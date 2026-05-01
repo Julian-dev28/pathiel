@@ -271,6 +271,7 @@ export default function AgentPage() {
   // doesn't re-fire immediately when the user navigates away and back mid-cycle
   const tradedTickerRef   = useRef<string | null>(null)
   const lastAnalysisRef   = useRef<number>(0)
+  const fatalErrorRef     = useRef<string | null>(null)  // set on non-retryable errors (auth, config)
   const sendRef = useRef<((text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => Promise<boolean>) | null>(null)
   // True when this mount detected an in-progress analysis from a previous navigation
   const [resuming, setResuming] = useState(false)
@@ -495,9 +496,12 @@ export default function AgentPage() {
       return false
 
     } catch (err) {
+      const errText = String(err)
+      const isFatal = errText.includes('401') || errText.toLowerCase().includes('unauthorized')
+      if (isFatal) fatalErrorRef.current = errText
       setMessages(prev => [
         ...prev.map(m => m.role === 'tool' && m.toolStatus === 'running' ? { ...m, toolStatus: 'done' as const } : m),
-        { role: 'system', content: `Error: ${String(err)}` },
+        { role: 'system', content: `Error: ${errText}` },
       ])
       return false
     } finally {
@@ -520,6 +524,18 @@ export default function AgentPage() {
 
     async function loop() {
       if (cancelled || !autoRef.current) return
+
+      // Stop on non-retryable errors (auth failures, config issues)
+      if (fatalErrorRef.current) {
+        const reason = fatalErrorRef.current
+        fatalErrorRef.current = null
+        setAutoMode(false)
+        setMessages(prev => [...prev, {
+          role: 'system',
+          content: `Auto mode stopped — ${reason.includes('401') ? 'auth error (HTTP 401). Check AOMI_APP and Kalshi credentials in your deployment env.' : reason}`,
+        }])
+        return
+      }
 
       // Wait for market data to arrive
       if (!liveMarket) {
