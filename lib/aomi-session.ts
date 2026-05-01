@@ -2,15 +2,16 @@ import { AomiClient, Session } from '@aomi-labs/client'
 
 const AOMI_BASE_URL = process.env.AOMI_BASE_URL ?? 'https://api.aomi.dev'
 const AOMI_APP      = process.env.AOMI_APP      ?? 'default'
+const AOMI_API_KEY  = process.env.AOMI_API_KEY  // scoped key from aomi.dev — required for custom apps
 
 export function createAomiClient() {
-  return new AomiClient({ baseUrl: AOMI_BASE_URL })
+  return new AomiClient({ baseUrl: AOMI_BASE_URL, apiKey: AOMI_API_KEY })
 }
 
 export function createSession(sessionId?: string) {
   return new Session(
-    { baseUrl: AOMI_BASE_URL },
-    { app: AOMI_APP, sessionId: sessionId ?? crypto.randomUUID() },
+    { baseUrl: AOMI_BASE_URL, apiKey: AOMI_API_KEY },
+    { app: AOMI_APP, sessionId: sessionId ?? crypto.randomUUID(), apiKey: AOMI_API_KEY },
   )
 }
 
