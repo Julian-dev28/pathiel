@@ -13,6 +13,9 @@ function isTradeable(m: { yes_ask: number; close_time?: string }): boolean {
 }
 
 export async function GET() {
+  let lastStatus = 0
+  let lastError  = ''
+
   // ── Attempt 1: query by current event_ticker (most precise) ──────────────
   try {
     const eventTicker = getCurrentEventTicker()
@@ -21,12 +24,20 @@ export async function GET() {
       headers: { ...buildKalshiHeaders('GET', path), Accept: 'application/json' },
       cache: 'no-store',
     })
+    lastStatus = res.status
     if (res.ok) {
       const data = await res.json()
       const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isTradeable)
       if (active.length > 0) return NextResponse.json({ ...data, markets: active })
+      lastError = 'no_tradeable_markets'
+    } else {
+      lastError = `kalshi_${res.status}`
     }
-  } catch { /* fall through */ }
+  } catch (e) {
+    lastError  = 'network_error'
+    lastStatus = 0
+    console.error('[/api/markets] attempt 1 threw:', e)
+  }
 
   // ── Attempt 2: series query with auth ─────────────────────────────────────
   try {
@@ -35,13 +46,23 @@ export async function GET() {
       headers: { ...buildKalshiHeaders('GET', path), Accept: 'application/json' },
       cache: 'no-store',
     })
+    lastStatus = res.status
     if (res.ok) {
       const data = await res.json()
       const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isTradeable)
       if (active.length > 0) return NextResponse.json({ ...data, markets: active })
+      lastError = 'no_tradeable_markets'
+    } else {
+      lastError = `kalshi_${res.status}`
     }
-  } catch { /* fall through */ }
+  } catch (e) {
+    lastError  = 'network_error'
+    lastStatus = 0
+    console.error('[/api/markets] attempt 2 threw:', e)
+  }
 
-  // Both Kalshi queries failed or no tradeable markets yet (between windows)
-  return NextResponse.json({ error: 'No active KXBTC15M markets found', markets: [] }, { status: 503 })
+  return NextResponse.json(
+    { error: lastError, kalshi_status: lastStatus, markets: [] },
+    { status: 503 },
+  )
 }

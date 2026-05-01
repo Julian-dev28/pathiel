@@ -7,15 +7,21 @@ export const maxDuration = 60
 
 interface ChatRequest {
   message: string
-  /** Optional hint for AOMI — e.g. which market ticker is currently active. */
   hint?: string
   sessionId?: string
+  marketData?: Record<string, unknown>
+  riskPct?: number
 }
 
 export async function POST(req: NextRequest) {
-  const { message, hint, sessionId } = (await req.json()) as ChatRequest
+  const { message, hint, sessionId, marketData, riskPct } = (await req.json()) as ChatRequest
   const session = createSession(sessionId)
   const prompt  = buildPrompt(message, hint)
+
+  // Inject live market context and risk setting into session state — persists
+  // across calls in the same session so the agent always has fresh numbers
+  if (marketData) session.addExtValue('market_context', marketData)
+  if (riskPct != null) session.addExtValue('risk_pct', riskPct)
 
   const encoder = new TextEncoder()
   let closed = false
@@ -27,6 +33,10 @@ export async function POST(req: NextRequest) {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)) }
         catch { /* write-after-close */ }
       }
+
+      // ── Processing lifecycle ──────────────────────────────────────────────
+      session.on('processing_start', () => send({ type: 'processing_start' }))
+      session.on('processing_end',   () => send({ type: 'processing_end'   }))
 
       // ── Tool call visibility ──────────────────────────────────────────────
       session.on('tool_update',  (ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'running' }))

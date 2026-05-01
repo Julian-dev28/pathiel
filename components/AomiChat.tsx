@@ -320,7 +320,7 @@ export default function AomiChat({ market, btcPrice, strikePrice, secondsLeft, o
           `Strike: $${strikePrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           `YES ask: ${market.yes_ask}¢  YES bid: ${market.yes_bid}¢`,
           `NO ask: ${market.no_ask}¢  NO bid: ${market.no_bid}¢`,
-          `Time left: ${secondsLeft}s`,
+          `Time left: ${Math.floor(secondsLeft / 60)}m ${secondsLeft % 60}s`,
           btcPrice > strikePrice
             ? `BTC is $${(btcPrice - strikePrice).toFixed(2)} ABOVE strike — YES is currently winning.`
             : `BTC is $${(strikePrice - btcPrice).toFixed(2)} BELOW strike — NO is currently winning.`,

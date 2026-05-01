@@ -214,9 +214,6 @@ html, body {
   0%,100% { opacity: 1; color: var(--pink); }
   50% { opacity: 0.7; color: var(--pink); }
 }
-
-
-
 @keyframes gradientFlow {
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }

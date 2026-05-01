@@ -56,9 +56,10 @@ function BotMsg({ content, autoExecuted }: { content: string; autoExecuted?: boo
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 4,
           padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
-          background: 'rgba(212,135,44,0.12)', color: 'var(--amber)',
-          border: '1px solid rgba(212,135,44,0.3)', width: 'fit-content',
-        }}>⚡ AUTO-EXECUTED</div>
+          background: 'rgba(245,158,11,0.10)', color: 'var(--amber)',
+          border: '1px solid rgba(245,158,11,0.25)', width: 'fit-content',
+          letterSpacing: '0.06em',
+        }}>AUTO-EXECUTED</div>
       )}
       {lines.map((line, i) => {
         const clean = line.replace(/^[•\-*]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').trim()
@@ -96,6 +97,20 @@ function BotMsg({ content, autoExecuted }: { content: string; autoExecuted?: boo
       })}
     </div>
   )
+}
+
+// ── Wait countdown ────────────────────────────────────────────────────────────
+
+function WaitCountdown({ label, until }: { label: string; until: number }) {
+  const [secs, setSecs] = useState(() => Math.max(0, Math.ceil((until - Date.now()) / 1000)))
+  useEffect(() => {
+    const id = setInterval(() => setSecs(Math.max(0, Math.ceil((until - Date.now()) / 1000))), 500)
+    return () => clearInterval(id)
+  }, [until])
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  const display = m > 0 ? `${m}m ${s}s` : `${s}s`
+  return <>{label} <span style={{ fontFamily: 'var(--font-geist-mono)' }}>{display}</span></>
 }
 
 // ── Market bar ─────────────────────────────────────────────────────────────────
@@ -169,19 +184,19 @@ function MarketBar({ market, btcPrice, strikePrice, secondsLeft }: {
 
 const INIT_MSG: Msg = {
   role: 'system',
-  content: "AOMI agent ready. I'll search the web for live BTC signals before every analysis. Enable Auto Mode to let me trade autonomously.",
+  content: "96 windows open today. Most traders catch 20 — the ones that align with their schedule. Enable Auto Mode and I'll cover all of them. Before every decision I search live BTC news, price action, and market sentiment. No stale data. No pre-programmed rules.",
 }
 
 const QUICK_PROMPTS = [
-  { label: '📊 Should I trade?', prompt: 'Research the latest BTC price action and news. Tell me if I should trade this window and why.' },
-  { label: '🟢 Bull case for YES', prompt: 'Search for bullish BTC signals right now. Make the case for buying YES on this window.' },
-  { label: '🔴 Bear case for NO', prompt: 'Search for bearish BTC signals and current crypto sentiment. Make the case for buying NO.' },
-  { label: '📰 Market news', prompt: 'Search for the latest BTC and crypto news in the last hour. How does it affect this prediction market window?' },
+  { label: 'Trade for me',        prompt: 'Search for live BTC price action, momentum, and order flow right now. Is there a tradeable edge in this window? Give me a direct verdict with confidence.' },
+  { label: 'Full analysis', prompt: 'Research the latest BTC price action and news. Synthesize with the live market snapshot and tell me exactly whether to trade this window and why.' },
+  { label: '↑ Bull case',  prompt: 'Search for bullish BTC signals right now — momentum, sentiment, news. Make the strongest case for buying YES on this window.' },
+  { label: '↓ Bear case',  prompt: 'Search for bearish BTC signals and current crypto sentiment. Make the strongest case for buying NO on this window.' },
 ]
 
 export default function AgentPage() {
   const [marketTicker, setMarketTicker] = useState<string | null>(null)
-  const { liveMarket, liveBTCPrice, refresh } = useMarketTick(marketTicker)
+  const { liveMarket, liveBTCPrice, marketError, refresh } = useMarketTick(marketTicker)
 
   useEffect(() => {
     if (liveMarket?.ticker && !marketTicker) setMarketTicker(liveMarket.ticker)
@@ -242,7 +257,9 @@ export default function AgentPage() {
   // ── Autonomous mode — persisted in sessionStorage (survives in-tab nav, not new tabs) ──
   const [autoMode, setAutoMode]     = useState(false)
   const [autoCycles, setAutoCycles] = useState(0)
-  const [riskPct, setRiskPct]       = useState(5)      // % of balance per trade, 1–50
+  const [tradesPlaced, setTradesPlaced] = useState(0)
+  const [riskPct, setRiskPct]       = useState(5)
+  const [autoWait, setAutoWait]     = useState<{ until: number; label: string } | null>(null)
   const autoRef        = useRef(false)
   const procRef        = useRef(false)
   const riskPctRef     = useRef(5)
@@ -251,19 +268,42 @@ export default function AgentPage() {
   const tradedTickerRef   = useRef<string | null>(null)
   const lastAnalysisRef   = useRef<number>(0)
   const sendRef = useRef<((text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => Promise<boolean>) | null>(null)
-  useEffect(() => { autoRef.current  = autoMode    }, [autoMode])
+  // True when this mount detected an in-progress analysis from a previous navigation
+  const [resuming, setResuming] = useState(false)
+  useEffect(() => { autoRef.current = autoMode; if (!autoMode) setAutoWait(null) }, [autoMode])
   useEffect(() => { procRef.current  = processing  }, [processing])
   useEffect(() => { riskPctRef.current = riskPct   }, [riskPct])
-  // Restore session state from sessionStorage on mount (client-only)
+  // Poll until the in-progress analysis from a previous mount finishes, then reload history
+  useEffect(() => {
+    if (!resuming) return
+    const id = setInterval(() => {
+      if (sessionStorage.getItem('aomi-processing') !== '1') {
+        setResuming(false)
+        setHistoryLoaded(false)  // triggers history re-fetch to show the completed result
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [resuming])
+  // Restore all persisted state on mount — runs client-only after hydration
   useEffect(() => {
     if (sessionStorage.getItem('aomi-auto') === '1') setAutoMode(true)
     tradedTickerRef.current = sessionStorage.getItem('aomi-traded-ticker')
     lastAnalysisRef.current = Number(sessionStorage.getItem('aomi-last-analysis') ?? 0)
+    const stored = sessionStorage.getItem('aomi-trades-placed')
+    if (stored) setTradesPlaced(Number(stored))
+    const storedRisk = localStorage.getItem('aomi-risk-pct')
+    if (storedRisk) setRiskPct(Number(storedRisk))
+    if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
   }, [])
-  // Persist autoMode to sessionStorage whenever it changes
+  // Persist autoMode and trades-placed counter to sessionStorage
   useEffect(() => {
     sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0')
   }, [autoMode])
+  useEffect(() => {
+    sessionStorage.setItem('aomi-trades-placed', String(tradesPlaced))
+  }, [tradesPlaced])
+  // riskPct is persisted inline in the slider onChange to avoid a race where the
+  // default-value effect overwrites localStorage before the mount effect reads it
 
   // ── Build market hint ─────────────────────────────────────────────────────
   const buildHint = useCallback((market: KalshiMarket | null, btc: number, strike: number, secs: number) => {
@@ -274,7 +314,7 @@ export default function AgentPage() {
       `Strike: $${strike.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       `YES ask: ${market.yes_ask}¢  YES bid: ${market.yes_bid}¢`,
       `NO ask: ${market.no_ask}¢  NO bid: ${market.no_bid}¢`,
-      `Time left: ${secs}s`,
+      `Time left: ${Math.floor(secs / 60)}m ${secs % 60}s`,
       btc > strike
         ? `BTC is $${(btc - strike).toFixed(2)} ABOVE strike — YES currently winning.`
         : `BTC is $${(strike - btc).toFixed(2)} BELOW strike — NO currently winning.`,
@@ -314,14 +354,36 @@ export default function AgentPage() {
     return data.ok
   }, [refresh])
 
+  // ── Interrupt current analysis ────────────────────────────────────────────
+  const handleStop = useCallback(async () => {
+    await fetch('/api/aomi/interrupt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    })
+  }, [sessionId])
+
   // ── Core send function ────────────────────────────────────────────────────
   const send = useCallback(async (text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => {
-    if (!text.trim() || procRef.current) return
+    if (!text.trim() || procRef.current) return false
     const userMsg = text.trim()
     setProcessing(true)
     procRef.current = true
+    sessionStorage.setItem('aomi-processing', '1')
 
     const hint = buildHint(liveMarket ?? null, btcPrice, strikePrice, secondsLeft)
+    const marketData = liveMarket ? {
+      ticker:    liveMarket.ticker,
+      btc_spot:  btcPrice,
+      strike:    strikePrice,
+      yes_ask:   liveMarket.yes_ask,
+      yes_bid:   liveMarket.yes_bid,
+      no_ask:    liveMarket.no_ask,
+      no_bid:    liveMarket.no_bid,
+      secs_left: secondsLeft,
+      direction: btcPrice > strikePrice ? 'ABOVE' : 'BELOW',
+      delta:     Math.abs(btcPrice - strikePrice),
+    } : undefined
 
     if (!opts?.silent) {
       setMessages(prev => [...prev,
@@ -339,7 +401,7 @@ export default function AgentPage() {
       const res = await fetch('/api/aomi/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, hint, sessionId }),
+        body: JSON.stringify({ message: userMsg, hint, sessionId, marketData, riskPct: riskPctRef.current }),
       })
       if (!res.ok || !res.body) throw new Error('Request failed')
 
@@ -379,6 +441,12 @@ export default function AgentPage() {
                 })
               }
             }
+            if (ev.type === 'processing_start') {
+              // agent confirmed working — tool pill already shown
+            }
+            if (ev.type === 'processing_end') {
+              // agent finished — stream is wrapping up
+            }
             if (ev.type === 'error') {
               setMessages(prev => [...prev, { role: 'system', content: `Error: ${ev.text}` }])
             }
@@ -402,7 +470,10 @@ export default function AgentPage() {
             return next
           })
           const ok = await executeTrade(side, liveMarket)
-          if (opts?.silent) setAutoCycles(c => c + 1)
+          if (opts?.silent) {
+            setAutoCycles(c => c + 1)
+            if (ok) setTradesPlaced(c => c + 1)
+          }
           return ok
         }
       }
@@ -417,6 +488,7 @@ export default function AgentPage() {
       ])
       return false
     } finally {
+      sessionStorage.removeItem('aomi-processing')
       setProcessing(false)
       procRef.current = false
     }
@@ -447,14 +519,20 @@ export default function AgentPage() {
         ? Math.max(0, Math.floor((new Date(liveMarket.close_time).getTime() - Date.now()) / 1000))
         : 0
       if (secsLeft > 0 && secsLeft < 45) {
-        if (!cancelled) setTimeout(loop, (secsLeft + 5) * 1000)
+        if (!cancelled) { setAutoWait({ until: Date.now() + (secsLeft + 5) * 1000, label: 'Next window in' }); setTimeout(loop, (secsLeft + 5) * 1000) }
         return
       }
 
       // Already traded this window — sit out until it expires
       if (tradedTickerRef.current === liveMarket.ticker) {
         const wait = secsLeft > 0 ? (secsLeft + 5) * 1000 : 60_000
-        if (!cancelled) setTimeout(loop, wait)
+        if (!cancelled) { setAutoWait({ until: Date.now() + wait, label: 'Next window in' }); setTimeout(loop, wait) }
+        return
+      }
+
+      // An analysis from a previous navigation is still running — wait for it
+      if (sessionStorage.getItem('aomi-processing') === '1') {
+        if (!cancelled) setTimeout(loop, 2000)
         return
       }
 
@@ -462,6 +540,7 @@ export default function AgentPage() {
       const msSinceLast = Date.now() - lastAnalysisRef.current
       if (msSinceLast < 30_000 && lastAnalysisRef.current > 0) {
         const wait = 30_000 - msSinceLast
+        if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Next analysis in' })
         await new Promise<void>(resolve => {
           const t = setTimeout(resolve, wait)
           if (cancelled) { clearTimeout(t); resolve() }
@@ -471,6 +550,7 @@ export default function AgentPage() {
 
       // Run analysis; auto-execute if confident
       if (!procRef.current && sendRef.current) {
+        setAutoWait(null)
         lastAnalysisRef.current = Date.now()
         sessionStorage.setItem('aomi-last-analysis', String(lastAnalysisRef.current))
         const traded = await sendRef.current(AUTO_PROMPT, { silent: true, autoExecute: true })
@@ -487,6 +567,7 @@ export default function AgentPage() {
       }
 
       // PASS or low confidence — retry in 30s
+      if (!cancelled) setAutoWait({ until: Date.now() + 30_000, label: 'PASS — retrying in' })
       await new Promise<void>(resolve => {
         const t = setTimeout(resolve, 30_000)
         if (cancelled) { clearTimeout(t); resolve() }
@@ -508,6 +589,8 @@ export default function AgentPage() {
     sessionStorage.removeItem('aomi-auto')
     sessionStorage.removeItem('aomi-traded-ticker')
     sessionStorage.removeItem('aomi-last-analysis')
+    sessionStorage.removeItem('aomi-trades-placed')
+    sessionStorage.removeItem('aomi-processing')
     const id = crypto.randomUUID()
     localStorage.setItem('aomi-agent-session', id)
     window.location.reload()
@@ -529,10 +612,10 @@ export default function AgentPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={() => setAutoMode(m => !m)}
-            disabled={processing}
+            disabled={processing && !autoMode}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              padding: '5px 16px', borderRadius: 20, cursor: 'pointer',
+              padding: '5px 16px', borderRadius: 20, cursor: processing && !autoMode ? 'not-allowed' : 'pointer',
               fontWeight: 700, fontSize: 12, transition: 'all 0.2s', border: 'none',
               background: autoMode ? 'var(--amber)' : 'var(--bg-card)',
               color: autoMode ? '#fff' : 'var(--text-muted)',
@@ -545,12 +628,14 @@ export default function AgentPage() {
               : '⚡ Enable Auto Mode'}
           </button>
           {autoMode ? (
-            <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600 }}>
-              Searching + trading autonomously · {autoCycles} trade{autoCycles !== 1 ? 's' : ''} placed
+            <span style={{ fontSize: 11, color: autoWait && !processing ? 'var(--text-muted)' : 'var(--amber)', fontWeight: 600 }}>
+              {autoWait && !processing
+                ? <WaitCountdown label={autoWait.label} until={autoWait.until} />
+                : `Searching + trading autonomously · ${tradesPlaced} trade${tradesPlaced !== 1 ? 's' : ''} placed`}
             </span>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              AOMI will search web, analyze, and execute trades automatically
+              Covers all 96 daily windows · search → analyze → execute · one slider to configure
             </span>
           )}
         </div>
@@ -560,7 +645,7 @@ export default function AgentPage() {
           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Risk per trade</span>
           <input
             type="range" min={1} max={50} value={riskPct}
-            onChange={e => setRiskPct(Number(e.target.value))}
+            onChange={e => { const v = Number(e.target.value); setRiskPct(v); localStorage.setItem('aomi-risk-pct', String(v)) }}
             style={{ flex: 1, accentColor: 'var(--amber)', cursor: 'pointer' }}
           />
           <span style={{
@@ -669,9 +754,9 @@ export default function AgentPage() {
               {/* Feature cards */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {[
-                  { icon: '🔍', title: 'Live web search', desc: 'Searches Brave for BTC news, RSI, sentiment, and whale activity before every analysis' },
-                  { icon: '⚡', title: 'Auto mode', desc: 'Runs every 90s. If confidence ≥ 65%, places the trade on Kalshi — no click needed' },
-                  { icon: '💰', title: 'One-click execute', desc: 'Every BUY YES / BUY NO response has a live Kalshi order button built in' },
+                  { icon: '◈', title: 'Not pre-programmed rules', desc: 'Before every decision, I search live BTC news, price action, and sentiment. I reason from what\'s happening right now.' },
+                  { icon: '⊛', title: '96 windows. Zero clicks.', desc: 'Enable Auto Mode. I\'ll cover every window — search, analyze, size, execute, wait for the next one. Repeat.' },
+                  { icon: '⊕', title: 'Real orders. Real money.', desc: 'BUY YES / BUY NO recommendations come with a live Kalshi order button. Kelly-sized from your actual balance.' },
                 ].map(({ icon, title, desc }) => (
                   <div key={title} style={{
                     padding: '16px', borderRadius: 12,
@@ -684,20 +769,50 @@ export default function AgentPage() {
                 ))}
               </div>
 
-              {/* Waiting for market */}
-              {!liveMarket && (
-                <div style={{ textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {[0,1,2].map(i => (
-                      <span key={i} style={{
-                        width: 8, height: 8, borderRadius: '50%', background: 'var(--text-muted)',
-                        display: 'inline-block', animation: `dotbounce 1.4s ease-in-out ${i*0.25}s infinite`,
-                      }} />
-                    ))}
+              {/* Waiting for market / error state */}
+              {!liveMarket && (() => {
+                const isAuthErr    = marketError === 'kalshi_403' || marketError === 'kalshi_401'
+                const isNetErr     = marketError === 'network_error'
+                const isBetween    = marketError === 'no_tradeable_markets'
+                const isKnownErr   = isAuthErr || isNetErr
+                const errColor     = 'var(--pink-dark)'
+                const warnColor    = 'var(--amber)'
+                return (
+                  <div style={{ textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                    {isKnownErr ? (
+                      <>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: errColor }}>
+                          {isNetErr ? 'Cannot reach Kalshi' : 'Kalshi auth failed'}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 280, lineHeight: 1.6 }}>
+                          {isNetErr
+                            ? 'Network error or geo-block. Kalshi restricts access by region — try a VPN.'
+                            : 'Check KALSHI_API_KEY and KALSHI_PRIVATE_KEY_PATH in .env.local.'}
+                        </span>
+                      </>
+                    ) : isBetween ? (
+                      <>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: warnColor }}>Between windows</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No active KXBTC15M market right now — next window opens shortly.</span>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {[0,1,2].map(i => (
+                            <span key={i} style={{
+                              width: 8, height: 8, borderRadius: '50%', background: 'var(--text-muted)',
+                              display: 'inline-block', animation: `dotbounce 1.4s ease-in-out ${i*0.25}s infinite`,
+                            }} />
+                          ))}
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {resuming ? 'Analysis in progress — result will appear shortly…' : 'Connecting to Kalshi markets…'}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Connecting to Kalshi markets…</span>
-                </div>
-              )}
+                )
+              })()}
             </div>
           )}
 
@@ -825,12 +940,21 @@ export default function AgentPage() {
               color: 'var(--text-primary)', fontFamily: 'inherit',
             }}
           />
-          <button onClick={() => { send(input); setInput('') }} disabled={processing || !input.trim()} style={{
-            padding: '0 20px', borderRadius: 14, border: 'none',
-            background: processing || !input.trim() ? 'var(--border)' : 'var(--blue)',
-            color: '#fff', cursor: processing || !input.trim() ? 'not-allowed' : 'pointer',
-            fontWeight: 700, fontSize: 15,
-          }}>{processing ? '…' : '↑'}</button>
+          {processing ? (
+            <button onClick={handleStop} style={{
+              padding: '0 20px', borderRadius: 14, border: 'none',
+              background: 'var(--pink-dark)', color: '#fff',
+              cursor: 'pointer', fontWeight: 700, fontSize: 13,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>■ Stop</button>
+          ) : (
+            <button onClick={() => { send(input); setInput('') }} disabled={!input.trim()} style={{
+              padding: '0 20px', borderRadius: 14, border: 'none',
+              background: !input.trim() ? 'var(--border)' : 'var(--blue)',
+              color: '#fff', cursor: !input.trim() ? 'not-allowed' : 'pointer',
+              fontWeight: 700, fontSize: 15,
+            }}>↑</button>
+          )}
         </div>
       </main>
 

@@ -148,28 +148,6 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
           </span>
         </div>
 
-        {/* Settings link */}
-        <Link
-          href="/settings"
-          title="Settings"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: 30, height: 30, borderRadius: 8,
-            border: '1px solid var(--border)', background: 'transparent',
-            color: 'var(--text-muted)', textDecoration: 'none', fontSize: 15,
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'var(--border-bright)'
-            ;(e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-secondary)'
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'var(--border)'
-            ;(e.currentTarget as HTMLAnchorElement).style.color = 'var(--text-muted)'
-          }}
-        >
-          ⚙
-        </Link>
       </div>
     </header>
   )

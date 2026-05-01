@@ -12,6 +12,7 @@ interface MarketTick {
   liveOrderbook: KalshiOrderbook | null
   liveBTCPrice: number | null
   livePriceHistory: PricePoint[]
+  marketError: string | null
   refresh: () => void
 }
 
@@ -38,6 +39,7 @@ export function useMarketTick(ticker: string | null, marketMode: '15m' | 'hourly
   const [liveOrderbook,    setLiveOrderbook]    = useState<KalshiOrderbook | null>(null)
   const [liveBTCPrice,     setLiveBTCPrice]     = useState<number | null>(null)
   const [livePriceHistory, setLivePriceHistory] = useState<PricePoint[]>([])
+  const [marketError,      setMarketError]      = useState<string | null>(null)
 
   const prevTickerRef   = useRef(ticker)
   const marketCloseRef  = useRef<number | null>(null)  // ms timestamp of current market's close_time
@@ -85,10 +87,15 @@ export function useMarketTick(ticker: string | null, marketMode: '15m' | 'hourly
 
         if (!res.ok) {
           backoff = Math.min(backoff * 2 + 1, 60)  // back off up to 30s (60 × 500ms)
+          try {
+            const errData = await res.json()
+            if (mounted) setMarketError(errData.error ?? `http_${res.status}`)
+          } catch { if (mounted) setMarketError(`http_${res.status}`) }
           return
         }
 
         backoff = 0
+        if (mounted) setMarketError(null)
         const data = await res.json()
 
         // /api/market-quote returns { market } ; /api/markets returns { markets: [] }
@@ -113,6 +120,7 @@ export function useMarketTick(ticker: string | null, marketMode: '15m' | 'hourly
         }
       } catch {
         backoff = Math.min(backoff * 2 + 1, 60)
+        if (mounted) setMarketError('network_error')
       }
     }
 
@@ -174,5 +182,5 @@ export function useMarketTick(ticker: string | null, marketMode: '15m' | 'hourly
     return () => { mounted = false; clearInterval(id) }
   }, [ticker])
 
-  return { liveMarket, liveOrderbook, liveBTCPrice, livePriceHistory, refresh }
+  return { liveMarket, liveOrderbook, liveBTCPrice, livePriceHistory, marketError, refresh }
 }
