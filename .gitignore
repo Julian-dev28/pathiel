@@ -78,6 +78,6 @@ sentient-trader-mcp/*.egg-info/
 # Dev/scratch scripts
 python-service/backtest_67c.py
 python-service/test_tiered_kelly.py
-# Local-only docs (not for VCS)
+
 ONE_PAGER.md
 THREAD.md
