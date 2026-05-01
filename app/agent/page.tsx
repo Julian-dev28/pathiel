@@ -184,6 +184,8 @@ function MarketBar({ market, btcPrice, strikePrice, secondsLeft }: {
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+const PRICE_CEILING = 94  // ¢ — no trades when ask ≥ this (terrible risk/reward at the extremes)
+
 const INIT_MSG: Msg = {
   role: 'system',
   content: "96 windows open today. Most traders catch 20 — the ones that align with their schedule. Enable Auto Mode and I'll cover all of them. Before every decision I search live BTC news, price action, and market sentiment. No stale data. No pre-programmed rules.",
@@ -320,11 +322,20 @@ export default function AgentPage() {
       btc > strike
         ? `BTC is $${(btc - strike).toFixed(2)} ABOVE strike — YES currently winning.`
         : `BTC is $${(strike - btc).toFixed(2)} BELOW strike — NO currently winning.`,
+      `Price ceiling: trades are blocked when ask ≥ 94¢ — recommend PASS if either side is ≥ 94¢.`,
     ].join('\n')
   }, [])
 
   // ── Execute trade ─────────────────────────────────────────────────────────
   const executeTrade = useCallback(async (side: 'yes' | 'no', market: KalshiMarket) => {
+    const askPrice = side === 'yes' ? market.yes_ask : market.no_ask
+    if (askPrice >= PRICE_CEILING) {
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: `Blocked — ${side.toUpperCase()} ask is ${askPrice}¢ (≥${PRICE_CEILING}¢ ceiling). Skipping.`,
+      }])
+      return false
+    }
     // Fetch balance to size the bet; route returns KalshiBalance directly (no { ok, data } wrapper)
     const balRes = await fetch('/api/balance')
     const balData = await balRes.json()
