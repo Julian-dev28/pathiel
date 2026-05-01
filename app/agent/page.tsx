@@ -215,13 +215,15 @@ export default function AgentPage() {
   const secondsLeft = liveMarket?.close_time
     ? Math.max(0, Math.floor((new Date(liveMarket.close_time).getTime() - Date.now()) / 1000)) : 0
 
-  // ── Session — persisted across refreshes ──────────────────────────────────
+  // ── Session — persisted per environment so local/prod don't share sessions ──
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return crypto.randomUUID()
-    const stored = localStorage.getItem('aomi-agent-session')
+    const env = window.location.hostname === 'localhost' ? 'local' : 'prod'
+    const key = `aomi-agent-session-${env}`
+    const stored = localStorage.getItem(key)
     if (stored) return stored
     const id = crypto.randomUUID()
-    localStorage.setItem('aomi-agent-session', id)
+    localStorage.setItem(key, id)
     return id
   })
 
