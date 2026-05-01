@@ -1,0 +1,6 @@
+python-service/
+data/
+*.pem
+*.csv
+analysis.json
+forecast.json
