@@ -92,7 +92,9 @@ export async function POST(req: NextRequest) {
           ? assistant.content : 'No response from agent.'
         send({ type: 'message', text })
       } catch (err) {
-        send({ type: 'error', text: err instanceof Error ? err.message : 'AOMI request failed' })
+        const msg = err instanceof Error ? err.message : 'AOMI request failed'
+        console.error('[aomi/chat] session.send failed — AOMI_APP:', process.env.AOMI_APP, '— error:', msg)
+        send({ type: 'error', text: msg })
       } finally {
         send({ type: 'done' })
         closed = true
