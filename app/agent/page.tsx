@@ -156,7 +156,9 @@ function MarketBar({ market, btcPrice, strikePrice, secondsLeft }: {
           {[['YES', market.yes_ask, 'var(--green-dark)'], ['NO', market.no_ask, 'var(--pink-dark)']].map(([label, val, color]) => (
             <div key={String(label)} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</span>
-              <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, color: String(color), fontSize: 13 }}>{val}¢</span>
+              <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, color: String(color), fontSize: 13 }}>
+                {(val as number) > 0 ? `${val}¢` : '—'}
+              </span>
             </div>
           ))}
         </div>

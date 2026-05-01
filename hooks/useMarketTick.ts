@@ -103,8 +103,10 @@ export function useMarketTick(ticker: string | null, marketMode: '15m' | 'hourly
         if (data.market && !marketClosed) {
           market = data.market
         } else if (data.markets?.length) {
-          const isLive = (m: KalshiMarket) => (m.yes_ask ?? 0) > 1 && (m.yes_ask ?? 100) < 99
-          market = data.markets.find(isLive) ?? null
+          // Prefer a market with live quotes; fall back to any open window (quotes arrive seconds after open)
+          const hasQuotes = (m: KalshiMarket) => (m.yes_ask ?? 0) > 1 && (m.yes_ask ?? 100) < 99
+          const isOpen    = (m: KalshiMarket) => !m.close_time || new Date(m.close_time).getTime() > Date.now()
+          market = data.markets.find(hasQuotes) ?? data.markets.find(isOpen) ?? null
           // Auto-switch to the newly discovered market
           if (market && market.ticker !== prevTickerRef.current) {
             prevTickerRef.current = market.ticker

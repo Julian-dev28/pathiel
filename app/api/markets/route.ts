@@ -6,10 +6,11 @@ import { KALSHI_HOST, getCurrentEventTicker } from '@/lib/kalshi'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-/** A market is still tradeable: window hasn't closed and prices are live (not 0 or 100 = settled extremes) */
-function isTradeable(m: { yes_ask: number; close_time?: string }): boolean {
+/** Window is still open — quotes may not exist yet at the very start of a window */
+function isOpenWindow(m: { yes_ask: number; close_time?: string; status?: string }): boolean {
   if (m.close_time && new Date(m.close_time).getTime() <= Date.now()) return false
-  return m.yes_ask > 0 && m.yes_ask < 100
+  if (m.status && ['closed', 'settled', 'finalized'].includes(m.status)) return false
+  return true
 }
 
 export async function GET() {
@@ -27,7 +28,7 @@ export async function GET() {
     lastStatus = res.status
     if (res.ok) {
       const data = await res.json()
-      const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isTradeable)
+      const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isOpenWindow)
       if (active.length > 0) return NextResponse.json({ ...data, markets: active })
       lastError = 'no_tradeable_markets'
     } else {
@@ -41,7 +42,7 @@ export async function GET() {
 
   // ── Attempt 2: series query with auth ─────────────────────────────────────
   try {
-    const path = '/trade-api/v2/markets?series_ticker=KXBTC15M&limit=20'
+    const path = '/trade-api/v2/markets?series_ticker=KXBTC15M&status=open&limit=10'
     const res = await fetch(`${KALSHI_HOST}${path}`, {
       headers: { ...buildKalshiHeaders('GET', path), Accept: 'application/json' },
       cache: 'no-store',
@@ -49,7 +50,7 @@ export async function GET() {
     lastStatus = res.status
     if (res.ok) {
       const data = await res.json()
-      const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isTradeable)
+      const active = (data.markets ?? []).map(normalizeKalshiMarket).filter(isOpenWindow)
       if (active.length > 0) return NextResponse.json({ ...data, markets: active })
       lastError = 'no_tradeable_markets'
     } else {
