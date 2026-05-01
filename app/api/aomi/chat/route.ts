@@ -15,6 +15,7 @@ interface ChatRequest {
 
 export async function POST(req: NextRequest) {
   const { message, hint, sessionId, marketData, riskPct } = (await req.json()) as ChatRequest
+  console.log('[aomi/chat] POST received — sessionId:', sessionId?.slice(0, 8), 'app:', process.env.AOMI_APP)
   const session = createSession(sessionId)
   const prompt  = buildPrompt(message, hint)
 
@@ -93,7 +94,11 @@ export async function POST(req: NextRequest) {
         send({ type: 'message', text })
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'AOMI request failed'
-        console.error('[aomi/chat] session.send failed — AOMI_APP:', process.env.AOMI_APP, '— error:', msg)
+        console.error('[aomi/chat] session.send failed —',
+          'AOMI_BASE_URL:', process.env.AOMI_BASE_URL,
+          'AOMI_APP:', process.env.AOMI_APP,
+          'AOMI_API_KEY set:', !!process.env.AOMI_API_KEY,
+          '— error:', msg)
         send({ type: 'error', text: msg })
       } finally {
         send({ type: 'done' })
