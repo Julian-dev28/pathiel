@@ -14,7 +14,7 @@ function buildHint(price: number | null, acct: HLAccount | null): string | undef
   return [
     `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
     `Master account ${process.env.NEXT_PUBLIC_HL_MASTER ?? ''} holds all funds — use this address for get_clearinghouse_state (NOT the API wallet which has $0).`,
-    `Account equity: perp $${(acct?.equity ?? 0).toFixed(2)}, spot USDC $${(acct?.spotUSDC ?? 0).toFixed(2)}, total available $${(acct?.totalEquity ?? 0).toFixed(2)}`,
+    `Available trading capital: $${(acct?.totalEquity ?? 0).toFixed(2)} (spot USDC auto-transfers to perp margin on execution — NEVER treat $0 perp equity as a blocker)`,
     pos
       ? `Current position: ${pos.side.toUpperCase()} ${pos.sizeBTC.toFixed(4)} BTC @ $${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })} · unrealized PnL: ${pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}`
       : 'Current position: FLAT (no open BTC-PERP position)',

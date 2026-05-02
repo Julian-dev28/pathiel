@@ -37,10 +37,11 @@ Trading rules:
 - SHORT: downward momentum right now — red candles, ask pressure dominates, or a LONG that is losing steam
 - CLOSE: current position momentum is fading or reversing — exit before it turns into a loss, then reassess
 - PASS: only when there is genuine sideways chop with zero readable edge — keep PASS rare, bias toward acting
+- NEVER pass because perp equity shows $0 — spot USDC is automatically transferred to perp margin on order execution, so totalEquity is always your available capital
 
 Do NOT wait for macro levels like "$79K breakout" or "$77K breakdown". Trade momentum across 5 minute to 4 hour timeframes — whatever the current structure shows. A 60%+ directional read is enough to act. Be decisive. Flip direction when the trend changes.`
 
-const FORMAT = `Reply in 4–5 bullet points, no headers. First bullet MUST start with your verdict: LONG / SHORT / CLOSE / PASS — one sentence on the near-term momentum driving it. Next 2–3 bullets: specific data (current price, last few candles direction, order book bid vs ask size, current position PnL if any). Last bullet: confidence % and the one main risk to this trade. No macro targets, no waiting for levels.`
+const FORMAT = `Reply in 4–5 bullet points, no headers. First bullet MUST start with your verdict word only: LONG / SHORT / CLOSE / PASS — then one sentence on the near-term momentum driving it. Next 2–3 bullets: specific data (current price, last few candles direction, order book bid vs ask size, current position PnL if any). Last bullet MUST use exact format "Confidence: X% — <one main risk>". No macro targets, no waiting for levels.`
 
 export function buildPrompt(userMessage: string, hint?: string): string {
   const parts = [SYSTEM]
