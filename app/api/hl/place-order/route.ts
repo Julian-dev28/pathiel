@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { placeHLOrder, setLeverage, getHLPrice, getHLAccount, HL_WALLET, HL_LEVERAGE } from '@/lib/hyperliquid'
+import { placeHLOrder, setLeverage, transferSpotToPerp, getHLPrice, getHLAccount, HL_WALLET, HL_LEVERAGE } from '@/lib/hyperliquid'
 
 export const runtime = 'nodejs'
 
@@ -18,6 +18,14 @@ export async function POST(req: NextRequest) {
     ])
 
     if (midPrice <= 0) return NextResponse.json({ ok: false, error: 'invalid price' })
+
+    // Auto-move spot USDC → perp if perp account is empty
+    if (account.equity === 0 && account.spotUSDC > 0) {
+      await transferSpotToPerp(account.spotUSDC)
+      // Re-fetch account so equity reflects the transfer
+      const updated = await getHLAccount(HL_WALLET)
+      Object.assign(account, updated)
+    }
 
     // Use total equity (perp + spot) for sizing; min 0.001 BTC
     const totalEquity = account.totalEquity

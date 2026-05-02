@@ -133,6 +133,19 @@ async function signAction(action: object, nonce: number): Promise<{ r: string; s
 
 // ── Order placement ───────────────────────────────────────────────────────────
 
+// Move USDC from spot wallet → perp margin if perp equity is empty
+export async function transferSpotToPerp(amount: number): Promise<void> {
+  if (!PRIVATE_KEY || amount <= 0) return
+  const nonce  = Date.now()
+  const action = { type: 'usdClassTransfer', amount: amount.toFixed(2), toPerp: true }
+  const sig    = await signAction(action, nonce)
+  await fetch(`${HL_API}/exchange`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ action, nonce, signature: sig }),
+  })
+}
+
 export async function setLeverage(leverage: number): Promise<void> {
   if (!PRIVATE_KEY) return
   const nonce  = Date.now()
