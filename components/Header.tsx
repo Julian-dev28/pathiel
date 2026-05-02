@@ -59,7 +59,7 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
               AOMI <span style={{ color: 'var(--blue)' }}>Trader</span>
             </div>
             <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 1 }}>
-              AI Agent · Kalshi KXBTC15M
+              AI Agent · Hyperliquid BTC-PERP
             </div>
           </div>
         </div>
@@ -68,12 +68,10 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
 
         {/* Nav tabs — path-aware active state */}
         {([
-          { href: '/dashboard', label: '15m'   },
-          { href: '/agent',     label: 'Agent' },
+          { href: '/agent', label: 'Agent' },
         ] as const).map(({ href, label }, i) => {
           const active = pathname === href
-          const isLast15m = i === 0
-          const effectiveActive = active || (isLast15m && pathname?.startsWith('/dashboard'))
+          const effectiveActive = active || i === 0
           return (
             <Link key={href} href={href} style={{
               fontSize: 11, fontWeight: effectiveActive ? 700 : 500,
@@ -91,10 +89,10 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
         <div style={{ height: 22, width: 1, background: 'var(--border)', margin: '0 2px' }} />
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>KXBTC15M</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>BTC-PERP</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: 'var(--green-dark)' }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block' }} />
-            Live · 15-min BTC
+            Live · Hyperliquid
           </span>
         </div>
       </div>

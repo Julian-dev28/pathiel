@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react'
 import type { HLAccount } from '@/lib/hyperliquid'
 
 export interface HLTick {
-  btcPrice:   number | null
-  account:    HLAccount | null
-  error:      string | null
+  btcPrice:       number | null
+  account:        HLAccount | null
+  error:          string | null
   refreshAccount: () => void
 }
 
@@ -24,7 +24,7 @@ export function useHLTick(): HLTick {
     async function tick() {
       try {
         const res  = await fetch('/api/hl/price', { cache: 'no-store' })
-        const data = await res.json() as { price?: number; error?: string }
+        const data = await res.json() as { price?: number }
         if (mounted && data.price && data.price > 0) setBtcPrice(data.price)
       } catch { /* blip */ }
     }

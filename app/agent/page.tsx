@@ -128,9 +128,9 @@ function WaitCountdown({ label, until }: { label: string; until: number }) {
 // ── Market bar ─────────────────────────────────────────────────────────────────
 
 function MarketBar({ btcPrice, account }: { btcPrice: number | null; account: HLAccount | null }) {
-  const pos    = account?.position ?? null
-  const equity = account?.equity ?? null
-  const pnlPos = pos && pos.unrealizedPnl >= 0
+  const pos         = account?.position ?? null
+  const equity      = account?.totalEquity ?? null
+  const pnlPos      = pos && pos.unrealizedPnl >= 0
 
   return (
     <div style={{
@@ -296,7 +296,7 @@ export default function AgentPage() {
     const pos = acct?.position
     return [
       `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
-      `Account equity: $${(acct?.equity ?? 0).toFixed(2)}`,
+      `Account: perp equity $${(acct?.equity ?? 0).toFixed(2)}, spot USDC $${(acct?.spotUSDC ?? 0).toFixed(2)}, total $${(acct?.totalEquity ?? 0).toFixed(2)}`,
       pos
         ? `Current position: ${pos.side.toUpperCase()} ${pos.sizeBTC.toFixed(4)} BTC @ $${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })} · unrealized PnL: ${pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}`
         : 'Current position: FLAT (no open BTC-PERP position)',
@@ -311,12 +311,12 @@ export default function AgentPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side, riskPct: riskPctRef.current }),
     })
-    const data = await res.json() as { ok: boolean; orderId?: string; error?: string; sizeBTC?: number; midPrice?: number }
+    const data = await res.json() as { ok: boolean; orderId?: string; error?: string; sizeBTC?: number; midPrice?: number; leverage?: number }
     const dir  = side === 'long' ? '↑ LONG' : '↓ SHORT'
     setMessages(prev => [...prev, {
       role: 'system',
       content: data.ok
-        ? `✅ ${dir} order placed — ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} (${riskPctRef.current}% risk)`
+        ? `✅ ${dir} order placed — ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${data.leverage ?? 5}× · ${riskPctRef.current}% risk`
         : `❌ Order failed: ${data.error}`,
     }])
     refreshAccount()
@@ -651,7 +651,7 @@ export default function AgentPage() {
                         ${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 1 })}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                        BTC-PERP · Hyperliquid · {account ? `$${account.equity.toFixed(2)} equity` : 'loading account…'}
+                        BTC-PERP · Hyperliquid · {account ? `$${account.totalEquity.toFixed(2)} total equity` : 'loading account…'}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>

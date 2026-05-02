@@ -21,25 +21,6 @@ const PUBLIC_API_PREFIXES = [
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Basic Auth — protects all routes when BASIC_AUTH_PASSWORD is set
-  const basicAuthPw = process.env.BASIC_AUTH_PASSWORD
-  if (basicAuthPw) {
-    const auth = req.headers.get('authorization')
-    let authed = false
-    if (auth?.startsWith('Basic ')) {
-      const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf-8')
-      const colonIdx = decoded.indexOf(':')
-      const pass = colonIdx >= 0 ? decoded.slice(colonIdx + 1) : decoded
-      authed = pass === basicAuthPw
-    }
-    if (!authed) {
-      return new NextResponse('Unauthorized', {
-        status: 401,
-        headers: { 'WWW-Authenticate': 'Basic realm="Sentient"' },
-      })
-    }
-  }
-
   // Only guard /api/ routes for Appwrite auth
   if (!pathname.startsWith('/api/')) {
     return NextResponse.next()
