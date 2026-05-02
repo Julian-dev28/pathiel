@@ -68,17 +68,17 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
 
         {/* Nav tabs — path-aware active state */}
         {([
-          { href: '/agent', label: 'Agent' },
-        ] as const).map(({ href, label }, i) => {
-          const active = pathname === href
-          const effectiveActive = active || i === 0
+          { href: '/dashboard', label: 'Dashboard' },
+          { href: '/agent',     label: 'Agent'     },
+        ] as const).map(({ href, label }) => {
+          const active = pathname === href || (pathname === '/' && href === '/dashboard')
           return (
             <Link key={href} href={href} style={{
-              fontSize: 11, fontWeight: effectiveActive ? 700 : 500,
+              fontSize: 11, fontWeight: active ? 700 : 500,
               padding: '4px 12px', borderRadius: 7, textDecoration: 'none',
-              background: effectiveActive ? 'var(--bg-secondary)' : 'transparent',
-              color: effectiveActive ? 'var(--text-primary)' : 'var(--text-muted)',
-              border: effectiveActive ? '1px solid var(--border)' : '1px solid transparent',
+              background: active ? 'var(--bg-secondary)' : 'transparent',
+              color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+              border: active ? '1px solid var(--border)' : '1px solid transparent',
               transition: 'all 0.15s',
             }}>
               {label}

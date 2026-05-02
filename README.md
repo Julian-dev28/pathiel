@@ -1,16 +1,16 @@
-# AOMI Kalshi Trader
+# AOMI Hyperliquid Trader
 
-> Autonomous BTC prediction market agent powered by [`@aomi-labs/client`](https://github.com/aomi-labs/aomi-sdk).
+> Autonomous BTC-PERP momentum trader on Hyperliquid, powered by [`@aomi-labs/client`](https://github.com/aomi-labs/aomi-sdk).
 
-**What it does:** Watches Kalshi's KXBTC15M market (15-min BTC binaries), searches the live web for signals, decides YES or NO, and places the order — with no human in the loop.
+**What it does:** Watches live BTC-PERP price action and order book on Hyperliquid, searches the web for market sentiment, decides LONG / SHORT / CLOSE / PASS, and executes the trade — with no human in the loop.
 
 ---
 
 ## The problem it solves
 
-Kalshi's KXBTC15M market opens and closes every 15 minutes, 96 times a day. Most traders catch 20 of those windows. The other 76 close without them, regardless of whether the setup was good.
+BTC momentum windows open and close constantly — 5-minute bursts, 1-hour trends, 4-hour swings. Most traders catch a handful per day. Most edge comes from acting fast when a signal is clear and getting out before it reverses.
 
-This agent covers all 96. Enable Auto Mode once and walk away.
+This agent runs a 60-second analysis loop, flips direction when momentum shifts, and closes positions before they turn into losses. It's not waiting for "$79K breakout" macro levels — it trades whatever structure the current candles show.
 
 ---
 
@@ -18,13 +18,13 @@ This agent covers all 96. Enable Auto Mode once and walk away.
 
 Every analysis cycle, AOMI:
 
-1. **Searches the live web** via `brave_search` — BTC price action, news, sentiment, whale activity. Not pre-computed signals — whatever is happening right now.
-2. **Reasons over the market snapshot** — current BTC vs strike, YES/NO ask prices, time left in the window.
-3. **Returns a verdict** — `BUY YES`, `BUY NO`, or `PASS` with a confidence level.
-4. **Auto-executes** if confidence ≥ 55% (configurable via risk slider).
-5. **Retries in 30 seconds** if the verdict is PASS, until it finds an edge or the window closes.
+1. **Queries live Hyperliquid data** — `get_all_mids` for current price, `get_l2_book` for bid/ask pressure, `get_clearinghouse_state` for open position and account equity.
+2. **Searches the live web** via `brave_search` — BTC news, sentiment, momentum reports, right now.
+3. **Returns a verdict** — `LONG`, `SHORT`, `CLOSE`, or `PASS` with a confidence percentage.
+4. **Auto-executes** if confidence ≥ 60%: opens the position, or closes and resets for immediate re-entry.
+5. **Runs again in 60 seconds** — perpetual loop, no windows to wait for.
 
-The agent uses a single `Session` from `@aomi-labs/client`. That's it — no custom model calls, no prompt chains, no evals infra.
+A single `Session` from `@aomi-labs/client` manages the agent lifecycle. No custom model calls, no prompt chains.
 
 ---
 
@@ -47,52 +47,62 @@ cp .env.local.example .env.local
 Fill in `.env.local`:
 
 ```bash
-# AOMI — no API key needed for the default app
+# AOMI
 AOMI_BASE_URL=https://api.aomi.dev
-AOMI_APP=default
+AOMI_APP=hyperliquid
+AOMI_API_KEY=your-aomi-api-key
 
-# Kalshi — get your key pair at kalshi.com/settings/api
-KALSHI_API_KEY=your-key-id
-KALSHI_PRIVATE_KEY_PATH=./kalshi_private_key.pem
+# Hyperliquid — API wallet is the signing agent; master holds all funds
+HYPERLIQUID_WALLET_ADDRESS=0xYOUR_API_WALLET
+HYPERLIQUID_MASTER_ADDRESS=0xYOUR_MASTER_ACCOUNT   # omit if single-account
+HYPERLIQUID_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+
+NEXT_PUBLIC_HL_WALLET=0xYOUR_API_WALLET
+NEXT_PUBLIC_HL_MASTER=0xYOUR_MASTER_ACCOUNT
 ```
 
 ### 3. Run
 
 ```bash
 npm run dev
-# → http://localhost:3000/agent
+# → http://localhost:3000/agent    ← autonomous trading
+# → http://localhost:3000/dashboard ← live chart + manual analysis
 ```
-
-> **No Kalshi keys?** The app still runs — market data and AOMI analysis work without credentials. Only order execution requires keys.
 
 ---
 
 ## How the AOMI integration works
 
 ```typescript
-import { AomiClient, Session } from '@aomi-labs/client'
+import { Session } from '@aomi-labs/client'
 
-const client  = new AomiClient({ baseUrl: process.env.AOMI_BASE_URL })
-const session = new Session(client, { app: process.env.AOMI_APP })
+const session = new Session(
+  { baseUrl: process.env.AOMI_BASE_URL, apiKey: process.env.AOMI_API_KEY },
+  {
+    app:       'hyperliquid',
+    sessionId: sessionId,
+    publicKey: masterAddress,   // query master account for real balances
+    userState: { address: masterAddress, is_connected: true, chain_id: 1337 },
+  },
+)
 
-// Inject live market context, then let AOMI search + reason
+// Inject live market context, then let AOMI use native HL tools + web search
 const prompt = `
-  Market: KXBTC15M-26MAY01-0545
-  BTC spot: $77,315 | Strike: $77,360 | NO ask: 82¢ | 4 min left
-  BTC is $45 BELOW strike — NO currently winning.
+  BTC-PERP mid: $94,150 | LONG 0.0020 BTC @ $93,800 · unrealized PnL: +$0.70
 
-  Search for the latest BTC price action and news.
-  Give me a direct YES or NO verdict with confidence. Be decisive.
+  Check live price and order book on Hyperliquid. Check my current position.
+  Search for the latest BTC price action and momentum.
+  Give me a direct LONG / SHORT / CLOSE / PASS verdict.
 `
 
 // Stream the response
 for await (const event of session.stream(prompt)) {
   if (event.type === 'message') console.log(event.text)
 }
-// → "BUY NO @ 82¢ — Confidence: 85% ..."
+// → "LONG — momentum holding above $94K, bid side heavier 2:1, PnL positive ..."
 ```
 
-AOMI handles the `brave_search` tool call internally. Your code just sends a prompt and streams the result.
+AOMI handles `get_all_mids`, `get_l2_book`, `get_clearinghouse_state`, and `brave_search` natively. Your code just sends a prompt and streams the result.
 
 ---
 
@@ -101,42 +111,65 @@ AOMI handles the `brave_search` tool call internally. Your code just sends a pro
 ```
 Browser (Next.js App Router)
 │
-├── /agent          ← Agent page: auto mode, chat, market bar
-├── /dashboard      ← Price chart, market card, positions panel
+├── /agent          ← Autonomous loop: 60s cycle, auto-execute, chat
+├── /dashboard      ← Live candlestick chart, market card, positions
 │
 └── /api/
-    ├── aomi/chat   ← Server-side AOMI session, SSE stream to browser
-    ├── aomi/history← Load prior session messages
-    ├── place-order ← Kalshi order execution (RSA-PSS signed)
-    ├── balance      ← Live Kalshi balance (for position sizing)
-    ├── positions    ← Open positions
-    └── markets      ← Active KXBTC15M market discovery
+    ├── aomi/chat        ← Server-side AOMI session, SSE stream to browser
+    ├── hl/price         ← Live BTC-PERP mid price
+    ├── hl/candles       ← OHLC candlestick data (1m / 5m intervals)
+    ├── hl/account       ← Equity, spot USDC, open position
+    ├── hl/orderbook     ← L2 bid/ask snapshot
+    ├── hl/place-order   ← EIP-712 signed IOC limit orders
+    └── hl/close-position← Market close of current BTC-PERP position
 ```
 
 **Key files:**
 
 | File | What it does |
 |------|-------------|
-| `lib/aomi-session.ts` | `Session` wrapper, market prompt builder |
-| `app/api/aomi/chat/route.ts` | SSE-streaming AOMI responses to the browser |
-| `app/agent/page.tsx` | Autonomous loop, risk slider, chat UI |
-| `lib/kalshi-trade.ts` | Order placement, balance, positions |
-| `lib/kalshi-auth.ts` | RSA-PSS request signing |
+| `lib/aomi-session.ts` | `Session` wrapper, system prompt, prompt builder |
+| `lib/hyperliquid.ts` | HL API calls, EIP-712 signing, order placement |
+| `app/api/aomi/chat/route.ts` | SSE-streaming AOMI responses to browser |
+| `app/agent/page.tsx` | Autonomous loop, risk slider, verdict UI, auto-execute |
+| `app/dashboard/page.tsx` | Candlestick chart, market card, manual analysis |
+| `components/HLPriceChart.tsx` | Canvas-rendered OHLC candlestick chart with live partial candle |
 
 ---
 
 ## Auto Mode
 
-The agent page has one control: a risk % slider (1–50% of live balance). Enable Auto Mode and the loop runs:
+The agent page runs a continuous 60-second loop:
 
 ```
-analyze → BUY? → execute → wait for next window
-             ↓
-           PASS? → wait 30s → analyze again
+analyze → LONG/SHORT (≥60%)? → open position → 2-min cooldown
+                ↓
+             CLOSE? → close position → immediate re-entry
+                ↓
+              PASS  → wait 60s → analyze again
 ```
 
-State (auto mode on/off, last analysis time, traded window) persists in `sessionStorage` — survives navigating between pages within the same tab, resets on new tab.
+**Verdicts:**
+- `LONG` — buy BTC-PERP at mid × 1.05 (IOC limit, 5% slippage allowance)
+- `SHORT` — sell BTC-PERP at mid × 0.95
+- `CLOSE` — close the current position, reset cooldown, re-enter immediately
+- `PASS` — no readable edge; wait for next cycle
+
+State (auto on/off, last trade time, current session ID) persists in `sessionStorage` — survives page navigation, resets on new tab.
 
 ---
 
-Built for the AOMI DevRel take-home · [`@aomi-labs/client`](https://github.com/aomi-labs/aomi-sdk) · Kalshi API · Next.js 16
+## Order signing
+
+Hyperliquid requires EIP-712 typed data signatures for every order:
+
+```
+connectionId = keccak256(msgpack(action) + nonce_BE8 + 0x00)
+sig = signTypedData({ domain: {name:'Exchange', version:'1', chainId:1337}, type: Agent, message: {source:'a', connectionId} })
+```
+
+The API wallet signs; if a master account is configured, orders are routed to the master account via the HL authorized-agent table. Balances and positions are always queried against the master account.
+
+---
+
+Built on [`@aomi-labs/client`](https://github.com/aomi-labs/aomi-sdk) · Hyperliquid API · Next.js 15

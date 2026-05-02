@@ -3,7 +3,11 @@ import { AomiClient, Session } from '@aomi-labs/client'
 const AOMI_BASE_URL = process.env.AOMI_BASE_URL ?? 'https://api.aomi.dev'
 const AOMI_APP      = process.env.AOMI_APP ?? 'default'
 const AOMI_API_KEY  = process.env.AOMI_API_KEY
-const HL_WALLET     = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''
+
+// Master account holds all funds — AOMI tools must query this address for real balances/positions
+const HL_MASTER  = process.env.HYPERLIQUID_MASTER_ADDRESS ?? ''
+const HL_WALLET  = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''
+const HL_ACCOUNT = HL_MASTER || HL_WALLET  // prefer master; fall back to wallet if no master set
 
 export function createAomiClient() {
   return new AomiClient({ baseUrl: AOMI_BASE_URL, apiKey: AOMI_API_KEY })
@@ -16,10 +20,9 @@ export function createSession(sessionId?: string) {
       app:       AOMI_APP,
       sessionId: sessionId ?? crypto.randomUUID(),
       apiKey:    AOMI_API_KEY,
-      // Provide wallet address so agent can call get_clearinghouse_state, get_open_orders etc.
-      publicKey: HL_WALLET || undefined,
-      userState: HL_WALLET ? {
-        address:      HL_WALLET,
+      publicKey: HL_ACCOUNT || undefined,
+      userState: HL_ACCOUNT ? {
+        address:      HL_ACCOUNT,
         is_connected: true,
         chain_id:     1337,
       } : undefined,
@@ -27,17 +30,22 @@ export function createSession(sessionId?: string) {
   )
 }
 
-const SYSTEM = `You are an AI trading analyst for Hyperliquid BTC-PERP perpetual futures. The current market data (BTC price, order book, account position) is provided in each message — analyze it directly. Do NOT call any tools or web searches. Output your verdict as text only — the system executes trades based on your analysis.`
+const SYSTEM = `You are an autonomous short-term BTC-PERP momentum trader on Hyperliquid. Your goal is to trade as many profitable windows as possible — catch trends early, ride them, close or flip when they reverse.
 
-const SEARCH_INSTRUCTION = `Analyze the live market snapshot below. No tools needed — all data is provided.`
+Trading rules:
+- LONG: upward momentum right now — green candles accelerating, bid side heavier than ask in order book
+- SHORT: downward momentum right now — red candles, ask pressure dominates, or a LONG that is losing steam
+- CLOSE: current position momentum is fading or reversing — exit before it turns into a loss, then reassess
+- PASS: only when there is genuine sideways chop with zero readable edge — keep PASS rare, bias toward acting
 
-const FORMAT = `Reply in 4–6 bullet points. No headers, no paragraphs. First bullet MUST be your verdict: LONG / SHORT / PASS — one sentence why. Next 2–3 bullets: key data points from the snapshot. Last bullet: confidence % and main risk. Be direct and specific. Do NOT use any tools.`
+Do NOT wait for macro levels like "$79K breakout" or "$77K breakdown". Trade momentum across 5 minute to 4 hour timeframes — whatever the current structure shows. A 60%+ directional read is enough to act. Be decisive. Flip direction when the trend changes.`
+
+const FORMAT = `Reply in 4–5 bullet points, no headers. First bullet MUST start with your verdict: LONG / SHORT / CLOSE / PASS — one sentence on the near-term momentum driving it. Next 2–3 bullets: specific data (current price, last few candles direction, order book bid vs ask size, current position PnL if any). Last bullet: confidence % and the one main risk to this trade. No macro targets, no waiting for levels.`
 
 export function buildPrompt(userMessage: string, hint?: string): string {
   const parts = [SYSTEM]
   if (hint) {
-    parts.push(SEARCH_INSTRUCTION)
-    parts.push(`Market snapshot:\n${hint}`)
+    parts.push(`Live market snapshot (use tools to verify/supplement):\n${hint}`)
   }
   parts.push(userMessage)
   parts.push(FORMAT)

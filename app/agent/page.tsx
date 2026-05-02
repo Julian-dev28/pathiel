@@ -196,13 +196,13 @@ const INIT_MSG: Msg = {
 }
 
 const QUICK_PROMPTS = [
-  { label: 'Trade for me',   prompt: 'Check live BTC price and order book on Hyperliquid. Look at my current position. Search for the latest BTC price action and momentum. Should I go LONG or SHORT right now? Give a direct verdict with confidence.' },
-  { label: 'Full analysis',  prompt: 'Run a full analysis: get live BTC price from Hyperliquid, check the order book depth, look at my current position and margin. Search for latest BTC news and technical signals. Give me LONG / SHORT / PASS with your full reasoning.' },
-  { label: '↑ Long case',    prompt: 'Make the bullish case for BTC right now. Check live Hyperliquid price and order book. Search for bullish signals and upward momentum. Strongest case for going LONG.' },
-  { label: '↓ Short case',   prompt: 'Make the bearish case for BTC right now. Check live Hyperliquid price and order book. Search for bearish signals and downside catalysts. Strongest case for going SHORT.' },
+  { label: 'Trade for me',  prompt: 'Get live BTC price and order book from Hyperliquid. Check my current position and PnL. Look at the last 5–10 minutes of price action and candles. Give me a LONG / SHORT / CLOSE / PASS verdict right now based on the current momentum. Be decisive.' },
+  { label: 'Should I flip', prompt: 'Check my current position on Hyperliquid. Get the live order book and recent candles. Is the current trend still intact or is it reversing? Should I hold, close, or flip direction? Give a direct verdict.' },
+  { label: '↑ Long case',   prompt: 'Check live BTC price and order book. Is there a near-term bullish setup right now — green momentum, bid pressure, buyers stepping in? Give me the case for LONG with confidence.' },
+  { label: '↓ Short case',  prompt: 'Check live BTC price and order book. Is there a near-term bearish setup — red candles, ask pressure, sellers dominating? Give me the case for SHORT with confidence.' },
 ]
 
-const AUTO_PROMPT = `Check live BTC price and order book on Hyperliquid. Check my current position. Search for the latest BTC price action and market sentiment right now. Based on all this, give me a direct LONG / SHORT / PASS verdict with a confidence percentage. Be decisive.`
+const AUTO_PROMPT = `Get live BTC price and order book depth from Hyperliquid. Check my current position and unrealized PnL. Look at recent candles for momentum direction across the 5m to 4h timeframe. Give a verdict: LONG (enter/add long), SHORT (enter/flip short), CLOSE (exit current position), or PASS (no edge). Be decisive — 60%+ confidence is enough to act.`
 
 export default function AgentPage() {
   const { btcPrice, account, refreshAccount } = useHLTick()
@@ -296,13 +296,27 @@ export default function AgentPage() {
     const pos = acct?.position
     return [
       `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
-      `Account: perp equity $${(acct?.equity ?? 0).toFixed(2)}, spot USDC $${(acct?.spotUSDC ?? 0).toFixed(2)}, total $${(acct?.totalEquity ?? 0).toFixed(2)}`,
+      `Master account (NEXT_PUBLIC_HL_MASTER): ${process.env.NEXT_PUBLIC_HL_MASTER ?? 'see env'} — this is the unified account holding all funds. Use this address for get_clearinghouse_state, NOT the API wallet.`,
+      `Account equity: perp $${(acct?.equity ?? 0).toFixed(2)}, spot USDC $${(acct?.spotUSDC ?? 0).toFixed(2)}, total available $${(acct?.totalEquity ?? 0).toFixed(2)}`,
       pos
         ? `Current position: ${pos.side.toUpperCase()} ${pos.sizeBTC.toFixed(4)} BTC @ $${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })} · unrealized PnL: ${pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}`
         : 'Current position: FLAT (no open BTC-PERP position)',
-      `Wallet: ${process.env.NEXT_PUBLIC_HL_WALLET ?? ''}`,
     ].join('\n')
   }, [])
+
+  // ── Close position ────────────────────────────────────────────────────────
+  const closePosition = useCallback(async () => {
+    const res  = await fetch('/api/hl/close-position', { method: 'POST' })
+    const data = await res.json() as { ok: boolean; sizeBTC?: number; midPrice?: number; error?: string }
+    setMessages(prev => [...prev, {
+      role: 'system',
+      content: data.ok
+        ? `✅ Position closed — ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+        : `❌ Close failed: ${data.error}`,
+    }])
+    refreshAccount()
+    return data.ok
+  }, [refreshAccount])
 
   // ── Execute trade ─────────────────────────────────────────────────────────
   const executeTrade = useCallback(async (side: 'long' | 'short') => {
@@ -419,17 +433,33 @@ export default function AgentPage() {
       if (opts?.autoExecute && finalText) {
         const isLong  = /\bLONG\b/i.test(finalText)
         const isShort = /\bSHORT\b/i.test(finalText)
-        const confidence = finalText.match(/confidence[:\s]+(\d+)%/i)?.[1]
+        const isClose = /\bCLOSE\b/i.test(finalText)
+        const confidence = finalText.match(/(\d+)%/)?.[1]
         const confNum  = confidence ? parseInt(confidence) : 50
 
-        if ((isLong || isShort) && confNum >= 55) {
+        const markAutoExecuted = () => setMessages(prev => {
+          const next = [...prev]
+          const idx  = next.findLastIndex(m => m.role === 'assistant')
+          if (idx >= 0) next[idx] = { ...next[idx], autoExecuted: true }
+          return next
+        })
+
+        // CLOSE — exit current position regardless of confidence
+        if (isClose && !isLong && !isShort) {
+          markAutoExecuted()
+          const ok = await closePosition()
+          if (opts?.silent && ok) {
+            setAutoCycles(c => c + 1)
+            lastTradedRef.current = 0  // reset so next analysis can re-enter immediately
+            sessionStorage.setItem('aomi-last-traded', '0')
+          }
+          return ok
+        }
+
+        // LONG / SHORT — enter or flip at 60%+ confidence
+        if ((isLong || isShort) && confNum >= 60) {
           const side = isLong ? 'long' : 'short'
-          setMessages(prev => {
-            const next = [...prev]
-            const idx  = next.findLastIndex(m => m.role === 'assistant')
-            if (idx >= 0) next[idx] = { ...next[idx], autoExecuted: true }
-            return next
-          })
+          markAutoExecuted()
           const ok = await executeTrade(side)
           if (opts?.silent) {
             setAutoCycles(c => c + 1)
@@ -465,7 +495,7 @@ export default function AgentPage() {
   useEffect(() => { sendRef.current = send }, [send])
 
   // ── Autonomous loop ───────────────────────────────────────────────────────
-  // Hyperliquid is continuous — no windows. Run every 90s. After a trade, wait 5 min.
+  // Analyze every 60s. After opening a position, hold for 2 min before re-evaluating.
   useEffect(() => {
     if (!autoMode || !historyLoaded) return
     let cancelled = false
@@ -489,10 +519,10 @@ export default function AgentPage() {
         return
       }
 
-      // If we just placed a trade, wait 5 min before re-entering
+      // After opening a position, wait 2 min before re-evaluating (give the trade room)
       const msSinceTrade = Date.now() - lastTradedRef.current
-      if (lastTradedRef.current > 0 && msSinceTrade < 300_000) {
-        const wait = 300_000 - msSinceTrade
+      if (lastTradedRef.current > 0 && msSinceTrade < 120_000) {
+        const wait = 120_000 - msSinceTrade
         if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Holding position — next check in' })
         await new Promise<void>(resolve => {
           const t = setTimeout(resolve, wait)
@@ -501,10 +531,10 @@ export default function AgentPage() {
         if (cancelled) return
       }
 
-      // 90s minimum between analyses
+      // 60s minimum between analyses
       const msSinceLast = Date.now() - lastAnalysisRef.current
-      if (msSinceLast < 90_000 && lastAnalysisRef.current > 0) {
-        const wait = 90_000 - msSinceLast
+      if (msSinceLast < 60_000 && lastAnalysisRef.current > 0) {
+        const wait = 60_000 - msSinceLast
         if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Next analysis in' })
         await new Promise<void>(resolve => {
           const t = setTimeout(resolve, wait)
@@ -520,17 +550,17 @@ export default function AgentPage() {
         const traded = await sendRef.current(AUTO_PROMPT, { silent: true, autoExecute: true })
         if (cancelled) return
         if (traded) {
-          // Wait 5 min after trade before next cycle
-          const wait = 300_000
+          // Wait 2 min after opening a position before re-evaluating
+          const wait = 120_000
           if (!cancelled) { setAutoWait({ until: Date.now() + wait, label: 'Holding — next check in' }); setTimeout(loop, wait) }
           return
         }
       }
 
-      // PASS / low confidence — retry in 90s
-      if (!cancelled) setAutoWait({ until: Date.now() + 90_000, label: 'PASS — retrying in' })
+      // PASS / low confidence — retry in 60s
+      if (!cancelled) setAutoWait({ until: Date.now() + 60_000, label: 'PASS — retrying in' })
       await new Promise<void>(resolve => {
-        const t = setTimeout(resolve, 90_000)
+        const t = setTimeout(resolve, 60_000)
         if (cancelled) { clearTimeout(t); resolve() }
       })
       loop()
@@ -750,6 +780,7 @@ export default function AgentPage() {
             }
             const hasLong  = /\bLONG\b/i.test(msg.content)
             const hasShort = /\bSHORT\b/i.test(msg.content)
+            const hasClose = /\bCLOSE\b/i.test(msg.content)
             return (
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <div style={{
@@ -763,7 +794,7 @@ export default function AgentPage() {
                   background: 'var(--bg-card)', border: '1px solid var(--border)',
                 }}>
                   <BotMsg content={msg.content} autoExecuted={msg.autoExecuted} />
-                  {!autoMode && (hasLong || hasShort) && !msg.autoExecuted && (
+                  {!autoMode && (hasLong || hasShort || hasClose) && !msg.autoExecuted && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
                       {hasLong && (
                         <button onClick={() => executeTrade('long')} style={{
@@ -776,6 +807,12 @@ export default function AgentPage() {
                           padding: '7px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
                           background: 'var(--pink)', color: '#fff', fontWeight: 700, fontSize: 13,
                         }}>↓ Go Short</button>
+                      )}
+                      {hasClose && (
+                        <button onClick={() => closePosition()} style={{
+                          padding: '7px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                          background: 'var(--amber)', color: '#fff', fontWeight: 700, fontSize: 13,
+                        }}>✕ Close Position</button>
                       )}
                       <button onClick={() => setMessages(prev => {
                         const next = [...prev]

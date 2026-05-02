@@ -4,25 +4,30 @@ import { privateKeyToAccount } from 'viem/accounts'
 
 const HL_API = 'https://api.hyperliquid.xyz'
 
-export const HL_WALLET = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''
-const PRIVATE_KEY       = process.env.HYPERLIQUID_PRIVATE_KEY ?? ''
+export const HL_WALLET  = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''   // API wallet — signer
+export const HL_MASTER  = process.env.HYPERLIQUID_MASTER_ADDRESS ?? ''   // master account — holds funds
+const PRIVATE_KEY        = process.env.HYPERLIQUID_PRIVATE_KEY ?? ''
+
+// When master address is set, API wallet acts as agent for master
+const IS_AGENT           = !!HL_MASTER && HL_MASTER.toLowerCase() !== HL_WALLET.toLowerCase()
+export const HL_ACCOUNT  = IS_AGENT ? HL_MASTER : HL_WALLET   // address to query for balance/positions
 
 export const HL_LEVERAGE = 5  // 5× cross margin
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HLPosition {
-  side:         'long' | 'short'
-  sizeBTC:      number
-  entryPx:      number
+  side:          'long' | 'short'
+  sizeBTC:       number
+  entryPx:       number
   unrealizedPnl: number
-  leverage:     number
+  leverage:      number
 }
 
 export interface HLAccount {
   equity:      number   // perp account value USD
   spotUSDC:    number   // spot USDC balance
-  totalEquity: number   // equity + spotUSDC (available for trading with unified account)
+  totalEquity: number   // equity + spotUSDC
   totalNtl:    number   // total notional open
   position:    HLPosition | null
 }
@@ -70,7 +75,6 @@ export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
   const equity   = parseFloat(perp.marginSummary?.accountValue ?? '0')
   const totalNtl = parseFloat(perp.marginSummary?.totalNtlPos ?? '0')
 
-  // Sum all USD-equivalent spot balances (USDC, USDT, etc.)
   const spotUSDC = (spot.balances ?? [])
     .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
     .reduce((sum, b) => sum + parseFloat(b.total), 0)
@@ -102,12 +106,12 @@ async function signAction(action: object, nonce: number): Promise<{ r: string; s
   const combined = new Uint8Array(actionBytes.length + 9)
   combined.set(actionBytes)
   combined.set(nonceBuf, actionBytes.length)
-  combined[actionBytes.length + 8] = 0  // no vault
+  combined[actionBytes.length + 8] = 0  // always 0 — HL routes to master via authorized agent table
 
   const connectionId = keccak256(combined)
-  const account      = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
+  const signer       = privateKeyToAccount(PRIVATE_KEY as `0x${string}`)
 
-  const sigHex = await account.signTypedData({
+  const sigHex = await signer.signTypedData({
     domain: {
       name:              'Exchange',
       version:           '1',
@@ -131,9 +135,19 @@ async function signAction(action: object, nonce: number): Promise<{ r: string; s
   }
 }
 
+function exchangeBody(action: object, nonce: number, sig: { r: string; s: string; v: number }) {
+  return JSON.stringify({ action, nonce, signature: sig })
+}
+
+// Strip trailing decimal zeros so p/s fields match HL's canonical msgpack hash
+function stripZeros(s: string): string {
+  if (!s.includes('.')) return s
+  const n = s.replace(/\.?0+$/, '')
+  return n === '-0' ? '0' : (n || '0')
+}
+
 // ── Order placement ───────────────────────────────────────────────────────────
 
-// Move USDC from spot wallet → perp margin if perp equity is empty
 export async function transferSpotToPerp(amount: number): Promise<void> {
   if (!PRIVATE_KEY || amount <= 0) return
   const nonce  = Date.now()
@@ -142,7 +156,7 @@ export async function transferSpotToPerp(amount: number): Promise<void> {
   await fetch(`${HL_API}/exchange`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ action, nonce, signature: sig }),
+    body:    exchangeBody(action, nonce, sig),
   })
 }
 
@@ -154,7 +168,7 @@ export async function setLeverage(leverage: number): Promise<void> {
   await fetch(`${HL_API}/exchange`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ action, nonce, signature: sig }),
+    body:    exchangeBody(action, nonce, sig),
   })
 }
 
@@ -165,30 +179,32 @@ export async function placeHLOrder(
 ): Promise<{ ok: boolean; orderId?: string; error?: string }> {
   if (!PRIVATE_KEY) return { ok: false, error: 'HYPERLIQUID_PRIVATE_KEY not set' }
 
+  // HL normalizes p and s (strips trailing zeros) before computing the hash —
+  // our signed action must use the same canonical form or ecrecover returns garbage.
   const limitPx = isBuy
-    ? (midPrice * 1.05).toFixed(1)   // 5% above for guaranteed IOC fill
-    : (midPrice * 0.95).toFixed(1)
+    ? String(Math.round(midPrice * 1.05))
+    : String(Math.round(midPrice * 0.95))
+  const sizeStr = stripZeros(sizeBTC.toFixed(5))
 
   const nonce  = Date.now()
   const action = {
     type:   'order',
     orders: [{
-      a: 0,          // BTC = asset index 0
+      a: 0,
       b: isBuy,
       p: limitPx,
-      s: sizeBTC.toFixed(5),
+      s: sizeStr,
       r: false,
       t: { limit: { tif: 'Ioc' } },
     }],
     grouping: 'na',
   }
 
-  const sig = await signAction(action, nonce)
-
+  const sig    = await signAction(action, nonce)
   const res    = await fetch(`${HL_API}/exchange`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ action, nonce, signature: sig }),
+    body:    exchangeBody(action, nonce, sig),
   })
   const result = await res.json() as {
     status: string
