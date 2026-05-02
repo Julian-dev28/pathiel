@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Header from '@/components/Header'
-import { useMarketTick } from '@/hooks/useMarketTick'
-import type { KalshiMarket } from '@/lib/types'
+import { useHLTick } from '@/hooks/useHLTick'
+import type { HLAccount } from '@/lib/hyperliquid'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -17,9 +17,19 @@ interface Msg {
 
 // ── Tool display ───────────────────────────────────────────────────────────────
 
+const HL_TOOLS: Record<string, string> = {
+  get_all_mids:           'Fetching BTC price',
+  get_l2_book:            'Checking order book',
+  get_clearinghouse_state:'Checking positions',
+  get_open_orders:        'Fetching open orders',
+  get_user_fills:         'Checking trade history',
+  get_funding_history:    'Checking funding rates',
+  get_candle_snapshot:    'Fetching candles',
+  brave_search:           'Searching web',
+}
+
 function ToolPill({ name, status }: { name: string; status: 'running' | 'done' }) {
-  const isSearch = name === 'brave_search'
-  const label = isSearch ? 'Searching web' : name.replace(/_/g, ' ')
+  const label = HL_TOOLS[name] ?? name.replace(/_/g, ' ')
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -40,7 +50,7 @@ function ToolPill({ name, status }: { name: string; status: 'running' | 'done' }
             }} />
           ))}
         </span>
-      ) : <span>🔍</span>}
+      ) : <span>⬡</span>}
       {label}{status === 'running' ? '…' : ' · done'}
     </div>
   )
@@ -64,16 +74,18 @@ function BotMsg({ content, autoExecuted }: { content: string; autoExecuted?: boo
       {lines.map((line, i) => {
         const clean = line.replace(/^[•\-*]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').trim()
         if (!clean) return null
-        const isBuyYes = /BUY YES/i.test(clean)
-        const isBuyNo  = /BUY NO/i.test(clean)
-        const isPass   = /\bPASS\b/i.test(clean)
-        const isVerdict = (isBuyYes || isBuyNo || isPass) && i === 0
+        const isLong  = /\bLONG\b/i.test(clean)
+        const isShort = /\bSHORT\b/i.test(clean)
+        const isClose = /\bCLOSE\b/i.test(clean)
+        const isPass  = /\bPASS\b/i.test(clean)
+        const isVerdict = (isLong || isShort || isClose || isPass) && i === 0
         if (isVerdict) {
-          const verdict = isBuyYes ? 'BUY YES' : isBuyNo ? 'BUY NO' : 'PASS'
-          const [vColor, vBg] = isBuyYes ? ['var(--green-dark)', 'rgba(58,158,114,0.10)']
-            : isBuyNo ? ['var(--pink-dark)', 'rgba(224,111,160,0.10)']
+          const verdict = isLong ? 'LONG' : isShort ? 'SHORT' : isClose ? 'CLOSE' : 'PASS'
+          const [vColor, vBg] = isLong  ? ['var(--green-dark)', 'rgba(58,158,114,0.10)']
+            : isShort ? ['var(--pink-dark)',  'rgba(224,111,160,0.10)']
+            : isClose ? ['var(--blue)',        'rgba(74,127,165,0.10)']
             : ['var(--amber)', 'rgba(212,135,44,0.08)']
-          const rest = clean.replace(/^(BUY YES|BUY NO|PASS)\s*[—–\-]?\s*/i, '')
+          const rest = clean.replace(/^(LONG|SHORT|CLOSE|PASS)\s*[—–\-]?\s*/i, '')
           return (
             <div key={i} style={{
               display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
@@ -99,7 +111,7 @@ function BotMsg({ content, autoExecuted }: { content: string; autoExecuted?: boo
   )
 }
 
-// ── Wait countdown ────────────────────────────────────────────────────────────
+// ── Wait countdown ─────────────────────────────────────────────────────────────
 
 function WaitCountdown({ label, until }: { label: string; until: number }) {
   const [secs, setSecs] = useState(() => Math.max(0, Math.ceil((until - Date.now()) / 1000)))
@@ -115,107 +127,87 @@ function WaitCountdown({ label, until }: { label: string; until: number }) {
 
 // ── Market bar ─────────────────────────────────────────────────────────────────
 
-function MarketBar({ market, btcPrice, strikePrice, secondsLeft }: {
-  market: KalshiMarket | null; btcPrice: number; strikePrice: number; secondsLeft: number
-}) {
-  const above = strikePrice > 0 && btcPrice > strikePrice
-  const diff  = strikePrice > 0 ? Math.abs(btcPrice - strikePrice) : 0
-  const mm    = Math.floor(secondsLeft / 60)
-  const ss    = secondsLeft % 60
+function MarketBar({ btcPrice, account }: { btcPrice: number | null; account: HLAccount | null }) {
+  const pos    = account?.position ?? null
+  const equity = account?.equity ?? null
+  const pnlPos = pos && pos.unrealizedPnl >= 0
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
       padding: '9px 24px', borderBottom: '1px solid var(--border)',
       background: 'var(--bg-card)', fontSize: 12,
     }}>
+      {/* BTC price */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>BTC</span>
-        <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 800, fontSize: 15,
-          color: above ? 'var(--green-dark)' : btcPrice > 0 ? 'var(--pink-dark)' : 'var(--text-muted)' }}>
-          {btcPrice > 0 ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>BTC-PERP</span>
+        <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>
+          {btcPrice ? `$${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 1 })}` : '—'}
         </span>
       </div>
-      {strikePrice > 0 && <>
+
+      {/* Account equity */}
+      {equity !== null && <>
         <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Strike</span>
+          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Equity</span>
           <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, color: 'var(--amber)' }}>
-            ${strikePrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-          </span>
-        </div>
-        <div style={{
-          padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-          background: above ? 'rgba(58,158,114,0.12)' : 'rgba(224,111,160,0.12)',
-          color: above ? 'var(--green-dark)' : 'var(--pink-dark)',
-          border: `1px solid ${above ? 'rgba(58,158,114,0.3)' : 'rgba(224,111,160,0.3)'}`,
-        }}>{above ? '↑' : '↓'} ${diff.toLocaleString('en-US', { maximumFractionDigits: 0 })} {above ? 'above' : 'below'}</div>
-      </>}
-      {market && <>
-        <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
-        <div style={{ display: 'flex', gap: 12 }}>
-          {[['YES', market.yes_ask, 'var(--green-dark)'], ['NO', market.no_ask, 'var(--pink-dark)']].map(([label, val, color]) => (
-            <div key={String(label)} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</span>
-              <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, color: String(color), fontSize: 13 }}>
-                {(val as number) > 0 ? `${val}¢` : '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      </>}
-      {secondsLeft > 0 && <>
-        <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
-        <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-          <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Expires</span>
-          <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, fontSize: 13,
-            color: secondsLeft < 60 ? 'var(--pink)' : secondsLeft < 180 ? 'var(--amber)' : 'var(--text-secondary)' }}>
-            {mm}:{ss.toString().padStart(2, '0')}
+            ${equity.toFixed(2)}
           </span>
         </div>
       </>}
-      {market && (
-        <div style={{ marginLeft: 'auto', fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
-          {market.ticker}
+
+      {/* Position */}
+      <div style={{ width: 1, height: 18, background: 'var(--border)' }} />
+      {pos ? (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{
+            padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+            background: pos.side === 'long' ? 'rgba(58,158,114,0.12)' : 'rgba(224,111,160,0.12)',
+            color: pos.side === 'long' ? 'var(--green-dark)' : 'var(--pink-dark)',
+            border: `1px solid ${pos.side === 'long' ? 'rgba(58,158,114,0.3)' : 'rgba(224,111,160,0.3)'}`,
+          }}>{pos.side === 'long' ? '↑ LONG' : '↓ SHORT'}</div>
+          <span style={{ fontFamily: 'var(--font-geist-mono)', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {pos.sizeBTC.toFixed(4)} BTC @ ${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+          </span>
+          <span style={{
+            fontFamily: 'var(--font-geist-mono)', fontWeight: 700, fontSize: 12,
+            color: pnlPos ? 'var(--green-dark)' : 'var(--pink-dark)',
+          }}>
+            {pnlPos ? '+' : ''}{pos.unrealizedPnl.toFixed(2)}
+          </span>
         </div>
+      ) : (
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>FLAT</span>
       )}
+
+      <div style={{ marginLeft: 'auto', fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
+        Hyperliquid
+      </div>
     </div>
   )
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
-const PRICE_CEILING = 94  // ¢ — no trades when ask ≥ this (terrible risk/reward at the extremes)
-
 const INIT_MSG: Msg = {
   role: 'system',
-  content: "96 windows open today. Most traders catch 20 — the ones that align with their schedule. Enable Auto Mode and I'll cover all of them. Before every decision I search live BTC news, price action, and market sentiment. No stale data. No pre-programmed rules.",
+  content: "BTC-PERP runs 24/7. Before every decision I pull live data from Hyperliquid — price, order book, your position — then search live BTC news and momentum. Enable Auto Mode and I'll analyze continuously: query → search → reason → execute. No stale data. No pre-programmed rules.",
 }
 
 const QUICK_PROMPTS = [
-  { label: 'Trade for me',        prompt: 'Search for live BTC price action, momentum, and order flow right now. Is there a tradeable edge in this window? Give me a direct verdict with confidence.' },
-  { label: 'Full analysis', prompt: 'Research the latest BTC price action and news. Synthesize with the live market snapshot and tell me exactly whether to trade this window and why.' },
-  { label: '↑ Bull case',  prompt: 'Search for bullish BTC signals right now — momentum, sentiment, news. Make the strongest case for buying YES on this window.' },
-  { label: '↓ Bear case',  prompt: 'Search for bearish BTC signals and current crypto sentiment. Make the strongest case for buying NO on this window.' },
+  { label: 'Trade for me',   prompt: 'Check live BTC price and order book on Hyperliquid. Look at my current position. Search for the latest BTC price action and momentum. Should I go LONG or SHORT right now? Give a direct verdict with confidence.' },
+  { label: 'Full analysis',  prompt: 'Run a full analysis: get live BTC price from Hyperliquid, check the order book depth, look at my current position and margin. Search for latest BTC news and technical signals. Give me LONG / SHORT / PASS with your full reasoning.' },
+  { label: '↑ Long case',    prompt: 'Make the bullish case for BTC right now. Check live Hyperliquid price and order book. Search for bullish signals and upward momentum. Strongest case for going LONG.' },
+  { label: '↓ Short case',   prompt: 'Make the bearish case for BTC right now. Check live Hyperliquid price and order book. Search for bearish signals and downside catalysts. Strongest case for going SHORT.' },
 ]
 
+const AUTO_PROMPT = `Check live BTC price and order book on Hyperliquid. Check my current position. Search for the latest BTC price action and market sentiment right now. Based on all this, give me a direct LONG / SHORT / PASS verdict with a confidence percentage. Be decisive.`
+
 export default function AgentPage() {
-  const [marketTicker, setMarketTicker] = useState<string | null>(null)
-  const { liveMarket, liveBTCPrice, marketError, refresh } = useMarketTick(marketTicker)
+  const { btcPrice, account, refreshAccount } = useHLTick()
 
-  useEffect(() => {
-    if (liveMarket?.ticker && !marketTicker) setMarketTicker(liveMarket.ticker)
-  }, [liveMarket?.ticker, marketTicker])
-  const expired = liveMarket?.close_time ? new Date(liveMarket.close_time).getTime() < Date.now() : false
-  useEffect(() => { if (expired) setMarketTicker(null) }, [expired])
-
-  const btcPrice    = liveBTCPrice ?? 0
-  const strikePrice = (liveMarket?.yes_sub_title
-    ? parseFloat(liveMarket.yes_sub_title.replace(/[^0-9.]/g, ''))
-    : 0) || liveMarket?.floor_strike || 0
-  const secondsLeft = liveMarket?.close_time
-    ? Math.max(0, Math.floor((new Date(liveMarket.close_time).getTime() - Date.now()) / 1000)) : 0
-
-  // ── Session — persisted per environment so local/prod don't share sessions ──
+  // ── Session ──────────────────────────────────────────────────────────────
   const [sessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return crypto.randomUUID()
     const env = window.location.hostname === 'localhost' ? 'local' : 'prod'
@@ -228,28 +220,22 @@ export default function AgentPage() {
   })
 
   // ── Messages ──────────────────────────────────────────────────────────────
-  const [messages, setMessages]   = useState<Msg[]>([INIT_MSG])
+  const [messages, setMessages]     = useState<Msg[]>([INIT_MSG])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [processing, setProcessing] = useState(false)
-  const [input, setInput]         = useState('')
-  const scrollRef                 = useRef<HTMLDivElement>(null)
+  const [input, setInput]           = useState('')
+  const scrollRef                   = useRef<HTMLDivElement>(null)
 
-  // Load history from AOMI backend on mount
   useEffect(() => {
     if (historyLoaded) return
     fetch(`/api/aomi/history?sessionId=${sessionId}`)
       .then(r => r.json())
       .then(({ messages: aomiMsgs }) => {
         if (!aomiMsgs?.length) return
-        // Only load agent (assistant) messages from history — user messages are injected
-        // system prompts and would show as ugly blue bubbles with the full prompt text
         const mapped: Msg[] = aomiMsgs
           .filter((m: { sender?: string; content?: string }) =>
             m.sender === 'agent' && m.content && m.content.trim().length > 0)
-          .map((m: { content?: string }) => ({
-            role: 'assistant' as const,
-            content: m.content ?? '',
-          }))
+          .map((m: { content?: string }) => ({ role: 'assistant' as const, content: m.content ?? '' }))
         if (mapped.length) setMessages([INIT_MSG, ...mapped])
       })
       .catch(() => {})
@@ -260,117 +246,84 @@ export default function AgentPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  // ── Autonomous mode — persisted in sessionStorage (survives in-tab nav, not new tabs) ──
-  const [autoMode, setAutoMode]     = useState(false)
-  const [autoCycles, setAutoCycles] = useState(0)
+  // ── Autonomous mode ───────────────────────────────────────────────────────
+  const [autoMode, setAutoMode]         = useState(false)
+  const [autoCycles, setAutoCycles]     = useState(0)
   const [tradesPlaced, setTradesPlaced] = useState(0)
-  const [riskPct, setRiskPct]       = useState(5)
-  const [autoWait, setAutoWait]     = useState<{ until: number; label: string } | null>(null)
-  const autoRef        = useRef(false)
-  const procRef        = useRef(false)
-  const riskPctRef     = useRef(5)
-  // Persist traded-ticker and last-analysis time across navigation so the loop
-  // doesn't re-fire immediately when the user navigates away and back mid-cycle
-  const tradedTickerRef   = useRef<string | null>(null)
-  const lastAnalysisRef   = useRef<number>(0)
-  const fatalErrorRef     = useRef<string | null>(null)  // set on non-retryable errors (auth, config)
+  const [riskPct, setRiskPct]           = useState(5)
+  const [autoWait, setAutoWait]         = useState<{ until: number; label: string } | null>(null)
+  const autoRef      = useRef(false)
+  const procRef      = useRef(false)
+  const riskPctRef   = useRef(5)
+  const lastAnalysisRef = useRef<number>(0)
+  const lastTradedRef   = useRef<number>(0)    // timestamp of last trade — wait 5min before re-entering
+  const fatalErrorRef   = useRef<string | null>(null)
   const sendRef = useRef<((text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => Promise<boolean>) | null>(null)
-  // True when this mount detected an in-progress analysis from a previous navigation
   const [resuming, setResuming] = useState(false)
+
   useEffect(() => { autoRef.current = autoMode; if (!autoMode) setAutoWait(null) }, [autoMode])
-  useEffect(() => { procRef.current  = processing  }, [processing])
-  useEffect(() => { riskPctRef.current = riskPct   }, [riskPct])
-  // Poll until the in-progress analysis from a previous mount finishes, then reload history
+  useEffect(() => { procRef.current = processing }, [processing])
+  useEffect(() => { riskPctRef.current = riskPct }, [riskPct])
+
   useEffect(() => {
     if (!resuming) return
     const id = setInterval(() => {
       if (sessionStorage.getItem('aomi-processing') !== '1') {
         setResuming(false)
-        setHistoryLoaded(false)  // triggers history re-fetch to show the completed result
+        setHistoryLoaded(false)
       }
     }, 1000)
     return () => clearInterval(id)
   }, [resuming])
-  // Restore all persisted state on mount — runs client-only after hydration
+
   useEffect(() => {
     if (sessionStorage.getItem('aomi-auto') === '1') setAutoMode(true)
-    tradedTickerRef.current = sessionStorage.getItem('aomi-traded-ticker')
     lastAnalysisRef.current = Number(sessionStorage.getItem('aomi-last-analysis') ?? 0)
+    lastTradedRef.current   = Number(sessionStorage.getItem('aomi-last-traded')   ?? 0)
     const stored = sessionStorage.getItem('aomi-trades-placed')
     if (stored) setTradesPlaced(Number(stored))
     const storedRisk = localStorage.getItem('aomi-risk-pct')
     if (storedRisk) setRiskPct(Number(storedRisk))
     if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
   }, [])
-  // Persist autoMode and trades-placed counter to sessionStorage
-  useEffect(() => {
-    sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0')
-  }, [autoMode])
-  useEffect(() => {
-    sessionStorage.setItem('aomi-trades-placed', String(tradesPlaced))
-  }, [tradesPlaced])
-  // riskPct is persisted inline in the slider onChange to avoid a race where the
-  // default-value effect overwrites localStorage before the mount effect reads it
+
+  useEffect(() => { sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0') }, [autoMode])
+  useEffect(() => { sessionStorage.setItem('aomi-trades-placed', String(tradesPlaced)) }, [tradesPlaced])
 
   // ── Build market hint ─────────────────────────────────────────────────────
-  const buildHint = useCallback((market: KalshiMarket | null, btc: number, strike: number, secs: number) => {
-    if (!market) return undefined
+  const buildHint = useCallback((price: number | null, acct: HLAccount | null) => {
+    if (!price) return undefined
+    const pos = acct?.position
     return [
-      `Market: ${market.ticker}`,
-      `BTC spot: $${btc.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `Strike: $${strike.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      `YES ask: ${market.yes_ask}¢  YES bid: ${market.yes_bid}¢`,
-      `NO ask: ${market.no_ask}¢  NO bid: ${market.no_bid}¢`,
-      `Time left: ${Math.floor(secs / 60)}m ${secs % 60}s`,
-      btc > strike
-        ? `BTC is $${(btc - strike).toFixed(2)} ABOVE strike — YES currently winning.`
-        : `BTC is $${(strike - btc).toFixed(2)} BELOW strike — NO currently winning.`,
-      `Price ceiling: trades are blocked when ask ≥ 94¢ — recommend PASS if either side is ≥ 94¢.`,
+      `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
+      `Account equity: $${(acct?.equity ?? 0).toFixed(2)}`,
+      pos
+        ? `Current position: ${pos.side.toUpperCase()} ${pos.sizeBTC.toFixed(4)} BTC @ $${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })} · unrealized PnL: ${pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}`
+        : 'Current position: FLAT (no open BTC-PERP position)',
+      `Wallet: ${process.env.NEXT_PUBLIC_HL_WALLET ?? ''}`,
     ].join('\n')
   }, [])
 
   // ── Execute trade ─────────────────────────────────────────────────────────
-  const executeTrade = useCallback(async (side: 'yes' | 'no', market: KalshiMarket) => {
-    const askPrice = side === 'yes' ? market.yes_ask : market.no_ask
-    if (askPrice >= PRICE_CEILING) {
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: `Blocked — ${side.toUpperCase()} ask is ${askPrice}¢ (≥${PRICE_CEILING}¢ ceiling). Skipping.`,
-      }])
-      return false
-    }
-    // Fetch balance to size the bet; route returns KalshiBalance directly (no { ok, data } wrapper)
-    const balRes = await fetch('/api/balance')
-    const balData = await balRes.json()
-    const balanceCents: number = balRes.ok ? (balData.balance ?? 0) : 0
-    const price = side === 'yes' ? market.yes_ask : market.no_ask
-    const pct = riskPctRef.current
-    const count = balanceCents > 0 && price > 0
-      ? Math.max(1, Math.floor((balanceCents * pct / 100) / price))
-      : 1
-
-    const res = await fetch('/api/place-order', {
+  const executeTrade = useCallback(async (side: 'long' | 'short') => {
+    const res = await fetch('/api/hl/place-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ticker: market.ticker, side, count,
-        yesPrice: market.yes_ask, noPrice: market.no_ask,
-        clientOrderId: `aomi-${Date.now()}`,
-      }),
+      body: JSON.stringify({ side, riskPct: riskPctRef.current }),
     })
-    const data = await res.json()
-    const dollarCost = ((price * count) / 100).toFixed(2)
+    const data = await res.json() as { ok: boolean; orderId?: string; error?: string; sizeBTC?: number; midPrice?: number }
+    const dir  = side === 'long' ? '↑ LONG' : '↓ SHORT'
     setMessages(prev => [...prev, {
       role: 'system',
       content: data.ok
-        ? `✅ Order placed — ${count}× ${side.toUpperCase()} @ ${price}¢ ($${dollarCost} · ${pct}% of balance)`
+        ? `✅ ${dir} order placed — ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} (${riskPctRef.current}% risk)`
         : `❌ Order failed: ${data.error}`,
     }])
-    refresh()
+    refreshAccount()
     return data.ok
-  }, [refresh])
+  }, [refreshAccount])
 
-  // ── Interrupt current analysis ────────────────────────────────────────────
+  // ── Interrupt ─────────────────────────────────────────────────────────────
   const handleStop = useCallback(async () => {
     await fetch('/api/aomi/interrupt', {
       method: 'POST',
@@ -379,37 +332,29 @@ export default function AgentPage() {
     })
   }, [sessionId])
 
-  // ── Core send function ────────────────────────────────────────────────────
+  // ── Core send ─────────────────────────────────────────────────────────────
   const send = useCallback(async (text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => {
     if (!text.trim() || procRef.current) return false
-    const userMsg = text.trim()
     setProcessing(true)
     procRef.current = true
     sessionStorage.setItem('aomi-processing', '1')
 
-    const hint = buildHint(liveMarket ?? null, btcPrice, strikePrice, secondsLeft)
-    const marketData = liveMarket ? {
-      ticker:    liveMarket.ticker,
-      btc_spot:  btcPrice,
-      strike:    strikePrice,
-      yes_ask:   liveMarket.yes_ask,
-      yes_bid:   liveMarket.yes_bid,
-      no_ask:    liveMarket.no_ask,
-      no_bid:    liveMarket.no_bid,
-      secs_left: secondsLeft,
-      direction: btcPrice > strikePrice ? 'ABOVE' : 'BELOW',
-      delta:     Math.abs(btcPrice - strikePrice),
+    const hint       = buildHint(btcPrice, account)
+    const marketData = btcPrice ? {
+      btc_price: btcPrice,
+      equity:    account?.equity ?? 0,
+      position:  account?.position ?? null,
     } : undefined
 
     if (!opts?.silent) {
       setMessages(prev => [...prev,
-        { role: 'user', content: userMsg },
-        { role: 'tool', content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
+        { role: 'user',  content: text.trim() },
+        { role: 'tool',  content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
       ])
     } else {
       setMessages(prev => [...prev,
         { role: 'system', content: `⚡ Auto-analysis cycle ${autoCycles + 1}` },
-        { role: 'tool', content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
+        { role: 'tool',   content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
       ])
     }
 
@@ -417,16 +362,13 @@ export default function AgentPage() {
       const res = await fetch('/api/aomi/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMsg, hint, sessionId, marketData, riskPct: riskPctRef.current }),
+        body: JSON.stringify({ message: text.trim(), hint, sessionId, marketData, riskPct: riskPctRef.current }),
       })
       if (!res.ok || !res.body) throw new Error('Request failed')
 
       const reader = res.body.getReader()
       const dec    = new TextDecoder()
       let buf = ''
-      // Track whether we've opened the assistant bubble yet — plain boolean so it
-      // updates synchronously in the for loop (unlike assistantIdx set inside a
-      // state updater, which batches and causes duplicate empty bubbles in React 18)
       let assistantStarted = false
       let finalText = ''
 
@@ -440,6 +382,18 @@ export default function AgentPage() {
           if (!part.startsWith('data: ')) continue
           try {
             const ev = JSON.parse(part.slice(6))
+            if (ev.type === 'tool') {
+              setMessages(prev => {
+                const next = [...prev]
+                const last = next.findLastIndex(m => m.role === 'tool')
+                if (last >= 0) {
+                  next[last] = { ...next[last], toolName: ev.name, toolStatus: ev.status }
+                } else {
+                  next.push({ role: 'tool', content: ev.name, toolName: ev.name, toolStatus: ev.status })
+                }
+                return next
+              })
+            }
             if (ev.type === 'message') {
               finalText = ev.text
               if (!assistantStarted) {
@@ -451,17 +405,11 @@ export default function AgentPage() {
               } else {
                 setMessages(prev => {
                   const next = [...prev]
-                  const idx = next.findLastIndex(m => m.role === 'assistant')
+                  const idx  = next.findLastIndex(m => m.role === 'assistant')
                   if (idx >= 0) next[idx] = { ...next[idx], content: ev.text }
                   return next
                 })
               }
-            }
-            if (ev.type === 'processing_start') {
-              // agent confirmed working — tool pill already shown
-            }
-            if (ev.type === 'processing_end') {
-              // agent finished — stream is wrapping up
             }
             if (ev.type === 'error') {
               setMessages(prev => [...prev, { role: 'system', content: `Error: ${ev.text}` }])
@@ -470,25 +418,28 @@ export default function AgentPage() {
         }
       }
 
-      // Auto-execute if flagged; return true if trade was placed
-      if (opts?.autoExecute && liveMarket && finalText) {
-        const isBuyYes = /BUY YES/i.test(finalText)
-        const isBuyNo  = /BUY NO/i.test(finalText)
+      if (opts?.autoExecute && finalText) {
+        const isLong  = /\bLONG\b/i.test(finalText)
+        const isShort = /\bSHORT\b/i.test(finalText)
         const confidence = finalText.match(/confidence[:\s]+(\d+)%/i)?.[1]
-        const confNum = confidence ? parseInt(confidence) : 50
+        const confNum  = confidence ? parseInt(confidence) : 50
 
-        if ((isBuyYes || isBuyNo) && confNum >= 55) {
-          const side = isBuyYes ? 'yes' : 'no'
+        if ((isLong || isShort) && confNum >= 55) {
+          const side = isLong ? 'long' : 'short'
           setMessages(prev => {
             const next = [...prev]
-            const idx = next.findLastIndex(m => m.role === 'assistant')
+            const idx  = next.findLastIndex(m => m.role === 'assistant')
             if (idx >= 0) next[idx] = { ...next[idx], autoExecuted: true }
             return next
           })
-          const ok = await executeTrade(side, liveMarket)
+          const ok = await executeTrade(side)
           if (opts?.silent) {
             setAutoCycles(c => c + 1)
-            if (ok) setTradesPlaced(c => c + 1)
+            if (ok) {
+              setTradesPlaced(c => c + 1)
+              lastTradedRef.current = Date.now()
+              sessionStorage.setItem('aomi-last-traded', String(lastTradedRef.current))
+            }
           }
           return ok
         }
@@ -511,15 +462,12 @@ export default function AgentPage() {
       setProcessing(false)
       procRef.current = false
     }
-  }, [liveMarket, btcPrice, strikePrice, secondsLeft, sessionId, buildHint, executeTrade, autoCycles])
+  }, [btcPrice, account, sessionId, buildHint, executeTrade, autoCycles])
 
-  // Keep sendRef current so the auto loop calls the latest closure without restarting
   useEffect(() => { sendRef.current = send }, [send])
 
-  const AUTO_PROMPT = `Search for the very latest BTC price action, news, and market sentiment right now. Based on the live market snapshot, give me a direct YES or NO verdict with a confidence percentage. Be decisive.`
-
-  // ── Autonomous loop: fire immediately → trade placed → wait for next window
-  //    PASS/low confidence → retry in 30s. New window ticker restarts the loop. ──
+  // ── Autonomous loop ───────────────────────────────────────────────────────
+  // Hyperliquid is continuous — no windows. Run every 90s. After a trade, wait 5 min.
   useEffect(() => {
     if (!autoMode || !historyLoaded) return
     let cancelled = false
@@ -527,50 +475,38 @@ export default function AgentPage() {
     async function loop() {
       if (cancelled || !autoRef.current) return
 
-      // Stop on non-retryable errors (auth failures, config issues)
       if (fatalErrorRef.current) {
         const reason = fatalErrorRef.current
         fatalErrorRef.current = null
         setAutoMode(false)
         setMessages(prev => [...prev, {
           role: 'system',
-          content: `Auto mode stopped — ${reason.includes('401') ? 'auth error (HTTP 401). Check AOMI_APP and Kalshi credentials in your deployment env.' : reason}`,
+          content: `Auto mode stopped — ${reason.includes('401') ? 'auth error (HTTP 401).' : reason}`,
         }])
         return
       }
 
-      // Wait for market data to arrive
-      if (!liveMarket) {
-        if (!cancelled) setTimeout(loop, 2000)
-        return
-      }
-
-      // Don't trade in last 45s of window — not enough time to fill
-      const secsLeft = liveMarket.close_time
-        ? Math.max(0, Math.floor((new Date(liveMarket.close_time).getTime() - Date.now()) / 1000))
-        : 0
-      if (secsLeft > 0 && secsLeft < 45) {
-        if (!cancelled) { setAutoWait({ until: Date.now() + (secsLeft + 5) * 1000, label: 'Next window in' }); setTimeout(loop, (secsLeft + 5) * 1000) }
-        return
-      }
-
-      // Already traded this window — sit out until it expires
-      if (tradedTickerRef.current === liveMarket.ticker) {
-        const wait = secsLeft > 0 ? (secsLeft + 5) * 1000 : 60_000
-        if (!cancelled) { setAutoWait({ until: Date.now() + wait, label: 'Next window in' }); setTimeout(loop, wait) }
-        return
-      }
-
-      // An analysis from a previous navigation is still running — wait for it
       if (sessionStorage.getItem('aomi-processing') === '1') {
         if (!cancelled) setTimeout(loop, 2000)
         return
       }
 
-      // Respect the 30s cooldown if a recent analysis just ran (e.g. user nav'd away mid-analysis)
+      // If we just placed a trade, wait 5 min before re-entering
+      const msSinceTrade = Date.now() - lastTradedRef.current
+      if (lastTradedRef.current > 0 && msSinceTrade < 300_000) {
+        const wait = 300_000 - msSinceTrade
+        if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Holding position — next check in' })
+        await new Promise<void>(resolve => {
+          const t = setTimeout(resolve, wait)
+          if (cancelled) { clearTimeout(t); resolve() }
+        })
+        if (cancelled) return
+      }
+
+      // 90s minimum between analyses
       const msSinceLast = Date.now() - lastAnalysisRef.current
-      if (msSinceLast < 30_000 && lastAnalysisRef.current > 0) {
-        const wait = 30_000 - msSinceLast
+      if (msSinceLast < 90_000 && lastAnalysisRef.current > 0) {
+        const wait = 90_000 - msSinceLast
         if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Next analysis in' })
         await new Promise<void>(resolve => {
           const t = setTimeout(resolve, wait)
@@ -579,7 +515,6 @@ export default function AgentPage() {
         if (cancelled) return
       }
 
-      // Run analysis; auto-execute if confident
       if (!procRef.current && sendRef.current) {
         setAutoWait(null)
         lastAnalysisRef.current = Date.now()
@@ -587,20 +522,17 @@ export default function AgentPage() {
         const traded = await sendRef.current(AUTO_PROMPT, { silent: true, autoExecute: true })
         if (cancelled) return
         if (traded) {
-          tradedTickerRef.current = liveMarket.ticker
-          sessionStorage.setItem('aomi-traded-ticker', liveMarket.ticker)
-          const secsLeft2 = liveMarket.close_time
-            ? Math.max(0, Math.floor((new Date(liveMarket.close_time).getTime() - Date.now()) / 1000))
-            : 60
-          if (!cancelled) setTimeout(loop, (secsLeft2 + 5) * 1000)
+          // Wait 5 min after trade before next cycle
+          const wait = 300_000
+          if (!cancelled) { setAutoWait({ until: Date.now() + wait, label: 'Holding — next check in' }); setTimeout(loop, wait) }
           return
         }
       }
 
-      // PASS or low confidence — retry in 30s
-      if (!cancelled) setAutoWait({ until: Date.now() + 30_000, label: 'PASS — retrying in' })
+      // PASS / low confidence — retry in 90s
+      if (!cancelled) setAutoWait({ until: Date.now() + 90_000, label: 'PASS — retrying in' })
       await new Promise<void>(resolve => {
-        const t = setTimeout(resolve, 30_000)
+        const t = setTimeout(resolve, 90_000)
         if (cancelled) { clearTimeout(t); resolve() }
       })
       loop()
@@ -609,28 +541,29 @@ export default function AgentPage() {
     loop()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoMode, liveMarket?.ticker, historyLoaded])
+  }, [autoMode, historyLoaded])
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); setInput('') }
   }
 
   const resetSession = () => {
-    localStorage.removeItem('aomi-agent-session')
+    const env = window.location.hostname === 'localhost' ? 'local' : 'prod'
+    localStorage.removeItem(`aomi-agent-session-${env}`)
     sessionStorage.removeItem('aomi-auto')
-    sessionStorage.removeItem('aomi-traded-ticker')
     sessionStorage.removeItem('aomi-last-analysis')
+    sessionStorage.removeItem('aomi-last-traded')
     sessionStorage.removeItem('aomi-trades-placed')
     sessionStorage.removeItem('aomi-processing')
     const id = crypto.randomUUID()
-    localStorage.setItem('aomi-agent-session', id)
+    localStorage.setItem(`aomi-agent-session-${env}`, id)
     window.location.reload()
   }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
       <Header cycleId={autoCycles} isRunning={autoMode} />
-      <MarketBar market={liveMarket ?? null} btcPrice={btcPrice} strikePrice={strikePrice} secondsLeft={secondsLeft} />
+      <MarketBar btcPrice={btcPrice} account={account} />
 
       {/* Auto mode bar */}
       <div style={{
@@ -639,7 +572,6 @@ export default function AgentPage() {
         background: autoMode ? 'rgba(212,135,44,0.06)' : 'var(--bg-secondary)',
         transition: 'background 0.3s', gap: 16,
       }}>
-        {/* Left: toggle + status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={() => setAutoMode(m => !m)}
@@ -662,16 +594,15 @@ export default function AgentPage() {
             <span style={{ fontSize: 11, color: autoWait && !processing ? 'var(--text-muted)' : 'var(--amber)', fontWeight: 600 }}>
               {autoWait && !processing
                 ? <WaitCountdown label={autoWait.label} until={autoWait.until} />
-                : `Searching + trading autonomously · ${tradesPlaced} trade${tradesPlaced !== 1 ? 's' : ''} placed`}
+                : `Querying Hyperliquid + searching · ${tradesPlaced} trade${tradesPlaced !== 1 ? 's' : ''} placed`}
             </span>
           ) : (
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Covers all 96 daily windows · search → analyze → execute · one slider to configure
+              Continuous 24/7 loop · live HL data + search → analyze → execute
             </span>
           )}
         </div>
 
-        {/* Center: risk slider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, maxWidth: 340 }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Risk per trade</span>
           <input
@@ -685,13 +616,10 @@ export default function AgentPage() {
           }}>{riskPct}%</span>
         </div>
 
-        {/* Right: new session */}
         <button
           onClick={resetSession}
           style={{ fontSize: 11, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', whiteSpace: 'nowrap' }}
-        >
-          New session
-        </button>
+        >New session</button>
       </div>
 
       {/* Chat area */}
@@ -702,92 +630,66 @@ export default function AgentPage() {
       }}>
         <div ref={scrollRef} style={{
           flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column',
-          gap: 14, paddingBottom: 20, maxHeight: 'calc(100vh - 310px)',
+          gap: 14, paddingBottom: 20, maxHeight: 'calc(100vh - 290px)',
         }}>
 
-          {/* ── Ready state: shown until first real message ─────────────────── */}
+          {/* Ready state */}
           {messages.length === 1 && !processing && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: '8px 0 4px' }}>
 
-              {/* BTC vs Strike live bar */}
-              {liveMarket && btcPrice > 0 && strikePrice > 0 && (() => {
-                const above = btcPrice > strikePrice
-                const diff  = Math.abs(btcPrice - strikePrice)
-                const pct   = ((diff / strikePrice) * 100).toFixed(3)
-                return (
-                  <div style={{
-                    padding: '20px 24px', borderRadius: 16,
-                    background: 'var(--bg-card)', border: '1px solid var(--border)',
-                    display: 'flex', flexDirection: 'column', gap: 14,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Live Market</div>
-                        <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 36, fontWeight: 800, letterSpacing: '-0.03em',
-                          color: above ? 'var(--green-dark)' : 'var(--pink-dark)' }}>
-                          ${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                          BTC spot · {above ? '↑' : '↓'} ${diff.toLocaleString('en-US', { maximumFractionDigits: 0 })} ({pct}%) {above ? 'above' : 'below'} strike
-                        </div>
+              {/* Live BTC card */}
+              {btcPrice && (
+                <div style={{
+                  padding: '20px 24px', borderRadius: 16,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  display: 'flex', flexDirection: 'column', gap: 14,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Live Market</div>
+                      <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 36, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>
+                        ${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 1 })}
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Implied odds</div>
-                        <div style={{ display: 'flex', gap: 10 }}>
-                          {[['YES', liveMarket.yes_ask, 'var(--green-dark)', 'rgba(58,158,114,0.12)', 'rgba(58,158,114,0.3)'],
-                            ['NO',  liveMarket.no_ask,  'var(--pink-dark)',  'rgba(224,111,160,0.12)', 'rgba(224,111,160,0.3)']
-                          ].map(([label, price, color, bg, border]) => (
-                            <div key={String(label)} style={{
-                              padding: '8px 16px', borderRadius: 10, textAlign: 'center',
-                              background: String(bg), border: `1px solid ${String(border)}`,
-                            }}>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: String(color), marginBottom: 2 }}>{label}</div>
-                              <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 22, fontWeight: 800, color: String(color) }}>{price}¢</div>
-                            </div>
-                          ))}
-                        </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        BTC-PERP · Hyperliquid · {account ? `$${account.equity.toFixed(2)} equity` : 'loading account…'}
                       </div>
                     </div>
-
-                    {/* Progress bar: BTC position relative to strike */}
-                    {(() => {
-                      const range = Math.max(diff * 4, 200)
-                      const pos = Math.min(Math.max(((btcPrice - (strikePrice - range / 2)) / range) * 100, 2), 98)
-                      return (
-                        <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'rgba(224,111,160,0.2)' }}>
-                          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%', borderRadius: 4, background: 'rgba(224,111,160,0.35)' }} />
-                          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: above ? `${pos}%` : '50%', borderRadius: 4,
-                            background: above ? 'rgba(58,158,114,0.5)' : undefined, transition: 'width 1s ease' }} />
-                          {/* Strike line */}
-                          <div style={{ position: 'absolute', left: '50%', top: -3, bottom: -3, width: 2, background: 'var(--amber)', borderRadius: 1 }} />
-                          {/* BTC dot */}
-                          <div style={{
-                            position: 'absolute', top: '50%', left: `${pos}%`,
-                            transform: 'translate(-50%,-50%)',
-                            width: 14, height: 14, borderRadius: '50%',
-                            background: above ? 'var(--green)' : 'var(--pink)',
-                            border: '2px solid var(--bg-card)',
-                            boxShadow: `0 0 8px ${above ? 'rgba(58,158,114,0.6)' : 'rgba(224,111,160,0.6)'}`,
-                            transition: 'left 1s ease',
-                          }} />
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 9, color: 'var(--text-muted)', fontFamily: 'var(--font-geist-mono)' }}>
-                            <span>← NO wins</span>
-                            <span style={{ color: 'var(--amber)', fontWeight: 700 }}>STRIKE ${strikePrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
-                            <span>YES wins →</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Position</div>
+                      {account?.position ? (
+                        <div style={{
+                          padding: '8px 16px', borderRadius: 10, textAlign: 'center',
+                          background: account.position.side === 'long' ? 'rgba(58,158,114,0.12)' : 'rgba(224,111,160,0.12)',
+                          border: `1px solid ${account.position.side === 'long' ? 'rgba(58,158,114,0.3)' : 'rgba(224,111,160,0.3)'}`,
+                        }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: account.position.side === 'long' ? 'var(--green-dark)' : 'var(--pink-dark)', marginBottom: 2 }}>
+                            {account.position.side.toUpperCase()}
                           </div>
+                          <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 18, fontWeight: 800, color: account.position.side === 'long' ? 'var(--green-dark)' : 'var(--pink-dark)' }}>
+                            {account.position.sizeBTC.toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>BTC</div>
                         </div>
-                      )
-                    })()}
+                      ) : (
+                        <div style={{
+                          padding: '8px 16px', borderRadius: 10, textAlign: 'center',
+                          background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                        }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)' }}>FLAT</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>no position</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )
-              })()}
+                </div>
+              )}
 
               {/* Feature cards */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 {[
-                  { icon: '◈', title: 'Not pre-programmed rules', desc: 'Before every decision, I search live BTC news, price action, and sentiment. I reason from what\'s happening right now.' },
-                  { icon: '⊛', title: '96 windows. Zero clicks.', desc: 'Enable Auto Mode. I\'ll cover every window — search, analyze, size, execute, wait for the next one. Repeat.' },
-                  { icon: '⊕', title: 'Real orders. Real money.', desc: 'BUY YES / BUY NO recommendations come with a live Kalshi order button. Kelly-sized from your actual balance.' },
+                  { icon: '⬡', title: 'Live Hyperliquid data', desc: 'Pulls BTC price, order book depth, and your position state from Hyperliquid before every decision. No stale data.' },
+                  { icon: '⊛', title: 'Continuous 24/7 loop', desc: 'Enable Auto Mode. I analyze every 90 seconds — Hyperliquid data + web search → verdict → execute → hold → repeat.' },
+                  { icon: '⊕', title: 'Real orders. Real money.', desc: 'LONG / SHORT verdicts trigger live Hyperliquid perp orders. Kelly-sized from your actual equity.' },
                 ].map(({ icon, title, desc }) => (
                   <div key={title} style={{
                     padding: '16px', borderRadius: 12,
@@ -800,50 +702,21 @@ export default function AgentPage() {
                 ))}
               </div>
 
-              {/* Waiting for market / error state */}
-              {!liveMarket && (() => {
-                const isAuthErr    = marketError === 'kalshi_403' || marketError === 'kalshi_401'
-                const isNetErr     = marketError === 'network_error'
-                const isBetween    = marketError === 'no_tradeable_markets'
-                const isKnownErr   = isAuthErr || isNetErr
-                const errColor     = 'var(--pink-dark)'
-                const warnColor    = 'var(--amber)'
-                return (
-                  <div style={{ textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-                    {isKnownErr ? (
-                      <>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: errColor }}>
-                          {isNetErr ? 'Cannot reach Kalshi' : 'Kalshi auth failed'}
-                        </span>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)', maxWidth: 280, lineHeight: 1.6 }}>
-                          {isNetErr
-                            ? 'Network error or geo-block. Kalshi restricts access by region — try a VPN.'
-                            : 'Check KALSHI_API_KEY and KALSHI_PRIVATE_KEY_PATH in .env.local.'}
-                        </span>
-                      </>
-                    ) : isBetween ? (
-                      <>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: warnColor }}>Between windows</span>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No active KXBTC15M market right now — next window opens shortly.</span>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {[0,1,2].map(i => (
-                            <span key={i} style={{
-                              width: 8, height: 8, borderRadius: '50%', background: 'var(--text-muted)',
-                              display: 'inline-block', animation: `dotbounce 1.4s ease-in-out ${i*0.25}s infinite`,
-                            }} />
-                          ))}
-                        </div>
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          {resuming ? 'Analysis in progress — result will appear shortly…' : 'Connecting to Kalshi markets…'}
-                        </span>
-                      </>
-                    )}
+              {!btcPrice && (
+                <div style={{ textAlign: 'center', padding: '32px 0', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[0,1,2].map(i => (
+                      <span key={i} style={{
+                        width: 8, height: 8, borderRadius: '50%', background: 'var(--text-muted)',
+                        display: 'inline-block', animation: `dotbounce 1.4s ease-in-out ${i*0.25}s infinite`,
+                      }} />
+                    ))}
                   </div>
-                )
-              })()}
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {resuming ? 'Analysis in progress — result will appear shortly…' : 'Connecting to Hyperliquid…'}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -877,9 +750,8 @@ export default function AgentPage() {
                 </div>
               )
             }
-            // assistant
-            const hasYes = /BUY YES/i.test(msg.content)
-            const hasNo  = /BUY NO/i.test(msg.content)
+            const hasLong  = /\bLONG\b/i.test(msg.content)
+            const hasShort = /\bSHORT\b/i.test(msg.content)
             return (
               <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <div style={{
@@ -893,24 +765,23 @@ export default function AgentPage() {
                   background: 'var(--bg-card)', border: '1px solid var(--border)',
                 }}>
                   <BotMsg content={msg.content} autoExecuted={msg.autoExecuted} />
-                  {/* Trade buttons — only in manual mode, and only if not already auto-executed */}
-                  {!autoMode && liveMarket && (hasYes || hasNo) && !msg.autoExecuted && (
+                  {!autoMode && (hasLong || hasShort) && !msg.autoExecuted && (
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                      {hasYes && (
-                        <button onClick={() => executeTrade('yes', liveMarket)} style={{
+                      {hasLong && (
+                        <button onClick={() => executeTrade('long')} style={{
                           padding: '7px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
                           background: 'var(--green)', color: '#fff', fontWeight: 700, fontSize: 13,
-                        }}>Buy YES @ {liveMarket.yes_ask}¢</button>
+                        }}>↑ Go Long</button>
                       )}
-                      {hasNo && (
-                        <button onClick={() => executeTrade('no', liveMarket)} style={{
+                      {hasShort && (
+                        <button onClick={() => executeTrade('short')} style={{
                           padding: '7px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
                           background: 'var(--pink)', color: '#fff', fontWeight: 700, fontSize: 13,
-                        }}>Buy NO @ {liveMarket.no_ask}¢</button>
+                        }}>↓ Go Short</button>
                       )}
                       <button onClick={() => setMessages(prev => {
                         const next = [...prev]
-                        next[i] = { ...next[i], autoExecuted: true }  // hide buttons
+                        next[i] = { ...next[i], autoExecuted: true }
                         return next
                       })} style={{
                         padding: '7px 14px', borderRadius: 10, cursor: 'pointer',
@@ -962,7 +833,7 @@ export default function AgentPage() {
         <div style={{ display: 'flex', gap: 8, padding: '8px 0 20px', borderTop: '1px solid var(--border)' }}>
           <textarea
             value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
-            placeholder="Ask AOMI to research the market…  (Enter to send)"
+            placeholder="Ask AOMI to analyze the market…  (Enter to send)"
             disabled={processing} rows={2}
             style={{
               flex: 1, padding: '11px 15px', borderRadius: 14,
@@ -975,23 +846,20 @@ export default function AgentPage() {
             <button onClick={handleStop} style={{
               padding: '0 20px', borderRadius: 14, border: 'none',
               background: 'var(--pink-dark)', color: '#fff',
-              cursor: 'pointer', fontWeight: 700, fontSize: 13,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>■ Stop</button>
+              fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>Stop</button>
           ) : (
             <button onClick={() => { send(input); setInput('') }} disabled={!input.trim()} style={{
               padding: '0 20px', borderRadius: 14, border: 'none',
-              background: !input.trim() ? 'var(--border)' : 'var(--blue)',
-              color: '#fff', cursor: !input.trim() ? 'not-allowed' : 'pointer',
-              fontWeight: 700, fontSize: 15,
-            }}>↑</button>
+              background: input.trim() ? 'var(--blue)' : 'var(--bg-card)',
+              color: input.trim() ? '#fff' : 'var(--text-muted)',
+              fontWeight: 700, fontSize: 13, cursor: input.trim() ? 'pointer' : 'default',
+              outline: input.trim() ? 'none' : '1px solid var(--border)',
+              transition: 'all 0.15s',
+            }}>Send</button>
           )}
         </div>
       </main>
-
-      <style>{`
-        @keyframes dotbounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
-      `}</style>
     </div>
   )
 }

@@ -1,26 +1,24 @@
 import { NextRequest } from 'next/server'
 import { createSession, buildPrompt } from '@/lib/aomi-session'
-import type { WalletRequest } from '@aomi-labs/client'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
 interface ChatRequest {
-  message: string
-  hint?: string
+  message:    string
+  hint?:      string
   sessionId?: string
   marketData?: Record<string, unknown>
-  riskPct?: number
+  riskPct?:   number
 }
 
 export async function POST(req: NextRequest) {
   const { message, hint, sessionId, marketData, riskPct } = (await req.json()) as ChatRequest
-  console.log('[aomi/chat] POST received — sessionId:', sessionId?.slice(0, 8), 'app:', process.env.AOMI_APP)
+  console.log('[aomi/chat] POST — sessionId:', sessionId?.slice(0, 8), 'app:', process.env.AOMI_APP ?? 'hyperliquid')
+
   const session = createSession(sessionId)
   const prompt  = buildPrompt(message, hint)
 
-  // Inject live market context and risk setting into session state — persists
-  // across calls in the same session so the agent always has fresh numbers
   if (marketData) session.addExtValue('market_context', marketData)
   if (riskPct != null) session.addExtValue('risk_pct', riskPct)
 
@@ -35,58 +33,22 @@ export async function POST(req: NextRequest) {
         catch { /* write-after-close */ }
       }
 
-      // ── Processing lifecycle ──────────────────────────────────────────────
       session.on('processing_start', () => send({ type: 'processing_start' }))
       session.on('processing_end',   () => send({ type: 'processing_end'   }))
 
-      // ── Tool call visibility ──────────────────────────────────────────────
       session.on('tool_update',  (ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'running' }))
       session.on('tool_complete',(ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'done'    }))
 
-      // ── wallet_tx_request: AOMI wants to execute a trade ─────────────────
-      // AOMI's Kalshi plugin emits this when it's ready to place an order.
-      // We call our signed Kalshi API, then resolve/reject back to AOMI.
-      session.on('wallet_tx_request', async (req: WalletRequest) => {
-        send({ type: 'trade_request', requestId: req.id, payload: req.payload })
-
-        try {
-          // The Kalshi plugin encodes order details in the payload.
-          // We forward to our own authenticated Kalshi endpoint.
-          const payload = req.payload as Record<string, unknown>
-          const orderRes = await fetch(
-            new URL('/api/place-order', process.env.NEXTAUTH_URL ?? 'http://localhost:3000').href,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ticker:          payload.ticker ?? payload.market_ticker,
-                side:            payload.side,
-                count:           payload.count ?? 1,
-                yesPrice:        payload.yes_price,
-                noPrice:         payload.no_price,
-                clientOrderId:   `aomi-${Date.now()}`,
-              }),
-            }
-          )
-          const orderData = await orderRes.json()
-          if (orderRes.ok && orderData.ok) {
-            await session.resolve(req.id, { txHash: orderData.orderId ?? 'placed' })
-            send({ type: 'trade_confirmed', requestId: req.id, orderId: orderData.orderId })
-          } else {
-            await session.reject(req.id, orderData.error ?? 'order failed')
-            send({ type: 'trade_rejected', requestId: req.id, reason: orderData.error })
-          }
-        } catch (err) {
-          const reason = err instanceof Error ? err.message : 'execution error'
-          await session.reject(req.id, reason)
-          send({ type: 'trade_rejected', requestId: req.id, reason })
-        }
+      // Reject any EIP-712 requests — agent is instructed not to call send_eip712_to_wallet
+      // but reject gracefully in case it does anyway (instead of hanging the session)
+      session.on('wallet_eip712_request', async (req) => {
+        try { await session.reject(req.id, 'Execution handled by trading system — provide text verdict only') } catch { /* ignore */ }
       })
 
       session.on('system_error', ({ message: msg }) => send({ type: 'error', text: msg }))
 
       try {
-        const result = await session.send(prompt)
+        const result    = await session.send(prompt)
         const msgs      = result.messages ?? []
         const assistant = [...msgs].reverse().find(m => m.sender === 'agent')
         const text      = typeof assistant?.content === 'string' && assistant.content
@@ -96,7 +58,7 @@ export async function POST(req: NextRequest) {
         const msg = err instanceof Error ? err.message : 'AOMI request failed'
         console.error('[aomi/chat] session.send failed —',
           'AOMI_BASE_URL:', process.env.AOMI_BASE_URL,
-          'AOMI_APP:', process.env.AOMI_APP,
+          'AOMI_APP:', process.env.AOMI_APP ?? 'hyperliquid',
           'AOMI_API_KEY set:', !!process.env.AOMI_API_KEY,
           '— error:', msg)
         send({ type: 'error', text: msg })
