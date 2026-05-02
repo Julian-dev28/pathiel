@@ -27,13 +27,11 @@ export function createSession(sessionId?: string) {
   )
 }
 
-const SYSTEM = `You are an AI trading analyst for Hyperliquid BTC-PERP perpetual futures. The current market data (BTC price, order book, account position) is provided to you as context in each message. Also use brave_search to find the latest BTC news and sentiment before giving your verdict.
+const SYSTEM = `You are an AI trading analyst for Hyperliquid BTC-PERP perpetual futures. The current market data (BTC price, order book, account position) is provided in each message — analyze it directly. Do NOT call any tools or web searches. Output your verdict as text only — the system executes trades based on your analysis.`
 
-Do NOT call send_eip712_to_wallet or send_transaction_to_wallet. Output your verdict as text — the system executes trades based on your analysis.`
+const SEARCH_INSTRUCTION = `Analyze the live market snapshot below. No tools needed — all data is provided.`
 
-const SEARCH_INSTRUCTION = `Before answering, use brave_search to research: "BTC price action today", "Bitcoin technical analysis", "crypto market sentiment today". Then synthesize with the live market snapshot below.`
-
-const FORMAT = `Reply in 4–6 bullet points. No headers, no paragraphs. First bullet MUST be your verdict: LONG / SHORT / PASS — one sentence why. Next 2–3 bullets: key data points from Hyperliquid tools + search. Last bullet: confidence % and main risk. Be direct and specific.`
+const FORMAT = `Reply in 4–6 bullet points. No headers, no paragraphs. First bullet MUST be your verdict: LONG / SHORT / PASS — one sentence why. Next 2–3 bullets: key data points from the snapshot. Last bullet: confidence % and main risk. Be direct and specific. Do NOT use any tools.`
 
 export function buildPrompt(userMessage: string, hint?: string): string {
   const parts = [SYSTEM]

@@ -348,13 +348,11 @@ export default function AgentPage() {
 
     if (!opts?.silent) {
       setMessages(prev => [...prev,
-        { role: 'user',  content: text.trim() },
-        { role: 'tool',  content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
+        { role: 'user', content: text.trim() },
       ])
     } else {
       setMessages(prev => [...prev,
         { role: 'system', content: `⚡ Auto-analysis cycle ${autoCycles + 1}` },
-        { role: 'tool',   content: 'brave_search', toolName: 'brave_search', toolStatus: 'running' },
       ])
     }
 
