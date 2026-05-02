@@ -192,17 +192,17 @@ function MarketBar({ btcPrice, account }: { btcPrice: number | null; account: HL
 
 const INIT_MSG: Msg = {
   role: 'system',
-  content: "BTC-PERP runs 24/7. Before every decision I pull live data from Hyperliquid — price, order book, your position — then search live BTC news and momentum. Enable Auto Mode and I'll analyze continuously: query → search → reason → execute. No stale data. No pre-programmed rules.",
+  content: "5-minute to 1-hour BTC-PERP momentum. Every cycle: read your position + PnL → check 5m candles → check order book → decide LONG / SHORT / CLOSE / PASS. Auto Mode runs continuously — catches trends early, exits before they reverse. Your spot USDC is available as margin.",
 }
 
 const QUICK_PROMPTS = [
-  { label: 'Trade for me',  prompt: 'Get live BTC price and order book from Hyperliquid. Check my current position and PnL. Look at the last 5–10 minutes of price action and candles. Give me a LONG / SHORT / CLOSE / PASS verdict right now based on the current momentum. Be decisive.' },
-  { label: 'Should I flip', prompt: 'Check my current position on Hyperliquid. Get the live order book and recent candles. Is the current trend still intact or is it reversing? Should I hold, close, or flip direction? Give a direct verdict.' },
-  { label: '↑ Long case',   prompt: 'Check live BTC price and order book. Is there a near-term bullish setup right now — green momentum, bid pressure, buyers stepping in? Give me the case for LONG with confidence.' },
-  { label: '↓ Short case',  prompt: 'Check live BTC price and order book. Is there a near-term bearish setup — red candles, ask pressure, sellers dominating? Give me the case for SHORT with confidence.' },
+  { label: 'Trade for me',  prompt: 'Call get_clearinghouse_state to read my current position, entry price, and PnL. Call get_l2_book for live order book. Call get_candle_snapshot for the last 10 5-minute candles. Based on momentum right now: LONG, SHORT, CLOSE, or PASS. Be decisive.' },
+  { label: 'Manage position', prompt: 'Call get_clearinghouse_state to check my open position and unrealized PnL. Call get_candle_snapshot for 5m candles. Is momentum still in my favor, or should I CLOSE and reassess? If PnL is positive and momentum is stalling, say CLOSE. If it reversed, say CLOSE.' },
+  { label: '↑ Long case',   prompt: 'Call get_l2_book and get_candle_snapshot (5m). Are 5m candles green and accelerating? Is bid side heavier than ask? Make the case for LONG right now with Confidence: X%.' },
+  { label: '↓ Short case',  prompt: 'Call get_l2_book and get_candle_snapshot (5m). Are 5m candles red and declining? Is ask side heavier than bid? Make the case for SHORT right now with Confidence: X%.' },
 ]
 
-const AUTO_PROMPT = `Get live BTC price and order book depth from Hyperliquid. Check my current position and unrealized PnL. Look at recent candles for momentum direction across the 5m to 4h timeframe. Give a verdict: LONG (enter/add long), SHORT (enter/flip short), CLOSE (exit current position), or PASS (no edge). Be decisive — 60%+ confidence is enough to act.`
+const AUTO_PROMPT = `Step 1: Call get_clearinghouse_state to read my current position (side, entry price, unrealized PnL). Step 2: Call get_l2_book for live order book depth. Step 3: Call get_candle_snapshot for the last 10 5-minute candles. Step 4: Give verdict — LONG (enter long or hold long), SHORT (enter short or flip), CLOSE (exit now — PnL target hit, loss limit hit, or momentum reversed), or PASS (genuine flat chop only). 60%+ confidence on 5m structure is enough to act.`
 
 export default function AgentPage() {
   const { btcPrice, account, refreshAccount } = useHLTick()
