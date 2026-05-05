@@ -7,10 +7,12 @@ export async function GET(req: NextRequest) {
 
   const windowMs: Record<string, number> = {
     '15m': 15 * 60 * 1000,
+    '30m': 30 * 60 * 1000,
     '1h':  60 * 60 * 1000,
   }
   const interval: Record<string, string> = {
     '15m': '1m',
+    '30m': '1m',
     '1h':  '1m',
   }
 

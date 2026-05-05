@@ -61,13 +61,12 @@ export default function HLPositionsPanel({ account, onRefresh }: HLPositionsPane
           {/* Breakdown row */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '10px 0' }}>
             {[
-              ['Perp',     `$${fmtUSD(account.equity)}`,    'var(--text-primary)'],
-              ['Spot',     `$${fmtUSD(account.spotUSDC)}`,  'var(--blue-dark)'],
-              ['Notional', `$${fmtUSD(account.totalNtl)}`,  'var(--amber)'],
+              ['Perp margin', `$${fmtUSD(account.equity)}`,   'var(--text-primary)'],
+              ['Spot USDC',   `$${fmtUSD(account.spotUSDC)}`, 'var(--blue-dark)'],
             ].map(([label, val, col], idx, arr) => (
               <div key={label} style={{
                 flex: 1,
-                textAlign: idx === 0 ? 'left' : idx === arr.length - 1 ? 'right' : 'center',
+                textAlign: idx === arr.length - 1 ? 'right' : 'left',
               }}>
                 <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 3 }}>{label}</div>
                 <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: col }}>{val}</div>

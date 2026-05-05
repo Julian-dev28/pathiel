@@ -234,29 +234,39 @@ export default function HLMarketCard({ btcPrice, account, onRefresh }: HLMarketC
           </div>
 
           {pos && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Size</div>
-                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  {pos.sizeBTC.toFixed(4)} BTC
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Size</div>
+                  <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {pos.sizeBTC.toFixed(4)} BTC
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Entry</div>
+                  <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                    {fmtPrice(pos.entryPx)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Unr. PnL</div>
+                  <div style={{
+                    fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700,
+                    color: pos.unrealizedPnl >= 0 ? 'var(--green-dark)' : 'var(--pink-dark)',
+                  }}>
+                    {pos.unrealizedPnl >= 0 ? '+' : ''}{fmtPriceD(pos.unrealizedPnl)}
+                  </div>
                 </div>
               </div>
-              <div>
-                <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Entry</div>
-                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                  {fmtPrice(pos.entryPx)}
+              {btcPrice && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Total notional</span>
+                  <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                    {fmtPrice(pos.sizeBTC * btcPrice)}
+                  </span>
                 </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>Unr. PnL</div>
-                <div style={{
-                  fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700,
-                  color: pos.unrealizedPnl >= 0 ? 'var(--green-dark)' : 'var(--pink-dark)',
-                }}>
-                  {pos.unrealizedPnl >= 0 ? '+' : ''}{fmtPriceD(pos.unrealizedPnl)}
-                </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
 
@@ -343,6 +353,21 @@ export default function HLMarketCard({ btcPrice, account, onRefresh }: HLMarketC
             })}
           </div>
         </div>
+
+        {/* Order notional preview */}
+        {parseFloat(amount) > 0 && btcPrice && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', marginBottom: 8, borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Order notional</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {fmtPrice(parseFloat(amount) * leverage)}
+              </span>
+              <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+                ≈ {(parseFloat(amount) * leverage / btcPrice).toFixed(5)} BTC
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Trade buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: pos ? '1fr 1fr 1fr' : '1fr 1fr', gap: 6, marginBottom: 10 }}>

@@ -24,16 +24,15 @@ function buildHint(price: number | null, acct: HLAccount | null): string | undef
 function AnalysisLine({ text }: { text: string }) {
   const clean = text.replace(/^[•\-*]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').trim()
   if (!clean) return null
-  const isLong  = /\bLONG\b/i.test(clean)
-  const isShort = /\bSHORT\b/i.test(clean)
-  const isClose = /\bCLOSE\b/i.test(clean)
-  const isPass  = /\bPASS\b/i.test(clean)
-  const isVerdict = isLong || isShort || isClose || isPass
-  if (isVerdict) {
-    const verdict = isLong ? 'LONG' : isShort ? 'SHORT' : isClose ? 'CLOSE' : 'PASS'
-    const [vColor, vBg] = isLong  ? ['var(--green-dark)', 'rgba(58,158,114,0.10)']
-      : isShort ? ['var(--pink-dark)',  'rgba(224,111,160,0.10)']
-      : isClose ? ['var(--blue)',       'rgba(74,127,165,0.10)']
+  const verdict =
+    /^CLOSE\b/i.test(clean) ? 'CLOSE' :
+    /^LONG\b/i.test(clean)  ? 'LONG'  :
+    /^SHORT\b/i.test(clean) ? 'SHORT' :
+    /^PASS\b/i.test(clean)  ? 'PASS'  : null
+  if (verdict) {
+    const [vColor, vBg] = verdict === 'LONG'  ? ['var(--green-dark)', 'rgba(58,158,114,0.10)']
+      : verdict === 'SHORT' ? ['var(--pink-dark)',  'rgba(224,111,160,0.10)']
+      : verdict === 'CLOSE' ? ['var(--blue)',       'rgba(74,127,165,0.10)']
       : ['var(--amber)', 'rgba(212,135,44,0.08)']
     const rest = clean.replace(/^(LONG|SHORT|CLOSE|PASS)\s*[—–\-]?\s*/i, '')
     return (
@@ -82,7 +81,7 @@ export default function DashboardPage() {
           return id
         })())
       : crypto.randomUUID()
-    const prompt = `Check live BTC price and order book on Hyperliquid. Check my current position. Search for the latest BTC price action and market sentiment. Give me a direct LONG / SHORT / PASS verdict with confidence and 3-4 bullet points of reasoning.`
+    const prompt = `Check live BTC price and order book on Hyperliquid. Check my current position. Call get_candle_snapshot for the last 10 15-minute candles. Give me a direct LONG / SHORT / CLOSE / PASS verdict with confidence and 3-4 bullet points of reasoning.`
 
     try {
       const res = await fetch('/api/aomi/chat', {

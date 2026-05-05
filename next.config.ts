@@ -1,3 +1,4 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -11,6 +12,19 @@ const nextConfig: NextConfig = {
       'venv310/**',
       'venv313/**',
     ],
+  },
+  turbopack: {
+    root: __dirname,
+    resolveAlias: {
+      tailwindcss: path.resolve(__dirname, "node_modules/tailwindcss"),
+    },
+  },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      tailwindcss: path.resolve(__dirname, "node_modules/tailwindcss"),
+    };
+    return config;
   },
 };
 
