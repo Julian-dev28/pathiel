@@ -34,7 +34,7 @@ const HL_TOOLS: Record<string, string> = {
   get_funding_history:     'Funding rate',
   get_candle_snapshot:     'Candle data',
   get_meta:                'Exchange info',
-  brave_search:            'Web search',
+  brave_search:            'Web search',   // Brave Search — requires BRAVE_API_KEY
 }
 
 function WaitCountdown({ until }: { until: number }) {

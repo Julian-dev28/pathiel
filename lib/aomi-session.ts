@@ -140,6 +140,21 @@ export const TOOLS: OpenAI.ChatCompletionTool[] = [
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'brave_search',
+      description: 'Search the web for current BTC news, macro events, or sentiment using Brave Search',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query, e.g. "BTC price today" or "Bitcoin news"' },
+          count: { type: 'number', description: 'Number of results to return (default 5, max 10)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ]
 
 async function hlPost(body: object): Promise<unknown> {
@@ -186,6 +201,25 @@ export async function executeTool(name: string, args: Record<string, unknown>): 
 
       case 'get_meta':
         return JSON.stringify(await hlPost({ type: 'meta' }))
+
+      case 'brave_search': {
+        const apiKey = process.env.BRAVE_API_KEY
+        if (!apiKey) return JSON.stringify({ error: 'BRAVE_API_KEY not set' })
+        const query = encodeURIComponent((args.query as string) ?? 'BTC price')
+        const count = Math.min((args.count as number) ?? 5, 10)
+        const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${query}&count=${count}`, {
+          headers: { 'X-Subscription-Token': apiKey, Accept: 'application/json' },
+        })
+        const data = await res.json() as {
+          web?: { results?: Array<{ title: string; description: string; url: string }> }
+        }
+        const results = (data.web?.results ?? []).map(r => ({
+          title:       r.title,
+          description: r.description,
+          url:         r.url,
+        }))
+        return JSON.stringify(results)
+      }
 
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` })
