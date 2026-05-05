@@ -27,12 +27,23 @@ function r(...extra: (string | undefined)[]) {
 }
 
 const PIPELINE = [
-  { num: '01', name: 'Live Market Data',    desc: 'AOMI calls get_all_mids and get_l2_book — live BTC mid price, bid/ask spread, and full order book depth from Hyperliquid.' },
-  { num: '02', name: 'Position Check',      desc: 'AOMI calls get_clearinghouse_state with your wallet address — live account equity, open positions, margin used, unrealized PnL.' },
-  { num: '03', name: 'Web Search',          desc: 'brave_search fires for live BTC news, technical signals, and market sentiment. Agent reasons from what\'s happening right now, not training data.' },
-  { num: '04', name: 'AOMI Analysis',       desc: 'Agent synthesizes Hyperliquid order book + account state + search results. Streams a direct LONG / SHORT / PASS verdict with confidence %.' },
-  { num: '05', name: 'Risk Gate',           desc: 'Kelly criterion sizes the position from your live equity. 5× leverage. Orders execute only at confidence ≥ 55%. PASS on weak signals.' },
-  { num: '06', name: 'HL Execution',        desc: 'Auto Mode places the order directly — EIP-712 signed IOC limit order on Hyperliquid. Zero clicks after setup. Real orders, real settlement.' },
+  { num: '01', name: 'Position & Orders',   desc: 'get_clearinghouse_state reads your live equity, open position, and unrealized PnL. get_open_orders catches any stale orders before placing new ones.' },
+  { num: '02', name: 'Live Price & Book',   desc: 'get_all_mids pulls the live BTC mid price. get_l2_book snapshots full order book depth — bid and ask pressure at every level.' },
+  { num: '03', name: 'Candle Momentum',     desc: 'get_candle_snapshot pulls the last 10 15-minute candles. Direction, acceleration, and structure — the primary signal driving every verdict.' },
+  { num: '04', name: 'Funding & Fills',     desc: 'get_funding_history checks the current perpetual funding rate — positive means longs are paying. get_user_fills shows the last 5 executions for context.' },
+  { num: '05', name: 'AOMI Verdict',        desc: 'Agent synthesizes all 7 data sources and streams a direct verdict: LONG / SHORT / CLOSE / PASS — with confidence %. 60%+ is enough to act.' },
+  { num: '06', name: 'Risk Gate & Execute', desc: 'Kelly criterion sizes the trade from live equity. 5× leverage. Auto Mode places the IOC order on Hyperliquid. Real orders, real settlement, zero clicks.' },
+]
+
+const HL_TOOLS = [
+  { fn: 'get_clearinghouse_state', label: 'Position & Equity',   desc: 'Live account equity, open position side/size, entry price, unrealized PnL, and margin usage — checked first every cycle.' },
+  { fn: 'get_open_orders',         label: 'Open Orders',         desc: 'All pending open orders for the account — ensures stale orders are caught before a new one is placed.' },
+  { fn: 'get_all_mids',            label: 'Live Mid Prices',     desc: 'Current mid prices for all listed assets. Used to anchor the BTC price snapshot at decision time.' },
+  { fn: 'get_l2_book',             label: 'Order Book Depth',    desc: 'Full L2 order book — bid and ask sizes at every price level. Reveals real buying and selling pressure.' },
+  { fn: 'get_candle_snapshot',     label: 'Candlestick Data',    desc: 'OHLCV candles at 15m and 1h intervals. Direction and acceleration of the last 10 candles drive the primary verdict signal.' },
+  { fn: 'get_funding_history',     label: 'Funding Rate',        desc: 'Current perpetual funding rate. Positive = longs pay shorts, a cost that erodes hold time. Factored into LONG conviction.' },
+  { fn: 'get_user_fills',          label: 'Trade History',       desc: 'Last 5 fills for the account — recent execution context so the agent knows what was just traded and at what price.' },
+  { fn: 'get_meta',                label: 'Exchange Metadata',   desc: 'Asset specs, size decimals, tick sizes, and universe config from Hyperliquid — available on demand for order validation.' },
 ]
 
 const FEATURES = [
@@ -59,14 +70,17 @@ const FEATURES = [
 ]
 
 const CODE = [
-  { k: 'btc_price',   v: '$78,243.50',   c: '// Hyperliquid mid price' },
-  { k: 'bid_depth',   v: '22.2 BTC',     c: '// at $78,243',           hi: 'green' },
-  { k: 'ask_depth',   v: '1.19 BTC',     c: '// at $78,244' },
-  { k: 'equity',      v: '$10.00',       c: '// your HL account value', hi: 'amber' },
-  { k: 'position',    v: 'FLAT',         c: '// no open position' },
-  { k: 'confidence',  v: '68%',          c: '// agent certainty',       hi: 'green' },
-  { k: 'leverage',    v: '5×',           c: '// cross margin' },
-  { k: 'verdict',     v: 'LONG',         c: '// execute',               hi: 'green' },
+  { k: 'btc_price',    v: '$78,243.50',  c: '// get_all_mids' },
+  { k: 'bid_depth',    v: '22.2 BTC',    c: '// get_l2_book · bids',    hi: 'green' },
+  { k: 'ask_depth',    v: '1.19 BTC',    c: '// get_l2_book · asks' },
+  { k: 'candles_15m',  v: '↑↑↓↑↑',      c: '// get_candle_snapshot',   hi: 'green' },
+  { k: 'funding_rate', v: '+0.0082%',    c: '// get_funding_history' },
+  { k: 'open_orders',  v: '0',           c: '// get_open_orders · clear' },
+  { k: 'last_fill',    v: 'LONG $77,940',c: '// get_user_fills' },
+  { k: 'equity',       v: '$199.86',     c: '// get_clearinghouse_state',hi: 'amber' },
+  { k: 'position',     v: 'FLAT',        c: '// no open position' },
+  { k: 'confidence',   v: '72%',         c: '// agent certainty',        hi: 'green' },
+  { k: 'verdict',      v: 'LONG',        c: '// execute',                hi: 'green' },
 ]
 
 export default function Landing() {
@@ -82,6 +96,7 @@ export default function Landing() {
         </a>
         <div className={s.navLinks}>
           <a href="#how"      className={s.navLink}>How it works</a>
+          <a href="#tools"    className={s.navLink}>Tools</a>
           <a href="#signals"  className={s.navLink}>Signals</a>
           <a href="#features" className={s.navLink}>Features</a>
         </div>
@@ -150,6 +165,26 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* AOMI Tools */}
+      <section className={s.section} id="tools">
+        <div className={s.inner}>
+          <p className={`${s.label} ${r()}`}>AOMI Hyperliquid Tools</p>
+          <h2 className={`${s.headline} ${r(s.d1)}`}>8 live data tools.<br />Called every cycle.</h2>
+          <p className={`${s.sub} ${r(s.d2)}`}>
+            Every agent cycle queries all 8 Hyperliquid tools before deciding. No stale data, no guesses — every verdict is grounded in the current state of the market and your account.
+          </p>
+          <div className={s.toolsGrid}>
+            {HL_TOOLS.map((t, i) => (
+              <div className={`${s.toolItem} ${r(i < 4 ? s.d1 : s.d2)}`} key={t.fn}>
+                <span className={s.toolFn}>{t.fn}</span>
+                <span className={s.toolLabel}>{t.label}</span>
+                <span className={s.toolDesc}>{t.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Signals */}
       <section className={s.section} id="signals">
         <div className={s.inner}>
@@ -167,12 +202,14 @@ export default function Landing() {
               </p>
               <ul className={`${s.signalsList} ${r(s.d2)}`}>
                 {[
-                  'BTC mid price from Hyperliquid — get_all_mids, updated every cycle',
-                  'Order book depth — get_l2_book, bids and asks with full size levels',
-                  'Account equity and open positions — get_clearinghouse_state',
-                  'Brave web search — live BTC news, technicals, and market sentiment',
-                  'Funding rate — directional bias signal from the perpetual market',
-                  'Kelly criterion — position sizing from your live Hyperliquid equity',
+                  'get_clearinghouse_state — equity, position, PnL before every decision',
+                  'get_open_orders — stale order check before placing new ones',
+                  'get_all_mids — live BTC mid price at decision time',
+                  'get_l2_book — full order book depth, bid vs ask pressure',
+                  'get_candle_snapshot — last 10 × 15m candles, primary momentum signal',
+                  'get_funding_history — perpetual funding rate, factored into hold cost',
+                  'get_user_fills — last 5 fills for recent execution context',
+                  'get_meta — exchange specs available on demand',
                 ].map(item => (
                   <li className={s.signalItem} key={item}>
                     <span className={s.signalDot} />

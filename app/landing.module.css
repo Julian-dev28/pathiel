@@ -332,6 +332,47 @@
   line-height: 1.75;
 }
 
+/* ── Tools grid — 4-col card grid ───────────────────────────────────────── */
+.toolsGrid {
+  display:               grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap:                   1px;
+  margin-top:            clamp(56px, 8vh, 96px);
+  border:                1px solid var(--border-dim);
+}
+.toolItem {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  padding:        clamp(24px, 3vw, 36px);
+  border-right:   1px solid var(--border-dim);
+  transition:     background 0.2s;
+}
+.toolItem:last-child,
+.toolItem:nth-child(4) { border-right: none; }
+.toolItem:hover { background: rgba(255,255,255,0.02); }
+.toolFn {
+  font-family:    var(--font-geist-mono, monospace);
+  font-size:      10px;
+  font-weight:    700;
+  letter-spacing: 0.08em;
+  color:          var(--amber, #C2956B);
+  text-transform: lowercase;
+}
+.toolLabel {
+  font-size:      clamp(14px, 1.2vw, 17px);
+  font-weight:    500;
+  color:          var(--text);
+  line-height:    1.2;
+}
+.toolDesc {
+  font-size:   13px;
+  font-weight: 300;
+  color:       var(--text-mid);
+  line-height: 1.65;
+  flex:        1;
+}
+
 /* ── Signals — 2-col, generous gap ──────────────────────────────────────── */
 .signalsGrid {
   display:               grid;
@@ -549,11 +590,17 @@
   .signalsGrid           { grid-template-columns: 1fr; }
   .modesGrid             { grid-template-columns: repeat(2, 1fr); border-left: none; border-top: 1px solid var(--border-dim); }
   .modeItem              { border-right: none; border-left: 1px solid var(--border-dim); }
+  .toolsGrid             { grid-template-columns: repeat(2, 1fr); }
+  .toolItem:nth-child(2) { border-right: none; }
+  .toolItem:nth-child(4) { border-right: none; }
+  .toolItem              { border-bottom: 1px solid var(--border-dim); }
 }
 @media (max-width: 600px) {
   .pipelineItem          { grid-template-columns: 1fr; gap: 8px; }
   .pipelineNum           { display: none; }
   .modesGrid             { grid-template-columns: 1fr; }
+  .toolsGrid             { grid-template-columns: 1fr; }
+  .toolItem              { border-right: none; }
   .codeBlock             { font-size: 11px; padding: 24px 20px; }
 }
 @media (prefers-reduced-motion: reduce) {

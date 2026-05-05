@@ -2,7 +2,7 @@ import { AomiClient, Session } from '@aomi-labs/client'
 
 const AOMI_BASE_URL = process.env.AOMI_BASE_URL ?? 'https://api.aomi.dev'
 const AOMI_APP      = process.env.AOMI_APP ?? 'default'
-const AOMI_API_KEY  = process.env.AOMI_API_KEY
+const AOMI_API_KEY  = process.env.AOMI_API_KEY ?? ''
 
 // Master account holds all funds — AOMI tools must query this address for real balances/positions
 const HL_MASTER  = process.env.HYPERLIQUID_MASTER_ADDRESS ?? ''
