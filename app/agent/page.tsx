@@ -73,6 +73,7 @@ export default function AgentPage() {
     return id
   })
 
+  const [mounted, setMounted]             = useState(false)
   const [messages, setMessages]           = useState<Msg[]>([INIT_MSG])
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [processing, setProcessing]       = useState(false)
@@ -123,6 +124,8 @@ export default function AgentPage() {
   const abortRef        = useRef<AbortController | null>(null)
   const [resuming, setResuming]   = useState(false)
   const [threads, setThreads]     = useState<Array<{ session_id: string; title: string }>>([])
+
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     const pk = process.env.NEXT_PUBLIC_HL_MASTER
@@ -670,7 +673,7 @@ export default function AgentPage() {
               )}
             </div>
 
-            {tradeLog.length === 0 ? (
+            {!mounted || tradeLog.length === 0 ? (
               <div style={{ padding: '10px 0', fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
                 // {autoMode ? 'awaiting first signal…' : 'start the agent to begin trading'}
               </div>
