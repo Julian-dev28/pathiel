@@ -31,7 +31,9 @@ const HL_TOOLS: Record<string, string> = {
   get_clearinghouse_state: 'Reading position',
   get_open_orders:         'Open orders',
   get_user_fills:          'Trade history',
+  get_funding_history:     'Funding rate',
   get_candle_snapshot:     'Candle data',
+  get_meta:                'Exchange info',
   brave_search:            'Web search',
 }
 
@@ -45,7 +47,15 @@ function WaitCountdown({ until }: { until: number }) {
   return <span style={{ fontFamily: 'var(--font-geist-mono)' }}>{m > 0 ? `${m}m ${s}s` : `${s}s`}</span>
 }
 
-const AUTO_PROMPT = `Step 1: Call get_clearinghouse_state to read my current position (side, entry price, unrealized PnL). Step 2: Call get_l2_book for live order book depth. Step 3: Call get_candle_snapshot for the last 10 15-minute candles. Step 4: Give verdict — LONG (enter long or hold long), SHORT (enter short or flip), CLOSE (exit now — PnL target hit, loss limit hit, or momentum reversed), or PASS (genuine flat chop only). 60%+ confidence on 15m structure is enough to act.`
+const AUTO_PROMPT = `Call these Hyperliquid tools in order before deciding:
+1. get_clearinghouse_state — position side, size, entry price, unrealized PnL, account equity
+2. get_open_orders — any stale open orders to cancel before placing new ones
+3. get_all_mids — live BTC mid price
+4. get_l2_book — order book depth (bid vs ask pressure)
+5. get_candle_snapshot interval="15m" count=10 — last 10 candles (primary momentum signal)
+6. get_funding_history — current funding rate (positive = longs pay, factor into hold cost)
+7. get_user_fills — last 5 fills for recent execution context
+Verdict: LONG / SHORT / CLOSE / PASS. 60%+ read on 15m structure is enough to act.`
 
 const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: Date.now() }
 
@@ -89,15 +99,8 @@ export default function AgentPage() {
   }, [messages])
 
   // ── Trade log ─────────────────────────────────────────────────────────────
-  const [tradeLog, setTradeLog] = useState<TradeRecord[]>(() => {
-    if (typeof window === 'undefined') return []
-    try { const s = sessionStorage.getItem('aomi-trade-log'); return s ? JSON.parse(s) : [] } catch { return [] }
-  })
-  const openTradeRef  = useRef<TradeRecord | null>(
-    typeof window !== 'undefined'
-      ? (() => { try { const s = sessionStorage.getItem('aomi-open-trade'); return s ? JSON.parse(s) as TradeRecord : null } catch { return null } })()
-      : null
-  )
+  const [tradeLog, setTradeLog] = useState<TradeRecord[]>([])
+  const openTradeRef  = useRef<TradeRecord | null>(null)
   const posReconciled = useRef(false)
   const sessionPnL    = tradeLog.reduce((s, t) => s + (t.pnl ?? 0), 0)
   const closedTrades  = tradeLog.filter(t => t.closedAt)
@@ -105,15 +108,11 @@ export default function AgentPage() {
 
   // ── Auto mode ─────────────────────────────────────────────────────────────
   const [autoMode, setAutoMode]         = useState(false)
-  const [autoCycles, setAutoCycles]     = useState(() =>
-    typeof window !== 'undefined' ? Number(sessionStorage.getItem('aomi-auto-cycles') ?? '0') : 0
-  )
+  const [autoCycles, setAutoCycles]     = useState(0)
   const [tradesPlaced, setTradesPlaced] = useState(0)
   const [riskPct, setRiskPct]           = useState(5)
   const [autoWait, setAutoWait]         = useState<{ until: number; label: string } | null>(null)
-  const [lastVerdict, setLastVerdict]   = useState<string | null>(() =>
-    typeof window !== 'undefined' ? sessionStorage.getItem('aomi-last-verdict') : null
-  )
+  const [lastVerdict, setLastVerdict]   = useState<string | null>(null)
   const autoRef         = useRef(false)
   const procRef         = useRef(false)
   const riskPctRef      = useRef(5)
@@ -121,7 +120,18 @@ export default function AgentPage() {
   const lastTradedRef   = useRef<number>(0)
   const fatalErrorRef   = useRef<string | null>(null)
   const sendRef         = useRef<((text: string, opts?: { silent?: boolean; autoExecute?: boolean }) => Promise<boolean>) | null>(null)
-  const [resuming, setResuming] = useState(false)
+  const abortRef        = useRef<AbortController | null>(null)
+  const [resuming, setResuming]   = useState(false)
+  const [threads, setThreads]     = useState<Array<{ session_id: string; title: string }>>([])
+
+  useEffect(() => {
+    const pk = process.env.NEXT_PUBLIC_HL_MASTER
+    if (!pk) return
+    fetch(`/api/aomi/threads?publicKey=${pk}`)
+      .then(r => r.json())
+      .then(({ threads: t }) => { if (Array.isArray(t) && t.length) setThreads(t) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => { autoRef.current = autoMode; if (!autoMode) setAutoWait(null) }, [autoMode])
   useEffect(() => { procRef.current = processing }, [processing])
@@ -141,6 +151,13 @@ export default function AgentPage() {
     lastTradedRef.current   = Number(sessionStorage.getItem('aomi-last-traded') ?? 0)
     const stored = sessionStorage.getItem('aomi-trades-placed')
     if (stored) setTradesPlaced(Number(stored))
+    const storedCycles = sessionStorage.getItem('aomi-auto-cycles')
+    if (storedCycles) setAutoCycles(Number(storedCycles))
+    const storedVerdict = sessionStorage.getItem('aomi-last-verdict')
+    if (storedVerdict) setLastVerdict(storedVerdict)
+    const storedTrades = sessionStorage.getItem('aomi-trade-log')
+    if (storedTrades) { try { setTradeLog(JSON.parse(storedTrades)) } catch { /* ignore */ } }
+    openTradeRef.current = (() => { try { const s = sessionStorage.getItem('aomi-open-trade'); return s ? JSON.parse(s) as TradeRecord : null } catch { return null } })()
     const storedRisk = localStorage.getItem('aomi-risk-pct')
     if (storedRisk) setRiskPct(Number(storedRisk))
     if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
@@ -227,9 +244,12 @@ export default function AgentPage() {
     }
 
     try {
+      const controller = new AbortController()
+      abortRef.current = controller
       const res = await fetch('/api/aomi/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text.trim(), hint, sessionId, marketData, riskPct: riskPctRef.current }),
+        signal: controller.signal,
       })
       if (!res.ok || !res.body) throw new Error('Request failed')
 
@@ -318,6 +338,10 @@ export default function AgentPage() {
       return false
 
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setMessages(prev => [...prev.map(m => m.role === 'tool' && m.toolStatus === 'running' ? { ...m, toolStatus: 'done' as const } : m), { role: 'system', content: '// interrupted', ts: Date.now() }])
+        return false
+      }
       const errText = String(err)
       if (errText.includes('401') || errText.toLowerCase().includes('unauthorized')) fatalErrorRef.current = errText
       setMessages(prev => [
@@ -326,6 +350,7 @@ export default function AgentPage() {
       ])
       return false
     } finally {
+      abortRef.current = null
       sessionStorage.removeItem('aomi-processing')
       setProcessing(false)
       procRef.current = false
@@ -333,6 +358,16 @@ export default function AgentPage() {
   }, [btcPrice, account, sessionId, buildHint, executeTrade, closePosition, autoCycles])
 
   useEffect(() => { sendRef.current = send }, [send])
+
+  const interruptAgent = useCallback(async () => {
+    abortRef.current?.abort()
+    try { await fetch('/api/aomi/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId }) }) } catch { /* ignore */ }
+  }, [sessionId])
+
+  const deleteThread = useCallback(async (threadId: string) => {
+    setThreads(prev => prev.filter(t => t.session_id !== threadId))
+    try { await fetch(`/api/aomi/threads?sessionId=${threadId}`, { method: 'DELETE' }) } catch { /* ignore */ }
+  }, [])
 
   useEffect(() => {
     if (!autoMode || !historyLoaded) return
@@ -472,7 +507,7 @@ export default function AgentPage() {
 
           {/* Start / Stop */}
           <button
-            onClick={() => setAutoMode(m => !m)}
+            onClick={() => { if (processing) interruptAgent(); setAutoMode(m => !m) }}
             disabled={processing && !autoMode}
             style={{
               padding: '12px 0', borderRadius: 10, border: 'none',
@@ -715,6 +750,18 @@ export default function AgentPage() {
           </div>
 
           {/* Position */}
+          {threads.length > 0 && (
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Session History</div>
+              {threads.slice(0, 6).map(t => (
+                <div key={t.session_id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title || 'Session'}</span>
+                  <button onClick={() => deleteThread(t.session_id)} style={{ fontSize: 10, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0, lineHeight: 1 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {pos ? (
             <div className="card" style={{ padding: '14px 16px', border: `1px solid ${pos.side === 'long' ? 'rgba(58,158,104,0.25)' : 'rgba(190,74,64,0.25)'}` }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Open Position</div>

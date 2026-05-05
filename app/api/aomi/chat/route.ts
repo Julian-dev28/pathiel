@@ -39,9 +39,11 @@ export async function POST(req: NextRequest) {
       session.on('tool_update',  (ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'running' }))
       session.on('tool_complete',(ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'done'    }))
 
-      // Reject any EIP-712 requests — agent is instructed not to call send_eip712_to_wallet
-      // but reject gracefully in case it does anyway (instead of hanging the session)
       session.on('wallet_eip712_request', async (req) => {
+        try { await session.reject(req.id, 'Execution handled by trading system — provide text verdict only') } catch { /* ignore */ }
+      })
+
+      session.on('wallet_tx_request', async (req) => {
         try { await session.reject(req.id, 'Execution handled by trading system — provide text verdict only') } catch { /* ignore */ }
       })
 
