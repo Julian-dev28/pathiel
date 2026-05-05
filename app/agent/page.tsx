@@ -125,8 +125,6 @@ export default function AgentPage() {
   const [resuming, setResuming]   = useState(false)
   const [threads, setThreads]     = useState<Array<{ session_id: string; title: string }>>([])
 
-  useEffect(() => { setMounted(true) }, [])
-
   useEffect(() => {
     const pk = process.env.NEXT_PUBLIC_HL_MASTER
     if (!pk) return
@@ -166,6 +164,7 @@ export default function AgentPage() {
     if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
     const storedText = sessionStorage.getItem('aomi-last-analysis-text')
     if (storedText) setMessages([INIT_MSG, { role: 'assistant', content: storedText, ts: Date.now() }])
+    setMounted(true)
   }, [])
 
   useEffect(() => { sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0') }, [autoMode])
