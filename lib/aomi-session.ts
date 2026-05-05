@@ -140,8 +140,8 @@ export const TOOLS: OpenAI.ChatCompletionTool[] = [
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
-  {
-    type: 'function',
+  ...(process.env.BRAVE_API_KEY ? [{
+    type: 'function' as const,
     function: {
       name: 'brave_search',
       description: 'Search the web for current BTC news, macro events, or sentiment using Brave Search',
@@ -154,7 +154,7 @@ export const TOOLS: OpenAI.ChatCompletionTool[] = [
         required: ['query'],
       },
     },
-  },
+  }] : []),
 ]
 
 async function hlPost(body: object): Promise<unknown> {
