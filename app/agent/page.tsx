@@ -549,7 +549,7 @@ export default function AgentPage() {
           {/* AOMI Agent info */}
           <div className="card" style={{ padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>AOMI Agent</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Open Trader</span>
               <span style={{
                 padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
                 background: autoMode ? 'rgba(46,158,104,0.12)' : 'var(--bg-secondary)',

@@ -56,7 +56,7 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1.15, color: 'var(--text-primary)' }}>
-              AOMI <span style={{ color: 'var(--blue)' }}>Trader</span>
+              Open <span style={{ color: 'var(--blue)' }}>Trader</span>
             </div>
             <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 1 }}>
               AI Agent · Hyperliquid BTC-PERP

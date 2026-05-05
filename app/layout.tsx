@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono' })
 
 export const metadata: Metadata = {
-  title: 'AOMI Trader — Hyperliquid BTC-PERP',
-  description: 'AOMI-powered AI agent for Hyperliquid BTC perpetual futures. Live market data, autonomous trading.',
+  title: 'Open Trader — Hyperliquid BTC-PERP',
+  description: 'AI-powered autonomous trader for Hyperliquid BTC perpetual futures. Live market data, autonomous trading.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

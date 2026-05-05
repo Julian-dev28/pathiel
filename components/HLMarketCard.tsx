@@ -443,7 +443,7 @@ export default function HLMarketCard({ btcPrice, account, onRefresh }: HLMarketC
         {/* Info strip */}
         <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           {[
-            ['Agent', 'AOMI SDK'],
+            ['Agent', 'OpenRouter'],
             ['Leverage', `${leverage}×`],
             ['Market', 'BTC-PERP'],
           ].map(([label, val]) => (

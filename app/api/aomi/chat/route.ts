@@ -1,29 +1,24 @@
 import { NextRequest } from 'next/server'
-import { createSession, buildPrompt } from '@/lib/aomi-session'
+import { createOpenAIClient, OPENROUTER_MODEL, SYSTEM, FORMAT, TOOLS, executeTool } from '@/lib/aomi-session'
+import type OpenAI from 'openai'
 
-export const runtime = 'nodejs'
+export const runtime   = 'nodejs'
 export const maxDuration = 60
 
 interface ChatRequest {
-  message:    string
-  hint?:      string
-  sessionId?: string
+  message:     string
+  hint?:       string
+  sessionId?:  string
   marketData?: Record<string, unknown>
-  riskPct?:   number
+  riskPct?:    number
 }
 
 export async function POST(req: NextRequest) {
-  const { message, hint, sessionId, marketData, riskPct } = (await req.json()) as ChatRequest
-  console.log('[aomi/chat] POST — sessionId:', sessionId?.slice(0, 8), 'app:', process.env.AOMI_APP ?? 'hyperliquid')
+  const { message, hint } = (await req.json()) as ChatRequest
 
-  const session = createSession(sessionId)
-  const prompt  = buildPrompt(message, hint)
-
-  if (marketData) session.addExtValue('market_context', marketData)
-  if (riskPct != null) session.addExtValue('risk_pct', riskPct)
-
+  const client  = createOpenAIClient()
   const encoder = new TextEncoder()
-  let closed = false
+  let closed    = false
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -33,42 +28,104 @@ export async function POST(req: NextRequest) {
         catch { /* write-after-close */ }
       }
 
-      session.on('processing_start', () => send({ type: 'processing_start' }))
-      session.on('processing_end',   () => send({ type: 'processing_end'   }))
+      const systemContent = [
+        SYSTEM,
+        hint ? `Live market snapshot (use tools to verify/supplement):\n${hint}` : '',
+        FORMAT,
+      ].filter(Boolean).join('\n\n')
 
-      session.on('tool_update',  (ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'running' }))
-      session.on('tool_complete',(ev) => send({ type: 'tool', name: (ev as { name?: string }).name ?? 'tool', status: 'done'    }))
+      const messages: OpenAI.ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemContent },
+        { role: 'user',   content: message },
+      ]
 
-      session.on('wallet_eip712_request', async (req) => {
-        try { await session.reject(req.id, 'Execution handled by trading system — provide text verdict only') } catch { /* ignore */ }
-      })
-
-      session.on('wallet_tx_request', async (req) => {
-        try { await session.reject(req.id, 'Execution handled by trading system — provide text verdict only') } catch { /* ignore */ }
-      })
-
-      session.on('system_error', ({ message: msg }) => send({ type: 'error', text: msg }))
+      send({ type: 'processing_start' })
 
       try {
-        const result    = await session.send(prompt)
-        const msgs      = result.messages ?? []
-        const assistant = [...msgs].reverse().find(m => m.sender === 'agent')
-        const text      = typeof assistant?.content === 'string' && assistant.content
-          ? assistant.content : 'No response from agent.'
-        send({ type: 'message', text })
+        let loops = 0
+
+        while (loops < 10) {
+          loops++
+
+          const response = await client.chat.completions.create({
+            model:       OPENROUTER_MODEL,
+            messages,
+            tools:       TOOLS,
+            tool_choice: 'auto',
+            stream:      true,
+          })
+
+          let assistantText = ''
+          const toolAccum: Record<number, { id: string; name: string; arguments: string }> = {}
+          let finishReason: string | null = null
+
+          for await (const chunk of response) {
+            const choice = chunk.choices[0]
+            if (!choice) continue
+            finishReason = choice.finish_reason ?? finishReason
+
+            const delta = choice.delta
+
+            if (delta.content) {
+              assistantText += delta.content
+              send({ type: 'message', text: assistantText })
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index
+                if (!toolAccum[idx]) toolAccum[idx] = { id: '', name: '', arguments: '' }
+                if (tc.id)                  toolAccum[idx].id        += tc.id
+                if (tc.function?.name)      toolAccum[idx].name      += tc.function.name
+                if (tc.function?.arguments) toolAccum[idx].arguments += tc.function.arguments
+              }
+            }
+          }
+
+          const toolCalls = Object.values(toolAccum)
+
+          if (toolCalls.length > 0 && finishReason === 'tool_calls') {
+            // Append assistant message with tool_calls
+            messages.push({
+              role:       'assistant',
+              content:    assistantText || null,
+              tool_calls: toolCalls.map(tc => ({
+                id:       tc.id,
+                type:     'function' as const,
+                function: { name: tc.name, arguments: tc.arguments },
+              })),
+            } as OpenAI.ChatCompletionMessageParam)
+
+            // Execute tools and append results
+            for (const tc of toolCalls) {
+              send({ type: 'tool', name: tc.name, status: 'running' })
+              let args: Record<string, unknown> = {}
+              try { args = JSON.parse(tc.arguments) } catch { /* use empty args */ }
+              const result = await executeTool(tc.name, args)
+              send({ type: 'tool', name: tc.name, status: 'done' })
+              messages.push({ role: 'tool', tool_call_id: tc.id, content: result })
+            }
+
+            continue // loop back with tool results
+          }
+
+          // Final text response
+          if (assistantText) {
+            send({ type: 'message', text: assistantText })
+          } else {
+            send({ type: 'message', text: 'No response from agent.' })
+          }
+          break
+        }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'AOMI request failed'
-        console.error('[aomi/chat] session.send failed —',
-          'AOMI_BASE_URL:', process.env.AOMI_BASE_URL,
-          'AOMI_APP:', process.env.AOMI_APP ?? 'hyperliquid',
-          'AOMI_API_KEY set:', !!process.env.AOMI_API_KEY,
-          '— error:', msg)
+        const msg = err instanceof Error ? err.message : 'Request failed'
+        console.error('[chat] error —', 'model:', OPENROUTER_MODEL, 'key set:', !!process.env.OPENROUTER_API_KEY, '—', msg)
         send({ type: 'error', text: msg })
       } finally {
+        send({ type: 'processing_end' })
         send({ type: 'done' })
         closed = true
         try { controller.close() } catch { /* ignore */ }
-        session.close()
       }
     },
   })

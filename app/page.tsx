@@ -31,7 +31,7 @@ const PIPELINE = [
   { num: '02', name: 'Live Price & Book',   desc: 'get_all_mids pulls the live BTC mid price. get_l2_book snapshots full order book depth — bid and ask pressure at every level.' },
   { num: '03', name: 'Candle Momentum',     desc: 'get_candle_snapshot pulls the last 10 15-minute candles. Direction, acceleration, and structure — the primary signal driving every verdict.' },
   { num: '04', name: 'Funding & Fills',     desc: 'get_funding_history checks the current perpetual funding rate — positive means longs are paying. get_user_fills shows the last 5 executions for context.' },
-  { num: '05', name: 'AOMI Verdict',        desc: 'Agent synthesizes all 7 data sources and streams a direct verdict: LONG / SHORT / CLOSE / PASS — with confidence %. 60%+ is enough to act.' },
+  { num: '05', name: 'AI Verdict',           desc: 'Agent synthesizes all 7 data sources and streams a direct verdict: LONG / SHORT / CLOSE / PASS — with confidence %. 60%+ is enough to act.' },
   { num: '06', name: 'Risk Gate & Execute', desc: 'Kelly criterion sizes the trade from live equity. 5× leverage. Auto Mode places the IOC order on Hyperliquid. Real orders, real settlement, zero clicks.' },
 ]
 
@@ -50,7 +50,7 @@ const FEATURES = [
   {
     icon: '⬡',
     title: 'Live Hyperliquid data',
-    body: 'Before every decision: live BTC price, order book depth, your account equity and open positions — all from Hyperliquid via AOMI tools.',
+    body: 'Before every decision: live BTC price, order book depth, your account equity and open positions — all from Hyperliquid in real time.',
   },
   {
     icon: '⊛',
@@ -65,7 +65,7 @@ const FEATURES = [
   {
     icon: '⊕',
     title: 'Your keys, your orders',
-    body: 'Your wallet key lives in your server environment. AOMI never holds funds. Auto Mode executes when confident; Manual Mode keeps you in the loop.',
+    body: 'Your wallet key lives in your server environment. OpenTrader never holds funds. Auto Mode executes when confident; Manual Mode keeps you in the loop.',
   },
 ]
 
@@ -92,7 +92,7 @@ export default function Landing() {
       {/* Nav */}
       <nav className={s.nav}>
         <a href="/" className={s.navLogo}>
-          AOMI <span className={s.navLogoAccent}>TRADER</span>
+          OPEN <span className={s.navLogoAccent}>TRADER</span>
         </a>
         <div className={s.navLinks}>
           <a href="#how"      className={s.navLink}>How it works</a>
@@ -106,14 +106,14 @@ export default function Landing() {
       {/* Hero */}
       <section className={s.hero}>
         <div className={s.heroInner}>
-          <p className={s.heroEyebrow}>BTC-PERP · Hyperliquid · Powered by AOMI</p>
+          <p className={s.heroEyebrow}>BTC-PERP · Hyperliquid · Powered by Qwen via OpenRouter</p>
           <h1 className={s.heroHeadline}>
             TRADE<br />
             <span className={s.heroAccent}>BTC</span><br />
             PERP
           </h1>
           <p className={s.heroSub}>
-            BTC-PERP runs 24/7. Before every trade, AOMI queries live Hyperliquid
+            BTC-PERP runs 24/7. Before every trade, OpenTrader queries live Hyperliquid
             price and order book data, checks your position, and searches the web
             for current BTC news. LONG, SHORT, or PASS — grounded in what's
             happening right now.
@@ -132,7 +132,7 @@ export default function Landing() {
       {/* Stats */}
       <div className={s.statsRow}>
         {[
-          { num: '24/7',  accent: '',    label: 'continuous market',   desc: 'BTC-PERP never closes. AOMI watches it continuously — no windows, no gaps, no missed signals.' },
+          { num: '24/7',  accent: '',    label: 'continuous market',   desc: 'BTC-PERP never closes. OpenTrader watches it continuously — no windows, no gaps, no missed signals.' },
           { num: '5',     accent: '×',   label: 'leverage',            desc: 'Cross-margin 5× leverage. Kelly-sized from your live equity. PASS on weak or ambiguous signals.' },
           { num: '0',     accent: ' clicks', label: 'after setup',     desc: 'Analysis, sizing, EIP-712 signing, order placement — all runs without you in Auto Mode.' },
         ].map(({ num, accent, label, desc }, i) => (
@@ -151,7 +151,7 @@ export default function Landing() {
           <h2 className={`${s.headline} ${r(s.d1)}`}>Six steps.<br />One decision.</h2>
           <p className={`${s.sub} ${r(s.d2)}`}>
             From analysis trigger to executed order in a single agent cycle.
-            AOMI queries Hyperliquid, searches the web, reasons, and executes — or hands you the trade button.
+            OpenTrader queries Hyperliquid, searches the web, reasons, and executes — or hands you the trade button.
           </p>
           <div className={s.pipelineList}>
             {PIPELINE.map((step, i) => (
@@ -168,7 +168,7 @@ export default function Landing() {
       {/* AOMI Tools */}
       <section className={s.section} id="tools">
         <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>AOMI Hyperliquid Tools</p>
+          <p className={`${s.label} ${r()}`}>OpenTrader Hyperliquid Tools</p>
           <h2 className={`${s.headline} ${r(s.d1)}`}>8 live data tools.<br />Called every cycle.</h2>
           <p className={`${s.sub} ${r(s.d2)}`}>
             Every agent cycle queries all 8 Hyperliquid tools before deciding. No stale data, no guesses — every verdict is grounded in the current state of the market and your account.
@@ -188,14 +188,14 @@ export default function Landing() {
       {/* Signals */}
       <section className={s.section} id="signals">
         <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>What AOMI Sees</p>
+          <p className={`${s.label} ${r()}`}>What OpenTrader Sees</p>
           <div className={s.signalsGrid}>
             <div>
               <h2 className={`${s.signalsHeadline} ${r(s.d1)}`}>
                 Live data queried.<br />Agent searches.
               </h2>
               <p className={`${s.signalsBody} ${r(s.d2)}`}>
-                AOMI calls Hyperliquid tools before every decision — live price,
+                OpenTrader calls Hyperliquid tools before every decision — live price,
                 order book depth, your account state. Then searches the web for
                 current BTC news and sentiment. Synthesises both and streams
                 a direct verdict: LONG, SHORT, or PASS.
@@ -236,7 +236,7 @@ export default function Landing() {
       {/* Features */}
       <section className={s.section} id="features">
         <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>Why AOMI</p>
+          <p className={`${s.label} ${r()}`}>Why OpenTrader</p>
           <h2 className={`${s.headline} ${r(s.d1)}`}>Built for traders<br />who can&apos;t watch 24/7.</h2>
           <div className={s.modesGrid}>
             {FEATURES.map((f, i) => (
@@ -268,11 +268,11 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className={s.footer}>
-        <span className={s.footerBrand}>AOMI Trader · BTC-PERP · Powered by aomi-labs</span>
+        <span className={s.footerBrand}>Open Trader · BTC-PERP · Powered by OpenRouter</span>
         <div className={s.footerLinks}>
           <Link href="/agent"     className={s.footerLink}>Agent</Link>
           <a href="https://github.com/Julian-dev28/aomi-trader" target="_blank" rel="noopener noreferrer" className={s.footerLink}>GitHub</a>
-          <a href="https://aomi.dev" target="_blank" rel="noopener noreferrer" className={s.footerLink}>AOMI</a>
+          <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className={s.footerLink}>OpenRouter</a>
         </div>
       </footer>
 

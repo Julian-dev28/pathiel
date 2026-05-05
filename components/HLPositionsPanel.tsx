@@ -157,7 +157,7 @@ export default function HLPositionsPanel({ account, onRefresh }: HLPositionsPane
 
       {/* Footer strip */}
       <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center', gap: 12, alignItems: 'center' }}>
-        {['AOMI SDK', 'Hyperliquid', 'api.aomi.dev'].map((item, i, arr) => (
+        {['OpenRouter', 'Hyperliquid', 'Qwen3'].map((item, i, arr) => (
           <span key={item} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{item}</span>
             {i < arr.length - 1 && <span style={{ fontSize: 9, color: 'var(--border-bright)' }}>·</span>}

@@ -170,7 +170,7 @@ export default function DashboardPage() {
             positionSide={posSide}
           />
 
-          {/* AOMI Analysis panel */}
+          {/* AI Analysis panel */}
           <div className="card" style={{ padding: '18px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -181,7 +181,7 @@ export default function DashboardPage() {
                   fontSize: 11, fontWeight: 800, color: '#fff',
                 }}>A</div>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-                  AOMI Analysis
+                  AI Analysis
                 </span>
               </div>
               <button
@@ -224,7 +224,7 @@ export default function DashboardPage() {
 
             {!analysisText && !analyzing && !analysisErr && (
               <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                Click <strong>Analyze</strong> to get a live AOMI market verdict — Hyperliquid data + web search + reasoning.
+                Click <strong>Analyze</strong> to get a live market verdict — Hyperliquid data + reasoning.
               </div>
             )}
 
