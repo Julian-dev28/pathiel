@@ -173,10 +173,21 @@ export default function AgentPage() {
   useEffect(() => { sessionStorage.setItem('aomi-auto-cycles', String(autoCycles)) }, [autoCycles])
   useEffect(() => { sessionStorage.setItem('aomi-trade-log', JSON.stringify(tradeLog)) }, [tradeLog])
 
-  // Reconcile trade log from live position if sessionStorage was empty (e.g. pre-fix sessions)
+  // Reconcile trade log from sessionStorage ref or live position
   useEffect(() => {
     if (posReconciled.current) return
-    if (tradeLog.length > 0 || openTradeRef.current) { posReconciled.current = true; return }
+
+    // openTradeRef restored from sessionStorage but tradeLog state is empty — sync them
+    const openTrade = openTradeRef.current
+    if (openTrade && tradeLog.length === 0) {
+      posReconciled.current = true
+      setTradeLog([openTrade])
+      return
+    }
+
+    if (tradeLog.length > 0) { posReconciled.current = true; return }
+
+    // Nothing in local state — bootstrap from live Hyperliquid position
     if (!account?.position) return
     posReconciled.current = true
     const p = account.position
