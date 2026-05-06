@@ -52,10 +52,11 @@ const AUTO_PROMPT = `Call these Hyperliquid tools in order before deciding:
 2. get_open_orders — any stale open orders to cancel before placing new ones
 3. get_all_mids — live BTC mid price
 4. get_l2_book — order book depth (bid vs ask pressure)
-5. get_candle_snapshot interval="15m" count=10 — last 10 candles (primary momentum signal)
-6. get_funding_history — current funding rate (positive = longs pay, factor into hold cost)
-7. get_user_fills — last 5 fills for recent execution context
-Verdict: LONG / SHORT / CLOSE / PASS. 60%+ read on 15m structure is enough to act.`
+5. get_candle_snapshot interval="1h" count=10 — last 10 1h candles (primary momentum signal)
+6. get_candle_snapshot interval="4h" count=6 — last 6 4h candles (trend confirmation)
+7. get_funding_history — current funding rate (positive = longs pay, factor into hold cost)
+8. get_user_fills — last 5 fills for recent execution context
+Verdict: LONG / SHORT / CLOSE / PASS. 60%+ read on 1h structure is enough to act.`
 
 const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: Date.now() }
 
@@ -167,11 +168,11 @@ export default function AgentPage() {
     setMounted(true)
   }, [])
 
-  useEffect(() => { sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0') }, [autoMode])
-  useEffect(() => { sessionStorage.setItem('aomi-trades-placed', String(tradesPlaced)) }, [tradesPlaced])
-  useEffect(() => { if (lastVerdict) sessionStorage.setItem('aomi-last-verdict', lastVerdict) }, [lastVerdict])
-  useEffect(() => { sessionStorage.setItem('aomi-auto-cycles', String(autoCycles)) }, [autoCycles])
-  useEffect(() => { sessionStorage.setItem('aomi-trade-log', JSON.stringify(tradeLog)) }, [tradeLog])
+  useEffect(() => { if (!mounted) return; sessionStorage.setItem('aomi-auto', autoMode ? '1' : '0') }, [autoMode, mounted])
+  useEffect(() => { if (!mounted) return; sessionStorage.setItem('aomi-trades-placed', String(tradesPlaced)) }, [tradesPlaced, mounted])
+  useEffect(() => { if (!mounted || !lastVerdict) return; sessionStorage.setItem('aomi-last-verdict', lastVerdict) }, [lastVerdict, mounted])
+  useEffect(() => { if (!mounted) return; sessionStorage.setItem('aomi-auto-cycles', String(autoCycles)) }, [autoCycles, mounted])
+  useEffect(() => { if (!mounted) return; sessionStorage.setItem('aomi-trade-log', JSON.stringify(tradeLog)) }, [tradeLog, mounted])
 
   // Reconcile trade log from sessionStorage ref or live position
   useEffect(() => {
@@ -574,8 +575,8 @@ export default function AgentPage() {
             </div>
             {[
               ['Market',    'BTC-PERP'],
-              ['Timeframe', '15m – 1h'],
-              ['Signal',    '15m candles + book'],
+              ['Timeframe', '1h – 4h'],
+              ['Signal',    '1h candles + book'],
               ['Execution', 'Hyperliquid'],
             ].map(([label, val]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
@@ -653,7 +654,7 @@ export default function AgentPage() {
               </div>
               <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {processing
-                  ? 'reading 15m candles · order book · position state…'
+                  ? 'reading 1h candles · order book · position state…'
                   : autoMode
                     ? autoWait
                       ? autoWait.label === 'Holding position'

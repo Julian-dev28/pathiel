@@ -81,7 +81,7 @@ export default function DashboardPage() {
           return id
         })())
       : crypto.randomUUID()
-    const prompt = `Check live BTC price and order book on Hyperliquid. Check my current position. Call get_candle_snapshot for the last 10 15-minute candles. Give me a direct LONG / SHORT / CLOSE / PASS verdict with confidence and 3-4 bullet points of reasoning.`
+    const prompt = `Check live BTC price and order book on Hyperliquid. Check my current position. Call get_candle_snapshot for the last 10 1-hour candles and last 6 4-hour candles. Give me a direct LONG / SHORT / CLOSE / PASS verdict with confidence and 3-4 bullet points of reasoning.`
 
     try {
       const res = await fetch('/api/aomi/chat', {
