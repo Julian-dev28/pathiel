@@ -113,11 +113,13 @@ export default function AgentPage() {
   const [autoCycles, setAutoCycles]     = useState(0)
   const [tradesPlaced, setTradesPlaced] = useState(0)
   const [riskPct, setRiskPct]           = useState(5)
+  const [leverage, setLeverage]         = useState(5)
   const [autoWait, setAutoWait]         = useState<{ until: number; label: string } | null>(null)
   const [lastVerdict, setLastVerdict]   = useState<string | null>(null)
   const autoRef         = useRef(false)
   const procRef         = useRef(false)
   const riskPctRef      = useRef(5)
+  const leverageRef     = useRef(5)
   const lastAnalysisRef = useRef<number>(0)
   const lastTradedRef   = useRef<number>(0)
   const fatalErrorRef   = useRef<string | null>(null)
@@ -138,6 +140,7 @@ export default function AgentPage() {
   useEffect(() => { autoRef.current = autoMode; if (!autoMode) setAutoWait(null) }, [autoMode])
   useEffect(() => { procRef.current = processing }, [processing])
   useEffect(() => { riskPctRef.current = riskPct }, [riskPct])
+  useEffect(() => { leverageRef.current = leverage }, [leverage])
 
   useEffect(() => {
     if (!resuming) return
@@ -162,6 +165,8 @@ export default function AgentPage() {
     openTradeRef.current = (() => { try { const s = sessionStorage.getItem('aomi-open-trade'); return s ? JSON.parse(s) as TradeRecord : null } catch { return null } })()
     const storedRisk = localStorage.getItem('aomi-risk-pct')
     if (storedRisk) setRiskPct(Number(storedRisk))
+    const storedLeverage = localStorage.getItem('aomi-leverage')
+    if (storedLeverage) setLeverage(Number(storedLeverage))
     if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
     const storedText = sessionStorage.getItem('aomi-last-analysis-text')
     if (storedText) setMessages([INIT_MSG, { role: 'assistant', content: storedText, ts: Date.now() }])
@@ -230,7 +235,7 @@ export default function AgentPage() {
   const executeTrade = useCallback(async (side: 'long' | 'short') => {
     const res  = await fetch('/api/hl/place-order', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ side, riskPct: riskPctRef.current }),
+      body: JSON.stringify({ side, riskPct: riskPctRef.current, leverage: leverageRef.current }),
     })
     const data = await res.json() as { ok: boolean; error?: string; sizeBTC?: number; midPrice?: number; leverage?: number }
     if (data.ok) {
@@ -494,29 +499,59 @@ export default function AgentPage() {
             </div>
           )}
 
-          {/* Risk per trade */}
+          {/* Trade settings: risk + leverage */}
           <div className="card" style={{ padding: '14px 16px' }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Risk per trade · {editingRisk ? <span style={{ color: 'var(--blue)' }}>editing</span> : <button onClick={() => setEditingRisk(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', fontSize: 10, fontWeight: 600, padding: 0 }}>tap to edit</button>}
-            </div>
-            {editingRisk ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  type="range" min={1} max={50} value={riskPct}
-                  onChange={e => { const v = Number(e.target.value); setRiskPct(v); localStorage.setItem('aomi-risk-pct', String(v)) }}
-                  style={{ flex: 1, accentColor: 'var(--blue)' }}
-                />
-                <button onClick={() => setEditingRisk(false)} style={{ fontSize: 10, fontWeight: 700, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer' }}>done</button>
+
+            {/* Risk */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Risk per trade</span>
+                {editingRisk
+                  ? <span style={{ color: 'var(--blue)', fontSize: 10 }}>editing</span>
+                  : <button onClick={() => setEditingRisk(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--blue)', fontSize: 10, fontWeight: 600, padding: 0 }}>edit</button>}
               </div>
-            ) : null}
-            <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em', color: riskPct > 20 ? 'var(--pink-dark)' : riskPct > 10 ? 'var(--amber)' : 'var(--text-primary)', marginTop: 4 }}>
-              {riskPct}%
-            </div>
-            {account?.totalEquity ? (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'var(--font-geist-mono)' }}>
-                ≈ ${(account.totalEquity * riskPct / 100).toFixed(2)} per trade
+              {editingRisk && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <input
+                    type="range" min={1} max={100} value={riskPct}
+                    onChange={e => { const v = Number(e.target.value); setRiskPct(v); localStorage.setItem('aomi-risk-pct', String(v)) }}
+                    style={{ flex: 1, accentColor: 'var(--blue)' }}
+                  />
+                  <button onClick={() => setEditingRisk(false)} style={{ fontSize: 10, fontWeight: 700, color: 'var(--blue)', background: 'none', border: 'none', cursor: 'pointer' }}>done</button>
+                </div>
+              )}
+              <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: riskPct > 50 ? 'var(--pink-dark)' : riskPct > 25 ? 'var(--amber)' : 'var(--text-primary)' }}>
+                {riskPct}%
               </div>
-            ) : null}
+              {account?.totalEquity ? (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-geist-mono)' }}>
+                  ≈ ${(account.totalEquity * riskPct / 100).toFixed(2)} · {leverage}× = ${(account.totalEquity * riskPct / 100 * leverage).toFixed(2)} notional
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ height: 1, background: 'var(--border)', margin: '4px 0 12px' }} />
+
+            {/* Leverage */}
+            <div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Leverage</div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {[1, 2, 3, 5, 10, 20].map(lv => (
+                  <button
+                    key={lv}
+                    onClick={() => { setLeverage(lv); localStorage.setItem('aomi-leverage', String(lv)) }}
+                    style={{
+                      padding: '4px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      border: `1px solid ${leverage === lv ? 'rgba(74,127,165,0.5)' : 'var(--border)'}`,
+                      background: leverage === lv ? 'rgba(74,127,165,0.12)' : 'var(--bg-secondary)',
+                      color: leverage === lv ? 'var(--blue)' : 'var(--text-muted)',
+                      transition: 'all 0.15s',
+                    }}
+                  >{lv}×</button>
+                ))}
+              </div>
+            </div>
+
           </div>
 
           {/* Start / Stop */}
@@ -577,6 +612,7 @@ export default function AgentPage() {
               ['Market',    'BTC-PERP'],
               ['Timeframe', '1h – 4h'],
               ['Signal',    '1h candles + book'],
+              ['Leverage',  `${leverage}×`],
               ['Execution', 'Hyperliquid'],
             ].map(([label, val]) => (
               <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
