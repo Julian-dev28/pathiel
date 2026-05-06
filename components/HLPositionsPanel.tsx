@@ -46,32 +46,24 @@ export default function HLPositionsPanel({ account, onRefresh }: HLPositionsPane
         </button>
       </div>
 
-      {/* Total Equity */}
+      {/* Balance */}
       {account ? (
         <>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 4 }}>
-              Total Equity
+              Balance
             </div>
             <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 30, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1 }}>
-              ${fmtUSD(account.totalEquity)}
+              ${fmtUSD(account.spotUSDC + (account.position?.unrealizedPnl ?? 0))}
             </div>
-          </div>
-
-          {/* Breakdown row */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '10px 0' }}>
-            {[
-              ['Perp margin', `$${fmtUSD(account.equity)}`,   'var(--text-primary)'],
-              ['Spot USDC',   `$${fmtUSD(account.spotUSDC)}`, 'var(--blue-dark)'],
-            ].map(([label, val, col], idx, arr) => (
-              <div key={label} style={{
-                flex: 1,
-                textAlign: idx === arr.length - 1 ? 'right' : 'left',
-              }}>
-                <div style={{ fontSize: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 3 }}>{label}</div>
-                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: col }}>{val}</div>
-              </div>
-            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+              <span>USDC ${fmtUSD(account.spotUSDC)}</span>
+              {(account.position?.unrealizedPnl ?? 0) !== 0 && (
+                <span style={{ color: (account.position?.unrealizedPnl ?? 0) >= 0 ? 'var(--green-dark)' : 'var(--pink-dark)' }}>
+                  {(account.position?.unrealizedPnl ?? 0) >= 0 ? '+' : ''}{fmtUSD(account.position!.unrealizedPnl)} PnL
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Open Position */}

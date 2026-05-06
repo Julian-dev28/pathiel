@@ -307,7 +307,7 @@ export default function HLMarketCard({ btcPrice, account, onRefresh }: HLMarketC
           </div>
           <div style={{ display: 'flex', gap: 5 }}>
             {RISK_PCTS.map(pct => {
-              const equity = account?.totalEquity ?? 0
+              const equity = account?.spotUSDC ?? 0
               return (
                 <button key={pct}
                   onClick={() => setAmount((equity * pct / 100).toFixed(2))}

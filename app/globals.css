@@ -223,6 +223,10 @@ html, body {
   from { stroke-dashoffset: 138.2; }
   to   { stroke-dashoffset: 0; }
 }
+@keyframes bar-rise {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
 
 .animate-float1    { animation: float1  14s ease-in-out infinite; }
 .animate-float2    { animation: float2  18s ease-in-out infinite; }

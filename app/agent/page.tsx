@@ -47,16 +47,88 @@ function WaitCountdown({ until }: { until: number }) {
   return <span style={{ fontFamily: 'var(--font-geist-mono)' }}>{m > 0 ? `${m}m ${s}s` : `${s}s`}</span>
 }
 
-const AUTO_PROMPT = `Call these Hyperliquid tools in order before deciding:
-1. get_clearinghouse_state — position side, size, entry price, unrealized PnL, account equity
-2. get_open_orders — any stale open orders to cancel before placing new ones
-3. get_all_mids — live BTC mid price
-4. get_l2_book — order book depth (bid vs ask pressure)
-5. get_candle_snapshot interval="1h" count=10 — last 10 1h candles (primary momentum signal)
-6. get_candle_snapshot interval="4h" count=6 — last 6 4h candles (trend confirmation)
-7. get_funding_history — current funding rate (positive = longs pay, factor into hold cost)
-8. get_user_fills — last 5 fills for recent execution context
-Verdict: LONG / SHORT / CLOSE / PASS. 60%+ read on 1h structure is enough to act.`
+const SCAN_CANDLES = [
+  { h: 88, l: 18, o: 28, c: 82, bull: true  },
+  { h: 82, l: 44, o: 78, c: 48, bull: false },
+  { h: 74, l: 28, o: 46, c: 70, bull: true  },
+  { h: 94, l: 52, o: 68, c: 90, bull: true  },
+  { h: 86, l: 38, o: 83, c: 52, bull: false },
+  { h: 68, l: 32, o: 36, c: 63, bull: true  },
+  { h: 78, l: 40, o: 74, c: 44, bull: false },
+  { h: 90, l: 55, o: 58, c: 86, bull: true  },
+  { h: 84, l: 48, o: 80, c: 60, bull: false },
+  { h: 97, l: 62, o: 65, c: 94, bull: true  },
+]
+
+function CandleScan({ activeTool }: { activeTool?: string }) {
+  const W = 200, H = 72
+  const spacing = W / SCAN_CANDLES.length
+  const bw = 9
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: 10,
+      background: 'rgba(74,127,165,0.04)',
+      border: '1px solid rgba(74,127,165,0.14)',
+    }}>
+      <div style={{ position: 'relative', marginBottom: 10, overflow: 'hidden', borderRadius: 6 }}>
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} height={H} style={{ display: 'block' }}>
+          {SCAN_CANDLES.map((c, i) => {
+            const x     = i * spacing + spacing / 2
+            const color = c.bull ? '#2E9E68' : '#BE4A40'
+            const yH    = H - (c.h / 100) * H
+            const yL    = H - (c.l / 100) * H
+            const yO    = H - (c.o / 100) * H
+            const yC    = H - (c.c / 100) * H
+            const byTop = Math.min(yO, yC)
+            const byH   = Math.max(2, Math.abs(yO - yC))
+            return (
+              <g key={i} style={{
+                animation: `bar-rise 0.45s ease-out ${i * 0.055}s both`,
+                transformOrigin: `${x}px ${H}px`,
+              }}>
+                <line x1={x} y1={yH} x2={x} y2={yL} stroke={color} strokeWidth="1" opacity="0.45" />
+                <rect x={x - bw / 2} y={byTop} width={bw} height={byH} fill={color} opacity="0.88" rx="1" />
+              </g>
+            )
+          })}
+        </svg>
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0, width: 2,
+          background: 'linear-gradient(to bottom, transparent, rgba(74,127,165,0.65), transparent)',
+          animation: 'scanLine 2.4s linear infinite',
+          pointerEvents: 'none',
+        }} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        {[0, 1, 2].map(i => (
+          <span key={i} style={{
+            width: 4, height: 4, borderRadius: '50%', background: 'var(--blue)',
+            display: 'inline-block',
+            animation: `dotbounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }} />
+        ))}
+        <span style={{
+          fontFamily: 'var(--font-geist-mono)', fontSize: 11, fontWeight: 700, color: 'var(--blue)',
+        }}>
+          {activeTool ? (HL_TOOLS[activeTool] ?? activeTool) : 'scanning market'}…
+        </span>
+      </div>
+    </div>
+  )
+}
+
+const AUTO_PROMPT = `You are evaluating a BTC-PERP swing trade. Call tools in this order:
+1. get_clearinghouse_state — CHECK IF IN A POSITION FIRST. Note side, size, entry price, unrealized PnL.
+2. get_candle_snapshot interval="4h" count=8 — 4h trend structure (this is the anchor — determine uptrend/downtrend/ranging)
+3. get_candle_snapshot interval="1h" count=12 — 1h momentum and entry/exit timing
+4. get_l2_book — bid vs ask pressure and depth
+5. get_all_mids — confirm current BTC price
+6. get_funding_history — funding rate (extreme rates affect hold cost)
+
+Decision rules:
+- If IN A POSITION: default is PASS (hold). Only output CLOSE if 4h structure has clearly broken or hard stop hit.
+- If FLAT: only enter if 4h trend is unambiguous AND 1h setup is clean. Otherwise PASS.
+- Never close based on short-term noise. Let the 4h trend be your guide.`
 
 const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: Date.now() }
 
@@ -209,7 +281,7 @@ export default function AgentPage() {
     return [
       `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
       `Master account: ${process.env.NEXT_PUBLIC_HL_MASTER ?? 'see env'} — use for get_clearinghouse_state.`,
-      `Available capital: $${(acct?.totalEquity ?? 0).toFixed(2)} (spot USDC auto-transfers to perp — never treat $0 perp as a blocker)`,
+      `Available capital: $${(acct?.spotUSDC ?? 0).toFixed(2)} spot USDC (auto-transfers to perp on execution — never treat $0 perp equity as a blocker)`,
       pos
         ? `Position: ${pos.side.toUpperCase()} ${pos.sizeBTC.toFixed(4)} BTC @ $${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })} · PnL: ${pos.unrealizedPnl >= 0 ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}`
         : 'Position: FLAT',
@@ -402,17 +474,20 @@ export default function AgentPage() {
       }
       if (sessionStorage.getItem('aomi-processing') === '1') { if (!cancelled) setTimeout(loop, 2000); return }
 
+      const HOLD_MS = 900_000   // 15 min — let the trade breathe
+      const SCAN_MS = 300_000   // 5 min between flat scans
+
       const msSinceTrade = Date.now() - lastTradedRef.current
-      if (lastTradedRef.current > 0 && msSinceTrade < 120_000) {
-        const wait = 120_000 - msSinceTrade
+      if (lastTradedRef.current > 0 && msSinceTrade < HOLD_MS) {
+        const wait = HOLD_MS - msSinceTrade
         if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Holding position' })
         await new Promise<void>(resolve => { const t = setTimeout(resolve, wait); if (cancelled) { clearTimeout(t); resolve() } })
         if (cancelled) return
       }
 
       const msSinceLast = Date.now() - lastAnalysisRef.current
-      if (msSinceLast < 60_000 && lastAnalysisRef.current > 0) {
-        const wait = 60_000 - msSinceLast
+      if (msSinceLast < SCAN_MS && lastAnalysisRef.current > 0) {
+        const wait = SCAN_MS - msSinceLast
         if (!cancelled) setAutoWait({ until: Date.now() + wait, label: 'Next analysis' })
         await new Promise<void>(resolve => { const t = setTimeout(resolve, wait); if (cancelled) { clearTimeout(t); resolve() } })
         if (cancelled) return
@@ -425,14 +500,14 @@ export default function AgentPage() {
         const traded = await sendRef.current(AUTO_PROMPT, { silent: true, autoExecute: true })
         if (cancelled) return
         if (traded) {
-          const wait = 120_000
+          const wait = HOLD_MS
           if (!cancelled) { setAutoWait({ until: Date.now() + wait, label: 'Holding position' }); setTimeout(loop, wait) }
           return
         }
       }
 
-      if (!cancelled) setAutoWait({ until: Date.now() + 60_000, label: 'Next analysis' })
-      await new Promise<void>(resolve => { const t = setTimeout(resolve, 60_000); if (cancelled) { clearTimeout(t); resolve() } })
+      if (!cancelled) setAutoWait({ until: Date.now() + SCAN_MS, label: 'Next analysis' })
+      await new Promise<void>(resolve => { const t = setTimeout(resolve, SCAN_MS); if (cancelled) { clearTimeout(t); resolve() } })
       loop()
     }
 
@@ -480,6 +555,9 @@ export default function AgentPage() {
 
   const verdictColor = displayVerdict === 'LONG' ? '#2E9E68' : displayVerdict === 'SHORT' ? '#BE4A40' : displayVerdict === 'CLOSE' ? '#3C6EA0' : '#C2956B'
   const verdictBg    = displayVerdict === 'LONG' ? 'rgba(46,158,104,0.08)' : displayVerdict === 'SHORT' ? 'rgba(190,74,64,0.08)' : displayVerdict === 'CLOSE' ? 'rgba(60,110,160,0.08)' : 'rgba(194,149,107,0.08)'
+  const activeTool   = processing
+    ? [...messages].reverse().find(m => m.role === 'tool' && m.toolStatus === 'running')?.toolName
+    : undefined
 
   return (
     <div style={{ height: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -490,14 +568,23 @@ export default function AgentPage() {
         {/* ── LEFT: Agent config ──────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-          {/* Account equity */}
-          {account && (
-            <div className="card" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Account equity</div>
-              <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>${account.totalEquity.toFixed(2)}</div>
-              {btcPrice && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-geist-mono)' }}>BTC ${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>}
-            </div>
-          )}
+          {/* Balance */}
+          {account && (() => {
+            const pnl     = account.position?.unrealizedPnl ?? 0
+            const balance = account.spotUSDC + pnl
+            const pnlColor = pnl > 0 ? 'var(--green-dark)' : pnl < 0 ? 'var(--pink-dark)' : 'var(--text-muted)'
+            return (
+              <div className="card" style={{ padding: '12px 16px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Balance</div>
+                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>${balance.toFixed(2)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                  <span>USDC ${account.spotUSDC.toFixed(2)}</span>
+                  {pnl !== 0 && <span style={{ color: pnlColor }}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)} PnL</span>}
+                  {btcPrice && <span>· BTC ${btcPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Trade settings: risk + leverage */}
           <div className="card" style={{ padding: '14px 16px' }}>
@@ -523,9 +610,9 @@ export default function AgentPage() {
               <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color: riskPct > 50 ? 'var(--pink-dark)' : riskPct > 25 ? 'var(--amber)' : 'var(--text-primary)' }}>
                 {riskPct}%
               </div>
-              {account?.totalEquity ? (
+              {account?.spotUSDC ? (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, fontFamily: 'var(--font-geist-mono)' }}>
-                  ≈ ${(account.totalEquity * riskPct / 100).toFixed(2)} · {leverage}× = ${(account.totalEquity * riskPct / 100 * leverage).toFixed(2)} notional
+                  ≈ ${(account.spotUSDC * riskPct / 100).toFixed(2)} · {leverage}× = ${(account.spotUSDC * riskPct / 100 * leverage).toFixed(2)} notional
                 </div>
               ) : null}
             </div>
@@ -672,40 +759,42 @@ export default function AgentPage() {
           </div>
 
           {/* Agent status bubble */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-            background: processing ? 'rgba(74,127,165,0.05)' : autoMode ? 'rgba(46,158,104,0.04)' : 'var(--bg-card)',
-            borderRadius: 10,
-            border: `1px solid ${processing ? 'rgba(74,127,165,0.18)' : autoMode ? 'rgba(46,158,104,0.14)' : 'var(--border)'}`,
-            flexShrink: 0,
-          }}>
-            <span style={{
-              width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
-              background: processing ? 'var(--blue)' : autoMode ? 'var(--green-dark)' : 'var(--text-muted)',
-              animation: processing ? 'dotbounce 1.2s ease-in-out infinite' : autoMode ? 'pulse-live 2s ease-in-out infinite' : 'none',
-            }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 11, fontWeight: 700, color: processing ? 'var(--blue)' : autoMode ? 'var(--green-dark)' : 'var(--text-muted)', marginBottom: 2 }}>
-                {processing ? 'scanning market' : autoMode ? autoWait?.label === 'Holding position' ? 'holding position' : 'monitoring' : 'agent paused'}
-              </div>
-              <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {processing
-                  ? 'reading 1h candles · order book · position state…'
-                  : autoMode
+          {processing ? (
+            <CandleScan activeTool={activeTool} />
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+              background: autoMode ? 'rgba(46,158,104,0.04)' : 'var(--bg-card)',
+              borderRadius: 10,
+              border: `1px solid ${autoMode ? 'rgba(46,158,104,0.14)' : 'var(--border)'}`,
+              flexShrink: 0,
+            }}>
+              <span style={{
+                width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                background: autoMode ? 'var(--green-dark)' : 'var(--text-muted)',
+                animation: autoMode ? 'pulse-live 2s ease-in-out infinite' : 'none',
+              }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 11, fontWeight: 700, color: autoMode ? 'var(--green-dark)' : 'var(--text-muted)', marginBottom: 2 }}>
+                  {autoMode ? autoWait?.label === 'Holding position' ? 'holding position' : 'monitoring' : 'agent paused'}
+                </div>
+                <div style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {autoMode
                     ? autoWait
                       ? autoWait.label === 'Holding position'
                         ? <><WaitCountdown until={autoWait.until} /> cooldown · watching for reversal</>
                         : <>next analysis in <WaitCountdown until={autoWait.until} /></>
                       : `cycle ${autoCycles} complete · queuing next scan…`
                     : 'start agent for 24/7 autonomous trading'}
+                </div>
               </div>
+              {autoMode && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--green-dark)', fontFamily: 'var(--font-geist-mono)', opacity: 0.7, letterSpacing: '0.05em', flexShrink: 0 }}>
+                  24/7
+                </span>
+              )}
             </div>
-            {autoMode && (
-              <span style={{ fontSize: 9, fontWeight: 700, color: autoMode ? 'var(--green-dark)' : 'var(--text-muted)', fontFamily: 'var(--font-geist-mono)', opacity: 0.7, letterSpacing: '0.05em', flexShrink: 0 }}>
-                24/7
-              </span>
-            )}
-          </div>
+          )}
 
           {/* Trade log */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
