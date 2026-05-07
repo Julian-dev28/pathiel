@@ -32,33 +32,39 @@ function niceStep(range: number) {
 }
 
 interface Props {
-  priceHistory:  PricePoint[]
-  currentPrice:  number
-  entryPrice?:   number
-  positionSide?: 'long' | 'short'
+  priceHistory:    PricePoint[]
+  currentPrice:    number
+  entryPrice?:     number
+  positionSide?:   'long' | 'short'
+  positionSizeBTC?: number
+  accountBalance?:  number
 }
 
-export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, positionSide }: Props) {
+export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, positionSide, positionSizeBTC, accountBalance }: Props) {
   const [windowIdx, setWindowIdx] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef    = useRef<HTMLCanvasElement>(null)
   const rafRef       = useRef<number | undefined>(undefined)
 
   const live = useRef({
-    candles:      [] as Candle[],
-    priceHistory: [] as PricePoint[],
-    entryPrice:   0,
-    currentPrice: 0,
-    windowMs:     WINDOWS[0].windowMs,
-    candleMs:     WINDOWS[0].candleMs,
-    pulseT:       0,
-    cssW:         600,
-    cssH:         280,
+    candles:         [] as Candle[],
+    priceHistory:    [] as PricePoint[],
+    entryPrice:      0,
+    currentPrice:    0,
+    positionSizeBTC: 0,
+    accountBalance:  0,
+    windowMs:        WINDOWS[0].windowMs,
+    candleMs:        WINDOWS[0].candleMs,
+    pulseT:          0,
+    cssW:            600,
+    cssH:            280,
   })
 
-  live.current.priceHistory = priceHistory
-  live.current.entryPrice   = entryPrice ?? 0
-  live.current.currentPrice = currentPrice
+  live.current.priceHistory    = priceHistory
+  live.current.entryPrice      = entryPrice ?? 0
+  live.current.currentPrice    = currentPrice
+  live.current.positionSizeBTC = positionSizeBTC ?? 0
+  live.current.accountBalance  = accountBalance ?? 0
   live.current.windowMs     = WINDOWS[windowIdx].windowMs
   live.current.candleMs     = WINDOWS[windowIdx].candleMs
 
@@ -179,8 +185,13 @@ export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, p
         ctx.font         = '9px ui-monospace, monospace'
         ctx.textAlign    = 'center'
         ctx.textBaseline = 'middle'
-        const delta = s.currentPrice - s.entryPrice
-        ctx.fillText(`${isProfit ? '+' : ''}$${Math.abs(delta).toFixed(0)}`, cX + cW / 2, cY)
+        const delta    = s.currentPrice - s.entryPrice
+        const sideMult = positionSide === 'short' ? -1 : 1
+        const pnlUsd   = s.positionSizeBTC > 0 ? delta * s.positionSizeBTC * sideMult : null
+        const chipText = pnlUsd !== null
+          ? `${pnlUsd >= 0 ? '+' : '−'}$${Math.abs(pnlUsd).toFixed(2)}`
+          : `${isProfit ? '+' : '−'}$${Math.abs(delta).toFixed(0)}/BTC`
+        ctx.fillText(chipText, cX + cW / 2, cY)
       }
 
       // ── Price line + fill ─────────────────────────────────────────────────
@@ -273,9 +284,13 @@ export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, p
   }, [])
 
   const hasEntry   = (entryPrice ?? 0) > 0
-  const priceAbove = hasEntry && currentPrice > (entryPrice ?? 0)
-  const pnl        = hasEntry ? currentPrice - (entryPrice ?? 0) : null
-  const dispColor  = hasEntry ? (priceAbove ? 'var(--green-dark)' : 'var(--pink-dark)') : 'var(--text-primary)'
+  const delta      = hasEntry ? currentPrice - (entryPrice ?? 0) : 0
+  const sideMult   = positionSide === 'short' ? -1 : 1
+  const pnlUsd     = hasEntry && (positionSizeBTC ?? 0) > 0 ? delta * (positionSizeBTC ?? 0) * sideMult : null
+  const baseBal    = (accountBalance ?? 0) - (pnlUsd ?? 0)
+  const pnlPct     = pnlUsd !== null && baseBal > 0 ? pnlUsd / baseBal * 100 : null
+  const isUp       = pnlUsd !== null ? pnlUsd >= 0 : hasEntry && currentPrice > (entryPrice ?? 0)
+  const dispColor  = hasEntry ? (isUp ? 'var(--green-dark)' : 'var(--pink-dark)') : 'var(--text-primary)'
   const posLabel   = positionSide === 'long' ? 'LONG' : positionSide === 'short' ? 'SHORT' : null
   const posColor   = positionSide === 'long' ? 'var(--green-dark)' : 'var(--pink-dark)'
   const posBg      = positionSide === 'long' ? 'rgba(46,158,104,0.10)' : 'rgba(190,74,64,0.10)'
@@ -294,9 +309,11 @@ export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, p
               <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 26, fontWeight: 800, color: dispColor, letterSpacing: '-0.02em', transition: 'color 0.4s' }}>
                 {currentPrice > 0 ? `$${currentPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
               </span>
-              {pnl !== null && (
-                <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: priceAbove ? 'var(--green-dark)' : 'var(--pink-dark)', transition: 'color 0.4s' }}>
-                  {priceAbove ? '+' : ''}{pnl.toFixed(0)}
+              {hasEntry && (
+                <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 700, color: isUp ? 'var(--green-dark)' : 'var(--pink-dark)', transition: 'color 0.4s' }}>
+                  {pnlUsd !== null
+                    ? <>{pnlUsd >= 0 ? '+' : '−'}${Math.abs(pnlUsd).toFixed(2)}{pnlPct !== null && <> ({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%)</>}</>
+                    : <>{isUp ? '+' : '−'}${Math.abs(delta).toFixed(0)}/BTC</>}
                 </span>
               )}
             </div>
@@ -311,7 +328,7 @@ export default function HLPriceChart({ priceHistory, currentPrice, entryPrice, p
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           {hasEntry && entryPrice && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'var(--text-muted)' }}>
-              <svg width="14" height="2" viewBox="0 0 14 2"><line x1="0" y1="1" x2="14" y2="1" stroke={priceAbove ? C.green : C.red} strokeWidth="1.5" strokeDasharray="4 3" /></svg>
+              <svg width="14" height="2" viewBox="0 0 14 2"><line x1="0" y1="1" x2="14" y2="1" stroke={isUp ? C.green : C.red} strokeWidth="1.5" strokeDasharray="4 3" /></svg>
               <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 600 }}>Entry ${entryPrice.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span>
             </div>
           )}

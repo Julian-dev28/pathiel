@@ -255,6 +255,16 @@ export default function HLMarketCard({ btcPrice, account, onRefresh }: HLMarketC
                     color: pos.unrealizedPnl >= 0 ? 'var(--green-dark)' : 'var(--pink-dark)',
                   }}>
                     {pos.unrealizedPnl >= 0 ? '+' : ''}{fmtPriceD(pos.unrealizedPnl)}
+                    {(() => {
+                      const baseBalance = (account?.totalEquity ?? 0) - pos.unrealizedPnl
+                      if (baseBalance <= 0) return null
+                      const pct = pos.unrealizedPnl / baseBalance * 100
+                      return (
+                        <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.75, marginLeft: 4 }}>
+                          ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>

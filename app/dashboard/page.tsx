@@ -168,6 +168,8 @@ export default function DashboardPage() {
             currentPrice={btcPrice ?? 0}
             entryPrice={entryPrice}
             positionSide={posSide}
+            positionSizeBTC={pos?.sizeBTC}
+            accountBalance={account?.totalEquity}
           />
 
           {/* AI Analysis panel */}

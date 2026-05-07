@@ -37,6 +37,42 @@ const HL_TOOLS: Record<string, string> = {
   brave_search:            'Web search',   // Brave Search — requires BRAVE_API_KEY
 }
 
+function exportTradeLog(trades: TradeRecord[]) {
+  const headers = ['id', 'side', 'sizeBTC', 'entryPrice', 'exitPrice', 'pnlUsd', 'pnlPctOnNotional', 'openedAt', 'closedAt', 'holdSeconds', 'status']
+  const rows = trades.map(t => {
+    const notional = t.entryPrice * t.sizeBTC
+    const pnlPct   = t.pnl !== undefined && notional > 0 ? (t.pnl / notional * 100).toFixed(4) : ''
+    const holdSec  = t.closedAt ? Math.round((t.closedAt - t.openedAt) / 1000) : ''
+    const status   = !t.closedAt ? 'open' : (t.pnl ?? 0) > 0 ? 'win' : 'loss'
+    return [
+      t.id,
+      t.side,
+      t.sizeBTC,
+      t.entryPrice,
+      t.exitPrice ?? '',
+      t.pnl?.toFixed(2) ?? '',
+      pnlPct,
+      new Date(t.openedAt).toISOString(),
+      t.closedAt ? new Date(t.closedAt).toISOString() : '',
+      holdSec,
+      status,
+    ]
+  })
+  const csv = [headers, ...rows].map(r => r.map(v => {
+    const s = String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = `aomi-trades-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 function WaitCountdown({ until }: { until: number }) {
   const [secs, setSecs] = useState(() => Math.max(0, Math.ceil((until - Date.now()) / 1000)))
   useEffect(() => {
@@ -117,18 +153,34 @@ function CandleScan({ activeTool }: { activeTool?: string }) {
   )
 }
 
-const AUTO_PROMPT = `You are evaluating a BTC-PERP swing trade. Call tools in this order:
-1. get_clearinghouse_state — CHECK IF IN A POSITION FIRST. Note side, size, entry price, unrealized PnL.
-2. get_candle_snapshot interval="4h" count=8 — 4h trend structure (this is the anchor — determine uptrend/downtrend/ranging)
-3. get_candle_snapshot interval="1h" count=12 — 1h momentum and entry/exit timing
-4. get_l2_book — bid vs ask pressure and depth
-5. get_all_mids — confirm current BTC price
-6. get_funding_history — funding rate (extreme rates affect hold cost)
+const AUTO_PROMPT = `You are evaluating a BTC-PERP swing trade. Robust backtested rule set — profitable on 90/180/365d BTC windows after fees, slippage, and funding (53-62% WR, PF 1.13-1.52). Follow precisely. Call tools in this order:
+1. get_clearinghouse_state — CHECK IF IN A POSITION FIRST. Note side, size, entry price, unrealized PnL, time in position.
+2. get_candle_snapshot interval="1d" count=24 — daily trend (anchor). Compute mental EMA(8), EMA(21), and EMA(8) slope (now vs 2 bars ago).
+3. get_candle_snapshot interval="4h" count=24 — 4h entry timing. Compute mental EMA(20), 14-bar RSI, 14-bar ATR, 20-bar avg volume.
+4. get_l2_book — bid vs ask pressure (confirmation, not primary).
+5. get_all_mids — confirm current BTC price.
+6. get_funding_history — extreme funding (>±0.05%/8h) shifts edge against the crowd.
 
-Decision rules:
-- If IN A POSITION: default is PASS (hold). Only output CLOSE if 4h structure has clearly broken or hard stop hit.
-- If FLAT: only enter if 4h trend is unambiguous AND 1h setup is clean. Otherwise PASS.
-- Never close based on short-term noise. Let the 4h trend be your guide.`
+Trend gate (DAILY, STRICT — no trades during range):
+- UP: 1d EMA(8) > EMA(21) AND last daily close > EMA(21) AND EMA(8) slope rising.
+- DOWN: 1d EMA(8) < EMA(21) AND last daily close < EMA(21) AND EMA(8) slope falling.
+- Otherwise: PASS.
+
+Entry trigger (4h close, must align with daily trend):
+- LONG: prior 4h dipped to/below 4h EMA(20), current 4h closed back above EMA(20) AND green AND RSI < 70 AND volume ≥ 80% of 20-bar avg.
+- SHORT: mirror.
+- Confidence ≥ 60%. No setup → PASS.
+
+Brackets are auto-placed on Hyperliquid the moment your entry fills:
+- Hard stop at entry ± 3.5 × 4h ATR (wide enough to ride 4h noise without getting wicked out).
+- Single TP at entry ± 1.0 × 4h ATR (full position closes when reached).
+
+CLOSE rules (rare — brackets handle 95% of exits):
+- Daily trend flips to OPPOSITE direction → CLOSE.
+- Clear daily structural break (lower-low on long / higher-high on short) → CLOSE.
+- Otherwise PASS. Most trades resolve within hours-to-days via TP1/TP2.
+
+Output format: first line "LONG X%" / "SHORT X%" / "CLOSE X%" / "PASS X%". Then 3-5 bullets: daily EMA(8/21) state + slope, 4h EMA(20) pullback+reclaim, RSI + volume, bracket plan if entering OR position progress if holding.`
 
 const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: Date.now() }
 
@@ -275,6 +327,24 @@ export default function AgentPage() {
     setTradeLog([r])
   }, [account, tradeLog])
 
+  // If HL reports flat but we still have an Open trade locally, it closed externally (TP/SL or manual). Mark it closed.
+  useEffect(() => {
+    if (!account || !btcPrice) return
+    if (account.position) return
+    const open = openTradeRef.current
+    if (!open) return
+    if (Date.now() - open.openedAt < 30_000) return // grace window for HL data lag after entry
+    const exitPrice = btcPrice
+    const pnl = open.side === 'long'
+      ? (exitPrice - open.entryPrice) * open.sizeBTC
+      : (open.entryPrice - exitPrice) * open.sizeBTC
+    setTradeLog(prev => prev.map(t => t.id === open.id ? { ...open, exitPrice, pnl, closedAt: Date.now() } : t))
+    openTradeRef.current = null
+    sessionStorage.removeItem('aomi-open-trade')
+    sessionStorage.setItem('aomi-last-traded', '0')
+    lastTradedRef.current = 0
+  }, [account, btcPrice])
+
   const buildHint = useCallback((price: number | null, acct: HLAccount | null) => {
     if (!price) return undefined
     const pos = acct?.position
@@ -309,14 +379,22 @@ export default function AgentPage() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side, riskPct: riskPctRef.current, leverage: leverageRef.current }),
     })
-    const data = await res.json() as { ok: boolean; error?: string; sizeBTC?: number; midPrice?: number; leverage?: number }
+    const data = await res.json() as {
+      ok: boolean; error?: string; sizeBTC?: number; midPrice?: number; leverage?: number
+      brackets?: { ok: boolean; sl?: string; tp1?: string; tp2?: string; atr: number; error?: string }
+    }
     if (data.ok) {
       const record: TradeRecord = { id: crypto.randomUUID(), side, sizeBTC: data.sizeBTC ?? 0, entryPrice: data.midPrice ?? 0, openedAt: Date.now() }
       openTradeRef.current = record
       sessionStorage.setItem('aomi-open-trade', JSON.stringify(record))
       setTradeLog(prev => [...prev, record])
     }
-    setMessages(prev => [...prev, { role: 'system', ts: Date.now(), content: data.ok ? `✅ ${side === 'long' ? '↑ LONG' : '↓ SHORT'} ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${data.leverage ?? 5}× · ${riskPctRef.current}% risk` : `❌ Order failed: ${data.error}` }])
+    const bracketLine = data.brackets
+      ? data.brackets.ok
+        ? `\n  brackets: SL ${data.brackets.sl} · TP1 ${data.brackets.tp1} · TP2 ${data.brackets.tp2}  (ATR ${data.brackets.atr.toFixed(0)})`
+        : `\n  ⚠ brackets partial: SL ${data.brackets.sl ?? '—'} · TP1 ${data.brackets.tp1 ?? '—'} · TP2 ${data.brackets.tp2 ?? '—'}`
+      : ''
+    setMessages(prev => [...prev, { role: 'system', ts: Date.now(), content: data.ok ? `✅ ${side === 'long' ? '↑ LONG' : '↓ SHORT'} ${(data.sizeBTC ?? 0).toFixed(5)} BTC @ $${(data.midPrice ?? 0).toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${data.leverage ?? 5}× · ${riskPctRef.current}% risk${bracketLine}` : `❌ Order failed: ${data.error}` }])
     refreshAccount()
     return data.ok
   }, [refreshAccount])
@@ -474,8 +552,8 @@ export default function AgentPage() {
       }
       if (sessionStorage.getItem('aomi-processing') === '1') { if (!cancelled) setTimeout(loop, 2000); return }
 
-      const HOLD_MS = 900_000   // 15 min — let the trade breathe
-      const SCAN_MS = 300_000   // 5 min between flat scans
+      const HOLD_MS = 4 * 3600_000   // 4h cooldown after entering — match entry timeframe
+      const SCAN_MS = 1800_000       // 30 min between flat scans — 4h candles only close every 4h
 
       const msSinceTrade = Date.now() - lastTradedRef.current
       if (lastTradedRef.current > 0 && msSinceTrade < HOLD_MS) {
@@ -784,7 +862,7 @@ export default function AgentPage() {
                       ? autoWait.label === 'Holding position'
                         ? <><WaitCountdown until={autoWait.until} /> cooldown · watching for reversal</>
                         : <>next analysis in <WaitCountdown until={autoWait.until} /></>
-                      : `cycle ${autoCycles} complete · queuing next scan…`
+                      : `scanning market now · cycle ${autoCycles + 1}`
                     : 'start agent for 24/7 autonomous trading'}
                 </div>
               </div>
@@ -802,11 +880,22 @@ export default function AgentPage() {
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', fontFamily: 'var(--font-geist-mono)' }}>
                 Agent Trade Log
               </span>
-              {tradesPlaced > 0 && (
-                <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-geist-mono)' }}>
-                  {tradesPlaced} trade{tradesPlaced !== 1 ? 's' : ''}
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {tradesPlaced > 0 && (
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-geist-mono)' }}>
+                    {tradesPlaced} trade{tradesPlaced !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {tradeLog.length > 0 && (
+                  <button
+                    onClick={() => exportTradeLog(tradeLog)}
+                    style={{ fontSize: 10, fontWeight: 700, fontFamily: 'var(--font-geist-mono)', color: 'var(--text-muted)', background: 'none', border: '1px solid var(--border)', padding: '3px 8px', borderRadius: 5, cursor: 'pointer', letterSpacing: '0.06em', textTransform: 'uppercase' }}
+                    title="Download trade log as CSV"
+                  >
+                    Export CSV
+                  </button>
+                )}
+              </div>
             </div>
 
             {!mounted || tradeLog.length === 0 ? (
@@ -910,7 +999,19 @@ export default function AgentPage() {
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Entry <span style={{ fontFamily: 'var(--font-geist-mono)', fontWeight: 700, color: 'var(--text-secondary)' }}>${pos.entryPx.toLocaleString('en-US', { maximumFractionDigits: 0 })}</span></div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-                <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 15, fontWeight: 800, color: pnlPos ? 'var(--green-dark)' : 'var(--pink-dark)' }}>{pnlPos ? '+' : ''}{pos.unrealizedPnl.toFixed(2)}</span>
+                <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 15, fontWeight: 800, color: pnlPos ? 'var(--green-dark)' : 'var(--pink-dark)' }}>
+                  {pnlPos ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}
+                  {(() => {
+                    const baseBalance = (account?.totalEquity ?? 0) - pos.unrealizedPnl
+                    if (baseBalance <= 0) return null
+                    const pct = pos.unrealizedPnl / baseBalance * 100
+                    return (
+                      <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.75, marginLeft: 5 }}>
+                        ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                      </span>
+                    )
+                  })()}
+                </span>
                 <button onClick={() => closePosition()} style={{ padding: '4px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', background: 'rgba(190,74,64,0.08)', color: 'var(--pink-dark)', fontWeight: 700, fontSize: 11, outline: '1px solid rgba(190,74,64,0.25)' }}>Close</button>
               </div>
             </div>

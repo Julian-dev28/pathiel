@@ -227,3 +227,81 @@ export async function placeHLOrder(
 
   return { ok: false, error: JSON.stringify(result) }
 }
+
+// Place a reduce-only trigger order (stop-loss or take-profit) that fires at triggerPx as a market close.
+export async function placeHLTriggerOrder(
+  isLongPosition: boolean,
+  sizeBTC:        number,
+  triggerPx:      number,
+  kind:           'sl' | 'tp',
+): Promise<{ ok: boolean; orderId?: string; error?: string }> {
+  if (!PRIVATE_KEY) return { ok: false, error: 'HYPERLIQUID_PRIVATE_KEY not set' }
+  if (sizeBTC <= 0 || triggerPx <= 0) return { ok: false, error: 'invalid size/price' }
+
+  const triggerStr = stripZeros(String(Math.round(triggerPx)))
+  const sizeStr    = stripZeros(sizeBTC.toFixed(5))
+  // limit price: for a market trigger HL still requires a p — use a wide one so it always fills
+  const limitPx = isLongPosition
+    ? String(Math.round(triggerPx * 0.95))     // closing a long = sell, accept down to 5% below trigger
+    : String(Math.round(triggerPx * 1.05))     // closing a short = buy, accept up to 5% above trigger
+
+  const nonce  = Date.now()
+  const action = {
+    type:   'order',
+    orders: [{
+      a: 0,
+      b: !isLongPosition,                       // opposite side closes the position
+      p: limitPx,
+      s: sizeStr,
+      r: true,                                  // reduce-only
+      t: { trigger: { isMarket: true, triggerPx: triggerStr, tpsl: kind } },
+    }],
+    grouping: 'na',
+  }
+
+  const sig = await signAction(action, nonce)
+  const res = await fetch(`${HL_API}/exchange`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    exchangeBody(action, nonce, sig),
+  })
+  const result = await res.json() as {
+    status: string
+    response?: { data?: { statuses?: Array<{ resting?: { oid: number }; error?: string }> } }
+  }
+  if (result.status === 'ok') {
+    const st = result.response?.data?.statuses?.[0]
+    if (st?.resting) return { ok: true, orderId: String(st.resting.oid) }
+    if (st?.error)   return { ok: false, error: st.error }
+    return { ok: true }
+  }
+  return { ok: false, error: JSON.stringify(result) }
+}
+
+// Compute ATR(14) on a given HL interval. Defaults to 4h, the timeframe used for backtested entries.
+export async function getHLATR(interval: '1h' | '4h' | '1d' = '4h', period = 14): Promise<number> {
+  const intervalMs: Record<string, number> = { '1h': 3600_000, '4h': 4 * 3600_000, '1d': 86400_000 }
+  const ms = intervalMs[interval]
+  const endTime   = Date.now()
+  const startTime = endTime - (period + 4) * ms
+  const res = await fetch(`${HL_API}/info`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval, startTime, endTime } }),
+  })
+  const raw = await res.json() as Array<{ t: number; h: string; l: string; c: string }>
+  if (!Array.isArray(raw) || raw.length < period + 1) return 0
+  const candles = raw.map(c => ({ h: parseFloat(c.h), l: parseFloat(c.l), c: parseFloat(c.c) }))
+  const tr: number[] = []
+  for (let i = 1; i < candles.length; i++) {
+    const cur = candles[i], pc = candles[i - 1].c
+    tr.push(Math.max(cur.h - cur.l, Math.abs(cur.h - pc), Math.abs(cur.l - pc)))
+  }
+  if (tr.length < period) return 0
+  let atr = tr.slice(0, period).reduce((s, x) => s + x, 0) / period
+  for (let i = period; i < tr.length; i++) atr = (atr * (period - 1) + tr[i]) / period
+  return atr
+}
+
+// Backwards-compat alias
+export const getHL1hATR = (period = 14) => getHLATR('1h', period)
