@@ -184,6 +184,10 @@ Output format: first line "LONG X%" / "SHORT X%" / "CLOSE X%" / "PASS X%". Then 
 
 const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: Date.now() }
 
+// Bump this whenever the strategy / prompt format changes — invalidates cached analysis text
+// so users don't see stale "PASS 0%" / old-format bullets after a deploy.
+const STRATEGY_VERSION = '2026-05-08-robust-daily-4h'
+
 export default function AgentPage() {
   const { btcPrice, account, refreshAccount } = useHLTick()
 
@@ -292,8 +296,16 @@ export default function AgentPage() {
     const storedLeverage = localStorage.getItem('aomi-leverage')
     if (storedLeverage) setLeverage(Number(storedLeverage))
     if (sessionStorage.getItem('aomi-processing') === '1') setResuming(true)
-    const storedText = sessionStorage.getItem('aomi-last-analysis-text')
-    if (storedText) setMessages([INIT_MSG, { role: 'assistant', content: storedText, ts: Date.now() }])
+    // Invalidate cached analysis text when the strategy version bumps (prevents stale prompt-format display after deploys)
+    const storedVersion = sessionStorage.getItem('aomi-strategy-version')
+    if (storedVersion !== STRATEGY_VERSION) {
+      sessionStorage.removeItem('aomi-last-analysis-text')
+      sessionStorage.removeItem('aomi-last-verdict')
+      sessionStorage.setItem('aomi-strategy-version', STRATEGY_VERSION)
+    } else {
+      const storedText = sessionStorage.getItem('aomi-last-analysis-text')
+      if (storedText) setMessages([INIT_MSG, { role: 'assistant', content: storedText, ts: Date.now() }])
+    }
     setMounted(true)
   }, [])
 
