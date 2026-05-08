@@ -475,8 +475,10 @@ export default function AgentPage() {
         const isLong  = /^LONG\b/i.test(firstLine)
         const isShort = /^SHORT\b/i.test(firstLine)
         const isClose = /^CLOSE\b/i.test(firstLine)
-        const confMatch = finalText.match(/confidence[^:]*:\s*(\d+)%/i)
-        const confNum   = confMatch ? parseInt(confMatch[1]) : 0
+        // Match both inline ("PASS 80%") and labeled ("Confidence: 80%") formats
+        const inlineMatch   = finalText.match(/^[\s•\-*]*(?:LONG|SHORT|CLOSE|PASS)[\s—–\-]+(\d+)\s*%/im)
+        const labeledMatch  = finalText.match(/confidence[^:]*:?\s*(\d+)\s*%/i)
+        const confNum       = inlineMatch ? parseInt(inlineMatch[1]) : labeledMatch ? parseInt(labeledMatch[1]) : 0
 
         const v = isClose ? 'CLOSE' : isLong ? 'LONG' : isShort ? 'SHORT' : 'PASS'
         setLastVerdict(v)
@@ -629,6 +631,14 @@ export default function AgentPage() {
     if (/^SHORT\b/i.test(first)) return 'SHORT'
     if (/^PASS\b/i.test(first))  return 'PASS'
     return null
+  })()
+
+  const displayConfidence = (() => {
+    if (!latestAnalysis) return null
+    const inlineMatch  = latestAnalysis.content.match(/^[\s•\-*]*(?:LONG|SHORT|CLOSE|PASS)[\s—–\-]+(\d+)\s*%/im)
+    const labeledMatch = latestAnalysis.content.match(/confidence[^:]*:?\s*(\d+)\s*%/i)
+    const v = inlineMatch ? parseInt(inlineMatch[1]) : labeledMatch ? parseInt(labeledMatch[1]) : null
+    return v == null || isNaN(v) ? null : v
   })()
 
   const verdictColor = displayVerdict === 'LONG' ? '#2E9E68' : displayVerdict === 'SHORT' ? '#BE4A40' : displayVerdict === 'CLOSE' ? '#3C6EA0' : '#C2956B'
@@ -799,6 +809,11 @@ export default function AgentPage() {
                 <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', color: displayVerdict ? verdictColor : 'var(--text-muted)', lineHeight: 1 }}>
                   {displayVerdict ?? '—'}
                 </span>
+                {displayConfidence != null && (
+                  <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 14, fontWeight: 700, color: verdictColor, lineHeight: 1 }}>
+                    {displayConfidence}%
+                  </span>
+                )}
                 {autoCycles > 0 && (
                   <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>cycle {autoCycles}</span>
                 )}
@@ -816,9 +831,15 @@ export default function AgentPage() {
 
             {latestAnalysis ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {latestAnalysis.content.split('\n').filter(l => l.trim()).slice(0, 5).map((line, i) => {
-                  const clean = line.replace(/^[•\-*]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/^(CLOSE|LONG|SHORT|PASS)\s*[—–\-]?\s*/i, '').trim()
-                  if (!clean || /^(CLOSE|LONG|SHORT|PASS)$/i.test(clean)) return null
+                {latestAnalysis.content.split('\n').filter(l => l.trim()).slice(0, 6).map((line, i) => {
+                  // Strip leading bullet markers, bold, and the verdict + confidence prefix ("PASS 80% —" / "LONG —")
+                  const clean = line
+                    .replace(/^[•\-*]\s*/, '')
+                    .replace(/\*\*(.*?)\*\*/g, '$1')
+                    .replace(/^(CLOSE|LONG|SHORT|PASS)\s*\d*\s*%?\s*[—–\-:·]?\s*/i, '')
+                    .trim()
+                  // Drop empty, verdict-only, or pure-percent leftovers
+                  if (!clean || /^(CLOSE|LONG|SHORT|PASS)$/i.test(clean) || /^\d+\s*%$/.test(clean)) return null
                   return (
                     <div key={i} style={{ display: 'flex', gap: 7 }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.3, flexShrink: 0, marginTop: 1 }}>·</span>
