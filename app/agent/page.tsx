@@ -771,6 +771,28 @@ export default function AgentPage() {
           >↺ Run Once</button>
 
           <button
+            onClick={() => {
+              if (processing) return
+              // Clear cached analysis state so the fresh cycle's output renders cleanly
+              sessionStorage.removeItem('aomi-last-analysis-text')
+              sessionStorage.removeItem('aomi-last-verdict')
+              setLastVerdict(null)
+              setMessages([INIT_MSG])
+              send(AUTO_PROMPT, { autoExecute: true })
+            }}
+            disabled={processing}
+            title="Clear cached analysis text + verdict, then run a fresh cycle"
+            style={{
+              padding: '8px 0', borderRadius: 10,
+              border: '1px dashed var(--border)', background: 'transparent',
+              cursor: processing ? 'not-allowed' : 'pointer',
+              fontWeight: 600, fontSize: 11, color: processing ? 'var(--text-muted)' : 'var(--text-muted)',
+              opacity: processing ? 0.5 : 1,
+              letterSpacing: '0.03em',
+            }}
+          >⟲ Clear cache + rerun</button>
+
+          <button
             onClick={resetSession}
             style={{
               padding: '8px 0', borderRadius: 10,
