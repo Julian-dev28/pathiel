@@ -160,6 +160,7 @@ const AUTO_PROMPT = `You are evaluating a BTC-PERP swing trade. Robust backteste
 4. get_l2_book — bid vs ask pressure (confirmation, not primary).
 5. get_all_mids — confirm current BTC price.
 6. get_funding_history — extreme funding (>±0.05%/8h) shifts edge against the crowd.
+7. brave_search (only if steps 1-6 are setting up a LONG or SHORT, not for PASS) — query "BTC bitcoin news today" or "<event> <today>". Veto entry on adverse news only (see CLOSE rules).
 
 Trend gate (DAILY, STRICT — no trades during range):
 - UP: 1d EMA(8) > EMA(21) AND last daily close > EMA(21) AND EMA(8) slope rising.
@@ -170,6 +171,11 @@ Entry trigger (4h close, must align with daily trend):
 - LONG: prior 4h dipped to/below 4h EMA(20), current 4h closed back above EMA(20) AND green AND RSI < 70 AND volume ≥ 80% of 20-bar avg.
 - SHORT: mirror.
 - Confidence ≥ 60%. No setup → PASS.
+
+News veto (only run when 1-6 already point to LONG/SHORT — don't waste calls on PASS):
+- brave_search top results for major adverse catalysts: FOMC/CPI within ~6h, US regulation, exchange hack, mass liquidation cascade.
+- If found → downgrade to PASS regardless of TA setup. Note the catalyst in your output.
+- Routine commentary / price recap headlines are NOT a veto — only acute event risk.
 
 Brackets are auto-placed on Hyperliquid the moment your entry fills:
 - Hard stop at entry ± 3.5 × 4h ATR (wide enough to ride 4h noise without getting wicked out).
@@ -186,7 +192,7 @@ const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: 
 
 // Bump this whenever the strategy / prompt format changes — invalidates cached analysis text
 // so users don't see stale "PASS 0%" / old-format bullets after a deploy.
-const STRATEGY_VERSION = '2026-05-08-robust-daily-4h'
+const STRATEGY_VERSION = '2026-05-08-robust-daily-4h-news'
 
 export default function AgentPage() {
   const { btcPrice, account, refreshAccount } = useHLTick()

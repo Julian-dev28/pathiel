@@ -31,7 +31,8 @@ WHEN FLAT — ALL must align for an entry verdict:
 2. 4h pullback-and-reclaim: prior 4h candle dipped to/below 4h EMA(20), current 4h closed back above EMA(20) AND green (LONG); mirror for SHORT.
 3. 4h RSI(14) check: < 70 for longs, > 30 for shorts (avoid blow-off entries).
 4. 4h volume ≥ 80% of 20-bar average (skip dead candles).
-5. If anything fails or is ambiguous → PASS. Missing a trade costs nothing.
+5. NEWS VETO (only after 1-4 pass — saves API): brave_search for "BTC bitcoin news <today's date>". If top results show MAJOR adverse catalyst — FOMC/CPI within next 6 hours, US regulatory action, exchange hack/halt, large liquidation cascade — downgrade to PASS. Routine market commentary is NOT a veto. State the news read explicitly in your output.
+6. If anything fails or is ambiguous → PASS. Missing a trade costs nothing.
 
 WHEN IN A POSITION — default is PASS (let brackets work):
 - Brackets at SL=−3.5× ATR and TP=+1.0× ATR are already on the book; do not duplicate.
@@ -45,7 +46,7 @@ export const FORMAT = `Reply in 4-6 bullet points, no headers.
 Bullet 1: Verdict — LONG X% / SHORT X% / CLOSE X% / PASS X%, with one sentence stating the dominant signal (or lack of one).
 Bullet 2: Daily trend — EMA(8) vs EMA(21) state, last daily close vs EMA(21), EMA(8) slope direction. Call out UP / DOWN / RANGE.
 Bullet 3: 4h entry check — EMA(20) pullback+reclaim status, last 4h candle color, RSI(14) value, volume vs 20-bar avg.
-Bullet 4: Order book + funding — bid vs ask pressure, funding rate (only flag if >±0.05%/8h).
+Bullet 4: Order book + funding + news — bid vs ask pressure, funding rate (flag only if >±0.05%/8h), and a one-line news read from brave_search if you ran it (state "no veto" or name the catalyst).
 Bullet 5 (if in position): side + PnL + bracket status (SL/TP distances) + whether daily trend has flipped (rare CLOSE) or still aligned (HOLD).
 Bullet 6: One-line risk note. Confidence is the X% in bullet 1, not a separate bullet.`
 
