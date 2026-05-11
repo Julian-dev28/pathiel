@@ -1,9 +1,11 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import Header from '@/components/Header'
 import { useHLTick } from '@/hooks/useHLTick'
 import type { HLAccount } from '@/lib/hyperliquid'
+import { WatchlistCard } from '@/components/agent/WatchlistCard'
+import { DecisionEntry } from '@/components/agent/DecisionEntry'
 
 interface Msg {
   role: 'user' | 'assistant' | 'tool' | 'system'
@@ -195,6 +197,8 @@ const INIT_MSG: Msg = { role: 'system', content: 'Awaiting first cycle…', ts: 
 const STRATEGY_VERSION = '2026-05-08-robust-daily-4h-news'
 
 export default function AgentPage() {
+  const coinFromUrl = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('coin') ?? 'BTC' : 'BTC'
+  const [coinParam] = useState(coinFromUrl)
   const { btcPrice, account, refreshAccount } = useHLTick()
 
   const [sessionId] = useState<string>(() => {
@@ -250,6 +254,13 @@ export default function AgentPage() {
   const [leverage, setLeverage]         = useState(5)
   const [autoWait, setAutoWait]         = useState<{ until: number; label: string } | null>(null)
   const [lastVerdict, setLastVerdict]   = useState<string | null>(null)
+
+  // ── Autonomous agent state ─────────────────────────────────────────────
+  const agentMode = 'LIVE' as const
+  const [agentConfig, setAgentConfig]     = useState<Record<string, unknown>>({})
+  const [agentWatchlist, setAgentWatchlist] = useState<Array<{coin: string; type: string; mid: number; compositeScore: number; status: string; triggers: Array<{name: string; fired: boolean; reason: string}>; blockReason?: string}>>([])
+  const [agentDecisions, setAgentDecisions] = useState<Array<{coin: string; verdict: string; confidence: number; reasoning: string; side: string | null; entryPx?: number; stopPx?: number; tpPx?: number; newsContext?: string; blockedBy?: string[]; executed?: boolean; createdAt: number}>>([])
+
   const autoRef         = useRef(false)
   const procRef         = useRef(false)
   const riskPctRef      = useRef(5)
@@ -269,6 +280,73 @@ export default function AgentPage() {
       .then(r => r.json())
       .then(({ threads: t }) => { if (Array.isArray(t) && t.length) setThreads(t) })
       .catch(() => {})
+  }, [])
+
+  // ── Poll agent config ──────────────────────────────────────────────────
+  useEffect(() => {
+    const pollConfig = async () => {
+      try {
+        const res = await fetch('/api/agent/config')
+        if (res.ok) {
+          const cfg = await res.json()
+          setAgentConfig(cfg)
+
+        }
+      } catch { /* ignore */ }
+    }
+    pollConfig()
+    const id = setInterval(pollConfig, 10_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ── Poll agent state (watchlist + decisions) ──────────────────────────
+  useEffect(() => {
+    const pollState = async () => {
+      try {
+        const res = await fetch('/api/agent/state')
+        if (!res.ok) return
+        const state = await res.json()
+        // Watchlist
+        if (Array.isArray(state.watchlist)) {
+          setAgentWatchlist(prev => {
+            // Merge: for each watchlist item, attach triggers from recent perceptions
+            return state.watchlist.slice(0, 12) as typeof prev
+          })
+        }
+        // Decisions from recent analyses
+        if (Array.isArray(state.recentAnalyses)) {
+          const decisions = state.recentAnalyses
+            .filter((a: any) => a && a.coin && a.verdict)
+            .slice(-20)
+            .map((a: any) => ({
+              coin: a.coin,
+              verdict: a.verdict,
+              confidence: a.confidence ?? 0,
+              reasoning: a.reasoning ?? '',
+              side: a.side ?? null,
+              entryPx: a.entryPx,
+              stopPx: a.stopPx,
+              tpPx: a.tpPx,
+              newsContext: a.newsContext,
+              createdAt: a.createdAt ?? Date.now(),
+            }))
+          // Get recent trades for executed flags
+          const executedCoins = new Set(
+            (state.recentTrades ?? [])
+              .filter((t: any) => t.executedAt && t.coin)
+              .map((t: any) => t.coin)
+          )
+          decisions.forEach((d: any) => {
+            d.executed = executedCoins.has(d.coin)
+          })
+          // Get blocked info from config
+          setAgentDecisions(decisions)
+        }
+      } catch { /* ignore */ }
+    }
+    pollState()
+    const id = setInterval(pollState, 5_000)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => { autoRef.current = autoMode; if (!autoMode) setAutoWait(null) }, [autoMode])
@@ -367,7 +445,7 @@ export default function AgentPage() {
     if (!price) return undefined
     const pos = acct?.position
     return [
-      `BTC-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
+      `${coinParam}-PERP mid price: $${price.toLocaleString('en-US', { maximumFractionDigits: 1 })}`,
       `Master account: ${process.env.NEXT_PUBLIC_HL_MASTER ?? 'see env'} — use for get_clearinghouse_state.`,
       `Available capital: $${(acct?.spotUSDC ?? 0).toFixed(2)} spot USDC (auto-transfers to perp on execution — never treat $0 perp equity as a blocker)`,
       pos
@@ -668,11 +746,76 @@ export default function AgentPage() {
   return (
     <div style={{ height: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Header cycleId={autoCycles} isRunning={autoMode} />
+      {/* ── Autonomous Agent Top Bar ────────────────────────────────────── */}
+      {(() => {
+        const modeColor = '#2E9E68'
+        const modeBg = 'rgba(46,158,104,0.06)'
+        const recentTrades = (agentDecisions.filter(d => d.executed).length)
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
+            background: modeBg, borderBottom: `1px solid ${modeColor}25`,
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontFamily: 'var(--font-geist-mono)', fontSize: 12, fontWeight: 800,
+              color: modeColor, letterSpacing: '0.05em'
+            }}>
+              aomi
+            </span>
+            <span style={{
+              padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+              background: `${modeColor}20`, color: modeColor,
+              border: `1px solid ${modeColor}40`
+            }}>
+              LIVE
+            </span>
+            {agentConfig.equity != null && (
+              <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                equity: ${(agentConfig.equity as number).toFixed(0)}
+              </span>
+            )}
+            {recentTrades > 0 && (
+              <span style={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
+                {recentTrades} trades
+              </span>
+            )}
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 9, color: '#2E9E68', fontFamily: 'var(--font-geist-mono)', opacity: 0.7 }}>
+              LIVE MODE
+            </span>
+            <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Cmd+K emergency stop</span>
+          </div>
+        )
+      })()}
 
       <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '260px 1fr 220px', gap: 12, minHeight: 0, overflow: 'hidden', padding: '12px 16px' } as React.CSSProperties}>
 
         {/* ── LEFT: Agent config ──────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+          {/* ── Autonomous Watchlist ────────────────────────────────────── */}
+          {agentWatchlist.length > 0 && (
+            <div className="card" style={{ padding: '12px 14px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Watchlist · {agentWatchlist.length} markets
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {agentWatchlist.slice(0, 8).map(w => (
+                  <WatchlistCard
+                    key={w.coin}
+                    coin={w.coin}
+                    type={(w.type as 'perp' | 'spot') || 'perp'}
+                    mid={w.mid ?? 0}
+                    compositeScore={w.compositeScore ?? 0}
+                    triggers={(w.triggers ?? []).map((t: any) => ({ ...t, score: t.score ?? 0 }))}
+                    status={(w.status as any) ?? 'scanning'}
+                    blockReason={w.blockReason}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Balance */}
           {account && (() => {
@@ -824,7 +967,7 @@ export default function AgentPage() {
               </span>
             </div>
             {[
-              ['Market',    'BTC-PERP'],
+              ['Market',    `${coinParam}-PERP`],
               ['Timeframe', '1h – 4h'],
               ['Signal',    '1h candles + book'],
               ['Leverage',  `${leverage}×`],
@@ -1008,6 +1151,33 @@ export default function AgentPage() {
 
         {/* ── RIGHT: Stats ────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+          {/* ── Decision Stream ─────────────────────────────────────────── */}
+          {agentDecisions.length > 0 && (
+            <div className="card" style={{ padding: '12px 14px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Reasoning Stream
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+                {[...agentDecisions].reverse().slice(0, 12).map((d, i) => (
+                  <DecisionEntry
+                    key={`${d.coin}-${d.createdAt}-${i}`}
+                    coin={d.coin}
+                    verdict={d.verdict}
+                    confidence={d.confidence}
+                    reasoning={d.reasoning}
+                    side={d.side as 'long' | 'short' | null}
+                    entryPx={d.entryPx}
+                    stopPx={d.stopPx}
+                    tpPx={d.tpPx}
+                    newsContext={d.newsContext}
+                    executed={d.executed}
+                    createdAt={d.createdAt}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Session P&L */}
           <div className="card" style={{ padding: '14px 16px' }}>

@@ -70,6 +70,7 @@ export default function Header({ cycleId, isRunning, lastCompletedAt, onRunCycle
         {([
           { href: '/dashboard', label: 'Dashboard' },
           { href: '/agent',     label: 'Agent'     },
+          { href: '/scanner',   label: 'Scanner'   },
         ] as const).map(({ href, label }) => {
           const active = pathname === href || (pathname === '/' && href === '/dashboard')
           return (

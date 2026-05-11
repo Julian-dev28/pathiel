@@ -2,7 +2,7 @@ import { encode } from '@msgpack/msgpack'
 import { keccak256 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
-const HL_API = 'https://api.hyperliquid.xyz'
+export const HL_API = 'https://api.hyperliquid.xyz'
 
 export const HL_WALLET  = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''   // API wallet — signer
 export const HL_MASTER  = process.env.HYPERLIQUID_MASTER_ADDRESS ?? ''   // master account — holds funds

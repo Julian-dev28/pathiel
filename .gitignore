@@ -58,6 +58,8 @@ timesfm/
 # Persistent trade log (local algo data, not for VCS)
 data/trade-log.json
 data/agent-config.json
+data/trade-journal.json
+data/trade-journal.json.tmp
 
 # Python service runtime cache/output (generated at runtime)
 python-service/_backtest_cache_*.json
@@ -79,6 +81,22 @@ sentient-trader-mcp/*.egg-info/
 python-service/backtest_67c.py
 python-service/test_tiered_kelly.py
 
+# Scanner config
+.scanner-config.json
+
 ONE_PAGER.md
 THREAD.md
 DISTRIBUTE.md
+
+# Agent config
+.agent-config.json
+.agent-memory.json
+
+# Rust build artifacts
+target/
+
+# Editor backups
+*.bak
+
+# Local backtest output
+backtest-trades.csv

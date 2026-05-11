@@ -82,6 +82,42 @@ function rsi(c, period = 14) {
   }
   return out
 }
+function adx(c, period = 14) {
+  const n = c.length
+  const out = new Array(n).fill(NaN)
+  if (n <= period * 2) return out
+  const tr = new Array(n).fill(0)
+  const pDM = new Array(n).fill(0)
+  const mDM = new Array(n).fill(0)
+  for (let i = 1; i < n; i++) {
+    const h = c[i].h, l = c[i].l, pc = c[i - 1].c, ph = c[i - 1].h, pl = c[i - 1].l
+    tr[i] = Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc))
+    const up = h - ph, dn = pl - l
+    pDM[i] = (up > dn && up > 0) ? up : 0
+    mDM[i] = (dn > up && dn > 0) ? dn : 0
+  }
+  let trS = 0, pS = 0, mS = 0
+  for (let i = 1; i <= period; i++) { trS += tr[i]; pS += pDM[i]; mS += mDM[i] }
+  const dx = new Array(n).fill(NaN)
+  const computeDX = () => {
+    const pdi = trS === 0 ? 0 : 100 * pS / trS
+    const mdi = trS === 0 ? 0 : 100 * mS / trS
+    const sum = pdi + mdi
+    return sum === 0 ? 0 : 100 * Math.abs(pdi - mdi) / sum
+  }
+  dx[period] = computeDX()
+  for (let i = period + 1; i < n; i++) {
+    trS = trS - trS / period + tr[i]
+    pS  = pS  - pS  / period + pDM[i]
+    mS  = mS  - mS  / period + mDM[i]
+    dx[i] = computeDX()
+  }
+  let adxS = 0
+  for (let i = period; i < period * 2; i++) adxS += dx[i]
+  out[period * 2 - 1] = adxS / period
+  for (let i = period * 2; i < n; i++) out[i] = (out[i - 1] * (period - 1) + dx[i]) / period
+  return out
+}
 
 // ── Data fetch ─────────────────────────────────────────────────────────────
 async function fetchCandles(interval, startTime, endTime) {
@@ -150,24 +186,32 @@ function entrySignal(c1, ema1, rsi1, volSma, i, want) {
 }
 
 // HTF = higher-timeframe (4h or 1d depending on mode). LTF = lower (1h or 4h).
-function runOne(ltf, htf, p) {
+// daily (optional): daily candles for the 1d-trend regime filter.
+function runOne(ltf, htf, p, daily = null) {
   const closeH = htf.map(x => x.c)
   const efH = ema(closeH, p.fastP)
   const esH = ema(closeH, p.slowP)
+  const adxH = (p.adxMin > 0) ? adx(htf, 14) : null
   const emaL = ema(ltf.map(x => x.c), p.ema1P)
   const atrL = atr(ltf, p.atrP)
   const rsiL = rsi(ltf, 14)
   const volSma = sma(ltf.map(x => x.v), 20)
   const ltfMs = (ltf[1]?.t ?? 0) - (ltf[0]?.t ?? 0) || 3600_000
   const htfMs = (htf[1]?.t ?? 0) - (htf[0]?.t ?? 0) || 4 * 3600_000
+  const useDaily = p.useDailyTrend && daily && daily.length > 22
+  const dailyEf = useDaily ? ema(daily.map(x => x.c), 8) : null
+  const dailyEs = useDaily ? ema(daily.map(x => x.c), 21) : null
+  const dailyMs = useDaily ? ((daily[1]?.t ?? 0) - (daily[0]?.t ?? 0) || 86400_000) : 86400_000
 
   let equity = STARTING_EQ
   let peak = equity, maxDD = 0
   let pos = null
   const trades = []
   let lastExitIdx = -10
+  const startI = p.windowStart ?? 1
+  const endI   = p.windowEnd ?? ltf.length
 
-  for (let i = 1; i < ltf.length; i++) {
+  for (let i = startI; i < endI; i++) {
     const c = ltf[i]
     const closeMs = c.t + ltfMs
     const ti4 = latestClosed(htf, htfMs, closeMs)
@@ -245,6 +289,24 @@ function runOne(ltf, htf, p) {
       if (trend === 'up'   && entrySignal(ltf, emaL, rsiL, volSma, i, 'long'))  want = 'long'
       if (!want && trend === 'down' && entrySignal(ltf, emaL, rsiL, volSma, i, 'short')) want = 'short'
       if (want) {
+        // Regime filters: vol floor (ATR/price), 4h ADX, 1d trend agreement.
+        if (p.volFloor > 0 && a / c.c < p.volFloor) want = null
+        if (want && p.adxMin > 0) {
+          const av = adxH[ti4]
+          if (!isFinite(av) || av < p.adxMin) want = null
+        }
+        if (want && useDaily) {
+          const di = latestClosed(daily, dailyMs, closeMs)
+          if (di < 0 || !isFinite(dailyEf[di]) || !isFinite(dailyEs[di])) want = null
+          else {
+            const up = dailyEf[di] > dailyEs[di]
+            const dn = dailyEf[di] < dailyEs[di]
+            if (want === 'long'  && !up) want = null
+            if (want === 'short' && !dn) want = null
+          }
+        }
+      }
+      if (want) {
         const stopDist = a * p.stopMult
         const entryPx  = c.c // gross fill; FEE + SLIPPAGE are charged separately via tradeCost
         const stop     = want === 'long' ? entryPx - stopDist : entryPx + stopDist
@@ -266,7 +328,7 @@ function runOne(ltf, htf, p) {
   }
 
   if (pos) {
-    const last     = ltf[ltf.length - 1]
+    const last     = ltf[endI - 1]
     const exitPx   = last.c
     const grossPnl = (pos.side === 'long' ? exitPx - pos.entryPx : pos.entryPx - exitPx) * pos.size
     const exitCost = tradeCost(exitPx * pos.size)
@@ -308,6 +370,10 @@ const DEFAULT = {
   riskPct: 0.02,
   cooldown: 1,
   maxHoldBars: 0,
+  // Regime filters (off by default — opt in via the `regime` mode or by setting these)
+  adxMin: 0,         // skip if 4h ADX < adxMin (0 = disabled)
+  volFloor: 0,       // skip if ATR/price < volFloor (e.g. 0.005 = 0.5%; 0 = disabled)
+  useDailyTrend: false, // require 1d EMA8/21 trend agreement
 }
 
 async function runWindow(days, params, label = 'run', mode = '1h-4h') {
@@ -391,6 +457,96 @@ async function main() {
       console.log(`▶ ${tag}`)
       for (let i = 0; i < ds.length; i++) report(`  ${ds[i]}d`, rs[i], ds[i])
       console.log()
+    }
+    return
+  }
+
+  if (mode === 'compare') {
+    const days = Number(process.argv[3] ?? 180)
+    const trainFrac = 2 / 3
+    console.log(`Head-to-head: 4h-1d default  vs  1h-4h ADX≥25 +1dTrend, over ${days}d.\n`)
+    const ltf1h = await getCandles('1h', days)
+    const ltf4h = await getCandles('4h', days)
+    const htf1d = await getCandles('1d', days)
+    const splitIdx1h = Math.floor(ltf1h.length * trainFrac)
+    const splitIdx4h = Math.floor(ltf4h.length * trainFrac)
+    const trainDays = Math.round(days * trainFrac)
+    const testDays  = days - trainDays
+
+    const cfg4h1d = { ...DEFAULT } // the deployed config
+    const cfg1h4h = { ...DEFAULT, stopMult: 2.5, rrTarget: 1.5, p1Target: 0.5, partial: false, riskPct: 0.01, adxMin: 25, useDailyTrend: true }
+
+    const runs = [
+      { label: 'full 180d', d: days, h1: { s: 1, e: ltf1h.length }, h4: { s: 1, e: ltf4h.length } },
+      { label: 'train',     d: trainDays, h1: { s: 1, e: splitIdx1h }, h4: { s: 1, e: splitIdx4h } },
+      { label: 'test (OOS)', d: testDays, h1: { s: splitIdx1h, e: ltf1h.length }, h4: { s: splitIdx4h, e: ltf4h.length } },
+    ]
+    for (const r of runs) {
+      console.log(`── ${r.label} ──`)
+      const r4h = runOne(ltf4h, htf1d, { ...cfg4h1d, windowStart: r.h4.s, windowEnd: r.h4.e })
+      const r1h = runOne(ltf1h, ltf4h, { ...cfg1h4h, windowStart: r.h1.s, windowEnd: r.h1.e }, htf1d)
+      report('  4h-1d default     ', r4h, r.d)
+      report('  1h-4h ADX25+1dTrn ', r1h, r.d)
+      console.log()
+    }
+    return
+  }
+
+  if (mode === 'regime') {
+    const days = Number(process.argv[3] ?? 180)
+    const trainFrac = 2 / 3
+    console.log(`Regime-filter analysis [1h-4h-1d] over ${days}d with ${Math.round(trainFrac * 100)}/${Math.round((1 - trainFrac) * 100)} train/test split.\n`)
+    const ltf = await getCandles('1h', days)
+    const htf = await getCandles('4h', days)
+    const daily = await getCandles('1d', days)
+    const splitIdx = Math.floor(ltf.length * trainFrac)
+    const trainDays = Math.round(days * trainFrac)
+    const testDays  = days - trainDays
+    console.log(`Train: ${splitIdx} 1h bars (~${trainDays}d)   Test: ${ltf.length - splitIdx} 1h bars (~${testDays}d)\n`)
+
+    const grid = []
+    for (const stopMult of [1.5, 2.0, 2.5])
+      for (const rrTarget of [0.8, 1.0, 1.5])
+        for (const partial of [true, false])
+          for (const adxMin of [0, 15, 20, 25])
+            for (const volFloor of [0, 0.003, 0.005])
+              for (const useDailyTrend of [false, true])
+                grid.push({ ...DEFAULT, stopMult, rrTarget, p1Target: 0.5, partial, adxMin, volFloor, useDailyTrend, riskPct: 0.01 })
+
+    console.log(`Sweeping ${grid.length} regime/strategy combos on train window...\n`)
+    const trainResults = grid.map(p => ({
+      p,
+      r: runOne(ltf, htf, { ...p, windowStart: 1, windowEnd: splitIdx }, daily),
+    }))
+    const profitable = trainResults.filter(x => x.r.ret > 0 && x.r.n >= 10 && x.r.maxDD < 0.25)
+    profitable.sort((a, b) => b.r.ret - a.r.ret)
+    console.log(`Profitable on train (n≥10, DD<25%): ${profitable.length} / ${grid.length}\n`)
+    if (profitable.length === 0) {
+      console.log('No regime-filter combo turns 1h-4h profitable in-sample. Honest answer: this timeframe has no edge with this signal.')
+      return
+    }
+    const top = profitable.slice(0, 10).map(({ p, r }) => ({
+      p,
+      trainR: r,
+      testR: runOne(ltf, htf, { ...p, windowStart: splitIdx, windowEnd: ltf.length }, daily),
+    }))
+    console.log('Top 10 train winners, with held-out test performance:\n')
+    for (const { p, trainR, testR } of top) {
+      const tag = `s${p.stopMult} rr${p.rrTarget}${p.partial?'P':''} adx≥${p.adxMin} vf${(p.volFloor*100).toFixed(2)}% ${p.useDailyTrend?'+1dTrend':'        '}`
+      console.log(`▶ ${tag}`)
+      report('  train', trainR, trainDays)
+      report('  test ', testR,  testDays)
+      console.log()
+    }
+    const testProfitable = top.filter(x => x.testR.ret > 0).length
+    const testPosPF      = top.filter(x => x.testR.pf > 1).length
+    console.log(`Out-of-sample verdict: ${testProfitable}/10 train-top combos are profitable on test, ${testPosPF}/10 have PF>1 on test.`)
+    if (testProfitable === 0) {
+      console.log('→ Regime filters didn\'t generalize. The 1h-4h signal lacks robust edge.')
+    } else if (testProfitable < 3) {
+      console.log('→ Marginal. Most "winners" were in-sample lucky; treat any candidate with skepticism.')
+    } else {
+      console.log('→ Multiple combos survive out-of-sample. Worth deeper validation (more windows, walk-forward).')
     }
     return
   }

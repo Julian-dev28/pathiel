@@ -172,4 +172,76 @@ The API wallet signs; if a master account is configured, orders are routed to th
 
 ---
 
+## Multi-Market Scanner + Auto-Trader
+
+The `/scanner` dashboard watches 200+ Hyperliquid perp/spot markets continuously and fires AI analysis only when statistical triggers (price spikes, volume surges, breakouts, Bollinger squeezes) fire.
+
+### Running the scanner daemon
+
+```bash
+# In one terminal
+npm run dev
+
+# In a second terminal — starts polling every 60s
+node scripts/scanner-daemon.mjs
+
+# Optional env vars:
+#   SCANNER_API_URL=http://localhost:3000   (default)
+#   SCANNER_INTERVAL_MS=60000               (default, 60s)
+#   SCANNER_MIN_SCORE=1.0                   (min composite score 0-10)
+```
+
+### LIVE-mode flip procedure
+
+1. Navigate to `/scanner` — the auto-trade toggle shows **OFF** or **DRY**.
+2. Click through: OFF → DRY → LIVE. The LIVE transition requires typing `LIVE` to confirm.
+3. **LIVE mode also requires `ALLOW_LIVE_TRADING=true` in `.env.local`** — without this env var, the API returns 403.
+4. To instantly disable: press **Cmd+K** or click the toggle (sets mode to OFF).
+5. Default safety caps: ≤3 concurrent positions, $200 per trade, -$100 daily loss kill switch, 60-min cooldown per market. Edit at `/api/scanner/auto-trade/config` or in `.scanner-config.json`.
+
+### Press Cmd+K anywhere on /scanner to kill switch
+
 Built on [`@aomi-labs/client`](https://github.com/aomi-labs/aomi-sdk) · Hyperliquid API · Next.js 15
+## Autonomous Multi-Market Agent
+
+The `/agent` page is now a multi-market autonomous trading firm: **scanner** (perception) → **research** (AI analyst) → **risk gates** (compliance) → **executor** (trader). It watches every market on Hyperliquid via `lib/hl-universe.ts`, fires statistical triggers (pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength) in `lib/agent/triggers.ts`, and only runs AI analysis on triggered candidates via the heartbeat daemon.
+
+### Running the heartbeat daemon
+
+```bash
+# Terminal 1: Next.js dev server
+npm run dev
+
+# Terminal 2: heartbeat daemon — polls the full HL universe every 60s
+node scripts/agent-heartbeat.mjs
+```
+
+The heartbeat calls `/api/agent/scan` → ingests perceptions → triggers `/api/agent/research/{coin}` for high-score candidates (default threshold 75) → runs the research pipeline (multi-timeframe indicators + news + AI verdict) → executes through risk gates. All AI analysis happens server-side; the UI streams results every 5s.
+
+### LIVE mode
+
+1. Navigate to `/agent` — the top bar shows the agent mode (OFF by default).
+2. Click **ACTIVATE LIVE** — a confirmation modal appears.
+3. Type the word `LIVE` into the input to confirm. Mode flips to LIVE and real orders will execute.
+4. **Cmd+K** from anywhere on the page instantly sets mode to OFF and logs a kill-switch message.
+5. Default risk caps: ≤3 concurrent positions, $200/trade notional, -$100 daily loss kill switch, 60-min cooldown per market, news blackout on binary events. Configure at `/api/agent/config` or by editing `.agent-config.json`.
+
+### Architecture
+
+```
+Heartbeat (node scripts/agent-heartbeat.mjs, every 60s)
+  └→ POST /api/agent/scan      → scans all HL markets, returns triggered perceptions
+  └→ POST /api/agent/ingest    → stores perceptions in agent memory
+  └→ POST /api/agent/research/{coin} → deep analysis pipeline:
+       1. Fetch 1h/4h/1d candles + indicators
+       2. Fetch news via Brave Search
+       3. Call AI through OpenRouter with full context
+       4. Parse verdict, persist analysis
+       5. POST /api/agent/execute → runs 10 risk gates → executes in LIVE mode
+
+Browser (/agent page, polls /api/agent/state every 5s)
+  └→ Watchlist: top-12 markets by composite trigger score
+  └→ Decision stream: live AI verdicts with gate results
+  └→ Chat: existing BTC-PERP analyst (single market, manual trigger)
+```
+
