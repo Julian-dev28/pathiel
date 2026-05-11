@@ -8,6 +8,7 @@ interface PlaceOrderRequest {
   riskUSD?:  number   // explicit dollar amount
   riskPct?:  number   // fallback % of equity
   leverage?: number
+  coin?:     string   // default BTC
 }
 
 // ROBUST brackets — profitable on 90/180/365d BTC after realistic costs.
@@ -18,13 +19,21 @@ const TP2_ATR_MULT = 1.0    // Same target — partial logic disabled
 const TP1_FRAC     = 1.0    // 100% closes at TP (no partial)
 
 export async function POST(req: NextRequest) {
-  const { side, riskUSD: riskUSDParam, riskPct, leverage = HL_LEVERAGE } = (await req.json()) as PlaceOrderRequest
+  const { side, riskUSD: riskUSDParam, riskPct, leverage = HL_LEVERAGE, coin = 'BTC' } = (await req.json()) as PlaceOrderRequest
 
   try {
-    const [midPrice, account, atr] = await Promise.all([
-      getHLPrice(),
+    // Get all mids to find price for this coin
+    const midsRes = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'allMids' }),
+    })
+    const allMids = await midsRes.json() as Record<string, string>
+    const midPrice = parseFloat(allMids[coin] ?? '0')
+
+    const [account, atr] = await Promise.all([
       getHLAccount(HL_ACCOUNT),
-      getHLATR('4h', 14),
+      getHLATR('4h', 14, coin),
     ])
 
     if (midPrice <= 0) return NextResponse.json({ ok: false, error: 'invalid price' })
@@ -43,8 +52,10 @@ export async function POST(req: NextRequest) {
     const sizeBTC     = parseFloat((notional / midPrice).toFixed(5))
     const isBuy       = side === 'long'
 
-    await setLeverage(leverage)
-    const result = await placeHLOrder(isBuy, sizeBTC, midPrice)
+    const { getCoinIndex } = await import('@/lib/hyperliquid')
+    const { index: assetIdx } = await getCoinIndex(coin)
+    await setLeverage(assetIdx, leverage)
+    const result = await placeHLOrder(isBuy, notional / midPrice, midPrice, coin)
     if (!result.ok) return NextResponse.json({ ...result, sizeBTC, midPrice, equity: totalEquity, leverage })
 
     // Auto-place SL + TP brackets sized via 4h ATR. ROBUST backtested defaults — single TP at 1× ATR.

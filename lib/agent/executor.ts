@@ -158,6 +158,7 @@ export async function maybeExecute(analysis: AgentAnalysis): Promise<ExecutionRe
           side: analysis.side === 'long' ? 'long' : 'short',
           riskUSD: tradeNotionalUSD,
           leverage: 5,
+          coin: analysis.coin,
         }),
       },
     )

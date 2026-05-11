@@ -14,6 +14,27 @@ export const HL_ACCOUNT  = IS_AGENT ? HL_MASTER : HL_WALLET   // address to quer
 
 export const HL_LEVERAGE = 5  // 5× cross margin
 
+// ── Coin to HL asset index resolver ───────────────────────────────────────
+let _coinIndexCache: Map<string, { index: number; szDecimals: number }> | null = null
+
+export async function getCoinIndex(coin: string): Promise<{ index: number; szDecimals: number }> {
+  if (!_coinIndexCache) {
+    try {
+      const res = await fetch(`${HL_API}/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'meta' }),
+      })
+      const meta = await res.json() as { universe?: Array<{ name: string; szDecimals: number }> }
+      _coinIndexCache = new Map()
+      meta.universe?.forEach((u, i) => _coinIndexCache!.set(u.name, { index: i, szDecimals: u.szDecimals }))
+    } catch { _coinIndexCache = new Map() }
+  }
+  const entry = _coinIndexCache.get(coin)
+  if (!entry) throw new Error(`Unknown coin: ${coin}`)
+  return entry
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface HLPosition {
@@ -160,10 +181,10 @@ export async function transferSpotToPerp(amount: number): Promise<void> {
   })
 }
 
-export async function setLeverage(leverage: number): Promise<void> {
+export async function setLeverage(asset: number, leverage: number): Promise<void> {
   if (!PRIVATE_KEY) return
   const nonce  = Date.now()
-  const action = { type: 'updateLeverage', asset: 0, isCross: true, leverage }
+  const action = { type: 'updateLeverage', asset, isCross: true, leverage }
   const sig    = await signAction(action, nonce)
   await fetch(`${HL_API}/exchange`, {
     method:  'POST',
@@ -173,24 +194,30 @@ export async function setLeverage(leverage: number): Promise<void> {
 }
 
 export async function placeHLOrder(
-  isBuy:    boolean,
-  sizeBTC:  number,
+  isBuy:     boolean,
+  size:     number,
   midPrice: number,
+  coin:     string = 'BTC',
+  assetIdx?: number,  // if not provided, resolved via getCoinIndex
 ): Promise<{ ok: boolean; orderId?: string; error?: string }> {
   if (!PRIVATE_KEY) return { ok: false, error: 'HYPERLIQUID_PRIVATE_KEY not set' }
+
+  // Resolve asset index
+  const idx = assetIdx ?? (await getCoinIndex(coin)).index
+  const szDec = assetIdx !== undefined ? 5 : (await getCoinIndex(coin)).szDecimals
 
   // HL normalizes p and s (strips trailing zeros) before computing the hash —
   // our signed action must use the same canonical form or ecrecover returns garbage.
   const limitPx = isBuy
     ? String(Math.round(midPrice * 1.05))
     : String(Math.round(midPrice * 0.95))
-  const sizeStr = stripZeros(sizeBTC.toFixed(5))
+  const sizeStr = stripZeros(size.toFixed(szDec))
 
   const nonce  = Date.now()
   const action = {
     type:   'order',
     orders: [{
-      a: 0,
+      a: idx,
       b: isBuy,
       p: limitPx,
       s: sizeStr,
@@ -231,25 +258,27 @@ export async function placeHLOrder(
 // Place a reduce-only trigger order (stop-loss or take-profit) that fires at triggerPx as a market close.
 export async function placeHLTriggerOrder(
   isLongPosition: boolean,
-  sizeBTC:        number,
+  size:           number,
   triggerPx:      number,
   kind:           'sl' | 'tp',
+  assetIdx:       number = 0,
 ): Promise<{ ok: boolean; orderId?: string; error?: string }> {
   if (!PRIVATE_KEY) return { ok: false, error: 'HYPERLIQUID_PRIVATE_KEY not set' }
-  if (sizeBTC <= 0 || triggerPx <= 0) return { ok: false, error: 'invalid size/price' }
+  if (size <= 0 || triggerPx <= 0) return { ok: false, error: 'invalid size/price' }
 
   const triggerStr = stripZeros(String(Math.round(triggerPx)))
-  const sizeStr    = stripZeros(sizeBTC.toFixed(5))
+  const sizeStr    = stripZeros(size.toFixed(5))  // trigger orders use standard precision
   // limit price: for a market trigger HL still requires a p — use a wide one so it always fills
   const limitPx = isLongPosition
     ? String(Math.round(triggerPx * 0.95))     // closing a long = sell, accept down to 5% below trigger
     : String(Math.round(triggerPx * 1.05))     // closing a short = buy, accept up to 5% above trigger
 
   const nonce  = Date.now()
+  const coinIdx = assetIdx
   const action = {
     type:   'order',
     orders: [{
-      a: 0,
+      a: coinIdx,
       b: !isLongPosition,                       // opposite side closes the position
       p: limitPx,
       s: sizeStr,
@@ -279,7 +308,7 @@ export async function placeHLTriggerOrder(
 }
 
 // Compute ATR(14) on a given HL interval. Defaults to 4h, the timeframe used for backtested entries.
-export async function getHLATR(interval: '1h' | '4h' | '1d' = '4h', period = 14): Promise<number> {
+export async function getHLATR(interval: '1h' | '4h' | '1d' = '4h', period = 14, coin: string = 'BTC'): Promise<number> {
   const intervalMs: Record<string, number> = { '1h': 3600_000, '4h': 4 * 3600_000, '1d': 86400_000 }
   const ms = intervalMs[interval]
   const endTime   = Date.now()
@@ -287,7 +316,7 @@ export async function getHLATR(interval: '1h' | '4h' | '1d' = '4h', period = 14)
   const res = await fetch(`${HL_API}/info`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'candleSnapshot', req: { coin: 'BTC', interval, startTime, endTime } }),
+    body: JSON.stringify({ type: 'candleSnapshot', req: { coin, interval, startTime, endTime } }),
   })
   const raw = await res.json() as Array<{ t: number; h: string; l: string; c: string }>
   if (!Array.isArray(raw) || raw.length < period + 1) return 0
@@ -301,6 +330,32 @@ export async function getHLATR(interval: '1h' | '4h' | '1d' = '4h', period = 14)
   let atr = tr.slice(0, period).reduce((s, x) => s + x, 0) / period
   for (let i = period; i < tr.length; i++) atr = (atr * (period - 1) + tr[i]) / period
   return atr
+}
+
+export function getAllPositions(rawPerp: {
+  marginSummary?: { accountValue: string; totalNtlPos: string }
+  assetPositions?: Array<{
+    position: { coin: string; szi: string; entryPx: string; unrealizedPnl: string; leverage?: { value: string } }
+  }>
+}): Array<{ coin: string; side: 'long' | 'short'; szi: number; entryPx: number; unrealizedPnl: number; leverage: number; notional: number }> {
+  const mids: Record<string, number> = {}
+  return (rawPerp.assetPositions ?? [])
+    .map(p => {
+      const szi = parseFloat(p.position.szi)
+      if (szi === 0) return null
+      const entryPx = parseFloat(p.position.entryPx)
+      const notional = Math.abs(szi) * entryPx
+      return {
+        coin: p.position.coin,
+        side: szi > 0 ? 'long' as const : 'short' as const,
+        szi: Math.abs(szi),
+        entryPx,
+        unrealizedPnl: parseFloat(p.position.unrealizedPnl),
+        leverage: parseFloat(p.position.leverage?.value ?? '5'),
+        notional,
+      }
+    })
+    .filter((p): p is NonNullable<typeof p> => p !== null)
 }
 
 // Backwards-compat alias
