@@ -282,8 +282,12 @@ export async function research(coin: string, perception: Perception): Promise<Ag
       ])
 
       const perpEquity = parseFloat(perpRaw.marginSummary?.accountValue ?? '0')
-      const spotUSDC = (spotRaw.balances ?? []).find(b => b.coin === 'USDC')
-      equity = perpEquity + (spotUSDC ? parseFloat(spotUSDC.total) : 0)
+      const spotBalances = (spotRaw.balances ?? [])
+        .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+        .map(b => `${b.coin}: ${b.total}`)
+        .join(', ') || 'none'
+      console.log(`[research] perp equity=$${perpEquity.toFixed(2)}, spot=${spotBalances}`)
+      equity = perpEquity
 
       // Check perp positions for context
       openPositions = (perpRaw.assetPositions ?? [])

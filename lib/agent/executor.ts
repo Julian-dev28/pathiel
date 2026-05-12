@@ -85,8 +85,14 @@ export async function maybeExecute(analysis: AgentAnalysis): Promise<ExecutionRe
       const perpEquity = parseFloat(perpAcct.marginSummary?.accountValue ?? '0')
       totalOpenNotional = parseFloat(perpAcct.marginSummary?.totalNtlPos ?? '0')
 
-      const spotUSDC = (spotAcct.balances ?? []).find(b => b.coin === 'USDC')
-      equity = perpEquity + (spotUSDC ? parseFloat(spotUSDC.total) : 0)
+      // Unified account: perp accountValue already includes spot collateral. 
+      // Log spot balances for debugging.
+      const spotBalances = (spotAcct.balances ?? [])
+        .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+        .map(b => `${b.coin}: ${b.total}`)
+        .join(', ') || 'none'
+      console.log(`[executor] perp equity=$${perpEquity.toFixed(2)}, spot=${spotBalances}`)
+      equity = perpEquity
 
       // Check perp positions for open position guard
       positions = (perpAcct.assetPositions ?? [])

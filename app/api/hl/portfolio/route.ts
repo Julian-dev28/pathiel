@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server'
-import { HL_API, HL_ACCOUNT, getAllPositions } from '@/lib/hyperliquid'
+import { HL_API, HL_ACCOUNT, getHLAccount } from '@/lib/hyperliquid'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
   try {
-    const res = await fetch(`${HL_API}/info`, {
+    const account = await getHLAccount(HL_ACCOUNT)
+
+    // Fetch perp positions for detailed display
+    const perpRes = await fetch(`${HL_API}/info`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'clearinghouseState', user: HL_ACCOUNT }),
     })
-    const raw = await res.json() as {
-      marginSummary?: { accountValue: string; totalNtlPos: string }
+    const raw = await perpRes.json() as {
       assetPositions?: Array<{
         position: {
           coin: string
@@ -22,9 +24,6 @@ export async function GET() {
         }
       }>
     }
-    const positions = getAllPositions(raw)
-    const equity = parseFloat(raw.marginSummary?.accountValue ?? '0')
-    const totalNotional = parseFloat(raw.marginSummary?.totalNtlPos ?? '0')
 
     // Fetch allMids for live mark prices
     const midsRes = await fetch(`${HL_API}/info`, {
@@ -33,6 +32,9 @@ export async function GET() {
       body: JSON.stringify({ type: 'allMids' }),
     })
     const mids = await midsRes.json() as Record<string, string>
+
+    const { getAllPositions } = await import('@/lib/hyperliquid')
+    const positions = getAllPositions(raw)
 
     const enriched = positions.map(p => {
       const markPrice = parseFloat(mids[p.coin] ?? '0')
@@ -49,8 +51,8 @@ export async function GET() {
     })
 
     return NextResponse.json({
-      equity,
-      totalNotional,
+      equity: account.equity,
+      totalNotional: account.totalNtl,
       positions: enriched,
     })
   } catch (err) {

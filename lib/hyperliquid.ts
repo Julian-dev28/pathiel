@@ -102,7 +102,7 @@ export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
     .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
     .reduce((sum, b) => sum + parseFloat(b.total), 0)
 
-  const equity = perpEquity + spotUSDC
+  const equity = perpEquity
 
   const btcPos = (perp.assetPositions ?? []).find(p => p.position.coin === 'BTC')
   let position: HLPosition | null = null

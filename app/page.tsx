@@ -140,7 +140,11 @@ export default function TradingDesk() {
   const fetchPortfolio = useCallback(async () => {
     try {
       const res = await fetch('/api/hl/portfolio')
-      if (res.ok) setPortfolio(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        setPortfolio(data)
+        if (data.equity != null) setEquity(data.equity)
+      }
     } catch { /* ignore */ }
   }, [])
 
@@ -153,7 +157,8 @@ export default function TradingDesk() {
         if (Array.isArray(d.recentAnalyses)) setAnalyses(d.recentAnalyses)
         if (Array.isArray(d.recentTrades)) setTrades(d.recentTrades)
         if (Array.isArray(d.watchlist)) setWatchlist(d.watchlist.slice(0, 10))
-        if (d.equity != null) setEquity(d.equity)
+        // Note: equity comes from /api/hl/portfolio (the real source of truth)
+        // Agent memory equity is only populated after scans — don't clobber
         if (d.winRate) setWinRate(d.winRate)
         if (d.dailyPnl != null) setDailyPnl(d.dailyPnl)
       }
