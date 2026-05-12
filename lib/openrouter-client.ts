@@ -7,4 +7,4 @@ export function createOpenAIClient() {
   })
 }
 
-export const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'qwen/qwen3.6-plus'
+export const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? 'qwen/qwen3-235b-a22b'

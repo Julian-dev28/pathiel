@@ -321,6 +321,8 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     memory.recordAnalysis(analysis)
     return analysis
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`[research] FAILED for ${coin}: ${msg}\n`)
     const fallback: AgentAnalysis = {
       id: crypto.randomUUID(),
       perceptionId: 'unknown',
@@ -331,7 +333,7 @@ export async function research(coin: string, perception: Perception): Promise<Ag
       entryPx: perception.mid,
       stopPx: 0,
       tpPx: 0,
-      reasoning: `Research failed: ${err instanceof Error ? err.message : String(err)}`,
+      reasoning: `Research failed: ${msg}`,
       createdAt: Date.now(),
     }
     memory.recordAnalysis(fallback)
