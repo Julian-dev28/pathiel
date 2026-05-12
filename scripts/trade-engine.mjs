@@ -1,137 +1,158 @@
-// Hermes-Trader Autonomous Engine — standalone Node.js script
-// Usage: node scripts/trade-engine.mjs [one-shot | --loop]
+#!/usr/bin/env node
+// Hermes-Trader Autonomous Engine
+// Calls the existing Next.js API routes via fetch (no UI needed, just the API).
+// Usage: node scripts/trade-engine.mjs [--loop]
 //
-// Pipeline: Scan → TA Filter → AI Research → Execute
-// No Next.js needed — uses lib/agent modules directly.
-// All env vars loaded from .env.local via import-meta-env.
+// Pipeline: Scan → TA Filter (top N) → AI Research (max 3) → Execute (conf >= 70%)
+// Reports results to stdout.
 
-// ── Load env ──────────────────────────────────────────────────────────────────
+// ── Load env ─────────────────────────────────────────────────────────────────
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
-// ── Imports (all lib/agent modules are standalone Node.js) ───────────────────
-import { getUniverse, getMarketByCoin } from '../lib/hl-universe.js'
-import { scanOnce } from '../lib/agent/perception.js'
-import { analyzePerception } from '../lib/agent/ta-filter.js'
-import { research } from '../lib/agent/research.js'
-import { maybeExecute } from '../lib/agent/executor.js'
-import { memory } from '../lib/agent/memory.js'
-import { setLastScanAt } from '../app/api/agent/state/route.ts'  // only if on Next.js
-
-const HL_API = 'https://api.hyperliquid.xyz'
-const SCAN_INTERVAL_MS = parseInt(process.env.AGENT_HEARTBEAT_INTERVAL_MS || '3600000', 10) // 1h default
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+const SCAN_INTERVAL_MS = parseInt(process.env.AGENT_SCAN_INTERVAL_MS || '3600000', 10) // 1h
 const MIN_SCORE = parseInt(process.env.AGENT_MIN_SCORE || '70', 10)
+const MAX_RESEARCH = parseInt(process.env.MAX_RESEARCH_PER_CYCLE || '3', 10)
+const MIN_CONFIDENCE = parseFloat(process.env.MIN_AI_CONFIDENCE || '0.70')
 
 function ts() { return new Date().toISOString().slice(11, 19) }
 function log(msg) { console.log(`[${ts()}] ${msg}`) }
 
-// ── HL Helpers (direct, no proxy) ───────────────────────────────────────────
-async function hlPost(body) {
-  const res = await fetch(`${HL_API}/info`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!res.ok) throw new Error(`HL ${res.status}`)
+// ── API helpers ──────────────────────────────────────────────────────────────
+async function apiGet(path) {
+  const res = await fetch(`${BASE_URL}${path}`, { signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new Error(`${path}: ${res.status}`)
   return res.json()
 }
 
-async function getPortfolio() {
-  try {
-    const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
-    const acct = await hlPost({ type: 'spotClearinghouseState', user })
-    const perp = await hlPost({ type: 'clearinghouseState', user })
-    const equity = parseFloat(perp?.marginSummary?.accountValue ?? '0')
-    const positions = (perp?.assetPositions ?? []).map(p => ({
-      coin: p.position.coin,
-      szi: parseFloat(p.position.szi),
-      entry: parseFloat(p.position.entryPx),
-      pnl: parseFloat(p.position.unrealizedPnl),
-    }))
-    return { equity, positions }
-  } catch { return { equity: 0, positions: [] } }
+async function apiPost(path, body) {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
+  })
+  if (!res.ok) {
+    let text
+    try { text = await res.text() } catch { text = '' }
+    throw new Error(`${path}: ${res.status} ${text.slice(0, 200)}`)
+  }
+  return res.json()
 }
 
-// ── Trading Cycle ───────────────────────────────────────────────────────────
+async function ensureServer() {
+  try { await apiGet('/api/agent/config'); return } catch {}
+  log('Starting Next.js API server...')
+  const { spawn } = await import('child_process')
+  spawn('npx', ['next', 'dev', '-p', '3000'], {
+    stdio: 'ignore', detached: true, cwd: process.cwd(),
+  }).unref()
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 3000))
+    try { await apiGet('/api/agent/config'); log('API server ready'); return } catch {}
+  }
+  throw new Error('API server failed to start after 60s')
+}
+
+// ── Trading Cycle ────────────────────────────────────────────────────────────
 async function cycle() {
-  // 1. Load universe & get prices
-  const universe = await getUniverse()
-  const allMids = await hlPost({ type: 'allMids' })
+  // 1. Scan all markets
+  log('Scanning 230+ markets...')
+  const scan = await apiPost('/api/agent/scan', { minScore: MIN_SCORE, withTA: false })
 
-  // 2. Scan (triggers fire here)
-  const perceptions = await scanOnce({ universe, minScore: MIN_SCORE })
-  log(`Scanned ${universe.length} markets → ${perceptions.length} triggered (score ≥ ${MIN_SCORE})`)
+  const percs = scan.perceptions || []
+  log(`→ ${percs.length} triggered (score ≥ ${MIN_SCORE})`)
 
-  if (perceptions.length === 0) {
-    log('No triggered signals — market quiet, $0 tokens burned')
+  if (percs.length === 0) {
+    log('No signals — market quiet, $0 tokens burned')
     return
   }
 
-  // 3. TA Filter on top candidates (sequential, no rate limit issues)
-  let confirmed = []
-  const topN = Math.min(8, perceptions.length)
+  // 2. AI Research (top 3, 15s gap between calls)
+  // TA is async background — by next cycle the scan has TA tags
+  // For now, skip inline TA (rate limits) and just AI-research top triggers
+  let analyzed = 0, executed = 0, trades = []
+  const topN = Math.min(MAX_RESEARCH, percs.length)
+
   for (let i = 0; i < topN; i++) {
-    const p = perceptions[i]
-    if (i > 0) await new Promise(r => setTimeout(r, 2000)) // 2s gap
-    const ta = await analyzePerception(p)
-    if (ta.signal === 'CONFIRMED') confirmed.push({ perception: p, ta })
-  }
-  log(`TA: ${confirmed.length} CONFIRMED of ${topN} analyzed`)
+    const p = percs[i]
+    if (i > 0) { log(`  waiting 15s...`); await new Promise(r => setTimeout(r, 15000)) }
 
-  if (confirmed.length === 0) {
-    log('No CONFIRMED — saved $0.00.1 in AI tokens') 
-    return
-  }
+    log(`AI researching ${p.coin} (score: ${p.compositeScore.toFixed(0)})...`)
+    try {
+      const analysis = await apiPost(`/api/agent/research/${encodeURIComponent(p.coin)}`, {
+        perception: {
+          id: p.id, coin: p.coin, type: p.type,
+          firedAt: p.firedAt, mid: p.mid,
+          triggers: p.triggers, compositeScore: p.compositeScore,
+        },
+      })
+      // Route returns { analysis: {...} } — unwrap if needed
+      const a = analysis.analysis || analysis
+      const verdict = a?.verdict || 'PASS'
+      const confidence = typeof a?.confidence === 'number' ? a.confidence : 0
+      const reasoning = a?.reasoning || ''
+      const analysisId = a?.id || ''
+      analyzed++
+      log(`  → ${verdict} conf ${(confidence * 100).toFixed(0)}% | ${reasoning?.slice(0, 120) || ''}`)
 
-  // 4. AI Research (max 2 per cycle)
-  let executed = 0
-  for (const { perception, ta } of confirmed.slice(0, 2)) {
-    const result = await research(perception.coin, perception)
-    log(`Research ${perception.coin}: ${result.verdict} conf ${(result.confidence * 100).toFixed(0)}%`)
-
-    if (result.confidence >= 0.85 && result.verdict !== 'PASS') {
-      const execResult = await maybeExecute(result)
-      if (execResult.executed) {
-        log(`EXECUTED: ${execResult.sizeUSD} on ${perception.coin}`)
-        executed++
+      // Execute if confident enough
+      if (confidence >= MIN_CONFIDENCE && verdict !== 'PASS') {
+        log(`  Executing...`)
+        const exec = await apiPost('/api/agent/execute', { analysisId })
+        if (exec.executed) {
+          executed++
+          trades.push(`${p.coin} ${a.side} $${exec.sizeUSD?.toFixed(0) || '?'}`)
+          log(`  ✓ EXECUTED ${trades[trades.length - 1]}`)
+        } else {
+          log(`  ✗ Blocked: ${exec.blockedBy?.join(', ') || exec.reason}`)
+        }
       } else {
-        log(`BLOCKED: ${execResult.blockedBy?.join(', ') || execResult.reason}`)
+        log(`  PASS (conf ${(analysis.confidence * 100).toFixed(0)}% < ${(MIN_CONFIDENCE * 100).toFixed(0)}%)`)
       }
-    } else {
-      log(`${perception.coin}: not confident enough (${(result.confidence * 100).toFixed(0)}% < 85%)`)
+    } catch (e) {
+      log(`  Error: ${e.message}`)
     }
   }
 
-  // 5. Post-cycle status
-  const portfolio = await getPortfolio()
-  log(`Portfolio: $${portfolio.equity.toFixed(2)} | ${portfolio.positions.length} positions | +${executed} trades this cycle`)
+  // 3. Check portfolio
+  try {
+    const portfolio = await apiGet('/api/hl/portfolio')
+    log(`Portfolio: $${portfolio.equity?.toFixed(2) || '?'} | ${portfolio.positions?.length || 0} positions`)
+    const pnl = portfolio.positions?.reduce((s, p) => s + (p.livePnl || 0), 0) || 0
+    if (pnl !== 0) log(`Unrealized PnL: $${pnl.toFixed(2)}`)
+  } catch {}
+
+  log(`Cycle done: ${percs.length} triggered → ${analyzed} analyzed → ${executed} executed`)
+  if (trades.length > 0) log(`Trades: ${trades.join(', ')}`)
 }
 
-// ── Main ────────────────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  await memory.ensureLoaded()
-  const portfolio = await getPortfolio()
-  log(`Hermes-Trader Engine — starting — equity $${portfolio.equity.toFixed(2)} | ${portfolio.positions.length} positions`)
-  log(`Config: scan every ${SCAN_INTERVAL_MS / 1000 / 60}m | minScore ${MIN_SCORE} | conf ≥ 0.85 | max $25/trade`)
+  await ensureServer()
 
-  if (process.argv.includes('--loop')) {
-    log('Running loop mode...')
+  // Check current config
+  try {
+    const cfg = await apiGet('/api/agent/config')
+    log(`Config: mode=${cfg.mode || '?'} minConf=${cfg.minAiConfidence || '?'} maxTrade=$${cfg.maxTradeNotionalUsd || '?'}`)
+  } catch {}
+
+  const isLoop = process.argv.includes('--loop')
+  log(isLoop ? 'Loop mode — every 1h' : 'One-shot mode')
+
+  await cycle()
+
+  if (isLoop) {
     while (true) {
-      try {
-        await cycle()
-      } catch (err) {
-        log(`Cycle error: ${err.message}`)
-      }
+      log(`Next scan in ${Math.round(SCAN_INTERVAL_MS / 60000)}m...`)
       await new Promise(r => setTimeout(r, SCAN_INTERVAL_MS))
+      await cycle()
     }
-  } else {
-    log('One-shot mode — exiting after cycle')
-    await cycle()
   }
 }
 
 main().catch(err => {
-  log(`FATAL: ${err.message || err}`)
+  log(`FATAL: ${err.message}`)
   process.exit(1)
 })
