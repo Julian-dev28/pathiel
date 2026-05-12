@@ -26,23 +26,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const perceptions = await scanOnce({ universe, minScore })
 
-  // Run TA filter on triggered perceptions (server-side statistical pass)
+  // TA filter is run async in background — don't block the scan response
+  // The heartbeat (scripts/agent-heartbeat.mjs) handles TA on perceptions in memory
   if (withTA && perceptions.length > 0) {
-    try {
-      const { analyzePerception } = await import('../../../../lib/agent/ta-filter')
-      for (const p of perceptions) {
-        const ta = await analyzePerception(p)
-        // Mutate perception with TA results (passed back to heartbeat)
-        ;(p as Record<string, unknown>).taSignal = ta.signal
-        ;(p as Record<string, unknown>).taScore = ta.score
-        ;(p as Record<string, unknown>).taTrend4h = ta.trend4h
-        ;(p as Record<string, unknown>).taRsi4h = ta.rsi4h
-        ;(p as Record<string, unknown>).taAtr4pct = ta.atr4pct
-        ;(p as Record<string, unknown>).taReason = ta.reason
-      }
-    } catch {
-      // TA filter is non-blocking — heartbeat falls back to score threshold
-    }
+    ;(async () => {
+      try {
+        const { analyzePerceptions } = await import('../../../../lib/agent/ta-filter')
+        const results = await analyzePerceptions(perceptions.slice(0, 8), 1)
+        const { memory } = await import('@/lib/agent/memory')
+        for (const p of perceptions.slice(0, 8)) {
+          const ta = results.get(p.id)
+          if (ta) {
+            memory.recordPerception({
+              id: p.id, coin: p.coin, type: p.type,
+              firedAt: p.firedAt, mid: p.mid,
+              triggers: p.triggers, compositeScore: p.compositeScore,
+              taSignal: ta.signal, taScore: ta.score,
+            })
+          }
+        }
+      } catch {}
+    })()
   }
 
   // Auto-store perceptions in agent memory so research can find them by ID

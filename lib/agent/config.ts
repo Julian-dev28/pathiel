@@ -39,7 +39,7 @@ export const DEFAULT_CONFIG: TriggerConfig = {
   },
   scan: {
     minCompositeScore: 75,
-    maxConcurrency: 20,
+    maxConcurrency: 8,
     candleInterval: '5m',
     candleCount: 100,
     cacheTtlMs: 300_000,

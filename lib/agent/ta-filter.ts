@@ -185,7 +185,7 @@ export async function analyzePerception(perception: Perception): Promise<TAResul
     // Perception trigger score: scale to add up to 15
     score += Math.min(15, perception.compositeScore / 100 * 15)
 
-    const verdict = score >= 65 ? 'CONFIRMED' : score >= 40 ? 'WEAK' : 'REJECTED'
+    const verdict = score >= 45 ? "CONFIRMED" : score >= 30 ? "WEAK" : "REJECTED"
 
     return {
       signal: verdict,
