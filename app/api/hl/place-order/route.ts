@@ -72,11 +72,11 @@ export async function POST(req: NextRequest) {
       // place sequentially (HL nonces must increment) — log errors but don't abort the entry
       const sl  = await placeHLTriggerOrder(isBuy, sizeBTC, slPx, 'sl', assetIdx)
       const tp1 = tp1Size > 0 ? await placeHLTriggerOrder(isBuy, tp1Size, tp1Px, 'tp', assetIdx) : { ok: true }
-      const tp2 = tp2Size > 0 ? await placeHLTriggerOrder(isBuy, tp2Size, tp2Px, 'tp', assetIdx) : { ok: true }
+      const tp2 = tp2Size > 0 ? await placeHLTriggerOrder(isBuy, tp2Size, tp2Px, 'tp', assetIdx) : null
       brackets.sl  = sl.ok ? `placed @ ${slPx.toFixed(0)}`  : `failed: ${sl.error}`
       brackets.tp1 = tp1.ok ? `placed @ ${tp1Px.toFixed(0)}` : `failed: ${tp1.error}`
-      brackets.tp2 = tp2.ok ? `placed @ ${tp2Px.toFixed(0)}` : `failed: ${tp2.error}`
-      brackets.ok  = sl.ok && tp1.ok && tp2.ok
+      brackets.tp2 = tp2 ? (tp2.ok ? `placed @ ${tp2Px.toFixed(0)}` : `failed: ${tp2.error}`) : 'skipped (full close at tp1)'
+      brackets.ok  = sl.ok && tp1.ok && (tp2 === null || tp2.ok)
     } else {
       brackets.ok = false
       brackets.error = atr <= 0 ? 'ATR unavailable' : 'size 0'

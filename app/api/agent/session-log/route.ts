@@ -6,7 +6,7 @@ import * as os from 'os'
 
 const LOG_FILE =
   process.env.SESSION_LOG_PATH ||
-  path.join(os.homedir(), 'Documents', 'code', 'hermes-trader-trader', '.trader-session-log.jsonl')
+  path.join(os.homedir(), 'Documents', 'code', 'hermes-trader', '.trader-session-log.jsonl')
 
 export const runtime = 'nodejs'
 

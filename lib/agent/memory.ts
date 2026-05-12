@@ -70,6 +70,8 @@ const DEFAULT_STATE = {
   cooldowns: [] as Array<{ coin: string; expires: number }>,
   equity: 0,
   dailyPnl: 0,
+  startOfDayEquity: 0,
+  dayStartTs: 0,
   openPositions: [] as Array<{ coin: string; side: string; sizeUSD: number; entryPx: number }>,
 };
 
@@ -83,6 +85,8 @@ export class AgentMemory {
   private cooldowns: Map<string, number> = new Map();
   private equity = 0;
   private dailyPnl = 0;
+  private startOfDayEquity = 0;
+  private dayStartTs = 0;
   private openPositions: Array<{ coin: string; side: 'long' | 'short'; sizeUSD: number; entryPx: number }> = [];
 
   private _saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -131,6 +135,8 @@ export class AgentMemory {
 
       this.equity = data.equity ?? 0;
       this.dailyPnl = data.dailyPnl ?? 0;
+      this.startOfDayEquity = (data as typeof DEFAULT_STATE).startOfDayEquity ?? 0;
+      this.dayStartTs = (data as typeof DEFAULT_STATE).dayStartTs ?? 0;
       this.openPositions = (data.openPositions ?? []) as typeof this.openPositions;
 
       process.stderr.write(`[memory] loaded ${this.perceptions.length} perceptions, ${this.analyses.length} analyses, ${this.trades.length} trades from ${MEMORY_FILE}\n`);
@@ -156,6 +162,8 @@ export class AgentMemory {
         cooldowns: Array.from(this.cooldowns.entries()).map(([coin, expires]) => ({ coin, expires })),
         equity: this.equity,
         dailyPnl: this.dailyPnl,
+        startOfDayEquity: this.startOfDayEquity,
+        dayStartTs: this.dayStartTs,
         openPositions: this.openPositions,
       };
       await fs.writeFile(MEMORY_FILE, JSON.stringify(data, null, 2), 'utf8');
@@ -236,6 +244,23 @@ export class AgentMemory {
 
   updateEquity(eq: number): void {
     this.equity = eq;
+    this.scheduleSave();
+  }
+
+  /**
+   * Called with live equity each trading cycle. Resets baseline at UTC midnight
+   * so dailyPnl always reflects gains/losses since start of the current day.
+   */
+  trackDailyPnl(currentEquity: number): void {
+    const todayUtcStart = new Date().setUTCHours(0, 0, 0, 0);
+    if (this.dayStartTs < todayUtcStart || this.startOfDayEquity === 0) {
+      this.startOfDayEquity = currentEquity;
+      this.dayStartTs = todayUtcStart;
+      this.dailyPnl = 0;
+    } else {
+      this.dailyPnl = currentEquity - this.startOfDayEquity;
+    }
+    this.equity = currentEquity;
     this.scheduleSave();
   }
 
@@ -343,6 +368,7 @@ export class AgentMemory {
       winRate: this.getWinRate(),
       equity: this.equity,
       dailyPnl: this.dailyPnl,
+      startOfDayEquity: this.startOfDayEquity,
       openPositions: this.openPositions,
     };
   }

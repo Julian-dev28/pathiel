@@ -109,7 +109,7 @@ async function cycle() {
           log(`  ✗ Blocked: ${exec.blockedBy?.join(', ') || exec.reason}`)
         }
       } else {
-        log(`  PASS (conf ${(analysis.confidence * 100).toFixed(0)}% < ${(MIN_CONFIDENCE * 100).toFixed(0)}%)`)
+        log(`  PASS (conf ${(confidence * 100).toFixed(0)}% < ${(MIN_CONFIDENCE * 100).toFixed(0)}%)`)
       }
     } catch (e) {
       log(`  Error: ${e.message}`)

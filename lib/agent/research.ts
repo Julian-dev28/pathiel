@@ -32,8 +32,11 @@ interface NewsResult {
 
 async function fetchFundingRate(coin: string): Promise<string> {
   try {
-    const raw = await hlCall<Array<{ funding: string }>>({ type: 'fundingHistory', coin, startTime: Date.now() - 86_400_000 })
-    if (Array.isArray(raw) && raw.length > 0) return raw[raw.length - 1].funding
+    const raw = await hlCall<Array<{ fundingRate: string }>>({ type: 'fundingHistory', coin, startTime: Date.now() - 86_400_000 })
+    if (Array.isArray(raw) && raw.length > 0) {
+      const r = parseFloat(raw[raw.length - 1].fundingRate)
+      if (isFinite(r)) return `${(r * 100).toFixed(4)}%/hr`
+    }
   } catch { /* skip */ }
   return 'N/A'
 }
@@ -253,7 +256,7 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     if (perpRes.ok) {
       const perp = await perpRes.json() as {
         marginSummary?: { accountValue: string; totalNtlPos: string }
-        assetPositions?: Array<{ position: { coin: string; szi: string } }>
+        assetPositions?: Array<{ position: { coin: string; szi: string; entryPx: string; positionValue?: string } }>
       }
       equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
 
@@ -268,8 +271,9 @@ export async function research(coin: string, perception: Perception): Promise<Ag
           const spot = await spotRes.json() as {
             balances?: Array<{ coin: string; total: string }>
           }
-          const usdc = (spot.balances ?? []).find(b => b.coin === 'USDC')
-          equity = usdc ? parseFloat(usdc.total) : 0
+          equity = (spot.balances ?? [])
+            .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+            .reduce((sum, b) => sum + parseFloat(b.total), 0)
         }
       }
       // Sync to memory so other routes see it
@@ -277,11 +281,18 @@ export async function research(coin: string, perception: Perception): Promise<Ag
 
       openPositions = (perp.assetPositions ?? [])
         .filter(p => parseFloat(p.position.szi) !== 0)
-        .map(p => ({
-          coin: p.position.coin,
-          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
-          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (tf4h.lastClose || perception.mid),
-        }))
+        .map(p => {
+          const szi = parseFloat(p.position.szi)
+          const posVal = parseFloat(p.position.positionValue ?? '0')
+          const sizeUSD = isFinite(posVal) && posVal > 0
+            ? posVal
+            : Math.abs(szi) * parseFloat(p.position.entryPx)
+          return {
+            coin: p.position.coin,
+            side: szi > 0 ? 'long' : 'short',
+            sizeUSD,
+          }
+        })
     }
 
     const wr = memory.getWinRate()
