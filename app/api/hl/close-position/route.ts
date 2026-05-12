@@ -1,23 +1,40 @@
-import { NextResponse } from 'next/server'
-import { placeHLOrder, getHLPrice, getHLAccount, HL_ACCOUNT } from '@/lib/hyperliquid'
+import { NextRequest, NextResponse } from 'next/server'
+import { placeHLOrder, getCoinIndex } from '@/lib/hyperliquid'
+import { HL_API, HL_ACCOUNT } from '@/lib/hyperliquid'
 
 export const runtime = 'nodejs'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    const [midPrice, account] = await Promise.all([
-      getHLPrice(),
-      getHLAccount(HL_ACCOUNT),
-    ])
+    const body = await req.json() as { coin?: string }
+    const coin = (body?.coin || 'BTC').toUpperCase()
 
-    if (!account.position) return NextResponse.json({ ok: false, error: 'no open position' })
-    if (midPrice <= 0)      return NextResponse.json({ ok: false, error: 'invalid price' })
+    const midRes = await fetch(`${HL_API}/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'allMids' }),
+    })
+    const mids = await midRes.json() as Record<string, string>
+    const midPrice = parseFloat(mids[coin] || '0')
+    if (midPrice <= 0) return NextResponse.json({ ok: false, error: `invalid price for ${coin}` })
 
-    const { sizeBTC, side } = account.position
-    const isBuy = side === 'short'
-    const result = await placeHLOrder(isBuy, sizeBTC, midPrice)
+    const idx = await getCoinIndex(coin)
+    const acctRes = await fetch(`${HL_API}/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'clearinghouseState', user: HL_ACCOUNT }),
+    })
+    const acct = await acctRes.json() as {
+      assetPositions?: Array<{ position: { coin: string; szi: string } }>
+    }
+    const pos = (acct.assetPositions ?? []).find(p => p.position.coin === coin)
+    if (!pos) return NextResponse.json({ ok: false, error: `no open position for ${coin}` })
 
-    return NextResponse.json({ ...result, sizeBTC, midPrice })
+    const szi = parseFloat(pos.position.szi)
+    const isLong = szi > 0
+    // Close: sell if long, buy if short
+    const result = await placeHLOrder(!isLong, Math.abs(szi), midPrice, coin, idx.index)
+    return NextResponse.json({ ...result, coin, side: isLong ? 'long' : 'short', size: Math.abs(szi), midPrice })
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
   }

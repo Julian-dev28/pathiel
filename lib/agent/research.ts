@@ -242,17 +242,47 @@ export async function research(coin: string, perception: Perception): Promise<Ag
 
     let equity = 0
     let openPositions: Array<{ coin: string; side: string; sizeUSD: number }> = []
-    try {
-      const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
-      const acct = await fetchAccountState(user)
-      equity = acct.equity
+    const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
 
-      openPositions = acct.assetPositions.map(p => ({
-        coin: p.coin,
-        side: parseFloat(p.szi) > 0 ? 'long' : 'short',
-        sizeUSD: Math.abs(parseFloat(p.szi)) * (tf4h.lastClose || perception.mid),
-      }))
-    } catch { /* skip account context */ }
+    // Fetch perp equity directly (not via hl-client wrapper)
+    const perpRes = await fetch(`https://api.hyperliquid.xyz/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'clearinghouseState', user }),
+    })
+    if (perpRes.ok) {
+      const perp = await perpRes.json() as {
+        marginSummary?: { accountValue: string; totalNtlPos: string }
+        assetPositions?: Array<{ position: { coin: string; szi: string } }>
+      }
+      equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
+
+      // On unified accounts, perp shows $0 — use spot balance as equity
+      if (equity === 0) {
+        const spotRes = await fetch(`https://api.hyperliquid.xyz/info`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'spotClearinghouseState', user }),
+        })
+        if (spotRes.ok) {
+          const spot = await spotRes.json() as {
+            balances?: Array<{ coin: string; total: string }>
+          }
+          const usdc = (spot.balances ?? []).find(b => b.coin === 'USDC')
+          equity = usdc ? parseFloat(usdc.total) : 0
+        }
+      }
+      // Sync to memory so other routes see it
+      memory.updateEquity(equity)
+
+      openPositions = (perp.assetPositions ?? [])
+        .filter(p => parseFloat(p.position.szi) !== 0)
+        .map(p => ({
+          coin: p.position.coin,
+          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
+          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (tf4h.lastClose || perception.mid),
+        }))
+    }
 
     const wr = memory.getWinRate()
 

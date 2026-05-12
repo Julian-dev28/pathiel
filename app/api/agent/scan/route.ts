@@ -69,19 +69,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } catch { /* non-fatal — research fallback handles inline perception */ }
 
-  // ── Sync equity from Hyperliquid (unified: perp accountValue includes spot collateral) ──
+  // ── Sync equity from Hyperliquid (unified: perp or spot, whichever is > 0) ──
   try {
     const { HL_ACCOUNT } = await import('@/lib/hyperliquid')
-    const perpRes = await fetch(`https://api.hyperliquid.xyz/info`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'clearinghouseState', user: HL_ACCOUNT }),
-    })
+    const [perpRes, spotRes] = await Promise.all([
+      fetch(`https://api.hyperliquid.xyz/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'clearinghouseState', user: HL_ACCOUNT }),
+      }),
+      fetch(`https://api.hyperliquid.xyz/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'spotClearinghouseState', user: HL_ACCOUNT }),
+      }),
+    ])
+    let equity = 0
     if (perpRes.ok) {
       const perp = await perpRes.json() as { marginSummary?: { accountValue: string } }
-      const { memory } = await import('@/lib/agent/memory')
-      memory.updateEquity(parseFloat(perp.marginSummary?.accountValue ?? '0'))
+      equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
     }
+    if (equity === 0 && spotRes.ok) {
+      const spot = await spotRes.json() as { balances?: Array<{ coin: string; total: string }> }
+      const usdc = (spot.balances ?? []).find(b => b.coin === 'USDC')
+      equity = usdc ? parseFloat(usdc.total) : 0
+    }
+    const { memory } = await import('@/lib/agent/memory')
+    memory.updateEquity(equity)
   } catch { /* non-fatal */ }
 
   lastScanAt = Date.now()

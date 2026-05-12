@@ -203,12 +203,13 @@ export async function placeHLOrder(
   const idx = assetIdx ?? (await getCoinIndex(coin)).index
   const szDec = assetIdx !== undefined ? 5 : (await getCoinIndex(coin)).szDecimals
 
-  // HL normalizes p and s (strips trailing zeros) before computing the hash —
-  // our signed action must use the same canonical form or ecrecover returns garbage.
-  const limitPx = isBuy
-    ? String(Math.round(midPrice * 1.05))
-    : String(Math.round(midPrice * 0.95))
+  // Price precision: HL mid prices use up to 6 decimals (not szDecimals which is for size)
+  const priceStr = isBuy
+    ? String(parseFloat((midPrice * 1.005).toFixed(6)))
+    : String(parseFloat((midPrice * 0.995).toFixed(6)))
   const sizeStr = stripZeros(size.toFixed(szDec))
+
+  if (!priceStr || isNaN(parseFloat(priceStr))) return { ok: false, error: `invalid price for ${coin}` }
 
   const nonce  = Date.now()
   const action = {
@@ -216,7 +217,7 @@ export async function placeHLOrder(
     orders: [{
       a: idx,
       b: isBuy,
-      p: limitPx,
+      p: priceStr,
       s: sizeStr,
       r: false,
       t: { limit: { tif: 'Ioc' } },
@@ -263,12 +264,11 @@ export async function placeHLTriggerOrder(
   if (!PRIVATE_KEY) return { ok: false, error: 'HYPERLIQUID_PRIVATE_KEY not set' }
   if (size <= 0 || triggerPx <= 0) return { ok: false, error: 'invalid size/price' }
 
-  const triggerStr = stripZeros(String(Math.round(triggerPx)))
-  const sizeStr    = stripZeros(size.toFixed(5))  // trigger orders use standard precision
-  // limit price: for a market trigger HL still requires a p — use a wide one so it always fills
-  const limitPx = isLongPosition
-    ? String(Math.round(triggerPx * 0.95))     // closing a long = sell, accept down to 5% below trigger
-    : String(Math.round(triggerPx * 1.05))     // closing a short = buy, accept up to 5% above trigger
+  const triggerStr = stripZeros(triggerPx.toFixed(5))
+  const sizeStr    = stripZeros(size.toFixed(5))
+  const priceStr = isLongPosition
+    ? (triggerPx * 0.95).toFixed(5)
+    : (triggerPx * 1.05).toFixed(5)
 
   const nonce  = Date.now()
   const coinIdx = assetIdx
@@ -277,7 +277,7 @@ export async function placeHLTriggerOrder(
     orders: [{
       a: coinIdx,
       b: !isLongPosition,                       // opposite side closes the position
-      p: limitPx,
+      p: priceStr,
       s: sizeStr,
       r: true,                                  // reduce-only
       t: { trigger: { isMarket: true, triggerPx: triggerStr, tpsl: kind } },

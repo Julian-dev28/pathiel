@@ -48,13 +48,17 @@ export async function fetchAccountState(user: string): Promise<{
     hlCall<HLSpotClearinghouseState>({ type: 'spotClearinghouseState', user }),
   ])
 
-  const equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
+  // On unified accounts, equity = perp marginValue OR spot USDC (whichever is > 0)
+  const perpEquity = parseFloat(perp.marginSummary?.accountValue ?? '0')
   const totalNtl = parseFloat(perp.marginSummary?.totalNtlPos ?? '0')
   const spotBalances = (spot.balances ?? [])
     .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
   const assetPositions = (perp.assetPositions ?? [])
     .filter(p => parseFloat(p.position.szi) !== 0)
     .map(p => ({ coin: p.position.coin, szi: p.position.szi }))
+
+  const spotUSDC = spotBalances.find(b => b.coin === 'USDC')
+  const equity = perpEquity > 0 ? perpEquity : (spotUSDC ? parseFloat(spotUSDC.total) : 0)
 
   return { equity, totalNtl, spotBalances, assetPositions }
 }
