@@ -72,13 +72,34 @@ export async function maybeExecute(analysis: AgentAnalysis): Promise<ExecutionRe
     const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
 
     try {
-      const acct = await hlPost({ type: 'spotClearinghouseState', user }) as {
-        balances?: Array<{ coin: string; total: string }>
-      }
-      const usdc = (acct.balances ?? []).find(b => b.coin === 'USDC')
-      equity = usdc ? parseFloat(usdc.total) : 0
-      totalOpenNotional = 0
-    } catch {}
+      const [perpAcct, spotAcct] = await Promise.all([
+        hlPost({ type: 'clearinghouseState', user }) as Promise<{
+          marginSummary?: { accountValue: string; totalNtlPos: string }
+          assetPositions?: Array<{ position: { coin: string; szi: string } }>
+        }>,
+        hlPost({ type: 'spotClearinghouseState', user }) as Promise<{
+          balances?: Array<{ coin: string; total: string }>
+        }>,
+      ])
+
+      const perpEquity = parseFloat(perpAcct.marginSummary?.accountValue ?? '0')
+      totalOpenNotional = parseFloat(perpAcct.marginSummary?.totalNtlPos ?? '0')
+
+      const spotUSDC = (spotAcct.balances ?? []).find(b => b.coin === 'USDC')
+      equity = perpEquity + (spotUSDC ? parseFloat(spotUSDC.total) : 0)
+
+      // Check perp positions for open position guard
+      positions = (perpAcct.assetPositions ?? [])
+        .filter(p => parseFloat(p.position.szi) !== 0)
+        .map(p => ({
+          coin: p.position.coin,
+          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
+          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (analysis.entryPx ?? 0),
+        }))
+    } catch (err) {
+      console.error(`[executor] account fetch failed: ${err}`)
+      return { executed: false, mode, analysisId: analysis.id, reason: 'account_fetch_failed' }
+    }
 
     const dailyPnl = memory.getDailyPnl()
 

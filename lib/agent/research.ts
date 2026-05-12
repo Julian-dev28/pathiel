@@ -270,18 +270,22 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     let equity = 0
     let openPositions: Array<{ coin: string; side: string; sizeUSD: number }> = []
     try {
-      // Unified account: MASTER holds funds (agent wallet signs)
       const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
-      const acctRaw = await hlPost({ type: 'spotClearinghouseState', user }) as {
-        balances?: Array<{ coin: string; total: string }>
-      }
-      const usdcBalance = (acctRaw.balances ?? []).find(b => b.coin === 'USDC')
-      equity = usdcBalance ? parseFloat(usdcBalance.total) : 0
+      const [perpRaw, spotRaw] = await Promise.all([
+        hlPost({ type: 'clearinghouseState', user }) as Promise<{
+          marginSummary?: { accountValue: string }
+          assetPositions?: Array<{ position: { coin: string; szi: string } }>
+        }>,
+        hlPost({ type: 'spotClearinghouseState', user }) as Promise<{
+          balances?: Array<{ coin: string; total: string }>
+        }>,
+      ])
+
+      const perpEquity = parseFloat(perpRaw.marginSummary?.accountValue ?? '0')
+      const spotUSDC = (spotRaw.balances ?? []).find(b => b.coin === 'USDC')
+      equity = perpEquity + (spotUSDC ? parseFloat(spotUSDC.total) : 0)
 
       // Check perp positions for context
-      const perpRaw = await hlPost({ type: 'clearinghouseState', user }) as {
-        assetPositions?: Array<{ position: { coin: string; szi: string } }>
-      }
       openPositions = (perpRaw.assetPositions ?? [])
         .filter(p => parseFloat(p.position.szi) !== 0)
         .map(p => ({

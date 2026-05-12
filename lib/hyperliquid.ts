@@ -68,8 +68,13 @@ export async function getHLPrice(): Promise<number> {
 }
 
 export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
-  // Unified account: spot + perp share one margin pool. Use spotClearinghouseState for total equity.
-  const [spotRes] = await Promise.all([
+  // Unified account: equity = perp margin account value + spot USDC balance
+  const [perpRes, spotRes] = await Promise.all([
+    fetch(`${HL_API}/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'clearinghouseState', user: walletAddress }),
+    }),
     fetch(`${HL_API}/info`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -77,16 +82,44 @@ export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
     }),
   ])
 
+  const perp = await perpRes.json() as {
+    marginSummary?: { accountValue: string; totalNtlPos: string }
+    assetPositions?: Array<{
+      position: {
+        coin: string; szi: string; entryPx: string
+        unrealizedPnl: string; leverage?: { value: string }
+      }
+    }>
+  }
+
   const spot = await spotRes.json() as {
     balances?: Array<{ coin: string; total: string; hold: string }>
   }
 
-  // In unified mode, USDC balance IS the total equity
+  const perpEquity = parseFloat(perp.marginSummary?.accountValue ?? '0')
+  const totalNtl = parseFloat(perp.marginSummary?.totalNtlPos ?? '0')
   const spotUSDC = (spot.balances ?? [])
-    .filter(b => b.coin === 'USDC')
+    .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
     .reduce((sum, b) => sum + parseFloat(b.total), 0)
 
-  return { equity: spotUSDC, spotUSDC, totalEquity: spotUSDC, totalNtl: 0, position: null }
+  const equity = perpEquity + spotUSDC
+
+  const btcPos = (perp.assetPositions ?? []).find(p => p.position.coin === 'BTC')
+  let position: HLPosition | null = null
+  if (btcPos) {
+    const szi = parseFloat(btcPos.position.szi)
+    if (szi !== 0) {
+      position = {
+        side:          szi > 0 ? 'long' : 'short',
+        sizeBTC:       Math.abs(szi),
+        entryPx:       parseFloat(btcPos.position.entryPx),
+        unrealizedPnl: parseFloat(btcPos.position.unrealizedPnl),
+        leverage:      parseFloat(btcPos.position.leverage?.value ?? '5'),
+      }
+    }
+  }
+
+  return { equity, spotUSDC, totalEquity: equity, totalNtl, position }
 }
 
 // ── Signing utilities ─────────────────────────────────────────────────────────

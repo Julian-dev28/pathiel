@@ -65,21 +65,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } catch { /* non-fatal — research fallback handles inline perception */ }
 
-  // ── Sync equity from Hyperliquid (unified account, no transfer needed) ──
+  // ── Sync equity from Hyperliquid (perp margin + spot USDC) ──
   try {
     const { HL_ACCOUNT } = await import('@/lib/hyperliquid')
-    const res = await fetch(`https://api.hyperliquid.xyz/info`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'spotClearinghouseState', user: HL_ACCOUNT }),
-    })
-    if (res.ok) {
-      const data = await res.json() as { balances?: Array<{ coin: string; total: string }> }
-      const usdc = (data.balances ?? []).find(b => b.coin === 'USDC')
-      const totalEquity = usdc ? parseFloat(usdc.total) : 0
-      const { memory } = await import('@/lib/agent/memory')
-      memory.updateEquity(totalEquity)
+    const [perpRes, spotRes] = await Promise.all([
+      fetch(`https://api.hyperliquid.xyz/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'clearinghouseState', user: HL_ACCOUNT }),
+      }),
+      fetch(`https://api.hyperliquid.xyz/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'spotClearinghouseState', user: HL_ACCOUNT }),
+      }),
+    ])
+    let perpEquity = 0, spotUSDC = 0
+    if (perpRes.ok) {
+      const perp = await perpRes.json() as { marginSummary?: { accountValue: string } }
+      perpEquity = parseFloat(perp.marginSummary?.accountValue ?? '0')
     }
+    if (spotRes.ok) {
+      const spot = await spotRes.json() as { balances?: Array<{ coin: string; total: string }> }
+      const usdc = (spot.balances ?? []).find(b => b.coin === 'USDC')
+      spotUSDC = usdc ? parseFloat(usdc.total) : 0
+    }
+    const { memory } = await import('@/lib/agent/memory')
+    memory.updateEquity(perpEquity + spotUSDC)
   } catch { /* non-fatal */ }
 
   lastScanAt = Date.now()
