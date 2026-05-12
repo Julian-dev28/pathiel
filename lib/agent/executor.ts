@@ -4,6 +4,7 @@ import type { AgentAnalysis } from './memory'
 import { memory } from './memory'
 import { evalAllGates, type GateResults } from './risk-gates'
 import { readAgentConfig as readConfig } from './config-store'
+import { hlCall, fetchAccountState } from '../hl-client'
 import * as crypto from 'crypto'
 
 export type ExecutionResult = {
@@ -18,18 +19,6 @@ export type ExecutionResult = {
   entryPx?: number
   stopPx?: number
   tpPx?: number
-}
-
-const HL_API = 'https://api.hyperliquid.xyz'
-
-async function hlPost(body: object): Promise<unknown> {
-  const res = await fetch(`${HL_API}/info`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`HL API ${res.status}`)
-  return res.json()
 }
 
 function kellySize(
@@ -47,179 +36,123 @@ function kellySize(
   return Math.min(notional, maxTradeNotional)
 }
 
-async function getMarketVolume24h(coin: string): Promise<number> {
-  try {
-    const majors = new Set(['BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'DOGE', 'ADA', 'AVAX'])
-    if (majors.has(coin)) return 100_000_000
-    return 10_000_000
-  } catch {
-    return 0
-  }
+const MAJOR_VOLUMES = new Map<string, number>([
+  ['BTC', 1e8], ['ETH', 1e8], ['SOL', 1e8], ['BNB', 1e8],
+  ['XRP', 1e8], ['DOGE', 1e8], ['ADA', 1e8], ['AVAX', 1e8],
+])
+function getMarketVolume24h(coin: string): number {
+  return MAJOR_VOLUMES.get(coin) ?? 1e7
 }
 
 export async function maybeExecute(analysis: AgentAnalysis): Promise<ExecutionResult> {
-  try {
-    const config = await readConfig()
-    const mode = (config.mode as string) || 'OFF'
+  const config = await readConfig()
+  const mode = config.mode === 'OFF' ? 'OFF' : (config.mode as string) || 'OFF'
 
-    if (mode === 'OFF') {
-      return { executed: false, mode, analysisId: analysis.id, reason: 'mode_off' }
-    }
+  if (mode === 'OFF') {
+    return { executed: false, mode, analysisId: analysis.id, reason: 'mode_off' }
+  }
 
-    let equity = 0
-    let totalOpenNotional = 0
-    let positions: Array<{ coin: string; side: string; sizeUSD: number }> = []
-    const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
+  const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
+  const state = await fetchAccountState(user)
+  const { equity, totalNtl: totalOpenNotional, assetPositions } = state
 
-    try {
-      const [perpAcct, spotAcct] = await Promise.all([
-        hlPost({ type: 'clearinghouseState', user }) as Promise<{
-          marginSummary?: { accountValue: string; totalNtlPos: string }
-          assetPositions?: Array<{ position: { coin: string; szi: string } }>
-        }>,
-        hlPost({ type: 'spotClearinghouseState', user }) as Promise<{
-          balances?: Array<{ coin: string; total: string }>
-        }>,
-      ])
+  const positions = assetPositions.map(p => ({
+    coin: p.coin,
+    side: parseFloat(p.szi) > 0 ? 'long' : 'short',
+    sizeUSD: Math.abs(parseFloat(p.szi)) * (analysis.entryPx ?? 0),
+  }))
 
-      const perpEquity = parseFloat(perpAcct.marginSummary?.accountValue ?? '0')
-      totalOpenNotional = parseFloat(perpAcct.marginSummary?.totalNtlPos ?? '0')
+  const dailyPnl = memory.getDailyPnl()
 
-      // Unified account: perp accountValue already includes spot collateral. 
-      // Log spot balances for debugging.
-      const spotBalances = (spotAcct.balances ?? [])
-        .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
-        .map(b => `${b.coin}: ${b.total}`)
-        .join(', ') || 'none'
-      console.log(`[executor] perp equity=$${perpEquity.toFixed(2)}, spot=${spotBalances}`)
-      equity = perpEquity
+  const rewardRisk = analysis.tpPx && analysis.stopPx && analysis.entryPx
+    ? Math.abs(analysis.tpPx - analysis.entryPx) / Math.abs(analysis.entryPx - analysis.stopPx)
+    : 1.0
+  const rawSize = kellySize(analysis.confidence, equity, rewardRisk, Number(config.maxTradeNotionalUsd) || 200)
+  const tradeNotionalUSD = rawSize > 0 ? rawSize : (analysis.entryPx ?? 0) * 0.001
 
-      // Check perp positions for open position guard
-      positions = (perpAcct.assetPositions ?? [])
-        .filter(p => parseFloat(p.position.szi) !== 0)
-        .map(p => ({
-          coin: p.position.coin,
-          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
-          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (analysis.entryPx ?? 0),
-        }))
-    } catch (err) {
-      console.error(`[executor] account fetch failed: ${err}`)
-      return { executed: false, mode, analysisId: analysis.id, reason: 'account_fetch_failed' }
-    }
+  const recentTrades = memory.getRecentTrades(10)
+  const lastTradeForCoin = recentTrades.find(t => t.coin === analysis.coin)
+  const lastTradeTime = lastTradeForCoin?.executedAt
 
-    const dailyPnl = memory.getDailyPnl()
+  const hasBinaryNews = analysis.newsContext
+    ? /fed|fomc|cpi|rate|earnings|hack|exploit|SEC/i.test(analysis.newsContext)
+    : false
 
-    const rewardRisk = analysis.tpPx && analysis.stopPx && analysis.entryPx
-      ? Math.abs(analysis.tpPx - analysis.entryPx) / Math.abs(analysis.entryPx - analysis.stopPx)
-      : 1.0
-    const rawSize = kellySize(analysis.confidence, equity, rewardRisk, (config.maxTradeNotionalUsd as number) ?? 200)
-    const tradeNotionalUSD = rawSize > 0 ? rawSize : (analysis.entryPx ?? 0) * 0.001
+  const ctx = {
+    confidence: analysis.confidence,
+    currentPositions: positions,
+    tradeNotionalUSD,
+    dailyPnl,
+    marketVolume24hUSD: getMarketVolume24h(analysis.coin),
+    coin: analysis.coin,
+    tradeSide: (analysis.side ?? 'long') as 'long' | 'short',
+    hasBinaryNewsRisk: hasBinaryNews,
+    equity,
+    totalOpenNotional,
+  }
 
-    const marketVolume24h = await getMarketVolume24h(analysis.coin)
+  const { results, blocked, blockReasons } = evalAllGates(ctx, config, lastTradeTime)
 
-    const recentTrades = memory.getRecentTrades(10)
-    const lastTradeForCoin = recentTrades.find(t => t.coin === analysis.coin)
-    const lastTradeTime = lastTradeForCoin?.executedAt
-
-    const hasBinaryNews = analysis.newsContext
-      ? /fed|fomc|cpi|rate|earnings|hack|exploit|SEC/i.test(analysis.newsContext)
-      : false
-
-    const ctx = {
-      confidence: analysis.confidence,
-      currentPositions: positions,
-      tradeNotionalUSD: tradeNotionalUSD,
-      dailyPnl,
-      marketVolume24hUSD: marketVolume24h,
-      coin: analysis.coin,
-      tradeSide: (analysis.side ?? 'long') as 'long' | 'short',
-      hasBinaryNewsRisk: hasBinaryNews,
-      equity,
-      totalOpenNotional,
-    }
-
-    const { results, blocked, blockReasons } = evalAllGates(ctx, config, lastTradeTime)
-
-    if (blocked) {
-      memory.recordTrade({
-        id: crypto.randomUUID(),
-        analysisId: analysis.id,
-        coin: analysis.coin,
-        side: (analysis.side ?? 'long') as 'long' | 'short',
-        entryPx: analysis.entryPx ?? 0,
-        sizeUSD: 0,
-        executedAt: Date.now(),
-      })
-
-      return {
-        executed: false,
-        mode,
-        analysisId: analysis.id,
-        blockedBy: blockReasons,
-        gateResults: results,
-      }
-    }
-
-    // LIVE mode — real orders only
-    const walletKey = process.env.HYPERLIQUID_PRIVATE_KEY
-    if (!walletKey) {
-      return { executed: false, mode, analysisId: analysis.id, reason: 'private_key_missing' }
-    }
-
-    const orderRes = await fetch(
-      `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/hl/place-order`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          side: analysis.side === 'long' ? 'long' : 'short',
-          riskUSD: tradeNotionalUSD,
-          leverage: 5,
-          coin: analysis.coin,
-        }),
-      },
-    )
-
-    const orderData = await orderRes.json() as { ok: boolean; orderId?: string; error?: string }
-
-    if (!orderData.ok) {
-      return {
-        executed: false,
-        mode,
-        analysisId: analysis.id,
-        reason: `order_failed: ${orderData.error ?? 'unknown'}`,
-        gateResults: results,
-      }
-    }
-
+  if (blocked) {
     memory.recordTrade({
       id: crypto.randomUUID(),
       analysisId: analysis.id,
       coin: analysis.coin,
       side: (analysis.side ?? 'long') as 'long' | 'short',
       entryPx: analysis.entryPx ?? 0,
-      sizeUSD: tradeNotionalUSD,
-      orderId: orderData.orderId,
+      sizeUSD: 0,
       executedAt: Date.now(),
     })
 
+    return { executed: false, mode, analysisId: analysis.id, blockedBy: blockReasons, gateResults: results }
+  }
+
+  const walletKey = process.env.HYPERLIQUID_PRIVATE_KEY
+  if (!walletKey) {
+    return { executed: false, mode, analysisId: analysis.id, reason: 'private_key_missing' }
+  }
+
+  const orderRes = await fetch(
+    `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/hl/place-order`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        side: analysis.side === 'long' ? 'long' : 'short',
+        riskUSD: tradeNotionalUSD,
+        leverage: 5,
+        coin: analysis.coin,
+      }),
+    },
+  )
+
+  const orderData = await orderRes.json() as { ok: boolean; orderId?: string; error?: string }
+
+  if (!orderData.ok) {
     return {
-      executed: true,
-      mode,
-      analysisId: analysis.id,
-      orderId: orderData.orderId,
+      executed: false, mode, analysisId: analysis.id,
+      reason: `order_failed: ${orderData.error ?? 'unknown'}`,
       gateResults: results,
-      sizeUSD: tradeNotionalUSD,
-      entryPx: analysis.entryPx ?? 0,
-      stopPx: analysis.stopPx,
-      tpPx: analysis.tpPx,
     }
-  } catch (err) {
-    return {
-      executed: false,
-      mode: 'ERROR',
-      analysisId: analysis.id,
-      reason: err instanceof Error ? err.message : String(err),
-    }
+  }
+
+  memory.recordTrade({
+    id: crypto.randomUUID(),
+    analysisId: analysis.id,
+    coin: analysis.coin,
+    side: (analysis.side ?? 'long') as 'long' | 'short',
+    entryPx: analysis.entryPx ?? 0,
+    sizeUSD: tradeNotionalUSD,
+    orderId: orderData.orderId,
+    executedAt: Date.now(),
+  })
+
+  return {
+    executed: true, mode, analysisId: analysis.id,
+    orderId: orderData.orderId, gateResults: results,
+    sizeUSD: tradeNotionalUSD,
+    entryPx: analysis.entryPx ?? 0,
+    stopPx: analysis.stopPx,
+    tpPx: analysis.tpPx,
   }
 }

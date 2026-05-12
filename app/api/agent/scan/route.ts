@@ -53,6 +53,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const { memory } = await import('@/lib/agent/memory')
     for (const p of perceptions) {
+      const partial: Partial<Record<string, unknown>> = {}
+      if (p.taSignal) partial.taSignal = p.taSignal
+      if (p.taScore) partial.taScore = p.taScore
       memory.recordPerception({
         id: p.id,
         coin: p.coin,
@@ -61,10 +64,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         mid: p.mid,
         triggers: p.triggers,
         compositeScore: p.compositeScore,
-        ...(p as Record<string, unknown>).taSignal ? {
-          taSignal: (p as Record<string, unknown>).taSignal,
-          taScore: (p as Record<string, unknown>).taScore,
-        } : {},
+        ...partial,
       })
     }
   } catch { /* non-fatal — research fallback handles inline perception */ }

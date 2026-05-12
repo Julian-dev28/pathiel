@@ -7,13 +7,10 @@ import { memory } from './memory'
 import { buildSystemPrompt } from './system-prompt'
 import { ema, sma, atr as calcAtr, rsi, adx } from './triggers'
 import { createOpenAIClient, OPENROUTER_MODEL } from '../openrouter-client'
+import { hlCall, fetchHLCandles, fetchAccountState } from '../hl-client'
+import type { Candle, HLClearinghouseState, HLSpotClearinghouseState } from '../types'
 import { readAgentConfig as readConfig } from './config-store'
 import * as crypto from 'crypto'
-
-const HL_API = 'https://api.hyperliquid.xyz'
-
-type CandleRow = { t: number; o: string; h: string; l: string; c: string; v: string }
-type Candle = { t: number; o: number; h: number; l: number; c: number; v: number }
 
 interface IndicatorSnapshot {
   ema8: number | null
@@ -33,33 +30,9 @@ interface NewsResult {
   recency: number
 }
 
-async function hlPost(body: object): Promise<unknown> {
-  const res = await fetch(`${HL_API}/info`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(`HL API ${res.status}`)
-  return res.json()
-}
-
-async function fetchCandles(coin: string, interval: string, count: number): Promise<Candle[]> {
-  const msPerCandle: Record<string, number> = {
-    '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000,
-  }
-  const intvMs = msPerCandle[interval] ?? 300_000
-  const endTime = Date.now()
-  const startTime = endTime - intvMs * count
-  const raw = await hlPost({ type: 'candleSnapshot', req: { coin, interval, startTime, endTime } }) as CandleRow[]
-  if (!Array.isArray(raw)) return []
-  return raw.map(c => ({
-    t: c.t, o: parseFloat(c.o), h: parseFloat(c.h), l: parseFloat(c.l), c: parseFloat(c.c), v: parseFloat(c.v ?? '0'),
-  }))
-}
-
 async function fetchFundingRate(coin: string): Promise<string> {
   try {
-    const raw = await hlPost({ type: 'fundingHistory', coin, startTime: Date.now() - 86_400_000 }) as Array<{ funding: string }>
+    const raw = await hlCall<Array<{ funding: string }>>({ type: 'fundingHistory', coin, startTime: Date.now() - 86_400_000 })
     if (Array.isArray(raw) && raw.length > 0) return raw[raw.length - 1].funding
   } catch { /* skip */ }
   return 'N/A'
@@ -251,9 +224,9 @@ function parseVerdict(aiText: string, coin: string, perception: Perception): {
 export async function research(coin: string, perception: Perception): Promise<AgentAnalysis> {
   try {
     const [c1h, c4h, c1d, fundingRaw] = await Promise.all([
-      fetchCandles(coin, '1h', 100).catch(() => [] as Candle[]),
-      fetchCandles(coin, '4h', 100).catch(() => [] as Candle[]),
-      fetchCandles(coin, '1d', 60).catch(() => [] as Candle[]),
+      fetchHLCandles(coin, '1h', 100).catch(() => []),
+      fetchHLCandles(coin, '4h', 100).catch(() => []),
+      fetchHLCandles(coin, '1d', 60).catch(() => []),
       fetchFundingRate(coin),
     ])
 
@@ -271,32 +244,14 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     let openPositions: Array<{ coin: string; side: string; sizeUSD: number }> = []
     try {
       const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
-      const [perpRaw, spotRaw] = await Promise.all([
-        hlPost({ type: 'clearinghouseState', user }) as Promise<{
-          marginSummary?: { accountValue: string }
-          assetPositions?: Array<{ position: { coin: string; szi: string } }>
-        }>,
-        hlPost({ type: 'spotClearinghouseState', user }) as Promise<{
-          balances?: Array<{ coin: string; total: string }>
-        }>,
-      ])
+      const acct = await fetchAccountState(user)
+      equity = acct.equity
 
-      const perpEquity = parseFloat(perpRaw.marginSummary?.accountValue ?? '0')
-      const spotBalances = (spotRaw.balances ?? [])
-        .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
-        .map(b => `${b.coin}: ${b.total}`)
-        .join(', ') || 'none'
-      console.log(`[research] perp equity=$${perpEquity.toFixed(2)}, spot=${spotBalances}`)
-      equity = perpEquity
-
-      // Check perp positions for context
-      openPositions = (perpRaw.assetPositions ?? [])
-        .filter(p => parseFloat(p.position.szi) !== 0)
-        .map(p => ({
-          coin: p.position.coin,
-          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
-          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (tf4h.lastClose || perception.mid),
-        }))
+      openPositions = acct.assetPositions.map(p => ({
+        coin: p.coin,
+        side: parseFloat(p.szi) > 0 ? 'long' : 'short',
+        sizeUSD: Math.abs(parseFloat(p.szi)) * (tf4h.lastClose || perception.mid),
+      }))
     } catch { /* skip account context */ }
 
     const wr = memory.getWinRate()

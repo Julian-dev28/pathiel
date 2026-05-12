@@ -383,5 +383,3 @@ export async function cancelOrders(oid: number, a?: number): Promise<{ ok: boole
   return { ok: false, error: JSON.stringify(result) }
 }
 
-// Backwards-compat alias
-export const getHL1hATR = (period = 14) => getHLATR('1h', period)

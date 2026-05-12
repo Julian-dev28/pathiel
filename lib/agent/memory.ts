@@ -52,6 +52,8 @@ type RawPerception = {
   mid: number;
   triggers: unknown[];
   compositeScore: number;
+  taSignal?: string;
+  taScore?: number;
 };
 
 const MAX_PERCEPTIONS = 500;
