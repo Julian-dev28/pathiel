@@ -125,6 +125,11 @@ async function scanMarket(
     trendStrength(candles, config.thresholds.adxPeriod),
   ];
 
+  // Require at least 2 triggers to co-fire — single-trigger (e.g. ADX-only) is not
+  // a trade entry signal and would score 100/100 under the normalized formula.
+  const firedCount = hits.filter(h => h.fired).length;
+  if (firedCount < 2) return null;
+
   const score = compositeScore(hits, config.weights);
 
   if (score < minScore) return null;

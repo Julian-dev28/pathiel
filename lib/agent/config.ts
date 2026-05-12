@@ -38,7 +38,7 @@ export const DEFAULT_CONFIG: TriggerConfig = {
     adxPeriod: 14,
   },
   scan: {
-    minCompositeScore: 75,
+    minCompositeScore: 20,  // normalized over all weights: ~10=single trigger, ~30=2 triggers, ~60=3+ strong
     maxConcurrency: 8,
     candleInterval: '5m',
     candleCount: 100,

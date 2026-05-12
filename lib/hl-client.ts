@@ -9,6 +9,7 @@ export async function hlCall<T>(body: Record<string, unknown>): Promise<T> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
   })
   if (!res.ok) throw new Error(`HL API ${res.status}`)
   return res.json() as Promise<T>

@@ -227,11 +227,21 @@ function parseVerdict(aiText: string, coin: string, perception: Perception): {
 export async function research(coin: string, perception: Perception): Promise<AgentAnalysis> {
   try {
     const [c1h, c4h, c1d, fundingRaw] = await Promise.all([
-      fetchHLCandles(coin, '1h', 100).catch(() => []),
-      fetchHLCandles(coin, '4h', 100).catch(() => []),
-      fetchHLCandles(coin, '1d', 60).catch(() => []),
+      fetchHLCandles(coin, '1h', 100).catch((e: unknown) => {
+        process.stderr.write(`[research] 1h candles failed for ${coin}: ${e}\n`); return []
+      }),
+      fetchHLCandles(coin, '4h', 100).catch((e: unknown) => {
+        process.stderr.write(`[research] 4h candles failed for ${coin}: ${e}\n`); return []
+      }),
+      fetchHLCandles(coin, '1d', 60).catch((e: unknown) => {
+        process.stderr.write(`[research] 1d candles failed for ${coin}: ${e}\n`); return []
+      }),
       fetchFundingRate(coin),
     ])
+
+    if (c4h.length < 30) {
+      process.stderr.write(`[research] thin 4h history for ${coin}: only ${c4h.length} candles — indicators will be partial\n`)
+    }
 
     const tf1h = computeIndicators(c1h)
     const tf4h = computeIndicators(c4h)

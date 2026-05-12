@@ -16,7 +16,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const body = await req.json() as { minScore?: number; withTA?: boolean }
-  const minScore = body.minScore ?? 75
+  const minScore = body.minScore ?? 20
   const withTA = body.withTA !== false // default true
 
   const universe = await getUniverse()

@@ -343,24 +343,16 @@ export function trendStrength(candles: Candle[], adxPeriod: number): TriggerHit 
  */
 export function compositeScore(hits: TriggerHit[], weights: Record<string, number>): number {
   const firedHits = hits.filter(h => h.fired);
-
-  if (firedHits.length === 0) {
-    return 0;
-  }
+  if (firedHits.length === 0) return 0;
 
   let weightedSum = 0;
-  let weightTotal = 0;
-
   for (const hit of firedHits) {
-    const w = weights[hit.name] ?? 0;
-    weightedSum += hit.score * w;
-    weightTotal += w;
+    weightedSum += hit.score * (weights[hit.name] ?? 0);
   }
 
-  if (weightTotal === 0) {
-    return 0;
-  }
-
-  const raw = (weightedSum / weightTotal) * 10;  // scale to 0-100
+  // Normalize over ALL trigger weights (not just fired) so single-trigger coins
+  // score proportionally low and multi-trigger setups score high.
+  const totalWeight = Object.values(weights).reduce((s, w) => s + w, 0) || 1;
+  const raw = (weightedSum / totalWeight) * 10;  // scale to 0-100
   return Math.min(100, Math.max(0, raw));
 }

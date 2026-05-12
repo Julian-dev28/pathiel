@@ -12,7 +12,7 @@ config({ path: '.env.local' })
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
 const SCAN_INTERVAL_MS = parseInt(process.env.AGENT_SCAN_INTERVAL_MS || '3600000', 10) // 1h
-const MIN_SCORE = parseInt(process.env.AGENT_MIN_SCORE || '70', 10)
+const MIN_SCORE = parseInt(process.env.AGENT_MIN_SCORE || '20', 10)
 const MAX_RESEARCH = parseInt(process.env.MAX_RESEARCH_PER_CYCLE || '3', 10)
 const MIN_CONFIDENCE = parseFloat(process.env.MIN_AI_CONFIDENCE || '0.70')
 
