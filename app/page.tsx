@@ -1,281 +1,505 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import Link from 'next/link'
-import s from './landing.module.css'
+import React from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
-function useReveal() {
-  const ref = useRef<HTMLDivElement>(null)
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface PortfolioPosition {
+  coin: string
+  side: string
+  szi: number
+  entryPx: number
+  unrealizedPnl: number
+  leverage: number
+  notional: number
+  markPrice: number
+  livePnl: number
+}
+
+interface PortfolioData {
+  equity: number
+  totalNotional: number
+  positions: PortfolioPosition[]
+}
+
+interface Analysis {
+  id: string
+  coin: string
+  verdict: string
+  confidence: number
+  reasoning: string
+  side?: string | null
+  entryPx?: number
+  stopPx?: number
+  tpPx?: number
+  createdAt: number
+  taSignal?: string
+  taScore?: number
+  taReason?: string
+  executed?: boolean
+  blockedBy?: string[]
+}
+
+interface Trade {
+  id: string
+  coin: string
+  side: string
+  entryPx: number
+  sizeUSD: number
+  executedAt: number
+  exitPx?: number
+  pnl?: number
+}
+
+interface WatchlistItem {
+  coin: string
+  type: string
+  mid: number
+  compositeScore: number
+  status: string
+  triggers: Array<{ name: string; fired: boolean; reason: string }>
+}
+
+interface SessionLogEntry {
+  cycle: number
+  timestamp: string
+  markets_scanned?: number
+  triggers_fired?: number
+  message?: string
+  research_verdicts?: Array<{ coin: string; verdict: string; confidence: number; reasoning: string }>
+  trades_executed?: Array<{ coin: string; side: string; sizeUSD: number; entryPx: number }>
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function ago(tsMs: number): string {
+  if (!tsMs) return '-'
+  const sec = Math.floor((Date.now() - tsMs) / 1000)
+  if (sec < 30) return 'now'
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h`
+}
+
+function fmt(ts: string | number): string {
+  const d = new Date(ts)
+  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+}
+
+function verdictColor(v: string): string {
+  const u = v?.toUpperCase() ?? ''
+  if (u === 'LONG') return '#2E9E68'
+  if (u === 'SHORT') return '#BE4A40'
+  if (u === 'CLOSE') return '#3C6EA0'
+  return '#C2956B'
+}
+
+function taColor(s: string): string {
+  switch (s) {
+    case 'CONFIRMED': return '#2E9E68'
+    case 'WEAK': return '#F59E0B'
+    case 'REJECTED': return '#BE4A40'
+    default: return '#666'
+  }
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+
+export default function TradingDesk() {
+  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null)
+  const [analyses, setAnalyses] = useState<Analysis[]>([])
+  const [trades, setTrades] = useState<Trade[]>([])
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([])
+  const [sessionLog, setSessionLog] = useState<SessionLogEntry[]>([])
+  const [utcTime, setUtcTime] = useState('')
+  const [winRate, setWinRate] = useState({ rate: 0, wins: 0, total: 0 })
+  const [equity, setEquity] = useState(0)
+  const [dailyPnl, setDailyPnl] = useState(0)
+
+  // Hermes status
+  type AgentStatus = 'idle' | 'starting' | 'active' | 'stopping'
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle')
+  const [lastCycleAt, setLastCycleAt] = useState<number | null>(null)
+  const [cycleCount, setCycleCount] = useState(0)
+  const [marketsScanned, setMarketsScanned] = useState(0)
+  const statusRef = useRef<AgentStatus>('idle')
+  statusRef.current = agentStatus
+
+  // Clock
   useEffect(() => {
-    const root = ref.current
-    if (!root) return
-    const els = root.querySelectorAll(`.${s.reveal}`)
-    const io = new IntersectionObserver(
-      (entries) => entries.forEach((e) => {
-        if (e.isIntersecting) { e.target.classList.add(s.visible); io.unobserve(e.target) }
-      }),
-      { threshold: 0.1, rootMargin: '0px 0px -48px 0px' },
+    const update = () => setUtcTime(
+      new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC' }) + ' UTC'
     )
-    els.forEach((el) => io.observe(el))
-    return () => io.disconnect()
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
   }, [])
-  return ref
-}
 
-function r(...extra: (string | undefined)[]) {
-  return [s.reveal, ...extra].filter(Boolean).join(' ')
-}
+  // ── Poll portfolio every 8s ─────────────────────────────────────────────
+  const fetchPortfolio = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hl/portfolio')
+      if (res.ok) setPortfolio(await res.json())
+    } catch { /* ignore */ }
+  }, [])
 
-const PIPELINE = [
-  { num: '01', name: 'Position & Orders',   desc: 'get_clearinghouse_state reads your live equity, open position, and unrealized PnL. get_open_orders catches any stale orders before placing new ones.' },
-  { num: '02', name: 'Live Price & Book',   desc: 'get_all_mids pulls the live BTC mid price. get_l2_book snapshots full order book depth — bid and ask pressure at every level.' },
-  { num: '03', name: 'Candle Momentum',     desc: 'get_candle_snapshot pulls the last 10 15-minute candles. Direction, acceleration, and structure — the primary signal driving every verdict.' },
-  { num: '04', name: 'Funding & Fills',     desc: 'get_funding_history checks the current perpetual funding rate — positive means longs are paying. get_user_fills shows the last 5 executions for context.' },
-  { num: '05', name: 'AI Verdict',           desc: 'Agent synthesizes all 7 data sources and streams a direct verdict: LONG / SHORT / CLOSE / PASS — with confidence %. 60%+ is enough to act.' },
-  { num: '06', name: 'Risk Gate & Execute', desc: 'Kelly criterion sizes the trade from live equity. 5× leverage. Auto Mode places the IOC order on Hyperliquid. Real orders, real settlement, zero clicks.' },
-]
+  // ── Poll agent state every 5s ───────────────────────────────────────────
+  const fetchAgentState = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent/state')
+      if (res.ok) {
+        const d = await res.json()
+        if (Array.isArray(d.recentAnalyses)) setAnalyses(d.recentAnalyses)
+        if (Array.isArray(d.recentTrades)) setTrades(d.recentTrades)
+        if (Array.isArray(d.watchlist)) setWatchlist(d.watchlist.slice(0, 10))
+        if (d.equity != null) setEquity(d.equity)
+        if (d.winRate) setWinRate(d.winRate)
+        if (d.dailyPnl != null) setDailyPnl(d.dailyPnl)
+      }
+    } catch { /* ignore */ }
+  }, [])
 
-const HL_TOOLS = [
-  { fn: 'get_clearinghouse_state', label: 'Position & Equity',   desc: 'Live account equity, open position side/size, entry price, unrealized PnL, and margin usage — checked first every cycle.' },
-  { fn: 'get_open_orders',         label: 'Open Orders',         desc: 'All pending open orders for the account — ensures stale orders are caught before a new one is placed.' },
-  { fn: 'get_all_mids',            label: 'Live Mid Prices',     desc: 'Current mid prices for all listed assets. Used to anchor the BTC price snapshot at decision time.' },
-  { fn: 'get_l2_book',             label: 'Order Book Depth',    desc: 'Full L2 order book — bid and ask sizes at every price level. Reveals real buying and selling pressure.' },
-  { fn: 'get_candle_snapshot',     label: 'Candlestick Data',    desc: 'OHLCV candles at 15m and 1h intervals. Direction and acceleration of the last 10 candles drive the primary verdict signal.' },
-  { fn: 'get_funding_history',     label: 'Funding Rate',        desc: 'Current perpetual funding rate. Positive = longs pay shorts, a cost that erodes hold time. Factored into LONG conviction.' },
-  { fn: 'get_user_fills',          label: 'Trade History',       desc: 'Last 5 fills for the account — recent execution context so the agent knows what was just traded and at what price.' },
-  { fn: 'get_meta',                label: 'Exchange Metadata',   desc: 'Asset specs, size decimals, tick sizes, and universe config from Hyperliquid — available on demand for order validation.' },
-]
+  // ── Poll heartbeat status every 5s ──────────────────────────────────────
+  const fetchStatus = useCallback(async () => {
+    if (statusRef.current === 'starting' || statusRef.current === 'stopping') return
+    try {
+      const res = await fetch('/api/agent/start')
+      if (res.ok) {
+        const d = await res.json()
+        setAgentStatus(d.running ? 'active' : 'idle')
+      }
+    } catch { /* ignore */ }
+  }, [])
 
-const FEATURES = [
-  {
-    icon: '⬡',
-    title: 'Live Hyperliquid data',
-    body: 'Before every decision: live BTC price, order book depth, your account equity and open positions — all from Hyperliquid in real time.',
-  },
-  {
-    icon: '⊛',
-    title: 'Continuous 24/7 loop',
-    body: 'BTC-PERP never closes. Auto Mode runs every 90 seconds — Hyperliquid data + web search → verdict → execute → hold → repeat.',
-  },
-  {
-    icon: '⟁',
-    title: 'Grounded in live data',
-    body: 'Every verdict is anchored in a live Brave web search and Hyperliquid order book query — pulled seconds before the decision.',
-  },
-  {
-    icon: '⊕',
-    title: 'Your keys, your orders',
-    body: 'Your wallet key lives in your server environment. OpenTrader never holds funds. Auto Mode executes when confident; Manual Mode keeps you in the loop.',
-  },
-]
+  // ── Poll session log every 5s ───────────────────────────────────────────
+  const fetchSessionLog = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent/session-log')
+      if (res.ok) {
+        const log: SessionLogEntry[] = await res.json()
+        if (Array.isArray(log)) {
+          setSessionLog(log.slice(-40))
+          const last = log[log.length - 1]
+          if (last?.timestamp) {
+            setLastCycleAt(new Date(last.timestamp).getTime())
+            setCycleCount(last.cycle ?? cycleCount)
+            if (last.markets_scanned != null) setMarketsScanned(last.markets_scanned)
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }, [cycleCount])
 
-const CODE = [
-  { k: 'btc_price',    v: '$78,243.50',  c: '// get_all_mids' },
-  { k: 'bid_depth',    v: '22.2 BTC',    c: '// get_l2_book · bids',    hi: 'green' },
-  { k: 'ask_depth',    v: '1.19 BTC',    c: '// get_l2_book · asks' },
-  { k: 'candles_15m',  v: '↑↑↓↑↑',      c: '// get_candle_snapshot',   hi: 'green' },
-  { k: 'funding_rate', v: '+0.0082%',    c: '// get_funding_history' },
-  { k: 'open_orders',  v: '0',           c: '// get_open_orders · clear' },
-  { k: 'last_fill',    v: 'LONG $77,940',c: '// get_user_fills' },
-  { k: 'equity',       v: '$199.86',     c: '// get_clearinghouse_state',hi: 'amber' },
-  { k: 'position',     v: 'FLAT',        c: '// no open position' },
-  { k: 'confidence',   v: '72%',         c: '// agent certainty',        hi: 'green' },
-  { k: 'verdict',      v: 'LONG',        c: '// execute',                hi: 'green' },
-]
+  // ── Start / Stop ────────────────────────────────────────────────────────
+  const startAgent = async () => {
+    setAgentStatus('starting')
+    try {
+      const res = await fetch('/api/agent/start', { method: 'POST' })
+      if (res.ok) setAgentStatus('active')
+      else setAgentStatus('idle')
+    } catch { setAgentStatus('idle') }
+  }
 
-export default function Landing() {
-  const rootRef = useReveal()
+  const stopAgent = async () => {
+    setAgentStatus('stopping')
+    try {
+      const res = await fetch('/api/agent/stop', { method: 'POST' })
+      if (res.ok) setAgentStatus('idle')
+      else setAgentStatus('active')
+    } catch { setAgentStatus('active') }
+  }
 
+  // Initial + intervals
+  useEffect(() => {
+    fetchPortfolio()
+    fetchAgentState()
+    fetchStatus()
+    fetchSessionLog()
+    const pId = setInterval(fetchPortfolio, 8000)
+    const sId = setInterval(fetchAgentState, 5000)
+    const tId = setInterval(fetchStatus, 5000)
+    const lId = setInterval(fetchSessionLog, 5000)
+    return () => { clearInterval(pId); clearInterval(sId); clearInterval(tId); clearInterval(lId) }
+  }, [fetchPortfolio, fetchAgentState, fetchStatus, fetchSessionLog])
+
+  // ── Derived ──────────────────────────────────────────────────────────────
+  const positions = portfolio?.positions ?? []
+  const totalPnl = portfolio
+    ? positions.reduce((sum: number, p: PortfolioPosition) => sum + (p.livePnl ?? 0), 0)
+    : dailyPnl
+  const closedTrades = trades.filter(t => t.exitPx != null)
+  const tradeWins = closedTrades.filter(t => (t.pnl ?? 0) > 0).length
+  const tradePnl = closedTrades.reduce((s: number, t: Trade) => s + (t.pnl ?? 0), 0)
+
+  const isActive = agentStatus === 'active'
+  const isBusy = agentStatus === 'starting' || agentStatus === 'stopping'
+
+  // ════════════════════════════════════════════════════════════════════════
   return (
-    <div className={s.root} ref={rootRef}>
+    <div style={{ minHeight: '100vh', background: '#0a0a0a', color: '#d4d4d4', fontFamily: "var(--font-geist-mono, 'SF Mono', 'JetBrains Mono', monospace)" }}>
 
-      {/* Nav */}
-      <nav className={s.nav}>
-        <a href="/" className={s.navLogo}>
-          OPEN <span className={s.navLogoAccent}>TRADER</span>
-        </a>
-        <div className={s.navLinks}>
-          <a href="#how"      className={s.navLink}>How it works</a>
-          <a href="#tools"    className={s.navLink}>Tools</a>
-          <a href="#signals"  className={s.navLink}>Signals</a>
-          <a href="#features" className={s.navLink}>Features</a>
+      {/* ── Top Control Bar ─────────────────────────────────── */}
+      <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 24px', borderBottom: '1px solid #1a1a1a', background: '#0a0a0a', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontWeight: 800, fontSize: 14, color: '#e5e5e5', letterSpacing: '0.04em' }}>hermes-trader</span>
+
+          {/* Status badge */}
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4,
+            background: isActive ? 'rgba(46,158,104,0.10)' : 'rgba(190,74,64,0.10)',
+            color: isActive ? '#2E9E68' : '#BE4A40',
+            border: `1px solid ${isActive ? 'rgba(46,158,104,0.3)' : 'rgba(190,74,64,0.3)'}`,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: isActive ? '#2E9E68' : '#BE4A40',
+              display: 'inline-block',
+              animation: isActive ? 'pulse-live 1.5s infinite' : 'none',
+            }} />
+            {isBusy ? '...' : isActive ? 'ACTIVE' : 'IDLE'}
+          </span>
+
+          {/* Last cycle */}
+          {lastCycleAt && isActive && (
+            <span style={{ fontSize: 11, color: '#666' }}>
+              cycle #{cycleCount} · {ago(lastCycleAt)} · {marketsScanned} mkts
+            </span>
+          )}
         </div>
-        <Link href="/agent" className={s.navCta}>Open Agent →</Link>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Start / Stop */}
+          <button
+            onClick={isActive ? stopAgent : startAgent}
+            disabled={isBusy}
+            style={{
+              fontSize: 11, fontWeight: 700, padding: '6px 14px', borderRadius: 6,
+              cursor: isBusy ? 'not-allowed' : 'pointer',
+              background: isActive ? 'rgba(190,74,64,0.10)' : 'rgba(46,158,104,0.10)',
+              color: isActive ? '#BE4A40' : '#2E9E68',
+              border: `1px solid ${isActive ? 'rgba(190,74,64,0.3)' : 'rgba(46,158,104,0.3)'}`,
+              textTransform: 'uppercase', letterSpacing: '0.04em',
+              opacity: isBusy ? 0.6 : 1,
+              transition: 'all 0.15s',
+            }}
+          >
+            {isBusy ? agentStatus === 'starting' ? 'Starting...' : 'Stopping...' : isActive ? 'Stop' : 'Start'}
+          </button>
+
+          <div style={{ fontSize: 11, color: '#555' }}>{utcTime}</div>
+        </div>
       </nav>
 
-      {/* Hero */}
-      <section className={s.hero}>
-        <div className={s.heroInner}>
-          <p className={s.heroEyebrow}>BTC-PERP · Hyperliquid · Powered by Qwen via OpenRouter</p>
-          <h1 className={s.heroHeadline}>
-            TRADE<br />
-            <span className={s.heroAccent}>BTC</span><br />
-            PERP
-          </h1>
-          <p className={s.heroSub}>
-            BTC-PERP runs 24/7. Before every trade, OpenTrader queries live Hyperliquid
-            price and order book data, checks your position, and searches the web
-            for current BTC news. LONG, SHORT, or PASS — grounded in what's
-            happening right now.
-          </p>
-          <div className={s.heroCtas}>
-            <Link href="/agent" className={s.btnPrimary}>Open Agent →</Link>
-            <a href="#how"      className={s.btnSecondary}>How it works</a>
-          </div>
-        </div>
-        <div className={s.scrollCue}>
-          <div className={s.scrollLine} />
-          Scroll
-        </div>
-      </section>
+      {/* ── Main Content ─────────────────────────────────── */}
+      <div style={{ padding: '16px 20px 20px', maxWidth: 1600, margin: '0 auto' }}>
 
-      {/* Stats */}
-      <div className={s.statsRow}>
-        {[
-          { num: '24/7',  accent: '',    label: 'continuous market',   desc: 'BTC-PERP never closes. OpenTrader watches it continuously — no windows, no gaps, no missed signals.' },
-          { num: '5',     accent: '×',   label: 'leverage',            desc: 'Cross-margin 5× leverage. Kelly-sized from your live equity. PASS on weak or ambiguous signals.' },
-          { num: '0',     accent: ' clicks', label: 'after setup',     desc: 'Analysis, sizing, EIP-712 signing, order placement — all runs without you in Auto Mode.' },
-        ].map(({ num, accent, label, desc }, i) => (
-          <div className={`${s.statItem} ${r(i > 0 ? s.d1 : undefined)}`} key={label}>
-            <div className={s.statNum}>{num}<span className={s.statAccent}>{accent}</span></div>
-            <div className={s.statLabel}>{label}</div>
-            <div className={s.statDesc}>{desc}</div>
+        {/* ── Stats Row ──────────────────────────────────── */}
+        <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: '14px 20px', marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+            {[
+              { label: 'EQUITY', value: `$${(equity || 0).toFixed(2)}`, color: '#e5e5e5' },
+              { label: 'UNREAL PnL', value: `$${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}`, color: totalPnl >= 0 ? '#2E9E68' : '#BE4A40' },
+              { label: 'WIN RATE', value: winRate.total > 0 ? `${(winRate.rate * 100).toFixed(1)}%` : '-', color: winRate.rate >= 0.5 ? '#2E9E68' : '#e5e5e5' },
+              { label: 'TRADES', value: `${winRate.total} (${tradeWins}W/${Math.max(0, winRate.total - tradeWins)}L)`, color: '#e5e5e5' },
+              { label: 'TRADE PnL', value: `${tradePnl >= 0 ? '+' : ''}$${tradePnl.toFixed(2)}`, color: tradePnl >= 0 ? '#2E9E68' : '#BE4A40' },
+              { label: 'POSITIONS', value: `${positions.length}`, color: positions.length > 0 ? '#F59E0B' : '#555' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ background: '#0a0a0a', padding: '8px 12px', borderRadius: 6 }}>
+                <div style={{ fontSize: 10, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color, letterSpacing: '-0.02em' }}>{value}</div>
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+
+        {/* ── 3-Column Grid ───────────────────────────── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 280px', gap: 16 }}>
+
+          {/* ── Left: Positions + Watchlist ───────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Positions */}
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Positions ({positions.length})</div>
+              {positions.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#555', textAlign: 'center', padding: '24px 0' }}>FLAT</div>
+              ) : (
+                positions.map((p, i) => {
+                  const c = p.side === 'long' ? '#2E9E68' : '#BE4A40'
+                  const pnl = p.livePnl ?? p.unrealizedPnl ?? 0
+                  return (
+                    <div key={i} style={{ background: '#0a0a0a', padding: '8px 10px', borderRadius: 6, marginBottom: 6, borderLeft: `3px solid ${c}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800 }}>{p.coin}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: `${c}20`, color: c, border: `1px solid ${c}40`, textTransform: 'uppercase' }}>{p.side}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: '#888', lineHeight: 1.6 }}>
+                        <div>Size: <span style={{ color: '#ccc' }}>{p.szi?.toFixed(4)}</span></div>
+                        <div>Entry: <span style={{ color: '#ccc' }}>${p.entryPx?.toLocaleString()}</span></div>
+                        <div>PnL: <span style={{ color: pnl >= 0 ? '#2E9E68' : '#BE4A40', fontWeight: 700 }}>{pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</span></div>
+                        <div>Lev: <span style={{ color: '#ccc' }}>{p.leverage}x</span></div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Watchlist */}
+            {watchlist.length > 0 && (
+              <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Watchlist</div>
+                {watchlist.map((w) => {
+                  const fired = w.triggers?.filter(t => t.fired).length ?? 0
+                  const total = w.triggers?.length ?? 0
+                  const sc = w.compositeScore >= 80 ? '#2E9E68' : w.compositeScore >= 60 ? '#F59E0B' : '#666'
+                  const st = w.status === 'scanning' ? '#3C6EA0' : w.status === 'analyzing' ? '#F59E0B' : w.status === 'trading' ? '#2E9E68' : '#666'
+                  return (
+                    <div key={w.coin} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #1a1a1a', fontSize: 11 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 800, color: '#e5e5e5', width: 60 }}>{w.coin}</span>
+                        <span style={{ color: '#888', fontSize: 10 }}>${w.mid?.toLocaleString() ?? '-'}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {total > 0 && <span style={{ fontSize: 9, color: fired > 0 ? '#F59E0B' : '#555' }}>{fired}/{total}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: sc, width: 28, textAlign: 'right' }}>{w.compositeScore ?? '-'}</span>
+                        <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: `${st}15`, color: st, border: `1px solid ${st}30`, textTransform: 'uppercase' }}>{w.status}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Center: Reasoning Stream + Decisions ──── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Session Log / Reasoning Stream */}
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, flexShrink: 0 }}>Activity Log</div>
+              <div style={{ flex: 1, overflow: 'auto', maxHeight: 400 }}>
+                {sessionLog.length === 0 ? (
+                  <div style={{ fontSize: 11, color: '#555', padding: '20px 0' }}>{isActive ? '// awaiting first cycle...' : '// start Hermes to begin'}</div>
+                ) : (
+                  sessionLog.slice().reverse().map((entry, i) => {
+                    const ts = entry.timestamp ? new Date(entry.timestamp).getTime() : 0
+                    return (
+                      <div key={i} style={{ padding: '7px 10px', borderBottom: '1px solid #111', fontSize: 11 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                          <span style={{ fontWeight: 700, color: '#888' }}>
+                            #{entry.cycle ?? '?'}{' '}
+                            {entry.markets_scanned ? `${entry.markets_scanned} mkts` : ''}
+                            {entry.triggers_fired != null ? ` · ${entry.triggers_fired} fired` : ''}
+                          </span>
+                          <span style={{ color: '#555', fontSize: 10 }}>{entry.timestamp ? fmt(entry.timestamp) : '-'}</span>
+                        </div>
+                        {entry.message && (
+                          <div style={{ color: '#999', fontSize: 10, lineHeight: 1.4 }}>{entry.message}</div>
+                        )}
+                        {entry.research_verdicts?.map((v, vi) => (
+                          <div key={vi} style={{ color: verdictColor(v.verdict), fontSize: 10 }}>
+                            {'  '}→ {v.coin} {v.verdict} {(v.confidence * 100).toFixed(0)}%
+                          </div>
+                        ))}
+                        {entry.trades_executed?.map((t, ti) => (
+                          <div key={ti} style={{ color: '#2E9E68', fontSize: 10 }}>
+                            {'  '}→ EXEC {t.coin} {t.side} @ ${t.entryPx?.toFixed(2)} (${t.sizeUSD})
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Recent AI Verdicts */}
+            <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, flexShrink: 0 }}>AI Verdicts</div>
+              <div style={{ flex: 1, overflow: 'auto', maxHeight: 300 }}>
+                {analyses.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#555', textAlign: 'center', padding: '20px 0' }}>No analyses yet</div>
+                ) : (
+                  <div>
+                    {analyses.slice().reverse().slice(0, 15).map((a) => {
+                      const vc = verdictColor(a.verdict)
+                      return (
+                        <div key={a.id ?? `${a.coin}-${a.createdAt}`} style={{ padding: '7px 10px', borderBottom: '1px solid #111', borderLeft: `2px solid ${vc}40`, background: a.executed ? `${vc}06` : 'transparent' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 800, fontSize: 11, color: vc }}>{a.verdict}</span>
+                              <span style={{ fontWeight: 700, fontSize: 12, color: '#e5e5e5' }}>{a.coin}</span>
+                              {a.executed && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(46,158,104,0.1)', color: '#2E9E68', border: '1px solid rgba(46,158,104,0.25)' }}>FILLED</span>}
+                              {a.blockedBy?.length && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: 'rgba(190,74,64,0.1)', color: '#BE4A40', border: '1px solid rgba(190,74,64,0.25)' }}>BLOCKED</span>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 9, color: taColor(a.taSignal ?? 'PASS') }}>{a.taSignal ?? '-'}</span>
+                              <span style={{ fontSize: 10, color: '#888' }}>{(a.confidence * 100).toFixed(0)}%</span>
+                              <span style={{ fontSize: 9, color: '#555' }}>{ago(a.createdAt)}</span>
+                            </div>
+                          </div>
+                          {a.reasoning && (
+                            <div style={{ fontSize: 10, color: '#777', lineHeight: 1.4, marginTop: 3 }}>
+                              {a.reasoning.split('\n').filter(l => l.trim()).slice(0, 1).map((line, li) => {
+                                const cl = line.replace(/^[•\-*]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1').trim()
+                                if (!cl) return null
+                                return <div key={li} style={{ display: 'flex', gap: 5 }}><span style={{ color: '#555', flexShrink: 0 }}>·</span><span>{cl}</span></div>
+                              }).filter(Boolean)}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Right: Trade Log ──────────────────────── */}
+          <div style={{ background: '#111', border: '1px solid #222', borderRadius: 8, padding: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#666', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, flexShrink: 0 }}>
+              Trade Log
+              {trades.length > 0 && <span style={{ color: '#555', fontWeight: 400 }}> ({closedTrades.length} closed)</span>}
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', maxHeight: 750 }}>
+              {trades.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#555', textAlign: 'center', padding: '40px 0' }}>No trades yet</div>
+              ) : (
+                <div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '60px 50px 70px 80px 70px 50px', gap: 0, paddingBottom: 6, borderBottom: '1px solid #222', marginBottom: 4 }}>
+                    {['COIN', 'SIDE', 'SIZE', 'ENTRY', 'P&L', 'AGE'].map(h => (
+                      <span key={h} style={{ fontSize: 8, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+                    ))}
+                  </div>
+                  {trades.slice().reverse().slice(0, 30).map((t, i) => {
+                    const pnl = t.pnl ?? 0
+                    const c = t.side === 'long' ? '#2E9E68' : '#BE4A40'
+                    return (
+                      <div key={t.id ?? i} style={{ display: 'grid', gridTemplateColumns: '60px 50px 70px 80px 70px 50px', gap: 0, padding: '5px 0', borderBottom: '1px solid #111', fontSize: 10, alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, color: '#ccc' }}>{t.coin}</span>
+                        <span style={{ fontSize: 9, textTransform: 'uppercase', color: c, fontWeight: 700 }}>{t.side.slice(0, 1)}</span>
+                        <span style={{ color: '#888' }}>${t.sizeUSD.toFixed(0)}</span>
+                        <span style={{ color: '#888' }}>{t.entryPx?.toFixed(2) ?? '-'}</span>
+                        <span style={{ fontWeight: 700, color: pnl > 0 ? '#2E9E68' : pnl < 0 ? '#BE4A40' : '#555' }}>
+                          {t.exitPx != null ? `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` : 'OPEN'}
+                        </span>
+                        <span style={{ color: '#555', fontSize: 9 }}>{ago(t.executedAt)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
       </div>
 
-      {/* How it works */}
-      <section className={s.section} id="how">
-        <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>How It Works</p>
-          <h2 className={`${s.headline} ${r(s.d1)}`}>Six steps.<br />One decision.</h2>
-          <p className={`${s.sub} ${r(s.d2)}`}>
-            From analysis trigger to executed order in a single agent cycle.
-            OpenTrader queries Hyperliquid, searches the web, reasons, and executes — or hands you the trade button.
-          </p>
-          <div className={s.pipelineList}>
-            {PIPELINE.map((step, i) => (
-              <div className={`${s.pipelineItem} ${r(i < 3 ? s.d1 : s.d2)}`} key={step.num}>
-                <span className={s.pipelineNum}>{step.num}</span>
-                <span className={s.pipelineName}>{step.name}</span>
-                <span className={s.pipelineDesc}>{step.desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* AOMI Tools */}
-      <section className={s.section} id="tools">
-        <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>OpenTrader Hyperliquid Tools</p>
-          <h2 className={`${s.headline} ${r(s.d1)}`}>8 live data tools.<br />Called every cycle.</h2>
-          <p className={`${s.sub} ${r(s.d2)}`}>
-            Every agent cycle queries all 8 Hyperliquid tools before deciding. No stale data, no guesses — every verdict is grounded in the current state of the market and your account.
-          </p>
-          <div className={s.toolsGrid}>
-            {HL_TOOLS.map((t, i) => (
-              <div className={`${s.toolItem} ${r(i < 4 ? s.d1 : s.d2)}`} key={t.fn}>
-                <span className={s.toolFn}>{t.fn}</span>
-                <span className={s.toolLabel}>{t.label}</span>
-                <span className={s.toolDesc}>{t.desc}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Signals */}
-      <section className={s.section} id="signals">
-        <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>What OpenTrader Sees</p>
-          <div className={s.signalsGrid}>
-            <div>
-              <h2 className={`${s.signalsHeadline} ${r(s.d1)}`}>
-                Live data queried.<br />Agent searches.
-              </h2>
-              <p className={`${s.signalsBody} ${r(s.d2)}`}>
-                OpenTrader calls Hyperliquid tools before every decision — live price,
-                order book depth, your account state. Then searches the web for
-                current BTC news and sentiment. Synthesises both and streams
-                a direct verdict: LONG, SHORT, or PASS.
-              </p>
-              <ul className={`${s.signalsList} ${r(s.d2)}`}>
-                {[
-                  'get_clearinghouse_state — equity, position, PnL before every decision',
-                  'get_open_orders — stale order check before placing new ones',
-                  'get_all_mids — live BTC mid price at decision time',
-                  'get_l2_book — full order book depth, bid vs ask pressure',
-                  'get_candle_snapshot — last 10 × 15m candles, primary momentum signal',
-                  'get_funding_history — perpetual funding rate, factored into hold cost',
-                  'get_user_fills — last 5 fills for recent execution context',
-                  'get_meta — exchange specs available on demand',
-                ].map(item => (
-                  <li className={s.signalItem} key={item}>
-                    <span className={s.signalDot} />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className={`${s.codeBlock} ${r(s.d1)}`}>
-              {CODE.map(line => (
-                <div className={s.codeLine} key={line.k}>
-                  <span className={s.codeKey}>{line.k}</span>
-                  <span className={line.hi === 'green' ? s.codeGreen : line.hi === 'amber' ? s.codeAmber : s.codeVal}>
-                    {line.v}
-                  </span>
-                  <span className={s.codeComment}>{line.c}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className={s.section} id="features">
-        <div className={s.inner}>
-          <p className={`${s.label} ${r()}`}>Why OpenTrader</p>
-          <h2 className={`${s.headline} ${r(s.d1)}`}>Built for traders<br />who can&apos;t watch 24/7.</h2>
-          <div className={s.modesGrid}>
-            {FEATURES.map((f, i) => (
-              <div className={`${s.modeItem} ${r(i < 2 ? s.d1 : s.d2)}`} key={f.title}>
-                <p className={s.modeName} style={{ fontSize: 20, marginBottom: 6 }}>{f.icon}</p>
-                <p className={s.modeName}>{f.title}</p>
-                <p className={s.modeDesc}>{f.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className={s.cta}>
-        <div className={s.ctaInner}>
-          <h2 className={`${s.ctaHeadline} ${r()}`}>
-            YOUR AGENT<br />IS READY
-          </h2>
-          <p className={`${s.ctaSub} ${r(s.d1)}`}>
-            BTC-PERP. 24/7. Live Hyperliquid data before every trade.<br />
-            One slider. Everything else runs without you.
-          </p>
-          <div className={`${s.ctaBtns} ${r(s.d2)}`}>
-            <Link href="/agent" className={s.btnPrimary}>Open Agent →</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className={s.footer}>
-        <span className={s.footerBrand}>Open Trader · BTC-PERP · Powered by OpenRouter</span>
-        <div className={s.footerLinks}>
-          <Link href="/agent"     className={s.footerLink}>Agent</Link>
-          <a href="https://github.com/Julian-dev28/aomi-trader" target="_blank" rel="noopener noreferrer" className={s.footerLink}>GitHub</a>
-          <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className={s.footerLink}>OpenRouter</a>
-        </div>
-      </footer>
-
+      <style dangerouslySetInnerHTML={{ __html: `@keyframes pulse-live{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.85)}}` }} />
     </div>
   )
 }

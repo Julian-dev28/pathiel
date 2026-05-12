@@ -66,7 +66,7 @@ let libEma, libSma, libAtr, libRsi
 let pctMoveSpike, volumeSpike, breakoutFn, rangeCompression, compositeScore
 
 try {
-  const triggers = await import('../../lib/scanner/triggers.ts')
+  const triggers = await import('../../lib/agent/triggers.ts')
   libEma = triggers.ema
   libSma = triggers.sma
   libAtr = triggers.atr

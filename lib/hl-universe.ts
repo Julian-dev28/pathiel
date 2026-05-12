@@ -5,9 +5,9 @@ import { HL_API } from './hyperliquid'
 export type HLMarket = {
   coin: string
   type: 'perp' | 'spot'
+  category: 'crypto' | 'equity' | 'commodity'
   szDecimals: number
   maxLeverage: number
-  isEquityPerp: boolean
   minNotional?: number
 }
 
@@ -39,8 +39,17 @@ interface HLSpotMeta {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Known equity perp coins on HL. New ones appear via meta automatically.
 const EQUITY_PERP_COINS = new Set([
+  // US Tech / Growth
   'TSLA', 'NVDA', 'AAPL', 'AMZN', 'GOOGL', 'MSFT', 'META', 'COIN', 'MSTR',
+  'INTC', 'AMD', 'NFLX', 'ADBE', 'CRM', 'AVGO', 'QCOM', 'TXN', 'MU', 'SNPS',
+  'SNDK', 'LITE', 'CRDO', 'SMCI', 'ARM', 'PLTR', 'SOFI', 'HOOD', 'RKLB',
+])
+
+// Commodities on HL
+const COMMODITY_COINS = new Set([
+  'NATGAS', 'CRCL', 'SILVER', 'COPPER', 'GOLD', 'URNM',
 ])
 
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
@@ -50,6 +59,12 @@ const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
 let universeCache: { value: HLMarket[]; ttl: number } | null = null
 
 // ── Fetchers ──────────────────────────────────────────────────────────────────
+
+function categorize(coin: string): 'crypto' | 'equity' | 'commodity' {
+  if (COMMODITY_COINS.has(coin)) return 'commodity'
+  if (EQUITY_PERP_COINS.has(coin)) return 'equity'
+  return 'crypto'
+}
 
 async function fetchPerpUniverse(): Promise<HLMarket[]> {
   const res = await fetch(`${HL_API}/info`, {
@@ -63,9 +78,9 @@ async function fetchPerpUniverse(): Promise<HLMarket[]> {
   return (meta.universe ?? []).map(u => ({
     coin: u.name,
     type: 'perp',
+    category: categorize(u.name),
     szDecimals: u.szDecimals,
     maxLeverage: u.maxLeverage,
-    isEquityPerp: EQUITY_PERP_COINS.has(u.name),
     minNotional: u.minNtl !== undefined ? parseFloat(u.minNtl) : undefined,
   }))
 }
@@ -82,11 +97,11 @@ async function fetchSpotUniverse(): Promise<HLMarket[]> {
   return (spot.universe ?? []).map(u => ({
     coin: u.name,
     type: 'spot',
+    category: 'crypto' as const,
     szDecimals: typeof u.szDecimals === 'number'
       ? u.szDecimals
       : (spot.tokens[u.index]?.szDecimals ?? 6),
     maxLeverage: 1,
-    isEquityPerp: false,
   }))
 }
 

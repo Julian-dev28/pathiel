@@ -8,9 +8,11 @@ export const HL_WALLET  = process.env.HYPERLIQUID_WALLET_ADDRESS ?? ''   // API 
 export const HL_MASTER  = process.env.HYPERLIQUID_MASTER_ADDRESS ?? ''   // master account — holds funds
 const PRIVATE_KEY        = process.env.HYPERLIQUID_PRIVATE_KEY ?? ''
 
-// When master address is set, API wallet acts as agent for master
-const IS_AGENT           = !!HL_MASTER && HL_MASTER.toLowerCase() !== HL_WALLET.toLowerCase()
-export const HL_ACCOUNT  = IS_AGENT ? HL_MASTER : HL_WALLET   // address to query for balance/positions
+// Unified account with agent wallet:
+//   - MASTER holds funds → query MASTER for balance
+//   - WALLET signs orders → use WALLET private key for signing
+const IS_AGENT = !!(HL_MASTER && HL_WALLET && HL_MASTER.toLowerCase() !== HL_WALLET.toLowerCase())
+export const HL_ACCOUNT  = IS_AGENT ? HL_MASTER : HL_WALLET
 
 export const HL_LEVERAGE = 5  // 5× cross margin
 
@@ -66,12 +68,8 @@ export async function getHLPrice(): Promise<number> {
 }
 
 export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
-  const [perpRes, spotRes] = await Promise.all([
-    fetch(`${HL_API}/info`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'clearinghouseState', user: walletAddress }),
-    }),
+  // Unified account: spot + perp share one margin pool. Use spotClearinghouseState for total equity.
+  const [spotRes] = await Promise.all([
     fetch(`${HL_API}/info`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -79,43 +77,16 @@ export async function getHLAccount(walletAddress: string): Promise<HLAccount> {
     }),
   ])
 
-  const perp = await perpRes.json() as {
-    marginSummary: { accountValue: string; totalNtlPos: string }
-    assetPositions: Array<{
-      position: {
-        coin: string; szi: string; entryPx: string
-        unrealizedPnl: string; leverage?: { value: string }
-      }
-    }>
-  }
-
   const spot = await spotRes.json() as {
     balances?: Array<{ coin: string; total: string; hold: string }>
   }
 
-  const equity   = parseFloat(perp.marginSummary?.accountValue ?? '0')
-  const totalNtl = parseFloat(perp.marginSummary?.totalNtlPos ?? '0')
-
+  // In unified mode, USDC balance IS the total equity
   const spotUSDC = (spot.balances ?? [])
-    .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+    .filter(b => b.coin === 'USDC')
     .reduce((sum, b) => sum + parseFloat(b.total), 0)
 
-  const btcPos = (perp.assetPositions ?? []).find(p => p.position.coin === 'BTC')
-  let position: HLPosition | null = null
-  if (btcPos) {
-    const szi = parseFloat(btcPos.position.szi)
-    if (szi !== 0) {
-      position = {
-        side:          szi > 0 ? 'long' : 'short',
-        sizeBTC:       Math.abs(szi),
-        entryPx:       parseFloat(btcPos.position.entryPx),
-        unrealizedPnl: parseFloat(btcPos.position.unrealizedPnl),
-        leverage:      parseFloat(btcPos.position.leverage?.value ?? String(HL_LEVERAGE)),
-      }
-    }
-  }
-
-  return { equity, spotUSDC, totalEquity: equity + spotUSDC, totalNtl, position }
+  return { equity: spotUSDC, spotUSDC, totalEquity: spotUSDC, totalNtl: 0, position: null }
 }
 
 // ── Signing utilities ─────────────────────────────────────────────────────────
@@ -170,15 +141,8 @@ function stripZeros(s: string): string {
 // ── Order placement ───────────────────────────────────────────────────────────
 
 export async function transferSpotToPerp(amount: number): Promise<void> {
-  if (!PRIVATE_KEY || amount <= 0) return
-  const nonce  = Date.now()
-  const action = { type: 'usdClassTransfer', amount: amount.toFixed(2), toPerp: true }
-  const sig    = await signAction(action, nonce)
-  await fetch(`${HL_API}/exchange`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    exchangeBody(action, nonce, sig),
-  })
+  // Unified account: no transfer needed — spot and perp share margin pool
+  return
 }
 
 export async function setLeverage(asset: number, leverage: number): Promise<void> {
@@ -356,6 +320,34 @@ export function getAllPositions(rawPerp: {
       }
     })
     .filter((p): p is NonNullable<typeof p> => p !== null)
+}
+
+// Cancel orders by asset index + order ID(s)
+export async function cancelOrders(oid: number, a?: number): Promise<{ ok: boolean; error?: string }> {
+  if (!PRIVATE_KEY) return { ok: false, error: 'PRIVATE_KEY not set' }
+  const assetIdx = a ?? 0
+  const nonce = Date.now()
+  const action = {
+    type: 'cancel',
+    cancels: [{ a: assetIdx, o: oid }],
+  }
+  const sig = await signAction(action, nonce)
+  const res = await fetch(`${HL_API}/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: exchangeBody(action, nonce, sig),
+  })
+  const result = await res.json() as {
+    status: string
+    response?: { data?: { statuses?: Array<{ status?: string; error?: string }> } }
+  }
+  if (result.status === 'ok') {
+    const st = result.response?.data?.statuses?.[0]
+    if (st?.status === 'success') return { ok: true }
+    if (st?.error) return { ok: false, error: st.error }
+    return { ok: true }
+  }
+  return { ok: false, error: JSON.stringify(result) }
 }
 
 // Backwards-compat alias

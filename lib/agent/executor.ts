@@ -72,23 +72,13 @@ export async function maybeExecute(analysis: AgentAnalysis): Promise<ExecutionRe
     const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
 
     try {
-      const acct = await hlPost({ type: 'clearinghouseState', user }) as {
-        marginSummary?: { accountValue: string; totalNtlPos: string }
-        assetPositions?: Array<{ position: { coin: string; szi: string } }>
+      const acct = await hlPost({ type: 'spotClearinghouseState', user }) as {
+        balances?: Array<{ coin: string; total: string }>
       }
-      equity = parseFloat(acct.marginSummary?.accountValue ?? '0')
-      totalOpenNotional = parseFloat(acct.marginSummary?.totalNtlPos ?? '0')
-      positions = (acct.assetPositions ?? [])
-        .filter(p => parseFloat(p.position.szi) !== 0)
-        .map(p => ({
-          coin: p.position.coin,
-          side: parseFloat(p.position.szi) > 0 ? 'long' : 'short',
-          sizeUSD: Math.abs(parseFloat(p.position.szi)) * (analysis.entryPx ?? 0),
-        }))
-    } catch (err) {
-      console.error(`[executor] account fetch failed: ${err}`)
-      return { executed: false, mode, analysisId: analysis.id, reason: 'account_fetch_failed' }
-    }
+      const usdc = (acct.balances ?? []).find(b => b.coin === 'USDC')
+      equity = usdc ? parseFloat(usdc.total) : 0
+      totalOpenNotional = 0
+    } catch {}
 
     const dailyPnl = memory.getDailyPnl()
 

@@ -17,6 +17,13 @@ export type Perception = {
   mid: number;
   triggers: TriggerHit[];
   compositeScore: number;
+  // Pre-AI technical analysis (optional, filled by ta-filter)
+  taSignal?: 'CONFIRMED' | 'WEAK' | 'REJECTED';
+  taScore?: number;
+  taTrend4h?: string;
+  taRsi4h?: number | null;
+  taAtr4pct?: number | null;
+  taReason?: string;
 };
 
 interface CacheEntry { candles: Candle[]; cachedAt: number; }

@@ -5,12 +5,14 @@
 //
 // Uses setTimeout (NOT setInterval) for drift-correct timing.
 // NEVER crashes on network errors — logs and retries next cycle.
+//
+// Pipeline: Scan → TA Filter (server-side) → AI Research (CONFIRMED only) → Execute
 
 const BASE_URL = process.env.SCANNER_API_URL || 'http://localhost:3000'
-const SCAN_INTERVAL_MS = parseInt(process.env.AGENT_HEARTBEAT_INTERVAL_MS || '60000', 10)
-const MIN_SCORE = parseInt(process.env.AGENT_MIN_SCORE || '75', 10)
-const MAX_AI_PER_CYCLE = parseInt(process.env.AGENT_MAX_AI_PER_CYCLE || '5', 10)
-const AI_RATE_LIMIT_MS = 10_000  // max 1 AI call per 10s globally
+const SCAN_INTERVAL_MS = parseInt(process.env.AGENT_HEARTBEAT_INTERVAL_MS || '180000', 10) // 3min (was 60s)
+const MIN_SCORE = parseInt(process.env.AGENT_MIN_SCORE || '80', 10) // higher bar -> fewer false triggers
+const MAX_AI_PER_CYCLE = parseInt(process.env.AGENT_MAX_AI_PER_CYCLE || '2', 10) // only top 2 signals per cycle
+const AI_RATE_LIMIT_MS = 15_000  // max 1 AI call per 15s globally (was 10s)
 
 let lastAIAt = 0
 
@@ -52,15 +54,10 @@ async function tick() {
 
     const scanResult = await api('/api/agent/scan', { minScore: MIN_SCORE })
     const { perceptions = [], count = 0, scanned = 0 } = scanResult
-    scans = scanned
+    scans = scanned || count
     triggered = perceptions.length
 
-    // Push perceptions to memory
-    await api('/api/agent/ingest', {
-      perceptions,
-      scanTime: cycleStart,
-      scanned,
-    })
+    // Perceptions are auto-stored by the scan route
 
     // Fetch updated state for equity
     try {
@@ -71,15 +68,27 @@ async function tick() {
       }
     } catch { /* ignore state read */ }
 
-    // 2. Auto-analyze high-score perceptions
+    // 2. Run TA filter via /api/agent/scan (server-side indicator computation)
+    // The scan route already runs TA on all triggered perceptions
+    // so enriched perceptions come back with taSignal, taScore, etc.
+    // Heartbeat filters to only AI-analyze CONFIRMED signals.
     let aiCount = 0
+    const confirmed = perceptions.filter(p => {
+      const sig = p.taSignal
+      return sig === 'CONFIRMED'
+    })
+    log(`TA filter: ${confirmed.length} confirmed of ${perceptions.length} triggered`)
+
+    // 3. Auto-analyze only CONFIRMED signals (skip WEAK/REJECTED)
     for (const p of perceptions) {
-      if (p.compositeScore < (config.autoAnalyzeThreshold ?? MIN_SCORE)) continue
+      // Only AI-analyze CONFIRMED signals — REJECTED and WEAK are statistical dead ends
+      const sig = p.taSignal
+      if (sig !== 'CONFIRMED') continue
       if (!config.mode || config.mode === 'OFF') break
       if (aiCount >= MAX_AI_PER_CYCLE) break
 
       const now = Date.now()
-      if (now - lastAIAt < AI_RATE_LIMIT_MS) continue  // global rate limit
+      if (now - lastAIAt < AI_RATE_LIMIT_MS) continue
 
       lastAIAt = now
       aiCount++

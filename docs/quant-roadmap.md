@@ -2,7 +2,7 @@
 
 ## Current State
 
-AOMI Trader is a functional live trading system with three components:
+HERMES_TRADER Trader is a functional live trading system with three components:
 1. **Agent** -- AI-driven BTC-PERP swing trader (60s loop, verdict → execute → repeat)
 2. **Scanner** -- 230+ perps + 294 spot pairs, statistical triggers → AI analysis → risk gates → auto-trade
 3. **Dashboard** -- Live charting and manual analysis

@@ -70,9 +70,9 @@ export async function POST(req: NextRequest) {
       const tp2Size = parseFloat((sizeBTC - tp1Size).toFixed(5))
 
       // place sequentially (HL nonces must increment) — log errors but don't abort the entry
-      const sl  = await placeHLTriggerOrder(isBuy, sizeBTC, slPx, 'sl')
-      const tp1 = tp1Size > 0 ? await placeHLTriggerOrder(isBuy, tp1Size, tp1Px, 'tp') : { ok: true }
-      const tp2 = tp2Size > 0 ? await placeHLTriggerOrder(isBuy, tp2Size, tp2Px, 'tp') : { ok: true }
+      const sl  = await placeHLTriggerOrder(isBuy, sizeBTC, slPx, 'sl', assetIdx)
+      const tp1 = tp1Size > 0 ? await placeHLTriggerOrder(isBuy, tp1Size, tp1Px, 'tp', assetIdx) : { ok: true }
+      const tp2 = tp2Size > 0 ? await placeHLTriggerOrder(isBuy, tp2Size, tp2Px, 'tp', assetIdx) : { ok: true }
       brackets.sl  = sl.ok ? `placed @ ${slPx.toFixed(0)}`  : `failed: ${sl.error}`
       brackets.tp1 = tp1.ok ? `placed @ ${tp1Px.toFixed(0)}` : `failed: ${tp1.error}`
       brackets.tp2 = tp2.ok ? `placed @ ${tp2Px.toFixed(0)}` : `failed: ${tp2.error}`

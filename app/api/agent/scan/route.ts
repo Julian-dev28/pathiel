@@ -15,8 +15,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
-  const body = await req.json() as { minScore?: number }
+  const body = await req.json() as { minScore?: number; withTA?: boolean }
   const minScore = body.minScore ?? 75
+  const withTA = body.withTA !== false // default true
 
   const universe = await getUniverse()
 
@@ -24,6 +25,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { scanOnce } = await import('@/lib/agent/perception')
 
   const perceptions = await scanOnce({ universe, minScore })
+
+  // Run TA filter on triggered perceptions (server-side statistical pass)
+  if (withTA && perceptions.length > 0) {
+    try {
+      const { analyzePerception } = await import('../../../../lib/agent/ta-filter')
+      for (const p of perceptions) {
+        const ta = await analyzePerception(p)
+        // Mutate perception with TA results (passed back to heartbeat)
+        ;(p as Record<string, unknown>).taSignal = ta.signal
+        ;(p as Record<string, unknown>).taScore = ta.score
+        ;(p as Record<string, unknown>).taTrend4h = ta.trend4h
+        ;(p as Record<string, unknown>).taRsi4h = ta.rsi4h
+        ;(p as Record<string, unknown>).taAtr4pct = ta.atr4pct
+        ;(p as Record<string, unknown>).taReason = ta.reason
+      }
+    } catch {
+      // TA filter is non-blocking — heartbeat falls back to score threshold
+    }
+  }
 
   // Auto-store perceptions in agent memory so research can find them by ID
   try {
@@ -37,24 +57,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         mid: p.mid,
         triggers: p.triggers,
         compositeScore: p.compositeScore,
+        ...(p as Record<string, unknown>).taSignal ? {
+          taSignal: (p as Record<string, unknown>).taSignal,
+          taScore: (p as Record<string, unknown>).taScore,
+        } : {},
       })
     }
   } catch { /* non-fatal — research fallback handles inline perception */ }
 
-  // ── Sync equity from Hyperliquid (spot → perp + total) ──
+  // ── Sync equity from Hyperliquid (unified account, no transfer needed) ──
   try {
-    const { getHLAccount, HL_ACCOUNT, transferSpotToPerp } = await import('@/lib/hyperliquid')
-    const acct = await getHLAccount(HL_ACCOUNT)
-    if (acct.spotUSDC > 5 && acct.equity < 5) {
-      // Transfer most spot to perp, leave $5 buffer
-      const transferAmt = Math.floor(acct.spotUSDC - 5)
-      if (transferAmt > 0) {
-        await transferSpotToPerp(transferAmt)
-      }
+    const { HL_ACCOUNT } = await import('@/lib/hyperliquid')
+    const res = await fetch(`https://api.hyperliquid.xyz/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'spotClearinghouseState', user: HL_ACCOUNT }),
+    })
+    if (res.ok) {
+      const data = await res.json() as { balances?: Array<{ coin: string; total: string }> }
+      const usdc = (data.balances ?? []).find(b => b.coin === 'USDC')
+      const totalEquity = usdc ? parseFloat(usdc.total) : 0
+      const { memory } = await import('@/lib/agent/memory')
+      memory.updateEquity(totalEquity)
     }
-    const updated = await getHLAccount(HL_ACCOUNT)
-    const { memory } = await import('@/lib/agent/memory')
-    memory.updateEquity(updated.equity + updated.spotUSDC)
   } catch { /* non-fatal */ }
 
   lastScanAt = Date.now()

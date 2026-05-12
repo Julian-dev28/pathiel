@@ -6,7 +6,7 @@ import type { AgentAnalysis, AgentVerdict } from './memory'
 import { memory } from './memory'
 import { buildSystemPrompt } from './system-prompt'
 import { ema, sma, atr as calcAtr, rsi, adx } from './triggers'
-import { createOpenAIClient, OPENROUTER_MODEL } from '../aomi-session'
+import { createOpenAIClient, OPENROUTER_MODEL } from '../openrouter-client'
 import { readAgentConfig as readConfig } from './config-store'
 import * as crypto from 'crypto'
 
@@ -188,7 +188,8 @@ async function callAI(systemPrompt: string, userMessage: string): Promise<string
       { role: 'user', content: userMessage },
     ],
     stream: false,
-    max_tokens: 2048,
+    max_tokens: 1024,  // trimmed: 2-3 bullets + JSON only
+    temperature: 0.1,
   })
   return response.choices[0]?.message?.content ?? ''
 }
@@ -260,7 +261,8 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     const tf4h = computeIndicators(c4h)
     const tf1d = computeIndicators(c1d)
 
-    const news = await fetchNews(coin)
+    // Skip news fetch — saves Brave API calls + ~400 tokens/call. Technical signals are the edge.
+    const news: NewsResult[] = []
 
     const config = await readConfig()
     const mode = (config.mode as string) || 'OFF'
@@ -268,13 +270,19 @@ export async function research(coin: string, perception: Perception): Promise<Ag
     let equity = 0
     let openPositions: Array<{ coin: string; side: string; sizeUSD: number }> = []
     try {
+      // Unified account: MASTER holds funds (agent wallet signs)
       const user = process.env.HYPERLIQUID_MASTER_ADDRESS || process.env.HYPERLIQUID_WALLET_ADDRESS || ''
-      const acctRaw = await hlPost({ type: 'clearinghouseState', user }) as {
-        marginSummary?: { accountValue: string }
+      const acctRaw = await hlPost({ type: 'spotClearinghouseState', user }) as {
+        balances?: Array<{ coin: string; total: string }>
+      }
+      const usdcBalance = (acctRaw.balances ?? []).find(b => b.coin === 'USDC')
+      equity = usdcBalance ? parseFloat(usdcBalance.total) : 0
+
+      // Check perp positions for context
+      const perpRaw = await hlPost({ type: 'clearinghouseState', user }) as {
         assetPositions?: Array<{ position: { coin: string; szi: string } }>
       }
-      equity = parseFloat(acctRaw.marginSummary?.accountValue ?? '0')
-      openPositions = (acctRaw.assetPositions ?? [])
+      openPositions = (perpRaw.assetPositions ?? [])
         .filter(p => parseFloat(p.position.szi) !== 0)
         .map(p => ({
           coin: p.position.coin,
