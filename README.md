@@ -1,8 +1,4 @@
 # Hermes-Trader
-
-[![Built with Hermes Agent](https://img.shields.io/badge/Built%20with-Hermes%20Agent-%23E56399?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgZmlsbD0iI0U1NjM5OSIvPjxwYXRoIGQ9Ik04IDEybDIgMiA0LTRtLTYgMnY2bTYtNnY2IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+)](https://github.com/NousResearch/hermes-agent)
-[![Contributor](https://img.shields.io/badge/Hermes-Contributor-%23E56399?style=flat)](https://github.com/NousResearch/hermes-agent)
-
 > Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL, MU, etc.), and commodities (NATGAS, SILVER, COPPER). Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) with Next.js 16, OpenRouter, and a pre-AI technical analysis filter that cuts token costs by 80%.
 
 **What it does:** Scans every Hyperliquid market (230+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with SL/TP brackets — no human in the loop.
