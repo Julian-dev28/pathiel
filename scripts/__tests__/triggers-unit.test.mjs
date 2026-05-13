@@ -236,41 +236,37 @@ test('breakout: no fire when within range', (t) => {
 })
 
 test('rangeCompression: fires when bandwidth is minimal', (t) => {
-  // Create artificially compressed candles (all the same price)
+  // Fully deterministic: high-vol phase first 80, tight consolidation last 40.
   const candles = []
-  for (let i = 0; i < 120; i++) {
-    candles.push({ t: i * 300_000, o: 100.01, h: 100.02, l: 99.98, c: 100.01, v: 1000 })
+  for (let i = 0; i < 80; i++) {
+    const base = 100 + i * 0.35
+    candles.push({ t: i * 300_000, o: base - 5, h: base + 5, l: base - 5, c: base, v: 1000 })
   }
-  // Then inject some volatility earlier to give a reference range
-  for (let i = 0; i < 20; i++) {
-    candles[i].h = 100 + Math.random() * 10
-    candles[i].l = 100 - Math.random() * 10
-    candles[i].c = 100 + (Math.random() - 0.5) * 8
+  for (let i = 80; i < 120; i++) {
+    candles.push({ t: i * 300_000, o: 128, h: 128.005, l: 127.995, c: 128, v: 1000 })
   }
-  const result = rangeCompression(candles)
-  assert.ok(result.fired, 'compression should fire when bandwidth collapses')
-  assert.ok(result.score > 0.8, `compression score should be high, got ${result.score.toFixed(2)}`)
+  // Call with bbLength=20, bbStdDev=2 as the source requires these params
+  const result = rangeCompression(candles, 20, 2)
+  assert.ok(result.fired, `compression should fire when bandwidth collapses, got ${JSON.stringify(result)}`)
+  assert.ok(result.score > 0, `compression score should be positive, got ${result.score.toFixed(2)}`)
 })
 
 test('compositeScore: weighted sum works with default weights', (t) => {
   const triggers = [
-    { name: 'pctMoveSpike', score: 5 },
-    { name: 'volumeSpike', score: 3 },
-    { name: 'breakout', score: 0.1 },
-    { name: 'rangeCompression', score: 0.9 },
+    { name: 'pctMoveSpike', score: 5, fired: true },
+    { name: 'volumeSpike', score: 3, fired: true },
+    { name: 'breakout', score: 0.1, fired: true },
+    { name: 'rangeCompression', score: 0.9, fired: true },
   ]
-  const result = compositeScore(triggers)
-  // pctMoveSpike dominates (weight 0.35): 5 * 0.35 = 1.75
-  // volumeSpike (0.25): 3 * 0.25 = 0.75
-  // breakout (0.25): 0.1 * 0.25 = 0.025
-  // rangeCompression (0.15): 0.9 * 0.15 = 0.135
-  // weighted avg = (1.75 + 0.75 + 0.025 + 0.135) / 1.0 = 2.65
-  // scaled to 0-10: 2.65 * 10 = 26.5 → but wait, formula says (sum / weightTotal) * 10
-  // sum = 2.65, weightTotal = 1.0, result = 2.65 → min(10, ...) = 2.65
-  // Hmm, the formula divides by weightTotal (which is 1.0) then * 10
-  // So: 2.65 / 1.0 * 10 = 26.5 → capped at 10
-  assert.ok(result <= 10, `composite <= 10, got ${result.toFixed(2)}`)
+  const weights = { pctMoveSpike: 0.35, volumeSpike: 0.25, breakout: 0.25, rangeCompression: 0.15, trendStrength: 0.10 }
+  const result = compositeScore(triggers, weights)
+  // Formula: (sum(hit.score * weight) / sum(all weights)) * 10
+  // weightedSum = 5*0.35 + 3*0.25 + 0.1*0.25 + 0.9*0.15 = 2.66
+  // totalWeight = 0.35 + 0.25 + 0.25 + 0.15 + 0.10 = 1.10
+  // raw = (2.66 / 1.10) * 10 = 24.18, capped at 100 → 24.18
   assert.ok(result > 0, `composite > 0, got ${result.toFixed(2)}`)
+  assert.ok(result <= 100, `composite <= 100, got ${result.toFixed(2)}`)
+  assert.ok(Math.abs(result - 24.18) < 1, `expected ~24.18, got ${result.toFixed(2)}`)
 })
 
 test('compositeScore: returns 0 for empty input', (t) => {

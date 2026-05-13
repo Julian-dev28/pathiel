@@ -150,7 +150,7 @@ test('recordPerception: capped at MAX_PERCEPTIONS', () => {
   for (let i = 0; i < 510; i++) {
     mem.recordPerception({ id: `p${i}`, coin: 'BTC', type: 'perp', firedAt: i, mid: 100, triggers: [], compositeScore: 50 })
   }
-  assert.strictEqual(mem.getRecentPerceptions().length, MAX_PERCEPTIONS)
+  assert.strictEqual(mem.perceptions.length, MAX_PERCEPTIONS)
   assert.strictEqual(mem.getRecentPerceptions(510).length, MAX_PERCEPTIONS)
 })
 
@@ -181,7 +181,8 @@ test('recordAnalysis: capped at MAX_ANALYSES', () => {
   for (let i = 0; i < 210; i++) {
     mem.recordAnalysis({ id: `a${i}`, perceptionId: `p${i}`, coin: 'BTC', verdict: 'PASS', confidence: 0.5, side: null, entryPx: 100, stopPx: 0, tpPx: 0, reasoning: 'test', createdAt: i })
   }
-  assert.strictEqual(mem.getRecentAnalyses().length, MAX_ANALYSES)
+  assert.strictEqual(mem.analyses.length, MAX_ANALYSES)
+  assert.strictEqual(mem.getAllAnalyses().length, MAX_ANALYSES)
 })
 
 test('getAnalysisById: finds by ID', () => {

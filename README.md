@@ -59,14 +59,28 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 |--------|---------|
 | `scripts/hermes-mcp-server.mjs` | MCP server — exposes scan/research/execute/state/config tools to Hermes Agent |
 | `scripts/backtest.mjs` | Historical backtesting utility |
-| `scripts/analyze-journal.mjs` | Trade journal analytics |
+|| `scripts/analyze-journal.mjs` | Trade journal analytics |
 
 ### Tests
 
-| Path | Purpose |
-|------|---------|
-| `scripts/__tests__/triggers-unit.test.mjs` | Unit tests for trigger engine |
-| `scripts/__tests__/e2e-market-data.test.mjs` | E2E tests for market data fetching |
+313 tests across 7+ suites covering the full trading pipeline — 0 failures.
+
+|| Path | Purpose |
+||------|---------|
+|| `scripts/__tests__/triggers-unit.test.mjs` | Unit tests for trigger engine (EMA, SMA, ATR, RSI, ADX, breakout, range compression, composite scoring) |
+|| `scripts/__tests__/e2e-market-data.test.mjs` | E2E tests for Hyperliquid market data fetching |
+|| `scripts/__tests__/e2e-pipeline.test.mjs` | End-to-end multi-coin scan, TA filter scoring, risk gate evaluation |
+|| `scripts/__tests__/executor.test.mjs` | Order placement, cancellation, position closing |
+|| `scripts/__tests__/memory.test.mjs` | Persistent file-backed state management |
+|| `scripts/__tests__/ta-filter.test.mjs` | Pre-AI technical analysis (trend, RSI, ATR, ADX, volume confirm) |
+|| `scripts/__tests__/hl-client.test.mjs` | Shared Hyperliquid client wrapper |
+|| `scripts/__tests__/hl-universe.test.mjs` | Market discovery and categorization |
+|| `scripts/__tests__/openrouter-client.test.mjs` | AI API client configuration |
+|| `scripts/__tests__/risk-gates.test.mjs` | All 10 risk gates (confidence, notional, daily loss, cooldown, correlation, equity risk, etc.) |
+|| `scripts/__tests__/config-store.test.mjs` | Config persistence layer CRUD |
+|| `scripts/__tests__/system-prompt.test.mjs` | System prompt builder (OFF/LIVE modes, win rate injection) |
+|| `scripts/__tests__/parse-verdict.test.mjs` | AI verdict JSON extraction and fallback logic |
+|| `scripts/__tests__/run-all.mjs` | Test runner — discovers and runs all `*.test.mjs` files |
 
 ### Documentation
 

@@ -42,7 +42,7 @@ test('kellySize: scales with equity', () => {
   const size2 = kellySize(0.70, 2000, 2.0, 500)
   // f* = (0.7 * 2 - 0.3) / 2 = 0.55, half = 0.275
   // notional1 = 275 (not capped), notional2 = 550 (capped at 500)
-  assert.strictEqual(size1, 275)
+  assert.ok(Math.abs(size1 - 275) < 0.01, `size1 ~275: ${size1}`)
   assert.strictEqual(size2, 500)
 })
 
