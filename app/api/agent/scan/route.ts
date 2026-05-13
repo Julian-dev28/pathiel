@@ -69,7 +69,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
   } catch { /* non-fatal — research fallback handles inline perception */ }
 
-  // ── Sync equity from Hyperliquid (unified: perp or spot, whichever is > 0) ──
+  // ── Sync equity from Hyperliquid (unified account: perp margin + spot USDC) ──
   try {
     const { HL_ACCOUNT } = await import('@/lib/hyperliquid')
     const [perpRes, spotRes] = await Promise.all([
@@ -89,10 +89,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const perp = await perpRes.json() as { marginSummary?: { accountValue: string } }
       equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
     }
-    if (equity === 0 && spotRes.ok) {
+    // In a unified Hyperliquid account, spot balances are separate from perp margin
+    // but still count toward total equity. Add them instead of using as fallback.
+    if (spotRes.ok) {
       const spot = await spotRes.json() as { balances?: Array<{ coin: string; total: string }> }
-      const usdc = (spot.balances ?? []).find(b => b.coin === 'USDC')
-      equity = usdc ? parseFloat(usdc.total) : 0
+      const usdcBal = (spot.balances ?? [])
+        .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+        .reduce((sum, b) => sum + parseFloat(b.total), 0)
+      equity += usdcBal
     }
     const { memory } = await import('@/lib/agent/memory')
     memory.updateEquity(equity)

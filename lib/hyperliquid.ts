@@ -204,9 +204,10 @@ export async function placeHLOrder(
   const szDec = assetIdx !== undefined ? 5 : (await getCoinIndex(coin)).szDecimals
 
   // Price precision: HL mid prices use up to 6 decimals (not szDecimals which is for size)
+  // 5% offset for testing — confirm bands work, then tighten
   const priceStr = isBuy
-    ? String(parseFloat((midPrice * 1.005).toFixed(6)))
-    : String(parseFloat((midPrice * 0.995).toFixed(6)))
+    ? String(parseFloat((midPrice * 1.05).toFixed(6)))
+    : String(parseFloat((midPrice * 0.95).toFixed(6)))
   const sizeStr = stripZeros(size.toFixed(szDec))
 
   if (!priceStr || isNaN(parseFloat(priceStr))) return { ok: false, error: `invalid price for ${coin}` }

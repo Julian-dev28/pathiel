@@ -175,7 +175,11 @@ export async function scanOnce(opts: {
   }
 
   // Step 2: Filter universe to markets with valid mid prices
-  const markets = opts.universe.filter(m => (mids[m.coin] ?? 0) > 0);
+  // Exclude spot pairs (coin names starting with @) — they trade at 1x leverage
+  // and produce noise spikes that don't correlate with directional edge.
+  const markets = opts.universe.filter(
+    m => (mids[m.coin] ?? 0) > 0 && !m.coin.startsWith('@')
+  );
 
   if (markets.length === 0) return [];
 

@@ -270,21 +270,21 @@ export async function research(coin: string, perception: Perception): Promise<Ag
       }
       equity = parseFloat(perp.marginSummary?.accountValue ?? '0')
 
-      // On unified accounts, perp shows $0 — use spot balance as equity
-      if (equity === 0) {
-        const spotRes = await fetch(`https://api.hyperliquid.xyz/info`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'spotClearinghouseState', user }),
-        })
-        if (spotRes.ok) {
-          const spot = await spotRes.json() as {
-            balances?: Array<{ coin: string; total: string }>
-          }
-          equity = (spot.balances ?? [])
-            .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
-            .reduce((sum, b) => sum + parseFloat(b.total), 0)
+      // In a unified Hyperliquid account, spot balances are separate from perp margin
+      // but still count toward total equity. Add them (not as fallback).
+      const spotRes = await fetch(`https://api.hyperliquid.xyz/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'spotClearinghouseState', user }),
+      })
+      if (spotRes.ok) {
+        const spot = await spotRes.json() as {
+          balances?: Array<{ coin: string; total: string }>
         }
+        const usdcBal = (spot.balances ?? [])
+          .filter(b => ['USDC', 'USDT', 'USD'].includes(b.coin))
+          .reduce((sum, b) => sum + parseFloat(b.total), 0)
+        equity += usdcBal
       }
       // Sync to memory so other routes see it
       memory.updateEquity(equity)
@@ -315,7 +315,7 @@ export async function research(coin: string, perception: Perception): Promise<Ag
 
     const analysis: AgentAnalysis = {
       id: crypto.randomUUID(),
-      perceptionId: memory.getRecentPerceptions(1)[0]?.id ?? 'unknown',
+      perceptionId: perception.id,
       coin,
       verdict: parsed.verdict,
       confidence: parsed.confidence,
