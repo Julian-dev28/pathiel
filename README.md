@@ -1,4 +1,5 @@
 # Hermes-Trader
+
 > Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL, MU, etc.), and commodities (NATGAS, SILVER, COPPER). Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) with Next.js 16, OpenRouter, and a pre-AI technical analysis filter that cuts token costs by 80%.
 
 **What it does:** Scans every Hyperliquid market (230+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with SL/TP brackets — no human in the loop.
@@ -21,40 +22,88 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Hermes Agent (LLM)                   │
-│                                                         │
-│  Scan ──→ TA Filter ──→ AI Research ──→ Risk Gates ─→ Execute
-│           (cheap)        (expensive)    (10 gates)
-│                     ↑
-│              Only CONFIRMED
-│              signals proceed
-└─────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                 Hermes Agent (LLM)                          |
+|                                                             |
+|  Scan --> TA Filter --> AI Research --> Risk Gates --> Execute
+|           (cheap)         (expensive)    (10 gates)
+|                     ^
+|              Only CONFIRMED
+|              signals proceed
++-------------------------------------------------------------+
 ```
 
-### Components
+### Core Components
 
 | Component | Purpose |
 |-----------|---------|
 | `lib/agent/perception.ts` | Multi-market scanner — triggers: pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength |
+| `lib/agent/triggers.ts` | Trigger engine — composite scoring across signal types |
 | `lib/agent/ta-filter.ts` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
 | `lib/agent/research.ts` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
 | `lib/agent/risk-gates.ts` | 10 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, etc. |
 | `lib/agent/executor.ts` | EIP-712 order signing + placement on Hyperliquid |
 | `lib/agent/memory.ts` | Persistent file-backed state (.agent-memory.json, .agent-config.json) |
+| `lib/agent/config.ts` | Agent configuration (live/off mode, thresholds, risk params) |
+| `lib/agent/config-store.ts` | Config persistence layer |
+| `lib/agent/system-prompt.ts` | Dedicated system prompt for the trading agent |
+| `lib/hl-client.ts` | Shared Hyperliquid REST + WSS client |
 | `lib/hl-universe.ts` | HL market discovery — auto-detects crypto, equity, commodity perps from meta API |
-| `scripts/agent-heartbeat.mjs` | Standalone daemon — scan → TA → AI → execute loop (3-min intervals) |
+| `lib/hyperliquid.ts` | Additional HL helpers |
+| `lib/openrouter-client.ts` | OpenRouter API client |
+| `lib/types.ts` | Shared TypeScript types |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
 | `scripts/hermes-mcp-server.mjs` | MCP server — exposes scan/research/execute/state/config tools to Hermes Agent |
-| `app/page.tsx` | Trading desk dashboard — equity, positions, verdicts, trade log |
-| `app/agent/desk/page.tsx` | Full desk view with session log |
+| `scripts/backtest.mjs` | Historical backtesting utility |
+| `scripts/analyze-journal.mjs` | Trade journal analytics |
+
+### Tests
+
+| Path | Purpose |
+|------|---------|
+| `scripts/__tests__/triggers-unit.test.mjs` | Unit tests for trigger engine |
+| `scripts/__tests__/e2e-market-data.test.mjs` | E2E tests for market data fetching |
+
+### Documentation
+
+| Path | Purpose |
+|------|---------|
+| `docs/journal-schema.md` | Persistent trade journal JSON schema |
 
 ### API Routes
 
-- `POST /api/agent/scan` — scan all markets, run TA filter, return perceptions
-- `POST /api/agent/research/:coin` — AI analysis on triggered coin
-- `POST /api/agent/execute` — execute trade through risk gates
-- `GET /api/agent/state` — full agent state (positions, trades, config)
-- `GET /api/hl/portfolio` — live portfolio from Hyperliquid
+#### Agent Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/agent/scan` | Scan all markets, run TA filter, return perceptions |
+| POST | `/api/agent/research/:coin` | AI analysis on triggered coin |
+| POST | `/api/agent/execute` | Execute trade through risk gates |
+| GET | `/api/agent/state` | Full agent state (positions, trades, config) |
+| POST | `/api/agent/start` | Start autonomous agent mode |
+| POST | `/api/agent/stop` | Stop autonomous agent mode |
+| POST | `/api/agent/config` | Get/set agent configuration |
+| GET | `/api/agent/trades` | Trade history from journal |
+| POST | `/api/agent/session-log` | Session log endpoint |
+
+#### Hyperliquid Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/hl/portfolio` | Live portfolio from Hyperliquid |
+| GET | `/api/hl/account` | Account info and balances |
+| GET | `/api/hl/all-mids` | Current mids for all markets |
+| GET | `/api/hl/universe` | Full market universe |
+| GET | `/api/hl/price` | Real-time price feed |
+| GET | `/api/hl/candles` | OHLCV candlestick data |
+| GET | `/api/hl/orderbook` | Orderbook depth |
+| POST | `/api/hl/place-order` | Place a new order |
+| POST | `/api/hl/cancel-order` | Cancel a pending order |
+| POST | `/api/hl/close-position` | Close an open position |
 
 ### Market Coverage
 
@@ -94,30 +143,32 @@ cp .env.local.example .env.local
 ### Environment Variables
 
 ```bash
-# Hyperliquid
-HYPERLIQUID_PRIVATE_KEY=your_wallet_private_key
-HYPERLIQUID_MASTER_ADDRESS=your_wallet_address
+# ── Brave Search ─────────────────────────────────────────────
+BRAVE_API_KEY=BSA...your-key
 
-# OpenRouter (via hermes agent)
-OPENROUTER_API_KEY=your_key
-OPENROUTER_MODEL=qwen/qwen3.6-plus
+# ── OpenRouter ───────────────────────────────────────────────
+OPENROUTER_API_KEY=sk-or-...your-key
+# Optional: override the default Qwen model
+# OPENROUTER_MODEL=qwen/qwen3-235b-a22b
 
-# Agent (optional, defaults are sensible)
-AGENT_HEARTBEAT_INTERVAL_MS=180000   # 3 minutes
-AGENT_MIN_SCORE=80                    # trigger threshold 0-100
-AGENT_MAX_AI_PER_CYCLE=2              # max AI calls per scan
+# ── Hyperliquid ──────────────────────────────────────────────
+HYPERLIQUID_WALLET_ADDRESS=0x...your-wallet-address
+HYPERLIQUID_PRIVATE_KEY=0x...your-private-key
+# Optional: master account (if using agent wallet setup)
+# HYPERLIQUID_MASTER_ADDRESS=0x...your-master-address
+
+# ── Next.js Public (front-end display) ───────────────────────
+NEXT_PUBLIC_HL_WALLET=0x...your-wallet-address
+# NEXT_PUBLIC_HL_MASTER=0x...your-master-address
 ```
 
 ### Running
 
 ```bash
-# Terminal 1: Next.js dev server
+# Terminal 1: Next.js dev server (trading desk dashboard)
 npm run dev
 
-# Terminal 2: Autonomous agent heartbeat
-node scripts/agent-heartbeat.mjs
-
-# Terminal 3: MCP server (for Hermes Agent integration)
+# Terminal 2: MCP server (for Hermes Agent integration)
 node scripts/hermes-mcp-server.mjs
 ```
 
@@ -158,7 +209,6 @@ This project includes a Hermes Agent skill in `skills/hermes-trader-agent/` that
 
 - Architecture overview and patterns
 - Risk gate configuration
-- Heartbeat daemon setup
 - MCP tool usage
 - Common pitfalls and debugging tips
 
@@ -181,11 +231,7 @@ skill_view(name='hermes-trader-agent')
 
 ### Why pre-AI TA filter?
 
-AI models cost money. Most triggered signals are noise — a 2-sigma price spike in a low-volume market isn't a trade opportunity. The TA filter computes multi-timeframe indicators (EMA crossovers, RSI, ATR, ADX, volume confirmation) in ~50ms of CPU time with zero token cost. Only signals scoring ≥65/100 as "CONFIRMED" proceed to AI analysis.
-
-### Why standalone heartbeat daemon?
-
-The heartbeat runs as `node scripts/agent-heartbeat.mjs`, not inside Next.js. Using `setInterval` inside Next.js serverless functions is unsafe — the function can be killed at any time. The standalone process uses drift-corrected `setTimeout` for precise timing and never crashes on network errors.
+AI models cost money. Most triggered signals are noise — a 2-sigma price spike in a low-volume market isn't a trade opportunity. The TA filter computes multi-timeframe indicators (EMA crossovers, RSI, ATR, ADX, volume confirmation) in ~50ms of CPU time with zero token cost. Only signals scoring >=65/100 as "CONFIRMED" proceed to AI analysis.
 
 ### Why no DRY/simulated mode?
 
@@ -193,11 +239,52 @@ This agent trades real orders only. The OFF/LIVE toggle controls whether the age
 
 ---
 
-## Built with
+## Project Structure
+
+```
+hermes-trader/
+├── app/                          # Next.js 16 App Router
+│   ├── api/agent/                # Trading agent API routes
+│   ├── api/hl/                   # Hyperliquid API routes
+│   ├── layout.tsx
+│   └── page.tsx                  # Trading desk dashboard
+├── data/
+│   └── trade-journal.json        # Persistent trade history
+├── docs/
+│   └── journal-schema.md         # Trade journal schema
+├── lib/
+│   ├── agent/                    # Core agent logic
+│   │   ├── config-store.ts       # Config persistence
+│   │   ├── config.ts             # Agent config
+│   │   ├── executor.ts           # Order execution
+│   │   ├── memory.ts             # File-backed state
+│   │   ├── perception.ts         # Market scanner
+│   │   ├── research.ts           # AI research pipeline
+│   │   ├── risk-gates.ts         # 10 risk gates
+│   │   ├── system-prompt.ts      # Agent system prompt
+│   │   ├── ta-filter.ts          # Pre-AI TA filter
+│   │   └── triggers.ts           # Trigger engine
+│   ├── hl-client.ts              # Shared HL client
+│   ├── hl-universe.ts            # Market discovery
+│   ├── hyperliquid.ts            # HL helpers
+│   ├── openrouter-client.ts      # OpenRouter client
+│   └── types.ts                  # Shared types
+├── scripts/
+│   ├── hermes-mcp-server.mjs     # MCP server
+│   ├── backtest.mjs              # Historical backtesting
+│   ├── analyze-journal.mjs       # Trade journal analytics
+│   └── __tests__/                # Test suite
+├── skills/hermes-trader-agent/   # Hermes Agent skill
+└── target/                       # Rust build artifacts (not committed)
+```
+
+---
+
+## Built With
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — autonomous AI agent framework
 - Next.js 16 App Router
-- OpenRouter (Qwen 3.6 Plus)
+- OpenRouter (Qwen 3.6)
 - Hyperliquid API (perpetual futures DEX)
 - Brave Search API (optional, for news signals)
 
