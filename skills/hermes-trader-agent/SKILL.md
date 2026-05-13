@@ -14,24 +14,20 @@ Autonomous multi-market trading agent built on [Hermes Agent](https://github.com
 
 Four-layer pipeline designed to minimize AI token costs:
 
-1. **Scan** — Fetch all mids, evaluate 5 triggers per market (pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength)
-2. **TA Filter** — Multi-TF technical analysis (1h/4h/1d EMA, RSI, ATR, ADX, volume) — zero AI cost
-3. **AI Research** — Only on CONFIRMED signals (score ≥65), fetches deep candle data + news
+1. **Scan** — Fetch all mids, evaluate 5 triggers per market (pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength). Spot pairs (@ prefix) excluded to avoid noise spikes.
+2. **TA Filter** — Multi-TF technical analysis (1h/4h/1d EMA, RSI, ATR, ADX, volume) — zero AI cost. Only CONFIRMED signals (score >= 45) proceed. WEAK (30-44) and REJECTED (< 30) dropped.
+3. **AI Research** — Deep AI analysis on CONFIRMED candidates. Max 3 per cycle. News fetch DISABLED.
 4. **Execution** — Kelly-sized orders, EIP-712 signing, auto SL/TP brackets
 
-## Heartbeat Daemon
+## Cron Job Management
 
-Runs as standalone `node scripts/agent-heartbeat.mjs` (NOT inside Next.js — serverless-unsafe):
+The agent runs via cron jobs (managed by the `cronjob` tool), not a standalone daemon.
 
-```bash
-# Every 3 minutes:
-node scripts/agent-heartbeat.mjs
-```
+Two cron jobs:
+- **Hourly scan**: runs scan -> TA filter -> research -> risk gates -> execute
+- **Hourly report**: summarizes state, positions, PnL
 
-Uses drift-corrected `setTimeout` for precise timing. Configurable via env vars:
-- `AGENT_HEARTBEAT_INTERVAL_MS` (default 180000)
-- `AGENT_MIN_SCORE` (default 80)
-- `AGENT_MAX_AI_PER_CYCLE` (default 2)
+Both can be paused/resumed via `cronjob` tool.
 
 ## MCP Integration
 
@@ -50,10 +46,20 @@ Tools: `scan`, `research`, `execute`, `state`, `config`
 
 ## Persistent Memory
 
-Two files (gitignored):
+Files (all gitignored):
 - `.agent-config.json` — mode (OFF/LIVE), risk caps, thresholds
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
 - `.trader-session-log.jsonl` — append-only cycle summaries
+
+## Equity on Unified Accounts (CRITICAL BUG FIX)
+
+On this unified HL account, perp `marginSummary.accountValue` and spot USDC are SEPARATE values that MUST be added:
+
+```
+equity = perpMarginSummary.accountValue + spotUSDC
+```
+
+Perp shows ~$4, spot shows ~$71. Total equity ~$75. DO NOT use perp accountValue alone.
 
 ## Risk Gates (10 independent, no short-circuiting)
 
@@ -72,29 +78,32 @@ All gates evaluated independently, results collected even if one blocks:
 ## User Rules
 
 - **NO simulated trading** — real orders only (OFF or LIVE)
-- **Cmd+K** — emergency kill switch: mode OFF + cancel orders
 - **TA filter** — cheap statistical pass before AI, cuts token cost 80%
+- **FULL AUTONOMY** — never ask permission for trade decisions
+- **Real money only** — no simulation or dry-run
+- **Token cost aware** — flat market with 0 CONFIRMED = $0 spent = correct
 
 ## Common Pitfalls
 
 | Issue | Fix |
 |-------|-----|
-| `@/` imports fail in standalone scripts | Use relative paths from project root |
-| `setInterval` in Next.js | Use standalone daemon with `setTimeout` |
-| Cross-route imports in App Router | Extract to `lib/` modules |
-| TA filter blocks all signals | Lower TA threshold or check candle count |
-| Heartbeat rate limited on scan | `/api/agent/scan` has 30s debounce |
-| Session stuck on old cwd | Terminal cwd was old path — set workdir |
+| MCP hangs when dev server is down | Check `curl localhost:3000/api/agent/config` first. Start server if down. |
+| Dev server startup takes 20s+ | Don't assume ready after `npx next dev &`. Check with curl. |
+| Equity shows $4 instead of ~$75 | Must sum perp + spot, not use perp alone |
+| @ coin noise in scan results | Spot pairs (@ prefix) filtered in perception.ts |
+| Research fails with "perception not found" | Must send full perception object inline, not just perceptionId |
+| `.next` cache causes phantom TS errors | `rm -rf .next` after code changes |
+| Research returns zero equity verdicts | Verify equity via `/api/hl/portfolio` separately |
+| Scan returns 0 triggers | Markets may be quiet. Lower `minScore` to 20 for broader scan. |
+| Session stuck on old cwd | Set workdir to project root |
 
-## Cost Optimization
+## Config Tuning
 
-| Setting | Default | Impact |
-|---------|---------|--------|
-| Scan interval | 180s | Fewer cycles = fewer AI calls |
-| Min score | 80 | Filters false triggers |
-| Max AI/cycle | 2 | Caps worst-case |
-| TA threshold | 65 | Statistical gate before AI |
-| **Result** | | **~80% token savings** |
+**Micro-account (< $10)**: conf >= 0.50, $2-3/trade, 1 concurrent, 30min cooldown, 15% notional
+**Conservative (< $100)**: conf >= 0.85, $20/trade, 2 concurrent, 60min cooldown, 8% notional
+**Aggressive (default)**: conf >= 0.75, $25/trade, 5 concurrent, 30min cooldown, 15% notional
+
+**All-PASS diagnostic**: If 3+ consecutive scans produce only PASS with low confidence, lower threshold or review system prompt for over-cautiousness.
 
 ## Files
 
@@ -102,18 +111,31 @@ All gates evaluated independently, results collected even if one blocks:
 hermes-trader/
 ├── lib/agent/
 │   ├── ta-filter.ts          ← Pre-AI statistical filter
-│   ├── perception.ts         ← Scan triggers
-│   ├── research.ts           ← AI analysis pipeline
+│   ├── perception.ts         ← Scan triggers (filters @ spot pairs)
+│   ├── research.ts           ← AI analysis pipeline (equity = perp + spot)
 │   ├── risk-gates.ts         ← 10 compliance gates
 │   ├── executor.ts           ← Order placement
 │   ├── memory.ts             ← Persistent state
 │   ├── config-store.ts       ← Config management
 │   └── system-prompt.ts      ← Agent system prompt
+├── lib/
+│   ├── hl-client.ts          ← Shared HL API helpers
+│   ├── hl-universe.ts        ← Market universe (perps only)
+│   └── types.ts              ← Shared types
 ├── scripts/
-│   ├── agent-heartbeat.mjs   ← Autonomous loop
-│   └── hermes-mcp-server.mjs ← MCP server
+│   ├── hermes-mcp-server.mjs ← MCP server (stdio)
+│   ├── backtest.mjs          ← Backtesting
+│   └── analyze-journal.mjs   ← Trade journal analysis
 ├── app/
-│   ├── page.tsx              ← Trading desk
-│   └── agent/desk/page.tsx   ← Full desk view
-└── .agent-config.json        ← Runtime config
+│   ├── page.tsx              ← Dashboard
+│   └── api/
+│       ├── agent/
+│       │   ├── scan/route.ts      ← Scan + TA filter
+│       │   ├── research/[coin]/route.ts
+│       │   ├── execute/route.ts
+│       │   ├── state/route.ts
+│       │   └── config/route.ts
+│       └── hl/                  ← Hyperliquid API proxies
+│           ├── account, candles, close-position, place-order, ...
+└── skills/hermes-trader-agent/ ← This skill
 ```
