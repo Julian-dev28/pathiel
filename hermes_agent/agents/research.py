@@ -206,11 +206,21 @@ async def _async_do_call(
             },
             headers={"Authorization": f"Bearer {openrouter_key}"},
         )
+        import logging
+        _logger = logging.getLogger(__name__)
+        _logger.warning(f"[research] AI response status: {resp.status_code}")
+        
         if resp.is_success:
             data = resp.json()
+            _logger.warning(f"[research] AI response data keys: {list(data.keys())}")
             choices = data.get("choices", [])
+            _logger.warning(f"[research] AI choices count: {len(choices)}")
             if choices:
-                return choices[0].get("message", {}).get("content", "")
+                content = choices[0].get("message", {}).get("content", "")
+                _logger.warning(f"[research] AI content length: {len(content) if content else 0}")
+                return content
+        else:
+            _logger.warning(f"[research] AI error response: {resp.text[:500]}")
     return ""
 
 
