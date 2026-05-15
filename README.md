@@ -1,8 +1,7 @@
 # Hermes-Trader
+> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) with FastAPI, OpenRouter, and a pre-AI technical analysis filter that cuts token costs by 80%.
 
-> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL, MU, etc.), and commodities (NATGAS, SILVER, COPPER). Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) with FastAPI, OpenRouter, and a pre-AI technical analysis filter that cuts token costs by 80%.
-
-**What it does:** Scans every Hyperliquid market (500+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with SL/TP brackets — no human in the loop.
+**What it does:** Scans every Hyperliquid market (500+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with DSL-managed dynamic exits — no human in the loop.
 
 ---
 
@@ -10,10 +9,11 @@
 
 Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Hermes-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
 
-1. **Scan** — 500+ markets in parallel, fire statistical triggers
+1. **Scan** — 500+ markets in parallel with volume pre-filtering and rate-limit-aware batching
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
 3. **AI Research** — only on CONFIRMED signals (typically 0-2 per cycle vs. 5+ before)
-4. **Execution** — Kelly-sized orders with auto SL/TP brackets
+4. **Execution** — Kelly-sized orders with DSL dynamic stop-loss exits (loss protection → profit locking)
+5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
 
 This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving signal quality.
 
@@ -22,120 +22,129 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 ## Architecture
 
 ```
-+-------------------------------------------------------------+
-|                 Hermes Agent (LLM)                          |
-|                                                             |
-|  Scan --> TA Filter --> AI Research --> Risk Gates --> Execute
-|           (cheap)         (expensive)    (10 gates)
-|                     ^
-|              Only CONFIRMED
-|              signals proceed
-+-------------------------------------------------------------+
++---------------------------------------------------------------+
+|                  Hermes Agent (LLM)                           |
+|                                                               |
+|  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ DSL Exit ──▶ Execute
+|        (cheap)          (expensive)     (10 gates)    (2-phase)
+│                       |
+│                  Only CONFIRMED
+│                  signals proceed
+├───────────────────────────────────────────────────────────────┤
+│               Hyperfeed Discovery                             |
+│  Leaderboard • Smart Money • OI Anomaly • Whale Tracking      |
++---------------------------------------------------------------+
 ```
 
 ### Pipeline
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────┐    ┌──────────┐
-│ Perception │───>│  TA Filter   │───>│  AI Research    │───>│ Risk     │───>│ Executor │
-│   Scanner  │    │  (TA Filter) │    │ (OpenRouter API) │    │  Gates   │    │ (HL)     │
-│ 5m/1h/4h   │    │  EMA/RSI/ATR │    │ Verdict + Price  │    │  10 gates│    │ SL/TP    │
-└─────────────┘    └──────────────┘    └─────────────────┘    └──────────┘    └──────────┘
+│  Perception │───>│  TA Filter   │───>│   AI Research   │───>│  Risk    │───>│  Executor│
+│   Scanner   │    │  (TA Filter) │    │ (OpenRouter API)│    │  Gates   │    │ (HL + DSL)│
+│ 5m/1h/4h    │    │  EMA/RSI/ATR│    │ Verdict + Price │    │  10 gates│    │ SL/TP    │
+│ Volume-N    │    └──────────────┘    └─────────────────┘    └──────────┘    └──────────┘
+└─────────────┘
+     │
+     ├── Hyperfeed Discovery (leaderboard, whale index, OI anomaly)
+     │     ↳ smart_money_concentration(), oi_funding_anomaly()
+     │     ↳ discovery_get_top_traders(), leaderboard_get_trader_positions()
+     └── Rate-Limit Pipeline (1200 weight/min — batch + cache)
 ```
 
-### Core Modules
+---
+
+## Key Features
+
+### Rate-Limit-Aware Scan Pipeline
+- **Volume pre-filtering**: Top-N markets by 24h notional volume (default 50)
+- **Parallel batch scanning**: Workers fan out within batches, sleep between
+- **TTL caching**: Candles cached 15 minutes, 4-scan cost ≈ 600 weight (vs. 10,000+ raw)
+- **Configurable**: `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
+
+### DSL (Dynamic Stop-Loss) Exit Engine
+- **Phase 1 — Loss Protection**: Max loss stop, protect threshold
+- **Phase 2 — Profit Locking**: Tiered retrace thresholds, trailing floor that only moves up
+- **Hard timeout**: Emergency exit after configurable minutes
+- **Auto-registration**: Every executed position is registered for DSL tracking
+
+### Hyperfeed Discovery (Native, no MCP)
+Replicates the Hyperfeed MCP plugin's data directly from HL API:
+- `leaderboard_get_markets(limit)` — top markets by OI + volume
+- `market_get_funding_regime()` — LONG_CROWDED / SHORT_CROWDED / NEUTRAL analysis
+- `smart_money_concentration()` — identifies assets with whale accumulation
+- `oi_funding_anomaly()` — OI spike + negative funding + flat price = accumulation signal
+- `discovery_get_top_traders(...)` — trader rankings with win rates
+- `market_get_asset_data(asset)` — candles + funding + OI for any coin
+
+---
+
+## Core Modules
 
 | Module | Purpose |
 |--------|---------|
-| `hermes_agent/agents/perception.py` | Multi-market scanner — triggers: pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength |
+| `hermes_agent/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
 | `hermes_agent/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
 | `hermes_agent/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
 | `hermes_agent/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
 | `hermes_agent/agents/risk_gates.py` | 10 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, etc. |
-| `hermes_agent/agents/executor.py` | Kelly sizing + EIP-712 order signing + placement on Hyperliquid |
+| `hermes_agent/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
+| `hermes_agent/agents/dsl_exit.py` | Two-phase trailing stop engine — loss protection → profit locking |
+| `hermes_agent/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
+| `hermes_agent/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
 | `hermes_agent/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
 | `hermes_agent/agents/config_store.py` | Config persistence layer |
 | `hermes_agent/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
-| `hermes_agent/client/hl_client.py` | Hyperliquid REST client (mids, candles, account state, funding) |
-| `hermes_agent/client/universe.py` | HL market discovery — auto-detects crypto, equity, commodity perps from meta API |
+| `hermes_agent/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
+| `hermes_agent/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
+| `hermes_agent/client/universe.py` | Volume-ranked market loader with 24h caching |
+| `hermes_agent/client/cache.py` | LRU + TTL memoization with in-flight dedup |
+| `hermes_agent/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
+| `hermes_agent/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
+| `hermes_agent/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
 | `hermes_agent/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
 | `hermes_agent/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
 | `hermes_agent/models/` | Data types: `AgentConfig`, `AgentAnalysis`, `AgentTrade`, `Candle`, `HLMarket`, `TriggerHit` |
 | `hermes_agent/server.py` | FastAPI server — 26 REST routes for frontend/dashboard + MCP bridge |
 
-### Scripts
+---
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/hermes-mcp-server.mjs` | MCP server — exposes scan/research/execute/state/config tools to Hermes Agent |
-| `scripts/backtest.mjs` | Historical backtesting utility |
-| `scripts/analyze-journal.mjs` | Trade journal analytics |
+## Environment Variables
 
-### Tests
+```bash
+# ── OpenRouter ───────────────────────────────────────────────
+OPENROUTER_API_KEY=sk-or-...your-key
+# Optional: override the default Qwen model
+# OPENROUTER_MODEL=qwen/qwen3.6-35b-a3b
 
+# ── Hyperliquid ──────────────────────────────────────────────
+HYPERLIQUID_WALLET_ADDRESS=0x...your-wallet-address
+HYPERLIQUID_PRIVATE_KEY=0x...your-private-key
+# Optional: master account (if using agent wallet setup)
+# HYPERLIQUID_MASTER_ADDRESS=0x...your-master-address
+
+# ── Scan Tuning ──────────────────────────────────────────────
+HERMES_MAX_MARKETS=50          # Top-N markets to scan by volume
+HERMES_BATCH_SIZE=20           # Batch size for parallel scanning
+HERMES_BATCH_SLEEP=0.3         # Seconds between scan batches
+
+# ── Brave Search (optional, for news signals) ───────────────
+BRAVE_API_KEY=BSA...your-key
 ```
-test_all.py — 17 module-level tests covering the full pipeline:
-  config_store  •  memory  •  system_prompt  •  ta_filter
-  risk_gates    •  executor  •  hl_client  •  universe
-  exchange      •  indicators/math  •  triggers
-  perception    •  research  •  models  •  server  •  HTTP endpoints
-```
-
-### Documentation
-
-| Path | Purpose |
-|------|---------|
-| `docs/journal-schema.md` | Persistent trade journal JSON schema |
-
-### FastAPI Endpoints
-
-#### Agent Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/agent/scan` | Scan all markets, run TA filter, return perceptions |
-| POST | `/api/agent/research/{coin}` | AI analysis on triggered coin |
-| POST | `/api/agent/execute` | Execute trade through risk gates |
-| GET | `/api/agent/state` | Full agent state (positions, trades, config) |
-| GET | `/api/agent/config` | Get agent configuration |
-| POST | `/api/agent/config` | Set agent configuration |
-
-#### Hyperliquid Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/hl/account` | Account info and balances |
-| GET | `/api/hl/all-mids` | Current mids for all markets |
-| GET | `/api/hl/universe` | Full market universe (perp + spot) |
-| GET | `/api/hl/candles` | OHLCV candlestick data |
-
-### Market Coverage
-
-The universe is fetched live from Hyperliquid's `meta` API. Categories:
-
-| Category | Examples |
-|----------|----------|
-| **Crypto** | BTC, ETH, SOL, DOGE, WLD, ARB, ... |
-| **Equity Perps** | TSLA, NVDA, AAPL, AMZN, GOOGL, MSFT, META, COIN, MSTR, INTC, AMD, NFLX, MU, SNDK, LITE, ARM, PLTR, ... |
-| **Commodities** | NATGAS, SILVER, COPPER, GOLD, URNM, CRCL, ... |
-
-New markets added by Hyperliquid are picked up automatically via the meta endpoint.
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-
 - Python 3.12+
 - Hyperliquid wallet with private key
 - OpenRouter API key ([openrouter.ai](https://openrouter.ai))
 - (Optional) Brave Search API key for news
 
 ### Setup
-
 ```bash
-git clone https://github.com/YOUR_HANDLE/hermes-trader
+git clone https://github.com/Julian-dev28/hermes-trader
 cd hermes-trader
 
 # Create and activate virtual environment
@@ -150,26 +159,7 @@ cp .env.local.example .env.local
 # Edit .env.local with your keys
 ```
 
-### Environment Variables
-
-```bash
-# ── OpenRouter ───────────────────────────────────────────────
-OPENROUTER_API_KEY=sk-or-...your-key
-# Optional: override the default Qwen model
-# OPENROUTER_MODEL=qwen/qwen3.6-35b-a3b
-
-# ── Hyperliquid ──────────────────────────────────────────────
-HYPERLIQUID_WALLET_ADDRESS=0x...your-wallet-address
-HYPERLIQUID_PRIVATE_KEY=0x...your-private-key
-# Optional: master account (if using agent wallet setup)
-# HYPERLIQUID_MASTER_ADDRESS=0x...your-master-address
-
-# ── Brave Search (optional, for news signals) ───────────────
-BRAVE_API_KEY=BSA...your-key
-```
-
 ### Running
-
 ```bash
 # Start the FastAPI server (port 8000)
 python -m hermes_agent.server
@@ -177,25 +167,23 @@ python -m hermes_agent.server
 # Or use uvicorn directly:
 uvicorn hermes_agent.server:app --host 0.0.0.0 --port 8000
 ```
-
 The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes Agent", "version": "0.2.0", "status": "running"}`.
 
 ---
 
 ## MCP Integration
 
-Hermes-Trader exposes an MCP server at `scripts/hermes-mcp-server.mjs` with tools:
+Hermes-Trader exposes MCP tools for autonomous agent integration:
 
 | Tool | Description |
 |------|-------------|
-| `scan` | Scan all HL markets, return triggered candidates |
+| `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
 | `research` | Deep AI analysis on a coin |
-| `execute` | Execute trade from prior analysis |
+| `execute` | Execute trade through risk gates + DSL registration |
 | `state` | Get full agent state |
 | `config` | Get/set agent configuration |
 
 Configure in Hermes Agent's `config.yaml`:
-
 ```yaml
 mcp_servers:
   hermes-trader:
@@ -205,51 +193,35 @@ mcp_servers:
     timeout: 60
 ```
 
-See `skills/hermes-trader-agent/SKILL.md` for full usage guide.
-
----
-
-## Skills
-
-This project includes a Hermes Agent skill in `skills/hermes-trader-agent/` that provides:
-
-- Architecture overview and patterns
-- Risk gate configuration
-- MCP tool usage
-- Common pitfalls and debugging tips
-
-To use as a reusable skill in your own Hermes Agent project:
-
-```bash
-# Symlink or copy to your Hermes skills directory
-ln -s /path/to/hermes-trader/skills/hermes-trader-agent ~/.hermes/skills/
-```
-
-Or load it directly:
-
-```
-skill_view(name='hermes-trader-agent')
-```
-
 ---
 
 ## Design Decisions
 
-### Why pre-AI TA filter?
+### Why volume pre-filtering?
+HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight → instant 429. Volume pre-filtering to the top 50 markets reduces this to ~2,000 weight (or ~600 with TTL cache hits).
 
-AI models cost money. Most triggered signals are noise — a 2-sigma price spike in a low-volume market isn't a trade opportunity. The TA filter computes multi-timeframe indicators (EMA crossovers, RSI, ATR, ADX, volume confirmation) in ~50ms of CPU time with zero token cost. Only signals scoring >=65/100 as "CONFIRMED" proceed to AI analysis.
+### Why DSL exit engine?
+Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
+
+### Why Hyperfeed Discovery?
+The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
 
 ### Why pure Python?
+Rewritten from TypeScript/Next.js to enable simpler deployment, direct Hermes Agent integration, and native testability without browser headless.
 
-The project was rewritten from TypeScript/Next.js to pure Python for:
-- Simpler deployment (no Node.js build step, no Next.js overhead)
-- Better testability (pytest-native modules, no browser headless needed)
-- Direct integration with the Hermes Agent Python framework
-- Leaner dependencies and faster cold-start for the FastAPI server
+---
 
-### Why no DRY/simulated mode?
+## Rate Limit Math
 
-This agent trades real orders only. The OFF/LIVE toggle controls whether the agent executes — there is no simulated mode. Trade records in memory only contain real executions.
+| Operation | Weight | Notes |
+|-----------|--------|-------|
+| `allMids` | 2 | Real-time prices |
+| `metaAndAssetCtxs` | 20 | Universe + volume + OI (perp) |
+| `spotMetaAndAssetCtxs` | 20 | Universe + volume + OI (spot) |
+| `candleSnapshot` (per coin) | 20 | Plus per-item weight |
+| **Total per scan cycle** | ~600-800 | Top 50 markets with cache |
+
+With `HERMES_MAX_MARKETS=50` and 15-min TTL cache, the first scan per cycle costs ~800 weight. Subsequent scans within the cache window cost ~60 weight (mostly cache hits).
 
 ---
 
@@ -257,24 +229,32 @@ This agent trades real orders only. The OFF/LIVE toggle controls whether the age
 
 ```
 hermes-trader/
-├── hermes_agent/                  # Pure Python agent (3674 LOC)
+├── hermes_agent/                  # Pure Python agent
 │   ├── __init__.py
 │   ├── __main__.py                # Entry point
 │   ├── server.py                  # FastAPI server — 26 routes
 │   ├── agents/                    # Core agent logic
 │   │   ├── config.py              # Agent configuration model
 │   │   ├── config_store.py        # Config persistence
-│   │   ├── executor.py            # Kelly sizing + order execution
+│   │   ├── executor.py            # Kelly sizing + order execution + DSL registration
 │   │   ├── memory.py              # File-backed state
-│   │   ├── perception.py          # Market scanner
+│   │   ├── perception.py          # Volume-filtered parallel scanner
 │   │   ├── research.py            # AI research pipeline
 │   │   ├── risk_gates.py          # 10 risk gates
 │   │   ├── system_prompt.py       # Agent system prompt
-│   │   └── ta_filter.py           # Pre-AI TA filter
+│   │   ├── ta_filter.py           # Pre-AI TA filter
+│   │   ├── dsl_exit.py            # Two-phase trailing stop engine
+│   │   ├── hyperfeed.py           # Discovery API (leaderboard, whale index, etc.)
+│   │   └── whale_index.py         # Smart money + OI anomaly signals
 │   ├── client/                    # External API clients
 │   │   ├── exchange.py            # HL order placement
-│   │   ├── hl_client.py           # HL REST client (mids, candles)
-│   │   └── universe.py            # Market discovery + caching
+│   │   ├── hl_client.py           # HL REST + WebSocket client
+│   │   ├── ws_client.py           # Persistent WebSocket for real-time mids
+│   │   ├── universe.py            # Volume-ranked market loader with caching
+│   │   ├── cache.py               # LRU + TTL memoization
+│   │   ├── lock.py                # fcntl lock with stale-PID recovery
+│   │   ├── parallel.py            # Concurrency-bounded fan-out
+│   │   └── daemon.py              # Long-lived scan scheduler
 │   ├── indicators/                # TA math
 │   │   ├── math.py                # EMA, SMA, ATR, RSI, ADX
 │   │   └── triggers.py            # Trigger detection + composite scoring
@@ -283,14 +263,10 @@ hermes-trader/
 │       ├── hl.py                  # HLMeta, HLOrderResponse
 │       ├── perception.py          # TriggerHit, Perception
 │       └── types.py               # AgentConfig, AgentVerdict, Candle, HLMarket
-├── scripts/
-│   ├── hermes-mcp-server.mjs     # MCP server (Node.js bridge)
-│   ├── backtest.mjs              # Historical backtesting
-│   └── analyze-journal.mjs       # Trade journal analytics
-├── skills/hermes-trader-agent/   # Hermes Agent skill
-├── test_all.py                   # 17-module test suite
+├── skills/hermes-trader-agent/    # Hermes Agent skill
+├── test_all.py                    # 17-module test suite
 └── docs/
-    └── journal-schema.md         # Trade journal schema
+    └── journal-schema.md          # Trade journal schema
 ```
 
 ---
