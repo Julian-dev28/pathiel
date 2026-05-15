@@ -163,14 +163,20 @@ def _call_ai(system_prompt: str, user_message: str) -> str:
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     model = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3.6-35b-a3b")
 
+    import logging
+    _logger = logging.getLogger(__name__)
+    _logger.warning(f"[research] _call_ai: key={'set' if openrouter_key else 'NOT SET'}, model={model}")
+
     if not openrouter_key:
-        logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
+        _logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
         return ""
 
     # Run async httpx in a new event loop
     loop = asyncio.new_event_loop()
     try:
-        return loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
+        result = loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
+        _logger.warning(f"[research] _call_ai result length: {len(result) if result else 0}")
+        return result
     finally:
         loop.close()
 
@@ -218,6 +224,9 @@ def parse_verdict(
     Translation of parseVerdict() from lib/agent/research.ts.
     Looks for JSON on the last line, then falls back to regex matching.
     """
+    if not ai_text:
+        ai_text = ""
+    
     verdict = "PASS"
     confidence = 0.0
     side = None
@@ -375,8 +384,12 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         return analysis
 
     except Exception as err:
-        msg = str(err)
-        logger.error(f"[research] FAILED for {coin}: {msg}")
+        import traceback
+        msg = f"{err}\n{traceback.format_exc()}"
+        # Write full traceback to file for debugging
+        with open('/tmp/hermes_research_error.log', 'w') as f:
+            f.write(msg)
+        logger.error(f"[research] FAILED for {coin}: {err}")
         fallback = {
             "id": str(uuid.uuid4()),
             "perception_id": "unknown",
