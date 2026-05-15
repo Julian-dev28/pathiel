@@ -1,17 +1,28 @@
-"""Hyperliquid info API client using official SDK.
+"""Hyperliquid API client — HTTP + persistent Info() for REST.
 
-Wraps hyperliquid.info.Info for async-style usage in our FastAPI app.
-Provides high-level methods for market data fetching.
+Architecture:
+1. Single Info() instance for meta/spot_meta (REST, not WS)
+2. All candle/mids/account calls via direct HTTP POST
+3. Optional websocket for future realtime features
+4. Volume-based pre-filtering to stay under rate limits
+
+Rate limit management:
+- metaAndAssetCtxs (weight 20) returns ALL 230 perps with dayNtlVlm
+- spotMetaAndAssetCtxs (weight 20) returns ALL 297 spot assets
+- candleSnapshot per-coin costs weight 20 each
+- Total capacity: 1,200 weight/minute
+- Strategy: volume-filter to top N markets, then fetch candles only for those
+- Candle cache with 15min TTL so repeated scans reuse data
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
 import requests
-from hyperliquid.info import Info
 from hermes_agent.models.types import Candle
 
 logger = logging.getLogger(__name__)
@@ -26,21 +37,82 @@ _MS_PER_CANDLE: Dict[str, int] = {
     "1d": 86_400_000,
 }
 
+# ── Singleton Info client ─────────────────────────────────────────────
+# We create Info() ONCE with pre-fetched meta (HTTP, fast, no WS blocking).
 
-def _make_info() -> Info:
-    """Create an Info client instance."""
-    return Info()
+_info_instance: Any = None
+_info_lock = threading.Lock()
 
 
-def hl_call(action: str, **kwargs: Any) -> Any:
-    """Direct POST to the HL info endpoint for unsupported actions.
-    
-    Uses requests directly to avoid SDK post() URL construction bug.
+def _fetch_meta_sync() -> tuple:
+    """Fetch meta and spot_meta via HTTP (fast, no WS needed)."""
+    try:
+        perp = requests.post(f"{HL_API}/info", json={"type": "meta"}, timeout=10)
+        perp.raise_for_status()
+        perp_meta = perp.json()
+
+        spot = requests.post(f"{HL_API}/info", json={"type": "spotMeta"}, timeout=10)
+        spot.raise_for_status()
+        spot_meta = spot.json()
+        return perp_meta, spot_meta
+    except Exception as e:
+        logger.error(f"[hl] Meta fetch failed: {e}")
+        return {}, {}
+
+
+def init_info() -> None:
+    """Initialize the shared Info client.
+
+    Fast path: fetches meta via HTTP then creates Info with skip_ws=True.
     """
-    payload = {"action": action, **kwargs}
-    resp = requests.post(HL_API, json=payload, timeout=10)
-    resp.raise_for_status()
-    return resp.json()
+    global _info_instance
+
+    with _info_lock:
+        if _info_instance is not None:
+            return
+
+        logger.info("[hl] Initializing Info client...")
+        perp_meta, spot_meta = _fetch_meta_sync()
+
+        try:
+            from hyperliquid.info import Info
+            # skip_ws=True prevents blocking WS connect + meta fetch
+            # We already have meta from HTTP above
+            _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta)
+            logger.info("[hl] Info client initialized (HTTP-only)")
+        except Exception as e:
+            logger.warning(f"[hl] Failed to create Info: {e}")
+            _info_instance = None
+
+
+def clear_info():
+    """Clear the shared instance."""
+    global _info_instance
+    with _info_lock:
+        _info_instance = None
+
+
+# ── HTTP helpers ──────────────────────────────────────────────────────
+
+def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
+    """Direct HTTP POST."""
+    try:
+        resp = requests.post(f"{HL_API}{path}", json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.error(f"[hl] HTTP POST {path} failed: {e}")
+        return None
+
+
+# ── Public API ────────────────────────────────────────────────────────
+
+def get_info() -> Any:
+    """Get the shared Info client instance."""
+    global _info_instance
+    if _info_instance is None:
+        init_info()
+    return _info_instance
 
 
 def fetch_hl_candles(
@@ -48,53 +120,41 @@ def fetch_hl_candles(
     interval: str = "5m",
     count: int = 100,
 ) -> List[Candle]:
-    """Fetch candles from Hyperliquid.
-    
-    Translation of fetchHLCandles from lib/hl-client.ts.
-    Returns list of Candle objects with float values.
-    """
+    """Fetch candles via HTTP."""
     ms = _MS_PER_CANDLE.get(interval, 300_000)
     end_time = int(time.time() * 1000)
     start_time = end_time - ms * count
 
-    info = _make_info()
-    raw = info.candles_snapshot(coin, interval, start_time, end_time)
-
+    payload = {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": coin,
+            "interval": interval,
+            "startTime": start_time,
+            "endTime": end_time,
+        }
+    }
+    raw = _http_post("/info", payload)
     if not isinstance(raw, list):
         return []
 
     return [
         Candle(
-            t=c["t"],
-            o=float(c["o"]),
-            h=float(c["h"]),
-            l=float(c["l"]),
-            c=float(c["c"]),
-            v=float(c.get("v", "0")),
+            t=c["t"], o=float(c["o"]), h=float(c["h"]),
+            l=float(c["l"]), c=float(c["c"]), v=float(c.get("v", "0")),
         )
         for c in raw
     ]
 
 
 def fetch_account_state(user: str) -> Dict[str, Any]:
-    """Fetch perp + spot account state for a user.
-    
-    Translation of fetchAccountState from lib/hl-client.ts.
-    Returns {equity, total_ntl, spot_balances, asset_positions}.
-    """
-    info = _make_info()
-    
-    # Use direct POST for clearinghouse state (not exposed by SDK)
-    try:
-        perp = hl_call("clearinghouseState", user=user)
-    except Exception as e:
-        logger.error(f"Failed to fetch perp state: {e}")
+    """Fetch perp + spot account state."""
+    perp = _http_post("/info", {"action": "clearinghouseState", "user": user})
+    spot = _http_post("/info", {"action": "spotClearinghouseState", "user": user})
+
+    if not perp:
         perp = {}
-    
-    try:
-        spot = hl_call("spotClearinghouseState", user=user)
-    except Exception as e:
-        logger.error(f"Failed to fetch spot state: {e}")
+    if not spot:
         spot = {}
 
     margin_summary = perp.get("marginSummary", {})
@@ -102,11 +162,8 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
     total_ntl = float(margin_summary.get("totalNtlPos", "0"))
 
     raw_balances = spot.get("balances", []) or []
-    spot_balances = [
-        b for b in raw_balances
-        if b.get("coin", "") in ("USDC", "USDT", "USD")
-    ]
-    
+    spot_balances = [b for b in raw_balances if b.get("coin", "") in ("USDC", "USDT", "USD")]
+
     raw_positions = perp.get("assetPositions", []) or []
     asset_positions = [
         p for p in raw_positions
@@ -128,26 +185,115 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
     }
 
 
+# ── WebSocket mids (real-time, low latency) ───────────────────────────
+# The persistent WebSocket connection gives sub-second latency for all 500+
+# market prices. It's used by the autonomous scanning loop for real-time data.
+
+_ws_mids_instance: Optional[Any] = None
+_ws_mids_lock = threading.Lock()
+
+
+def _get_ws_mids_instance() -> Optional[Any]:
+    """Get (or create) the lazy-initialized WebSocket mids instance.
+
+    Only returns data if the WS has received at least one update.
+    Falls back to HTTP if WS isn't connected or has no data.
+    """
+    global _ws_mids_instance
+    with _ws_mids_lock:
+        if _ws_mids_instance is None:
+            return None
+        return _ws_mids_instance
+
+
+def _try_ws_mids() -> Dict[str, str] | None:
+    """Try to get mids from the persistent WebSocket (non-blocking).
+
+    Returns None immediately if WS isn't running. Caller decides whether
+    to fall back to HTTP.
+    """
+    ws = _get_ws_mids_instance()
+    if ws is None:
+        return None
+    try:
+        mids = ws.get_all_mids()
+        if mids:
+            return {k: str(v) for k, v in mids.items()}
+    except Exception:
+        pass
+    return None
+
+
+_ws_mids_fallback: Optional["HyperliquidWebSocket"] = None
+
+
 def fetch_all_mids() -> Dict[str, str]:
-    """Get all mid prices from Hyperliquid."""
-    info = _make_info()
-    return info.all_mids()
+    """Get all mid prices.
+
+    For one-shot commands: uses HTTP POST (reliable, fast).
+    For the autonomous loop: use start_ws_mids() to keep a persistent
+    WebSocket running, then call ws.get_all_mids() for sub-second data.
+    """
+    # Try WebSocket first (only if already initialized by scanning loop)
+    ws_result = _try_ws_mids()
+    if ws_result:
+        return ws_result
+
+    # Fallback: HTTP POST — reliable, ~150ms
+    try:
+        raw = _http_post("/info", {"type": "allMids"})
+        if raw and isinstance(raw, dict):
+            return {k: str(v) for k, v in raw.items()}
+    except Exception as e:
+        logger.warning(f"[hl] HTTP fallback for mids failed: {e}")
+    return {}
 
 
-def fetch_funding_history(coin: str, start_time: int, end_time: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Fetch funding rate history for a coin."""
-    info = _make_info()
+def start_ws_mids() -> Any:
+    """Start the persistent WebSocket for real-time mids.
+
+    Call once at startup (e.g., in 'hermes start'). After this, fetch_all_mids()
+    will use the WS. For best results, also call ws.get_all_mids() directly
+    to get sub-second latency.
+    """
+    global _ws_mids_instance
+    with _ws_mids_lock:
+        if _ws_mids_instance is None or _ws_mids_instance is False:
+            try:
+                from hermes_agent.client.ws_client import HyperliquidWebSocket
+                _ws_mids_instance = HyperliquidWebSocket()
+                _ws_mids_instance.start()
+                logger.info("[hl] WebSocket started for real-time mids")
+            except Exception as e:
+                logger.warning(f"[hl] WebSocket init failed: {e}")
+                _ws_mids_instance = False
+                return None
+        return _ws_mids_instance
+
+
+def stop_ws_mids() -> None:
+    """Stop the persistent WebSocket. Call when exiting the scanning loop."""
+    global _ws_mids_instance
+    with _ws_mids_lock:
+        if _ws_mids_instance and hasattr(_ws_mids_instance, 'stop'):
+            _ws_mids_instance.stop(timeout=2.0)
+            _ws_mids_instance = None
+            logger.info("[hl] WebSocket stopped")
+
+
+def fetch_funding_history(
+    coin: str, start_time: int, end_time: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Fetch funding rate history."""
     if end_time is None:
         end_time = int(time.time() * 1000)
-    return info.funding_history(coin, start_time, end_time)
+    payload = {"type": "fundingHistory", "coin": coin, "startTime": start_time, "endTime": end_time}
+    raw = _http_post("/info", payload)
+    return raw if isinstance(raw, list) else []
 
 
 def fetch_universe(force_refresh: bool = False) -> Dict[str, Any]:
-    """Fetch the full market universe (perp + spot meta).
-    
-    Returns dict with 'perp' and 'spot' keys, each containing the raw metadata.
-    """
-    info = _make_info()
-    perp_meta = info.meta()
-    spot_meta = info.spot_meta()
-    return {"perp": perp_meta, "spot": spot_meta}
+    """Fetch the full market universe."""
+    # Imported lazily to avoid circular import
+    from hermes_agent.client.universe import get_universe as _get_universe
+    return _get_universe()

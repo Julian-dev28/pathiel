@@ -1,6 +1,7 @@
 """Auto-executor: validates through risk gates, sizes via Kelly, executes LIVE.
 
-Translation of lib/agent/executor.ts.
+Translation of lib/agent/executor.ts. Integrates DSL exit engine for
+two-phase trailing stops (loss protection → profit locking).
 """
 
 from __future__ import annotations
@@ -14,6 +15,10 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from hermes_agent.agents.config_store import read_agent_config
+from hermes_agent.agents.dsl_exit import (
+    ExitPolicy, register_position, unregister_position,
+    get_tracker, check_all_positions,
+)
 from hermes_agent.agents.memory import memory
 from hermes_agent.agents.risk_gates import eval_all_gates, GateContext
 from hermes_agent.client.exchange import (
@@ -49,10 +54,7 @@ def kelly_size(
     reward_risk_ratio: float,
     max_trade_notional: float,
 ) -> float:
-    """Calculate trade size using half-Kelly criterion.
-
-    Translation of the kellySize() function from lib/agent/executor.ts.
-    """
+    """Calculate trade size using half-Kelly criterion."""
     p = confidence
     q = 1 - p
     b = reward_risk_ratio
@@ -63,22 +65,14 @@ def kelly_size(
 
 
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute an analysis through risk gates and into the market.
-
-    Translation of maybeExecute() from lib/agent/executor.ts.
-    Returns ExecutionResult dict.
-
-    NOTE: This is a SYNC function. All client modules are synchronous.
-    """
+    """Execute an analysis through risk gates and into the market."""
     config = read_agent_config()
     mode = str(config.get("mode", "OFF"))
 
     if mode == "OFF":
         return {
-            "executed": False,
-            "mode": mode,
-            "analysis_id": analysis["id"],
-            "reason": "mode_off",
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"], "reason": "mode_off",
         }
 
     # Idempotency: don't double-execute
@@ -89,14 +83,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     if already:
         return {
-            "executed": False,
-            "mode": mode,
-            "analysis_id": analysis["id"],
-            "reason": "already_executed",
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"], "reason": "already_executed",
             "order_id": already.get("order_id"),
         }
 
-    # Fetch account state (sync)
+    # Fetch account state
     user = (
         os.environ.get("HYPERLIQUID_MASTER_ADDRESS")
         or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
@@ -105,7 +97,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     equity = state["equity"]
     total_open_notional = state["total_ntl"]
 
-    # Update daily PnL from live equity
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
 
@@ -177,8 +168,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "executed_at": int(time.time() * 1000),
         })
         return {
-            "executed": False,
-            "mode": mode,
+            "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
             "blocked_by": gate_output["block_reasons"],
             "gate_results": gate_output["results"],
@@ -186,8 +176,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     if not os.environ.get("HYPERLIQUID_PRIVATE_KEY"):
         return {
-            "executed": False,
-            "mode": mode,
+            "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
             "reason": "private_key_missing",
         }
@@ -213,20 +202,26 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     if not order_res.get("ok"):
         return {
-            "executed": False,
-            "mode": mode,
-            "analysis_id": analysis["id"],
+            "executed": False, "mode": mode, "analysis_id": analysis["id"],
             "reason": f"order_failed: {order_res.get('error', 'unknown')}",
             "gate_results": gate_output["results"],
         }
 
-    # Place SL + TP brackets using 4h ATR
-    if atr > 0 and size_in_coin > 0:
-        sl_px = mid_price - atr * SL_ATR_MULT if is_buy else mid_price + atr * SL_ATR_MULT
-        tp_px_live = mid_price + atr * TP_ATR_MULT if is_buy else mid_price - atr * TP_ATR_MULT
-        place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", asset_idx, coin)
-        place_hl_trigger_order(is_buy, size_in_coin, tp_px_live, "tp", asset_idx, coin)
+    # ── DSL exit engine integration ───────────────────────────────
+    # Register the position with the DSL tracker for dynamic stop management.
+    # DSL will monitor price on every scan tick and trigger exits when
+    # conditions are met (loss protection → profit locking).
+    dsl_config = config.get("dsl_exit", {})
+    policy = ExitPolicy(
+        max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
+        protect_pct=dsl_config.get("protect_pct", 1.5),
+        retrace_threshold=dsl_config.get("retrace_threshold", 0.30),
+        hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
+    )
+    register_position(coin, trade_side, mid_price, policy=policy)
+    logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price}")
 
+    # Track trade in memory
     memory.record_trade({
         "id": str(uuid.uuid4()),
         "analysis_id": analysis["id"],
@@ -238,12 +233,19 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "executed_at": int(time.time() * 1000),
     })
 
+    # Also place exchange SL brackets as a safety net (ATR-based)
+    if atr > 0 and size_in_coin > 0:
+        sl_px = mid_price - atr * SL_ATR_MULT if is_buy else mid_price + atr * SL_ATR_MULT
+        tp_px_live = mid_price + atr * TP_ATR_MULT if is_buy else mid_price - atr * TP_ATR_MULT
+        # Note: These trigger orders are a backup — DSL is the primary exit engine
+        place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", asset_idx, coin)
+        logger.info(f"[executor] Placed backup SL at {sl_px}")
+
     final_sl = (mid_price - atr * SL_ATR_MULT) if is_buy else (mid_price + atr * SL_ATR_MULT) if atr > 0 else stop_px
     final_tp = (mid_price + atr * TP_ATR_MULT) if is_buy else (mid_price - atr * TP_ATR_MULT) if atr > 0 else tp_px
 
     return {
-        "executed": True,
-        "mode": mode,
+        "executed": True, "mode": mode,
         "analysis_id": analysis["id"],
         "order_id": order_res.get("order_id"),
         "gate_results": gate_output["results"],
@@ -251,4 +253,23 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "entry_px": mid_price,
         "stop_px": final_sl,
         "tp_px": final_tp,
+        "dsl_registered": True,
     }
+
+
+def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
+    """Check all DSL-tracked positions for exit conditions.
+
+    Called from the scan loop. Returns list of positions that should be closed.
+    The caller (daemon loop) then executes the close via exchange API.
+    """
+    exits = check_all_positions(mids)
+    return [
+        {
+            "coin": v.coin,
+            "side": v.phase,
+            "reason": v.reason,
+            "unrealized_pct": v.unrealized_pct,
+        }
+        for v in exits
+    ]

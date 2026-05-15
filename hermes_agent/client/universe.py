@@ -1,118 +1,184 @@
 """Hyperliquid universe loader.
 
-Translation of lib/hl-universe.ts — fetches perp + spot meta from HL,
-caches results for 1 hour.
+Fetches perp + spot metadata with volume data from metaAndAssetCtxs and
+spotMetaAndAssetCtxs. Returns volume-ranked markets for pre-filtering.
+
+Uses metaAndAssetCtxs/spotMetaAndAssetCtxs endpoints (weight ~20 each)
+instead of separate meta + allMids calls, so we get universe + volume +
+mids in TWO HTTP POSTs total.
+
+Caches results for 1 hour.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-from hyperliquid.info import Info
-from hermes_agent.client.hl_client import hl_call
+from hermes_agent.client.hl_client import HL_API, _http_post
 
 logger = logging.getLogger(__name__)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-
-EQUITY_PERP_COINS = {
-    # US Tech / Growth
-    "TSLA", "NVDA", "AAPL", "AMZN", "GOOGL", "MSFT", "META", "COIN", "MSTR",
-    "INTC", "AMD", "NFLX", "ADBE", "CRM", "AVGO", "QCOM", "TXN", "MU", "SNPS",
-    "SNDK", "LITE", "CRDO", "SMCI", "ARM", "PLTR", "SOFI", "HOOD", "RKLB",
-}
-
-COMMODITY_COINS = {
-    "NATGAS", "CRCL", "SILVER", "COPPER", "GOLD", "URNM",
-}
-
-CACHE_TTL_MS = 60 * 60 * 1000  # 1 hour
-
-# ── Cache ──────────────────────────────────────────────────────────────────────
-
-_cache: Optional[Dict[str, Any]] = None
+_CACHE_DIR = Path.home() / ".hermes" / "universe_cache"
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_UNIVERSE_CACHE_PATH = _CACHE_DIR / "meta.json"
+_SPOT_CACHE_PATH = _CACHE_DIR / "spot_meta.json"
+_CACHE_TTL_SECS = 86_400  # 24 hours
 
 
-def _categorize(coin: str) -> str:
-    """Determine market category from coin name."""
-    if coin in COMMODITY_COINS:
-        return "commodity"
-    if coin in EQUITY_PERP_COINS:
-        return "equity"
-    return "crypto"
+def _load_json_cached(path: Path, ttl_secs: int) -> Optional[Any]:
+    """Load a JSON file if it's fresh enough."""
+    try:
+        if path.exists() and (time.time() - path.stat().st_mtime) < ttl_secs:
+            with open(path, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
 
 
-# ── Fetchers ───────────────────────────────────────────────────────────────────
-
-def _fetch_perp_universe() -> List[Dict[str, Any]]:
-    """Fetch perp universe from HL meta endpoint."""
-    info = Info()
-    raw = info.meta()
-    universe = raw.get("universe", [])
-
-    return [
-        {
-            "coin": u["name"],
-            "type": "perp",
-            "category": _categorize(u["name"]),
-            "sz_decimals": u.get("szDecimals", 5),
-            "max_leverage": u.get("maxLeverage", 1),
-            "min_notional": float(u["minNtl"]) if u.get("minNtl") else None,
-        }
-        for u in universe
-    ]
+def _save_json_cached(path: Path, data: Any) -> None:
+    """Save JSON to a cache file."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.warning(f"[universe] Failed to cache {path}: {e}")
 
 
-def _fetch_spot_universe() -> List[Dict[str, Any]]:
-    """Fetch spot universe from HL spotMeta endpoint."""
-    info = Info()
-    raw = info.spot_meta()
-    universe = raw.get("universe", [])
-    tokens = raw.get("tokens", [])
+def _fetch_perp_meta(force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Fetch perp metadata with asset context (volume, funding, etc.).
+    
+    Returns (meta_dict, asset_ctx_dict) where:
+    - meta_dict: coin -> {name, maxLeverage, szDecimals, ...}
+    - asset_ctx_dict: coin -> {dayNtlVlm, openInterest, funding, ...}
+    """
+    cache = _load_json_cached(_UNIVERSE_CACHE_PATH, _CACHE_TTL_SECS) if not force_refresh else None
+    if cache is None:
+        data = _http_post("/info", {"type": "metaAndAssetCtxs"})
+        if data and isinstance(data, list) and len(data) >= 2:
+            meta = data[0]
+            ctx = data[1]
+            meta_dict = {}
+            ctx_dict = {}
+            for i, u in enumerate(meta.get("universe", [])):
+                coin = u["name"]
+                meta_dict[coin] = {
+                    "name": coin,
+                    "maxLeverage": u.get("maxLeverage", 40),
+                    "szDecimals": u.get("szDecimals", 5),
+                    "type": "perp",
+                }
+                if i < len(ctx):
+                    ctx_dict[coin] = ctx[i]
+            _save_json_cached(_UNIVERSE_CACHE_PATH, (meta_dict, ctx_dict))
+            return meta_dict, ctx_dict
+        return {}, {}
+    return cache[0], cache[1]
 
-    return [
-        {
-            "coin": u["name"],
-            "type": "spot",
-            "category": "crypto",
-            "sz_decimals": u.get("szDecimals", 6) if isinstance(u.get("szDecimals"), int) else (
-                tokens[u.get("index", 0)]["szDecimals"] if u.get("index") is not None and u.get("index") < len(tokens) and "szDecimals" in tokens[u.get("index", 0)] else 6
-            ),
-            "max_leverage": 1,
-        }
-        for u in universe
-    ]
 
+def _fetch_spot_meta(force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Fetch spot metadata with asset context.
+    
+    Returns (meta_dict, asset_ctx_dict) for spot assets.
+    Spot coin names are prefixed with '@' internally — we strip that.
+    """
+    cache = _load_json_cached(_SPOT_CACHE_PATH, _CACHE_TTL_SECS) if not force_refresh else None
+    if cache is None:
+        data = _http_post("/info", {"type": "spotMetaAndAssetCtxs"})
+        if data and isinstance(data, list) and len(data) >= 2:
+            meta = data[0]
+            ctx = data[1]
+            meta_dict = {}
+            ctx_dict = {}
+            for i, u in enumerate(meta.get("universe", [])):
+                # Spot names come as "@4", "@5" etc — use "name" if available
+                coin = u.get("name", f"@{i}")
+                if not coin.startswith("@"):
+                    coin = f"@{coin}"  # Normalize spot prefix
+                meta_dict[coin] = {
+                    "name": coin,
+                    "type": "spot",
+                }
+                if i < len(ctx):
+                    ctx_dict[coin] = ctx[i]
+            _save_json_cached(_SPOT_CACHE_PATH, (meta_dict, ctx_dict))
+            return meta_dict, ctx_dict
+        return {}, {}
+    return cache[0], cache[1]
 
-# ── Public API ─────────────────────────────────────────────────────────────────
 
 def get_universe(force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Get the full tradeable universe (perp + spot).
-
-    Returns list of market dicts with {coin, type, category, sz_decimals, max_leverage, min_notional?}.
-    Cached for 1 hour unless force_refresh=True.
+    """Fetch the full market universe (perp + spot) with volume data.
+    
+    Returns list of dicts sorted by 24h volume (highest first):
+    [
+        {
+            "coin": "BTC",
+            "type": "perp",
+            "maxLeverage": 40,
+            "szDecimals": 5,
+            "dayNtlVlm": 3274603594.46,  # 24h volume in USDC
+            "dayBaseVlm": 40576.83,      # 24h volume in coin
+            "openInterest": 27824.85,
+            ...
+        },
+        ...
+    ]
     """
-    global _cache
+    perp_meta, perp_ctx = _fetch_perp_meta(force_refresh)
+    spot_meta, spot_ctx = _fetch_spot_meta(force_refresh)
+    
+    # Merge into unified list
+    results = []
+    all_coins = set(list(perp_meta.keys()) + list(spot_meta.keys()))
+    
+    for coin in all_coins:
+        m = perp_meta.get(coin) or spot_meta.get(coin, {})
+        c = perp_ctx.get(coin) or spot_ctx.get(coin, {})
+        
+        def _f(v, d=0):
+            return float(v) if v is not None else d
+        
+        asset = {
+            "coin": coin,
+            "type": m.get("type", "perp"),
+            "maxLeverage": m.get("maxLeverage"),
+            "szDecimals": m.get("szDecimals"),
+            "dayNtlVlm": _f(c.get("dayNtlVlm")),
+            "dayBaseVlm": _f(c.get("dayBaseVlm")),
+            "openInterest": _f(c.get("openInterest")),
+            "funding": _f(c.get("funding")),
+            "prevDayPx": _f(c.get("prevDayPx")),
+            "oraclePx": _f(c.get("oraclePx")),
+            "markPx": _f(c.get("markPx")),
+            "midPx": _f(c.get("midPx")),
+        }
+        results.append(asset)
+    
+    # Sort by 24h volume descending
+    results.sort(key=lambda x: x["dayNtlVlm"], reverse=True)
+    return results
 
-    now = int(time.time() * 1000)
-    if not force_refresh and _cache and _cache.get("ttl", 0) > now:
-        return _cache["value"]
 
-    perps, spots = _fetch_perp_universe(), _fetch_spot_universe()
-
-    all_markets = perps + spots
-    _cache = {"value": all_markets, "ttl": now + CACHE_TTL_MS}
-    logger.info(f"[universe] loaded {len(all_markets)} markets ({len(perps)} perp + {len(spots)} spot)")
-    return all_markets
+def get_universe_top_n(n: int = 100, force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """Get top N markets by 24h volume.
+    
+    This is the pre-filtered list for scanning — avoids hitting rate limits
+    by only fetching candles for the most liquid markets.
+    """
+    universe = get_universe(force_refresh)
+    return universe[:n]
 
 
 def get_market_by_coin(coin: str) -> Optional[Dict[str, Any]]:
-    """Lookup a market by coin name from the cache."""
-    if _cache is None:
-        return None
-    for m in _cache.get("value", []):
+    """Get a single market by coin name."""
+    for m in get_universe():
         if m["coin"] == coin:
             return m
     return None

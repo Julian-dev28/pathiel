@@ -26,8 +26,12 @@ def read_agent_config() -> Dict[str, Any]:
         return dict(DEFAULT_CONFIG)
 
 
-async def write_agent_config(cfg: Dict[str, Any]) -> None:
+def write_agent_config(cfg: Dict[str, Any]) -> None:
     """Write the agent config to .agent-config.json."""
-    with open(CONFIG_PATH, "w") as f:
+    import os as _os
+    # Write atomically
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2)
+    _os.replace(tmp, CONFIG_PATH)
     logger.info(f"[config] written {len(cfg)} keys to {CONFIG_PATH}")
