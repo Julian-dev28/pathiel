@@ -149,8 +149,8 @@ def fetch_hl_candles(
 
 def fetch_account_state(user: str) -> Dict[str, Any]:
     """Fetch perp + spot account state."""
-    perp = _http_post("/info", {"action": "clearinghouseState", "user": user})
-    spot = _http_post("/info", {"action": "spotClearinghouseState", "user": user})
+    perp = _http_post("/info", {"type": "clearinghouseState", "user": user})
+    spot = _http_post("/info", {"type": "spotClearinghouseState", "user": user})
 
     if not perp:
         perp = {}
@@ -175,7 +175,8 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         if b.get("coin") == "USDC":
             spot_usdc = float(b.get("total", "0"))
 
-    equity = perp_equity if perp_equity > 0 else spot_usdc
+    # On unified accounts: equity = perp + spot combined
+    equity = perp_equity + spot_usdc
 
     return {
         "equity": equity,

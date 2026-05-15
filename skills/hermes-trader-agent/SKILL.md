@@ -34,12 +34,13 @@ Both can be paused/resumed via `cronjob` tool.
 Provides tools to Hermes Agent:
 
 ```yaml
-# In Hermes config.yaml
+# In your Hermes Agent config.yaml
 mcp_servers:
   hermes-trader:
-    command: node
-    args: [/path/to/hermes-trader/scripts/hermes-mcp-server.mjs]
-    timeout: 60
+    command: python
+    args: [/path/to/hermes-trader/scripts/hermes-mcp-server.py]
+    cwd: /path/to/hermes-trader  # ← important: sets working directory
+    timeout: 120
 ```
 
 Tools: `scan`, `research`, `execute`, `state`, `config`
@@ -51,15 +52,11 @@ Files (all gitignored):
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
 - `.trader-session-log.jsonl` — append-only cycle summaries
 
-## Equity on Unified Accounts (CRITICAL BUG FIX)
+## Unified Accounts Support
 
-On this unified HL account, perp `marginSummary.accountValue` and spot USDC are SEPARATE values that MUST be added:
+On HL unified accounts, the agent wallet signs orders (API key) but the master account holds funds. **Equity = perp + spot combined.** The `fetch_account_state` resolves the user via `HYPERLIQUID_MASTER_ADDRESS` (preferred) or falls back to `HYPERLIQUID_WALLET_ADDRESS`.
 
-```
-equity = perpMarginSummary.accountValue + spotUSDC
-```
-
-Perp shows ~$4, spot shows ~$71. Total equity ~$75. DO NOT use perp accountValue alone.
+**Info endpoints use `type` not `action`.** The old `action` field returns 422.
 
 ## Risk Gates (10 independent, no short-circuiting)
 
