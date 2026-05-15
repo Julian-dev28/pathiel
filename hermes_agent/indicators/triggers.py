@@ -7,16 +7,22 @@ and compositeScore from OHLCV candles.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import math
 from typing import Any, Dict, List
 
 from hermes_agent.indicators.math import ema, sma, atr as calc_atr, rsi, adx
 
-# ── Trigger hit type ──────────────────────────────────────────────────────────
+# Helper to handle both dict and Candle objects
+def _get(c, key):
+    if isinstance(c, dict):
+        return c.get(key, 0)
+    return getattr(c, key, 0)
 
+# ── Trigger hit type ─────────────────────────────────────────────────────
 # Re-exports for backwards compat
 TriggerHit = Dict[str, Any]  # {name, score, reason, fired}
-
 
 def pct_move_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) -> TriggerHit:
     """Current-bar return z-score vs trailing 96-bar std.
@@ -28,7 +34,7 @@ def pct_move_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) ->
 
     returns = []
     for i in range(1, len(candles)):
-        returns.append((candles[i]["c"] - candles[i - 1]["c"]) / candles[i - 1]["c"])
+        returns.append((_get(candles[i], "c") - _get(candles[i - 1], "c")) / _get(candles[i - 1], "c"))
 
     current_return = returns[-1]
     prior = returns[:-1][-96:]  # up to 96 trailing bars
@@ -61,7 +67,7 @@ def volume_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) -> T
 
     Ported verbatim from lib/agent/triggers.ts.
     """
-    vols = [c["v"] for c in candles]
+    vols = [_get(c, "v") for c in candles]
     if len(vols) < 21:
         return {"name": "volumeSpike", "score": 0, "reason": "flat", "fired": False}
 
@@ -107,13 +113,13 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
     prior_high = float("-inf")
     prior_low = float("inf")
     for i in range(prior_start, prior_end):
-        if candles[i]["h"] > prior_high:
-            prior_high = candles[i]["h"]
-        if candles[i]["l"] < prior_low:
-            prior_low = candles[i]["l"]
+        if _get(candles[i], "h") > prior_high:
+            prior_high = _get(candles[i], "h")
+        if _get(candles[i], "l") < prior_low:
+            prior_low = _get(candles[i], "l")
 
-    if current["c"] > prior_high:
-        pct_break = (current["c"] - prior_high) / prior_high * 100
+    if _get(current, "c") > prior_high:
+        pct_break = (_get(current, "c") - prior_high) / prior_high * 100
         return {
             "name": "breakout",
             "score": min(10, max(0, pct_break)),
@@ -121,8 +127,8 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
             "fired": True,
         }
 
-    if current["c"] < prior_low:
-        pct_break = (prior_low - current["c"]) / prior_low * 100
+    if _get(current, "c") < prior_low:
+        pct_break = (prior_low - _get(current, "c")) / prior_low * 100
         return {
             "name": "breakout",
             "score": min(10, max(0, pct_break)),
@@ -131,8 +137,8 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
         }
 
     # Score proportional to distance from nearest range edge
-    dist_up = prior_high - current["c"]
-    dist_down = current["c"] - prior_low
+    dist_up = prior_high - _get(current, "c")
+    dist_down = _get(current, "c") - prior_low
     closest = min(dist_up, dist_down)
     range_size = prior_high - prior_low
     score = max(0, (1 - closest / range_size)) * 5 if range_size > 0 else 0
@@ -154,7 +160,7 @@ def range_compression(
 
     Ported verbatim from lib/agent/triggers.ts.
     """
-    closes = [c["c"] for c in candles]
+    closes = [_get(c, "c") for c in candles]
     if len(closes) < bb_length + 1:
         return {"name": "rangeCompression", "score": 0, "reason": "flat", "fired": False}
 

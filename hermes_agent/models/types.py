@@ -42,6 +42,10 @@ class Candle(BaseModel):
     c: float  # close
     v: float  # volume
 
+    def __getitem__(self, key: str) -> float:
+        """Allow dict-style access: c['t'], c['c'], etc."""
+        return getattr(self, key)
+
 
 class HLAccount(BaseModel):
     """Hyperliquid account snapshot."""

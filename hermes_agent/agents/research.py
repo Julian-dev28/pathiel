@@ -31,7 +31,13 @@ logger = logging.getLogger(__name__)
 
 def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Compute EMA8/21, RSI, ATR, ADX for a set of candles."""
-    closes = [c["c"] for c in candles]
+    # Handle both dict and Candle objects
+    def _get(cl, key):
+        if isinstance(cl, dict):
+            return cl.get(key, 0)
+        return getattr(cl, key, 0)
+    
+    closes = [_get(c, "c") for c in candles]
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
 
@@ -288,6 +294,23 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         c1h = fetch_hl_candles(coin, "1h", 100)
         c4h = fetch_hl_candles(coin, "4h", 100)
         c1d = fetch_hl_candles(coin, "1d", 60)
+        
+        # Convert Candle objects to dicts (Candle objects don't support subscript)
+        def _candle_to_dict(c):
+            if isinstance(c, dict):
+                return c
+            try:
+                return {"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v}
+            except Exception as e:
+                logger.error(f"[research] Failed to convert candle: {e}, type={type(c)}, candle={c}")
+                raise
+        
+        logger.info(f"[research] Converting {len(c1h)} 1h candles, first type: {type(c1h[0]) if c1h else 'empty'}")
+        c1h = [_candle_to_dict(c) for c in c1h]
+        logger.info(f"[research] After conversion, first 1h candle type: {type(c1h[0]) if c1h else 'empty'}")
+        c4h = [_candle_to_dict(c) for c in c4h]
+        c1d = [_candle_to_dict(c) for c in c1d]
+        
         funding_raw = _fetch_funding_rate(coin)
 
         if len(c4h) < 30:

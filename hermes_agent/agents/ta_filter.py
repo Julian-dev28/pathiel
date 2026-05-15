@@ -15,6 +15,12 @@ from typing import Any, Dict, List, Optional
 from hermes_agent.indicators.math import ema, atr, rsi, adx
 from hermes_agent.client.hl_client import fetch_hl_candles
 
+# Helper to handle both dict and Candle objects
+def _get(c, key):
+    if isinstance(c, dict):
+        return c.get(key, 0)
+    return getattr(c, key, 0)
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +32,7 @@ def _assess_trend(candles: List[Dict[str, Any]]) -> str:
     if len(candles) < 30:
         return "flat"
 
-    closes = [c["c"] for c in candles]
+    closes = [_get(c, "c") for c in candles]
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
 
@@ -51,7 +57,7 @@ def _compute_atr4pct(candles: List[Dict[str, Any]]) -> Optional[float]:
         return None
     atr_arr = atr(candles, 14)
     last = atr_arr[-1]
-    last_close = candles[-1]["c"]
+    last_close = _get(candles[-1], "c")
     if not math.isfinite(last) or last_close == 0:
         return None
     return (last / last_close) * 100
@@ -76,15 +82,15 @@ def _compute_adx(candles: List[Dict[str, Any]]) -> Optional[float]:
 def _check_volume_confirm(candles: List[Dict[str, Any]]) -> bool:
     if len(candles) < 21:
         return False
-    last_vol = candles[-1]["v"]
-    avg_vol = sum(c["v"] for c in candles[-21:-1]) / 20
+    last_vol = _get(candles[-1], "v")
+    avg_vol = sum(_get(c, "v") for c in candles[-21:-1]) / 20
     return avg_vol == 0 or last_vol >= avg_vol * 0.8
 
 
 def _check_ema_cross_recent(candles: List[Dict[str, Any]]) -> bool:
     if len(candles) < 25:
         return False
-    closes = [c["c"] for c in candles]
+    closes = [_get(c, "c") for c in candles]
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
 

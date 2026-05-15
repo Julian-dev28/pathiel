@@ -49,10 +49,16 @@ def atr(candles: List[Dict[str, Any]], period: int = 14) -> List[float]:
     Ported verbatim from lib/agent/triggers.ts.
     candles must have 'h', 'l', 'c' keys.
     """
+    # Handle both dict and Candle objects
+    def _get(c, key):
+        if isinstance(c, dict):
+            return c.get(key, 0)
+        return getattr(c, key, 0)
+    
     tr = [0.0] * len(candles)
     for i in range(1, len(candles)):
-        h, l = candles[i]["h"], candles[i]["l"]
-        pc = candles[i - 1]["c"]
+        h, l = _get(candles[i], "h"), _get(candles[i], "l")
+        pc = _get(candles[i - 1], "c")
         tr[i] = max(h - l, abs(h - pc), abs(l - pc))
 
     out = [float("nan")] * len(candles)
@@ -71,13 +77,19 @@ def rsi(candles: List[Dict[str, Any]], period: int = 14) -> List[float]:
 
     Ported verbatim from lib/agent/triggers.ts.
     """
+    # Handle both dict and Candle objects
+    def _get(c, key):
+        if isinstance(c, dict):
+            return c.get(key, 0)
+        return getattr(c, key, 0)
+    
     out = [float("nan")] * len(candles)
     if len(candles) <= period:
         return out
 
     g, l = 0.0, 0.0
     for i in range(1, period + 1):
-        d = candles[i]["c"] - candles[i - 1]["c"]
+        d = _get(candles[i], "c") - _get(candles[i - 1], "c")
         if d >= 0:
             g += d
         else:
@@ -88,7 +100,7 @@ def rsi(candles: List[Dict[str, Any]], period: int = 14) -> List[float]:
     out[period] = 100 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l)
 
     for i in range(period + 1, len(candles)):
-        d = candles[i]["c"] - candles[i - 1]["c"]
+        d = _get(candles[i], "c") - _get(candles[i - 1], "c")
         avg_g = (avg_g * (period - 1) + (d if d > 0 else 0)) / period
         avg_l = (avg_l * (period - 1) + (d if d < 0 else -d)) / period
         out[i] = 100 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l)
@@ -101,6 +113,12 @@ def adx(candles: List[Dict[str, Any]], period: int = 14) -> List[float]:
 
     Ported verbatim from lib/agent/triggers.ts.
     """
+    # Handle both dict and Candle objects
+    def _get(c, key):
+        if isinstance(c, dict):
+            return c.get(key, 0)
+        return getattr(c, key, 0)
+    
     n = len(candles)
     out = [float("nan")] * n
     if n <= period * 2:
@@ -111,9 +129,9 @@ def adx(candles: List[Dict[str, Any]], period: int = 14) -> List[float]:
     m_dm = [0.0] * n
 
     for i in range(1, n):
-        h, l = candles[i]["h"], candles[i]["l"]
-        pc = candles[i - 1]["c"]
-        ph, pl = candles[i - 1]["h"], candles[i - 1]["l"]
+        h, l = _get(candles[i], "h"), _get(candles[i], "l")
+        pc = _get(candles[i - 1], "c")
+        ph, pl = _get(candles[i - 1], "h"), _get(candles[i - 1], "l")
 
         tr[i] = max(h - l, abs(h - pc), abs(l - pc))
 
