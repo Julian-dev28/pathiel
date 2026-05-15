@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+import requests
 from hyperliquid.info import Info
 from hermes_agent.models.types import Candle
 
@@ -34,10 +35,12 @@ def _make_info() -> Info:
 def hl_call(action: str, **kwargs: Any) -> Any:
     """Direct POST to the HL info endpoint for unsupported actions.
     
-    This is a fallback for actions not exposed by the SDK's high-level methods.
+    Uses requests directly to avoid SDK post() URL construction bug.
     """
-    info = _make_info()
-    return info.post(action, kwargs)
+    payload = {"action": action, **kwargs}
+    resp = requests.post(HL_API, json=payload, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def fetch_hl_candles(
@@ -140,7 +143,10 @@ def fetch_funding_history(coin: str, start_time: int, end_time: Optional[int] = 
 
 
 def fetch_universe(force_refresh: bool = False) -> Dict[str, Any]:
-    """Fetch the full market universe (perp + spot meta)."""
+    """Fetch the full market universe (perp + spot meta).
+    
+    Returns dict with 'perp' and 'spot' keys, each containing the raw metadata.
+    """
     info = _make_info()
     perp_meta = info.meta()
     spot_meta = info.spot_meta()

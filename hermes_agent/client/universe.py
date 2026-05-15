@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
+from hyperliquid.info import Info
 from hermes_agent.client.hl_client import hl_call
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,8 @@ def _categorize(coin: str) -> str:
 
 def _fetch_perp_universe() -> List[Dict[str, Any]]:
     """Fetch perp universe from HL meta endpoint."""
-    raw = hl_call("meta")
+    info = Info()
+    raw = info.meta()
     universe = raw.get("universe", [])
 
     return [
@@ -65,7 +67,8 @@ def _fetch_perp_universe() -> List[Dict[str, Any]]:
 
 def _fetch_spot_universe() -> List[Dict[str, Any]]:
     """Fetch spot universe from HL spotMeta endpoint."""
-    raw = hl_call("spotMeta")
+    info = Info()
+    raw = info.spot_meta()
     universe = raw.get("universe", [])
     tokens = raw.get("tokens", [])
 
