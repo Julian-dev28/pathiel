@@ -114,8 +114,8 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 ```bash
 # ── OpenRouter ───────────────────────────────────────────────
 OPENROUTER_API_KEY=sk-or-...your-key
-# Optional: override the default Qwen model
-# OPENROUTER_MODEL=qwen/qwen3.6-35b-a3b
+# Default model (tested working):
+OPENROUTER_MODEL=qwen/qwen3-235b-a22b
 
 # ── Hyperliquid ──────────────────────────────────────────────
 HYPERLIQUID_WALLET_ADDRESS=0x...your-wallet-address
@@ -159,7 +159,9 @@ cp .env.local.example .env.local
 # Edit .env.local with your keys
 ```
 
-### Running
+## Running
+
+### API Server (Optional)
 ```bash
 # Start the FastAPI server (port 8000)
 python -m hermes_agent.server
@@ -169,27 +171,56 @@ uvicorn hermes_agent.server:app --host 0.0.0.0 --port 8000
 ```
 The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes Agent", "version": "0.2.0", "status": "running"}`.
 
+### Continuous Trading Loop (Recommended)
+```bash
+# Start the autonomous trading loop (scans every 180s)
+python scripts/trading_loop.py
+
+# Or run in background:
+nohup python scripts/trading_loop.py > /tmp/hermes-trader.log 2>&1 &
+```
+Monitor logs: `tail -f /tmp/hermes-trader.log`
+
+**Trading Loop Behavior:**
+- Scans top 50 markets every 180 seconds
+- Researches triggered signals with AI (qwen/qwen3-235b-a22b)
+- Executes trades when confidence >= 0.50
+- Enforces risk caps (max $200 notional, max 3 concurrent positions)
+- Runs continuously until stopped
+
 ---
 
 ## MCP Integration
 
-Hermes-Trader exposes MCP tools for autonomous agent integration:
+Hermes-Trader exposes 14 MCP tools for autonomous agent integration (stdio transport):
 
 | Tool | Description |
 |------|-------------|
+| **Trading Core** | |
 | `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
-| `research` | Deep AI analysis on a coin |
+| `research` | Deep AI analysis on a coin with OpenRouter |
 | `execute` | Execute trade through risk gates + DSL registration |
-| `state` | Get full agent state |
-| `config` | Get/set agent configuration |
+| `state` | Get full agent state (mode, equity, positions, trades) |
+| `config` | Get/set agent configuration (mode, risk caps, thresholds) |
+| **Hyperfeed Discovery** | |
+| `leaderboard_get_markets` | Top markets by OI + volume |
+| `leaderboard_get_top_traders` | Trader rankings with win rates |
+| `leaderboard_get_trader_positions` | Positions for a specific trader |
+| `discovery_get_top_traders` | Discovery top traders (alias) |
+| `discovery_get_trader_state` | Full trader state from discovery |
+| **Market Data** | |
+| `market_get_asset_data` | Candles + funding + OI for any coin |
+| `market_get_funding_regime` | LONG_CROWDED / SHORT_CROWDED / NEUTRAL |
+| `market_list_instruments` | All tradeable instruments |
+| `market_get_mids` | Real-time mid prices |
 
 Configure in Hermes Agent's `config.yaml`:
 ```yaml
 mcp_servers:
   hermes-trader:
-    command: node
+    command: python
     args:
-      - /path/to/hermes-trader/scripts/hermes-mcp-server.mjs
+      - /path/to/hermes-trader/scripts/hermes-mcp-server.py
     timeout: 60
 ```
 
@@ -275,10 +306,10 @@ hermes-trader/
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — autonomous AI agent framework
 - FastAPI — Python web framework
-- OpenRouter (Qwen 3.6)
+- OpenRouter (Qwen3-235B-A22B) — AI research pipeline
 - Hyperliquid API (perpetual futures DEX)
 - Brave Search API (optional, for news signals)
 
 ---
 
-*Author: [@Julian-dev28](https://github.com/Julian-dev28) — Hermes Agent contributor*
+**Note:** Project runs on `python` branch. Never merge to `main`.
