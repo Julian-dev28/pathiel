@@ -36,6 +36,20 @@ from hermes_agent.agents.config_store import read_agent_config
 from hermes_agent.agents.perception import scan_once
 from hermes_agent.client.hl_client import fetch_all_mids, fetch_account_state
 from hermes_agent.agents.risk_gates import eval_all_gates, GateContext
+from hermes_agent.agents.hyperfeed import (
+    leaderboard_get_markets,
+    leaderboard_get_top as leaderboard_get_top_traders,
+    leaderboard_get_trader_positions,
+    discovery_get_top_traders,
+    discovery_get_trader_state,
+    market_get_asset_data,
+    market_get_funding_regime,
+    market_list_instruments,
+    market_get_mids,
+)
+
+# Per-subprocess perception cache so research can access the data from last scan
+_perception_cache: Dict[str, Dict[str, Any]] = {}
 
 # Tools definition
 TOOLS = [
@@ -105,6 +119,91 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "leaderboard_get_markets",
+        "description": "Get Hyperliquid SM leaderboard market rankings by volume.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "number", "description": "Max markets to return (default 100)"}
+            }
+        }
+    },
+    {
+        "name": "leaderboard_get_top_traders",
+        "description": "Get top traders from Hyperliquid leaderboard.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "time_frame": {"type": "string", "enum": ["DAILY", "WEEKLY", "MONTHLY"], "default": "DAILY"},
+                "sort_by": {"type": "string", "enum": ["PROFIT_AND_LOSS_UNREALIZED", "RETURN_ON_INVESTMENT"], "default": "PROFIT_AND_LOSS_UNREALIZED"},
+                "limit": {"type": "number", "description": "Max traders to return (default 10)"},
+                "open_position_filter": {"type": "boolean", "default": True}
+            }
+        }
+    },
+    {
+        "name": "leaderboard_get_trader_positions",
+        "description": "Get open positions for a specific trader address.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trader_id": {"type": "string", "description": "Trader wallet address"}
+            },
+            "required": ["trader_id"]
+        }
+    },
+    {
+        "name": "discovery_get_top_traders",
+        "description": "Get top traders sorted by performance metrics.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "time_frame": {"type": "string", "enum": ["DAILY", "WEEKLY", "MONTHLY"], "default": "MONTHLY"},
+                "sort_by": {"type": "string", "enum": ["RETURN_ON_INVESTMENT", "PROFIT_AND_LOSS_UNREALIZED"], "default": "RETURN_ON_INVESTMENT"},
+                "limit": {"type": "number", "description": "Max traders to return (default 60)"},
+                "open_position_filter": {"type": "boolean", "default": True}
+            }
+        }
+    },
+    {
+        "name": "discovery_get_trader_state",
+        "description": "Get comprehensive state for multiple traders.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "trader_addresses": {"type": "array", "items": {"type": "string"}, "description": "List of trader wallet addresses"}
+            },
+            "required": ["trader_addresses"]
+        }
+    },
+    {
+        "name": "market_get_asset_data",
+        "description": "Get comprehensive asset data: candles + funding + OI.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "asset": {"type": "string", "description": "Coin ticker (e.g. BTC)"},
+                "intervals": {"type": "array", "items": {"type": "string"}, "description": "Candle intervals (default [\"5m\",\"15m\",\"1h\",\"4h\"])"}
+            },
+            "required": ["asset"]
+        }
+    },
+    {
+        "name": "market_get_funding_regime",
+        "description": "Get market-wide funding regime analysis (crowded trades).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "market_list_instruments",
+        "description": "List all tradable instruments (perps + spot).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "market_get_mids",
+        "description": "Get all current mid prices for all assets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -112,13 +211,19 @@ def handle_scan(params: Dict[str, Any]) -> str:
     from hermes_agent.agents.config import get_config
     from hermes_agent.client.universe import get_universe
 
-    min_score = params.get("minScore", 75)
+    min_score = params.get("minScore", 20)
     max_markets = params.get("maxMarkets")
     if max_markets:
         os.environ["HERMES_MAX_MARKETS"] = str(int(max_markets))
 
     universe = get_universe()
     results = scan_once(universe=universe, min_score=min_score, config=get_config())
+
+    # Cache perceptions by coin so research can look them up
+    for r in results:
+        coin = r.get("coin", "")
+        if coin:
+            _perception_cache[coin] = r
 
     return json.dumps({
         "scanned": len(universe),
@@ -166,21 +271,158 @@ def handle_config(params: Dict[str, Any]) -> str:
 
 
 def handle_research(params: Dict[str, Any]) -> str:
+    from hermes_agent.agents.research import research
+    
     coin = params.get("coin", "")
-    return json.dumps({
-        "status": "research queued",
-        "coin": coin,
-        "note": "AI research requires OpenRouter API — ensure OPENROUTER_API_KEY is set",
-    })
+    if not coin:
+        return json.dumps({"status": "error", "error": "coin is required"})
+    
+    # Find matching perception from last scan
+    perception = _perception_cache.get(coin)
+    if not perception:
+        # Build minimal perception from current mid price
+        try:
+            from hermes_agent.client.hl_client import fetch_all_mids
+            mids = fetch_all_mids()
+            for m in mids:
+                if m.get("coin") == coin:
+                    perception = {
+                        "id": f"{coin}-{int(time.time()*1000)}",
+                        "coin": coin,
+                        "type": "perp",
+                        "mid": float(m.get("mid", 0)),
+                        "triggers": [],
+                        "composite_score": 0,
+                    }
+                    break
+        except Exception:
+            perception = {
+                "id": f"{coin}-{int(time.time()*1000)}",
+                "coin": coin,
+                "type": "perp",
+                "mid": 0,
+                "triggers": [],
+                "composite_score": 0,
+            }
+    
+    try:
+        analysis = research(coin, perception)
+        return json.dumps({
+            "status": "complete",
+            "analysisId": analysis["id"],
+            "coin": coin,
+            "verdict": analysis["verdict"],
+            "confidence": analysis["confidence"],
+            "side": analysis["side"],
+            "entryPx": analysis["entry_px"],
+            "stopPx": analysis["stop_px"],
+            "tpPx": analysis["tp_px"],
+            "reasoning": analysis["reasoning"],
+        })
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "coin": coin,
+            "error": str(e),
+        })
 
 
 def handle_execute(params: Dict[str, Any]) -> str:
+    from hermes_agent.agents.executor import maybe_execute
+    from hermes_agent.agents.memory import memory
+
     analysis_id = params.get("analysisId", "")
-    return json.dumps({
-        "status": "execution queued",
-        "analysisId": analysis_id,
-        "note": "Requires HYPERLIQUID_PRIVATE_KEY and LIVE mode",
-    })
+    if not analysis_id:
+        return json.dumps({"status": "error", "error": "analysisId is required"})
+
+    # Find the analysis in memory
+    analyses = memory.get_recent_analyses(20)
+    analysis = None
+    for a in analyses:
+        if a.get("id") == analysis_id:
+            analysis = a
+            break
+
+    if not analysis:
+        return json.dumps({
+            "status": "error",
+            "error": f"Analysis {analysis_id} not found",
+        })
+
+    if analysis.get("verdict") not in ("LONG", "SHORT"):
+        return json.dumps({
+            "status": "skipped",
+            "coin": analysis.get("coin"),
+            "verdict": analysis.get("verdict"),
+            "reason": f"Verdict {analysis.get('verdict')} — no trade action needed",
+        })
+
+    try:
+        result = maybe_execute(analysis)
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({
+            "status": "error",
+            "coin": analysis.get("coin"),
+            "error": str(e),
+        })
+
+
+def handle_leaderboard_get_markets(params: Dict[str, Any]) -> str:
+    limit = params.get("limit", 100)
+    return json.dumps(leaderboard_get_markets(limit=limit))
+
+
+def handle_leaderboard_get_top_traders(params: Dict[str, Any]) -> str:
+    return json.dumps(leaderboard_get_top_traders(
+        time_frame=params.get("time_frame", "DAILY"),
+        sort_by=params.get("sort_by", "PROFIT_AND_LOSS_UNREALIZED"),
+        limit=params.get("limit", 10),
+        open_position_filter=params.get("open_position_filter", True)
+    ))
+
+
+def handle_leaderboard_get_trader_positions(params: Dict[str, Any]) -> str:
+    trader_id = params.get("trader_id", "")
+    if not trader_id:
+        return json.dumps({"status": "error", "error": "trader_id required"})
+    return json.dumps(leaderboard_get_trader_positions(trader_id=trader_id))
+
+
+def handle_discovery_get_top_traders(params: Dict[str, Any]) -> str:
+    return json.dumps(discovery_get_top_traders(
+        time_frame=params.get("time_frame", "MONTHLY"),
+        sort_by=params.get("sort_by", "RETURN_ON_INVESTMENT"),
+        limit=params.get("limit", 60),
+        open_position_filter=params.get("open_position_filter", True)
+    ))
+
+
+def handle_discovery_get_trader_state(params: Dict[str, Any]) -> str:
+    addresses = params.get("trader_addresses", [])
+    if not addresses:
+        return json.dumps({"status": "error", "error": "trader_addresses required"})
+    return json.dumps(discovery_get_trader_state(trader_addresses=addresses))
+
+
+def handle_market_get_asset_data(params: Dict[str, Any]) -> str:
+    asset = params.get("asset", "")
+    if not asset:
+        return json.dumps({"status": "error", "error": "asset required"})
+    intervals = params.get("intervals")
+    return json.dumps(market_get_asset_data(asset=asset, intervals=intervals))
+
+
+def handle_market_get_funding_regime(params: Dict[str, Any]) -> str:
+    return json.dumps(market_get_funding_regime())
+
+
+def handle_market_list_instruments(params: Dict[str, Any]) -> str:
+    return json.dumps(market_list_instruments())
+
+
+def handle_market_get_mids(params: Dict[str, Any]) -> str:
+    return json.dumps(market_get_mids())
 
 
 # MCP server loop
@@ -192,6 +434,15 @@ def run() -> None:
         "execute": handle_execute,
         "state": handle_state,
         "config": handle_config,
+        "leaderboard_get_markets": handle_leaderboard_get_markets,
+        "leaderboard_get_top_traders": handle_leaderboard_get_top_traders,
+        "leaderboard_get_trader_positions": handle_leaderboard_get_trader_positions,
+        "discovery_get_top_traders": handle_discovery_get_top_traders,
+        "discovery_get_trader_state": handle_discovery_get_trader_state,
+        "market_get_asset_data": handle_market_get_asset_data,
+        "market_get_funding_regime": handle_market_get_funding_regime,
+        "market_list_instruments": handle_market_list_instruments,
+        "market_get_mids": handle_market_get_mids,
     }
 
     # MCP handshake
