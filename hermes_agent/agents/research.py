@@ -163,20 +163,14 @@ def _call_ai(system_prompt: str, user_message: str) -> str:
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     model = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3.6-35b-a3b")
 
-    import logging
-    _logger = logging.getLogger(__name__)
-    _logger.warning(f"[research] _call_ai: key={'set' if openrouter_key else 'NOT SET'}, model={model}")
-
     if not openrouter_key:
-        _logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
+        logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
         return ""
 
     # Run async httpx in a new event loop
     loop = asyncio.new_event_loop()
     try:
-        result = loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
-        _logger.warning(f"[research] _call_ai result length: {len(result) if result else 0}")
-        return result
+        return loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
     finally:
         loop.close()
 
@@ -206,21 +200,11 @@ async def _async_do_call(
             },
             headers={"Authorization": f"Bearer {openrouter_key}"},
         )
-        import logging
-        _logger = logging.getLogger(__name__)
-        _logger.warning(f"[research] AI response status: {resp.status_code}")
-        
         if resp.is_success:
             data = resp.json()
-            _logger.warning(f"[research] AI response data keys: {list(data.keys())}")
             choices = data.get("choices", [])
-            _logger.warning(f"[research] AI choices count: {len(choices)}")
             if choices:
-                content = choices[0].get("message", {}).get("content", "")
-                _logger.warning(f"[research] AI content length: {len(content) if content else 0}")
-                return content
-        else:
-            _logger.warning(f"[research] AI error response: {resp.text[:500]}")
+                return choices[0].get("message", {}).get("content", "")
     return ""
 
 

@@ -28,12 +28,6 @@ if os.path.exists(_env_path):
             if line and not line.startswith('#') and '=' in line:
                 key, _, val = line.partition('=')
                 os.environ.setdefault(key.strip(), val.strip())
-    # Debug: check if key loaded
-    import logging
-    _logger = logging.getLogger(__name__)
-    _logger.warning(f"[mcp] OPENROUTER_API_KEY loaded: {'yes' if os.environ.get('OPENROUTER_API_KEY') else 'NO!'}")
-else:
-    print(f"WARNING: .env.local not found at {_env_path}", file=sys.stderr)
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
