@@ -31,6 +31,13 @@ logger = logging.getLogger(__name__)
 
 def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Compute EMA8/21, RSI, ATR, ADX for a set of candles."""
+    if not candles:
+        return {
+            "ema8": None, "ema21": None, "slope_up": None,
+            "rsi14": None, "atr14": None, "adx14": None,
+            "last_close": 0, "last_time": 0,
+        }
+    
     # Handle both dict and Candle objects
     def _get(cl, key):
         if isinstance(cl, dict):
@@ -38,27 +45,37 @@ def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         return getattr(cl, key, 0)
     
     closes = [_get(c, "c") for c in candles]
+    
+    # Check minimum data requirements
+    if len(closes) < 21:
+        return {
+            "ema8": None, "ema21": None, "slope_up": None,
+            "rsi14": None, "atr14": None, "adx14": None,
+            "last_close": closes[-1] if closes else 0,
+            "last_time": candles[-1]["t"] if candles else 0,
+        }
+    
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
-
-    last_ema8 = ema8_arr[-1]
-    last_ema21 = ema21_arr[-1]
-
+    
+    last_ema8 = ema8_arr[-1] if ema8_arr else None
+    last_ema21 = ema21_arr[-1] if ema21_arr else None
+    
     slope_up = None
-    if math.isfinite(last_ema8) and len(ema8_arr) >= 3:
+    if last_ema8 is not None and len(ema8_arr) >= 3:
         slope_up = last_ema8 > ema8_arr[-3]
-
+    
     rsi_arr = rsi(candles, 14)
     atr_arr = atr(candles, 14)
     adx_arr = adx(candles, 14)
-
+    
     return {
-        "ema8": last_ema8 if math.isfinite(last_ema8) else None,
-        "ema21": last_ema21 if math.isfinite(last_ema21) else None,
+        "ema8": last_ema8 if last_ema8 is not None and math.isfinite(last_ema8) else None,
+        "ema21": last_ema21 if last_ema21 is not None and math.isfinite(last_ema21) else None,
         "slope_up": slope_up,
-        "rsi14": rsi_arr[-1] if math.isfinite(rsi_arr[-1]) else None,
-        "atr14": atr_arr[-1] if math.isfinite(atr_arr[-1]) else None,
-        "adx14": adx_arr[-1] if math.isfinite(adx_arr[-1]) else None,
+        "rsi14": rsi_arr[-1] if rsi_arr and math.isfinite(rsi_arr[-1]) else None,
+        "atr14": atr_arr[-1] if atr_arr and math.isfinite(atr_arr[-1]) else None,
+        "adx14": adx_arr[-1] if adx_arr and math.isfinite(adx_arr[-1]) else None,
         "last_close": closes[-1] if closes else 0,
         "last_time": candles[-1]["t"] if candles else 0,
     }
