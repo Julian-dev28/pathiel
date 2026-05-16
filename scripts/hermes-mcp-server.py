@@ -611,6 +611,26 @@ TOOLS = [
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_historical_funding",
+        "description": "Get historical funding rates for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "limit": {"type": "number", "description": "Max entries (default 100)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_open_interest",
+        "description": "Get open interest for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_market_sentiment",
+        "description": "Get market sentiment indicators.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -923,6 +943,9 @@ def run() -> None:
         "get_spot_markets": handle_get_spot_markets,
         "get_perp_markets": handle_get_perp_markets,
         "get_market_depth": handle_get_market_depth,
+        "get_historical_funding": handle_get_historical_funding,
+        "get_open_interest": handle_get_open_interest,
+        "get_market_sentiment": handle_get_market_sentiment,
     }
 
     # MCP handshake
@@ -1681,6 +1704,45 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
         info = _get_info()
         l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
         return json.dumps({'coin': coin, 'depth': l2, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_market_depth(params: Dict[str, Any]) -> str:
+    """Handle get_market_depth tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
+        return json.dumps({'coin': coin, 'depth': l2, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_historical_funding(params: Dict[str, Any]) -> str:
+    """Handle get_historical_funding tool call."""
+    coin = params.get('coin', '').upper()
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'coin': coin, 'funding_history': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_open_interest(params: Dict[str, Any]) -> str:
+    """Handle get_open_interest tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        # Open interest not directly available via SDK, return placeholder
+        return json.dumps({'coin': coin, 'open_interest': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
+    """Handle get_market_sentiment tool call."""
+    try:
+        return json.dumps({'sentiment': {'fear_greed': 50}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
