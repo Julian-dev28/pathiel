@@ -115,9 +115,9 @@ def _scan_single_market(
             trigger_mod.trend_strength(candles, thresholds["adxPeriod"]),
         ]
 
-        # Require at least 2 triggers to co-fire
+        # Require at least 1 trigger to co-fire (lowered from 2 for quiet markets)
         fired_count = sum(1 for h in hits if h.get("fired"))
-        if fired_count < 2:
+        if fired_count < 1:
             return (True, None)
 
         score = trigger_mod.composite_score(hits, config["weights"])
