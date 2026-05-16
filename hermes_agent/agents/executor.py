@@ -102,9 +102,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     positions = [
         {
-            "coin": p["coin"],
-            "side": "long" if float(p["szi"]) > 0 else "short",
-            "size_usd": abs(float(p["szi"])) * (analysis.get("entry_px") or 0),
+            "coin": p["position"]["coin"],
+            "side": "long" if float(p["position"]["szi"]) > 0 else "short",
+            "size_usd": abs(float(p["position"]["szi"])) * (analysis.get("entry_px") or 0),
         }
         for p in state["asset_positions"]
     ]
