@@ -165,9 +165,10 @@ class AgentMemory:
 
     def track_daily_pnl(self, current_equity: float) -> None:
         """Reset baseline at UTC midnight so dailyPnl reflects today's gains."""
-        today_utc = int(time.mktime(time.gmtime(time.time()).replace(
+        from datetime import datetime, timezone
+        today_utc = int(datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
-        )))
+        ).timestamp())
         if self._day_start_ts < today_utc or self._start_of_day_equity == 0:
             self._start_of_day_equity = current_equity
             self._day_start_ts = today_utc
