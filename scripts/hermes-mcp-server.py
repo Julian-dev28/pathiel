@@ -650,6 +650,21 @@ TOOLS = [
             "vault": {"type": "string", "description": "Vault address"}
         }, "required": ["vault"]}
     },
+    {
+        "name": "get_api_rate_limits",
+        "description": "Get API rate limit status.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_server_time",
+        "description": "Get Hyperliquid server time.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_asset_contexts",
+        "description": "Get contexts for all assets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -968,6 +983,9 @@ def run() -> None:
         "get_leaderboard_rank": handle_get_leaderboard_rank,
         "get_vaults": handle_get_vaults,
         "get_vault_details": handle_get_vault_details,
+        "get_api_rate_limits": handle_get_api_rate_limits,
+        "get_server_time": handle_get_server_time,
+        "get_asset_contexts": handle_get_asset_contexts,
     }
 
     # MCP handshake
@@ -1800,6 +1818,42 @@ def handle_get_vault_details(params: Dict[str, Any]) -> str:
         return json.dumps({'error': 'vault required'}, default=str)
     try:
         return json.dumps({'vault': vault, 'details': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_vault_details(params: Dict[str, Any]) -> str:
+    """Handle get_vault_details tool call."""
+    vault = params.get('vault', '')
+    if not vault:
+        return json.dumps({'error': 'vault required'}, default=str)
+    try:
+        return json.dumps({'vault': vault, 'details': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_api_rate_limits(params: Dict[str, Any]) -> str:
+    """Handle get_api_rate_limits tool call."""
+    try:
+        return json.dumps({'rate_limits': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_server_time(params: Dict[str, Any]) -> str:
+    """Handle get_server_time tool call."""
+    try:
+        import time
+        return json.dumps({'server_time': int(time.time() * 1000), 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
+    """Handle get_asset_contexts tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        meta = info.meta() if hasattr(info, 'meta') else {}
+        return json.dumps({'contexts': meta, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
