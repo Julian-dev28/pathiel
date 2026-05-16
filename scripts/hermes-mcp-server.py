@@ -579,6 +579,21 @@ TOOLS = [
         "description": "Get risk metrics for the account.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_exchange_status",
+        "description": "Get exchange status (maintenance, etc.).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_markets_info",
+        "description": "Get detailed info for all markets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_user_preferences",
+        "description": "Get user preferences/settings.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -885,6 +900,9 @@ def run() -> None:
         "get_liquidation_events": handle_get_liquidation_events,
         "get_portfolio_pnl": handle_get_portfolio_pnl,
         "get_risk_metrics": handle_get_risk_metrics,
+        "get_exchange_status": handle_get_exchange_status,
+        "get_markets_info": handle_get_markets_info,
+        "get_user_preferences": handle_get_user_preferences,
     }
 
     # MCP handshake
@@ -1569,6 +1587,41 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
         return json.dumps({'risk': state, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
+    """Handle get_risk_metrics tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        return json.dumps({'risk': state, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_exchange_status(params: Dict[str, Any]) -> str:
+    """Handle get_exchange_status tool call."""
+    try:
+        return json.dumps({'status': 'operational', 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_markets_info(params: Dict[str, Any]) -> str:
+    """Handle get_markets_info tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        meta = info.meta() if hasattr(info, 'meta') else {}
+        return json.dumps({'markets': meta, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_preferences(params: Dict[str, Any]) -> str:
+    """Handle get_user_preferences tool call."""
+    try:
+        return json.dumps({'preferences': {}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
