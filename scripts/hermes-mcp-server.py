@@ -710,6 +710,45 @@ TOOLS = [
             "limit": {"type": "number", "description": "Max entries (default 100)"}
         }}
     },
+    {
+        "name": "get_governance_proposals",
+        "description": "Get active governance proposals.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_validator_info",
+        "description": "Get validator information.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_network_stats",
+        "description": "Get network statistics.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_whale_alerts",
+        "description": "Get recent whale trading alerts.",
+        "inputSchema": {"type": "object", "properties": {
+            "min_value": {"type": "number", "description": "Minimum USD value (default 100000)"}
+        }}
+    },
+    {
+        "name": "get_liquidation_price",
+        "description": "Calculate liquidation price for a position.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "size": {"type": "number", "description": "Position size"},
+            "leverage": {"type": "number", "description": "Leverage used"},
+            "is_long": {"type": "boolean", "description": "True for long, False for short"}
+        }, "required": ["coin", "size", "leverage", "is_long"]}
+    },
+    {
+        "name": "get_max_leverage",
+        "description": "Get maximum allowed leverage for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -1037,6 +1076,15 @@ def run() -> None:
         "get_withdrawal_status": handle_get_withdrawal_status,
         "get_deposit_address": handle_get_deposit_address,
         "get_transfer_history": handle_get_transfer_history,
+        "get_governance_proposals": handle_get_governance_proposals,
+        "get_validator_info": handle_get_validator_info,
+        "get_network_stats": handle_get_network_stats,
+        "get_liquidation_price": handle_get_liquidation_price,
+        "get_max_leverage": handle_get_max_leverage,
+        "get_order_by_oid": handle_get_order_by_oid,
+        "get_sub_account_balances": handle_get_sub_account_balances,
+        "get_user_fees_detailed": handle_get_user_fees_detailed,
+        "get_whale_alerts": handle_get_whale_alerts,
     }
 
     # MCP handshake
@@ -1473,18 +1521,6 @@ def handle_get_market_stats(params: Dict[str, Any]) -> str:
     coin = params.get('coin', 'BTC').upper()
     try:
         from hermes_agent.client.hl_client import get_hl_candles
-        # Get recent candles for stats
-        candles = get_hl_candles(coin, '1h', 24)
-        return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_market_stats(params: Dict[str, Any]) -> str:
-    """Handle get_market_stats tool call."""
-    coin = params.get('coin', 'BTC').upper()
-    try:
-        from hermes_agent.client.hl_client import get_hl_candles
         candles = get_hl_candles(coin, '1h', 24)
         return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
@@ -1512,14 +1548,6 @@ def handle_get_rewards(params: Dict[str, Any]) -> str:
         return json.dumps({'rewards': [], 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_staking_info(params: Dict[str, Any]) -> str:
-    """Handle get_staking_info tool call."""
-    try:
-        return json.dumps({'staking': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_staking_info(params: Dict[str, Any]) -> str:
     """Handle get_staking_info tool call."""
@@ -1559,14 +1587,6 @@ def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
-    """Handle get_portfolio_status tool call."""
-    try:
-        return json.dumps({'status': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_coin_price(params: Dict[str, Any]) -> str:
     """Handle get_coin_price tool call."""
     coin = params.get('coin', '').upper()
@@ -1597,17 +1617,6 @@ def handle_get_all_mids(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_all_mids(params: Dict[str, Any]) -> str:
-    """Handle get_all_mids tool call."""
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        mids = info.all_mids()
-        return json.dumps({'mids': mids}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_trading_permissions(params: Dict[str, Any]) -> str:
     """Handle get_trading_permissions tool call."""
     try:
@@ -1624,20 +1633,6 @@ def handle_get_account_summary(params: Dict[str, Any]) -> str:
         return json.dumps({'summary': state, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_asset_positions(params: Dict[str, Any]) -> str:
-    """Handle get_asset_positions tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
-        if coin:
-            positions = [p for p in positions if p.get('coin', '').upper() == coin]
-        return json.dumps({'coin': coin, 'positions': positions}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_asset_positions(params: Dict[str, Any]) -> str:
     """Handle get_asset_positions tool call."""
@@ -1683,18 +1678,6 @@ def handle_get_funding_rate(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_funding_rate(params: Dict[str, Any]) -> str:
-    """Handle get_funding_rate tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        # Get predicted funding
-        return json.dumps({'coin': coin, 'funding_rate': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_liquidation_events(params: Dict[str, Any]) -> str:
     """Handle get_liquidation_events tool call."""
     coin = params.get('coin', '').upper()
@@ -1724,17 +1707,6 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
-    """Handle get_risk_metrics tool call."""
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
-        return json.dumps({'risk': state, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_exchange_status(params: Dict[str, Any]) -> str:
     """Handle get_exchange_status tool call."""
     try:
@@ -1751,14 +1723,6 @@ def handle_get_markets_info(params: Dict[str, Any]) -> str:
         return json.dumps({'markets': meta, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_preferences(params: Dict[str, Any]) -> str:
-    """Handle get_user_preferences tool call."""
-    try:
-        return json.dumps({'preferences': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_user_preferences(params: Dict[str, Any]) -> str:
     """Handle get_user_preferences tool call."""
@@ -1798,18 +1762,6 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_market_depth(params: Dict[str, Any]) -> str:
-    """Handle get_market_depth tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
-        return json.dumps({'coin': coin, 'depth': l2, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_historical_funding(params: Dict[str, Any]) -> str:
     """Handle get_historical_funding tool call."""
     coin = params.get('coin', '').upper()
@@ -1829,14 +1781,6 @@ def handle_get_open_interest(params: Dict[str, Any]) -> str:
         return json.dumps({'coin': coin, 'open_interest': 0, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
-    """Handle get_market_sentiment tool call."""
-    try:
-        return json.dumps({'sentiment': {'fear_greed': 50}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
     """Handle get_market_sentiment tool call."""
@@ -1872,17 +1816,6 @@ def handle_get_vault_details(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_vault_details(params: Dict[str, Any]) -> str:
-    """Handle get_vault_details tool call."""
-    vault = params.get('vault', '')
-    if not vault:
-        return json.dumps({'error': 'vault required'}, default=str)
-    try:
-        return json.dumps({'vault': vault, 'details': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_api_rate_limits(params: Dict[str, Any]) -> str:
     """Handle get_api_rate_limits tool call."""
     try:
@@ -1897,17 +1830,6 @@ def handle_get_server_time(params: Dict[str, Any]) -> str:
         return json.dumps({'server_time': int(time.time() * 1000), 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
-    """Handle get_asset_contexts tool call."""
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        meta = info.meta() if hasattr(info, 'meta') else {}
-        return json.dumps({'contexts': meta, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
     """Handle get_asset_contexts tool call."""
@@ -1946,17 +1868,6 @@ def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
-    """Handle get_slippage_estimate tool call."""
-    coin = params.get('coin', '').upper()
-    size = params.get('size', 0)
-    is_buy = params.get('is_buy', True)
-    try:
-        return json.dumps({'coin': coin, 'size': size, 'is_buy': is_buy, 'slippage': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
     """Handle get_withdrawal_status tool call."""
     withdrawal_id = params.get('withdrawal_id', '')
@@ -1984,6 +1895,123 @@ def handle_get_transfer_history(params: Dict[str, Any]) -> str:
         return json.dumps({'transfers': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_governance_proposals(params: Dict[str, Any]) -> str:
+    """Handle get_governance_proposals tool call."""
+    try:
+        return json.dumps({'proposals': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_validator_info(params: Dict[str, Any]) -> str:
+    """Handle get_validator_info tool call."""
+    try:
+        return json.dumps({'validators': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_network_stats(params: Dict[str, Any]) -> str:
+    """Handle get_network_stats tool call."""
+    try:
+        return json.dumps({'stats': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
+    """Handle get_liquidation_price tool call."""
+    coin = params.get('coin', '').upper()
+    size = params.get('size')
+    leverage = params.get('leverage')
+    is_long = params.get('is_long')
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        mids = info.all_mids()
+        mark = float(mids.get(coin, 0)) if mids else 0.0
+        if not mark or not leverage:
+            return json.dumps({'error': 'unable to compute', 'coin': coin}, default=str)
+        # Simple liq estimate (1/leverage haircut, ignoring fees/maintenance)
+        if is_long:
+            liq = mark * (1 - 1.0/float(leverage))
+        else:
+            liq = mark * (1 + 1.0/float(leverage))
+        return json.dumps({'coin': coin, 'size': size, 'leverage': leverage,
+                           'is_long': is_long, 'mark': mark,
+                           'liquidation_price': liq,
+                           'note': 'simple estimate; ignores maintenance margin & funding'},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_max_leverage(params: Dict[str, Any]) -> str:
+    """Handle get_max_leverage tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        meta = info.meta() if hasattr(info, 'meta') else {}
+        universe = meta.get('universe', []) if isinstance(meta, dict) else []
+        for asset in universe:
+            if asset.get('name', '').upper() == coin:
+                return json.dumps({'coin': coin, 'max_leverage': asset.get('maxLeverage')},
+                                  default=str)
+        return json.dumps({'coin': coin, 'max_leverage': None, 'note': 'not found'},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
+    """Handle get_order_by_oid tool call."""
+    user = params.get('user', '')
+    oid = params.get('oid')
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        if hasattr(info, 'query_order_by_oid'):
+            res = info.query_order_by_oid(user, int(oid))
+            return json.dumps({'order': res}, default=str)
+        return json.dumps({'order': None, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_sub_account_balances(params: Dict[str, Any]) -> str:
+    """Handle get_sub_account_balances tool call."""
+    name = params.get('name', '')
+    try:
+        return json.dumps({'name': name, 'balances': [], 'note': 'SDK method pending'},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
+    """Handle get_user_fees_detailed tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info, _get_address
+        info = _get_info()
+        addr = _get_address()
+        if hasattr(info, 'user_fees'):
+            res = info.user_fees(addr)
+            return json.dumps({'fees': res}, default=str)
+        return json.dumps({'fees': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_whale_alerts(params: Dict[str, Any]) -> str:
+    """Handle get_whale_alerts tool call."""
+    min_value = float(params.get('min_value', 100000))
+    try:
+        return json.dumps({'alerts': [], 'min_value': min_value,
+                           'note': 'whale alerts pending; use whale_index for live signals'},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
 
 
 if __name__ == "__main__":
