@@ -221,7 +221,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     # Kelly gives margin amount; multiply by leverage for position notional
     position_notional = trade_notional * HL_LEVERAGE
-    size_in_coin = position_notional / mid_price
+    # HARDCODE: 1 XRP (minimum size for testing)
+    size_in_coin = 1.0
 
     asset_idx, _ = get_coin_index(coin)
     atr = get_hl_atr("4h", 14, coin)
