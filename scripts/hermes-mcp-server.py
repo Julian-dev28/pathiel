@@ -561,6 +561,24 @@ TOOLS = [
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_liquidation_events",
+        "description": "Get liquidation events for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "limit": {"type": "number", "description": "Max events (default 100)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_portfolio_pnl",
+        "description": "Get portfolio PnL summary.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_risk_metrics",
+        "description": "Get risk metrics for the account.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -864,6 +882,9 @@ def run() -> None:
         "get_24h_stats": handle_get_24h_stats,
         "get_recent_trades": handle_get_recent_trades,
         "get_funding_rate": handle_get_funding_rate,
+        "get_liquidation_events": handle_get_liquidation_events,
+        "get_portfolio_pnl": handle_get_portfolio_pnl,
+        "get_risk_metrics": handle_get_risk_metrics,
     }
 
     # MCP handshake
@@ -1507,6 +1528,47 @@ def handle_get_funding_rate(params: Dict[str, Any]) -> str:
         info = _get_info()
         # Get predicted funding
         return json.dumps({'coin': coin, 'funding_rate': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_funding_rate(params: Dict[str, Any]) -> str:
+    """Handle get_funding_rate tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        # Get predicted funding
+        return json.dumps({'coin': coin, 'funding_rate': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_liquidation_events(params: Dict[str, Any]) -> str:
+    """Handle get_liquidation_events tool call."""
+    coin = params.get('coin', '').upper()
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'coin': coin, 'liquidations': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
+    """Handle get_portfolio_pnl tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        return json.dumps({'pnl': state, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
+    """Handle get_risk_metrics tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        return json.dumps({'risk': state, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
