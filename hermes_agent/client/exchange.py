@@ -173,15 +173,9 @@ def place_hl_order(
         
         # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
         price = mid_price * (1.001 if is_buy else 0.999)
-        # Round price to tick size (match by coin name, not index)
-        info = _get_info()
-        meta = info.meta()
-        tick_size = 0.0001  # Default
-        for u in meta.get("universe", []):
-            if u.get("name") == coin:  # Match by name, not index
-                px_dec = u.get("pxDecimals", 4)
-                tick_size = 10 ** (-px_dec)
-                break
+        # Round price to tick size (use sz_dec, pxDecimals usually same as szDecimals)
+        # Avoid calling info.meta() again (rate limit)
+        tick_size = 10 ** (-sz_dec)
         price = round(price / tick_size) * tick_size
         price = round(price / tick_size) * tick_size
         price_str = f"{float(f'{price:.6f}')}"
