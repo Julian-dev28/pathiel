@@ -458,6 +458,31 @@ TOOLS = [
         "description": "Get staking information.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_user_roles",
+        "description": "Get user roles and permissions.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_leverage",
+        "description": "Get current leverage for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_max_trade_size",
+        "description": "Get maximum trade size for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "is_buy": {"type": "boolean", "description": "True for buy, False for sell"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_portfolio_status",
+        "description": "Get portfolio status summary.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -748,6 +773,10 @@ def run() -> None:
         "get_transfers": handle_get_transfers,
         "get_rewards": handle_get_rewards,
         "get_staking_info": handle_get_staking_info,
+        "get_user_roles": handle_get_user_roles,
+        "get_leverage": handle_get_leverage,
+        "get_max_trade_size": handle_get_max_trade_size,
+        "get_portfolio_status": handle_get_portfolio_status,
     }
 
     # MCP handshake
@@ -1228,6 +1257,45 @@ def handle_get_staking_info(params: Dict[str, Any]) -> str:
     """Handle get_staking_info tool call."""
     try:
         return json.dumps({'staking': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_staking_info(params: Dict[str, Any]) -> str:
+    """Handle get_staking_info tool call."""
+    try:
+        return json.dumps({'staking': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_roles(params: Dict[str, Any]) -> str:
+    """Handle get_user_roles tool call."""
+    try:
+        return json.dumps({'roles': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_leverage(params: Dict[str, Any]) -> str:
+    """Handle get_leverage tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        return json.dumps({'coin': coin, 'leverage': 1, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
+    """Handle get_max_trade_size tool call."""
+    coin = params.get('coin', '').upper()
+    is_buy = params.get('is_buy', True)
+    try:
+        return json.dumps({'coin': coin, 'is_buy': is_buy, 'max_size': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
+    """Handle get_portfolio_status tool call."""
+    try:
+        return json.dumps({'status': {}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
