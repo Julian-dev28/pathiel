@@ -176,8 +176,8 @@ def place_hl_order(
             else:
                 sz_dec = 5
         
-        # 5% offset from mid for market-like execution
-        price = mid_price * 1.05 if is_buy else mid_price * 0.95
+        # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
+        price = mid_price * (1.001 if is_buy else 0.999)
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
         
