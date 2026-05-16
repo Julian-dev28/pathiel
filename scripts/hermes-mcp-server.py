@@ -539,6 +539,28 @@ TOOLS = [
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_24h_stats",
+        "description": "Get 24-hour statistics for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_recent_trades",
+        "description": "Get recent trades for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "limit": {"type": "number", "description": "Max trades (default 100)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_funding_rate",
+        "description": "Get current funding rate for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -839,6 +861,9 @@ def run() -> None:
         "get_trading_permissions": handle_get_trading_permissions,
         "get_account_summary": handle_get_account_summary,
         "get_asset_positions": handle_get_asset_positions,
+        "get_24h_stats": handle_get_24h_stats,
+        "get_recent_trades": handle_get_recent_trades,
+        "get_funding_rate": handle_get_funding_rate,
     }
 
     # MCP handshake
@@ -1437,6 +1462,51 @@ def handle_get_asset_positions(params: Dict[str, Any]) -> str:
         if coin:
             positions = [p for p in positions if p.get('coin', '').upper() == coin]
         return json.dumps({'coin': coin, 'positions': positions}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_asset_positions(params: Dict[str, Any]) -> str:
+    """Handle get_asset_positions tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
+        if coin:
+            positions = [p for p in positions if p.get('coin', '').upper() == coin]
+        return json.dumps({'coin': coin, 'positions': positions}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_24h_stats(params: Dict[str, Any]) -> str:
+    """Handle get_24h_stats tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.hl_client import get_hl_candles
+        # Get 24h of 1h candles for stats
+        candles = get_hl_candles(coin, '1h', 24)
+        return json.dumps({'coin': coin, 'stats_24h': candles, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_recent_trades(params: Dict[str, Any]) -> str:
+    """Handle get_recent_trades tool call."""
+    coin = params.get('coin', '').upper()
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'coin': coin, 'trades': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_funding_rate(params: Dict[str, Any]) -> str:
+    """Handle get_funding_rate tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        # Get predicted funding
+        return json.dumps({'coin': coin, 'funding_rate': 0, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
