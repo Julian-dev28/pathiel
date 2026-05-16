@@ -221,9 +221,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     # Kelly gives margin amount; multiply by leverage for position notional
     position_notional = trade_notional * HL_LEVERAGE
-    # Dynamic size: ensure $10 minimum value for ALL coins
-    min_size_by_value = 10.0 / mid_price  # $10 / price = coin amount
-    size_in_coin = max(10.0, min_size_by_value)  # At least 10 coins or $10 worth
+    # Dynamic size: use 5% of equity (with 5x leverage = 25% of equity buying power)
+    max_notional = equity * 0.05 * HL_LEVERAGE  # 5% * 5 = 25% of equity
+    size_in_coin = max_notional / mid_price
+    # Ensure minimum $10 value
+    min_size_by_value = 10.0 / mid_price
+    size_in_coin = max(size_in_coin, min_size_by_value)
+    # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
+    size_in_coin = min(size_in_coin, 100.0)
 
     asset_idx, _ = get_coin_index(coin)
     atr = get_hl_atr("4h", 14, coin)
