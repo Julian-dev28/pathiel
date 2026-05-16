@@ -82,22 +82,23 @@ def _get_info() -> Info:
     return Info()
 
 
-def get_coin_index(coin: str) -> Tuple[int, int]:
-    """Resolve a coin name to (asset_index, sz_decimals).
+def get_coin_index(coin: str) -> Tuple[int, int, int]:
+    """Resolve a coin name to (asset_index, sz_decimals, px_decimals).
     
     Uses the SDK's meta endpoint.
-    Returns (asset_idx, sz_decimals).
+    Returns (asset_idx, sz_decimals, px_decimals).
     """
     info = _get_info()
     meta = info.meta()
     for i, u in enumerate(meta.get("universe", [])):
         if u["name"] == coin:
             sz = u.get("szDecimals", 5)
+            px = u.get("pxDecimals", 4)
             # DEBUG: Log what we found
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"[get_coin_index] coin={coin}, idx={i}, szDecimals={sz}, full entry: {u}")
-            return i, sz
+            logger.info(f"[get_coin_index] coin={coin}, idx={i}, szDecimals={sz}, pxDecimals={px}")
+            return i, sz, px
     raise ValueError(f"Unknown coin: {coin}")
 
 
@@ -168,17 +169,13 @@ def place_hl_order(
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     
     try:
-        # Always get sz_dec from get_coin_index() to avoid mismatch
-        _, sz_dec = get_coin_index(coin)
+        # Always get sz_dec and px_dec from get_coin_index() to avoid mismatch
+        _, sz_dec, px_dec = get_coin_index(coin)
         
-        # 0.5% offset from mid for market-like execution (was 0.1%, too small for IOC)
+        # 0.5% offset from mid for market-like execution
         price = mid_price * (1.005 if is_buy else 0.995)
-        # DEBUG: Log mid_price
-        logger.info(f"[place_hl_order] coin={coin}, mid_price={mid_price}, calculated_price={price}")
-        # Round price to tick size (use sz_dec, pxDecimals usually same as szDecimals)
-        # Avoid calling info.meta() again (rate limit)
-        tick_size = 10 ** (-sz_dec)
-        price = round(price / tick_size) * tick_size
+        # Round price to tick size (use px_decimals, NOT sz_decimals)
+        tick_size = 10 ** (-px_dec)
         price = round(price / tick_size) * tick_size
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
