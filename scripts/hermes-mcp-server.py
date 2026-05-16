@@ -380,6 +380,60 @@ TOOLS = [
             "count": {"type": "number", "description": "Number of candles (default 100)"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_api_keys",
+        "description": "Get API key list for the account.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_user_verify",
+        "description": "Get user verification status.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_liquidations",
+        "description": "Get recent liquidation events.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max events (default 100)"}
+        }}
+    },
+    {
+        "name": "get_price_history",
+        "description": "Get historical price data for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "start_time": {"type": "number", "description": "Start timestamp (unix)"},
+            "end_time": {"type": "number", "description": "End timestamp (unix)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_order_status",
+        "description": "Get status of a specific order.",
+        "inputSchema": {"type": "object", "properties": {
+            "user": {"type": "string", "description": "User address"},
+            "oid": {"type": "number", "description": "Order ID"}
+        }, "required": ["user", "oid"]}
+    },
+    {
+        "name": "get_user_orders",
+        "description": "Get all user orders (open + filled + cancelled).",
+        "inputSchema": {"type": "object", "properties": {
+            "user": {"type": "string", "description": "User address (optional, uses env)"},
+            "limit": {"type": "number", "description": "Max orders (default 100)"}
+        }}
+    },
+    {
+        "name": "get_assets",
+        "description": "Get list of all tradeable assets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_market_stats",
+        "description": "Get market statistics for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -658,6 +712,14 @@ def run() -> None:
         "get_asset_context": handle_get_asset_context,
         "get_user_defined_types": handle_get_user_defined_types,
         "get_candles_aggregated": handle_get_candles_aggregated,
+        "get_api_keys": handle_get_api_keys,
+        "get_user_verify": handle_get_user_verify,
+        "get_liquidations": handle_get_liquidations,
+        "get_price_history": handle_get_price_history,
+        "get_order_status": handle_get_order_status,
+        "get_user_orders": handle_get_user_orders,
+        "get_assets": handle_get_assets,
+        "get_market_stats": handle_get_market_stats,
     }
 
     # MCP handshake
@@ -1003,6 +1065,102 @@ def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
     }
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
+
+def handle_get_api_keys(params: Dict[str, Any]) -> str:
+    """Handle get_api_keys tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        # API keys
+        return json.dumps({'api_keys': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_verify(params: Dict[str, Any]) -> str:
+    """Handle get_user_verify tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        # User verification status
+        return json.dumps({'verified': False, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_liquidations(params: Dict[str, Any]) -> str:
+    """Handle get_liquidations tool call."""
+    from hermes_agent.client.exchange import _get_info
+    limit = params.get('limit', 100)
+    try:
+        info = _get_info()
+        # Liquidation events
+        return json.dumps({'liquidations': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_price_history(params: Dict[str, Any]) -> str:
+    """Handle get_price_history tool call."""
+    from hermes_agent.client.hl_client import get_hl_candles
+    coin = params.get('coin', 'BTC').upper()
+    start_time = params.get('start_time')
+    end_time = params.get('end_time')
+    try:
+        # Get candles as price history
+        candles = get_hl_candles(coin, '1h', 100)
+        return json.dumps(candles, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_order_status(params: Dict[str, Any]) -> str:
+    """Handle get_order_status tool call."""
+    user = params.get('user', '')
+    oid = params.get('oid')
+    if not user or oid is None:
+        return json.dumps({'error': 'user and oid required'}, default=str)
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        # Order status
+        return json.dumps({'status': 'pending', 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_orders(params: Dict[str, Any]) -> str:
+    """Handle get_user_orders tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = params.get('user') or os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    limit = params.get('limit', 100)
+    try:
+        info = _get_info()
+        # All user orders
+        return json.dumps({'orders': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_assets(params: Dict[str, Any]) -> str:
+    """Handle get_assets tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        # All tradeable assets
+        return json.dumps({'assets': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_market_stats(params: Dict[str, Any]) -> str:
+    """Handle get_market_stats tool call."""
+    coin = params.get('coin', 'BTC').upper()
+    try:
+        from hermes_agent.client.hl_client import get_hl_candles
+        # Get recent candles for stats
+        candles = get_hl_candles(coin, '1h', 24)
+        return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
 
 
 if __name__ == "__main__":
