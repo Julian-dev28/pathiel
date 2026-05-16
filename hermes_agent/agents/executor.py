@@ -149,7 +149,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     else:
         reward_risk = 1.0
 
-    max_notional = float(config.get("max_trade_notional_usd", 200))
+    max_notional = float(config.get("max_trade_notional_usd") or config.get("maxTradeNotionalUsd") or 200)
     raw_size = kelly_size(analysis["confidence"], equity, reward_risk, max_notional)
     trade_notional = raw_size if raw_size > 0 else (entry_px or 0) * 0.001
 
