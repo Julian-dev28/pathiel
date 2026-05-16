@@ -92,7 +92,12 @@ def get_coin_index(coin: str) -> Tuple[int, int]:
     meta = info.meta()
     for i, u in enumerate(meta.get("universe", [])):
         if u["name"] == coin:
-            return i, u.get("szDecimals", 5)
+            sz = u.get("szDecimals", 5)
+            # DEBUG: Log what we found
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[get_coin_index] coin={coin}, idx={i}, szDecimals={sz}, full entry: {u}")
+            return i, sz
     raise ValueError(f"Unknown coin: {coin}")
 
 
