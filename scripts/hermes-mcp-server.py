@@ -253,6 +253,55 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "set_leverage",
+        "description": "Set leverage for a coin (cross margin).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (e.g. BTC)"},
+                "leverage": {"type": "number", "description": "Leverage value (default 5)"}
+            },
+            "required": ["coin"]
+        }
+    },
+    {
+        "name": "get_open_orders",
+        "description": "Get open orders for the account.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Filter by coin (optional)"}
+            }
+        }
+    },
+    {
+        "name": "cancel_order",
+        "description": "Cancel an open order by asset index and order ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "asset": {"type": "number", "description": "Asset index"},
+                "order_id": {"type": "number", "description": "Order ID to cancel"}
+            },
+            "required": ["asset", "order_id"]
+        }
+    },
+    {
+        "name": "get_spot_balances",
+        "description": "Get spot token balances for the account.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_user_fees",
+        "description": "Get user fee tiers and rates.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_referral",
+        "description": "Get referral code and statistics.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -513,6 +562,12 @@ def run() -> None:
         "get_portfolio": handle_get_portfolio,
         "get_price": handle_get_price,
         "get_candles": handle_get_candles,
+        "set_leverage": handle_set_leverage,
+        "get_open_orders": handle_get_open_orders,
+        "cancel_order": handle_cancel_order,
+        "get_spot_balances": handle_get_spot_balances,
+        "get_user_fees": handle_get_user_fees,
+        "get_referral": handle_get_referral,
     }
 
     # MCP handshake
@@ -629,6 +684,76 @@ def handle_close_position(params: Dict[str, Any]) -> str:
         return json.dumps({'closed': True, 'coin': coin, 'size': size, 'result': result}, default=str)
     except Exception as e:
         return json.dumps({'closed': False, 'error': str(e)}, default=str)
+
+def handle_set_leverage(params: Dict[str, Any]) -> str:
+    """Handle set_leverage tool call."""
+    from hermes_agent.client.exchange import set_leverage as set_leverage_fn
+    coin = params.get('coin', 'BTC').upper()
+    leverage = params.get('leverage', 5)
+    result = set_leverage_fn(coin, int(leverage))
+    return json.dumps(result, default=str)
+
+def handle_get_open_orders(params: Dict[str, Any]) -> str:
+    """Handle get_open_orders tool call."""
+    from hermes_agent.client.hl_client import fetch_account_state
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    state = fetch_account_state(user)
+    orders = state.get('open_orders', [])
+    coin_filter = params.get('coin', '').upper()
+    if coin_filter:
+        orders = [o for o in orders if o.get('coin', '').upper() == coin_filter]
+    return json.dumps(orders, indent=2, default=str)
+
+def handle_cancel_order(params: Dict[str, Any]) -> str:
+    """Handle cancel_order tool call."""
+    from hermes_agent.client.exchange import _make_exchange
+    asset = params.get('asset')
+    order_id = params.get('order_id')
+    if asset is None or order_id is None:
+        return json.dumps({'cancelled': False, 'error': 'asset and order_id required'})
+    try:
+        exchange = _make_exchange()
+        result = exchange.cancel(asset, order_id)
+        return json.dumps({'cancelled': True, 'result': result}, default=str)
+    except Exception as e:
+        return json.dumps({'cancelled': False, 'error': str(e)}, default=str)
+
+def handle_get_spot_balances(params: Dict[str, Any]) -> str:
+    """Handle get_spot_balances tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        spot_state = info.spot_user_state(user)
+        return json.dumps(spot_state.get('balances', []), indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_fees(params: Dict[str, Any]) -> str:
+    """Handle get_user_fees tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        fees = info.user_fees(user)
+        return json.dumps(fees, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_referral(params: Dict[str, Any]) -> str:
+    """Handle get_referral tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        referral = info.referral(user)
+        return json.dumps(referral, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
 
 def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
     msg = {
