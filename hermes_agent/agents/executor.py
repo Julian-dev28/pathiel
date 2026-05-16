@@ -205,7 +205,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # Calculate size in coin from the correct notional (already includes leverage)
     size_in_coin = trade_notional / mid_price
     # Ensure minimum $10 value (Hyperliquid requirement) - round UP to avoid falling below $10
-    import math
     min_size_by_value = math.ceil(10.0 / mid_price)  # Round UP to nearest integer (for sz_dec=0)
     size_in_coin = max(size_in_coin, min_size_by_value)
     # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
