@@ -178,9 +178,18 @@ def place_hl_order(
         
         # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
         price = mid_price * (1.001 if is_buy else 0.999)
-        # Round price to tick size (XRP: 0.0001, so 4 decimal places)
-        # For simplicity, round to 4 decimal places for all coins
-        price = round(price, 4)
+        # Round price to tick size (get from meta info)
+        # asset_idx is set earlier in the function
+        info = _get_info()
+        meta = info.meta()
+        tick_size = 0.0001  # Default
+        for u in meta.get("universe", []):
+            if u.get("index") == asset_idx:
+                # pxDecimals tells us the tick size: 1→0.1, 2→0.01, 3→0.001, 4→0.0001, 5→0.00001
+                px_dec = u.get("pxDecimals", 4)
+                tick_size = 10 ** (-px_dec)
+                break
+        price = round(price / tick_size) * tick_size
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
         
