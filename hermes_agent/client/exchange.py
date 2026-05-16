@@ -46,34 +46,35 @@ HL_ACCOUNT = HL_MASTER if IS_AGENT else HL_WALLET
 HL_LEVERAGE = 5  # 5x cross margin
 
 
+_exchange_instance = None  # Singleton instance
+
 def _make_exchange() -> Exchange:
-    """Create an Exchange client instance.
+    """Create or reuse Exchange client singleton (avoids WebSocket connection limit)."""
+    global _exchange_instance
+    if _exchange_instance is not None:
+        return _exchange_instance
     
-    Uses the SDK's built-in signing which handles:
-    - ECDSA secp256k1 key from private key hex
-    - Agent typed data domain signing
-    - Connection ID hashing
-    """
     if not PRIVATE_KEY_HEX:
         raise RuntimeError("HYPERLIQUID_PRIVATE_KEY not set")
-    
+
     key_hex = PRIVATE_KEY_HEX
     if key_hex.startswith("0x"):
         key_hex = key_hex[2:]
-    
+
     # The SDK uses eth_account for signing
     acct = Account.from_key(key_hex)
-    
+
     # For unified accounts with agent wallet:
     # - WALLET signs orders
     # - MASTER holds funds
     account_address = HL_WALLET if IS_AGENT else None
-    
-    return Exchange(
+
+    _exchange_instance = Exchange(
         wallet=acct,
         base_url=HL_API,
         account_address=account_address,
     )
+    return _exchange_instance
 
 
 def _get_info() -> Info:
