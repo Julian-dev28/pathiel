@@ -434,6 +434,30 @@ TOOLS = [
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_deposits",
+        "description": "Get deposit history.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max entries (default 100)"}
+        }}
+    },
+    {
+        "name": "get_transfers",
+        "description": "Get transfer history.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max entries (default 100)"}
+        }}
+    },
+    {
+        "name": "get_rewards",
+        "description": "Get user rewards/earnings.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_staking_info",
+        "description": "Get staking information.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -720,6 +744,10 @@ def run() -> None:
         "get_user_orders": handle_get_user_orders,
         "get_assets": handle_get_assets,
         "get_market_stats": handle_get_market_stats,
+        "get_deposits": handle_get_deposits,
+        "get_transfers": handle_get_transfers,
+        "get_rewards": handle_get_rewards,
+        "get_staking_info": handle_get_staking_info,
     }
 
     # MCP handshake
@@ -1159,6 +1187,47 @@ def handle_get_market_stats(params: Dict[str, Any]) -> str:
         # Get recent candles for stats
         candles = get_hl_candles(coin, '1h', 24)
         return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_market_stats(params: Dict[str, Any]) -> str:
+    """Handle get_market_stats tool call."""
+    coin = params.get('coin', 'BTC').upper()
+    try:
+        from hermes_agent.client.hl_client import get_hl_candles
+        candles = get_hl_candles(coin, '1h', 24)
+        return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_deposits(params: Dict[str, Any]) -> str:
+    """Handle get_deposits tool call."""
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'deposits': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_transfers(params: Dict[str, Any]) -> str:
+    """Handle get_transfers tool call."""
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'transfers': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_rewards(params: Dict[str, Any]) -> str:
+    """Handle get_rewards tool call."""
+    try:
+        return json.dumps({'rewards': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_staking_info(params: Dict[str, Any]) -> str:
+    """Handle get_staking_info tool call."""
+    try:
+        return json.dumps({'staking': {}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
