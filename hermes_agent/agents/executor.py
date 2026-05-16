@@ -221,6 +221,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     # Kelly gives margin amount; multiply by leverage for position notional
     position_notional = trade_notional * HL_LEVERAGE
+    
     # Dynamic size: use 5% of equity (with 5x leverage = 25% of equity buying power)
     max_notional = equity * 0.05 * HL_LEVERAGE  # 5% * 5 = 25% of equity
     size_in_coin = max_notional / mid_price
@@ -229,6 +230,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     size_in_coin = max(size_in_coin, min_size_by_value)
     # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
     size_in_coin = min(size_in_coin, 100.0)
+    
+    # DEBUG: Print actual values
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[executor] equity={equity}, max_notional={max_notional}, mid_price={mid_price}, size_in_coin={size_in_coin}")
 
     asset_idx, _ = get_coin_index(coin)
     atr = get_hl_atr("4h", 14, coin)
