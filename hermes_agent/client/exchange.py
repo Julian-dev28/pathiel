@@ -176,7 +176,13 @@ def place_hl_order(
         price = mid_price * (1.0025 if is_buy else 0.9975)
         # Round price to tick size (use px_decimals, NOT sz_decimals)
         tick_size = 10 ** (-px_dec)
-        price = round(price / tick_size) * tick_size
+        # Use Decimal for exact decimal arithmetic to avoid floating-point issues
+        from decimal import Decimal, ROUND_HALF_UP
+        price_dec = Decimal(str(price))
+        tick_dec = Decimal(str(tick_size))
+        # Round to nearest tick size using Decimal
+        price_dec = (price_dec / tick_dec).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_dec
+        price = float(price_dec)
         price_str = f"{price:.{px_dec}f}"
         size_str = f"{size:.{sz_dec}f}"
         
