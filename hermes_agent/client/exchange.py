@@ -171,8 +171,8 @@ def place_hl_order(
         # Always get sz_dec from get_coin_index() to avoid mismatch
         _, sz_dec = get_coin_index(coin)
         
-        # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
-        price = mid_price * (1.001 if is_buy else 0.999)
+        # 0.5% offset from mid for market-like execution (was 0.1%, too small for IOC)
+        price = mid_price * (1.005 if is_buy else 0.995)
         # Round price to tick size (use sz_dec, pxDecimals usually same as szDecimals)
         # Avoid calling info.meta() again (rate limit)
         tick_size = 10 ** (-sz_dec)
