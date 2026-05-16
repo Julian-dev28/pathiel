@@ -107,6 +107,16 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
 
+    # DEBUG: Log asset_positions format
+    import json
+    pos_debug = f"[EXECUTOR] asset_positions count: {len(state['asset_positions'])}\n"
+    for i, p in enumerate(state['asset_positions']):
+        pos_debug += f"[EXECUTOR] Position {i}: keys={list(p.keys())}\n"
+        if 'position' in p:
+            pos_debug += f"[EXECUTOR] Position {i}['position'] keys={list(p['position'].keys())}\n"
+    with open('/tmp/hermes_executor_positions.log', 'w') as f:
+        f.write(pos_debug)
+    
     positions = [
         {
             "coin": p["position"]["coin"],
