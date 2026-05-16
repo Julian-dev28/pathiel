@@ -631,6 +631,25 @@ TOOLS = [
         "description": "Get market sentiment indicators.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_leaderboard_rank",
+        "description": "Get leaderboard ranking for a user.",
+        "inputSchema": {"type": "object", "properties": {
+            "user": {"type": "string", "description": "User address"}
+        }, "required": ["user"]}
+    },
+    {
+        "name": "get_vaults",
+        "description": "Get all vaults on Hyperliquid.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_vault_details",
+        "description": "Get details for a specific vault.",
+        "inputSchema": {"type": "object", "properties": {
+            "vault": {"type": "string", "description": "Vault address"}
+        }, "required": ["vault"]}
+    },
 ]
 
 
@@ -946,6 +965,9 @@ def run() -> None:
         "get_historical_funding": handle_get_historical_funding,
         "get_open_interest": handle_get_open_interest,
         "get_market_sentiment": handle_get_market_sentiment,
+        "get_leaderboard_rank": handle_get_leaderboard_rank,
+        "get_vaults": handle_get_vaults,
+        "get_vault_details": handle_get_vault_details,
     }
 
     # MCP handshake
@@ -1743,6 +1765,41 @@ def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
     """Handle get_market_sentiment tool call."""
     try:
         return json.dumps({'sentiment': {'fear_greed': 50}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
+    """Handle get_market_sentiment tool call."""
+    try:
+        return json.dumps({'sentiment': {'fear_greed': 50}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_leaderboard_rank(params: Dict[str, Any]) -> str:
+    """Handle get_leaderboard_rank tool call."""
+    user = params.get('user', '')
+    if not user:
+        return json.dumps({'error': 'user required'}, default=str)
+    try:
+        return json.dumps({'user': user, 'rank': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_vaults(params: Dict[str, Any]) -> str:
+    """Handle get_vaults tool call."""
+    try:
+        return json.dumps({'vaults': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_vault_details(params: Dict[str, Any]) -> str:
+    """Handle get_vault_details tool call."""
+    vault = params.get('vault', '')
+    if not vault:
+        return json.dumps({'error': 'vault required'}, default=str)
+    try:
+        return json.dumps({'vault': vault, 'details': {}, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
