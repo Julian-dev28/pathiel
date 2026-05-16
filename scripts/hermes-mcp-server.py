@@ -689,6 +689,27 @@ TOOLS = [
             "is_buy": {"type": "boolean", "description": "True for buy, False for sell"}
         }, "required": ["coin", "size", "is_buy"]}
     },
+    {
+        "name": "get_withdrawal_status",
+        "description": "Get status of a withdrawal.",
+        "inputSchema": {"type": "object", "properties": {
+            "withdrawal_id": {"type": "string", "description": "Withdrawal ID"}
+        }, "required": ["withdrawal_id"]}
+    },
+    {
+        "name": "get_deposit_address",
+        "description": "Get deposit address for a token.",
+        "inputSchema": {"type": "object", "properties": {
+            "token": {"type": "string", "description": "Token symbol"}
+        }, "required": ["token"]}
+    },
+    {
+        "name": "get_transfer_history",
+        "description": "Get transfer history for user.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max entries (default 100)"}
+        }}
+    },
 ]
 
 
@@ -1013,6 +1034,9 @@ def run() -> None:
         "get_user_orders_history": handle_get_user_orders_history,
         "get_price_impact": handle_get_price_impact,
         "get_slippage_estimate": handle_get_slippage_estimate,
+        "get_withdrawal_status": handle_get_withdrawal_status,
+        "get_deposit_address": handle_get_deposit_address,
+        "get_transfer_history": handle_get_transfer_history,
     }
 
     # MCP handshake
@@ -1919,6 +1943,45 @@ def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
     is_buy = params.get('is_buy', True)
     try:
         return json.dumps({'coin': coin, 'size': size, 'is_buy': is_buy, 'slippage': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
+    """Handle get_slippage_estimate tool call."""
+    coin = params.get('coin', '').upper()
+    size = params.get('size', 0)
+    is_buy = params.get('is_buy', True)
+    try:
+        return json.dumps({'coin': coin, 'size': size, 'is_buy': is_buy, 'slippage': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
+    """Handle get_withdrawal_status tool call."""
+    withdrawal_id = params.get('withdrawal_id', '')
+    if not withdrawal_id:
+        return json.dumps({'error': 'withdrawal_id required'}, default=str)
+    try:
+        return json.dumps({'withdrawal_id': withdrawal_id, 'status': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_deposit_address(params: Dict[str, Any]) -> str:
+    """Handle get_deposit_address tool call."""
+    token = params.get('token', '').upper()
+    if not token:
+        return json.dumps({'error': 'token required'}, default=str)
+    try:
+        return json.dumps({'token': token, 'address': '', 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_transfer_history(params: Dict[str, Any]) -> str:
+    """Handle get_transfer_history tool call."""
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'transfers': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
