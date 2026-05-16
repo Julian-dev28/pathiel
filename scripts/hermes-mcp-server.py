@@ -749,6 +749,42 @@ TOOLS = [
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
+    {
+        "name": "get_user_fills",
+        "description": "Get recent fills for the configured user (most recent first).",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max fills to return (default 100)"}
+        }}
+    },
+    {
+        "name": "get_user_fills_by_time",
+        "description": "Get user fills within a time window (unix ms).",
+        "inputSchema": {"type": "object", "properties": {
+            "start_time": {"type": "number", "description": "Start time (unix ms)"},
+            "end_time": {"type": "number", "description": "End time (unix ms, optional)"}
+        }, "required": ["start_time"]}
+    },
+    {
+        "name": "get_user_funding_history",
+        "description": "Get user's funding-payment history within a time window.",
+        "inputSchema": {"type": "object", "properties": {
+            "start_time": {"type": "number", "description": "Start time (unix ms)"},
+            "end_time": {"type": "number", "description": "End time (unix ms, optional)"}
+        }, "required": ["start_time"]}
+    },
+    {
+        "name": "get_historical_orders",
+        "description": "Get historical (filled + cancelled) orders for the configured user.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "query_order_by_cloid",
+        "description": "Query an order by its client order ID (cloid).",
+        "inputSchema": {"type": "object", "properties": {
+            "user": {"type": "string", "description": "User address (optional, uses env)"},
+            "cloid": {"type": "string", "description": "Client order ID"}
+        }, "required": ["cloid"]}
+    },
 ]
 
 
@@ -1085,6 +1121,11 @@ def run() -> None:
         "get_sub_account_balances": handle_get_sub_account_balances,
         "get_user_fees_detailed": handle_get_user_fees_detailed,
         "get_whale_alerts": handle_get_whale_alerts,
+        "get_user_fills": handle_get_user_fills,
+        "get_user_fills_by_time": handle_get_user_fills_by_time,
+        "get_user_funding_history": handle_get_user_funding_history,
+        "get_historical_orders": handle_get_historical_orders,
+        "query_order_by_cloid": handle_query_order_by_cloid,
     }
 
     # MCP handshake
@@ -1991,13 +2032,12 @@ def handle_get_sub_account_balances(params: Dict[str, Any]) -> str:
 def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
     """Handle get_user_fees_detailed tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info, _get_address
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
-        addr = _get_address()
-        if hasattr(info, 'user_fees'):
-            res = info.user_fees(addr)
+        if hasattr(info, 'user_fees') and HL_ACCOUNT:
+            res = info.user_fees(HL_ACCOUNT)
             return json.dumps({'fees': res}, default=str)
-        return json.dumps({'fees': {}, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'fees': {}, 'note': 'no address or SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2012,6 +2052,90 @@ def handle_get_whale_alerts(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
+
+
+def handle_get_user_fills(params: Dict[str, Any]) -> str:
+    """Handle get_user_fills tool call."""
+    limit = int(params.get('limit', 100))
+    try:
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        info = _get_info()
+        if not HL_ACCOUNT:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        fills = info.user_fills(HL_ACCOUNT)
+        if isinstance(fills, list):
+            fills = fills[:limit]
+        return json.dumps({'fills': fills, 'count': len(fills) if isinstance(fills, list) else 0}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_user_fills_by_time(params: Dict[str, Any]) -> str:
+    """Handle get_user_fills_by_time tool call."""
+    start_time = int(params.get('start_time', 0))
+    end_time = params.get('end_time')
+    try:
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        info = _get_info()
+        if not HL_ACCOUNT:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        if end_time is not None:
+            fills = info.user_fills_by_time(HL_ACCOUNT, start_time, int(end_time))
+        else:
+            fills = info.user_fills_by_time(HL_ACCOUNT, start_time)
+        return json.dumps({'fills': fills, 'count': len(fills) if isinstance(fills, list) else 0,
+                           'start_time': start_time, 'end_time': end_time}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
+    """Handle get_user_funding_history tool call."""
+    start_time = int(params.get('start_time', 0))
+    end_time = params.get('end_time')
+    try:
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        info = _get_info()
+        if not HL_ACCOUNT:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        if end_time is not None:
+            hist = info.user_funding_history(HL_ACCOUNT, start_time, int(end_time))
+        else:
+            hist = info.user_funding_history(HL_ACCOUNT, start_time)
+        return json.dumps({'funding': hist, 'count': len(hist) if isinstance(hist, list) else 0,
+                           'start_time': start_time, 'end_time': end_time}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_historical_orders(params: Dict[str, Any]) -> str:
+    """Handle get_historical_orders tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        info = _get_info()
+        if not HL_ACCOUNT:
+            return json.dumps({'error': 'no configured user address'}, default=str)
+        orders = info.historical_orders(HL_ACCOUNT)
+        return json.dumps({'orders': orders, 'count': len(orders) if isinstance(orders, list) else 0},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_query_order_by_cloid(params: Dict[str, Any]) -> str:
+    """Handle query_order_by_cloid tool call."""
+    cloid = params.get('cloid', '')
+    user = params.get('user')
+    try:
+        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        info = _get_info()
+        addr = user or HL_ACCOUNT
+        if not addr:
+            return json.dumps({'error': 'no user address provided or configured'}, default=str)
+        res = info.query_order_by_cloid(addr, cloid)
+        return json.dumps({'order': res, 'cloid': cloid, 'user': addr}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
 
 
 if __name__ == "__main__":
