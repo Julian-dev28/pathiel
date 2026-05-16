@@ -182,8 +182,9 @@ def place_hl_order(
         tick_dec = Decimal(str(tick_size))
         # Round to nearest tick size using Decimal
         price_dec = (price_dec / tick_dec).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_dec
-        price = float(price_dec)
-        price_str = f"{price:.{px_dec}f}"
+        # Convert to integer representing price in tick units (avoid float precision)
+        price_in_ticks = int(price_dec / tick_dec)
+        price_str = str(price_in_ticks)  # Pass as integer string
         size_str = f"{size:.{sz_dec}f}"
         
         # DEBUG: Log price_str and size_str
