@@ -361,6 +361,11 @@ def handle_execute(params: Dict[str, Any]) -> str:
         result = maybe_execute(analysis)
         return json.dumps(result)
     except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        # Write to file for debugging
+        with open('/tmp/hermes_execute_error.log', 'w') as f:
+            f.write(f"Exception: {e}\n\nTraceback:\n{error_detail}\n\nAnalysis dict:\n{json.dumps(analysis, indent=2)}")
         return json.dumps({
             "status": "error",
             "coin": analysis.get("coin"),
