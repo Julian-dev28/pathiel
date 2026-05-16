@@ -226,6 +226,33 @@ TOOLS = [
             "required": ["coin"],
         },
     },
+    {
+        "name": "get_portfolio",
+        "description": "Get current positions and portfolio state.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_price",
+        "description": "Get current mid price for a coin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (default BTC)"},
+            },
+        },
+    },
+    {
+        "name": "get_candles",
+        "description": "Get candles for a coin and interval.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (default BTC)"},
+                "interval": {"type": "string", "description": "Candle interval (default 1h)"},
+                "count": {"type": "number", "description": "Number of candles (default 100)"},
+            },
+        },
+    },
 ]
 
 
@@ -483,6 +510,9 @@ def run() -> None:
         "market_get_mids": handle_market_get_mids,
         "whale_index": handle_whale_index,
         "close_position": handle_close_position,
+        "get_portfolio": handle_get_portfolio,
+        "get_price": handle_get_price,
+        "get_candles": handle_get_candles,
     }
 
     # MCP handshake
@@ -542,6 +572,30 @@ def run() -> None:
             sys.stderr.write(f"MCP error: {e}\n")
             sys.stderr.flush()
 
+
+def handle_get_portfolio(params: Dict[str, Any]) -> str:
+    """Handle get_portfolio tool call."""
+    from hermes_agent.client.hl_client import fetch_account_state
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    state = fetch_account_state(user)
+    return json.dumps(state.get('asset_positions', []), indent=2, default=str)
+
+def handle_get_price(params: Dict[str, Any]) -> str:
+    """Handle get_price tool call."""
+    from hermes_agent.client.exchange import get_hl_price
+    coin = params.get('coin', 'BTC').upper()
+    price = get_hl_price(coin)
+    return json.dumps({'coin': coin, 'price': price}, default=str)
+
+def handle_get_candles(params: Dict[str, Any]) -> str:
+    """Handle get_candles tool call."""
+    from hermes_agent.client.hl_client import get_hl_candles
+    coin = params.get('coin', 'BTC').upper()
+    interval = params.get('interval', '1h')
+    count = params.get('count', 100)
+    candles = get_hl_candles(coin, interval, count)
+    return json.dumps(candles, indent=2, default=str)
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
