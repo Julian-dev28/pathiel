@@ -181,20 +181,22 @@ def place_hl_order(
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
         
-        # DEBUG: Log order parameters
-        logger.info(f"[place_hl_order] coin={coin}, is_buy={is_buy}, size={size}, sz_dec={sz_dec}")
+        # DEBUG: Log full order parameters
+        logger.info(f"[place_hl_order] FULL PARAMS: coin={coin}, is_buy={is_buy}, size={size}, sz_dec={sz_dec}")
         logger.info(f"[place_hl_order] size_str={size_str}, price_str={price_str}")
         logger.info(f"[place_hl_order] mid_price={mid_price}, final_price={price}")
         
         exchange = _make_exchange()
         order_type = OrderType(limit={"tif": "Ioc"})
         
-        # SDK signature: order(name, is_buy, sz, limit_px, order_type, ...)
+        logger.info(f"[place_hl_order] Calling exchange.order({coin}, {is_buy}, {float(size_str)}, {float(price_str)}, {order_type})")
+        
+        # Try passing strings directly (SDK might handle conversion)
         result = exchange.order(
             coin,
             is_buy,
-            float(size_str),
-            float(price_str),
+            float(size_str),  # Try float
+            float(price_str),  # Try float
             order_type,
             reduce_only=False,
         )
