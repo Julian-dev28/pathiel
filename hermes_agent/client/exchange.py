@@ -172,8 +172,8 @@ def place_hl_order(
         # Always get sz_dec and px_dec from get_coin_index() to avoid mismatch
         _, sz_dec, px_dec = get_coin_index(coin)
         
-        # Use mid price directly for market-like execution
-        price = mid_price
+        # Use 0.1% offset from mid for market-like execution (small enough to pass 95% validation)
+        price = mid_price * (1.001 if is_buy else 0.999)
         # Round price to tick size (use px_decimals, NOT sz_decimals)
         tick_size = 10 ** (-px_dec)
         # Use Decimal for exact decimal arithmetic to avoid floating-point issues
@@ -182,9 +182,8 @@ def place_hl_order(
         tick_dec = Decimal(str(tick_size))
         # Round to nearest tick size using Decimal
         price_dec = (price_dec / tick_dec).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * tick_dec
-        # Convert to integer representing price in tick units (avoid float precision)
-        price_in_ticks = int(price_dec / tick_dec)
-        price_str = str(price_in_ticks)  # Pass as integer string
+        price = float(price_dec)  # Convert back to float for SDK
+        price_str = f"{price:.{px_dec}f}"
         size_str = f"{size:.{sz_dec}f}"
         
         # DEBUG: Log price_str and size_str
