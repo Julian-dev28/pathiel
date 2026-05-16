@@ -194,12 +194,12 @@ def place_hl_order(
         
         logger.info(f"[place_hl_order] Calling exchange.order({coin}, {is_buy}, {float(size_str)}, {float(price_str)}, {order_type})")
         
-        # Try passing strings directly (SDK might handle conversion)
+        # Pass string directly - SDK might handle conversion at runtime
         result = exchange.order(
             coin,
             is_buy,
-            float(size_str),  # Try float
-            float(price_str),  # Try float
+            float(size_str),  # SDK expects float for size
+            price_str,  # Try string for price to avoid float precision
             order_type,
             reduce_only=False,
         )
