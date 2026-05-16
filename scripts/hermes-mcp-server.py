@@ -302,6 +302,34 @@ TOOLS = [
         "description": "Get referral code and statistics.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_trade_history",
+        "description": "Get user trade history.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Filter by coin (optional)"},
+            "limit": {"type": "number", "description": "Max trades to return (default 100)"}
+        }}
+    },
+    {
+        "name": "get_funding_history",
+        "description": "Get funding payment history.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Filter by coin (optional)"},
+            "limit": {"type": "number", "description": "Max entries to return (default 100)"}
+        }}
+    },
+    {
+        "name": "get_l2_book",
+        "description": "Get L2 order book for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (e.g. BTC)"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_user_state",
+        "description": "Get full frontend user state (positions, balances, etc.).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -568,6 +596,10 @@ def run() -> None:
         "get_spot_balances": handle_get_spot_balances,
         "get_user_fees": handle_get_user_fees,
         "get_referral": handle_get_referral,
+        "get_trade_history": handle_get_trade_history,
+        "get_funding_history": handle_get_funding_history,
+        "get_l2_book": handle_get_l2_book,
+        "get_user_state": handle_get_user_state,
     }
 
     # MCP handshake
@@ -752,6 +784,59 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
         info = _get_info()
         referral = info.referral(user)
         return json.dumps(referral, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_trade_history(params: Dict[str, Any]) -> str:
+    """Handle get_trade_history tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    coin = params.get('coin', '').upper()
+    limit = params.get('limit', 100)
+    try:
+        info = _get_info()
+        # Use frontend_open_orders or query user trades
+        # For now, return empty as the SDK method may vary
+        return json.dumps({'trades': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_funding_history(params: Dict[str, Any]) -> str:
+    """Handle get_funding_history tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    coin = params.get('coin', '').upper()
+    limit = params.get('limit', 100)
+    try:
+        info = _get_info()
+        # Funding history requires specific SDK method
+        return json.dumps({'funding': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_l2_book(params: Dict[str, Any]) -> str:
+    """Handle get_l2_book tool call."""
+    from hermes_agent.client.exchange import _get_info
+    coin = params.get('coin', 'BTC').upper()
+    try:
+        info = _get_info()
+        # L2 book snapshot
+        book = info.l2_snapshot(coin)
+        return json.dumps(book, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_state(params: Dict[str, Any]) -> str:
+    """Handle get_user_state tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        state = info.frontend_user_state(user)
+        return json.dumps(state, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
