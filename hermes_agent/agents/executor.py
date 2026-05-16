@@ -66,13 +66,6 @@ def kelly_size(
 
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market."""
-    # DEBUG: Log analysis keys to find the bug
-    import json
-    debug_info = f"[EXECUTOR] Analysis keys: {list(analysis.keys())}\n"
-    debug_info += f"[EXECUTOR] Analysis: {json.dumps(analysis, indent=2)}\n"
-    with open('/tmp/hermes_executor_debug.log', 'w') as f:
-        f.write(debug_info)
-    
     config = read_agent_config()
     mode = str(config.get("mode", "OFF"))
 
@@ -102,10 +95,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     try:
         state = fetch_account_state(user)
-        # DEBUG: Log which address is being used
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"[executor] Using address: {user[:10]}..., state equity: {state.get('equity')}, state keys: {list(state.keys())[:10]}")
     except Exception as e:
         with open('/tmp/hermes_executor_error.log', 'w') as f:
             f.write(f"fetch_account_state failed: {e}")
@@ -122,16 +111,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
 
-    # DEBUG: Log asset_positions format
-    import json
-    pos_debug = f"[EXECUTOR] asset_positions count: {len(state['asset_positions'])}\n"
-    for i, p in enumerate(state['asset_positions']):
-        pos_debug += f"[EXECUTOR] Position {i}: keys={list(p.keys())}\n"
-        if 'position' in p:
-            pos_debug += f"[EXECUTOR] Position {i}['position'] keys={list(p['position'].keys())}\n"
-    with open('/tmp/hermes_executor_positions.log', 'w') as f:
-        f.write(pos_debug)
-    
     positions = [
         {
             "coin": p["position"]["coin"],
@@ -141,7 +120,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         for p in state["asset_positions"]
     ]
 
-    # Kelly sizing
+    # Kelly sizing - will be overridden with correct equity-based calculation
     entry_px = analysis.get("entry_px")
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
@@ -153,10 +132,10 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     else:
         reward_risk = 1.0
 
-    # FORCE small test size to debug "invalid size" error
-    # Hardcode to 0.001 XMR (minimum size) at current mid price
-    size = 0.001  # Minimum XMR size
-    trade_notional = size * (entry_px or 2600)  # Approximate $ notional
+    # Calculate correct notional BEFORE gate check
+    # Use 1% of equity (with 5x leverage = 5% of equity buying power)
+    max_notional = equity * 0.01 * HL_LEVERAGE  # 1% * 5 = 5% of equity
+    trade_notional = max_notional  # Override any AI-provided value
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
@@ -222,14 +201,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     if mid_price <= 0:
         return {"executed": False, "mode": mode, "analysis_id": analysis["id"],
                 "reason": f"invalid_price_for_{coin}"}
-
-    # Kelly gives margin amount; multiply by leverage for position notional
-    position_notional = trade_notional * HL_LEVERAGE
     
-    # Dynamic size: use 1% of equity (with 5x leverage = 5% of equity buying power)
-    # Reduced from 2% because account has multiple positions
-    max_notional = equity * 0.01 * HL_LEVERAGE  # 1% * 5 = 5% of equity
-    size_in_coin = max_notional / mid_price
+    # Calculate size in coin from the correct notional (already includes leverage)
+    size_in_coin = trade_notional / mid_price
     # Ensure minimum $10 value (Hyperliquid requirement) - round UP to avoid falling below $10
     import math
     min_size_by_value = math.ceil(10.0 / mid_price)  # Round UP to nearest integer (for sz_dec=0)
@@ -237,10 +211,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
     size_in_coin = min(size_in_coin, 100.0)
     
-    # DEBUG: Print actual values
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"[executor] equity={equity}, max_notional={max_notional}, mid_price={mid_price}, size_in_coin={size_in_coin}")
+    position_notional = trade_notional  # Already includes leverage
 
     asset_idx, _, _ = get_coin_index(coin)
     atr = get_hl_atr("4h", 14, coin)
