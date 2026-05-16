@@ -149,9 +149,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     else:
         reward_risk = 1.0
 
-    max_notional = float(config.get("max_trade_notional_usd") or config.get("maxTradeNotionalUsd") or 200)
-    raw_size = kelly_size(analysis["confidence"], equity, reward_risk, max_notional)
-    trade_notional = raw_size if raw_size > 0 else (entry_px or 0) * 0.001
+    # FORCE small test size to debug "invalid size" error
+    trade_notional = 1.0  # $1 USD notional (tiny test)
+    size = trade_notional / entry_px if entry_px else 1.0
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
