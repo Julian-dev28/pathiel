@@ -12,7 +12,11 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = os.path.join(os.getcwd(), ".agent-config.json")
+# Use absolute path based on this file's location (hermes-trader project root)
+# __file__ = .../hermes-trader/hermes_agent/agents/config_store.py
+# Go up 3 levels: agents/ → hermes_agent/ → hermes-trader/
+_CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CONFIG_PATH = os.path.join(_CONFIG_DIR, ".agent-config.json")
 
 DEFAULT_CONFIG: Dict[str, Any] = {"mode": "OFF"}
 
