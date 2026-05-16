@@ -177,7 +177,7 @@ def place_hl_order(
         # Round price to tick size (use px_decimals, NOT sz_decimals)
         tick_size = 10 ** (-px_dec)
         price = round(price / tick_size) * tick_size
-        price_str = f"{float(f'{price:.6f}')}"
+        price_str = f"{price:.{px_dec}f}"
         size_str = f"{size:.{sz_dec}f}"
         
         # DEBUG: Log price_str and size_str
