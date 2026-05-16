@@ -175,8 +175,9 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         if b.get("coin") == "USDC":
             spot_usdc = float(b.get("total", "0"))
 
-    # On unified accounts: equity = perp + spot combined
-    equity = perp_equity + spot_usdc
+    # On unified accounts: perp_equity ALREADY includes spot USDC
+    # Don't double-count!
+    equity = perp_equity
 
     return {
         "equity": equity,
