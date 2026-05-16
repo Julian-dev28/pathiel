@@ -230,8 +230,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # Reduced from 2% because account has multiple positions
     max_notional = equity * 0.01 * HL_LEVERAGE  # 1% * 5 = 5% of equity
     size_in_coin = max_notional / mid_price
-    # Ensure minimum $10 value
-    min_size_by_value = 10.0 / mid_price
+    # Ensure minimum $10 value (Hyperliquid requirement) - round UP to avoid falling below $10
+    import math
+    min_size_by_value = math.ceil(10.0 / mid_price)  # Round UP to nearest integer (for sz_dec=0)
     size_in_coin = max(size_in_coin, min_size_by_value)
     # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
     size_in_coin = min(size_in_coin, 100.0)
