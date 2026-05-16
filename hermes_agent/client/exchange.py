@@ -178,6 +178,9 @@ def place_hl_order(
         
         # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
         price = mid_price * (1.001 if is_buy else 0.999)
+        # Round price to tick size (XRP: 0.0001, so 4 decimal places)
+        # For simplicity, round to 4 decimal places for all coins
+        price = round(price, 4)
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
         
