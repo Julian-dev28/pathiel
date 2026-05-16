@@ -155,7 +155,7 @@ def eval_all_gates(
     results["cooldown"] = cooldown_gate(ctx, last_trade_time, config.get("cooldown_min", 60))
     results["opposite_guard"] = opposite_direction_guard(ctx)
     results["correlation"] = correlation_cap(ctx, 2)
-    results["equity_risk"] = equity_risk_cap(ctx, config.get("max_total_notional_pct", 0.3))
+    results["equity_risk"] = equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0))  # Default 100% to allow trading with small accounts
     results["news"] = news_blackout_gate(ctx)
 
     block_reasons = []
