@@ -502,6 +502,43 @@ TOOLS = [
         "description": "Get all mid prices (alias for market_get_mids).",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_order_by_oid",
+        "description": "Get order details by order ID.",
+        "inputSchema": {"type": "object", "properties": {
+            "user": {"type": "string", "description": "User address"},
+            "oid": {"type": "number", "description": "Order ID"}
+        }, "required": ["user", "oid"]}
+    },
+    {
+        "name": "get_sub_account_balances",
+        "description": "Get sub-account balances.",
+        "inputSchema": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "Sub-account name"}
+        }, "required": ["name"]}
+    },
+    {
+        "name": "get_user_fees_detailed",
+        "description": "Get detailed fee structure.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_trading_permissions",
+        "description": "Get trading permissions for the account.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_account_summary",
+        "description": "Get account summary (balance, positions, PnL).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_asset_positions",
+        "description": "Get positions for a specific asset.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -799,6 +836,9 @@ def run() -> None:
         "get_coin_price": handle_get_coin_price,
         "get_coin_info": handle_get_coin_info,
         "get_all_mids": handle_get_all_mids,
+        "get_trading_permissions": handle_get_trading_permissions,
+        "get_account_summary": handle_get_account_summary,
+        "get_asset_positions": handle_get_asset_positions,
     }
 
     # MCP handshake
@@ -1356,6 +1396,47 @@ def handle_get_all_mids(params: Dict[str, Any]) -> str:
         info = _get_info()
         mids = info.all_mids()
         return json.dumps({'mids': mids}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_all_mids(params: Dict[str, Any]) -> str:
+    """Handle get_all_mids tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        mids = info.all_mids()
+        return json.dumps({'mids': mids}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_trading_permissions(params: Dict[str, Any]) -> str:
+    """Handle get_trading_permissions tool call."""
+    try:
+        return json.dumps({'permissions': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_account_summary(params: Dict[str, Any]) -> str:
+    """Handle get_account_summary tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        return json.dumps({'summary': state, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_asset_positions(params: Dict[str, Any]) -> str:
+    """Handle get_asset_positions tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
+        if coin:
+            positions = [p for p in positions if p.get('coin', '').upper() == coin]
+        return json.dumps({'coin': coin, 'positions': positions}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
