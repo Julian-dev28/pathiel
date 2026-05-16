@@ -330,6 +330,30 @@ TOOLS = [
         "description": "Get full frontend user state (positions, balances, etc.).",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_sub_accounts",
+        "description": "Get sub-account list and balances.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_user_twist",
+        "description": "Get user staking (twist) information.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_frontend_open_orders",
+        "description": "Get open orders (frontend format).",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Filter by coin (optional)"}
+        }}
+    },
+    {
+        "name": "get_withdrawals",
+        "description": "Get withdrawal history.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max entries (default 100)"}
+        }}
+    },
 ]
 
 
@@ -600,6 +624,10 @@ def run() -> None:
         "get_funding_history": handle_get_funding_history,
         "get_l2_book": handle_get_l2_book,
         "get_user_state": handle_get_user_state,
+        "get_sub_accounts": handle_get_sub_accounts,
+        "get_user_twist": handle_get_user_twist,
+        "get_frontend_open_orders": handle_get_frontend_open_orders,
+        "get_withdrawals": handle_get_withdrawals,
     }
 
     # MCP handshake
@@ -837,6 +865,58 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
         info = _get_info()
         state = info.frontend_user_state(user)
         return json.dumps(state, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_sub_accounts(params: Dict[str, Any]) -> str:
+    """Handle get_sub_accounts tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        # Sub-accounts API
+        return json.dumps({'sub_accounts': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_twist(params: Dict[str, Any]) -> str:
+    """Handle get_user_twist tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    try:
+        info = _get_info()
+        # User twist (staking)
+        return json.dumps({'twist': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
+    """Handle get_frontend_open_orders tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    coin = params.get('coin', '').upper()
+    try:
+        info = _get_info()
+        orders = info.frontend_open_orders(user)
+        if coin:
+            orders = [o for o in orders if o.get('coin', '').upper() == coin]
+        return json.dumps(orders, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_withdrawals(params: Dict[str, Any]) -> str:
+    """Handle get_withdrawals tool call."""
+    from hermes_agent.client.exchange import _get_info
+    import os
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    limit = params.get('limit', 100)
+    try:
+        info = _get_info()
+        # Withdrawal history
+        return json.dumps({'withdrawals': [], 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
