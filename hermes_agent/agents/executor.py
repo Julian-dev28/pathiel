@@ -66,6 +66,13 @@ def kelly_size(
 
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market."""
+    # DEBUG: Log analysis keys to find the bug
+    import json
+    debug_info = f"[EXECUTOR] Analysis keys: {list(analysis.keys())}\n"
+    debug_info += f"[EXECUTOR] Analysis: {json.dumps(analysis, indent=2)}\n"
+    with open('/tmp/hermes_executor_debug.log', 'w') as f:
+        f.write(debug_info)
+    
     config = read_agent_config()
     mode = str(config.get("mode", "OFF"))
 
