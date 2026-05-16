@@ -181,10 +181,8 @@ def place_hl_order(
         price_str = f"{float(f'{price:.6f}')}"
         size_str = f"{size:.{sz_dec}f}"
         
-        # DEBUG: Log full order parameters
-        logger.info(f"[place_hl_order] FULL PARAMS: coin={coin}, is_buy={is_buy}, size={size}, sz_dec={sz_dec}")
-        logger.info(f"[place_hl_order] size_str={size_str}, price_str={price_str}")
-        logger.info(f"[place_hl_order] mid_price={mid_price}, final_price={price}")
+        # DEBUG: Log price_str and size_str
+        logger.info(f"[place_hl_order] price_str={price_str}, size_str={size_str}, tick_size={tick_size}")
         
         exchange = _make_exchange()
         order_type = OrderType(limit={"tif": "Ioc"})
