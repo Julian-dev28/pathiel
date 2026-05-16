@@ -102,6 +102,10 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     try:
         state = fetch_account_state(user)
+        # DEBUG: Log which address is being used
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[executor] Using address: {user[:10]}..., state equity: {state.get('equity')}, state keys: {list(state.keys())[:10]}")
     except Exception as e:
         with open('/tmp/hermes_executor_error.log', 'w') as f:
             f.write(f"fetch_account_state failed: {e}")
