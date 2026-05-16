@@ -194,14 +194,14 @@ def place_hl_order(
         
         logger.info(f"[place_hl_order] Calling exchange.order({coin}, {is_buy}, {float(size_str)}, {float(price_str)}, {order_type})")
         
-        # Pass float - SDK expects float, not string
-        # Use round() to ensure price has exactly px_dec decimals (avoid floating-point artifacts)
-        price_float = round(float(price_str), px_dec)
+        # Try passing Decimal directly - SDK might accept it at runtime
+        from decimal import Decimal
+        price_decimal = Decimal(price_str)  # Keep as Decimal to avoid float precision
         result = exchange.order(
             coin,
             is_buy,
             float(size_str),  # SDK expects float for size
-            price_float,  # Pass rounded float
+            price_decimal,  # Try Decimal for price to avoid float precision
             order_type,
             reduce_only=False,
         )
