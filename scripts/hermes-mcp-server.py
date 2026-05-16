@@ -354,6 +354,32 @@ TOOLS = [
             "limit": {"type": "number", "description": "Max entries (default 100)"}
         }}
     },
+    {
+        "name": "get_predicted_funding",
+        "description": "Get predicted funding rates for all assets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_asset_context",
+        "description": "Get detailed context for a specific asset.",
+        "inputSchema": {"type": "object", "properties": {
+            "asset": {"type": "number", "description": "Asset index"}
+        }, "required": ["asset"]}
+    },
+    {
+        "name": "get_user_defined_types",
+        "description": "Get user-defined perpetual types.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_candles_aggregated",
+        "description": "Get aggregated candle data across timeframes.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "interval": {"type": "string", "description": "Interval (1m, 5m, 15m, 1h, 4h, 1d)"},
+            "count": {"type": "number", "description": "Number of candles (default 100)"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -628,6 +654,10 @@ def run() -> None:
         "get_user_twist": handle_get_user_twist,
         "get_frontend_open_orders": handle_get_frontend_open_orders,
         "get_withdrawals": handle_get_withdrawals,
+        "get_predicted_funding": handle_get_predicted_funding,
+        "get_asset_context": handle_get_asset_context,
+        "get_user_defined_types": handle_get_user_defined_types,
+        "get_candles_aggregated": handle_get_candles_aggregated,
     }
 
     # MCP handshake
@@ -917,6 +947,51 @@ def handle_get_withdrawals(params: Dict[str, Any]) -> str:
         info = _get_info()
         # Withdrawal history
         return json.dumps({'withdrawals': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
+    """Handle get_predicted_funding tool call."""
+    from hermes_agent.client.exchange import _get_info
+    try:
+        info = _get_info()
+        # Predicted funding rates
+        return json.dumps({'predicted_funding': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_asset_context(params: Dict[str, Any]) -> str:
+    """Handle get_asset_context tool call."""
+    from hermes_agent.client.exchange import _get_info
+    asset = params.get('asset')
+    if asset is None:
+        return json.dumps({'error': 'asset index required'}, default=str)
+    try:
+        info = _get_info()
+        # Asset context
+        return json.dumps({'context': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_defined_types(params: Dict[str, Any]) -> str:
+    """Handle get_user_defined_types tool call."""
+    from hermes_agent.client.exchange import _get_info
+    try:
+        info = _get_info()
+        # User-defined perpetual types
+        return json.dumps({'user_defined_types': [], 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
+    """Handle get_candles_aggregated tool call."""
+    from hermes_agent.client.hl_client import get_hl_candles
+    coin = params.get('coin', 'BTC').upper()
+    interval = params.get('interval', '1h')
+    count = params.get('count', 100)
+    try:
+        candles = get_hl_candles(coin, interval, count)
+        return json.dumps(candles, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
