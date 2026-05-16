@@ -594,6 +594,23 @@ TOOLS = [
         "description": "Get user preferences/settings.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_spot_markets",
+        "description": "Get all spot markets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_perp_markets",
+        "description": "Get all perpetual markets.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "get_market_depth",
+        "description": "Get market depth (order book) for a coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
 ]
 
 
@@ -903,6 +920,9 @@ def run() -> None:
         "get_exchange_status": handle_get_exchange_status,
         "get_markets_info": handle_get_markets_info,
         "get_user_preferences": handle_get_user_preferences,
+        "get_spot_markets": handle_get_spot_markets,
+        "get_perp_markets": handle_get_perp_markets,
+        "get_market_depth": handle_get_market_depth,
     }
 
     # MCP handshake
@@ -1622,6 +1642,45 @@ def handle_get_user_preferences(params: Dict[str, Any]) -> str:
     """Handle get_user_preferences tool call."""
     try:
         return json.dumps({'preferences': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_user_preferences(params: Dict[str, Any]) -> str:
+    """Handle get_user_preferences tool call."""
+    try:
+        return json.dumps({'preferences': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_spot_markets(params: Dict[str, Any]) -> str:
+    """Handle get_spot_markets tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        spot_meta = info.spot_meta() if hasattr(info, 'spot_meta') else {}
+        return json.dumps({'spot_markets': spot_meta}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_perp_markets(params: Dict[str, Any]) -> str:
+    """Handle get_perp_markets tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        meta = info.meta() if hasattr(info, 'meta') else {}
+        return json.dumps({'perp_markets': meta}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_market_depth(params: Dict[str, Any]) -> str:
+    """Handle get_market_depth tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
+        return json.dumps({'coin': coin, 'depth': l2, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
