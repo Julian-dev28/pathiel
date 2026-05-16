@@ -168,18 +168,8 @@ def place_hl_order(
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     
     try:
-        if asset_idx is None:
-            asset_idx, sz_dec = get_coin_index(coin)
-        else:
-            # Need to get sz_decimals
-            info = _get_info()
-            meta = info.meta()
-            for u in meta.get("universe", []):
-                if u.get("index") == asset_idx:
-                    sz_dec = u.get("szDecimals", 5)
-                    break
-            else:
-                sz_dec = 5
+        # Always get sz_dec from get_coin_index() to avoid mismatch
+        _, sz_dec = get_coin_index(coin)
         
         # 0.1% offset from mid for market-like execution (was 5%, too aggressive)
         price = mid_price * (1.001 if is_buy else 0.999)
