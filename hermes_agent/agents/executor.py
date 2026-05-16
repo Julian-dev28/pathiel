@@ -150,8 +150,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         reward_risk = 1.0
 
     # FORCE small test size to debug "invalid size" error
-    trade_notional = 1.0  # $1 USD notional (tiny test)
-    size = trade_notional / entry_px if entry_px else 1.0
+    # Hardcode to 0.001 XMR (minimum size) at current mid price
+    size = 0.001  # Minimum XMR size
+    trade_notional = size * (entry_px or 2600)  # Approximate $ notional
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
