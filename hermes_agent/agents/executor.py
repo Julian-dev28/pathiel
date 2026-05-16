@@ -226,9 +226,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # Kelly gives margin amount; multiply by leverage for position notional
     position_notional = trade_notional * HL_LEVERAGE
     
-    # Dynamic size: use 2% of equity (with 5x leverage = 10% of equity buying power)
-    # Reduced from 5% because account already has multiple positions
-    max_notional = equity * 0.02 * HL_LEVERAGE  # 2% * 5 = 10% of equity
+    # Dynamic size: use 1% of equity (with 5x leverage = 5% of equity buying power)
+    # Reduced from 2% because account has multiple positions
+    max_notional = equity * 0.01 * HL_LEVERAGE  # 1% * 5 = 5% of equity
     size_in_coin = max_notional / mid_price
     # Ensure minimum $10 value
     min_size_by_value = 10.0 / mid_price
