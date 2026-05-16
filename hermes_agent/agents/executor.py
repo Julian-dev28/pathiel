@@ -223,7 +223,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     position_notional = trade_notional * HL_LEVERAGE
     # Dynamic size: ensure $10 minimum value for ALL coins
     min_size_by_value = 10.0 / mid_price  # $10 / price = coin amount
-    size_in_coin = max(10.0, min_size_by_value)  # At least 10 coins or $10 worth
+    size_in_coin = max(1.0, min_size_by_value)  # At least 1 coin or $10 worth
 
     asset_idx, _ = get_coin_index(coin)
     atr = get_hl_atr("4h", 14, coin)
