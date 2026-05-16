@@ -173,6 +173,8 @@ def place_hl_order(
         
         # 0.5% offset from mid for market-like execution (was 0.1%, too small for IOC)
         price = mid_price * (1.005 if is_buy else 0.995)
+        # DEBUG: Log mid_price
+        logger.info(f"[place_hl_order] coin={coin}, mid_price={mid_price}, calculated_price={price}")
         # Round price to tick size (use sz_dec, pxDecimals usually same as szDecimals)
         # Avoid calling info.meta() again (rate limit)
         tick_size = 10 ** (-sz_dec)
