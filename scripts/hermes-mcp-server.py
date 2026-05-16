@@ -215,6 +215,17 @@ TOOLS = [
             }
         }
     },
+    {
+        "name": "close_position",
+        "description": "Close a position for a specific coin.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (e.g. BTC, ETH)"},
+            },
+            "required": ["coin"],
+        },
+    },
 ]
 
 
@@ -471,6 +482,7 @@ def run() -> None:
         "market_list_instruments": handle_market_list_instruments,
         "market_get_mids": handle_market_get_mids,
         "whale_index": handle_whale_index,
+        "close_position": handle_close_position,
     }
 
     # MCP handshake
@@ -530,6 +542,39 @@ def run() -> None:
             sys.stderr.write(f"MCP error: {e}\n")
             sys.stderr.flush()
 
+
+def handle_close_position(params: Dict[str, Any]) -> str:
+    """Handle close_position tool call."""
+    from hermes_agent.client.exchange import get_coin_index, get_hl_price, place_hl_order
+    from hermes_agent.client.hl_client import fetch_account_state
+    import os
+    
+    coin = params.get('coin', 'BTC').upper()
+    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    
+    try:
+        # Fetch position
+        state = fetch_account_state(user)
+        pos = None
+        for p in (state.get('asset_positions') or []):
+            if p.get('position', {}).get('coin') == coin:
+                pos = p
+                break
+        
+        if not pos:
+            return json.dumps({'closed': False, 'reason': f'No position found for {coin}'})
+        
+        # Get position details
+        szi = float(pos['position']['szi'])
+        is_long = szi > 0
+        size = abs(szi)
+        mid_price = get_hl_price(coin)
+        
+        # Place opposite order to close
+        result = place_hl_order(not is_long, size, mid_price, coin=coin)
+        return json.dumps({'closed': True, 'coin': coin, 'size': size, 'result': result}, default=str)
+    except Exception as e:
+        return json.dumps({'closed': False, 'error': str(e)}, default=str)
 
 def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
     msg = {
