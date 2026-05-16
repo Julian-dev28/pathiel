@@ -665,6 +665,30 @@ TOOLS = [
         "description": "Get contexts for all assets.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_user_orders_history",
+        "description": "Get user's order history with filtering.",
+        "inputSchema": {"type": "object", "properties": {
+            "limit": {"type": "number", "description": "Max orders (default 100)"}
+        }}
+    },
+    {
+        "name": "get_price_impact",
+        "description": "Estimate price impact for a trade size.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "size": {"type": "number", "description": "Trade size in coin"}
+        }, "required": ["coin", "size"]}
+    },
+    {
+        "name": "get_slippage_estimate",
+        "description": "Estimate slippage for a trade.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"},
+            "size": {"type": "number", "description": "Trade size in coin"},
+            "is_buy": {"type": "boolean", "description": "True for buy, False for sell"}
+        }, "required": ["coin", "size", "is_buy"]}
+    },
 ]
 
 
@@ -986,6 +1010,9 @@ def run() -> None:
         "get_api_rate_limits": handle_get_api_rate_limits,
         "get_server_time": handle_get_server_time,
         "get_asset_contexts": handle_get_asset_contexts,
+        "get_user_orders_history": handle_get_user_orders_history,
+        "get_price_impact": handle_get_price_impact,
+        "get_slippage_estimate": handle_get_slippage_estimate,
     }
 
     # MCP handshake
@@ -1854,6 +1881,44 @@ def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         return json.dumps({'contexts': meta, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
+    """Handle get_asset_contexts tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        meta = info.meta() if hasattr(info, 'meta') else {}
+        return json.dumps({'contexts': meta, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
+    """Handle get_user_orders_history tool call."""
+    limit = params.get('limit', 100)
+    try:
+        return json.dumps({'orders': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_price_impact(params: Dict[str, Any]) -> str:
+    """Handle get_price_impact tool call."""
+    coin = params.get('coin', '').upper()
+    size = params.get('size', 0)
+    try:
+        return json.dumps({'coin': coin, 'size': size, 'impact': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
+    """Handle get_slippage_estimate tool call."""
+    coin = params.get('coin', '').upper()
+    size = params.get('size', 0)
+    is_buy = params.get('is_buy', True)
+    try:
+        return json.dumps({'coin': coin, 'size': size, 'is_buy': is_buy, 'slippage': 0, 'note': 'SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
