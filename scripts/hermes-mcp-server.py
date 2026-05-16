@@ -483,6 +483,25 @@ TOOLS = [
         "description": "Get portfolio status summary.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "get_coin_price",
+        "description": "Get current price for a specific coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_coin_info",
+        "description": "Get detailed info for a specific coin.",
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker"}
+        }, "required": ["coin"]}
+    },
+    {
+        "name": "get_all_mids",
+        "description": "Get all mid prices (alias for market_get_mids).",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
 ]
 
 
@@ -777,6 +796,9 @@ def run() -> None:
         "get_leverage": handle_get_leverage,
         "get_max_trade_size": handle_get_max_trade_size,
         "get_portfolio_status": handle_get_portfolio_status,
+        "get_coin_price": handle_get_coin_price,
+        "get_coin_info": handle_get_coin_info,
+        "get_all_mids": handle_get_all_mids,
     }
 
     # MCP handshake
@@ -1296,6 +1318,44 @@ def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
     """Handle get_portfolio_status tool call."""
     try:
         return json.dumps({'status': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+
+def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
+    """Handle get_portfolio_status tool call."""
+    try:
+        return json.dumps({'status': {}, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_coin_price(params: Dict[str, Any]) -> str:
+    """Handle get_coin_price tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.hl_client import get_hl_candles
+        candles = get_hl_candles(coin, '1m', 1)
+        return json.dumps({'coin': coin, 'price': 0, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_coin_info(params: Dict[str, Any]) -> str:
+    """Handle get_coin_info tool call."""
+    coin = params.get('coin', '').upper()
+    try:
+        from hermes_agent.client.exchange import get_coin_index
+        idx, _, _ = get_coin_index(coin)
+        return json.dumps({'coin': coin, 'index': idx, 'note': 'SDK method pending'}, default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
+
+def handle_get_all_mids(params: Dict[str, Any]) -> str:
+    """Handle get_all_mids tool call."""
+    try:
+        from hermes_agent.client.exchange import _get_info
+        info = _get_info()
+        mids = info.all_mids()
+        return json.dumps({'mids': mids}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
