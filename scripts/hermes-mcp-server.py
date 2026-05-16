@@ -204,6 +204,17 @@ TOOLS = [
         "description": "Get all current mid prices for all assets.",
         "inputSchema": {"type": "object", "properties": {}}
     },
+    {
+        "name": "whale_index",
+        "description": "Get whale concentration + OI/funding anomaly signals.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "minConfidence": {"type": "number", "description": "Minimum signal confidence (default 0.1)"},
+                "topN": {"type": "number", "description": "Max signals to return (default 10)"}
+            }
+        }
+    },
 ]
 
 
@@ -430,6 +441,17 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
     return json.dumps(market_get_mids())
 
 
+
+def handle_whale_index(params: Dict[str, Any]) -> str:
+    """Handle whale_index tool call."""
+    from hermes_agent.agents.whale_index import get_whale_signals
+    
+    min_confidence = params.get("minConfidence", 0.1)
+    top_n = params.get("topN", 10)
+    
+    signals = get_whale_signals(min_confidence=min_confidence, top_n=top_n)
+    return json.dumps(signals, indent=2, default=str)
+
 # MCP server loop
 def run() -> None:
     # Initialize tool handlers
@@ -448,6 +470,7 @@ def run() -> None:
         "market_get_funding_regime": handle_market_get_funding_regime,
         "market_list_instruments": handle_market_list_instruments,
         "market_get_mids": handle_market_get_mids,
+        "whale_index": handle_whale_index,
     }
 
     # MCP handshake
