@@ -100,9 +100,20 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         os.environ.get("HYPERLIQUID_MASTER_ADDRESS")
         or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
     )
-    state = fetch_account_state(user)
-    equity = state["equity"]
-    total_open_notional = state["total_ntl"]
+    try:
+        state = fetch_account_state(user)
+    except Exception as e:
+        with open('/tmp/hermes_executor_error.log', 'w') as f:
+            f.write(f"fetch_account_state failed: {e}")
+        raise
+    
+    try:
+        equity = state["equity"]
+        total_open_notional = state["total_ntl"]
+    except KeyError as e:
+        with open('/tmp/hermes_executor_error.log', 'w') as f:
+            f.write(f"state keys: {list(state.keys())}\nError: {e}")
+        raise
 
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
