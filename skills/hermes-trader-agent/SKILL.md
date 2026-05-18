@@ -123,8 +123,15 @@ Runnable tooling shipped with this skill (`scripts/`, stdlib-only, no side effec
   positions, and whether the loop / MCP server are running. Local-only, safe to
   run any time — suitable for a cron status report.
 
+## Scheduled Operation
+
+An hourly Hermes cron job (`no_agent`, zero LLM cost) runs `status.py` and
+delivers the snapshot. It ships paused — `hermes cron resume 8a82eaa567fe` to
+start it. See `references/cron-jobs.md`.
+
 ## References
 
 - `references/mcp-config.md` — MCP server config and tool list.
 - `references/mcp-server.md` — server structure, adding tools, the audit invariant.
 - `references/hyperliquid-gotchas.md` — order-placement gotchas (decimals, tick size, $10 min, singletons).
+- `references/cron-jobs.md` — Hermes cron wiring for the hourly status report.
