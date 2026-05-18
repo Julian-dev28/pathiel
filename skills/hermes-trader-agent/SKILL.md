@@ -30,10 +30,9 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
    pairs (`@` prefix) are excluded. A fired `momentumBurst` (large fast move)
    bypasses the composite-score gate so explosive moves are never filtered out.
 2. **TA Filter** — `ta_filter.py` does multi-timeframe validation (1h/4h/1d EMA,
-   RSI, ATR, ADX, volume) at zero AI cost. **Note:** `analyze_perception()` exists
-   but `scripts/trading_loop.py` does not currently call it — the loop researches
-   every triggered perception. Wiring the filter in as a gate is a known cost
-   improvement, not yet done.
+   RSI, ATR, ADX, volume) at zero AI cost. `trading_loop.py` runs it as a gate:
+   only CONFIRMED perceptions (score ≥ 45) reach AI research; WEAK / REJECTED are
+   dropped. A perception whose `momentumBurst` trigger fired bypasses the gate.
 3. **AI Research** — deep AI analysis via OpenRouter on triggered candidates.
 4. **Execution** — equity-sized orders (1% × leverage), SDK order signing, an
    ATR-based backup stop-loss, and DSL dynamic exits.

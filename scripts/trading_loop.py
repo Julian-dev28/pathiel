@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Continuous trading loop for hermes-trader."""
+"""Continuous trading loop for hermes-trader.
+
+Per cycle: scan -> TA filter -> AI research -> execute. The TA filter
+(`analyze_perception`, zero AI cost) gates the paid LLM call — only CONFIRMED
+perceptions reach research. A perception whose `momentumBurst` trigger fired
+bypasses the gate: a large fast move is always worth researching.
+"""
 import os
 import time
 import logging
@@ -20,6 +26,7 @@ logging.basicConfig(
 )
 
 from hermes_trader.agents.perception import scan_once
+from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.executor import maybe_execute
 from hermes_trader.agents.config import get_config
@@ -40,31 +47,45 @@ min_score = config['scan']['minCompositeScore']
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
 
+
+def _burst_fired(perception):
+    """True if the perception's momentumBurst trigger fired (a large fast move)."""
+    return any(t.get("name") == "momentumBurst" and t.get("fired")
+               for t in perception.get("triggers", []))
+
+
 while True:
     try:
         logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
-        
+
         for perception in results:
             coin = perception['coin']
             score = perception.get('composite_score', 0)
-            logger.info(f"Researching {coin} (score: {score:.1f})...")
-            
+
+            # TA filter — cheap statistical gate before the paid AI call.
+            ta = analyze_perception(perception)
+            if ta['signal'] != 'CONFIRMED' and not _burst_fired(perception):
+                logger.info(f"{coin}: TA {ta['signal']} (score {ta['score']:.0f}) — skip AI research")
+                continue
+            gate = 'CONFIRMED' if ta['signal'] == 'CONFIRMED' else f"{ta['signal']}+burst"
+            logger.info(f"Researching {coin} (trigger {score:.1f}, TA {gate})...")
+
             try:
                 analysis = research(coin, perception)
                 logger.info(f"Verdict: {analysis['verdict']}, Confidence: {analysis['confidence']}")
-                
+
                 if analysis['verdict'] in ('LONG', 'SHORT'):
                     logger.info(f"Executing {analysis['side']} trade...")
                     result = maybe_execute(analysis)
                     logger.info(f"Trade result: {result}")
             except Exception as e:
                 logger.error(f"Error processing {coin}: {e}")
-        
+
         logger.info(f"Sleeping {scan_interval}s until next scan...")
         time.sleep(scan_interval)
-        
+
     except KeyboardInterrupt:
         logger.info("Trading loop stopped by user")
         break

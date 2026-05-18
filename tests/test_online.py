@@ -70,6 +70,17 @@ def test_market_get_funding_regime_live():
     assert out["assets"]
 
 
+def test_ta_filter_gate_live():
+    """The TA filter that trading_loop.py uses to gate AI research."""
+    from hermes_trader.agents.ta_filter import analyze_perception
+    ta = analyze_perception({"coin": "BTC", "composite_score": 50})
+    assert ta["signal"] in ("CONFIRMED", "WEAK", "REJECTED")
+    assert 0 <= ta["score"] <= 100
+    for key in ("trend4h", "rsi4h", "atr4pct", "adx4h", "ema_cross",
+                "volume_confirm", "reason"):
+        assert key in ta
+
+
 def test_research_pipeline_live_without_llm(monkeypatch):
     """Full research data pipeline against the live API, minus the paid LLM call.
 

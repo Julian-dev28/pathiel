@@ -11,7 +11,7 @@ Trading signals appear constantly — 5-minute spikes, hourly trends, daily brea
 
 1. **Scan** — 500+ markets in parallel with volume pre-filtering and rate-limit-aware batching
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
-3. **AI Research** — only on CONFIRMED signals (typically 0-2 per cycle vs. 5+ before)
+3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst
 4. **Execution** — Kelly-sized orders with DSL dynamic stop-loss exits (loss protection → profit locking)
 5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
 
@@ -184,9 +184,9 @@ Monitor logs: `tail -f /tmp/hermes-trader.log`
 
 **Trading Loop Behavior:**
 - Scans top 60 markets every 60 seconds
-- Researches triggered signals with AI (qwen/qwen3-235b-a22b)
-- Executes trades when confidence >= 0.50
-- Enforces risk caps (max $200 notional, max 3 concurrent positions)
+- Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
+- Researches qualifying signals with AI (qwen/qwen3-235b-a22b)
+- Executes trades that clear all 11 risk gates
 - Runs continuously until stopped
 
 ---
