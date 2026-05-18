@@ -58,8 +58,9 @@ no duplicate handle_* function definitions (a dup silently shadows the first)
 every TOOLS entry has a resolvable handler; no unwired handlers; no orphan dict keys
 ```
 
-Verify after any tool change — collect `TOOLS` names, `tool_handlers` keys, and
-`_STUB_RESPONSES` keys via AST and assert the equality above.
+Do not check this by hand — run the bundled `scripts/audit_mcp_server.py` before
+and after any tool change. It parses the server via `ast` (no import, no
+execution) and exits non-zero on drift.
 
 ## Restart
 

@@ -111,6 +111,18 @@ For agent-wallet setup and the `approveAgent` flow, see the
 | MCP tool runs stale code after a fix | The server is a separate process — `pkill -f hermes-mcp-server.py` to respawn. |
 | Scan returns 0 triggers | Often correct (quiet market). Lower `minScore` only to widen deliberately. |
 
+## Bundled Scripts
+
+Runnable tooling shipped with this skill (`scripts/`, stdlib-only, no side effects):
+
+- `scripts/audit_mcp_server.py` — validates MCP tool wiring (`TOOLS` /
+  `tool_handlers` / `_STUB_RESPONSES` consistency). Run before and after editing
+  the server; parses via `ast` (no import, no execution) and exits non-zero on
+  drift.
+- `scripts/status.py` — plain-text snapshot: mode, equity, trades, open
+  positions, and whether the loop / MCP server are running. Local-only, safe to
+  run any time — suitable for a cron status report.
+
 ## References
 
 - `references/mcp-config.md` — MCP server config and tool list.
