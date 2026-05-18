@@ -12,18 +12,16 @@ All market data streams through ONE websocket connection:
 
 from __future__ import annotations
 
-import json
 import logging
 import ssl
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import certifi
-import websocket
 from hyperliquid.info import Info
-from hyperliquid.websocket_manager import WebsocketManager, ws_msg_to_identifier
+from hyperliquid.websocket_manager import WebsocketManager
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +211,7 @@ class HyperliquidWebSocket:
                     if sock and hasattr(sock, 'close'):
                         try:
                             sock.shutdown(2)  # SHUT_RDWR
-                        except Exception:
+                        except OSError:
                             pass
                         sock.close()
             except Exception:

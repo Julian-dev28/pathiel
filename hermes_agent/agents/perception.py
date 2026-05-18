@@ -1,16 +1,9 @@
-"""Perception scan engine — sweeps all Hyperliquid markets for trigger signals.
+"""Perception scan engine — sweeps Hyperliquid markets for trigger signals.
 
-Translation of lib/agent/perception.ts. Sweeps every market, fetches candles,
-runs trigger detection, returns Perception objects for candidates that meet
-the composite score threshold.
-
-Uses parallel fan-out (absorbed from senpi-skills) for concurrent market scans,
-reducing scan time from O(N*latency) to O(N/parallelism*latency).
-
-Volume pre-filtering limits scans to top-N markets by 24h volume to stay
-within HL's 1200 weight/minute rate limit (candle fetch = 20 weight each).
-
-All functions are SYNC — no async/await needed.
+Fetches candles, runs trigger detection, and returns candidates that meet the
+composite-score threshold. Scans fan out across threads; volume pre-filtering
+limits the sweep to the top-N markets by 24h volume to stay within HL's
+1200 weight/minute rate limit (candle fetch = 20 weight each).
 """
 
 from __future__ import annotations
@@ -23,13 +16,11 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_agent.agents.config import get_config
-from hermes_agent.client.cache import get_global_cache
-from hermes_agent.client.daemon import producer_daemon, check_daemon_state
-from hermes_agent.client.hl_client import fetch_hl_candles, fetch_all_mids, start_ws_mids
-from hermes_agent.client.lock import scanner_lock, check_lock_status
-from hermes_agent.client.parallel import parallel
-from hermes_agent.client.universe import get_universe, get_universe_top_n
+from hermes_agent.client.daemon import check_daemon_state, producer_daemon
+from hermes_agent.client.hl_client import fetch_all_mids, fetch_hl_candles, start_ws_mids
+from hermes_agent.client.universe import get_universe
 from hermes_agent.indicators import triggers as trigger_mod
+from hermes_agent.models.types import Candle
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +40,7 @@ def _fetch_candles_sync(
     cache_ttl_ms: int,
     max_retries: int = 3,
     backoff_base: float = 2.0,
-) -> Optional[List[Dict[str, Any]]]:
+) -> Optional[List[Candle]]:
     """Fetch candles from the SDK with in-memory caching and retry on 429."""
     key = _make_cache_key(coin, interval, count)
     cached = _candle_cache.get(key)
@@ -59,16 +50,10 @@ def _fetch_candles_sync(
     for attempt in range(max_retries):
         try:
             candles = fetch_hl_candles(coin, interval, count)
-            if not candles or len(candles) == 0:
+            if not candles:
                 return None
-
-            candle_dicts = [
-                {"t": c.t, "o": c.o, "h": c.h,
-                 "l": c.l, "c": c.c, "v": c.v}
-                for c in candles
-            ]
-            _candle_cache[key] = {"candles": candle_dicts, "cached_at": time.time() * 1000}
-            return candle_dicts
+            _candle_cache[key] = {"candles": candles, "cached_at": time.time() * 1000}
+            return candles
         except Exception as e:
             err_str = str(e).lower()
             if attempt < max_retries - 1 and ("429" in err_str or "rate" in err_str or "connection" in err_str or "timeout" in err_str):
@@ -89,11 +74,11 @@ def _scan_single_market(
     mid: float,
     config: Dict[str, Any],
     min_score: float,
-) -> Tuple[bool, Any]:
+) -> Tuple[bool, Dict[str, Any] | str | None]:
     """Run all triggers on a single market's candles.
-    
-    Returns (success, perception_dict) or (False, error_string).
-    Designed for use with parallel() or ThreadPoolExecutor.
+
+    Returns (success, perception_dict | None) on success, or (False, error_string).
+    Designed to run inside a ThreadPoolExecutor worker.
     """
     try:
         candles = _fetch_candles_sync(
@@ -143,28 +128,18 @@ def scan_once(
     universe: Optional[List[Dict[str, Any]]] = None,
     min_score: float = 20,
     config: Optional[Dict[str, Any]] = None,
-    throttle: float = 0.5,
     parallel_workers: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Scan all Hyperliquid markets for trigger signals.
+    """Scan Hyperliquid markets for trigger signals.
 
-    Translation of scanOnce() from lib/agent/perception.ts.
-    Returns list of Perception dicts sorted by composite score descending.
-
-    Uses parallel fan-out for candle fetching. Each market is scanned
-    independently — the only shared state is the candle cache.
-
-    Volume pre-filtering: only scans top-N markets by 24h notional volume
-    to stay within HL's 1200 weight/minute rate limit. Default N=50.
+    Returns perception dicts sorted by composite score descending. Markets are
+    scanned in parallel; the only shared state is the candle cache.
 
     Args:
         universe: pre-fetched market list. Defaults to get_universe().
-        min_score: minimum composite score to include results.
+        min_score: minimum composite score to include a result.
         config: config dict. Defaults to get_config().
-        throttle: not used with parallel mode (kept for backward compat).
         parallel_workers: max concurrent market scans. Defaults to 32.
-
-    For sequential mode (debugging, small universe): pass parallel_workers=1.
     """
     started = time.time()
     cfg = config or get_config()
@@ -232,7 +207,7 @@ def scan_once(
                 idx = batch_start + i
                 try:
                     success, result = future.result(timeout=60)
-                    if success and result is not None:
+                    if success and isinstance(result, dict):
                         results.append(result)
                     elif not success:
                         errors += 1
@@ -276,14 +251,12 @@ def start_scan_daemon(interval_seconds: int = 180, name: str = "hermes-scanner")
     - Writes PID/heartbeat state files for monitoring
     - Handles SIGTERM gracefully
     """
-    from hermes_agent.client.hl_client import start_ws_mids
-
     # Start WebSocket for real-time mids (one persistent connection)
     ws = start_ws_mids()
     if ws:
         logger.info("[daemon] WebSocket started for real-time mids")
 
-    def scan_fn() -> dict:
+    def scan_fn() -> List[Dict[str, Any]]:
         return scan_once(
             config=None,
             min_score=75,
@@ -300,5 +273,4 @@ def start_scan_daemon(interval_seconds: int = 180, name: str = "hermes-scanner")
 
 def check_scan_daemon_state(name: str = "hermes-scanner") -> Dict[str, Any]:
     """Check the state of the scanning daemon."""
-    from hermes_agent.client.daemon import check_daemon_state
     return check_daemon_state(name)

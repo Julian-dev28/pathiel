@@ -28,7 +28,7 @@ from hermes_agent.client.universe import get_universe
 logger = logging.getLogger(__name__)
 
 logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
-logger.info(f"Mode: LIVE")
+logger.info("Mode: LIVE")
 
 config = get_config()
 universe = get_universe()
@@ -40,7 +40,7 @@ logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
 
 while True:
     try:
-        logger.info(f"Scanning markets...")
+        logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
         
@@ -68,5 +68,5 @@ while True:
         break
     except Exception as e:
         logger.error(f"Trading loop error: {e}")
-        logger.info(f"Sleeping 60s before retry...")
+        logger.info("Sleeping 60s before retry...")
         time.sleep(60)

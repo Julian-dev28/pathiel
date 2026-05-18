@@ -34,8 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hermes_agent.agents.config_store import read_agent_config
 from hermes_agent.agents.perception import scan_once
-from hermes_agent.client.hl_client import fetch_all_mids, fetch_account_state
-from hermes_agent.agents.risk_gates import eval_all_gates, GateContext
+from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
 from hermes_agent.agents.hyperfeed import (
     leaderboard_get_markets,
     leaderboard_get_top as leaderboard_get_top_traders,
@@ -50,6 +49,18 @@ from hermes_agent.agents.hyperfeed import (
 
 # Per-subprocess perception cache so research can access the data from last scan
 _perception_cache: Dict[str, Dict[str, Any]] = {}
+
+# Tools whose underlying SDK call is not yet wired up. Each returns a fixed
+# placeholder payload tagged with a "SDK method pending" note.
+_STUB_RESPONSES: Dict[str, Dict[str, Any]] = {'get_trade_history': {'trades': []}, 'get_funding_history': {'funding': []}, 'get_sub_accounts': {'sub_accounts': []}, 'get_user_twist': {'twist': {}}, 'get_withdrawals': {'withdrawals': []}, 'get_predicted_funding': {'predicted_funding': []}, 'get_asset_context': {'context': {}}, 'get_user_defined_types': {'user_defined_types': []}, 'get_api_keys': {'api_keys': []}, 'get_user_verify': {'verified': False}, 'get_liquidations': {'liquidations': []}, 'get_order_status': {'status': 'pending'}, 'get_user_orders': {'orders': []}, 'get_assets': {'assets': []}, 'get_market_stats': {'stats': {}}, 'get_deposits': {'deposits': []}, 'get_transfers': {'transfers': []}, 'get_rewards': {'rewards': []}, 'get_staking_info': {'staking': {}}, 'get_user_roles': {'roles': []}, 'get_leverage': {'leverage': 1}, 'get_max_trade_size': {'max_size': 0}, 'get_portfolio_status': {'status': {}}, 'get_coin_price': {'price': 0}, 'get_trading_permissions': {'permissions': []}, 'get_recent_trades': {'trades': []}, 'get_funding_rate': {'funding_rate': 0}, 'get_liquidation_events': {'liquidations': []}, 'get_exchange_status': {'status': 'operational'}, 'get_user_preferences': {'preferences': {}}, 'get_historical_funding': {'funding_history': []}, 'get_open_interest': {'open_interest': 0}, 'get_market_sentiment': {'sentiment': {'fear_greed': 50}}, 'get_leaderboard_rank': {'rank': {}}, 'get_vaults': {'vaults': []}, 'get_vault_details': {'details': {}}, 'get_api_rate_limits': {'rate_limits': {}}, 'get_user_orders_history': {'orders': []}, 'get_price_impact': {'impact': 0}, 'get_slippage_estimate': {'slippage': 0}, 'get_withdrawal_status': {'status': {}}, 'get_deposit_address': {'address': ''}, 'get_transfer_history': {'transfers': []}, 'get_governance_proposals': {'proposals': []}, 'get_validator_info': {'validators': []}, 'get_network_stats': {'stats': {}}, 'get_sub_account_balances': {'balances': []}, 'get_whale_alerts': {'alerts': []}}
+
+
+def _make_stub_handler(payload: Dict[str, Any]):
+    """Build a handler that returns a fixed placeholder payload."""
+    def handler(params: Dict[str, Any]) -> str:
+        return json.dumps({**payload, "note": "SDK method pending"}, default=str)
+    return handler
+
 
 # Tools definition
 TOOLS = [
@@ -814,7 +825,7 @@ def handle_scan(params: Dict[str, Any]) -> str:
 
 
 def handle_state(params: Dict[str, Any]) -> str:
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    user = resolve_user_address()
     account = fetch_account_state(user) if user else {"equity": 0, "total_ntl": 0, "asset_positions": []}
     config = read_agent_config()
 
@@ -861,30 +872,17 @@ def handle_research(params: Dict[str, Any]) -> str:
     # Find matching perception from last scan
     perception = _perception_cache.get(coin)
     if not perception:
-        # Build minimal perception from current mid price
-        try:
-            from hermes_agent.client.hl_client import fetch_all_mids
-            mids = fetch_all_mids()
-            for m in mids:
-                if m.get("coin") == coin:
-                    perception = {
-                        "id": f"{coin}-{int(time.time()*1000)}",
-                        "coin": coin,
-                        "type": "perp",
-                        "mid": float(m.get("mid", 0)),
-                        "triggers": [],
-                        "composite_score": 0,
-                    }
-                    break
-        except Exception:
-            perception = {
-                "id": f"{coin}-{int(time.time()*1000)}",
-                "coin": coin,
-                "type": "perp",
-                "mid": 0,
-                "triggers": [],
-                "composite_score": 0,
-            }
+        # Build a minimal perception from the current mid price.
+        from hermes_agent.client.hl_client import fetch_all_mids
+        mids = fetch_all_mids()
+        perception = {
+            "id": f"{coin}-{int(time.time()*1000)}",
+            "coin": coin,
+            "type": "perp",
+            "mid": float(mids.get(coin, 0)),
+            "triggers": [],
+            "composite_score": 0,
+        }
     
     try:
         analysis = research(coin, perception)
@@ -942,11 +940,6 @@ def handle_execute(params: Dict[str, Any]) -> str:
         result = maybe_execute(analysis)
         return json.dumps(result)
     except Exception as e:
-        import traceback
-        error_detail = traceback.format_exc()
-        # Write to file for debugging
-        with open('/tmp/hermes_execute_error.log', 'w') as f:
-            f.write(f"Exception: {e}\n\nTraceback:\n{error_detail}\n\nAnalysis dict:\n{json.dumps(analysis, indent=2)}")
         return json.dumps({
             "status": "error",
             "coin": analysis.get("coin"),
@@ -1011,7 +1004,6 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
     return json.dumps(market_get_mids())
 
 
-
 def handle_whale_index(params: Dict[str, Any]) -> str:
     """Handle whale_index tool call."""
     from hermes_agent.agents.whale_index import get_whale_signals
@@ -1051,82 +1043,37 @@ def run() -> None:
         "get_spot_balances": handle_get_spot_balances,
         "get_user_fees": handle_get_user_fees,
         "get_referral": handle_get_referral,
-        "get_trade_history": handle_get_trade_history,
-        "get_funding_history": handle_get_funding_history,
         "get_l2_book": handle_get_l2_book,
         "get_user_state": handle_get_user_state,
-        "get_sub_accounts": handle_get_sub_accounts,
-        "get_user_twist": handle_get_user_twist,
         "get_frontend_open_orders": handle_get_frontend_open_orders,
-        "get_withdrawals": handle_get_withdrawals,
-        "get_predicted_funding": handle_get_predicted_funding,
-        "get_asset_context": handle_get_asset_context,
-        "get_user_defined_types": handle_get_user_defined_types,
         "get_candles_aggregated": handle_get_candles_aggregated,
-        "get_api_keys": handle_get_api_keys,
-        "get_user_verify": handle_get_user_verify,
-        "get_liquidations": handle_get_liquidations,
         "get_price_history": handle_get_price_history,
-        "get_order_status": handle_get_order_status,
-        "get_user_orders": handle_get_user_orders,
-        "get_assets": handle_get_assets,
-        "get_market_stats": handle_get_market_stats,
-        "get_deposits": handle_get_deposits,
-        "get_transfers": handle_get_transfers,
-        "get_rewards": handle_get_rewards,
-        "get_staking_info": handle_get_staking_info,
-        "get_user_roles": handle_get_user_roles,
-        "get_leverage": handle_get_leverage,
-        "get_max_trade_size": handle_get_max_trade_size,
-        "get_portfolio_status": handle_get_portfolio_status,
-        "get_coin_price": handle_get_coin_price,
         "get_coin_info": handle_get_coin_info,
         "get_all_mids": handle_get_all_mids,
-        "get_trading_permissions": handle_get_trading_permissions,
         "get_account_summary": handle_get_account_summary,
         "get_asset_positions": handle_get_asset_positions,
         "get_24h_stats": handle_get_24h_stats,
-        "get_recent_trades": handle_get_recent_trades,
-        "get_funding_rate": handle_get_funding_rate,
-        "get_liquidation_events": handle_get_liquidation_events,
         "get_portfolio_pnl": handle_get_portfolio_pnl,
         "get_risk_metrics": handle_get_risk_metrics,
-        "get_exchange_status": handle_get_exchange_status,
         "get_markets_info": handle_get_markets_info,
-        "get_user_preferences": handle_get_user_preferences,
         "get_spot_markets": handle_get_spot_markets,
         "get_perp_markets": handle_get_perp_markets,
         "get_market_depth": handle_get_market_depth,
-        "get_historical_funding": handle_get_historical_funding,
-        "get_open_interest": handle_get_open_interest,
-        "get_market_sentiment": handle_get_market_sentiment,
-        "get_leaderboard_rank": handle_get_leaderboard_rank,
-        "get_vaults": handle_get_vaults,
-        "get_vault_details": handle_get_vault_details,
-        "get_api_rate_limits": handle_get_api_rate_limits,
         "get_server_time": handle_get_server_time,
         "get_asset_contexts": handle_get_asset_contexts,
-        "get_user_orders_history": handle_get_user_orders_history,
-        "get_price_impact": handle_get_price_impact,
-        "get_slippage_estimate": handle_get_slippage_estimate,
-        "get_withdrawal_status": handle_get_withdrawal_status,
-        "get_deposit_address": handle_get_deposit_address,
-        "get_transfer_history": handle_get_transfer_history,
-        "get_governance_proposals": handle_get_governance_proposals,
-        "get_validator_info": handle_get_validator_info,
-        "get_network_stats": handle_get_network_stats,
         "get_liquidation_price": handle_get_liquidation_price,
         "get_max_leverage": handle_get_max_leverage,
         "get_order_by_oid": handle_get_order_by_oid,
-        "get_sub_account_balances": handle_get_sub_account_balances,
         "get_user_fees_detailed": handle_get_user_fees_detailed,
-        "get_whale_alerts": handle_get_whale_alerts,
         "get_user_fills": handle_get_user_fills,
         "get_user_fills_by_time": handle_get_user_fills_by_time,
         "get_user_funding_history": handle_get_user_funding_history,
         "get_historical_orders": handle_get_historical_orders,
         "query_order_by_cloid": handle_query_order_by_cloid,
     }
+
+    for _name, _payload in _STUB_RESPONSES.items():
+        tool_handlers[_name] = _make_stub_handler(_payload)
 
     # MCP handshake
     while True:
@@ -1189,8 +1136,7 @@ def run() -> None:
 def handle_get_portfolio(params: Dict[str, Any]) -> str:
     """Handle get_portfolio tool call."""
     from hermes_agent.client.hl_client import fetch_account_state
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     state = fetch_account_state(user)
     return json.dumps(state.get('asset_positions', []), indent=2, default=str)
 
@@ -1203,21 +1149,19 @@ def handle_get_price(params: Dict[str, Any]) -> str:
 
 def handle_get_candles(params: Dict[str, Any]) -> str:
     """Handle get_candles tool call."""
-    from hermes_agent.client.hl_client import get_hl_candles
+    from hermes_agent.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
-    candles = get_hl_candles(coin, interval, count)
-    return json.dumps(candles, indent=2, default=str)
+    candles = fetch_hl_candles(coin, interval, count)
+    return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
-    from hermes_agent.client.exchange import get_coin_index, get_hl_price, place_hl_order
-    from hermes_agent.client.hl_client import fetch_account_state
-    import os
+    from hermes_agent.client.exchange import get_hl_price, place_hl_order
     
     coin = params.get('coin', 'BTC').upper()
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     
     try:
         # Fetch position
@@ -1254,8 +1198,7 @@ def handle_set_leverage(params: Dict[str, Any]) -> str:
 def handle_get_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_open_orders tool call."""
     from hermes_agent.client.hl_client import fetch_account_state
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     state = fetch_account_state(user)
     orders = state.get('open_orders', [])
     coin_filter = params.get('coin', '').upper()
@@ -1280,8 +1223,7 @@ def handle_cancel_order(params: Dict[str, Any]) -> str:
 def handle_get_spot_balances(params: Dict[str, Any]) -> str:
     """Handle get_spot_balances tool call."""
     from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     try:
         info = _get_info()
         spot_state = info.spot_user_state(user)
@@ -1292,8 +1234,7 @@ def handle_get_spot_balances(params: Dict[str, Any]) -> str:
 def handle_get_user_fees(params: Dict[str, Any]) -> str:
     """Handle get_user_fees tool call."""
     from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     try:
         info = _get_info()
         fees = info.user_fees(user)
@@ -1304,8 +1245,7 @@ def handle_get_user_fees(params: Dict[str, Any]) -> str:
 def handle_get_referral(params: Dict[str, Any]) -> str:
     """Handle get_referral tool call."""
     from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     try:
         info = _get_info()
         referral = info.referral(user)
@@ -1313,34 +1253,6 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_trade_history(params: Dict[str, Any]) -> str:
-    """Handle get_trade_history tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    coin = params.get('coin', '').upper()
-    limit = params.get('limit', 100)
-    try:
-        info = _get_info()
-        # Use frontend_open_orders or query user trades
-        # For now, return empty as the SDK method may vary
-        return json.dumps({'trades': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_funding_history(params: Dict[str, Any]) -> str:
-    """Handle get_funding_history tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    coin = params.get('coin', '').upper()
-    limit = params.get('limit', 100)
-    try:
-        info = _get_info()
-        # Funding history requires specific SDK method
-        return json.dumps({'funding': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_l2_book(params: Dict[str, Any]) -> str:
     """Handle get_l2_book tool call."""
@@ -1357,8 +1269,7 @@ def handle_get_l2_book(params: Dict[str, Any]) -> str:
 def handle_get_user_state(params: Dict[str, Any]) -> str:
     """Handle get_user_state tool call."""
     from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     try:
         info = _get_info()
         state = info.frontend_user_state(user)
@@ -1366,35 +1277,11 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_sub_accounts(params: Dict[str, Any]) -> str:
-    """Handle get_sub_accounts tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    try:
-        info = _get_info()
-        # Sub-accounts API
-        return json.dumps({'sub_accounts': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_twist(params: Dict[str, Any]) -> str:
-    """Handle get_user_twist tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    try:
-        info = _get_info()
-        # User twist (staking)
-        return json.dumps({'twist': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_frontend_open_orders tool call."""
     from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
+    user = resolve_user_address()
     coin = params.get('coin', '').upper()
     try:
         info = _get_info()
@@ -1405,61 +1292,16 @@ def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_withdrawals(params: Dict[str, Any]) -> str:
-    """Handle get_withdrawals tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    limit = params.get('limit', 100)
-    try:
-        info = _get_info()
-        # Withdrawal history
-        return json.dumps({'withdrawals': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
-    """Handle get_predicted_funding tool call."""
-    from hermes_agent.client.exchange import _get_info
-    try:
-        info = _get_info()
-        # Predicted funding rates
-        return json.dumps({'predicted_funding': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_asset_context(params: Dict[str, Any]) -> str:
-    """Handle get_asset_context tool call."""
-    from hermes_agent.client.exchange import _get_info
-    asset = params.get('asset')
-    if asset is None:
-        return json.dumps({'error': 'asset index required'}, default=str)
-    try:
-        info = _get_info()
-        # Asset context
-        return json.dumps({'context': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_defined_types(params: Dict[str, Any]) -> str:
-    """Handle get_user_defined_types tool call."""
-    from hermes_agent.client.exchange import _get_info
-    try:
-        info = _get_info()
-        # User-defined perpetual types
-        return json.dumps({'user_defined_types': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
     """Handle get_candles_aggregated tool call."""
-    from hermes_agent.client.hl_client import get_hl_candles
+    from hermes_agent.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
     try:
-        candles = get_hl_candles(coin, interval, count)
-        return json.dumps(candles, indent=2, default=str)
+        candles = fetch_hl_candles(coin, interval, count)
+        return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1472,171 +1314,17 @@ def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
 
-def handle_get_api_keys(params: Dict[str, Any]) -> str:
-    """Handle get_api_keys tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    try:
-        info = _get_info()
-        # API keys
-        return json.dumps({'api_keys': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_verify(params: Dict[str, Any]) -> str:
-    """Handle get_user_verify tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    try:
-        info = _get_info()
-        # User verification status
-        return json.dumps({'verified': False, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_liquidations(params: Dict[str, Any]) -> str:
-    """Handle get_liquidations tool call."""
-    from hermes_agent.client.exchange import _get_info
-    limit = params.get('limit', 100)
-    try:
-        info = _get_info()
-        # Liquidation events
-        return json.dumps({'liquidations': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_price_history(params: Dict[str, Any]) -> str:
     """Handle get_price_history tool call."""
-    from hermes_agent.client.hl_client import get_hl_candles
-    coin = params.get('coin', 'BTC').upper()
-    start_time = params.get('start_time')
-    end_time = params.get('end_time')
-    try:
-        # Get candles as price history
-        candles = get_hl_candles(coin, '1h', 100)
-        return json.dumps(candles, indent=2, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_order_status(params: Dict[str, Any]) -> str:
-    """Handle get_order_status tool call."""
-    user = params.get('user', '')
-    oid = params.get('oid')
-    if not user or oid is None:
-        return json.dumps({'error': 'user and oid required'}, default=str)
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        # Order status
-        return json.dumps({'status': 'pending', 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_orders(params: Dict[str, Any]) -> str:
-    """Handle get_user_orders tool call."""
-    from hermes_agent.client.exchange import _get_info
-    import os
-    user = params.get('user') or os.environ.get('HYPERLIQUID_MASTER_ADDRESS') or os.environ.get('HYPERLIQUID_WALLET_ADDRESS', '')
-    limit = params.get('limit', 100)
-    try:
-        info = _get_info()
-        # All user orders
-        return json.dumps({'orders': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_assets(params: Dict[str, Any]) -> str:
-    """Handle get_assets tool call."""
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        # All tradeable assets
-        return json.dumps({'assets': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_market_stats(params: Dict[str, Any]) -> str:
-    """Handle get_market_stats tool call."""
+    from hermes_agent.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     try:
-        from hermes_agent.client.hl_client import get_hl_candles
-        candles = get_hl_candles(coin, '1h', 24)
-        return json.dumps({'coin': coin, 'stats': {}, 'note': 'SDK method pending'}, default=str)
+        candles = fetch_hl_candles(coin, '1h', 100)
+        return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_deposits(params: Dict[str, Any]) -> str:
-    """Handle get_deposits tool call."""
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'deposits': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_transfers(params: Dict[str, Any]) -> str:
-    """Handle get_transfers tool call."""
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'transfers': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_rewards(params: Dict[str, Any]) -> str:
-    """Handle get_rewards tool call."""
-    try:
-        return json.dumps({'rewards': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_staking_info(params: Dict[str, Any]) -> str:
-    """Handle get_staking_info tool call."""
-    try:
-        return json.dumps({'staking': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_roles(params: Dict[str, Any]) -> str:
-    """Handle get_user_roles tool call."""
-    try:
-        return json.dumps({'roles': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_leverage(params: Dict[str, Any]) -> str:
-    """Handle get_leverage tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        return json.dumps({'coin': coin, 'leverage': 1, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
-    """Handle get_max_trade_size tool call."""
-    coin = params.get('coin', '').upper()
-    is_buy = params.get('is_buy', True)
-    try:
-        return json.dumps({'coin': coin, 'is_buy': is_buy, 'max_size': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
-    """Handle get_portfolio_status tool call."""
-    try:
-        return json.dumps({'status': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_coin_price(params: Dict[str, Any]) -> str:
-    """Handle get_coin_price tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.hl_client import get_hl_candles
-        candles = get_hl_candles(coin, '1m', 1)
-        return json.dumps({'coin': coin, 'price': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_coin_info(params: Dict[str, Any]) -> str:
     """Handle get_coin_info tool call."""
@@ -1644,7 +1332,7 @@ def handle_get_coin_info(params: Dict[str, Any]) -> str:
     try:
         from hermes_agent.client.exchange import get_coin_index
         idx, _, _ = get_coin_index(coin)
-        return json.dumps({'coin': coin, 'index': idx, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'coin': coin, 'index': idx}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1658,12 +1346,6 @@ def handle_get_all_mids(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_trading_permissions(params: Dict[str, Any]) -> str:
-    """Handle get_trading_permissions tool call."""
-    try:
-        return json.dumps({'permissions': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_account_summary(params: Dict[str, Any]) -> str:
     """Handle get_account_summary tool call."""
@@ -1671,7 +1353,7 @@ def handle_get_account_summary(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
-        return json.dumps({'summary': state, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'summary': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1692,41 +1374,13 @@ def handle_get_24h_stats(params: Dict[str, Any]) -> str:
     """Handle get_24h_stats tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.hl_client import get_hl_candles
+        from hermes_agent.client.hl_client import fetch_hl_candles
         # Get 24h of 1h candles for stats
-        candles = get_hl_candles(coin, '1h', 24)
-        return json.dumps({'coin': coin, 'stats_24h': candles, 'note': 'SDK method pending'}, default=str)
+        candles = fetch_hl_candles(coin, '1h', 24)
+        return json.dumps({'coin': coin, 'stats_24h': [c.model_dump() for c in candles]}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_recent_trades(params: Dict[str, Any]) -> str:
-    """Handle get_recent_trades tool call."""
-    coin = params.get('coin', '').upper()
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'coin': coin, 'trades': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_funding_rate(params: Dict[str, Any]) -> str:
-    """Handle get_funding_rate tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        # Get predicted funding
-        return json.dumps({'coin': coin, 'funding_rate': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_liquidation_events(params: Dict[str, Any]) -> str:
-    """Handle get_liquidation_events tool call."""
-    coin = params.get('coin', '').upper()
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'coin': coin, 'liquidations': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
     """Handle get_portfolio_pnl tool call."""
@@ -1734,7 +1388,7 @@ def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
-        return json.dumps({'pnl': state, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'pnl': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1744,16 +1398,10 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
-        return json.dumps({'risk': state, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'risk': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_exchange_status(params: Dict[str, Any]) -> str:
-    """Handle get_exchange_status tool call."""
-    try:
-        return json.dumps({'status': 'operational', 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_markets_info(params: Dict[str, Any]) -> str:
     """Handle get_markets_info tool call."""
@@ -1761,16 +1409,10 @@ def handle_get_markets_info(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
-        return json.dumps({'markets': meta, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'markets': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_user_preferences(params: Dict[str, Any]) -> str:
-    """Handle get_user_preferences tool call."""
-    try:
-        return json.dumps({'preferences': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     """Handle get_spot_markets tool call."""
@@ -1799,76 +1441,16 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
-        return json.dumps({'coin': coin, 'depth': l2, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'coin': coin, 'depth': l2}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_historical_funding(params: Dict[str, Any]) -> str:
-    """Handle get_historical_funding tool call."""
-    coin = params.get('coin', '').upper()
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'coin': coin, 'funding_history': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_open_interest(params: Dict[str, Any]) -> str:
-    """Handle get_open_interest tool call."""
-    coin = params.get('coin', '').upper()
-    try:
-        from hermes_agent.client.exchange import _get_info
-        info = _get_info()
-        # Open interest not directly available via SDK, return placeholder
-        return json.dumps({'coin': coin, 'open_interest': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_market_sentiment(params: Dict[str, Any]) -> str:
-    """Handle get_market_sentiment tool call."""
-    try:
-        return json.dumps({'sentiment': {'fear_greed': 50}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_leaderboard_rank(params: Dict[str, Any]) -> str:
-    """Handle get_leaderboard_rank tool call."""
-    user = params.get('user', '')
-    if not user:
-        return json.dumps({'error': 'user required'}, default=str)
-    try:
-        return json.dumps({'user': user, 'rank': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_vaults(params: Dict[str, Any]) -> str:
-    """Handle get_vaults tool call."""
-    try:
-        return json.dumps({'vaults': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_vault_details(params: Dict[str, Any]) -> str:
-    """Handle get_vault_details tool call."""
-    vault = params.get('vault', '')
-    if not vault:
-        return json.dumps({'error': 'vault required'}, default=str)
-    try:
-        return json.dumps({'vault': vault, 'details': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_api_rate_limits(params: Dict[str, Any]) -> str:
-    """Handle get_api_rate_limits tool call."""
-    try:
-        return json.dumps({'rate_limits': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_server_time(params: Dict[str, Any]) -> str:
     """Handle get_server_time tool call."""
     try:
         import time
-        return json.dumps({'server_time': int(time.time() * 1000), 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'server_time': int(time.time() * 1000)}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1878,83 +1460,7 @@ def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
         from hermes_agent.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
-        return json.dumps({'contexts': meta, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
-    """Handle get_user_orders_history tool call."""
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'orders': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_price_impact(params: Dict[str, Any]) -> str:
-    """Handle get_price_impact tool call."""
-    coin = params.get('coin', '').upper()
-    size = params.get('size', 0)
-    try:
-        return json.dumps({'coin': coin, 'size': size, 'impact': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
-    """Handle get_slippage_estimate tool call."""
-    coin = params.get('coin', '').upper()
-    size = params.get('size', 0)
-    is_buy = params.get('is_buy', True)
-    try:
-        return json.dumps({'coin': coin, 'size': size, 'is_buy': is_buy, 'slippage': 0, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
-    """Handle get_withdrawal_status tool call."""
-    withdrawal_id = params.get('withdrawal_id', '')
-    if not withdrawal_id:
-        return json.dumps({'error': 'withdrawal_id required'}, default=str)
-    try:
-        return json.dumps({'withdrawal_id': withdrawal_id, 'status': {}, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_deposit_address(params: Dict[str, Any]) -> str:
-    """Handle get_deposit_address tool call."""
-    token = params.get('token', '').upper()
-    if not token:
-        return json.dumps({'error': 'token required'}, default=str)
-    try:
-        return json.dumps({'token': token, 'address': '', 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_transfer_history(params: Dict[str, Any]) -> str:
-    """Handle get_transfer_history tool call."""
-    limit = params.get('limit', 100)
-    try:
-        return json.dumps({'transfers': [], 'limit': limit, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_governance_proposals(params: Dict[str, Any]) -> str:
-    """Handle get_governance_proposals tool call."""
-    try:
-        return json.dumps({'proposals': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_validator_info(params: Dict[str, Any]) -> str:
-    """Handle get_validator_info tool call."""
-    try:
-        return json.dumps({'validators': [], 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_network_stats(params: Dict[str, Any]) -> str:
-    """Handle get_network_stats tool call."""
-    try:
-        return json.dumps({'stats': {}, 'note': 'SDK method pending'}, default=str)
+        return json.dumps({'contexts': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2014,17 +1520,7 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
         if hasattr(info, 'query_order_by_oid'):
             res = info.query_order_by_oid(user, int(oid))
             return json.dumps({'order': res}, default=str)
-        return json.dumps({'order': None, 'note': 'SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_sub_account_balances(params: Dict[str, Any]) -> str:
-    """Handle get_sub_account_balances tool call."""
-    name = params.get('name', '')
-    try:
-        return json.dumps({'name': name, 'balances': [], 'note': 'SDK method pending'},
-                          default=str)
+        return json.dumps({'order': None}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2040,18 +1536,6 @@ def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
         return json.dumps({'fees': {}, 'note': 'no address or SDK method pending'}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_whale_alerts(params: Dict[str, Any]) -> str:
-    """Handle get_whale_alerts tool call."""
-    min_value = float(params.get('min_value', 100000))
-    try:
-        return json.dumps({'alerts': [], 'min_value': min_value,
-                           'note': 'whale alerts pending; use whale_index for live signals'},
-                          default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 
 def handle_get_user_fills(params: Dict[str, Any]) -> str:

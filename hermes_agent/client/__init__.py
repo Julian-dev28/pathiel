@@ -1,7 +1,4 @@
-"""hermes-trader client utilities.
-
-Absorbed from senpi-skills runtime SDK with hyperliquid-specific adaptations.
-"""
+"""hermes-trader client utilities."""
 
 from hermes_agent.client.hl_client import (
     HL_API,
@@ -9,14 +6,12 @@ from hermes_agent.client.hl_client import (
     fetch_account_state,
     fetch_all_mids,
     fetch_hl_candles,
-    fetch_universe,
     get_info,
     start_ws_mids,
     stop_ws_mids,
 )
 from hermes_agent.client.universe import get_market_by_coin, get_universe
 
-# Utility modules (absorbed from senpi-skills)
 from hermes_agent.client.cache import _Cache, _CacheEntry, cached_api_call, get_global_cache
 from hermes_agent.client.lock import scanner_lock, check_lock_status
 from hermes_agent.client.parallel import parallel
@@ -29,7 +24,6 @@ __all__ = [
     "fetch_account_state",
     "fetch_all_mids",
     "fetch_hl_candles",
-    "fetch_universe",
     "get_info",
     "start_ws_mids",
     "stop_ws_mids",

@@ -1,7 +1,4 @@
-"""Read/write .agent-config.json.
-
-Translation of lib/agent/config-store.ts.
-"""
+"""Read/write the agent config at .agent-config.json."""
 
 from __future__ import annotations
 
@@ -31,11 +28,9 @@ def read_agent_config() -> Dict[str, Any]:
 
 
 def write_agent_config(cfg: Dict[str, Any]) -> None:
-    """Write the agent config to .agent-config.json."""
-    import os as _os
-    # Write atomically
+    """Write the agent config to .agent-config.json (atomic replace)."""
     tmp = CONFIG_PATH + ".tmp"
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2)
-    _os.replace(tmp, CONFIG_PATH)
+    os.replace(tmp, CONFIG_PATH)
     logger.info(f"[config] written {len(cfg)} keys to {CONFIG_PATH}")

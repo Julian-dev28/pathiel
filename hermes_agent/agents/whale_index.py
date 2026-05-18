@@ -1,37 +1,23 @@
-"""Whale Index — discovery engine for smart money signals on Hyperliquid.
+"""Whale Index — smart-money signal heuristics over the Hyperliquid universe.
 
-Builds a whale/leaderboard tracking layer from the raw HL API data.
-Unlike the HL website's leaderboard (which is internal), this reconstructs
-the data from public API endpoints.
-
-Tools:
-1. leaderboard_get_top — fetches top traders by PnL from on-chain data
-2. smart_money_concentration — identifies assets with growing whale positioning
-3. oi_funding_anomaly — detects accumulation (OI spike + flat price + negative funding)
-
-All endpoints use the same rate-limit-aware HTTP pattern as the scan pipeline.
+Provides OI/funding-based concentration and accumulation signals.
+leaderboard_get_top / get_trader_state only return data for wallets added
+to WHALE_WALLETS.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any, Dict, List, Optional
 
-import requests
-
-from hermes_agent.client.cache import get_global_cache
-from hermes_agent.client.hl_client import HL_API, _http_post
+from hermes_agent.client.hl_client import _http_post
 from hermes_agent.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 
-# ── Curated whale wallet list ───────────────────────────────────────────
-# High-PnL wallets identified from HL leaderboard + on-chain analysis.
-# Add wallets here from app.hyperliquid.xyz/leaderboard or hyperstats.org.
-WHALE_WALLETS = {
-    # Example format: "0x...": {"name": "Trader Name", "risk": "low"|"medium"|"high"}
-}
+# Curated whale wallet registry. Add entries from app.hyperliquid.xyz/leaderboard
+# or hyperstats.org; format: "0x...": {"name": ..., "risk": "low"|"medium"|"high"}.
+WHALE_WALLETS: Dict[str, Dict[str, str]] = {}
 
 # ── Leaderboard from on-chain data ──────────────────────────────────────
 
@@ -52,19 +38,12 @@ def leaderboard_get_top(
     start: int = 0,
     limit: int = 10,
 ) -> List[Dict[str, Any]]:
-    """Get top traders from the HL leaderboard.
-    
-    Since HL doesn't expose a public leaderboard endpoint, we reconstruct
-    it from public data sources (HL website leaderboard pages).
-    
-    For now, returns curated whale wallets with their current positions.
-    
+    """Return positions for the wallets registered in WHALE_WALLETS.
+
     Args:
         start: pagination offset
         limit: number of entries (max 100)
     """
-    # TODO: Scrape HL leaderboard from app.hyperliquid.xyz/leaderboard
-    # For now, return whale wallet data from the registry
     results = []
     for addr, meta in list(WHALE_WALLETS.items())[start:start + limit]:
         try:

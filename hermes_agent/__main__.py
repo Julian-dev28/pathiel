@@ -16,13 +16,9 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import sys
-import time
-import uuid
-from typing import Any, Dict, List, Optional
 
 
 def print_banner():
@@ -233,10 +229,10 @@ def cmd_trades():
 
 def cmd_account():
     """Show HL account state."""
-    from hermes_agent.client.hl_client import fetch_account_state
+    from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
 
     print_banner()
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    user = resolve_user_address()
     if not user:
         print("  HL wallet not configured. Set HYPERLIQUID_WALLET_ADDRESS.\n")
         return
@@ -313,7 +309,7 @@ def cmd_config(*args):
             print(f"  {key}: {old!r:12} → {val!r}")
 
         write_agent_config(config)
-        print(f"\n  ✓ Config updated.\n")
+        print("\n  ✓ Config updated.\n")
 
 
 def cmd_start():
@@ -340,8 +336,8 @@ def cmd_start():
 
     open(pid_file, "w").write(str(proc.pid))
     print(f"  Scanner running (PID {proc.pid}).\n")
-    print(f"  To stop:  hermes stop")
-    print(f"  Monitor:  hermes status\n")
+    print("  To stop:  hermes stop")
+    print("  Monitor:  hermes status\n")
 
 
 def cmd_stop():
@@ -356,7 +352,7 @@ def cmd_stop():
         os.kill(int(pid), signal.SIGTERM)
         print(f"  Scanner stopped (PID {pid}).\n")
     except (OSError, ValueError):
-        print(f"  Scanner not running (stale PID).\n")
+        print("  Scanner not running (stale PID).\n")
     finally:
         try:
             os.remove(pid_file)
@@ -409,7 +405,7 @@ def main():
 
     if not handler:
         print(f"  Unknown command: {cmd}")
-        print(f"  Run 'hermes' for available commands.\n")
+        print("  Run 'hermes' for available commands.\n")
         return
 
     handler(*sys.argv[2:])

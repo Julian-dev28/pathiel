@@ -1,7 +1,6 @@
 """DSL (Dynamic Stop-Loss) exit engine.
 
-Adapted from senpi-skills DSL exit engine for hermes-trader. Manages exit
-logic for open positions with two-phase design:
+Manages exit logic for open positions with a two-phase design:
 
   Phase 1 — Loss protection from entry until price moves up `protect_pct`.
   Phase 2 — Profit locking with tiered retrace thresholds once PnL is positive.
@@ -56,6 +55,7 @@ class ExitVerdict:
     peak_price: Optional[float] = None
     phase: str = ""  # "phase1" or "phase2"
     unrealized_pct: float = 0.0
+    coin: str = ""
 
 
 @dataclass
@@ -243,25 +243,13 @@ def register_position(coin: str, side: str, entry_px: float,
     return tracker
 
 
-def unregister_position(coin: str, side: str) -> None:
-    """Remove a position from DSL tracking after it's closed."""
-    key = f"{coin}_{side}"
-    _active_positions.pop(key, None)
-    logger.info(f"[dsl] Unregistered {key}")
-
-
-def get_tracker(coin: str, side: str) -> Optional[DSLTracker]:
-    """Get the DSL tracker for an open position."""
-    return _active_positions.get(f"{coin}_{side}")
-
-
 def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:
     """Check all active positions against current mids. Call each scan tick.
 
     Returns list of ExitVerdict for positions that should be closed.
     """
     exits = []
-    for key, tracker in list(_active_positions.items()):
+    for tracker in list(_active_positions.values()):
         mark_px = mids.get(tracker.coin)
         # Handle both str and float values from different sources
         if mark_px is not None:
@@ -271,14 +259,7 @@ def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:
                 continue
             if mark_px > 0:
                 verdict = tracker.check(mark_px)
+                verdict.coin = tracker.coin
                 if verdict.exit:
                     exits.append(verdict)
     return exits
-
-
-def all_status(mids: Dict[str, float]) -> List[Dict[str, Any]]:
-    """Get status for all tracked positions."""
-    return [
-        tracker.status(mids.get(tracker.coin, tracker.entry_px))
-        for tracker in _active_positions.values()
-    ]

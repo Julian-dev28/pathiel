@@ -1,40 +1,34 @@
-"""Trigger detection functions.
+"""Trigger detection over OHLCV candles.
 
-Ported verbatim from lib/agent/triggers.ts.
-Computes pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength,
-and compositeScore from OHLCV candles.
+Computes pct-move spike, volume spike, breakout, range compression and
+trend strength, plus a weighted composite score across them.
 """
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 import math
-from typing import Any, Dict, List
+from typing import Dict, List, TypedDict
 
-from hermes_agent.indicators.math import ema, sma, atr as calc_atr, rsi, adx
+from hermes_agent.indicators.math import adx, sma, candle_val
+from hermes_agent.models.types import Candle
 
-# Helper to handle both dict and Candle objects
-def _get(c, key):
-    if isinstance(c, dict):
-        return c.get(key, 0)
-    return getattr(c, key, 0)
 
-# ── Trigger hit type ─────────────────────────────────────────────────────
-# Re-exports for backwards compat
-TriggerHit = Dict[str, Any]  # {name, score, reason, fired}
+class TriggerHit(TypedDict):
+    """Result of a single trigger check: {name, score, reason, fired}."""
+    name: str
+    score: float
+    reason: str
+    fired: bool
 
-def pct_move_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) -> TriggerHit:
-    """Current-bar return z-score vs trailing 96-bar std.
 
-    Ported verbatim from lib/agent/triggers.ts.
-    """
+def pct_move_spike(candles: List[Candle], sigma_threshold: float = 3) -> TriggerHit:
+    """Current-bar return z-score vs trailing 96-bar std."""
     if len(candles) < 3:
         return {"name": "pctMoveSpike", "score": 0, "reason": "flat", "fired": False}
 
     returns = []
     for i in range(1, len(candles)):
-        returns.append((_get(candles[i], "c") - _get(candles[i - 1], "c")) / _get(candles[i - 1], "c"))
+        returns.append((candle_val(candles[i], "c") - candle_val(candles[i - 1], "c")) / candle_val(candles[i - 1], "c"))
 
     current_return = returns[-1]
     prior = returns[:-1][-96:]  # up to 96 trailing bars
@@ -62,12 +56,9 @@ def pct_move_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) ->
     }
 
 
-def volume_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) -> TriggerHit:
-    """Current volume z-score vs 20-bar rolling.
-
-    Ported verbatim from lib/agent/triggers.ts.
-    """
-    vols = [_get(c, "v") for c in candles]
+def volume_spike(candles: List[Candle], sigma_threshold: float = 3) -> TriggerHit:
+    """Current volume z-score vs 20-bar rolling window."""
+    vols = [candle_val(c, "v") for c in candles]
     if len(vols) < 21:
         return {"name": "volumeSpike", "score": 0, "reason": "flat", "fired": False}
 
@@ -98,11 +89,8 @@ def volume_spike(candles: List[Dict[str, Any]], sigma_threshold: float = 3) -> T
     }
 
 
-def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
-    """Breakout detection: prior range high/low over lookback bars.
-
-    Ported verbatim from lib/agent/triggers.ts.
-    """
+def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
+    """Breakout detection against the prior range high/low over lookback bars."""
     if len(candles) < lookback + 2:
         return {"name": "breakout", "score": 0, "reason": "flat", "fired": False}
 
@@ -113,13 +101,13 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
     prior_high = float("-inf")
     prior_low = float("inf")
     for i in range(prior_start, prior_end):
-        if _get(candles[i], "h") > prior_high:
-            prior_high = _get(candles[i], "h")
-        if _get(candles[i], "l") < prior_low:
-            prior_low = _get(candles[i], "l")
+        if candle_val(candles[i], "h") > prior_high:
+            prior_high = candle_val(candles[i], "h")
+        if candle_val(candles[i], "l") < prior_low:
+            prior_low = candle_val(candles[i], "l")
 
-    if _get(current, "c") > prior_high:
-        pct_break = (_get(current, "c") - prior_high) / prior_high * 100
+    if candle_val(current, "c") > prior_high:
+        pct_break = (candle_val(current, "c") - prior_high) / prior_high * 100
         return {
             "name": "breakout",
             "score": min(10, max(0, pct_break)),
@@ -127,8 +115,8 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
             "fired": True,
         }
 
-    if _get(current, "c") < prior_low:
-        pct_break = (prior_low - _get(current, "c")) / prior_low * 100
+    if candle_val(current, "c") < prior_low:
+        pct_break = (prior_low - candle_val(current, "c")) / prior_low * 100
         return {
             "name": "breakout",
             "score": min(10, max(0, pct_break)),
@@ -137,8 +125,8 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
         }
 
     # Score proportional to distance from nearest range edge
-    dist_up = prior_high - _get(current, "c")
-    dist_down = _get(current, "c") - prior_low
+    dist_up = prior_high - candle_val(current, "c")
+    dist_down = candle_val(current, "c") - prior_low
     closest = min(dist_up, dist_down)
     range_size = prior_high - prior_low
     score = max(0, (1 - closest / range_size)) * 5 if range_size > 0 else 0
@@ -152,15 +140,12 @@ def breakout(candles: List[Dict[str, Any]], lookback: int = 48) -> TriggerHit:
 
 
 def range_compression(
-    candles: List[Dict[str, Any]],
+    candles: List[Candle],
     bb_length: int = 20,
     bb_std_dev: float = 2,
 ) -> TriggerHit:
-    """Bollinger Band squeeze detection: current bandwidth vs last 100 bars.
-
-    Ported verbatim from lib/agent/triggers.ts.
-    """
-    closes = [_get(c, "c") for c in candles]
+    """Bollinger Band squeeze: current bandwidth percentile vs the last 100 bars."""
+    closes = [candle_val(c, "c") for c in candles]
     if len(closes) < bb_length + 1:
         return {"name": "rangeCompression", "score": 0, "reason": "flat", "fired": False}
 
@@ -171,7 +156,7 @@ def range_compression(
     for i in range(len(closes)):
         if not math.isfinite(mid[i]):
             continue
-        sum_sq = 0
+        sum_sq = 0.0
         count = 0
         for j in range(i - bb_length + 1, i + 1):
             if j < 0:
@@ -184,7 +169,6 @@ def range_compression(
         upper[i] = mid[i] + sd * bb_std_dev
         lower[i] = mid[i] - sd * bb_std_dev
 
-    # Compute bandwidths
     bandwidths = []
     for i in range(len(closes)):
         if (
@@ -202,8 +186,7 @@ def range_compression(
     history = bandwidths[-100:]
     sorted_bw = sorted(history)
 
-    # Percentile rank
-    percentile = 0
+    percentile = 0.0
     for i in range(len(sorted_bw)):
         if sorted_bw[i] < current_bw:
             percentile = ((i + 1) / len(sorted_bw)) * 100
@@ -219,18 +202,15 @@ def range_compression(
     }
 
 
-def trend_strength(candles: List[Dict[str, Any]], adx_period: int = 14) -> TriggerHit:
-    """Trend strength via ADX(14).
-
-    Ported verbatim from lib/agent/triggers.ts.
-    """
+def trend_strength(candles: List[Candle], adx_period: int = 14) -> TriggerHit:
+    """Trend strength via ADX(14)."""
     if len(candles) < adx_period * 2 + 1:
         return {"name": "trendStrength", "score": 0, "reason": "flat", "fired": False}
 
     adx_values = adx(candles, adx_period)
     last_adx = adx_values[-1]
 
-    if not __import__("math").isfinite(last_adx):
+    if not math.isfinite(last_adx):
         return {"name": "trendStrength", "score": 0, "reason": "flat", "fired": False}
 
     fired = last_adx >= 25
@@ -244,20 +224,18 @@ def trend_strength(candles: List[Dict[str, Any]], adx_period: int = 14) -> Trigg
     }
 
 
-# ── Composite Scoring ─────────────────────────────────────────────────────────
-
 def composite_score(hits: List[TriggerHit], weights: Dict[str, float]) -> float:
-    """Weighted composite score from triggered hits.
+    """Weighted composite score from triggered hits, clamped 0-100.
 
-    Only fires count. Divides by sum of weights for fired triggers only,
-    so the score reflects the strength of the combination.
-    Clamped 0-100.
+    Normalizes against the sum of ALL trigger weights (not just fired ones),
+    so a single max-score trigger cannot alone score 100; co-firing triggers
+    score proportionally higher.
     """
     fired_hits = [h for h in hits if h.get("fired")]
     if not fired_hits:
         return 0
 
+    total_weight = sum(weights.values()) or 1
     weighted_sum = sum(h["score"] * weights.get(h["name"], 0) for h in fired_hits)
-    fired_weight = sum(weights.get(h["name"], 0) for h in fired_hits) or 1
-    raw = (weighted_sum / fired_weight) * 10  # scale 0-100
+    raw = (weighted_sum / total_weight) * 10
     return max(0, min(100, raw))

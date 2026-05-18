@@ -1,9 +1,6 @@
 """Pre-AI technical analysis filter.
 
-Translation of lib/agent/ta-filter.ts.
 Performs pure statistical validation of triggered signals before AI analysis.
-
-All functions are SYNC — no await needed. Client modules are synchronous.
 """
 
 from __future__ import annotations
@@ -12,27 +9,19 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from hermes_agent.indicators.math import ema, atr, rsi, adx
+from hermes_agent.indicators.math import adx, atr, candle_val, ema, rsi
 from hermes_agent.client.hl_client import fetch_hl_candles
-
-# Helper to handle both dict and Candle objects
-def _get(c, key):
-    if isinstance(c, dict):
-        return c.get(key, 0)
-    return getattr(c, key, 0)
+from hermes_agent.models.types import Candle
 
 logger = logging.getLogger(__name__)
 
 
-TASignal = str  # 'CONFIRMED', 'WEAK', 'REJECTED'
-
-
-def _assess_trend(candles: List[Dict[str, Any]]) -> str:
+def _assess_trend(candles: List[Candle]) -> str:
     """Bullish / bearish / flat based on EMA8/21 cross and slope."""
     if len(candles) < 30:
         return "flat"
 
-    closes = [_get(c, "c") for c in candles]
+    closes = [candle_val(c, "c") for c in candles]
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
 
@@ -52,18 +41,18 @@ def _assess_trend(candles: List[Dict[str, Any]]) -> str:
     return "flat"
 
 
-def _compute_atr4pct(candles: List[Dict[str, Any]]) -> Optional[float]:
+def _compute_atr4pct(candles: List[Candle]) -> Optional[float]:
     if len(candles) < 20:
         return None
     atr_arr = atr(candles, 14)
     last = atr_arr[-1]
-    last_close = _get(candles[-1], "c")
+    last_close = candle_val(candles[-1], "c")
     if not math.isfinite(last) or last_close == 0:
         return None
     return (last / last_close) * 100
 
 
-def _compute_rsi(candles: List[Dict[str, Any]]) -> Optional[float]:
+def _compute_rsi(candles: List[Candle]) -> Optional[float]:
     if len(candles) < 20:
         return None
     arr = rsi(candles, 14)
@@ -71,7 +60,7 @@ def _compute_rsi(candles: List[Dict[str, Any]]) -> Optional[float]:
     return last if math.isfinite(last) else None
 
 
-def _compute_adx(candles: List[Dict[str, Any]]) -> Optional[float]:
+def _compute_adx(candles: List[Candle]) -> Optional[float]:
     if len(candles) < 30:
         return None
     arr = adx(candles, 14)
@@ -79,18 +68,18 @@ def _compute_adx(candles: List[Dict[str, Any]]) -> Optional[float]:
     return last if math.isfinite(last) else None
 
 
-def _check_volume_confirm(candles: List[Dict[str, Any]]) -> bool:
+def _check_volume_confirm(candles: List[Candle]) -> bool:
     if len(candles) < 21:
         return False
-    last_vol = _get(candles[-1], "v")
-    avg_vol = sum(_get(c, "v") for c in candles[-21:-1]) / 20
+    last_vol = candle_val(candles[-1], "v")
+    avg_vol = sum(candle_val(c, "v") for c in candles[-21:-1]) / 20
     return avg_vol == 0 or last_vol >= avg_vol * 0.8
 
 
-def _check_ema_cross_recent(candles: List[Dict[str, Any]]) -> bool:
+def _check_ema_cross_recent(candles: List[Candle]) -> bool:
     if len(candles) < 25:
         return False
-    closes = [_get(c, "c") for c in candles]
+    closes = [candle_val(c, "c") for c in candles]
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
 
@@ -107,16 +96,9 @@ def _check_ema_cross_recent(candles: List[Dict[str, Any]]) -> bool:
 
 
 def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
-    """Run TA analysis on a single perception.
-
-    Translation of analyzePerception() from lib/agent/ta-filter.ts.
-    Returns TAResult dict.
-
-    NOTE: This is SYNC. fetch_hl_candles() is a sync wrapper around the SDK.
-    """
+    """Run TA validation on a single perception, returning a TA-result dict."""
     coin = perception["coin"]
     try:
-        # All fetch calls are sync — no await needed
         c1h = fetch_hl_candles(coin, "1h", 60)
         c4h = fetch_hl_candles(coin, "4h", 60)
         c1d = fetch_hl_candles(coin, "1d", 40)
@@ -180,6 +162,8 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
             "reason": ", ".join(reasons) if reasons else "no signals",
         }
     except Exception as err:
+        # Candle fetches hit the network; a failure rejects the candidate
+        # (no-trade is the safe direction) and surfaces the cause.
         return {
             "signal": "REJECTED", "score": 0,
             "trend1h": "flat", "trend4h": "flat", "trend1d": "flat",
@@ -190,16 +174,6 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def analyze_perceptions(
-    perceptions: List[Dict[str, Any]],
-    concurrency: int = 3,
-) -> Dict[str, Dict[str, Any]]:
-    """Run TA analysis on multiple perceptions.
-    
-    All calls are sync. Concurrency limit is provided for API rate limiting
-    but no actual async needed since HL API is fast.
-    """
-    results = {}
-    for p in perceptions:
-        results[p["id"]] = analyze_perception(p)
-    return results
+def analyze_perceptions(perceptions: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Run TA analysis on multiple perceptions, keyed by perception id."""
+    return {p["id"]: analyze_perception(p) for p in perceptions}

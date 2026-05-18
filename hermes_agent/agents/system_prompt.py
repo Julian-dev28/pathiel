@@ -1,17 +1,10 @@
-"""Agent brain system prompt.
-
-Translation of lib/agent/system-prompt.ts.
-Builds the system prompt string that frames the AI as a quant trading analyst.
-"""
+"""Builds the system prompt that frames the AI as a quant trading analyst."""
 
 from __future__ import annotations
 
 
 def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
-    """Build the system prompt for the AI model.
-
-    Translates the TypeScript buildSystemPrompt() function.
-    """
+    """Build the system prompt for the AI model."""
     mode_desc = (
         "You are in OFF mode — analyze and output your verdict. "
         "No execution will occur."

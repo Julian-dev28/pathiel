@@ -1,36 +1,31 @@
-"""Auto-executor: validates through risk gates, sizes via Kelly, executes LIVE.
+"""Auto-executor: validates through risk gates, sizes the trade, executes LIVE.
 
-Translation of lib/agent/executor.ts. Integrates DSL exit engine for
-two-phase trailing stops (loss protection → profit locking).
+Integrates the DSL exit engine for two-phase trailing stops
+(loss protection -> profit locking).
 """
 
 from __future__ import annotations
 
 import logging
-import math
 import os
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from hermes_agent.agents.config_store import read_agent_config
-from hermes_agent.agents.dsl_exit import (
-    ExitPolicy, register_position, unregister_position,
-    get_tracker, check_all_positions,
-)
+from hermes_agent.agents.dsl_exit import ExitPolicy, check_all_positions, register_position
 from hermes_agent.agents.memory import memory
-from hermes_agent.agents.risk_gates import eval_all_gates, GateContext
+from hermes_agent.agents.risk_gates import GateContext, eval_all_gates
 from hermes_agent.client.exchange import (
     HL_LEVERAGE,
-    get_coin_index,
     get_hl_atr,
     get_hl_price,
     place_hl_order,
     place_hl_trigger_order,
     set_leverage,
 )
-from hermes_agent.client.hl_client import fetch_account_state
+from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +49,7 @@ def kelly_size(
     reward_risk_ratio: float,
     max_trade_notional: float,
 ) -> float:
-    """Calculate trade size using half-Kelly criterion."""
+    """Calculate trade size using the half-Kelly criterion."""
     p = confidence
     q = 1 - p
     b = reward_risk_ratio
@@ -88,25 +83,10 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "order_id": already.get("order_id"),
         }
 
-    # Fetch account state
-    user = (
-        os.environ.get("HYPERLIQUID_MASTER_ADDRESS")
-        or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
-    )
-    try:
-        state = fetch_account_state(user)
-    except Exception as e:
-        with open('/tmp/hermes_executor_error.log', 'w') as f:
-            f.write(f"fetch_account_state failed: {e}")
-        raise
-    
-    try:
-        equity = state["equity"]
-        total_open_notional = state["total_ntl"]
-    except KeyError as e:
-        with open('/tmp/hermes_executor_error.log', 'w') as f:
-            f.write(f"state keys: {list(state.keys())}\nError: {e}")
-        raise
+    user = resolve_user_address()
+    state = fetch_account_state(user)
+    equity = state["equity"]
+    total_open_notional = state["total_ntl"]
 
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
@@ -120,22 +100,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         for p in state["asset_positions"]
     ]
 
-    # Kelly sizing - will be overridden with correct equity-based calculation
     entry_px = analysis.get("entry_px")
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
-    if tp_px and stop_px and entry_px:
-        reward = abs(tp_px - entry_px)
-        risk = abs(entry_px - stop_px)
-        reward_risk = reward / risk if risk != 0 else 1.0
-    else:
-        reward_risk = 1.0
-
-    # Calculate correct notional BEFORE gate check
-    # Use 1% of equity (with 5x leverage = 5% of equity buying power)
-    max_notional = equity * 0.01 * HL_LEVERAGE  # 1% * 5 = 5% of equity
-    trade_notional = max_notional  # Override any AI-provided value
+    # Notional sized off equity (1% * leverage), overriding any AI-provided value.
+    trade_notional = equity * 0.01 * HL_LEVERAGE
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
@@ -196,28 +166,25 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     coin = analysis["coin"]
     is_buy = trade_side == "long"
 
-    # Fetch live mid — never use stale analysis entryPx
+    # Fetch live mid — never use the (possibly stale) analysis entry price.
     mid_price = get_hl_price(coin)
     if mid_price <= 0:
         return {"executed": False, "mode": mode, "analysis_id": analysis["id"],
                 "reason": f"invalid_price_for_{coin}"}
-    
-    # Calculate size in coin from the correct notional (already includes leverage)
+
+    # Size in coin from the leverage-inclusive notional, floored at HL's $10
+    # minimum order value and capped at 100 coins to bound very cheap assets.
     size_in_coin = trade_notional / mid_price
-    # Ensure minimum $10 value (Hyperliquid requirement)
-    # Calculate minimum size needed for $10 notional, without rounding up to integer
     min_size_by_value = 10.0 / mid_price
     size_in_coin = max(size_in_coin, min_size_by_value)
-    # Cap at 100 coins max to avoid insanely large sizes for very cheap coins
     size_in_coin = min(size_in_coin, 100.0)
-    
-    position_notional = trade_notional  # Already includes leverage
 
-    asset_idx, _, _ = get_coin_index(coin)
+    position_notional = trade_notional
+
     atr = get_hl_atr("4h", 14, coin)
 
     set_leverage(coin, HL_LEVERAGE)
-    order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin, asset_idx)
+    order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin)
 
     if not order_res.get("ok"):
         return {
@@ -226,10 +193,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "gate_results": gate_output["results"],
         }
 
-    # ── DSL exit engine integration ───────────────────────────────
-    # Register the position with the DSL tracker for dynamic stop management.
-    # DSL will monitor price on every scan tick and trigger exits when
-    # conditions are met (loss protection → profit locking).
+    # Register the position with the DSL tracker; it re-evaluates the exit
+    # floor on every scan tick (loss protection -> profit locking).
     dsl_config = config.get("dsl_exit", {})
     policy = ExitPolicy(
         max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
@@ -240,7 +205,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     register_position(coin, trade_side, mid_price, policy=policy)
     logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price}")
 
-    # Track trade in memory
     memory.record_trade({
         "id": str(uuid.uuid4()),
         "analysis_id": analysis["id"],
@@ -252,13 +216,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "executed_at": int(time.time() * 1000),
     })
 
-    # Also place exchange SL brackets as a safety net (ATR-based)
+    # Backup exchange stop-loss bracket — DSL is the primary exit engine.
     if atr > 0 and size_in_coin > 0:
         sl_px = mid_price - atr * SL_ATR_MULT if is_buy else mid_price + atr * SL_ATR_MULT
-        tp_px_live = mid_price + atr * TP_ATR_MULT if is_buy else mid_price - atr * TP_ATR_MULT
-        # Note: These trigger orders are a backup — DSL is the primary exit engine
-        place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", asset_idx, coin)
-        logger.info(f"[executor] Placed backup SL at {sl_px}")
+        sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
+        if sl_res.get("ok"):
+            logger.info(f"[executor] Placed backup SL at {sl_px}")
+        else:
+            logger.error(f"[executor] Backup SL FAILED for {coin}: {sl_res.get('error')}")
 
     final_sl = (mid_price - atr * SL_ATR_MULT) if is_buy else (mid_price + atr * SL_ATR_MULT) if atr > 0 else stop_px
     final_tp = (mid_price + atr * TP_ATR_MULT) if is_buy else (mid_price - atr * TP_ATR_MULT) if atr > 0 else tp_px
@@ -277,11 +242,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
-    """Check all DSL-tracked positions for exit conditions.
-
-    Called from the scan loop. Returns list of positions that should be closed.
-    The caller (daemon loop) then executes the close via exchange API.
-    """
+    """Check all DSL-tracked positions and return those that should be closed."""
     exits = check_all_positions(mids)
     return [
         {

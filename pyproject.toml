@@ -30,3 +30,7 @@ hermes = "hermes_agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["hermes_agent"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

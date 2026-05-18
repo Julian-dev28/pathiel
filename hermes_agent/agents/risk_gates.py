@@ -1,16 +1,14 @@
 """Risk gates — every gate is a pure function returning {pass, reason?}.
 
-Translation of lib/agent/risk-gates.ts.
-All gates are evaluated; results are collected for telemetry, no short-circuit.
+All gates are evaluated; results are collected for telemetry (no short-circuit).
 """
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
-
 GateResult = Dict[str, Any]  # {pass: bool, reason?: str}
-GateResults = Dict[str, GateResult]
 
 
 class GateContext:
@@ -81,7 +79,7 @@ def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[
 def cooldown_gate(ctx: GateContext, last_trade_time: Optional[int], cooldown_min: float) -> GateResult:
     if last_trade_time is None:
         return {"pass": True}
-    elapsed = (int(__import__("time").time() * 1000) - last_trade_time) / 60_000
+    elapsed = (int(time.time() * 1000) - last_trade_time) / 60_000
     if elapsed >= cooldown_min:
         return {"pass": True}
     return {"pass": False, "reason": f"cooldown active ({int(cooldown_min - elapsed)}min remaining)"}

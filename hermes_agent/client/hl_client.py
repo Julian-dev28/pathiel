@@ -18,12 +18,18 @@ Rate limit management:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
+
 from hermes_agent.models.types import Candle
+
+if TYPE_CHECKING:
+    from hyperliquid.info import Info
+    from hermes_agent.client.ws_client import HyperliquidWebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +46,7 @@ _MS_PER_CANDLE: Dict[str, int] = {
 # ── Singleton Info client ─────────────────────────────────────────────
 # We create Info() ONCE with pre-fetched meta (HTTP, fast, no WS blocking).
 
-_info_instance: Any = None
+_info_instance: "Info | None" = None
 _info_lock = threading.Lock()
 
 
@@ -85,13 +91,6 @@ def init_info() -> None:
             _info_instance = None
 
 
-def clear_info():
-    """Clear the shared instance."""
-    global _info_instance
-    with _info_lock:
-        _info_instance = None
-
-
 # ── HTTP helpers ──────────────────────────────────────────────────────
 
 def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
@@ -107,12 +106,17 @@ def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
 
 # ── Public API ────────────────────────────────────────────────────────
 
-def get_info() -> Any:
+def get_info() -> "Info | None":
     """Get the shared Info client instance."""
     global _info_instance
     if _info_instance is None:
         init_info()
     return _info_instance
+
+
+def resolve_user_address() -> str:
+    """Master address if set, else wallet address, else empty string."""
+    return os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
 
 
 def fetch_hl_candles(
@@ -170,13 +174,8 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         if float(p.get("position", {}).get("szi", "0")) != 0
     ]
 
-    spot_usdc = 0.0
-    for b in spot_balances:
-        if b.get("coin") == "USDC":
-            spot_usdc = float(b.get("total", "0"))
-
-    # On unified accounts: perp_equity ALREADY includes spot USDC
-    # Don't double-count!
+    # On unified accounts perp_equity already includes spot USDC, so it is
+    # the total equity directly — spot balances are not added on top.
     equity = perp_equity
 
     return {
@@ -191,20 +190,13 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
 # The persistent WebSocket connection gives sub-second latency for all 500+
 # market prices. It's used by the autonomous scanning loop for real-time data.
 
-_ws_mids_instance: Optional[Any] = None
+_ws_mids_instance: "HyperliquidWebSocket | None" = None
 _ws_mids_lock = threading.Lock()
 
 
-def _get_ws_mids_instance() -> Optional[Any]:
-    """Get (or create) the lazy-initialized WebSocket mids instance.
-
-    Only returns data if the WS has received at least one update.
-    Falls back to HTTP if WS isn't connected or has no data.
-    """
-    global _ws_mids_instance
+def _get_ws_mids_instance() -> "HyperliquidWebSocket | None":
+    """Return the active WebSocket mids instance, or None if not started."""
     with _ws_mids_lock:
-        if _ws_mids_instance is None:
-            return None
         return _ws_mids_instance
 
 
@@ -217,16 +209,10 @@ def _try_ws_mids() -> Dict[str, str] | None:
     ws = _get_ws_mids_instance()
     if ws is None:
         return None
-    try:
-        mids = ws.get_all_mids()
-        if mids:
-            return {k: str(v) for k, v in mids.items()}
-    except Exception:
-        pass
+    mids = ws.get_all_mids()
+    if mids:
+        return {k: str(v) for k, v in mids.items()}
     return None
-
-
-_ws_mids_fallback: Optional["HyperliquidWebSocket"] = None
 
 
 def fetch_all_mids() -> Dict[str, str]:
@@ -236,39 +222,30 @@ def fetch_all_mids() -> Dict[str, str]:
     For the autonomous loop: use start_ws_mids() to keep a persistent
     WebSocket running, then call ws.get_all_mids() for sub-second data.
     """
-    # Try WebSocket first (only if already initialized by scanning loop)
     ws_result = _try_ws_mids()
     if ws_result:
         return ws_result
 
-    # Fallback: HTTP POST — reliable, ~150ms
-    try:
-        raw = _http_post("/info", {"type": "allMids"})
-        if raw and isinstance(raw, dict):
-            return {k: str(v) for k, v in raw.items()}
-    except Exception as e:
-        logger.warning(f"[hl] HTTP fallback for mids failed: {e}")
+    # Fallback: HTTP POST (_http_post handles its own network errors).
+    raw = _http_post("/info", {"type": "allMids"})
+    if raw and isinstance(raw, dict):
+        return {k: str(v) for k, v in raw.items()}
     return {}
 
 
-def start_ws_mids() -> Any:
-    """Start the persistent WebSocket for real-time mids.
-
-    Call once at startup (e.g., in 'hermes start'). After this, fetch_all_mids()
-    will use the WS. For best results, also call ws.get_all_mids() directly
-    to get sub-second latency.
-    """
+def start_ws_mids() -> "HyperliquidWebSocket | None":
+    """Start the persistent WebSocket for real-time mids (call once at startup)."""
     global _ws_mids_instance
     with _ws_mids_lock:
-        if _ws_mids_instance is None or _ws_mids_instance is False:
+        if _ws_mids_instance is None:
             try:
                 from hermes_agent.client.ws_client import HyperliquidWebSocket
-                _ws_mids_instance = HyperliquidWebSocket()
-                _ws_mids_instance.start()
+                ws = HyperliquidWebSocket()
+                ws.start()
+                _ws_mids_instance = ws
                 logger.info("[hl] WebSocket started for real-time mids")
             except Exception as e:
                 logger.warning(f"[hl] WebSocket init failed: {e}")
-                _ws_mids_instance = False
                 return None
         return _ws_mids_instance
 
@@ -277,7 +254,7 @@ def stop_ws_mids() -> None:
     """Stop the persistent WebSocket. Call when exiting the scanning loop."""
     global _ws_mids_instance
     with _ws_mids_lock:
-        if _ws_mids_instance and hasattr(_ws_mids_instance, 'stop'):
+        if _ws_mids_instance is not None:
             _ws_mids_instance.stop(timeout=2.0)
             _ws_mids_instance = None
             logger.info("[hl] WebSocket stopped")
@@ -292,10 +269,3 @@ def fetch_funding_history(
     payload = {"type": "fundingHistory", "coin": coin, "startTime": start_time, "endTime": end_time}
     raw = _http_post("/info", payload)
     return raw if isinstance(raw, list) else []
-
-
-def fetch_universe(force_refresh: bool = False) -> Dict[str, Any]:
-    """Fetch the full market universe."""
-    # Imported lazily to avoid circular import
-    from hermes_agent.client.universe import get_universe as _get_universe
-    return _get_universe()

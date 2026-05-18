@@ -1,16 +1,14 @@
 """producer_daemon — long-lived scheduler for hermes-trader scanning.
 
-Adapted from senpi_runtime_helpers.daemon. Replaces ad-hoc while True
-loops with a robust scheduler that:
+A robust scan scheduler that:
 - Fires the scan function on a fixed interval
 - Wraps each tick in scanner_lock so overlapping ticks are skipped
 - Enforces per-tick wall-clock timeout via SIGALRM
 - Handles SIGTERM/SIGINT with graceful drain
 - Writes self-describing state files (pid, heartbeat)
-
-Stdlib-only.
 """
 
+import json
 import logging
 import os
 import signal
@@ -19,7 +17,7 @@ import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .lock import scanner_lock
 
@@ -57,10 +55,7 @@ def _arm_tick_alarm(seconds: float) -> bool:
 
 def _disarm_tick_alarm() -> None:
     if hasattr(signal, 'SIGALRM'):
-        try:
-            signal.alarm(0)
-        except Exception:
-            pass
+        signal.alarm(0)
 
 
 def _interruptible_sleep(seconds: float, stop_event: threading.Event) -> bool:
@@ -75,18 +70,18 @@ def _interruptible_sleep(seconds: float, stop_event: threading.Event) -> bool:
     return stop_event.is_set()
 
 
-def _atomic_write(path: Path, data: dict) -> None:
+def _atomic_write(path: Path, data: Dict[str, Any]) -> None:
     """Write JSON atomically (temp file + os.replace)."""
     tmp = path.with_suffix('.tmp')
     try:
         tmp.write_text(json.dumps(data, default=str))
         tmp.replace(path)
-    except Exception as e:
+    except OSError as e:
         logger.warning(f"[daemon] State write failed: {e}")
 
 
 def producer_daemon(
-    scan_fn: Callable[[], dict],
+    scan_fn: Callable[[], object],
     interval_seconds: int = 180,
     name: str = "hermes-scanner",
     state_dir: Optional[str] = None,
@@ -95,28 +90,12 @@ def producer_daemon(
     """Run a long-lived scanning daemon.
 
     Args:
-        scan_fn: callable that returns a dict of scan results.
+        scan_fn: callable invoked once per tick (its return value is ignored).
         interval_seconds: seconds between scan starts.
         name: lock name (affects lock file path).
         state_dir: directory for state files.
         tick_timeout: max seconds per scan tick.
-
-    Usage:
-        from hermes_agent.client.daemon import producer_daemon
-        from hermes_agent.agents.perception import scan_once
-
-        producer_daemon(
-            scan_fn=lambda: scan_once(
-                universe=get_universe(),
-                min_score=75,
-                throttle=100
-            ),
-            interval_seconds=180,
-            name="hermes-scanner",
-        )
     """
-    import json  # For atomic_write
-
     state_dir = state_dir or _DEFAULT_STATE_DIR
     state_path = Path(state_dir)
     state_path.mkdir(parents=True, exist_ok=True)
@@ -157,34 +136,28 @@ def producer_daemon(
                 "error_count": error_count,
             })
 
-            # Acquire scan lock — if previous tick is still running, skip
-            lock_acquired = False
+            # Acquire scan lock — if the previous tick is still running, skip.
             try:
                 with scanner_lock(name, timeout=10.0):
-                    # Run the scan with timeout
                     try:
                         if has_alarm:
                             _disarm_tick_alarm()  # reset before starting
 
-                        result = scan_fn()
+                        scan_fn()
                         status = "ok"
                         tick_error = None
                     except _TickTimeout as e:
                         status = "timeout"
                         tick_error = str(e)
                         error_count += 1
-                        result = {"error": "tick_timeout", "message": str(e)}
                     except Exception as e:
                         status = "error"
                         tick_error = str(e)
                         error_count += 1
-                        result = {"error": "scan_error", "message": str(e)}
 
             except TimeoutError:
                 status = "locked"
                 tick_error = "previous scan still running"
-                error_count += 0  # not our error
-                result = {"status": "skipped", "reason": "scan_lock"}
                 logger.warning(f"[daemon] Tick {tick_count} skipped (scan lock held)")
 
             tick_elapsed = time.time() - tick_start
@@ -223,7 +196,7 @@ def producer_daemon(
         logger.info(f"[daemon] {name} stopped — {tick_count} ticks, {error_count} errors, {time.time()-start_time:.0f}s uptime")
 
 
-def check_daemon_state(name: str, state_dir: Optional[str] = None) -> dict:
+def check_daemon_state(name: str, state_dir: Optional[str] = None) -> Dict[str, Any]:
     """Check the state of a running daemon."""
     state_dir = state_dir or _DEFAULT_STATE_DIR
     state_path = Path(state_dir)

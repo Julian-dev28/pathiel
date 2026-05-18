@@ -1,10 +1,4 @@
-"""Persistent agent memory — survives restarts, loads from .agent-memory.json on init.
-
-Translation of lib/agent/memory.ts.
-Singleton pattern with debounced persistence to disk.
-
-All methods are SYNC — no async/await needed.
-"""
+"""Persistent agent memory — a disk-backed singleton loaded from .agent-memory.json."""
 
 from __future__ import annotations
 
@@ -256,5 +250,5 @@ class AgentMemory:
         }
 
 
-# Singleton instance — matches TypeScript `export const memory = AgentMemory.getInstance()`
+# Module-level singleton.
 memory = AgentMemory.get_instance()

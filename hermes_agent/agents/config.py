@@ -1,7 +1,4 @@
-"""Agent trigger configuration.
-
-Translation of lib/agent/config.ts — TriggerConfig interface and DEFAULT_CONFIG.
-"""
+"""Agent trigger configuration: trigger weights, thresholds, and scan settings."""
 
 from __future__ import annotations
 
@@ -26,7 +23,6 @@ TRIGGER_CONFIG: Dict[str, Any] = {
     "scan": {
         # Normalized over all weights: ~10=single trigger, ~30=2 triggers, ~60=3+ strong
         "minCompositeScore": 20,
-        "maxConcurrency": 8,
         "candleInterval": "5m",
         "candleCount": 100,
         "cacheTtlMs": 300_000,

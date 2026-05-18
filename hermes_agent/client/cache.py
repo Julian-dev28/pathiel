@@ -1,19 +1,9 @@
-"""tick_cache — API response memoization with TTL + LRU cap.
+"""API response memoization with TTL and an LRU cap.
 
-Adapted from senpi_runtime_helpers.cache for hermes-trader's scanning
-pipeline. Two scanners often query the same endpoint (e.g. all_mids)
-multiple times per tick. The cache holds responses for `TTL_SECONDS`
-seconds so duplicate calls within a tick reuse the result.
-
-Scope: cache state lives on the HermesClient instance (client._cache),
-not at module scope. Multiple clients in the same process do not share
-cache keys — eliminates cross-client key namespace collisions.
-
-Stdlib-only (collections.OrderedDict + threading + hashlib).
+Duplicate calls to the same endpoint within a short window reuse the result.
+Per-key in-flight tracking deduplicates concurrent misses on the same key.
 """
 
-import hashlib
-import json
 import threading
 import time
 from collections import OrderedDict
@@ -91,7 +81,7 @@ class _Cache:
             self.misses = 0
             self.evictions = 0
 
-    def summary(self) -> Dict[str, int]:
+    def summary(self) -> Dict[str, float]:
         with self._lock:
             total = self.hits + self.misses
             hit_rate = self.hits / total if total > 0 else 0.0

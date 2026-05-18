@@ -1,21 +1,14 @@
 """scanner_lock — fcntl lock with PID-aliveness stale recovery.
 
-Adapted from senpi_runtime_helpers.lock for hermes-trader's autonomous
-scanning loop. Ensures only one scan runs at a time, with automatic
-recovery if a previous scan crashed (kill -9, OOM, etc.).
-
-If a previous holder died holding the file, the lock file persists but
-fcntl flock is auto-released by the kernel. On re-acquire, metadata
-is updated so the inode stays stable.
-
-Stdlib-only (fcntl + json + os).
+Ensures only one scan runs at a time, with automatic recovery if a previous
+scan crashed: fcntl flock is released by the kernel on process death, so a
+stale lock file is reclaimed on the next acquire.
 """
 
 import fcntl
 import json
 import logging
 import os
-import signal
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -122,7 +115,7 @@ def scanner_lock(name: str, timeout: float = 300.0) -> Iterator[None]:
             try:
                 fcntl.flock(fd, fcntl.LOCK_UN)
                 os.close(fd)
-            except Exception:
+            except OSError:
                 pass
         logger.debug(f"[lock] Released lock '{name}'")
 

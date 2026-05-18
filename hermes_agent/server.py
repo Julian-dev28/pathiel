@@ -1,8 +1,4 @@
-"""Hermes Agent — FastAPI server.
-
-Replaces all 22 Next.js API routes from app/api/.
-Frontend calls become:  http://localhost:8000/api/{endpoint}
-"""
+"""Hermes Agent — FastAPI server exposing the agent and Hyperliquid endpoints."""
 
 from __future__ import annotations
 
@@ -12,24 +8,22 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from hermes_agent.agents.config_store import read_agent_config, write_agent_config
 from hermes_agent.agents.executor import maybe_execute
 from hermes_agent.agents.memory import memory
-from hermes_agent.agents.perception import scan_once, clear_candle_cache
+from hermes_agent.agents.perception import scan_once
 from hermes_agent.agents.research import research
-from hermes_agent.agents.system_prompt import build_system_prompt
 from hermes_agent.client.hl_client import (
-    HL_API,
     fetch_account_state,
     fetch_all_mids,
     fetch_hl_candles,
+    resolve_user_address,
 )
 from hermes_agent.client.universe import get_universe
 
@@ -81,48 +75,18 @@ def _is_alive(pid: int) -> bool:
 
 # ── Rate limiter for scan endpoint ─────────────────────────────────────────────
 
-_last_scan_at = 0
+_last_scan_at: float = 0
 _SCAN_MIN_SECONDS = 30
-
-
-# ── Pydantic models ────────────────────────────────────────────────────────────
-
-
-class PlaceOrderRequest(BaseModel):
-    side: str
-    riskUSD: Optional[float] = None
-    riskPct: Optional[float] = None
-    leverage: Optional[int] = None
-    coin: Optional[str] = None
-
-
-class ExecuteRequest(BaseModel):
-    analysisId: str
-
-
-class ResearchRequest(BaseModel):
-    perceptionId: Optional[str] = None
-    perception: Optional[Dict[str, Any]] = None
-
-
-class StartResponse(BaseModel):
-    status: str
-    pid: Optional[int] = None
-
-
-class ConfigUpdateRequest(BaseModel):
-    model_config = {"extra": "allow"}
 
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load persisted memory on startup."""
-    memory.load()  # sync
+    """Load persisted memory on startup, flush it on shutdown."""
+    memory.load()
     logger.info("Hermes server started — memory loaded")
     yield
-    # On shutdown, flush memory to disk
     memory.flush()
     logger.info("Hermes server stopped — memory flushed")
 
@@ -143,21 +107,12 @@ app.add_middleware(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 async def _fetch_live_equity() -> float:
-    """Fetch live equity from HL, mirroring the old Next.js route."""
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    """Fetch live account equity from HL; returns 0.0 if no wallet is configured."""
+    user = resolve_user_address()
     if not user:
         return 0.0
-    try:
-        state = fetch_account_state(user)
-        return float(state.get("equity", 0))
-    except Exception:
-        return 0.0
-
-
-def _build_scan_response(perceptions: list, with_ta: bool = True):
-    """Build the scan response mirroring the Next.js POST /api/agent/scan."""
-    result = {"perceptions": perceptions, "count": len(perceptions)}
-    return result
+    state = fetch_account_state(user)
+    return float(state.get("equity", 0))
 
 
 # ── Agent endpoints ───────────────────────────────────────────────────────────
@@ -165,10 +120,7 @@ def _build_scan_response(perceptions: list, with_ta: bool = True):
 
 @app.get("/api/agent/state")
 async def get_agent_state():
-    """GET /api/agent/state — full state snapshot for the UI.
-
-    Replaces: app/api/agent/state/route.ts
-    """
+    """GET /api/agent/state — full state snapshot for the UI."""
     memory.load()
     state = memory.get_full_state()
     config = read_agent_config()
@@ -185,10 +137,7 @@ async def get_agent_state():
 
 @app.post("/api/agent/scan")
 async def run_scan(request: Request):
-    """POST /api/agent/scan — sweep all markets for triggers.
-
-    Replaces: app/api/agent/scan/route.ts
-    """
+    """POST /api/agent/scan — sweep markets for trigger signals."""
     global _last_scan_at
 
     elapsed = time.time() - _last_scan_at
@@ -201,25 +150,20 @@ async def run_scan(request: Request):
 
     body = await request.json() if await request.body() else {}
     min_score = body.get("minScore", 20)
-    with_ta = body.get("withTA", True)
 
     universe = get_universe()
     _last_scan_at = time.time()
 
     perceptions = scan_once(universe=universe, min_score=min_score)
 
-    # Note: TA filter runs in separate cron/job, not in the HTTP handler
-    result = _build_scan_response(perceptions, with_ta=with_ta)
+    result = {"perceptions": perceptions, "count": len(perceptions)}
     await _append_session_log({"event": "scan", "perceptions": len(perceptions)})
     return JSONResponse(content=result)
 
 
 @app.post("/api/agent/research/{coin}")
 async def run_research(coin: str, request: Request):
-    """POST /api/agent/research/{coin} — full AI analysis for one coin.
-
-    Replaces: app/api/agent/research/[coin]/route.ts
-    """
+    """POST /api/agent/research/{coin} — full AI analysis for one coin."""
     memory.load()
 
     # Build a minimal perception from memory or request
@@ -249,10 +193,7 @@ async def run_research(coin: str, request: Request):
 
 @app.post("/api/agent/execute")
 async def run_execute(request: Request):
-    """POST /api/agent/execute — run risk gates + execute.
-
-    Replaces: app/api/agent/execute/route.ts
-    """
+    """POST /api/agent/execute — run risk gates and execute an analysis."""
     memory.load()
 
     try:
@@ -264,7 +205,6 @@ async def run_execute(request: Request):
     if not analysis_id:
         raise HTTPException(400, "analysisId required")
 
-    # Look up analysis from memory
     analysis = memory.get_analysis_by_id(analysis_id)
     if not analysis:
         raise HTTPException(404, f"analysis {analysis_id} not found")
@@ -280,20 +220,14 @@ async def run_execute(request: Request):
 
 @app.get("/api/agent/trades")
 async def get_trades():
-    """GET /api/agent/trades — all recorded trades.
-
-    Replaces: app/api/agent/trades/route.ts
-    """
+    """GET /api/agent/trades — all recorded trades."""
     memory.load()
     return JSONResponse(content=memory.get_all_trades())
 
 
 @app.get("/api/agent/session-log")
 async def get_session_log():
-    """GET /api/agent/session-log — last 50 log entries.
-
-    Replaces: app/api/agent/session-log/route.ts
-    """
+    """GET /api/agent/session-log — last 50 log entries."""
     try:
         with open(SESSION_LOG_FILE, "r") as f:
             lines = f.readlines()
@@ -310,10 +244,7 @@ async def get_session_log():
 
 @app.get("/api/agent/start")
 async def agent_start():
-    """GET /api/agent/start — check if scanner is running.
-
-    Replaces: app/api/agent/start/route.ts (GET)
-    """
+    """GET /api/agent/start — report whether the scanner process is running."""
     if not os.path.exists(PID_FILE):
         return JSONResponse(content={"running": False, "cycle": 0, "lastUpdate": None})
 
@@ -324,9 +255,9 @@ async def agent_start():
 
 @app.post("/api/agent/start")
 async def agent_start_post():
-    """POST /api/agent/start — spawn the heartbeat process.
+    """POST /api/agent/start — report scanner status.
 
-    Replaces: app/api/agent/start/route.ts (POST)
+    The Python agent runs as its own process; this endpoint does not spawn it.
     """
     if os.path.exists(PID_FILE):
         pid = int(open(PID_FILE).read().strip())
@@ -338,17 +269,12 @@ async def agent_start_post():
         except OSError:
             pass
 
-    # NOTE: The actual heartbeat script path would need to be provided
-    # For now, return a stub — the Python agent would run as its own process
     return JSONResponse(content={"status": "stub", "message": "Python agent runs independently"})
 
 
 @app.post("/api/agent/stop")
 async def agent_stop():
-    """POST /api/agent/stop — kill the heartbeat process.
-
-    Replaces: app/api/agent/stop/route.ts
-    """
+    """POST /api/agent/stop — terminate the scanner process."""
     if not os.path.exists(PID_FILE):
         return JSONResponse(content={"status": "not_running"})
 
@@ -369,19 +295,13 @@ async def agent_stop():
 
 @app.get("/api/agent/config")
 async def get_config():
-    """GET /api/agent/config — read agent config.
-
-    Replaces: app/api/agent/config/route.ts (GET)
-    """
+    """GET /api/agent/config — read the agent config."""
     return JSONResponse(content=read_agent_config())
 
 
 @app.post("/api/agent/config")
 async def update_config(request: Request):
-    """POST /api/agent/config — merge new config values.
-
-    Replaces: app/api/agent/config/route.ts (POST)
-    """
+    """POST /api/agent/config — merge new values into the agent config."""
     existing = read_agent_config()
     try:
         body = await request.json()
@@ -398,11 +318,8 @@ async def update_config(request: Request):
 
 @app.get("/api/hl/account")
 async def get_account():
-    """GET /api/hl/account — perp + spot account state.
-
-    Replaces: app/api/hl/account/route.ts
-    """
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    """GET /api/hl/account — perp + spot account state."""
+    user = resolve_user_address()
     if not user:
         raise HTTPException(400, "HL wallet not configured")
 
@@ -415,10 +332,7 @@ async def get_account():
 
 @app.get("/api/hl/all-mids")
 async def get_all_mids():
-    """GET /api/hl/all-mids — all mid prices.
-
-    Replaces: app/api/hl/all-mids/route.ts
-    """
+    """GET /api/hl/all-mids — all mid prices."""
     try:
         mids = fetch_all_mids()
         return JSONResponse(content=mids)
@@ -428,10 +342,7 @@ async def get_all_mids():
 
 @app.get("/api/hl/universe")
 async def get_market_universe():
-    """GET /api/hl/universe — full market universe.
-
-    Replaces: app/api/hl/universe/route.ts
-    """
+    """GET /api/hl/universe — full market universe."""
     try:
         universe = get_universe()
         return JSONResponse(content={"markets": universe, "count": len(universe)})
@@ -441,10 +352,7 @@ async def get_market_universe():
 
 @app.get("/api/hl/price")
 async def get_price(coin: str = Query("BTC")):
-    """GET /api/hl/price — mid price for a coin.
-
-    Replaces: app/api/hl/price/route.ts
-    """
+    """GET /api/hl/price — mid price for a coin."""
     try:
         mids = fetch_all_mids()
         price = float(mids.get(coin, "0"))
@@ -459,24 +367,18 @@ async def get_candles(
     interval: str = Query("5m"),
     count: int = Query(100),
 ):
-    """GET /api/hl/candles — OHLCV candles.
-
-    Replaces: app/api/hl/candles/route.ts
-    """
+    """GET /api/hl/candles — OHLCV candles."""
     try:
         candles = fetch_hl_candles(coin, interval, count)
-        return JSONResponse(content={"candles": [c.dict() for c in candles]})
+        return JSONResponse(content={"candles": [c.model_dump() for c in candles]})
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @app.get("/api/hl/portfolio")
 async def get_portfolio():
-    """GET /api/hl/portfolio — full portfolio with positions + equity.
-
-    Replaces: app/api/hl/portfolio/route.ts
-    """
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    """GET /api/hl/portfolio — positions and equity."""
+    user = resolve_user_address()
     if not user:
         raise HTTPException(400, "HL wallet not configured")
 
@@ -516,18 +418,15 @@ async def get_portfolio():
 
 @app.get("/api/hl/orderbook")
 async def get_orderbook(coin: str = Query("BTC")):
-    """GET /api/hl/orderbook — L2 orderbook.
-
-    Replaces: app/api/hl/orderbook/route.ts
-    """
+    """GET /api/hl/orderbook — top-of-book L2 levels."""
     try:
-        from hermes_agent.client.hl_client import hl_call
-        raw = hl_call("l2Book", coin=coin)
+        from hermes_agent.client.hl_client import _http_post
+        raw = _http_post("/info", {"type": "l2Book", "coin": coin}) or {}
         levels = raw.get("levels", [[], []])
         bids_raw = levels[0][:8] if len(levels) > 0 else []
         asks_raw = levels[1][:8] if len(levels) > 1 else []
-        bids = [{"px": float(b[0]), "sz": float(b[1])} for b in bids_raw]
-        asks = [{"px": float(a[0]), "sz": float(a[1])} for a in asks_raw]
+        bids = [{"px": float(b["px"]), "sz": float(b["sz"])} for b in bids_raw]
+        asks = [{"px": float(a["px"]), "sz": float(a["sz"])} for a in asks_raw]
         return JSONResponse(content={"bids": bids, "asks": asks})
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -535,10 +434,7 @@ async def get_orderbook(coin: str = Query("BTC")):
 
 @app.post("/api/hl/place-order")
 async def place_order(request: Request):
-    """POST /api/hl/place-order — manual limit/market order.
-
-    Replaces: app/api/hl/place-order/route.ts
-    """
+    """POST /api/hl/place-order — manual order with ATR-based SL/TP brackets."""
     try:
         body = await request.json()
     except Exception:
@@ -551,24 +447,21 @@ async def place_order(request: Request):
 
     try:
         from hermes_agent.client.exchange import (
-            get_hl_price,
-            get_coin_index,
-            set_leverage,
-            place_hl_order,
             get_hl_atr,
+            get_hl_price,
+            place_hl_order,
             place_hl_trigger_order,
+            set_leverage,
         )
 
         mid_price = get_hl_price(coin)
         if mid_price <= 0:
             raise HTTPException(400, f"invalid price for {coin}")
 
-        asset_idx, _ = get_coin_index(coin)
         set_leverage(coin, leverage)
-
         atr = get_hl_atr("4h", 14, coin)
 
-        # Kelly-style sizing: use 1% of equity or riskUSD if provided
+        # Sizing: use riskUSD if provided, else riskPct of live equity.
         risk_usd = body.get("riskUSD")
         if risk_usd is None:
             risk_pct = body.get("riskPct", 0.01)
@@ -578,19 +471,18 @@ async def place_order(request: Request):
         position_notional = risk_usd * leverage
         size_in_coin = position_notional / mid_price
 
-        result = place_hl_order(is_buy, size_in_coin, mid_price, coin, asset_idx)
+        result = place_hl_order(is_buy, size_in_coin, mid_price, coin)
 
         if not result.get("ok"):
             raise HTTPException(400, f"order failed: {result.get('error')}")
 
-        # Place SL + TP brackets
         brackets = []
         if atr > 0 and size_in_coin > 0:
             sl_px = mid_price - atr * 3.5 if is_buy else mid_price + atr * 3.5
             tp_px = mid_price + atr * 1.0 if is_buy else mid_price - atr * 1.0
 
-            sl = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", asset_idx, coin)
-            tp = place_hl_trigger_order(is_buy, size_in_coin, tp_px, "tp", asset_idx, coin)
+            sl = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
+            tp = place_hl_trigger_order(is_buy, size_in_coin, tp_px, "tp", coin)
             brackets = [
                 {"type": "SL", "price": sl_px, "ok": sl.get("ok")},
                 {"type": "TP", "price": tp_px, "ok": tp.get("ok")},
@@ -619,27 +511,18 @@ async def place_order(request: Request):
 
 @app.post("/api/hl/close-position")
 async def close_position(request: Request):
-    """POST /api/hl/close-position — close a coin position.
-
-    Replaces: app/api/hl/close-position/route.ts
-    """
+    """POST /api/hl/close-position — close an open position for a coin."""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(400, "invalid JSON")
 
     coin = (body.get("coin") or "BTC").upper()
-    user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    user = resolve_user_address()
 
     try:
-        from hermes_agent.client.exchange import (
-            get_coin_index,
-            get_hl_price,
-            place_hl_order,
-        )
-        from hermes_agent.client.hl_client import fetch_account_state
+        from hermes_agent.client.exchange import get_hl_price, place_hl_order
 
-        # Fetch current position
         state = fetch_account_state(user)
         pos = None
         for p in (state.get("asset_positions") or []):
@@ -660,7 +543,7 @@ async def close_position(request: Request):
         if mid_price <= 0:
             raise HTTPException(400, f"invalid price for {coin}")
 
-        # Close: opposite direction
+        # Close: trade in the opposite direction.
         result = place_hl_order(
             is_buy=not is_long,
             size=abs(szi),
@@ -683,10 +566,7 @@ async def close_position(request: Request):
 
 @app.post("/api/hl/cancel-order")
 async def cancel_order(request: Request):
-    """POST /api/hl/cancel-order — cancel an order by OID.
-
-    Replaces: app/api/hl/cancel-order/route.ts
-    """
+    """POST /api/hl/cancel-order — cancel an order by OID."""
     try:
         body = await request.json()
     except Exception:

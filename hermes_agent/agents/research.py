@@ -1,14 +1,8 @@
-"""Deep-analysis pipeline: perception -> multi-TF indicators -> AI verdict -> persist.
-
-Translation of lib/agent/research.ts.
-Orchestrates the full AI research flow: fetch candles on multiple timeframes,
-compute indicators, call the LLM, parse verdict, and persist results.
-
-All functions are SYNC — no async/await needed.
-"""
+"""Deep-analysis pipeline: perception -> multi-timeframe indicators -> AI verdict -> persist."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -16,20 +10,26 @@ import os
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
 
 from hermes_agent.agents.config_store import read_agent_config
 from hermes_agent.agents.memory import memory
 from hermes_agent.agents.system_prompt import build_system_prompt
-from hermes_agent.client.hl_client import HL_API, fetch_hl_candles, fetch_account_state
-from hermes_agent.indicators.math import ema, atr, rsi, adx
+from hermes_agent.client.hl_client import (
+    fetch_account_state,
+    fetch_funding_history,
+    fetch_hl_candles,
+    resolve_user_address,
+)
+from hermes_agent.indicators.math import adx, atr, candle_val, ema, rsi
+from hermes_agent.models.types import Candle
 
 logger = logging.getLogger(__name__)
 
 
-def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _compute_indicators(candles: List[Candle]) -> Dict[str, Any]:
     """Compute EMA8/21, RSI, ATR, ADX for a set of candles."""
     if not candles:
         return {
@@ -37,38 +37,31 @@ def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
             "rsi14": None, "atr14": None, "adx14": None,
             "last_close": 0, "last_time": 0,
         }
-    
-    # Handle both dict and Candle objects
-    def _get(cl, key):
-        if isinstance(cl, dict):
-            return cl.get(key, 0)
-        return getattr(cl, key, 0)
-    
-    closes = [_get(c, "c") for c in candles]
-    
-    # Check minimum data requirements
+
+    closes = [candle_val(c, "c") for c in candles]
+
     if len(closes) < 21:
         return {
             "ema8": None, "ema21": None, "slope_up": None,
             "rsi14": None, "atr14": None, "adx14": None,
-            "last_close": closes[-1] if closes else 0,
-            "last_time": candles[-1]["t"] if candles else 0,
+            "last_close": closes[-1],
+            "last_time": candles[-1].t,
         }
-    
+
     ema8_arr = ema(closes, 8)
     ema21_arr = ema(closes, 21)
-    
+
     last_ema8 = ema8_arr[-1] if ema8_arr else None
     last_ema21 = ema21_arr[-1] if ema21_arr else None
-    
+
     slope_up = None
     if last_ema8 is not None and len(ema8_arr) >= 3:
         slope_up = last_ema8 > ema8_arr[-3]
-    
+
     rsi_arr = rsi(candles, 14)
     atr_arr = atr(candles, 14)
     adx_arr = adx(candles, 14)
-    
+
     return {
         "ema8": last_ema8 if last_ema8 is not None and math.isfinite(last_ema8) else None,
         "ema21": last_ema21 if last_ema21 is not None and math.isfinite(last_ema21) else None,
@@ -76,24 +69,19 @@ def _compute_indicators(candles: List[Dict[str, Any]]) -> Dict[str, Any]:
         "rsi14": rsi_arr[-1] if rsi_arr and math.isfinite(rsi_arr[-1]) else None,
         "atr14": atr_arr[-1] if atr_arr and math.isfinite(atr_arr[-1]) else None,
         "adx14": adx_arr[-1] if adx_arr and math.isfinite(adx_arr[-1]) else None,
-        "last_close": closes[-1] if closes else 0,
-        "last_time": candles[-1]["t"] if candles else 0,
+        "last_close": closes[-1],
+        "last_time": candles[-1].t,
     }
 
 
 def _fetch_funding_rate(coin: str) -> str:
-    """Fetch latest funding rate for a coin."""
-    try:
-        from hermes_agent.client.hl_client import _make_info
-        info = _make_info()
-        start_time = int(time.time() * 1000) - 86_400_000
-        raw = info.funding_history(coin, start_time)
-        if isinstance(raw, list) and len(raw) > 0:
-            r = float(raw[-1].get("fundingRate", "0"))
-            if math.isfinite(r):
-                return f"{r * 100:.4f}%/hr"
-    except Exception:
-        pass
+    """Latest hourly funding rate for a coin, or 'N/A' if unavailable."""
+    start_time = int(time.time() * 1000) - 86_400_000
+    history = fetch_funding_history(coin, start_time)
+    if history:
+        rate = float(history[-1].get("fundingRate", "0"))
+        if math.isfinite(rate):
+            return f"{rate * 100:.4f}%/hr"
     return "N/A"
 
 
@@ -108,10 +96,7 @@ def _build_user_message(
     open_positions: List[Dict[str, Any]],
     mode: str,
 ) -> str:
-    """Build the user message passed to the LLM.
-
-    Translation of buildUserMessage() from lib/agent/research.ts.
-    """
+    """Build the user message passed to the LLM."""
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
@@ -141,7 +126,7 @@ def _build_user_message(
 
     position_block = (
         "Open positions: " + ", ".join(
-            f"{p['coin']} {p['side']} ${p.get('sizeUsd', 0):.0f}"
+            f"{p['coin']} {p['side']} ${p.get('size_usd', 0):.0f}"
             for p in open_positions
         )
         if open_positions
@@ -172,27 +157,19 @@ def _build_user_message(
 
 
 def _call_ai(system_prompt: str, user_message: str) -> str:
-    """Call the OpenRouter LLM API.
-
-    Translation of callAI() from lib/agent/research.ts.
-    Uses sync httpx in a new event loop for simplicity.
-    """
+    """Call the OpenRouter LLM API (runs the async client in a fresh event loop)."""
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
-    model = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3.6-35b-a3b")
+    model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.3")
 
     if not openrouter_key:
         logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
         return ""
 
-    # Run async httpx in a new event loop
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
     finally:
         loop.close()
-
-
-import asyncio
 
 
 async def _async_do_call(
@@ -201,7 +178,7 @@ async def _async_do_call(
     system_prompt: str,
     user_message: str,
 ) -> str:
-    """Async version of _call_ai."""
+    """Async POST to the OpenRouter chat-completions endpoint."""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -230,14 +207,10 @@ def parse_verdict(
     coin: str,
     perception: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Parse the AI response and extract the structured verdict.
-
-    Translation of parseVerdict() from lib/agent/research.ts.
-    Looks for JSON on the last line, then falls back to regex matching.
-    """
+    """Parse the AI response: JSON on the last line, with a regex fallback."""
     if not ai_text:
         ai_text = ""
-    
+
     verdict = "PASS"
     confidence = 0.0
     side = None
@@ -302,117 +275,69 @@ def parse_verdict(
 
 
 def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
-    """Full AI research pipeline for a perception.
+    """Full AI research pipeline for a perception — returns an analysis dict."""
+    c1h = fetch_hl_candles(coin, "1h", 100)
+    c4h = fetch_hl_candles(coin, "4h", 100)
+    c1d = fetch_hl_candles(coin, "1d", 60)
 
-    Translation of research() from lib/agent/research.ts.
-    Returns an AgentAnalysis dict.
+    funding_raw = _fetch_funding_rate(coin)
 
-    NOTE: This is SYNC. All fetch calls are synchronous.
-    """
-    try:
-        # All fetch calls are sync — no await
-        c1h = fetch_hl_candles(coin, "1h", 100)
-        c4h = fetch_hl_candles(coin, "4h", 100)
-        c1d = fetch_hl_candles(coin, "1d", 60)
-        
-        # Convert Candle objects to dicts (Candle objects don't support subscript)
-        def _candle_to_dict(c):
-            if isinstance(c, dict):
-                return c
-            try:
-                return {"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v}
-            except Exception as e:
-                logger.error(f"[research] Failed to convert candle: {e}, type={type(c)}, candle={c}")
-                raise
-        
-        logger.info(f"[research] Converting {len(c1h)} 1h candles, first type: {type(c1h[0]) if c1h else 'empty'}")
-        c1h = [_candle_to_dict(c) for c in c1h]
-        logger.info(f"[research] After conversion, first 1h candle type: {type(c1h[0]) if c1h else 'empty'}")
-        c4h = [_candle_to_dict(c) for c in c4h]
-        c1d = [_candle_to_dict(c) for c in c1d]
-        
-        funding_raw = _fetch_funding_rate(coin)
+    if len(c4h) < 30:
+        logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles")
 
-        if len(c4h) < 30:
-            logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles")
+    tf1h = _compute_indicators(c1h)
+    tf4h = _compute_indicators(c4h)
+    tf1d = _compute_indicators(c1d)
 
-        tf1h = _compute_indicators(c1h)
-        tf4h = _compute_indicators(c4h)
-        tf1d = _compute_indicators(c1d)
+    config = read_agent_config()
+    mode = str(config.get("mode", "OFF"))
 
-        config = read_agent_config()
-        mode = str(config.get("mode", "OFF"))
+    equity = 0.0
+    open_positions: List[Dict[str, Any]] = []
+    user = resolve_user_address()
 
-        # Fetch equity + positions (sync)
-        equity = 0.0
-        open_positions = []
-        user = os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
+    if user:
+        state = fetch_account_state(user)
+        equity = float(state.get("equity", "0"))
+        memory.update_equity(equity)
 
-        if user:
-            state = fetch_account_state(user)
-            equity = float(state.get("equity", "0"))
-            memory.update_equity(equity)
+        open_positions = [
+            {
+                "coin": p.get("position", {}).get("coin", ""),
+                "side": "long" if float(p.get("position", {}).get("szi", "0")) > 0 else "short",
+                "size_usd": float(p.get("position", {}).get("positionValue", "0")) or (
+                    abs(float(p.get("position", {}).get("szi", "0"))) *
+                    float(p.get("position", {}).get("entryPx", "0"))
+                ),
+            }
+            for p in (state.get("asset_positions") or [])
+            if float(p.get("position", {}).get("szi", "0")) != 0
+        ]
 
-            open_positions = [
-                {
-                    "coin": p.get("position", {}).get("coin", ""),
-                    "side": "long" if float(p.get("position", {}).get("szi", "0")) > 0 else "short",
-                    "size_usd": float(p.get("position", {}).get("positionValue", "0")) or (
-                        abs(float(p.get("position", {}).get("szi", "0"))) *
-                        float(p.get("position", {}).get("entryPx", "0"))
-                    ),
-                }
-                for p in (state.get("asset_positions") or [])
-                if float(p.get("position", {}).get("szi", "0")) != 0
-            ]
+    wr = memory.get_win_rate()
+    system_prompt = build_system_prompt(mode, wr.get("rate", 0), int(wr.get("total", 0)))
+    user_message = _build_user_message(
+        coin, perception, tf1h, tf4h, tf1d,
+        funding_raw, equity, open_positions, mode,
+    )
 
-        wr = memory.get_win_rate()
-        system_prompt = build_system_prompt(mode, wr.get("rate", 0), wr.get("total", 0))
-        user_message = _build_user_message(
-            coin, perception, tf1h, tf4h, tf1d,
-            funding_raw, equity, open_positions, mode,
-        )
+    ai_text = _call_ai(system_prompt, user_message)
+    parsed = parse_verdict(ai_text, coin, perception)
 
-        ai_text = _call_ai(system_prompt, user_message)
-        parsed = parse_verdict(ai_text, coin, perception)
+    analysis = {
+        "id": str(uuid.uuid4()),
+        "perception_id": perception.get("id", "unknown"),
+        "coin": coin,
+        "verdict": parsed["verdict"],
+        "confidence": parsed["confidence"],
+        "side": parsed["side"],
+        "entry_px": parsed["entry_px"],
+        "stop_px": parsed["stop_px"],
+        "tp_px": parsed["tp_px"],
+        "reasoning": parsed["reasoning"],
+        "news_context": "no news",
+        "created_at": int(time.time() * 1000),
+    }
 
-        analysis = {
-            "id": str(uuid.uuid4()),
-            "perception_id": perception.get("id", "unknown"),
-            "coin": coin,
-            "verdict": parsed["verdict"],
-            "confidence": parsed["confidence"],
-            "side": parsed["side"],
-            "entry_px": parsed["entry_px"],
-            "stop_px": parsed["stop_px"],
-            "tp_px": parsed["tp_px"],
-            "reasoning": parsed["reasoning"],
-            "news_context": "no news",
-            "created_at": int(time.time() * 1000),
-        }
-
-        memory.record_analysis(analysis)
-        return analysis
-
-    except Exception as err:
-        import traceback
-        msg = f"{err}\n{traceback.format_exc()}"
-        # Write full traceback to file for debugging
-        with open('/tmp/hermes_research_error.log', 'w') as f:
-            f.write(msg)
-        logger.error(f"[research] FAILED for {coin}: {err}")
-        fallback = {
-            "id": str(uuid.uuid4()),
-            "perception_id": "unknown",
-            "coin": coin,
-            "verdict": "PASS",
-            "confidence": 0,
-            "side": None,
-            "entry_px": perception.get("mid", 0),
-            "stop_px": 0,
-            "tp_px": 0,
-            "reasoning": f"Research failed: {msg}",
-            "created_at": int(time.time() * 1000),
-        }
-        memory.record_analysis(fallback)
-        return fallback
+    memory.record_analysis(analysis)
+    return analysis
