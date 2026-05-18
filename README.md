@@ -1,5 +1,5 @@
 # Hermes-Trader
-> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). Built on [Hermes Agent](https://github.com/NousResearch/hermes-agent) with FastAPI, OpenRouter, and a pre-AI technical analysis filter that cuts token costs by 80%.
+> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). A standalone Python system built with FastAPI and OpenRouter, operated by [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP server.
 
 **What it does:** Scans every Hyperliquid market (500+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with DSL-managed dynamic exits — no human in the loop.
 
@@ -23,7 +23,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 
 ```
 +---------------------------------------------------------------+
-|                  Hermes Agent (LLM)                           |
+|          hermes-trader — autonomous trading pipeline          |
 |                                                               |
 |  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ DSL Exit ──▶ Execute
 |        (cheap)          (expensive)     (11 gates)    (2-phase)
@@ -207,7 +207,9 @@ additionally gated behind `HERMES_E2E=1` so it can never run by accident.
 
 ## MCP Integration
 
-Hermes-Trader's MCP server (`scripts/hermes-mcp-server.py`) exposes 100 tools over stdio transport. The 14 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
+hermes-trader is a standalone Python application; **Hermes Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Hermes-framework dependency.
+
+The MCP server (`scripts/hermes-mcp-server.py`) exposes 100 tools over stdio transport. The 14 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
 
 | Tool | Description |
 |------|-------------|
@@ -233,10 +235,13 @@ Configure in Hermes Agent's `config.yaml`:
 ```yaml
 mcp_servers:
   hermes-trader:
-    command: python
+    command: python3
     args:
       - /path/to/hermes-trader/scripts/hermes-mcp-server.py
+    cwd: /path/to/hermes-trader
     timeout: 60
+    env:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
 ```
 
 ---
@@ -253,7 +258,7 @@ Static SL/TP orders don't adapt to price action. The DSL engine implements a two
 The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
 
 ### Why pure Python?
-Rewritten from TypeScript/Next.js to enable simpler deployment, direct Hermes Agent integration, and native testability without browser headless.
+Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration with Hermes Agent, and native testability without a headless browser.
 
 ---
 
@@ -319,11 +324,14 @@ hermes-trader/
 
 ## Built With
 
-- [Hermes Agent](https://github.com/NousResearch/hermes-agent) — autonomous AI agent framework
 - FastAPI — Python web framework
 - OpenRouter (Qwen3-235B-A22B) — AI research pipeline
-- Hyperliquid API (perpetual futures DEX)
+- Hyperliquid Python SDK — perpetual futures DEX
 - Brave Search API (optional, for news signals)
+
+It is **operated by** [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+through the MCP server — Hermes Agent is not a build dependency; the trading
+engine is plain Python.
 
 ---
 

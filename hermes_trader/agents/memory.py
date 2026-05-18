@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-MEMORY_FILE = os.path.join(os.getcwd(), ".agent-memory.json")
+# Anchored to the repo root (mirrors config_store.py), not os.getcwd() — so the
+# MCP server and the trading loop always share one .agent-memory.json regardless
+# of which directory each was launched from.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MEMORY_FILE = os.path.join(_REPO_ROOT, ".agent-memory.json")
 
 MAX_PERCEPTIONS = 500
 MAX_ANALYSES = 200
