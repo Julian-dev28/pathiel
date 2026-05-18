@@ -253,35 +253,27 @@ you operate hermes-trader by prompting your Hermes Agent in plain language — t
 calls the MCP tools for you. Restart your Hermes session first so the skill and MCP
 server are picked up.
 
-**Check state**
-> Load the hermes-trader skill and show me its current state — mode, equity, open positions, recent trades.
+| Goal | Prompt to give Hermes |
+|------|-----------------------|
+| **Check state** | *Load the hermes-trader skill and show me its current state — mode, equity, open positions, recent trades.* |
+| **Configure** (`OFF` analyzes only, `LIVE` places real orders) | *Set hermes-trader to LIVE mode with a max trade size of $20.* |
+| **Scan** | *Scan the markets with hermes-trader and list what triggered, with composite scores.* |
+| **Research** | *Research the top candidate and tell me the verdict, side, and confidence.* |
+| **Run one full cycle** | *Run a hermes-trader cycle: scan, run the TA filter, research the best candidate, and execute it if the verdict is LONG or SHORT. Tell me what happened.* |
+| **Start continuous trading** | *Start the hermes-trader trading loop in the background, then confirm it is running.* |
+| **Stop continuous trading** | *Stop the hermes-trader trading loop.* |
+| **Monitor (in session)** | *Check hermes-trader's status and tell me if anything changed since the last report.* |
 
-**Configure** — `OFF` analyzes only, `LIVE` places real orders:
-> Set hermes-trader to LIVE mode with a max trade size of $20.
+"Start continuous trading" runs `python scripts/trading_loop.py`, which scans ->
+TA-filters -> researches -> executes on its own every `HERMES_SCAN_INTERVAL`
+seconds, independent of the Hermes session.
 
-**Scan and research**
-> Scan the markets with hermes-trader and list what triggered, with composite scores.
-> Research the top candidate and tell me the verdict, side, and confidence.
-
-**Run one full cycle**
-> Run a hermes-trader cycle: scan, run the TA filter, research the best candidate, and execute it if the verdict is LONG or SHORT. Tell me what happened.
-
-**Start continuous autonomous trading** — the continuous loop is a standalone process; ask Hermes to launch it:
-> Start the hermes-trader trading loop in the background, then confirm it is running.
-
-That runs `python scripts/trading_loop.py`, which scans -> TA-filters -> researches ->
-executes on its own every `HERMES_SCAN_INTERVAL` seconds, independent of the Hermes
-session. To stop it:
-> Stop the hermes-trader trading loop.
-
-**Monitor** — for hands-off monitoring, resume the hourly status cron job (zero AI cost;
-it just runs `status.py` — see [`references/cron-jobs.md`](skills/hermes-trader-agent/references/cron-jobs.md)):
+For **hands-off monitoring**, resume the hourly status cron job (zero AI cost — it
+just runs `status.py`; see [`references/cron-jobs.md`](skills/hermes-trader-agent/references/cron-jobs.md)):
 ```bash
 hermes cron list            # find the "Hermes Trader Hourly Report" job id
 hermes cron resume <job-id> # start hourly status delivery
 ```
-Or check any time inside a session:
-> Check hermes-trader's status and tell me if anything changed since the last report.
 
 ---
 
