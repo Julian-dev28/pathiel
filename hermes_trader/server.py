@@ -1,4 +1,4 @@
-"""Hermes Agent — FastAPI server exposing the agent and Hyperliquid endpoints."""
+"""Hermes-Trader — FastAPI server exposing the trading agent and Hyperliquid endpoints."""
 
 from __future__ import annotations
 
@@ -14,19 +14,19 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from hermes_agent import __version__
-from hermes_agent.agents.config_store import read_agent_config, write_agent_config
-from hermes_agent.agents.executor import maybe_execute
-from hermes_agent.agents.memory import memory
-from hermes_agent.agents.perception import scan_once
-from hermes_agent.agents.research import research
-from hermes_agent.client.hl_client import (
+from hermes_trader import __version__
+from hermes_trader.agents.config_store import read_agent_config, write_agent_config
+from hermes_trader.agents.executor import maybe_execute
+from hermes_trader.agents.memory import memory
+from hermes_trader.agents.perception import scan_once
+from hermes_trader.agents.research import research
+from hermes_trader.client.hl_client import (
     fetch_account_state,
     fetch_all_mids,
     fetch_hl_candles,
     resolve_user_address,
 )
-from hermes_agent.client.universe import get_universe
+from hermes_trader.client.universe import get_universe
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Hermes Agent", version=__version__, lifespan=lifespan)
+app = FastAPI(title="Hermes-Trader", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -421,7 +421,7 @@ async def get_portfolio():
 async def get_orderbook(coin: str = Query("BTC")):
     """GET /api/hl/orderbook — top-of-book L2 levels."""
     try:
-        from hermes_agent.client.hl_client import _http_post
+        from hermes_trader.client.hl_client import _http_post
         raw = _http_post("/info", {"type": "l2Book", "coin": coin}) or {}
         levels = raw.get("levels", [[], []])
         bids_raw = levels[0][:8] if len(levels) > 0 else []
@@ -447,7 +447,7 @@ async def place_order(request: Request):
     is_buy = side.lower() in ("long", "buy")
 
     try:
-        from hermes_agent.client.exchange import (
+        from hermes_trader.client.exchange import (
             get_hl_atr,
             get_hl_price,
             place_hl_order,
@@ -522,7 +522,7 @@ async def close_position(request: Request):
     user = resolve_user_address()
 
     try:
-        from hermes_agent.client.exchange import get_hl_price, place_hl_order
+        from hermes_trader.client.exchange import get_hl_price, place_hl_order
 
         state = fetch_account_state(user)
         pos = None
@@ -579,7 +579,7 @@ async def cancel_order(request: Request):
         raise HTTPException(400, "oid required")
 
     try:
-        from hermes_agent.client.exchange import cancel_orders
+        from hermes_trader.client.exchange import cancel_orders
         result = cancel_orders(oid, coin=coin)
         return JSONResponse(content=result)
     except Exception as e:
@@ -590,7 +590,7 @@ async def cancel_order(request: Request):
 
 @app.get("/")
 async def root():
-    return {"service": "Hermes Agent", "version": __version__, "status": "running"}
+    return {"service": "Hermes-Trader", "version": __version__, "status": "running"}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -599,4 +599,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("HERMES_PORT", 8000))
     logger.info(f"Starting Hermes server on port {port}")
-    uvicorn.run("hermes_agent.server:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("hermes_trader.server:app", host="0.0.0.0", port=port, reload=False)

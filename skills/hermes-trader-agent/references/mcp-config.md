@@ -1,6 +1,6 @@
 # MCP Server Configuration
 
-The MCP server is a Python stdio process. It imports `hermes_agent` directly —
+The MCP server is a Python stdio process. It imports `hermes_trader` directly —
 there is no separate HTTP server to keep running.
 
 ## Starting the MCP Server

@@ -34,8 +34,8 @@ def _positions(state):
 )
 def test_live_order_roundtrip():
     """Set leverage, open a tiny leveraged position, close it, verify it is flat."""
-    from hermes_agent.client.exchange import HL_LEVERAGE, get_hl_price, place_hl_order, set_leverage
-    from hermes_agent.client.hl_client import _http_post, fetch_account_state, resolve_user_address
+    from hermes_trader.client.exchange import HL_LEVERAGE, get_hl_price, place_hl_order, set_leverage
+    from hermes_trader.client.hl_client import _http_post, fetch_account_state, resolve_user_address
 
     user = resolve_user_address()
     state0 = fetch_account_state(user)
@@ -85,8 +85,8 @@ def test_live_order_roundtrip():
                     reason="OPENROUTER_API_KEY not configured")
 def test_live_research_loop():
     """Run the full research pipeline (incl. the real LLM) and validate the output."""
-    from hermes_agent.agents.research import research
-    from hermes_agent.client.hl_client import fetch_all_mids
+    from hermes_trader.agents.research import research
+    from hermes_trader.client.hl_client import fetch_all_mids
 
     mid = float(fetch_all_mids().get("BTC", 0))
     assert mid > 0

@@ -13,11 +13,11 @@ import time
 import uuid
 from typing import Any, Dict, List
 
-from hermes_agent.agents.config_store import read_agent_config
-from hermes_agent.agents.dsl_exit import ExitPolicy, check_all_positions, register_position
-from hermes_agent.agents.memory import memory
-from hermes_agent.agents.risk_gates import GateContext, eval_all_gates
-from hermes_agent.client.exchange import (
+from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.dsl_exit import ExitPolicy, check_all_positions, register_position
+from hermes_trader.agents.memory import memory
+from hermes_trader.agents.risk_gates import GateContext, eval_all_gates
+from hermes_trader.client.exchange import (
     HL_LEVERAGE,
     get_hl_atr,
     get_hl_price,
@@ -25,7 +25,7 @@ from hermes_agent.client.exchange import (
     place_hl_trigger_order,
     set_leverage,
 )
-from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
+from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
 
 logger = logging.getLogger(__name__)
 

@@ -32,11 +32,11 @@ if os.path.exists(_env_path):
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hermes_agent import __version__
-from hermes_agent.agents.config_store import read_agent_config
-from hermes_agent.agents.perception import scan_once
-from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
-from hermes_agent.agents.hyperfeed import (
+from hermes_trader import __version__
+from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.perception import scan_once
+from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
+from hermes_trader.agents.hyperfeed import (
     leaderboard_get_markets,
     leaderboard_get_top as leaderboard_get_top_traders,
     leaderboard_get_trader_positions,
@@ -801,8 +801,8 @@ TOOLS = [
 
 
 def handle_scan(params: Dict[str, Any]) -> str:
-    from hermes_agent.agents.config import get_config
-    from hermes_agent.client.universe import get_universe
+    from hermes_trader.agents.config import get_config
+    from hermes_trader.client.universe import get_universe
 
     min_score = params.get("minScore", 20)
     max_markets = params.get("maxMarkets")
@@ -841,7 +841,7 @@ def handle_state(params: Dict[str, Any]) -> str:
 
 
 def handle_config(params: Dict[str, Any]) -> str:
-    from hermes_agent.agents.config_store import read_agent_config, write_agent_config
+    from hermes_trader.agents.config_store import read_agent_config, write_agent_config
 
     config = read_agent_config()
 
@@ -864,7 +864,7 @@ def handle_config(params: Dict[str, Any]) -> str:
 
 
 def handle_research(params: Dict[str, Any]) -> str:
-    from hermes_agent.agents.research import research
+    from hermes_trader.agents.research import research
     
     coin = params.get("coin", "")
     if not coin:
@@ -874,7 +874,7 @@ def handle_research(params: Dict[str, Any]) -> str:
     perception = _perception_cache.get(coin)
     if not perception:
         # Build a minimal perception from the current mid price.
-        from hermes_agent.client.hl_client import fetch_all_mids
+        from hermes_trader.client.hl_client import fetch_all_mids
         mids = fetch_all_mids()
         perception = {
             "id": f"{coin}-{int(time.time()*1000)}",
@@ -908,8 +908,8 @@ def handle_research(params: Dict[str, Any]) -> str:
 
 
 def handle_execute(params: Dict[str, Any]) -> str:
-    from hermes_agent.agents.executor import maybe_execute
-    from hermes_agent.agents.memory import memory
+    from hermes_trader.agents.executor import maybe_execute
+    from hermes_trader.agents.memory import memory
 
     analysis_id = params.get("analysisId", "")
     if not analysis_id:
@@ -1007,7 +1007,7 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
 
 def handle_whale_index(params: Dict[str, Any]) -> str:
     """Handle whale_index tool call."""
-    from hermes_agent.agents.whale_index import get_whale_signals
+    from hermes_trader.agents.whale_index import get_whale_signals
     
     min_confidence = params.get("minConfidence", 0.1)
     top_n = params.get("topN", 10)
@@ -1136,21 +1136,21 @@ def run() -> None:
 
 def handle_get_portfolio(params: Dict[str, Any]) -> str:
     """Handle get_portfolio tool call."""
-    from hermes_agent.client.hl_client import fetch_account_state
+    from hermes_trader.client.hl_client import fetch_account_state
     user = resolve_user_address()
     state = fetch_account_state(user)
     return json.dumps(state.get('asset_positions', []), indent=2, default=str)
 
 def handle_get_price(params: Dict[str, Any]) -> str:
     """Handle get_price tool call."""
-    from hermes_agent.client.exchange import get_hl_price
+    from hermes_trader.client.exchange import get_hl_price
     coin = params.get('coin', 'BTC').upper()
     price = get_hl_price(coin)
     return json.dumps({'coin': coin, 'price': price}, default=str)
 
 def handle_get_candles(params: Dict[str, Any]) -> str:
     """Handle get_candles tool call."""
-    from hermes_agent.client.hl_client import fetch_hl_candles
+    from hermes_trader.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
@@ -1159,7 +1159,7 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
-    from hermes_agent.client.exchange import get_hl_price, place_hl_order
+    from hermes_trader.client.exchange import get_hl_price, place_hl_order
     
     coin = params.get('coin', 'BTC').upper()
     user = resolve_user_address()
@@ -1190,7 +1190,7 @@ def handle_close_position(params: Dict[str, Any]) -> str:
 
 def handle_set_leverage(params: Dict[str, Any]) -> str:
     """Handle set_leverage tool call."""
-    from hermes_agent.client.exchange import set_leverage as set_leverage_fn
+    from hermes_trader.client.exchange import set_leverage as set_leverage_fn
     coin = params.get('coin', 'BTC').upper()
     leverage = params.get('leverage', 5)
     result = set_leverage_fn(coin, int(leverage))
@@ -1198,7 +1198,7 @@ def handle_set_leverage(params: Dict[str, Any]) -> str:
 
 def handle_get_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_open_orders tool call."""
-    from hermes_agent.client.hl_client import fetch_account_state
+    from hermes_trader.client.hl_client import fetch_account_state
     user = resolve_user_address()
     state = fetch_account_state(user)
     orders = state.get('open_orders', [])
@@ -1209,7 +1209,7 @@ def handle_get_open_orders(params: Dict[str, Any]) -> str:
 
 def handle_cancel_order(params: Dict[str, Any]) -> str:
     """Handle cancel_order tool call."""
-    from hermes_agent.client.exchange import _make_exchange
+    from hermes_trader.client.exchange import _make_exchange
     asset = params.get('asset')
     order_id = params.get('order_id')
     if asset is None or order_id is None:
@@ -1223,7 +1223,7 @@ def handle_cancel_order(params: Dict[str, Any]) -> str:
 
 def handle_get_spot_balances(params: Dict[str, Any]) -> str:
     """Handle get_spot_balances tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
     try:
         info = _get_info()
@@ -1234,7 +1234,7 @@ def handle_get_spot_balances(params: Dict[str, Any]) -> str:
 
 def handle_get_user_fees(params: Dict[str, Any]) -> str:
     """Handle get_user_fees tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
     try:
         info = _get_info()
@@ -1245,7 +1245,7 @@ def handle_get_user_fees(params: Dict[str, Any]) -> str:
 
 def handle_get_referral(params: Dict[str, Any]) -> str:
     """Handle get_referral tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
     try:
         info = _get_info()
@@ -1257,7 +1257,7 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
 
 def handle_get_l2_book(params: Dict[str, Any]) -> str:
     """Handle get_l2_book tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     coin = params.get('coin', 'BTC').upper()
     try:
         info = _get_info()
@@ -1269,7 +1269,7 @@ def handle_get_l2_book(params: Dict[str, Any]) -> str:
 
 def handle_get_user_state(params: Dict[str, Any]) -> str:
     """Handle get_user_state tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
     try:
         info = _get_info()
@@ -1281,7 +1281,7 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
 
 def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_frontend_open_orders tool call."""
-    from hermes_agent.client.exchange import _get_info
+    from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
     coin = params.get('coin', '').upper()
     try:
@@ -1296,7 +1296,7 @@ def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
 
 def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
     """Handle get_candles_aggregated tool call."""
-    from hermes_agent.client.hl_client import fetch_hl_candles
+    from hermes_trader.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
@@ -1318,7 +1318,7 @@ def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
 
 def handle_get_price_history(params: Dict[str, Any]) -> str:
     """Handle get_price_history tool call."""
-    from hermes_agent.client.hl_client import fetch_hl_candles
+    from hermes_trader.client.hl_client import fetch_hl_candles
     coin = params.get('coin', 'BTC').upper()
     try:
         candles = fetch_hl_candles(coin, '1h', 100)
@@ -1331,7 +1331,7 @@ def handle_get_coin_info(params: Dict[str, Any]) -> str:
     """Handle get_coin_info tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.exchange import get_coin_index
+        from hermes_trader.client.exchange import get_coin_index
         idx, _, _ = get_coin_index(coin)
         return json.dumps({'coin': coin, 'index': idx}, default=str)
     except Exception as e:
@@ -1340,7 +1340,7 @@ def handle_get_coin_info(params: Dict[str, Any]) -> str:
 def handle_get_all_mids(params: Dict[str, Any]) -> str:
     """Handle get_all_mids tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         mids = info.all_mids()
         return json.dumps({'mids': mids}, default=str)
@@ -1351,7 +1351,7 @@ def handle_get_all_mids(params: Dict[str, Any]) -> str:
 def handle_get_account_summary(params: Dict[str, Any]) -> str:
     """Handle get_account_summary tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
         return json.dumps({'summary': state}, default=str)
@@ -1362,7 +1362,7 @@ def handle_get_asset_positions(params: Dict[str, Any]) -> str:
     """Handle get_asset_positions tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
         if coin:
@@ -1375,7 +1375,7 @@ def handle_get_24h_stats(params: Dict[str, Any]) -> str:
     """Handle get_24h_stats tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.hl_client import fetch_hl_candles
+        from hermes_trader.client.hl_client import fetch_hl_candles
         # Get 24h of 1h candles for stats
         candles = fetch_hl_candles(coin, '1h', 24)
         return json.dumps({'coin': coin, 'stats_24h': [c.model_dump() for c in candles]}, default=str)
@@ -1386,7 +1386,7 @@ def handle_get_24h_stats(params: Dict[str, Any]) -> str:
 def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
     """Handle get_portfolio_pnl tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
         return json.dumps({'pnl': state}, default=str)
@@ -1396,7 +1396,7 @@ def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
 def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
     """Handle get_risk_metrics tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
         return json.dumps({'risk': state}, default=str)
@@ -1407,7 +1407,7 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
 def handle_get_markets_info(params: Dict[str, Any]) -> str:
     """Handle get_markets_info tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         return json.dumps({'markets': meta}, default=str)
@@ -1418,7 +1418,7 @@ def handle_get_markets_info(params: Dict[str, Any]) -> str:
 def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     """Handle get_spot_markets tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         spot_meta = info.spot_meta() if hasattr(info, 'spot_meta') else {}
         return json.dumps({'spot_markets': spot_meta}, default=str)
@@ -1428,7 +1428,7 @@ def handle_get_spot_markets(params: Dict[str, Any]) -> str:
 def handle_get_perp_markets(params: Dict[str, Any]) -> str:
     """Handle get_perp_markets tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         return json.dumps({'perp_markets': meta}, default=str)
@@ -1439,7 +1439,7 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
     """Handle get_market_depth tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
         return json.dumps({'coin': coin, 'depth': l2}, default=str)
@@ -1458,7 +1458,7 @@ def handle_get_server_time(params: Dict[str, Any]) -> str:
 def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
     """Handle get_asset_contexts tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         return json.dumps({'contexts': meta}, default=str)
@@ -1473,7 +1473,7 @@ def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
     leverage = params.get('leverage')
     is_long = params.get('is_long')
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         mids = info.all_mids()
         mark = float(mids.get(coin, 0)) if mids else 0.0
@@ -1497,7 +1497,7 @@ def handle_get_max_leverage(params: Dict[str, Any]) -> str:
     """Handle get_max_leverage tool call."""
     coin = params.get('coin', '').upper()
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         universe = meta.get('universe', []) if isinstance(meta, dict) else []
@@ -1516,7 +1516,7 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
     user = params.get('user', '')
     oid = params.get('oid')
     try:
-        from hermes_agent.client.exchange import _get_info
+        from hermes_trader.client.exchange import _get_info
         info = _get_info()
         if hasattr(info, 'query_order_by_oid'):
             res = info.query_order_by_oid(user, int(oid))
@@ -1529,7 +1529,7 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
 def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
     """Handle get_user_fees_detailed tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         if hasattr(info, 'user_fees') and HL_ACCOUNT:
             res = info.user_fees(HL_ACCOUNT)
@@ -1543,7 +1543,7 @@ def handle_get_user_fills(params: Dict[str, Any]) -> str:
     """Handle get_user_fills tool call."""
     limit = int(params.get('limit', 100))
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
@@ -1560,7 +1560,7 @@ def handle_get_user_fills_by_time(params: Dict[str, Any]) -> str:
     start_time = int(params.get('start_time', 0))
     end_time = params.get('end_time')
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
@@ -1579,7 +1579,7 @@ def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
     start_time = int(params.get('start_time', 0))
     end_time = params.get('end_time')
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
@@ -1596,7 +1596,7 @@ def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
 def handle_get_historical_orders(params: Dict[str, Any]) -> str:
     """Handle get_historical_orders tool call."""
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
@@ -1612,7 +1612,7 @@ def handle_query_order_by_cloid(params: Dict[str, Any]) -> str:
     cloid = params.get('cloid', '')
     user = params.get('user')
     try:
-        from hermes_agent.client.exchange import _get_info, HL_ACCOUNT
+        from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
         addr = user or HL_ACCOUNT
         if not addr:

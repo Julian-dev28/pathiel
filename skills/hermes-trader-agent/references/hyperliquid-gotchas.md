@@ -1,6 +1,6 @@
 # Hyperliquid Order-Placement Gotchas
 
-Hard-won operational knowledge for `hermes_agent/client/exchange.py`. Every item
+Hard-won operational knowledge for `hermes_trader/client/exchange.py`. Every item
 below is reflected in the current code — this is reference, not a TODO list.
 
 ## szDecimals vs pxDecimals

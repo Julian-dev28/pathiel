@@ -19,11 +19,11 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from hermes_agent.agents.perception import scan_once
-from hermes_agent.agents.research import research
-from hermes_agent.agents.executor import maybe_execute
-from hermes_agent.agents.config import get_config
-from hermes_agent.client.universe import get_universe
+from hermes_trader.agents.perception import scan_once
+from hermes_trader.agents.research import research
+from hermes_trader.agents.executor import maybe_execute
+from hermes_trader.agents.config import get_config
+from hermes_trader.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 

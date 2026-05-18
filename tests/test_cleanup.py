@@ -14,7 +14,7 @@ import pathlib
 import subprocess
 import sys
 
-from hermes_agent.models.types import Candle
+from hermes_trader.models.types import Candle
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MCP_SCRIPT = str(ROOT / "scripts" / "hermes-mcp-server.py")
@@ -37,14 +37,14 @@ def test_candle_model_and_getitem():
 
 # ── indicators ──────────────────────────────────────────────────────────
 def test_candle_val_dict_and_obj():
-    from hermes_agent.indicators.math import candle_val
+    from hermes_trader.indicators.math import candle_val
     assert candle_val(Candle(t=1, o=1, h=2, l=0.5, c=1.5, v=9), "c") == 1.5
     assert candle_val({"c": 7.0}, "c") == 7.0
     assert candle_val({}, "c") == 0
 
 
 def test_ema_sma():
-    from hermes_agent.indicators.math import ema, sma
+    from hermes_trader.indicators.math import ema, sma
     vals = [float(i) for i in range(50)]
     assert len(ema(vals, 8)) == 50
     assert len(sma(vals, 8)) == 50
@@ -52,7 +52,7 @@ def test_ema_sma():
 
 
 def test_atr_rsi_adx_produce_finite_output():
-    from hermes_agent.indicators.math import atr, rsi, adx
+    from hermes_trader.indicators.math import atr, rsi, adx
     cs = _candles(150)
     for fn in (atr, rsi, adx):
         out = fn(cs, 14)
@@ -62,7 +62,7 @@ def test_atr_rsi_adx_produce_finite_output():
 
 # ── triggers ────────────────────────────────────────────────────────────
 def test_triggers_return_shape():
-    from hermes_agent.indicators.triggers import (
+    from hermes_trader.indicators.triggers import (
         pct_move_spike, volume_spike, breakout, range_compression, trend_strength,
     )
     cs = _candles(150)
@@ -73,7 +73,7 @@ def test_triggers_return_shape():
 
 
 def test_composite_score_in_range():
-    from hermes_agent.indicators.triggers import pct_move_spike, volume_spike, composite_score
+    from hermes_trader.indicators.triggers import pct_move_spike, volume_spike, composite_score
     cs = _candles(150)
     weights = {"pctMoveSpike": 0.35, "volumeSpike": 0.25}
     s = composite_score([pct_move_spike(cs), volume_spike(cs)], weights)
@@ -82,7 +82,7 @@ def test_composite_score_in_range():
 
 
 def test_momentum_burst_fires_on_large_move():
-    from hermes_agent.indicators.triggers import momentum_burst
+    from hermes_trader.indicators.triggers import momentum_burst
     flat = [Candle(t=i, o=100, h=100, l=100, c=100.0, v=10) for i in range(10)]
     h = momentum_burst(flat, lookback=2, pct_threshold=4.0)
     assert h["name"] == "momentumBurst" and h["fired"] is False
@@ -107,7 +107,7 @@ def test_momentum_burst_fires_on_large_move():
 
 # ── exchange order-result parsing (DRY-5 helper) ────────────────────────
 def test_parse_order_result():
-    from hermes_agent.client.exchange import _parse_order_result
+    from hermes_trader.client.exchange import _parse_order_result
     filled = {"status": "ok", "response": {"data": {"statuses": [{"filled": {"oid": 123}}]}}}
     assert _parse_order_result(filled) == {"ok": True, "order_id": "123"}
     err = {"status": "ok", "response": {"data": {"statuses": [{"error": "bad px"}]}}}
@@ -119,7 +119,7 @@ def test_parse_order_result():
 
 # ── research verdict parsing (camelCase fallback kept intentionally) ─────
 def test_parse_verdict_json_camelcase():
-    from hermes_agent.agents.research import parse_verdict
+    from hermes_trader.agents.research import parse_verdict
     txt = ('reasoning\n{"verdict":"LONG","confidence":0.8,"side":"long",'
            '"entryPx":100,"stopPx":95,"tpPx":110,"reasoning":"x"}')
     v = parse_verdict(txt, "BTC", {"mid": 50})
@@ -128,14 +128,14 @@ def test_parse_verdict_json_camelcase():
 
 
 def test_parse_verdict_empty_defaults_to_pass():
-    from hermes_agent.agents.research import parse_verdict
+    from hermes_trader.agents.research import parse_verdict
     v = parse_verdict("", "BTC", {"mid": 42})
     assert v["verdict"] == "PASS" and v["entry_px"] == 42
 
 
 # ── kelly sizing ────────────────────────────────────────────────────────
 def test_kelly_size():
-    from hermes_agent.agents.executor import kelly_size
+    from hermes_trader.agents.executor import kelly_size
     assert kelly_size(0.9, 1000, 2.0, 500) > 0
     assert kelly_size(0.3, 1000, 2.0, 500) == 0          # negative edge
     assert kelly_size(0.99, 1_000_000, 5.0, 100) == 100  # capped
@@ -143,7 +143,7 @@ def test_kelly_size():
 
 # ── risk gates ──────────────────────────────────────────────────────────
 def _ctx(**kw):
-    from hermes_agent.agents.risk_gates import GateContext
+    from hermes_trader.agents.risk_gates import GateContext
     base = dict(confidence=0.9, current_positions=[], trade_notional_usd=50,
                 daily_pnl=0, market_volume_24h_usd=1e8, coin="BTC",
                 trade_side="long", has_binary_news_risk=False, equity=1000,
@@ -153,7 +153,7 @@ def _ctx(**kw):
 
 
 def test_risk_gates_pass_and_block():
-    from hermes_agent.agents.risk_gates import eval_all_gates
+    from hermes_trader.agents.risk_gates import eval_all_gates
     cfg = {"min_ai_confidence": 0.8, "max_concurrent": 3, "max_trade_notional_usd": 200,
            "max_daily_loss_usd": -100, "min_market_volume_usd": 5e6,
            "max_total_notional_pct": 1.0, "cooldown_min": 60}
@@ -165,8 +165,8 @@ def test_risk_gates_pass_and_block():
 
 # ── DSL exit engine (incl. the ExitVerdict.coin field added by cleanup) ──
 def test_dsl_max_loss_exit_populates_coin():
-    from hermes_agent.agents import dsl_exit
-    from hermes_agent.agents.executor import monitor_exits
+    from hermes_trader.agents import dsl_exit
+    from hermes_trader.agents.executor import monitor_exits
     dsl_exit._active_positions.clear()
     dsl_exit.register_position("ETH", "long", 100.0)
     verdicts = dsl_exit.check_all_positions({"ETH": 96.0})  # 4% loss > 2.5% cap
@@ -178,7 +178,7 @@ def test_dsl_max_loss_exit_populates_coin():
 
 
 def test_dsl_no_exit_when_flat():
-    from hermes_agent.agents import dsl_exit
+    from hermes_trader.agents import dsl_exit
     dsl_exit._active_positions.clear()
     dsl_exit.register_position("SOL", "long", 100.0)
     assert dsl_exit.check_all_positions({"SOL": 100.5}) == []
@@ -187,7 +187,7 @@ def test_dsl_no_exit_when_flat():
 
 # ── resolve_user_address (DRY-2 helper) ─────────────────────────────────
 def test_resolve_user_address(monkeypatch):
-    from hermes_agent.client.hl_client import resolve_user_address
+    from hermes_trader.client.hl_client import resolve_user_address
     monkeypatch.setenv("HYPERLIQUID_MASTER_ADDRESS", "0xMASTER")
     monkeypatch.setenv("HYPERLIQUID_WALLET_ADDRESS", "0xWALLET")
     assert resolve_user_address() == "0xMASTER"
@@ -197,7 +197,7 @@ def test_resolve_user_address(monkeypatch):
 
 # ── memory round-trip ───────────────────────────────────────────────────
 def test_memory_record_and_read():
-    from hermes_agent.agents.memory import AgentMemory
+    from hermes_trader.agents.memory import AgentMemory
     m = AgentMemory()
     m.record_trade({"id": "t1", "coin": "BTC", "size_usd": 10})
     m.record_analysis({"id": "a1", "coin": "BTC"})

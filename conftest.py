@@ -1,6 +1,6 @@
 """Pytest bootstrap — load .env.local before the test session starts.
 
-hermes_agent.client.exchange reads Hyperliquid credentials at import time, so
+hermes_trader.client.exchange reads Hyperliquid credentials at import time, so
 the environment must be populated before any test imports the package. This is
 a no-op when .env.local is absent (e.g. CI without secrets).
 """

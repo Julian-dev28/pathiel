@@ -18,7 +18,7 @@ pytestmark = pytest.mark.online
 
 
 def test_fetch_all_mids_live():
-    from hermes_agent.client.hl_client import fetch_all_mids
+    from hermes_trader.client.hl_client import fetch_all_mids
     mids = fetch_all_mids()
     assert isinstance(mids, dict) and mids
     assert "BTC" in mids
@@ -26,7 +26,7 @@ def test_fetch_all_mids_live():
 
 
 def test_fetch_hl_candles_live():
-    from hermes_agent.client.hl_client import fetch_hl_candles
+    from hermes_trader.client.hl_client import fetch_hl_candles
     candles = fetch_hl_candles("BTC", "1h", 20)
     assert len(candles) > 0
     for c in candles:
@@ -37,7 +37,7 @@ def test_fetch_hl_candles_live():
 
 
 def test_get_universe_live():
-    from hermes_agent.client.universe import get_universe
+    from hermes_trader.client.universe import get_universe
     uni = get_universe()
     assert len(uni) > 50
     btc = next((m for m in uni if m["coin"] == "BTC"), None)
@@ -47,14 +47,14 @@ def test_get_universe_live():
 
 
 def test_get_hl_atr_live():
-    from hermes_agent.client.exchange import get_hl_atr
+    from hermes_trader.client.exchange import get_hl_atr
     assert get_hl_atr("4h", 14, "BTC") > 0
 
 
 def test_funding_rate_live():
     """Verifies the funding-rate bug fix (_make_info -> fetch_funding_history)."""
-    from hermes_agent.client.hl_client import fetch_funding_history
-    from hermes_agent.agents.research import _fetch_funding_rate
+    from hermes_trader.client.hl_client import fetch_funding_history
+    from hermes_trader.agents.research import _fetch_funding_rate
     hist = fetch_funding_history("BTC", int(time.time() * 1000) - 86_400_000)
     assert isinstance(hist, list) and hist
     assert "fundingRate" in hist[-1]
@@ -64,7 +64,7 @@ def test_funding_rate_live():
 
 
 def test_market_get_funding_regime_live():
-    from hermes_agent.agents.hyperfeed import market_get_funding_regime
+    from hermes_trader.agents.hyperfeed import market_get_funding_regime
     out = market_get_funding_regime()
     assert out["regime"] in ("LONG_CROWDED", "SHORT_CROWDED", "NEUTRAL")
     assert out["assets"]
@@ -77,7 +77,7 @@ def test_research_pipeline_live_without_llm(monkeypatch):
     PASS — so this exercises candle/funding/indicator fetching without spending.
     """
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    from hermes_agent.agents.research import research
+    from hermes_trader.agents.research import research
     perception = {"coin": "BTC", "type": "perp", "mid": 0,
                   "composite_score": 0, "triggers": []}
     analysis = research("BTC", perception)
@@ -89,8 +89,8 @@ def test_research_pipeline_live_without_llm(monkeypatch):
 def test_scan_once_live(monkeypatch):
     """A live market scan over a small universe; any results must be well-formed."""
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
-    from hermes_agent.agents.perception import scan_once
-    from hermes_agent.client.universe import get_universe
+    from hermes_trader.agents.perception import scan_once
+    from hermes_trader.client.universe import get_universe
     perceptions = scan_once(universe=get_universe(), min_score=0)
     assert isinstance(perceptions, list)
     for p in perceptions:

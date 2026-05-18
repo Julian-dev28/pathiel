@@ -15,12 +15,12 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_agent.agents.config import get_config
-from hermes_agent.client.daemon import check_daemon_state, producer_daemon
-from hermes_agent.client.hl_client import fetch_all_mids, fetch_hl_candles, start_ws_mids
-from hermes_agent.client.universe import get_universe
-from hermes_agent.indicators import triggers as trigger_mod
-from hermes_agent.models.types import Candle
+from hermes_trader.agents.config import get_config
+from hermes_trader.client.daemon import check_daemon_state, producer_daemon
+from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles, start_ws_mids
+from hermes_trader.client.universe import get_universe
+from hermes_trader.indicators import triggers as trigger_mod
+from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
 

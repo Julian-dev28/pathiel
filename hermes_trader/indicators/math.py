@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from hermes_agent.models.types import Candle
+from hermes_trader.models.types import Candle
 
 
 def candle_val(c: Candle | dict[str, float], key: str) -> float:

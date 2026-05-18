@@ -83,29 +83,29 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 
 | Module | Purpose |
 |--------|---------|
-| `hermes_agent/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
-| `hermes_agent/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
-| `hermes_agent/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
-| `hermes_agent/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
-| `hermes_agent/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
-| `hermes_agent/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
-| `hermes_agent/agents/dsl_exit.py` | Two-phase trailing stop engine — loss protection → profit locking |
-| `hermes_agent/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
-| `hermes_agent/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
-| `hermes_agent/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
-| `hermes_agent/agents/config_store.py` | Config persistence layer |
-| `hermes_agent/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
-| `hermes_agent/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
-| `hermes_agent/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
-| `hermes_agent/client/universe.py` | Volume-ranked market loader with 24h caching |
-| `hermes_agent/client/cache.py` | LRU + TTL memoization with in-flight dedup |
-| `hermes_agent/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
-| `hermes_agent/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
-| `hermes_agent/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
-| `hermes_agent/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
-| `hermes_agent/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
-| `hermes_agent/models/types.py` | Shared data type: `Candle` (OHLCV) |
-| `hermes_agent/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
+| `hermes_trader/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
+| `hermes_trader/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
+| `hermes_trader/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
+| `hermes_trader/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
+| `hermes_trader/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
+| `hermes_trader/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
+| `hermes_trader/agents/dsl_exit.py` | Two-phase trailing stop engine — loss protection → profit locking |
+| `hermes_trader/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
+| `hermes_trader/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
+| `hermes_trader/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
+| `hermes_trader/agents/config_store.py` | Config persistence layer |
+| `hermes_trader/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
+| `hermes_trader/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
+| `hermes_trader/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
+| `hermes_trader/client/universe.py` | Volume-ranked market loader with 24h caching |
+| `hermes_trader/client/cache.py` | LRU + TTL memoization with in-flight dedup |
+| `hermes_trader/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
+| `hermes_trader/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
+| `hermes_trader/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
+| `hermes_trader/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
+| `hermes_trader/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
+| `hermes_trader/models/types.py` | Shared data type: `Candle` (OHLCV) |
+| `hermes_trader/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
 
 ---
 
@@ -165,12 +165,12 @@ cp .env.local.example .env.local
 ### API Server (Optional)
 ```bash
 # Start the FastAPI server (port 8000)
-python -m hermes_agent.server
+python -m hermes_trader.server
 
 # Or use uvicorn directly:
-uvicorn hermes_agent.server:app --host 0.0.0.0 --port 8000
+uvicorn hermes_trader.server:app --host 0.0.0.0 --port 8000
 ```
-The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes Agent", "version": "0.3.0", "status": "running"}`.
+The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes-Trader", "version": "0.3.0", "status": "running"}`.
 
 ### Continuous Trading Loop (Recommended)
 ```bash
@@ -275,7 +275,7 @@ With `HERMES_MAX_MARKETS=60` and a 50s candle-cache TTL, each 60s scan fetches f
 
 ```
 hermes-trader/
-├── hermes_agent/                  # Pure Python agent
+├── hermes_trader/                  # Pure Python agent
 │   ├── __init__.py
 │   ├── __main__.py                # Entry point
 │   ├── server.py                  # FastAPI server — 22 routes

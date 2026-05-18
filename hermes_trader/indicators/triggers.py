@@ -9,8 +9,8 @@ from __future__ import annotations
 import math
 from typing import Dict, List, TypedDict
 
-from hermes_agent.indicators.math import adx, sma, candle_val
-from hermes_agent.models.types import Candle
+from hermes_trader.indicators.math import adx, sma, candle_val
+from hermes_trader.models.types import Candle
 
 
 class TriggerHit(TypedDict):

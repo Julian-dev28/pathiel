@@ -10,8 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from hermes_agent.client.hl_client import _http_post
-from hermes_agent.client.universe import get_universe
+from hermes_trader.client.hl_client import _http_post
+from hermes_trader.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 

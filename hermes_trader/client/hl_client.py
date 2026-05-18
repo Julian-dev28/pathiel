@@ -25,11 +25,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
 
-from hermes_agent.models.types import Candle
+from hermes_trader.models.types import Candle
 
 if TYPE_CHECKING:
     from hyperliquid.info import Info
-    from hermes_agent.client.ws_client import HyperliquidWebSocket
+    from hermes_trader.client.ws_client import HyperliquidWebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ def start_ws_mids() -> "HyperliquidWebSocket | None":
     with _ws_mids_lock:
         if _ws_mids_instance is None:
             try:
-                from hermes_agent.client.ws_client import HyperliquidWebSocket
+                from hermes_trader.client.ws_client import HyperliquidWebSocket
                 ws = HyperliquidWebSocket()
                 ws.start()
                 _ws_mids_instance = ws

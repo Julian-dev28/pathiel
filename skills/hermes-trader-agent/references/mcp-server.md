@@ -30,8 +30,8 @@ Use the existing helpers — do not invent new ones:
 ```python
 def handle_get_xxx(params: Dict[str, Any]) -> str:
     try:
-        from hermes_agent.client.exchange import _get_info
-        from hermes_agent.client.hl_client import resolve_user_address
+        from hermes_trader.client.exchange import _get_info
+        from hermes_trader.client.hl_client import resolve_user_address
         user = resolve_user_address()
         if not user:
             return json.dumps({"error": "no configured user address"}, default=str)
@@ -43,7 +43,7 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
 - `_get_info()` — shared read-side `Info` client.
 - `_make_exchange()` — shared write-side `Exchange` client (needs `HYPERLIQUID_PRIVATE_KEY`).
 - `resolve_user_address()` (in `hl_client`) — master address, else wallet, else `""`.
-- A bad import from `hermes_agent.client.exchange` fails at *handler-call* time,
+- A bad import from `hermes_trader.client.exchange` fails at *handler-call* time,
   not file load — a `python -c 'import ...'` smoke test will not catch it. Check
   the import against the actual module.
 

@@ -14,17 +14,17 @@ from typing import Any, Dict, List
 
 import httpx
 
-from hermes_agent.agents.config_store import read_agent_config
-from hermes_agent.agents.memory import memory
-from hermes_agent.agents.system_prompt import build_system_prompt
-from hermes_agent.client.hl_client import (
+from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.memory import memory
+from hermes_trader.agents.system_prompt import build_system_prompt
+from hermes_trader.client.hl_client import (
     fetch_account_state,
     fetch_funding_history,
     fetch_hl_candles,
     resolve_user_address,
 )
-from hermes_agent.indicators.math import adx, atr, candle_val, ema, rsi
-from hermes_agent.models.types import Candle
+from hermes_trader.indicators.math import adx, atr, candle_val, ema, rsi
+from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from hermes_agent.client.hl_client import _http_post
+from hermes_trader.client.hl_client import _http_post
 
 logger = logging.getLogger(__name__)
 

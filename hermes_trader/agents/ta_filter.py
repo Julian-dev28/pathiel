@@ -9,9 +9,9 @@ import logging
 import math
 from typing import Any, Dict, List, Optional
 
-from hermes_agent.indicators.math import adx, atr, candle_val, ema, rsi
-from hermes_agent.client.hl_client import fetch_hl_candles
-from hermes_agent.models.types import Candle
+from hermes_trader.indicators.math import adx, atr, candle_val, ema, rsi
+from hermes_trader.client.hl_client import fetch_hl_candles
+from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
 

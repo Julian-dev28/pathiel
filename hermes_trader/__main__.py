@@ -20,7 +20,7 @@ import os
 import signal
 import sys
 
-from hermes_agent import __version__
+from hermes_trader import __version__
 
 
 def print_banner():
@@ -46,7 +46,7 @@ BOLD = lambda t: color(t, "\033[1m")
 
 
 def _import_memory():
-    from hermes_agent.agents.memory import memory
+    from hermes_trader.agents.memory import memory
     memory.load()
     return memory
 
@@ -55,8 +55,8 @@ def _import_memory():
 
 def cmd_scan():
     """Scan all markets for triggers."""
-    from hermes_agent.agents.perception import scan_once
-    from hermes_agent.client.universe import get_universe
+    from hermes_trader.agents.perception import scan_once
+    from hermes_trader.client.universe import get_universe
 
     print_banner()
     print("  Scanning all markets for trigger signals...\n")
@@ -80,9 +80,9 @@ def cmd_scan():
 
 def cmd_research(coin: str):
     """Run AI research on a coin."""
-    from hermes_agent.agents.research import research
-    from hermes_agent.agents.memory import memory
-    from hermes_agent.client.hl_client import fetch_all_mids
+    from hermes_trader.agents.research import research
+    from hermes_trader.agents.memory import memory
+    from hermes_trader.client.hl_client import fetch_all_mids
 
     print_banner()
     coin = coin.upper()
@@ -137,7 +137,7 @@ def cmd_research(coin: str):
 
 def cmd_execute():
     """Execute trade from last confirmed analysis."""
-    from hermes_agent.agents.executor import maybe_execute
+    from hermes_trader.agents.executor import maybe_execute
 
     print_banner()
     memory = _import_memory()
@@ -163,7 +163,7 @@ def cmd_execute():
 
 def cmd_status():
     """Show full agent state."""
-    from hermes_agent.agents.config_store import read_agent_config
+    from hermes_trader.agents.config_store import read_agent_config
 
     print_banner()
     memory = _import_memory()
@@ -231,7 +231,7 @@ def cmd_trades():
 
 def cmd_account():
     """Show HL account state."""
-    from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
+    from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
 
     print_banner()
     user = resolve_user_address()
@@ -267,7 +267,7 @@ def cmd_account():
 
 def cmd_config(*args):
     """Show or set config."""
-    from hermes_agent.agents.config_store import read_agent_config, write_agent_config
+    from hermes_trader.agents.config_store import read_agent_config, write_agent_config
 
     print_banner()
     config = read_agent_config()
@@ -331,7 +331,7 @@ def cmd_start():
     print("  Starting autonomous scanner...\n")
     env = os.environ.copy()
     proc = subprocess.Popen(
-        [sys.executable, "-m", "hermes_agent"],
+        [sys.executable, "-m", "hermes_trader"],
         env=env,
         start_new_session=True,
     )
@@ -364,7 +364,7 @@ def cmd_stop():
 
 def cmd_version():
     print_banner()
-    print(f"  Hermes Agent v{__version__}\n")
+    print(f"  Hermes-Trader v{__version__}\n")
 
 
 # ── Main ──────────────────────────────────────────────────────────────

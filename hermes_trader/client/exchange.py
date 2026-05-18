@@ -26,7 +26,7 @@ from hyperliquid.utils.signing import (
     TriggerOrderType,
 )
 
-from hermes_agent.client.hl_client import HL_API, fetch_hl_candles
+from hermes_trader.client.hl_client import HL_API, fetch_hl_candles
 
 logger = logging.getLogger(__name__)
 
