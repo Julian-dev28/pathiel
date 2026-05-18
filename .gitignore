@@ -71,6 +71,7 @@ python-service/research_cache.json
 .sentient-trader/config.env
 
 # Python daemon logs
+logs/
 python-service/logs/
 
 # sentient-trader-mcp build artifacts
