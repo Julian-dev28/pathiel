@@ -224,6 +224,39 @@ def trend_strength(candles: List[Candle], adx_period: int = 14) -> TriggerHit:
     }
 
 
+def momentum_burst(
+    candles: List[Candle],
+    lookback: int = 2,
+    pct_threshold: float = 4.0,
+) -> TriggerHit:
+    """Large cumulative price move over the last `lookback` bars.
+
+    Unlike the z-score triggers, this fires on the raw % move regardless of how
+    volatile the coin already is — so it still catches an explosive move once it
+    is underway, when recent bars have already inflated the trailing std and
+    pushed pct_move_spike's bar to fire out of reach.
+    """
+    if len(candles) < lookback + 1:
+        return {"name": "momentumBurst", "score": 0, "reason": "flat", "fired": False}
+
+    start = candle_val(candles[-lookback - 1], "c")
+    end = candle_val(candles[-1], "c")
+    if start == 0:
+        return {"name": "momentumBurst", "score": 0, "reason": "flat", "fired": False}
+
+    move_pct = (end - start) / start * 100
+    fired = abs(move_pct) >= pct_threshold
+    score = min(10, max(0, abs(move_pct) / pct_threshold * 5))  # 10 at 2x threshold
+    direction = "up" if move_pct > 0 else "down"
+
+    return {
+        "name": "momentumBurst",
+        "score": score if fired else 0,
+        "reason": f"{move_pct:+.1f}% over {lookback} bars {direction}" if fired else "flat",
+        "fired": fired,
+    }
+
+
 def composite_score(hits: List[TriggerHit], weights: Dict[str, float]) -> float:
     """Weighted composite score from triggered hits, clamped 0-100.
 

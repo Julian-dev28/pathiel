@@ -81,6 +81,30 @@ def test_composite_score_in_range():
     assert composite_score([], weights) == 0
 
 
+def test_momentum_burst_fires_on_large_move():
+    from hermes_agent.indicators.triggers import momentum_burst
+    flat = [Candle(t=i, o=100, h=100, l=100, c=100.0, v=10) for i in range(10)]
+    h = momentum_burst(flat, lookback=2, pct_threshold=4.0)
+    assert h["name"] == "momentumBurst" and h["fired"] is False
+
+    # +6% over the last 2 bars — well past a 4% threshold
+    surge = flat[:-2] + [
+        Candle(t=8, o=103, h=103, l=103, c=103.0, v=10),
+        Candle(t=9, o=106, h=106, l=106, c=106.0, v=10),
+    ]
+    h = momentum_burst(surge, lookback=2, pct_threshold=4.0)
+    assert h["fired"] is True
+    assert h["score"] > 0
+    assert "up" in h["reason"]
+
+    # a downward burst fires too
+    crash = flat[:-2] + [
+        Candle(t=8, o=97, h=97, l=97, c=97.0, v=10),
+        Candle(t=9, o=94, h=94, l=94, c=94.0, v=10),
+    ]
+    assert momentum_burst(crash, lookback=2, pct_threshold=4.0)["fired"] is True
+
+
 # ── exchange order-result parsing (DRY-5 helper) ────────────────────────
 def test_parse_order_result():
     from hermes_agent.client.exchange import _parse_order_result

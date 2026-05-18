@@ -60,7 +60,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Volume pre-filtering**: Top-N markets by 24h notional volume (default 50)
 - **Parallel batch scanning**: Workers fan out within batches, sleep between
 - **TTL caching**: Candles cached 15 minutes, 4-scan cost ≈ 600 weight (vs. 10,000+ raw)
-- **Configurable**: `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
+- **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
 - **Phase 1 — Loss Protection**: Max loss stop, protect threshold
@@ -124,7 +124,8 @@ HYPERLIQUID_PRIVATE_KEY=0x...your-private-key
 # HYPERLIQUID_MASTER_ADDRESS=0x...your-master-address
 
 # ── Scan Tuning ──────────────────────────────────────────────
-HERMES_MAX_MARKETS=50          # Top-N markets to scan by volume
+HERMES_SCAN_INTERVAL=60        # Seconds between scan cycles
+HERMES_MAX_MARKETS=60          # Top-N markets to scan by volume
 HERMES_BATCH_SIZE=20           # Batch size for parallel scanning
 HERMES_BATCH_SLEEP=0.3         # Seconds between scan batches
 
@@ -173,7 +174,7 @@ The API is available at `http://localhost:8000`. Health check: `GET /` returns `
 
 ### Continuous Trading Loop (Recommended)
 ```bash
-# Start the autonomous trading loop (scans every 180s)
+# Start the autonomous trading loop (scans every 60s)
 python scripts/trading_loop.py
 
 # Or run in background:
@@ -182,7 +183,7 @@ nohup python scripts/trading_loop.py > /tmp/hermes-trader.log 2>&1 &
 Monitor logs: `tail -f /tmp/hermes-trader.log`
 
 **Trading Loop Behavior:**
-- Scans top 50 markets every 180 seconds
+- Scans top 60 markets every 60 seconds
 - Researches triggered signals with AI (qwen/qwen3-235b-a22b)
 - Executes trades when confidence >= 0.50
 - Enforces risk caps (max $200 notional, max 3 concurrent positions)
@@ -243,7 +244,7 @@ mcp_servers:
 ## Design Decisions
 
 ### Why volume pre-filtering?
-HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight → instant 429. Volume pre-filtering to the top 50 markets reduces this to ~2,000 weight (or ~600 with TTL cache hits).
+HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight → instant 429. Volume pre-filtering to the top 60 markets keeps a scan at ~1,200 weight. Sustained usage is `1200 × markets ÷ interval` weight/min, so the safe rule is **markets ≤ scan-interval-in-seconds** (the default 60/60 sits right at the limit's edge).
 
 ### Why DSL exit engine?
 Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
@@ -264,9 +265,9 @@ Rewritten from TypeScript/Next.js to enable simpler deployment, direct Hermes Ag
 | `metaAndAssetCtxs` | 20 | Universe + volume + OI (perp) |
 | `spotMetaAndAssetCtxs` | 20 | Universe + volume + OI (spot) |
 | `candleSnapshot` (per coin) | 20 | Plus per-item weight |
-| **Total per scan cycle** | ~600-800 | Top 50 markets with cache |
+| **Total per scan cycle** | ~1,200 | Top 60 markets, one candle fetch each |
 
-With `HERMES_MAX_MARKETS=50` and 15-min TTL cache, the first scan per cycle costs ~800 weight. Subsequent scans within the cache window cost ~60 weight (mostly cache hits).
+With `HERMES_MAX_MARKETS=60` and a 50s candle-cache TTL, each 60s scan fetches fresh candles (~1,200 weight). The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
 
 ---
 

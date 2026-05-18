@@ -98,15 +98,19 @@ def _scan_single_market(
             trigger_mod.breakout(candles, thresholds["breakoutLookback"]),
             trigger_mod.range_compression(candles, thresholds["bbLength"], thresholds["bbStdDev"]),
             trigger_mod.trend_strength(candles, thresholds["adxPeriod"]),
+            trigger_mod.momentum_burst(candles, thresholds["momentumLookback"], thresholds["momentumPct"]),
         ]
 
-        # Require at least 1 trigger to co-fire (lowered from 2 for quiet markets)
+        # At least one trigger must fire.
         fired_count = sum(1 for h in hits if h.get("fired"))
         if fired_count < 1:
             return (True, None)
 
         score = trigger_mod.composite_score(hits, config["weights"])
-        if score < min_score:
+        # A confirmed momentum burst is always surfaced — a large, fast move is
+        # exactly the signal the composite gate must never filter out.
+        burst_fired = any(h["name"] == "momentumBurst" and h["fired"] for h in hits)
+        if score < min_score and not burst_fired:
             return (True, None)
 
         return (True, {
@@ -170,7 +174,7 @@ def scan_once(
                 if mids.get(m["coin"], 0) > 0 
                 and not m["coin"].startswith("@")
                 and m.get("type") != "spot"]
-    max_markets = int(os.environ.get("HERMES_MAX_MARKETS", "50"))
+    max_markets = int(os.environ.get("HERMES_MAX_MARKETS", "60"))
     markets = sorted(eligible, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[:max_markets]
     if not markets:
         return []

@@ -33,8 +33,10 @@ logger.info("Mode: LIVE")
 config = get_config()
 universe = get_universe()
 
-scan_interval = config.get('scan_interval_sec', 180)
-min_score = config.get('min_composite_score', 20)
+# Scan cadence: env-overridable, default 60s. Keep it above the candle cache
+# TTL (config.scan.cacheTtlMs) so every scan reads a fresh candle snapshot.
+scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))
+min_score = config['scan']['minCompositeScore']
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
 

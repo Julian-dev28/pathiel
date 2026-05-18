@@ -14,7 +14,7 @@ Autonomous multi-market trading agent built on [Hermes Agent](https://github.com
 
 Four-layer pipeline designed to minimize AI token costs:
 
-1. **Scan** — Fetch all mids, evaluate 5 triggers per market (pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength). Spot pairs (@ prefix) excluded to avoid noise spikes.
+1. **Scan** — Fetch all mids, evaluate 6 triggers per market (pctMoveSpike, volumeSpike, breakout, rangeCompression, trendStrength, momentumBurst). Spot pairs (@ prefix) excluded to avoid noise spikes. A fired momentumBurst (large fast move) bypasses the composite-score gate.
 2. **TA Filter** — Multi-TF technical analysis (1h/4h/1d EMA, RSI, ATR, ADX, volume) — zero AI cost. Only CONFIRMED signals (score >= 45) proceed. WEAK (30-44) and REJECTED (< 30) dropped.
 3. **AI Research** — Deep AI analysis on CONFIRMED candidates. Max 3 per cycle. News fetch DISABLED.
 4. **Execution** — Kelly-sized orders, EIP-712 signing, auto SL/TP brackets + DSL dynamic exits.
