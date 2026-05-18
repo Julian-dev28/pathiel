@@ -26,7 +26,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 |                  Hermes Agent (LLM)                           |
 |                                                               |
 |  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ DSL Exit ──▶ Execute
-|        (cheap)          (expensive)     (10 gates)    (2-phase)
+|        (cheap)          (expensive)     (11 gates)    (2-phase)
 │                       |
 │                  Only CONFIRMED
 │                  signals proceed
@@ -42,7 +42,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────┐    ┌──────────┐
 │  Perception │───>│  TA Filter   │───>│   AI Research   │───>│  Risk    │───>│  Executor│
 │   Scanner   │    │  (TA Filter) │    │ (OpenRouter API)│    │  Gates   │    │ (HL + DSL)│
-│ 5m/1h/4h    │    │  EMA/RSI/ATR│    │ Verdict + Price │    │  10 gates│    │ SL/TP    │
+│ 5m/1h/4h    │    │  EMA/RSI/ATR│    │ Verdict + Price │    │  11 gates│    │ SL/TP    │
 │ Volume-N    │    └──────────────┘    └─────────────────┘    └──────────┘    └──────────┘
 └─────────────┘
      │
@@ -87,7 +87,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_agent/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
 | `hermes_agent/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
 | `hermes_agent/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
-| `hermes_agent/agents/risk_gates.py` | 10 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, etc. |
+| `hermes_agent/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
 | `hermes_agent/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
 | `hermes_agent/agents/dsl_exit.py` | Two-phase trailing stop engine — loss protection → profit locking |
 | `hermes_agent/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
@@ -104,8 +104,8 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_agent/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
 | `hermes_agent/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
 | `hermes_agent/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
-| `hermes_agent/models/` | Data types: `AgentConfig`, `AgentAnalysis`, `AgentTrade`, `Candle`, `HLMarket`, `TriggerHit` |
-| `hermes_agent/server.py` | FastAPI server — 26 REST routes for frontend/dashboard + MCP bridge |
+| `hermes_agent/models/types.py` | Shared data type: `Candle` (OHLCV) |
+| `hermes_agent/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
 
 ---
 
@@ -137,7 +137,7 @@ BRAVE_API_KEY=BSA...your-key
 ## Quick Start
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.11+
 - Hyperliquid wallet with private key
 - OpenRouter API key ([openrouter.ai](https://openrouter.ai))
 - (Optional) Brave Search API key for news
@@ -151,8 +151,8 @@ cd hermes-trader
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (editable, with dev extras: pytest + ruff)
+pip install -e ".[dev]"
 
 # Configure
 cp .env.local.example .env.local
@@ -190,9 +190,23 @@ Monitor logs: `tail -f /tmp/hermes-trader.log`
 
 ---
 
+## Testing
+
+```bash
+pytest                          # offline unit tests — fast, no network, CI-safe
+pytest -m online                # read-only tests against the live Hyperliquid public API
+HERMES_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
+```
+
+`online` and `live` tests are deselected by default. The `live` suite spends
+real funds (a ~$14 round-trip order plus a billable OpenRouter call) and is
+additionally gated behind `HERMES_E2E=1` so it can never run by accident.
+
+---
+
 ## MCP Integration
 
-Hermes-Trader exposes 14 MCP tools for autonomous agent integration (stdio transport):
+Hermes-Trader's MCP server (`scripts/hermes-mcp-server.py`) exposes 100 tools over stdio transport. The 14 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
 
 | Tool | Description |
 |------|-------------|
@@ -263,7 +277,7 @@ hermes-trader/
 ├── hermes_agent/                  # Pure Python agent
 │   ├── __init__.py
 │   ├── __main__.py                # Entry point
-│   ├── server.py                  # FastAPI server — 26 routes
+│   ├── server.py                  # FastAPI server — 22 routes
 │   ├── agents/                    # Core agent logic
 │   │   ├── config.py              # Agent configuration model
 │   │   ├── config_store.py        # Config persistence
@@ -271,7 +285,7 @@ hermes-trader/
 │   │   ├── memory.py              # File-backed state
 │   │   ├── perception.py          # Volume-filtered parallel scanner
 │   │   ├── research.py            # AI research pipeline
-│   │   ├── risk_gates.py          # 10 risk gates
+│   │   ├── risk_gates.py          # 11 risk gates
 │   │   ├── system_prompt.py       # Agent system prompt
 │   │   ├── ta_filter.py           # Pre-AI TA filter
 │   │   ├── dsl_exit.py            # Two-phase trailing stop engine
@@ -289,13 +303,13 @@ hermes-trader/
 │   ├── indicators/                # TA math
 │   │   ├── math.py                # EMA, SMA, ATR, RSI, ADX
 │   │   └── triggers.py            # Trigger detection + composite scoring
-│   └── models/                    # Data types
-│       ├── analysis.py            # AgentAnalysis, AgentTrade, WatchlistEntry
-│       ├── hl.py                  # HLMeta, HLOrderResponse
-│       ├── perception.py          # TriggerHit, Perception
-│       └── types.py               # AgentConfig, AgentVerdict, Candle, HLMarket
+│   └── models/                    # Shared data types
+│       └── types.py               # Candle (OHLCV)
+├── scripts/
+│   ├── hermes-mcp-server.py       # MCP server (stdio, 100 tools)
+│   └── trading_loop.py            # Continuous trading loop
 ├── skills/hermes-trader-agent/    # Hermes Agent skill
-├── test_all.py                    # 17-module test suite
+├── tests/                         # pytest suite — offline / online / live e2e
 └── docs/
     └── journal-schema.md          # Trade journal schema
 ```

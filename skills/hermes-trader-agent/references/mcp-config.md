@@ -1,41 +1,56 @@
 # MCP Server Configuration
 
+The MCP server is a Python stdio process. It imports `hermes_agent` directly —
+there is no separate HTTP server to keep running.
+
 ## Starting the MCP Server
 
 ```bash
-node scripts/hermes-mcp-server.mjs
+python scripts/hermes-mcp-server.py
 ```
+
+It auto-loads `.env.local` from the project root, so credentials must be set
+there (see Environment Variables below).
 
 ## Hermes Agent config.yaml
 
 ```yaml
 mcp_servers:
   hermes-trader:
-    command: node
+    command: python
     args:
-      - /absolute/path/to/hermes-trader/scripts/hermes-mcp-server.mjs
-    timeout: 60
+      - /absolute/path/to/hermes-trader/scripts/hermes-mcp-server.py
+    cwd: /absolute/path/to/hermes-trader   # so .env.local resolves
+    timeout: 120
 ```
 
-## Available Tools
+## Primary Tools
+
+The server exposes 100 tools; the 5 trading-core tools are the ones you call
+directly. The rest are Hyperliquid data passthroughs.
 
 | Tool | Args | Returns |
 |------|------|---------|
-| `scan` | `minScore: number` (0-100) | Perceptions with TA signals |
-| `research` | `coin: string, perceptionId?: string` | AI analysis verdict |
+| `scan` | `minScore: number` (0-100), `maxMarkets?: number` | Triggered candidates |
+| `research` | `coin: string` | AI analysis verdict |
 | `execute` | `analysisId: string` | Trade result |
 | `state` | none | Full agent state |
 | `config` | see SKILL.md | Current or updated config |
 
 ## Environment Variables
 
+Set in `.env.local` at the project root:
+
 ```bash
-SCANNER_API_URL=http://localhost:3000  # Next.js server
+HYPERLIQUID_WALLET_ADDRESS=0x...
+HYPERLIQUID_PRIVATE_KEY=0x...
+# HYPERLIQUID_MASTER_ADDRESS=0x...   # optional, for agent-wallet setups
+OPENROUTER_API_KEY=sk-or-...
 ```
 
 ## Testing Tools
 
-In Hermes Agent, after MCP connects:
+In Hermes Agent, after the MCP server connects:
 
 ```
 mcp hermes-trader scan { minScore: 80 }
