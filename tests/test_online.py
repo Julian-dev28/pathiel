@@ -70,6 +70,20 @@ def test_market_get_funding_regime_live():
     assert out["assets"]
 
 
+def test_account_state_has_available():
+    """fetch_account_state exposes `available` USDC — the base for trade sizing."""
+    from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
+    user = resolve_user_address()
+    if not user:
+        import pytest as _pt
+        _pt.skip("no Hyperliquid address configured")
+    state = fetch_account_state(user)
+    assert "available" in state and "equity" in state
+    assert isinstance(state["available"], float)
+    assert state["available"] >= 0
+    assert state["available"] <= state["equity"] + 1e-6  # free <= total
+
+
 def test_ta_filter_gate_live():
     """The TA filter that trading_loop.py uses to gate AI research."""
     from hermes_trader.agents.ta_filter import analyze_perception

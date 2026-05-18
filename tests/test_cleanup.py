@@ -163,6 +163,15 @@ def test_risk_gates_pass_and_block():
     assert any("confidence" in r for r in blocked["block_reasons"])
 
 
+def test_cfg_camelcase_tolerance():
+    """Gate config keys resolve whether written snake_case or camelCase."""
+    from hermes_trader.agents.risk_gates import _cfg
+    assert _cfg({"max_trade_notional_usd": 30}, "max_trade_notional_usd", 200) == 30
+    assert _cfg({"maxTradeNotionalUsd": 20}, "max_trade_notional_usd", 200) == 20  # camelCase
+    assert _cfg({"minAiConfidence": 0.5}, "min_ai_confidence", 0.8) == 0.5
+    assert _cfg({}, "max_trade_notional_usd", 200) == 200  # default
+
+
 # ── DSL exit engine (incl. the ExitVerdict.coin field added by cleanup) ──
 def test_dsl_max_loss_exit_populates_coin():
     from hermes_trader.agents import dsl_exit

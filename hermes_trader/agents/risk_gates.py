@@ -133,6 +133,15 @@ def news_blackout_gate(ctx: GateContext) -> GateResult:
     return {"pass": False, "reason": "binary news risk detected (Fed, earnings, hack within 2h) — standing down"}
 
 
+def _cfg(config: Dict[str, Any], key: str, default: Any) -> Any:
+    """Read a config value tolerating snake_case or camelCase keys."""
+    if key in config:
+        return config[key]
+    parts = key.split("_")
+    camel = parts[0] + "".join(p.capitalize() for p in parts[1:])
+    return config[camel] if camel in config else default
+
+
 def eval_all_gates(
     ctx: GateContext,
     config: Dict[str, Any],
@@ -140,7 +149,7 @@ def eval_all_gates(
 ) -> Dict[str, Any]:
     """Evaluate all 11 risk gates and collect results."""
     results = {}
-    results["confidence"] = confidence_gate(ctx, config.get("min_ai_confidence", 0.8))
+    results["confidence"] = confidence_gate(ctx, _cfg(config, "min_ai_confidence", 0.8))
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 200))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))

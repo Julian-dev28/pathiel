@@ -83,7 +83,17 @@ Project state — not Hermes memory (all gitignored):
 Every gate is evaluated; results are collected even when one blocks: confidence,
 maxConcurrent, perTradeNotionalCap, dailyLossKillSwitch, marketLiquidityFloor,
 coinAllowlist/Blocklist, cooldown, oppositeDirectionGuard, correlationCap,
-equityRiskCap, newsBlackout.
+equityRiskCap, newsBlackout. Gate config keys are read tolerantly —
+`snake_case` or `camelCase` both resolve.
+
+## Trade Sizing
+
+Per-trade size = `equity_fraction_per_trade × available_USDC × leverage`. Both
+keys live in `.agent-config.json` (e.g. `0.10` + `10` = commit 10% of available
+balance as margin, levered 10× → a position worth 100% of available balance).
+Sizing is based on *available* (free) USDC, so it tapers as positions open.
+Defaults if absent: `0.01` and `5`. The `maxTradeNotionalUsd` gate caps the
+result — keep that cap above the intended notional or trades are blocked.
 
 ## Unified Accounts
 

@@ -285,6 +285,36 @@ Or check any time inside a session:
 
 ---
 
+## Trade Sizing
+
+Every trade's position size comes from one formula in `executor.py`:
+
+```
+trade_notional = available_USDC  ×  equity_fraction_per_trade  ×  leverage
+```
+
+Both knobs live in `.agent-config.json`:
+
+| Key | Meaning | Example |
+|-----|---------|---------|
+| `equity_fraction_per_trade` | Fraction of **available** USDC committed as margin per trade | `0.10` = 10% |
+| `leverage` | Leverage applied (also pushed to the exchange via `set_leverage`) | `10` = 10× |
+
+`equity_fraction_per_trade: 0.10` + `leverage: 10` means each trade commits 10%
+of available balance as margin and opens a position worth `10% × 10 = 100%` of
+available balance in notional. Sizing is based on *available* (free) USDC, not
+total equity, so it tapers automatically as open positions lock up margin.
+
+Two risk-gate caps still apply on top: `maxTradeNotionalUsd` (hard ceiling on one
+trade's notional) and `max_total_notional_pct` (ceiling on combined open notional,
+as a multiple of equity). Set `maxTradeNotionalUsd` **above** your intended
+per-trade notional or it will block trades. Config keys are read tolerantly —
+`snake_case` or `camelCase` both work.
+
+Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage = 5`.
+
+---
+
 ## Design Decisions
 
 ### Why volume pre-filtering?

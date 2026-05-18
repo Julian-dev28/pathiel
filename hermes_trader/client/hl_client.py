@@ -164,6 +164,7 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
     margin_summary = perp.get("marginSummary", {})
     perp_equity = float(margin_summary.get("accountValue", "0"))
     total_ntl = float(margin_summary.get("totalNtlPos", "0"))
+    total_margin_used = float(margin_summary.get("totalMarginUsed", "0"))
 
     raw_balances = spot.get("balances", []) or []
     spot_balances = [b for b in raw_balances if b.get("coin", "") in ("USDC", "USDT", "USD")]
@@ -177,9 +178,13 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
     # On unified accounts perp_equity already includes spot USDC, so it is
     # the total equity directly — spot balances are not added on top.
     equity = perp_equity
+    # Free USDC not locked as margin — HL's `withdrawable`, falling back to
+    # equity minus margin in use. This is the base for per-trade sizing.
+    available = float(perp.get("withdrawable", "0")) or max(0.0, equity - total_margin_used)
 
     return {
         "equity": equity,
+        "available": available,
         "total_ntl": total_ntl,
         "spot_balances": spot_balances,
         "asset_positions": asset_positions,

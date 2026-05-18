@@ -86,6 +86,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     user = resolve_user_address()
     state = fetch_account_state(user)
     equity = state["equity"]
+    available = state.get("available", equity)
     total_open_notional = state["total_ntl"]
 
     memory.track_daily_pnl(equity)
@@ -104,8 +105,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
-    # Notional sized off equity (1% * leverage), overriding any AI-provided value.
-    trade_notional = equity * 0.01 * HL_LEVERAGE
+    # Per-trade size: a fraction of available USDC, levered. Both knobs live
+    # in .agent-config.json; defaults reproduce the prior 1%-margin x 5x sizing.
+    equity_fraction = float(config.get("equity_fraction_per_trade", 0.01))
+    leverage = int(config.get("leverage", HL_LEVERAGE))
+    trade_notional = available * equity_fraction * leverage
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
@@ -183,7 +187,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     atr = get_hl_atr("4h", 14, coin)
 
-    set_leverage(coin, HL_LEVERAGE)
+    set_leverage(coin, leverage)
     order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin)
 
     if not order_res.get("ok"):
