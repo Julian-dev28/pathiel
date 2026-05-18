@@ -84,3 +84,18 @@ def test_research_pipeline_live_without_llm(monkeypatch):
     assert analysis["coin"] == "BTC"
     assert analysis["verdict"] == "PASS"   # no LLM key -> safe default
     assert analysis["id"] and analysis["created_at"]
+
+
+def test_scan_once_live(monkeypatch):
+    """A live market scan over a small universe; any results must be well-formed."""
+    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
+    from hermes_agent.agents.perception import scan_once
+    from hermes_agent.client.universe import get_universe
+    perceptions = scan_once(universe=get_universe(), min_score=0)
+    assert isinstance(perceptions, list)
+    for p in perceptions:
+        for key in ("id", "coin", "type", "fired_at", "mid", "triggers", "composite_score"):
+            assert key in p and p[key] not in (None, ""), f"perception field missing/empty: {key}"
+        assert p["mid"] > 0
+        assert 0 <= p["composite_score"] <= 100
+        assert isinstance(p["triggers"], list) and p["triggers"]

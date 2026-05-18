@@ -34,7 +34,8 @@ packages = ["hermes_agent"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-m 'not online'"
+addopts = "-m 'not online and not live'"
 markers = [
-    "online: exercises the live Hyperliquid public API; deselected by default (run with: pytest -m online)",
+    "online: exercises the live Hyperliquid public API (read-only); deselected by default (run with: pytest -m online)",
+    "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires HERMES_E2E=1 (run with: HERMES_E2E=1 pytest -m live)",
 ]

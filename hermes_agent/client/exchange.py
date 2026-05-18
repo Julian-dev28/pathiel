@@ -74,9 +74,19 @@ def _make_exchange() -> Exchange:
     return _exchange_instance
 
 
+_info_instance: Optional[Info] = None
+
+
 def _get_info() -> Info:
-    """Get or create an Info client."""
-    return Info()
+    """Get (or lazily create) the shared HTTP-only Info client.
+
+    skip_ws=True: the callers only use REST methods (meta, all_mids, l2,
+    fills, ...), so no WebSocket connection is opened.
+    """
+    global _info_instance
+    if _info_instance is None:
+        _info_instance = Info(skip_ws=True)
+    return _info_instance
 
 
 def get_coin_index(coin: str) -> Tuple[int, int, int]:
