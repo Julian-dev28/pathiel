@@ -1,0 +1,9 @@
+2026-05-18 19:25:04,950 INFO:__main__:=== HERMES TRADER - Starting Continuous Trading Loop ===
+2026-05-18 19:25:04,950 INFO:__main__:Mode: LIVE
+2026-05-18 19:25:04,952 INFO:__main__:Scan interval: 180s, Min score: 20
+2026-05-18 19:25:04,952 INFO:__main__:Scanning markets...
+2026-05-18 19:25:05,072 INFO:hermes_agent.agents.perception:[scan] scanning 50 markets in batches of 20 (32 workers/batch)...
+2026-05-18 19:25:09,645 INFO:hermes_agent.agents.perception:[scan] progress: 50/50 (100%), 0 triggers so far
+2026-05-18 19:25:09,645 INFO:hermes_agent.agents.perception:[scan] scanned 50 markets, 0 triggers in 4693ms (0 errors)
+2026-05-18 19:25:09,646 INFO:__main__:Scan found 0 triggers
+2026-05-18 19:25:09,646 INFO:__main__:Sleeping 180s until next scan...

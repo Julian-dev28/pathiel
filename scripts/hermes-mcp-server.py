@@ -32,6 +32,7 @@ if os.path.exists(_env_path):
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from hermes_agent import __version__
 from hermes_agent.agents.config_store import read_agent_config
 from hermes_agent.agents.perception import scan_once
 from hermes_agent.client.hl_client import fetch_account_state, resolve_user_address
@@ -1095,7 +1096,7 @@ def run() -> None:
                     },
                     "serverInfo": {
                         "name": "hermes-trader",
-                        "version": "0.3.0",
+                        "version": __version__,
                     },
                 })
             elif method == "tools/list":

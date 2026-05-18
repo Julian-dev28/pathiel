@@ -169,7 +169,7 @@ python -m hermes_agent.server
 # Or use uvicorn directly:
 uvicorn hermes_agent.server:app --host 0.0.0.0 --port 8000
 ```
-The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes Agent", "version": "0.2.0", "status": "running"}`.
+The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes Agent", "version": "0.3.0", "status": "running"}`.
 
 ### Continuous Trading Loop (Recommended)
 ```bash

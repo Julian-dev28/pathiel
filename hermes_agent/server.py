@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from hermes_agent import __version__
 from hermes_agent.agents.config_store import read_agent_config, write_agent_config
 from hermes_agent.agents.executor import maybe_execute
 from hermes_agent.agents.memory import memory
@@ -93,7 +94,7 @@ async def lifespan(app: FastAPI):
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Hermes Agent", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Hermes Agent", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -589,7 +590,7 @@ async def cancel_order(request: Request):
 
 @app.get("/")
 async def root():
-    return {"service": "Hermes Agent", "version": "0.2.0", "status": "running"}
+    return {"service": "Hermes Agent", "version": __version__, "status": "running"}
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

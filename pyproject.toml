@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hermes-agent"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Autonomous quant trading agent for Hyperliquid perpetual markets"
 requires-python = ">=3.11"
 dependencies = [
@@ -27,6 +27,9 @@ dev = [
 
 [project.scripts]
 hermes = "hermes_agent.__main__:main"
+
+[tool.hatch.version]
+path = "hermes_agent/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["hermes_agent"]

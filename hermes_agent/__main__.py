@@ -20,6 +20,8 @@ import os
 import signal
 import sys
 
+from hermes_agent import __version__
+
 
 def print_banner():
     print("""
@@ -362,7 +364,7 @@ def cmd_stop():
 
 def cmd_version():
     print_banner()
-    print("  Hermes Agent v0.2.0\n")
+    print(f"  Hermes Agent v{__version__}\n")
 
 
 # ── Main ──────────────────────────────────────────────────────────────
