@@ -34,3 +34,7 @@ packages = ["hermes_agent"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-m 'not online'"
+markers = [
+    "online: exercises the live Hyperliquid public API; deselected by default (run with: pytest -m online)",
+]
