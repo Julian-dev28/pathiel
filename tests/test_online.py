@@ -46,6 +46,16 @@ def test_get_universe_live():
     assert vols == sorted(vols, reverse=True)  # sorted by 24h volume desc
 
 
+def test_get_max_leverage_live():
+    """Per-coin max leverage — used to cap order leverage so it isn't rejected."""
+    from hermes_trader.client.exchange import get_max_leverage
+    btc = get_max_leverage("BTC")
+    assert isinstance(btc, int) and 1 <= btc <= 100
+    # different coins genuinely have different maxes
+    eth = get_max_leverage("ETH")
+    assert isinstance(eth, int) and 1 <= eth <= 100
+
+
 def test_get_hl_atr_live():
     from hermes_trader.client.exchange import get_hl_atr
     assert get_hl_atr("4h", 14, "BTC") > 0

@@ -104,6 +104,20 @@ def get_coin_index(coin: str) -> Tuple[int, int, int]:
     raise ValueError(f"Unknown coin: {coin}")
 
 
+def get_max_leverage(coin: str) -> int:
+    """The coin's maximum allowed leverage, from the SDK meta endpoint.
+
+    Hyperliquid sets this per coin (e.g. BOME 3x, ONDO 10x, BTC 40x); an order
+    that tries to exceed it is rejected, so callers cap their leverage here.
+    """
+    info = _get_info()
+    meta = info.meta()
+    for u in meta.get("universe", []):
+        if u["name"] == coin:
+            return int(u.get("maxLeverage", 1))
+    raise ValueError(f"Unknown coin: {coin}")
+
+
 # ── Market data ────────────────────────────────────────────────────────────────
 
 def get_hl_price(coin: str = "BTC") -> float:

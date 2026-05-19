@@ -173,7 +173,7 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 |-----|--------------|---------|
 | `mode` | `OFF` = analyse only, no orders · `LIVE` = place real orders | `OFF` |
 | `equity_fraction_per_trade` | Fraction of perp equity committed as margin per trade — see [Trade Sizing](#trade-sizing) | `0.01` |
-| `leverage` | Leverage applied per coin; **also multiplies position notional** | `5` |
+| `leverage` | Leverage **ceiling** — each trade uses `min(this, the coin's own max)`. Coin maxes differ (BOME 3×, BTC 40×). Set high (e.g. 40) to ride each coin's max. Also multiplies position notional. | `5` |
 | `min_ai_confidence` | Minimum AI confidence for a LONG/SHORT to execute | `0.8` |
 | `max_concurrent` | Max simultaneous open positions | `3` |
 | `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `200` |
@@ -348,7 +348,7 @@ Both knobs live in `.agent-config.json`:
 | Key | Meaning | Example |
 |-----|---------|---------|
 | `equity_fraction_per_trade` | Fraction of **total perp equity** committed as margin per trade | `0.10` = 10% |
-| `leverage` | Leverage applied (also pushed to the exchange via `set_leverage`) | `10` = 10× |
+| `leverage` | Leverage ceiling — each trade uses `min(this, coin's own max)`; pushed to the exchange via `set_leverage` | `10` = up to 10× |
 
 Sizing keys off **total perp equity**, not free margin — so each trade commits a
 *fixed* amount and `N` trades scales the account fully in. With

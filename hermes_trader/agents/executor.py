@@ -21,6 +21,7 @@ from hermes_trader.client.exchange import (
     HL_LEVERAGE,
     get_hl_atr,
     get_hl_price,
+    get_max_leverage,
     place_hl_order,
     place_hl_trigger_order,
     set_leverage,
@@ -110,7 +111,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # .agent-config.json; defaults reproduce the prior 1%-margin x 5x sizing.
     # The equity_risk_cap gate (max_total_notional_pct) bounds total deployment.
     equity_fraction = float(config.get("equity_fraction_per_trade", 0.01))
-    leverage = int(config.get("leverage", HL_LEVERAGE))
+    # Leverage = the coin's own max, capped by the configured ceiling. Coin
+    # maxes differ (BOME 3x, ONDO 10x, BTC 40x) — a fixed value gets rejected
+    # on low-max coins and under-uses high-max ones. Set config "leverage"
+    # high (e.g. 40) to always ride each coin's max.
+    leverage = min(int(config.get("leverage", HL_LEVERAGE)),
+                   get_max_leverage(analysis["coin"]))
     trade_notional = equity * equity_fraction * leverage
 
     recent_trades = memory.get_recent_trades(10)
