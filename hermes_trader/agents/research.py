@@ -85,6 +85,32 @@ def _fetch_funding_rate(coin: str) -> str:
     return "N/A"
 
 
+def _fetch_news(coin: str) -> str:
+    """Recent news headlines for a coin via the Brave Search API.
+
+    Returns a compact ' | '-joined headline string, or 'no news' when no
+    BRAVE_API_KEY is set or the request fails — news is a supplementary
+    signal, so a fetch failure degrades gracefully and never blocks research.
+    """
+    key = os.environ.get("BRAVE_API_KEY", "")
+    if not key:
+        return "no news"
+    try:
+        resp = httpx.get(
+            "https://api.search.brave.com/res/v1/news/search",
+            params={"q": f"{coin} crypto", "count": 5},
+            headers={"X-Subscription-Token": key, "Accept": "application/json"},
+            timeout=10.0,
+        )
+        if not resp.is_success:
+            return "no news"
+        results = resp.json().get("results", []) or []
+        headlines = [str(r.get("title", "")).strip() for r in results if r.get("title")]
+        return " | ".join(headlines[:5]) if headlines else "no news"
+    except Exception:
+        return "no news"
+
+
 def _build_user_message(
     coin: str,
     perception: Dict[str, Any],
@@ -92,6 +118,7 @@ def _build_user_message(
     tf4h: Dict[str, Any],
     tf1d: Dict[str, Any],
     funding_rate: str,
+    news: str,
     equity: float,
     open_positions: List[Dict[str, Any]],
     mode: str,
@@ -145,6 +172,7 @@ def _build_user_message(
         _indicator_block("1d", tf1d),
         "",
         f"Funding rate (latest): {funding_rate}",
+        f"Recent news: {news}",
         f"Equity: ${equity:.2f}",
         position_block,
         "",
@@ -281,6 +309,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     c1d = fetch_hl_candles(coin, "1d", 60)
 
     funding_raw = _fetch_funding_rate(coin)
+    news = _fetch_news(coin)
 
     if len(c4h) < 30:
         logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles")
@@ -318,7 +347,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     system_prompt = build_system_prompt(mode, wr.get("rate", 0), int(wr.get("total", 0)))
     user_message = _build_user_message(
         coin, perception, tf1h, tf4h, tf1d,
-        funding_raw, equity, open_positions, mode,
+        funding_raw, news, equity, open_positions, mode,
     )
 
     ai_text = _call_ai(system_prompt, user_message)
@@ -335,7 +364,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         "stop_px": parsed["stop_px"],
         "tp_px": parsed["tp_px"],
         "reasoning": parsed["reasoning"],
-        "news_context": "no news",
+        "news_context": news,
         "created_at": int(time.time() * 1000),
     }
 

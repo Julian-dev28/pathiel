@@ -120,10 +120,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     last_trade_time = last_trade.get("executed_at") if last_trade else None
 
+    # Binary-event terms in the news headlines → stand down (news_blackout gate).
+    # Word-boundaried and specific: bare "rate" matched "hash rate", and "SEC"
+    # matched "security"/"second" — both over-fired once real headlines flow in.
     has_binary_news = bool(
         analysis.get("news_context")
         and re.search(
-            r"fed|fomc|cpi|rate|earnings|hack|exploit|SEC",
+            r"\bfed(eral)?\b|\bfomc\b|\bcpi\b|\bsec\b|rate (hike|cut)"
+            r"|\b(hack|exploit|lawsuit|earnings|halt|delist)",
             analysis["news_context"],
             re.IGNORECASE,
         )

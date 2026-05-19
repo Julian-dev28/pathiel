@@ -131,6 +131,11 @@ HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
 # HYPERLIQUID_MASTER_ADDRESS=0x...        # optional — set for an agent-wallet
 #                                           setup; the master holds the funds
 
+# ── News (optional) ──────────────────────────────────────────
+# BRAVE_API_KEY=BSA...                    # optional — enables news headlines
+#   in AI research and the news-blackout risk gate. Without it, research runs
+#   with news_context = "no news" and that gate is inert.
+
 # ── Scan tuning (optional — defaults shown) ──────────────────
 HERMES_SCAN_INTERVAL=60        # seconds between scan cycles
 HERMES_MAX_MARKETS=60          # top-N markets scanned by 24h volume

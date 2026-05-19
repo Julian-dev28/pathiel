@@ -163,6 +163,13 @@ def test_parse_verdict_empty_defaults_to_pass():
     assert v["verdict"] == "PASS" and v["entry_px"] == 42
 
 
+def test_fetch_news_no_key_returns_no_news(monkeypatch):
+    """Without BRAVE_API_KEY, news fetch degrades to 'no news' — never raises."""
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    from hermes_trader.agents.research import _fetch_news
+    assert _fetch_news("BTC") == "no news"
+
+
 # ── kelly sizing ────────────────────────────────────────────────────────
 def test_kelly_size():
     from hermes_trader.agents.executor import kelly_size
