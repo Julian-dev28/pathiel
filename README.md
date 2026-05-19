@@ -109,29 +109,82 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 
 ---
 
-## Environment Variables
+## Configuration
+
+There are two places to configure hermes-trader: **`.env.local`** (credentials,
+API, runtime/infra — process-level, read at startup) and **`.agent-config.json`**
+(trading behaviour and risk — read fresh on every trade, no restart needed). Both
+are gitignored.
+
+### `.env.local` — credentials & runtime
+
+Copy `.env.local.example` → `.env.local` and fill in:
 
 ```bash
-# ── OpenRouter ───────────────────────────────────────────────
-OPENROUTER_API_KEY=sk-or-...your-key
-# Default model (tested working):
-OPENROUTER_MODEL=qwen/qwen3-235b-a22b
+# ── OpenRouter (AI research) ─────────────────────────────────
+OPENROUTER_API_KEY=sk-or-...your-key      # required
+OPENROUTER_MODEL=x-ai/grok-4.3            # optional — this is the default
 
 # ── Hyperliquid ──────────────────────────────────────────────
-HYPERLIQUID_WALLET_ADDRESS=0x...your-wallet-address
-HYPERLIQUID_PRIVATE_KEY=0x...your-private-key
-# Optional: master account (if using agent wallet setup)
-# HYPERLIQUID_MASTER_ADDRESS=0x...your-master-address
+HYPERLIQUID_WALLET_ADDRESS=0x...          # required — the signing (agent) wallet
+HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
+# HYPERLIQUID_MASTER_ADDRESS=0x...        # optional — set for an agent-wallet
+#                                           setup; the master holds the funds
 
-# ── Scan Tuning ──────────────────────────────────────────────
-HERMES_SCAN_INTERVAL=60        # Seconds between scan cycles
-HERMES_MAX_MARKETS=60          # Top-N markets to scan by volume
-HERMES_BATCH_SIZE=20           # Batch size for parallel scanning
-HERMES_BATCH_SLEEP=0.3         # Seconds between scan batches
-
-# ── Brave Search (optional, for news signals) ───────────────
-BRAVE_API_KEY=BSA...your-key
+# ── Scan tuning (optional — defaults shown) ──────────────────
+HERMES_SCAN_INTERVAL=60        # seconds between scan cycles
+HERMES_MAX_MARKETS=60          # top-N markets scanned by 24h volume
+HERMES_BATCH_SIZE=20           # markets per parallel batch
+HERMES_BATCH_SLEEP=0.3         # seconds between batches
+# HERMES_PORT=8000             # FastAPI server port
 ```
+
+Keep `HERMES_MAX_MARKETS ≤ HERMES_SCAN_INTERVAL` — see [Rate Limit Math](#rate-limit-math).
+
+### `.agent-config.json` — trading behaviour & risk
+
+The live trading knobs. Read fresh on **every trade**, so edits take effect on the
+next cycle — no restart. Keys are read tolerantly: `snake_case` or `camelCase`
+both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
+
+```json
+{
+  "mode": "LIVE",
+  "equity_fraction_per_trade": 0.10,
+  "leverage": 10,
+  "min_ai_confidence": 0.30,
+  "max_concurrent": 10,
+  "max_trade_notional_usd": 200,
+  "max_total_notional_pct": 10.0,
+  "max_daily_loss_usd": -100,
+  "min_market_volume_usd": 5000000,
+  "cooldown_min": 60,
+  "coin_allowlist": [],
+  "coin_blocklist": []
+}
+```
+
+| Key | What it does | Default |
+|-----|--------------|---------|
+| `mode` | `OFF` = analyse only, no orders · `LIVE` = place real orders | `OFF` |
+| `equity_fraction_per_trade` | Fraction of perp equity committed as margin per trade — see [Trade Sizing](#trade-sizing) | `0.01` |
+| `leverage` | Leverage applied per coin; **also multiplies position notional** | `5` |
+| `min_ai_confidence` | Minimum AI confidence for a LONG/SHORT to execute | `0.8` |
+| `max_concurrent` | Max simultaneous open positions | `3` |
+| `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `200` |
+| `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
+| `max_daily_loss_usd` | Daily-loss kill switch (negative number) | `-100` |
+| `min_market_volume_usd` | Skip markets below this 24h volume | `5_000_000` |
+| `cooldown_min` | Minutes before re-trading the same coin | `60` |
+| `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
+| `coin_blocklist` | Coins that are never traded | `[]` |
+
+Optional nested `dsl_exit` block tunes the trailing-stop engine —
+`max_loss_pct` (2.5), `protect_pct` (1.5), `retrace_threshold` (0.30),
+`hard_timeout_minutes` (180).
+
+Trigger internals (weights, sigma thresholds, candle interval) live separately in
+`hermes_trader/agents/config.py` — edit there to tune the scan itself.
 
 ---
 
