@@ -81,8 +81,11 @@ def rsi(candles: List[Candle], period: int = 14) -> List[float]:
 
     for i in range(period + 1, len(candles)):
         d = candle_val(candles[i], "c") - candle_val(candles[i - 1], "c")
+        # gain = positive move else 0; loss = magnitude of a negative move else 0.
+        # The loss term must be a non-negative magnitude — the previous
+        # `d if d < 0 else -d` fed negatives in and drove RSI below 0.
         avg_g = (avg_g * (period - 1) + (d if d > 0 else 0)) / period
-        avg_l = (avg_l * (period - 1) + (d if d < 0 else -d)) / period
+        avg_l = (avg_l * (period - 1) + (-d if d < 0 else 0)) / period
         out[i] = 100 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l)
 
     return out

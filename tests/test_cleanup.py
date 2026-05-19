@@ -60,6 +60,22 @@ def test_atr_rsi_adx_produce_finite_output():
         assert any(math.isfinite(x) for x in out)
 
 
+def test_rsi_and_adx_stay_in_0_100_bound():
+    """RSI and ADX are mathematically bounded 0-100 — every finite output
+    value must respect that. A negative RSI means the loss/gain accumulator
+    math is broken (regression guard for the avg_l sign bug)."""
+    from hermes_trader.indicators.math import rsi, adx
+    # exercise rising, falling and choppy series so the smoothing loop runs
+    rising = [Candle(t=i, o=100 + i, h=101 + i, l=99 + i, c=100 + i, v=10) for i in range(150)]
+    falling = [Candle(t=i, o=250 - i, h=251 - i, l=249 - i, c=250 - i, v=10) for i in range(150)]
+    choppy = _candles(150)
+    for series in (rising, falling, choppy):
+        for fn in (rsi, adx):
+            for v in fn(series, 14):
+                if math.isfinite(v):
+                    assert 0.0 <= v <= 100.0, f"{fn.__name__} out of bound: {v}"
+
+
 # ── triggers ────────────────────────────────────────────────────────────
 def test_triggers_return_shape():
     from hermes_trader.indicators.triggers import (
