@@ -83,37 +83,43 @@ def _sync_account_state():
     data — previously the on-disk memory only updated on a successful execute,
     so equity stayed at 0 between trades.
 
-    Returns (equity, positions, available) — all 0/[] if wallet not configured
-    or the HL call raised, so a network blip never kills the loop.
+    Returns (equity, positions, available, spot_usdc) — all 0/[] if wallet not
+    configured or the HL call raised, so a network blip never kills the loop.
     """
     user = resolve_user_address()
     if not user:
-        return 0.0, [], 0.0
+        return 0.0, [], 0.0, 0.0
     try:
         state = fetch_account_state(user)
     except Exception as e:
         logger.warning(f"[heartbeat] HL fetch_account_state failed: {e}")
-        return 0.0, [], 0.0
+        return 0.0, [], 0.0, 0.0
 
     equity = float(state.get("equity", 0) or 0)
     available = float(state.get("available", 0) or 0)
+    spot_usdc = float(state.get("spot_usdc", 0) or 0)
     positions = state.get("asset_positions", []) or []
 
     memory.track_daily_pnl(equity)              # also sets _equity
     memory.update_open_positions(positions)
     memory.flush()                               # persist to disk
-    return equity, positions, available
+    return equity, positions, available, spot_usdc
 
 
 while True:
     try:
         # ── Heartbeat: refresh equity / positions before scanning ──────────
-        equity, positions, available = _sync_account_state()
+        equity, positions, available, spot_usdc = _sync_account_state()
         daily_pnl = memory.get_daily_pnl()
+        if equity <= 0 and spot_usdc > 0:
+            logger.warning(
+                f"[heartbeat] perp equity $0 but ${spot_usdc:.2f} USDC idle in "
+                f"spot — transfer spot->perp to enable trading.")
         log_event({
             "event": "loop_heartbeat",
             "equity": round(equity, 4),
             "available": round(available, 4),
+            "spot_usdc": round(spot_usdc, 4),
             "daily_pnl": round(daily_pnl, 4),
             "open_positions": len(positions),
         })

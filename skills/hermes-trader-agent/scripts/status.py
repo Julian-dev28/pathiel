@@ -190,10 +190,16 @@ def main() -> int:
     else:
         live_equity = float(live.get("equity", 0) or 0)
         available = float(live.get("available", 0) or 0)
+        spot_usdc = float(live.get("spot_usdc", 0) or 0)
         total_ntl = float(live.get("total_ntl", 0) or 0)
         positions = live.get("asset_positions", []) or []
-        print(f"LIVE equity   : ${live_equity:.2f}   "
-              f"available: ${available:.2f}   notional: ${total_ntl:.2f}")
+        print(f"LIVE perp     : equity ${live_equity:.2f}   "
+              f"available ${available:.2f}   notional ${total_ntl:.2f}")
+        print(f"LIVE spot     : ${spot_usdc:.2f} USDC   "
+              f"(total controlled ${live_equity + spot_usdc:.2f})")
+        if live_equity <= 0 and spot_usdc > 0:
+            print(f"  ⚠ ${spot_usdc:.2f} sits in SPOT — the bot trades perps and "
+                  f"cannot use it until you transfer USDC spot -> perp.")
         print(f"LIVE positions: {len(positions)} open")
         for ap in positions:
             p = ap.get("position", {}) if isinstance(ap, dict) else {}

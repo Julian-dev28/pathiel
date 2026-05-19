@@ -57,10 +57,14 @@ def _fmt_event(e: dict) -> str:
     if ev == "loop_heartbeat":
         eq = e.get("equity", 0)
         av = e.get("available", 0)
+        spot = e.get("spot_usdc", 0)
         pnl = e.get("daily_pnl", 0)
         op = e.get("open_positions", 0)
-        return (f"[{ts}] ♥  equity=${eq:.2f}  avail=${av:.2f}  "
+        line = (f"[{ts}] ♥  perp=${eq:.2f}  avail=${av:.2f}  spot=${spot:.2f}  "
                 f"dailyPnL=${pnl:+.2f}  open={op}")
+        if eq <= 0 and spot > 0:
+            line += "  ⚠ funds in spot — transfer spot->perp to trade"
+        return line
     if ev == "scan":
         n = e.get("triggers", 0)
         coins = e.get("coins") or []

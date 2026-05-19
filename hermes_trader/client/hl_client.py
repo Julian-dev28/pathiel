@@ -168,6 +168,7 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
 
     raw_balances = spot.get("balances", []) or []
     spot_balances = [b for b in raw_balances if b.get("coin", "") in ("USDC", "USDT", "USD")]
+    spot_usdc = sum(float(b.get("total", "0") or 0) for b in spot_balances)
 
     raw_positions = perp.get("assetPositions", []) or []
     asset_positions = [
@@ -175,8 +176,12 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         if float(p.get("position", {}).get("szi", "0")) != 0
     ]
 
-    # On unified accounts perp_equity already includes spot USDC, so it is
-    # the total equity directly — spot balances are not added on top.
+    # Hyperliquid keeps perp and spot as SEPARATE pools — `accountValue` from
+    # clearinghouseState is perp-only and does NOT include spot USDC. So:
+    #   equity     = perp-tradeable equity (backs perp orders)
+    #   spot_usdc  = idle USDC in the spot wallet; must be transferred
+    #                spot -> perp before it can back a perp trade
+    #   total_usdc = everything the account holds
     equity = perp_equity
     # Free USDC not locked as margin — HL's `withdrawable`, falling back to
     # equity minus margin in use. This is the base for per-trade sizing.
@@ -185,6 +190,8 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
     return {
         "equity": equity,
         "available": available,
+        "spot_usdc": spot_usdc,
+        "total_usdc": equity + spot_usdc,
         "total_ntl": total_ntl,
         "spot_balances": spot_balances,
         "asset_positions": asset_positions,
