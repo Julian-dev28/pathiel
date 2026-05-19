@@ -208,6 +208,29 @@ def _min_order_size(price: float, sz_decimals: int) -> float:
     return math.ceil((MIN_ORDER_USD / price) / tick) * tick
 
 
+def _ioc_cross_price(coin: str, is_buy: bool, mid_price: float) -> float:
+    """Limit price for an IOC order that reliably crosses the live book.
+
+    Anchors to the current best bid/ask from a *fresh* L2 fetch — the mid
+    passed into place_hl_order is stale by the time the order is built
+    (set_leverage + get_hl_atr run in between) — and steps 1% past the
+    touch. An IOC fills at the resting price, so that 1% is headroom that
+    absorbs price moves before the order lands, not slippage. The old
+    fixed 0.1%-from-mid offset missed on moving coins ("could not
+    immediately match"). Falls back to mid +/- 1% if the L2 fetch fails.
+    """
+    try:
+        levels = _get_info().l2_snapshot(coin).get("levels", [])
+        bids, asks = levels[0], levels[1]
+        if is_buy and asks:
+            return float(asks[0]["px"]) * 1.01
+        if not is_buy and bids:
+            return float(bids[0]["px"]) * 0.99
+    except Exception:
+        pass
+    return mid_price * (1.01 if is_buy else 0.99)
+
+
 def place_hl_order(
     is_buy: bool,
     size: float,
@@ -224,8 +247,8 @@ def place_hl_order(
         # Always get sz_dec from get_coin_index() (px_dec is ignored — we compute it correctly)
         _, sz_dec, _ = get_coin_index(coin)
 
-        # Use 0.1% offset from mid for market-like execution (small enough to pass 95% validation)
-        price = mid_price * (1.001 if is_buy else 0.999)
+        # Price the IOC to cross the live book (best bid/ask + 1% headroom).
+        price = _ioc_cross_price(coin, is_buy, mid_price)
 
         # Round price honoring Hyperliquid's tick + 5-sigfig rules
         price_str = _round_price_for_hl(price, sz_dec, is_perp=True)

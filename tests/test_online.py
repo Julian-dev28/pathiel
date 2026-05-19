@@ -56,6 +56,20 @@ def test_get_max_leverage_live():
     assert isinstance(eth, int) and 1 <= eth <= 100
 
 
+def test_ioc_cross_price_crosses_book():
+    """The IOC limit price must cross the live book — a buy >= best ask,
+    a sell <= best bid — or the order matches nothing ('could not
+    immediately match')."""
+    from hermes_trader.client.exchange import _ioc_cross_price, _get_info, get_hl_price
+    info = _get_info()
+    for coin in ("BTC", "ETH"):
+        mid = get_hl_price(coin)
+        levels = info.l2_snapshot(coin)["levels"]
+        best_bid, best_ask = float(levels[0][0]["px"]), float(levels[1][0]["px"])
+        assert _ioc_cross_price(coin, True, mid) >= best_ask    # buy crosses ask
+        assert _ioc_cross_price(coin, False, mid) <= best_bid   # sell crosses bid
+
+
 def test_get_hl_atr_live():
     from hermes_trader.client.exchange import get_hl_atr
     assert get_hl_atr("4h", 14, "BTC") > 0
