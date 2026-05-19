@@ -122,6 +122,20 @@ def test_momentum_burst_fires_on_large_move():
 
 
 # ── exchange order-result parsing (DRY-5 helper) ────────────────────────
+def test_min_order_size_meets_10_dollar_floor():
+    """_min_order_size must yield >= $10 notional at the coin's size precision.
+    Regression: MEGA ($0.084, integer sizes) — 100 coins is only ~$8.4."""
+    from hermes_trader.client.exchange import _min_order_size
+    cases = [(0.084334, 0), (1.56, 0), (76000.0, 5), (3.2, 2), (0.0001, 0)]
+    for price, sz_dec in cases:
+        ms = _min_order_size(price, sz_dec)
+        assert ms * price >= 10.0, f"price={price} sz_dec={sz_dec}: ${ms * price:.2f}"
+        tick = 10.0 ** (-sz_dec)
+        assert abs(round(ms / tick) - ms / tick) < 1e-9  # exact tick multiple
+    # the specific regression: MEGA needs more than the old 100-coin cap
+    assert _min_order_size(0.084334, 0) > 100
+
+
 def test_parse_order_result():
     from hermes_trader.client.exchange import _parse_order_result
     filled = {"status": "ok", "response": {"data": {"statuses": [{"filled": {"oid": 123}}]}}}

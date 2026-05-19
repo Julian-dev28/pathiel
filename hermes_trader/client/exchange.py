@@ -15,8 +15,13 @@ The SDK handles:
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import Any, Dict, Optional, Tuple
+
+# Hyperliquid rejects any order below $10 notional. Target a small buffer above
+# it so the IOC price offset and mark-vs-limit rounding can't dip under.
+MIN_ORDER_USD = 10.5
 
 from eth_account import Account
 from hyperliquid.exchange import Exchange
@@ -178,6 +183,17 @@ def _parse_order_result(result: Any, accept_resting: bool = False) -> Dict[str, 
     return {"ok": True}
 
 
+def _min_order_size(price: float, sz_decimals: int) -> float:
+    """Smallest size at the coin's precision worth at least MIN_ORDER_USD.
+
+    Rounded UP to the size tick (10^-sz_decimals): for integer-size coins
+    (sz_decimals=0) a plain round-to-precision would drop a near-$10 size
+    under HL's floor. e.g. MEGA at $0.084 needs ~125 coins, not 100.
+    """
+    tick = 10.0 ** (-sz_decimals)
+    return math.ceil((MIN_ORDER_USD / price) / tick) * tick
+
+
 def place_hl_order(
     is_buy: bool,
     size: float,
@@ -187,16 +203,22 @@ def place_hl_order(
     """Place an IOC (immediate-or-cancel) limit order on Hyperliquid."""
     if not PRIVATE_KEY_HEX:
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
-    
+    if mid_price <= 0:
+        return {"ok": False, "error": f"invalid price for {coin}"}
+
     try:
         # Always get sz_dec from get_coin_index() (px_dec is ignored — we compute it correctly)
         _, sz_dec, _ = get_coin_index(coin)
-        
+
         # Use 0.1% offset from mid for market-like execution (small enough to pass 95% validation)
         price = mid_price * (1.001 if is_buy else 0.999)
-        
+
         # Round price honoring Hyperliquid's tick + 5-sigfig rules
         price_str = _round_price_for_hl(price, sz_dec, is_perp=True)
+
+        # Never place below HL's $10 minimum. _min_order_size rounds the floor
+        # UP to the coin's size tick, so rounding to sz_dec can't drop it under.
+        size = max(size, _min_order_size(mid_price, sz_dec))
         size_str = f"{size:.{sz_dec}f}"
         
         logger.info(f"[place_hl_order] price_str={price_str}, size_str={size_str}, mid={mid_price}, sz_dec={sz_dec}")

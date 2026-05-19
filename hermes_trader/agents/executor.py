@@ -178,12 +178,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         return {"executed": False, "mode": mode, "analysis_id": analysis["id"],
                 "reason": f"invalid_price_for_{coin}"}
 
-    # Size in coin from the leverage-inclusive notional, floored at HL's $10
-    # minimum order value and capped at 100 coins to bound very cheap assets.
+    # Coin size from the leverage-inclusive notional. No coin-count cap: the
+    # dollar amount is already bounded by trade_notional (and the notional
+    # risk gate); a fixed "100 coins" cap wrongly shrank cheap coins below
+    # HL's $10 minimum. place_hl_order enforces that $10 floor at size precision.
     size_in_coin = trade_notional / mid_price
-    min_size_by_value = 10.0 / mid_price
-    size_in_coin = max(size_in_coin, min_size_by_value)
-    size_in_coin = min(size_in_coin, 100.0)
 
     position_notional = trade_notional
 
