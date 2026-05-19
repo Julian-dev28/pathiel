@@ -125,12 +125,13 @@ equityRiskCap, newsBlackout. Gate config keys are read tolerantly —
 
 ## Trade Sizing
 
-Per-trade size = `equity_fraction_per_trade × available_USDC × leverage`. Both
-keys live in `.agent-config.json` (e.g. `0.10` + `10` = commit 10% of available
-balance as margin, levered 10× → a position worth 100% of available balance).
-Sizing is based on *available* (free) USDC, so it tapers as positions open.
-Defaults if absent: `0.01` and `5`. The `maxTradeNotionalUsd` gate caps the
-result — keep that cap above the intended notional or trades are blocked.
+Per-trade size = `equity_fraction_per_trade × perp_equity × leverage`, keyed off
+**total perp equity** (not free margin). Each trade commits a fixed fraction, so
+N trades scales the account fully in — `0.10` means ~10 trades = fully deployed.
+Both keys live in `.agent-config.json`; defaults if absent: `0.01` and `5`.
+Bounded by `maxConcurrent` (simultaneous positions), `max_total_notional_pct`
+(combined-notional ceiling), and `maxTradeNotionalUsd` (per-trade ceiling) —
+keep those above the intended deployment or trades get gate-blocked.
 
 ## Unified Accounts
 

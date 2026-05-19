@@ -282,26 +282,27 @@ hermes cron resume <job-id> # start hourly status delivery
 Every trade's position size comes from one formula in `executor.py`:
 
 ```
-trade_notional = available_USDC  ×  equity_fraction_per_trade  ×  leverage
+trade_notional = perp_equity  ×  equity_fraction_per_trade  ×  leverage
 ```
 
 Both knobs live in `.agent-config.json`:
 
 | Key | Meaning | Example |
 |-----|---------|---------|
-| `equity_fraction_per_trade` | Fraction of **available** USDC committed as margin per trade | `0.10` = 10% |
+| `equity_fraction_per_trade` | Fraction of **total perp equity** committed as margin per trade | `0.10` = 10% |
 | `leverage` | Leverage applied (also pushed to the exchange via `set_leverage`) | `10` = 10× |
 
-`equity_fraction_per_trade: 0.10` + `leverage: 10` means each trade commits 10%
-of available balance as margin and opens a position worth `10% × 10 = 100%` of
-available balance in notional. Sizing is based on *available* (free) USDC, not
-total equity, so it tapers automatically as open positions lock up margin.
+Sizing keys off **total perp equity**, not free margin — so each trade commits a
+*fixed* amount and `N` trades scales the account fully in. With
+`equity_fraction_per_trade: 0.10`, every trade commits 10% of equity as margin,
+so ~10 trades deploys the whole account linearly. (Sizing off *free* margin
+instead would decay geometrically and never fully deploy.)
 
-Two risk-gate caps still apply on top: `maxTradeNotionalUsd` (hard ceiling on one
-trade's notional) and `max_total_notional_pct` (ceiling on combined open notional,
-as a multiple of equity). Set `maxTradeNotionalUsd` **above** your intended
-per-trade notional or it will block trades. Config keys are read tolerantly —
-`snake_case` or `camelCase` both work.
+Caps that bound it: `maxConcurrent` (max simultaneous positions — set it ≥ the
+number of trades you want open at once), `max_total_notional_pct` (ceiling on
+combined open notional as a multiple of equity — at 10× leverage, `10.0` ≈ fully
+deployed), and `maxTradeNotionalUsd` (hard ceiling on a single trade's notional).
+Config keys are read tolerantly — `snake_case` or `camelCase` both work.
 
 Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage = 5`.
 

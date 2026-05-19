@@ -86,7 +86,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     user = resolve_user_address()
     state = fetch_account_state(user)
     equity = state["equity"]
-    available = state.get("available", equity)
     total_open_notional = state["total_ntl"]
 
     memory.track_daily_pnl(equity)
@@ -105,11 +104,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
-    # Per-trade size: a fraction of available USDC, levered. Both knobs live
-    # in .agent-config.json; defaults reproduce the prior 1%-margin x 5x sizing.
+    # Per-trade size: a FIXED fraction of total perp equity, levered. Keyed off
+    # equity (not free margin), so N trades deploys N x equity_fraction of the
+    # account — e.g. 0.10 means ~10 trades scales fully in. Both knobs live in
+    # .agent-config.json; defaults reproduce the prior 1%-margin x 5x sizing.
+    # The equity_risk_cap gate (max_total_notional_pct) bounds total deployment.
     equity_fraction = float(config.get("equity_fraction_per_trade", 0.01))
     leverage = int(config.get("leverage", HL_LEVERAGE))
-    trade_notional = available * equity_fraction * leverage
+    trade_notional = equity * equity_fraction * leverage
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
