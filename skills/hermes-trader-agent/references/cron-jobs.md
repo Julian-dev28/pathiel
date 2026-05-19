@@ -5,18 +5,25 @@ How hermes-trader is wired into Hermes Agent's cron scheduler
 
 ## Hourly status report
 
-A `no_agent` cron job that runs `status.py` and delivers its stdout verbatim —
-deterministic, zero LLM cost, zero risk (read-only, no network, no credentials).
+A `no_agent` cron job that runs the `hermes-trader-status.sh` wrapper and
+delivers its stdout verbatim — zero LLM cost, read-only (no orders, no writes).
+The wrapper does a read-only Hyperliquid query for live equity, using the
+public wallet address from `.env.local` — no private key involved.
 
 - **Job id:** `8a82eaa567fe` — "Hermes Trader Hourly Report"
 - **Schedule:** every 60m
-- **Script:** `~/.hermes/scripts/hermes-trader-status.sh` — a thin wrapper that
-  execs this skill's `scripts/status.py`. Cron `script` paths resolve under
-  `~/.hermes/scripts/`, so the wrapper must live there:
+- **Script:** `~/.hermes/scripts/hermes-trader-status.sh` — a wrapper that runs
+  `status.py` (cached + live snapshot) followed by `feed.py --since 60m` (the
+  last hour's activity). Cron `script` paths resolve under `~/.hermes/scripts/`,
+  so the wrapper must live there. It calls the skill's scripts by absolute path:
 
   ```bash
   #!/usr/bin/env bash
-  exec python3 /Users/julian_dev/Documents/code/hermes-trader/skills/hermes-trader-agent/scripts/status.py
+  set -uo pipefail
+  REPO=/Users/julian_dev/Documents/code/hermes-trader
+  python3 "$REPO/skills/hermes-trader-agent/scripts/status.py"
+  echo; echo "--- activity (last 60m) ---"
+  python3 "$REPO/skills/hermes-trader-agent/scripts/feed.py" --since 60m
   ```
 
 It ships **paused** (`enabled: false`). Enable it when ready:

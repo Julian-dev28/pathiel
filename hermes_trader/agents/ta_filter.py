@@ -150,7 +150,10 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
             reasons.append("volume confirmed")
         score += min(15, perception["composite_score"] / 100 * 15)
 
-        verdict = "CONFIRMED" if score >= 45 else "WEAK" if score >= 30 else "REJECTED"
+        verdict = "CONFIRMED" if score >= 22 else "WEAK" if score >= 12 else "REJECTED"
+
+        if verdict != "CONFIRMED":
+            logger.info(f"[ta_filter] {coin} -> {verdict} (score {score:.0f}) reasons: {', '.join(reasons) or 'none'}")
 
         return {
             "signal": verdict,

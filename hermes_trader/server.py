@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -14,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from hermes_trader import __version__
+from hermes_trader import __version__, session_log
 from hermes_trader.agents.config_store import read_agent_config, write_agent_config
 from hermes_trader.agents.executor import maybe_execute
 from hermes_trader.agents.memory import memory
@@ -37,28 +36,15 @@ logging.basicConfig(
 logger = logging.getLogger("hermes-server")
 
 # ── Session log ────────────────────────────────────────────────────────────────
-
-SESSION_LOG_FILE = os.environ.get(
-    "SESSION_LOG_PATH",
-    os.path.expanduser("~/.hermes-trader-session-log.jsonl"),
-)
-_session_log_lock = asyncio.Lock()
+# Shared activity feed (hermes_trader.session_log) — the same JSONL file the
+# trading loop and status.py use. Writes run in an executor so the file append
+# never blocks the event loop.
 
 
 async def _append_session_log(entry: Dict[str, Any]) -> None:
-    """Append one JSONL line to the session log."""
-    try:
-        async with _session_log_lock:
-            loop = asyncio.get_running_loop()
-            fut = loop.run_in_executor(None, _sync_append, SESSION_LOG_FILE, entry)
-            await fut
-    except Exception as e:
-        logger.warning(f"Failed to write session log: {e}")
-
-
-def _sync_append(path: str, entry: Dict[str, Any]) -> None:
-    with open(path, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+    """Append one event to the shared session log (non-blocking)."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, session_log.append, entry)
 
 
 # ── PID file helpers (start/stop) ──────────────────────────────────────────────
@@ -229,18 +215,7 @@ async def get_trades():
 @app.get("/api/agent/session-log")
 async def get_session_log():
     """GET /api/agent/session-log — last 50 log entries."""
-    try:
-        with open(SESSION_LOG_FILE, "r") as f:
-            lines = f.readlines()
-        last_50 = lines[-50:]
-        entries = []
-        for line in last_50:
-            line = line.strip()
-            if line:
-                entries.append(json.loads(line))
-        return JSONResponse(content=entries)
-    except FileNotFoundError:
-        return JSONResponse(content=[])
+    return JSONResponse(content=session_log.tail(50))
 
 
 @app.get("/api/agent/start")

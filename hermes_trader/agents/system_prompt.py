@@ -42,8 +42,7 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "2. If already in position on this coin → prefer HOLD or CLOSE.",
         "3. SL must be ATR-sized (default 3.5× ATR). TP ≥ 1.0× ATR.",
         "4. Never output entryPx without stopPx.",
-        "5. VERDICT is PASS unless: (a) score ≥ 80, (b) 4h EMA trend confirms, "
-        "(c) ATR ≥ 0.5% of price.",
+        "5. VERDICT is PASS unless: (a) composite_score ≥ 60 OR (b) 4h EMA trend confirms with ATR ≥ 0.4%.",
         "6. Confidence: all 3 met = 0.90–1.0, 2 of 3 = 0.70–0.89, < 2 = PASS.",
         "",
         track_record,
