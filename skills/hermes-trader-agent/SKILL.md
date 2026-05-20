@@ -245,4 +245,6 @@ start it. See `references/cron-jobs.md`.
 - `references/mcp-server.md` — server structure, adding tools, the audit invariant.
 - `references/hyperliquid-gotchas.md` — order-placement gotchas (decimals, tick size, $10 min, singletons).
 - `references/cron-jobs.md` — Hermes cron wiring for the hourly status report.
-- `references/signal-vs-action-gap.md` — diagnosis of the recurring "scanner fires, trader stays silent" pattern (triggers present, research returns PASS + low confidence, no execute events). Contains root-cause checklist and quick mitigation commands.
+- `references/signal-vs-action-gap.md` — diagnosis of the recurring \"scanner fires, trader stays silent\" pattern + all live tuning performed 2026-05-19.
+- `references/restart-sequence.md` — canonical short `pkill + restart` command the user repeatedly uses (maintains this exact two-line ritual).
+- `references/trading-mode.md` — explicit execute-first reporting contract when the user is in active trading mode.
