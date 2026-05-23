@@ -27,12 +27,22 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Persist tracker state so a daemon restart doesn't lose peak/floor ratchets.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DSL_STATE_FILE = os.environ.get(
+    "HERMES_DSL_STATE_FILE",
+    os.path.join(_REPO_ROOT, ".dsl-state.json"),
+)
+_STATE_VERSION = 1
 
 
 @dataclass
@@ -123,10 +133,13 @@ class DSLTracker:
         pol = self.policy
 
         # Update peak (for longs: highest price seen; for shorts: lowest)
+        peak_changed = False
         if is_long and mark_px > self.peak_px:
             self.peak_px = mark_px
+            peak_changed = True
         elif not is_long and mark_px < self.peak_px:
             self.peak_px = mark_px
+            peak_changed = True
 
         # ── Hard timeout ──────────────────────────────────────────────
         if elapsed_min >= pol.hard_timeout_minutes:
@@ -179,13 +192,16 @@ class DSLTracker:
                 floor = self.entry_px * (1 + pol.max_loss_pct / 100)
 
         # Floor should never decrease for longs (or increase for shorts)
-        if self._last_floor is not None:
+        prev_floor = self._last_floor
+        if prev_floor is not None:
             if is_long:
-                floor = max(floor, self._last_floor)
+                floor = max(floor, prev_floor)
             else:
-                floor = min(floor, self._last_floor)
+                floor = min(floor, prev_floor)
 
         self._last_floor = floor
+        if peak_changed or prev_floor != floor:
+            _save_state()
 
         # ── Floor breach check ────────────────────────────────────────
         breached = (is_long and mark_px < floor) or (not is_long and mark_px > floor)
@@ -230,6 +246,79 @@ class DSLTracker:
 # ── Global tracker registry ──────────────────────────────────────────
 
 _active_positions: Dict[str, DSLTracker] = {}
+_loaded_from_disk = False
+
+
+def _tracker_to_dict(t: DSLTracker) -> Dict[str, Any]:
+    return {
+        "coin": t.coin,
+        "side": t.side,
+        "entry_px": t.entry_px,
+        "entry_time": t.entry_time,
+        "peak_px": t.peak_px,
+        "consecutive_breaches": t.consecutive_breaches,
+        "last_floor": t._last_floor,
+        "policy": asdict(t.policy),
+    }
+
+
+def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
+    pol_raw = d.get("policy") or {}
+    tiers = [RetraceTier(**rt) for rt in pol_raw.get("phase2_tiers", [])]
+    policy = ExitPolicy(
+        max_loss_pct=pol_raw.get("max_loss_pct", ExitPolicy.max_loss_pct),
+        protect_pct=pol_raw.get("protect_pct", ExitPolicy.protect_pct),
+        retrace_threshold=pol_raw.get("retrace_threshold", ExitPolicy.retrace_threshold),
+        hard_timeout_minutes=pol_raw.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
+        phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
+        consecutive_breaches_required=pol_raw.get("consecutive_breaches_required", 1),
+    )
+    t = DSLTracker(d["coin"], d["side"], float(d["entry_px"]),
+                   float(d.get("entry_time") or time.time()), policy)
+    t.peak_px = float(d.get("peak_px", d["entry_px"]))
+    t.consecutive_breaches = int(d.get("consecutive_breaches", 0))
+    lf = d.get("last_floor")
+    t._last_floor = float(lf) if lf is not None else None
+    return t
+
+
+def _save_state() -> None:
+    """Atomically write the tracker registry to disk. Best-effort — never raises."""
+    try:
+        payload = {
+            "version": _STATE_VERSION,
+            "saved_at": int(time.time() * 1000),
+            "positions": [_tracker_to_dict(t) for t in _active_positions.values()],
+        }
+        tmp = DSL_STATE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f)
+        os.replace(tmp, DSL_STATE_FILE)
+    except OSError as e:
+        logger.warning(f"[dsl] failed to persist state: {e}")
+
+
+def load_state() -> None:
+    """Load persisted trackers into `_active_positions`. Idempotent."""
+    global _loaded_from_disk
+    if _loaded_from_disk:
+        return
+    _loaded_from_disk = True
+    try:
+        with open(DSL_STATE_FILE) as f:
+            payload = json.load(f)
+    except FileNotFoundError:
+        return
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"[dsl] state file unreadable, ignoring: {e}")
+        return
+    for d in payload.get("positions", []):
+        try:
+            t = _tracker_from_dict(d)
+            _active_positions[f"{t.coin}_{t.side}"] = t
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning(f"[dsl] skipping malformed tracker entry: {e}")
+    logger.info(f"[dsl] rehydrated {len(_active_positions)} tracker(s) from disk")
 
 
 def register_position(coin: str, side: str, entry_px: float,
@@ -239,8 +328,62 @@ def register_position(coin: str, side: str, entry_px: float,
     key = f"{coin}_{side}"
     tracker = DSLTracker(coin, side, entry_px, entry_time or time.time(), policy)
     _active_positions[key] = tracker
+    _save_state()
     logger.info(f"[dsl] Registered {key} @ {entry_px}")
     return tracker
+
+
+def deregister_position(coin: str, side: str) -> bool:
+    """Remove a tracker (after a successful close). Returns True if removed."""
+    key = f"{coin}_{side}"
+    if key in _active_positions:
+        del _active_positions[key]
+        _save_state()
+        logger.info(f"[dsl] Deregistered {key}")
+        return True
+    return False
+
+
+def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
+                            policy: Optional[ExitPolicy] = None) -> None:
+    """Reconcile the tracker registry with the exchange's live position list.
+
+    - On first call, loads any persisted trackers from disk.
+    - For each exchange position with no tracker, synthesizes one from
+      `position.entryPx` (entry_time = now, since the original is unknown).
+    - Drops trackers for coins that no longer have an open exchange position
+      (closed manually, by SL, by a different process).
+    """
+    load_state()
+    live_keys = set()
+    added = 0
+    for p in asset_positions or []:
+        pos = p.get("position", {}) if isinstance(p, dict) else {}
+        coin = pos.get("coin")
+        if not coin:
+            continue
+        try:
+            szi = float(pos.get("szi", "0") or 0)
+            entry = float(pos.get("entryPx") or 0)
+        except (TypeError, ValueError):
+            continue
+        if szi == 0 or entry <= 0:
+            continue
+        side = "long" if szi > 0 else "short"
+        key = f"{coin}_{side}"
+        live_keys.add(key)
+        if key not in _active_positions:
+            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), policy)
+            added += 1
+            logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry}")
+
+    stale = [k for k in _active_positions if k not in live_keys]
+    for k in stale:
+        del _active_positions[k]
+        logger.info(f"[dsl] Dropped stale tracker {k} (no live exchange position)")
+
+    if added or stale:
+        _save_state()
 
 
 def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:

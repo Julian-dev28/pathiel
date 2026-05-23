@@ -45,9 +45,11 @@ logging.basicConfig(
 from hermes_trader.agents.perception import scan_once
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
-from hermes_trader.agents.executor import maybe_execute
+from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits
+from hermes_trader.agents.dsl_exit import rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
 from hermes_trader.agents.memory import memory
+from hermes_trader.client.exchange import get_all_hl_mids
 from hermes_trader.client.universe import get_universe
 from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
 from hermes_trader.session_log import append as log_event
@@ -123,6 +125,30 @@ while True:
             "daily_pnl": round(daily_pnl, 4),
             "open_positions": len(positions),
         })
+
+        # ── DSL exit pass ───────────────────────────────────────────────────
+        # Reconcile trackers with live exchange positions (handles restarts,
+        # manual closes, externally-filled SLs), then market-close anything
+        # whose dynamic floor was breached.
+        try:
+            rehydrate_from_exchange(positions)
+            mids = get_all_hl_mids()
+            exits = monitor_exits(mids)
+            for ex in exits:
+                coin = ex["coin"]
+                logger.info(f"[dsl] Closing {coin}: {ex['reason']} (unrealized {ex['unrealized_pct']:+.2f}%)")
+                res = close_position_market(coin)
+                log_event({
+                    "event": "dsl_exit",
+                    "coin": coin,
+                    "reason": ex["reason"],
+                    "unrealized_pct": round(ex["unrealized_pct"], 2),
+                    "executed": bool(res.get("ok")),
+                    "detail": res.get("order_id") or res.get("noop") or res.get("error"),
+                })
+        except Exception as e:
+            logger.error(f"[dsl] monitor pass failed: {e}")
+            log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
 
         logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)

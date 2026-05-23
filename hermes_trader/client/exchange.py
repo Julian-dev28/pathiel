@@ -127,6 +127,18 @@ def get_hl_price(coin: str = "BTC") -> float:
     return float(mids.get(coin, "0"))
 
 
+def get_all_hl_mids() -> Dict[str, float]:
+    """Return {coin: mid_price} for every perp — one HTTP call for the whole universe."""
+    raw = _get_info().all_mids() or {}
+    out: Dict[str, float] = {}
+    for k, v in raw.items():
+        try:
+            out[k] = float(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 # ── Order placement ────────────────────────────────────────────────────────────
 
 def set_leverage(coin: str, leverage: int) -> Dict[str, Any]:

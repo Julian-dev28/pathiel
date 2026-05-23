@@ -92,6 +92,7 @@ DISTRIBUTE.md
 # Agent config
 .agent-config.json
 .agent-memory.json
+.dsl-state.json
 
 # Rust build artifacts
 target/

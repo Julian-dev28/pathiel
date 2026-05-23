@@ -14,7 +14,12 @@ import uuid
 from typing import Any, Dict, List
 
 from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.agents.dsl_exit import ExitPolicy, check_all_positions, register_position
+from hermes_trader.agents.dsl_exit import (
+    ExitPolicy,
+    check_all_positions,
+    deregister_position,
+    register_position,
+)
 from hermes_trader.agents.memory import memory
 from hermes_trader.agents.risk_gates import GateContext, eval_all_gates
 from hermes_trader.client.exchange import (
@@ -268,3 +273,41 @@ def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
         }
         for v in exits
     ]
+
+
+def close_position_market(coin: str) -> Dict[str, Any]:
+    """Market-close any open perp position for `coin`. Deregisters the DSL tracker on success."""
+    user = resolve_user_address()
+    if not user:
+        return {"ok": False, "coin": coin, "error": "no_user_address"}
+
+    state = fetch_account_state(user)
+    pos = next(
+        (p for p in state.get("asset_positions", [])
+         if p.get("position", {}).get("coin") == coin),
+        None,
+    )
+    if not pos:
+        # Already flat — drop any stale tracker so we don't keep retrying.
+        deregister_position(coin, "long")
+        deregister_position(coin, "short")
+        return {"ok": True, "coin": coin, "noop": "already_flat"}
+
+    try:
+        szi = float(pos["position"].get("szi", "0") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "coin": coin, "error": "bad_szi"}
+    if szi == 0:
+        deregister_position(coin, "long")
+        deregister_position(coin, "short")
+        return {"ok": True, "coin": coin, "noop": "zero_szi"}
+
+    is_long = szi > 0
+    mid_price = get_hl_price(coin)
+    if mid_price <= 0:
+        return {"ok": False, "coin": coin, "error": f"invalid_price_for_{coin}"}
+
+    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin)
+    if res.get("ok"):
+        deregister_position(coin, "long" if is_long else "short")
+    return {**res, "coin": coin, "side": "long" if is_long else "short"}

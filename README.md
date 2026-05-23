@@ -25,8 +25,8 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 +---------------------------------------------------------------+
 |          hermes-trader — autonomous trading pipeline          |
 |                                                               |
-|  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ DSL Exit ──▶ Execute
-|        (cheap)          (expensive)     (11 gates)    (2-phase)
+|  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ Execute ➜ DSL Monitor ──▶ Auto-Close
+|        (cheap)          (expensive)     (11 gates)            (per-tick, 2-phase)
 │                       |
 │                  Only CONFIRMED
 │                  signals proceed
@@ -63,10 +63,13 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
-- **Phase 1 — Loss Protection**: Max loss stop, protect threshold
-- **Phase 2 — Profit Locking**: Tiered retrace thresholds, trailing floor that only moves up
-- **Hard timeout**: Emergency exit after configurable minutes
+- **Phase 1 — Loss Protection**: Hard stop at `max_loss_pct` below entry (default 2.5%)
+- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` (1.5%) in your favor — trailing floor at `entry + (peak − entry) × (1 − retrace)`; retrace tightens by tier (30% @ +5%, 40% @ +10%, 50% @ +20%, 60% @ +50%); floor ratchets one-way and never gives back locked profit
+- **Hard timeout**: Emergency exit after `hard_timeout_minutes` (180 min default), regardless of PnL
 - **Auto-registration**: Every executed position is registered for DSL tracking
+- **Persisted across restarts**: Tracker state (peak, floor, breach counter) is written to `.dsl-state.json` on every advance, so a daemon restart doesn't reset the ratchet
+- **Exchange reconciliation**: Each scan tick, trackers are reconciled with live exchange positions — manually-opened or externally-closed positions stay in sync; positions opened before the engine shipped are synthesized from `entryPx`
+- **Auto-close**: When a tick trips a floor/stop/timeout, the trading loop market-closes the position and logs a `dsl_exit` event to the session log. No human in the loop
 
 ### Hyperfeed Discovery (Native, no MCP)
 Replicates the Hyperfeed MCP plugin's data directly from HL API:
@@ -89,7 +92,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_trader/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
 | `hermes_trader/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
 | `hermes_trader/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
-| `hermes_trader/agents/dsl_exit.py` | Two-phase trailing stop engine — loss protection → profit locking |
+| `hermes_trader/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
 | `hermes_trader/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
 | `hermes_trader/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
 | `hermes_trader/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
@@ -186,7 +189,9 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 
 Optional nested `dsl_exit` block tunes the trailing-stop engine —
 `max_loss_pct` (2.5), `protect_pct` (1.5), `retrace_threshold` (0.30),
-`hard_timeout_minutes` (180).
+`hard_timeout_minutes` (180). Tracker state persists to `.dsl-state.json` at the
+repo root (override with `HERMES_DSL_STATE_FILE`); positions opened before the
+auto-close pass shipped are picked up automatically from the exchange.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -242,6 +247,7 @@ Monitor logs: `tail -f /tmp/hermes-trader.log`
 
 **Trading Loop Behavior:**
 - Scans top 60 markets every 60 seconds
+- Each tick, reconciles DSL trackers with live exchange positions and runs an exit pass — market-closes anything whose dynamic floor, hard stop, or timeout has tripped
 - Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
 - Researches qualifying signals with AI (qwen/qwen3-235b-a22b)
 - Executes trades that clear all 11 risk gates
@@ -372,7 +378,7 @@ Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage =
 HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight → instant 429. Volume pre-filtering to the top 60 markets keeps a scan at ~1,200 weight. Sustained usage is `1200 × markets ÷ interval` weight/min, so the safe rule is **markets ≤ scan-interval-in-seconds** (the default 60/60 sits right at the limit's edge).
 
 ### Why DSL exit engine?
-Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
+Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. State is persisted on disk so a daemon restart doesn't reset the ratchet, and the registry is reconciled against the exchange each tick so manually-opened or externally-closed positions stay coherent. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
 
 ### Why Hyperfeed Discovery?
 The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
