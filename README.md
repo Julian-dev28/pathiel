@@ -461,4 +461,4 @@ engine is plain Python.
 
 ---
 
-**Note:** Project runs on `python` branch. Never merge to `main`.
+**Note:** Project trunk is `main` (Python). The legacy TypeScript/Next.js implementation lives on archived branches.
