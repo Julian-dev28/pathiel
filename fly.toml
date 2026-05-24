@@ -1,0 +1,49 @@
+# Fly.io deploy config for hermes-trader.
+# Edit `app` to your chosen name; `flyctl launch` will offer a default.
+
+app = "hermes-trader"
+primary_region = "iad"  # change to a region near you
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Two processes share the image:
+#   web  — FastAPI server (dashboard + JSON API + SSE feed)
+#   loop — autonomous trading loop (scan → research → execute → DSL monitor)
+[processes]
+  web  = "python3 -m hermes_trader.server"
+  loop = "python3 scripts/trading_loop.py"
+
+[[mounts]]
+  source = "hermes_data"   # `fly volumes create hermes_data --size 1`
+  destination = "/data"
+  processes = ["web", "loop"]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false  # don't sleep — the loop must keep running
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["web"]
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    timeout = "10s"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["web"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["loop"]
+
+[env]
+  HERMES_PORT = "8000"
+  HERMES_SCAN_INTERVAL = "60"

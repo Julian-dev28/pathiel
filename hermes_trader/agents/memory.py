@@ -13,8 +13,12 @@ logger = logging.getLogger(__name__)
 # Anchored to the repo root (mirrors config_store.py), not os.getcwd() — so the
 # MCP server and the trading loop always share one .agent-memory.json regardless
 # of which directory each was launched from.
+# Override with HERMES_AGENT_MEMORY_FILE when deploying behind a mounted volume.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-MEMORY_FILE = os.path.join(_REPO_ROOT, ".agent-memory.json")
+MEMORY_FILE = os.environ.get(
+    "HERMES_AGENT_MEMORY_FILE",
+    os.path.join(_REPO_ROOT, ".agent-memory.json"),
+)
 
 MAX_PERCEPTIONS = 500
 MAX_ANALYSES = 200

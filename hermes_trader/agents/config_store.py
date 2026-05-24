@@ -12,8 +12,12 @@ logger = logging.getLogger(__name__)
 # Use absolute path based on this file's location (hermes-trader project root)
 # __file__ = .../hermes-trader/hermes_trader/agents/config_store.py
 # Go up 3 levels: agents/ → hermes_trader/ → hermes-trader/
+# Override with HERMES_AGENT_CONFIG_FILE when deploying behind a mounted volume.
 _CONFIG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CONFIG_PATH = os.path.join(_CONFIG_DIR, ".agent-config.json")
+CONFIG_PATH = os.environ.get(
+    "HERMES_AGENT_CONFIG_FILE",
+    os.path.join(_CONFIG_DIR, ".agent-config.json"),
+)
 
 DEFAULT_CONFIG: Dict[str, Any] = {"mode": "OFF"}
 

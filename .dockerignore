@@ -1,0 +1,32 @@
+# Local state / secrets — must never end up in the image.
+.env
+.env.local
+.agent-config.json
+.agent-memory.json
+.dsl-state.json
+*.pid
+logs/
+
+# Build / runtime junk
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.venv/
+.venv-*/
+
+# Git / editor / OS
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+.DS_Store
+
+# Docs / notes that don't belong in the runtime image
+docs/
+*.md
+!README.md
+skills/
+tests/
