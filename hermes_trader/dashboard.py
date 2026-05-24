@@ -155,12 +155,27 @@ def _positions_payload() -> List[Dict[str, Any]]:
             szi = float(pos.get("szi", "0") or 0)
             entry = float(pos.get("entryPx") or 0)
             mark = float(pos.get("positionValue", 0) or 0) / abs(szi) if szi else 0
-            unrealized = float(pos.get("unrealizedPnl", 0) or 0)
+            unrealized_usd = float(pos.get("unrealizedPnl", 0) or 0)
+            margin_used = float(pos.get("marginUsed", 0) or 0)
         except (TypeError, ValueError):
             continue
         if szi == 0 or not coin:
             continue
         side = "long" if szi > 0 else "short"
+
+        # HL stores leverage as {"value": N, "type": "cross"|"isolated"}; older
+        # records (and synthesized stubs) may store it as a bare int.
+        leverage_obj = pos.get("leverage")
+        if isinstance(leverage_obj, dict):
+            leverage = int(leverage_obj.get("value", 1) or 1)
+        else:
+            leverage = int(leverage_obj or 1)
+
+        spot_pct = ((mark - entry) / entry * 100 if side == "long"
+                    else (entry - mark) / entry * 100) if entry else 0
+        # ROE = unrealizedPnl / marginUsed — this is what HL's "PNL (ROE %)"
+        # column displays, and it already accounts for the open-side fee paid.
+        roe_pct = (unrealized_usd / margin_used * 100) if margin_used > 0 else spot_pct * leverage
 
         tracker = dsl_exit._active_positions.get(f"{coin}_{side}")
         dsl_info = None
@@ -178,11 +193,12 @@ def _positions_payload() -> List[Dict[str, Any]]:
             "coin": coin,
             "side": side,
             "size": abs(szi),
+            "leverage": leverage,
             "entry_px": entry,
             "mark_px": mark,
-            "unrealized_pnl": unrealized,
-            "unrealized_pct": ((mark - entry) / entry * 100 if side == "long"
-                               else (entry - mark) / entry * 100) if entry else 0,
+            "unrealized_pnl_usd": unrealized_usd,
+            "unrealized_pct": roe_pct,       # leveraged ROE — matches HL
+            "spot_pct": spot_pct,            # bare price move, for the curious
             "dsl": dsl_info,
         })
     return rows
@@ -528,15 +544,25 @@ async function refreshPositions() {
     if (!ps.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none</div>'; return; }
     el.innerHTML = ps.map(p => {
       const pnlColor = p.unrealized_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
-      const floor = p.dsl?.floor_px ? ('floor ' + p.dsl.floor_px.toFixed(2)) : '';
+      const sideTag = p.side === 'long'
+        ? '<span class="text-[10px] text-emerald-400 font-semibold">LONG</span>'
+        : '<span class="text-[10px] text-red-400 font-semibold">SHORT</span>';
+      const levTag = p.leverage > 1 ? `<span class="text-[10px] text-zinc-500">${p.leverage}x</span>` : '';
+      const sizeFmt = p.size >= 1 ? p.size.toFixed(2) : p.size.toFixed(4);
+      const pxFmt = (v) => v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
+      const floor = p.dsl?.floor_px ? ('floor ' + pxFmt(p.dsl.floor_px)) : '<span class="text-zinc-700">no DSL</span>';
       const phase = p.dsl?.phase || '';
-      return `<div class="grid grid-cols-6 gap-2 py-1 border-b border-zinc-800 last:border-0 num">
-        <div><span class="font-bold">${p.coin}</span> <span class="text-xs ${p.side==='long'?'text-emerald-400':'text-red-400'}">${p.side}</span></div>
-        <div>${p.size.toFixed(4)}</div>
-        <div class="text-zinc-400">@ ${p.entry_px.toFixed(2)}</div>
-        <div>mark ${p.mark_px.toFixed(2)}</div>
-        <div class="${pnlColor}">${fmtPct(p.unrealized_pct)}</div>
-        <div class="text-xs text-zinc-500">${floor} ${phase}</div>
+      const usd = p.unrealized_pnl_usd;
+      const usdStr = (usd >= 0 ? '+$' : '-$') + Math.abs(usd).toFixed(2);
+      const spotNote = p.leverage > 1
+        ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}% × ${p.leverage}x leverage = ROE shown">(spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}%)</span>`
+        : '';
+      return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
+        <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${p.coin}</span>${sideTag} ${levTag}</div>
+        <div class="col-span-2 text-zinc-400">${sizeFmt} @ ${pxFmt(p.entry_px)}</div>
+        <div class="col-span-2 text-zinc-400">mark ${pxFmt(p.mark_px)}</div>
+        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${usdStr} (${p.unrealized_pct >= 0 ? '+' : ''}${p.unrealized_pct.toFixed(1)}%)${spotNote}</div>
+        <div class="col-span-3 text-zinc-500 text-[11px]">${floor} ${phase}</div>
       </div>`;
     }).join('');
   } catch (e) {}
