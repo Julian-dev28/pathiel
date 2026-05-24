@@ -222,8 +222,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         retrace_threshold=dsl_config.get("retrace_threshold", 0.30),
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
     )
-    register_position(coin, trade_side, mid_price, policy=policy)
-    logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price}")
+    register_position(coin, trade_side, mid_price, policy=policy, leverage=leverage)
+    logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price} ({leverage}x)")
 
     memory.record_trade({
         "id": str(uuid.uuid4()),
@@ -262,14 +262,22 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
-    """Check all DSL-tracked positions and return those that should be closed."""
+    """Check all DSL-tracked positions and return those that should be closed.
+
+    `side` is the long/short of the actual position; `phase` is the DSL phase
+    (phase1/phase2/timeout). `leveraged_pct` ≈ spot move × leverage and matches
+    what Hyperliquid's UI shows on the user's margin.
+    """
     exits = check_all_positions(mids)
     return [
         {
             "coin": v.coin,
-            "side": v.phase,
+            "side": v.position_side,
+            "phase": v.phase,
+            "leverage": v.leverage,
             "reason": v.reason,
             "unrealized_pct": v.unrealized_pct,
+            "leveraged_pct": v.unrealized_pct * v.leverage,
         }
         for v in exits
     ]

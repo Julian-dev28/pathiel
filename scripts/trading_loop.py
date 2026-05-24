@@ -131,18 +131,24 @@ while True:
         # manual closes, externally-filled SLs), then market-close anything
         # whose dynamic floor was breached.
         try:
-            rehydrate_from_exchange(positions)
+            rehydrate_from_exchange(positions, default_leverage=int(config.get("leverage", 1) or 1))
             mids = get_all_hl_mids()
             exits = monitor_exits(mids)
             for ex in exits:
                 coin = ex["coin"]
-                logger.info(f"[dsl] Closing {coin}: {ex['reason']} (unrealized {ex['unrealized_pct']:+.2f}%)")
+                lev = ex.get("leverage", 1)
+                lpct = ex.get("leveraged_pct", ex["unrealized_pct"] * lev)
+                logger.info(f"[dsl] Closing {coin} {ex.get('side','?')} ({lev}x): "
+                            f"{ex['reason']} (margin {lpct:+.2f}% · spot {ex['unrealized_pct']:+.2f}%)")
                 res = close_position_market(coin)
                 log_event({
                     "event": "dsl_exit",
                     "coin": coin,
+                    "side": ex.get("side"),
+                    "leverage": lev,
                     "reason": ex["reason"],
                     "unrealized_pct": round(ex["unrealized_pct"], 2),
+                    "leveraged_pct": round(lpct, 2),
                     "executed": bool(res.get("ok")),
                     "detail": res.get("order_id") or res.get("noop") or res.get("error"),
                 })

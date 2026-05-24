@@ -37,6 +37,27 @@ from hermes_trader.client.hl_client import fetch_account_state, resolve_user_add
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
+# HL per-coin max leverage table, built lazily from one info.meta() call so the
+# closed-trades fallback can compute a sane historical leverage estimate
+# without spamming the API per row.
+_max_lev_table: Optional[Dict[str, int]] = None
+
+
+def _load_max_lev_table() -> Dict[str, int]:
+    global _max_lev_table
+    if _max_lev_table is not None:
+        return _max_lev_table
+    try:
+        from hermes_trader.client.exchange import _get_info
+        meta = _get_info().meta() or {}
+        _max_lev_table = {
+            u["name"]: int(u.get("maxLeverage", 1) or 1)
+            for u in meta.get("universe", []) if "name" in u
+        }
+    except Exception:
+        _max_lev_table = {}
+    return _max_lev_table
+
 
 # ── data helpers ─────────────────────────────────────────────────────────────
 
@@ -165,30 +186,80 @@ def _positions_payload() -> List[Dict[str, Any]]:
 def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
     """Walk the session log for close events (dsl_exit, close_position).
 
-    Returns newest-first. unrealized_pct on a dsl_exit event is the realized
-    PnL at the close moment (the position closes at that mark price), so it
-    doubles as realized PnL %.
+    Returns newest-first. Each row carries:
+      - `spot_pct`: raw price-move %. This is what the DSL engine measures
+        and what HL would show you as "unrealized PnL %" on the position.
+      - `pnl_pct`: leveraged margin PnL — what shows up in the HL P&L view.
+        Equals spot_pct × leverage.
+      - `side` and `leverage`: pulled from the event itself for new closes;
+        for older events lacking those fields, walked back to the matching
+        execute event (for side) and the live config (for leverage).
     """
+    events = _read_log_lines()
+    n = len(events)
+    cfg_leverage: Optional[int] = None  # lazy-fetched fallback
+
+    def _find_open_side(coin: str, before_idx: int) -> Optional[str]:
+        for j in range(before_idx - 1, -1, -1):
+            pe = events[j]
+            if pe.get("event") == "execute" and pe.get("coin") == coin:
+                return pe.get("side")
+        return None
+
+    def _cfg_leverage() -> int:
+        nonlocal cfg_leverage
+        if cfg_leverage is None:
+            try:
+                cfg_leverage = int(read_agent_config().get("leverage", 1) or 1)
+            except Exception:
+                cfg_leverage = 1
+        return cfg_leverage
+
+    def _estimate_leverage(coin: str) -> int:
+        # Mirrors executor.py: actual leverage = min(config.leverage, HL per-coin max).
+        # Not perfectly accurate for old trades (config may have changed), but
+        # closer than config alone — and for most coins HL's cap is the binding one.
+        coin_max = _load_max_lev_table().get(coin, 0)
+        cfg = _cfg_leverage()
+        return min(cfg, coin_max) if coin_max else cfg
+
     out: List[Dict[str, Any]] = []
-    for e in reversed(_read_log_lines()):
+    for i in range(n - 1, -1, -1):
+        e = events[i]
         ev = e.get("event")
         if ev == "dsl_exit":
+            coin = e.get("coin", "?")
+            side = e.get("side") or _find_open_side(coin, i) or "?"
+            has_explicit_lev = e.get("leverage") is not None
+            leverage = int(e["leverage"]) if has_explicit_lev else _estimate_leverage(coin)
+            spot_pct = float(e.get("unrealized_pct", 0) or 0)
+            leveraged_pct = (float(e["leveraged_pct"]) if e.get("leveraged_pct") is not None
+                             else spot_pct * leverage)
             out.append({
                 "ts": e.get("ts"),
-                "coin": e.get("coin"),
+                "coin": coin,
                 "source": "dsl",
+                "side": side,
+                "leverage": leverage,
+                "leverage_estimated": not has_explicit_lev,
                 "reason": e.get("reason", ""),
-                "pnl_pct": float(e.get("unrealized_pct", 0) or 0),
+                "pnl_pct": leveraged_pct,
+                "spot_pct": spot_pct,
                 "executed": bool(e.get("executed")),
                 "detail": e.get("detail"),
             })
         elif ev == "close_position":
+            coin = e.get("coin", "?")
             out.append({
                 "ts": e.get("ts"),
-                "coin": e.get("coin"),
+                "coin": coin,
                 "source": "manual",
+                "side": _find_open_side(coin, i) or "?",
+                "leverage": _estimate_leverage(coin),
+                "leverage_estimated": True,
                 "reason": "manual_close",
-                "pnl_pct": 0.0,  # we don't capture pnl on manual closes today
+                "pnl_pct": 0.0,
+                "spot_pct": 0.0,
                 "executed": bool(e.get("ok")),
                 "detail": None,
             })
@@ -457,22 +528,30 @@ async function refreshCloses() {
       const ageMin = Math.max(0, Math.round((Date.now() - c.ts) / 60000));
       const ageStr = ageMin < 60 ? ageMin + 'm ago' : ageMin < 1440 ? Math.floor(ageMin/60) + 'h ago' : Math.floor(ageMin/1440) + 'd ago';
       const pnlColor = c.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
-      const sourceTag = c.source === 'dsl' ? '<span class="text-amber-400">dsl</span>' : '<span class="text-zinc-500">manual</span>';
-      const failedTag = c.executed ? '' : ' <span class="text-red-400 text-xs">[FAILED]</span>';
-      return `<div class="grid grid-cols-6 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs">
-        <div><span class="font-bold">${c.coin}</span> ${sourceTag}${failedTag}</div>
-        <div class="col-span-3 text-zinc-400 truncate" title="${c.reason}">${c.reason}</div>
-        <div class="${pnlColor}">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(2)}%</div>
-        <div class="text-zinc-500">${ageStr}</div>
+      const sideTag = c.side === 'long' ? '<span class="text-emerald-400 text-[10px] font-semibold">LONG</span>'
+                    : c.side === 'short' ? '<span class="text-red-400 text-[10px] font-semibold">SHORT</span>'
+                    : '<span class="text-zinc-500 text-[10px]">—</span>';
+      const levMark = c.leverage_estimated ? '~' : '';
+      const levTag = c.leverage > 1 ? `<span class="text-zinc-500 text-[10px]" title="${c.leverage_estimated ? 'leverage estimated from HL per-coin max — not recorded for this old trade' : ''}">${levMark}${c.leverage}x</span>` : '';
+      const sourceTag = c.source === 'dsl' ? '<span class="text-amber-400 text-[10px]">dsl</span>'
+                                           : '<span class="text-zinc-500 text-[10px]">manual</span>';
+      const failedTag = c.executed ? '' : ' <span class="text-red-400 text-[10px]">FAILED</span>';
+      const spotNote = c.spot_pct && c.leverage > 1
+        ? `<span class="text-zinc-600 text-[10px] ml-1">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
+      return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
+        <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${c.coin}</span>${sideTag} ${levTag}</div>
+        <div class="col-span-5 text-zinc-400 truncate" title="${c.reason}">${c.reason}${failedTag}</div>
+        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(2)}%${spotNote}</div>
+        <div class="col-span-1 text-zinc-500">${sourceTag}</div>
+        <div class="col-span-1 text-zinc-500 text-right">${ageStr}</div>
       </div>`;
     }).join('');
-    // Win-rate strip
-    const wins = cs.filter(c => c.pnl_pct > 0).length;
-    const total = cs.filter(c => c.source === 'dsl').length;
+    const dslOnly = cs.filter(c => c.source === 'dsl');
+    const wins = dslOnly.filter(c => c.pnl_pct > 0).length;
+    const total = dslOnly.length;
     if (total > 0) {
-      const winPct = (wins / total * 100).toFixed(0);
-      const avgPnl = (cs.filter(c => c.source==='dsl').reduce((a,c)=>a+c.pnl_pct,0) / total).toFixed(2);
-      document.getElementById('closes-stats').textContent = `${wins}/${total} winners · avg ${avgPnl >= 0 ? '+' : ''}${avgPnl}%`;
+      const avgPnl = (dslOnly.reduce((a,c)=>a+c.pnl_pct,0) / total).toFixed(1);
+      document.getElementById('closes-stats').textContent = `${wins}/${total} winners · avg ${avgPnl >= 0 ? '+' : ''}${avgPnl}% (leveraged)`;
     }
   } catch (e) {}
 }

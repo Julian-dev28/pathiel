@@ -64,8 +64,10 @@ class ExitVerdict:
     floor_price: Optional[float] = None
     peak_price: Optional[float] = None
     phase: str = ""  # "phase1" or "phase2"
-    unrealized_pct: float = 0.0
+    unrealized_pct: float = 0.0  # spot price-move %, not leveraged
     coin: str = ""
+    position_side: str = ""  # "long" or "short" (distinct from `phase`)
+    leverage: int = 1
 
 
 @dataclass
@@ -96,12 +98,14 @@ class DSLTracker:
     Must be called on every price tick (e.g., from the scan loop's WS mids).
     """
     def __init__(self, coin: str, side: str, entry_px: float,
-                 entry_time: float, policy: Optional[ExitPolicy] = None) -> None:
+                 entry_time: float, policy: Optional[ExitPolicy] = None,
+                 leverage: int = 1) -> None:
         self.coin = coin
         self.side = side  # "long" | "short"
         self.entry_px = entry_px
         self.entry_time = entry_time
         self.policy = policy or ExitPolicy()
+        self.leverage = int(leverage) if leverage else 1
 
         # State
         self.peak_px = entry_px
@@ -115,6 +119,11 @@ class DSLTracker:
         if self.is_long():
             return (mark_px - self.entry_px) / self.entry_px * 100
         return (self.entry_px - mark_px) / self.entry_px * 100
+
+    def _verdict(self, **kwargs: Any) -> ExitVerdict:
+        """ExitVerdict pre-filled with coin/side/leverage so callers don't repeat."""
+        return ExitVerdict(coin=self.coin, position_side=self.side,
+                           leverage=self.leverage, **kwargs)
 
     def _active_tier(self, mark_px: float) -> RetraceTier:
         """Find the highest active retrace tier based on current profit."""
@@ -143,7 +152,7 @@ class DSLTracker:
 
         # ── Hard timeout ──────────────────────────────────────────────
         if elapsed_min >= pol.hard_timeout_minutes:
-            return ExitVerdict(
+            return self._verdict(
                 exit=True, reason=f"hard_timeout ({elapsed_min:.0f}min)",
                 floor_price=None, peak_price=self.peak_px, phase="timeout",
                 unrealized_pct=upct,
@@ -158,7 +167,7 @@ class DSLTracker:
             
             # Max loss check
             if loss_pct >= pol.max_loss_pct:
-                return ExitVerdict(
+                return self._verdict(
                     exit=True, reason=f"max_loss ({loss_pct:.1f}% >= {pol.max_loss_pct}%)",
                     floor_price=self.entry_px * (1 - pol.max_loss_pct / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
@@ -178,7 +187,7 @@ class DSLTracker:
             loss_pct = (mark_px - self.entry_px) / self.entry_px * 100
             
             if loss_pct >= pol.max_loss_pct:
-                return ExitVerdict(
+                return self._verdict(
                     exit=True, reason=f"max_loss ({loss_pct:.1f}% >= {pol.max_loss_pct}%)",
                     floor_price=self.entry_px * (1 + pol.max_loss_pct / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
@@ -208,7 +217,7 @@ class DSLTracker:
         if breached:
             self.consecutive_breaches += 1
             if self.consecutive_breaches >= pol.consecutive_breaches_required:
-                return ExitVerdict(
+                return self._verdict(
                     exit=True,
                     reason=f"floor_breach ({self.consecutive_breaches}x consec, floor={floor:.2f})",
                     floor_price=floor, peak_price=self.peak_px,
@@ -218,7 +227,7 @@ class DSLTracker:
         else:
             self.consecutive_breaches = 0
 
-        return ExitVerdict(
+        return self._verdict(
             exit=False, reason="", floor_price=self._last_floor,
             peak_price=self.peak_px,
             phase="phase2" if self._unrealized_pct(mark_px) >= pol.protect_pct else "phase1",
@@ -253,6 +262,7 @@ def _tracker_to_dict(t: DSLTracker) -> Dict[str, Any]:
     return {
         "coin": t.coin,
         "side": t.side,
+        "leverage": t.leverage,
         "entry_px": t.entry_px,
         "entry_time": t.entry_time,
         "peak_px": t.peak_px,
@@ -274,7 +284,8 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         consecutive_breaches_required=pol_raw.get("consecutive_breaches_required", 1),
     )
     t = DSLTracker(d["coin"], d["side"], float(d["entry_px"]),
-                   float(d.get("entry_time") or time.time()), policy)
+                   float(d.get("entry_time") or time.time()), policy,
+                   leverage=int(d.get("leverage", 1) or 1))
     t.peak_px = float(d.get("peak_px", d["entry_px"]))
     t.consecutive_breaches = int(d.get("consecutive_breaches", 0))
     lf = d.get("last_floor")
@@ -332,13 +343,15 @@ def load_state(force: bool = False) -> None:
 
 def register_position(coin: str, side: str, entry_px: float,
                       entry_time: Optional[float] = None,
-                      policy: Optional[ExitPolicy] = None) -> DSLTracker:
+                      policy: Optional[ExitPolicy] = None,
+                      leverage: int = 1) -> DSLTracker:
     """Register a new position for DSL tracking."""
     key = f"{coin}_{side}"
-    tracker = DSLTracker(coin, side, entry_px, entry_time or time.time(), policy)
+    tracker = DSLTracker(coin, side, entry_px, entry_time or time.time(), policy,
+                         leverage=leverage)
     _active_positions[key] = tracker
     _save_state()
-    logger.info(f"[dsl] Registered {key} @ {entry_px}")
+    logger.info(f"[dsl] Registered {key} @ {entry_px} ({leverage}x)")
     return tracker
 
 
@@ -354,7 +367,8 @@ def deregister_position(coin: str, side: str) -> bool:
 
 
 def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
-                            policy: Optional[ExitPolicy] = None) -> None:
+                            policy: Optional[ExitPolicy] = None,
+                            default_leverage: int = 1) -> None:
     """Reconcile the tracker registry with the exchange's live position list.
 
     - On first call, loads any persisted trackers from disk.
@@ -381,10 +395,18 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         side = "long" if szi > 0 else "short"
         key = f"{coin}_{side}"
         live_keys.add(key)
+        # HL exposes per-position leverage; fall back to the synthesizer default
+        # when missing so an open position from before the leverage-tracking
+        # change still surfaces a sensible value.
+        pos_leverage = pos.get("leverage", {})
+        lev = int(pos_leverage.get("value", 0) or 0) if isinstance(pos_leverage, dict) else int(pos_leverage or 0)
+        if not lev:
+            lev = default_leverage
         if key not in _active_positions:
-            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), policy)
+            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), policy,
+                                                leverage=lev)
             added += 1
-            logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry}")
+            logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry} ({lev}x)")
 
     stale = [k for k in _active_positions if k not in live_keys]
     for k in stale:
@@ -411,7 +433,6 @@ def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:
                 continue
             if mark_px > 0:
                 verdict = tracker.check(mark_px)
-                verdict.coin = tracker.coin
                 if verdict.exit:
                     exits.append(verdict)
     return exits
