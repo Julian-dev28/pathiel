@@ -37,6 +37,11 @@ from hermes_trader.client.hl_client import fetch_account_state, resolve_user_add
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
+# Hyperliquid taker fee — 2.5bps per fill, paid on notional. We close with IOC
+# orders so all closes are taker. Round-trip cost on margin: 2 fills × 0.025% × leverage.
+HL_TAKER_FEE_PCT = 0.025
+HL_ROUND_TRIP_FILLS = 2
+
 # HL per-coin max leverage table, built lazily from one info.meta() call so the
 # closed-trades fallback can compute a sane historical leverage estimate
 # without spamming the API per row.
@@ -235,6 +240,10 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
             spot_pct = float(e.get("unrealized_pct", 0) or 0)
             leveraged_pct = (float(e["leveraged_pct"]) if e.get("leveraged_pct") is not None
                              else spot_pct * leverage)
+            # Subtract HL taker fees so the displayed number matches the user's
+            # actual realized PnL on Hyperliquid (which is net of fees).
+            fees_pct = HL_TAKER_FEE_PCT * HL_ROUND_TRIP_FILLS * leverage
+            net_pnl_pct = leveraged_pct - fees_pct
             out.append({
                 "ts": e.get("ts"),
                 "coin": coin,
@@ -243,7 +252,9 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
                 "leverage": leverage,
                 "leverage_estimated": not has_explicit_lev,
                 "reason": e.get("reason", ""),
-                "pnl_pct": leveraged_pct,
+                "pnl_pct": net_pnl_pct,
+                "pnl_pct_gross": leveraged_pct,
+                "fees_pct": fees_pct,
                 "spot_pct": spot_pct,
                 "executed": bool(e.get("executed")),
                 "detail": e.get("detail"),
@@ -537,11 +548,11 @@ async function refreshCloses() {
                                            : '<span class="text-zinc-500 text-[10px]">manual</span>';
       const failedTag = c.executed ? '' : ' <span class="text-red-400 text-[10px]">FAILED</span>';
       const spotNote = c.spot_pct && c.leverage > 1
-        ? `<span class="text-zinc-600 text-[10px] ml-1">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
+        ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot move × ${c.leverage}x = ${c.pnl_pct_gross.toFixed(2)}% gross; minus ${c.fees_pct.toFixed(2)}% taker fees = ${c.pnl_pct.toFixed(2)}% net">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
       return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
         <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${c.coin}</span>${sideTag} ${levTag}</div>
         <div class="col-span-5 text-zinc-400 truncate" title="${c.reason}">${c.reason}${failedTag}</div>
-        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(2)}%${spotNote}</div>
+        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%${spotNote}</div>
         <div class="col-span-1 text-zinc-500">${sourceTag}</div>
         <div class="col-span-1 text-zinc-500 text-right">${ageStr}</div>
       </div>`;

@@ -147,8 +147,10 @@ while True:
                     "side": ex.get("side"),
                     "leverage": lev,
                     "reason": ex["reason"],
-                    "unrealized_pct": round(ex["unrealized_pct"], 2),
-                    "leveraged_pct": round(lpct, 2),
+                    # 4dp keeps enough precision to multiply by leverage and
+                    # still round cleanly to HL's 1dp display.
+                    "unrealized_pct": round(ex["unrealized_pct"], 4),
+                    "leveraged_pct": round(lpct, 4),
                     "executed": bool(res.get("ok")),
                     "detail": res.get("order_id") or res.get("noop") or res.get("error"),
                 })
