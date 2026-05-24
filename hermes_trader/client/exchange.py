@@ -194,7 +194,13 @@ def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True) ->
 
 
 def _parse_order_result(result: Any, accept_resting: bool = False) -> Dict[str, Any]:
-    """Normalize a raw SDK order response into {ok, order_id?, error?}."""
+    """Normalize a raw SDK order response into {ok, order_id?, avg_px?, total_sz?, error?}.
+
+    For `filled` statuses we extract avgPx and totalSz too — downstream uses
+    these to compute realized PnL from the actual fill price rather than the
+    pre-trade mid (the two differ by spread + slippage, which compounds at
+    leverage).
+    """
     if not (isinstance(result, dict) and result.get("status") == "ok"):
         return {"ok": False, "error": str(result)}
     statuses = result.get("response", {}).get("data", {}).get("statuses", [])
@@ -203,7 +209,16 @@ def _parse_order_result(result: Any, accept_resting: bool = False) -> Dict[str, 
         if accept_resting and st.get("resting"):
             return {"ok": True, "order_id": str(st["resting"]["oid"])}
         if st.get("filled"):
-            return {"ok": True, "order_id": str(st["filled"]["oid"])}
+            f = st["filled"]
+            out: Dict[str, Any] = {"ok": True, "order_id": str(f.get("oid", ""))}
+            try:
+                if "avgPx" in f:
+                    out["avg_px"] = float(f["avgPx"])
+                if "totalSz" in f:
+                    out["total_sz"] = float(f["totalSz"])
+            except (TypeError, ValueError):
+                pass
+            return out
         if st.get("error"):
             return {"ok": False, "error": st["error"]}
     return {"ok": True}

@@ -284,7 +284,13 @@ def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
 
 
 def close_position_market(coin: str) -> Dict[str, Any]:
-    """Market-close any open perp position for `coin`. Deregisters the DSL tracker on success."""
+    """Market-close any open perp position for `coin`. Deregisters the DSL tracker on success.
+
+    Returns include `entry_px`, `fill_px`, and `realized_pnl_pct` (leveraged,
+    net of taker fees) whenever the close fills with a parseable avgPx — so the
+    trading loop can log the actual realized PnL instead of an estimate based
+    on the pre-trade mid.
+    """
     user = resolve_user_address()
     if not user:
         return {"ok": False, "coin": coin, "error": "no_user_address"}
@@ -303,6 +309,7 @@ def close_position_market(coin: str) -> Dict[str, Any]:
 
     try:
         szi = float(pos["position"].get("szi", "0") or 0)
+        entry_px = float(pos["position"].get("entryPx") or 0)
     except (TypeError, ValueError):
         return {"ok": False, "coin": coin, "error": "bad_szi"}
     if szi == 0:
@@ -311,11 +318,35 @@ def close_position_market(coin: str) -> Dict[str, Any]:
         return {"ok": True, "coin": coin, "noop": "zero_szi"}
 
     is_long = szi > 0
+    side = "long" if is_long else "short"
     mid_price = get_hl_price(coin)
     if mid_price <= 0:
         return {"ok": False, "coin": coin, "error": f"invalid_price_for_{coin}"}
 
+    # Look up tracker leverage before close so the realized PnL can be computed
+    # at the right multiplier even after deregister.
+    from hermes_trader.agents import dsl_exit
+    tracker = dsl_exit._active_positions.get(f"{coin}_{side}")
+    leverage = tracker.leverage if tracker else 1
+
     res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin)
+    out: Dict[str, Any] = {**res, "coin": coin, "side": side,
+                            "entry_px": entry_px, "leverage": leverage}
+
     if res.get("ok"):
-        deregister_position(coin, "long" if is_long else "short")
-    return {**res, "coin": coin, "side": "long" if is_long else "short"}
+        deregister_position(coin, side)
+        fill_px = res.get("avg_px")
+        if fill_px and entry_px > 0:
+            # Spot move from the perspective of the position: long earns when
+            # mark rises, short earns when mark falls.
+            if is_long:
+                spot_pct = (fill_px - entry_px) / entry_px * 100
+            else:
+                spot_pct = (entry_px - fill_px) / entry_px * 100
+            # 2 round-trip taker fills at 2.5bps × leverage
+            fees_pct = 0.025 * 2 * leverage
+            out["fill_px"] = fill_px
+            out["spot_pct"] = round(spot_pct, 4)
+            out["realized_pnl_pct"] = round(spot_pct * leverage - fees_pct, 4)
+            out["fees_pct"] = round(fees_pct, 4)
+    return out

@@ -237,13 +237,24 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
             side = e.get("side") or _find_open_side(coin, i) or "?"
             has_explicit_lev = e.get("leverage") is not None
             leverage = int(e["leverage"]) if has_explicit_lev else _estimate_leverage(coin)
-            spot_pct = float(e.get("unrealized_pct", 0) or 0)
-            leveraged_pct = (float(e["leveraged_pct"]) if e.get("leveraged_pct") is not None
-                             else spot_pct * leverage)
-            # Subtract HL taker fees so the displayed number matches the user's
-            # actual realized PnL on Hyperliquid (which is net of fees).
-            fees_pct = HL_TAKER_FEE_PCT * HL_ROUND_TRIP_FILLS * leverage
-            net_pnl_pct = leveraged_pct - fees_pct
+
+            # If the close logged an actual fill price, use the realized PnL —
+            # it matches HL exactly. Otherwise estimate from the DSL trigger
+            # mark and subtract round-trip taker fees.
+            if e.get("realized_pnl_pct") is not None:
+                spot_pct = float(e.get("realized_spot_pct") or 0)
+                net_pnl_pct = float(e["realized_pnl_pct"])
+                gross_pnl_pct = spot_pct * leverage
+                fees_pct = float(e.get("fees_pct") or (HL_TAKER_FEE_PCT * HL_ROUND_TRIP_FILLS * leverage))
+                pnl_source = "fill"
+            else:
+                spot_pct = float(e.get("unrealized_pct", 0) or 0)
+                gross_pnl_pct = (float(e["leveraged_pct"]) if e.get("leveraged_pct") is not None
+                                 else spot_pct * leverage)
+                fees_pct = HL_TAKER_FEE_PCT * HL_ROUND_TRIP_FILLS * leverage
+                net_pnl_pct = gross_pnl_pct - fees_pct
+                pnl_source = "estimated"
+
             out.append({
                 "ts": e.get("ts"),
                 "coin": coin,
@@ -253,9 +264,12 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
                 "leverage_estimated": not has_explicit_lev,
                 "reason": e.get("reason", ""),
                 "pnl_pct": net_pnl_pct,
-                "pnl_pct_gross": leveraged_pct,
+                "pnl_pct_gross": gross_pnl_pct,
+                "pnl_source": pnl_source,  # "fill" = exact, "estimated" = pre-trade mid × lev − fees
                 "fees_pct": fees_pct,
                 "spot_pct": spot_pct,
+                "fill_px": e.get("fill_px"),
+                "entry_px": e.get("entry_px"),
                 "executed": bool(e.get("executed")),
                 "detail": e.get("detail"),
             })
@@ -547,12 +561,19 @@ async function refreshCloses() {
       const sourceTag = c.source === 'dsl' ? '<span class="text-amber-400 text-[10px]">dsl</span>'
                                            : '<span class="text-zinc-500 text-[10px]">manual</span>';
       const failedTag = c.executed ? '' : ' <span class="text-red-400 text-[10px]">FAILED</span>';
+      const pnlExactMark = c.pnl_source === 'fill' ? '' : '~';
+      const tipLines = [
+        `spot move × ${c.leverage}x = ${c.pnl_pct_gross.toFixed(2)}% gross`,
+        `minus ${c.fees_pct.toFixed(2)}% taker fees`,
+        `= ${c.pnl_pct.toFixed(2)}% net`,
+        c.pnl_source === 'fill' ? `realized at fill ${c.fill_px} (entry ${c.entry_px})` : 'estimated from DSL trigger mark (no fill captured)',
+      ].join(' · ');
       const spotNote = c.spot_pct && c.leverage > 1
-        ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot move × ${c.leverage}x = ${c.pnl_pct_gross.toFixed(2)}% gross; minus ${c.fees_pct.toFixed(2)}% taker fees = ${c.pnl_pct.toFixed(2)}% net">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
+        ? `<span class="text-zinc-600 text-[10px] ml-1" title="${tipLines}">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
       return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
         <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${c.coin}</span>${sideTag} ${levTag}</div>
         <div class="col-span-5 text-zinc-400 truncate" title="${c.reason}">${c.reason}${failedTag}</div>
-        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%${spotNote}</div>
+        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${pnlExactMark}${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%${spotNote}</div>
         <div class="col-span-1 text-zinc-500">${sourceTag}</div>
         <div class="col-span-1 text-zinc-500 text-right">${ageStr}</div>
       </div>`;

@@ -147,6 +147,25 @@ def test_parse_order_result():
     assert _parse_order_result("boom")["ok"] is False
 
 
+def test_parse_order_result_extracts_avg_px_and_total_sz():
+    """Realized-PnL computation depends on these fields being threaded through
+    from the SDK response — regression guard against the parser dropping them."""
+    from hermes_trader.client.exchange import _parse_order_result
+    filled = {"status": "ok", "response": {"data": {"statuses": [
+        {"filled": {"oid": 99, "avgPx": "0.5435", "totalSz": "100.0"}}
+    ]}}}
+    out = _parse_order_result(filled)
+    assert out["ok"] is True and out["order_id"] == "99"
+    assert out["avg_px"] == 0.5435 and out["total_sz"] == 100.0
+
+    # Garbage avgPx should be tolerated, not raise — order still parses ok.
+    garbage = {"status": "ok", "response": {"data": {"statuses": [
+        {"filled": {"oid": 1, "avgPx": "nope"}}
+    ]}}}
+    g = _parse_order_result(garbage)
+    assert g["ok"] is True and "avg_px" not in g
+
+
 # ── research verdict parsing (camelCase fallback kept intentionally) ─────
 def test_parse_verdict_json_camelcase():
     from hermes_trader.agents.research import parse_verdict
@@ -312,6 +331,41 @@ def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     assert res["ok"] is True
     assert res["side"] == "long"
     assert "ETH_long" not in dsl_exit._active_positions
+
+
+def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_path):
+    """When place_hl_order returns avg_px, the close result carries an exact
+    realized PnL (leveraged × spot move from fill, minus taker fees) — this is
+    what the dashboard surfaces to match HL's display."""
+    from hermes_trader.agents import dsl_exit, executor
+    dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
+    # Long ARB 10x, entry 0.11684; close fills at 0.10522 → +9.945% spot,
+    # +99.45% gross, − (2 × 0.025 × 10 = 0.5%) fees = +98.95% net realized.
+    # We register as SHORT here since the screenshot showed ARB SHORT 10x.
+    dsl_exit.register_position("ARB", "short", 0.11684, leverage=10)
+
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u: {
+        "asset_positions": [{"position": {"coin": "ARB", "szi": "-1000", "entryPx": "0.11684"}}],
+    })
+    monkeypatch.setattr(executor, "get_hl_price", lambda c: 0.10522)
+    monkeypatch.setattr(executor, "place_hl_order",
+                        lambda is_buy, size, mid_price, coin: {
+                            "ok": True, "order_id": "999",
+                            "avg_px": 0.10522, "total_sz": 1000.0,
+                        })
+
+    res = executor.close_position_market("ARB")
+    assert res["ok"] is True
+    assert res["side"] == "short"
+    assert res["fill_px"] == 0.10522
+    assert res["entry_px"] == 0.11684
+    assert res["leverage"] == 10
+    # Short profits when fill < entry: (0.11684 - 0.10522) / 0.11684 ≈ 9.9452%
+    assert abs(res["spot_pct"] - 9.9452) < 0.01
+    # Realized = spot × 10 − (0.025 × 2 × 10) = 99.45 − 0.5 = 98.95
+    assert abs(res["realized_pnl_pct"] - 98.95) < 0.05
+    assert "ARB_short" not in dsl_exit._active_positions
 
 
 # ── resolve_user_address (DRY-2 helper) ─────────────────────────────────

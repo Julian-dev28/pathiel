@@ -141,19 +141,28 @@ while True:
                 logger.info(f"[dsl] Closing {coin} {ex.get('side','?')} ({lev}x): "
                             f"{ex['reason']} (margin {lpct:+.2f}% · spot {ex['unrealized_pct']:+.2f}%)")
                 res = close_position_market(coin)
-                log_event({
+                # The close response carries authoritative realized PnL when
+                # the order filled with a parseable avgPx — prefer it over the
+                # tick-time estimate, which is gross of fees and off by the
+                # fill slippage.
+                evt = {
                     "event": "dsl_exit",
                     "coin": coin,
                     "side": ex.get("side"),
                     "leverage": lev,
                     "reason": ex["reason"],
-                    # 4dp keeps enough precision to multiply by leverage and
-                    # still round cleanly to HL's 1dp display.
                     "unrealized_pct": round(ex["unrealized_pct"], 4),
                     "leveraged_pct": round(lpct, 4),
                     "executed": bool(res.get("ok")),
                     "detail": res.get("order_id") or res.get("noop") or res.get("error"),
-                })
+                }
+                if res.get("realized_pnl_pct") is not None:
+                    evt["fill_px"] = res.get("fill_px")
+                    evt["entry_px"] = res.get("entry_px")
+                    evt["realized_spot_pct"] = res.get("spot_pct")
+                    evt["realized_pnl_pct"] = res.get("realized_pnl_pct")
+                    evt["fees_pct"] = res.get("fees_pct")
+                log_event(evt)
         except Exception as e:
             logger.error(f"[dsl] monitor pass failed: {e}")
             log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
