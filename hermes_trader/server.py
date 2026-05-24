@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from hermes_trader import __version__, session_log
+from hermes_trader import __version__, dashboard, session_log
 from hermes_trader.agents.config_store import read_agent_config, write_agent_config
 from hermes_trader.agents.executor import maybe_execute
 from hermes_trader.agents.memory import memory
@@ -563,14 +563,30 @@ async def cancel_order(request: Request):
 
 # ── Root ──────────────────────────────────────────────────────────────────────
 
-@app.get("/")
-async def root():
+@app.get("/api/health")
+async def health():
     return {"service": "Hermes-Trader", "version": __version__, "status": "running"}
+
+
+# Dashboard, SSE feed, and operator console all live in hermes_trader.dashboard.
+# Mounting after the JSON API routes so the dashboard's "/" doesn't shadow them.
+dashboard.register_routes(app)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # Load .env.local (CWD-relative, mirrors the trading loop + MCP server) so
+    # the wallet/HL credentials are available when the dashboard reads positions.
+    _env_path = ".env.local"
+    if os.path.exists(_env_path):
+        with open(_env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, _, v = line.partition("=")
+                    os.environ.setdefault(k.strip(), v.strip())
+
     import uvicorn
     port = int(os.environ.get("HERMES_PORT", 8000))
     logger.info(f"Starting Hermes server on port {port}")

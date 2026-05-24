@@ -210,25 +210,21 @@ def test_cfg_camelcase_tolerance():
 
 
 # ── DSL exit engine (incl. the ExitVerdict.coin field added by cleanup) ──
-def test_dsl_max_loss_exit_populates_coin():
-    from hermes_trader.agents import dsl_exit
+def test_dsl_max_loss_exit_populates_coin(monkeypatch, tmp_path):
     from hermes_trader.agents.executor import monitor_exits
-    dsl_exit._active_positions.clear()
+    dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("ETH", "long", 100.0)
     verdicts = dsl_exit.check_all_positions({"ETH": 96.0})  # 4% loss > 2.5% cap
     assert len(verdicts) == 1 and verdicts[0].exit is True
     assert verdicts[0].coin == "ETH"          # field the cleanup added
     exits = monitor_exits({"ETH": 96.0})
     assert exits and exits[0]["coin"] == "ETH"
-    dsl_exit._active_positions.clear()
 
 
-def test_dsl_no_exit_when_flat():
-    from hermes_trader.agents import dsl_exit
-    dsl_exit._active_positions.clear()
+def test_dsl_no_exit_when_flat(monkeypatch, tmp_path):
+    dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("SOL", "long", 100.0)
     assert dsl_exit.check_all_positions({"SOL": 100.5}) == []
-    dsl_exit._active_positions.clear()
 
 
 def _isolate_dsl_state(monkeypatch, tmp_path):

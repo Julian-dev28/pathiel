@@ -298,10 +298,16 @@ def _save_state() -> None:
         logger.warning(f"[dsl] failed to persist state: {e}")
 
 
-def load_state() -> None:
-    """Load persisted trackers into `_active_positions`. Idempotent."""
+def load_state(force: bool = False) -> None:
+    """Load persisted trackers into `_active_positions`.
+
+    Idempotent by default (skips after the first call in a process). Pass
+    `force=True` from read-only consumers like the web dashboard that need to
+    pick up the latest disk state on every request — the trading loop is in a
+    different process and writes through the same file.
+    """
     global _loaded_from_disk
-    if _loaded_from_disk:
+    if _loaded_from_disk and not force:
         return
     _loaded_from_disk = True
     try:
@@ -312,13 +318,16 @@ def load_state() -> None:
     except (OSError, json.JSONDecodeError) as e:
         logger.warning(f"[dsl] state file unreadable, ignoring: {e}")
         return
+    if force:
+        _active_positions.clear()
     for d in payload.get("positions", []):
         try:
             t = _tracker_from_dict(d)
             _active_positions[f"{t.coin}_{t.side}"] = t
         except (KeyError, ValueError, TypeError) as e:
             logger.warning(f"[dsl] skipping malformed tracker entry: {e}")
-    logger.info(f"[dsl] rehydrated {len(_active_positions)} tracker(s) from disk")
+    if not force:
+        logger.info(f"[dsl] rehydrated {len(_active_positions)} tracker(s) from disk")
 
 
 def register_position(coin: str, side: str, entry_px: float,
