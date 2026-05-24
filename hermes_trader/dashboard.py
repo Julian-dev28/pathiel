@@ -361,7 +361,7 @@ _PUBLIC_HTML = """<!doctype html>
       </div>
     </div>
     <div class="relative">
-      <canvas id="equity-chart" height="80"></canvas>
+      <canvas id="equity-chart" height="110"></canvas>
       <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
         no heartbeats yet in this window
       </div>
@@ -482,6 +482,14 @@ let chart;
 let currentRange = 86400;
 const RANGE_UNIT = {86400: 'hour', 604800: 'day', 2592000: 'day'};
 
+function makeGradient(ctx, area) {
+  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+  g.addColorStop(0,   'rgba(16, 185, 129, 0.28)');
+  g.addColorStop(0.6, 'rgba(16, 185, 129, 0.06)');
+  g.addColorStop(1,   'rgba(16, 185, 129, 0)');
+  return g;
+}
+
 async function refreshChart(rangeSec) {
   currentRange = rangeSec;
   try {
@@ -494,14 +502,51 @@ async function refreshChart(rangeSec) {
       const ctx = document.getElementById('equity-chart').getContext('2d');
       chart = new Chart(ctx, {
         type: 'line',
-        data: { datasets: [{ data, borderColor: '#10b981', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 }] },
+        data: { datasets: [{
+          data,
+          borderColor: '#34d399',
+          borderWidth: 1.75,
+          borderJoinStyle: 'round',
+          borderCapStyle: 'round',
+          cubicInterpolationMode: 'monotone',
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: '#34d399',
+          pointHoverBorderColor: '#0a0a0a',
+          pointHoverBorderWidth: 2,
+          fill: true,
+          backgroundColor: (c) => {
+            const {ctx, chartArea} = c.chart;
+            if (!chartArea) return 'rgba(16,185,129,0.1)';
+            return makeGradient(ctx, chartArea);
+          },
+        }] },
         options: {
           responsive: true, animation: false, parsing: false,
-          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            decimation: { enabled: true, algorithm: 'lttb', samples: 80, threshold: 100 },
+            tooltip: {
+              backgroundColor: '#18181b', borderColor: '#27272a', borderWidth: 1,
+              titleColor: '#a1a1aa', bodyColor: '#e5e5e5', padding: 8, displayColors: false,
+              callbacks: {
+                title: (items) => new Date(items[0].parsed.x).toLocaleString(),
+                label: (item) => '$' + item.parsed.y.toFixed(2),
+              }
+            }
+          },
           scales: {
-            x: { type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
-                 ticks: { color: '#71717a', maxTicksLimit: 6 }, grid: { color: '#1f1f1f' } },
-            y: { ticks: { color: '#71717a', callback: v => '$' + v }, grid: { color: '#1f1f1f' } },
+            x: {
+              type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
+              ticks: { color: '#52525b', maxTicksLimit: 6, font: { size: 10 } },
+              grid: { display: false }, border: { display: false },
+            },
+            y: {
+              ticks: { color: '#52525b', callback: v => '$' + v, font: { size: 10 }, maxTicksLimit: 6 },
+              grid: { color: '#18181b', drawTicks: false }, border: { display: false },
+            },
           }
         }
       });
