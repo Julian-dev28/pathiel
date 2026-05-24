@@ -162,6 +162,41 @@ def _positions_payload() -> List[Dict[str, Any]]:
     return rows
 
 
+def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
+    """Walk the session log for close events (dsl_exit, close_position).
+
+    Returns newest-first. unrealized_pct on a dsl_exit event is the realized
+    PnL at the close moment (the position closes at that mark price), so it
+    doubles as realized PnL %.
+    """
+    out: List[Dict[str, Any]] = []
+    for e in reversed(_read_log_lines()):
+        ev = e.get("event")
+        if ev == "dsl_exit":
+            out.append({
+                "ts": e.get("ts"),
+                "coin": e.get("coin"),
+                "source": "dsl",
+                "reason": e.get("reason", ""),
+                "pnl_pct": float(e.get("unrealized_pct", 0) or 0),
+                "executed": bool(e.get("executed")),
+                "detail": e.get("detail"),
+            })
+        elif ev == "close_position":
+            out.append({
+                "ts": e.get("ts"),
+                "coin": e.get("coin"),
+                "source": "manual",
+                "reason": "manual_close",
+                "pnl_pct": 0.0,  # we don't capture pnl on manual closes today
+                "executed": bool(e.get("ok")),
+                "detail": None,
+            })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
     """Series of (ts, equity) points from loop_heartbeat events within `range_s`."""
     cutoff = int(time.time() * 1000) - range_s * 1000
@@ -246,6 +281,7 @@ _PUBLIC_HTML = """<!doctype html>
 <title>hermes-trader · live</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
   .feed-row{font-size:12px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -300,6 +336,21 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </section>
 
+  <section class="bg-zinc-900 rounded-lg p-4 mb-6 text-xs leading-relaxed text-zinc-400">
+    <div class="text-zinc-500 mb-2 uppercase tracking-wider text-[10px]">how it works</div>
+    <p>
+      Autonomous trading agent on
+      <a class="text-emerald-400 hover:underline" href="https://hyperliquid.xyz">Hyperliquid</a>
+      perpetuals — crypto, equities, commodities.
+      Every minute the engine scans 60+ markets for statistical triggers (volume
+      spikes, breakouts, momentum bursts), runs a free TA filter, and only spends
+      AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly,
+      and exit through a two-phase dynamic stop-loss (loss protection → profit
+      locking with one-way trailing floor).
+      <span class="text-zinc-500">Live on one wallet. Not financial advice.</span>
+    </p>
+  </section>
+
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
       <div class="text-xs text-zinc-500">equity curve</div>
@@ -309,13 +360,28 @@ _PUBLIC_HTML = """<!doctype html>
         <button data-range="2592000" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">30d</button>
       </div>
     </div>
-    <canvas id="equity-chart" height="80"></canvas>
+    <div class="relative">
+      <canvas id="equity-chart" height="80"></canvas>
+      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
+        no heartbeats yet in this window
+      </div>
+    </div>
   </section>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="text-xs text-zinc-500 mb-2">open positions</div>
     <div id="positions" class="text-sm">
       <div class="text-zinc-500 text-xs">none</div>
+    </div>
+  </section>
+
+  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-xs text-zinc-500">recent closes</div>
+      <div class="text-xs text-zinc-600" id="closes-stats"></div>
+    </div>
+    <div id="closes" class="text-sm">
+      <div class="text-zinc-500 text-xs">none yet</div>
     </div>
   </section>
 
@@ -380,37 +446,78 @@ async function refreshPositions() {
   } catch (e) {}
 }
 
+// ── Closed trades ──
+async function refreshCloses() {
+  try {
+    const r = await fetch('/api/dashboard/closed-trades?limit=20');
+    const cs = await r.json();
+    const el = document.getElementById('closes');
+    if (!cs.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none yet</div>'; return; }
+    el.innerHTML = cs.map(c => {
+      const ageMin = Math.max(0, Math.round((Date.now() - c.ts) / 60000));
+      const ageStr = ageMin < 60 ? ageMin + 'm ago' : ageMin < 1440 ? Math.floor(ageMin/60) + 'h ago' : Math.floor(ageMin/1440) + 'd ago';
+      const pnlColor = c.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
+      const sourceTag = c.source === 'dsl' ? '<span class="text-amber-400">dsl</span>' : '<span class="text-zinc-500">manual</span>';
+      const failedTag = c.executed ? '' : ' <span class="text-red-400 text-xs">[FAILED]</span>';
+      return `<div class="grid grid-cols-6 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs">
+        <div><span class="font-bold">${c.coin}</span> ${sourceTag}${failedTag}</div>
+        <div class="col-span-3 text-zinc-400 truncate" title="${c.reason}">${c.reason}</div>
+        <div class="${pnlColor}">${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(2)}%</div>
+        <div class="text-zinc-500">${ageStr}</div>
+      </div>`;
+    }).join('');
+    // Win-rate strip
+    const wins = cs.filter(c => c.pnl_pct > 0).length;
+    const total = cs.filter(c => c.source === 'dsl').length;
+    if (total > 0) {
+      const winPct = (wins / total * 100).toFixed(0);
+      const avgPnl = (cs.filter(c => c.source==='dsl').reduce((a,c)=>a+c.pnl_pct,0) / total).toFixed(2);
+      document.getElementById('closes-stats').textContent = `${wins}/${total} winners · avg ${avgPnl >= 0 ? '+' : ''}${avgPnl}%`;
+    }
+  } catch (e) {}
+}
+
 // ── Equity curve ──
 let chart;
+let currentRange = 86400;
+const RANGE_UNIT = {86400: 'hour', 604800: 'day', 2592000: 'day'};
+
 async function refreshChart(rangeSec) {
+  currentRange = rangeSec;
   try {
     const r = await fetch('/api/dashboard/equity-curve?range_s=' + rangeSec);
     const series = await r.json();
-    const labels = series.map(p => new Date(p.ts));
-    const data = series.map(p => p.equity);
+    const data = series.map(p => ({x: p.ts, y: p.equity}));
+    const empty = document.getElementById('equity-empty');
+    empty.classList.toggle('hidden', data.length > 0);
     if (!chart) {
       const ctx = document.getElementById('equity-chart').getContext('2d');
       chart = new Chart(ctx, {
         type: 'line',
-        data: { labels, datasets: [{ data, borderColor: '#10b981', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 }] },
+        data: { datasets: [{ data, borderColor: '#10b981', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 }] },
         options: {
-          responsive: true, animation: false,
-          plugins: { legend: { display: false } },
+          responsive: true, animation: false, parsing: false,
+          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
           scales: {
-            x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#71717a', maxTicksLimit: 6 }, grid: { color: '#1f1f1f' } },
+            x: { type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
+                 ticks: { color: '#71717a', maxTicksLimit: 6 }, grid: { color: '#1f1f1f' } },
             y: { ticks: { color: '#71717a', callback: v => '$' + v }, grid: { color: '#1f1f1f' } },
           }
         }
       });
     } else {
-      chart.data.labels = labels;
       chart.data.datasets[0].data = data;
+      chart.options.scales.x.time.unit = RANGE_UNIT[rangeSec] || 'hour';
       chart.update('none');
     }
-  } catch (e) {}
+  } catch (e) { console.error('chart error', e); }
 }
 document.querySelectorAll('.range-btn').forEach(b => {
-  b.addEventListener('click', () => refreshChart(parseInt(b.dataset.range)));
+  b.addEventListener('click', () => {
+    refreshChart(parseInt(b.dataset.range));
+    document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('bg-emerald-700'));
+    b.classList.add('bg-emerald-700');
+  });
 });
 
 // ── Live feed (SSE) ──
@@ -466,10 +573,11 @@ es.onmessage = (m) => {
 };
 
 // ── kickoff + polling ──
-refreshSummary(); refreshPositions(); refreshChart(86400);
+refreshSummary(); refreshPositions(); refreshCloses(); refreshChart(86400);
 setInterval(refreshSummary, 5000);
 setInterval(refreshPositions, 15000);
-setInterval(() => refreshChart(86400), 60000);
+setInterval(refreshCloses, 20000);
+setInterval(() => refreshChart(currentRange), 60000);
 </script>
 </body>
 </html>
@@ -603,6 +711,10 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/dashboard/equity-curve")
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
         return JSONResponse(_equity_curve_payload(range_s))
+
+    @app.get("/api/dashboard/closed-trades")
+    async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
+        return JSONResponse(_closed_trades_payload(limit))
 
     @app.get("/api/feed/stream")
     async def feed_stream() -> StreamingResponse:
