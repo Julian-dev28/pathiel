@@ -720,7 +720,7 @@ function renderEvent(e) {
       ? scored.slice(0, 6).map(c => `${c.coin}(${c.score})`).join(', ') + (scored.length > 6 ? ` (+${scored.length-6})` : '')
       : ((e.coins || []).slice(0, 6).join(', ') + (e.coins?.length > 6 ? ` (+${e.coins.length-6})` : ''));
     text = `scan       ${e.triggers||0} triggers${coinsStr ? ' — ' + coinsStr : ''}`;
-    if (scored.length) tooltip = scored.map(c => `${c.coin}: score ${c.score}` + (c.triggers?.length ? ` [${c.triggers.join(', ')}]` : '')).join('\n');
+    if (scored.length) tooltip = scored.map(c => `${c.coin}: score ${c.score}` + (c.triggers?.length ? ` [${c.triggers.join(', ')}]` : '')).join('\\n');
   } else if (ev === 'ta_skip') {
     glyph = '✗'; cls = 'scan';
     const scoreNote = e.score != null ? ` ta=${e.score}` : '';
@@ -746,7 +746,7 @@ function renderEvent(e) {
     } else {
       const blocked = Array.isArray(e.blocked_by) ? e.blocked_by.join(' · ') : (e.blocked_by || e.detail || '');
       text = `execute    ${e.coin} ${e.side || '?'}  BLOCKED: ${blocked}`;
-      if (Array.isArray(e.blocked_by) && e.blocked_by.length > 1) tooltip = e.blocked_by.join('\n');
+      if (Array.isArray(e.blocked_by) && e.blocked_by.length > 1) tooltip = e.blocked_by.join('\\n');
     }
   } else if (ev === 'dsl_exit') {
     glyph = '⏹'; cls = 'dsl_exit';
@@ -900,16 +900,21 @@ setInterval(loadPositions, 10000);
 def register_routes(app: FastAPI) -> None:
     """Mount dashboard + SSE + operator routes onto an existing FastAPI app."""
 
+    # no-store on both dashboards so a server restart isn't masked by a cached
+    # HTML shell that pre-dates the new JS. The JSON endpoints below are fine
+    # to cache for their poll interval.
+    _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
     @app.get("/", response_class=HTMLResponse)
     async def public_dashboard() -> HTMLResponse:
-        return HTMLResponse(content=_PUBLIC_HTML)
+        return HTMLResponse(content=_PUBLIC_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/operator", response_class=HTMLResponse)
     async def operator_console() -> HTMLResponse:
         # No token gate on the HTML itself — the page is a shell that calls
         # token-gated APIs. Without a valid ?token=… the AJAX calls 401 and the
         # page shows "loading…" with no data. Cheap defense, no auth library.
-        return HTMLResponse(content=_OPERATOR_HTML)
+        return HTMLResponse(content=_OPERATOR_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:
