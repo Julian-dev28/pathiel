@@ -391,11 +391,32 @@ _PUBLIC_HTML = """<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5;image-rendering:pixelated}
+  /* Pixel-font headings only — body text stays readable mono. */
+  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
+  /* Chunky pixel-card: 2px border + hard 4px offset shadow, no rounded corners. */
+  .pixel-card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10;border-radius:0}
+  .pixel-card.accent{border-color:#34d399;box-shadow:4px 4px 0 #064e3b}
+  .pixel-btn{border:2px solid currentColor;box-shadow:2px 2px 0 #18181b;border-radius:0;image-rendering:pixelated}
+  .pixel-btn:active{transform:translate(2px,2px);box-shadow:none}
+  /* LCD-style title strip */
+  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
+  /* Agent pet — bounces gently */
+  .pet{font-size:28px;display:inline-block;animation:pet-bounce 1.4s ease-in-out infinite;filter:drop-shadow(2px 2px 0 #064e3b)}
+  @keyframes pet-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  .pet.shake{animation:pet-shake 0.4s linear infinite}
+  @keyframes pet-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+  .pet.sleep{animation:pet-sleep 3s ease-in-out infinite;filter:none;opacity:.7}
+  @keyframes pet-sleep{0%,100%{transform:scale(1)}50%{transform:scale(0.95)}}
+  /* Pixel "mood bar" — chunky blocks */
+  .mood-bar{font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:2px;color:#34d399}
   .feed-row{font-size:12px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .feed-row.scan{color:#9ca3af}
   .feed-row.research{color:#a5b4fc}
@@ -404,22 +425,28 @@ _PUBLIC_HTML = """<!doctype html>
   .feed-row.error{color:#f87171}
   .feed-row.heartbeat{color:#71717a}
   .feed-row.dsl_exit{color:#fbbf24}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:600}
+  /* Status pill — pixel-block style with sharp corners */
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:10px;font-weight:600;font-family:'Press Start 2P',monospace;border:2px solid currentColor;border-radius:0;letter-spacing:.05em}
   .pill.scanning{background:#064e3b;color:#6ee7b7}
   .pill.stale{background:#451a03;color:#fbbf24}
   .pill.offline{background:#450a0a;color:#fca5a5}
   .num{font-variant-numeric:tabular-nums}
   .blink{animation:blink 1.6s ease-in-out infinite}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+  /* Override Tailwind's rounded-lg on existing sections to keep pixel feel */
+  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
 </style>
 </head>
 <body class="min-h-screen">
 <div class="max-w-5xl mx-auto px-4 py-6">
 
-  <header class="flex items-center justify-between mb-6">
-    <div class="flex items-baseline gap-3">
-      <span class="text-lg font-bold tracking-tight">hermes-trader</span>
-      <span class="text-xs text-zinc-500">autonomous · hyperliquid</span>
+  <header class="flex items-center justify-between mb-6 gap-3 flex-wrap">
+    <div class="flex items-center gap-3">
+      <span id="pet" class="pet" title="agent mood — reacts to status + PnL">🤖</span>
+      <div class="flex flex-col">
+        <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER</span>
+        <span class="text-[10px] text-zinc-500 mt-1 pixel">AUTONOMOUS · HYPERLIQUID</span>
+      </div>
     </div>
     <div class="flex items-center gap-2 text-xs">
       <select id="ccy-sel" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 focus:outline-none cursor-pointer">
@@ -458,22 +485,22 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500" data-i18n="equity">equity</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity">equity</div>
       <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500" data-i18n="today">today</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="today">today</div>
       <div class="text-2xl font-bold num" id="kpi-pnl">$0.00</div>
       <div class="text-xs num" id="kpi-pnl-pct">—</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500" data-i18n="open_positions">open positions</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="open_positions">open positions</div>
       <div class="text-2xl font-bold num" id="kpi-open">0</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500" data-i18n="last_tick">last tick</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="last_tick">last tick</div>
       <div class="text-2xl font-bold num" id="kpi-tick">—</div>
-      <div class="text-xs text-zinc-500" id="kpi-tick-detail" data-i18n="no_scan_yet">no scan yet</div>
+      <div class="text-[10px] text-zinc-500 pixel" id="kpi-tick-detail" data-i18n="no_scan_yet">no scan yet</div>
     </div>
   </section>
 
@@ -494,7 +521,7 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500" data-i18n="equity_curve">equity curve</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity_curve">equity curve</div>
       <div class="flex gap-1 text-xs">
         <button data-range="86400" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">24h</button>
         <button data-range="604800" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">7d</button>
@@ -511,7 +538,7 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500" data-i18n="open_positions">open positions</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="open_positions">open positions</div>
       <div class="flex gap-1 text-[10px]">
         <button data-sort="default" data-i18n="default" class="pos-sort-btn px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">default</button>
         <button data-sort="pnl_desc" class="pos-sort-btn px-2 py-0.5 rounded bg-emerald-700">PnL ↓</button>
@@ -525,7 +552,7 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500" data-i18n="recent_closes">recent closes</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="recent_closes">recent closes</div>
       <div class="text-xs text-zinc-600" id="closes-stats"></div>
     </div>
     <div id="closes" class="text-sm">
@@ -535,13 +562,13 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="bg-zinc-900 rounded-lg p-4">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500" data-i18n="live_activity">live activity</div>
+      <div class="text-[10px] text-zinc-500 pixel" data-i18n="live_activity">live activity</div>
       <span class="text-xs text-emerald-400 blink" data-i18n="following">▶ following</span>
     </div>
     <div id="feed" class="space-y-0.5 max-h-96 overflow-y-auto"></div>
   </section>
 
-  <footer class="text-xs text-zinc-600 mt-6 text-center" data-i18n="footer">
+  <footer class="text-[10px] text-zinc-600 mt-6 text-center pixel" data-i18n="footer">
     one wallet · live · not financial advice
   </footer>
 </div>
@@ -610,6 +637,28 @@ async function loadRates() {
 }
 
 // ── KPIs ──
+// Agent-pet mood: status sets the base, then PnL nudges it. Big winners → 🤑,
+// big losers → 😱. The pet element gets a CSS modifier class for animation
+// (shake on executing, sleep on offline/stale, default gentle bounce otherwise).
+function updatePet(status, dailyPnlPct) {
+  const pet = document.getElementById('pet');
+  if (!pet) return;
+  let face = '🤖', mood = '';
+  if (status === 'offline') { face = '💤'; mood = 'sleep'; }
+  else if (status === 'stale') { face = '😴'; mood = 'sleep'; }
+  else if (status === 'executing') { face = '⚡'; mood = 'shake'; }
+  else if (status === 'scanning') { face = '👀'; }
+  // PnL overrides for strong signals
+  if (status !== 'offline' && status !== 'stale') {
+    if (dailyPnlPct >= 5) face = '🤑';
+    else if (dailyPnlPct <= -5) face = '😱';
+    else if (dailyPnlPct >= 1.5) face = '😎';
+    else if (dailyPnlPct <= -1.5) face = '😰';
+  }
+  pet.textContent = face;
+  pet.className = 'pet' + (mood ? ' ' + mood : '');
+}
+
 async function refreshSummary() {
   try {
     const r = await fetch('/api/dashboard/summary');
@@ -625,6 +674,7 @@ async function refreshSummary() {
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
+    updatePet(s.status, s.daily_pnl_pct);
   } catch (e) {}
 }
 
