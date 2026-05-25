@@ -435,10 +435,45 @@ _PUBLIC_HTML = """<!doctype html>
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
   /* Override Tailwind's rounded-lg on existing sections to keep pixel feel */
   section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
+  /* ── Matrix-rain right sidebar ── */
+  .matrix-pane{
+    background:linear-gradient(180deg,#02110a 0%,#000805 100%);
+    border:2px solid #047857;
+    box-shadow:4px 4px 0 #022c1e, inset 0 0 24px rgba(52,211,153,0.08);
+    border-radius:0;
+    position:relative;overflow:hidden;
+  }
+  .matrix-pane::before{
+    /* scanline overlay — barely visible, sells the CRT vibe */
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,0.18) 3px,rgba(0,0,0,0) 4px);
+    z-index:1;
+  }
+  .matrix-feed{position:relative;z-index:2;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .matrix-feed .feed-row{
+    color:#6ee7b7;text-shadow:0 0 4px rgba(52,211,153,0.5);
+    animation:matrix-in .55s cubic-bezier(.2,.7,.3,1);
+    padding:1px 2px;
+  }
+  /* Last row glows a bit hotter — like the "head" of a matrix stream */
+  .matrix-feed .feed-row:last-child{color:#a7f3d0;text-shadow:0 0 8px rgba(167,243,208,0.7)}
+  .matrix-feed .feed-row.error{color:#fca5a5;text-shadow:0 0 4px rgba(248,113,113,0.5)}
+  .matrix-feed .feed-row.execute{color:#86efac;text-shadow:0 0 6px rgba(134,239,172,0.6)}
+  .matrix-feed .feed-row.dsl_exit{color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.6)}
+  .matrix-feed::-webkit-scrollbar{width:6px}
+  .matrix-feed::-webkit-scrollbar-track{background:#02110a}
+  .matrix-feed::-webkit-scrollbar-thumb{background:#047857}
+  @keyframes matrix-in{
+    0%{opacity:0;transform:translateY(-6px);filter:blur(1px)}
+    60%{opacity:.85}
+    100%{opacity:1;transform:translateY(0);filter:blur(0)}
+  }
+  /* Sticky on wide screens, scrolls inline on narrow */
+  @media (min-width:1024px){.matrix-pane{position:sticky;top:1.5rem;height:calc(100vh - 3rem)}}
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-5xl mx-auto px-4 py-6">
+<div class="max-w-[1600px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-6 gap-3 flex-wrap">
     <div class="flex items-center gap-3">
@@ -483,7 +518,10 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </header>
 
-  <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+  <main class="min-w-0 space-y-6">
+
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
     <div class="bg-zinc-900 rounded-lg p-4">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity">equity</div>
       <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
@@ -504,7 +542,7 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6 text-xs leading-relaxed text-zinc-400">
+  <section class="bg-zinc-900 rounded-lg p-4 text-xs leading-relaxed text-zinc-400">
     <div class="text-zinc-500 mb-2 uppercase tracking-wider text-[10px]">how it works</div>
     <p>
       Autonomous trading agent on
@@ -519,7 +557,7 @@ _PUBLIC_HTML = """<!doctype html>
     </p>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="flex items-center justify-between mb-2">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity_curve">equity curve</div>
       <div class="flex gap-1 text-xs">
@@ -536,7 +574,7 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="flex items-center justify-between mb-2">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="open_positions">open positions</div>
       <div class="flex gap-1 text-[10px]">
@@ -550,7 +588,7 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="flex items-center justify-between mb-2">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="recent_closes">recent closes</div>
       <div class="text-xs text-zinc-600" id="closes-stats"></div>
@@ -560,13 +598,16 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="live_activity">live activity</div>
-      <span class="text-xs text-emerald-400 blink" data-i18n="following">▶ following</span>
+  </main>
+
+  <aside class="matrix-pane flex flex-col">
+    <div class="flex items-center justify-between px-3 py-2 border-b-2 border-emerald-800/60 bg-black/40 relative z-10">
+      <div class="text-[10px] text-emerald-400 pixel" data-i18n="live_activity">live activity</div>
+      <span class="text-[10px] text-emerald-400 blink pixel" data-i18n="following">▶ following</span>
     </div>
-    <div id="feed" class="space-y-0.5 max-h-96 overflow-y-auto"></div>
-  </section>
+    <div id="feed" class="matrix-feed flex-1 px-3 py-2 space-y-0.5"></div>
+  </aside>
+  </div>
 
   <footer class="text-[10px] text-zinc-600 mt-6 text-center pixel" data-i18n="footer">
     one wallet · live · not financial advice
@@ -1005,17 +1046,17 @@ _OPERATOR_HTML = """<!doctype html>
     <a href="/" class="text-xs text-zinc-400 hover:text-zinc-200">← public dashboard</a>
   </header>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="text-xs text-zinc-500 mb-2">config (.agent-config.json)</div>
     <pre id="config" class="text-zinc-300 overflow-x-auto">loading…</pre>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="text-xs text-zinc-500 mb-2">positions — force close</div>
     <div id="positions" class="text-sm">loading…</div>
   </section>
 
-  <section class="bg-zinc-900 rounded-lg p-4 mb-6">
+  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="text-xs text-zinc-500 mb-2">DSL trackers (in-memory + persisted)</div>
     <pre id="trackers" class="text-zinc-300 overflow-x-auto">loading…</pre>
   </section>
