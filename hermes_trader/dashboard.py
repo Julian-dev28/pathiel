@@ -421,7 +421,36 @@ _PUBLIC_HTML = """<!doctype html>
       <span class="text-lg font-bold tracking-tight">hermes-trader</span>
       <span class="text-xs text-zinc-500">autonomous · hyperliquid</span>
     </div>
-    <div class="flex items-center gap-3 text-xs">
+    <div class="flex items-center gap-2 text-xs">
+      <select id="ccy-sel" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 focus:outline-none cursor-pointer">
+        <option value="USD">USD $</option>
+        <option value="EUR">EUR €</option>
+        <option value="JPY">JPY ¥</option>
+        <option value="GBP">GBP £</option>
+        <option value="CNY">CNY ¥</option>
+        <option value="KRW">KRW ₩</option>
+        <option value="SGD">SGD S$</option>
+        <option value="PHP">PHP ₱</option>
+        <option value="MYR">MYR RM</option>
+        <option value="THB">THB ฿</option>
+        <option value="IDR">IDR Rp</option>
+        <option value="VND">VND ₫</option>
+        <option value="AUD">AUD A$</option>
+        <option value="CAD">CAD C$</option>
+        <option value="CHF">CHF</option>
+      </select>
+      <select id="lang-sel" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 focus:outline-none cursor-pointer">
+        <option value="en">EN</option>
+        <option value="zh">中文</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+        <option value="fr">Français</option>
+        <option value="es">Español</option>
+        <option value="id">Bahasa</option>
+        <option value="tl">Tagalog</option>
+        <option value="vi">Tiếng Việt</option>
+        <option value="th">ไทย</option>
+      </select>
       <span id="status-pill" class="pill offline">offline</span>
       <a href="https://github.com/Julian-dev28/hermes-trader" class="text-zinc-400 hover:text-zinc-200">github</a>
     </div>
@@ -429,22 +458,22 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500">equity</div>
+      <div class="text-xs text-zinc-500" data-i18n="equity">equity</div>
       <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500">today</div>
+      <div class="text-xs text-zinc-500" data-i18n="today">today</div>
       <div class="text-2xl font-bold num" id="kpi-pnl">$0.00</div>
       <div class="text-xs num" id="kpi-pnl-pct">—</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500">open positions</div>
+      <div class="text-xs text-zinc-500" data-i18n="open_positions">open positions</div>
       <div class="text-2xl font-bold num" id="kpi-open">0</div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-xs text-zinc-500">last tick</div>
+      <div class="text-xs text-zinc-500" data-i18n="last_tick">last tick</div>
       <div class="text-2xl font-bold num" id="kpi-tick">—</div>
-      <div class="text-xs text-zinc-500" id="kpi-tick-detail">no scan yet</div>
+      <div class="text-xs text-zinc-500" id="kpi-tick-detail" data-i18n="no_scan_yet">no scan yet</div>
     </div>
   </section>
 
@@ -465,7 +494,7 @@ _PUBLIC_HTML = """<!doctype html>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500">equity curve</div>
+      <div class="text-xs text-zinc-500" data-i18n="equity_curve">equity curve</div>
       <div class="flex gap-1 text-xs">
         <button data-range="86400" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">24h</button>
         <button data-range="604800" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">7d</button>
@@ -481,40 +510,104 @@ _PUBLIC_HTML = """<!doctype html>
   </section>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
-    <div class="text-xs text-zinc-500 mb-2">open positions</div>
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-xs text-zinc-500" data-i18n="open_positions">open positions</div>
+      <div class="flex gap-1 text-[10px]">
+        <button data-sort="default" data-i18n="default" class="pos-sort-btn px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">default</button>
+        <button data-sort="pnl_desc" class="pos-sort-btn px-2 py-0.5 rounded bg-emerald-700">PnL ↓</button>
+        <button data-sort="pnl_asc"  class="pos-sort-btn px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">PnL ↑</button>
+      </div>
+    </div>
     <div id="positions" class="text-sm">
-      <div class="text-zinc-500 text-xs">none</div>
+      <div class="text-zinc-500 text-xs" data-i18n="none">none</div>
     </div>
   </section>
 
   <section class="bg-zinc-900 rounded-lg p-4 mb-6">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500">recent closes</div>
+      <div class="text-xs text-zinc-500" data-i18n="recent_closes">recent closes</div>
       <div class="text-xs text-zinc-600" id="closes-stats"></div>
     </div>
     <div id="closes" class="text-sm">
-      <div class="text-zinc-500 text-xs">none yet</div>
+      <div class="text-zinc-500 text-xs" data-i18n="none_yet">none yet</div>
     </div>
   </section>
 
   <section class="bg-zinc-900 rounded-lg p-4">
     <div class="flex items-center justify-between mb-2">
-      <div class="text-xs text-zinc-500">live activity</div>
-      <span class="text-xs text-emerald-400 blink">▶ following</span>
+      <div class="text-xs text-zinc-500" data-i18n="live_activity">live activity</div>
+      <span class="text-xs text-emerald-400 blink" data-i18n="following">▶ following</span>
     </div>
     <div id="feed" class="space-y-0.5 max-h-96 overflow-y-auto"></div>
   </section>
 
-  <footer class="text-xs text-zinc-600 mt-6 text-center">
+  <footer class="text-xs text-zinc-600 mt-6 text-center" data-i18n="footer">
     one wallet · live · not financial advice
   </footer>
 </div>
 
 <script>
-const fmtMoney = n => (n >= 0 ? '$' : '-$') + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+// ── locale / currency state ──
+// USD values from the API are multiplied by ccyState.rate at display time. FX
+// rates pulled from open.er-api.com (free, no key) and cached 1h in localStorage.
+let ccyState = { code: 'USD', rate: 1 };
+let langState = 'en';
+const ZERO_DECIMAL_CCY = new Set(['JPY', 'KRW', 'VND', 'IDR']);
+
+function fmtMoney(usd, opts = {}) {
+  const v = (usd ?? 0) * ccyState.rate;
+  const digits = ZERO_DECIMAL_CCY.has(ccyState.code) ? 0 : 2;
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: ccyState.code,
+      signDisplay: opts.signed ? 'always' : 'auto',
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(v);
+  } catch (e) {
+    return (v >= 0 ? '' : '-') + Math.abs(v).toFixed(digits);
+  }
+}
 const fmtPct = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
 const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s/60) + 'm ago');
 const fmtTime = ms => { const d = new Date(ms); return d.toTimeString().slice(0,8); };
+
+// ── i18n ──
+const I18N = {
+  en: { equity:'equity', today:'today', open_positions:'open positions', last_tick:'last tick', no_scan_yet:'no scan yet', equity_curve:'equity curve', recent_closes:'recent closes', live_activity:'live activity', none:'none', none_yet:'none yet', following:'▶ following', footer:'one wallet · live · not financial advice', default:'default', triggers:'triggers' },
+  zh: { equity:'净值', today:'今日', open_positions:'持仓', last_tick:'上次更新', no_scan_yet:'尚未扫描', equity_curve:'净值曲线', recent_closes:'最近平仓', live_activity:'实时活动', none:'无', none_yet:'尚无', following:'▶ 关注中', footer:'单一钱包 · 实盘 · 非投资建议', default:'默认', triggers:'触发' },
+  ja: { equity:'純資産', today:'本日', open_positions:'ポジション', last_tick:'最終更新', no_scan_yet:'スキャン未実施', equity_curve:'純資産推移', recent_closes:'最近のクローズ', live_activity:'ライブアクティビティ', none:'なし', none_yet:'まだなし', following:'▶ 追跡中', footer:'単一ウォレット · ライブ · 投資助言ではありません', default:'デフォルト', triggers:'トリガー' },
+  ko: { equity:'자본', today:'오늘', open_positions:'보유 포지션', last_tick:'마지막 틱', no_scan_yet:'스캔 전', equity_curve:'자본 곡선', recent_closes:'최근 청산', live_activity:'실시간 활동', none:'없음', none_yet:'아직 없음', following:'▶ 추적 중', footer:'단일 지갑 · 실시간 · 투자 조언 아님', default:'기본', triggers:'트리거' },
+  fr: { equity:'capital', today:"aujourd'hui", open_positions:'positions ouvertes', last_tick:'dernier tick', no_scan_yet:'pas encore scanné', equity_curve:'courbe du capital', recent_closes:'clôtures récentes', live_activity:'activité en direct', none:'aucune', none_yet:'aucune encore', following:'▶ en cours', footer:'un portefeuille · en direct · pas un conseil financier', default:'défaut', triggers:'déclencheurs' },
+  es: { equity:'capital', today:'hoy', open_positions:'posiciones abiertas', last_tick:'último tick', no_scan_yet:'sin escaneo aún', equity_curve:'curva de capital', recent_closes:'cierres recientes', live_activity:'actividad en vivo', none:'ninguna', none_yet:'ninguna aún', following:'▶ siguiendo', footer:'una cartera · en vivo · no es consejo financiero', default:'por defecto', triggers:'disparadores' },
+  id: { equity:'ekuitas', today:'hari ini', open_positions:'posisi terbuka', last_tick:'tick terakhir', no_scan_yet:'belum pindai', equity_curve:'kurva ekuitas', recent_closes:'penutupan terbaru', live_activity:'aktivitas langsung', none:'tidak ada', none_yet:'belum ada', following:'▶ mengikuti', footer:'satu dompet · langsung · bukan nasihat keuangan', default:'bawaan', triggers:'pemicu' },
+  tl: { equity:'puhunan', today:'ngayon', open_positions:'bukas na posisyon', last_tick:'huling tick', no_scan_yet:'wala pang scan', equity_curve:'kurba ng puhunan', recent_closes:'kamakailang isinara', live_activity:'live na aktibidad', none:'wala', none_yet:'wala pa', following:'▶ sumusunod', footer:'isang wallet · live · hindi payong pinansyal', default:'default', triggers:'trigger' },
+  vi: { equity:'vốn', today:'hôm nay', open_positions:'vị thế mở', last_tick:'tick cuối', no_scan_yet:'chưa quét', equity_curve:'đường vốn', recent_closes:'đóng gần đây', live_activity:'hoạt động trực tiếp', none:'không có', none_yet:'chưa có', following:'▶ đang theo', footer:'một ví · trực tiếp · không phải lời khuyên tài chính', default:'mặc định', triggers:'kích hoạt' },
+  th: { equity:'ทุน', today:'วันนี้', open_positions:'สถานะเปิด', last_tick:'อัปเดตล่าสุด', no_scan_yet:'ยังไม่สแกน', equity_curve:'เส้นทุน', recent_closes:'ปิดล่าสุด', live_activity:'กิจกรรมสด', none:'ไม่มี', none_yet:'ยังไม่มี', following:'▶ ติดตาม', footer:'หนึ่งวอลเล็ต · สด · ไม่ใช่คำแนะนำทางการเงิน', default:'ค่าเริ่มต้น', triggers:'ทริกเกอร์' },
+};
+function applyI18n() {
+  const dict = I18N[langState] || I18N.en;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.dataset.i18n;
+    if (dict[k]) el.textContent = dict[k];
+  });
+}
+
+async function loadRates() {
+  const cached = JSON.parse(localStorage.getItem('hermes-fx') || 'null');
+  if (cached && Date.now() - cached.t < 3600000) return cached.rates;
+  try {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const d = await r.json();
+    if (d.result !== 'success') throw new Error('rate fetch failed');
+    const rates = { USD: 1, ...d.rates };
+    localStorage.setItem('hermes-fx', JSON.stringify({ t: Date.now(), rates }));
+    return rates;
+  } catch (e) {
+    return cached?.rates || { USD: 1 };
+  }
+}
 
 // ── KPIs ──
 async function refreshSummary() {
@@ -536,12 +629,15 @@ async function refreshSummary() {
 }
 
 // ── Positions ──
+let currentPosSort = 'pnl_desc';
 async function refreshPositions() {
   try {
     const r = await fetch('/api/dashboard/positions');
     const ps = await r.json();
     const el = document.getElementById('positions');
     if (!ps.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none</div>'; return; }
+    if (currentPosSort === 'pnl_desc') ps.sort((a, b) => (b.unrealized_pct ?? 0) - (a.unrealized_pct ?? 0));
+    else if (currentPosSort === 'pnl_asc') ps.sort((a, b) => (a.unrealized_pct ?? 0) - (b.unrealized_pct ?? 0));
     el.innerHTML = ps.map(p => {
       const pnlColor = p.unrealized_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
       const sideTag = p.side === 'long'
@@ -553,7 +649,7 @@ async function refreshPositions() {
       const floor = p.dsl?.floor_px ? ('floor ' + pxFmt(p.dsl.floor_px)) : '<span class="text-zinc-700">no DSL</span>';
       const phase = p.dsl?.phase || '';
       const usd = p.unrealized_pnl_usd;
-      const usdStr = (usd >= 0 ? '+$' : '-$') + Math.abs(usd).toFixed(2);
+      const usdStr = fmtMoney(usd, { signed: true });
       const spotNote = p.leverage > 1
         ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}% × ${p.leverage}x leverage = ROE shown">(spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}%)</span>`
         : '';
@@ -670,7 +766,7 @@ async function refreshChart(rangeSec) {
               titleColor: '#a1a1aa', bodyColor: '#e5e5e5', padding: 8, displayColors: false,
               callbacks: {
                 title: (items) => new Date(items[0].parsed.x).toLocaleString(),
-                label: (item) => '$' + item.parsed.y.toFixed(2),
+                label: (item) => fmtMoney(item.parsed.y),
               }
             }
           },
@@ -681,7 +777,7 @@ async function refreshChart(rangeSec) {
               grid: { display: false }, border: { display: false },
             },
             y: {
-              ticks: { color: '#52525b', callback: v => '$' + v, font: { size: 10 }, maxTicksLimit: 6 },
+              ticks: { color: '#52525b', callback: v => fmtMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
               grid: { color: '#18181b', drawTicks: false }, border: { display: false },
             },
           }
@@ -699,6 +795,15 @@ document.querySelectorAll('.range-btn').forEach(b => {
     refreshChart(parseInt(b.dataset.range));
     document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('bg-emerald-700'));
     b.classList.add('bg-emerald-700');
+  });
+});
+document.querySelectorAll('.pos-sort-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    currentPosSort = b.dataset.sort;
+    document.querySelectorAll('.pos-sort-btn').forEach(x => { x.classList.remove('bg-emerald-700'); x.classList.add('bg-zinc-800'); });
+    b.classList.remove('bg-zinc-800');
+    b.classList.add('bg-emerald-700');
+    refreshPositions();
   });
 });
 
@@ -783,8 +888,37 @@ es.onmessage = (m) => {
   } catch {}
 };
 
+// ── locale init + change handlers ──
+async function initLocale() {
+  const rates = await loadRates();
+  const savedCcy = localStorage.getItem('hermes-ccy') || 'USD';
+  const savedLang = localStorage.getItem('hermes-lang') || 'en';
+  ccyState = { code: savedCcy, rate: rates[savedCcy] || 1 };
+  langState = savedLang;
+  const ccySel = document.getElementById('ccy-sel');
+  const langSel = document.getElementById('lang-sel');
+  if (ccySel) ccySel.value = savedCcy;
+  if (langSel) langSel.value = savedLang;
+  applyI18n();
+}
+document.getElementById('ccy-sel')?.addEventListener('change', async (e) => {
+  const code = e.target.value;
+  localStorage.setItem('hermes-ccy', code);
+  const rates = await loadRates();
+  ccyState = { code, rate: rates[code] || 1 };
+  refreshSummary(); refreshPositions(); refreshCloses();
+  if (chart) refreshChart(currentRange);
+});
+document.getElementById('lang-sel')?.addEventListener('change', (e) => {
+  langState = e.target.value;
+  localStorage.setItem('hermes-lang', langState);
+  applyI18n();
+});
+
 // ── kickoff + polling ──
-refreshSummary(); refreshPositions(); refreshCloses(); refreshChart(86400);
+initLocale().then(() => {
+  refreshSummary(); refreshPositions(); refreshCloses(); refreshChart(86400);
+});
 setInterval(refreshSummary, 5000);
 setInterval(refreshPositions, 15000);
 setInterval(refreshCloses, 20000);
