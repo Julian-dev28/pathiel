@@ -451,9 +451,14 @@ _PUBLIC_HTML = """<!doctype html>
   }
   .matrix-feed{position:relative;z-index:2;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .matrix-feed .feed-row{
+    /* Override the global .feed-row nowrap/ellipsis — in the matrix sidebar we
+       want full readability over single-line truncation. Hanging indent so the
+       wrapped continuation lines sit under the message body, not under the
+       timestamp. */
+    white-space:normal;word-break:break-word;overflow:visible;text-overflow:clip;
+    text-indent:-1.25em;padding:2px 2px 2px 1.5em;line-height:1.5;
     color:#6ee7b7;text-shadow:0 0 4px rgba(52,211,153,0.5);
     animation:matrix-in .55s cubic-bezier(.2,.7,.3,1);
-    padding:1px 2px;
   }
   /* Last row glows a bit hotter — like the "head" of a matrix stream */
   .matrix-feed .feed-row:last-child{color:#a7f3d0;text-shadow:0 0 8px rgba(167,243,208,0.7)}
@@ -518,7 +523,7 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </header>
 
-  <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-6">
   <main class="min-w-0 space-y-6">
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
