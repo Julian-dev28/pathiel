@@ -127,6 +127,38 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
     }
 
 
+def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -> GateResult:
+    """Block counter-regime trades unless conviction clears a higher bar.
+
+    The per-coin scan + AI research pipeline is direction-agnostic about the
+    macro: it'll fire a short on TSLA even while the equity-perp basket is
+    grinding up, and that's how a bunch of low-conviction shorts got
+    steamrolled in correlation rather than on per-coin merit.
+
+    This gate looks up the regime for the right proxy (BTC for crypto, NVDA
+    for equity, the coin's own 4h for commodities) and:
+      - trade aligned with regime → pass
+      - regime neutral             → pass (no opinion → don't override)
+      - counter-trend trade        → require confidence >= counter_regime_min_conf
+                                     (default 0.7), else block
+    """
+    from hermes_trader.agents.market_regime import detect_regime
+    regime = detect_regime(ctx.coin)
+    if regime == "neutral":
+        return {"pass": True}
+    aligned = (regime == "up" and ctx.trade_side == "long") or \
+              (regime == "down" and ctx.trade_side == "short")
+    if aligned:
+        return {"pass": True}
+    if ctx.confidence >= counter_regime_min_conf:
+        return {"pass": True}  # high-conviction counter-trade allowed through
+    return {
+        "pass": False,
+        "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend — "
+                   f"need conf >= {counter_regime_min_conf}, have {ctx.confidence:.2f}"),
+    }
+
+
 def news_blackout_gate(ctx: GateContext) -> GateResult:
     if not ctx.has_binary_news_risk:
         return {"pass": True}
@@ -163,6 +195,9 @@ def eval_all_gates(
     results["opposite_guard"] = opposite_direction_guard(ctx)
     results["correlation"] = correlation_cap(ctx, 2)
     results["equity_risk"] = equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0))  # Default 100% to allow trading with small accounts
+    results["market_regime"] = market_regime_gate(
+        ctx, _cfg(config, "counter_regime_min_conf", 0.7)
+    )
     results["news"] = news_blackout_gate(ctx)
 
     block_reasons = []

@@ -368,6 +368,111 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     assert "ARB_short" not in dsl_exit._active_positions
 
 
+# ── market regime + gate ─────────────────────────────────────────────────
+def test_classify_asset():
+    from hermes_trader.agents.market_regime import classify_asset
+    # crypto default
+    assert classify_asset("BTC") == "crypto"
+    assert classify_asset("PEPE") == "crypto"
+    assert classify_asset("randomcoin42") == "crypto"
+    # equity perps
+    assert classify_asset("TSLA") == "equity"
+    assert classify_asset("nvda") == "equity"   # case-insensitive
+    assert classify_asset("MSTR") == "equity"
+    # commodity perps
+    assert classify_asset("NATGAS") == "commodity"
+    assert classify_asset("SILVER") == "commodity"
+
+
+def test_trend_from_closes_up_down_neutral():
+    """EMA20>EMA50 + positive fast-slope → up; opposite → down; flat → neutral."""
+    from hermes_trader.agents.market_regime import _trend_from_closes
+    # Pure uptrend: prices rising linearly
+    assert _trend_from_closes([100 + i for i in range(60)]) == "up"
+    # Pure downtrend
+    assert _trend_from_closes([200 - i for i in range(60)]) == "down"
+    # Pure flat
+    assert _trend_from_closes([100.0] * 60) == "neutral"
+    # Too few candles
+    assert _trend_from_closes([100.0] * 20) == "neutral"
+
+
+def test_detect_regime_caches_and_uses_proxy(monkeypatch):
+    """detect_regime should call the proxy (BTC/NVDA/own) and cache the result."""
+    from hermes_trader.agents import market_regime
+    market_regime._regime_cache.clear()
+    calls: list[str] = []
+    monkeypatch.setattr(market_regime, "_detect_for_proxy",
+                        lambda proxy: calls.append(proxy) or "up")
+    # First call for an alt coin → fetches BTC proxy
+    assert market_regime.detect_regime("PEPE") == "up"
+    assert calls == ["BTC"]
+    # Second call for another alt → cache hit, no new fetch
+    assert market_regime.detect_regime("WIF") == "up"
+    assert calls == ["BTC"]
+    # Equity coin uses NVDA proxy
+    assert market_regime.detect_regime("TSLA") == "up"
+    assert calls == ["BTC", "NVDA"]
+    # Commodity uses its own ticker
+    assert market_regime.detect_regime("NATGAS") == "up"
+    assert calls == ["BTC", "NVDA", "NATGAS"]
+
+
+def test_market_regime_gate_aligned_passes(monkeypatch):
+    from hermes_trader.agents import market_regime
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
+    # Long when up → pass, regardless of confidence
+    r = market_regime_gate(_ctx(confidence=0.1, trade_side="long"))
+    assert r["pass"] is True
+
+
+def test_market_regime_gate_neutral_passes(monkeypatch):
+    from hermes_trader.agents import market_regime
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
+    r = market_regime_gate(_ctx(confidence=0.1, trade_side="short"))
+    assert r["pass"] is True
+
+
+def test_market_regime_gate_counter_low_conf_blocks(monkeypatch):
+    from hermes_trader.agents import market_regime
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
+    r = market_regime_gate(_ctx(confidence=0.5, trade_side="short"))
+    assert r["pass"] is False
+    assert "counter-regime" in r["reason"]
+
+
+def test_market_regime_gate_counter_high_conf_passes(monkeypatch):
+    """A 0.85-confidence counter-trend trade should sneak through the gate —
+    high-conviction contrarian trades are the whole point of the bypass."""
+    from hermes_trader.agents import market_regime
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
+    r = market_regime_gate(_ctx(confidence=0.85, trade_side="short"))
+    assert r["pass"] is True
+
+
+def test_market_regime_gate_wired_into_eval_all(monkeypatch):
+    """The new gate is part of the 12-gate evaluation now and blocks at the
+    right time — regression guard against forgetting to wire it in."""
+    from hermes_trader.agents import market_regime
+    from hermes_trader.agents.risk_gates import eval_all_gates
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
+    cfg = {"min_ai_confidence": 0.3, "max_concurrent": 10,
+           "max_trade_notional_usd": 1000, "max_daily_loss_usd": -100,
+           "min_market_volume_usd": 5e6, "max_total_notional_pct": 10.0,
+           "cooldown_min": 0, "counter_regime_min_conf": 0.7}
+    # Low-conf short in an up regime → blocked, with the new reason surfaced
+    out = eval_all_gates(_ctx(confidence=0.4, trade_side="short"), cfg)
+    assert out["blocked"] is True
+    assert any("counter-regime" in r for r in out["block_reasons"])
+    # Aligned long → not blocked by the regime gate
+    out_ok = eval_all_gates(_ctx(confidence=0.4, trade_side="long"), cfg)
+    assert out_ok["results"]["market_regime"]["pass"] is True
+
+
 # ── resolve_user_address (DRY-2 helper) ─────────────────────────────────
 def test_resolve_user_address(monkeypatch):
     from hermes_trader.client.hl_client import resolve_user_address
