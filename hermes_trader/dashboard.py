@@ -475,6 +475,63 @@ _PUBLIC_HTML = """<!doctype html>
   }
   /* Sticky on wide screens, scrolls inline on narrow */
   @media (min-width:1024px){.matrix-pane{position:sticky;top:1.5rem;height:calc(100vh - 3rem)}}
+  /* ── HERMES.HAMSTER habitat — nous-research-flavored tamagotchi at top of matrix pane ── */
+  .habitat{padding:10px 12px 8px;border-bottom:2px solid #047857;background:linear-gradient(180deg,#02160c 0%,#000805 100%);position:relative;z-index:3}
+  .habitat-name{font-family:'Press Start 2P',monospace;font-size:8px;color:#34d399;letter-spacing:.15em;text-align:center;margin-bottom:4px;text-shadow:0 0 4px rgba(52,211,153,0.6)}
+  .habitat-name .psi{color:#fbbf24;margin-left:4px;text-shadow:0 0 6px rgba(251,191,36,0.6)}
+  .habitat-pet{display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 0 4px;line-height:1}
+  /* White rabbit: brightness+saturate to wash the default emoji tone toward
+     white, plus a soft white glow. Animation filters in keyframes override
+     this briefly during celebrate/victory/defeat. */
+  .hamster-body{font-size:30px;display:inline-block;animation:hamster-run .42s ease-in-out infinite;filter:brightness(1.55) saturate(0.25) drop-shadow(0 0 6px rgba(255,255,255,0.65))}
+  @keyframes hamster-run{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px) rotate(-2deg)}}
+  .hamster-wheel{font-size:14px;display:inline-block;animation:wheel-spin .8s linear infinite;opacity:.75;color:#34d399}
+  @keyframes wheel-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .habitat-quote{font-family:'Press Start 2P',monospace;font-size:7px;color:#34d399aa;text-align:center;padding:6px 2px 0;min-height:14px;letter-spacing:.05em;transition:opacity .3s ease}
+  .habitat-quote::before{content:'» '}
+  .habitat-quote::after{content:' «'}
+  /* ── Hamster reactions to live trading events ── */
+  /* execute → yellow celebrate (lightning bolt burst) */
+  .hamster-body.celebrate{animation:hamster-celebrate 1.2s ease-out}
+  @keyframes hamster-celebrate{
+    0%{transform:translateY(0) scale(1) rotate(0);filter:drop-shadow(0 0 4px rgba(251,191,36,0.5))}
+    20%{transform:translateY(-10px) scale(1.35) rotate(-15deg);filter:drop-shadow(0 0 14px #fde047) brightness(1.4)}
+    40%{transform:translateY(-6px) scale(1.25) rotate(15deg)}
+    60%{transform:translateY(-3px) scale(1.15) rotate(-8deg)}
+    100%{transform:translateY(0) scale(1) rotate(0)}
+  }
+  /* dsl_exit profitable → victory wiggle */
+  .hamster-body.victory{animation:hamster-victory 1.4s ease-out}
+  @keyframes hamster-victory{
+    0%,100%{transform:rotate(0) scale(1)}
+    15%{transform:rotate(-20deg) scale(1.2);filter:drop-shadow(0 0 10px #34d399)}
+    30%{transform:rotate(20deg) scale(1.2)}
+    45%{transform:rotate(-15deg) scale(1.15)}
+    60%{transform:rotate(15deg) scale(1.1)}
+    75%{transform:rotate(-5deg)}
+  }
+  /* dsl_exit loss → defeat shake */
+  .hamster-body.defeat{animation:hamster-defeat 1.2s ease-out}
+  @keyframes hamster-defeat{
+    0%,100%{transform:translateX(0) rotate(0)}
+    10%,30%,50%,70%,90%{transform:translateX(-4px) rotate(-6deg);filter:drop-shadow(0 0 8px #f87171)}
+    20%,40%,60%,80%{transform:translateX(4px) rotate(6deg)}
+  }
+  /* Habitat background flash on event */
+  .habitat.flash-yellow{animation:habitat-flash-y 1.2s ease-out}
+  @keyframes habitat-flash-y{0%{background:linear-gradient(180deg,#3f2e00 0%,#150e00 100%);box-shadow:inset 0 0 20px rgba(251,191,36,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
+  .habitat.flash-green{animation:habitat-flash-g 1.2s ease-out}
+  @keyframes habitat-flash-g{0%{background:linear-gradient(180deg,#064e3b 0%,#001f12 100%);box-shadow:inset 0 0 20px rgba(52,211,153,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
+  .habitat.flash-red{animation:habitat-flash-r 1.2s ease-out}
+  @keyframes habitat-flash-r{0%{background:linear-gradient(180deg,#450a0a 0%,#1f0000 100%);box-shadow:inset 0 0 20px rgba(248,113,113,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
+  /* Floating burst icon — ⚡/💰/💀 rises and fades */
+  .habitat-burst{position:absolute;top:32px;left:50%;font-size:20px;opacity:0;pointer-events:none;z-index:5;text-shadow:0 0 8px rgba(255,255,255,0.6)}
+  .habitat-burst.show{animation:burst-rise 1.1s ease-out forwards}
+  @keyframes burst-rise{
+    0%{opacity:0;transform:translateX(-50%) translateY(0) scale(0.5)}
+    20%{opacity:1;transform:translateX(-50%) translateY(-8px) scale(1.5)}
+    100%{opacity:0;transform:translateX(-50%) translateY(-36px) scale(1)}
+  }
 </style>
 </head>
 <body class="min-h-screen">
@@ -523,7 +580,7 @@ _PUBLIC_HTML = """<!doctype html>
     </div>
   </header>
 
-  <div class="grid grid-cols-1 lg:grid-cols-[1fr_440px] gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
   <main class="min-w-0 space-y-6">
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -606,6 +663,13 @@ _PUBLIC_HTML = """<!doctype html>
   </main>
 
   <aside class="matrix-pane flex flex-col">
+    <div class="habitat">
+      <div class="habitat-pet">
+        <span class="hamster-body" title="follow the white rabbit">🐇</span>
+        <span class="hamster-wheel">⚙</span>
+      </div>
+      <div class="habitat-quote" id="hamster-quote">awakening</div>
+    </div>
     <div class="flex items-center justify-between px-3 py-2 border-b-2 border-emerald-800/60 bg-black/40 relative z-10">
       <div class="text-[10px] text-emerald-400 pixel" data-i18n="live_activity">live activity</div>
       <span class="text-[10px] text-emerald-400 blink pixel" data-i18n="following">▶ following</span>
@@ -680,6 +744,69 @@ async function loadRates() {
   } catch (e) {
     return cached?.rates || { USD: 1 };
   }
+}
+
+// ── HERMES.HAMSTER habitat ──
+// Tamagotchi-meets-Nous: hamster contemplates the digital rain. Stats are
+// recomputed from the dashboard summary; cryptic quotes rotate on a timer.
+const HAMSTER_QUOTES = [
+  'follow the white rabbit',
+  'down the rabbit hole',
+  'the rabbit hole goes deeper',
+  'wake up neo',
+  'the signal is clear',
+  'compute is destiny',
+  'all paths converge',
+  'i dream in OHLC',
+  'the wheel knows',
+  'world model loaded',
+  'hermes opens the path',
+  'ψ awaits',
+  'there is no candle',
+  'momentum is prayer',
+  'noesis in the orderbook',
+  'let entropy speak',
+  'risk is a koan',
+  'we run because we must',
+];
+let hamsterQuoteIdx = -1;
+function rotateHamsterQuote() {
+  const el = document.getElementById('hamster-quote');
+  if (!el) return;
+  hamsterQuoteIdx = (hamsterQuoteIdx + 1) % HAMSTER_QUOTES.length;
+  el.style.opacity = '0';
+  setTimeout(() => { el.textContent = HAMSTER_QUOTES[hamsterQuoteIdx]; el.style.opacity = '1'; }, 250);
+}
+// Hamster reacts to live trading events: execute → celebrate (yellow ⚡),
+// dsl_exit profit → victory wiggle (green 💰), dsl_exit loss → defeat shake
+// (red 💀). Animation classes auto-clear so subsequent events restart cleanly.
+function triggerHamsterReaction(eventType, pnlPct) {
+  const body = document.querySelector('.hamster-body');
+  const habitat = document.querySelector('.habitat');
+  if (!body || !habitat) return;
+  body.classList.remove('celebrate', 'victory', 'defeat');
+  habitat.classList.remove('flash-yellow', 'flash-green', 'flash-red');
+  let bodyClass, habitatClass, burstChar;
+  if (eventType === 'execute') {
+    bodyClass = 'celebrate'; habitatClass = 'flash-yellow'; burstChar = '⚡';
+  } else if (eventType === 'dsl_exit') {
+    if ((pnlPct ?? 0) >= 0) { bodyClass = 'victory'; habitatClass = 'flash-green'; burstChar = '💰'; }
+    else { bodyClass = 'defeat'; habitatClass = 'flash-red'; burstChar = '💀'; }
+  } else { return; }
+  // Force reflow so the same class re-fires on rapid repeat events.
+  void body.offsetWidth;
+  body.classList.add(bodyClass);
+  habitat.classList.add(habitatClass);
+  // Floating burst icon above the hamster
+  const burst = document.createElement('span');
+  burst.className = 'habitat-burst show';
+  burst.textContent = burstChar;
+  habitat.appendChild(burst);
+  setTimeout(() => burst.remove(), 1200);
+  setTimeout(() => {
+    body.classList.remove(bodyClass);
+    habitat.classList.remove(habitatClass);
+  }, 1500);
 }
 
 // ── KPIs ──
@@ -981,6 +1108,13 @@ es.onmessage = (m) => {
     feed.appendChild(renderEvent(e));
     while (feed.childNodes.length > 200) feed.removeChild(feed.firstChild);
     feed.scrollTop = feed.scrollHeight;
+    // Hamster reacts to executes (successful only) and DSL exits
+    if (e.event === 'execute' && e.executed) {
+      triggerHamsterReaction('execute');
+    } else if (e.event === 'dsl_exit') {
+      const pnlPct = e.realized_pnl_pct != null ? e.realized_pnl_pct : (e.unrealized_pct || 0);
+      triggerHamsterReaction('dsl_exit', pnlPct);
+    }
   } catch {}
 };
 
@@ -1014,11 +1148,13 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
 // ── kickoff + polling ──
 initLocale().then(() => {
   refreshSummary(); refreshPositions(); refreshCloses(); refreshChart(86400);
+  rotateHamsterQuote();
 });
 setInterval(refreshSummary, 5000);
 setInterval(refreshPositions, 15000);
 setInterval(refreshCloses, 20000);
 setInterval(() => refreshChart(currentRange), 60000);
+setInterval(rotateHamsterQuote, 7000);
 </script>
 </body>
 </html>
