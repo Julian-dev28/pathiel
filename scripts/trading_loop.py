@@ -171,8 +171,14 @@ while True:
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
         # Per-cycle heartbeat — proof of life even when nothing triggers.
+        # `coin_scores` carries the composite score for each trigger so the
+        # feed can show *why* a coin was picked, not just that it was.
         log_event({"event": "scan", "triggers": len(results),
-                   "coins": [p['coin'] for p in results]})
+                   "coins": [p['coin'] for p in results],
+                   "coin_scores": [{"coin": p['coin'],
+                                    "score": round(p.get('composite_score', 0), 1),
+                                    "triggers": [t['name'] for t in p.get('triggers', []) if t.get('fired')]}
+                                   for p in results]})
 
         for perception in results:
             coin = perception['coin']
@@ -182,7 +188,10 @@ while True:
             ta = analyze_perception(perception)
             if ta['signal'] != 'CONFIRMED' and not _burst_fired(perception):
                 logger.info(f"{coin}: TA {ta['signal']} (score {ta['score']:.0f}) — skip AI research")
-                log_event({"event": "ta_skip", "coin": coin, "signal": ta['signal']})
+                log_event({"event": "ta_skip", "coin": coin,
+                           "signal": ta['signal'],
+                           "score": round(float(ta.get('score', 0)), 1),
+                           "trigger_score": round(float(score), 1)})
                 continue
             gate = 'CONFIRMED' if ta['signal'] == 'CONFIRMED' else f"{ta['signal']}+burst"
             logger.info(f"Researching {coin} (trigger {score:.1f}, TA {gate})...")
@@ -190,20 +199,35 @@ while True:
             try:
                 analysis = research(coin, perception)
                 logger.info(f"Verdict: {analysis['verdict']}, Confidence: {analysis['confidence']}")
+                # Reasoning is often a long paragraph from the LLM; truncate at
+                # log time so the JSONL file doesn't blow up. Full text stays in
+                # memory (.agent-memory.json) for forensics; the feed only needs
+                # enough to convey the "why".
+                _r = (analysis.get('reasoning') or '').strip()
                 log_event({"event": "research", "coin": coin,
                            "verdict": analysis['verdict'],
-                           "confidence": round(float(analysis['confidence']), 2)})
+                           "confidence": round(float(analysis['confidence']), 2),
+                           "reasoning": _r[:240],
+                           "entry_px": analysis.get('entry_px'),
+                           "stop_px": analysis.get('stop_px'),
+                           "tp_px": analysis.get('tp_px')})
 
                 if analysis['verdict'] in ('LONG', 'SHORT'):
                     logger.info(f"Executing {analysis['side']} trade...")
                     result = maybe_execute(analysis)
                     logger.info(f"Trade result: {result}")
+                    executed = bool(result.get("executed"))
                     log_event({"event": "execute", "coin": coin,
                                "side": analysis['side'],
-                               "executed": bool(result.get("executed")),
+                               "executed": executed,
                                "detail": result.get("order_id")
                                or result.get("reason")
-                               or result.get("blocked_by")})
+                               or result.get("blocked_by"),
+                               "blocked_by": result.get("blocked_by") if not executed else None,
+                               "size_usd": result.get("size_usd"),
+                               "entry_px": result.get("entry_px"),
+                               "stop_px": result.get("stop_px"),
+                               "tp_px": result.get("tp_px")})
             except Exception as e:
                 logger.error(f"Error processing {coin}: {e}")
                 log_event({"event": "error", "coin": coin, "error": str(e)})

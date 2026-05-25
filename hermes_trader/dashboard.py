@@ -703,30 +703,58 @@ document.querySelectorAll('.range-btn').forEach(b => {
 });
 
 // ── Live feed (SSE) ──
+function fmtPx(v) { if (v == null) return '?'; return v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2); }
+
 function renderEvent(e) {
   const ts = fmtTime(e.ts || Date.now());
   const ev = e.event || '?';
-  let glyph = '?', text = '', cls = ev;
+  let glyph = '?', text = '', cls = ev, detail = '', tooltip = '';
   if (ev === 'loop_heartbeat') {
     glyph = '♥'; cls = 'heartbeat';
     text = `perp=$${(e.equity||0).toFixed(2)} avail=$${(e.available||0).toFixed(2)} daily=${(e.daily_pnl||0)>=0?'+':''}$${(e.daily_pnl||0).toFixed(2)} open=${e.open_positions||0}`;
   } else if (ev === 'scan') {
     glyph = '•'; cls = 'scan';
-    const coins = (e.coins || []).slice(0, 6).join(', ') + (e.coins?.length > 6 ? ` (+${e.coins.length-6})` : '');
-    text = `scan       ${e.triggers||0} triggers${coins ? ' — ' + coins : ''}`;
+    // Prefer scored coin list if present (newer events); fall back to plain names.
+    const scored = e.coin_scores || [];
+    const coinsStr = scored.length
+      ? scored.slice(0, 6).map(c => `${c.coin}(${c.score})`).join(', ') + (scored.length > 6 ? ` (+${scored.length-6})` : '')
+      : ((e.coins || []).slice(0, 6).join(', ') + (e.coins?.length > 6 ? ` (+${e.coins.length-6})` : ''));
+    text = `scan       ${e.triggers||0} triggers${coinsStr ? ' — ' + coinsStr : ''}`;
+    if (scored.length) tooltip = scored.map(c => `${c.coin}: score ${c.score}` + (c.triggers?.length ? ` [${c.triggers.join(', ')}]` : '')).join('\n');
   } else if (ev === 'ta_skip') {
     glyph = '✗'; cls = 'scan';
-    text = `ta_skip    ${e.coin} (${e.signal})`;
+    const scoreNote = e.score != null ? ` ta=${e.score}` : '';
+    const trigNote = e.trigger_score != null ? ` trig=${e.trigger_score}` : '';
+    text = `ta_skip    ${e.coin} (${e.signal})${scoreNote}${trigNote}`;
   } else if (ev === 'research') {
     glyph = '?'; cls = 'research';
     text = `research   ${e.coin} → ${e.verdict} (conf ${e.confidence})`;
+    // Inline preview of reasoning + entry/stop/tp when present.
+    const priceTriad = (e.entry_px || e.stop_px || e.tp_px)
+      ? ` · entry ${fmtPx(e.entry_px)}/sl ${fmtPx(e.stop_px)}/tp ${fmtPx(e.tp_px)}` : '';
+    const reasonPreview = e.reasoning ? ` — ${e.reasoning.slice(0, 90)}${e.reasoning.length > 90 ? '…' : ''}` : '';
+    detail = priceTriad + reasonPreview;
+    if (e.reasoning && e.reasoning.length > 90) tooltip = e.reasoning;
   } else if (ev === 'execute') {
     const ok = e.executed;
     glyph = ok ? '✓' : '✗'; cls = ok ? 'execute' : 'execute-fail';
-    text = `execute    ${e.coin} ${e.side || '?'}  ${e.detail || ''}`;
+    if (ok) {
+      const sz = e.size_usd != null ? ` $${e.size_usd.toFixed(2)}` : '';
+      const ep = e.entry_px != null ? ` @ ${fmtPx(e.entry_px)}` : '';
+      text = `execute    ${e.coin} ${e.side || '?'}${sz}${ep}  ${e.detail || ''}`;
+      if (e.stop_px || e.tp_px) tooltip = `entry ${fmtPx(e.entry_px)}\nstop ${fmtPx(e.stop_px)}\ntp ${fmtPx(e.tp_px)}\nsize $${(e.size_usd||0).toFixed(2)}\norder ${e.detail || ''}`;
+    } else {
+      const blocked = Array.isArray(e.blocked_by) ? e.blocked_by.join(' · ') : (e.blocked_by || e.detail || '');
+      text = `execute    ${e.coin} ${e.side || '?'}  BLOCKED: ${blocked}`;
+      if (Array.isArray(e.blocked_by) && e.blocked_by.length > 1) tooltip = e.blocked_by.join('\n');
+    }
   } else if (ev === 'dsl_exit') {
     glyph = '⏹'; cls = 'dsl_exit';
-    text = `dsl_exit   ${e.coin}  ${e.reason}  (${(e.unrealized_pct||0)>=0?'+':''}${(e.unrealized_pct||0).toFixed(2)}%)`;
+    const side = e.side ? `${e.side} ` : '';
+    const lev = e.leverage ? `${e.leverage}x ` : '';
+    const pnlPct = e.realized_pnl_pct != null ? e.realized_pnl_pct : (e.unrealized_pct || 0);
+    text = `dsl_exit   ${e.coin} ${side}${lev} ${e.reason}  (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`;
+    if (e.fill_px) tooltip = `entry ${fmtPx(e.entry_px)}\nfill ${fmtPx(e.fill_px)}\nspot ${(e.realized_spot_pct||0).toFixed(2)}%\nleveraged ${(pnlPct||0).toFixed(2)}%`;
   } else if (ev === 'error') {
     glyph = '!'; cls = 'error';
     text = `error      ${e.coin || e.scope || 'loop'}: ${(e.error || '').slice(0, 120)}`;
@@ -739,7 +767,8 @@ function renderEvent(e) {
   }
   const row = document.createElement('div');
   row.className = 'feed-row ' + cls;
-  row.textContent = `[${ts}] ${glyph}  ${text}`;
+  row.textContent = `[${ts}] ${glyph}  ${text}${detail}`;
+  if (tooltip) row.title = tooltip;
   return row;
 }
 
