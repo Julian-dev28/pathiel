@@ -48,8 +48,9 @@ python scripts/trading_loop.py        # continuous scan -> research -> execute
 
 Recommended production start (background daemon):
 ```bash
-python3 scripts/trading_loop.py --env prod --daemon
+nohup python3 scripts/trading_loop.py > logs/trading_loop.log 2>&1 &
 ```
+The `--env prod --daemon` flags are parsed but **informational only** — the script does NOT actually fork or daemonize itself. Use `nohup ... &` or run the loop as a background process from your terminal/task runner. The loop already has its own `while True` with periodic sleeps.
 
 Cadence is `HERMES_SCAN_INTERVAL` (default 60s). Or drive the steps individually
 through the MCP `scan` / `research` / `execute` tools.
@@ -74,12 +75,13 @@ To stop and restart cleanly (especially after config or MCP changes):
    ps aux | grep -E "(trading_loop|hermes-mcp-server)" | grep -v grep || echo "All cleared"
    ```
 
-4. Restart the trading loop (background daemon):
+4. Restart the trading loop (background):
    ```bash
-   python3 scripts/trading_loop.py --env prod --daemon
+   nohup python3 scripts/trading_loop.py > logs/trading_loop.log 2>&1 &
    ```
+   **Pitfall:** `python3 scripts/trading_loop.py --env prod --daemon` does NOT daemonize — the `--daemon` flag is parsed but has no effect. If you use it without `nohup`/background, the process dies when the terminal session ends. Always use `nohup ... &` or a proper process manager.
 
-The MCP server is intentionally transient. It respawns automatically on the next Hermes tool call because it is registered in `~/.hermes/config.yaml`. No persistent MCP daemon is required.
+5. The MCP server is intentionally transient. It respawns automatically on the next Hermes tool call because it is registered in `~/.hermes/config.yaml`. No persistent MCP daemon is required.
 
 This two-kill + verify sequence prevents stale MCP state from interfering with the fresh trading loop.
 
@@ -248,3 +250,4 @@ start it. See `references/cron-jobs.md`.
 - `references/signal-vs-action-gap.md` — diagnosis of the recurring \"scanner fires, trader stays silent\" pattern + all live tuning performed 2026-05-19.
 - `references/restart-sequence.md` — canonical short `pkill + restart` command the user repeatedly uses (maintains this exact two-line ritual).
 - `references/trading-mode.md` — explicit execute-first reporting contract when the user is in active trading mode.
+- `references/daemon-investigation.md` — `--daemon` flag is informational-only; correct background pattern.
