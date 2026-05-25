@@ -9,11 +9,12 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from hermes_trader import __version__, dashboard, session_log
+from hermes_trader.dashboard import _require_operator
 from hermes_trader.agents.config_store import read_agent_config, write_agent_config
 from hermes_trader.agents.executor import maybe_execute
 from hermes_trader.agents.memory import memory
@@ -82,10 +83,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Hermes-Trader", version=__version__, lifespan=lifespan)
 
+# Wildcard origins + credentials=True is invalid per the CORS spec and would be
+# silently rejected by browsers. Token auth happens via X-Operator-Token /
+# ?token=, neither of which is a credential the browser auto-sends, so we don't
+# need credentialed CORS. Keep wildcard origins for tool/curl access; flip
+# credentials off so a future cookie-auth flow can't be abused cross-origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -105,7 +111,7 @@ async def _fetch_live_equity() -> float:
 # ── Agent endpoints ───────────────────────────────────────────────────────────
 
 
-@app.get("/api/agent/state")
+@app.get("/api/agent/state", dependencies=[Depends(_require_operator)])
 async def get_agent_state():
     """GET /api/agent/state — full state snapshot for the UI."""
     memory.load()
@@ -122,7 +128,7 @@ async def get_agent_state():
     return JSONResponse(content=state)
 
 
-@app.post("/api/agent/scan")
+@app.post("/api/agent/scan", dependencies=[Depends(_require_operator)])
 async def run_scan(request: Request):
     """POST /api/agent/scan — sweep markets for trigger signals."""
     global _last_scan_at
@@ -148,7 +154,7 @@ async def run_scan(request: Request):
     return JSONResponse(content=result)
 
 
-@app.post("/api/agent/research/{coin}")
+@app.post("/api/agent/research/{coin}", dependencies=[Depends(_require_operator)])
 async def run_research(coin: str, request: Request):
     """POST /api/agent/research/{coin} — full AI analysis for one coin."""
     memory.load()
@@ -178,7 +184,7 @@ async def run_research(coin: str, request: Request):
     return JSONResponse(content=analysis)
 
 
-@app.post("/api/agent/execute")
+@app.post("/api/agent/execute", dependencies=[Depends(_require_operator)])
 async def run_execute(request: Request):
     """POST /api/agent/execute — run risk gates and execute an analysis."""
     memory.load()
@@ -205,20 +211,20 @@ async def run_execute(request: Request):
     return JSONResponse(content=result)
 
 
-@app.get("/api/agent/trades")
+@app.get("/api/agent/trades", dependencies=[Depends(_require_operator)])
 async def get_trades():
     """GET /api/agent/trades — all recorded trades."""
     memory.load()
     return JSONResponse(content=memory.get_all_trades())
 
 
-@app.get("/api/agent/session-log")
+@app.get("/api/agent/session-log", dependencies=[Depends(_require_operator)])
 async def get_session_log():
     """GET /api/agent/session-log — last 50 log entries."""
     return JSONResponse(content=session_log.tail(50))
 
 
-@app.get("/api/agent/start")
+@app.get("/api/agent/start", dependencies=[Depends(_require_operator)])
 async def agent_start():
     """GET /api/agent/start — report whether the scanner process is running."""
     if not os.path.exists(PID_FILE):
@@ -229,7 +235,7 @@ async def agent_start():
     return JSONResponse(content={"running": running, "pid": pid if running else None})
 
 
-@app.post("/api/agent/start")
+@app.post("/api/agent/start", dependencies=[Depends(_require_operator)])
 async def agent_start_post():
     """POST /api/agent/start — report scanner status.
 
@@ -248,7 +254,7 @@ async def agent_start_post():
     return JSONResponse(content={"status": "stub", "message": "Python agent runs independently"})
 
 
-@app.post("/api/agent/stop")
+@app.post("/api/agent/stop", dependencies=[Depends(_require_operator)])
 async def agent_stop():
     """POST /api/agent/stop — terminate the scanner process."""
     if not os.path.exists(PID_FILE):
@@ -269,13 +275,13 @@ async def agent_stop():
     return JSONResponse(content={"status": "stopped", "pid": pid})
 
 
-@app.get("/api/agent/config")
+@app.get("/api/agent/config", dependencies=[Depends(_require_operator)])
 async def get_config():
     """GET /api/agent/config — read the agent config."""
     return JSONResponse(content=read_agent_config())
 
 
-@app.post("/api/agent/config")
+@app.post("/api/agent/config", dependencies=[Depends(_require_operator)])
 async def update_config(request: Request):
     """POST /api/agent/config — merge new values into the agent config."""
     existing = read_agent_config()
@@ -292,7 +298,7 @@ async def update_config(request: Request):
 # ── HL endpoints ──────────────────────────────────────────────────────────────
 
 
-@app.get("/api/hl/account")
+@app.get("/api/hl/account", dependencies=[Depends(_require_operator)])
 async def get_account():
     """GET /api/hl/account — perp + spot account state."""
     user = resolve_user_address()
@@ -351,7 +357,7 @@ async def get_candles(
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/hl/portfolio")
+@app.get("/api/hl/portfolio", dependencies=[Depends(_require_operator)])
 async def get_portfolio():
     """GET /api/hl/portfolio — positions and equity."""
     user = resolve_user_address()
@@ -408,7 +414,7 @@ async def get_orderbook(coin: str = Query("BTC")):
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/place-order")
+@app.post("/api/hl/place-order", dependencies=[Depends(_require_operator)])
 async def place_order(request: Request):
     """POST /api/hl/place-order — manual order with ATR-based SL/TP brackets."""
     try:
@@ -485,7 +491,7 @@ async def place_order(request: Request):
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/close-position")
+@app.post("/api/hl/close-position", dependencies=[Depends(_require_operator)])
 async def close_position(request: Request):
     """POST /api/hl/close-position — close an open position for a coin."""
     try:
@@ -540,7 +546,7 @@ async def close_position(request: Request):
         raise HTTPException(500, str(e))
 
 
-@app.post("/api/hl/cancel-order")
+@app.post("/api/hl/cancel-order", dependencies=[Depends(_require_operator)])
 async def cancel_order(request: Request):
     """POST /api/hl/cancel-order — cancel an order by OID."""
     try:
