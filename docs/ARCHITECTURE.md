@@ -466,14 +466,485 @@ the engine writes to. There's one source of truth for each thing.
 
 ---
 
-## What this doc deliberately does NOT cover
+---
 
-- Specific trade ideas, parameter tuning recipes, market-condition strategies
-- Detailed risk modeling, Kelly sizing math, retrace tier theory
-- The cron job + skill scaffolding for hands-off monitoring
-- Backtesting methodology + walk-forward validation
-- Wallet security (use a fresh agent wallet with limited funds; master-wallet
-  reads only)
+## Using hermes-trader — the operator's manual
 
-Those belong in their own docs (or, for now, in the code + commit history).
-This doc is the **map**. If you're lost, start at the pipeline diagram.
+Three audiences, three workflows: you-the-human via Hermes Agent for ad-hoc
+operation, you-the-human via the dashboard for live monitoring, and the
+trading loop running headless for autonomous execution.
+
+### General use (no Hermes Agent)
+
+The minimum to get from "I cloned this" to "the bot is trading":
+
+```bash
+# 1. Install
+git clone https://github.com/Julian-dev28/hermes-trader
+cd hermes-trader
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# 2. Configure
+cp .env.local.example .env.local
+# Edit: OPENROUTER_API_KEY, HYPERLIQUID_WALLET_ADDRESS, HYPERLIQUID_PRIVATE_KEY
+# Optional: HERMES_OPERATOR_TOKEN (for the operator console), BRAVE_API_KEY (news)
+
+# 3. Start in OFF mode first — verify the engine reads market data without trading
+echo '{"mode":"OFF","minAiConfidence":0.8,"max_concurrent":3}' > .agent-config.json
+
+# 4. Run the trading loop and the dashboard
+python3 scripts/trading_loop.py &     # scans every 60s
+python3 -m hermes_trader.server &      # dashboard at http://localhost:8000
+
+# 5. Watch one cycle — the dashboard's live feed shows scans + research verdicts
+open http://localhost:8000
+
+# 6. When you're satisfied, flip mode to LIVE
+#    Either edit .agent-config.json directly, or use /operator?token=… and click "set mode LIVE"
+```
+
+The config is read **fresh on every trade** — no restart needed for changes.
+Same for risk caps, leverage, allowlists.
+
+### Hands-off operating via Hermes Agent (the MCP path)
+
+If you have Hermes Agent installed and the MCP server registered, you operate
+the engine in plain English:
+
+```yaml
+# ~/.hermes/config.yaml
+mcp_servers:
+  hermes-trader:
+    command: python3
+    args: [/Users/you/path/to/hermes-trader/scripts/hermes-mcp-server.py]
+    cwd: /Users/you/path/to/hermes-trader
+    timeout: 60
+```
+
+Then in a Hermes session:
+
+| Intent | Prompt |
+|---|---|
+| **Check state** | *Load the hermes-trader skill and show me its current state — mode, equity, open positions, recent trades.* |
+| **Tune** | *Set hermes-trader to LIVE mode with `max_concurrent: 5` and `equity_fraction_per_trade: 0.025`.* |
+| **One-shot cycle** | *Run a hermes-trader scan, research the best candidate, and execute it if the verdict is LONG or SHORT with confidence ≥ 0.7. Tell me what happened.* |
+| **Start continuous** | *Start the hermes-trader trading loop in the background. Confirm it is running.* |
+| **Stop continuous** | *Stop the hermes-trader trading loop. Don't close existing positions.* |
+| **Status (in-session)** | *Check hermes-trader status. Highlight anything that changed since the last report.* |
+| **Manual close** | *Close my hermes-trader position in TSLA. Show me the realized PnL.* |
+
+The skill at `skills/hermes-trader-agent/` carries the system prompt, the
+`feed.py` / `status.py` helper scripts, and reference docs that Hermes Agent
+loads as context for every session. So the agent knows the conventions —
+session-log glyphs, gate names, restart ritual — without you having to
+re-explain.
+
+### Live monitoring via the dashboard
+
+The dashboard at `/` is **read-only and public-safe** — no token required.
+What you see:
+
+- **Hero KPIs**: equity, today's PnL, open positions, last-tick age + scan status pill
+- **Equity curve**: LTTB-smoothed line over 24h / 7d / 30d windows
+- **Open positions**: leveraged ROE matching HL's display, DSL floor + phase per position
+- **Recent closes**: realized PnL net of taker fees, with `~estimated` marker on pre-fill-capture trades
+- **Live feed**: SSE stream of every event the engine emits, with hover-tooltips for AI reasoning + full prices
+
+The operator console at `/operator?token=<HERMES_OPERATOR_TOKEN>` adds:
+- **Config viewer** — current `.agent-config.json` rendered as JSON
+- **DSL tracker viewer** — every position's peak/floor/phase/leverage
+- **Force-close buttons** — one click per coin to market-close + deregister
+- **Mode toggle** — flip OFF ↔ LIVE without editing config files
+
+The operator endpoints check `X-Operator-Token` or `?token=` query param
+on every request; missing env var → 503, wrong token → 401.
+
+### Tailing from the terminal (no browser)
+
+```bash
+# Live feed, same format as the dashboard
+python3 skills/hermes-trader-agent/scripts/feed.py --follow
+
+# Last hour of activity (one-shot, for cron / piping to Slack)
+python3 skills/hermes-trader-agent/scripts/feed.py --since 1h
+
+# Compact status block — equity, positions, recent closes, win rate
+python3 skills/hermes-trader-agent/scripts/status.py
+```
+
+---
+
+## The skill scaffolding + cron for hands-off monitoring
+
+`skills/hermes-trader-agent/` is a self-contained Hermes-Agent skill: a
+folder that Hermes loads as a *capability* for an agent session. The
+layout intentionally mirrors Senpi's skill format so the directory pattern is
+portable, even though the runtime semantics differ.
+
+```
+skills/hermes-trader-agent/
+├── SKILL.md                       # the system prompt — what this agent IS,
+│                                    what tools it has, how to phrase
+│                                    decisions, what to ask the user before
+│                                    risky actions
+├── scripts/
+│   ├── feed.py                    # live activity tail (CLI + cron-friendly)
+│   ├── status.py                  # compact status block
+│   └── audit_mcp_server.py        # verifies the MCP server is healthy
+└── references/
+    ├── cron-jobs.md               # how to wire the hourly status job
+    ├── hyperliquid-gotchas.md     # tick-size / sig-fig / IOC fill quirks
+    ├── mcp-config.md              # Hermes ~/.hermes/config.yaml block
+    ├── mcp-server.md              # the 100-tool surface
+    ├── restart-sequence.md        # the canonical pkill+restart ritual
+    ├── signal-vs-action-gap.md    # debugging "scanner fires, no trade"
+    ├── trading-mode.md            # execute-first reporting contract
+    └── daemon-investigation.md    # the --daemon flag is informational only
+```
+
+### Hands-off monitoring via Hermes cron
+
+Hermes Agent supports scheduled jobs (`hermes cron list/create/resume/pause`).
+The skill includes a recommended **hourly status report** job that runs
+`status.py` and posts the output to whichever channel you have configured
+(Telegram, Slack, email, or just stdout in your terminal).
+
+```bash
+# One-time setup
+hermes cron create hermes-trader-hourly \
+  --interval "0 * * * *" \
+  --command "python3 /path/to/hermes-trader/skills/hermes-trader-agent/scripts/status.py"
+
+# Status of all jobs
+hermes cron list
+
+# Pause / resume
+hermes cron pause  <job-id>
+hermes cron resume <job-id>
+```
+
+The status report is **zero AI cost** — it's a pure CLI script reading the
+session log + memory file. The whole point is to give you ambient awareness
+without paying for an LLM call.
+
+For full AI-summarized reports (Hermes-driven "tell me what changed in the
+last hour and flag anomalies"), set up a separate Hermes cron that prompts
+the agent — that does cost OpenRouter tokens but produces a much richer
+report.
+
+---
+
+## Backtesting methodology
+
+`scripts/backtest.py` runs the current strategy against historical HL candles.
+The point is to make tuning empirical rather than vibes-driven.
+
+```bash
+# Basic run — last 30 days of BTC + ETH 4h candles
+python3 scripts/backtest.py --coins BTC,ETH --interval 4h --days 30
+
+# Walk-forward: optimize on first half, validate on second
+python3 scripts/backtest.py --walk-forward 0.5
+
+# Test a specific config (overrides .agent-config.json for the run only)
+HERMES_BACKTEST_CONFIG='{"min_ai_confidence":0.7,"counter_regime_min_conf":0.85}' \
+  python3 scripts/backtest.py --coins BTC --days 60
+```
+
+### What the backtest does and doesn't model
+
+| Modeled | Approximated | Not modeled |
+|---|---|---|
+| Trigger detection (same code as live) | Slippage (configurable bps drag) | Order-book depth |
+| TA filter (same code) | HL taker fees | Funding payments mid-trade |
+| Risk gates (same code, sees historical equity) | LLM verdicts (replayed from memory if available, else mocked) | News-blackout (no historical news index) |
+| DSL exit logic (same code) | Fill probability for IOC orders | Liquidations |
+| Sizing math (same code) | | Cross-margin interactions |
+
+The biggest gap: **the AI research call** doesn't replay historically (the LLM
+might give a different verdict today than the day-of). The backtest defaults
+to "all verdicts pass" or "use cached verdicts from memory", which over-states
+results. Treat backtest numbers as an **upper bound**, not a forecast.
+
+### Walk-forward validation
+
+To avoid overfitting parameters to a specific window, split the period in
+half: optimize the config on the first half, then run the optimized config
+**unchanged** on the second half. A strategy that wins the in-sample period
+but loses out-of-sample is overfit; ditch the change.
+
+Three params worth walk-forwarding:
+- `counter_regime_min_conf` (0.5 / 0.7 / 0.85 / 1.0)
+- `min_ai_confidence` (0.3 / 0.5 / 0.7)
+- `dsl_exit.max_loss_pct` (1.5 / 2.5 / 4.0)
+
+Don't walk-forward more than 3 params simultaneously — combinatorial
+explosion, and most "wins" become noise.
+
+---
+
+## Risk modeling — Kelly, retrace tiers, daily killswitch
+
+### Half-Kelly sizing (in `executor.kelly_size`)
+
+The classical Kelly criterion says: **fraction of capital to bet** =
+`(p × b − q) / b` where:
+- p = win probability (= AI confidence)
+- q = 1 − p
+- b = reward-to-risk ratio (= tp distance / sl distance)
+
+Full Kelly maximizes long-run growth but is brutally volatile (it'll cut
+your capital in half from peak with high probability before recovering).
+Standard practice is **half-Kelly** — divide the result by 2 — which gives
+~75% of full Kelly's expected growth at ~half the volatility.
+
+In the executor:
+
+```python
+def kelly_size(confidence, equity, reward_risk_ratio, max_trade_notional):
+    p = confidence; q = 1 - p; b = reward_risk_ratio
+    f_star = max(0, (p * b - q) / b) if b != 0 else 0
+    half_kelly = f_star / 2
+    return min(half_kelly * equity, max_trade_notional)
+```
+
+**This is the historical implementation.** The *live* sizing in the current
+build actually uses a simpler fixed-fraction:
+`equity × equity_fraction_per_trade × leverage`. The Kelly function is kept
+as a reference implementation and is the model to switch back to when AI
+confidence + tp/sl ratios are well-calibrated. The fixed-fraction sizing
+is simpler to reason about during the calibration phase.
+
+### Retrace tier theory (in `dsl_exit.ExitPolicy.phase2_tiers`)
+
+Phase 2's trailing floor:
+
+```
+floor = entry + (peak − entry) × (1 − retrace_threshold)
+```
+
+`retrace_threshold` is **how much of the peak profit you're willing to
+give back** before exiting. Lower → tighter trailing → more whipsaw. Higher
+→ looser trailing → more drawdown but bigger winners.
+
+The tiered design says: **as a position becomes a bigger winner, tighten
+the trail**. Defaults:
+
+| Profit % above entry | Retrace threshold | Floor after pullback from peak |
+|---|---|---|
+| 1.5% – 5% | 30% | entry + 70% of (peak − entry) |
+| 5% – 10% | 40% | entry + 60% of (peak − entry) |
+| 10% – 20% | 50% | entry + 50% of (peak − entry) |
+| 20% – 50% | 60% | entry + 40% of (peak − entry) |
+| 50%+ | (cap at last tier) | entry + 40% of (peak − entry) |
+
+Why tighten with profit? Because mean-reversion probability rises as a move
+extends — a position that's +50% is more likely to give back 50% than a
+position that's +3% is to give back 50%. The tier schedule reflects this
+empirically rather than via a fitted model.
+
+**To tune more aggressively**: shift the entire tier schedule lower (e.g.
+20%/30%/40%/50%). You'll close winners faster but with smaller average
+realized gain.
+
+**To tune more loosely**: shift higher (e.g. 40%/50%/60%/70%). You'll ride
+bigger winners but eat more giveback.
+
+The tier schedule is per-position via `register_position(policy=…)` so
+different strategies can use different aggressiveness. The default applies
+to all positions opened by the standard executor path.
+
+### Daily killswitch + the equity-spike bug
+
+`max_daily_loss_usd` (default -$100, often tuned tighter) stops new trades
+for the rest of the UTC day when realized PnL drops below it. Cap-only —
+existing positions still get DSL-managed.
+
+**Known weakness (pending fix):** the heartbeat computes daily PnL from
+HL's `accountValue`, which occasionally returns `0` on a transient API
+hiccup before recovering. A zero reading mid-day looks like a catastrophic
+loss and trips the killswitch on phantom data. The mitigation is to
+sanity-check the heartbeat: if equity drops >50% in a single 60s tick AND
+no `dsl_exit` event explains it, treat the reading as transient and don't
+update daily PnL until the next clean tick. **TODO** in the loop.
+
+### Risk gate composition philosophy
+
+The 12 gates evaluate in parallel (no short-circuit) and the trade blocks
+if any returns `pass: False`. Two consequences:
+
+1. **You always see all gate results in the execute event's telemetry,
+   even on a block.** This makes "why didn't the trade go through" trivially
+   answerable from the session log.
+2. **Adding a gate is additive.** Composition is a frozenset; you can't
+   accidentally weaken safety by adding more gates, only by removing one.
+
+The 12 gates split into three layers conceptually:
+
+- **Position-level** (confidence, opposite_guard, cooldown) — about *this*
+  trade in *this* moment.
+- **Portfolio-level** (max_concurrent, notional_cap, equity_risk,
+  correlation) — about how this trade fits the rest of your book.
+- **Macro-level** (daily_loss, liquidity, coin_filter, market_regime,
+  news) — about external conditions independent of your book.
+
+When a strategy fires too much or too little, look at which layer is
+binding. The session log's `gate_results` payload tells you exactly.
+
+---
+
+## Specific trade ideas + tuning recipes by market regime
+
+The strategy is designed to work across regimes, but the *parameters* you
+want differ by what BTC is doing. These are starting points, not gospel —
+backtest before flipping things in `.agent-config.json`.
+
+### Regime: BTC strong uptrend (EMA20 >> EMA50, slope > +1%/5d)
+
+Posture: **trend-follow, accept some giveback.**
+
+```json
+{
+  "min_ai_confidence": 0.45,         // lower — riding the trend is easier
+  "counter_regime_min_conf": 0.85,   // much higher — counter-shorts rarely worth it
+  "equity_fraction_per_trade": 0.04, // larger size; correlation works in your favor
+  "dsl_exit": {
+    "max_loss_pct": 3.0,             // wider stop — trend pulls back further than 2.5%
+    "protect_pct": 2.0,              // require more cushion before locking
+    "retrace_threshold": 0.45        // wider trail — let winners run further
+  }
+}
+```
+
+Best signal types: **momentum_burst, trend_strength, breakout** (high-beta
+crypto + equity perps).
+
+### Regime: BTC strong downtrend
+
+Posture: **trend-follow the bear, tight risk.**
+
+```json
+{
+  "min_ai_confidence": 0.45,
+  "counter_regime_min_conf": 0.85,   // counter-longs only on real conviction
+  "equity_fraction_per_trade": 0.025,
+  "dsl_exit": {
+    "max_loss_pct": 2.0,             // tighter — bear rallies are sharp
+    "retrace_threshold": 0.30        // tighter trail
+  }
+}
+```
+
+Best signal types: **breakout (to the downside), volume_spike on selloffs**.
+
+### Regime: chop / neutral (EMA cross near zero, ADX < 20)
+
+Posture: **mean-revert, smaller size, faster exits.**
+
+```json
+{
+  "min_ai_confidence": 0.65,         // higher bar — fewer trades, better quality
+  "counter_regime_min_conf": 0.65,   // symmetric — no directional bias
+  "equity_fraction_per_trade": 0.02, // smaller — chop wears you down
+  "dsl_exit": {
+    "max_loss_pct": 1.8,
+    "protect_pct": 1.0,
+    "retrace_threshold": 0.25,
+    "hard_timeout_minutes": 90       // close faster — chop doesn't pay to hold
+  }
+}
+```
+
+Best signal types: **range_compression, oi_funding_anomaly** (fade
+crowded positioning).
+
+### Regime: high-VIX / macro event window (CPI, FOMC, earnings cluster)
+
+Posture: **stand down, or only trade with massive conviction.**
+
+```json
+{
+  "min_ai_confidence": 0.85,
+  "counter_regime_min_conf": 1.01,   // effectively disable counter-trades
+  "max_concurrent": 3,
+  "max_daily_loss_usd": -15,         // tight killswitch
+  "max_total_notional_pct": 3.0      // 3x equity max — way under normal
+}
+```
+
+The `news_blackout` gate already handles this for explicit FOMC/CPI
+keywords. The above is the manual posture for "I know macro vol is high
+and I want the bot to be cautious for 24h".
+
+---
+
+## Wallet security
+
+Trading from your **personal main wallet** is wrong on every axis. Do this:
+
+### Recommended setup: agent wallet + master wallet
+
+Hyperliquid supports an **agent wallet** mechanism: a separate keypair you
+authorize to *act on behalf of* a master wallet without being able to
+*withdraw* from it. The master holds the funds; the agent signs orders.
+
+```bash
+# In HL UI:
+# 1. Generate or import a fresh wallet for the bot (never reuse a key)
+# 2. Master wallet → "Add Agent Wallet" → paste the agent's address
+# 3. Agent is now authorized to trade for the master, but can NOT withdraw
+```
+
+Then in `.env.local`:
+
+```bash
+HYPERLIQUID_MASTER_ADDRESS=0x...    # the wallet that holds funds (read-only here)
+HYPERLIQUID_WALLET_ADDRESS=0x...    # the agent wallet (used to sign orders)
+HYPERLIQUID_PRIVATE_KEY=0x...       # the AGENT's private key — NOT the master's
+```
+
+**The master's private key never touches the bot's filesystem.** If the
+agent key leaks (bot machine compromised, key checked in by accident,
+malicious dependency), the worst case is the attacker trades your funds
+into a loss — they can't drain them.
+
+### Key hygiene checklist
+
+- `.env.local` is gitignored (verify before any first commit).
+- Use a separate machine / VM / Fly instance for the bot — not your
+  personal laptop where you also browse the web.
+- Rotate the agent key every 90 days; HL agent wallets revoke instantly.
+- `HERMES_OPERATOR_TOKEN` is in `.env.local` (not in `fly.toml`'s env
+  block); rotate quarterly or after every "did I share that screen?" moment.
+- The dashboard URL is **public**; the operator URL is `?token=…` which is
+  in your browser history. Use a long-lived OS keychain entry to retrieve
+  it rather than pasting into chat / docs.
+
+### Things that should NEVER be in the repo
+
+```
+HYPERLIQUID_PRIVATE_KEY    OPENROUTER_API_KEY    HERMES_OPERATOR_TOKEN
+BRAVE_API_KEY              .agent-memory.json    .dsl-state.json
+```
+
+All of these are in `.gitignore`. If you ever commit one by accident,
+**rotate the key immediately** — `git rm --cached` doesn't remove it from
+remote history. Treat the key as burned.
+
+### Capital limits
+
+Don't fund the agent wallet with more than you can afford to lose **and
+to lose to a bug**. The DSL engine is robust but it's not formally
+verified; a single bad `mark_px` reading, an off-by-one in size precision,
+a network partition during a close — any of these can lose money faster
+than you can intervene. Run with the smallest balance that the strategy
+can produce meaningful signal on. The bot should be a research instrument
+first, a money-maker second.
+
+---
+
+This is the operator's manual. The pipeline + module map earlier in the
+doc is the **map**; this section is the **owner's manual**. Together they
+should let you (or anyone) operate the engine confidently without
+spelunking through the source.
