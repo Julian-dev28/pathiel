@@ -1304,11 +1304,20 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   applyI18n();
 });
 
-// ── Highlight the active page in the primary navbar.
+// ── Highlight the active page in the primary navbar + carry the operator
+// token across navigation. Without the token-carry, clicking OPERATOR after
+// entering operator mode on / would land on a 401-locked operator page.
 (function(){
   const here = window.location.pathname.replace(/\/$/, '') || '/';
+  const tok = new URLSearchParams(window.location.search).get('token')
+           || localStorage.getItem('hermes-op-token') || '';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
+    if (tok) {
+      const u = new URL(a.href, window.location.origin);
+      u.searchParams.set('token', tok);
+      a.href = u.toString();
+    }
   });
 })();
 
@@ -1607,11 +1616,18 @@ async function loadConfig() {
 loadConfig();
 setInterval(loadConfig, 5000); // hot-reloads alongside the trading loop
 
-// Highlight the active page in the primary navbar.
+// Highlight the active page + carry the operator token across navigation.
 (function(){
   const here = window.location.pathname.replace(/\\/$/, '') || '/';
+  const tok = new URLSearchParams(window.location.search).get('token')
+           || localStorage.getItem('hermes-op-token') || '';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
+    if (tok) {
+      const u = new URL(a.href, window.location.origin);
+      u.searchParams.set('token', tok);
+      a.href = u.toString();
+    }
   });
 })();
 </script>
@@ -1624,27 +1640,47 @@ _OPERATOR_HTML = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · operator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
+  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
+  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
+  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
   .btn{padding:6px 12px;border-radius:6px;background:#27272a;color:#e5e5e5;font-size:12px}
   .btn:hover{background:#3f3f46}
   .btn.danger{background:#7f1d1d;color:#fecaca}
   .btn.danger:hover{background:#991b1b}
   pre{font-size:11px;line-height:1.5}
+  /* Primary navbar (mirrors / and /config) */
+  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
+  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
+  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
+  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
+  .op-banner{font-family:'Press Start 2P',monospace;font-size:9px;color:#fbbf24;text-align:center;padding:6px;border:2px dashed #78350f;background:#1f1300;margin-bottom:14px;letter-spacing:.06em}
+  .op-banner.op-ok{color:#6ee7b7;border-color:#047857;background:#022c1e}
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-5xl mx-auto px-4 py-6">
+<div class="max-w-[1100px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-6">
-    <div class="flex items-baseline gap-3">
-      <span class="text-lg font-bold tracking-tight">hermes-trader</span>
-      <span class="text-xs text-amber-400">operator console</span>
+  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+    <div class="flex items-center gap-3">
+      <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER · OPERATOR</span>
     </div>
-    <a href="/" class="text-xs text-zinc-400 hover:text-zinc-200">← public dashboard</a>
   </header>
+
+  <nav class="flex items-center gap-2 mb-4 flex-wrap" id="hermes-nav">
+    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
+    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
+    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
+  </nav>
+
+  <div id="op-banner" class="op-banner">checking operator token…</div>
 
   <section class="bg-zinc-900 rounded-lg p-4">
     <div class="text-xs text-zinc-500 mb-2">config (.agent-config.json)</div>
@@ -1669,16 +1705,53 @@ _OPERATOR_HTML = """<!doctype html>
 </div>
 
 <script>
+// Token resolution mirrors the public dashboard: ?token= in URL wins,
+// then localStorage `hermes-op-token`, else empty. If a fresh URL token
+// is present, persist it so navigating between pages keeps the session.
 const params = new URLSearchParams(location.search);
-const token = params.get('token');
+const tokenFromUrl = params.get('token') || '';
+const tokenFromStore = localStorage.getItem('hermes-op-token') || '';
+const token = tokenFromUrl || tokenFromStore;
+if (tokenFromUrl) localStorage.setItem('hermes-op-token', tokenFromUrl);
 const auth = () => ({'X-Operator-Token': token || ''});
 
+function setBanner(msg, ok) {
+  const el = document.getElementById('op-banner');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'op-banner' + (ok ? ' op-ok' : '');
+}
+
+// Highlight the active page in the navbar. Carry the operator token across
+// navigation so clicking DASHBOARD / CONFIG doesn't lose the session.
+(function(){
+  const here = window.location.pathname.replace(/\\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+    if (token) {
+      const u = new URL(a.href, window.location.origin);
+      u.searchParams.set('token', token);
+      a.href = u.toString();
+    }
+  });
+})();
+
+if (!token) {
+  setBanner('NO TOKEN · go to / and click 🔒 op to enter one', false);
+} else {
+  setBanner('operator session ACTIVE · token loaded', true);
+}
+
 async function loadConfig() {
+  if (!token) return;
   const r = await fetch('/api/dashboard/operator/config', {headers: auth()});
+  if (r.status === 401) { setBanner('TOKEN REJECTED by server (401) · re-enter via 🔒 op', false); return; }
   document.getElementById('config').textContent = JSON.stringify(await r.json(), null, 2);
 }
 async function loadTrackers() {
+  if (!token) return;
   const r = await fetch('/api/dashboard/operator/trackers', {headers: auth()});
+  if (r.status === 401) return;
   document.getElementById('trackers').textContent = JSON.stringify(await r.json(), null, 2);
 }
 async function loadPositions() {
