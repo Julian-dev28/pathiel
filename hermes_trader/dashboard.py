@@ -1683,11 +1683,6 @@ _OPERATOR_HTML = """<!doctype html>
   <div id="op-banner" class="op-banner">checking operator token…</div>
 
   <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="text-xs text-zinc-500 mb-2">config (.agent-config.json)</div>
-    <pre id="config" class="text-zinc-300 overflow-x-auto">loading…</pre>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
     <div class="text-xs text-zinc-500 mb-2">positions — force close</div>
     <div id="positions" class="text-sm">loading…</div>
   </section>
@@ -1742,16 +1737,12 @@ if (!token) {
   setBanner('operator session ACTIVE · token loaded', true);
 }
 
-async function loadConfig() {
-  if (!token) return;
-  const r = await fetch('/api/dashboard/operator/config', {headers: auth()});
-  if (r.status === 401) { setBanner('TOKEN REJECTED by server (401) · re-enter via 🔒 op', false); return; }
-  document.getElementById('config').textContent = JSON.stringify(await r.json(), null, 2);
-}
+// Config dump moved to its own /config page (linked in the navbar above) —
+// the operator console focuses on actions (close, set mode) and live state.
 async function loadTrackers() {
   if (!token) return;
   const r = await fetch('/api/dashboard/operator/trackers', {headers: auth()});
-  if (r.status === 401) return;
+  if (r.status === 401) { setBanner('TOKEN REJECTED by server (401) · re-enter via 🔒 op', false); return; }
   document.getElementById('trackers').textContent = JSON.stringify(await r.json(), null, 2);
 }
 async function loadPositions() {
@@ -1780,10 +1771,9 @@ async function setMode(mode) {
     body: JSON.stringify({mode})
   });
   alert('mode → ' + (await r.json()).mode);
-  loadConfig();
 }
 
-loadConfig(); loadTrackers(); loadPositions();
+loadTrackers(); loadPositions();
 setInterval(loadTrackers, 10000);
 setInterval(loadPositions, 10000);
 </script>
