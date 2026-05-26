@@ -394,6 +394,9 @@ _PUBLIC_HTML = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<!-- NES.css — pixel-perfect Nintendo-flavored UI primitives. Spike: wraps the
+     hamster habitat as a proper Tamagotchi enclosure. Tiny (~30KB), no JS. -->
+<link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -410,6 +413,10 @@ _PUBLIC_HTML = """<!doctype html>
   .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
   /* Agent pet — bounces gently */
   .pet{font-size:28px;display:inline-block;animation:pet-bounce 1.4s ease-in-out infinite;filter:drop-shadow(2px 2px 0 #064e3b)}
+  /* When the pet element renders the pixel-sprite SVG (worried state), size
+     it like the emoji glyphs so the bounce animation lines up. */
+  .pet.pet-sprite{width:32px;height:32px;font-size:0;line-height:0;image-rendering:pixelated}
+  .pet.pet-sprite svg{width:100%;height:100%;display:block;image-rendering:pixelated}
   @keyframes pet-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
   .pet.shake{animation:pet-shake 0.4s linear infinite}
   @keyframes pet-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
@@ -475,21 +482,27 @@ _PUBLIC_HTML = """<!doctype html>
   }
   /* Sticky on wide screens, scrolls inline on narrow */
   @media (min-width:1024px){.matrix-pane{position:sticky;top:1.5rem;height:calc(100vh - 3rem)}}
-  /* ── HERMES.HAMSTER habitat — nous-research-flavored tamagotchi at top of matrix pane ── */
-  .habitat{padding:10px 12px 8px;border-bottom:2px solid #047857;background:linear-gradient(180deg,#02160c 0%,#000805 100%);position:relative;z-index:3}
+  /* ── HERMES.HAMSTER habitat — Tamagotchi pet enclosure ── */
+  /* NES.css supplies the chunky pixel border/dark fill; we only override
+     spacing + position so it sits cleanly at the top of the matrix sidebar. */
+  .habitat-nes{margin:8px 8px 6px;padding:12px !important;background:#020a05 !important;border-color:#047857 !important;position:relative;z-index:3}
+  /* Layout: rabbit + spinning wheel on the left, NES speech balloon on the right. */
+  .habitat-pet-section{display:flex;align-items:flex-start;gap:8px}
+  .habitat-balloon{flex:1;margin:0 !important;padding:6px 8px !important;min-width:0}
+  .habitat-balloon::after,.habitat-balloon::before{filter:hue-rotate(0)}
+  #hamster-quote{font-family:'Press Start 2P',monospace;font-size:7px;color:#6ee7b7;text-align:left;line-height:1.6;margin:0;letter-spacing:.04em;transition:opacity .3s ease;word-break:break-word}
   .habitat-name{font-family:'Press Start 2P',monospace;font-size:8px;color:#34d399;letter-spacing:.15em;text-align:center;margin-bottom:4px;text-shadow:0 0 4px rgba(52,211,153,0.6)}
   .habitat-name .psi{color:#fbbf24;margin-left:4px;text-shadow:0 0 6px rgba(251,191,36,0.6)}
   .habitat-pet{display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 0 4px;line-height:1}
-  /* White rabbit: brightness+saturate to wash the default emoji tone toward
-     white, plus a soft white glow. Animation filters in keyframes override
-     this briefly during celebrate/victory/defeat. */
-  .hamster-body{font-size:30px;display:inline-block;animation:hamster-run .42s ease-in-out infinite;filter:brightness(1.55) saturate(0.25) drop-shadow(0 0 6px rgba(255,255,255,0.65))}
+  /* Pixel-art container — sized for either the inline SVG rabbit sprite or
+     a fallback emoji (when a PnL state swaps the contents). image-rendering
+     pixelated keeps the SVG crisp even when scaled. */
+  .hamster-body{font-size:30px;display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;animation:hamster-run .42s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(255,255,255,0.65));image-rendering:pixelated}
+  .hamster-body svg{width:100%;height:100%;display:block;image-rendering:pixelated}
   @keyframes hamster-run{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px) rotate(-2deg)}}
   .hamster-wheel{font-size:14px;display:inline-block;animation:wheel-spin .8s linear infinite;opacity:.75;color:#34d399}
   @keyframes wheel-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-  .habitat-quote{font-family:'Press Start 2P',monospace;font-size:7px;color:#34d399aa;text-align:center;padding:6px 2px 0;min-height:14px;letter-spacing:.05em;transition:opacity .3s ease}
-  .habitat-quote::before{content:'» '}
-  .habitat-quote::after{content:' «'}
+  /* (legacy .habitat-quote removed in favor of NES.css balloon — see #hamster-quote above) */
   /* ── Hamster reactions to live trading events ── */
   /* execute → yellow celebrate (lightning bolt burst) */
   .hamster-body.celebrate{animation:hamster-celebrate 1.2s ease-out}
@@ -663,12 +676,35 @@ _PUBLIC_HTML = """<!doctype html>
   </main>
 
   <aside class="matrix-pane flex flex-col">
-    <div class="habitat">
-      <div class="habitat-pet">
-        <span class="hamster-body" title="follow the white rabbit">🐇</span>
-        <span class="hamster-wheel">⚙</span>
-      </div>
-      <div class="habitat-quote" id="hamster-quote">awakening</div>
+    <div class="nes-container is-dark is-rounded habitat habitat-nes">
+      <section class="habitat-pet-section">
+        <div class="habitat-pet">
+          <span class="hamster-body" title="follow the white rabbit">
+            <!-- 16x16 pixel rabbit sprite — hand-rolled because NES.css ships
+                 mario/kirby/bulbasaur but no rabbit. shape-rendering=crispEdges
+                 keeps the pixels sharp at any scale. -->
+            <svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="0" width="2" height="6" fill="#f5f5f5"/>
+              <rect x="11" y="0" width="2" height="6" fill="#f5f5f5"/>
+              <rect x="4" y="1" width="1" height="3" fill="#fbcfe8"/>
+              <rect x="12" y="1" width="1" height="3" fill="#fbcfe8"/>
+              <rect x="3" y="4" width="10" height="1" fill="#f5f5f5"/>
+              <rect x="2" y="5" width="12" height="8" fill="#f5f5f5"/>
+              <rect x="5" y="8" width="2" height="2" fill="#ef4444"/>
+              <rect x="9" y="8" width="2" height="2" fill="#ef4444"/>
+              <rect x="7" y="11" width="2" height="1" fill="#f472b6"/>
+              <rect x="1" y="10" width="1" height="1" fill="#a3a3a3"/>
+              <rect x="14" y="10" width="1" height="1" fill="#a3a3a3"/>
+              <rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/>
+              <rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/>
+            </svg>
+          </span>
+          <span class="hamster-wheel">⚙</span>
+        </div>
+        <div class="nes-balloon from-left is-dark habitat-balloon">
+          <p id="hamster-quote">awakening</p>
+        </div>
+      </section>
     </div>
     <div class="flex items-center justify-between px-3 py-2 border-b-2 border-emerald-800/60 bg-black/40 relative z-10">
       <div class="text-[10px] text-emerald-400 pixel" data-i18n="live_activity">live activity</div>
@@ -810,13 +846,19 @@ function triggerHamsterReaction(eventType, pnlPct) {
 }
 
 // ── KPIs ──
+// 8-bit pixel sprites used for the always-visible rabbit + the worried mood
+// (😰 replacement). Other PnL faces still use modern emoji — say the word and
+// I'll pixelize the whole set. shape-rendering=crispEdges keeps lines sharp.
+const SPRITE_RABBIT = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="0" width="2" height="6" fill="#f5f5f5"/><rect x="11" y="0" width="2" height="6" fill="#f5f5f5"/><rect x="4" y="1" width="1" height="3" fill="#fbcfe8"/><rect x="12" y="1" width="1" height="3" fill="#fbcfe8"/><rect x="3" y="4" width="10" height="1" fill="#f5f5f5"/><rect x="2" y="5" width="12" height="8" fill="#f5f5f5"/><rect x="5" y="8" width="2" height="2" fill="#ef4444"/><rect x="9" y="8" width="2" height="2" fill="#ef4444"/><rect x="7" y="11" width="2" height="1" fill="#f472b6"/><rect x="1" y="10" width="1" height="1" fill="#a3a3a3"/><rect x="14" y="10" width="1" height="1" fill="#a3a3a3"/><rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/><rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/></svg>`;
+const SPRITE_WORRIED = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="2" width="8" height="1" fill="#fde047"/><rect x="3" y="3" width="10" height="1" fill="#fde047"/><rect x="2" y="4" width="12" height="8" fill="#fde047"/><rect x="3" y="12" width="10" height="1" fill="#fde047"/><rect x="4" y="13" width="8" height="1" fill="#fde047"/><rect x="4" y="6" width="1" height="1" fill="#000"/><rect x="5" y="5" width="2" height="1" fill="#000"/><rect x="9" y="5" width="2" height="1" fill="#000"/><rect x="11" y="6" width="1" height="1" fill="#000"/><rect x="5" y="11" width="6" height="1" fill="#000"/><rect x="4" y="10" width="1" height="1" fill="#000"/><rect x="11" y="10" width="1" height="1" fill="#000"/><rect x="13" y="3" width="1" height="1" fill="#60a5fa"/><rect x="12" y="4" width="1" height="2" fill="#60a5fa"/><rect x="13" y="4" width="1" height="2" fill="#7dd3fc"/><rect x="13" y="6" width="1" height="1" fill="#60a5fa"/></svg>`;
+
 // Agent-pet mood: status sets the base, then PnL nudges it. Big winners → 🤑,
 // big losers → 😱. The pet element gets a CSS modifier class for animation
 // (shake on executing, sleep on offline/stale, default gentle bounce otherwise).
 function updatePet(status, dailyPnlPct) {
   const pet = document.getElementById('pet');
   if (!pet) return;
-  let face = '🤖', mood = '';
+  let face = '🤖', mood = '', isSprite = false;
   if (status === 'offline') { face = '💤'; mood = 'sleep'; }
   else if (status === 'stale') { face = '😴'; mood = 'sleep'; }
   else if (status === 'executing') { face = '⚡'; mood = 'shake'; }
@@ -826,10 +868,11 @@ function updatePet(status, dailyPnlPct) {
     if (dailyPnlPct >= 5) face = '🤑';
     else if (dailyPnlPct <= -5) face = '😱';
     else if (dailyPnlPct >= 1.5) face = '😎';
-    else if (dailyPnlPct <= -1.5) face = '😰';
+    else if (dailyPnlPct <= -1.5) { face = SPRITE_WORRIED; isSprite = true; }
   }
-  pet.textContent = face;
-  pet.className = 'pet' + (mood ? ' ' + mood : '');
+  if (isSprite) pet.innerHTML = face;
+  else pet.textContent = face;
+  pet.className = 'pet' + (mood ? ' ' + mood : '') + (isSprite ? ' pet-sprite' : '');
 }
 
 async function refreshSummary() {
