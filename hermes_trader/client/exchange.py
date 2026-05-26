@@ -212,19 +212,58 @@ def get_all_hl_mids() -> Dict[str, float]:
 
 # ── Order placement ────────────────────────────────────────────────────────────
 
+def _is_isolated_only(coin: str) -> bool:
+    """True if the market only supports isolated margin (no cross-margin).
+
+    Most HIP-3 markets are isolated-only (85% of xyz, 100% of vntl, 87% of km,
+    etc.) and a small subset of native HL perps too. Calling
+    `update_leverage(is_cross=True)` on these silently fails on the exchange,
+    after which the next `order()` is rejected with "Insufficient margin to
+    place order" — even when the wallet has plenty of free equity, because no
+    isolated-margin position was actually opened first.
+
+    Reads the per-market meta (main dex or the namespace-prefix HIP-3 dex)
+    and returns the `onlyIsolated` flag. Defaults to False (cross) if lookup
+    fails so native crypto behavior is preserved.
+    """
+    info = _get_info()
+    try:
+        for m in info.meta().get("universe", []):
+            if m["name"] == coin:
+                return bool(m.get("onlyIsolated", False))
+        if ":" in coin:
+            dex = coin.split(":", 1)[0]
+            for m in info.meta(dex=dex).get("universe", []):
+                if m["name"] == coin:
+                    return bool(m.get("onlyIsolated", False))
+    except Exception as e:
+        logger.warning(f"[_is_isolated_only] meta lookup failed for {coin}: {e}")
+    return False
+
+
 def set_leverage(coin: str, leverage: int) -> Dict[str, Any]:
-    """Set leverage for a coin. No-op if no private key is set."""
+    """Set leverage for a coin, choosing cross vs isolated based on the market.
+
+    For markets flagged `onlyIsolated: true` (most HIP-3 + ~3% of native HL),
+    we send `is_cross=False`. Without this branch the leverage call no-ops
+    on isolated-only markets and the order that follows is rejected by HL
+    with "Insufficient margin to place order" despite plenty of free margin.
+
+    No-op when no private key is set.
+    """
     if not PRIVATE_KEY_HEX:
         return {"ok": False, "error": "no private key"}
-    
+
+    is_cross = not _is_isolated_only(coin)
     try:
         exchange = _make_exchange()
-        # SDK signature: update_leverage(leverage, coin, is_cross=True)
-        result = exchange.update_leverage(leverage, coin, is_cross=True)
-        return {"ok": True, "result": result}
+        # SDK: update_leverage(leverage, coin, is_cross). is_cross=False for
+        # markets where the dex rejects cross-margin (HIP-3 majority).
+        result = exchange.update_leverage(leverage, coin, is_cross=is_cross)
+        return {"ok": True, "result": result, "is_cross": is_cross}
     except Exception as e:
-        logger.error(f"Failed to set leverage for {coin}: {e}")
-        return {"ok": False, "error": str(e)}
+        logger.error(f"Failed to set leverage for {coin} (is_cross={is_cross}): {e}")
+        return {"ok": False, "error": str(e), "is_cross": is_cross}
 
 
 def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True) -> str:
