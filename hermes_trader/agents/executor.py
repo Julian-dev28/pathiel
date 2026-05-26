@@ -90,6 +90,41 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     user = resolve_user_address()
+
+    # ── HIP-3 dex-balance preflight ──────────────────────────────────
+    # HIP-3 perp dexes (xyz / km / vntl / etc.) are SEPARATE clearinghouses
+    # from main HL — your $X balance on main does not back trades on xyz
+    # unless USDC has been transferred into the xyz clearinghouse first.
+    # The error "Insufficient margin to place order. asset=110XXX" with
+    # plenty of equity in the main dashboard is this exact bug.
+    # Agent wallets can sign orders but CANNOT transfer between dexes;
+    # the master wallet has to do it manually via the HL frontend (or via
+    # a master-key script). Refuse cleanly here instead of letting HL
+    # reject with a confusing error.
+    coin_for_dex_check = analysis["coin"]
+    if ":" in coin_for_dex_check:
+        dex_name = coin_for_dex_check.split(":", 1)[0]
+        try:
+            from hermes_trader.client.hl_client import _http_post
+            dex_state = _http_post("/info", {
+                "type": "clearinghouseState", "user": user, "dex": dex_name,
+            }) or {}
+            dex_value = float((dex_state.get("marginSummary") or {}).get("accountValue", 0) or 0)
+            if dex_value < 1.0:  # essentially nothing on this dex
+                return {
+                    "executed": False, "mode": mode,
+                    "analysis_id": analysis["id"],
+                    "reason": (
+                        f"hip3_dex_underfunded ({dex_name}: ${dex_value:.2f}). "
+                        f"HIP-3 dexes are separate clearinghouses; transfer USDC "
+                        f"from main to '{dex_name}' via the HL frontend before "
+                        f"the bot can trade these markets."
+                    ),
+                }
+        except Exception as e:
+            logger.warning(f"[executor] HIP-3 dex-balance check failed for {dex_name}: {e}")
+            # Don't block on lookup failure; let HL reject if it has to.
+
     state = fetch_account_state(user) or {}
     equity = float(state.get("equity") or 0)
     available = float(state.get("available") or 0)
