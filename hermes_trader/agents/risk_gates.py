@@ -183,7 +183,7 @@ def eval_all_gates(
     results = {}
     results["confidence"] = confidence_gate(ctx, _cfg(config, "min_ai_confidence", 0.8))
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
-    results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 200))
+    results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
     results["liquidity"] = market_liquidity_floor(ctx, config.get("min_market_volume_usd", 5_000_000))
     results["coin_filter"] = coin_allowlist_gate(
