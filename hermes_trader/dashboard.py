@@ -1184,8 +1184,9 @@ function renderEvent(e) {
       const cap = (c.notional_cap != null ? c.notional_cap + 'x' : '?');
       const cool = (c.cool_min != null ? c.cool_min + 'm' : '?');
       const conf = (c.min_conf != null ? c.min_conf : '?');
+      const kill = (c.kill != null ? '$' + c.kill : '?');
       const hip3 = c.hip3 ? 'on' : 'off';
-      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} hip3:${hip3}`;
+      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} kill=${kill} hip3:${hip3}`;
     }
     text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}${cfgStr}`;
   } else if (ev === 'loop_start') {
@@ -1743,7 +1744,17 @@ async function loadTrackers() {
   if (!token) return;
   const r = await fetch('/api/dashboard/operator/trackers', {headers: auth()});
   if (r.status === 401) { setBanner('TOKEN REJECTED by server (401) · re-enter via 🔒 op', false); return; }
-  document.getElementById('trackers').textContent = JSON.stringify(await r.json(), null, 2);
+  const data = await r.json();
+  const el = document.getElementById('trackers');
+  if (!Array.isArray(data) || data.length === 0) {
+    el.textContent = 'no active DSL trackers — nothing currently being managed.\n(this is normal when 0 positions are open.)';
+    el.style.color = '#71717a';
+    el.style.fontStyle = 'italic';
+  } else {
+    el.textContent = JSON.stringify(data, null, 2);
+    el.style.color = '';
+    el.style.fontStyle = '';
+  }
 }
 async function loadPositions() {
   const r = await fetch('/api/dashboard/positions');

@@ -159,6 +159,7 @@ while True:
                 "notional_cap": _cfg.get("max_total_notional_pct"),
                 "cool_min": _cfg.get("cooldown_min"),
                 "min_conf": _cfg.get("min_ai_confidence"),
+                "kill": _cfg.get("max_daily_loss_usd"),
                 "hip3": bool(_cfg.get("enable_hip3", False)),
             },
         })
