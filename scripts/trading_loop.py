@@ -194,9 +194,43 @@ while True:
                                     "triggers": [t['name'] for t in p.get('triggers', []) if t.get('fired')]}
                                    for p in results]})
 
+        # Pre-research dedupe cache: coin → last research timestamp this run.
+        # Prevents burning AI tokens on a setup that's still in cooldown from a
+        # prior cycle. The execute-time `cooldown_gate` is still in place as the
+        # authoritative backstop; this just stops the paid LLM call early.
+        cooldown_min = float(read_agent_config().get("cooldown_min", 60))
+        cooldown_ms = cooldown_min * 60_000
+        recent_trades_by_coin = {}
+        for t in memory.get_recent_trades(20):
+            if t.get("coin") and t.get("executed_at"):
+                recent_trades_by_coin.setdefault(t["coin"], t["executed_at"])
+        now_ms = int(time.time() * 1000)
+
         for perception in results:
             coin = perception['coin']
             score = perception.get('composite_score', 0)
+
+            # Persist the perception so the memory (and dashboard) tracks real
+            # signal volume. Previously perceptions were processed but never
+            # written, so .agent-memory.json only had 6 of them despite 100+
+            # trades — making the perception cache useless for forensics.
+            try:
+                memory.record_perception(perception)
+            except Exception:
+                pass
+
+            # Pre-research cooldown: if we executed (or attempted) the same
+            # coin within cooldown_min, skip the paid AI call. The execute
+            # gate would block it anyway; no reason to pay for analysis.
+            last_ms = recent_trades_by_coin.get(coin)
+            if last_ms and (now_ms - last_ms) < cooldown_ms:
+                remaining_min = int((cooldown_ms - (now_ms - last_ms)) / 60_000)
+                logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
+                log_event({"event": "ta_skip", "coin": coin,
+                           "signal": "COOLDOWN",
+                           "score": round(float(score), 1),
+                           "trigger_score": round(float(score), 1)})
+                continue
 
             # TA filter — cheap statistical gate before the paid AI call.
             ta = analyze_perception(perception)

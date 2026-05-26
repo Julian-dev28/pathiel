@@ -173,8 +173,26 @@ def get_max_leverage(coin: str) -> int:
 # ── Market data ────────────────────────────────────────────────────────────────
 
 def get_hl_price(coin: str = "BTC") -> float:
-    """Get the current mid price for a coin."""
+    """Get the current mid price for a coin.
+
+    HIP-3 namespaced coins (e.g. `xyz:NVDA`) live on a separate perpDex and
+    aren't returned by the bare `all_mids()` call — that endpoint only
+    covers the main HL perp universe. For colon-namespaced names we derive
+    the dex from the prefix and call `all_mids(dex=...)`. Without this fix
+    the executor was silently aborting HIP-3 trades at
+    `if mid_price <= 0: return invalid_price`.
+    """
     info = _get_info()
+    if ":" in coin:
+        dex = coin.split(":", 1)[0]
+        try:
+            mids = info.all_mids(dex=dex)
+            v = mids.get(coin)
+            if v is not None:
+                return float(v)
+        except Exception:
+            pass
+        return 0.0
     mids = info.all_mids()
     return float(mids.get(coin, "0"))
 

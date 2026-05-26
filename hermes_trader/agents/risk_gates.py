@@ -62,10 +62,26 @@ def daily_loss_kill_switch(ctx: GateContext, max_daily_loss: float) -> GateResul
     return {"pass": False, "reason": f"daily loss killswitch triggered (PnL ${ctx.daily_pnl:.0f} <= ${max_daily_loss})"}
 
 
-def market_liquidity_floor(ctx: GateContext, min_volume: float) -> GateResult:
-    if ctx.market_volume_24h_usd >= min_volume:
+def market_liquidity_floor(
+    ctx: GateContext,
+    min_volume: float,
+    min_volume_hip3: Optional[float] = None,
+) -> GateResult:
+    """Block trades on markets with insufficient 24h notional volume.
+
+    HIP-3 tokenized-equity / commodity perps live on separate dexs and
+    naturally carry less volume than BTC/ETH-style native markets (most
+    `xyz:*` markets sit in the $1M–$50M range vs $1B+ for BTC). Applying
+    the same 5M crypto floor incorrectly blocks adequately-liquid HIP-3
+    markets like xyz:CRCL ($4.7M) and km:USTECH ($1.06M). When the coin
+    is HIP-3 (colon-namespaced) and a separate `min_volume_hip3` is set,
+    use that floor instead.
+    """
+    is_hip3 = ":" in (ctx.coin or "")
+    floor = (min_volume_hip3 if (is_hip3 and min_volume_hip3 is not None) else min_volume)
+    if ctx.market_volume_24h_usd >= floor:
         return {"pass": True}
-    return {"pass": False, "reason": f"market 24h volume ${ctx.market_volume_24h_usd/1e6:.1f}M below floor ${min_volume/1e6:.1f}M"}
+    return {"pass": False, "reason": f"market 24h volume ${ctx.market_volume_24h_usd/1e6:.2f}M below floor ${floor/1e6:.2f}M"}
 
 
 def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[str]) -> GateResult:
@@ -185,7 +201,11 @@ def eval_all_gates(
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
-    results["liquidity"] = market_liquidity_floor(ctx, config.get("min_market_volume_usd", 5_000_000))
+    results["liquidity"] = market_liquidity_floor(
+        ctx,
+        config.get("min_market_volume_usd", 5_000_000),
+        config.get("min_hip3_volume_usd", 500_000),
+    )
     results["coin_filter"] = coin_allowlist_gate(
         ctx,
         config.get("coin_allowlist", []),

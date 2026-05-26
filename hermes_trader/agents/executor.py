@@ -90,9 +90,20 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     user = resolve_user_address()
-    state = fetch_account_state(user)
-    equity = state["equity"]
-    total_open_notional = state["total_ntl"]
+    state = fetch_account_state(user) or {}
+    equity = float(state.get("equity") or 0)
+    total_open_notional = float(state.get("total_ntl") or 0)
+    # Defensive: a transient HL API failure used to return state with equity=0,
+    # which collapsed `trade_notional = equity × fraction × leverage` to 0,
+    # which then either failed `place_hl_order` (min size) or silently produced
+    # an unsized trade. Better to refuse and let the next cycle retry with a
+    # live equity reading than to send a malformed order or claim "executed".
+    if equity <= 0:
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": "equity_unavailable (live account state returned 0 — likely HL API timeout)",
+        }
 
     memory.track_daily_pnl(equity)
     daily_pnl = memory.get_daily_pnl()
@@ -106,7 +117,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         for p in state["asset_positions"]
     ]
 
-    entry_px = analysis.get("entry_px")
+    # `entry_px` from the analysis is no longer used here — the executor fetches
+    # a fresh live mid below. `tp_px` and `stop_px` are still used as fallbacks
+    # when ATR is unavailable for bracket-order calculation.
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
@@ -161,15 +174,15 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     gate_output = eval_all_gates(ctx, config, last_trade_time)
 
     if gate_output["blocked"]:
-        memory.record_trade({
-            "id": str(uuid.uuid4()),
-            "analysis_id": analysis["id"],
-            "coin": analysis["coin"],
-            "side": trade_side,
-            "entry_px": entry_px or 0,
-            "size_usd": 0,
-            "executed_at": int(time.time() * 1000),
-        })
+        # Previously this wrote a fake size_usd=0 record into memory._trades so
+        # the dashboard could surface the block. That polluted trade history:
+        # the cooldown gate keys off the *most recent* trade-by-coin and was
+        # being tripped by blocked-record rows from earlier scans, which then
+        # blocked future legitimate attempts (and wrote more blocked records,
+        # ad infinitum). The session-log event below (and the caller in
+        # trading_loop.py) already emits `{event:'execute', executed:false,
+        # blocked_by:[...]}` to the public feed, so the block is still visible
+        # — just not as a trade.
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
