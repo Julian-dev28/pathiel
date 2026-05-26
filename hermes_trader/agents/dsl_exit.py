@@ -79,7 +79,13 @@ class ExitPolicy:
       Moderate:     max_loss_pct=2.5, retrace=7, protect=1.5, hard_timeout=180min
       Aggressive:   max_loss_pct=1.5, retrace=5, protect=0.8, hard_timeout=90min
     """
-    max_loss_pct: float = 2.5  # Max loss % below entry (hard stop)
+    max_loss_pct: float = 2.5  # Max loss SPOT % below entry (hard stop)
+    # Max loss ROE (margin) % — leverage-aware safety net. At 40x leverage a
+    # 2.5% spot move = 100% ROE = entire margin gone, so the spot threshold
+    # alone is meaningless on high-lev trades. The effective floor used at
+    # check time is min(max_loss_pct, max_loss_roe_pct / leverage). Set to a
+    # high value (e.g. 100) to disable the leveraged cap and use spot only.
+    max_loss_roe_pct: float = 50.0
     protect_pct: float = 1.5  # Price must rise this % above entry before Phase 2
     retrace_threshold: float = 0.30  # Give back 30% of peak profit (Phase 2 default)
     hard_timeout_minutes: float = 180.0  # Emergency exit after this long
@@ -150,6 +156,19 @@ class DSLTracker:
             self.peak_px = mark_px
             peak_changed = True
 
+        # ── Effective max-loss in SPOT % terms ───────────────────────
+        # Two thresholds combine into one effective floor:
+        #   * `max_loss_pct`        — direct spot-% cap (e.g. 2.5%)
+        #   * `max_loss_roe_pct`    — ROE/margin cap, divided by leverage
+        # At 40x leverage, max_loss_roe_pct=50 → 1.25% spot cap, which is
+        # MUCH tighter than max_loss_pct=2.5. The min() takes whichever
+        # fires first. Without this leverage-aware check, a 40x BTC long
+        # would happily lose 100% ROE before the 2.5% spot trigger.
+        lev = max(1, self.leverage)
+        effective_max_loss = min(pol.max_loss_pct, pol.max_loss_roe_pct / lev)
+        # Reason string surfaces both inputs so it's obvious post-hoc
+        # which cap was binding for a given exit.
+
         # ── Hard timeout ──────────────────────────────────────────────
         if elapsed_min >= pol.hard_timeout_minutes:
             return self._verdict(
@@ -164,41 +183,49 @@ class DSLTracker:
         if is_long:
             profit_pct = (mark_px - self.entry_px) / self.entry_px * 100
             loss_pct = (self.entry_px - mark_px) / self.entry_px * 100
-            
-            # Max loss check
-            if loss_pct >= pol.max_loss_pct:
+
+            # Max loss check (uses leverage-aware effective floor)
+            if loss_pct >= effective_max_loss:
+                roe_loss = loss_pct * lev
                 return self._verdict(
-                    exit=True, reason=f"max_loss ({loss_pct:.1f}% >= {pol.max_loss_pct}%)",
-                    floor_price=self.entry_px * (1 - pol.max_loss_pct / 100),
+                    exit=True,
+                    reason=(f"max_loss ({loss_pct:.2f}% spot / {roe_loss:.1f}% ROE "
+                            f">= {effective_max_loss:.2f}% spot cap; "
+                            f"spot_cap={pol.max_loss_pct}, roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
+                    floor_price=self.entry_px * (1 - effective_max_loss / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
                 )
-            
+
             if profit_pct >= pol.protect_pct:
                 # Phase 2: floor = entry + profit_range * (1 - retrace)
                 tier = self._active_tier(self.peak_px)  # Use PEAK for tier, not current
                 profit_range = self.peak_px - self.entry_px
                 floor = self.entry_px + profit_range * (1 - tier.retrace_threshold)
             else:
-                # Phase 1: floor at max loss
-                floor = self.entry_px * (1 - pol.max_loss_pct / 100)
+                # Phase 1: floor at effective max loss
+                floor = self.entry_px * (1 - effective_max_loss / 100)
         else:
             # Short side
             profit_pct = (self.entry_px - mark_px) / self.entry_px * 100
             loss_pct = (mark_px - self.entry_px) / self.entry_px * 100
-            
-            if loss_pct >= pol.max_loss_pct:
+
+            if loss_pct >= effective_max_loss:
+                roe_loss = loss_pct * lev
                 return self._verdict(
-                    exit=True, reason=f"max_loss ({loss_pct:.1f}% >= {pol.max_loss_pct}%)",
-                    floor_price=self.entry_px * (1 + pol.max_loss_pct / 100),
+                    exit=True,
+                    reason=(f"max_loss ({loss_pct:.2f}% spot / {roe_loss:.1f}% ROE "
+                            f">= {effective_max_loss:.2f}% spot cap; "
+                            f"spot_cap={pol.max_loss_pct}, roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
+                    floor_price=self.entry_px * (1 + effective_max_loss / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
                 )
-            
+
             if profit_pct >= pol.protect_pct:
                 tier = self._active_tier(self.peak_px)
                 profit_range = self.entry_px - self.peak_px
                 floor = self.entry_px - profit_range * (1 - tier.retrace_threshold)
             else:
-                floor = self.entry_px * (1 + pol.max_loss_pct / 100)
+                floor = self.entry_px * (1 + effective_max_loss / 100)
 
         # Floor should never decrease for longs (or increase for shorts)
         prev_floor = self._last_floor
@@ -277,6 +304,7 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
     tiers = [RetraceTier(**rt) for rt in pol_raw.get("phase2_tiers", [])]
     policy = ExitPolicy(
         max_loss_pct=pol_raw.get("max_loss_pct", ExitPolicy.max_loss_pct),
+        max_loss_roe_pct=pol_raw.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
         protect_pct=pol_raw.get("protect_pct", ExitPolicy.protect_pct),
         retrace_threshold=pol_raw.get("retrace_threshold", ExitPolicy.retrace_threshold),
         hard_timeout_minutes=pol_raw.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),

@@ -250,6 +250,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     dsl_config = config.get("dsl_exit", {})
     policy = ExitPolicy(
         max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
+        max_loss_roe_pct=dsl_config.get("max_loss_roe_pct", 50.0),
         protect_pct=dsl_config.get("protect_pct", 1.5),
         retrace_threshold=dsl_config.get("retrace_threshold", 0.30),
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
