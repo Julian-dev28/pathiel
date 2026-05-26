@@ -13,29 +13,48 @@ metadata:
 
 # Hermes-Trader Agent
 
-`hermes-trader` is a **standalone Python trading system** for Hyperliquid perpetual
-markets. Hermes Agent operates it through the **MCP server** registered in
-`~/.hermes/config.yaml` (`mcp_servers.hermes-trader`) — that MCP boundary is the
-integration. The trading engine itself has no Hermes-framework dependency; it is
+`hermes-trader` is a **standalone Python trading system** for Hyperliquid
+perpetual markets — both native crypto perps (BTC, ETH, etc.) **and HIP-3
+tokenized-equity / commodity / index perps** (`xyz:NVDA`, `xyz:GOLD`,
+`km:US500`, `xyz:CL`, etc.) when the `enable_hip3` flag is on. Hermes Agent
+operates it through the **MCP server** registered in `~/.hermes/config.yaml`
+(`mcp_servers.hermes-trader`) — that MCP boundary is the integration. The
+trading engine itself has no Hermes-framework dependency; it is
 Hermes-*operated*, not Hermes-*built*.
 
-Repo: `/Users/julian_dev/Documents/code/hermes-trader` — branch `python`, **never merge to `main`**.
+Repo: `/Users/julian_dev/Documents/code/hermes-trader`. The user develops on
+branch `python` and fast-forward-merges to `daily-push-v2` (the deploy
+branch) after each batch of changes. **Never push directly to other branches
+without explicit confirmation.**
 
 ## Architecture
 
 A pipeline designed to keep AI token cost proportional to real opportunity:
 
-1. **Scan** — fetch all mids, evaluate 6 triggers per market (pctMoveSpike,
-   volumeSpike, breakout, rangeCompression, trendStrength, momentumBurst). Spot
-   pairs (`@` prefix) are excluded. A fired `momentumBurst` (large fast move)
-   bypasses the composite-score gate so explosive moves are never filtered out.
-2. **TA Filter** — `ta_filter.py` does multi-timeframe validation (1h/4h/1d EMA,
-   RSI, ATR, ADX, volume) at zero AI cost. `trading_loop.py` runs it as a gate:
-   only CONFIRMED perceptions (score ≥ 45) reach AI research; WEAK / REJECTED are
-   dropped. A perception whose `momentumBurst` trigger fired bypasses the gate.
-3. **AI Research** — deep AI analysis via OpenRouter on triggered candidates.
-4. **Execution** — equity-sized orders (1% × leverage), SDK order signing, an
-   ATR-based backup stop-loss, and DSL dynamic exits.
+1. **Scan** — fetch all mids (native + HIP-3 dexes when `enable_hip3=true`),
+   evaluate 6 triggers per market (pctMoveSpike, volumeSpike, breakout,
+   rangeCompression, trendStrength, momentumBurst). Spot pairs (`@` prefix)
+   are excluded; HIP-3 namespaced markets (`xyz:`, `km:`, `hyna:`, etc.) are
+   included alongside native crypto and ranked by 24h volume. A fired
+   `momentumBurst` (large fast move) bypasses the composite-score gate so
+   explosive moves are never filtered out. The loop persists every perception
+   via `memory.record_perception` so the dashboard reflects real signal
+   volume (previously perceptions were processed but never stored).
+2. **Pre-research cooldown** — `trading_loop.py` checks the most recent
+   trade per coin and skips paid AI research if the coin is still inside its
+   `cooldown_min` window. The execute-time `cooldown_gate` remains as the
+   authoritative backstop.
+3. **TA Filter** — `ta_filter.py` does multi-timeframe validation (1h/4h/1d
+   EMA, RSI, ATR, ADX, volume) at zero AI cost. Only CONFIRMED perceptions
+   (score ≥ 45) reach AI research; WEAK / REJECTED are dropped. A perception
+   whose `momentumBurst` trigger fired bypasses the gate.
+4. **AI Research** — deep AI analysis via OpenRouter on triggered candidates.
+5. **Execution** — equity-sized orders (`equity_fraction_per_trade × equity ×
+   leverage`, defaults to 0.05 × current equity × per-coin-max leverage), SDK
+   order signing, an ATR-based backup stop-loss, and DSL dynamic exits.
+   Blocked attempts are NOT written to `memory._trades` — only successful
+   executions appear there, so `cooldown_gate` keys off real history rather
+   than its own rejection log.
 
 ## Running
 
@@ -119,21 +138,31 @@ Project state — not Hermes memory (all gitignored):
 
 ## Risk Gates (11 independent, no short-circuiting)
 
-Every gate is evaluated; results are collected even when one blocks: confidence,
-maxConcurrent, perTradeNotionalCap, dailyLossKillSwitch, marketLiquidityFloor,
-coinAllowlist/Blocklist, cooldown, oppositeDirectionGuard, correlationCap,
-equityRiskCap, newsBlackout. Gate config keys are read tolerantly —
-`snake_case` or `camelCase` both resolve.
+Every gate is evaluated; results are collected even when one blocks:
+confidence, max_concurrent, per_trade_notional_cap, daily_loss_killswitch,
+market_liquidity_floor (with HIP-3 floor split — see below), coin_allowlist /
+coin_blocklist, cooldown, opposite_direction_guard, correlation_cap,
+equity_risk_cap, news_blackout. **Config keys are read as `snake_case` only**
+— legacy camelCase keys (`maxTradeNotionalUsd`, `coinAllowlist`, etc.) in
+`.agent-config.json` are silently ignored by the gates and only used by the
+old MCP-server status display. The canonical config has snake_case
+throughout; see `.agent-config.json` for the full key list.
 
 ## Trade Sizing
 
-Per-trade size = `equity_fraction_per_trade × perp_equity × leverage`, keyed off
-**total perp equity** (not free margin). Each trade commits a fixed fraction, so
-N trades scales the account fully in — `0.10` means ~10 trades = fully deployed.
-Both keys live in `.agent-config.json`; defaults if absent: `0.01` and `5`.
-Bounded by `maxConcurrent` (simultaneous positions), `max_total_notional_pct`
-(combined-notional ceiling), and `maxTradeNotionalUsd` (per-trade ceiling) —
-keep those above the intended deployment or trades get gate-blocked.
+Per-trade size = `equity_fraction_per_trade × perp_equity × leverage`, keyed
+off **total perp equity** (not free margin). Each trade commits a fixed
+fraction, so N trades scales the account fully in — `0.05` means ~20 trades
+= fully deployed (which is the current canonical config). Both keys live in
+`.agent-config.json`; in-code defaults if absent: `0.01` and `5x` (very
+conservative — actual config should override). Bounded by `max_concurrent`
+(simultaneous positions), `max_total_notional_pct` (combined-notional
+ceiling, e.g. 40 = 40× equity), and `max_trade_notional_usd` (per-trade
+ceiling) — keep those above the intended deployment or trades get
+gate-blocked. Defensive guard: if a live HL API failure makes
+`fetch_account_state` return `equity=0`, the executor refuses the trade
+(returns `reason: equity_unavailable`) rather than silently sending a
+zero-sized order.
 
 ## Unified Accounts
 
@@ -157,6 +186,56 @@ Low-volume or newly listed names (e.g. DYM) are therefore frequently missed even
 To force coverage of a specific coin:
 - Increase `maxMarkets` (expensive) or
 - Call `research` / analysis directly on the symbol after confirming it appears in `get_perp_markets`.
+
+## HIP-3 Tokenized Equity / Commodity Perps
+
+Hyperliquid hosts a separate family of perp dexes for tokenized stocks,
+indices, commodities, and FX (`xyz`, `km`, `vntl`, `flx`, `hyna`, `abcd`,
+`cash`, `para`). Markets are namespaced as `<dex>:<symbol>` — e.g.
+`xyz:NVDA`, `xyz:GOLD`, `xyz:SP500`, `km:US500`, `km:USOIL`.
+
+**Enabling**: set `"enable_hip3": true` in `.agent-config.json` and **restart
+the trading loop** (the universe is fetched once at startup). The flag is
+read at three places automatically:
+
+1. `get_universe(include_hip3=True)` — auto-discovers registered HIP-3 dexes
+   via `/info perpDexs` and merges each dex's markets into the unified list.
+2. `fetch_all_mids(include_hip3=True)` — adds one HTTP POST per HIP-3 dex
+   so colon-namespaced mids are populated in the scanner.
+3. `Info(perp_dexs=[""]+dex_names)` / `Exchange(perp_dexs=...)` — teaches
+   the HL SDK to resolve colon names at order-placement time. **CRITICAL**:
+   the empty string `""` must be prepended; the SDK treats the list as
+   exclusive — pass only HIP-3 dexes and BTC/ETH start raising `KeyError`
+   at `update_leverage` / `order`.
+
+**Liquidity floor split**: HIP-3 markets carry less volume than BTC/ETH
+(most `xyz:*` markets sit in the $1M–$50M range vs $1B+ for BTC). The
+risk gate uses two floors:
+- `min_market_volume_usd` (default 5,000,000) — applies to native crypto
+- `min_hip3_volume_usd` (default 500,000) — applies to colon-namespaced markets
+
+Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
+tokenized equities flow.
+
+**Market regime classifier** (`agents/market_regime.py`) strips the dex
+prefix before lookup, so `xyz:NVDA` correctly classifies as `equity` (not
+crypto) and uses `EQUITY_PROXY = "xyz:SP500"` for its regime trend.
+Tokenized commodities (`xyz:GOLD`, `xyz:CL`, `xyz:BRENTOIL`, `km:USOIL`)
+classify as `commodity` and use their own candle stream as the proxy.
+
+**Price lookup gotcha**: `info.all_mids()` only returns the native HL perp
+dex — colon-namespaced coins need `info.all_mids(dex=<prefix>)`. Both
+`get_hl_price()` (`client/exchange.py`) and `fetch_all_mids(include_hip3=True)`
+(`client/hl_client.py`) handle this. Outside those helpers, look up the
+prefix manually before calling SDK methods.
+
+**Off-hours behavior**: HIP-3 equity markets only trade during US equity
+hours; outside those hours volume drops to ~zero, so the scanner naturally
+skips them (filtered by `min_hip3_volume_usd`). No explicit hours-gate is
+implemented — the volume floor handles it.
+
+See `references/hip3-tokenized-equity-handoff.md` for the original task
+brief and the post-implementation audit findings.
 
 Pitfall: assuming “we scanned everything” when the log simply says “50 markets”. Always check via the MCP market-list tools when the user mentions an asset that was not reported.
 
