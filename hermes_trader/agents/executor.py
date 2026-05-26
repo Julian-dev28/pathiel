@@ -92,6 +92,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     user = resolve_user_address()
     state = fetch_account_state(user) or {}
     equity = float(state.get("equity") or 0)
+    available = float(state.get("available") or 0)
     total_open_notional = float(state.get("total_ntl") or 0)
     # Defensive: a transient HL API failure used to return state with equity=0,
     # which collapsed `trade_notional = equity × fraction × leverage` to 0,
@@ -103,6 +104,24 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
             "reason": "equity_unavailable (live account state returned 0 — likely HL API timeout)",
+        }
+
+    # Free-margin guard. The bot's internal `equity_risk_cap` gate bounds
+    # *total notional*, but Hyperliquid rejects orders based on free *margin*
+    # — which is what's left after maintenance margin, fees, and price moves
+    # against the open book. When the account is near 100% margin-deployed
+    # the exchange returns "Insufficient margin to place order" and the
+    # whole research → analysis → place pipeline is wasted.
+    # Refuse here if free margin < `min_available_margin_pct` of equity
+    # (default 5%) so the loop leaves headroom for maintenance + slippage.
+    min_avail_pct = float(config.get("min_available_margin_pct", 0.10))
+    if equity > 0 and (available / equity) < min_avail_pct:
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": (f"insufficient_free_margin "
+                       f"(available ${available:.2f} / equity ${equity:.2f} = "
+                       f"{100*available/equity:.1f}%, floor {100*min_avail_pct:.0f}%)"),
         }
 
     memory.track_daily_pnl(equity)

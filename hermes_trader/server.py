@@ -9,24 +9,51 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
-from hermes_trader import __version__, dashboard, session_log
-from hermes_trader.dashboard import _require_operator
-from hermes_trader.agents.config_store import read_agent_config, write_agent_config
-from hermes_trader.agents.executor import maybe_execute
-from hermes_trader.agents.memory import memory
-from hermes_trader.agents.perception import scan_once
-from hermes_trader.agents.research import research
-from hermes_trader.client.hl_client import (
+def _load_env_local_early() -> None:
+    """Pull `.env.local` into os.environ BEFORE any hermes_trader imports.
+
+    `client/exchange.py` captures `PRIVATE_KEY_HEX = os.environ.get(...)` at
+    module-load time. If `.env.local` is only loaded in the `__main__` block
+    at the bottom of this file (the prior layout), every signing call
+    afterwards returns "HYPERLIQUID_PRIVATE_KEY not set" because the
+    module-level constant was frozen empty during the import chain — fine
+    for the trading_loop (which loads env earlier) but broken for the
+    server. Loading here, before the imports below, fixes it.
+    """
+    candidates = [".env.local",
+                  os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env.local")]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, _, v = line.partition("=")
+                        os.environ.setdefault(k.strip(), v.strip())
+            return
+
+
+_load_env_local_early()
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware                   # noqa: E402
+from fastapi.responses import JSONResponse                            # noqa: E402
+
+from hermes_trader import __version__, dashboard, session_log         # noqa: E402
+from hermes_trader.dashboard import _require_operator                 # noqa: E402
+from hermes_trader.agents.config_store import read_agent_config, write_agent_config  # noqa: E402
+from hermes_trader.agents.executor import maybe_execute               # noqa: E402
+from hermes_trader.agents.memory import memory                        # noqa: E402
+from hermes_trader.agents.perception import scan_once                 # noqa: E402
+from hermes_trader.agents.research import research                    # noqa: E402
+from hermes_trader.client.hl_client import (                          # noqa: E402
     fetch_account_state,
     fetch_all_mids,
     fetch_hl_candles,
     resolve_user_address,
 )
-from hermes_trader.client.universe import get_universe
+from hermes_trader.client.universe import get_universe                # noqa: E402
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -606,17 +633,9 @@ dashboard.register_routes(app)
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Load .env.local (CWD-relative, mirrors the trading loop + MCP server) so
-    # the wallet/HL credentials are available when the dashboard reads positions.
-    _env_path = ".env.local"
-    if os.path.exists(_env_path):
-        with open(_env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, _, v = line.partition("=")
-                    os.environ.setdefault(k.strip(), v.strip())
-
+    # .env.local is already loaded by _load_env_local_early() at the top of
+    # this file — done before hermes_trader imports so module-level env reads
+    # (notably PRIVATE_KEY_HEX in client/exchange.py) capture real values.
     import uvicorn
     port = int(os.environ.get("HERMES_PORT", 8000))
     logger.info(f"Starting Hermes server on port {port}")

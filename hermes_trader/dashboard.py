@@ -409,6 +409,13 @@ _PUBLIC_HTML = """<!doctype html>
   body.discreet .dollar-mask{display:inline;color:#71717a}
   /* Pixel-font headings only — body text stays readable mono. */
   .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
+  /* Primary navbar links — NES-button-flavored with a clear active state. */
+  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
+  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
+  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
+  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
+  .nav-link.nav-link-ghost{background:transparent;border-color:#27272a;color:#71717a}
+  .nav-link.nav-link-ghost:hover{color:#fde047;border-color:#78350f}
   /* Chunky pixel-card: 2px border + hard 4px offset shadow, no rounded corners. */
   .pixel-card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10;border-radius:0}
   .pixel-card.accent{border-color:#34d399;box-shadow:4px 4px 0 #064e3b}
@@ -576,7 +583,7 @@ _PUBLIC_HTML = """<!doctype html>
 <body class="min-h-screen">
 <div class="max-w-[1600px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-6 gap-3 flex-wrap">
+  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
     <div class="flex items-center gap-3">
       <span id="pet" class="pet" title="agent mood — reacts to status + PnL">🤖</span>
       <div class="flex flex-col">
@@ -626,6 +633,16 @@ _PUBLIC_HTML = """<!doctype html>
       <a href="https://github.com/Julian-dev28/hermes-trader" class="text-zinc-400 hover:text-zinc-200">github</a>
     </div>
   </header>
+
+  <!-- ── primary navbar: clear page links, NES-button styled, current page
+       highlighted via the .nav-active class set in JS at the bottom. ── -->
+  <nav class="flex items-center gap-2 mb-6 flex-wrap" id="hermes-nav">
+    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
+    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
+    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
+    <span class="text-zinc-700 mx-1">·</span>
+    <a href="javascript:void(0)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true}))" class="nav-link pixel nav-link-ghost">⌘K TERMINAL</a>
+  </nav>
 
   <div class="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
   <main class="min-w-0 space-y-6">
@@ -1287,6 +1304,14 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   applyI18n();
 });
 
+// ── Highlight the active page in the primary navbar.
+(function(){
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
 // ── Operator-mode toggle: lets the user paste their HERMES_OPERATOR_TOKEN
 // without hand-editing the URL. Token persists to localStorage so subsequent
 // page loads stay unlocked without retyping. Click again to clear.
@@ -1437,6 +1462,164 @@ setInterval(rotateHamsterQuote, 7000);
 """
 
 
+_CONFIG_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · config</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
+  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
+  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
+  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
+  /* Config rows render as a two-col grid: pixel-font key on the left,
+     value (color-coded by type) on the right. */
+  .cfg-grid{display:grid;grid-template-columns:minmax(220px,32%) 1fr;gap:6px 16px;align-items:baseline}
+  .cfg-key{font-family:'Press Start 2P',monospace;font-size:9px;color:#34d399;text-shadow:0 0 4px rgba(52,211,153,0.45);padding:6px 0;letter-spacing:.06em;word-break:break-all}
+  .cfg-val{font-family:ui-monospace,monospace;font-size:13px;padding:6px 0;border-left:2px solid #1f2937;padding-left:14px;word-break:break-word}
+  .cfg-val.num{color:#a7f3d0}
+  .cfg-val.bool{color:#fde68a}
+  .cfg-val.str{color:#bae6fd}
+  .cfg-val.null{color:#71717a;font-style:italic}
+  .cfg-val.obj{color:#f9a8d4}
+  .cfg-val pre{margin:0;font-family:ui-monospace,monospace;font-size:11px;white-space:pre-wrap;color:#e5e5e5;background:#020a05;border:1px solid #064e3b;padding:6px 8px;max-width:100%;overflow-x:auto}
+  /* Section break inside the cfg grid */
+  .cfg-section-head{grid-column:1/-1;font-family:'Press Start 2P',monospace;font-size:8px;color:#71717a;letter-spacing:.2em;padding:12px 0 4px;border-top:1px solid #1f2937;margin-top:8px}
+  .cfg-section-head:first-child{border-top:0;margin-top:0;padding-top:4px}
+  /* Tip pill at the bottom */
+  .cfg-tip{font-family:'Press Start 2P',monospace;font-size:9px;color:#fbbf24;letter-spacing:.06em;text-align:center;padding:8px;margin-top:14px;border:2px dashed #78350f;background:#1f1300}
+  /* Mode pill */
+  .cfg-mode{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;font-family:'Press Start 2P',monospace;font-size:10px;border:2px solid currentColor;letter-spacing:.1em}
+  .cfg-mode.LIVE{background:#064e3b;color:#6ee7b7}
+  .cfg-mode.OFF{background:#450a0a;color:#fca5a5}
+  /* Primary navbar — must match dashboard.html's nav-link rules */
+  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
+  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
+  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
+  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1100px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+    <div class="flex items-center gap-3">
+      <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER · CONFIG</span>
+    </div>
+  </header>
+
+  <nav class="flex items-center gap-2 mb-6 flex-wrap" id="hermes-nav">
+    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
+    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
+    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
+  </nav>
+
+  <section class="bg-zinc-900 p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <span class="pixel text-[10px] text-zinc-500">.agent-config.json (live, hot-reloaded every cycle)</span>
+      <span id="cfg-mode-pill" class="cfg-mode OFF">—</span>
+    </div>
+    <div id="cfg-grid" class="cfg-grid">
+      <div class="cfg-section-head">loading…</div>
+    </div>
+    <div class="cfg-tip">
+      to change a value: open Cmd+K terminal · `set &lt;key&gt; &lt;value&gt;` · type auto-inferred
+    </div>
+  </section>
+
+  <footer class="text-[10px] text-zinc-600 mt-6 text-center pixel">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+// Group the live agent config into named sections for readability. Anything
+// not in the explicit grouping falls into "other" so future config keys
+// still appear without code changes.
+const SECTIONS = [
+  { label: 'mode + sizing', keys: ['mode','equity_fraction_per_trade','leverage','max_concurrent','max_trade_notional_usd','max_total_notional_pct'] },
+  { label: 'safety',        keys: ['max_daily_loss_usd','cooldown_min','min_ai_confidence','counter_regime_min_conf','max_crypto_long_correlated'] },
+  { label: 'liquidity',     keys: ['min_market_volume_usd','min_hip3_volume_usd'] },
+  { label: 'filters',       keys: ['coin_allowlist','coin_blocklist'] },
+  { label: 'markets',       keys: ['enable_hip3'] },
+  { label: 'dsl exit',      keys: ['dsl_exit'] },
+];
+const SECTION_KEYS = new Set(SECTIONS.flatMap(s => s.keys));
+
+function classifyVal(v) {
+  if (v === null || v === undefined) return 'null';
+  const t = typeof v;
+  if (t === 'number') return 'num';
+  if (t === 'boolean') return 'bool';
+  if (t === 'string') return 'str';
+  return 'obj';
+}
+function formatVal(v) {
+  if (v === null || v === undefined) return 'null';
+  if (typeof v === 'object') return `<pre>${JSON.stringify(v, null, 2)}</pre>`;
+  if (typeof v === 'string') return `"${v}"`;
+  return String(v);
+}
+
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/dashboard/config');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const cfg = await r.json();
+    const grid = document.getElementById('cfg-grid');
+    grid.innerHTML = '';
+    // Mode pill at the top
+    const mode = cfg.mode || 'OFF';
+    const pill = document.getElementById('cfg-mode-pill');
+    pill.textContent = '◆ ' + mode;
+    pill.className = 'cfg-mode ' + (mode === 'LIVE' ? 'LIVE' : 'OFF');
+    // Render section by section
+    const renderSection = (label, keys) => {
+      const present = keys.filter(k => k in cfg);
+      if (!present.length) return;
+      const head = document.createElement('div');
+      head.className = 'cfg-section-head';
+      head.textContent = '── ' + label + ' ──';
+      grid.appendChild(head);
+      for (const k of present) {
+        const keyEl = document.createElement('div'); keyEl.className = 'cfg-key'; keyEl.textContent = k;
+        const valEl = document.createElement('div'); valEl.className = 'cfg-val ' + classifyVal(cfg[k]);
+        valEl.innerHTML = formatVal(cfg[k]);
+        grid.appendChild(keyEl); grid.appendChild(valEl);
+      }
+    };
+    for (const s of SECTIONS) renderSection(s.label, s.keys);
+    // "other" — anything not in the grouping
+    const otherKeys = Object.keys(cfg).filter(k => !SECTION_KEYS.has(k));
+    if (otherKeys.length) renderSection('other', otherKeys);
+  } catch (e) {
+    document.getElementById('cfg-grid').innerHTML =
+      '<div class="cfg-section-head">load failed: ' + (e.message || e) + '</div>';
+  }
+}
+
+loadConfig();
+setInterval(loadConfig, 5000); // hot-reloads alongside the trading loop
+
+// Highlight the active page in the primary navbar.
+(function(){
+  const here = window.location.pathname.replace(/\\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+</script>
+</body>
+</html>
+"""
+
+
 _OPERATOR_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -1557,6 +1740,18 @@ def register_routes(app: FastAPI) -> None:
         # token-gated APIs. Without a valid ?token=… the AJAX calls 401 and the
         # page shows "loading…" with no data. Cheap defense, no auth library.
         return HTMLResponse(content=_OPERATOR_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/config", response_class=HTMLResponse)
+    async def config_page() -> HTMLResponse:
+        """Live agent-config viewer. Read-only — mutations happen via the
+        Cmd+K terminal's `set <key> <value>` command."""
+        return HTMLResponse(content=_CONFIG_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/api/dashboard/config")
+    async def dashboard_config() -> JSONResponse:
+        """Read-only JSON dump of `.agent-config.json` for the /config page.
+        Hot-reloads alongside the trading loop (no caching)."""
+        return JSONResponse(read_agent_config())
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:
