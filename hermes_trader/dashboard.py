@@ -402,6 +402,11 @@ _PUBLIC_HTML = """<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5;image-rendering:pixelated}
+  /* Discreet mode — show `•••` instead of every dollar value. The mask span
+     sits next to the value span; CSS flips which is visible. */
+  .dollar-mask{display:none}
+  body.discreet .dollar-value{display:none}
+  body.discreet .dollar-mask{display:inline;color:#71717a}
   /* Pixel-font headings only — body text stays readable mono. */
   .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
   /* Chunky pixel-card: 2px border + hard 4px offset shadow, no rounded corners. */
@@ -588,6 +593,10 @@ _PUBLIC_HTML = """<!doctype html>
         <option value="vi">Tiếng Việt</option>
         <option value="th">ไทย</option>
       </select>
+      <!-- Discreet-mode toggle: hides $ amounts (equity, PnL, position size,
+           chart axis/tooltip) while leaving every % visible. State persists
+           in localStorage. Click to flip 👁 ↔ 🙈. -->
+      <button id="discreet-toggle" type="button" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 cursor-pointer hover:bg-zinc-700" title="hide all $ amounts (keep percentages)">👁</button>
       <span id="status-pill" class="pill offline">offline</span>
       <a href="https://github.com/Julian-dev28/hermes-trader" class="text-zinc-400 hover:text-zinc-200">github</a>
     </div>
@@ -743,6 +752,17 @@ function fmtMoney(usd, opts = {}) {
   }
 }
 const fmtPct = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+
+// ── discreet mode ──────────────────────────────────────────────────────────
+// When `body.discreet`, all $ amounts render as `•••` (KPIs, position PnL $,
+// chart y-axis, chart tooltip, feed heartbeat $). Percentages stay visible.
+function isDiscreet() { return document.body.classList.contains('discreet'); }
+function maskDollar(text) { return isDiscreet() ? '•••' : text; }
+// HTML helper for elements whose textContent is set imperatively (KPIs):
+// wraps the value in matched .dollar-value / .dollar-mask spans.
+function dollarHTML(value) {
+  return `<span class="dollar-value">${value}</span><span class="dollar-mask">•••</span>`;
+}
 const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s/60) + 'm ago');
 const fmtTime = ms => { const d = new Date(ms); return d.toTimeString().slice(0,8); };
 
@@ -879,9 +899,9 @@ async function refreshSummary() {
   try {
     const r = await fetch('/api/dashboard/summary');
     const s = await r.json();
-    document.getElementById('kpi-equity').textContent = fmtMoney(s.equity);
+    document.getElementById('kpi-equity').innerHTML = dollarHTML(fmtMoney(s.equity));
     const pnlEl = document.getElementById('kpi-pnl');
-    pnlEl.textContent = fmtMoney(s.daily_pnl);
+    pnlEl.innerHTML = dollarHTML(fmtMoney(s.daily_pnl));
     pnlEl.className = 'text-2xl font-bold num ' + (s.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400');
     document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
     document.getElementById('kpi-open').textContent = s.open_positions;
@@ -915,7 +935,7 @@ async function refreshPositions() {
       const floor = p.dsl?.floor_px ? ('floor ' + pxFmt(p.dsl.floor_px)) : '<span class="text-zinc-700">no DSL</span>';
       const phase = p.dsl?.phase || '';
       const usd = p.unrealized_pnl_usd;
-      const usdStr = fmtMoney(usd, { signed: true });
+      const usdStr = `<span class="dollar-value">${fmtMoney(usd, { signed: true })}</span><span class="dollar-mask">•••</span>`;
       const spotNote = p.leverage > 1
         ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}% × ${p.leverage}x leverage = ROE shown">(spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}%)</span>`
         : '';
@@ -1032,7 +1052,7 @@ async function refreshChart(rangeSec) {
               titleColor: '#a1a1aa', bodyColor: '#e5e5e5', padding: 8, displayColors: false,
               callbacks: {
                 title: (items) => new Date(items[0].parsed.x).toLocaleString(),
-                label: (item) => fmtMoney(item.parsed.y),
+                label: (item) => maskDollar(fmtMoney(item.parsed.y)),
               }
             }
           },
@@ -1043,7 +1063,7 @@ async function refreshChart(rangeSec) {
               grid: { display: false }, border: { display: false },
             },
             y: {
-              ticks: { color: '#52525b', callback: v => fmtMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
+              ticks: { color: '#52525b', callback: v => isDiscreet() ? '•••' : fmtMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
               grid: { color: '#18181b', drawTicks: false }, border: { display: false },
             },
           }
@@ -1082,7 +1102,7 @@ function renderEvent(e) {
   let glyph = '?', text = '', cls = ev, detail = '', tooltip = '';
   if (ev === 'loop_heartbeat') {
     glyph = '♥'; cls = 'heartbeat';
-    text = `perp=$${(e.equity||0).toFixed(2)} avail=$${(e.available||0).toFixed(2)} daily=${(e.daily_pnl||0)>=0?'+':''}$${(e.daily_pnl||0).toFixed(2)} open=${e.open_positions||0}`;
+    text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}`;
   } else if (ev === 'scan') {
     glyph = '•'; cls = 'scan';
     // Prefer scored coin list if present (newer events); fall back to plain names.
@@ -1110,7 +1130,7 @@ function renderEvent(e) {
     const ok = e.executed;
     glyph = ok ? '✓' : '✗'; cls = ok ? 'execute' : 'execute-fail';
     if (ok) {
-      const sz = e.size_usd != null ? ` $${e.size_usd.toFixed(2)}` : '';
+      const sz = e.size_usd != null ? ' ' + maskDollar('$'+e.size_usd.toFixed(2)) : '';
       const ep = e.entry_px != null ? ` @ ${fmtPx(e.entry_px)}` : '';
       text = `execute    ${e.coin} ${e.side || '?'}${sz}${ep}  ${e.detail || ''}`;
       if (e.stop_px || e.tp_px) tooltip = `entry ${fmtPx(e.entry_px)}\nstop ${fmtPx(e.stop_px)}\ntp ${fmtPx(e.tp_px)}\nsize $${(e.size_usd||0).toFixed(2)}\norder ${e.detail || ''}`;
@@ -1187,6 +1207,27 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   localStorage.setItem('hermes-lang', langState);
   applyI18n();
 });
+
+// ── discreet toggle: flip body.discreet, persist, re-render the views that
+// build dollar text imperatively (KPIs, positions, chart) so they pick up
+// the new state on the same tick rather than waiting for the next poll.
+(function () {
+  const btn = document.getElementById('discreet-toggle');
+  if (!btn) return;
+  // Restore persisted state
+  if (localStorage.getItem('hermes-discreet') === '1') {
+    document.body.classList.add('discreet');
+    btn.textContent = '🙈';
+  }
+  btn.addEventListener('click', () => {
+    const on = document.body.classList.toggle('discreet');
+    localStorage.setItem('hermes-discreet', on ? '1' : '0');
+    btn.textContent = on ? '🙈' : '👁';
+    refreshSummary();
+    refreshPositions();
+    if (chart) chart.update('none');
+  });
+})();
 
 // ── kickoff + polling ──
 initLocale().then(() => {
