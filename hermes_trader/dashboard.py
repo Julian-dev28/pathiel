@@ -1706,24 +1706,90 @@ def register_routes(app: FastAPI) -> None:
             if not key:
                 return JSONResponse({"response": "Hermes chat unavailable: OPENROUTER_API_KEY not set", "kind": "error"})
 
-            # Compact world-state context for the LLM
-            events = session_log.tail(20) or []
+            # Pull context from BOTH the session log (recent feed events) AND
+            # canonical memory (the 100-entry trade ring buffer). Previously
+            # `recent_executes` was filtered from a 20-event session-log window,
+            # which was empty most of the time because heartbeats dominate the
+            # tail — the LLM kept claiming "no recent trades" while memory had
+            # plenty. Now: real trades come from memory; the feed contributes
+            # recent DSL exits + ta_skips for "why did X close" questions.
+            from hermes_trader.agents.memory import memory as _mem
+            _mem.load()
+            events = session_log.tail(80) or []
             last_hb = next((e for e in reversed(events) if e.get("event") == "loop_heartbeat"), {})
-            recent_executes = [e for e in events if e.get("event") == "execute" and e.get("executed")][-5:]
+
+            # Last 8 executed trades (size_usd > 0 means it actually placed)
+            mem_trades = _mem.get_recent_trades(50) or []
+            real_trades = [t for t in mem_trades if float(t.get("size_usd") or 0) > 0][-8:]
+
+            # Open positions from the live exchange state (already maintained
+            # by the heartbeat sync); fall back to memory if heartbeat is stale.
+            try:
+                user = resolve_user_address()
+                state = fetch_account_state(user) if user else {}
+                open_pos = [
+                    {
+                        "coin": p.get("position", {}).get("coin"),
+                        "side": "long" if float(p.get("position", {}).get("szi", "0") or 0) > 0 else "short",
+                        "szi": float(p.get("position", {}).get("szi", "0") or 0),
+                        "entry": float(p.get("position", {}).get("entryPx", "0") or 0),
+                        "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0),
+                    }
+                    for p in state.get("asset_positions", []) or []
+                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
+                ]
+            except Exception:
+                open_pos = []
+
+            recent_dsl_exits = [e for e in events if e.get("event") == "dsl_exit"][-5:]
+            recent_ta_skips = [e for e in events if e.get("event") == "ta_skip"][-5:]
+            recent_research = [e for e in events if e.get("event") == "research"][-5:]
+
             ctx = {
                 "equity": last_hb.get("equity"),
                 "daily_pnl": last_hb.get("daily_pnl"),
-                "open_positions": last_hb.get("open_positions"),
+                "open_position_count": last_hb.get("open_positions"),
                 "config_snippet": last_hb.get("config", {}),
-                "recent_executes": [{"coin": e.get("coin"), "side": e.get("side"),
-                                     "ts": e.get("ts")} for e in recent_executes],
+                "open_positions": open_pos[:20],
+                "recent_trades": [
+                    {
+                        "coin": t.get("coin"),
+                        "side": t.get("side"),
+                        "entry_px": t.get("entry_px"),
+                        "size_usd": t.get("size_usd"),
+                        "executed_at": t.get("executed_at"),
+                    } for t in real_trades
+                ],
+                "recent_dsl_exits": [
+                    {"coin": e.get("coin"), "reason": e.get("reason"),
+                     "pnl_pct": e.get("realized_pnl_pct") or e.get("unrealized_pct"),
+                     "ts": e.get("ts")}
+                    for e in recent_dsl_exits
+                ],
+                "recent_ta_skips": [
+                    {"coin": e.get("coin"), "signal": e.get("signal"), "score": e.get("score"), "ts": e.get("ts")}
+                    for e in recent_ta_skips
+                ],
+                "recent_research_verdicts": [
+                    {"coin": e.get("coin"), "verdict": e.get("verdict"),
+                     "confidence": e.get("confidence"),
+                     "reasoning": (e.get("reasoning") or "")[:160], "ts": e.get("ts")}
+                    for e in recent_research
+                ],
             }
             system_msg = (
                 "You are Hermes, the autonomous trading agent's voice. You're embedded in "
                 "a Tamagotchi-style dashboard. Be concise (2-4 sentences max), specific, and "
-                "operator-grade — no hedging fluff. You can reference the live state below. "
-                "If asked about a coin or position, look at recent_executes. Refuse to make "
-                "predictions about future prices; talk about what the bot is doing and why.\n\n"
+                "operator-grade — no hedging fluff. Answer using ONLY the LIVE STATE below.\n\n"
+                "Field map:\n"
+                "  • open_positions = live exchange state (the source of truth for what's open)\n"
+                "  • recent_trades = last 8 actually-filled trades from memory (with size_usd > 0)\n"
+                "  • recent_dsl_exits = positions the DSL exit engine closed (and why)\n"
+                "  • recent_research_verdicts = analysis results that fed execution decisions\n"
+                "  • recent_ta_skips = signals the TA filter rejected before paid AI research\n\n"
+                "Rules: if asked about \"the last trade\", look at recent_trades[-1]. If asked "
+                "\"why X\", check recent_research_verdicts for the reasoning. If asked why a "
+                "position closed, check recent_dsl_exits. NEVER predict future prices.\n\n"
                 f"LIVE STATE: {json.dumps(ctx, default=str)}"
             )
             async def _call():
