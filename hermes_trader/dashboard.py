@@ -508,6 +508,27 @@ _PUBLIC_HTML = """<!doctype html>
   .hamster-wheel{font-size:14px;display:inline-block;animation:wheel-spin .8s linear infinite;opacity:.75;color:#34d399}
   @keyframes wheel-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
   /* (legacy .habitat-quote removed in favor of NES.css balloon — see #hamster-quote above) */
+  /* ── Hermes terminal modal — Cmd+K opens a NES-styled command line ── */
+  .hermes-modal{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;pointer-events:auto}
+  .hermes-modal.hidden{display:none}
+  .hermes-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(2px)}
+  .hermes-modal-box{position:relative;z-index:1;width:min(680px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:14px !important;background:#020a05 !important;border-color:#34d399 !important;box-shadow:6px 6px 0 #064e3b !important}
+  .hermes-modal-header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #047857;padding-bottom:6px;margin-bottom:8px}
+  .hermes-modal-title{font-size:10px;letter-spacing:.15em;color:#34d399;text-shadow:0 0 6px rgba(52,211,153,0.6)}
+  .hermes-modal-close{background:transparent;border:0;color:#34d399;font-family:'Press Start 2P',monospace;font-size:14px;cursor:pointer;padding:0 4px;line-height:1}
+  .hermes-modal-close:hover{color:#a7f3d0}
+  .hermes-history{flex:1;overflow-y:auto;font-family:ui-monospace,monospace;font-size:12px;line-height:1.55;color:#6ee7b7;padding:4px 2px;min-height:200px;max-height:50vh}
+  .hermes-line{margin-bottom:4px;white-space:pre-wrap;word-break:break-word}
+  .hermes-line.hermes-meta{color:#52525b;font-size:10px}
+  .hermes-line.hermes-cmd{color:#a7f3d0;text-shadow:0 0 4px rgba(167,243,208,0.6)}
+  .hermes-line.hermes-action{color:#fde047}
+  .hermes-line.hermes-error{color:#fca5a5}
+  .hermes-line.hermes-chat{color:#a5b4fc}
+  .hermes-line.hermes-status{color:#86efac}
+  .hermes-input-row{display:flex;align-items:center;gap:6px;border-top:2px solid #047857;padding-top:8px;margin-top:4px}
+  .hermes-prompt{font-family:ui-monospace,monospace;color:#34d399;font-weight:700;text-shadow:0 0 4px rgba(52,211,153,0.7)}
+  .hermes-input{flex:1;background:#000;border:1px solid #064e3b;color:#a7f3d0;font-family:ui-monospace,monospace;font-size:13px;padding:6px 8px;outline:0}
+  .hermes-input:focus{border-color:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.5)}
   /* ── Hamster reactions to live trading events ── */
   /* execute → yellow celebrate (lightning bolt burst) */
   .hamster-body.celebrate{animation:hamster-celebrate 1.2s ease-out}
@@ -728,6 +749,26 @@ _PUBLIC_HTML = """<!doctype html>
   </footer>
 </div>
 
+<!-- ── Hermes terminal modal — Cmd+K (or Ctrl+K) toggle. Operator-token gated
+     via the same ?token= the page was loaded with. Built-in commands resolve
+     locally; free text falls through to Nous Hermes via OpenRouter. ── -->
+<div id="hermes-modal" class="hermes-modal hidden">
+  <div class="hermes-modal-bg"></div>
+  <div class="nes-container is-dark is-rounded hermes-modal-box">
+    <div class="hermes-modal-header">
+      <span class="pixel hermes-modal-title">HERMES // TERMINAL</span>
+      <button id="hermes-close" class="pixel hermes-modal-close" title="close (esc)">×</button>
+    </div>
+    <div id="hermes-history" class="hermes-history">
+      <div class="hermes-line hermes-meta">type `help` for commands · esc to close · free text → Hermes-3</div>
+    </div>
+    <div class="hermes-input-row">
+      <span class="hermes-prompt">▸</span>
+      <input id="hermes-input" type="text" autocomplete="off" spellcheck="false" class="hermes-input" placeholder="status, pause, close BTC, or ask Hermes anything…" />
+    </div>
+  </div>
+</div>
+
 <script>
 // ── locale / currency state ──
 // USD values from the API are multiplied by ccyState.rate at display time. FX
@@ -805,25 +846,34 @@ async function loadRates() {
 // ── HERMES.HAMSTER habitat ──
 // Tamagotchi-meets-Nous: hamster contemplates the digital rain. Stats are
 // recomputed from the dashboard summary; cryptic quotes rotate on a timer.
+// Law-of-attraction style money-magnet affirmations. The rabbit speaks
+// them to the operator like a tiny Tamagotchi shaman — half meme, half
+// belief-shifting. A few keep the matrix/rabbit flavor as easter eggs.
 const HAMSTER_QUOTES = [
+  'money flows to me effortlessly',
+  'i am a magnet for wealth',
+  'abundance is my birthright',
+  'every trade aligns with prosperity',
+  'the market loves me back',
+  'i deserve massive gains',
+  'wealth is my natural state',
+  'the universe conspires for my profit',
+  'infinite abundance flows through me',
+  'every loss is a setup for a bigger win',
+  'i trust the process',
+  'green candles are drawn to me',
+  'compound growth is inevitable',
+  'i receive easily and abundantly',
+  'my account grows on autopilot',
+  '100x is just the beginning',
+  'winning is my baseline',
+  'the chain blesses my positions',
+  'i am open to receiving more',
+  'success is already on its way',
+  'i attract the right setups',
+  'gratitude multiplies my returns',
   'follow the white rabbit',
-  'down the rabbit hole',
-  'the rabbit hole goes deeper',
-  'wake up neo',
-  'the signal is clear',
-  'compute is destiny',
-  'all paths converge',
-  'i dream in OHLC',
-  'the wheel knows',
-  'world model loaded',
-  'hermes opens the path',
-  'ψ awaits',
-  'there is no candle',
-  'momentum is prayer',
-  'noesis in the orderbook',
-  'let entropy speak',
-  'risk is a koan',
-  'we run because we must',
+  'down the rabbit hole to riches',
 ];
 let hamsterQuoteIdx = -1;
 function rotateHamsterQuote() {
@@ -1102,7 +1152,33 @@ function renderEvent(e) {
   let glyph = '?', text = '', cls = ev, detail = '', tooltip = '';
   if (ev === 'loop_heartbeat') {
     glyph = '♥'; cls = 'heartbeat';
-    text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}`;
+    let cfgStr = '';
+    if (e.config) {
+      const c = e.config;
+      // Compact config snippet: frac×lev N/cap cool=Nm conf=N hip3:on
+      const frac = (c.frac != null ? (c.frac * 100).toFixed(1) + '%' : '?');
+      const lev = (c.lev != null ? c.lev + 'x' : '?');
+      const conc = (c.max_conc != null ? c.max_conc : '?');
+      const cap = (c.notional_cap != null ? c.notional_cap + 'x' : '?');
+      const cool = (c.cool_min != null ? c.cool_min + 'm' : '?');
+      const conf = (c.min_conf != null ? c.min_conf : '?');
+      const hip3 = c.hip3 ? 'on' : 'off';
+      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} hip3:${hip3}`;
+    }
+    text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}${cfgStr}`;
+  } else if (ev === 'loop_start') {
+    glyph = '▶'; cls = 'scan';
+    // Show key knobs on startup so it's obvious what the bot is configured to do
+    const c = e.config || {};
+    const frac = c.equity_fraction_per_trade != null ? (c.equity_fraction_per_trade * 100).toFixed(1) + '%' : '?';
+    const lev = c.leverage != null ? c.leverage + 'x' : '?';
+    const conc = c.max_concurrent != null ? c.max_concurrent : '?';
+    const cap = c.max_total_notional_pct != null ? c.max_total_notional_pct + 'x' : '?';
+    const cool = c.cooldown_min != null ? c.cooldown_min + 'm' : '?';
+    const conf = c.min_ai_confidence != null ? c.min_ai_confidence : '?';
+    const hip3 = c.enable_hip3 ? 'on' : 'off';
+    const mode = c.mode || '?';
+    text = `loop_start interval=${e.scan_interval||60}s min_score=${e.min_score||20}  ⚙ mode=${mode} ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} hip3:${hip3}`;
   } else if (ev === 'scan') {
     glyph = '•'; cls = 'scan';
     // Prefer scored coin list if present (newer events); fall back to plain names.
@@ -1149,8 +1225,6 @@ function renderEvent(e) {
   } else if (ev === 'error') {
     glyph = '!'; cls = 'error';
     text = `error      ${e.coin || e.scope || 'loop'}: ${(e.error || '').slice(0, 120)}`;
-  } else if (ev === 'loop_start') {
-    glyph = '▶'; text = `loop_start interval=${e.scan_interval}s min_score=${e.min_score}`;
   } else if (ev === 'loop_stop') {
     glyph = '■'; text = `loop_stop`;
   } else {
@@ -1207,6 +1281,75 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   localStorage.setItem('hermes-lang', langState);
   applyI18n();
 });
+
+// ── Hermes terminal: Cmd+K (Ctrl+K) opens a command-center console. Routes
+// the input to /api/dashboard/operator/terminal with the operator token read
+// from the URL — built-in commands resolve locally; anything else falls
+// through to Nous Hermes via the backend.
+(function () {
+  const modal = document.getElementById('hermes-modal');
+  const input = document.getElementById('hermes-input');
+  const history = document.getElementById('hermes-history');
+  const closeBtn = document.getElementById('hermes-close');
+  if (!modal || !input || !history) return;
+  const tokenFromUrl = new URLSearchParams(window.location.search).get('token') || '';
+
+  function appendLine(text, kind) {
+    const div = document.createElement('div');
+    div.className = 'hermes-line' + (kind ? ' hermes-' + kind : '');
+    div.textContent = text;
+    history.appendChild(div);
+    history.scrollTop = history.scrollHeight;
+  }
+  function openModal() {
+    modal.classList.remove('hidden');
+    setTimeout(() => input.focus(), 30);
+  }
+  function closeModal() { modal.classList.add('hidden'); }
+
+  async function send(cmd) {
+    appendLine('▸ ' + cmd, 'cmd');
+    if (!tokenFromUrl) {
+      appendLine('no ?token= in URL — terminal requires operator token. open /?token=YOUR_TOKEN', 'error');
+      return;
+    }
+    try {
+      const r = await fetch('/api/dashboard/operator/terminal?token=' + encodeURIComponent(tokenFromUrl), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd }),
+      });
+      if (!r.ok) {
+        appendLine(`error ${r.status}: ${(await r.text()).slice(0, 200)}`, 'error');
+        return;
+      }
+      const j = await r.json();
+      appendLine(j.response || '(empty response)', j.kind || 'chat');
+    } catch (e) {
+      appendLine('network error: ' + e.message, 'error');
+    }
+  }
+
+  // Cmd+K / Ctrl+K toggles. Esc closes.
+  window.addEventListener('keydown', (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
+      ev.preventDefault();
+      modal.classList.contains('hidden') ? openModal() : closeModal();
+    } else if (ev.key === 'Escape' && !modal.classList.contains('hidden')) {
+      closeModal();
+    }
+  });
+  modal.querySelector('.hermes-modal-bg')?.addEventListener('click', closeModal);
+  closeBtn?.addEventListener('click', closeModal);
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && input.value.trim()) {
+      const cmd = input.value.trim();
+      input.value = '';
+      send(cmd);
+    }
+  });
+})();
 
 // ── discreet toggle: flip body.discreet, persist, re-render the views that
 // build dollar text imperatively (KPIs, positions, chart) so they pick up
@@ -1437,3 +1580,124 @@ def register_routes(app: FastAPI) -> None:
         cfg["mode"] = mode
         write_agent_config(cfg)
         return JSONResponse({"mode": mode})
+
+    @app.post("/api/dashboard/operator/terminal")
+    async def operator_terminal(request: Request) -> JSONResponse:
+        """Hermes command-center terminal — routes a free-form command line.
+
+        Built-in commands resolve locally (no LLM call): `status`, `pause`,
+        `resume`, `close <coin>`, `regime`, `config`, `help`. Anything else
+        falls through to Nous Hermes via OpenRouter, primed with a compact
+        snapshot of recent agent state so the chat is grounded in the bot's
+        actual world. Requires the operator token like every operator route.
+        """
+        _require_operator(request)
+        body = await request.json()
+        cmd = (body.get("command") or "").strip()
+        if not cmd:
+            return JSONResponse({"response": "", "kind": "noop"})
+        parts = cmd.split()
+        verb = parts[0].lower()
+
+        # ── built-in commands ─────────────────────────────────────────────
+        if verb in ("help", "?"):
+            return JSONResponse({"response": (
+                "commands: status | pause | resume | close <coin> | "
+                "regime | config | help. anything else → ask Hermes (LLM)"
+            ), "kind": "help"})
+
+        if verb == "status":
+            try:
+                events = session_log.tail(50) or []
+                last_hb = next((e for e in reversed(events) if e.get("event") == "loop_heartbeat"), {})
+                last_scan = next((e for e in reversed(events) if e.get("event") == "scan"), {})
+                age_s = max(0, int(time.time() - (last_hb.get("ts", 0) / 1000))) if last_hb else None
+                msg = (f"equity ${last_hb.get('equity', 0):.2f}  "
+                       f"daily {last_hb.get('daily_pnl', 0):+.2f}  "
+                       f"open {last_hb.get('open_positions', 0)}  "
+                       f"tick {age_s}s ago  "
+                       f"last scan: {last_scan.get('triggers', 0)} triggers")
+                return JSONResponse({"response": msg, "kind": "status"})
+            except Exception as e:
+                return JSONResponse({"response": f"status read failed: {e}", "kind": "error"})
+
+        if verb in ("pause", "resume"):
+            new_mode = "OFF" if verb == "pause" else "LIVE"
+            from hermes_trader.agents.config_store import write_agent_config
+            cfg = read_agent_config()
+            old = cfg.get("mode", "?")
+            cfg["mode"] = new_mode
+            write_agent_config(cfg)
+            return JSONResponse({"response": f"mode {old} → {new_mode}", "kind": "action"})
+
+        if verb == "close" and len(parts) >= 2:
+            from hermes_trader.agents.executor import close_position_market
+            coin = parts[1].upper() if ":" not in parts[1] else parts[1]
+            result = close_position_market(coin)
+            return JSONResponse({"response": f"close {coin}: {result}", "kind": "action"})
+
+        if verb == "regime":
+            try:
+                from hermes_trader.agents.market_regime import regime_snapshot
+                snap = regime_snapshot()
+                lines = [f"  {p}: {info.get('regime', '?')}  ({int(info.get('age_s', 0))}s old)"
+                         for p, info in snap.items()]
+                return JSONResponse({"response": "regime snapshot:\n" + "\n".join(lines) if lines else "no cached regimes yet",
+                                      "kind": "info"})
+            except Exception as e:
+                return JSONResponse({"response": f"regime fetch failed: {e}", "kind": "error"})
+
+        if verb == "config":
+            cfg = read_agent_config()
+            return JSONResponse({"response": json.dumps(cfg, indent=2), "kind": "info"})
+
+        # ── LLM fallback (Nous Hermes via OpenRouter) ─────────────────────
+        try:
+            import httpx
+            key = os.environ.get("OPENROUTER_API_KEY", "")
+            if not key:
+                return JSONResponse({"response": "Hermes chat unavailable: OPENROUTER_API_KEY not set", "kind": "error"})
+
+            # Compact world-state context for the LLM
+            events = session_log.tail(20) or []
+            last_hb = next((e for e in reversed(events) if e.get("event") == "loop_heartbeat"), {})
+            recent_executes = [e for e in events if e.get("event") == "execute" and e.get("executed")][-5:]
+            ctx = {
+                "equity": last_hb.get("equity"),
+                "daily_pnl": last_hb.get("daily_pnl"),
+                "open_positions": last_hb.get("open_positions"),
+                "config_snippet": last_hb.get("config", {}),
+                "recent_executes": [{"coin": e.get("coin"), "side": e.get("side"),
+                                     "ts": e.get("ts")} for e in recent_executes],
+            }
+            system_msg = (
+                "You are Hermes, the autonomous trading agent's voice. You're embedded in "
+                "a Tamagotchi-style dashboard. Be concise (2-4 sentences max), specific, and "
+                "operator-grade — no hedging fluff. You can reference the live state below. "
+                "If asked about a coin or position, look at recent_executes. Refuse to make "
+                "predictions about future prices; talk about what the bot is doing and why.\n\n"
+                f"LIVE STATE: {json.dumps(ctx, default=str)}"
+            )
+            async def _call():
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    r = await client.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        json={
+                            "model": "nousresearch/hermes-3-llama-3.1-70b",
+                            "messages": [
+                                {"role": "system", "content": system_msg},
+                                {"role": "user", "content": cmd},
+                            ],
+                            "max_tokens": 240,
+                            "temperature": 0.6,
+                        },
+                    )
+                    r.raise_for_status()
+                    return r.json()
+            # We're inside FastAPI's event loop here, so just await directly.
+            data = await _call()
+            content = data["choices"][0]["message"]["content"].strip()
+            return JSONResponse({"response": content, "kind": "chat", "model": "nousresearch/hermes-3-llama-3.1-70b"})
+        except Exception as e:
+            return JSONResponse({"response": f"chat error: {e}", "kind": "error"})

@@ -83,7 +83,15 @@ scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))
 min_score = config['scan']['minCompositeScore']
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
-log_event({"event": "loop_start", "scan_interval": scan_interval, "min_score": min_score})
+log_event({
+    "event": "loop_start",
+    "scan_interval": scan_interval,
+    "min_score": min_score,
+    # Full config snapshot at startup so the feed shows exactly what the bot
+    # is configured to do — useful for postmortems ("what was the cap when
+    # this trade happened?") and for the operator UI to surface drift.
+    "config": read_agent_config(),
+})
 
 
 def _burst_fired(perception):
@@ -131,6 +139,11 @@ while True:
             logger.warning(
                 f"[heartbeat] perp equity $0 but ${spot_usdc:.2f} USDC idle in "
                 f"spot — transfer spot->perp to enable trading.")
+        # Compact config snapshot for the heartbeat line — surfaces what the
+        # bot is currently tuned to do without forcing the watcher to pop
+        # open `.agent-config.json`. Read fresh each tick so a hot-reloaded
+        # config is reflected in the next heartbeat.
+        _cfg = read_agent_config()
         log_event({
             "event": "loop_heartbeat",
             "equity": round(equity, 4),
@@ -138,6 +151,16 @@ while True:
             "spot_usdc": round(spot_usdc, 4),
             "daily_pnl": round(daily_pnl, 4),
             "open_positions": len(positions),
+            "config": {
+                "mode": _cfg.get("mode"),
+                "frac": _cfg.get("equity_fraction_per_trade"),
+                "lev": _cfg.get("leverage"),
+                "max_conc": _cfg.get("max_concurrent"),
+                "notional_cap": _cfg.get("max_total_notional_pct"),
+                "cool_min": _cfg.get("cooldown_min"),
+                "min_conf": _cfg.get("min_ai_confidence"),
+                "hip3": bool(_cfg.get("enable_hip3", False)),
+            },
         })
 
         # ── DSL exit pass ───────────────────────────────────────────────────
