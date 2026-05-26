@@ -51,15 +51,45 @@ from hermes_trader.agents.hyperfeed import (
 # Per-subprocess perception cache so research can access the data from last scan
 _perception_cache: Dict[str, Dict[str, Any]] = {}
 
-# Tools whose underlying SDK call is not yet wired up. Each returns a fixed
-# placeholder payload tagged with a "SDK method pending" note.
-_STUB_RESPONSES: Dict[str, Dict[str, Any]] = {'get_trade_history': {'trades': []}, 'get_funding_history': {'funding': []}, 'get_sub_accounts': {'sub_accounts': []}, 'get_user_twist': {'twist': {}}, 'get_withdrawals': {'withdrawals': []}, 'get_predicted_funding': {'predicted_funding': []}, 'get_asset_context': {'context': {}}, 'get_user_defined_types': {'user_defined_types': []}, 'get_api_keys': {'api_keys': []}, 'get_user_verify': {'verified': False}, 'get_liquidations': {'liquidations': []}, 'get_order_status': {'status': 'pending'}, 'get_user_orders': {'orders': []}, 'get_assets': {'assets': []}, 'get_market_stats': {'stats': {}}, 'get_deposits': {'deposits': []}, 'get_transfers': {'transfers': []}, 'get_rewards': {'rewards': []}, 'get_staking_info': {'staking': {}}, 'get_user_roles': {'roles': []}, 'get_leverage': {'leverage': 1}, 'get_max_trade_size': {'max_size': 0}, 'get_portfolio_status': {'status': {}}, 'get_coin_price': {'price': 0}, 'get_trading_permissions': {'permissions': []}, 'get_recent_trades': {'trades': []}, 'get_funding_rate': {'funding_rate': 0}, 'get_liquidation_events': {'liquidations': []}, 'get_exchange_status': {'status': 'operational'}, 'get_user_preferences': {'preferences': {}}, 'get_historical_funding': {'funding_history': []}, 'get_open_interest': {'open_interest': 0}, 'get_market_sentiment': {'sentiment': {'fear_greed': 50}}, 'get_leaderboard_rank': {'rank': {}}, 'get_vaults': {'vaults': []}, 'get_vault_details': {'details': {}}, 'get_api_rate_limits': {'rate_limits': {}}, 'get_user_orders_history': {'orders': []}, 'get_price_impact': {'impact': 0}, 'get_slippage_estimate': {'slippage': 0}, 'get_withdrawal_status': {'status': {}}, 'get_deposit_address': {'address': ''}, 'get_transfer_history': {'transfers': []}, 'get_governance_proposals': {'proposals': []}, 'get_validator_info': {'validators': []}, 'get_network_stats': {'stats': {}}, 'get_sub_account_balances': {'balances': []}, 'get_whale_alerts': {'alerts': []}}
+# Tools whose underlying SDK call is not yet wired up. Each one is registered
+# with the MCP server so clients don't get a "tool not found" error, but
+# instead of returning fake data (which an LLM would silently consume —
+# things like `{'fear_greed': 50}` or `{'max_size': 0}` look like real
+# numbers), the handler returns an explicit `not_implemented` error. This
+# keeps tool discovery honest: an LLM that gets this response knows to skip
+# the value rather than fold a placeholder into its reasoning.
+_STUB_TOOL_NAMES = [
+    'get_trade_history', 'get_funding_history', 'get_sub_accounts',
+    'get_user_twist', 'get_withdrawals', 'get_predicted_funding',
+    'get_asset_context', 'get_user_defined_types', 'get_api_keys',
+    'get_user_verify', 'get_liquidations', 'get_order_status',
+    'get_user_orders', 'get_assets', 'get_market_stats',
+    'get_deposits', 'get_transfers', 'get_rewards',
+    'get_staking_info', 'get_user_roles', 'get_leverage',
+    'get_max_trade_size', 'get_portfolio_status', 'get_coin_price',
+    'get_trading_permissions', 'get_recent_trades', 'get_funding_rate',
+    'get_liquidation_events', 'get_exchange_status', 'get_user_preferences',
+    'get_historical_funding', 'get_open_interest', 'get_market_sentiment',
+    'get_leaderboard_rank', 'get_vaults', 'get_vault_details',
+    'get_api_rate_limits', 'get_user_orders_history', 'get_price_impact',
+    'get_slippage_estimate', 'get_withdrawal_status', 'get_deposit_address',
+    'get_transfer_history', 'get_governance_proposals', 'get_validator_info',
+    'get_network_stats', 'get_sub_account_balances', 'get_whale_alerts',
+]
 
 
-def _make_stub_handler(payload: Dict[str, Any]):
-    """Build a handler that returns a fixed placeholder payload."""
+def _make_stub_handler(tool_name: str):
+    """Build a handler that explicitly reports the tool is not implemented.
+
+    Returns an error payload instead of fake data so any LLM caller gets an
+    unambiguous "don't use this" signal rather than a plausible-looking zero.
+    """
     def handler(params: Dict[str, Any]) -> str:
-        return json.dumps({**payload, "note": "SDK method pending"}, default=str)
+        return json.dumps({
+            "error": "not_implemented",
+            "tool": tool_name,
+            "reason": "stub — underlying Hyperliquid SDK method not yet wired up. Do not use the response as data.",
+        })
     return handler
 
 
@@ -1073,8 +1103,8 @@ def run() -> None:
         "query_order_by_cloid": handle_query_order_by_cloid,
     }
 
-    for _name, _payload in _STUB_RESPONSES.items():
-        tool_handlers[_name] = _make_stub_handler(_payload)
+    for _name in _STUB_TOOL_NAMES:
+        tool_handlers[_name] = _make_stub_handler(_name)
 
     # MCP handshake
     while True:

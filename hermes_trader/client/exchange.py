@@ -68,7 +68,8 @@ def _resolve_perp_dexs() -> Optional[list]:
         from hermes_trader.client.universe import list_hip3_dexes
         hip3 = list_hip3_dexes()
         return [""] + hip3 if hip3 else None
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[_resolve_perp_dexs] HIP-3 dex discovery failed: {e}")
         return None
 
 
@@ -140,8 +141,8 @@ def get_coin_index(coin: str) -> Tuple[int, int, int]:
             for i, u in enumerate(info.meta(dex=dex).get("universe", [])):
                 if u["name"] == coin:
                     return i, u.get("szDecimals", 5), u.get("pxDecimals", 4)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[get_coin_index] HIP-3 meta lookup failed for dex={dex}: {e}")
     raise ValueError(f"Unknown coin: {coin}")
 
 
@@ -165,8 +166,8 @@ def get_max_leverage(coin: str) -> int:
             for u in info.meta(dex=dex).get("universe", []):
                 if u["name"] == coin:
                     return int(u.get("maxLeverage", 1))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[get_max_leverage] HIP-3 meta lookup failed for dex={dex}: {e}")
     raise ValueError(f"Unknown coin: {coin}")
 
 
@@ -190,8 +191,8 @@ def get_hl_price(coin: str = "BTC") -> float:
             v = mids.get(coin)
             if v is not None:
                 return float(v)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[get_hl_price] HIP-3 all_mids failed for dex={dex}: {e}")
         return 0.0
     mids = info.all_mids()
     return float(mids.get(coin, "0"))
@@ -323,8 +324,10 @@ def _ioc_cross_price(coin: str, is_buy: bool, mid_price: float) -> float:
             return float(asks[0]["px"]) * 1.01
         if not is_buy and bids:
             return float(bids[0]["px"]) * 0.99
-    except Exception:
-        pass
+    except Exception as e:
+        # Best-effort: fall back to mid ±1%. Log so a persistent l2 outage
+        # is visible even though execution still succeeds.
+        logger.warning(f"[aggressive_limit_px] l2_snapshot failed for {coin}: {e}")
     return mid_price * (1.01 if is_buy else 0.99)
 
 

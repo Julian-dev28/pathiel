@@ -108,6 +108,20 @@ async def _fetch_live_equity() -> float:
     return float(state.get("equity", 0))
 
 
+def _hip3_on() -> bool:
+    """Whether HIP-3 (tokenized-equity / commodity perps) is currently enabled.
+
+    The autonomous trading loop reads this at startup; the operator-facing
+    endpoints in this module need to honor the same flag so the dashboard
+    shows live HIP-3 prices, market lists, and portfolios when the bot is
+    actively trading them.
+    """
+    try:
+        return bool(read_agent_config().get("enable_hip3", False))
+    except Exception:
+        return False
+
+
 # ── Agent endpoints ───────────────────────────────────────────────────────────
 
 
@@ -314,9 +328,9 @@ async def get_account():
 
 @app.get("/api/hl/all-mids")
 async def get_all_mids():
-    """GET /api/hl/all-mids — all mid prices."""
+    """GET /api/hl/all-mids — all mid prices (incl. HIP-3 when enabled)."""
     try:
-        mids = fetch_all_mids()
+        mids = fetch_all_mids(include_hip3=_hip3_on())
         return JSONResponse(content=mids)
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -324,9 +338,9 @@ async def get_all_mids():
 
 @app.get("/api/hl/universe")
 async def get_market_universe():
-    """GET /api/hl/universe — full market universe."""
+    """GET /api/hl/universe — full market universe (incl. HIP-3 when enabled)."""
     try:
-        universe = get_universe()
+        universe = get_universe(include_hip3=_hip3_on())
         return JSONResponse(content={"markets": universe, "count": len(universe)})
     except Exception as e:
         raise HTTPException(502, str(e))
@@ -334,9 +348,15 @@ async def get_market_universe():
 
 @app.get("/api/hl/price")
 async def get_price(coin: str = Query("BTC")):
-    """GET /api/hl/price — mid price for a coin."""
+    """GET /api/hl/price — mid price for a coin.
+
+    Always includes HIP-3 dexes in the mid lookup so a request for
+    `xyz:NVDA` etc. resolves even if the bot's `enable_hip3` flag isn't set
+    (the operator might want to view a HIP-3 price without enabling the
+    autonomous bot to trade it).
+    """
     try:
-        mids = fetch_all_mids()
+        mids = fetch_all_mids(include_hip3=True)
         price = float(mids.get(coin, "0"))
         return JSONResponse(content={"price": price})
     except Exception as e:
@@ -366,7 +386,11 @@ async def get_portfolio():
 
     try:
         state = fetch_account_state(user)
-        mids = fetch_all_mids()
+        # Always include HIP-3 mids so the portfolio view can show mark prices
+        # for any open xyz:/km:/hyna: positions; without this the mark column
+        # would render $0.00 for tokenized markets even when the position is
+        # real and trackable.
+        mids = fetch_all_mids(include_hip3=True)
 
         positions = []
         for p in (state.get("asset_positions") or []):

@@ -504,10 +504,16 @@ def _load_mcp():
 
 def test_mcp_stub_table_and_tool_coverage():
     mod = _load_mcp()
-    assert len(mod._STUB_RESPONSES) == 48
+    # The stub list is now a list of tool names (not a dict of fake payloads).
+    # Each stubbed tool returns an explicit `not_implemented` error so LLM
+    # callers don't silently consume placeholder data.
+    assert len(mod._STUB_TOOL_NAMES) == 48
     assert len({t["name"] for t in mod.TOOLS}) == 100
-    handler = mod._make_stub_handler({"rewards": []})
-    assert json.loads(handler({})) == {"rewards": [], "note": "SDK method pending"}
+    handler = mod._make_stub_handler("get_rewards")
+    res = json.loads(handler({}))
+    assert res["error"] == "not_implemented"
+    assert res["tool"] == "get_rewards"
+    assert "stub" in res["reason"].lower()
 
 
 def test_mcp_server_stdio_end_to_end():
@@ -525,4 +531,5 @@ def test_mcp_server_stdio_end_to_end():
     assert resps[0]["result"]["serverInfo"]["name"] == "hermes-trader"
     assert len(resps[1]["result"]["tools"]) == 100
     call = json.loads(resps[2]["result"]["content"][0]["text"])
-    assert call == {"rewards": [], "note": "SDK method pending"}
+    assert call["error"] == "not_implemented"
+    assert call["tool"] == "get_rewards"
