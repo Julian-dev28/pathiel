@@ -618,6 +618,10 @@ _PUBLIC_HTML = """<!doctype html>
            chart axis/tooltip) while leaving every % visible. State persists
            in localStorage. Click to flip 👁 ↔ 🙈. -->
       <button id="discreet-toggle" type="button" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 cursor-pointer hover:bg-zinc-700" title="hide all $ amounts (keep percentages)">👁</button>
+      <!-- Operator-mode toggle: prompts for HERMES_OPERATOR_TOKEN, stashes it
+           in localStorage, reloads with ?token= so the Hermes terminal
+           (Cmd+K) + operator endpoints unlock. 🔒 = read-only, 🔓 = operator. -->
+      <button id="operator-toggle" type="button" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 cursor-pointer hover:bg-zinc-700" title="enter operator mode — unlocks Hermes terminal (Cmd+K)">🔒 op</button>
       <span id="status-pill" class="pill offline">offline</span>
       <a href="https://github.com/Julian-dev28/hermes-trader" class="text-zinc-400 hover:text-zinc-200">github</a>
     </div>
@@ -1282,6 +1286,43 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   applyI18n();
 });
 
+// ── Operator-mode toggle: lets the user paste their HERMES_OPERATOR_TOKEN
+// without hand-editing the URL. Token persists to localStorage so subsequent
+// page loads stay unlocked without retyping. Click again to clear.
+(function () {
+  const btn = document.getElementById('operator-toggle');
+  if (!btn) return;
+  function syncBtn() {
+    const tok = localStorage.getItem('hermes-op-token') || new URLSearchParams(window.location.search).get('token') || '';
+    btn.textContent = tok ? '🔓 op' : '🔒 op';
+    btn.title = tok
+      ? 'operator mode ON — click to clear token (revert to read-only)'
+      : 'enter operator mode — unlocks Hermes terminal (Cmd+K)';
+  }
+  syncBtn();
+  btn.addEventListener('click', () => {
+    const current = localStorage.getItem('hermes-op-token') || '';
+    if (current) {
+      if (confirm('Clear operator token and revert to read-only?')) {
+        localStorage.removeItem('hermes-op-token');
+        // Strip ?token= from URL for a clean reload
+        const u = new URL(window.location.href);
+        u.searchParams.delete('token');
+        window.location.replace(u.toString());
+      }
+      return;
+    }
+    const tok = prompt('Paste your HERMES_OPERATOR_TOKEN:\\n(stored only in this browser via localStorage)');
+    if (!tok || !tok.trim()) return;
+    const clean = tok.trim();
+    localStorage.setItem('hermes-op-token', clean);
+    // Reload with ?token= so backend SSE / page-token-reading consumers pick it up.
+    const u = new URL(window.location.href);
+    u.searchParams.set('token', clean);
+    window.location.replace(u.toString());
+  });
+})();
+
 // ── Hermes terminal: Cmd+K (Ctrl+K) opens a command-center console. Routes
 // the input to /api/dashboard/operator/terminal with the operator token read
 // from the URL — built-in commands resolve locally; anything else falls
@@ -1292,7 +1333,14 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   const history = document.getElementById('hermes-history');
   const closeBtn = document.getElementById('hermes-close');
   if (!modal || !input || !history) return;
+  // Token resolution order: ?token= in URL wins, then localStorage, else empty.
+  // Letting localStorage hold it means the operator doesn't have to retype
+  // the token on every page load — but URL still wins so a copy-pasted
+  // share-link can override.
   const tokenFromUrl = new URLSearchParams(window.location.search).get('token') || '';
+  const tokenFromStore = localStorage.getItem('hermes-op-token') || '';
+  const operatorToken = tokenFromUrl || tokenFromStore;
+  if (tokenFromUrl) localStorage.setItem('hermes-op-token', tokenFromUrl);
 
   function appendLine(text, kind) {
     const div = document.createElement('div');
@@ -1309,12 +1357,12 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
 
   async function send(cmd) {
     appendLine('▸ ' + cmd, 'cmd');
-    if (!tokenFromUrl) {
-      appendLine('no ?token= in URL — terminal requires operator token. open /?token=YOUR_TOKEN', 'error');
+    if (!operatorToken) {
+      appendLine('no operator token set — click 🔒 op in the top bar to enter one.', 'error');
       return;
     }
     try {
-      const r = await fetch('/api/dashboard/operator/terminal?token=' + encodeURIComponent(tokenFromUrl), {
+      const r = await fetch('/api/dashboard/operator/terminal?token=' + encodeURIComponent(operatorToken), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: cmd }),
