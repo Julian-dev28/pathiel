@@ -86,7 +86,10 @@ One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
 ```
 1. HEARTBEAT
    Pull equity, positions, daily PnL from HL. Persist to .agent-memory.json.
-   Append a `loop_heartbeat` event to the session log.
+   Append a `loop_heartbeat` event to the session log with a compact
+   config snapshot (frac × lev, slots, cap, cooldown, hip3 flag) so
+   the feed surfaces what the bot is tuned to do without anyone having
+   to open .agent-config.json.
 
 2. DSL MONITOR
    Reconcile DSL trackers with live exchange positions (rehydrate any
@@ -97,45 +100,60 @@ One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
    the actual fill price.
 
 3. SCAN
-   perception.scan_once() fetches top-N markets by 24h volume, runs each
-   through the trigger engine (pct move, volume spike, breakout, range
-   compression, trend strength, momentum burst). Returns triggers above
-   composite_score threshold. Log `scan` event with the coin list.
+   perception.scan_once() fetches top-N markets by 24h volume (native
+   crypto + HIP-3 dexes when enable_hip3=true), runs each through the
+   trigger engine (pct move, volume spike, breakout, range compression,
+   trend strength, momentum burst). Every perception is persisted via
+   memory.record_perception (previously they were processed but never
+   stored — the memory ring buffer ran flat at ~6 perceptions despite
+   100+ trades). Log `scan` event with the coin list + scores.
 
 4. PER-TRIGGER
    For each triggered coin:
-     a. TA filter (ta_filter.analyze_perception) — multi-TF EMA/RSI/ATR/ADX
+     a. Pre-research cooldown — skip the paid LLM call if the coin had
+        a real trade within `cooldown_min`. The execute-time cooldown
+        gate is still authoritative; this just saves tokens on coins
+        the gate would block anyway.
+     b. TA filter (ta_filter.analyze_perception) — multi-TF EMA/RSI/ATR/ADX
         + volume confirmation. Free statistical gate before any AI cost.
         Result: CONFIRMED / WEAK / REJECTED. Momentum-burst triggers bypass.
-     b. AI research (research.research) — fetches candles + news context,
+     c. AI research (research.research) — fetches candles + news context,
         sends to OpenRouter LLM (Grok-4 or similar), parses verdict
         (LONG / SHORT / PASS) + confidence (0-1) + entry/stop/tp prices.
-     c. Risk gates (risk_gates.eval_all_gates) — 12 independent gates,
+        memory.record_analysis() persists the result.
+     d. Risk gates (risk_gates.eval_all_gates) — 11 independent gates,
         all evaluated (no short-circuit) for telemetry. Listed below.
-     d. Executor (executor.maybe_execute) — if all gates pass:
-        Kelly-sized notional, set leverage, place IOC order, register
-        DSL tracker with leverage, place backup ATR stop on exchange.
-     e. Log `execute` event with side, executed flag, order_id, blocked_by.
+     e. Executor (executor.maybe_execute) — defensive equity guard first
+        (refuse if HL API returned equity=0). If all gates pass: size
+        by equity_fraction × equity × leverage, set leverage, place
+        IOC order, register DSL tracker, place backup ATR stop on
+        exchange. Blocked attempts are NOT written to memory._trades —
+        a previous bug had them polluting the trade log with
+        size_usd=0 entries, which then tripped the cooldown gate on
+        the NEXT scan and caused infinite reject loops.
+     f. Log `execute` event with side, executed flag, order_id, blocked_by.
 ```
 
-### The 12 risk gates
+### The 11 risk gates
 
 All evaluated; results recorded for telemetry. Trade blocks if any returns
-`{pass: False}`.
+`{pass: False}`. **All config keys are `snake_case`** — legacy camelCase
+keys (e.g. `maxConcurrent`) are silently ignored by the gates and only
+used by the old MCP-server status display.
 
 | Gate | What it checks |
 |---|---|
-| `confidence` | AI confidence ≥ `min_ai_confidence` (default 0.8, often 0.3 in live) |
+| `confidence` | AI confidence ≥ `min_ai_confidence` (in-code default 0.8; live config typically 0.25–0.3) |
 | `max_concurrent` | Open positions < `max_concurrent` |
 | `notional_cap` | Per-trade notional ≤ `max_trade_notional_usd` |
 | `daily_loss` | Daily PnL > `max_daily_loss_usd` (kill switch) |
-| `liquidity` | Coin 24h volume ≥ `min_market_volume_usd` |
+| `liquidity` | Asset-class-aware floor. Crypto: ≥ `min_market_volume_usd` (default 5M). HIP-3 (colon-namespaced): ≥ `min_hip3_volume_usd` (default 500k). Same floor would have wrongly blocked legitimately-liquid tokenized markets like `xyz:CRCL` ($4.7M) and `km:USTECH` ($1.06M). |
 | `coin_filter` | Coin not in blocklist; if allowlist set, must be in it |
-| `cooldown` | Same-coin cooldown elapsed (`cooldown_min`) |
+| `cooldown` | Same-coin cooldown elapsed (`cooldown_min`). Keys off the most-recent REAL trade in memory (blocked attempts no longer pollute this — see fix in pipeline section). |
 | `opposite_guard` | No simultaneous opposite-direction position on the same coin |
-| `correlation` | Crypto long correlation cap (max 2 concurrent crypto longs) |
+| `correlation` | Crypto long correlation cap — `max_crypto_long_correlated` (default 2, often 5–8 in live). HIP-3 equity/commodity longs don't count against the crypto cap because the regime classifier strips the dex prefix and routes them to the equity/commodity class. |
 | `equity_risk` | Total open notional ≤ `max_total_notional_pct × equity` |
-| `market_regime` | **(new)** Counter-trend trades blocked unless conf ≥ `counter_regime_min_conf`. Per-asset-class proxy: BTC for crypto, NVDA for equity, own ticker for commodities. |
+| `market_regime` | Counter-trend trades blocked unless confidence ≥ `counter_regime_min_conf`. Per-asset-class proxy: BTC for crypto, `xyz:SP500` for equity, own ticker for commodities. |
 | `news` | No binary news risk in research's news_context (Fed/CPI/earnings/etc.) |
 
 ### Why the two-stage AI gating
@@ -207,6 +225,67 @@ make people stop and ask what you're doing.
 
 ---
 
+## HIP-3 — tokenized equities, commodities, and indices
+
+Hyperliquid hosts a second class of perps on separately-deployed dexes
+(`xyz`, `km`, `vntl`, `flx`, `hyna`, `abcd`, `cash`, `para`). Markets are
+namespaced as `<dex>:<symbol>` — e.g. `xyz:NVDA`, `xyz:SP500`, `xyz:GOLD`,
+`km:USOIL`, `km:US500`. Enabled with `"enable_hip3": true` in
+`.agent-config.json`. **Restart the loop** after flipping the flag — the
+universe is fetched once at startup.
+
+The flag is honored at three entry points so the bot can scan, score, size,
+and execute these markets end-to-end:
+
+| Entry point | What changes when `enable_hip3=true` |
+|---|---|
+| `client/universe.get_universe(include_hip3=True)` | Auto-discovers registered HIP-3 dexes via `/info perpDexs` and merges each dex's `metaAndAssetCtxs` into the unified market list. Each market dict gets `dex: "<name>"` (None for native HL). |
+| `client/hl_client.fetch_all_mids(include_hip3=True)` | Adds one HTTP POST per HIP-3 dex (~8 total) so colon-namespaced mids are populated in the scanner. |
+| `client/exchange.Info / Exchange(perp_dexs=[""] + hip3)` | Teaches the HL SDK to resolve colon names at order placement. **CRITICAL: the empty string `""` must be prepended** — the SDK treats the list as exclusive. Pass only HIP-3 dexes and BTC/ETH start raising `KeyError` at `update_leverage` / `order`. |
+
+### Asset-class routing
+
+`agents/market_regime.classify_asset()` strips the dex prefix before lookup
+so `xyz:NVDA` correctly lands in `_EQUITY_COINS` (not crypto) and uses
+`EQUITY_PROXY = "xyz:SP500"` for its regime-trend check. Tokenized
+commodities (`xyz:GOLD`, `xyz:CL`, `km:USOIL`, etc.) route to `commodity`
+and use their own candle stream as the regime proxy.
+
+### Liquidity tier split
+
+Crypto perps and HIP-3 markets have different liquidity profiles — most
+`xyz:*` markets are in the $1M–$50M range vs $1B+ for BTC. The
+`market_liquidity_floor` gate uses two configurable floors keyed off
+whether the coin contains a colon:
+
+- `min_market_volume_usd` (default 5,000,000) — crypto floor
+- `min_hip3_volume_usd` (default 500,000) — HIP-3 floor
+
+Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
+tokenized equities flow.
+
+### The `get_hl_price` gotcha (silent-kill bug, since fixed)
+
+`info.all_mids()` returns ONLY the native HL perp dex. Colon-namespaced
+coins need `info.all_mids(dex=<prefix>)`. Before the fix, every HIP-3
+trade attempt died at `if mid_price <= 0: return invalid_price_for_X`
+before reaching the order endpoint — no log, no exception, just silently
+no trade. Both `get_hl_price()` (`client/exchange.py`) and
+`fetch_all_mids(include_hip3=True)` (`client/hl_client.py`) now derive
+the dex from the prefix when the coin is namespaced.
+
+### Off-hours behavior
+
+HIP-3 equity markets only trade during US equity hours; outside those
+hours volume drops to ~zero, so the scanner naturally skips them
+(filtered by `min_hip3_volume_usd`). No explicit hours-gate is
+implemented — the volume floor handles it.
+
+See `skills/hermes-trader-agent/references/hip3-tokenized-equity-handoff.md`
+for the original task brief and the post-implementation audit findings.
+
+---
+
 ## Persistence layer — four files
 
 | File | Owner | What it holds | TTL |
@@ -263,6 +342,14 @@ the agent needs than to have to teach the agent a new tool mid-session.
   fees-net PnL, streaming live activity feed via SSE.
 - `GET /operator?token=…` — token-gated console: config JSON, in-memory DSL
   trackers, per-position force-close, OFF/LIVE mode toggle.
+- `POST /api/dashboard/operator/terminal?token=…` — Hermes terminal endpoint.
+  Built-in commands resolve locally (`status`, `pause`, `resume`,
+  `close <coin>`, `regime`, `config`, `help`); free-form text falls through
+  to **Nous Hermes 3 70B** via OpenRouter, primed with a structured
+  world-state snapshot (last 8 real trades from memory, live positions
+  with uPnL, recent research verdicts with reasoning, DSL exits with
+  reason+PnL, ta_skips) so the chat answers about what the bot is
+  actually doing, not in a vacuum.
 - `GET /api/feed/stream` — Server-Sent Events tailing the JSONL log.
   Replays last 50 events on connect; heartbeats every 15s to defeat proxy
   idle-kill.
@@ -270,16 +357,53 @@ the agent needs than to have to teach the agent a new tool mid-session.
   JSON endpoints driving the dashboard JS. Reusable for a future Next.js
   frontend or any other consumer.
 
-Design choice worth knowing: the dashboard is **static HTML + Tailwind CDN +
-Chart.js CDN + HTMX/vanilla JS**. No build step, no bundler, no SPA. Total
-JS surface ~250 lines. This was the right choice at this scale because:
+### UI layer — Tamagotchi-meets-Matrix
+
+Single-file static HTML, no build step. The dashboard intentionally has
+personality:
+
+- **Press Start 2P font + NES.css** — pixel-bordered cards with hard 4px
+  shadows on every section. Title block (`HERMES-TRADER`) is an emerald-glow
+  LCD strip.
+- **Matrix-rain sidebar** — the live activity feed sits in a sticky 440px
+  right column with CRT scanline overlay, fade-in row animation, and
+  brighter glow on the newest entry (the "head" of the rain).
+- **White-rabbit habitat** — a hand-rolled 16×16 inline-SVG pixel rabbit
+  sits at the top of the matrix sidebar, bouncing on a spinning ⚙ wheel.
+  An NES speech balloon next to it cycles through 24 law-of-attraction
+  affirmations every 7s.
+- **Reactive header pet** — separate emoji widget that swaps on the
+  current `status` × `daily_pnl_pct` (scanning → 👀, executing → ⚡ shake,
+  profitable → 🤑/😎, losing → 😰 [pixel-SVG sprite] / 😱). Live trading
+  events animate the rabbit too: `execute` → yellow celebrate + ⚡ burst,
+  `dsl_exit` profit → green victory wiggle + 💰, `dsl_exit` loss → red
+  defeat shake + 💀.
+- **Heartbeat config insight line** — every heartbeat in the feed shows
+  the compact live config alongside the equity/PnL/open line:
+  `♥ perp=$X avail=$Y daily=±$Z open=N  ⚙ 5.0%×40x slots=20 cap=40x cool=60m hip3:on`.
+- **Currency + language selectors** — Intl.NumberFormat with USD-base FX
+  rates from open.er-api.com (15 currencies); 10 languages with a static
+  i18n dict applied via `data-i18n` attributes. Both persist in localStorage.
+- **Discreet mode** (`👁` toggle) — flips every $ amount to `•••` while
+  leaving every % visible. For screenshots / public sharing without
+  disclosing capital size.
+- **Operator-mode toggle** (`🔒 op` / `🔓 op` button) — prompts for the
+  `HERMES_OPERATOR_TOKEN`, stashes it in localStorage, reloads with
+  `?token=`. No more hand-editing the URL to unlock the terminal.
+- **Hermes terminal modal** — **Cmd+K** (Ctrl+K) opens a NES-styled
+  black console with an emerald prompt. Operator-token gated. Esc closes.
+
+Design choice worth knowing: still **static HTML + Tailwind CDN +
+Chart.js CDN + NES.css CDN + vanilla JS**. No build step, no bundler, no
+SPA. This stays the right choice at this scale because:
 - Anyone can fork and modify in 5 minutes
 - No npm dependency surface to maintain
 - Server-side trivially deployable as one Python process
 - Looks indie-but-real, which is right for a public trading wallet
 
-Move to Next.js once the product has auth + marketplace + multi-tenant —
-not before.
+Move to a real framework (Lit, Alpine, HTMX, or Svelte) once the
+dashboard grows multi-page, auth-multi-tenant, or marketplace-y — not
+before.
 
 ---
 
