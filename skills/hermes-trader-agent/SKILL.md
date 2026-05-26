@@ -251,3 +251,4 @@ start it. See `references/cron-jobs.md`.
 - `references/restart-sequence.md` — canonical short `pkill + restart` command the user repeatedly uses (maintains this exact two-line ritual).
 - `references/trading-mode.md` — explicit execute-first reporting contract when the user is in active trading mode.
 - `references/daemon-investigation.md` — `--daemon` flag is informational-only; correct background pattern.
+- `references/hip3-tokenized-equity-handoff.md` — original HIP-3 task brief + 2026-05-26 session learnings (the size_usd=0 blocked-record-pollution + perception-persistence findings that drove the pipeline audit).
