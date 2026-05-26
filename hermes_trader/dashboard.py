@@ -755,7 +755,8 @@ _PUBLIC_HTML = """<!doctype html>
 
 <!-- ── Hermes terminal modal — Cmd+K (or Ctrl+K) toggle. Operator-token gated
      via the same ?token= the page was loaded with. Built-in commands resolve
-     locally; free text falls through to Nous Hermes via OpenRouter. ── -->
+     locally; free text falls through to the chat model (default xAI Grok 4.3,
+     override via HERMES_CHAT_MODEL env var) over OpenRouter. ── -->
 <div id="hermes-modal" class="hermes-modal hidden">
   <div class="hermes-modal-bg"></div>
   <div class="nes-container is-dark is-rounded hermes-modal-box">
@@ -764,7 +765,7 @@ _PUBLIC_HTML = """<!doctype html>
       <button id="hermes-close" class="pixel hermes-modal-close" title="close (esc)">×</button>
     </div>
     <div id="hermes-history" class="hermes-history">
-      <div class="hermes-line hermes-meta">type `help` for commands · esc to close · free text → Hermes-3</div>
+      <div class="hermes-line hermes-meta">type `help` for commands · esc to close · free text → Grok 4.3</div>
     </div>
     <div class="hermes-input-row">
       <span class="hermes-prompt">▸</span>
@@ -1792,13 +1793,19 @@ def register_routes(app: FastAPI) -> None:
                 "position closed, check recent_dsl_exits. NEVER predict future prices.\n\n"
                 f"LIVE STATE: {json.dumps(ctx, default=str)}"
             )
+            # Model is env-overridable so the operator can swap without a
+            # code change. Default is xAI Grok 4.3 — fast, strong on
+            # numeric/financial reasoning, and the operator picked it.
+            # Override with HERMES_CHAT_MODEL=<openrouter-slug> in .env.local.
+            # Catalog: https://openrouter.ai/models
+            chat_model = os.environ.get("HERMES_CHAT_MODEL", "x-ai/grok-4.3")
             async def _call():
                 async with httpx.AsyncClient(timeout=20.0) as client:
                     r = await client.post(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                         json={
-                            "model": "nousresearch/hermes-3-llama-3.1-70b",
+                            "model": chat_model,
                             "messages": [
                                 {"role": "system", "content": system_msg},
                                 {"role": "user", "content": cmd},
@@ -1812,6 +1819,6 @@ def register_routes(app: FastAPI) -> None:
             # We're inside FastAPI's event loop here, so just await directly.
             data = await _call()
             content = data["choices"][0]["message"]["content"].strip()
-            return JSONResponse({"response": content, "kind": "chat", "model": "nousresearch/hermes-3-llama-3.1-70b"})
+            return JSONResponse({"response": content, "kind": "chat", "model": chat_model})
         except Exception as e:
             return JSONResponse({"response": f"chat error: {e}", "kind": "error"})
