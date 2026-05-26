@@ -1651,8 +1651,21 @@ def register_routes(app: FastAPI) -> None:
         # ── built-in commands ─────────────────────────────────────────────
         if verb in ("help", "?"):
             return JSONResponse({"response": (
-                "commands: status | pause | resume | close <coin> | "
-                "regime | config | help. anything else → ask Hermes (LLM)"
+                "commands:\n"
+                "  status                — equity, daily PnL, open, tick, scan triggers\n"
+                "  positions             — live positions w/ uPnL (winners + losers grouped)\n"
+                "  trades [n]            — last n real fills from memory (default 10)\n"
+                "  config                — dump current .agent-config.json\n"
+                "  dump                  — full state (config + positions + last events)\n"
+                "  regime                — cached regime per proxy\n"
+                "  pause / resume        — flip mode OFF/LIVE\n"
+                "  close <coin>          — market-close a single position\n"
+                "  close all             — market-close every open position\n"
+                "  close losing          — market-close every position with uPnL < 0\n"
+                "  close winning         — market-close every position with uPnL > 0\n"
+                "  set <key> <value>     — update .agent-config.json (int/float/bool/str inferred)\n"
+                "  kill                  — pause trading then close all (panic button)\n"
+                "  help                  — this list. anything else → ask the chat model"
             ), "kind": "help"})
 
         if verb == "status":
@@ -1679,11 +1692,183 @@ def register_routes(app: FastAPI) -> None:
             write_agent_config(cfg)
             return JSONResponse({"response": f"mode {old} → {new_mode}", "kind": "action"})
 
+        # ── close: single coin, all, losing, or winning ─────────────────
         if verb == "close" and len(parts) >= 2:
             from hermes_trader.agents.executor import close_position_market
-            coin = parts[1].upper() if ":" not in parts[1] else parts[1]
+            target = parts[1].lower()
+            if target in ("all", "losing", "winning"):
+                # Bulk close — iterate live positions, filter, close each.
+                try:
+                    user = resolve_user_address()
+                    state = fetch_account_state(user) if user else {}
+                    open_pos = [
+                        {
+                            "coin": p.get("position", {}).get("coin"),
+                            "szi": float(p.get("position", {}).get("szi", "0") or 0),
+                            "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0),
+                        }
+                        for p in state.get("asset_positions", []) or []
+                        if float(p.get("position", {}).get("szi", "0") or 0) != 0
+                    ]
+                except Exception as e:
+                    return JSONResponse({"response": f"could not read live positions: {e}", "kind": "error"})
+
+                if target == "losing":
+                    targets = [p for p in open_pos if p["uPnL"] < 0]
+                elif target == "winning":
+                    targets = [p for p in open_pos if p["uPnL"] > 0]
+                else:  # all
+                    targets = open_pos
+
+                if not targets:
+                    return JSONResponse({"response": f"no positions matched `close {target}`", "kind": "info"})
+
+                results = []
+                for p in targets:
+                    coin = p["coin"]
+                    try:
+                        r = close_position_market(coin)
+                        ok = bool(r.get("ok") or r.get("executed"))
+                        results.append(f"  {coin:<14} {('✓' if ok else '✗')} uPnL={p['uPnL']:+.2f}")
+                    except Exception as e:
+                        results.append(f"  {coin:<14} ✗ {e}")
+                head = f"closed {len(targets)} position(s) [{target}]:\n"
+                return JSONResponse({"response": head + "\n".join(results), "kind": "action"})
+
+            # Single-coin close (preserve original behavior)
+            coin = parts[1] if ":" in parts[1] else parts[1].upper()
             result = close_position_market(coin)
             return JSONResponse({"response": f"close {coin}: {result}", "kind": "action"})
+
+        # ── positions: live list grouped by winners / losers ───────────
+        if verb == "positions":
+            try:
+                user = resolve_user_address()
+                state = fetch_account_state(user) if user else {}
+                rows = []
+                for p in state.get("asset_positions", []) or []:
+                    pos = p.get("position", {})
+                    szi = float(pos.get("szi", "0") or 0)
+                    if szi == 0:
+                        continue
+                    rows.append({
+                        "coin": pos.get("coin"),
+                        "side": "long" if szi > 0 else "short",
+                        "size": abs(szi),
+                        "entry": float(pos.get("entryPx", "0") or 0),
+                        "uPnL": float(pos.get("unrealizedPnl", "0") or 0),
+                    })
+                if not rows:
+                    return JSONResponse({"response": "no open positions", "kind": "info"})
+                rows.sort(key=lambda r: -r["uPnL"])
+                lines = [f"  {r['coin']:<14} {r['side']:<5} size={r['size']:>9.4f} entry={r['entry']:<10} uPnL={r['uPnL']:+.2f}"
+                         for r in rows]
+                total = sum(r["uPnL"] for r in rows)
+                head = f"{len(rows)} open · total uPnL ${total:+.2f}\n"
+                return JSONResponse({"response": head + "\n".join(lines), "kind": "status"})
+            except Exception as e:
+                return JSONResponse({"response": f"positions read failed: {e}", "kind": "error"})
+
+        # ── trades [n]: last n real fills from memory ──────────────────
+        if verb == "trades":
+            try:
+                from hermes_trader.agents.memory import memory as _mem
+                _mem.load()
+                n = 10
+                if len(parts) >= 2:
+                    try: n = max(1, min(50, int(parts[1])))
+                    except ValueError: pass
+                real = [t for t in (_mem.get_recent_trades(50) or []) if float(t.get("size_usd") or 0) > 0]
+                last_n = real[-n:]
+                if not last_n:
+                    return JSONResponse({"response": "no real trades in memory yet", "kind": "info"})
+                from datetime import datetime
+                lines = []
+                for t in last_n:
+                    ts = datetime.fromtimestamp(t["executed_at"]/1000).strftime("%m-%d %H:%M:%S")
+                    lines.append(f"  {ts}  {t.get('coin'):<14} {t.get('side','?'):<5} "
+                                 f"entry={t.get('entry_px',0):<10} size=${float(t.get('size_usd') or 0):.2f}")
+                return JSONResponse({"response": f"last {len(last_n)} fills:\n" + "\n".join(lines), "kind": "info"})
+            except Exception as e:
+                return JSONResponse({"response": f"trades read failed: {e}", "kind": "error"})
+
+        # ── set <key> <value>: update agent config (type-inferred) ─────
+        if verb == "set" and len(parts) >= 3:
+            from hermes_trader.agents.config_store import write_agent_config
+            key = parts[1]
+            raw = " ".join(parts[2:]).strip()
+            # Type coercion: int, float, bool, json, else string.
+            def _coerce(s: str):
+                if s.lower() in ("true", "false"):
+                    return s.lower() == "true"
+                if s.lower() in ("null", "none"):
+                    return None
+                try: return int(s)
+                except ValueError: pass
+                try: return float(s)
+                except ValueError: pass
+                if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
+                    try: return json.loads(s)
+                    except Exception: pass
+                return s
+            new_val = _coerce(raw)
+            cfg = read_agent_config()
+            old_val = cfg.get(key, "<unset>")
+            cfg[key] = new_val
+            write_agent_config(cfg)
+            return JSONResponse({"response": f"config[{key}]: {old_val} → {new_val}  (type={type(new_val).__name__})",
+                                  "kind": "action"})
+
+        # ── kill: pause + close all (panic button) ─────────────────────
+        if verb == "kill":
+            from hermes_trader.agents.config_store import write_agent_config
+            from hermes_trader.agents.executor import close_position_market
+            cfg = read_agent_config()
+            cfg["mode"] = "OFF"
+            write_agent_config(cfg)
+            try:
+                user = resolve_user_address()
+                state = fetch_account_state(user) if user else {}
+                open_coins = [
+                    p["position"]["coin"]
+                    for p in state.get("asset_positions", []) or []
+                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
+                ]
+            except Exception as e:
+                return JSONResponse({"response": f"mode → OFF, but position-list fetch failed: {e}", "kind": "error"})
+            closed = []
+            for c in open_coins:
+                try:
+                    r = close_position_market(c)
+                    closed.append(f"  {c}: {'✓' if (r.get('ok') or r.get('executed')) else '✗'}")
+                except Exception as e:
+                    closed.append(f"  {c}: ✗ {e}")
+            head = f"KILL · mode → OFF · closed {len(open_coins)} position(s):\n"
+            return JSONResponse({"response": head + ("\n".join(closed) if closed else "  (no positions to close)"),
+                                  "kind": "action"})
+
+        # ── dump: full state snapshot (config + positions + last events) ─
+        if verb == "dump":
+            try:
+                user = resolve_user_address()
+                state = fetch_account_state(user) if user else {}
+                events = session_log.tail(10) or []
+                positions = [
+                    {"coin": p.get("position", {}).get("coin"),
+                     "szi": float(p.get("position", {}).get("szi", "0") or 0),
+                     "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0)}
+                    for p in state.get("asset_positions", []) or []
+                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
+                ]
+                snap = {
+                    "config": read_agent_config(),
+                    "equity": float(state.get("equity", 0) or 0),
+                    "open_positions": positions,
+                    "recent_events": [{k: v for k, v in e.items() if k != "ts"} for e in events],
+                }
+                return JSONResponse({"response": json.dumps(snap, indent=2, default=str), "kind": "info"})
+            except Exception as e:
+                return JSONResponse({"response": f"dump failed: {e}", "kind": "error"})
 
         if verb == "regime":
             try:
