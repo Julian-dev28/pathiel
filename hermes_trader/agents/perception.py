@@ -150,8 +150,18 @@ def scan_once(
     min_score = cfg["scan"]["minCompositeScore"] if min_score == 20 else min_score
     workers = parallel_workers or cfg["scan"].get("parallelWorkers", 32)
 
-    # ── Step 1: Fetch mids (HTTP POST, ~150ms) ──────────────────────────
-    raw_mids = fetch_all_mids()
+    # HIP-3 toggle lives in the runtime agent config (.agent-config.json) so it
+    # can be flipped without code changes. When on, fetch_all_mids and
+    # get_universe pull in tokenized-equity / commodity perps from the
+    # registered HIP-3 perpDexs alongside native crypto.
+    try:
+        from hermes_trader.agents.config_store import read_agent_config
+        include_hip3 = bool(read_agent_config().get("enable_hip3", False))
+    except Exception:
+        include_hip3 = False
+
+    # ── Step 1: Fetch mids (HTTP POST, ~150ms; +~8 per-dex POSTs if HIP-3 on) ─
+    raw_mids = fetch_all_mids(include_hip3=include_hip3)
     mids: Dict[str, float] = {}
     for coin, val in raw_mids.items():
         if isinstance(val, str):
@@ -167,7 +177,7 @@ def scan_once(
     # Fetching all 500+ markets would need 10,000+ weight → instant 429.
     # Pre-filter to top-N markets by 24h notional volume to stay under limit.
     if universe is None:
-        universe = get_universe()
+        universe = get_universe(include_hip3=include_hip3)
 
     # Filter: must have valid mid, exclude spot (@ or type=spot), then top-N by volume
     eligible = [m for m in universe 

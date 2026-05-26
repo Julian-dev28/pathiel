@@ -60,7 +60,21 @@ logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
 logger.info(f"Mode: LIVE  env={_args.env}  daemon={_args.daemon}")
 
 config = get_config()
-universe = get_universe()
+# HIP-3 toggle: read once at startup so the prefetched universe includes
+# tokenized-equity / commodity perps if enabled. The agent config is
+# hot-reloaded per cycle inside the executor / perception layer for other
+# fields; the universe itself is fetched once at startup, so flipping
+# enable_hip3 mid-run requires a loop restart to pick up new markets.
+try:
+    from hermes_trader.agents.config_store import read_agent_config
+    _enable_hip3 = bool(read_agent_config().get("enable_hip3", False))
+except Exception:
+    _enable_hip3 = False
+universe = get_universe(include_hip3=_enable_hip3)
+logger.info(
+    f"Universe loaded: {len(universe)} markets"
+    + (f" (HIP-3 enabled — {sum(1 for m in universe if m.get('dex'))} tokenized markets)" if _enable_hip3 else "")
+)
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 
 # Scan cadence: env-overridable, default 60s. Keep it above the candle cache

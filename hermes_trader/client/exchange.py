@@ -50,12 +50,34 @@ HL_LEVERAGE = 5  # 5x cross margin
 
 _exchange_instance = None  # Singleton instance
 
+def _resolve_perp_dexs() -> Optional[list]:
+    """Discover HIP-3 perpDex names so the SDK can resolve colon-namespaced coins.
+
+    Only invoked when HIP-3 is enabled via .agent-config.json `enable_hip3`.
+    Returns None when disabled so the SDK uses its default (main perp dex only).
+
+    CRITICAL: the SDK treats `perp_dexs` as *exclusive* — if you pass a list,
+    it loads ONLY those dexes and drops the main perp universe. The empty
+    string `""` is the sentinel for the main dex. So we must prepend `""` to
+    keep BTC/ETH/etc. resolvable alongside the HIP-3 namespaced coins.
+    """
+    try:
+        from hermes_trader.agents.config_store import read_agent_config
+        if not read_agent_config().get("enable_hip3"):
+            return None
+        from hermes_trader.client.universe import list_hip3_dexes
+        hip3 = list_hip3_dexes()
+        return [""] + hip3 if hip3 else None
+    except Exception:
+        return None
+
+
 def _make_exchange() -> Exchange:
     """Create or reuse Exchange client singleton (avoids WebSocket connection limit)."""
     global _exchange_instance
     if _exchange_instance is not None:
         return _exchange_instance
-    
+
     if not PRIVATE_KEY_HEX:
         raise RuntimeError("HYPERLIQUID_PRIVATE_KEY not set")
 
@@ -71,10 +93,14 @@ def _make_exchange() -> Exchange:
     # - MASTER holds funds
     account_address = HL_WALLET if IS_AGENT else None
 
+    # perp_dexs= teaches the SDK the HIP-3 dex list at init so name_to_asset
+    # can resolve `xyz:NVDA` etc. when enable_hip3 is on. With it None the
+    # SDK behaves exactly as before.
     _exchange_instance = Exchange(
         wallet=acct,
         base_url=HL_API,
         account_address=account_address,
+        perp_dexs=_resolve_perp_dexs(),
     )
     return _exchange_instance
 
@@ -90,17 +116,32 @@ def _get_info() -> Info:
     """
     global _info_instance
     if _info_instance is None:
-        _info_instance = Info(skip_ws=True)
+        _info_instance = Info(skip_ws=True, perp_dexs=_resolve_perp_dexs())
     return _info_instance
 
 
 def get_coin_index(coin: str) -> Tuple[int, int, int]:
-    """Resolve a coin name to (asset_index, sz_decimals, px_decimals) via the SDK meta endpoint."""
+    """Resolve a coin name to (asset_index, sz_decimals, px_decimals) via the SDK meta endpoint.
+
+    Searches the main perp universe first, then (for HIP-3 colon-namespaced
+    coins like `xyz:NVDA`) the parent dex's meta. The returned index is the
+    coin's position *within its own universe*; downstream callers (the SDK
+    `order`/`update_leverage` etc.) translate name → asset ID internally using
+    `perp_dexs`, so this helper is only used for sz/px decimals in our own
+    rounding code.
+    """
     info = _get_info()
-    meta = info.meta()
-    for i, u in enumerate(meta.get("universe", [])):
+    for i, u in enumerate(info.meta().get("universe", [])):
         if u["name"] == coin:
             return i, u.get("szDecimals", 5), u.get("pxDecimals", 4)
+    if ":" in coin:
+        dex = coin.split(":", 1)[0]
+        try:
+            for i, u in enumerate(info.meta(dex=dex).get("universe", [])):
+                if u["name"] == coin:
+                    return i, u.get("szDecimals", 5), u.get("pxDecimals", 4)
+        except Exception:
+            pass
     raise ValueError(f"Unknown coin: {coin}")
 
 
@@ -109,12 +150,23 @@ def get_max_leverage(coin: str) -> int:
 
     Hyperliquid sets this per coin (e.g. BOME 3x, ONDO 10x, BTC 40x); an order
     that tries to exceed it is rejected, so callers cap their leverage here.
+    HIP-3 namespaced coins (e.g. `xyz:NVDA`) are looked up in the parent dex's
+    metadata when not found in the main perp universe.
     """
     info = _get_info()
-    meta = info.meta()
-    for u in meta.get("universe", []):
+    # Main perp dex
+    for u in info.meta().get("universe", []):
         if u["name"] == coin:
             return int(u.get("maxLeverage", 1))
+    # HIP-3: derive dex name from the namespace prefix and consult that dex's meta
+    if ":" in coin:
+        dex = coin.split(":", 1)[0]
+        try:
+            for u in info.meta(dex=dex).get("universe", []):
+                if u["name"] == coin:
+                    return int(u.get("maxLeverage", 1))
+        except Exception:
+            pass
     raise ValueError(f"Unknown coin: {coin}")
 
 

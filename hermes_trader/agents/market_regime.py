@@ -35,19 +35,27 @@ Regime = Literal["up", "down", "neutral"]
 # universe shifts and we want a stable classifier — adds latency to no new
 # coin, just a one-line update when HL lists more.
 _EQUITY_COINS = frozenset([
+    # Single-name equities
     "TSLA", "NVDA", "AAPL", "MSFT", "GOOGL", "GOOG", "META", "AMZN",
     "NFLX", "AMD", "INTC", "SPY", "QQQ", "COIN", "MSTR", "HOOD", "PLTR",
-    "DIS", "JPM", "BA", "WMT", "XOM",
+    "DIS", "JPM", "BA", "WMT", "XOM", "MU", "ARM", "BABA", "SKHX",
+    # Broad-market indices (HIP-3: xyz:SP500, xyz:XYZ100, km:US500, km:USTECH, km:SMALL2000)
+    "SP500", "US500", "XYZ100", "USTECH", "QQQ", "DJI", "NDX", "SMALL2000", "USENERGY",
 ])
 
-# HL commodity perps — names vary across the API; cover the obvious aliases.
+# HL commodity perps — names vary across the API; cover the obvious aliases
+# including HIP-3 namespaced equivalents (xyz:CL = crude, xyz:BRENTOIL, km:USOIL, etc.).
 _COMMODITY_COINS = frozenset([
-    "NATGAS", "GAS", "NGAS", "OIL", "BRENT", "WTI",
-    "GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM",
+    "NATGAS", "GAS", "NGAS",
+    "OIL", "USOIL", "BRENT", "BRENTOIL", "WTI", "CL",
+    "GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM", "ALUMINIUM",
 ])
 
 CRYPTO_PROXY = "BTC"
-EQUITY_PROXY = "NVDA"  # if HL lists SPY/QQQ later, prefer those
+# HIP-3 tokenized equity perp — xyz:SP500 is the highest-volume broad-market
+# proxy ($194M 24h vol). Only resolves when enable_hip3 is on; falls back to
+# crypto proxy when the candle fetch returns nothing.
+EQUITY_PROXY = "xyz:SP500"
 
 # Trend thresholds — small numbers because we're on 4h closes; even a 0.1%
 # slope per 5 bars (20h) is a meaningful directional move at crypto vol.
@@ -63,11 +71,17 @@ _regime_cache: Dict[str, Tuple[Regime, float]] = {}
 def classify_asset(coin: str) -> AssetClass:
     """Map a coin to its asset class. Default is 'crypto' for everything not
     explicitly listed as equity or commodity — the universe is crypto-heavy
-    and that fallback is safe (BTC trend is the right gate for them)."""
-    c = (coin or "").upper()
-    if c in _EQUITY_COINS:
+    and that fallback is safe (BTC trend is the right gate for them).
+
+    HIP-3 namespaced coins (e.g. `xyz:NVDA`, `km:US500`) drop the dex prefix
+    before matching, so `xyz:NVDA` lands in `_EQUITY_COINS` and `xyz:GOLD` in
+    `_COMMODITY_COINS`. Without this strip every HIP-3 trade would be gated
+    by BTC's trend, which is plainly wrong for stocks/commodities."""
+    raw = (coin or "")
+    bare = raw.split(":", 1)[-1].upper() if ":" in raw else raw.upper()
+    if bare in _EQUITY_COINS:
         return "equity"
-    if c in _COMMODITY_COINS:
+    if bare in _COMMODITY_COINS:
         return "commodity"
     return "crypto"
 
@@ -113,7 +127,10 @@ def detect_regime(coin: str, *, force: bool = False) -> Regime:
     `force=True` bypasses the cache (used by tests + the operator console)."""
     klass = classify_asset(coin)
     if klass == "commodity":
-        proxy = coin.upper()
+        # HIP-3 commodity names are case-sensitive (`xyz:GOLD`, never `XYZ:GOLD`).
+        # For non-HIP-3 bare names there isn't a working commodity perp on the
+        # main dex, but `upper()` on a bare name was the prior convention.
+        proxy = coin if ":" in coin else coin.upper()
     elif klass == "equity":
         proxy = EQUITY_PROXY
     else:

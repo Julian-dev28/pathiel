@@ -227,22 +227,43 @@ def _try_ws_mids() -> Dict[str, str] | None:
     return None
 
 
-def fetch_all_mids() -> Dict[str, str]:
+def fetch_all_mids(include_hip3: bool = False) -> Dict[str, str]:
     """Get all mid prices.
 
     For one-shot commands: uses HTTP POST (reliable, fast).
     For the autonomous loop: use start_ws_mids() to keep a persistent
     WebSocket running, then call ws.get_all_mids() for sub-second data.
+
+    Args:
+        include_hip3: when True, also fetches `allMids` for each HIP-3 perpDex
+            (one HTTP POST per dex, sequential) and merges results in. Adds
+            ~8 small POSTs per call — only enable from contexts that need
+            tokenized-equity / commodity prices.
     """
     ws_result = _try_ws_mids()
-    if ws_result:
+    if ws_result and not include_hip3:
+        # WebSocket only carries the native HL perp mids; if HIP-3 is needed
+        # we fall through to per-dex HTTP fetches below.
         return ws_result
 
-    # Fallback: HTTP POST (_http_post handles its own network errors).
+    # Native perp + spot mids (one HTTP POST).
     raw = _http_post("/info", {"type": "allMids"})
+    out: Dict[str, str] = {}
     if raw and isinstance(raw, dict):
-        return {k: str(v) for k, v in raw.items()}
-    return {}
+        out = {k: str(v) for k, v in raw.items()}
+    elif ws_result:
+        out = dict(ws_result)
+
+    if include_hip3:
+        # HIP-3 mids live behind a `dex` parameter. Walk the registered dex list
+        # and merge — one POST per dex (~8 total, weight ~2 each).
+        from hermes_trader.client.universe import list_hip3_dexes
+        for dex in list_hip3_dexes():
+            r = _http_post("/info", {"type": "allMids", "dex": dex})
+            if r and isinstance(r, dict):
+                for k, v in r.items():
+                    out[k] = str(v)
+    return out
 
 
 def start_ws_mids() -> "HyperliquidWebSocket | None":

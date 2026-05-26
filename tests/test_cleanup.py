@@ -410,12 +410,12 @@ def test_detect_regime_caches_and_uses_proxy(monkeypatch):
     # Second call for another alt → cache hit, no new fetch
     assert market_regime.detect_regime("WIF") == "up"
     assert calls == ["BTC"]
-    # Equity coin uses NVDA proxy
+    # Equity coin uses the configured equity proxy
     assert market_regime.detect_regime("TSLA") == "up"
-    assert calls == ["BTC", "NVDA"]
+    assert calls == ["BTC", market_regime.EQUITY_PROXY]
     # Commodity uses its own ticker
     assert market_regime.detect_regime("NATGAS") == "up"
-    assert calls == ["BTC", "NVDA", "NATGAS"]
+    assert calls == ["BTC", market_regime.EQUITY_PROXY, "NATGAS"]
 
 
 def test_market_regime_gate_aligned_passes(monkeypatch):
