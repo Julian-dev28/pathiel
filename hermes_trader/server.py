@@ -127,11 +127,16 @@ app.add_middleware(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 async def _fetch_live_equity() -> float:
-    """Fetch live account equity from HL; returns 0.0 if no wallet is configured."""
+    """Fetch live account equity from HL; returns 0.0 if no wallet is configured.
+
+    Honors the runtime HIP-3 flag so the dashboard reflects total tradeable
+    USDC across main + HIP-3 dexes when HIP-3 is enabled. Without this the
+    equity card only counts the main HL clearinghouse.
+    """
     user = resolve_user_address()
     if not user:
         return 0.0
-    state = fetch_account_state(user)
+    state = fetch_account_state(user, include_hip3=_hip3_on())
     return float(state.get("equity", 0))
 
 
@@ -347,7 +352,7 @@ async def get_account():
         raise HTTPException(400, "HL wallet not configured")
 
     try:
-        state = fetch_account_state(user)
+        state = fetch_account_state(user, include_hip3=_hip3_on())
         return JSONResponse(content=state)
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -412,7 +417,10 @@ async def get_portfolio():
         raise HTTPException(400, "HL wallet not configured")
 
     try:
-        state = fetch_account_state(user)
+        # Always aggregate HIP-3 dexes here — the portfolio view's job is to
+        # show every position the wallet holds, and xyz/vntl/km positions live
+        # on separate clearinghouses that the default fetch skips.
+        state = fetch_account_state(user, include_hip3=True)
         # Always include HIP-3 mids so the portfolio view can show mark prices
         # for any open xyz:/km:/hyna: positions; without this the mark column
         # would render $0.00 for tokenized markets even when the position is
@@ -556,7 +564,10 @@ async def close_position(request: Request):
     try:
         from hermes_trader.client.exchange import get_hl_price, place_hl_order
 
-        state = fetch_account_state(user)
+        # include_hip3=True so a manual close request for xyz:MU/vntl:* can
+        # locate the position on the right dex; main-only would 404 every
+        # HIP-3 close.
+        state = fetch_account_state(user, include_hip3=True)
         pos = None
         for p in (state.get("asset_positions") or []):
             p_coin = p.get("position", {}).get("coin", "")

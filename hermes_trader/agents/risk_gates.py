@@ -25,6 +25,8 @@ class GateContext:
         has_binary_news_risk: bool,
         equity: float,
         total_open_notional: float,
+        composite_score: float = 0.0,
+        momentum_burst_fired: bool = False,
     ):
         self.confidence = confidence
         self.current_positions = current_positions
@@ -36,6 +38,8 @@ class GateContext:
         self.has_binary_news_risk = has_binary_news_risk
         self.equity = equity
         self.total_open_notional = total_open_notional
+        self.composite_score = composite_score
+        self.momentum_burst_fired = momentum_burst_fired
 
 
 def confidence_gate(ctx: GateContext, min_confidence: float) -> GateResult:
@@ -144,19 +148,18 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
 
 
 def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -> GateResult:
-    """Block counter-regime trades unless conviction clears a higher bar.
+    """Block counter-regime trades unless conviction OR own-coin momentum clears the bar.
 
-    The per-coin scan + AI research pipeline is direction-agnostic about the
-    macro: it'll fire a short on TSLA even while the equity-perp basket is
-    grinding up, and that's how a bunch of low-conviction shorts got
-    steamrolled in correlation rather than on per-coin merit.
+      - aligned with regime → pass
+      - regime neutral      → pass
+      - counter-trend trade → pass if confidence >= counter_regime_min_conf
+                              OR composite_score >= 50
+                              OR momentumBurst fired (large own-coin move)
+                              else block.
 
-    This gate looks up the regime for the right proxy (BTC for crypto, NVDA
-    for equity, the coin's own 4h for commodities) and:
-      - trade aligned with regime → pass
-      - regime neutral             → pass (no opinion → don't override)
-      - counter-trend trade        → require confidence >= counter_regime_min_conf
-                                     (default 0.7), else block
+    The own-momentum bypass exists because the regime proxy (BTC for crypto,
+    SP500 for equity) is slow and a strong individual signal should override
+    a stale macro call — otherwise we miss every relief-rally breakout.
     """
     from hermes_trader.agents.market_regime import detect_regime
     regime = detect_regime(ctx.coin)
@@ -167,11 +170,14 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
     if aligned:
         return {"pass": True}
     if ctx.confidence >= counter_regime_min_conf:
-        return {"pass": True}  # high-conviction counter-trade allowed through
+        return {"pass": True}
+    if ctx.composite_score >= 50 or ctx.momentum_burst_fired:
+        return {"pass": True}
     return {
         "pass": False,
         "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend — "
-                   f"need conf >= {counter_regime_min_conf}, have {ctx.confidence:.2f}"),
+                   f"need conf >= {counter_regime_min_conf} or own-coin momentum, "
+                   f"have conf {ctx.confidence:.2f}, score {ctx.composite_score:.0f}"),
     }
 
 

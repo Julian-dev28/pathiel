@@ -16,8 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_trader.agents.config import get_config
-from hermes_trader.client.daemon import check_daemon_state, producer_daemon
-from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles, start_ws_mids
+from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles
 from hermes_trader.client.universe import get_universe
 from hermes_trader.indicators import triggers as trigger_mod
 from hermes_trader.models.types import Candle
@@ -150,15 +149,20 @@ def scan_once(
     min_score = cfg["scan"]["minCompositeScore"] if min_score == 20 else min_score
     workers = parallel_workers or cfg["scan"].get("parallelWorkers", 32)
 
-    # HIP-3 toggle lives in the runtime agent config (.agent-config.json) so it
-    # can be flipped without code changes. When on, fetch_all_mids and
-    # get_universe pull in tokenized-equity / commodity perps from the
-    # registered HIP-3 perpDexs alongside native crypto.
+    # Asset-class toggles read fresh per scan so operator flips take effect
+    # without restart. `enable_hip3` adds per-dex POSTs (cost) so it's opt-in.
     try:
         from hermes_trader.agents.config_store import read_agent_config
-        include_hip3 = bool(read_agent_config().get("enable_hip3", False))
+        _cfg = read_agent_config()
+        include_crypto = bool(_cfg.get("enable_crypto", True))
+        include_hip3 = bool(_cfg.get("enable_hip3", False))
     except Exception:
+        include_crypto = True
         include_hip3 = False
+
+    if not include_crypto and not include_hip3:
+        logger.warning("[scan] both enable_crypto and enable_hip3 are False — nothing to scan")
+        return []
 
     # ── Step 1: Fetch mids (HTTP POST, ~150ms; +~8 per-dex POSTs if HIP-3 on) ─
     raw_mids = fetch_all_mids(include_hip3=include_hip3)
@@ -179,13 +183,77 @@ def scan_once(
     if universe is None:
         universe = get_universe(include_hip3=include_hip3)
 
-    # Filter: must have valid mid, exclude spot (@ or type=spot), then top-N by volume
-    eligible = [m for m in universe 
-                if mids.get(m["coin"], 0) > 0 
+    # Filter: must have valid mid, exclude spot (@ or type=spot), then apply
+    # asset-class gates + budget split.
+    eligible = [m for m in universe
+                if mids.get(m["coin"], 0) > 0
                 and not m["coin"].startswith("@")
                 and m.get("type") != "spot"]
+    if not include_crypto:
+        eligible = [m for m in eligible if m.get("dex")]
+    if not include_hip3:
+        eligible = [m for m in eligible if not m.get("dex")]
+    # Bucketed budget so HIP-3 markets and low-volume big-movers each get
+    # candle fetches instead of being crowded out by crypto majors. Crypto
+    # gets `max_markets - max_markets_hip3` slots, further split between
+    # top-by-volume and top-by-|24h%| (movers); HIP-3 gets a flat
+    # top-by-volume slice. Single-class runs hand the entire budget to
+    # that class. Total candle fetches stay at `max_markets` to keep
+    # the scanner inside HL's 1200 weight/minute rate budget.
     max_markets = int(os.environ.get("HERMES_MAX_MARKETS", "60"))
-    markets = sorted(eligible, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[:max_markets]
+    max_markets_hip3 = int(os.environ.get("HERMES_MAX_MARKETS_HIP3", "25"))
+    max_markets_movers = int(os.environ.get("HERMES_MAX_MARKETS_MOVERS", "10"))
+    movers_vol_floor = float(os.environ.get("HERMES_MOVERS_VOL_FLOOR_USD", "1000000"))
+
+    def _abs_pct_24h(m):
+        prev = float(m.get("prevDayPx") or 0)
+        cur = float(m.get("midPx") or m.get("markPx") or 0)
+        if prev <= 0 or cur <= 0:
+            return 0.0
+        return abs((cur - prev) / prev * 100)
+
+    def _pick_with_movers(pool, vol_budget, movers_budget):
+        """Top-N by 24h volume + top-M by |24h%|, deduped, in that priority.
+
+        The movers slot guarantees a budget for sub-top-volume big movers
+        regardless of their volume rank; the floor filters out pico-cap
+        noise where a $200 trade can print a 50% move.
+        """
+        by_vol = sorted(pool, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)
+        vol_pick = by_vol[:vol_budget]
+        chosen = {m["coin"] for m in vol_pick}
+        candidates = [m for m in pool
+                      if m["coin"] not in chosen
+                      and m.get("dayNtlVlm", 0) >= movers_vol_floor]
+        by_pct = sorted(candidates, key=_abs_pct_24h, reverse=True)
+        movers_pick = [m for m in by_pct if _abs_pct_24h(m) >= 1.0][:movers_budget]
+        return vol_pick, movers_pick
+
+    if include_crypto and include_hip3:
+        crypto_budget = max(0, max_markets - max_markets_hip3)
+        crypto_vol_budget = max(0, crypto_budget - max_markets_movers)
+        crypto = [m for m in eligible if not m.get("dex")]
+        hip3 = [m for m in eligible if m.get("dex")]
+        crypto_top, crypto_movers = _pick_with_movers(crypto, crypto_vol_budget, max_markets_movers)
+        hip3_top = sorted(hip3, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[:max_markets_hip3]
+        markets = crypto_top + crypto_movers + hip3_top
+        logger.info(
+            f"[scan] budget split: {len(crypto_top)} crypto-vol + {len(crypto_movers)} crypto-movers "
+            f"+ {len(hip3_top)} HIP-3 (of {len(crypto)} crypto + {len(hip3)} HIP-3 eligible)"
+        )
+        if crypto_movers:
+            sample = ", ".join(f"{m['coin']} {_abs_pct_24h(m):+.1f}%" for m in crypto_movers[:5])
+            logger.info(f"[scan] movers picked: {sample}")
+    else:
+        pool = eligible
+        vol_budget = max(0, max_markets - max_markets_movers)
+        chosen, movers = _pick_with_movers(pool, vol_budget, max_markets_movers)
+        markets = chosen + movers
+        cls = "crypto-only" if include_crypto else "HIP-3-only"
+        logger.info(
+            f"[scan] {cls} mode: {len(chosen)} by-volume + {len(movers)} by-momentum "
+            f"(of {len(eligible)} eligible)"
+        )
     if not markets:
         return []
 
@@ -245,46 +313,3 @@ def scan_once(
     return sorted(results, key=lambda r: r["composite_score"], reverse=True)
 
 
-def clear_candle_cache() -> None:
-    """Clear the in-memory candle cache."""
-    _candle_cache.clear()
-
-
-def get_candle_cache_stats() -> Dict[str, int]:
-    """Return cache size."""
-    return {"size": len(_candle_cache)}
-
-
-def start_scan_daemon(interval_seconds: int = 180, name: str = "hermes-scanner") -> None:
-    """Start the autonomous scanning daemon loop.
-    
-    This wraps scan_once in a producer_daemon that:
-    - Runs every `interval_seconds` seconds
-    - Uses scanner_lock to prevent overlapping scans
-    - Enforces per-tick timeout (3 min default)
-    - Writes PID/heartbeat state files for monitoring
-    - Handles SIGTERM gracefully
-    """
-    # Start WebSocket for real-time mids (one persistent connection)
-    ws = start_ws_mids()
-    if ws:
-        logger.info("[daemon] WebSocket started for real-time mids")
-
-    def scan_fn() -> List[Dict[str, Any]]:
-        return scan_once(
-            config=None,
-            min_score=75,
-            parallel_workers=32,
-        )
-
-    producer_daemon(
-        scan_fn=scan_fn,
-        interval_seconds=interval_seconds,
-        name=name,
-        tick_timeout=180.0,
-    )
-
-
-def check_scan_daemon_state(name: str = "hermes-scanner") -> Dict[str, Any]:
-    """Check the state of the scanning daemon."""
-    return check_daemon_state(name)

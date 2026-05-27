@@ -76,6 +76,24 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"], "reason": "mode_off",
         }
 
+    # Asset-class gate. Mirrors the perception-time filter so a stale
+    # perception (e.g. one re-evaluated from memory after the operator
+    # flips the flag) can't sneak through to a real trade. Crypto =
+    # native HL coin (no colon); HIP-3 = colon-namespaced (`xyz:MU`).
+    is_hip3 = ":" in (analysis.get("coin") or "")
+    if is_hip3 and not bool(config.get("enable_hip3", False)):
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": "hip3_disabled (set enable_hip3=true to trade tokenized-equity perps)",
+        }
+    if (not is_hip3) and not bool(config.get("enable_crypto", True)):
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": "crypto_disabled (set enable_crypto=true to trade native HL perps)",
+        }
+
     # Idempotency: don't double-execute
     already = next(
         (t for t in memory.get_recent_trades(100)
@@ -91,16 +109,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     user = resolve_user_address()
 
-    # ── HIP-3 dex-balance preflight ──────────────────────────────────
-    # HIP-3 perp dexes (xyz / km / vntl / etc.) are SEPARATE clearinghouses
-    # from main HL — your $X balance on main does not back trades on xyz
-    # unless USDC has been transferred into the xyz clearinghouse first.
-    # The error "Insufficient margin to place order. asset=110XXX" with
-    # plenty of equity in the main dashboard is this exact bug.
-    # Agent wallets can sign orders but CANNOT transfer between dexes;
-    # the master wallet has to do it manually via the HL frontend (or via
-    # a master-key script). Refuse cleanly here instead of letting HL
-    # reject with a confusing error.
+    # HIP-3 dex-balance preflight: dexes are separate clearinghouses, so
+    # refuse cleanly when the target dex has no funds rather than letting
+    # HL return a confusing "Insufficient margin" rejection. Agent wallets
+    # cannot transfer between dexes; the master wallet must move USDC via
+    # the HL frontend first.
     coin_for_dex_check = analysis["coin"]
     if ":" in coin_for_dex_check:
         dex_name = coin_for_dex_check.split(":", 1)[0]
@@ -110,45 +123,32 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "clearinghouseState", "user": user, "dex": dex_name,
             }) or {}
             dex_value = float((dex_state.get("marginSummary") or {}).get("accountValue", 0) or 0)
-            if dex_value < 1.0:  # essentially nothing on this dex
+            if dex_value < 1.0:
                 return {
                     "executed": False, "mode": mode,
                     "analysis_id": analysis["id"],
                     "reason": (
                         f"hip3_dex_underfunded ({dex_name}: ${dex_value:.2f}). "
-                        f"HIP-3 dexes are separate clearinghouses; transfer USDC "
-                        f"from main to '{dex_name}' via the HL frontend before "
-                        f"the bot can trade these markets."
+                        f"Transfer USDC to '{dex_name}' via the HL frontend."
                     ),
                 }
         except Exception as e:
             logger.warning(f"[executor] HIP-3 dex-balance check failed for {dex_name}: {e}")
-            # Don't block on lookup failure; let HL reject if it has to.
 
     state = fetch_account_state(user) or {}
     equity = float(state.get("equity") or 0)
     available = float(state.get("available") or 0)
     total_open_notional = float(state.get("total_ntl") or 0)
-    # Defensive: a transient HL API failure used to return state with equity=0,
-    # which collapsed `trade_notional = equity × fraction × leverage` to 0,
-    # which then either failed `place_hl_order` (min size) or silently produced
-    # an unsized trade. Better to refuse and let the next cycle retry with a
-    # live equity reading than to send a malformed order or claim "executed".
     if equity <= 0:
+        # Likely an HL API timeout — refuse rather than send an unsized order.
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
-            "reason": "equity_unavailable (live account state returned 0 — likely HL API timeout)",
+            "reason": "equity_unavailable (live account state returned 0)",
         }
 
-    # Free-margin guard. The bot's internal `equity_risk_cap` gate bounds
-    # *total notional*, but Hyperliquid rejects orders based on free *margin*
-    # — which is what's left after maintenance margin, fees, and price moves
-    # against the open book. When the account is near 100% margin-deployed
-    # the exchange returns "Insufficient margin to place order" and the
-    # whole research → analysis → place pipeline is wasted.
-    # Refuse here if free margin < `min_available_margin_pct` of equity
-    # (default 5%) so the loop leaves headroom for maintenance + slippage.
+    # Free-margin floor: leave headroom for maintenance + slippage so HL
+    # doesn't reject mid-pipeline with "Insufficient margin".
     min_avail_pct = float(config.get("min_available_margin_pct", 0.10))
     if equity > 0 and (available / equity) < min_avail_pct:
         return {
@@ -171,22 +171,16 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         for p in state["asset_positions"]
     ]
 
-    # `entry_px` from the analysis is no longer used here — the executor fetches
-    # a fresh live mid below. `tp_px` and `stop_px` are still used as fallbacks
-    # when ATR is unavailable for bracket-order calculation.
+    # `tp_px` / `stop_px` are fallbacks for bracket calculation when ATR
+    # is unavailable; the executor uses a fresh live mid as entry.
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
-    # Per-trade size: a FIXED fraction of total perp equity, levered. Keyed off
-    # equity (not free margin), so N trades deploys N x equity_fraction of the
-    # account — e.g. 0.10 means ~10 trades scales fully in. Both knobs live in
-    # .agent-config.json; defaults reproduce the prior 1%-margin x 5x sizing.
-    # The equity_risk_cap gate (max_total_notional_pct) bounds total deployment.
+    # Per-trade size = equity × fraction × leverage. N trades deploys
+    # N × equity_fraction of the account; equity_risk_cap bounds totals.
+    # Leverage is capped per-coin (BOME 3x, ONDO 10x, BTC 40x) — a fixed
+    # value gets rejected on low-max coins.
     equity_fraction = float(config.get("equity_fraction_per_trade", 0.01))
-    # Leverage = the coin's own max, capped by the configured ceiling. Coin
-    # maxes differ (BOME 3x, ONDO 10x, BTC 40x) — a fixed value gets rejected
-    # on low-max coins and under-uses high-max ones. Set config "leverage"
-    # high (e.g. 40) to always ride each coin's max.
     leverage = min(int(config.get("leverage", HL_LEVERAGE)),
                    get_max_leverage(analysis["coin"]))
     trade_notional = equity * equity_fraction * leverage
@@ -198,10 +192,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     last_trade_time = last_trade.get("executed_at") if last_trade else None
 
-    # Binary-event terms in the news headlines → stand down (news_blackout gate).
-    # Word-boundaried and specific: bare "rate" matched "hash rate", and "SEC"
-    # matched "security"/"second" — both over-fired once real headlines flow in.
-    has_binary_news = bool(
+    # Binary-event terms → stand down (news_blackout gate). Word-boundaried
+    # to avoid false positives ("rate" vs "hash rate", "SEC" vs "security").
+    # Skipped for tokenized-equity perps because their news ALWAYS mentions
+    # earnings/Fed/SEC by the nature of equity reporting; the gate was
+    # over-firing on every xyz:TSLA / xyz:META / cash:* candidate.
+    from hermes_trader.agents.market_regime import classify_asset
+    is_equity_perp = classify_asset(analysis["coin"]) == "equity"
+    has_binary_news = (not is_equity_perp) and bool(
         analysis.get("news_context")
         and re.search(
             r"\bfed(eral)?\b|\bfomc\b|\bcpi\b|\bsec\b|rate (hike|cut)"
@@ -223,20 +221,16 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         has_binary_news_risk=has_binary_news,
         equity=equity,
         total_open_notional=total_open_notional,
+        composite_score=float(analysis.get("composite_score", 0) or 0),
+        momentum_burst_fired=bool(analysis.get("momentum_burst_fired", False)),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)
 
     if gate_output["blocked"]:
-        # Previously this wrote a fake size_usd=0 record into memory._trades so
-        # the dashboard could surface the block. That polluted trade history:
-        # the cooldown gate keys off the *most recent* trade-by-coin and was
-        # being tripped by blocked-record rows from earlier scans, which then
-        # blocked future legitimate attempts (and wrote more blocked records,
-        # ad infinitum). The session-log event below (and the caller in
-        # trading_loop.py) already emits `{event:'execute', executed:false,
-        # blocked_by:[...]}` to the public feed, so the block is still visible
-        # — just not as a trade.
+        # Don't write blocked attempts to memory._trades — the cooldown gate
+        # keys off the most recent trade-by-coin and would self-perpetuate.
+        # Visibility comes from the `execute` event in the session log.
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
@@ -363,7 +357,10 @@ def close_position_market(coin: str) -> Dict[str, Any]:
     if not user:
         return {"ok": False, "coin": coin, "error": "no_user_address"}
 
-    state = fetch_account_state(user)
+    # include_hip3=True so we can resolve HIP-3 positions (xyz:MU, vntl:*, ...).
+    # Without this every close call for a HIP-3 position would fall into the
+    # `already_flat` branch even when the position is real.
+    state = fetch_account_state(user, include_hip3=True)
     pos = next(
         (p for p in state.get("asset_positions", [])
          if p.get("position", {}).get("coin") == coin),

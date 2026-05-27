@@ -53,3 +53,32 @@ Observed outcome after one full cycle: still seeing `PASS conf 0.0–0.2` on ETH
 - .agent-config.json: the current minAiConfidence value
 
 This reference file exists so future sessions immediately recognise the gap instead of re-diagnosing it from scratch.
+
+## Update 2026-05-28 — direction-asymmetric gap
+
+A second flavor of this gap surfaced: the AI was generating roughly balanced
+LONG/SHORT verdicts (48 LONG / 43 SHORT over 24h) but the executor was only
+firing **11 LONGs vs 29 SHORTs**. Diagnosis: the `market_regime` gate was
+blocking 60 LONG attempts as "counter-regime" because the BTC proxy was
+on a slow trailing trend while alts were rallying.
+
+Fixes applied:
+- Regime classifier: 4h × 5-bar (20h) → **1h × 8-bar (8h)** so intraday
+  rotations register (`market_regime.py`).
+- `counter_regime_min_conf`: 0.85 → **0.65** (`.agent-config.json`).
+- Counter-regime gate: added bypass when `composite_score ≥ 50` OR
+  `momentumBurst` fired — own-coin momentum overrides a stale macro
+  proxy (`risk_gates.market_regime_gate`).
+- News-blackout gate: skipped for tokenized equity (their headlines
+  always include earnings/Fed/SEC by definition).
+- DSL: `protect_pct` 1.5% → **0.5%** so phase-2 ratchets engage earlier;
+  `hard_timeout_minutes` 90 → **180** so slow winners aren't force-closed.
+
+The diagnostic flow for "we're missing the gainers":
+1. Session log: count `execute` events where `executed=false` by side,
+   bucket `blocked_by` reasons.
+2. If counter-regime dominates LONG blocks, check `regime_snapshot()` —
+   the BTC/SP500 proxy may be lagging the actual market.
+3. Check the LONG verdicts that the AI generated; if conviction is
+   reasonable (>0.6) but blocked by the gate, relax either the
+   confidence floor or trust own-coin momentum.

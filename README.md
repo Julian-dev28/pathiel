@@ -5,6 +5,24 @@
 
 ---
 
+## CLI Quick Start
+
+```bash
+# 1. Start autonomous trading loop (background)
+python3 scripts/trading_loop.py --env prod --daemon
+
+# 2. Start dashboard + API server
+python3 -m hermes_trader.server
+# or: python3 -m uvicorn hermes_trader.server:app --host 0.0.0.0 --port 8000
+
+# 3. Monitor
+python3 scripts/status.py
+```
+
+Dashboard served at `http://localhost:8000` (port from `HERMES_PORT`).
+
+---
+
 ## The problem it solves
 
 Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Hermes-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
@@ -141,13 +159,16 @@ HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
 
 # ── Scan tuning (optional — defaults shown) ──────────────────
 HERMES_SCAN_INTERVAL=60        # seconds between scan cycles
-HERMES_MAX_MARKETS=60          # top-N markets scanned by 24h volume
+HERMES_MAX_MARKETS=60          # total candle-fetch budget per scan
+HERMES_MAX_MARKETS_HIP3=25     # of that budget, slots reserved for HIP-3
 HERMES_BATCH_SIZE=20           # markets per parallel batch
 HERMES_BATCH_SLEEP=0.3         # seconds between batches
 # HERMES_PORT=8000             # FastAPI server port
 ```
 
 Keep `HERMES_MAX_MARKETS ≤ HERMES_SCAN_INTERVAL` — see [Rate Limit Math](#rate-limit-math).
+
+When `enable_hip3=true`, the budget splits into `(HERMES_MAX_MARKETS - HERMES_MAX_MARKETS_HIP3)` crypto slots + `HERMES_MAX_MARKETS_HIP3` HIP-3 slots, each sorted by 24h volume independently. Without this split, BTC/ETH/SOL/etc. dominate the single sorted list and tokenized-equity perps (e.g. `xyz:CRCL` $34M, `xyz:DRAM` $22M) never get candles fetched — so their +20% / −8% swings never surface a signal.
 
 ### `.agent-config.json` — trading behaviour & risk
 
@@ -399,6 +420,10 @@ Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration 
 | **Total per scan cycle** | ~1,200 | Top 60 markets, one candle fetch each |
 
 With `HERMES_MAX_MARKETS=60` and a 50s candle-cache TTL, each 60s scan fetches fresh candles (~1,200 weight). The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
+
+The crypto/HIP-3 budget split (`HERMES_MAX_MARKETS_HIP3`, default 25) is a *partition* of the same 60-slot budget, not extra calls — total candle weight stays at ~1,200/scan regardless of how the split is tuned.
+
+When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio`/`close` handlers; the executor's sizing path stays main-only so free-margin checks aren't fooled by cross-dex idle USDC.
 
 ---
 

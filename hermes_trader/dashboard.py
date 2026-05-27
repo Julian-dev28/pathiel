@@ -143,7 +143,10 @@ def _positions_payload() -> List[Dict[str, Any]]:
     if not user:
         return []
     try:
-        state = fetch_account_state(user)
+        # include_hip3=True so xyz:MU / vntl:* positions appear in the
+        # dashboard list alongside main-dex positions; HIP-3 dexes are
+        # separate clearinghouses that the default fetch ignores.
+        state = fetch_account_state(user, include_hip3=True)
     except Exception:
         return []
 
@@ -1186,7 +1189,8 @@ function renderEvent(e) {
       const conf = (c.min_conf != null ? c.min_conf : '?');
       const kill = (c.kill != null ? '$' + c.kill : '?');
       const hip3 = c.hip3 ? 'on' : 'off';
-      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} kill=${kill} hip3:${hip3}`;
+      const crypto = c.crypto === false ? 'off' : 'on';
+      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} kill=${kill} crypto:${crypto} hip3:${hip3}`;
     }
     text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}${cfgStr}`;
   } else if (ev === 'loop_start') {
@@ -1200,8 +1204,9 @@ function renderEvent(e) {
     const cool = c.cooldown_min != null ? c.cooldown_min + 'm' : '?';
     const conf = c.min_ai_confidence != null ? c.min_ai_confidence : '?';
     const hip3 = c.enable_hip3 ? 'on' : 'off';
+    const crypto = c.enable_crypto === false ? 'off' : 'on';
     const mode = c.mode || '?';
-    text = `loop_start interval=${e.scan_interval||60}s min_score=${e.min_score||20}  ⚙ mode=${mode} ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} hip3:${hip3}`;
+    text = `loop_start interval=${e.scan_interval||60}s min_score=${e.min_score||20}  ⚙ mode=${mode} ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} crypto:${crypto} hip3:${hip3}`;
   } else if (ev === 'scan') {
     glyph = '•'; cls = 'scan';
     // Prefer scored coin list if present (newer events); fall back to plain names.
@@ -1557,7 +1562,7 @@ const SECTIONS = [
   { label: 'safety',        keys: ['max_daily_loss_usd','cooldown_min','min_ai_confidence','counter_regime_min_conf','max_crypto_long_correlated'] },
   { label: 'liquidity',     keys: ['min_market_volume_usd','min_hip3_volume_usd'] },
   { label: 'filters',       keys: ['coin_allowlist','coin_blocklist'] },
-  { label: 'markets',       keys: ['enable_hip3'] },
+  { label: 'markets',       keys: ['enable_crypto','enable_hip3'] },
   { label: 'dsl exit',      keys: ['dsl_exit'] },
 ];
 const SECTION_KEYS = new Set(SECTIONS.flatMap(s => s.keys));
@@ -1969,7 +1974,9 @@ def register_routes(app: FastAPI) -> None:
                 # Bulk close — iterate live positions, filter, close each.
                 try:
                     user = resolve_user_address()
-                    state = fetch_account_state(user) if user else {}
+                    # include_hip3=True so `close all` also closes xyz:/vntl:/...
+                    # positions, not just main-dex.
+                    state = fetch_account_state(user, include_hip3=True) if user else {}
                     open_pos = [
                         {
                             "coin": p.get("position", {}).get("coin"),
@@ -2013,7 +2020,7 @@ def register_routes(app: FastAPI) -> None:
         if verb == "positions":
             try:
                 user = resolve_user_address()
-                state = fetch_account_state(user) if user else {}
+                state = fetch_account_state(user, include_hip3=True) if user else {}
                 rows = []
                 for p in state.get("asset_positions", []) or []:
                     pos = p.get("position", {})
@@ -2097,7 +2104,7 @@ def register_routes(app: FastAPI) -> None:
             write_agent_config(cfg)
             try:
                 user = resolve_user_address()
-                state = fetch_account_state(user) if user else {}
+                state = fetch_account_state(user, include_hip3=True) if user else {}
                 open_coins = [
                     p["position"]["coin"]
                     for p in state.get("asset_positions", []) or []
@@ -2120,7 +2127,7 @@ def register_routes(app: FastAPI) -> None:
         if verb == "dump":
             try:
                 user = resolve_user_address()
-                state = fetch_account_state(user) if user else {}
+                state = fetch_account_state(user, include_hip3=True) if user else {}
                 events = session_log.tail(10) or []
                 positions = [
                     {"coin": p.get("position", {}).get("coin"),
@@ -2161,13 +2168,9 @@ def register_routes(app: FastAPI) -> None:
             if not key:
                 return JSONResponse({"response": "Hermes chat unavailable: OPENROUTER_API_KEY not set", "kind": "error"})
 
-            # Pull context from BOTH the session log (recent feed events) AND
-            # canonical memory (the 100-entry trade ring buffer). Previously
-            # `recent_executes` was filtered from a 20-event session-log window,
-            # which was empty most of the time because heartbeats dominate the
-            # tail — the LLM kept claiming "no recent trades" while memory had
-            # plenty. Now: real trades come from memory; the feed contributes
-            # recent DSL exits + ta_skips for "why did X close" questions.
+            # Real trades come from memory (the 100-entry trade ring buffer);
+            # the feed supplies recent DSL exits + ta_skips so "why did X close"
+            # questions have context.
             from hermes_trader.agents.memory import memory as _mem
             _mem.load()
             events = session_log.tail(80) or []
@@ -2181,7 +2184,7 @@ def register_routes(app: FastAPI) -> None:
             # by the heartbeat sync); fall back to memory if heartbeat is stale.
             try:
                 user = resolve_user_address()
-                state = fetch_account_state(user) if user else {}
+                state = fetch_account_state(user, include_hip3=True) if user else {}
                 open_pos = [
                     {
                         "coin": p.get("position", {}).get("coin"),

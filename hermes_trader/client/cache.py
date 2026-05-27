@@ -81,19 +81,6 @@ class _Cache:
             self.misses = 0
             self.evictions = 0
 
-    def summary(self) -> Dict[str, float]:
-        with self._lock:
-            total = self.hits + self.misses
-            hit_rate = self.hits / total if total > 0 else 0.0
-            return {
-                "hits": self.hits,
-                "misses": self.misses,
-                "hit_rate_pct": round(hit_rate * 100, 1),
-                "evictions": self.evictions,
-                "size": len(self._store),
-            }
-
-
 # Module-level cache for global (non-client) memoization
 _global_cache: Optional[_Cache] = None
 _global_cache_lock = threading.Lock()
@@ -106,14 +93,6 @@ def get_global_cache(max_size: int = 512, ttl: float = 5.0) -> _Cache:
         if _global_cache is None:
             _global_cache = _Cache(max_size=max_size, default_ttl=ttl)
         return _global_cache
-
-
-def clear_global_cache() -> None:
-    global _global_cache
-    with _global_cache_lock:
-        if _global_cache is not None:
-            _global_cache.clear()
-            _global_cache = None
 
 
 def cached_api_call(key_func: Callable, ttl: float = 3.0, max_size: int = 512) -> Callable:

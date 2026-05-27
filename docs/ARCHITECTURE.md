@@ -85,11 +85,13 @@ One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
 
 ```
 1. HEARTBEAT
-   Pull equity, positions, daily PnL from HL. Persist to .agent-memory.json.
-   Append a `loop_heartbeat` event to the session log with a compact
-   config snapshot (frac × lev, slots, cap, cooldown, hip3 flag) so
-   the feed surfaces what the bot is tuned to do without anyone having
-   to open .agent-config.json.
+   Pull equity, positions, daily PnL from HL via
+   fetch_account_state(user, include_hip3=True) — equity sums main +
+   every HIP-3 dex clearinghouse and positions include all xyz/vntl/km
+   coins. Persist to .agent-memory.json. Append a `loop_heartbeat` event
+   to the session log with a compact config snapshot (frac × lev, slots,
+   cap, cooldown, hip3 flag) so the feed surfaces what the bot is tuned
+   to do without anyone having to open .agent-config.json.
 
 2. DSL MONITOR
    Reconcile DSL trackers with live exchange positions (rehydrate any
@@ -100,13 +102,21 @@ One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
    the actual fill price.
 
 3. SCAN
-   perception.scan_once() fetches top-N markets by 24h volume (native
-   crypto + HIP-3 dexes when enable_hip3=true), runs each through the
-   trigger engine (pct move, volume spike, breakout, range compression,
-   trend strength, momentum burst). Every perception is persisted via
-   memory.record_perception (previously they were processed but never
-   stored — the memory ring buffer ran flat at ~6 perceptions despite
-   100+ trades). Log `scan` event with the coin list + scores.
+   perception.scan_once() fetches candles for top-N markets by 24h volume,
+   runs each through the trigger engine (pct move, volume spike, breakout,
+   range compression, trend strength, momentum burst). When enable_hip3=true,
+   the candle-fetch budget splits into a crypto bucket
+   (HERMES_MAX_MARKETS − HERMES_MAX_MARKETS_HIP3 slots) + a HIP-3 bucket
+   (HERMES_MAX_MARKETS_HIP3 slots, default 25), each sorted by 24h
+   volume independently — without this split, BTC/ETH/SOL dominate the
+   single-list cut and HIP-3 swings (xyz:MU +20%, xyz:CRCL −8%, etc.)
+   never surface. Daemon override is min_score=40 (was 75 — too high to
+   let any non-burst composite signal through); momentum_burst still
+   bypasses the score gate so a >4% / 2-bar move always emits.
+   Every perception is persisted via memory.record_perception (previously
+   they were processed but never stored — the memory ring buffer ran flat
+   at ~6 perceptions despite 100+ trades). Log `scan` event with the
+   coin list + scores.
 
 4. PER-TRIGGER
    For each triggered coin:
@@ -242,6 +252,8 @@ and execute these markets end-to-end:
 | `client/universe.get_universe(include_hip3=True)` | Auto-discovers registered HIP-3 dexes via `/info perpDexs` and merges each dex's `metaAndAssetCtxs` into the unified market list. Each market dict gets `dex: "<name>"` (None for native HL). |
 | `client/hl_client.fetch_all_mids(include_hip3=True)` | Adds one HTTP POST per HIP-3 dex (~8 total) so colon-namespaced mids are populated in the scanner. |
 | `client/exchange.Info / Exchange(perp_dexs=[""] + hip3)` | Teaches the HL SDK to resolve colon names at order placement. **CRITICAL: the empty string `""` must be prepended** — the SDK treats the list as exclusive. Pass only HIP-3 dexes and BTC/ETH start raising `KeyError` at `update_leverage` / `order`. |
+| `client/hl_client.fetch_account_state(user, include_hip3=True)` | Queries each HIP-3 dex's `clearinghouseState` in addition to main, sums `equity` + `total_ntl`, concatenates `asset_positions` (prefixing bare HIP-3 coin names with `<dex>:`), and exposes a per-dex breakdown under `dex_equity`. `available` stays main-only (see "Per-dex equity aggregation" below). |
+| `agents/perception.scan_once` | Splits the candle-fetch budget into a crypto bucket + a HIP-3 bucket (`HERMES_MAX_MARKETS_HIP3`, default 25 of the 60-slot total) so tokenized-equity markets get sorted independently and aren't crowded out by BTC/ETH/SOL volume. |
 
 ### Asset-class routing
 
@@ -263,6 +275,40 @@ whether the coin contains a colon:
 
 Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
 tokenized equities flow.
+
+### Per-dex equity aggregation
+
+HIP-3 dexes are **separate clearinghouses** — main-account USDC does not
+back trades on `xyz`/`vntl`/`km` unless transferred in. `fetch_account_state`
+takes `include_hip3` precisely so callers can choose between two semantics:
+
+| Caller | `include_hip3` | Why |
+|---|---|---|
+| Dashboard equity card, portfolio API, trading-loop heartbeat, MCP `state`/`portfolio`/`close`, CLI `account`, dashboard chat (`positions`, `close all`, `kill`, `dump`, LLM context) | `True` | The operator wants to see total tradeable USDC across every dex they hold, and every open position regardless of which clearinghouse it sits on. |
+| Executor `maybe_execute` sizing path, research context | `False` | Sizing is keyed off main-dex free margin. If `equity` silently included idle xyz/vntl USDC, `trade_notional = equity × fraction × leverage` would oversize main-dex trades and HL would reject with "insufficient margin". |
+
+The aggregated path:
+1. Calls `/info clearinghouseState` for the main dex (unchanged).
+2. Calls `list_hip3_dexes()` and issues one `clearinghouseState` POST per
+   HIP-3 dex with `{"dex": "<name>"}` (~8 extra POSTs, weight 2 each).
+3. Sums `marginSummary.accountValue` → `equity`; sums `totalNtlPos` → `total_ntl`.
+4. Walks each dex's `assetPositions` and, if the position's `coin` field is
+   bare (HL's response varies — some endpoints return `MU`, others
+   `xyz:MU`), prepends `<dex>:`. This keeps DSL tracker keys, dashboard
+   joins, and downstream coin-comparison code consistent with what
+   perception emits.
+5. Exposes `dex_equity = {"": main_equity, "xyz": ..., "vntl": ..., ...}`
+   so the dashboard can show where USDC sits.
+
+`available` (used for the executor's free-margin gate) is left as
+main-only by design — HIP-3 free margin only backs trades on that dex,
+so cross-dex summing would mislead the gate.
+
+The executor still does its per-dex preflight (`executor.maybe_execute`
+lines ~94-126) for HIP-3 trades: it queries the *specific* dex's
+clearinghouse before sending the order and refuses cleanly with
+`hip3_dex_underfunded` rather than letting HL reject with a confusing
+"insufficient margin" error.
 
 ### The `get_hl_price` gotcha (silent-kill bug, since fixed)
 

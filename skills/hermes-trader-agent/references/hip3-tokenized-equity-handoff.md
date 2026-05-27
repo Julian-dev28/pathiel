@@ -1,50 +1,90 @@
-# HIP-3 Tokenized Equity Integration Handoff Prompt
+# HIP-3 — current production state
 
-**Task**: Add HIP-3 Tokenized Equity Market Support to Hermes Trader
+HIP-3 (Hyperliquid's separately-deployed perp dexes for tokenized stocks,
+commodities, indices, FX) is fully wired through the trading pipeline.
+Dexes seen in production: `xyz`, `km`, `vntl`, `flx`, `hyna`, `abcd`,
+`cash`, `para`. Markets are namespaced `<dex>:<symbol>` — e.g.
+`xyz:NVDA`, `vntl:NVDA`, `xyz:GOLD`, `xyz:SP500`, `km:USOIL`,
+`cash:TSLA`.
 
-**Current state**
-Hermes Trader runs a continuous loop (`scripts/trading_loop.py`) that does:
-- `scan_once()` → TA filter → research → execute
-- Only scans native Hyperliquid crypto perpetuals via `get_universe()` + `get_all_hl_mids()`
-- Uses existing components: `analyze_perception`, `research`, `maybe_execute`, DSL exit engine, `.agent-memory.json`, config, etc.
+## Enable
 
-**Goal**
-Extend the engine so it can also scan, analyze, and trade tokenized equity/commodity markets on Hyperliquid (HIP-3 markets) such as:
-- `xyz:NVDA`, `xyz:TSLA`, `xyz:AAPL`, etc.
-- `km:GLDMINE` (gold), oil, indices, SPACEX, etc.
+Set `"enable_hip3": true` in `.agent-config.json`, then restart the loop
+(`scripts/restart.sh loop`). The universe is fetched once at startup, so
+flipping the flag without restart has no effect on the scanner.
 
-**Requirements**
-1. Update the market universe / scanner to include HIP-3 markets when they are enabled.
-2. Make sure `scan_once` and the perception layer can generate signals on these assets (the same TA triggers should work).
-3. Ensure the research agent and executor can handle asset names that contain `:` (e.g. `xyz:NVDA`).
-4. DSL exit engine must be able to track and exit these positions (it already does some synthesis, so this may need light extension).
-5. Keep all existing behavior for native crypto markets. Do not break the current loop.
-6. Add a config flag or simple toggle (`enable_hip3` or similar) so it can be turned on/off cleanly.
-7. Update `status.py` and any reporting so it shows HIP-3 positions and equity correctly.
+## Threading
 
-**Key files to modify**
-- `hermes_trader/client/universe.py`
-- `hermes_trader/agents/perception.py`
-- `hermes_trader/agents/research.py` (if needed for asset naming)
-- `hermes_trader/agents/executor.py`
-- `hermes_trader/agents/dsl_exit.py`
-- `scripts/trading_loop.py`
-- Any relevant config or memory handling
+The `include_hip3=True` parameter is honored at five entry points:
 
-**Constraints**
-- Do not rewrite the whole scanner or research logic from scratch.
-- Prefer small, targeted changes that reuse as much existing code as possible.
-- Keep the same scoring / filtering / sizing model.
+| Function | Effect |
+|---|---|
+| `get_universe(include_hip3=True)` | Auto-discovers HIP-3 dexes via `/info perpDexs` and merges each dex's markets. Each market dict gets `"dex": "<name>"`. |
+| `fetch_all_mids(include_hip3=True)` | One extra POST per HIP-3 dex; merges `<dex>:<symbol>` mids. |
+| `get_all_hl_mids(include_hip3=True)` | Same for the DSL exit pass. Without this, HIP-3 trackers receive no mid and peak/floor never advance. |
+| `fetch_account_state(user, include_hip3=True)` | Aggregates equity + `total_ntl` across main + all HIP-3 clearinghouses; concatenates `asset_positions` (bare coins normalized to `<dex>:`); returns `dex_equity` per-dex breakdown and `queried_dexes` set. |
+| `Info(perp_dexs=[""] + dex_names)` / `Exchange(perp_dexs=...)` | Teaches the HL SDK to resolve colon names at order-placement time. **CRITICAL: prepend `""`** — the SDK treats the list as exclusive; without main, BTC/ETH/etc. start raising `KeyError`. |
 
-**Deliverables**
-- Working implementation that can produce triggers on at least `xyz:NVDA` (and a couple other HIP-3 markets).
-- Brief `README` or comment block explaining how to enable HIP-3 scanning.
-- Confirmation that a full loop cycle runs without errors on both crypto and tokenized equity markets.
+## Per-class config
 
-**Context**
-Current equity is small (~$272) and the user wants to deploy into NVDA tokenized perps via the engine instead of manual trading. This is a high-priority extension.
+Two flags govern what gets scanned/traded:
+- `enable_crypto` (default `true`) — native HL perps
+- `enable_hip3` (default `false`) — HIP-3 dexes
 
-**Related session learning (26 May 2026)**
-- Risk gate default in `risk_gates.py` was raised from 200 → 300 to unblock ~$291 notional trades.
-- Recent trades on `hyna:XRP` and repeated PENDLE entries failed with size_usd=0 because sizing logic did not handle HIP-3 asset names.
-- perception layer had very low output (only 6 perceptions despite 100 trades).
+The executor enforces these at execute-time too, so stale perceptions in
+memory can't sneak through after a flag flip.
+
+## Per-dex equity vs cross-dex sizing
+
+HIP-3 dexes are SEPARATE clearinghouses. Agent wallets sign orders but
+cannot transfer USDC between dexes; the master wallet must do that via
+the HL frontend. Sizing semantics:
+
+- **`equity` field (aggregated)**: returned when `include_hip3=True`,
+  used by dashboard / heartbeat / portfolio / CLI. Reflects total
+  tradeable USDC.
+- **`available` field (main-only)**: free initial margin on main HL
+  (`accountValue − totalMarginUsed`); the executor sizes against this
+  for native crypto trades. Matches what HL UI calls "Available to Trade".
+- **Per-trade HIP-3 preflight**: before placing an HIP-3 order, the
+  executor queries that specific dex's clearinghouse and refuses with
+  `hip3_dex_underfunded` if the dex has < $1.
+
+## DSL safety: `queried_dexes`
+
+`fetch_account_state(include_hip3=True)` returns a set of dexes whose
+clearinghouse responded successfully this cycle. `rehydrate_from_exchange`
+takes this as a hint and only drops trackers whose dex was actually
+queried. If the `xyz` dex query times out, all xyz trackers are
+preserved (peak/floor intact) until the next successful poll, instead
+of getting nuked and re-synthesized fresh.
+
+## Liquidity floor split
+
+- `min_market_volume_usd` (default $5M) — applies to native crypto
+- `min_hip3_volume_usd` (default $500k) — applies to colon-namespaced
+  markets (most `xyz:*` markets sit in $1M–$50M vs $1B+ for BTC)
+
+## Asset-class routing
+
+`agents/market_regime.classify_asset()` strips the dex prefix before
+lookup so `xyz:NVDA` correctly maps to `equity` (not crypto). The
+regime gate also skips the binary-news check for tokenized equities
+because their headlines always include earnings/Fed/SEC by definition.
+
+## Off-hours
+
+HIP-3 equity markets only trade during US equity hours. Outside those
+hours volume drops to ~zero and the scanner skips them via
+`min_hip3_volume_usd`. No explicit hours-gate.
+
+## Original session learnings (May 2026, kept for posterity)
+
+- Universe fetched once at startup, so changing `enable_hip3` mid-run
+  required a restart (still true).
+- HIP-3 trades initially died at `if mid_price <= 0` because
+  `info.all_mids()` defaults to native dex; fix was to detect the colon
+  prefix and call `all_mids(dex=...)`.
+- HIP-3 dex clearinghouse balance check exists because agent wallets
+  cannot move funds between dexes; HL's "Insufficient margin" rejection
+  doesn't say which dex.

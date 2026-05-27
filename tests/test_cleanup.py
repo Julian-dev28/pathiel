@@ -320,7 +320,7 @@ def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     dsl_exit.register_position("ETH", "long", 100.0)
 
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(executor, "fetch_account_state", lambda u: {
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
         "asset_positions": [{"position": {"coin": "ETH", "szi": "0.5", "entryPx": "100"}}],
     })
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 99.0)
@@ -345,7 +345,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     dsl_exit.register_position("ARB", "short", 0.11684, leverage=10)
 
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(executor, "fetch_account_state", lambda u: {
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
         "asset_positions": [{"position": {"coin": "ARB", "szi": "-1000", "entryPx": "0.11684"}}],
     })
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 0.10522)
@@ -502,6 +502,19 @@ def _load_mcp():
     return mod
 
 
+def test_mcp_norm_coin_preserves_hip3_dex_prefix():
+    """`_norm_coin` uppercases bare crypto tickers but never the lowercase
+    HIP-3 dex prefix — a naive .upper() turns `xyz:MU` into `XYZ:MU` and
+    breaks every HIP-3 position lookup the MCP server does."""
+    mod = _load_mcp()
+    assert mod._norm_coin("btc") == "BTC"
+    assert mod._norm_coin("BTC") == "BTC"
+    assert mod._norm_coin("xyz:mu") == "xyz:MU"
+    assert mod._norm_coin("xyz:MU") == "xyz:MU"
+    assert mod._norm_coin("vntl:nvda") == "vntl:NVDA"
+    assert mod._norm_coin("") == ""
+
+
 def test_mcp_stub_table_and_tool_coverage():
     mod = _load_mcp()
     # The stub list is now a list of tool names (not a dict of fake payloads).
@@ -533,3 +546,346 @@ def test_mcp_server_stdio_end_to_end():
     call = json.loads(resps[2]["result"]["content"][0]["text"])
     assert call["error"] == "not_implemented"
     assert call["tool"] == "get_rewards"
+
+
+# ── HIP-3 aggregation in fetch_account_state ────────────────────────────
+def test_fetch_account_state_aggregates_hip3_dexes(monkeypatch):
+    """include_hip3=True sums equity across main + per-dex clearinghouses,
+    concatenates positions, and prefixes bare HIP-3 coins with the dex name."""
+    from hermes_trader.client import hl_client
+
+    def _fake_http_post(path, payload):
+        kind = payload.get("type")
+        if kind == "clearinghouseState" and "dex" not in payload:
+            return {
+                "marginSummary": {"accountValue": "1000", "totalNtlPos": "500", "totalMarginUsed": "100"},
+                "withdrawable": "800",
+                "assetPositions": [
+                    {"position": {"coin": "BTC", "szi": "0.1", "entryPx": "60000"}},
+                ],
+            }
+        if kind == "clearinghouseState" and payload.get("dex") == "xyz":
+            return {
+                "marginSummary": {"accountValue": "250", "totalNtlPos": "300"},
+                # Bare coin name — code should prefix to "xyz:MU"
+                "assetPositions": [
+                    {"position": {"coin": "MU", "szi": "5", "entryPx": "100"}},
+                ],
+            }
+        if kind == "clearinghouseState" and payload.get("dex") == "vntl":
+            return {
+                "marginSummary": {"accountValue": "50", "totalNtlPos": "0"},
+                "assetPositions": [],
+            }
+        if kind == "spotClearinghouseState":
+            return {"balances": [{"coin": "USDC", "total": "10"}]}
+        return None
+
+    monkeypatch.setattr(hl_client, "_http_post", _fake_http_post)
+    monkeypatch.setattr("hermes_trader.client.universe.list_hip3_dexes", lambda: ["xyz", "vntl"])
+
+    state = hl_client.fetch_account_state("0xUSER", include_hip3=True)
+    # Aggregated equity = main 1000 + xyz 250 + vntl 50 = 1300
+    assert state["equity"] == 1300.0
+    # Aggregated notional = main 500 + xyz 300 + vntl 0 = 800
+    assert state["total_ntl"] == 800.0
+    # `available` = main free initial margin (equity 1000 - margin used 100);
+    # stays main-only so executor sizing doesn't bleed in cross-dex idle USDC
+    assert state["available"] == 900.0
+    # Per-dex breakdown exposed for the dashboard
+    assert state["dex_equity"] == {"": 1000.0, "xyz": 250.0, "vntl": 50.0}
+    # Positions: main BTC + HIP-3 MU, with bare MU prefixed to xyz:MU
+    coins = [p["position"]["coin"] for p in state["asset_positions"]]
+    assert coins == ["BTC", "xyz:MU"]
+
+
+def test_fetch_account_state_main_only_default(monkeypatch):
+    """Default include_hip3=False keeps the behavior the executor relies on
+    for trade sizing — equity must reflect only the main clearinghouse so
+    free-margin calculations don't bleed in idle HIP-3 USDC."""
+    from hermes_trader.client import hl_client
+
+    def _fake_http_post(path, payload):
+        if payload.get("type") == "clearinghouseState":
+            assert "dex" not in payload  # must NOT query HIP-3 dexes
+            return {
+                "marginSummary": {"accountValue": "1000", "totalNtlPos": "500", "totalMarginUsed": "0"},
+                "withdrawable": "1000",
+                "assetPositions": [],
+            }
+        if payload.get("type") == "spotClearinghouseState":
+            return {"balances": []}
+        return None
+
+    monkeypatch.setattr(hl_client, "_http_post", _fake_http_post)
+    state = hl_client.fetch_account_state("0xUSER")
+    assert state["equity"] == 1000.0
+    assert state["available"] == 1000.0
+
+
+# ── Scan bucket split ─────────────────────────────────────────────────────
+def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
+    """With include_hip3=True the scanner reserves HERMES_MAX_MARKETS_HIP3
+    slots for HIP-3 markets so high-volume crypto doesn't crowd them out."""
+    from hermes_trader.agents import perception
+
+    # 100 fake crypto markets (all higher volume than the HIP-3 ones) +
+    # 10 HIP-3 markets. With max=10 / hip3=3, expect 7 crypto + 3 HIP-3 = 10.
+    universe = [
+        {"coin": f"C{i}", "type": "perp", "dex": None, "dayNtlVlm": 1_000_000_000 - i}
+        for i in range(100)
+    ] + [
+        {"coin": f"xyz:H{i}", "type": "perp", "dex": "xyz", "dayNtlVlm": 50_000_000 - i}
+        for i in range(10)
+    ]
+    mids = {m["coin"]: "100" for m in universe}
+
+    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
+    monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "3")
+    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
+    monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
+    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms: (True, None))
+    # Force include_hip3=True via the runtime config
+    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+                        lambda: {"enable_hip3": True})
+
+    seen = []
+    real_scan = perception._scan_single_market
+    def _capture(m, mid, cfg, ms):
+        seen.append(m["coin"])
+        return (True, None)
+    monkeypatch.setattr(perception, "_scan_single_market", _capture)
+
+    perception.scan_once(min_score=0)
+    crypto_seen = [c for c in seen if not c.startswith("xyz:")]
+    hip3_seen = [c for c in seen if c.startswith("xyz:")]
+    # Crypto budget = 10 - 3 = 7; HIP-3 budget = 3
+    assert len(crypto_seen) == 7, f"crypto picked: {crypto_seen}"
+    assert len(hip3_seen) == 3, f"hip3 picked: {hip3_seen}"
+
+
+# ── Contribution-aware daily PnL ────────────────────────────────────────
+def test_fetch_aggregate_contributions_classifies_send_events(monkeypatch):
+    """`fetch_aggregate_contributions_since` distinguishes pool-boundary
+    transfers (spot↔perp, spot↔HIP-3) from intra-pool transfers (main↔xyz),
+    treating only the former as contributions to the aggregated equity."""
+    from hermes_trader.client import hl_client
+
+    USER = "0xUSER"
+    events = [
+        # spot → xyz: $30 into the pool
+        {"delta": {"type": "send", "user": USER, "destination": USER,
+                   "sourceDex": "spot", "destinationDex": "xyz",
+                   "usdcValue": "30.0"}},
+        # spot → main: $50 into the pool
+        {"delta": {"type": "send", "user": USER, "destination": USER,
+                   "sourceDex": "spot", "destinationDex": "",
+                   "usdcValue": "50.0"}},
+        # main → spot: $20 OUT of the pool
+        {"delta": {"type": "send", "user": USER, "destination": USER,
+                   "sourceDex": "", "destinationDex": "spot",
+                   "usdcValue": "20.0"}},
+        # main → xyz: $100 intra-pool — must be NEUTRAL
+        {"delta": {"type": "send", "user": USER, "destination": USER,
+                   "sourceDex": "", "destinationDex": "xyz",
+                   "usdcValue": "100.0"}},
+        # xyz → vntl: $40 intra-pool — must be NEUTRAL
+        {"delta": {"type": "send", "user": USER, "destination": USER,
+                   "sourceDex": "xyz", "destinationDex": "vntl",
+                   "usdcValue": "40.0"}},
+        # External deposit: $200 into pool
+        {"delta": {"type": "deposit", "usdcValue": "200.0"}},
+        # External withdrawal: $15 out
+        {"delta": {"type": "withdraw", "usdcValue": "15.0"}},
+    ]
+    monkeypatch.setattr(hl_client, "_http_post", lambda path, payload: events)
+    monkeypatch.setattr("hermes_trader.client.universe.list_hip3_dexes",
+                        lambda: ["xyz", "vntl", "km"])
+
+    # Net = 30 + 50 - 20 + 0 + 0 + 200 - 15 = 245
+    net = hl_client.fetch_aggregate_contributions_since(USER, start_ms=1)
+    assert net == 245.0
+
+
+def test_fetch_aggregate_contributions_skips_when_no_user(monkeypatch):
+    """Defensive zero-return when user is empty or start_ms is invalid —
+    a missing wallet should never crash the heartbeat."""
+    from hermes_trader.client import hl_client
+    assert hl_client.fetch_aggregate_contributions_since("", start_ms=1) == 0.0
+    assert hl_client.fetch_aggregate_contributions_since("0xUSER", start_ms=0) == 0.0
+
+
+def test_track_daily_pnl_subtracts_contributions():
+    """A $50 spot→perp transfer must not appear as $50 of trading profit."""
+    from hermes_trader.agents.memory import AgentMemory
+    import time
+    m = AgentMemory()
+    # Seed start-of-day so the function takes the "established baseline" branch.
+    m._start_of_day_equity = 200.0
+    m._day_start_ts = int(time.time()) + 1  # in future → won't reset baseline
+    # Equity grew $60 since start-of-day, but $50 was a transfer in →
+    # only $10 is real trading PnL.
+    m.track_daily_pnl(current_equity=260.0, net_contributions=50.0)
+    assert m.get_daily_pnl() == 10.0
+    # Pure trading gain with no contributions still works.
+    m.track_daily_pnl(current_equity=270.0, net_contributions=50.0)
+    assert m.get_daily_pnl() == 20.0  # 270 - 200 - 50
+
+
+# ── enable_crypto / enable_hip3 asset-class toggles ──────────────────────
+def _scan_with_config(monkeypatch, cfg):
+    """Scaffolding: run perception.scan_once with a fake universe + config,
+    return the list of coins that actually got candle-fetched."""
+    from hermes_trader.agents import perception
+    universe = [
+        {"coin": "BTC", "type": "perp", "dex": None, "dayNtlVlm": 9e9},
+        {"coin": "ETH", "type": "perp", "dex": None, "dayNtlVlm": 5e9},
+        {"coin": "xyz:MU", "type": "perp", "dex": "xyz", "dayNtlVlm": 2.7e8},
+        {"coin": "xyz:CRCL", "type": "perp", "dex": "xyz", "dayNtlVlm": 3.4e7},
+    ]
+    mids = {m["coin"]: "100" for m in universe}
+    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
+    monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "5")
+    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
+    monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
+    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+                        lambda: cfg)
+    seen = []
+    monkeypatch.setattr(perception, "_scan_single_market",
+                        lambda m, mid, c, ms: (seen.append(m["coin"]), (True, None))[1])
+    perception.scan_once(min_score=0)
+    return seen
+
+
+def test_scan_crypto_only_skips_hip3(monkeypatch):
+    """enable_crypto=True, enable_hip3=False → only native HL markets scanned."""
+    seen = _scan_with_config(monkeypatch, {"enable_crypto": True, "enable_hip3": False})
+    assert "BTC" in seen and "ETH" in seen
+    assert not any(c.startswith("xyz:") for c in seen), seen
+
+
+def test_scan_hip3_only_skips_crypto(monkeypatch):
+    """enable_crypto=False, enable_hip3=True → only HIP-3 markets scanned."""
+    seen = _scan_with_config(monkeypatch, {"enable_crypto": False, "enable_hip3": True})
+    assert set(seen) == {"xyz:MU", "xyz:CRCL"}, seen
+
+
+def test_scan_both_disabled_returns_empty(monkeypatch):
+    """Both flags off → no-op scan, no candles fetched."""
+    seen = _scan_with_config(monkeypatch, {"enable_crypto": False, "enable_hip3": False})
+    assert seen == []
+
+
+def test_scan_default_config_runs_crypto_only(monkeypatch):
+    """Missing/empty config defaults to crypto enabled, HIP-3 disabled —
+    backwards-compatible with deployments predating the toggle."""
+    seen = _scan_with_config(monkeypatch, {})
+    assert "BTC" in seen
+    assert not any(c.startswith("xyz:") for c in seen)
+
+
+def test_executor_blocks_hip3_when_disabled(monkeypatch):
+    """A stale HIP-3 analysis must not execute when enable_hip3 is False."""
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config",
+                        lambda: {"mode": "LIVE", "enable_crypto": True, "enable_hip3": False})
+    res = executor.maybe_execute({"id": "a1", "coin": "xyz:MU"})
+    assert res["executed"] is False
+    assert "hip3_disabled" in res["reason"]
+
+
+def test_executor_blocks_crypto_when_disabled(monkeypatch):
+    """A stale crypto analysis must not execute when enable_crypto is False."""
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config",
+                        lambda: {"mode": "LIVE", "enable_crypto": False, "enable_hip3": True})
+    res = executor.maybe_execute({"id": "a2", "coin": "BTC"})
+    assert res["executed"] is False
+    assert "crypto_disabled" in res["reason"]
+
+
+def test_scan_picks_low_volume_big_movers(monkeypatch):
+    """The movers sub-bucket fetches candles for high-%-move markets that
+    don't crack the volume cut — fixing the gap where IO +17%, HMSTR +9.6%,
+    DYDX +8.5% were going unscanned because BTC/ETH/SOL dominated the top.
+
+    Setup: 5 quiet high-volume coins (the volume budget happily takes them)
+    + 5 low-volume coins with big swings (must end up in the movers slot).
+    """
+    from hermes_trader.agents import perception
+
+    universe = (
+        # 5 quiet crypto majors, sorted by volume
+        [{"coin": f"MAJOR{i}", "type": "perp", "dex": None,
+          "dayNtlVlm": 1e9 - i, "prevDayPx": 100.0, "midPx": 100.1}  # +0.1% — quiet
+         for i in range(5)]
+        # 5 low-volume big movers; volume ABOVE the floor so they're eligible
+        + [{"coin": f"MOVER{i}", "type": "perp", "dex": None,
+            "dayNtlVlm": 2_000_000 - i*1000, "prevDayPx": 100.0, "midPx": 100.0 + (10 + i)}
+           for i in range(5)]
+        # 1 micro-cap with insane move BUT below the floor — must be excluded
+        + [{"coin": "PICO", "type": "perp", "dex": None,
+            "dayNtlVlm": 50_000, "prevDayPx": 1.0, "midPx": 1.5}]  # +50% but $50k vol
+    )
+    mids = {m["coin"]: "100" for m in universe}
+
+    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
+    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "3")
+    monkeypatch.setenv("HERMES_MOVERS_VOL_FLOOR_USD", "1000000")
+    monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
+    monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
+    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+                        lambda: {"enable_crypto": True, "enable_hip3": False})
+
+    seen = []
+    monkeypatch.setattr(perception, "_scan_single_market",
+                        lambda m, mid, c, ms: (seen.append(m["coin"]), (True, None))[1])
+    perception.scan_once(min_score=0)
+
+    # Volume budget = 10 - 3 = 7 → all 5 MAJORs + 2 of the 5 MOVERs by volume
+    # Then movers slot adds top-3 by |24h%| among the remaining MOVERs.
+    assert any(c == "MAJOR0" for c in seen), seen
+    movers_picked = [c for c in seen if c.startswith("MOVER")]
+    # At least 3 movers should be picked total (some via volume, top remainder via momentum)
+    assert len(movers_picked) >= 3, f"expected >=3 movers, got {movers_picked}"
+    # Pico-cap below the volume floor must NEVER be scanned (noise filter)
+    assert "PICO" not in seen, f"pico-cap leaked through floor: {seen}"
+
+
+def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path):
+    """A timeout on the `xyz` HIP-3 dex used to drop every xyz tracker as
+    stale and reset peak/floor/phase-2 state on the next cycle. Now the
+    rehydrator scopes its stale check to dexes that were actually queried,
+    so a transient HL outage leaves DSL state intact."""
+    dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
+    # Register 3 trackers: main BTC, xyz:MU (HIP-3), vntl:NVDA (HIP-3).
+    dsl_exit.register_position("BTC", "long", 60000.0)
+    dsl_exit.register_position("xyz:MU", "long", 920.0)
+    dsl_exit.register_position("vntl:NVDA", "long", 500.0)
+    # Bump phase-2 state on the xyz tracker, then persist to disk so it
+    # survives the load_state() call inside rehydrate_from_exchange.
+    t = dsl_exit._active_positions["xyz:MU_long"]
+    t.peak_px = 950.0
+    t._last_floor = 935.0
+    dsl_exit._save_state()
+
+    # Simulate one cycle where main returned BTC but xyz dex timed out.
+    # queried_dexes excludes "xyz" → xyz:MU tracker must be preserved.
+    # vntl was queried successfully and returned NVDA → that one stays too.
+    positions = [
+        {"position": {"coin": "BTC", "szi": "0.1", "entryPx": "60000"}},
+        {"position": {"coin": "vntl:NVDA", "szi": "1", "entryPx": "500"}},
+    ]
+    dsl_exit.rehydrate_from_exchange(positions, queried_dexes={"", "vntl"})
+
+    # xyz:MU was NOT in queried_dexes → preserved with phase-2 state intact.
+    assert "xyz:MU_long" in dsl_exit._active_positions, "xyz tracker wrongly dropped"
+    assert dsl_exit._active_positions["xyz:MU_long"].peak_px == 950.0
+    assert dsl_exit._active_positions["xyz:MU_long"]._last_floor == 935.0
+
+    # And the legacy behavior still works: pass queried_dexes=None and any
+    # missing position gets dropped exactly like before.
+    dsl_exit.rehydrate_from_exchange(positions, queried_dexes=None)
+    assert "xyz:MU_long" not in dsl_exit._active_positions

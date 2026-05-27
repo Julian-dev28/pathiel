@@ -122,6 +122,7 @@ def _build_user_message(
     equity: float,
     open_positions: List[Dict[str, Any]],
     mode: str,
+    dex_equity: Dict[str, float] | None = None,
 ) -> str:
     """Build the user message passed to the LLM."""
     trigger_summary = (
@@ -160,6 +161,28 @@ def _build_user_message(
         else "Open positions: none"
     )
 
+    # For HIP-3 candidates the relevant collateral is the target dex's
+    # balance, not the aggregated total — surface both so the LLM sizes
+    # the risk caps against the right pool.
+    equity_lines = [f"Equity (aggregated, perp + all HIP-3 dexes): ${equity:.2f}"]
+    if dex_equity:
+        main_eq = float(dex_equity.get("", 0) or 0)
+        hip3_breakdown = ", ".join(
+            f"{d}=${float(v):.2f}" for d, v in dex_equity.items()
+            if d and float(v or 0) > 0.5
+        )
+        equity_lines.append(f"  main HL clearinghouse: ${main_eq:.2f}")
+        if hip3_breakdown:
+            equity_lines.append(f"  HIP-3 dex equity: {hip3_breakdown}")
+        if ":" in coin:
+            trade_dex = coin.split(":", 1)[0]
+            trade_dex_eq = float(dex_equity.get(trade_dex, 0) or 0)
+            equity_lines.append(
+                f"  THIS TRADE lands on dex '{trade_dex}' which holds "
+                f"${trade_dex_eq:.2f} — that's the relevant capital, not the "
+                f"main-HL balance."
+            )
+
     return "\n".join([
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
         f"Current mid: ${perception.get('mid', 0):.4f}",
@@ -173,7 +196,7 @@ def _build_user_message(
         "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
-        f"Equity: ${equity:.2f}",
+        *equity_lines,
         position_block,
         "",
         f"Mode: {mode} — {'your verdict will execute against real funds' if mode == 'LIVE' else 'analysis only, no execution'}",
@@ -322,12 +345,16 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(config.get("mode", "OFF"))
 
     equity = 0.0
+    dex_equity: Dict[str, float] = {}
     open_positions: List[Dict[str, Any]] = []
     user = resolve_user_address()
 
     if user:
-        state = fetch_account_state(user)
+        # Aggregated equity so the LLM sees true capital across main + HIP-3
+        # dexes when reasoning about risk caps for HIP-3 candidates.
+        state = fetch_account_state(user, include_hip3=True)
         equity = float(state.get("equity", "0"))
+        dex_equity = state.get("dex_equity") or {}
         memory.update_equity(equity)
 
         open_positions = [
@@ -348,6 +375,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     user_message = _build_user_message(
         coin, perception, tf1h, tf4h, tf1d,
         funding_raw, news, equity, open_positions, mode,
+        dex_equity=dex_equity,
     )
 
     ai_text = _call_ai(system_prompt, user_message)
@@ -366,6 +394,12 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         "reasoning": parsed["reasoning"],
         "news_context": news,
         "created_at": int(time.time() * 1000),
+        # Carry forward so risk gates can read own-coin momentum.
+        "composite_score": float(perception.get("composite_score", 0) or 0),
+        "momentum_burst_fired": any(
+            t.get("name") == "momentumBurst" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
     }
 
     memory.record_analysis(analysis)

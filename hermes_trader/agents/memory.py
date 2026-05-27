@@ -34,7 +34,6 @@ class AgentMemory:
         self._perceptions: List[Dict[str, Any]] = []
         self._analyses: List[Dict[str, Any]] = []
         self._trades: List[Dict[str, Any]] = []
-        self._watchlist: Dict[str, Dict[str, Any]] = {}
         self._cooldowns: Dict[str, int] = {}
         self._equity: float = 0
         self._daily_pnl: float = 0
@@ -62,19 +61,6 @@ class AgentMemory:
             self._perceptions = (data.get("perceptions") or [])[:MAX_PERCEPTIONS]
             self._analyses = (data.get("analyses") or [])[:MAX_ANALYSES]
             self._trades = (data.get("trades") or [])[:MAX_TRADES]
-
-            # Rebuild watchlist
-            self._watchlist.clear()
-            for w in (data.get("watchlist") or []):
-                self._watchlist[w["coin"]] = {
-                    "coin": w["coin"],
-                    "type": w.get("type", "perp"),
-                    "mid": w.get("mid", 0),
-                    "composite_score": w.get("composite_score", 0),
-                    "last_perception_at": w.get("last_perception_at", 0),
-                    "status": w.get("status", "scanning"),
-                    "block_reason": w.get("block_reason"),
-                }
 
             # Rebuild cooldowns
             self._cooldowns.clear()
@@ -107,7 +93,6 @@ class AgentMemory:
                 "perceptions": self._perceptions,
                 "analyses": self._analyses,
                 "trades": self._trades,
-                "watchlist": list(self._watchlist.values()),
                 "cooldowns": [{"coin": coin, "expires": exp} for coin, exp in self._cooldowns.items()],
                 "equity": self._equity,
                 "dailyPnl": self._daily_pnl,
@@ -137,36 +122,20 @@ class AgentMemory:
         if len(self._trades) > MAX_TRADES:
             self._trades.pop(0)
 
-    def update_watchlist(self, percs: List[Dict[str, Any]]) -> None:
-        for p in percs:
-            existing = self._watchlist.get(p["coin"])
-            if existing:
-                existing["mid"] = p.get("mid", existing["mid"])
-                existing["composite_score"] = p.get("composite_score", existing["composite_score"])
-                existing["last_perception_at"] = p.get("fired_at", existing["last_perception_at"])
-                if existing["status"] == "scanning":
-                    existing["status"] = "analyzed"
-            else:
-                self._watchlist[p["coin"]] = {
-                    "coin": p["coin"],
-                    "type": p.get("type", "perp"),
-                    "mid": p.get("mid", 0),
-                    "composite_score": p.get("composite_score", 0),
-                    "last_perception_at": p.get("fired_at", int(time.time() * 1000)),
-                    "status": "analyzed",
-                }
-
-        # Sweep unsighted coins to 'scanning'
-        current_coins = {p["coin"] for p in percs}
-        for coin, entry in self._watchlist.items():
-            if coin not in current_coins:
-                entry["status"] = "scanning"
-
     def update_equity(self, eq: float) -> None:
         self._equity = eq
 
-    def track_daily_pnl(self, current_equity: float) -> None:
-        """Reset baseline at UTC midnight so dailyPnl reflects today's gains."""
+    def track_daily_pnl(self, current_equity: float, net_contributions: float = 0.0) -> None:
+        """Reset baseline at UTC midnight so dailyPnl reflects today's gains.
+
+        `net_contributions` is the cumulative USDC flow into the tradeable
+        equity pool since `_day_start_ts` (positive = money came in,
+        negative = money left). Subtracting it makes daily PnL invariant
+        to deposits, withdrawals, and spot↔perp transfers — otherwise a
+        $50 spot→perp transfer looks like $50 of trading profit. Callers
+        that don't have a ledger source should pass 0 (degrades to the
+        old behavior).
+        """
         from datetime import datetime, timezone
         today_utc = int(datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -176,23 +145,11 @@ class AgentMemory:
             self._day_start_ts = today_utc
             self._daily_pnl = 0
         else:
-            self._daily_pnl = current_equity - self._start_of_day_equity
+            self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
         self._equity = current_equity
-
-    def update_daily_pnl(self, pnl: float) -> None:
-        self._daily_pnl = pnl
 
     def update_open_positions(self, pos: List[Dict[str, Any]]) -> None:
         self._open_positions = list(pos)
-
-    def set_cooldown(self, coin: str, minutes: float) -> None:
-        self._cooldowns[coin] = int(time.time() * 1000) + int(minutes * 60_000)
-
-    def set_status(self, coin: str, status: str, block_reason: Optional[str] = None) -> None:
-        entry = self._watchlist.get(coin)
-        if entry:
-            entry["status"] = status
-            entry["block_reason"] = block_reason
 
     # ── Read operations ─────────────────────────────────────────────────────
 
@@ -211,12 +168,6 @@ class AgentMemory:
     def get_all_analyses(self) -> List[Dict[str, Any]]:
         return list(self._analyses)
 
-    def get_watchlist(self) -> List[Dict[str, Any]]:
-        return sorted(self._watchlist.values(), key=lambda e: e["composite_score"], reverse=True)
-
-    def get_watchlist_entry(self, coin: str) -> Optional[Dict[str, Any]]:
-        return self._watchlist.get(coin)
-
     def get_analysis_by_id(self, id: str) -> Optional[Dict[str, Any]]:
         for a in self._analyses:
             if a["id"] == id:
@@ -229,24 +180,15 @@ class AgentMemory:
         total = len(closed)
         return {"wins": wins, "total": total, "rate": wins / total if total > 0 else 0}
 
-    def get_equity(self) -> float:
-        return self._equity
-
     def get_daily_pnl(self) -> float:
         return self._daily_pnl
 
-    def get_open_positions(self) -> List[Dict[str, Any]]:
-        return list(self._open_positions)
-
-    def in_cooldown(self, coin: str) -> bool:
-        expires = self._cooldowns.get(coin)
-        if expires is None:
-            return False
-        return int(time.time() * 1000) < expires
+    def get_day_start_ts(self) -> int:
+        """UTC-midnight unix-seconds timestamp for the in-progress trading day."""
+        return self._day_start_ts
 
     def get_full_state(self) -> Dict[str, Any]:
         return {
-            "watchlist": self.get_watchlist(),
             "recent_perceptions": self.get_recent_perceptions(),
             "recent_analyses": self.get_recent_analyses(),
             "recent_trades": self.get_recent_trades(),

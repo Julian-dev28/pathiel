@@ -151,8 +151,18 @@ def fetch_hl_candles(
     ]
 
 
-def fetch_account_state(user: str) -> Dict[str, Any]:
-    """Fetch perp + spot account state."""
+def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]:
+    """Fetch perp + spot account state, optionally aggregating HIP-3 dexes.
+
+    When `include_hip3=True`, queries each HIP-3 perpDex's clearinghouse
+    (one POST per dex), sums equity + total_ntl, concatenates asset_positions
+    (HIP-3 coins normalized to `<dex>:<coin>`), and returns `dex_equity` +
+    `queried_dexes` (the dexes that actually responded — used by the DSL
+    rehydrator to avoid dropping trackers when a dex query times out).
+
+    `available` stays main-dex only because HIP-3 free margin only backs
+    trades on its own dex; the executor sizes against this for main trades.
+    """
     perp = _http_post("/info", {"type": "clearinghouseState", "user": user})
     spot = _http_post("/info", {"type": "spotClearinghouseState", "user": user})
 
@@ -176,16 +186,49 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         if float(p.get("position", {}).get("szi", "0")) != 0
     ]
 
-    # Hyperliquid keeps perp and spot as SEPARATE pools — `accountValue` from
-    # clearinghouseState is perp-only and does NOT include spot USDC. So:
-    #   equity     = perp-tradeable equity (backs perp orders)
-    #   spot_usdc  = idle USDC in the spot wallet; must be transferred
-    #                spot -> perp before it can back a perp trade
-    #   total_usdc = everything the account holds
     equity = perp_equity
-    # Free USDC not locked as margin — HL's `withdrawable`, falling back to
-    # equity minus margin in use. This is the base for per-trade sizing.
-    available = float(perp.get("withdrawable", "0")) or max(0.0, equity - total_margin_used)
+    # Free initial margin = what HL's UI shows as "Available to Trade" and
+    # what HL checks before accepting new orders. `withdrawable` is a
+    # different (much tighter) number — the spot-bridgeable amount — and
+    # using it gated the executor at ~5% of equity even when ~50% was
+    # actually free for new positions.
+    available = max(0.0, equity - total_margin_used)
+
+    dex_equity: Dict[str, float] = {"": perp_equity}
+    queried_dexes: set = {""}
+
+    if include_hip3:
+        from hermes_trader.client.universe import list_hip3_dexes
+        try:
+            dexes = list_hip3_dexes()
+        except Exception as e:
+            logger.warning(f"[hl] list_hip3_dexes failed during account aggregation: {e}")
+            dexes = []
+        for dex in dexes:
+            try:
+                dex_state = _http_post("/info", {
+                    "type": "clearinghouseState", "user": user, "dex": dex,
+                }) or {}
+            except Exception as e:
+                logger.warning(f"[hl] HIP-3 clearinghouseState failed for {dex}: {e}")
+                continue
+            queried_dexes.add(dex)
+            dex_ms = dex_state.get("marginSummary", {}) or {}
+            dex_value = float(dex_ms.get("accountValue", 0) or 0)
+            dex_ntl = float(dex_ms.get("totalNtlPos", 0) or 0)
+            dex_equity[dex] = dex_value
+            equity += dex_value
+            total_ntl += dex_ntl
+            for p in (dex_state.get("assetPositions") or []):
+                pos = p.get("position", {}) or {}
+                if float(pos.get("szi", "0") or 0) == 0:
+                    continue
+                coin = pos.get("coin", "") or ""
+                # HL's HIP-3 endpoints sometimes return bare ("MU"), sometimes
+                # namespaced ("xyz:MU"). Normalize so DSL tracker keys match.
+                if coin and ":" not in coin:
+                    pos["coin"] = f"{dex}:{coin}"
+                asset_positions.append(p)
 
     return {
         "equity": equity,
@@ -195,7 +238,75 @@ def fetch_account_state(user: str) -> Dict[str, Any]:
         "total_ntl": total_ntl,
         "spot_balances": spot_balances,
         "asset_positions": asset_positions,
+        "dex_equity": dex_equity,
+        "queried_dexes": queried_dexes,
     }
+
+
+def fetch_aggregate_contributions_since(user: str, start_ms: int) -> float:
+    """Net USDC flowing INTO main + HIP-3 dex clearinghouses since `start_ms`.
+
+    Used by daily-PnL tracking so transfers don't masquerade as trading
+    gains: `daily_pnl = equity_now - equity_sod - contributions`. Counts
+    deposits/withdrawals + transfers crossing the pool boundary (spot↔perp,
+    spot↔HIP-3); treats intra-pool transfers (main↔xyz, xyz↔vntl) as neutral.
+
+    Returns 0.0 on lookup failure to avoid distorting PnL on transient outages.
+    """
+    if not user or start_ms <= 0:
+        return 0.0
+    try:
+        events = _http_post("/info", {
+            "type": "userNonFundingLedgerUpdates",
+            "user": user,
+            "startTime": int(start_ms),
+        }) or []
+    except Exception as e:
+        logger.warning(f"[hl] ledger fetch failed for contributions: {e}")
+        return 0.0
+    if not isinstance(events, list):
+        return 0.0
+
+    # Pool members: main HL is keyed as "" in HL's `send` schema; HIP-3
+    # dexes are keyed by name.
+    in_pool = {""}
+    try:
+        from hermes_trader.client.universe import list_hip3_dexes
+        in_pool.update(list_hip3_dexes())
+    except Exception:
+        pass
+
+    user_lc = (user or "").lower()
+    net = 0.0
+    for e in events:
+        d = e.get("delta") or {}
+        t = d.get("type")
+        amt = float(d.get("usdcValue", d.get("amount", 0)) or 0)
+        if amt == 0:
+            continue
+        if t == "send":
+            src = d.get("sourceDex", "") or ""
+            dst = d.get("destinationDex", "") or ""
+            sender = (d.get("user") or "").lower()
+            receiver = (d.get("destination") or "").lower()
+            src_in, dst_in = src in in_pool, dst in in_pool
+            if sender == receiver == user_lc:
+                if dst_in and not src_in:
+                    net += amt
+                elif src_in and not dst_in:
+                    net -= amt
+            elif sender == user_lc and src_in:
+                net -= amt
+            elif receiver == user_lc and dst_in:
+                net += amt
+        elif t in ("deposit", "vaultWithdraw"):
+            net += amt
+        elif t in ("withdraw", "vaultDeposit"):
+            net -= amt
+        elif t in ("internalTransfer", "subAccountTransfer"):
+            sender = (d.get("user") or "").lower()
+            net += -amt if sender == user_lc else amt
+    return net
 
 
 # ── WebSocket mids (real-time, low latency) ───────────────────────────

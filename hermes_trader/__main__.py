@@ -241,7 +241,9 @@ def cmd_account():
 
     print("  Fetching account state...\n")
     try:
-        state = fetch_account_state(user)
+        # include_hip3=True so the CLI shows xyz/vntl/km positions and
+        # aggregates their equity into the total.
+        state = fetch_account_state(user, include_hip3=True)
         equity = state.get("equity", 0)
         notional = state.get("total_ntl", 0)
 

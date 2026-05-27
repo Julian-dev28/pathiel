@@ -51,6 +51,22 @@ from hermes_trader.agents.hyperfeed import (
 # Per-subprocess perception cache so research can access the data from last scan
 _perception_cache: Dict[str, Dict[str, Any]] = {}
 
+
+def _norm_coin(raw: str) -> str:
+    """Normalize a coin parameter without mangling HIP-3 dex prefixes.
+
+    Bare crypto tickers are case-insensitive (`btc` → `BTC`) but HIP-3 perp
+    names are `<lowercase-dex>:<uppercase-symbol>` (`xyz:MU`, `vntl:NVDA`).
+    A naive `.upper()` produces `XYZ:MU` and the position lookup fails.
+    Keep the dex prefix as-is and only uppercase the symbol.
+    """
+    if not raw:
+        return ""
+    if ":" in raw:
+        dex, _, sym = raw.partition(":")
+        return f"{dex}:{sym.upper()}"
+    return raw.upper()
+
 # Tools whose underlying SDK call is not yet wired up. Each one is registered
 # with the MCP server so clients don't get a "tool not found" error, but
 # instead of returning fake data (which an LLM would silently consume —
@@ -857,7 +873,9 @@ def handle_scan(params: Dict[str, Any]) -> str:
 
 def handle_state(params: Dict[str, Any]) -> str:
     user = resolve_user_address()
-    account = fetch_account_state(user) if user else {"equity": 0, "total_ntl": 0, "asset_positions": []}
+    # include_hip3=True so the LLM sees aggregated equity and every HIP-3
+    # position (xyz/vntl/km) when querying account state.
+    account = fetch_account_state(user, include_hip3=True) if user else {"equity": 0, "total_ntl": 0, "asset_positions": []}
     config = read_agent_config()
 
     return json.dumps({
@@ -1168,20 +1186,20 @@ def handle_get_portfolio(params: Dict[str, Any]) -> str:
     """Handle get_portfolio tool call."""
     from hermes_trader.client.hl_client import fetch_account_state
     user = resolve_user_address()
-    state = fetch_account_state(user)
+    state = fetch_account_state(user, include_hip3=True)
     return json.dumps(state.get('asset_positions', []), indent=2, default=str)
 
 def handle_get_price(params: Dict[str, Any]) -> str:
     """Handle get_price tool call."""
     from hermes_trader.client.exchange import get_hl_price
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     price = get_hl_price(coin)
     return json.dumps({'coin': coin, 'price': price}, default=str)
 
 def handle_get_candles(params: Dict[str, Any]) -> str:
     """Handle get_candles tool call."""
     from hermes_trader.client.hl_client import fetch_hl_candles
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
     candles = fetch_hl_candles(coin, interval, count)
@@ -1191,12 +1209,12 @@ def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
     from hermes_trader.client.exchange import get_hl_price, place_hl_order
     
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     user = resolve_user_address()
     
     try:
-        # Fetch position
-        state = fetch_account_state(user)
+        # Fetch position — include_hip3=True so HIP-3 coins are findable.
+        state = fetch_account_state(user, include_hip3=True)
         pos = None
         for p in (state.get('asset_positions') or []):
             if p.get('position', {}).get('coin') == coin:
@@ -1221,7 +1239,7 @@ def handle_close_position(params: Dict[str, Any]) -> str:
 def handle_set_leverage(params: Dict[str, Any]) -> str:
     """Handle set_leverage tool call."""
     from hermes_trader.client.exchange import set_leverage as set_leverage_fn
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     leverage = params.get('leverage', 5)
     result = set_leverage_fn(coin, int(leverage))
     return json.dumps(result, default=str)
@@ -1232,9 +1250,9 @@ def handle_get_open_orders(params: Dict[str, Any]) -> str:
     user = resolve_user_address()
     state = fetch_account_state(user)
     orders = state.get('open_orders', [])
-    coin_filter = params.get('coin', '').upper()
+    coin_filter = _norm_coin(params.get('coin', ''))
     if coin_filter:
-        orders = [o for o in orders if o.get('coin', '').upper() == coin_filter]
+        orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin_filter]
     return json.dumps(orders, indent=2, default=str)
 
 def handle_cancel_order(params: Dict[str, Any]) -> str:
@@ -1288,7 +1306,7 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
 def handle_get_l2_book(params: Dict[str, Any]) -> str:
     """Handle get_l2_book tool call."""
     from hermes_trader.client.exchange import _get_info
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     try:
         info = _get_info()
         # L2 book snapshot
@@ -1313,12 +1331,12 @@ def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_frontend_open_orders tool call."""
     from hermes_trader.client.exchange import _get_info
     user = resolve_user_address()
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         info = _get_info()
         orders = info.frontend_open_orders(user)
         if coin:
-            orders = [o for o in orders if o.get('coin', '').upper() == coin]
+            orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin]
         return json.dumps(orders, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1327,7 +1345,7 @@ def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
 def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
     """Handle get_candles_aggregated tool call."""
     from hermes_trader.client.hl_client import fetch_hl_candles
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
     try:
@@ -1349,7 +1367,7 @@ def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
 def handle_get_price_history(params: Dict[str, Any]) -> str:
     """Handle get_price_history tool call."""
     from hermes_trader.client.hl_client import fetch_hl_candles
-    coin = params.get('coin', 'BTC').upper()
+    coin = _norm_coin(params.get('coin', 'BTC'))
     try:
         candles = fetch_hl_candles(coin, '1h', 100)
         return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
@@ -1359,7 +1377,7 @@ def handle_get_price_history(params: Dict[str, Any]) -> str:
 
 def handle_get_coin_info(params: Dict[str, Any]) -> str:
     """Handle get_coin_info tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.exchange import get_coin_index
         idx, _, _ = get_coin_index(coin)
@@ -1390,20 +1408,20 @@ def handle_get_account_summary(params: Dict[str, Any]) -> str:
 
 def handle_get_asset_positions(params: Dict[str, Any]) -> str:
     """Handle get_asset_positions tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
         positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
         if coin:
-            positions = [p for p in positions if p.get('coin', '').upper() == coin]
+            positions = [p for p in positions if _norm_coin(p.get('coin', '')) == coin]
         return json.dumps({'coin': coin, 'positions': positions}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_24h_stats(params: Dict[str, Any]) -> str:
     """Handle get_24h_stats tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.hl_client import fetch_hl_candles
         # Get 24h of 1h candles for stats
@@ -1467,7 +1485,7 @@ def handle_get_perp_markets(params: Dict[str, Any]) -> str:
 
 def handle_get_market_depth(params: Dict[str, Any]) -> str:
     """Handle get_market_depth tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
@@ -1498,7 +1516,7 @@ def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
 
 def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
     """Handle get_liquidation_price tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     size = params.get('size')
     leverage = params.get('leverage')
     is_long = params.get('is_long')
@@ -1525,14 +1543,14 @@ def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
 
 def handle_get_max_leverage(params: Dict[str, Any]) -> str:
     """Handle get_max_leverage tool call."""
-    coin = params.get('coin', '').upper()
+    coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
         meta = info.meta() if hasattr(info, 'meta') else {}
         universe = meta.get('universe', []) if isinstance(meta, dict) else []
         for asset in universe:
-            if asset.get('name', '').upper() == coin:
+            if _norm_coin(asset.get('name', '')) == coin:
                 return json.dumps({'coin': coin, 'max_leverage': asset.get('maxLeverage')},
                                   default=str)
         return json.dumps({'coin': coin, 'max_leverage': None, 'note': 'not found'},

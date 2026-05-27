@@ -7,18 +7,10 @@ trend strength, plus a weighted composite score across them.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, TypedDict
+from typing import Dict, List
 
 from hermes_trader.indicators.math import adx, sma, candle_val
-from hermes_trader.models.types import Candle
-
-
-class TriggerHit(TypedDict):
-    """Result of a single trigger check: {name, score, reason, fired}."""
-    name: str
-    score: float
-    reason: str
-    fired: bool
+from hermes_trader.models.types import Candle, TriggerHit
 
 
 def pct_move_spike(candles: List[Candle], sigma_threshold: float = 3) -> TriggerHit:

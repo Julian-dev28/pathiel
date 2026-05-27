@@ -268,16 +268,6 @@ def get_universe(force_refresh: bool = False, include_hip3: bool = False) -> Lis
     return results
 
 
-def get_universe_top_n(n: int = 100, force_refresh: bool = False) -> List[Dict[str, Any]]:
-    """Get top N markets by 24h volume.
-    
-    This is the pre-filtered list for scanning — avoids hitting rate limits
-    by only fetching candles for the most liquid markets.
-    """
-    universe = get_universe(force_refresh)
-    return universe[:n]
-
-
 def get_market_by_coin(coin: str) -> Optional[Dict[str, Any]]:
     """Get a single market by coin name."""
     for m in get_universe():

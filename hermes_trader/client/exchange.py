@@ -198,15 +198,40 @@ def get_hl_price(coin: str = "BTC") -> float:
     return float(mids.get(coin, "0"))
 
 
-def get_all_hl_mids() -> Dict[str, float]:
-    """Return {coin: mid_price} for every perp — one HTTP call for the whole universe."""
-    raw = _get_info().all_mids() or {}
+def get_all_hl_mids(include_hip3: bool = False) -> Dict[str, float]:
+    """Return {coin: mid_price} for every perp — one HTTP call for the whole universe.
+
+    When `include_hip3=True`, also queries each registered HIP-3 perpDex
+    (~8 extra POSTs, weight ~2 each) and merges colon-namespaced mids
+    (`xyz:MU`, `vntl:NVDA`, ...) into the result. Without this, the DSL
+    exit pass receives no mid for any HIP-3 position, every tracker's
+    `advance()` short-circuits, peak/floor never update, and the
+    dashboard shows "no DSL" indefinitely for those positions.
+    """
+    info = _get_info()
+    raw = info.all_mids() or {}
     out: Dict[str, float] = {}
     for k, v in raw.items():
         try:
             out[k] = float(v)
         except (TypeError, ValueError):
             continue
+    if include_hip3:
+        try:
+            from hermes_trader.client.universe import list_hip3_dexes
+            for dex in list_hip3_dexes():
+                try:
+                    dex_mids = info.all_mids(dex=dex) or {}
+                except Exception as e:
+                    logger.warning(f"[get_all_hl_mids] HIP-3 all_mids failed for dex={dex}: {e}")
+                    continue
+                for k, v in dex_mids.items():
+                    try:
+                        out[k] = float(v)
+                    except (TypeError, ValueError):
+                        continue
+        except Exception as e:
+            logger.warning(f"[get_all_hl_mids] HIP-3 dex enumeration failed: {e}")
     return out
 
 

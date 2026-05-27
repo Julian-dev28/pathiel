@@ -396,14 +396,15 @@ def deregister_position(coin: str, side: str) -> bool:
 
 def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
                             policy: Optional[ExitPolicy] = None,
-                            default_leverage: int = 1) -> None:
+                            default_leverage: int = 1,
+                            queried_dexes: Optional[set] = None) -> None:
     """Reconcile the tracker registry with the exchange's live position list.
 
-    - On first call, loads any persisted trackers from disk.
-    - For each exchange position with no tracker, synthesizes one from
-      `position.entryPx` (entry_time = now, since the original is unknown).
-    - Drops trackers for coins that no longer have an open exchange position
-      (closed manually, by SL, by a different process).
+    Synthesizes a tracker for any open position without one (entry_time =
+    now, since the original is unknown), and drops trackers for coins no
+    longer open. When `queried_dexes` is given, a tracker is only dropped
+    if its dex *successfully responded* this cycle — protecting trackers
+    on timed-out dexes from being reset to fresh state next tick.
     """
     load_state()
     live_keys = set()
@@ -423,9 +424,6 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         side = "long" if szi > 0 else "short"
         key = f"{coin}_{side}"
         live_keys.add(key)
-        # HL exposes per-position leverage; fall back to the synthesizer default
-        # when missing so an open position from before the leverage-tracking
-        # change still surfaces a sensible value.
         pos_leverage = pos.get("leverage", {})
         lev = int(pos_leverage.get("value", 0) or 0) if isinstance(pos_leverage, dict) else int(pos_leverage or 0)
         if not lev:
@@ -436,10 +434,28 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
             added += 1
             logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry} ({lev}x)")
 
-    stale = [k for k in _active_positions if k not in live_keys]
+    def _key_in_queried_scope(k: str) -> bool:
+        """True iff the dex behind this tracker key was queried this cycle.
+        Key format `<coin>_<side>`; coin format `BTC` or `xyz:MU`."""
+        if queried_dexes is None:
+            return True
+        coin, _, _ = k.rpartition("_")
+        dex = coin.split(":", 1)[0] if ":" in coin else ""
+        return dex in queried_dexes
+
+    stale = [k for k in _active_positions
+             if k not in live_keys and _key_in_queried_scope(k)]
     for k in stale:
         del _active_positions[k]
         logger.info(f"[dsl] Dropped stale tracker {k} (no live exchange position)")
+    skipped = [k for k in _active_positions
+               if k not in live_keys and not _key_in_queried_scope(k)]
+    if skipped:
+        logger.warning(
+            f"[dsl] Preserving {len(skipped)} tracker(s) whose dex query failed "
+            f"this cycle (will retry next tick): {', '.join(skipped[:5])}"
+            + (f" +{len(skipped)-5} more" if len(skipped) > 5 else "")
+        )
 
     if added or stale:
         _save_state()

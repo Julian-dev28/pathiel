@@ -51,7 +51,7 @@ from hermes_trader.agents.config import get_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids
 from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
+from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -101,39 +101,48 @@ def _burst_fired(perception):
 
 
 def _sync_account_state():
-    """Pull live equity + positions from Hyperliquid, persist to .agent-memory.json.
+    """Pull live aggregated equity + positions from HL, persist to memory.
 
-    Runs once per cycle so `status.py` and the cron report always show fresh
-    data — previously the on-disk memory only updated on a successful execute,
-    so equity stayed at 0 between trades.
-
-    Returns (equity, positions, available, spot_usdc) — all 0/[] if wallet not
-    configured or the HL call raised, so a network blip never kills the loop.
+    Returns (equity, positions, available, spot_usdc, queried_dexes).
+    `queried_dexes` is the set of clearinghouses that successfully responded
+    this cycle — passed to the DSL rehydrator so trackers on a timed-out
+    dex aren't dropped as stale.
     """
     user = resolve_user_address()
     if not user:
-        return 0.0, [], 0.0, 0.0
+        return 0.0, [], 0.0, 0.0, {""}
     try:
-        state = fetch_account_state(user)
+        state = fetch_account_state(user, include_hip3=True)
     except Exception as e:
         logger.warning(f"[heartbeat] HL fetch_account_state failed: {e}")
-        return 0.0, [], 0.0, 0.0
+        return 0.0, [], 0.0, 0.0, {""}
 
     equity = float(state.get("equity", 0) or 0)
     available = float(state.get("available", 0) or 0)
     spot_usdc = float(state.get("spot_usdc", 0) or 0)
     positions = state.get("asset_positions", []) or []
+    queried_dexes = state.get("queried_dexes") or {""}
 
-    memory.track_daily_pnl(equity)              # also sets _equity
+    # Subtract net USDC contributions so transfers/deposits don't show
+    # up as trading PnL in the equity-diff calculation.
+    sod_ts_ms = memory.get_day_start_ts() * 1000
+    contributions = 0.0
+    if sod_ts_ms > 0:
+        try:
+            contributions = fetch_aggregate_contributions_since(user, sod_ts_ms)
+        except Exception as e:
+            logger.warning(f"[heartbeat] contribution fetch failed: {e}")
+
+    memory.track_daily_pnl(equity, contributions)
     memory.update_open_positions(positions)
-    memory.flush()                               # persist to disk
-    return equity, positions, available, spot_usdc
+    memory.flush()
+    return equity, positions, available, spot_usdc, queried_dexes
 
 
 while True:
     try:
         # ── Heartbeat: refresh equity / positions before scanning ──────────
-        equity, positions, available, spot_usdc = _sync_account_state()
+        equity, positions, available, spot_usdc, queried_dexes = _sync_account_state()
         daily_pnl = memory.get_daily_pnl()
         if equity <= 0 and spot_usdc > 0:
             logger.warning(
@@ -160,6 +169,7 @@ while True:
                 "cool_min": _cfg.get("cooldown_min"),
                 "min_conf": _cfg.get("min_ai_confidence"),
                 "kill": _cfg.get("max_daily_loss_usd"),
+                "crypto": bool(_cfg.get("enable_crypto", True)),
                 "hip3": bool(_cfg.get("enable_hip3", False)),
             },
         })
@@ -169,8 +179,14 @@ while True:
         # manual closes, externally-filled SLs), then market-close anything
         # whose dynamic floor was breached.
         try:
-            rehydrate_from_exchange(positions, default_leverage=int(config.get("leverage", 1) or 1))
-            mids = get_all_hl_mids()
+            rehydrate_from_exchange(positions,
+                                    default_leverage=int(config.get("leverage", 1) or 1),
+                                    queried_dexes=queried_dexes)
+            # include_hip3=True so xyz:MU / vntl:* etc. get fresh mids each
+            # cycle — without them, monitor_exits has no price for HIP-3
+            # trackers and their peak/floor never advance (dashboard shows
+            # "no DSL" indefinitely and DSL stop never fires on HIP-3).
+            mids = get_all_hl_mids(include_hip3=True)
             exits = monitor_exits(mids)
             for ex in exits:
                 coin = ex["coin"]
@@ -234,10 +250,7 @@ while True:
             coin = perception['coin']
             score = perception.get('composite_score', 0)
 
-            # Persist the perception so the memory (and dashboard) tracks real
-            # signal volume. Previously perceptions were processed but never
-            # written, so .agent-memory.json only had 6 of them despite 100+
-            # trades — making the perception cache useless for forensics.
+            # Persist perceptions so memory/dashboard track real signal volume.
             try:
                 memory.record_perception(perception)
             except Exception:

@@ -175,8 +175,3 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
             "ema_cross": False, "volume_confirm": False,
             "reason": f"TA error: {err}",
         }
-
-
-def analyze_perceptions(perceptions: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Run TA analysis on multiple perceptions, keyed by perception id."""
-    return {p["id"]: analyze_perception(p) for p in perceptions}

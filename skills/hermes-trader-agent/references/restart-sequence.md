@@ -1,32 +1,69 @@
-# Restart Sequence (canonical short form)
+# Restart Sequence
 
-This pattern is the one the user repeatedly requests for hermes-trader maintenance:
+Use `scripts/restart.sh` — it handles stop (SIGTERM → SIGKILL fallback),
+verify, background start with logs, and a status readout. It manages the
+trading loop AND the FastAPI server (which serves the dashboard at
+`http://localhost:8000`). The MCP server is intentionally NOT managed —
+it's a transient stdio process respawned by Hermes Agent on each tool
+call.
 
 ```bash
-pkill -f trading_loop.py && pkill -f hermes-mcp-server.py && sleep 1 && \
-cd /Users/julian_dev/Documents/code/hermes-trader && \
-python3 scripts/trading_loop.py --env prod --daemon
+cd /Users/julian_dev/Documents/code/hermes-trader
+scripts/restart.sh              # restart loop + server
+scripts/restart.sh loop         # loop only
+scripts/restart.sh server       # server only
+scripts/restart.sh stop         # stop both
+scripts/restart.sh status       # show PIDs
 ```
 
-The exact command the user repeatedly pastes (and that works reliably for them) is shown above. It includes the explicit `sleep 1` + `cd` so the new process starts in the correct working directory with a clean process table.
+Logs: `logs/trading_loop.log`, `logs/server.log`.
 
-**Correct pattern for Hermes terminal tool (background process):**
+## When to restart
+
+- After code changes to `trading_loop.py`, anything under `hermes_trader/`,
+  or `.env.local`. Most config changes (`.agent-config.json`) are
+  hot-reloaded per-trade and don't need a restart, but the asset-class
+  flags (`enable_hip3`, `enable_crypto`) need a restart because the
+  universe is fetched once at startup.
+- After an HL API timeout cluster — usually self-heals via
+  `queried_dexes` preservation, but if DSL trackers are stuck in a weird
+  state a restart re-reads `.dsl-state.json` clean.
+
+## Resetting today's daily PnL baseline
+
+If a deposit / transfer / cross-day boundary leaves the on-disk baseline
+out of sync, the contribution-aware tracker normally self-corrects within
+one heartbeat. To force a reset:
+
 ```bash
-pkill -f trading_loop.py && pkill -f hermes-mcp-server.py && sleep 1
-terminal(
-  action="run",
-  command="cd /Users/julian_dev/Documents/code/hermes-trader && python3 scripts/trading_loop.py --env prod --daemon",
-  background=true
-)
+scripts/restart.sh stop
+python3 -c "
+import json
+m = json.load(open('.agent-memory.json'))
+m['startOfDayEquity'] = m.get('equity', 0)
+m['dailyPnl'] = 0
+json.dump(m, open('.agent-memory.json','w'), indent=2)
+"
+scripts/restart.sh restart
 ```
 
-The `--env prod --daemon` flags are informational but kept because they match the user's standardized restart ritual.
+To set the baseline to a specific point (e.g. last UTC midnight from
+HL's portfolio history rather than current equity), see the snippet
+that called HL's `/info portfolio` endpoint in the session log.
 
-After any edit to trading_loop.py, ta_filter.py, system_prompt.py, .env.local, or .agent-config.json, run the above before the next scan cycle.
+## Stale MCP server
 
-Verify command:
+If an MCP tool runs old code after a fix:
+
 ```bash
-ps aux | grep -E "(trading_loop|hermes-mcp-server)" | grep -v grep || echo "All cleared"
+pkill -f hermes-mcp-server.py
 ```
 
-MCP server is intentionally transient — it only needs to be killed on code/config changes; it respawns on the next tool call via the hermes config.
+The next Hermes tool call respawns it fresh from `~/.hermes/config.yaml`.
+
+## Verifying clean state
+
+```bash
+scripts/restart.sh status
+ps aux | grep -E "(trading_loop|hermes-mcp-server|hermes_trader.server)" | grep -v grep
+```

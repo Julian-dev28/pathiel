@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Dict, Literal, Optional, Tuple
+from typing import Dict, Literal, Tuple
 
 from hermes_trader.client.hl_client import fetch_hl_candles
 from hermes_trader.indicators.math import ema
@@ -57,13 +57,14 @@ CRYPTO_PROXY = "BTC"
 # crypto proxy when the candle fetch returns nothing.
 EQUITY_PROXY = "xyz:SP500"
 
-# Trend thresholds — small numbers because we're on 4h closes; even a 0.1%
-# slope per 5 bars (20h) is a meaningful directional move at crypto vol.
-_SLOPE_LOOKBACK = 5
-_SLOPE_UP = 0.001       # +0.1% over 5 bars → 'up' candidate
-_SLOPE_DOWN = -0.001    # -0.1% over 5 bars → 'down' candidate
+# Trend thresholds on 1h closes — 8 bars = 8h lookback so intraday
+# rotations are caught (a slower 4h × 5-bar = 20h window was missing
+# every relief rally and pinning regime to BTC's macro drift).
+_SLOPE_LOOKBACK = 8
+_SLOPE_UP = 0.002       # +0.2% over 8 bars → 'up'
+_SLOPE_DOWN = -0.002    # -0.2% over 8 bars → 'down'
 
-REGIME_TTL_S = 600  # 10min cache; 4h trends don't flip faster
+REGIME_TTL_S = 300  # 5min cache — 1h trends can flip faster than 4h
 
 _regime_cache: Dict[str, Tuple[Regime, float]] = {}
 
@@ -111,7 +112,7 @@ def _detect_for_proxy(proxy: str) -> Regime:
     """Network path — fetch candles for `proxy`, compute trend.
     Wrapped by `detect_regime` for caching."""
     try:
-        candles = fetch_hl_candles(proxy, interval="4h", count=100)
+        candles = fetch_hl_candles(proxy, interval="1h", count=100)
         if not candles:
             return "neutral"
         closes = [float(c.c) for c in candles]

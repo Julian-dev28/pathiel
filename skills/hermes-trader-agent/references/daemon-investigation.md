@@ -1,5 +1,9 @@
 # Investigation: `--daemon` Flag Behavior (2026-05-22)
 
+**TL;DR for current operation:** use `scripts/restart.sh` — it handles
+the nohup backgrounding correctly. Section below kept for historical
+context on why the `--daemon` flag is a no-op.
+
 ## Problem
 The standard restart command `python3 scripts/trading_loop.py --env prod --daemon` appeared to start but produced no output and the process died quickly.
 
