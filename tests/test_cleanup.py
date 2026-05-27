@@ -889,3 +889,90 @@ def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path)
     # missing position gets dropped exactly like before.
     dsl_exit.rehydrate_from_exchange(positions, queried_dexes=None)
     assert "xyz:MU_long" not in dsl_exit._active_positions
+
+
+# ── Slow-burn 1h triggers ─────────────────────────────────────────────────
+def _candle_1h(t, o, h, l, c, v):
+    return Candle(t=t, o=o, h=h, l=l, c=c, v=v)
+
+
+def test_volume_buildup_1h_fires_on_4h_surge():
+    """volumeBuildup1h should fire when the last 4h's avg notional volume
+    is >= ratio_threshold × the prior 20h baseline."""
+    from hermes_trader.indicators.triggers import volume_buildup_1h
+    # 20h baseline at vol=1000, last 4h at vol=3000 → 3× surge
+    base = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(20)]
+    surge = [_candle_1h(i + 20, 100, 101, 99, 100, 3000) for i in range(4)]
+    res = volume_buildup_1h(base + surge, ratio_threshold=2.5)
+    assert res["fired"] is True
+    assert "3.0×" in res["reason"] or "3.00" in res["reason"]
+
+    # Flat: no surge
+    flat = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(24)]
+    res = volume_buildup_1h(flat, ratio_threshold=2.5)
+    assert res["fired"] is False
+
+
+def test_trend_flip_1h_detects_recent_ema_cross():
+    """trendFlip1h fires when EMA8 crosses above EMA21 within lookback bars."""
+    from hermes_trader.indicators.triggers import trend_flip_1h
+    # 25 bars trending down, then 8 bars trending up — fast EMA crosses slow.
+    closes = [100 - i for i in range(25)] + [76 + i * 2 for i in range(8)]
+    bars = [_candle_1h(i, c, c + 0.5, c - 0.5, c, 1000) for i, c in enumerate(closes)]
+    res = trend_flip_1h(bars, lookback_bars=5)
+    assert res["fired"] is True
+    assert "cross up" in res["reason"]
+
+    # All downtrend: no flip
+    down = [_candle_1h(i, 100 - i, 101 - i, 99 - i, 100 - i, 1000) for i in range(30)]
+    res = trend_flip_1h(down, lookback_bars=3)
+    assert res["fired"] is False
+
+
+def test_higher_lows_1h_counts_structure():
+    """higherLows1h fires when N+ of last 6 1h candles printed higher lows."""
+    from hermes_trader.indicators.triggers import higher_lows_1h
+    # 7 candles with strictly rising lows: 6/6 higher lows
+    rising = [_candle_1h(i, 100, 101, 99 + i, 100 + i, 1000) for i in range(7)]
+    res = higher_lows_1h(rising, required=4)
+    assert res["fired"] is True
+    assert "6/6" in res["reason"]
+
+    # All lows equal: 0/6 → fails
+    flat = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(7)]
+    res = higher_lows_1h(flat, required=4)
+    assert res["fired"] is False
+
+
+def test_regime_gate_bypasses_on_slow_burn():
+    """A counter-regime LONG with neither high conviction nor momentumBurst
+    should still pass if slow_burn_fired is True — the empirical fix for
+    WLFI/ICP-style accumulation breakouts."""
+    from hermes_trader.agents.risk_gates import market_regime_gate, GateContext
+    import hermes_trader.agents.market_regime as mr
+    # Force regime = "down" so the gate engages on a LONG.
+    mr._regime_cache.clear()
+    mr._regime_cache["BTC"] = ("down", 99999999999)
+
+    ctx = GateContext(
+        confidence=0.55,  # below 0.65 bar
+        current_positions=[],
+        trade_notional_usd=100,
+        daily_pnl=0,
+        market_volume_24h_usd=5_000_000,
+        coin="ALT",
+        trade_side="long",
+        has_binary_news_risk=False,
+        equity=200,
+        total_open_notional=0,
+        composite_score=15,  # below 50 bypass
+        momentum_burst_fired=False,
+        slow_burn_fired=True,  # ← the new bypass
+    )
+    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
+    assert res["pass"] is True, res
+
+    # Without slow_burn_fired, same setup should block.
+    ctx.slow_burn_fired = False
+    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
+    assert res["pass"] is False

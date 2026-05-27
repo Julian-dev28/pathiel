@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List
 
-from hermes_trader.indicators.math import adx, sma, candle_val
+from hermes_trader.indicators.math import adx, ema, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
 
 
@@ -245,6 +245,82 @@ def momentum_burst(
         "name": "momentumBurst",
         "score": score if fired else 0,
         "reason": f"{move_pct:+.1f}% over {lookback} bars {direction}" if fired else "flat",
+        "fired": fired,
+    }
+
+
+def volume_buildup_1h(candles: List[Candle], ratio_threshold: float = 2.5) -> TriggerHit:
+    """Notional-volume surge in the last 4h vs the prior 20h baseline.
+
+    Catches accumulation phases where size is loading into a market before
+    price has moved much. Empirically present in 8/10 of the +10% movers
+    we missed yesterday (HMSTR 10×, SEI 7.6×, DYDX 6.2×, JTO 21×, ...).
+    Needs 1h candles; returns flat if input is anything else or too short.
+    """
+    if len(candles) < 24:
+        return {"name": "volumeBuildup1h", "score": 0, "reason": "insufficient_history", "fired": False}
+    recent = sum(candle_val(c, "v") * candle_val(c, "c") for c in candles[-4:])
+    prior = sum(candle_val(c, "v") * candle_val(c, "c") for c in candles[-24:-4]) / 20
+    if prior <= 0:
+        return {"name": "volumeBuildup1h", "score": 0, "reason": "no_baseline", "fired": False}
+    ratio = (recent / 4) / prior
+    fired = ratio >= ratio_threshold
+    score = min(10, ratio / ratio_threshold * 5)  # 10 at 2× threshold
+    return {
+        "name": "volumeBuildup1h",
+        "score": score if fired else 0,
+        "reason": f"4h vol {ratio:.1f}× prior 20h baseline" if fired else f"vol {ratio:.1f}× (need {ratio_threshold:.1f}×)",
+        "fired": fired,
+    }
+
+
+def trend_flip_1h(candles: List[Candle], lookback_bars: int = 3) -> TriggerHit:
+    """1h EMA8 crossed above EMA21 within the last `lookback_bars` bars.
+
+    Catches the inflection moment when a slow downtrend turns. By design
+    fires only on UP crosses — a counter-regime LONG bypass is most useful
+    when the coin's own 1h trend is actually flipping bullish.
+    """
+    if len(candles) < 30:
+        return {"name": "trendFlip1h", "score": 0, "reason": "insufficient_history", "fired": False}
+    closes = [candle_val(c, "c") for c in candles]
+    e8 = ema(closes, 8)
+    e21 = ema(closes, 21)
+    if len(e8) < lookback_bars + 1 or len(e21) < lookback_bars + 1:
+        return {"name": "trendFlip1h", "score": 0, "reason": "insufficient_history", "fired": False}
+    # Look for a cross in the last N bars: prior bar e8<=e21, current bar e8>e21
+    for i in range(-lookback_bars, 0):
+        prev_diff = e8[i - 1] - e21[i - 1]
+        cur_diff = e8[i] - e21[i]
+        if prev_diff <= 0 and cur_diff > 0:
+            bars_ago = -i
+            return {
+                "name": "trendFlip1h",
+                "score": 8 if bars_ago == 0 else max(4, 8 - bars_ago * 2),
+                "reason": f"EMA8/21 cross up {bars_ago}h ago",
+                "fired": True,
+            }
+    return {"name": "trendFlip1h", "score": 0, "reason": "no recent cross", "fired": False}
+
+
+def higher_lows_1h(candles: List[Candle], required: int = 4) -> TriggerHit:
+    """At least `required` of the last 6 1h closes printed a higher low.
+
+    Pure structure signal — accumulation patterns where each pullback
+    holds higher than the prior. WLFI and GRASS had 5/5 yesterday before
+    their breakouts. Independent of price direction over the window
+    (works during consolidation).
+    """
+    if len(candles) < 7:
+        return {"name": "higherLows1h", "score": 0, "reason": "insufficient_history", "fired": False}
+    lows = [candle_val(c, "l") for c in candles[-7:]]
+    higher = sum(1 for i in range(1, len(lows)) if lows[i] > lows[i - 1])
+    fired = higher >= required
+    score = min(10, higher / 6 * 10)
+    return {
+        "name": "higherLows1h",
+        "score": score if fired else 0,
+        "reason": f"{higher}/6 higher lows" if fired else f"{higher}/6 (need {required})",
         "fired": fired,
     }
 

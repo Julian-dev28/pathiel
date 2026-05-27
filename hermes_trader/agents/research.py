@@ -134,22 +134,61 @@ def _build_user_message(
         or "no triggers fired"
     )
 
+    # 1h-structure block — accumulation patterns the multi-tf indicator
+    # blocks miss. Surfacing these explicitly because the LLM was reading
+    # 4h/1d bearish EMA alignment and shorting coins whose 1h was actually
+    # in a higher-lows / volume-buildup / EMA-flip setup.
+    _slow_burn_names = {"volumeBuildup1h", "trendFlip1h", "higherLows1h"}
+    slow_burn_hits = [
+        t for t in perception.get("triggers", [])
+        if t.get("name") in _slow_burn_names and t.get("fired")
+    ]
+    if slow_burn_hits:
+        structure_lines = ["1h structure signals (accumulation / breakout setup):"]
+        for t in slow_burn_hits:
+            structure_lines.append(f"  - {t['name']}: {t['reason']}")
+        structure_lines.append(
+            "Weigh these against the 4h/1d trend. A clean 1h accumulation pattern "
+            "(higher lows, vol surge, EMA flip) often precedes an UP move even when "
+            "longer timeframes are still bearish — don't reflexively SHORT into "
+            "developing 1h strength."
+        )
+        structure_block = "\n".join(structure_lines)
+    else:
+        structure_block = "1h structure signals: none fired (no accumulation / breakout setup detected)"
+
+    def _fmt_px(p: float) -> str:
+        """Adaptive precision so sub-cent coins (HMSTR at $0.000173 etc.) don't
+        all read as '0.0002' to the LLM. Without this the AI returned identical
+        entry/sl/tp on cheap coins because the prompt rounded them to the same
+        4-decimal value."""
+        if p == 0:
+            return "0"
+        ap = abs(p)
+        if ap >= 1:
+            return f"{p:.4f}"
+        if ap >= 0.01:
+            return f"{p:.5f}"
+        if ap >= 0.0001:
+            return f"{p:.6f}"
+        return f"{p:.8f}"
+
     def _indicator_block(label: str, snap: Dict[str, Any]) -> str:
         parts = []
         if snap.get("ema8") is not None and snap.get("ema21") is not None:
             direction = "bullish" if snap["ema8"] > snap["ema21"] else "bearish"
             parts.append(
-                f"EMA8={snap['ema8']:.4f}, EMA21={snap['ema21']:.4f}, {direction}"
+                f"EMA8={_fmt_px(snap['ema8'])}, EMA21={_fmt_px(snap['ema21'])}, {direction}"
             )
         if snap.get("slope_up") is not None:
             parts.append(f"EMA8 slope: {'rising' if snap['slope_up'] else 'falling'}")
         if snap.get("rsi14") is not None:
             parts.append(f"RSI(14)={snap['rsi14']:.1f}")
         if snap.get("atr14") is not None:
-            parts.append(f"ATR(14)={snap['atr14']:.4f}")
+            parts.append(f"ATR(14)={_fmt_px(snap['atr14'])}")
         if snap.get("adx14") is not None:
             parts.append(f"ADX(14)={snap['adx14']:.1f}")
-        parts.append(f"last close={snap.get('last_close', 0):.4f}")
+        parts.append(f"last close={_fmt_px(snap.get('last_close', 0))}")
         return f"{label}: {' | '.join(parts)}"
 
     position_block = (
@@ -185,7 +224,7 @@ def _build_user_message(
 
     return "\n".join([
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
-        f"Current mid: ${perception.get('mid', 0):.4f}",
+        f"Current mid: ${_fmt_px(perception.get('mid', 0))}",
         f"Perception score: {perception.get('composite_score', 0)}/100",
         f"Fired triggers: {trigger_summary}",
         "",
@@ -193,6 +232,8 @@ def _build_user_message(
         _indicator_block("1h", tf1h),
         _indicator_block("4h", tf4h),
         _indicator_block("1d", tf1d),
+        "",
+        structure_block,
         "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
@@ -394,10 +435,15 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         "reasoning": parsed["reasoning"],
         "news_context": news,
         "created_at": int(time.time() * 1000),
-        # Carry forward so risk gates can read own-coin momentum.
+        # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),
         "momentum_burst_fired": any(
             t.get("name") == "momentumBurst" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        "slow_burn_fired": any(
+            t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
+            and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
     }

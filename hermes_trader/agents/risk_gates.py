@@ -27,6 +27,7 @@ class GateContext:
         total_open_notional: float,
         composite_score: float = 0.0,
         momentum_burst_fired: bool = False,
+        slow_burn_fired: bool = False,
     ):
         self.confidence = confidence
         self.current_positions = current_positions
@@ -40,6 +41,10 @@ class GateContext:
         self.total_open_notional = total_open_notional
         self.composite_score = composite_score
         self.momentum_burst_fired = momentum_burst_fired
+        # True iff any 1h slow-burn trigger fired (volumeBuildup1h /
+        # trendFlip1h / higherLows1h). Used as a counter-regime bypass: a
+        # clean 1h accumulation pattern overrides the slow BTC proxy.
+        self.slow_burn_fired = slow_burn_fired
 
 
 def confidence_gate(ctx: GateContext, min_confidence: float) -> GateResult:
@@ -148,18 +153,20 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
 
 
 def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -> GateResult:
-    """Block counter-regime trades unless conviction OR own-coin momentum clears the bar.
+    """Block counter-regime trades unless conviction OR own-coin signal clears the bar.
 
       - aligned with regime → pass
       - regime neutral      → pass
-      - counter-trend trade → pass if confidence >= counter_regime_min_conf
-                              OR composite_score >= 50
-                              OR momentumBurst fired (large own-coin move)
-                              else block.
+      - counter-trend trade → pass if any of:
+          * confidence >= counter_regime_min_conf
+          * composite_score >= 50
+          * momentumBurst fired (large fast move on 5m)
+          * slow_burn_fired (1h vol surge or EMA cross — accumulation breakout)
+        else block.
 
-    The own-momentum bypass exists because the regime proxy (BTC for crypto,
-    SP500 for equity) is slow and a strong individual signal should override
-    a stale macro call — otherwise we miss every relief-rally breakout.
+    The own-signal bypasses exist because the regime proxy (BTC for crypto,
+    SP500 for equity) is slow; a strong individual signal should override
+    a stale macro call.
     """
     from hermes_trader.agents.market_regime import detect_regime
     regime = detect_regime(ctx.coin)
@@ -171,12 +178,12 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
         return {"pass": True}
     if ctx.confidence >= counter_regime_min_conf:
         return {"pass": True}
-    if ctx.composite_score >= 50 or ctx.momentum_burst_fired:
+    if ctx.composite_score >= 50 or ctx.momentum_burst_fired or ctx.slow_burn_fired:
         return {"pass": True}
     return {
         "pass": False,
         "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend — "
-                   f"need conf >= {counter_regime_min_conf} or own-coin momentum, "
+                   f"need conf >= {counter_regime_min_conf} or own-coin signal, "
                    f"have conf {ctx.confidence:.2f}, score {ctx.composite_score:.0f}"),
     }
 

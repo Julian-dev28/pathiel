@@ -110,30 +110,49 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     user = resolve_user_address()
 
     # HIP-3 dex-balance preflight: dexes are separate clearinghouses, so
-    # refuse cleanly when the target dex has no funds rather than letting
-    # HL return a confusing "Insufficient margin" rejection. Agent wallets
-    # cannot transfer between dexes; the master wallet must move USDC via
-    # the HL frontend first.
+    # refuse cleanly when the target dex truly has no funds. Distinguishes
+    # "API returned $0" from "API call failed / returned no marginSummary" —
+    # the latter is a transient lookup failure (the per-dex endpoint flakes
+    # intermittently) and shouldn't be reported as "underfunded" when funds
+    # are sitting on the dex. One retry, then back off rather than block
+    # falsely with a wire-USDC-to-dex error.
     coin_for_dex_check = analysis["coin"]
     if ":" in coin_for_dex_check:
         dex_name = coin_for_dex_check.split(":", 1)[0]
-        try:
-            from hermes_trader.client.hl_client import _http_post
-            dex_state = _http_post("/info", {
-                "type": "clearinghouseState", "user": user, "dex": dex_name,
-            }) or {}
-            dex_value = float((dex_state.get("marginSummary") or {}).get("accountValue", 0) or 0)
-            if dex_value < 1.0:
-                return {
-                    "executed": False, "mode": mode,
-                    "analysis_id": analysis["id"],
-                    "reason": (
-                        f"hip3_dex_underfunded ({dex_name}: ${dex_value:.2f}). "
-                        f"Transfer USDC to '{dex_name}' via the HL frontend."
-                    ),
-                }
-        except Exception as e:
-            logger.warning(f"[executor] HIP-3 dex-balance check failed for {dex_name}: {e}")
+        from hermes_trader.client.hl_client import _http_post
+
+        def _read_dex_value() -> tuple[bool, float]:
+            try:
+                state_resp = _http_post("/info", {
+                    "type": "clearinghouseState", "user": user, "dex": dex_name,
+                })
+            except Exception as e:
+                logger.warning(f"[executor] HIP-3 dex query raised for {dex_name}: {e}")
+                return (False, 0.0)
+            ms = (state_resp or {}).get("marginSummary")
+            if not ms:
+                return (False, 0.0)  # No marginSummary → response missing/malformed
+            return (True, float(ms.get("accountValue", 0) or 0))
+
+        ok, dex_value = _read_dex_value()
+        if not ok:
+            import time as _time
+            _time.sleep(0.3)
+            ok, dex_value = _read_dex_value()
+
+        if not ok:
+            logger.warning(f"[executor] HIP-3 dex-balance lookup failed twice for {dex_name}; letting HL adjudicate")
+            # Fall through and let HL reject if it has to — better than
+            # falsely claiming the dex is empty when we couldn't verify.
+        elif dex_value < 1.0:
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "reason": (
+                    f"hip3_dex_underfunded ({dex_name}: ${dex_value:.2f}). "
+                    f"Transfer USDC to '{dex_name}' via the HL frontend."
+                ),
+            }
 
     state = fetch_account_state(user) or {}
     equity = float(state.get("equity") or 0)
@@ -223,6 +242,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         total_open_notional=total_open_notional,
         composite_score=float(analysis.get("composite_score", 0) or 0),
         momentum_burst_fired=bool(analysis.get("momentum_burst_fired", False)),
+        slow_burn_fired=bool(analysis.get("slow_burn_fired", False)),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)

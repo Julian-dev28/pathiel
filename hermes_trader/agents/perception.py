@@ -90,6 +90,14 @@ def _scan_single_market(
         if not candles or len(candles) < 50:
             return (True, None)  # Not an error, just no triggers
 
+        # 1h candles for slow-burn / accumulation triggers. Cached far longer
+        # than 5m (1h bars don't change intra-hour). Failure here doesn't
+        # block the scan — slow-burn triggers just won't fire.
+        candles_1h = _fetch_candles_sync(
+            market["coin"], "1h", 48,
+            config["scan"].get("cacheTtlMs1h", 600_000),
+        ) or []
+
         thresholds = config["thresholds"]
         hits = [
             trigger_mod.pct_move_spike(candles, thresholds["sigmaThreshold"]),
@@ -98,6 +106,9 @@ def _scan_single_market(
             trigger_mod.range_compression(candles, thresholds["bbLength"], thresholds["bbStdDev"]),
             trigger_mod.trend_strength(candles, thresholds["adxPeriod"]),
             trigger_mod.momentum_burst(candles, thresholds["momentumLookback"], thresholds["momentumPct"]),
+            trigger_mod.volume_buildup_1h(candles_1h, thresholds.get("volBuildupRatio", 2.5)),
+            trigger_mod.trend_flip_1h(candles_1h, thresholds.get("trendFlipBars", 3)),
+            trigger_mod.higher_lows_1h(candles_1h, thresholds.get("higherLowsRequired", 4)),
         ]
 
         # At least one trigger must fire.
