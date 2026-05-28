@@ -52,6 +52,7 @@ from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids
 from hermes_trader.client.universe import get_universe
 from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
+from hermes_trader.positions_snapshot import write_snapshot
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,10 @@ while True:
                 "hip3": bool(_cfg.get("enable_hip3", False)),
             },
         })
+        # Publish the position list so the dashboard can render the table
+        # without its own fetch_account_state call (which, sharing this IP,
+        # was doubling HL load and tripping per-IP rate limits).
+        write_snapshot(positions)
 
         # ── DSL exit pass ───────────────────────────────────────────────────
         # Reconcile trackers with live exchange positions (handles restarts,

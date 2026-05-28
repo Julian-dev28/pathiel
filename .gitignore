@@ -93,6 +93,7 @@ DISTRIBUTE.md
 .agent-config.json
 .agent-memory.json
 .dsl-state.json
+.positions-snapshot.json
 
 # Rust build artifacts
 target/

@@ -2190,6 +2190,77 @@ def test_equity_curve_payload_filters_by_range_and_zero(monkeypatch):
     assert [p["equity"] for p in out] == [240.0]
 
 
+def test_positions_snapshot_round_trip(tmp_path, monkeypatch):
+    """write_snapshot then read_snapshot returns the same asset_positions."""
+    from hermes_trader import positions_snapshot as ps
+    monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(tmp_path / "snap.json"))
+    rows = [{"position": {"coin": "BTC", "szi": "1.0"}}]
+    ps.write_snapshot(rows)
+    out = ps.read_snapshot(max_age_s=120.0)
+    assert out == {"asset_positions": rows}
+
+
+def test_positions_snapshot_missing_returns_none(tmp_path, monkeypatch):
+    from hermes_trader import positions_snapshot as ps
+    monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(tmp_path / "absent.json"))
+    assert ps.read_snapshot() is None
+
+
+def test_positions_snapshot_stale_returns_none(tmp_path, monkeypatch):
+    """A snapshot older than max_age_s is treated as absent → caller refetches."""
+    from hermes_trader import positions_snapshot as ps
+    import json as _json
+    f = tmp_path / "snap.json"
+    f.write_text(_json.dumps({"saved_at": 0, "asset_positions": [{"x": 1}]}))
+    monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(f))
+    assert ps.read_snapshot(max_age_s=60.0) is None  # saved_at=epoch 0 → ancient
+
+
+def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):
+    """When a fresh snapshot exists the dashboard transforms it and never calls
+    fetch_account_state — this is what removes the cross-process HL load."""
+    from hermes_trader import dashboard
+    called = {"hl": False}
+    def boom(*a, **k):
+        called["hl"] = True
+        raise AssertionError("fetch_account_state must not be called")
+    monkeypatch.setattr(dashboard, "fetch_account_state", boom)
+    monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(dashboard.dsl_exit, "load_state", lambda force=False: None)
+    monkeypatch.setattr(dashboard.dsl_exit, "_active_positions", {})
+    monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: {
+        "asset_positions": [
+            {"position": {"coin": "BTC", "szi": "2.0", "entryPx": "60000",
+                          "positionValue": "122000", "unrealizedPnl": "1000",
+                          "marginUsed": "6000", "leverage": {"value": "20"}}},
+        ],
+    })
+    rows = dashboard._positions_payload_uncached()
+    assert called["hl"] is False
+    assert len(rows) == 1 and rows[0]["coin"] == "BTC" and rows[0]["side"] == "long"
+
+
+def test_dashboard_positions_falls_back_to_hl_when_no_snapshot(monkeypatch):
+    """No snapshot (loop down) → dashboard does a live fetch so it still works."""
+    from hermes_trader import dashboard
+    monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: None)
+    monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(dashboard.dsl_exit, "load_state", lambda force=False: None)
+    monkeypatch.setattr(dashboard.dsl_exit, "_active_positions", {})
+    fetched = {"n": 0}
+    def fake_fetch(user, **kw):
+        fetched["n"] += 1
+        return {"asset_positions": [
+            {"position": {"coin": "ETH", "szi": "-5", "entryPx": "3000",
+                          "positionValue": "15000", "unrealizedPnl": "-50",
+                          "marginUsed": "3000", "leverage": 5}},
+        ]}
+    monkeypatch.setattr(dashboard, "fetch_account_state", fake_fetch)
+    rows = dashboard._positions_payload_uncached()
+    assert fetched["n"] == 1
+    assert rows[0]["coin"] == "ETH" and rows[0]["side"] == "short"
+
+
 def test_build_user_message_indicator_block_full_snap():
     """A full indicator snapshot renders the bullish/bearish + RSI/ATR/ADX line."""
     from hermes_trader.agents.research import _build_user_message

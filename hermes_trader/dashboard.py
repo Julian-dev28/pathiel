@@ -35,6 +35,7 @@ from hermes_trader import session_log
 from hermes_trader.agents import dsl_exit
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
+from hermes_trader.positions_snapshot import read_snapshot as read_position_snapshot
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
@@ -180,6 +181,16 @@ def _positions_payload() -> List[Dict[str, Any]]:
 
 def _positions_payload_uncached() -> List[Dict[str, Any]]:
     dsl_exit.load_state(force=True)
+
+    # Prefer the loop's snapshot: it already fetched account state this cycle,
+    # so reading the file avoids a duplicate fetch_account_state (~9 HL POSTs)
+    # from this separate process — that duplication was tripping HL's per-IP
+    # rate limit. Fall back to a live fetch only when the snapshot is missing
+    # or stale (loop not running), so a standalone dashboard still works.
+    snap = read_position_snapshot(max_age_s=120.0)
+    if snap is not None:
+        return _rows_from_state(snap)
+
     user = resolve_user_address()
     if not user:
         return []
@@ -190,7 +201,12 @@ def _positions_payload_uncached() -> List[Dict[str, Any]]:
         state = fetch_account_state(user, include_hip3=True)
     except Exception:
         return []
+    return _rows_from_state(state)
 
+
+def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Transform a raw HL account state into dashboard position rows, overlaying
+    DSL tracker phase/floor from the shared state file. Pure — no network."""
     rows: List[Dict[str, Any]] = []
     for p in state.get("asset_positions", []):
         pos = p.get("position", {})
