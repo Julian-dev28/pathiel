@@ -73,8 +73,13 @@ def _scan_single_market(
     mid: float,
     config: Dict[str, Any],
     min_score: float,
+    whale_signals: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Tuple[bool, Dict[str, Any] | str | None]:
     """Run all triggers on a single market's candles.
+
+    `whale_signals` is the per-scan whale_accumulation_map() result, keyed by
+    coin. When present and the coin matches, the perception's `whale_signal`
+    field carries the signal dict for downstream gating.
 
     Returns (success, perception_dict | None) on success, or (False, error_string).
     Designed to run inside a ThreadPoolExecutor worker.
@@ -123,6 +128,7 @@ def _scan_single_market(
         if score < min_score and not burst_fired:
             return (True, None)
 
+        whale = (whale_signals or {}).get(market["coin"])
         return (True, {
             "id": f"{market['coin']}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}",
             "coin": market["coin"],
@@ -131,6 +137,7 @@ def _scan_single_market(
             "mid": mid,
             "triggers": hits,
             "composite_score": score,
+            "whale_signal": whale,  # None unless coin is in oi_funding_anomaly hits
         })
     except Exception as e:
         return (False, str(e))
@@ -214,7 +221,12 @@ def scan_once(
     max_markets = int(os.environ.get("HERMES_MAX_MARKETS", "60"))
     max_markets_hip3 = int(os.environ.get("HERMES_MAX_MARKETS_HIP3", "25"))
     max_markets_movers = int(os.environ.get("HERMES_MAX_MARKETS_MOVERS", "10"))
-    movers_vol_floor = float(os.environ.get("HERMES_MOVERS_VOL_FLOOR_USD", "1000000"))
+    movers_vol_floor = float(os.environ.get("HERMES_MOVERS_VOL_FLOOR_USD", "300000"))
+    # Half the HIP-3 budget goes to top-by-volume (clean liquid markets),
+    # half to top-by-|24h%| above a tiny floor (catches xyz:DKNG-style
+    # low-volume HIP-3 pumpers that would never make a vol cut). The HIP-3
+    # universe is bounded so this doesn't expose us to crypto-microcap noise.
+    hip3_movers_floor = float(os.environ.get("HERMES_HIP3_MOVERS_FLOOR_USD", "50000"))
 
     def _abs_pct_24h(m):
         prev = float(m.get("prevDayPx") or 0)
@@ -223,10 +235,10 @@ def scan_once(
             return 0.0
         return abs((cur - prev) / prev * 100)
 
-    def _pick_with_movers(pool, vol_budget, movers_budget):
+    def _pick_with_movers(pool, vol_budget, movers_budget, mv_floor):
         """Top-N by 24h volume + top-M by |24h%|, deduped, in that priority.
 
-        The movers slot guarantees a budget for sub-top-volume big movers
+        Movers slot guarantees a budget for sub-top-volume big movers
         regardless of their volume rank; the floor filters out pico-cap
         noise where a $200 trade can print a 50% move.
         """
@@ -235,7 +247,7 @@ def scan_once(
         chosen = {m["coin"] for m in vol_pick}
         candidates = [m for m in pool
                       if m["coin"] not in chosen
-                      and m.get("dayNtlVlm", 0) >= movers_vol_floor]
+                      and m.get("dayNtlVlm", 0) >= mv_floor]
         by_pct = sorted(candidates, key=_abs_pct_24h, reverse=True)
         movers_pick = [m for m in by_pct if _abs_pct_24h(m) >= 1.0][:movers_budget]
         return vol_pick, movers_pick
@@ -245,20 +257,31 @@ def scan_once(
         crypto_vol_budget = max(0, crypto_budget - max_markets_movers)
         crypto = [m for m in eligible if not m.get("dex")]
         hip3 = [m for m in eligible if m.get("dex")]
-        crypto_top, crypto_movers = _pick_with_movers(crypto, crypto_vol_budget, max_markets_movers)
-        hip3_top = sorted(hip3, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[:max_markets_hip3]
-        markets = crypto_top + crypto_movers + hip3_top
+        crypto_top, crypto_movers = _pick_with_movers(crypto, crypto_vol_budget,
+                                                     max_markets_movers, movers_vol_floor)
+        # Split HIP-3: half by volume, half by |24h%| above the tiny floor.
+        hip3_vol_budget = max_markets_hip3 // 2
+        hip3_mover_budget = max_markets_hip3 - hip3_vol_budget
+        hip3_top, hip3_movers = _pick_with_movers(hip3, hip3_vol_budget,
+                                                  hip3_mover_budget, hip3_movers_floor)
+        markets = crypto_top + crypto_movers + hip3_top + hip3_movers
         logger.info(
             f"[scan] budget split: {len(crypto_top)} crypto-vol + {len(crypto_movers)} crypto-movers "
-            f"+ {len(hip3_top)} HIP-3 (of {len(crypto)} crypto + {len(hip3)} HIP-3 eligible)"
+            f"+ {len(hip3_top)} HIP-3-vol + {len(hip3_movers)} HIP-3-movers "
+            f"(of {len(crypto)} crypto + {len(hip3)} HIP-3 eligible)"
         )
         if crypto_movers:
             sample = ", ".join(f"{m['coin']} {_abs_pct_24h(m):+.1f}%" for m in crypto_movers[:5])
-            logger.info(f"[scan] movers picked: {sample}")
+            logger.info(f"[scan] crypto-movers: {sample}")
+        if hip3_movers:
+            sample = ", ".join(f"{m['coin']} {_abs_pct_24h(m):+.1f}%" for m in hip3_movers[:5])
+            logger.info(f"[scan] HIP-3-movers: {sample}")
     else:
         pool = eligible
         vol_budget = max(0, max_markets - max_markets_movers)
-        chosen, movers = _pick_with_movers(pool, vol_budget, max_markets_movers)
+        # Use the appropriate floor for the single-class mode.
+        floor = hip3_movers_floor if include_hip3 else movers_vol_floor
+        chosen, movers = _pick_with_movers(pool, vol_budget, max_markets_movers, floor)
         markets = chosen + movers
         cls = "crypto-only" if include_crypto else "HIP-3-only"
         logger.info(
@@ -286,6 +309,21 @@ def scan_once(
     total = len(callables)
     logger.info(f"[scan] scanning {total} markets in batches of {batch_size} ({workers} workers/batch)...")
 
+    # Fetch the whale-accumulation map ONCE per scan (it's universe-derived
+    # so all markets share the same snapshot). If the call fails, perceptions
+    # just won't have whale signals attached — no other effect.
+    try:
+        from hermes_trader.agents.whale_index import whale_accumulation_map
+        whale_signals = whale_accumulation_map()
+        if whale_signals:
+            logger.info(
+                f"[scan] whale accumulation: {len(whale_signals)} coins flagged "
+                f"({', '.join(list(whale_signals.keys())[:5])})"
+            )
+    except Exception as e:
+        logger.warning(f"[scan] whale_accumulation_map failed: {e}")
+        whale_signals = {}
+
     results: List[Dict[str, Any]] = []
     errors = 0
     completed = 0
@@ -295,7 +333,7 @@ def scan_once(
         batch = callables[batch_start:batch_end]
 
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hermes-scan") as pool:
-            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score) for m, md in batch]
+            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals) for m, md in batch]
             for i, future in enumerate(futures):
                 idx = batch_start + i
                 try:

@@ -291,17 +291,24 @@ def set_leverage(coin: str, leverage: int) -> Dict[str, Any]:
         return {"ok": False, "error": str(e), "is_cross": is_cross}
 
 
-def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True) -> str:
+def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True,
+                        is_buy: Optional[bool] = None) -> str:
     """Round a price to satisfy Hyperliquid's two constraints:
-    
+
     1. Multiple of the tick size: tick = 10^(-(MAX_DECIMALS - sz_decimals))
        where MAX_DECIMALS = 6 for perps, 8 for spot.
     2. At most 5 significant figures total.
-    
-    Returns a string formatted with the resolved decimal count so the SDK
-    sees the exact representation HL expects.
+
+    `is_buy` controls rounding direction so an IOC limit always rounds in
+    the direction of MORE aggression (preserves cross-the-book intent):
+      * BUY → ROUND_CEILING (round UP; limit stays at/above ask)
+      * SELL → ROUND_FLOOR (round DOWN; limit stays at/below bid)
+    Without this, a SELL price like 0.00016533 (1% below bid 0.000167)
+    half-up-rounds to 0.00017, which is ABOVE the bid → IOC can never
+    match → "could not immediately match" rejection. Passing None falls
+    back to ROUND_HALF_UP for non-order callsites.
     """
-    from decimal import Decimal, ROUND_HALF_UP, getcontext
+    from decimal import Decimal, ROUND_HALF_UP, ROUND_CEILING, ROUND_FLOOR, getcontext
     getcontext().prec = 28
 
     if price <= 0:
@@ -310,19 +317,20 @@ def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True) ->
     MAX_DECIMALS = 6 if is_perp else 8
     px_decimals_by_tick = max(0, MAX_DECIMALS - int(sz_decimals))
 
-    # Sig-fig limit: 5 sig figs across the whole number.
-    # int_digits = number of digits to the LEFT of the decimal point in `price`.
     import math
     int_digits = max(0, int(math.floor(math.log10(price))) + 1)
     px_decimals_by_sigfig = max(0, 5 - int_digits)
-
-    # The binding constraint is whichever is *smaller* (fewer decimals).
     px_decimals = min(px_decimals_by_tick, px_decimals_by_sigfig)
 
-    # Round using Decimal to avoid float drift.
+    if is_buy is True:
+        rounding_mode = ROUND_CEILING
+    elif is_buy is False:
+        rounding_mode = ROUND_FLOOR
+    else:
+        rounding_mode = ROUND_HALF_UP
+
     q = Decimal(10) ** -px_decimals if px_decimals > 0 else Decimal(1)
-    rounded = (Decimal(str(price)) / q).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * q
-    # Format with the exact decimal count HL expects (no trailing zeros stripped)
+    rounded = (Decimal(str(price)) / q).quantize(Decimal('1'), rounding=rounding_mode) * q
     if px_decimals > 0:
         return f"{rounded:.{px_decimals}f}"
     return f"{rounded:.0f}"
@@ -414,8 +422,9 @@ def place_hl_order(
         # Price the IOC to cross the live book (best bid/ask + 1% headroom).
         price = _ioc_cross_price(coin, is_buy, mid_price)
 
-        # Round price honoring Hyperliquid's tick + 5-sigfig rules
-        price_str = _round_price_for_hl(price, sz_dec, is_perp=True)
+        # Round price honoring HL's tick + 5-sigfig rules. is_buy tells the
+        # rounder which direction preserves IOC-cross aggression.
+        price_str = _round_price_for_hl(price, sz_dec, is_perp=True, is_buy=is_buy)
 
         # Never place below HL's $10 minimum. _min_order_size rounds the floor
         # UP to the coin's size tick, so rounding to sz_dec can't drop it under.
@@ -439,8 +448,16 @@ def place_hl_order(
             order_type,
             reduce_only=False,
         )
-        
-        return _parse_order_result(result)
+
+        parsed = _parse_order_result(result)
+        if not parsed.get("ok"):
+            # Surface the HL error + the price/size we sent so future
+            # "could not immediately match" failures are diagnosable.
+            logger.warning(
+                f"[place_hl_order] {coin} {'BUY' if is_buy else 'SELL'} "
+                f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}"
+            )
+        return parsed
     except Exception as e:
         logger.error(f"Failed to place order for {coin}: {e}")
         return {"ok": False, "error": str(e)}

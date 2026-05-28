@@ -239,13 +239,30 @@ def get_trader_state(user: str) -> Optional[Dict[str, Any]]:
 # These functions can be registered as MCP tools for autonomous agents
 # to query whale data as part of their scanning pipeline.
 
+def whale_accumulation_map(min_confidence: float = 0.05) -> Dict[str, Dict[str, Any]]:
+    """Return {coin: signal_dict} for coins flagged by oi_funding_anomaly.
+
+    This is the clean signal — small list of coins where whales are loading
+    while retail shorts (negative funding) and price is still flat (move
+    hasn't happened yet). Excludes the noisy `high_oi_concentration` signal
+    which fires on every BTC/ETH/SOL by default. Cache once per scan.
+    """
+    return {
+        s["coin"]: s
+        for s in oi_funding_anomaly()
+        if s.get("confidence", 0) >= min_confidence
+    }
+
+
 def get_whale_signals(
     min_confidence: float = 0.1,
     top_n: int = 10,
 ) -> List[Dict[str, Any]]:
-    """Aggregate all whale signals for the autonomous scan loop.
-    
-    Called from scan_once() to enrich perception data with whale signals.
+    """Aggregate concentration + anomaly signals for MCP-tool callers.
+
+    Kept for the MCP exposure (`whale_index` tool). Production perception
+    uses `whale_accumulation_map()` instead — the high-OI-concentration
+    branch this combines in is too noisy for direction calls.
     """
     concentration = smart_money_concentration()
     anomalies = oi_funding_anomaly()

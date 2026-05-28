@@ -195,7 +195,9 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     available = max(0.0, equity - total_margin_used)
 
     dex_equity: Dict[str, float] = {"": perp_equity}
+    dex_available: Dict[str, float] = {"": available}
     queried_dexes: set = {""}
+    available_aggregated = available  # starts as main; HIP-3 adds in
 
     if include_hip3:
         from hermes_trader.client.universe import list_hip3_dexes
@@ -216,9 +218,13 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
             dex_ms = dex_state.get("marginSummary", {}) or {}
             dex_value = float(dex_ms.get("accountValue", 0) or 0)
             dex_ntl = float(dex_ms.get("totalNtlPos", 0) or 0)
+            dex_margin_used = float(dex_ms.get("totalMarginUsed", 0) or 0)
+            dex_free = max(0.0, dex_value - dex_margin_used)
             dex_equity[dex] = dex_value
+            dex_available[dex] = dex_free
             equity += dex_value
             total_ntl += dex_ntl
+            available_aggregated += dex_free
             for p in (dex_state.get("assetPositions") or []):
                 pos = p.get("position", {}) or {}
                 if float(pos.get("szi", "0") or 0) == 0:
@@ -232,13 +238,15 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     return {
         "equity": equity,
-        "available": available,
+        "available": available,                       # main-only — for executor sizing
+        "available_aggregated": available_aggregated, # total across all dexes — for display
         "spot_usdc": spot_usdc,
         "total_usdc": equity + spot_usdc,
         "total_ntl": total_ntl,
         "spot_balances": spot_balances,
         "asset_positions": asset_positions,
         "dex_equity": dex_equity,
+        "dex_available": dex_available,
         "queried_dexes": queried_dexes,
     }
 

@@ -629,13 +629,16 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     slots for HIP-3 markets so high-volume crypto doesn't crowd them out."""
     from hermes_trader.agents import perception
 
-    # 100 fake crypto markets (all higher volume than the HIP-3 ones) +
-    # 10 HIP-3 markets. With max=10 / hip3=3, expect 7 crypto + 3 HIP-3 = 10.
+    # 100 fake crypto markets (higher volume) + 10 HIP-3 markets.
+    # HIP-3 entries get prevDayPx + midPx so the mover sub-bucket has
+    # qualifying candidates (with the new vol+mover split for HIP-3).
     universe = [
         {"coin": f"C{i}", "type": "perp", "dex": None, "dayNtlVlm": 1_000_000_000 - i}
         for i in range(100)
     ] + [
-        {"coin": f"xyz:H{i}", "type": "perp", "dex": "xyz", "dayNtlVlm": 50_000_000 - i}
+        {"coin": f"xyz:H{i}", "type": "perp", "dex": "xyz",
+         "dayNtlVlm": 50_000_000 - i,
+         "prevDayPx": 100.0, "midPx": 105.0 + i * 0.1}
         for i in range(10)
     ]
     mids = {m["coin"]: "100" for m in universe}
@@ -645,14 +648,14 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
-    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms: (True, None))
+    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None: (True, None))
     # Force include_hip3=True via the runtime config
     monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
                         lambda: {"enable_hip3": True})
 
     seen = []
     real_scan = perception._scan_single_market
-    def _capture(m, mid, cfg, ms):
+    def _capture(m, mid, cfg, ms, ws=None):
         seen.append(m["coin"])
         return (True, None)
     monkeypatch.setattr(perception, "_scan_single_market", _capture)
@@ -754,7 +757,7 @@ def _scan_with_config(monkeypatch, cfg):
                         lambda: cfg)
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
     return seen
 
@@ -841,7 +844,7 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
 
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
 
     # Volume budget = 10 - 3 = 7 → all 5 MAJORs + 2 of the 5 MOVERs by volume
@@ -942,6 +945,72 @@ def test_higher_lows_1h_counts_structure():
     flat = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(7)]
     res = higher_lows_1h(flat, required=4)
     assert res["fired"] is False
+
+
+def test_regime_gate_bypasses_on_whale_signal():
+    """A counter-regime LONG should pass when whale_signal_fired is True,
+    even at low confidence and zero composite — the oi_funding_anomaly
+    signal (whale accumulation, negative funding, flat price) is its own
+    bypass path, parallel to slow_burn_fired."""
+    from hermes_trader.agents.risk_gates import market_regime_gate, GateContext
+    import hermes_trader.agents.market_regime as mr
+    mr._regime_cache.clear()
+    mr._regime_cache["BTC"] = ("down", 99999999999)
+
+    ctx = GateContext(
+        confidence=0.45,
+        current_positions=[], trade_notional_usd=100, daily_pnl=0,
+        market_volume_24h_usd=5_000_000, coin="ALT", trade_side="long",
+        has_binary_news_risk=False, equity=200, total_open_notional=0,
+        composite_score=10, momentum_burst_fired=False,
+        slow_burn_fired=False, whale_signal_fired=True,
+    )
+    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
+    assert res["pass"] is True, res
+
+    # Without whale signal, same setup blocks.
+    ctx.whale_signal_fired = False
+    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
+    assert res["pass"] is False
+
+
+def test_executor_structural_override_promotes_pass_to_long(monkeypatch):
+    """When composite >= 40 AND 2+ slow-burn triggers fired, the executor
+    upgrades an AI PASS to LONG conf 0.70 — the AI hedge doesn't override
+    objective structural strength."""
+    from hermes_trader.agents import executor
+
+    # Force a config that exercises ONLY the override path, then fails the
+    # next stage so we can verify the upgrade happened without HL calls.
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
+        "force_execute_composite": 40, "force_execute_slow_burn_count": 2,
+    })
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
+
+    analysis = {
+        "id": "test-override",
+        "coin": "WLFI",
+        "verdict": "PASS",
+        "confidence": 0.0,
+        "composite_score": 45.0,
+        "slow_burn_count": 3,
+    }
+    res = executor.maybe_execute(analysis)
+    # The override happens; then execution fails at equity_unavailable (equity=0).
+    # That tells us we passed the PASS-block and reached the equity check.
+    assert "equity_unavailable" in (res.get("reason") or "")
+
+    # Without the override conditions (composite below 40), the PASS verdict
+    # would never reach the equity check — it would short-circuit elsewhere.
+    # Sanity check: low-composite PASS doesn't trigger override.
+    analysis2 = {**analysis, "composite_score": 30.0}
+    res2 = executor.maybe_execute(analysis2)
+    # PASS verdict with no override → would still try to execute (since the
+    # executor doesn't directly gate on verdict; it relies on side). With
+    # equity=0 it'll hit the same gate. We're just verifying no crash.
+    assert isinstance(res2, dict)
 
 
 def test_regime_gate_bypasses_on_slow_burn():

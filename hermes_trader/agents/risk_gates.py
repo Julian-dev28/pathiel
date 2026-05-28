@@ -28,6 +28,7 @@ class GateContext:
         composite_score: float = 0.0,
         momentum_burst_fired: bool = False,
         slow_burn_fired: bool = False,
+        whale_signal_fired: bool = False,
     ):
         self.confidence = confidence
         self.current_positions = current_positions
@@ -45,6 +46,10 @@ class GateContext:
         # trendFlip1h / higherLows1h). Used as a counter-regime bypass: a
         # clean 1h accumulation pattern overrides the slow BTC proxy.
         self.slow_burn_fired = slow_burn_fired
+        # True iff whale_index oi_funding_anomaly flagged this coin
+        # (negative funding + flat price + high OI = whale accumulation).
+        # Same gate-bypass role as slow_burn_fired; orthogonal signal.
+        self.whale_signal_fired = whale_signal_fired
 
 
 def confidence_gate(ctx: GateContext, min_confidence: float) -> GateResult:
@@ -178,7 +183,10 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
         return {"pass": True}
     if ctx.confidence >= counter_regime_min_conf:
         return {"pass": True}
-    if ctx.composite_score >= 50 or ctx.momentum_burst_fired or ctx.slow_burn_fired:
+    if (ctx.composite_score >= 50
+            or ctx.momentum_burst_fired
+            or ctx.slow_burn_fired
+            or ctx.whale_signal_fired):
         return {"pass": True}
     return {
         "pass": False,

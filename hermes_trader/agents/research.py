@@ -157,6 +157,24 @@ def _build_user_message(
     else:
         structure_block = "1h structure signals: none fired (no accumulation / breakout setup detected)"
 
+    # Whale-accumulation block: oi_funding_anomaly flag (deep-negative funding +
+    # flat price + high OI = whales loading while retail shorts). When present
+    # this is a strong LONG-bias signal — don't fight it.
+    whale = perception.get("whale_signal")
+    if whale:
+        whale_block = (
+            "Whale accumulation flag (oi_funding_anomaly):\n"
+            f"  - funding rate: {whale.get('funding_rate', 0):.6f} (deeply negative = retail shorting)\n"
+            f"  - 24h price change: {whale.get('price_24h_change_pct', 0):+.2f}% (relatively flat)\n"
+            f"  - open interest: ${whale.get('oi', 0):,.0f}\n"
+            f"  - confidence: {whale.get('confidence', 0):.2f}\n"
+            "Interpretation: smart money is building long positions while retail pays them "
+            "to short. When the shorts cover, price tends to squeeze UP. Bias LONG unless "
+            "structure is overwhelmingly bearish."
+        )
+    else:
+        whale_block = "Whale accumulation flag: not flagged for this coin"
+
     def _fmt_px(p: float) -> str:
         """Adaptive precision so sub-cent coins (HMSTR at $0.000173 etc.) don't
         all read as '0.0002' to the LLM. Without this the AI returned identical
@@ -234,6 +252,8 @@ def _build_user_message(
         _indicator_block("1d", tf1d),
         "",
         structure_block,
+        "",
+        whale_block,
         "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
@@ -446,6 +466,15 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
+        "slow_burn_count": sum(
+            1 for t in (perception.get("triggers") or [])
+            if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
+            and t.get("fired")
+        ),
+        # OI+funding accumulation signal (oi_funding_anomaly). When present,
+        # the coin shows whale-loading patterns (high OI, negative funding,
+        # flat price). Used as a counter-regime bypass for LONGs.
+        "whale_signal": perception.get("whale_signal"),
     }
 
     memory.record_analysis(analysis)

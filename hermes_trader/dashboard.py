@@ -116,9 +116,16 @@ def _summary_payload() -> Dict[str, Any]:
     else:
         status = "scanning"
 
+    # Per-dex breakdowns so the dashboard can show where USDC sits
+    # (e.g. main $96 + xyz $114 + km $20) instead of one opaque total.
+    dex_equity = heartbeat.get("dex_equity") or {}
+    dex_available = heartbeat.get("dex_available") or {}
+
     return {
         "equity": round(equity, 2),
         "available": round(float(heartbeat.get("available", 0) or 0), 2),
+        "dex_equity": dex_equity,
+        "dex_available": dex_available,
         "spot_usdc": round(float(heartbeat.get("spot_usdc", 0) or 0), 2),
         "daily_pnl": round(daily_pnl, 2),
         "daily_pnl_pct": round(daily_pnl_pct, 2),
@@ -654,6 +661,7 @@ _PUBLIC_HTML = """<!doctype html>
     <div class="bg-zinc-900 rounded-lg p-4">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity">equity</div>
       <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
+      <div class="text-[10px] text-zinc-500 num mt-1" id="kpi-equity-breakdown" title="free margin available across all dexes"></div>
     </div>
     <div class="bg-zinc-900 rounded-lg p-4">
       <div class="text-[10px] text-zinc-500 pixel" data-i18n="today">today</div>
@@ -975,6 +983,29 @@ async function refreshSummary() {
     const r = await fetch('/api/dashboard/summary');
     const s = await r.json();
     document.getElementById('kpi-equity').innerHTML = dollarHTML(fmtMoney(s.equity));
+    // Per-dex breakdown: e.g. "main $76 + xyz $62 + km $15 = $153 free"
+    const brk = document.getElementById('kpi-equity-breakdown');
+    if (brk) {
+      const dexAvail = s.dex_available || {};
+      const parts = [];
+      let total = 0;
+      // Order: main first, then non-zero dexes alphabetically
+      const dexNames = Object.keys(dexAvail).sort((a, b) => {
+        if (a === '') return -1;
+        if (b === '') return 1;
+        return a.localeCompare(b);
+      });
+      for (const d of dexNames) {
+        const v = Number(dexAvail[d] || 0);
+        if (v < 0.5 && d !== '') continue;
+        const label = d === '' ? 'main' : d;
+        parts.push(`${label} ${fmtMoney(v)}`);
+        total += v;
+      }
+      brk.textContent = parts.length > 1
+        ? `${parts.join(' + ')} = $${total.toFixed(2)} free`
+        : (parts.length === 1 ? `$${total.toFixed(2)} free` : '');
+    }
     const pnlEl = document.getElementById('kpi-pnl');
     pnlEl.innerHTML = dollarHTML(fmtMoney(s.daily_pnl));
     pnlEl.className = 'text-2xl font-bold num ' + (s.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400');

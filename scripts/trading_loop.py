@@ -103,22 +103,24 @@ def _burst_fired(perception):
 def _sync_account_state():
     """Pull live aggregated equity + positions from HL, persist to memory.
 
-    Returns (equity, positions, available, spot_usdc, queried_dexes).
-    `queried_dexes` is the set of clearinghouses that successfully responded
-    this cycle — passed to the DSL rehydrator so trackers on a timed-out
-    dex aren't dropped as stale.
+    Returns (equity, positions, available, spot_usdc, queried_dexes, state).
+    `state` is the full dict so callers can grab per-dex breakdowns
+    (`dex_equity`, `dex_available`) without re-fetching.
     """
     user = resolve_user_address()
     if not user:
-        return 0.0, [], 0.0, 0.0, {""}
+        return 0.0, [], 0.0, 0.0, {""}, {}
     try:
         state = fetch_account_state(user, include_hip3=True)
     except Exception as e:
         logger.warning(f"[heartbeat] HL fetch_account_state failed: {e}")
-        return 0.0, [], 0.0, 0.0, {""}
+        return 0.0, [], 0.0, 0.0, {""}, {}
 
     equity = float(state.get("equity", 0) or 0)
-    available = float(state.get("available", 0) or 0)
+    # Heartbeat shows total-across-dexes free margin (what the operator
+    # actually has trade-ready) — not the main-only number used internally
+    # by the executor for native-crypto sizing.
+    available = float(state.get("available_aggregated", state.get("available", 0)) or 0)
     spot_usdc = float(state.get("spot_usdc", 0) or 0)
     positions = state.get("asset_positions", []) or []
     queried_dexes = state.get("queried_dexes") or {""}
@@ -136,13 +138,13 @@ def _sync_account_state():
     memory.track_daily_pnl(equity, contributions)
     memory.update_open_positions(positions)
     memory.flush()
-    return equity, positions, available, spot_usdc, queried_dexes
+    return equity, positions, available, spot_usdc, queried_dexes, state
 
 
 while True:
     try:
         # ── Heartbeat: refresh equity / positions before scanning ──────────
-        equity, positions, available, spot_usdc, queried_dexes = _sync_account_state()
+        equity, positions, available, spot_usdc, queried_dexes, state = _sync_account_state()
         daily_pnl = memory.get_daily_pnl()
         if equity <= 0 and spot_usdc > 0:
             logger.warning(
@@ -153,10 +155,16 @@ while True:
         # open `.agent-config.json`. Read fresh each tick so a hot-reloaded
         # config is reflected in the next heartbeat.
         _cfg = read_agent_config()
+        # Per-dex breakdown so the dashboard can show where USDC + free
+        # margin actually sits (main vs xyz vs km, etc).
+        dex_equity = {k: round(float(v), 2) for k, v in (state.get("dex_equity") or {}).items()}
+        dex_available = {k: round(float(v), 2) for k, v in (state.get("dex_available") or {}).items()}
         log_event({
             "event": "loop_heartbeat",
             "equity": round(equity, 4),
             "available": round(available, 4),
+            "dex_equity": dex_equity,
+            "dex_available": dex_available,
             "spot_usdc": round(spot_usdc, 4),
             "daily_pnl": round(daily_pnl, 4),
             "open_positions": len(positions),

@@ -94,6 +94,29 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "reason": "crypto_disabled (set enable_crypto=true to trade native HL perps)",
         }
 
+    # Structural-override: when the perception is objectively strong
+    # (composite >= 40 AND 2+ slow-burn triggers fired), don't let a hedging
+    # AI PASS leave the setup on the table. Upgrade to LONG conf 0.70 and
+    # let the gates do the real risk check. Slow-burn signals are
+    # accumulation patterns → implied LONG direction; we never force a SHORT.
+    override_composite = float(config.get("force_execute_composite", 40))
+    override_min_slow_burn = int(config.get("force_execute_slow_burn_count", 2))
+    if (analysis.get("verdict") == "PASS"
+            and float(analysis.get("composite_score", 0) or 0) >= override_composite
+            and int(analysis.get("slow_burn_count", 0) or 0) >= override_min_slow_burn):
+        logger.info(
+            f"[executor] Structural override on {analysis['coin']}: "
+            f"AI PASS but composite={analysis.get('composite_score'):.0f} + "
+            f"{analysis.get('slow_burn_count')} slow-burn triggers → upgrading to LONG conf 0.70"
+        )
+        analysis = dict(analysis)
+        analysis["verdict"] = "LONG"
+        analysis["side"] = "long"
+        analysis["confidence"] = max(0.70, float(analysis.get("confidence", 0) or 0))
+        analysis["reasoning"] = (
+            "[structural override] " + (analysis.get("reasoning", "") or "")
+        )[:500]
+
     # Idempotency: don't double-execute
     already = next(
         (t for t in memory.get_recent_trades(100)
@@ -195,11 +218,23 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     tp_px = analysis.get("tp_px")
     stop_px = analysis.get("stop_px")
 
-    # Per-trade size = equity × fraction × leverage. N trades deploys
-    # N × equity_fraction of the account; equity_risk_cap bounds totals.
-    # Leverage is capped per-coin (BOME 3x, ONDO 10x, BTC 40x) — a fixed
-    # value gets rejected on low-max coins.
-    equity_fraction = float(config.get("equity_fraction_per_trade", 0.01))
+    # Per-trade size = equity × fraction × leverage × conviction_multiplier.
+    # The multiplier scales size by AI confidence so high-conviction trades
+    # bet bigger and low-conviction trades bet smaller — same average
+    # exposure across many trades, but asymmetric per-trade. Disabled by
+    # setting "conviction_sizing": false in config.
+    base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
+    if bool(config.get("conviction_sizing", True)):
+        conf = float(analysis.get("confidence", 0) or 0)
+        if conf >= 0.80:
+            conviction_mult = 1.5
+        elif conf >= 0.65:
+            conviction_mult = 1.0
+        else:
+            conviction_mult = 0.7
+    else:
+        conviction_mult = 1.0
+    equity_fraction = base_fraction * conviction_mult
     leverage = min(int(config.get("leverage", HL_LEVERAGE)),
                    get_max_leverage(analysis["coin"]))
     trade_notional = equity * equity_fraction * leverage
@@ -243,6 +278,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         composite_score=float(analysis.get("composite_score", 0) or 0),
         momentum_burst_fired=bool(analysis.get("momentum_burst_fired", False)),
         slow_burn_fired=bool(analysis.get("slow_burn_fired", False)),
+        whale_signal_fired=bool(analysis.get("whale_signal")),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)
