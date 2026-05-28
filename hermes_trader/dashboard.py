@@ -137,14 +137,28 @@ def _summary_payload() -> Dict[str, Any]:
     }
 
 
+_POSITIONS_CACHE: Dict[str, Any] = {"ts": 0.0, "data": []}
+_POSITIONS_CACHE_TTL_S = 5.0  # acceptable staleness for a display endpoint
+
+
 def _positions_payload() -> List[Dict[str, Any]]:
     """Join live HL positions with DSL tracker state for the operator/public view.
 
-    The DSL registry is in the *trading loop's* memory; the web server is a
-    separate process. The loop persists tracker state to disk on every advance,
-    so `load_state()` here gives us the same view (one tick stale at worst).
-    The function is idempotent — repeated calls cost a single JSON parse.
+    Cached for ~5s so repeated dashboard polls don't hammer HL with
+    fetch_account_state(include_hip3=True) — each call is ~9 HTTP POSTs
+    (1 main + 8 HIP-3 dexes) even with the parallel fan-out. Cache TTL
+    is short enough that the position table never feels stuck.
     """
+    now = time.time()
+    if now - _POSITIONS_CACHE["ts"] < _POSITIONS_CACHE_TTL_S:
+        return _POSITIONS_CACHE["data"]
+    data = _positions_payload_uncached()
+    _POSITIONS_CACHE["ts"] = now
+    _POSITIONS_CACHE["data"] = data
+    return data
+
+
+def _positions_payload_uncached() -> List[Dict[str, Any]]:
     dsl_exit.load_state(force=True)
     user = resolve_user_address()
     if not user:
@@ -741,22 +755,32 @@ _PUBLIC_HTML = """<!doctype html>
     <div class="nes-container is-dark is-rounded habitat habitat-nes">
       <section class="habitat-pet-section">
         <div class="habitat-pet">
-          <span class="hamster-body" title="follow the white rabbit">
-            <!-- 16x16 pixel rabbit sprite — hand-rolled because NES.css ships
-                 mario/kirby/bulbasaur but no rabbit. shape-rendering=crispEdges
+          <span class="hamster-body" title="follow the white cat">
+            <!-- 16x16 pixel cat sprite — hand-rolled NES-style. Heterochromia:
+                 left eye blue, right eye green. shape-rendering=crispEdges
                  keeps the pixels sharp at any scale. -->
             <svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
-              <rect x="3" y="0" width="2" height="6" fill="#f5f5f5"/>
-              <rect x="11" y="0" width="2" height="6" fill="#f5f5f5"/>
-              <rect x="4" y="1" width="1" height="3" fill="#fbcfe8"/>
-              <rect x="12" y="1" width="1" height="3" fill="#fbcfe8"/>
-              <rect x="3" y="4" width="10" height="1" fill="#f5f5f5"/>
-              <rect x="2" y="5" width="12" height="8" fill="#f5f5f5"/>
-              <rect x="5" y="8" width="2" height="2" fill="#ef4444"/>
-              <rect x="9" y="8" width="2" height="2" fill="#ef4444"/>
-              <rect x="7" y="11" width="2" height="1" fill="#f472b6"/>
-              <rect x="1" y="10" width="1" height="1" fill="#a3a3a3"/>
-              <rect x="14" y="10" width="1" height="1" fill="#a3a3a3"/>
+              <!-- triangular ears -->
+              <rect x="4" y="1" width="1" height="1" fill="#f5f5f5"/>
+              <rect x="3" y="2" width="3" height="1" fill="#f5f5f5"/>
+              <rect x="2" y="3" width="4" height="1" fill="#f5f5f5"/>
+              <rect x="11" y="1" width="1" height="1" fill="#f5f5f5"/>
+              <rect x="10" y="2" width="3" height="1" fill="#f5f5f5"/>
+              <rect x="10" y="3" width="4" height="1" fill="#f5f5f5"/>
+              <!-- inner pink ear -->
+              <rect x="4" y="3" width="1" height="1" fill="#fbcfe8"/>
+              <rect x="11" y="3" width="1" height="1" fill="#fbcfe8"/>
+              <!-- head + body -->
+              <rect x="2" y="4" width="12" height="9" fill="#f5f5f5"/>
+              <!-- heterochromia eyes: green left, blue right -->
+              <rect x="4" y="7" width="2" height="2" fill="#15803d"/>
+              <rect x="10" y="7" width="2" height="2" fill="#3b82f6"/>
+              <!-- pink nose -->
+              <rect x="7" y="10" width="2" height="1" fill="#f472b6"/>
+              <!-- whiskers -->
+              <rect x="0" y="10" width="2" height="1" fill="#a3a3a3"/>
+              <rect x="14" y="10" width="2" height="1" fill="#a3a3a3"/>
+              <!-- paws -->
               <rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/>
               <rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/>
             </svg>
@@ -949,10 +973,10 @@ function triggerHamsterReaction(eventType, pnlPct) {
 }
 
 // ── KPIs ──
-// 8-bit pixel sprites used for the always-visible rabbit + the worried mood
-// (😰 replacement). Other PnL faces still use modern emoji — say the word and
-// I'll pixelize the whole set. shape-rendering=crispEdges keeps lines sharp.
-const SPRITE_RABBIT = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="0" width="2" height="6" fill="#f5f5f5"/><rect x="11" y="0" width="2" height="6" fill="#f5f5f5"/><rect x="4" y="1" width="1" height="3" fill="#fbcfe8"/><rect x="12" y="1" width="1" height="3" fill="#fbcfe8"/><rect x="3" y="4" width="10" height="1" fill="#f5f5f5"/><rect x="2" y="5" width="12" height="8" fill="#f5f5f5"/><rect x="5" y="8" width="2" height="2" fill="#ef4444"/><rect x="9" y="8" width="2" height="2" fill="#ef4444"/><rect x="7" y="11" width="2" height="1" fill="#f472b6"/><rect x="1" y="10" width="1" height="1" fill="#a3a3a3"/><rect x="14" y="10" width="1" height="1" fill="#a3a3a3"/><rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/><rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/></svg>`;
+// 8-bit pixel sprites: the always-visible white cat (heterochromia — green
+// left eye, blue right eye) + a worried-mood face. Other PnL faces still
+// use modern emoji. shape-rendering=crispEdges keeps the pixels sharp.
+const SPRITE_RABBIT = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="1" width="1" height="1" fill="#f5f5f5"/><rect x="3" y="2" width="3" height="1" fill="#f5f5f5"/><rect x="2" y="3" width="4" height="1" fill="#f5f5f5"/><rect x="11" y="1" width="1" height="1" fill="#f5f5f5"/><rect x="10" y="2" width="3" height="1" fill="#f5f5f5"/><rect x="10" y="3" width="4" height="1" fill="#f5f5f5"/><rect x="4" y="3" width="1" height="1" fill="#fbcfe8"/><rect x="11" y="3" width="1" height="1" fill="#fbcfe8"/><rect x="2" y="4" width="12" height="9" fill="#f5f5f5"/><rect x="4" y="7" width="2" height="2" fill="#15803d"/><rect x="10" y="7" width="2" height="2" fill="#3b82f6"/><rect x="7" y="10" width="2" height="1" fill="#f472b6"/><rect x="0" y="10" width="2" height="1" fill="#a3a3a3"/><rect x="14" y="10" width="2" height="1" fill="#a3a3a3"/><rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/><rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/></svg>`;
 const SPRITE_WORRIED = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="2" width="8" height="1" fill="#fde047"/><rect x="3" y="3" width="10" height="1" fill="#fde047"/><rect x="2" y="4" width="12" height="8" fill="#fde047"/><rect x="3" y="12" width="10" height="1" fill="#fde047"/><rect x="4" y="13" width="8" height="1" fill="#fde047"/><rect x="4" y="6" width="1" height="1" fill="#000"/><rect x="5" y="5" width="2" height="1" fill="#000"/><rect x="9" y="5" width="2" height="1" fill="#000"/><rect x="11" y="6" width="1" height="1" fill="#000"/><rect x="5" y="11" width="6" height="1" fill="#000"/><rect x="4" y="10" width="1" height="1" fill="#000"/><rect x="11" y="10" width="1" height="1" fill="#000"/><rect x="13" y="3" width="1" height="1" fill="#60a5fa"/><rect x="12" y="4" width="1" height="2" fill="#60a5fa"/><rect x="13" y="4" width="1" height="2" fill="#7dd3fc"/><rect x="13" y="6" width="1" height="1" fill="#60a5fa"/></svg>`;
 
 // Agent-pet mood: status sets the base, then PnL nudges it. Big winners → 🤑,

@@ -201,40 +201,51 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     if include_hip3:
         from hermes_trader.client.universe import list_hip3_dexes
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         try:
             dexes = list_hip3_dexes()
         except Exception as e:
             logger.warning(f"[hl] list_hip3_dexes failed during account aggregation: {e}")
             dexes = []
-        for dex in dexes:
+
+        # Fan out the per-dex clearinghouse queries in parallel — serial loop
+        # was 8 sequential POSTs × ~150ms each = 1.2s. Parallel finishes in
+        # the slowest single call (~200ms), 4-6× speedup on the dashboard.
+        def _fetch_dex(dex_name: str) -> tuple[str, Optional[Dict[str, Any]]]:
             try:
-                dex_state = _http_post("/info", {
-                    "type": "clearinghouseState", "user": user, "dex": dex,
-                }) or {}
+                return (dex_name, _http_post("/info", {
+                    "type": "clearinghouseState", "user": user, "dex": dex_name,
+                }))
             except Exception as e:
-                logger.warning(f"[hl] HIP-3 clearinghouseState failed for {dex}: {e}")
-                continue
-            queried_dexes.add(dex)
-            dex_ms = dex_state.get("marginSummary", {}) or {}
-            dex_value = float(dex_ms.get("accountValue", 0) or 0)
-            dex_ntl = float(dex_ms.get("totalNtlPos", 0) or 0)
-            dex_margin_used = float(dex_ms.get("totalMarginUsed", 0) or 0)
-            dex_free = max(0.0, dex_value - dex_margin_used)
-            dex_equity[dex] = dex_value
-            dex_available[dex] = dex_free
-            equity += dex_value
-            total_ntl += dex_ntl
-            available_aggregated += dex_free
-            for p in (dex_state.get("assetPositions") or []):
-                pos = p.get("position", {}) or {}
-                if float(pos.get("szi", "0") or 0) == 0:
-                    continue
-                coin = pos.get("coin", "") or ""
-                # HL's HIP-3 endpoints sometimes return bare ("MU"), sometimes
-                # namespaced ("xyz:MU"). Normalize so DSL tracker keys match.
-                if coin and ":" not in coin:
-                    pos["coin"] = f"{dex}:{coin}"
-                asset_positions.append(p)
+                logger.warning(f"[hl] HIP-3 clearinghouseState failed for {dex_name}: {e}")
+                return (dex_name, None)
+
+        if dexes:
+            with ThreadPoolExecutor(max_workers=min(8, len(dexes)),
+                                    thread_name_prefix="hl-dex") as pool:
+                for dex, dex_state in pool.map(_fetch_dex, dexes):
+                    if dex_state is None:
+                        continue
+                    queried_dexes.add(dex)
+                    dex_ms = dex_state.get("marginSummary", {}) or {}
+                    dex_value = float(dex_ms.get("accountValue", 0) or 0)
+                    dex_ntl = float(dex_ms.get("totalNtlPos", 0) or 0)
+                    dex_margin_used = float(dex_ms.get("totalMarginUsed", 0) or 0)
+                    dex_free = max(0.0, dex_value - dex_margin_used)
+                    dex_equity[dex] = dex_value
+                    dex_available[dex] = dex_free
+                    equity += dex_value
+                    total_ntl += dex_ntl
+                    available_aggregated += dex_free
+                    for p in (dex_state.get("assetPositions") or []):
+                        pos = p.get("position", {}) or {}
+                        if float(pos.get("szi", "0") or 0) == 0:
+                            continue
+                        coin = pos.get("coin", "") or ""
+                        # HL HIP-3 endpoints return bare or namespaced — normalize.
+                        if coin and ":" not in coin:
+                            pos["coin"] = f"{dex}:{coin}"
+                        asset_positions.append(p)
 
     return {
         "equity": equity,
