@@ -1578,3 +1578,631 @@ def test_route_verdict_lowercase_verdict_normalized():
     r = route_verdict({"verdict": "close", "coin": "X"},
                       execute_fn=lambda a: None, close_fn=lambda c: {"ok": True})
     assert r["action"] == "close"
+
+
+# ── Coverage: executor.maybe_execute branch matrix ──────────────────────
+def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
+    """Patch executor's I/O surface with sane defaults; return (executor, captured).
+    `captured` records the size/side passed to place_hl_order on the success path."""
+    from hermes_trader.agents import executor
+    cfg = {
+        "mode": "LIVE", "enable_crypto": True, "enable_hip3": True,
+        "equity_fraction_per_trade": 0.10, "leverage": 10,
+        "max_trade_notional_usd": 100000, "max_concurrent": 18,
+        "max_total_notional_pct": 40.0, "max_daily_loss_usd": -1000,
+        "min_available_margin_pct": 0.10, "cooldown_min": 60,
+        "min_ai_confidence": 0.30, "counter_regime_min_conf": 0.65,
+        "max_crypto_long_correlated": 5, "min_market_volume_usd": 5_000_000,
+        "min_hip3_volume_usd": 500_000, "conviction_sizing": True,
+        "dsl_exit": {"max_loss_pct": 2.0, "max_loss_roe_pct": 30.0,
+                     "protect_pct": 0.5, "retrace_threshold": 0.3,
+                     "hard_timeout_minutes": 180.0},
+    }
+    cfg.update(cfg_overrides or {})
+    state = {"equity": 1000.0, "available": 500.0, "total_ntl": 0.0,
+             "asset_positions": []}
+    state.update(state_overrides or {})
+    captured = {}
+
+    monkeypatch.setattr(executor, "read_agent_config", lambda: cfg)
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xMASTER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: state)
+    monkeypatch.setattr(executor, "get_hl_price", lambda c: 100.0)
+    monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 2.0)
+    monkeypatch.setattr(executor, "get_max_leverage", lambda c: 40)
+    monkeypatch.setattr(executor, "set_leverage", lambda c, l: {"ok": True})
+    monkeypatch.setattr(executor, "place_hl_trigger_order", lambda *a, **k: {"ok": True})
+    # _http_post is imported locally inside maybe_execute (hip3 preflight) —
+    # patch at the source module, not on executor.
+    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+                        lambda p, pl: {"marginSummary": {"accountValue": "500"}})
+    monkeypatch.setattr("hermes_trader.agents.market_regime.detect_regime", lambda c: "neutral")
+    monkeypatch.setattr("hermes_trader.agents.hyperfeed.market_get_funding_regime",
+                        lambda: {"regime": "NEUTRAL", "regimes_by_class": {}})
+    def _place(is_buy, size, mid, coin):
+        captured["is_buy"] = is_buy; captured["size"] = size; captured["coin"] = coin
+        return {"ok": True, "order_id": "OID1", "avg_px": mid}
+    monkeypatch.setattr(executor, "place_hl_order", _place)
+    monkeypatch.setattr(executor, "register_position", lambda *a, **k: None)
+    monkeypatch.setattr(executor.memory, "track_daily_pnl", lambda *a, **k: None)
+    monkeypatch.setattr(executor.memory, "get_daily_pnl", lambda: 0.0)
+    monkeypatch.setattr(executor.memory, "get_recent_trades", lambda n=10: [])
+    monkeypatch.setattr(executor.memory, "record_trade", lambda t: None)
+    monkeypatch.setenv("HYPERLIQUID_PRIVATE_KEY", "0xabc")
+    return executor, captured, cfg
+
+
+def _analysis(**kw):
+    base = {"id": "a1", "coin": "BTC", "verdict": "LONG", "side": "long",
+            "confidence": 0.70, "composite_score": 30, "entry_px": 100,
+            "stop_px": 95, "tp_px": 110, "news_context": "no news"}
+    base.update(kw)
+    return base
+
+
+def test_maybe_execute_mode_off(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch, {"mode": "OFF"})
+    r = ex.maybe_execute(_analysis())
+    assert r["executed"] is False and r["reason"] == "mode_off"
+
+
+def test_maybe_execute_hip3_disabled(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch, {"enable_hip3": False})
+    r = ex.maybe_execute(_analysis(coin="xyz:MU"))
+    assert r["executed"] is False and "hip3_disabled" in r["reason"]
+
+
+def test_maybe_execute_crypto_disabled(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch, {"enable_crypto": False})
+    r = ex.maybe_execute(_analysis(coin="BTC"))
+    assert r["executed"] is False and "crypto_disabled" in r["reason"]
+
+
+def test_maybe_execute_equity_unavailable(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch, state_overrides={"equity": 0.0})
+    r = ex.maybe_execute(_analysis())
+    assert r["executed"] is False and "equity_unavailable" in r["reason"]
+
+
+def test_maybe_execute_insufficient_free_margin(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch, state_overrides={"equity": 1000.0, "available": 50.0})
+    r = ex.maybe_execute(_analysis())
+    assert r["executed"] is False and "insufficient_free_margin" in r["reason"]
+
+
+def test_maybe_execute_hip3_underfunded(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch)
+    # dex check returns near-zero accountValue (patch the source module)
+    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+                        lambda p, pl: {"marginSummary": {"accountValue": "0.0"}})
+    r = ex.maybe_execute(_analysis(coin="xyz:MU"))
+    assert r["executed"] is False and "hip3_dex_underfunded" in r["reason"]
+
+
+def test_maybe_execute_success_path(monkeypatch):
+    ex, captured, _ = _exec_baseline(monkeypatch)
+    r = ex.maybe_execute(_analysis())
+    assert r["executed"] is True, r
+    assert r["order_id"] == "OID1"
+    assert captured["is_buy"] is True
+    # notional = equity 1000 × frac 0.10 × lev 10 × conviction(0.70→1.0) = 1000; /mid 100 = 10 coins
+    assert abs(captured["size"] - 10.0) < 1e-6
+
+
+def test_maybe_execute_order_failed(monkeypatch):
+    ex, _, _ = _exec_baseline(monkeypatch)
+    monkeypatch.setattr(ex, "place_hl_order",
+                        lambda b, s, m, c: {"ok": False, "error": "no match"})
+    r = ex.maybe_execute(_analysis())
+    assert r["executed"] is False and "order_failed" in r["reason"]
+
+
+def test_maybe_execute_conviction_sizing_high_conf(monkeypatch):
+    """conf >= 0.80 → 1.5× size."""
+    ex, captured, _ = _exec_baseline(monkeypatch)
+    ex.maybe_execute(_analysis(confidence=0.85))
+    # 1000 × 0.10 × 10 × 1.5 / 100 = 15 coins
+    assert abs(captured["size"] - 15.0) < 1e-6
+
+
+def test_maybe_execute_whale_boosts_size(monkeypatch):
+    """Whale signal multiplies sizing by 1.3 on top of the conf tier."""
+    ex, captured, _ = _exec_baseline(monkeypatch)
+    ex.maybe_execute(_analysis(confidence=0.70, whale_signal={"confidence": 0.5}))
+    # 1000 × 0.10 × 10 × (1.0 × 1.3) / 100 = 13 coins
+    assert abs(captured["size"] - 13.0) < 1e-6
+
+
+# ── Coverage: whale_index signal heuristics ─────────────────────────────
+def test_smart_money_concentration_accumulation_signal(monkeypatch):
+    """oi>0 + negative funding → 'accumulation'; confidence scales w/ |funding|."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+        {"coin": "BTC", "type": "perp", "openInterest": 5e7,
+         "dayNtlVlm": 1e9, "funding": -0.0002, "midPx": 60000},
+    ])
+    out = whale_index.smart_money_concentration()
+    acc = [s for s in out if s["signal"] == "accumulation"]
+    assert acc and acc[0]["coin"] == "BTC"
+    assert acc[0]["confidence"] == 1.0  # |−0.0002| / 0.0001 capped at 1.0
+
+
+def test_smart_money_concentration_volume_floor_filters(monkeypatch):
+    """Markets under min_volume_usd are skipped entirely."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+        {"coin": "TINY", "type": "perp", "openInterest": 5e7,
+         "dayNtlVlm": 100.0, "funding": -0.0002, "midPx": 1},
+    ])
+    assert whale_index.smart_money_concentration(min_volume_usd=1e6) == []
+
+
+def test_smart_money_concentration_high_oi_branch(monkeypatch):
+    """OI > 10× daily-volume-in-millions → 'high_oi_concentration'."""
+    from hermes_trader.agents import whale_index
+    # vol = $2M (→ 2.0 in millions), oi = 30 → ratio 15 > 10.
+    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+        {"coin": "ETH", "type": "perp", "openInterest": 30,
+         "dayNtlVlm": 2e6, "funding": 0.0001, "midPx": 3000},
+    ])
+    out = whale_index.smart_money_concentration()
+    sigs = {s["signal"] for s in out}
+    assert "high_oi_concentration" in sigs
+
+
+def test_get_whale_signals_merges_by_coin(monkeypatch):
+    """Concentration + anomaly signals for the same coin collapse into one
+    entry whose max_confidence is the higher of the two."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "smart_money_concentration",
+                        lambda **k: [{"coin": "SOL", "confidence": 0.3}])
+    monkeypatch.setattr(whale_index, "oi_funding_anomaly",
+                        lambda **k: [{"coin": "SOL", "confidence": 0.8}])
+    out = whale_index.get_whale_signals(min_confidence=0.1)
+    assert len(out) == 1
+    assert out[0]["coin"] == "SOL"
+    assert out[0]["max_confidence"] == 0.8
+    assert len(out[0]["signals"]) == 2
+
+
+def test_get_whale_signals_filters_below_min_conf(monkeypatch):
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "smart_money_concentration",
+                        lambda **k: [{"coin": "LOW", "confidence": 0.05}])
+    monkeypatch.setattr(whale_index, "oi_funding_anomaly", lambda **k: [])
+    assert whale_index.get_whale_signals(min_confidence=0.1) == []
+
+
+def test_whale_accumulation_map_keys_by_coin(monkeypatch):
+    """whale_accumulation_map → {coin: signal} for anomalies above min_conf."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "oi_funding_anomaly", lambda: [
+        {"coin": "ARB", "confidence": 0.9},
+        {"coin": "OP", "confidence": 0.01},  # below floor
+    ])
+    m = whale_index.whale_accumulation_map(min_confidence=0.05)
+    assert set(m) == {"ARB"}
+    assert m["ARB"]["confidence"] == 0.9
+
+
+def test_oi_funding_anomaly_requires_flat_price(monkeypatch):
+    """A 24h move ≥10% disqualifies the accumulation signal even with deep
+    negative funding + high OI."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+        {"coin": "PUMP", "type": "perp", "openInterest": 5e7,
+         "funding": -0.0006, "midPx": 130, "prevDayPx": 100},  # +30%
+        {"coin": "FLAT", "type": "perp", "openInterest": 5e7,
+         "funding": -0.0006, "midPx": 101, "prevDayPx": 100},  # +1%
+    ])
+    out = whale_index.oi_funding_anomaly()
+    coins = {s["coin"] for s in out}
+    assert coins == {"FLAT"}
+
+
+def test_leaderboard_get_top_reads_registry(monkeypatch):
+    """leaderboard_get_top builds entries from WHALE_WALLETS via _http_post."""
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "WHALE_WALLETS",
+                        {"0xABC": {"name": "alpha"}})
+    monkeypatch.setattr(whale_index, "_http_post", lambda path, body: {
+        "marginSummary": {"accountValue": "10000"},
+        "assetPositions": [
+            {"position": {"coin": "BTC", "szi": "1.5", "entryPx": "60000",
+                          "leverage": {"value": "10"}}},
+            {"position": {"coin": "ETH", "szi": "0"}},  # filtered out
+        ],
+    })
+    out = whale_index.leaderboard_get_top()
+    assert len(out) == 1
+    assert out[0]["account_value"] == 10000.0
+    assert [p["coin"] for p in out[0]["positions"]] == ["BTC"]
+
+
+def test_get_trader_state_returns_none_without_perp(monkeypatch):
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "_fetch_clearinghouse", lambda u: None)
+    monkeypatch.setattr(whale_index, "_fetch_user_fills", lambda u, limit=20: [])
+    assert whale_index.get_trader_state("0xABC") is None
+
+
+def test_get_trader_state_merges_positions_and_fills(monkeypatch):
+    from hermes_trader.agents import whale_index
+    monkeypatch.setattr(whale_index, "_fetch_clearinghouse", lambda u: {
+        "marginSummary": {"accountValue": "5000", "totalNtlPos": "12000"},
+        "assetPositions": [
+            {"position": {"coin": "SOL", "szi": "-20", "entryPx": "150",
+                          "leverage": {"value": "5"}, "unrealizedPnl": "-30"}},
+        ],
+    })
+    monkeypatch.setattr(whale_index, "_fetch_user_fills", lambda u, limit=20: [
+        {"coin": "SOL", "side": "A", "px": "150", "sz": "20", "fee": "0.1", "time": 1},
+    ])
+    st = whale_index.get_trader_state("0xABC")
+    assert st["account_value"] == 5000.0
+    assert st["positions"][0]["side"] == "short"
+    assert len(st["recent_trades"]) == 1
+
+
+# ── Coverage: hyperfeed market-data lookups ─────────────────────────────
+def test_hyperfeed_safe_float_default():
+    from hermes_trader.agents.hyperfeed import _safe_float
+    assert _safe_float("not-a-number", 7.0) == 7.0
+    assert _safe_float(None) == 0.0
+    assert _safe_float("3.5") == 3.5
+
+
+def test_leaderboard_get_markets_ranks_by_volume(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
+        {"coin": "SMALL", "type": "perp", "dayNtlVlm": 1e6, "openInterest": 1},
+        {"coin": "BIG", "type": "perp", "dayNtlVlm": 1e9, "openInterest": 9},
+        {"coin": "@SPOT", "type": "spot", "dayNtlVlm": 1e12},  # excluded
+    ])
+    out = hyperfeed.leaderboard_get_markets()["markets"]
+    assert [m["asset"] for m in out] == ["BIG", "SMALL"]
+    assert out[0]["rank"] == 1
+
+
+def test_leaderboard_get_trader_positions_unwraps_and_coerces(monkeypatch):
+    """Nested position unwrap, string-leverage coercion, szi==0 skip."""
+    from hermes_trader.agents import hyperfeed
+    monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: {
+        "assetPositions": [
+            {"position": {"coin": "BTC", "szi": "2.0", "entryPx": "60000",
+                          "leverage": "10", "unrealizedPnl": "500"}},
+            {"position": {"coin": "ETH", "szi": "0"}},  # skipped
+        ],
+    })
+    out = hyperfeed.leaderboard_get_trader_positions("0xABC")["positions"]
+    assert len(out) == 1
+    assert out[0]["side"] == "long"
+    assert out[0]["leverage"] == {"value": "10"}  # str coerced to obj
+
+
+def test_leaderboard_get_trader_positions_empty_when_no_state(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: None)
+    assert hyperfeed.leaderboard_get_trader_positions("0xABC") == {"positions": []}
+
+
+def test_market_get_asset_data_collects_candles_and_context(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    fake_candles = [Candle(t=1, o=1, h=2, l=0.5, c=1.5, v=100)]
+    monkeypatch.setattr(hyperfeed, "fetch_hl_candles",
+                        lambda asset, interval, n: fake_candles)
+    monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
+        {"coin": "BTC", "funding": -0.0001, "openInterest": 5e7,
+         "prevDayPx": 59000, "midPx": 60000, "dayNtlVlm": 1e9},
+    ])
+    out = hyperfeed.market_get_asset_data("BTC", intervals=["1h"])["data"]
+    assert out["asset"] == "BTC"
+    assert len(out["candles"]["1h"]) == 1
+    assert out["funding_rate"] == -0.0001
+    assert out["mid_px"] == 60000
+
+
+def test_market_get_asset_data_candle_error_yields_empty(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    def boom(asset, interval, n):
+        raise RuntimeError("rate limited")
+    monkeypatch.setattr(hyperfeed, "fetch_hl_candles", boom)
+    monkeypatch.setattr(hyperfeed, "get_universe", lambda: [])
+    out = hyperfeed.market_get_asset_data("BTC", intervals=["5m"])["data"]
+    assert out["candles"]["5m"] == []
+
+
+def test_market_list_instruments_counts_and_strips(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
+        {"coin": "BTC", "type": "perp", "maxLeverage": 40},
+        {"coin": "@107", "type": "spot", "maxLeverage": 0},
+    ])
+    out = hyperfeed.market_list_instruments()
+    assert out["counts"] == {"perps": 1, "spot": 1, "total": 2}
+    symbols = {i["symbol"] for i in out["instruments"]}
+    assert "107" in symbols  # @ stripped
+
+
+def test_market_get_mids_passthrough(monkeypatch):
+    from hermes_trader.agents import hyperfeed
+    monkeypatch.setattr(hyperfeed, "fetch_all_mids", lambda: {"BTC": "60000"})
+    assert hyperfeed.market_get_mids() == {"BTC": "60000"}
+
+
+def test_compute_funding_regime_long_crowded_margin(monkeypatch):
+    """A class needs a >5 long-over-short margin to be LONG_CROWDED."""
+    from hermes_trader.agents import hyperfeed
+    # 7 crypto longs (funding>0, oi high), 0 shorts → margin 7 > 5.
+    universe = [
+        {"coin": c, "funding": 0.0002, "openInterest": 5e7, "dayNtlVlm": 1e8}
+        for c in ("BTC", "ETH", "SOL", "DOGE", "AVAX", "XRP", "LINK")
+    ]
+    monkeypatch.setattr(hyperfeed, "get_universe",
+                        lambda *, include_hip3=False, **k: universe)
+    out = hyperfeed._compute_funding_regime()
+    assert out["regimes_by_class"]["crypto"] == "LONG_CROWDED"
+    assert out["regime"] == "LONG_CROWDED"
+
+
+def test_discovery_get_trader_state_win_rate_is_percentage(monkeypatch):
+    """win_rate is a 0-100 percentage; positions unwrapped; ROI computed."""
+    from hermes_trader.agents import hyperfeed
+    calls = {"clearinghouse": {
+        "marginSummary": {"accountValue": "8000", "totalNtlPos": "4000"},
+        "assetPositions": [
+            {"position": {"coin": "BTC", "szi": "1", "entryPx": "60000",
+                          "unrealizedPnl": "100", "leverage": {"value": "5"}}},
+        ],
+    }}
+    def fake_post(path, body):
+        if body["type"] == "clearinghouseState":
+            return calls["clearinghouse"]
+        if body["type"] == "userFills":
+            return [{"closedPnl": "5"}, {"closedPnl": "-2"}, {"closedPnl": "3"}]
+        return {}
+    monkeypatch.setattr(hyperfeed, "_http_post", fake_post)
+    out = hyperfeed.discovery_get_trader_state(["0xABC"])["data"]["traders"]
+    assert len(out) == 1
+    t = out[0]
+    assert t["total_trades"] == 3
+    assert abs(t["win_rate"] - (2 / 3 * 100)) < 1e-6  # 2 of 3 winners
+    assert t["open_positions"] == 1
+
+
+# ── Coverage: research indicator + prompt-builder helpers ───────────────
+def test_compute_indicators_empty_returns_nulls():
+    from hermes_trader.agents.research import _compute_indicators
+    out = _compute_indicators([])
+    assert out["ema8"] is None and out["last_close"] == 0
+
+
+def test_compute_indicators_thin_history_partial():
+    """<21 candles → indicators None but last_close/last_time populated."""
+    from hermes_trader.agents.research import _compute_indicators
+    candles = [Candle(t=i, o=10, h=11, l=9, c=10 + i, v=100) for i in range(5)]
+    out = _compute_indicators(candles)
+    assert out["ema8"] is None
+    assert out["last_close"] == 14  # 10 + 4
+    assert out["last_time"] == 4
+
+
+def test_compute_indicators_full_history_computes_emas():
+    """≥21 candles → EMA/RSI/ATR/ADX numeric, slope detected on rising series."""
+    from hermes_trader.agents.research import _compute_indicators
+    candles = [Candle(t=i, o=100 + i, h=101 + i, l=99 + i, c=100 + i, v=1000)
+               for i in range(40)]
+    out = _compute_indicators(candles)
+    assert out["ema8"] is not None and out["ema21"] is not None
+    assert out["ema8"] > out["ema21"]  # rising series → fast above slow
+    assert out["slope_up"] is True
+    assert out["last_close"] == 139
+
+
+def test_fetch_funding_rate_formats_percent(monkeypatch):
+    from hermes_trader.agents import research
+    monkeypatch.setattr(research, "fetch_funding_history",
+                        lambda coin, start: [{"fundingRate": "0.0001"}])
+    assert research._fetch_funding_rate("BTC") == "0.0100%/hr"
+
+
+def test_fetch_funding_rate_na_when_empty(monkeypatch):
+    from hermes_trader.agents import research
+    monkeypatch.setattr(research, "fetch_funding_history", lambda coin, start: [])
+    assert research._fetch_funding_rate("BTC") == "N/A"
+
+
+def test_build_user_message_includes_whale_and_structure_blocks():
+    from hermes_trader.agents.research import _build_user_message
+    perception = {
+        "type": "perp", "mid": 0.000173, "composite_score": 62,
+        "triggers": [
+            {"name": "higherLows1h", "reason": "3 HL", "fired": True},
+        ],
+        "whale_signal": {"funding_rate": -0.0006, "price_24h_change_pct": 1.2,
+                         "oi": 5e7, "confidence": 0.8},
+    }
+    snap = {"ema8": None, "ema21": None, "last_close": 0.000173}
+    msg = _build_user_message(
+        "HMSTR", perception, snap, snap, snap, "0.01%/hr", "no news",
+        250.0, [], "LIVE",
+    )
+    assert "Whale accumulation flag (oi_funding_anomaly)" in msg
+    assert "1h structure signals (accumulation" in msg
+    # sub-cent mid must NOT collapse to 0.0002 — adaptive precision keeps it.
+    assert "0.000173" in msg and "0.0002" not in msg
+
+
+def test_build_user_message_hip3_surfaces_target_dex_equity():
+    from hermes_trader.agents.research import _build_user_message
+    perception = {"type": "perp", "mid": 100, "composite_score": 10, "triggers": []}
+    snap = {"last_close": 100}
+    msg = _build_user_message(
+        "xyz:MU", perception, snap, snap, snap, "N/A", "no news",
+        300.0, [], "LIVE",
+        dex_equity={"": 96.0, "xyz": 114.0},
+    )
+    assert "dex 'xyz' which holds $114.00" in msg
+    assert "HIP-3 dex equity: xyz=$114.00" in msg
+
+
+def test_parse_verdict_regex_fallback_midtext():
+    """JSON not on the last line is recovered by the regex fallback."""
+    from hermes_trader.agents.research import parse_verdict
+    txt = ('reasoning here\n{"verdict":"LONG","confidence":0.7,"side":"long"}\n'
+           'some trailing commentary')
+    v = parse_verdict(txt, "BTC", {"mid": 50})
+    assert v["verdict"] == "LONG" and v["side"] == "long"
+
+
+def test_parse_verdict_malformed_json_uses_first_line_keyword():
+    """Unparseable JSON falls back to a keyword scan of the first line."""
+    from hermes_trader.agents.research import parse_verdict
+    txt = 'SHORT setup forming\n{"verdict": broken json,,}'
+    v = parse_verdict(txt, "ETH", {"mid": 10})
+    assert v["verdict"] == "SHORT" and v["side"] == "short"
+
+
+# ── Coverage: dashboard payload helpers ─────────────────────────────────
+def test_ttl_cached_serves_then_refetches(monkeypatch):
+    from hermes_trader import dashboard
+    calls = {"n": 0}
+    def fn():
+        calls["n"] += 1
+        return calls["n"]
+    t = [1000.0]
+    monkeypatch.setattr(dashboard.time, "time", lambda: t[0])
+    dashboard._TTL_CACHE.pop("k", None)
+    assert dashboard._ttl_cached("k", 5.0, fn) == 1
+    assert dashboard._ttl_cached("k", 5.0, fn) == 1  # cache hit
+    t[0] += 6.0
+    assert dashboard._ttl_cached("k", 5.0, fn) == 2  # expired → refetch
+    assert calls["n"] == 2
+
+
+def test_last_event_returns_newest_match():
+    from hermes_trader.dashboard import _last_event
+    events = [
+        {"event": "scan", "id": 1},
+        {"event": "execute", "id": 2},
+        {"event": "scan", "id": 3},
+    ]
+    assert _last_event(events, "scan")["id"] == 3
+    assert _last_event(events, "nope") is None
+
+
+def test_closed_trades_payload_dsl_realized_fill(monkeypatch):
+    """A dsl_exit with realized fill data reports the exact PnL, newest-first."""
+    from hermes_trader import dashboard
+    events = [
+        {"event": "execute", "coin": "BTC", "side": "long", "ts": 1},
+        {"event": "dsl_exit", "coin": "BTC", "ts": 2, "leverage": 10,
+         "realized_pnl_pct": 8.0, "realized_spot_pct": 0.8, "reason": "trail"},
+    ]
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    out = dashboard._closed_trades_payload()
+    assert len(out) == 1
+    row = out[0]
+    assert row["coin"] == "BTC" and row["side"] == "long"
+    assert row["pnl_source"] == "fill"
+    assert row["pnl_pct"] == 8.0
+    assert row["leverage_estimated"] is False
+
+
+def test_closed_trades_payload_estimates_leverage_and_side(monkeypatch):
+    """Old dsl_exit lacking side/leverage walks back to the execute event for
+    side and estimates leverage from config × HL cap."""
+    from hermes_trader import dashboard
+    events = [
+        {"event": "execute", "coin": "ETH", "side": "short", "ts": 1},
+        {"event": "dsl_exit", "coin": "ETH", "ts": 2,
+         "unrealized_pct": -1.0, "reason": "stop"},
+    ]
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    monkeypatch.setattr(dashboard, "read_agent_config", lambda: {"leverage": 20})
+    monkeypatch.setattr(dashboard, "_load_max_lev_table", lambda: {"ETH": 25})
+    out = dashboard._closed_trades_payload()
+    row = out[0]
+    assert row["side"] == "short"
+    assert row["leverage"] == 20  # min(cfg 20, HL cap 25)
+    assert row["leverage_estimated"] is True
+    assert row["pnl_source"] == "estimated"
+
+
+def test_closed_trades_payload_respects_limit(monkeypatch):
+    from hermes_trader import dashboard
+    events = []
+    for i in range(5):
+        events.append({"event": "execute", "coin": "BTC", "side": "long", "ts": i})
+        events.append({"event": "dsl_exit", "coin": "BTC", "ts": i + 100,
+                       "leverage": 5, "realized_pnl_pct": 1.0, "realized_spot_pct": 0.2})
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    assert len(dashboard._closed_trades_payload(limit=3)) == 3
+
+
+def test_summary_payload_offline_when_no_heartbeat(monkeypatch):
+    from hermes_trader import dashboard
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: [])
+    out = dashboard._summary_payload()
+    assert out["status"] == "offline"
+    assert out["equity"] == 0.0
+
+
+def test_summary_payload_scanning_and_pnl_pct(monkeypatch):
+    """Recent heartbeat → 'scanning'; daily_pnl_pct = pnl / (equity − pnl)."""
+    from hermes_trader import dashboard
+    now_ms = int(dashboard.time.time() * 1000)
+    events = [
+        {"event": "loop_heartbeat", "ts": now_ms, "equity": 260.0,
+         "daily_pnl": 10.0, "available": 50.0, "open_positions": 3},
+        {"event": "scan", "ts": now_ms, "triggers": 7},
+    ]
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    out = dashboard._summary_payload()
+    assert out["status"] == "scanning"
+    assert out["daily_pnl"] == 10.0
+    # sod = 260 − 10 = 250 → 10/250 = 4.0%
+    assert out["daily_pnl_pct"] == 4.0
+    assert out["open_positions"] == 3
+    assert out["last_scan_triggers"] == 7
+
+
+def test_summary_payload_stale_when_heartbeat_old(monkeypatch):
+    from hermes_trader import dashboard
+    old_ms = int(dashboard.time.time() * 1000) - 600_000  # 10 min ago
+    events = [{"event": "loop_heartbeat", "ts": old_ms, "equity": 100.0,
+               "daily_pnl": 0.0}]
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    assert dashboard._summary_payload()["status"] == "stale"
+
+
+def test_equity_curve_payload_filters_by_range_and_zero(monkeypatch):
+    from hermes_trader import dashboard
+    now_ms = int(dashboard.time.time() * 1000)
+    events = [
+        {"event": "loop_heartbeat", "ts": now_ms - 7200_000, "equity": 200.0},  # 2h old
+        {"event": "loop_heartbeat", "ts": now_ms - 60_000, "equity": 240.0},    # recent
+        {"event": "loop_heartbeat", "ts": now_ms, "equity": 0.0},               # zero-skip
+        {"event": "scan", "ts": now_ms, "equity": 999.0},                       # wrong event
+    ]
+    monkeypatch.setattr(dashboard, "_read_log_lines", lambda: events)
+    out = dashboard._equity_curve_payload(range_s=3600)  # last hour only
+    assert [p["equity"] for p in out] == [240.0]
+
+
+def test_build_user_message_indicator_block_full_snap():
+    """A full indicator snapshot renders the bullish/bearish + RSI/ATR/ADX line."""
+    from hermes_trader.agents.research import _build_user_message
+    perception = {"type": "perp", "mid": 100, "composite_score": 50, "triggers": []}
+    full = {"ema8": 105.0, "ema21": 100.0, "slope_up": True,
+            "rsi14": 62.5, "atr14": 3.2, "adx14": 28.0, "last_close": 104.0}
+    msg = _build_user_message(
+        "BTC", perception, full, full, full, "0.01%/hr", "no news",
+        500.0, [{"coin": "ETH", "side": "long", "size_usd": 120}], "OFF",
+    )
+    assert "bullish" in msg
+    assert "RSI(14)=62.5" in msg
+    assert "ADX(14)=28.0" in msg
+    assert "EMA8 slope: rising" in msg
+    assert "Open positions: ETH long $120" in msg
+    assert "analysis only" in msg  # OFF mode message

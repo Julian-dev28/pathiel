@@ -1395,7 +1395,7 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
 // token across navigation. Without the token-carry, clicking OPERATOR after
 // entering operator mode on / would land on a 401-locked operator page.
 (function(){
-  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  const here = window.location.pathname.replace(/[/]$/, '') || '/';
   const tok = new URLSearchParams(window.location.search).get('token')
            || localStorage.getItem('hermes-op-token') || '';
   document.querySelectorAll('a[data-nav]').forEach(a => {
