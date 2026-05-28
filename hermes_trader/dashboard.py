@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -65,6 +66,25 @@ def _load_max_lev_table() -> Dict[str, int]:
 
 
 # ── data helpers ─────────────────────────────────────────────────────────────
+
+# Generic TTL cache for read-heavy dashboard endpoints. The dashboard polls
+# every few seconds; without this each poll re-reads + re-parses the 800KB+
+# session-log JSONL from disk. Keyed by (name, args) so parametrized
+# endpoints (equity-curve range, closed-trades limit) cache per-variant.
+_TTL_CACHE: Dict[str, tuple] = {}
+_TTL_CACHE_LOCK = threading.Lock()
+
+
+def _ttl_cached(key: str, ttl: float, fn):
+    now = time.time()
+    with _TTL_CACHE_LOCK:
+        hit = _TTL_CACHE.get(key)
+        if hit and now - hit[0] < ttl:
+            return hit[1]
+    val = fn()
+    with _TTL_CACHE_LOCK:
+        _TTL_CACHE[key] = (now, val)
+    return val
 
 
 def _read_log_lines() -> List[Dict[str, Any]]:
@@ -1282,9 +1302,8 @@ function renderEvent(e) {
     // Inline preview of reasoning + entry/stop/tp when present.
     const priceTriad = (e.entry_px || e.stop_px || e.tp_px)
       ? ` · entry ${fmtPx(e.entry_px)}/sl ${fmtPx(e.stop_px)}/tp ${fmtPx(e.tp_px)}` : '';
-    const reasonPreview = e.reasoning ? ` — ${e.reasoning.slice(0, 90)}${e.reasoning.length > 90 ? '…' : ''}` : '';
-    detail = priceTriad + reasonPreview;
-    if (e.reasoning && e.reasoning.length > 90) tooltip = e.reasoning;
+    // Show the FULL reasoning — no truncation. The feed wraps long lines.
+    detail = priceTriad + (e.reasoning ? ` — ${e.reasoning}` : '');
   } else if (ev === 'execute') {
     const ok = e.executed;
     glyph = ok ? '✓' : '✗'; cls = ok ? 'execute' : 'execute-fail';
@@ -1889,19 +1908,21 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:
-        return JSONResponse(_summary_payload())
+        return JSONResponse(_ttl_cached("summary", 2.0, _summary_payload))
 
     @app.get("/api/dashboard/positions")
     async def dashboard_positions() -> JSONResponse:
-        return JSONResponse(_positions_payload())
+        return JSONResponse(_positions_payload())  # already 5s-cached internally
 
     @app.get("/api/dashboard/equity-curve")
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(_equity_curve_payload(range_s))
+        return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 30.0,
+                                        lambda: _equity_curve_payload(range_s)))
 
     @app.get("/api/dashboard/closed-trades")
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
-        return JSONResponse(_closed_trades_payload(limit))
+        return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 10.0,
+                                        lambda: _closed_trades_payload(limit)))
 
     @app.get("/api/feed/stream")
     async def feed_stream() -> StreamingResponse:

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
 
+from hermes_trader.client.rate_limit import HL_LIMITER as _HL_LIMITER, endpoint_weight as _endpoint_weight
 from hermes_trader.models.types import Candle
 
 if TYPE_CHECKING:
@@ -93,10 +94,45 @@ def init_info() -> None:
 
 # ── HTTP helpers ──────────────────────────────────────────────────────
 
+# Shared connection pool. Every _http_post reuses keep-alive connections
+# instead of opening a fresh TCP+TLS handshake per call (~50-200ms each).
+# At 60 markets × 2 candle fetches + 8 dex queries per scan, that handshake
+# tax dominated. requests.Session is thread-safe for concurrent .post()
+# when the adapter pool is sized for our fan-out (8 dex queries + headroom).
+_session: "requests.Session | None" = None
+_session_lock = threading.Lock()
+
+
+def _get_session() -> "requests.Session":
+    global _session
+    if _session is None:
+        with _session_lock:
+            if _session is None:
+                s = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=16,
+                    pool_maxsize=32,
+                    max_retries=requests.adapters.Retry(
+                        total=2, backoff_factor=0.3,
+                        status_forcelist=[502, 503, 504],
+                        allowed_methods=["POST"],
+                    ),
+                )
+                s.mount("https://", adapter)
+                _session = s
+    return _session
+
+
 def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
-    """Direct HTTP POST."""
+    """Direct HTTP POST over the shared keep-alive connection pool.
+
+    Acquires a rate-limit token first (HL: 1200 weight/min). On budget
+    exhaustion, raises so the caller's existing retry/backoff handles it
+    rather than firing into a 429.
+    """
+    _HL_LIMITER.acquire(_endpoint_weight(payload.get("type")))
     try:
-        resp = requests.post(f"{HL_API}{path}", json=payload, timeout=timeout)
+        resp = _get_session().post(f"{HL_API}{path}", json=payload, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     except Exception as e:

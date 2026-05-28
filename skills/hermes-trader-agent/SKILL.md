@@ -274,7 +274,84 @@ implemented — the volume floor handles it.
 See `references/hip3-tokenized-equity-handoff.md` for the original task
 brief and the post-implementation audit findings.
 
-Pitfall: assuming “we scanned everything” when the log simply says “50 markets”. Always check via the MCP market-list tools when the user mentions an asset that was not reported.
+**Pitfall:** assuming “we scanned everything” when the log simply says “50 markets”. Always check via the MCP market-list tools when the user mentions an asset that was not reported.
+
+## Funding-regime bias (symmetric — works in either direction)
+
+The funding regime (`market_get_funding_regime`) is the primary signal for
+whether the bot should bias toward longs or shorts. Implementation is
+**direction-agnostic** so it works the same when the regime flips:
+
+- Trades aligned with the funding regime → normal bar.
+- Trades against the funding regime → elevated bar (conf ≥ 0.85 OR
+  composite ≥ 60 OR any binary bypass).
+- Binary bypasses (momentumBurst / slow_burn / whale_signal) preserved on
+  both sides. Never weaken these — the user has explicitly refused.
+
+Core logic lives in `risk_gates.py::market_regime_gate`. The funding regime
+is read via `hyperfeed.py::market_get_funding_regime` (5-min cache —
+funding settles hourly so a longer TTL would still be safe; shorter is
+wasteful).
+
+Do **not** solve regime bias by raising `min_ai_confidence` globally — that
+kills overall trade volume. Use `counter_regime_min_conf` instead.
+
+Live config (edit `.agent-config.json` directly — the MCP `config` tool
+does NOT accept `counter_regime_min_conf` writes):
+```json
+{ "min_ai_confidence": 0.5, "counter_regime_min_conf": 0.85,
+  "leverage": 10, "equity_fraction_per_trade": 0.07 }
+```
+
+When the user asks "regime?" / "short or long?" / "what's the regime",
+always answer with a fresh `market_get_funding_regime` call — do not cache
+the answer in session memory across turns.
+
+**Cross-asset-class leak (KNOWN ISSUE)**: `market_get_funding_regime` only
+scans the crypto perp universe (BTC/ETH/alts). It does **not** see HIP-3
+equity or commodity funding. So when the crypto regime is SHORT_CROWDED:
+
+- A `xyz:CL` (oil) long whose own commodity trend is "up" passes the
+  `aligned and not against_funding` branch because `against_funding` only
+  reflects the crypto crowd, not oil's own crowd.
+- Same for `xyz:ARM`, `xyz:META`, equity perps aligned with `xyz:SP500` up
+  trend.
+
+This is by design (we don't want a crypto-only crowding signal to
+overweight equity/commodity decisions), but it means **longs on HIP-3
+equity/commodity assets can open even during a crypto SHORT_CROWDED regime
+if their own trend regime is up.** When the user asks "how did these
+sneak through?" about an `xyz:` long, this is almost always the answer.
+
+Three possible fixes if the user wants to close this:
+1. Make funding overlay crypto-only (cleanest — leave equity/commodity to
+   their own trend regimes).
+2. Block binary trigger bypass for cross-asset-class trades (breaks the
+   "don't weaken bypasses" rule — needs explicit user approval).
+3. Add HIP-3 namespaced assets to the funding regime scan with their own
+   per-class threshold.
+
+See `references/short-regime-bias.md` for the full prompt template, code
+locations, and pitfalls.
+
+### Testing the regime gate
+
+`tests/test_cleanup.py` has the regime + funding-regime overlay test suite
+(`test_market_regime_gate_*` and `test_funding_regime_*`). **Every test
+that touches `market_regime_gate` MUST mock BOTH the trend regime and the
+funding regime**, or the live API call from inside the gate will hit
+production and randomize the result:
+
+```python
+from hermes_trader.agents import market_regime, hyperfeed
+monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
+monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
+                    lambda: {"regime": "NEUTRAL", "assets": []})
+```
+
+For cache-behavior tests, also monkeypatch `_funding_regime_cache` to
+`None` and patch `_compute_funding_regime` (not `market_get_funding_regime`
+itself — that's the cache wrapper).
 
 ## Common Pitfalls
 
@@ -284,6 +361,7 @@ Pitfall: assuming “we scanned everything” when the log simply says “50 mar
 | Daily PnL inflated after a deposit/transfer | Contribution-aware tracking subtracts spot↔perp transfers + external deposits/withdrawals automatically. If still inflated, baseline may be stale — reset with the snippet in `references/restart-sequence.md`. |
 | Executor blocks LONG with "insufficient_free_margin" while HL UI shows plenty | `available` is `accountValue - totalMarginUsed` (matches HL UI). If they differ, the loop is on stale code — restart. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
+| MCP `config` tool silently drops a config key (e.g. `counter_regime_min_conf`) | The MCP tool only accepts a narrow schema. Edit `.agent-config.json` directly and restart the trading loop. Don't waste turns retrying through MCP. |
 | HIP-3 position shows "no DSL" indefinitely | `get_all_hl_mids` must be called with `include_hip3=True` so trackers receive a mid. If a HIP-3 dex query times out, trackers are preserved via `queried_dexes` until the next successful query. |
 | Coin lookup fails on HIP-3 (`XYZ:MU` → not found) | Use `_norm_coin()` in MCP handlers — only the symbol uppercases, the lowercase dex prefix stays. |
 | `@` coins as noise in scan results | Spot pairs are filtered in `perception.py`; if they appear, the filter regressed. |

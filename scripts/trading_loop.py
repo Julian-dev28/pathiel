@@ -292,15 +292,13 @@ while True:
             try:
                 analysis = research(coin, perception)
                 logger.info(f"Verdict: {analysis['verdict']}, Confidence: {analysis['confidence']}")
-                # Reasoning is often a long paragraph from the LLM; truncate at
-                # log time so the JSONL file doesn't blow up. Full text stays in
-                # memory (.agent-memory.json) for forensics; the feed only needs
-                # enough to convey the "why".
+                # Store the full LLM reasoning verbatim — no character cap.
+                # The feed shows the complete rationale.
                 _r = (analysis.get('reasoning') or '').strip()
                 log_event({"event": "research", "coin": coin,
                            "verdict": analysis['verdict'],
                            "confidence": round(float(analysis['confidence']), 2),
-                           "reasoning": _r[:240],
+                           "reasoning": _r,
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})

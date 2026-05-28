@@ -7,7 +7,8 @@ funding regime, instrument list) with no external MCP dependency.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_trader.client.hl_client import _http_post, fetch_all_mids, fetch_hl_candles
 from hermes_trader.client.universe import get_universe
@@ -17,6 +18,11 @@ logger = logging.getLogger(__name__)
 # Wallets to treat as "smart money". Empty by default — populate to enable
 # leaderboard_get_top / discovery_get_top_traders.
 TRUSTED_WALLETS: set[str] = set()
+
+# Funding-regime cache. Funding rates settle hourly so a 5-min TTL is safe
+# and avoids hitting get_universe() on every risk-gate evaluation.
+_FUNDING_REGIME_TTL_S = 300
+_funding_regime_cache: Optional[Tuple[Dict[str, Any], float]] = None
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -333,46 +339,100 @@ def market_get_asset_data(asset: str,
 
 
 def market_get_funding_regime() -> Dict[str, Any]:
-    """Market-wide funding regime: flags LONG_CROWDED / SHORT_CROWDED / NEUTRAL.
+    """Per-asset-class funding regime: flags LONG_CROWDED / SHORT_CROWDED / NEUTRAL.
 
     An asset is crowded when |funding| exceeds the threshold and open interest
-    is high; the market regime is the dominant side across all assets.
+    is high. The regime is computed PER ASSET CLASS (crypto / equity /
+    commodity) because crypto funding crowding shouldn't gate oil or
+    semiconductor longs — those have their own funding markets on the HIP-3
+    dexes (xyz, km, vntl, ...) and need to be evaluated separately.
+
+    Returns:
+        {
+            "regime": "SHORT_CROWDED",          # legacy market-wide regime (crypto)
+            "regimes_by_class": {                # NEW: per-class breakdown
+                "crypto":    "SHORT_CROWDED",
+                "equity":    "NEUTRAL",
+                "commodity": "LONG_CROWDED",
+            },
+            "assets": [...sorted by funding...],
+        }
+
+    The `regime` top-level field is kept for backward compatibility — it
+    reflects the crypto class regime, which is what callers historically
+    cared about. New code should consume `regimes_by_class`.
+
+    Cached for 5 min — funding rates settle every hour, so the regime can't
+    flip faster than that. Without the cache, the risk-gate caller would
+    fetch the full universe on every trade attempt.
     """
-    universe = get_universe()
+    global _funding_regime_cache
+    now = time.time()
+    if _funding_regime_cache and (now - _funding_regime_cache[1]) < _FUNDING_REGIME_TTL_S:
+        return _funding_regime_cache[0]
+    result = _compute_funding_regime()
+    _funding_regime_cache = (result, now)
+    return result
+
+
+def _compute_funding_regime() -> Dict[str, Any]:
+    # Pull the full universe INCLUDING HIP-3 so equity and commodity perps
+    # are visible to the regime classifier. Without include_hip3=True, oil
+    # (xyz:CL), semis (xyz:ARM), gold (xyz:GOLD), etc. would silently be
+    # excluded — and the gate would default them to a stale crypto regime.
+    from hermes_trader.agents.market_regime import classify_asset
+    universe = get_universe(include_hip3=True)
     assets = []
-    long_crowded = 0
-    short_crowded = 0
+    # Per-class counters: {"crypto": {"long": N, "short": M}, ...}
+    counts: Dict[str, Dict[str, int]] = {
+        "crypto":    {"long": 0, "short": 0},
+        "equity":    {"long": 0, "short": 0},
+        "commodity": {"long": 0, "short": 0},
+    }
 
     for m in universe:
         funding = m.get("funding", 0)
         oi = m.get("openInterest", 0)
+        coin = m["coin"]
+        klass = classify_asset(coin)
 
-        if funding > 0.0001 and oi > 1e7:
+        # OI threshold scales by class — HIP-3 markets are an order of
+        # magnitude smaller than BTC/ETH, so the 1e7 crypto floor would
+        # blank every equity/commodity perp's regime signal.
+        oi_floor = 1e7 if klass == "crypto" else 1e6
+
+        if funding > 0.0001 and oi > oi_floor:
             regime = "LONG_CROWDED"
-            long_crowded += 1
-        elif funding < -0.0001 and oi > 1e7:
+            counts[klass]["long"] += 1
+        elif funding < -0.0001 and oi > oi_floor:
             regime = "SHORT_CROWDED"
-            short_crowded += 1
+            counts[klass]["short"] += 1
         else:
             regime = "NEUTRAL"
 
         assets.append({
-            "asset": m["coin"],
+            "asset": coin,
+            "asset_class": klass,
             "funding_rate": funding,
             "regime": regime,
             "oi": oi,
             "volume_24h": m.get("dayNtlVlm", 0),
         })
 
-    if long_crowded > short_crowded + 5:
-        market_regime = "LONG_CROWDED"
-    elif short_crowded > long_crowded + 5:
-        market_regime = "SHORT_CROWDED"
-    else:
-        market_regime = "NEUTRAL"
+    # Compute per-class regime: dominant side beats the other by margin.
+    def _decide(c: Dict[str, int]) -> str:
+        if c["long"] > c["short"] + 5:
+            return "LONG_CROWDED"
+        if c["short"] > c["long"] + 5:
+            return "SHORT_CROWDED"
+        return "NEUTRAL"
+
+    regimes_by_class = {k: _decide(v) for k, v in counts.items()}
+    market_regime = regimes_by_class["crypto"]  # legacy field (crypto-only)
 
     return {
         "regime": market_regime,
+        "regimes_by_class": regimes_by_class,
         "assets": sorted(assets, key=lambda x: x.get("funding_rate", 0), reverse=True),
     }
 

@@ -161,7 +161,7 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
     """Block counter-regime trades unless conviction OR own-coin signal clears the bar.
 
       - aligned with regime → pass
-      - regime neutral      → pass
+      - regime neutral      → pass (subject to funding-regime override below)
       - counter-trend trade → pass if any of:
           * confidence >= counter_regime_min_conf
           * composite_score >= 50
@@ -172,26 +172,85 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
     The own-signal bypasses exist because the regime proxy (BTC for crypto,
     SP500 for equity) is slow; a strong individual signal should override
     a stale macro call.
+
+    Funding-regime overlay (added 2026): SYMMETRIC enforcement — when the
+    market-wide funding regime is crowded, any trade going AGAINST the crowd
+    direction must clear a higher bar. This is direction-agnostic and will
+    apply the same way when the regime flips:
+
+      * SHORT_CROWDED + long  → counter-regime, elevated bar
+      * LONG_CROWDED  + short → counter-regime, elevated bar
+      * SHORT_CROWDED + short → aligned, normal bar (no bias added)
+      * LONG_CROWDED  + long  → aligned, normal bar (no bias added)
+
+    Elevated bar = confidence >= max(counter_regime_min_conf, 0.85)
+                   OR composite_score >= 60
+                   OR any binary trigger (momentumBurst / slow_burn / whale_signal)
+
+    The bypass triggers are preserved on both sides — those are explicit
+    "the regime proxy is stale" signals and we never want to hard-block on
+    a clear individual setup, just enforce regime discipline by default.
     """
     from hermes_trader.agents.market_regime import detect_regime
     regime = detect_regime(ctx.coin)
-    if regime == "neutral":
-        return {"pass": True}
+
+    # Pull funding regime (cached) — used as a symmetric overlay on the
+    # trend-regime gate. Both directions are treated identically: anything
+    # going against the crowded side faces the elevated bar.
+    #
+    # PER-CLASS LOOKUP: the gate uses the funding regime of THIS coin's
+    # asset class (crypto / equity / commodity), not a global crypto-only
+    # signal. Without this, a SHORT_CROWDED crypto regime would gate longs
+    # on oil (xyz:CL) and semis (xyz:ARM) — those have their own funding
+    # markets and shouldn't be evaluated by the crypto crowd.
+    try:
+        from hermes_trader.agents.hyperfeed import market_get_funding_regime
+        from hermes_trader.agents.market_regime import classify_asset
+        funding_data = market_get_funding_regime()
+        coin_class = classify_asset(ctx.coin)
+        by_class = funding_data.get("regimes_by_class") or {}
+        funding_regime = by_class.get(coin_class) or funding_data.get("regime", "NEUTRAL")
+    except Exception:
+        funding_regime = "NEUTRAL"
+
+    # Symmetric counter-funding-regime detection.
+    against_funding = (
+        (funding_regime == "SHORT_CROWDED" and ctx.trade_side == "long") or
+        (funding_regime == "LONG_CROWDED"  and ctx.trade_side == "short")
+    )
+
+    # Effective thresholds: only elevated when against the funding regime.
+    # When aligned with funding regime, use the normal counter_regime_min_conf
+    # so we never *raise* the bar for regime-aligned trades.
+    effective_min_conf = counter_regime_min_conf
+    effective_min_score = 50.0
+    if against_funding:
+        effective_min_conf = max(counter_regime_min_conf, 0.85)
+        effective_min_score = 60.0
+
+    # Aligned with trend regime AND not against funding regime → easy pass.
     aligned = (regime == "up" and ctx.trade_side == "long") or \
               (regime == "down" and ctx.trade_side == "short")
-    if aligned:
+    if aligned and not against_funding:
         return {"pass": True}
-    if ctx.confidence >= counter_regime_min_conf:
+
+    # Trend-regime neutral and not against funding regime → pass.
+    if regime == "neutral" and not against_funding:
         return {"pass": True}
-    if (ctx.composite_score >= 50
-            or ctx.momentum_burst_fired
-            or ctx.slow_burn_fired
-            or ctx.whale_signal_fired):
+
+    # Counter-trend OR against-funding path — must clear effective bar.
+    if ctx.confidence >= effective_min_conf:
         return {"pass": True}
+    if ctx.composite_score >= effective_min_score:
+        return {"pass": True}
+    if ctx.momentum_burst_fired or ctx.slow_burn_fired or ctx.whale_signal_fired:
+        return {"pass": True}
+
     return {
         "pass": False,
-        "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend — "
-                   f"need conf >= {counter_regime_min_conf} or own-coin signal, "
+        "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend "
+                   f"(funding={funding_regime}) — need conf >= {effective_min_conf:.2f} "
+                   f"or score >= {effective_min_score:.0f} or own-coin signal, "
                    f"have conf {ctx.confidence:.2f}, score {ctx.composite_score:.0f}"),
     }
 
