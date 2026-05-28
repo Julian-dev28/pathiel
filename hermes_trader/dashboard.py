@@ -1324,6 +1324,13 @@ function renderEvent(e) {
     const pnlPct = e.realized_pnl_pct != null ? e.realized_pnl_pct : (e.unrealized_pct || 0);
     text = `dsl_exit   ${e.coin} ${side}${lev} ${e.reason}  (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`;
     if (e.fill_px) tooltip = `entry ${fmtPx(e.entry_px)}\nfill ${fmtPx(e.fill_px)}\nspot ${(e.realized_spot_pct||0).toFixed(2)}%\nleveraged ${(pnlPct||0).toFixed(2)}%`;
+  } else if (ev === 'ai_close') {
+    // AI CLOSE verdict acted on (position closed because structure flipped).
+    glyph = e.executed ? '⏹' : '✗';
+    cls = e.executed ? 'dsl_exit' : 'execute-fail';
+    const status = e.executed ? 'closed' : 'close FAILED';
+    text = `ai_close   ${e.coin} ${status}`;
+    detail = e.reasoning ? ` — ${e.reasoning}` : '';
   } else if (ev === 'error') {
     glyph = '!'; cls = 'error';
     text = `error      ${e.coin || e.scope || 'loop'}: ${(e.error || '').slice(0, 120)}`;

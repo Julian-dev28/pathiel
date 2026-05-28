@@ -97,6 +97,15 @@ If AI says PASS but trigger composite hits this AND `force_execute_slow_burn_cou
 ### `force_execute_slow_burn_count` (int, default `2`)
 Min slow-burn triggers (volumeBuildup1h / trendFlip1h / higherLows1h) required for the structural override. Combined with `force_execute_composite`.
 
+### Whale-signal priority (oi_funding_anomaly accumulation flag)
+Three independent knobs, all default-on, to capitalize on smart-money accumulation (deeply-negative funding + flat price + high OI):
+
+- `whale_regime_bypass` (bool, default `true`) — a whale signal lets a trade bypass the counter-regime gate (even against trend).
+- `whale_force_execute` (bool, default `true`) — a whale signal alone upgrades an AI PASS to LONG conf 0.70 (the structural override).
+- `whale_size_multiplier` (float, default `1.3`) — whale-backed trades multiply their conviction sizing by this, clamped at 2× base. Set `1.0` to keep override/bypass but no size boost.
+
+Set all three off (`false`/`false`/`1.0`) to treat whale signals as informational only (still shown in the AI prompt, no gate/sizing effect).
+
 ---
 
 ## Liquidity (volume floors)

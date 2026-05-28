@@ -94,20 +94,30 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "reason": "crypto_disabled (set enable_crypto=true to trade native HL perps)",
         }
 
-    # Structural-override: when the perception is objectively strong
-    # (composite >= 40 AND 2+ slow-burn triggers fired), don't let a hedging
-    # AI PASS leave the setup on the table. Upgrade to LONG conf 0.70 and
-    # let the gates do the real risk check. Slow-burn signals are
-    # accumulation patterns → implied LONG direction; we never force a SHORT.
+    # Structural-override: don't let a hedging AI PASS leave an objectively
+    # strong accumulation setup on the table. Upgrade to LONG conf 0.70 and
+    # let the gates do the real risk check. Two independent triggers, both
+    # LONG-biased (we never force a SHORT):
+    #   (a) composite >= 40 AND 2+ slow-burn 1h triggers fired, OR
+    #   (b) a whale-accumulation signal fired (oi_funding_anomaly) —
+    #       whale signals get their own override because smart-money loading
+    #       (negative funding, flat price, high OI) is a high-conviction
+    #       contrarian-to-retail setup we want to capitalize on even when the
+    #       AI hedges and even against trend.
     override_composite = float(config.get("force_execute_composite", 40))
     override_min_slow_burn = int(config.get("force_execute_slow_burn_count", 2))
-    if (analysis.get("verdict") == "PASS"
-            and float(analysis.get("composite_score", 0) or 0) >= override_composite
-            and int(analysis.get("slow_burn_count", 0) or 0) >= override_min_slow_burn):
+    # whale_force_execute gates whether a whale signal alone can upgrade a PASS.
+    whale_fired = bool(analysis.get("whale_signal")) and bool(config.get("whale_force_execute", True))
+    slow_burn_strong = (
+        float(analysis.get("composite_score", 0) or 0) >= override_composite
+        and int(analysis.get("slow_burn_count", 0) or 0) >= override_min_slow_burn
+    )
+    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired):
+        trigger = "whale-accumulation" if whale_fired else \
+            f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
         logger.info(
             f"[executor] Structural override on {analysis['coin']}: "
-            f"AI PASS but composite={analysis.get('composite_score'):.0f} + "
-            f"{analysis.get('slow_burn_count')} slow-burn triggers → upgrading to LONG conf 0.70"
+            f"AI PASS but {trigger} → upgrading to LONG conf 0.70"
         )
         analysis = dict(analysis)
         analysis["verdict"] = "LONG"
@@ -232,6 +242,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             conviction_mult = 1.0
         else:
             conviction_mult = 0.7
+        # Whale-signal boost: when smart-money accumulation is flagged on this
+        # coin, bet bigger to capitalize. Multiplies on top of the confidence
+        # tier and clamps so a whale + high-conf trade can't exceed 2× base.
+        if analysis.get("whale_signal"):
+            whale_mult = float(config.get("whale_size_multiplier", 1.3))
+            conviction_mult = min(conviction_mult * whale_mult, 2.0)
     else:
         conviction_mult = 1.0
     equity_fraction = base_fraction * conviction_mult
@@ -278,7 +294,10 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         composite_score=float(analysis.get("composite_score", 0) or 0),
         momentum_burst_fired=bool(analysis.get("momentum_burst_fired", False)),
         slow_burn_fired=bool(analysis.get("slow_burn_fired", False)),
-        whale_signal_fired=bool(analysis.get("whale_signal")),
+        # whale_regime_bypass gates whether a whale signal can bypass the
+        # counter-regime gate. Default True; set False to keep the size
+        # boost + override but require regime alignment.
+        whale_signal_fired=bool(analysis.get("whale_signal")) and bool(config.get("whale_regime_bypass", True)),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)
@@ -399,6 +418,37 @@ def monitor_exits(mids: Dict[str, float]) -> List[Dict[str, Any]]:
         }
         for v in exits
     ]
+
+
+def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -> Dict[str, Any]:
+    """Route an analysis to the right action based on its verdict.
+
+    Pure routing logic with the side-effecting functions injected, so EVERY
+    verdict path is unit-testable. This exists because the dropped-CLOSE bug
+    hid inside the trading loop's inline `if verdict in (...)` — orchestration
+    that couldn't be tested. Now the loop calls this and just logs the result.
+
+    Returns {"action": <str>, "verdict": <str>, "result": <dict|None>}:
+      - LONG / SHORT  → action="execute", result = execute_fn(analysis)
+      - CLOSE         → action="close",   result = close_fn(coin)
+      - PASS          → action="none"
+      - anything else → action="unknown" (logged loudly; never silently dropped)
+    """
+    execute_fn = execute_fn or maybe_execute
+    close_fn = close_fn or close_position_market
+    verdict = (analysis.get("verdict") or "").upper()
+    coin = analysis.get("coin")
+
+    if verdict in ("LONG", "SHORT"):
+        return {"action": "execute", "verdict": verdict, "result": execute_fn(analysis)}
+    if verdict == "CLOSE":
+        return {"action": "close", "verdict": verdict, "result": close_fn(coin)}
+    if verdict == "PASS":
+        return {"action": "none", "verdict": "PASS", "result": None}
+    # Should be unreachable (parse_verdict normalizes to one of the above),
+    # but never silently drop — surface it so a new verdict can't go unhandled.
+    logger.warning(f"[router] unhandled verdict {verdict!r} for {coin} — treating as no-op")
+    return {"action": "unknown", "verdict": verdict, "result": None}
 
 
 def close_position_market(coin: str) -> Dict[str, Any]:

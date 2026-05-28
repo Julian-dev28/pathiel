@@ -375,6 +375,24 @@ def parse_verdict(
             elif re.search(r"CLOSE", first_line, re.IGNORECASE):
                 verdict = "CLOSE"
 
+    # Coerce confidence to a clamped float — the LLM occasionally returns it
+    # as a string ("0.8") or out of range; a string would TypeError at the
+    # gate comparison (`ctx.confidence >= 0.85`) on a live trade.
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    # Derive side from verdict when the LLM omitted/nulled the side field.
+    # Without this a SHORT verdict with side=None falls through to the
+    # executor's `or "long"` default and executes in the WRONG direction.
+    if verdict == "LONG":
+        side = "long"
+    elif verdict == "SHORT":
+        side = "short"
+    # CLOSE/PASS keep whatever side was parsed (unused downstream).
+
     return {
         "verdict": verdict,
         "confidence": confidence,

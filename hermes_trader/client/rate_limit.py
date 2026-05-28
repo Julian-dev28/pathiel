@@ -73,10 +73,12 @@ class TokenBucket:
             time.sleep(min(sleep_for, 0.5))
 
 
-# HL budget: 1200 weight/min = 20 weight/sec. Refill at the full documented
-# rate so steady-state scans (one 5m candle refetch per market ≈ 1200 weight
-# / 60s) don't incur throttle wait. Capacity = 1 min burst lets a cold-cache
-# scan (5m + 1h for all markets) drain immediately, then pace the overflow.
-# Tune refill DOWN to 18 if HL still 429s in practice (their window timing
-# is stricter than a clean 1200/60s).
-HL_LIMITER = TokenBucket(capacity=1200, refill_per_sec=20.0)
+# NOTE: this bucket is PER-PROCESS, but HL limits per-IP. The live loop and
+# the dashboard server are separate processes sharing one IP, so neither
+# sees the other's usage — the limiter can't fully prevent cross-process
+# 429s (those get retried by the candle fetcher). Its real job is capping
+# the pathological single-process burst (a backtest firing thousands of
+# requests instantly). So: generous capacity/refill matched to HL's observed
+# tolerance (~the pre-limiter loop sustained ~133 w/s fine) so live scans
+# aren't slowed, while still throttling a runaway backtest to a paced stream.
+HL_LIMITER = TokenBucket(capacity=600, refill_per_sec=130.0)

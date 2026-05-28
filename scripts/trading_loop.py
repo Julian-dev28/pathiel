@@ -45,7 +45,7 @@ logging.basicConfig(
 from hermes_trader.agents.perception import scan_once
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
-from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits
+from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits, route_verdict
 from hermes_trader.agents.dsl_exit import rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
 from hermes_trader.agents.memory import memory
@@ -303,9 +303,12 @@ while True:
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})
 
-                if analysis['verdict'] in ('LONG', 'SHORT'):
-                    logger.info(f"Executing {analysis['side']} trade...")
-                    result = maybe_execute(analysis)
+                # All verdict→action routing lives in executor.route_verdict
+                # (unit-tested) so no verdict can be silently dropped again.
+                routed = route_verdict(analysis)
+                action = routed["action"]
+                result = routed["result"] or {}
+                if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))
                     log_event({"event": "execute", "coin": coin,
@@ -319,6 +322,17 @@ while True:
                                "entry_px": result.get("entry_px"),
                                "stop_px": result.get("stop_px"),
                                "tp_px": result.get("tp_px")})
+                elif action == "close":
+                    logger.info(f"Closed {coin} per AI CLOSE verdict: {result}")
+                    log_event({"event": "ai_close", "coin": coin,
+                               "executed": bool(result.get("ok")),
+                               "detail": result.get("order_id")
+                               or result.get("noop")
+                               or result.get("error"),
+                               "reasoning": (analysis.get("reasoning") or "")})
+                elif action == "unknown":
+                    log_event({"event": "error", "coin": coin,
+                               "error": f"unhandled verdict {routed['verdict']!r}"})
             except Exception as e:
                 logger.error(f"Error processing {coin}: {e}")
                 log_event({"event": "error", "coin": coin, "error": str(e)})

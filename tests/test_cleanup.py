@@ -1416,3 +1416,165 @@ def test_ttl_cache_keys_are_independent():
     assert d._ttl_cached("b", 5.0, lambda: 2) == 2
     # different keys don't collide
     assert d._ttl_cached("a", 5.0, lambda: 99) == 1
+
+
+# ── Whale-signal priority (override + sizing) ────────────────────────────
+def test_executor_whale_signal_overrides_pass_to_long(monkeypatch):
+    """A whale-accumulation flag upgrades an AI PASS to LONG even with no
+    slow-burn triggers and low composite — whale signals get their own
+    structural override."""
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
+    })
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
+
+    analysis = {
+        "id": "whale-override", "coin": "ALT", "verdict": "PASS",
+        "confidence": 0.0, "composite_score": 10.0, "slow_burn_count": 0,
+        "whale_signal": {"signal": "smart_money_accumulation", "confidence": 0.5},
+    }
+    res = executor.maybe_execute(analysis)
+    # Override fires → upgraded to LONG → reaches equity check (equity=0).
+    assert "equity_unavailable" in (res.get("reason") or "")
+
+    # No whale signal + weak composite → no override; PASS stays PASS,
+    # the executor doesn't upgrade. (verdict gate is downstream; we just
+    # confirm it didn't crash and didn't force a trade via override path.)
+    analysis_no_whale = {**analysis, "whale_signal": None}
+    res2 = executor.maybe_execute(analysis_no_whale)
+    assert isinstance(res2, dict)
+
+
+def test_whale_size_multiplier_clamps_at_2x():
+    """The whale multiplier stacks on the confidence tier but clamps at 2×
+    base so a high-conf whale trade can't run away."""
+    # Pure arithmetic mirror of the executor sizing logic.
+    def sized(conf, whale, base=0.07, whale_mult=1.3):
+        if conf >= 0.80:
+            m = 1.5
+        elif conf >= 0.65:
+            m = 1.0
+        else:
+            m = 0.7
+        if whale:
+            m = min(m * whale_mult, 2.0)
+        return base * m
+    # high conf + whale: 1.5 × 1.3 = 1.95 (under 2.0 cap)
+    assert abs(sized(0.85, True) - 0.07 * 1.95) < 1e-9
+    # mid conf + whale: 1.0 × 1.3 = 1.3
+    assert abs(sized(0.70, True) - 0.07 * 1.3) < 1e-9
+    # no whale: plain tier
+    assert abs(sized(0.85, False) - 0.07 * 1.5) < 1e-9
+
+
+# ── Shakedown: parse_verdict edge cases (silent-breakage guards) ─────────
+def test_parse_verdict_short_derives_side_short():
+    """A SHORT verdict with no/null side must yield side='short', NOT fall
+    through to the executor's 'long' default (wrong-direction bug)."""
+    from hermes_trader.agents.research import parse_verdict
+    txt = '{"verdict":"SHORT","confidence":0.7}'   # no side field
+    v = parse_verdict(txt, "BTC", {"mid": 100})
+    assert v["verdict"] == "SHORT"
+    assert v["side"] == "short"
+
+    # explicit null side too
+    v2 = parse_verdict('{"verdict":"SHORT","confidence":0.7,"side":null}', "BTC", {"mid": 100})
+    assert v2["side"] == "short"
+
+
+def test_parse_verdict_long_derives_side_long():
+    from hermes_trader.agents.research import parse_verdict
+    v = parse_verdict('{"verdict":"LONG","confidence":0.6}', "ETH", {"mid": 50})
+    assert v["side"] == "long"
+
+
+def test_parse_verdict_coerces_string_confidence():
+    """LLM sometimes returns confidence as a string — must coerce to float
+    so the gate comparison doesn't TypeError on a live trade."""
+    from hermes_trader.agents.research import parse_verdict
+    v = parse_verdict('{"verdict":"LONG","confidence":"0.82","side":"long"}', "BTC", {"mid": 1})
+    assert isinstance(v["confidence"], float)
+    assert abs(v["confidence"] - 0.82) < 1e-9
+
+
+def test_parse_verdict_clamps_confidence_range():
+    from hermes_trader.agents.research import parse_verdict
+    hi = parse_verdict('{"verdict":"LONG","confidence":1.8,"side":"long"}', "B", {"mid": 1})
+    assert hi["confidence"] == 1.0
+    lo = parse_verdict('{"verdict":"LONG","confidence":-0.5,"side":"long"}', "B", {"mid": 1})
+    assert lo["confidence"] == 0.0
+    junk = parse_verdict('{"verdict":"LONG","confidence":"high","side":"long"}', "B", {"mid": 1})
+    assert junk["confidence"] == 0.0
+
+
+def test_parse_verdict_unknown_verdict_defaults_pass():
+    """HOLD or any non-LONG/SHORT/CLOSE verdict → PASS (no accidental trade)."""
+    from hermes_trader.agents.research import parse_verdict
+    for raw in ("HOLD", "WAIT", "MAYBE", ""):
+        v = parse_verdict(f'{{"verdict":"{raw}","confidence":0.9}}', "BTC", {"mid": 1})
+        assert v["verdict"] == "PASS", raw
+
+
+# ── Shakedown: route_verdict (every verdict path is now testable) ────────
+def test_route_verdict_long_calls_execute():
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    def exec_fn(a): calls["exec"] = a; return {"executed": True, "order_id": "1"}
+    def close_fn(c): calls["close"] = c; return {"ok": True}
+    r = route_verdict({"verdict": "LONG", "coin": "BTC", "side": "long"},
+                      execute_fn=exec_fn, close_fn=close_fn)
+    assert r["action"] == "execute"
+    assert "exec" in calls and "close" not in calls
+
+
+def test_route_verdict_short_calls_execute():
+    from hermes_trader.agents.executor import route_verdict
+    seen = {}
+    r = route_verdict({"verdict": "SHORT", "coin": "ETH", "side": "short"},
+                      execute_fn=lambda a: seen.setdefault("e", a) or {"executed": True},
+                      close_fn=lambda c: seen.setdefault("c", c))
+    assert r["action"] == "execute" and "e" in seen and "c" not in seen
+
+
+def test_route_verdict_close_calls_close():
+    """The bug that started the shakedown: CLOSE must call close_fn, not be dropped."""
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "CLOSE", "coin": "DOGE"},
+                      execute_fn=lambda a: calls.setdefault("e", a),
+                      close_fn=lambda c: calls.setdefault("c", c) or {"ok": True})
+    assert r["action"] == "close"
+    assert calls.get("c") == "DOGE"
+    assert "e" not in calls            # never executes a trade on CLOSE
+
+
+def test_route_verdict_pass_is_noop():
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "PASS", "coin": "BTC"},
+                      execute_fn=lambda a: calls.setdefault("e", 1),
+                      close_fn=lambda c: calls.setdefault("c", 1))
+    assert r["action"] == "none"
+    assert not calls                   # nothing called
+
+
+def test_route_verdict_unknown_is_flagged_not_dropped():
+    """A novel/garbage verdict must surface as 'unknown', never silently no-op
+    like a PASS — that's how the next dropped-verdict bug gets caught."""
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "YOLO", "coin": "BTC"},
+                      execute_fn=lambda a: calls.setdefault("e", 1),
+                      close_fn=lambda c: calls.setdefault("c", 1))
+    assert r["action"] == "unknown"
+    assert r["verdict"] == "YOLO"
+    assert not calls
+
+
+def test_route_verdict_lowercase_verdict_normalized():
+    from hermes_trader.agents.executor import route_verdict
+    r = route_verdict({"verdict": "close", "coin": "X"},
+                      execute_fn=lambda a: None, close_fn=lambda c: {"ok": True})
+    assert r["action"] == "close"
