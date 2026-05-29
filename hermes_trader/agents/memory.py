@@ -151,6 +151,24 @@ class AgentMemory:
     def update_open_positions(self, pos: List[Dict[str, Any]]) -> None:
         self._open_positions = list(pos)
 
+    def open_position_coins(self) -> set:
+        """Set of coins with a live (non-zero) open position. The loop exempts
+        these from the pre-research cooldown so the AI can still issue a CLOSE
+        on something we already hold — AI-driven exits must never be starved by
+        the re-entry cooldown."""
+        coins = set()
+        for p in self._open_positions:
+            if not isinstance(p, dict):
+                continue
+            pos = p.get("position", p)
+            coin = pos.get("coin")
+            try:
+                if coin and float(pos.get("szi", 0) or 0) != 0:
+                    coins.add(coin)
+            except (TypeError, ValueError):
+                continue
+        return coins
+
     # ── Read operations ─────────────────────────────────────────────────────
 
     def get_recent_perceptions(self, limit: int = 20) -> List[Dict[str, Any]]:

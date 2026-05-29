@@ -402,6 +402,21 @@ def test_latest_trade_ts_by_coin_keeps_newest():
     assert "SOL" not in out
 
 
+def test_open_position_coins_filters_zero_size():
+    """Held-coin set drives the cooldown exemption so the AI can still CLOSE
+    open positions; zero-size / malformed entries are excluded."""
+    from hermes_trader.agents.memory import AgentMemory
+    m = AgentMemory()
+    m.update_open_positions([
+        {"position": {"coin": "NEAR", "szi": "12.0"}},
+        {"position": {"coin": "BTC", "szi": "0"}},     # flat → excluded
+        {"position": {"coin": "xyz:SNDK", "szi": "-3"}},  # short still counts
+        {"position": {"szi": "5"}},                    # no coin → excluded
+        "garbage",                                     # non-dict → excluded
+    ])
+    assert m.open_position_coins() == {"NEAR", "xyz:SNDK"}
+
+
 def test_classify_asset_hip3_namespaced(monkeypatch):
     """HIP-3 venues are mixed: unknown tokenized stocks default to equity (not
     the BTC-trend crypto default), but crypto names listed on a HIP-3 dex still

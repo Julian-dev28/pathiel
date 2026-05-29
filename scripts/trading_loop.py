@@ -257,6 +257,11 @@ while True:
         # the prior inline `setdefault` kept the oldest, so a coin traded twice
         # in the window paid for redundant LLM research every cycle).
         recent_trades_by_coin = memory.latest_trade_ts_by_coin(20)
+        # Coins we currently hold are EXEMPT from the cooldown skip: a re-entry
+        # would be blocked anyway, but we must keep researching them so the AI
+        # can issue a CLOSE. AI-driven exits are a hard requirement and must not
+        # be starved by the re-entry cooldown.
+        held_coins = memory.open_position_coins()
         now_ms = int(time.time() * 1000)
 
         for perception in results:
@@ -269,11 +274,12 @@ while True:
             except Exception:
                 pass
 
-            # Pre-research cooldown: if we executed (or attempted) the same
-            # coin within cooldown_min, skip the paid AI call. The execute
-            # gate would block it anyway; no reason to pay for analysis.
+            # Pre-research cooldown: if we executed the same coin within
+            # cooldown_min AND don't currently hold it, skip the paid AI call —
+            # a re-entry would be gate-blocked anyway. Coins we hold are exempt
+            # so the AI can still decide to CLOSE them.
             last_ms = recent_trades_by_coin.get(coin)
-            if last_ms and (now_ms - last_ms) < cooldown_ms:
+            if last_ms and (now_ms - last_ms) < cooldown_ms and coin not in held_coins:
                 remaining_min = int((cooldown_ms - (now_ms - last_ms)) / 60_000)
                 logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
                 log_event({"event": "ta_skip", "coin": coin,
