@@ -94,7 +94,10 @@ Daily-loss killswitch. When `daily_pnl <= this`, ALL new trades blocked until UT
 Too loose = catastrophic days possible. Too tight = locks you out on a normal variance day.
 
 ### `cooldown_min` (int, default `60`)
-Minimum minutes between trades on the same coin. Prevents over-trading a single market. 30-60 reasonable for active strategies; 120+ for slower.
+Minimum minutes between trades on the same coin. Prevents over-trading a single market. 30-60 reasonable for active strategies; 120+ for slower. Also skips the paid AI research call for a non-held coin still inside this window (a re-entry would be gate-blocked anyway).
+
+### `held_research_interval_min` (int, default `10`)
+How often a coin you ALREADY HOLD is re-researched for a possible AI `CLOSE`. Without this, a held position that keeps triggering pays for a "hold" PASS on every ~60s scan. The DSL exit engine still handles fast/loss exits in real time every scan regardless — this only paces the slower "thesis broke → close" judgment. Lower = more responsive AI closes but more token spend; higher = leans more on DSL for exits. Hot-reloaded.
 
 ### `min_ai_confidence` (float 0-1, default `0.35`)
 Floor for AI-verdict confidence to execute. Raise to filter out borderline trades; lower to accept more setups. Current default 0.30 with conviction_sizing reducing those bets to 0.7×.

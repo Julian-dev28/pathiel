@@ -142,6 +142,12 @@ def _sync_account_state():
     return equity, positions, available, spot_usdc, queried_dexes, state
 
 
+# When we last paid for AI research on each coin (this process). Throttles the
+# AI close-check on coins we already hold so we don't research a "hold" every
+# scan. Resets on restart (a fresh close-check on startup is harmless/useful).
+_last_research_by_coin: dict = {}
+
+
 while True:
     try:
         # ── Heartbeat: refresh equity / positions before scanning ──────────
@@ -251,16 +257,18 @@ while True:
         # Prevents burning AI tokens on a setup that's still in cooldown from a
         # prior cycle. The execute-time `cooldown_gate` is still in place as the
         # authoritative backstop; this just stops the paid LLM call early.
-        cooldown_min = float(read_agent_config().get("cooldown_min", 60))
+        _cfg_cd = read_agent_config()
+        cooldown_min = float(_cfg_cd.get("cooldown_min", 60))
         cooldown_ms = cooldown_min * 60_000
+        # How often a HELD coin is re-researched for a possible AI CLOSE. We
+        # don't pay for a "hold" PASS every scan — the DSL engine handles fast
+        # exits in real time; the AI close-check is the slower structural-flip
+        # judgment and only needs an occasional refresh.
+        held_research_ms = float(_cfg_cd.get("held_research_interval_min", 10)) * 60_000
         # Newest trade timestamp per coin (NOT oldest — see the method docstring;
         # the prior inline `setdefault` kept the oldest, so a coin traded twice
         # in the window paid for redundant LLM research every cycle).
         recent_trades_by_coin = memory.latest_trade_ts_by_coin(20)
-        # Coins we currently hold are EXEMPT from the cooldown skip: a re-entry
-        # would be blocked anyway, but we must keep researching them so the AI
-        # can issue a CLOSE. AI-driven exits are a hard requirement and must not
-        # be starved by the re-entry cooldown.
         held_coins = memory.open_position_coins()
         now_ms = int(time.time() * 1000)
 
@@ -274,19 +282,31 @@ while True:
             except Exception:
                 pass
 
-            # Pre-research cooldown: if we executed the same coin within
-            # cooldown_min AND don't currently hold it, skip the paid AI call —
-            # a re-entry would be gate-blocked anyway. Coins we hold are exempt
-            # so the AI can still decide to CLOSE them.
-            last_ms = recent_trades_by_coin.get(coin)
-            if last_ms and (now_ms - last_ms) < cooldown_ms and coin not in held_coins:
-                remaining_min = int((cooldown_ms - (now_ms - last_ms)) / 60_000)
-                logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
-                log_event({"event": "ta_skip", "coin": coin,
-                           "signal": "COOLDOWN",
-                           "score": round(float(score), 1),
-                           "trigger_score": round(float(score), 1)})
-                continue
+            if coin in held_coins:
+                # Held position: research only every held_research_interval_min
+                # so the AI can still issue a CLOSE without paying for a "hold"
+                # PASS on every scan. (A re-entry is gate-blocked anyway.)
+                last_research = _last_research_by_coin.get(coin, 0)
+                if (now_ms - last_research) < held_research_ms:
+                    remaining_min = int((held_research_ms - (now_ms - last_research)) / 60_000)
+                    logger.info(f"{coin}: held — next AI close-check in {remaining_min}min — skip")
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "HELD_THROTTLE",
+                               "score": round(float(score), 1),
+                               "trigger_score": round(float(score), 1)})
+                    continue
+            else:
+                # Not held but executed within cooldown_min → re-entry would be
+                # gate-blocked, so skip the paid AI call.
+                last_ms = recent_trades_by_coin.get(coin)
+                if last_ms and (now_ms - last_ms) < cooldown_ms:
+                    remaining_min = int((cooldown_ms - (now_ms - last_ms)) / 60_000)
+                    logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "COOLDOWN",
+                               "score": round(float(score), 1),
+                               "trigger_score": round(float(score), 1)})
+                    continue
 
             # TA filter — cheap statistical gate before the paid AI call.
             ta = analyze_perception(perception)
@@ -299,6 +319,9 @@ while True:
                 continue
             gate = 'CONFIRMED' if ta['signal'] == 'CONFIRMED' else f"{ta['signal']}+burst"
             logger.info(f"Researching {coin} (trigger {score:.1f}, TA {gate})...")
+            # Record the paid-research time so the held-coin throttle above can
+            # pace the next AI close-check on this position.
+            _last_research_by_coin[coin] = now_ms
 
             try:
                 analysis = research(coin, perception)
