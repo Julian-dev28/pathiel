@@ -228,26 +228,37 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
         effective_min_conf = max(counter_regime_min_conf, 0.85)
         effective_min_score = 60.0
 
+    # Context attached to every result so the log reads "why" without
+    # re-deriving regime state after the fact.
+    base = {"regime": regime, "funding": funding_regime,
+            "against_funding": against_funding, "counter_trend": False}
+
     # Aligned with trend regime AND not against funding regime → easy pass.
     aligned = (regime == "up" and ctx.trade_side == "long") or \
               (regime == "down" and ctx.trade_side == "short")
     if aligned and not against_funding:
-        return {"pass": True}
+        return {"pass": True, "via": "aligned", **base}
 
     # Trend-regime neutral and not against funding regime → pass.
     if regime == "neutral" and not against_funding:
-        return {"pass": True}
+        return {"pass": True, "via": "neutral", **base}
 
-    # Counter-trend OR against-funding path — must clear effective bar.
+    # Past here the trade is counter-trend and/or against the funding crowd —
+    # it must clear the (possibly elevated) bar via conviction or own-signal.
+    base["counter_trend"] = not aligned
     if ctx.confidence >= effective_min_conf:
-        return {"pass": True}
+        return {"pass": True, "via": "confidence", **base}
     if ctx.composite_score >= effective_min_score:
-        return {"pass": True}
+        return {"pass": True, "via": "composite", **base}
     if ctx.momentum_burst_fired or ctx.slow_burn_fired or ctx.whale_signal_fired:
-        return {"pass": True}
+        trig = ("momentum_burst" if ctx.momentum_burst_fired
+                else "slow_burn" if ctx.slow_burn_fired else "whale")
+        return {"pass": True, "via": f"trigger:{trig}", **base}
 
     return {
         "pass": False,
+        "via": "blocked",
+        **base,
         "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend "
                    f"(funding={funding_regime}) — need conf >= {effective_min_conf:.2f} "
                    f"or score >= {effective_min_score:.0f} or own-coin signal, "

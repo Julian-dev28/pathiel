@@ -384,6 +384,48 @@ def test_classify_asset():
     assert classify_asset("SILVER") == "commodity"
 
 
+def test_classify_asset_hip3_namespaced(monkeypatch):
+    """HIP-3 venues are mixed: unknown tokenized stocks default to equity (not
+    the BTC-trend crypto default), but crypto names listed on a HIP-3 dex still
+    resolve to crypto via the native-perp ticker set."""
+    from hermes_trader.agents import market_regime as mr
+    # Pretend the native HL dex lists these crypto majors.
+    monkeypatch.setattr(mr, "_crypto_tickers_cache",
+                        frozenset({"BTC", "ETH", "LINK", "FARTCOIN", "XMR"}))
+    # Unknown tokenized stock (not in the allowlist) → equity, NOT crypto.
+    assert mr.classify_asset("xyz:SNDK") == "equity"
+    assert mr.classify_asset("xyz:CBRS") == "equity"
+    # Known equity / commodity allowlist entries still win.
+    assert mr.classify_asset("xyz:NVDA") == "equity"
+    assert mr.classify_asset("xyz:GOLD") == "commodity"
+    assert mr.classify_asset("km:USOIL") == "commodity"
+    # Crypto names on a HIP-3 dex resolve to crypto via the native set.
+    assert mr.classify_asset("hyna:BTC") == "crypto"
+    assert mr.classify_asset("hyna:LINK") == "crypto"
+    assert mr.classify_asset("cash:ETH") == "crypto"
+    assert mr.classify_asset("flx:XMR") == "crypto"
+
+
+def test_native_crypto_tickers_skips_namespaced_and_caches(monkeypatch):
+    """_native_crypto_tickers pulls only main-dex perps (no ':') and caches."""
+    from hermes_trader.agents import market_regime as mr
+    mr._crypto_tickers_cache = None
+    calls = {"n": 0}
+    def fake_universe(**kw):
+        calls["n"] += 1
+        return [
+            {"coin": "BTC", "type": "perp"},
+            {"coin": "ETH", "type": "perp"},
+            {"coin": "xyz:NVDA", "type": "perp"},  # namespaced → excluded
+            {"coin": "@107", "type": "spot"},      # spot → excluded
+        ]
+    monkeypatch.setattr("hermes_trader.client.universe.get_universe", fake_universe)
+    out = mr._native_crypto_tickers()
+    assert out == frozenset({"BTC", "ETH"})
+    mr._native_crypto_tickers()  # second call served from cache
+    assert calls["n"] == 1
+
+
 def test_trend_from_closes_up_down_neutral():
     """EMA20>EMA50 + positive fast-slope → up; opposite → down; flat → neutral."""
     from hermes_trader.agents.market_regime import _trend_from_closes
@@ -427,6 +469,44 @@ def test_market_regime_gate_aligned_passes(monkeypatch):
     # Long when up → pass, regardless of confidence
     r = market_regime_gate(_ctx(confidence=0.1, trade_side="long"))
     assert r["pass"] is True
+    assert r["via"] == "aligned"
+
+
+def test_market_regime_gate_via_reports_trigger_bypass(monkeypatch):
+    """A counter-regime trade that clears only via a slow-burn trigger reports
+    via='trigger:slow_burn' and counter context — this is the LINK/FARTCOIN case."""
+    from hermes_trader.agents import market_regime, hyperfeed
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
+    monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
+                        lambda: {"regime": "SHORT_CROWDED",
+                                 "regimes_by_class": {"crypto": "SHORT_CROWDED"}})
+    monkeypatch.setattr(market_regime, "classify_asset", lambda c: "crypto")
+    # conf 0.52, low composite, against SHORT_CROWDED long → only slow_burn clears.
+    ctx = _ctx(confidence=0.52, trade_side="long", coin="FARTCOIN",
+               composite_score=21, slow_burn_fired=True)
+    r = market_regime_gate(ctx)
+    assert r["pass"] is True
+    assert r["via"] == "trigger:slow_burn"
+    assert r["against_funding"] is True
+    assert r["funding"] == "SHORT_CROWDED"
+
+
+def test_market_regime_gate_via_confidence_and_blocked(monkeypatch):
+    from hermes_trader.agents import market_regime, hyperfeed
+    from hermes_trader.agents.risk_gates import market_regime_gate
+    monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
+    monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
+                        lambda: {"regime": "SHORT_CROWDED",
+                                 "regimes_by_class": {"crypto": "SHORT_CROWDED"}})
+    monkeypatch.setattr(market_regime, "classify_asset", lambda c: "crypto")
+    # High enough conf clears the elevated 0.85 bar → via confidence.
+    hi = market_regime_gate(_ctx(confidence=0.9, trade_side="long", composite_score=0))
+    assert hi["pass"] is True and hi["via"] == "confidence"
+    # Nothing clears → blocked, with via marker for the log.
+    lo = market_regime_gate(_ctx(confidence=0.5, trade_side="long",
+                                 composite_score=10, slow_burn_fired=False))
+    assert lo["pass"] is False and lo["via"] == "blocked"
 
 
 def test_market_regime_gate_neutral_passes(monkeypatch):

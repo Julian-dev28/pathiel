@@ -316,6 +316,10 @@ while True:
                 if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))
+                    # Surface the regime decision so the log answers "why did a
+                    # counter-regime trade fire?" — via is one of aligned /
+                    # neutral / confidence / composite / trigger:<name> / blocked.
+                    mr = (result.get("gate_results") or {}).get("market_regime") or {}
                     log_event({"event": "execute", "coin": coin,
                                "side": analysis['side'],
                                "executed": executed,
@@ -326,7 +330,11 @@ while True:
                                "size_usd": result.get("size_usd"),
                                "entry_px": result.get("entry_px"),
                                "stop_px": result.get("stop_px"),
-                               "tp_px": result.get("tp_px")})
+                               "tp_px": result.get("tp_px"),
+                               "regime": mr.get("regime"),
+                               "funding_regime": mr.get("funding"),
+                               "regime_via": mr.get("via"),
+                               "counter_regime": mr.get("counter_trend") or mr.get("against_funding")})
                 elif action == "close":
                     logger.info(f"Closed {coin} per AI CLOSE verdict: {result}")
                     log_event({"event": "ai_close", "coin": coin,

@@ -68,22 +68,58 @@ REGIME_TTL_S = 300  # 5min cache — 1h trends can flip faster than 4h
 
 _regime_cache: Dict[str, Tuple[Regime, float]] = {}
 
+# Bare tickers that trade as native (main-dex) HL perps — authoritatively
+# crypto. Built once from the universe and cached; lets `hyna:BTC`, `cash:ETH`,
+# `flx:XMR` etc. resolve to crypto by their bare ticker rather than being
+# swept into the HIP-3 equity default below.
+_crypto_tickers_cache: frozenset[str] | None = None
+
+
+def _native_crypto_tickers() -> frozenset[str]:
+    global _crypto_tickers_cache
+    if _crypto_tickers_cache is None:
+        try:
+            from hermes_trader.client.universe import get_universe
+            uni = get_universe()  # main dex only — every perp here is crypto
+            tickers = frozenset(
+                m["coin"].upper() for m in uni
+                if m.get("type") == "perp" and ":" not in m.get("coin", "")
+            )
+            if tickers:  # only cache a real result; retry next call on failure
+                _crypto_tickers_cache = tickers
+            return tickers
+        except Exception:
+            return frozenset()
+    return _crypto_tickers_cache
+
 
 def classify_asset(coin: str) -> AssetClass:
-    """Map a coin to its asset class. Default is 'crypto' for everything not
-    explicitly listed as equity or commodity — the universe is crypto-heavy
-    and that fallback is safe (BTC trend is the right gate for them).
+    """Map a coin to its asset class, picking the trend proxy + funding-regime
+    bucket. Resolution is by BARE ticker (the dex prefix is stripped), because
+    HIP-3 venues are mixed: `xyz:`/`km:` are tokenized stocks/commodities, but
+    `hyna:`/`cash:`/`flx:` also list crypto (`hyna:BTC`, `cash:ETH`).
 
-    HIP-3 namespaced coins (e.g. `xyz:NVDA`, `km:US500`) drop the dex prefix
-    before matching, so `xyz:NVDA` lands in `_EQUITY_COINS` and `xyz:GOLD` in
-    `_COMMODITY_COINS`. Without this strip every HIP-3 trade would be gated
-    by BTC's trend, which is plainly wrong for stocks/commodities."""
+    Order:
+      1. commodity allowlist  → commodity
+      2. equity allowlist     → equity
+      3. native HL perp ticker (e.g. BTC, LINK, FARTCOIN) → crypto, so
+         `hyna:LINK` is gated by BTC, not SP500
+      4. any OTHER HIP-3 namespaced coin → equity — a tokenized stock the
+         allowlist doesn't enumerate (xyz:SNDK, xyz:CBRS). The old code
+         defaulted these to crypto and gated SanDisk by BTC's trend.
+      5. bare unknown (no dex prefix) → crypto (main dex is all crypto)
+    """
     raw = (coin or "")
-    bare = raw.split(":", 1)[-1].upper() if ":" in raw else raw.upper()
-    if bare in _EQUITY_COINS:
-        return "equity"
+    namespaced = ":" in raw
+    bare = raw.split(":", 1)[-1].upper() if namespaced else raw.upper()
     if bare in _COMMODITY_COINS:
         return "commodity"
+    if bare in _EQUITY_COINS:
+        return "equity"
+    if bare in _native_crypto_tickers():
+        return "crypto"
+    if namespaced:
+        return "equity"
     return "crypto"
 
 
