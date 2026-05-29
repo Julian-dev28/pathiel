@@ -394,6 +394,28 @@ def deregister_position(coin: str, side: str) -> bool:
     return False
 
 
+def _policy_from_config() -> ExitPolicy:
+    """Build an ExitPolicy from the live .agent-config.json dsl_exit block.
+
+    Mirrors the executor's entry-time policy construction so a SYNTHESIZED
+    tracker (post-blackout reconcile) gets the SAME stops a fresh entry would,
+    instead of the looser ExitPolicy() class defaults. Lazy import avoids a
+    config_store <-> dsl_exit import cycle. Falls back to class defaults if the
+    config can't be read."""
+    try:
+        from hermes_trader.agents.config_store import read_agent_config
+        dsl = read_agent_config().get("dsl_exit", {}) or {}
+        return ExitPolicy(
+            max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
+            max_loss_roe_pct=dsl.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
+            protect_pct=dsl.get("protect_pct", ExitPolicy.protect_pct),
+            retrace_threshold=dsl.get("retrace_threshold", ExitPolicy.retrace_threshold),
+            hard_timeout_minutes=dsl.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
+        )
+    except Exception:
+        return ExitPolicy()
+
+
 def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
                             policy: Optional[ExitPolicy] = None,
                             default_leverage: int = 1,
@@ -429,7 +451,14 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         if not lev:
             lev = default_leverage
         if key not in _active_positions:
-            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), policy,
+            # Inherit the CURRENT config exit policy, never the bare ExitPolicy()
+            # default. A synthesize happens after a blackout-induced drop (the
+            # exchange momentarily reported the position gone), and the default
+            # is LOOSER (2.5%/50% ROE vs config 2.0%/30%) — re-synthesizing with
+            # the default silently widened live stops ("policy drift"). Pull
+            # config when the caller didn't pass an explicit policy.
+            synth_policy = policy if policy is not None else _policy_from_config()
+            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), synth_policy,
                                                 leverage=lev)
             added += 1
             logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry} ({lev}x)")

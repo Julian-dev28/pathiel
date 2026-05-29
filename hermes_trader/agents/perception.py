@@ -211,6 +211,18 @@ def scan_once(
         eligible = [m for m in eligible if m.get("dex")]
     if not include_hip3:
         eligible = [m for m in eligible if not m.get("dex")]
+    # HIP-3 dex mute: focus scanning on specific HIP-3 venues without disabling
+    # HIP-3 entirely. `hip3_dex_allowlist` (e.g. ["xyz"]) = scan ONLY those dexes;
+    # `hip3_dex_blocklist` = scan all but those. Crypto/main-dex markets (no
+    # `dex`) are never affected. Stops wasted research on unfunded/uninteresting
+    # dexes (km, hyna, cash, ...). Both read fresh each scan (hot-reload).
+    if include_hip3:
+        allow = {d for d in (_cfg.get("hip3_dex_allowlist") or []) if d}
+        block = {d for d in (_cfg.get("hip3_dex_blocklist") or []) if d}
+        if allow:
+            eligible = [m for m in eligible if not m.get("dex") or m.get("dex") in allow]
+        if block:
+            eligible = [m for m in eligible if not m.get("dex") or m.get("dex") not in block]
     # Bucketed budget so HIP-3 markets and low-volume big-movers each get
     # candle fetches instead of being crowded out by crypto majors. Crypto
     # gets `max_markets - max_markets_hip3` slots, further split between

@@ -110,12 +110,20 @@ def _sync_account_state():
     """
     user = resolve_user_address()
     if not user:
-        return 0.0, [], 0.0, 0.0, {""}, {}
+        # No user → no authoritative position view. Return an EMPTY queried-dexes
+        # set (not {""}) so the DSL reconcile preserves existing trackers instead
+        # of dropping them as "stale".
+        return 0.0, [], 0.0, 0.0, set(), {}
     try:
         state = fetch_account_state(user, include_hip3=True)
     except Exception as e:
+        # Fetch FAILED (e.g. API timeout storm). We did NOT successfully query any
+        # dex, so report queried_dexes=set() — NOT {""}. Reporting the main dex as
+        # "queried" while holding no position data caused live main-dex trackers
+        # (e.g. NIL) to be falsely dropped and then re-synthesized with a looser
+        # default stop. Empty set => rehydrate preserves every tracker this tick.
         logger.warning(f"[heartbeat] HL fetch_account_state failed: {e}")
-        return 0.0, [], 0.0, 0.0, {""}, {}
+        return 0.0, [], 0.0, 0.0, set(), {}
 
     equity = float(state.get("equity", 0) or 0)
     # Heartbeat shows total-across-dexes free margin (what the operator
