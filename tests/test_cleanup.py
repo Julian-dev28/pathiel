@@ -189,6 +189,40 @@ def test_fetch_news_no_key_returns_no_news(monkeypatch):
     assert _fetch_news("BTC") == "no news"
 
 
+def test_fetch_news_sends_freshness_window(monkeypatch):
+    """The Brave request must carry a freshness range so year-old articles
+    (the AIXBT 2025 hack) don't feed the gate. Regression guard."""
+    from hermes_trader.agents import research
+    monkeypatch.setenv("BRAVE_API_KEY", "k")
+    captured = {}
+    class _Resp:
+        is_success = True
+        def json(self):
+            return {"results": [{"title": "fresh headline"}]}
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured["params"] = params
+        return _Resp()
+    monkeypatch.setattr(research.httpx, "get", fake_get)
+    out = research._fetch_news("AIXBT")
+    assert out == "fresh headline"
+    fr = captured["params"]["freshness"]
+    assert "to" in fr and len(fr.split("to")) == 2  # YYYY-MM-DDtoYYYY-MM-DD
+
+
+def test_parse_verdict_extracts_news_risk():
+    from hermes_trader.agents.research import parse_verdict
+    v = parse_verdict('{"verdict":"LONG","confidence":0.7,"newsRisk":"positive"}',
+                      "BTC", {"mid": 1})
+    assert v["news_risk"] == "positive"
+    # snake_case + invalid values fall back to "none"
+    assert parse_verdict('{"verdict":"LONG","confidence":0.7,"news_risk":"negative"}',
+                         "B", {"mid": 1})["news_risk"] == "negative"
+    assert parse_verdict('{"verdict":"LONG","confidence":0.7,"newsRisk":"spicy"}',
+                         "B", {"mid": 1})["news_risk"] == "none"
+    # absent → defaults none
+    assert parse_verdict('{"verdict":"PASS","confidence":0}', "B", {"mid": 1})["news_risk"] == "none"
+
+
 # ── kelly sizing ────────────────────────────────────────────────────────
 def test_kelly_size():
     from hermes_trader.agents.executor import kelly_size
@@ -2432,3 +2466,48 @@ def test_build_user_message_indicator_block_full_snap():
     assert "EMA8 slope: rising" in msg
     assert "Open positions: ETH long $120" in msg
     assert "analysis only" in msg  # OFF mode message
+
+
+# ── Coverage: news-sentiment gate (good news must not block) ────────────
+def test_maybe_execute_negative_news_blocks(monkeypatch):
+    """AI news_risk='negative' stands the trade down, and the block reason
+    surfaces the offending headline for log visibility."""
+    ex, _, _ = _exec_baseline(monkeypatch)
+    r = ex.maybe_execute(_analysis(
+        news_risk="negative",
+        news_context="SomeCoin suffers major exploit, $5M drained | other headline"))
+    assert r["executed"] is False
+    nr = (r.get("gate_results") or {}).get("news") or {}
+    assert nr.get("pass") is False
+    assert "exploit" in (nr.get("reason") or "").lower()
+
+
+def test_maybe_execute_positive_news_does_not_block(monkeypatch):
+    """An earnings BEAT (news_risk='positive') must NOT block — the old
+    keyword gate stood down on the mere word 'earnings'."""
+    ex, captured, _ = _exec_baseline(monkeypatch)
+    r = ex.maybe_execute(_analysis(
+        confidence=0.70,
+        news_risk="positive",
+        news_context="SomeCoin earnings beat expectations, stock surges"))
+    assert r["executed"] is True
+    assert (r["gate_results"]["news"]["pass"]) is True
+
+
+def test_maybe_execute_no_news_risk_does_not_block(monkeypatch):
+    """Absent/none news_risk → news gate passes (no keyword false-positives)."""
+    ex, _, _ = _exec_baseline(monkeypatch)
+    r = ex.maybe_execute(_analysis(
+        news_context="Fed meeting next week; SEC mentioned in passing"))
+    assert r["executed"] is True
+
+
+def test_news_blackout_gate_reason_includes_match():
+    from hermes_trader.agents.risk_gates import news_blackout_gate
+    ok = news_blackout_gate(_ctx(has_binary_news_risk=False))
+    assert ok["pass"] is True
+    blocked = _ctx(has_binary_news_risk=True)
+    blocked.binary_news_match = "'hack' in: Coin hacked for $1M"
+    r = news_blackout_gate(blocked)
+    assert r["pass"] is False
+    assert "Coin hacked for $1M" in r["reason"]

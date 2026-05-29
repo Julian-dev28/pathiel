@@ -292,22 +292,32 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     )
     last_trade_time = last_trade.get("executed_at") if last_trade else None
 
-    # Binary-event terms → stand down (news_blackout gate). Word-boundaried
-    # to avoid false positives ("rate" vs "hash rate", "SEC" vs "security").
-    # Skipped for tokenized-equity perps because their news ALWAYS mentions
-    # earnings/Fed/SEC by the nature of equity reporting; the gate was
-    # over-firing on every xyz:TSLA / xyz:META / cash:* candidate.
-    from hermes_trader.agents.market_regime import classify_asset
-    is_equity_perp = classify_asset(analysis["coin"]) == "equity"
-    has_binary_news = (not is_equity_perp) and bool(
-        analysis.get("news_context")
-        and re.search(
-            r"\bfed(eral)?\b|\bfomc\b|\bcpi\b|\bsec\b|rate (hike|cut)"
-            r"|\b(hack|exploit|lawsuit|earnings|halt|delist)",
-            analysis["news_context"],
-            re.IGNORECASE,
+    # News blackout: stand down only on GENUINELY adverse news. The AI judges
+    # the recent (last 48h) headlines and emits news_risk; only "negative"
+    # blocks. This replaced a dumb keyword blocklist that fired on the mere
+    # mention of "earnings"/"SEC" etc. — an earnings BEAT is bullish and must
+    # not block. Sentiment also makes the old equity-perp exemption unnecessary:
+    # the AI won't flag a beat as negative, but WILL flag a miss/fraud.
+    news_text = analysis.get("news_context") or ""
+    news_risk = str(analysis.get("news_risk") or "none").lower()
+    has_binary_news = news_risk == "negative"
+    binary_news_match = ""
+    if has_binary_news and news_text:
+        # Surface a representative adverse headline so the log says what tripped it.
+        m = re.search(
+            r"\b(hack|exploit|lawsuit|halt|delist|miss|crash|plunge|fraud)\w*"
+            r"|\bfomc\b|\bcpi\b|\bsec\b|\bfed(eral)?\b",
+            news_text, re.IGNORECASE,
         )
-    )
+        if m:
+            term = m.group(0)
+            headline = next(
+                (h.strip() for h in news_text.split("|") if term.lower() in h.lower()),
+                news_text[:140],
+            )
+            binary_news_match = f"'{term}' in: {headline}"
+        else:
+            binary_news_match = news_text[:140]
 
     trade_side = analysis.get("side", "long") or "long"
     ctx = GateContext(
@@ -319,6 +329,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         coin=analysis["coin"],
         trade_side=trade_side,
         has_binary_news_risk=has_binary_news,
+        binary_news_match=binary_news_match,
         equity=equity,
         total_open_notional=total_open_notional,
         composite_score=float(analysis.get("composite_score", 0) or 0),

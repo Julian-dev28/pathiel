@@ -29,6 +29,7 @@ class GateContext:
         momentum_burst_fired: bool = False,
         slow_burn_fired: bool = False,
         whale_signal_fired: bool = False,
+        binary_news_match: str = "",
     ):
         self.confidence = confidence
         self.current_positions = current_positions
@@ -50,6 +51,9 @@ class GateContext:
         # (negative funding + flat price + high OI = whale accumulation).
         # Same gate-bypass role as slow_burn_fired; orthogonal signal.
         self.whale_signal_fired = whale_signal_fired
+        # The headline + matched term that tripped the binary-news gate, for
+        # log visibility ("which article blocked this?").
+        self.binary_news_match = binary_news_match
 
 
 def confidence_gate(ctx: GateContext, min_confidence: float) -> GateResult:
@@ -269,7 +273,9 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
 def news_blackout_gate(ctx: GateContext) -> GateResult:
     if not ctx.has_binary_news_risk:
         return {"pass": True}
-    return {"pass": False, "reason": "binary news risk detected (Fed, earnings, hack within 2h) — standing down"}
+    detail = f" — {ctx.binary_news_match}" if ctx.binary_news_match else ""
+    return {"pass": False,
+            "reason": f"binary news risk (Fed/earnings/hack in recent news){detail} — standing down"}
 
 
 def _cfg(config: Dict[str, Any], key: str, default: Any) -> Any:

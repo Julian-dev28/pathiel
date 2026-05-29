@@ -10,6 +10,7 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 import httpx
@@ -85,8 +86,16 @@ def _fetch_funding_rate(coin: str) -> str:
     return "N/A"
 
 
+# Only surface news from the last N days. Without this, Brave returned
+# year-old articles (e.g. AIXBT's 2025 hack) that then tripped the binary-news
+# gate on a fresh 2026 trade. The gate reasons about *imminent* event risk, so
+# stale headlines are noise — both to the gate and to the LLM prompt.
+NEWS_FRESHNESS_DAYS = 2
+
+
 def _fetch_news(coin: str) -> str:
-    """Recent news headlines for a coin via the Brave Search API.
+    """Recent (last NEWS_FRESHNESS_DAYS) news headlines for a coin via the
+    Brave Search API.
 
     Returns a compact ' | '-joined headline string, or 'no news' when no
     BRAVE_API_KEY is set or the request fails — news is a supplementary
@@ -95,10 +104,16 @@ def _fetch_news(coin: str) -> str:
     key = os.environ.get("BRAVE_API_KEY", "")
     if not key:
         return "no news"
+    # Brave `freshness` takes a YYYY-MM-DDtoYYYY-MM-DD range; a 2-day window
+    # approximates "within 48h" (the closest the API offers to an hour-precise
+    # bound without per-result age filtering).
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=NEWS_FRESHNESS_DAYS)
+    freshness = f"{start.isoformat()}to{today.isoformat()}"
     try:
         resp = httpx.get(
             "https://api.search.brave.com/res/v1/news/search",
-            params={"q": f"{coin} crypto", "count": 5},
+            params={"q": f"{coin} crypto", "count": 5, "freshness": freshness},
             headers={"X-Subscription-Token": key, "Accept": "application/json"},
             timeout=10.0,
         )
@@ -329,6 +344,7 @@ def parse_verdict(
     entry_px = perception.get("mid", 0)
     stop_px = 0.0
     tp_px = 0.0
+    news_risk = "none"
     reasoning = ai_text.strip()
 
     lines = ai_text.strip().split("\n")
@@ -365,6 +381,8 @@ def parse_verdict(
             entry_px = parsed.get("entry_px") or parsed.get("entryPx", perception.get("mid", 0))
             stop_px = parsed.get("stop_px") or parsed.get("stopPx", 0)
             tp_px = parsed.get("tp_px") or parsed.get("tpPx", 0)
+            nr = str(parsed.get("news_risk") or parsed.get("newsRisk") or "none").lower()
+            news_risk = nr if nr in ("none", "positive", "negative") else "none"
             reasoning = parsed.get("reasoning", ai_text[:500])
         except json.JSONDecodeError:
             first_line = lines[0] if lines else ""
@@ -400,6 +418,7 @@ def parse_verdict(
         "entry_px": entry_px,
         "stop_px": stop_px,
         "tp_px": tp_px,
+        "news_risk": news_risk,
         "reasoning": reasoning,
     }
 
@@ -472,6 +491,9 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         "tp_px": parsed["tp_px"],
         "reasoning": parsed["reasoning"],
         "news_context": news,
+        # AI's good/bad judgment of the recent news — drives the news gate
+        # (only "negative" stands the trade down; an earnings beat is fine).
+        "news_risk": parsed["news_risk"],
         "created_at": int(time.time() * 1000),
         # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),

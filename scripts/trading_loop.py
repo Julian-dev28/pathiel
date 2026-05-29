@@ -310,6 +310,7 @@ while True:
                            "verdict": analysis['verdict'],
                            "confidence": round(float(analysis['confidence']), 2),
                            "reasoning": _r,
+                           "news_risk": analysis.get('news_risk'),
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})
