@@ -1,24 +1,31 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
+  pull_request:
 
 jobs:
-  typecheck:
-    name: Type check
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          node-version: 22
-          cache: npm
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - run: npm ci
+      - name: Install (with dev extras)
+        run: pip install -e ".[dev]"
 
-      - name: tsc --noEmit
-        run: npx tsc --noEmit
+      # pytest's addopts deselects the `online` and `live` markers, so this runs
+      # only the offline suite — no network, no real-money orders, CI-safe.
+      - name: Run offline test suite
+        run: pytest
