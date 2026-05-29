@@ -479,6 +479,8 @@ hermes-trader/
 - OpenRouter (Qwen3-235B-A22B) — AI research pipeline
 - Hyperliquid Python SDK — perpetual futures DEX
 - Brave Search API (optional, for news signals)
+- Prometheus (`prometheus-client`) — `/metrics` instrumentation + observability
+- Kubernetes (kind + kube-prometheus-stack) — local deployment & Grafana dashboards (see [`k8s/`](k8s/README.md))
 
 It is **operated by** [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 through the MCP server — Hermes Agent is not a build dependency; the trading
