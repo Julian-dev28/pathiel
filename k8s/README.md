@@ -1,6 +1,6 @@
 # hermes-trader on Kubernetes (local, $0)
 
-Run the full system on a throwaway local cluster with Prometheus + Grafana
+Run the full system on a local kind cluster with Prometheus + Grafana
 observability — **no cloud spend**. This is a skill-signal / demo layer; the
 live bot still runs on Fly.io (see `../DEPLOY.md`).
 
