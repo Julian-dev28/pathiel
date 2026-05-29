@@ -149,24 +149,24 @@ def _build_user_message(
         or "no triggers fired"
     )
 
-    # 1h-structure block — accumulation patterns the multi-tf indicator
-    # blocks miss. Surfacing these explicitly because the LLM was reading
-    # 4h/1d bearish EMA alignment and shorting coins whose 1h was actually
-    # in a higher-lows / volume-buildup / EMA-flip setup.
+    # 1h-structure block — accumulation/exhaustion patterns the multi-tf
+    # indicator blocks miss. Surfaced as an ENTRY-TIMING signal to be combined
+    # WITH the 4h/1d trend, not as a reason to trade against it: in an uptrend a
+    # 1h accumulation times a long pullback-entry; in a downtrend a 1h bounce is
+    # a short entry (sell the rip), NOT a counter-trend dip-buy.
     _slow_burn_names = {"volumeBuildup1h", "trendFlip1h", "higherLows1h"}
     slow_burn_hits = [
         t for t in perception.get("triggers", [])
         if t.get("name") in _slow_burn_names and t.get("fired")
     ]
     if slow_burn_hits:
-        structure_lines = ["1h structure signals (accumulation / breakout setup):"]
+        structure_lines = ["1h structure signals (entry-timing — apply IN the 4h/1d trend direction):"]
         for t in slow_burn_hits:
             structure_lines.append(f"  - {t['name']}: {t['reason']}")
         structure_lines.append(
-            "Weigh these against the 4h/1d trend. A clean 1h accumulation pattern "
-            "(higher lows, vol surge, EMA flip) often precedes an UP move even when "
-            "longer timeframes are still bearish — don't reflexively SHORT into "
-            "developing 1h strength."
+            "Use these to time the entry, not to pick the side. If 4h/1d are bullish, this is a "
+            "long pullback-entry; if 4h/1d are bearish, a 1h pop is a SHORT entry (sell the rip) — "
+            "do not buy the dip into a downtrend."
         )
         structure_block = "\n".join(structure_lines)
     else:
@@ -224,36 +224,16 @@ def _build_user_message(
         parts.append(f"last close={_fmt_px(snap.get('last_close', 0))}")
         return f"{label}: {' | '.join(parts)}"
 
+    # Only the coins/sides we already hold — purely so the LLM doesn't
+    # double-trade a coin or can CLOSE one. Deliberately NO dollar sizes:
+    # account notional/leverage must not influence the verdict (sizing and
+    # every risk cap live in the execution gates, not here).
     position_block = (
-        "Open positions: " + ", ".join(
-            f"{p['coin']} {p['side']} ${p.get('size_usd', 0):.0f}"
-            for p in open_positions
-        )
+        "Open positions (do not re-enter these; CLOSE only if structure flipped): "
+        + ", ".join(f"{p['coin']} {p['side']}" for p in open_positions)
         if open_positions
         else "Open positions: none"
     )
-
-    # For HIP-3 candidates the relevant collateral is the target dex's
-    # balance, not the aggregated total — surface both so the LLM sizes
-    # the risk caps against the right pool.
-    equity_lines = [f"Equity (aggregated, perp + all HIP-3 dexes): ${equity:.2f}"]
-    if dex_equity:
-        main_eq = float(dex_equity.get("", 0) or 0)
-        hip3_breakdown = ", ".join(
-            f"{d}=${float(v):.2f}" for d, v in dex_equity.items()
-            if d and float(v or 0) > 0.5
-        )
-        equity_lines.append(f"  main HL clearinghouse: ${main_eq:.2f}")
-        if hip3_breakdown:
-            equity_lines.append(f"  HIP-3 dex equity: {hip3_breakdown}")
-        if ":" in coin:
-            trade_dex = coin.split(":", 1)[0]
-            trade_dex_eq = float(dex_equity.get(trade_dex, 0) or 0)
-            equity_lines.append(
-                f"  THIS TRADE lands on dex '{trade_dex}' which holds "
-                f"${trade_dex_eq:.2f} — that's the relevant capital, not the "
-                f"main-HL balance."
-            )
 
     return "\n".join([
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
@@ -272,7 +252,6 @@ def _build_user_message(
         "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
-        *equity_lines,
         position_block,
         "",
         f"Mode: {mode} — {'your verdict will execute against real funds' if mode == 'LIVE' else 'analysis only, no execution'}",

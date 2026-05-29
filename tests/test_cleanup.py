@@ -2217,22 +2217,29 @@ def test_build_user_message_includes_whale_and_structure_blocks():
         250.0, [], "LIVE",
     )
     assert "Whale accumulation flag (oi_funding_anomaly)" in msg
-    assert "1h structure signals (accumulation" in msg
+    assert "1h structure signals (entry-timing" in msg
     # sub-cent mid must NOT collapse to 0.0002 — adaptive precision keeps it.
     assert "0.000173" in msg and "0.0002" not in msg
 
 
-def test_build_user_message_hip3_surfaces_target_dex_equity():
+def test_build_user_message_omits_account_equity_and_notional():
+    """Account equity / notional must NOT reach the LLM — leverage/exposure is
+    the gates' job and was causing the model to PASS good setups on 'over-leverage'
+    grounds. Only the held coins/sides are surfaced (for dup/CLOSE detection)."""
     from hermes_trader.agents.research import _build_user_message
     perception = {"type": "perp", "mid": 100, "composite_score": 10, "triggers": []}
     snap = {"last_close": 100}
     msg = _build_user_message(
         "xyz:MU", perception, snap, snap, snap, "N/A", "no news",
-        300.0, [], "LIVE",
+        300.0, [{"coin": "ETH", "side": "long", "size_usd": 779.0}], "LIVE",
         dex_equity={"": 96.0, "xyz": 114.0},
     )
-    assert "dex 'xyz' which holds $114.00" in msg
-    assert "HIP-3 dex equity: xyz=$114.00" in msg
+    # no equity figure, no dex-equity framing, no per-position dollar size
+    assert "Equity" not in msg
+    assert "$300" not in msg and "114.00" not in msg
+    assert "$779" not in msg
+    # held coin/side still surfaced so the model won't double-trade / can CLOSE
+    assert "ETH long" in msg
 
 
 def test_parse_verdict_regex_fallback_midtext():
@@ -2464,7 +2471,9 @@ def test_build_user_message_indicator_block_full_snap():
     assert "RSI(14)=62.5" in msg
     assert "ADX(14)=28.0" in msg
     assert "EMA8 slope: rising" in msg
-    assert "Open positions: ETH long $120" in msg
+    # held coin/side surfaced for dup/CLOSE detection, but NO dollar size
+    # (account notional must not influence the verdict).
+    assert "ETH long" in msg and "$120" not in msg
     assert "analysis only" in msg  # OFF mode message
 
 

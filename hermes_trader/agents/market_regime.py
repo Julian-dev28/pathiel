@@ -60,9 +60,16 @@ EQUITY_PROXY = "xyz:SP500"
 # Trend thresholds on 1h closes — 8 bars = 8h lookback so intraday
 # rotations are caught (a slower 4h × 5-bar = 20h window was missing
 # every relief rally and pinning regime to BTC's macro drift).
+#
+# Sensitivity raised 0.2%→0.1% (2026-05): a soft/chop tape was reading
+# 'neutral' all day, and a neutral regime is a FREE PASS in market_regime_gate
+# — so the gate gave zero trend discipline exactly when the book was filling
+# with counter-trend dip-buy longs. A bearish EMA20<EMA50 cross that is only
+# gently sloped is still a real downtrend; we want it to register as 'down' so
+# counter-trend longs face the gate. Flat (slope≈0) still reads neutral.
 _SLOPE_LOOKBACK = 8
-_SLOPE_UP = 0.002       # +0.2% over 8 bars → 'up'
-_SLOPE_DOWN = -0.002    # -0.2% over 8 bars → 'down'
+_SLOPE_UP = 0.001       # +0.1% over 8 bars → 'up'
+_SLOPE_DOWN = -0.001    # -0.1% over 8 bars → 'down'
 
 REGIME_TTL_S = 300  # 5min cache — 1h trends can flip faster than 4h
 
