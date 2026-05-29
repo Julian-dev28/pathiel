@@ -253,10 +253,10 @@ while True:
         # authoritative backstop; this just stops the paid LLM call early.
         cooldown_min = float(read_agent_config().get("cooldown_min", 60))
         cooldown_ms = cooldown_min * 60_000
-        recent_trades_by_coin = {}
-        for t in memory.get_recent_trades(20):
-            if t.get("coin") and t.get("executed_at"):
-                recent_trades_by_coin.setdefault(t["coin"], t["executed_at"])
+        # Newest trade timestamp per coin (NOT oldest — see the method docstring;
+        # the prior inline `setdefault` kept the oldest, so a coin traded twice
+        # in the window paid for redundant LLM research every cycle).
+        recent_trades_by_coin = memory.latest_trade_ts_by_coin(20)
         now_ms = int(time.time() * 1000)
 
         for perception in results:

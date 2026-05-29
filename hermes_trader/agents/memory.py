@@ -162,6 +162,17 @@ class AgentMemory:
     def get_recent_trades(self, limit: int = 20) -> List[Dict[str, Any]]:
         return self._trades[-limit:]
 
+    def latest_trade_ts_by_coin(self, limit: int = 20) -> Dict[str, int]:
+        """Map each coin to its NEWEST executed_at within the last `limit`
+        trades. Backs the loop's pre-research cooldown — must be the newest,
+        not the oldest, or a coin traded twice in the window keeps paying for
+        redundant LLM research while it's still inside its cooldown."""
+        out: Dict[str, int] = {}
+        for t in self.get_recent_trades(limit):  # chronological → newest wins
+            if t.get("coin") and t.get("executed_at"):
+                out[t["coin"]] = t["executed_at"]
+        return out
+
     def get_all_trades(self) -> List[Dict[str, Any]]:
         return list(self._trades)
 

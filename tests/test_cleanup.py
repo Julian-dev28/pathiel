@@ -384,6 +384,24 @@ def test_classify_asset():
     assert classify_asset("SILVER") == "commodity"
 
 
+def test_latest_trade_ts_by_coin_keeps_newest():
+    """The pre-research cooldown map must keep the NEWEST trade per coin, not
+    the oldest — the NEAR double-trade bug that burned LLM tokens every cycle."""
+    from hermes_trader.agents.memory import AgentMemory
+    m = AgentMemory()
+    # Chronological: NEAR traded 67min ago, then again 5min ago.
+    m._trades = [
+        {"coin": "NEAR", "executed_at": 1_000_000},   # older
+        {"coin": "BTC",  "executed_at": 1_500_000},
+        {"coin": "NEAR", "executed_at": 9_000_000},   # newer — must win
+        {"coin": "SOL"},                              # no executed_at → skipped
+    ]
+    out = m.latest_trade_ts_by_coin(20)
+    assert out["NEAR"] == 9_000_000  # newest, not 1_000_000
+    assert out["BTC"] == 1_500_000
+    assert "SOL" not in out
+
+
 def test_classify_asset_hip3_namespaced(monkeypatch):
     """HIP-3 venues are mixed: unknown tokenized stocks default to equity (not
     the BTC-trend crypto default), but crypto names listed on a HIP-3 dex still
