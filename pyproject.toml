@@ -17,6 +17,7 @@ dependencies = [
     "hyperliquid-python-sdk>=0.23.0",
     "eth-account>=0.13.0",
     "msgpack>=1.1.0",
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]

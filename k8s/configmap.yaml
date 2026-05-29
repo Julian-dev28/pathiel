@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-config
+  namespace: hermes
+# Non-secret runtime config (mirrors fly.toml [env]). Secrets — API keys, the
+# wallet key, the operator token — live in the `hermes-secrets` Secret, NOT here.
+# The /data path env vars (state/snapshot/log) are baked into the image, so both
+# containers already agree on where shared state lives.
+data:
+  HERMES_PORT: "8000"
+  HERMES_SCAN_INTERVAL: "60"

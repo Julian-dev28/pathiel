@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hermes-trader
+  namespace: hermes
+  labels:
+    app: hermes-trader
+spec:
+  serviceName: hermes-trader
+  # replicas is 1 ON PURPOSE — the `loop` writes .dsl-state.json / .agent-memory
+  # / the positions snapshot to the shared volume and is a singleton by design.
+  # Running two loops would double-trade and corrupt the ratchet state. This is
+  # why it's a StatefulSet (stable identity + its own PVC), not a Deployment.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hermes-trader
+  template:
+    metadata:
+      labels:
+        app: hermes-trader
+      annotations:
+        # Fallback for annotation-based Prometheus scrape configs. The
+        # operator-native path is k8s/servicemonitor.yaml.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # fsGroup so the mounted PVC is group-writable for state files.
+      securityContext:
+        fsGroup: 1000
+      containers:
+        # ── web: FastAPI dashboard + JSON API + /metrics ──────────────────────
+        - name: web
+          image: hermes-trader:local
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-m", "hermes_trader.server"]
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: hermes-config
+            - secretRef:
+                name: hermes-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+        # ── loop: autonomous scan → research → execute → DSL monitor ──────────
+        - name: loop
+          image: hermes-trader:local
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "scripts/trading_loop.py"]
+          envFrom:
+            - configMapRef:
+                name: hermes-config
+            - secretRef:
+                name: hermes-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # No HTTP to probe — this is a worker. A startupProbe waits for the
+          # first positions snapshot (proves it booted AND reached Hyperliquid);
+          # after that, a process crash is the failure signal (restartPolicy
+          # Always restarts it). No liveness flapping on transient API blips.
+          startupProbe:
+            exec:
+              command:
+                - python3
+                - -c
+                - "import os,sys,time; f='/data/.positions-snapshot.json'; sys.exit(0 if os.path.exists(f) and (time.time()-os.path.getmtime(f))<300 else 1)"
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 20
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

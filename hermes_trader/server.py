@@ -36,9 +36,11 @@ def _load_env_local_early() -> None:
 
 _load_env_local_early()
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware                   # noqa: E402
 from fastapi.responses import JSONResponse                            # noqa: E402
+
+from hermes_trader.metrics import render_metrics                      # noqa: E402
 
 from hermes_trader import __version__, dashboard, session_log         # noqa: E402
 from hermes_trader.dashboard import _require_operator                 # noqa: E402
@@ -634,6 +636,14 @@ async def cancel_order(request: Request):
 @app.get("/api/health")
 async def health():
     return {"service": "Hermes-Trader", "version": __version__, "status": "running"}
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus scrape target. Unauthenticated (like /api/health) so the
+    scraper needs no operator token; reads local state only — never hits HL."""
+    body, content_type = render_metrics()
+    return Response(content=body, media_type=content_type)
 
 
 # Dashboard, SSE feed, and operator console all live in hermes_trader.dashboard.

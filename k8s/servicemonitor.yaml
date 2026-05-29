@@ -1,0 +1,21 @@
+# Operator-native scrape config. Requires the Prometheus Operator CRDs, which
+# kube-prometheus-stack installs — so apply this AFTER `helm install`.
+#
+# The `release` label must match your kube-prometheus-stack Helm release name;
+# by default the stack's Prometheus only selects ServiceMonitors carrying it.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hermes-trader
+  namespace: hermes
+  labels:
+    app: hermes-trader
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: hermes-trader
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
