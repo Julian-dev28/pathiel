@@ -24,6 +24,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
+# Prefer the project venv interpreter (it has the full dep set incl.
+# prometheus_client + the hyperliquid stack). Bare `python3` on PATH was a
+# different interpreter missing server deps. Override with HERMES_PY if needed.
+if [[ -n "${HERMES_PY:-}" ]]; then
+  PY="$HERMES_PY"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PY="$ROOT/.venv/bin/python"
+else
+  PY="python3"
+fi
+
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -90,7 +101,7 @@ start_loop() {
     return 0
   fi
   info "starting trading loop (log: $LOOP_LOG)"
-  nohup python3 "$ROOT/scripts/trading_loop.py" > "$LOOP_LOG" 2>&1 &
+  nohup "$PY" "$ROOT/scripts/trading_loop.py" > "$LOOP_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 1
@@ -112,7 +123,7 @@ start_server() {
   fi
   local port="${HERMES_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
-  nohup python3 -m hermes_trader.server > "$SERVER_LOG" 2>&1 &
+  nohup "$PY" -m hermes_trader.server > "$SERVER_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 2
