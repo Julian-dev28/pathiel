@@ -1826,6 +1826,48 @@ def test_maybe_execute_whale_boosts_size(monkeypatch):
     assert abs(captured["size"] - 13.0) < 1e-6
 
 
+# ── Coverage: configurable conviction-sizing tiers ──────────────────────
+def test_parse_conviction_tiers_default_and_malformed():
+    from hermes_trader.agents.executor import (
+        _parse_conviction_tiers, _DEFAULT_CONVICTION_TIERS)
+    assert _parse_conviction_tiers(None) == _DEFAULT_CONVICTION_TIERS
+    assert _parse_conviction_tiers([]) == _DEFAULT_CONVICTION_TIERS
+    # malformed entries → fall back to defaults, never raise
+    assert _parse_conviction_tiers([["x", "y"]]) == _DEFAULT_CONVICTION_TIERS
+    # non-positive multipliers dropped; remaining sorted highest-threshold-first
+    assert _parse_conviction_tiers([[0.5, 0.8], [0.9, 2.0], [0.3, 0]]) == [
+        (0.9, 2.0), (0.5, 0.8)]
+
+
+def test_conviction_multiplier_tier_selection():
+    from hermes_trader.agents.executor import _conviction_multiplier
+    tiers = [(0.85, 2.0), (0.7, 1.2), (0.0, 0.5)]
+    assert _conviction_multiplier(0.90, tiers) == 2.0
+    assert _conviction_multiplier(0.85, tiers) == 2.0  # inclusive
+    assert _conviction_multiplier(0.72, tiers) == 1.2
+    assert _conviction_multiplier(0.10, tiers) == 0.5
+    # below every threshold when no 0.0 floor → lowest tier's mult
+    assert _conviction_multiplier(0.10, [(0.9, 2.0), (0.7, 1.2)]) == 1.2
+
+
+def test_maybe_execute_custom_conviction_tiers(monkeypatch):
+    """A config-supplied aggressive tier (0.85→2.0×) sizes bigger than default."""
+    ex, captured, _ = _exec_baseline(
+        monkeypatch,
+        cfg_overrides={"conviction_tiers": [[0.85, 2.0], [0.65, 1.0], [0.0, 0.5]]})
+    ex.maybe_execute(_analysis(confidence=0.90))
+    # 1000 × 0.10 × 10 × 2.0 / 100 = 20 coins (vs 15 under the default 1.5×)
+    assert abs(captured["size"] - 20.0) < 1e-6
+
+
+def test_maybe_execute_default_tiers_unchanged(monkeypatch):
+    """Absent conviction_tiers → identical to the prior hardcoded behavior."""
+    ex, captured, _ = _exec_baseline(monkeypatch)
+    ex.maybe_execute(_analysis(confidence=0.50))  # below 0.65 → 0.7×
+    # 1000 × 0.10 × 10 × 0.7 / 100 = 7 coins
+    assert abs(captured["size"] - 7.0) < 1e-6
+
+
 # ── Coverage: whale_index signal heuristics ─────────────────────────────
 def test_smart_money_concentration_accumulation_signal(monkeypatch):
     """oi>0 + negative funding → 'accumulation'; confidence scales w/ |funding|."""

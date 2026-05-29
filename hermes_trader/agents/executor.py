@@ -65,6 +65,40 @@ def kelly_size(
     return min(notional, max_trade_notional)
 
 
+# Conviction sizing: scale the per-trade equity fraction by AI confidence so
+# high-conviction setups bet bigger. The tiers are configurable via the
+# `conviction_tiers` config key; these are the defaults if it's unset.
+_DEFAULT_CONVICTION_TIERS = [(0.80, 1.5), (0.65, 1.0), (0.0, 0.7)]
+
+
+def _parse_conviction_tiers(raw: Any) -> List[tuple]:
+    """Parse `conviction_tiers` config into descending (threshold, mult) pairs.
+
+    Accepts a list of [min_confidence, size_multiplier] pairs. Falls back to the
+    defaults on any malformed input — this runs in the live trade path and must
+    never raise. Drops non-positive multipliers; sorts highest-threshold-first
+    so the multiplier lookup picks the best tier the confidence clears."""
+    if not raw:
+        return _DEFAULT_CONVICTION_TIERS
+    try:
+        tiers = [(float(t[0]), float(t[1])) for t in raw if float(t[1]) > 0]
+    except (TypeError, ValueError, IndexError):
+        return _DEFAULT_CONVICTION_TIERS
+    if not tiers:
+        return _DEFAULT_CONVICTION_TIERS
+    tiers.sort(key=lambda t: t[0], reverse=True)
+    return tiers
+
+
+def _conviction_multiplier(confidence: float, tiers: List[tuple]) -> float:
+    """First tier (descending) whose threshold `confidence` meets wins. Below
+    every threshold → the lowest tier's multiplier."""
+    for threshold, mult in tiers:
+        if confidence >= threshold:
+            return mult
+    return tiers[-1][1]
+
+
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market."""
     config = read_agent_config()
@@ -236,12 +270,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
     if bool(config.get("conviction_sizing", True)):
         conf = float(analysis.get("confidence", 0) or 0)
-        if conf >= 0.80:
-            conviction_mult = 1.5
-        elif conf >= 0.65:
-            conviction_mult = 1.0
-        else:
-            conviction_mult = 0.7
+        tiers = _parse_conviction_tiers(config.get("conviction_tiers"))
+        conviction_mult = _conviction_multiplier(conf, tiers)
         # Whale-signal boost: when smart-money accumulation is flagged on this
         # coin, bet bigger to capitalize. Multiplies on top of the confidence
         # tier and clamps so a whale + high-conf trade can't exceed 2× base.

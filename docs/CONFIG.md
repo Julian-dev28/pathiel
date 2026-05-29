@@ -62,7 +62,21 @@ Combined open notional cap as multiple of equity. `40.0` = max 40× equity in to
 Refuse new trade if `available / equity < this`. Default 10% leaves headroom for maintenance margin + slippage. Lower = more aggressive deployment, higher risk of HL "insufficient margin" rejections.
 
 ### `conviction_sizing` (bool, default `true`)
-Scale position size by AI confidence: `conf ≥ 0.80 → 1.5×`, `0.65-0.80 → 1.0×`, `< 0.65 → 0.7×`. Set `false` for flat sizing across all trades.
+Scale position size by AI confidence: a high-conviction setup bets a larger fraction of equity. Set `false` for flat sizing across all trades.
+
+### `conviction_tiers` (list of `[min_confidence, multiplier]`, optional)
+Overrides the built-in confidence tiers used by `conviction_sizing`. Each pair is `[threshold, size_multiplier]`; the highest threshold the AI confidence clears wins, and the multiplier scales `equity_fraction_per_trade` for that trade. Hot-reloaded — no restart needed.
+
+Default (when unset) reproduces the prior hardcoded behavior:
+```json
+"conviction_tiers": [[0.80, 1.5], [0.65, 1.0], [0.0, 0.7]]
+```
+
+Example — bet more aggressively on strong setups and smaller on weak ones:
+```json
+"conviction_tiers": [[0.85, 2.0], [0.70, 1.2], [0.0, 0.5]]
+```
+So at `equity_fraction_per_trade: 0.10`, a 0.90-confidence trade sizes at an effective 0.20 fraction (2.0×), while a 0.55-confidence trade sizes at 0.05 (0.5×). Malformed entries are ignored and fall back to the default tiers. The whale-signal boost (`whale_size_multiplier`) still multiplies on top, clamped at 2× base.
 
 ---
 
