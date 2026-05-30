@@ -51,6 +51,19 @@ _COMMODITY_COINS = frozenset([
     "GOLD", "SILVER", "COPPER", "PLATINUM", "PALLADIUM", "ALUMINIUM",
 ])
 
+# Foreign / non-US-correlated stock indices. These trade on their own session
+# and drivers (Korea, Japan, HK, Europe, India, Australia) and do NOT track the
+# US SP500 proxy — gating them by US equity regime made them perennial losers
+# (e.g. xyz:KR200 = KOSPI 200, repeatedly "trend-aligned with US-up" yet falling).
+# Classified to use their OWN 4h trend (the commodity/own-trend path) instead.
+_FOREIGN_INDICES = frozenset([
+    "KR200", "KOSPI", "KOSPI200",
+    "JP225", "NIKKEI", "N225",
+    "HSI", "HANGSENG", "HK50",
+    "DAX", "DAX40", "FTSE", "FTSE100", "CAC", "CAC40", "STOXX", "STOXX50", "ESTX50",
+    "ASX", "ASX200", "SENSEX", "NIFTY", "NIFTY50",
+])
+
 CRYPTO_PROXY = "BTC"
 # HIP-3 tokenized equity perp — xyz:SP500 is the highest-volume broad-market
 # proxy ($194M 24h vol). Only resolves when enable_hip3 is on; falls back to
@@ -120,6 +133,10 @@ def classify_asset(coin: str) -> AssetClass:
     namespaced = ":" in raw
     bare = raw.split(":", 1)[-1].upper() if namespaced else raw.upper()
     if bare in _COMMODITY_COINS:
+        return "commodity"
+    if bare in _FOREIGN_INDICES:
+        # Own-trend (commodity path): a foreign index follows its own market, not
+        # the US SP500 proxy used for the `equity` class.
         return "commodity"
     if bare in _EQUITY_COINS:
         return "equity"
