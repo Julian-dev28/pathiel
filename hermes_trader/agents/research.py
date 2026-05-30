@@ -295,7 +295,12 @@ async def _async_do_call(
                     {"role": "user", "content": user_message},
                 ],
                 "stream": False,
-                "max_tokens": 1024,
+                # Output is only a verdict JSON + 2-3 sentences (~150-300 tokens);
+                # 1024 was wasteful and, on a low OpenRouter balance, tripped 402
+                # "requires more credits ... can only afford N" — reserving 1024 of
+                # max cost. 512 fits the real output with margin and ~halves the
+                # reserved cost so research keeps working on a lean balance.
+                "max_tokens": 512,
                 "temperature": 0.1,
             },
             headers={"Authorization": f"Bearer {openrouter_key}"},
