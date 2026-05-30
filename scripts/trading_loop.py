@@ -273,6 +273,13 @@ while True:
         # exits in real time; the AI close-check is the slower structural-flip
         # judgment and only needs an occasional refresh.
         held_research_ms = float(_cfg_cd.get("held_research_interval_min", 10)) * 60_000
+        # Re-research throttle for NON-held, non-traded coins: a coin that keeps
+        # triggering but keeps PASSing (or whose trade gets gate/margin-rejected)
+        # used to be researched EVERY scan — burning LLM tokens/credits on a setup
+        # that won't meaningfully change in 60s (e.g. XLM PASS'd every cycle). Skip
+        # re-research for this window regardless of verdict. The scan still re-detects
+        # it; we just don't re-pay the LLM until the cooldown lapses.
+        research_cooldown_ms = float(_cfg_cd.get("research_cooldown_min", 15)) * 60_000
         # Newest trade timestamp per coin (NOT oldest — see the method docstring;
         # the prior inline `setdefault` kept the oldest, so a coin traded twice
         # in the window paid for redundant LLM research every cycle).
@@ -312,6 +319,17 @@ while True:
                     logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
                     log_event({"event": "ta_skip", "coin": coin,
                                "signal": "COOLDOWN",
+                               "score": round(float(score), 1),
+                               "trigger_score": round(float(score), 1)})
+                    continue
+                # Re-research throttle: already researched recently (any verdict) →
+                # don't re-pay the LLM until research_cooldown_min lapses.
+                last_research = _last_research_by_coin.get(coin, 0)
+                if (now_ms - last_research) < research_cooldown_ms:
+                    remaining_min = int((research_cooldown_ms - (now_ms - last_research)) / 60_000)
+                    logger.info(f"{coin}: re-research throttle ({remaining_min}min remaining) — skip")
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "RESEARCH_THROTTLE",
                                "score": round(float(score), 1),
                                "trigger_score": round(float(score), 1)})
                     continue
