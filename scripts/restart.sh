@@ -101,7 +101,7 @@ start_loop() {
     return 0
   fi
   info "starting trading loop (log: $LOOP_LOG)"
-  nohup "$PY" "$ROOT/scripts/trading_loop.py" > "$LOOP_LOG" 2>&1 &
+  nohup "$PY" "$ROOT/scripts/trading_loop.py" >> "$LOOP_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 1
@@ -123,7 +123,7 @@ start_server() {
   fi
   local port="${HERMES_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
-  nohup "$PY" -m hermes_trader.server > "$SERVER_LOG" 2>&1 &
+  nohup "$PY" -m hermes_trader.server >> "$SERVER_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 2
