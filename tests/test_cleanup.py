@@ -375,7 +375,7 @@ def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     })
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 99.0)
     monkeypatch.setattr(executor, "place_hl_order",
-                        lambda is_buy, size, mid_price, coin: {"ok": True, "order_id": "x1"})
+                        lambda is_buy, size, mid_price, coin, **kw: {"ok": True, "order_id": "x1"})
 
     res = executor.close_position_market("ETH")
     assert res["ok"] is True
@@ -400,7 +400,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     })
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 0.10522)
     monkeypatch.setattr(executor, "place_hl_order",
-                        lambda is_buy, size, mid_price, coin: {
+                        lambda is_buy, size, mid_price, coin, **kw: {
                             "ok": True, "order_id": "999",
                             "avg_px": 0.10522, "total_sz": 1000.0,
                         })
