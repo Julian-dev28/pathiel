@@ -126,6 +126,15 @@ def _sync_account_state():
         return 0.0, [], 0.0, 0.0, set(), {}
 
     equity = float(state.get("equity", 0) or 0)
+    if equity <= 0:
+        # A 'successful' fetch returning $0 equity while positions are open is a
+        # degraded/empty API response (timeout-storm), not reality. Don't poison
+        # memory — writing it would record a false equity=0 and dailyPnl=-SOD (which
+        # also drags the daily-loss kill toward a false trip). Preserve last-known-good
+        # by skipping the memory update this tick; queried_dexes=set() keeps DSL
+        # trackers intact, and maybe_execute already refuses to size on equity<=0.
+        logger.warning("[heartbeat] fetch returned equity<=0 (degraded API) — skipping memory update, preserving last-known-good")
+        return 0.0, [], 0.0, 0.0, set(), {}
     # Heartbeat shows total-across-dexes free margin (what the operator
     # actually has trade-ready) — not the main-only number used internally
     # by the executor for native-crypto sizing.
