@@ -305,6 +305,17 @@ async def _async_do_call(
             choices = data.get("choices", [])
             if choices:
                 return choices[0].get("message", {}).get("content", "")
+            logger.error("[research] LLM returned 200 but no choices — empty response")
+            return ""
+        # LOUD failure. A non-200 (esp. 402 Payment Required = out of OpenRouter
+        # credits, or 401/429) previously returned "" silently → parse_verdict
+        # defaulted every coin to PASS conf 0.0, so a billing/API outage looked
+        # identical to "no setups" and the bot sat blind for hours. Make it scream.
+        body = resp.text[:200] if resp.text else ""
+        logger.error(
+            f"[research] LLM call FAILED: HTTP {resp.status_code} — AI research is "
+            f"DOWN, all verdicts will default to PASS until fixed. {body}"
+        )
     return ""
 
 
