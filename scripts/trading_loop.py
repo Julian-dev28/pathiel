@@ -294,6 +294,11 @@ while True:
         # in the window paid for redundant LLM research every cycle).
         recent_trades_by_coin = memory.latest_trade_ts_by_coin(20)
         held_coins = memory.open_position_coins()
+        # Blocklisted coins can never execute (coin_filter gate blocks them), so
+        # we skip the paid LLM research for any we don't hold — see the else
+        # branch below. Held blocklisted coins are exempt (AI must keep the
+        # ability to CLOSE). Read once per scan from the hot-reloaded config.
+        _blocklist = set(_cfg_cd.get("coin_blocklist", []) or [])
         now_ms = int(time.time() * 1000)
 
         for perception in results:
@@ -320,6 +325,17 @@ while True:
                                "trigger_score": round(float(score), 1)})
                     continue
             else:
+                # Blocklisted + not held → coin_filter will reject any entry, so
+                # skip the paid LLM research entirely (this coin keeps triggering
+                # every scan otherwise). Held blocklisted coins took the held
+                # branch above and still get their AI close-check.
+                if coin in _blocklist:
+                    logger.info(f"{coin}: on coin blocklist — skip research")
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "BLOCKLISTED",
+                               "score": round(float(score), 1),
+                               "trigger_score": round(float(score), 1)})
+                    continue
                 # Not held but executed within cooldown_min → re-entry would be
                 # gate-blocked, so skip the paid AI call.
                 last_ms = recent_trades_by_coin.get(coin)
