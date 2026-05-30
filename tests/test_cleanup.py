@@ -253,6 +253,22 @@ def test_risk_gates_pass_and_block():
     assert any("confidence" in r for r in blocked["block_reasons"])
 
 
+def test_held_coin_blocks_both_pyramid_and_flip():
+    """A coin we already hold must block re-entry in BOTH directions: opposite =
+    no auto-flip, same side = no uncontrolled pyramid (the held-coin close-check
+    can return a fresh LONG/SHORT; only this guard stops it adding)."""
+    from hermes_trader.agents.risk_gates import opposite_direction_guard
+    held_long = [{"coin": "ETH", "side": "long", "size_usd": 100}]
+    # same-direction re-entry → blocked (pyramid)
+    r_same = opposite_direction_guard(_ctx(coin="ETH", trade_side="long", current_positions=held_long))
+    assert r_same["pass"] is False and "pyramid" in r_same["reason"]
+    # opposite-direction → blocked (no auto-flip)
+    r_opp = opposite_direction_guard(_ctx(coin="ETH", trade_side="short", current_positions=held_long))
+    assert r_opp["pass"] is False and "auto-flip" in r_opp["reason"]
+    # unheld coin → passes
+    assert opposite_direction_guard(_ctx(coin="SOL", trade_side="long", current_positions=held_long))["pass"] is True
+
+
 def test_cfg_camelcase_tolerance():
     """Gate config keys resolve whether written snake_case or camelCase."""
     from hermes_trader.agents.risk_gates import _cfg

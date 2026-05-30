@@ -411,8 +411,25 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     funding_raw = _fetch_funding_rate(coin)
     news = _fetch_news(coin)
 
+    # Thin-history guard: multi-timeframe TA is meaningless without enough 4h
+    # bars (EMA21/ADX need history). A near-empty series produced confident-
+    # looking but baseless entries (e.g. WLD entered at 0.68 conf on "0 candles"
+    # then ran straight to the stop). Decline outright — PASS, no LLM call, no entry.
     if len(c4h) < 30:
-        logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles")
+        logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles — PASS (skip)")
+        analysis = {
+            "id": str(uuid.uuid4()), "perception_id": perception.get("id", "unknown"),
+            "coin": coin, "verdict": "PASS", "confidence": 0.0, "side": None,
+            "entry_px": perception.get("mid", 0), "stop_px": 0.0, "tp_px": 0.0,
+            "reasoning": f"insufficient 4h history ({len(c4h)} candles) for reliable multi-TF TA",
+            "news_context": news, "news_risk": "none",
+            "created_at": int(time.time() * 1000),
+            "composite_score": float(perception.get("composite_score", 0) or 0),
+            "momentum_burst_fired": False, "slow_burn_fired": False,
+            "slow_burn_count": 0, "whale_signal": perception.get("whale_signal"),
+        }
+        memory.record_analysis(analysis)
+        return analysis
 
     tf1h = _compute_indicators(c1h)
     tf4h = _compute_indicators(c4h)

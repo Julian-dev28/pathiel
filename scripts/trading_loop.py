@@ -385,8 +385,12 @@ while True:
                     log_event({"event": "error", "coin": coin,
                                "error": f"unhandled verdict {routed['verdict']!r}"})
             except Exception as e:
-                logger.error(f"Error processing {coin}: {e}")
-                log_event({"event": "error", "coin": coin, "error": str(e)})
+                # repr(e) not str(e): a bare exception (e.g. some httpx errors)
+                # stringifies to "" and produced blank "Error processing X:" lines.
+                detail = repr(e) if str(e) == "" else str(e)
+                logger.error(f"Error processing {coin}: {type(e).__name__}: {detail}")
+                log_event({"event": "error", "coin": coin,
+                           "error": f"{type(e).__name__}: {detail}"})
 
         logger.info(f"Sleeping {scan_interval}s until next scan...")
         time.sleep(scan_interval)

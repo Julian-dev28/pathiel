@@ -120,12 +120,18 @@ def cooldown_gate(ctx: GateContext, last_trade_time: Optional[int], cooldown_min
 
 
 def opposite_direction_guard(ctx: GateContext) -> GateResult:
+    """Block ANY re-entry on a coin we already hold. A held position is managed
+    solely by the DSL engine + the periodic AI close-check (CLOSE / HOLD); it is
+    never flipped (opposite side = no auto-flip) NOR added to (same side =
+    uncontrolled pyramid). The held-coin close-check sometimes returns a fresh
+    LONG/SHORT on a strong held name; without this it would try to pyramid in
+    (previously only the exchange margin check stopped it)."""
     existing = next((p for p in ctx.current_positions if p["coin"] == ctx.coin), None)
     if not existing:
         return {"pass": True}
     if existing["side"] != ctx.trade_side:
         return {"pass": False, "reason": f"opposite position exists ({ctx.coin} {existing['side']}) — no auto-flip"}
-    return {"pass": True}
+    return {"pass": False, "reason": f"already holding {ctx.coin} {existing['side']} — no pyramid/re-entry"}
 
 
 # Major crypto coins for correlation cap

@@ -221,10 +221,20 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 ),
             }
 
-    state = fetch_account_state(user) or {}
-    equity = float(state.get("equity") or 0)
-    available = float(state.get("available") or 0)
-    total_open_notional = float(state.get("total_ntl") or 0)
+    # include_hip3=True so the concurrency + exposure gates COUNT every open
+    # position, including tokenized-equity (xyz:) HIP-3 perps. The old main-only
+    # fetch returned 0 positions / $0 notional whenever the book was all HIP-3,
+    # so max_concurrent and equity_risk never capped it — the book ballooned
+    # past max_concurrent (to ~22) and to ~17x notional. Sizing still uses the
+    # MAIN-dex clearinghouse ("") equity/available below, so per-trade size is
+    # unchanged; only the gate inputs are corrected to the aggregated book.
+    state = fetch_account_state(user, include_hip3=True) or {}
+    _dex_eq = state.get("dex_equity") or {}
+    _dex_av = state.get("dex_available") or {}
+    equity = float(_dex_eq.get("", state.get("equity")) or 0)        # main → sizing basis
+    available = float(_dex_av.get("", state.get("available")) or 0)  # main → margin floor
+    agg_equity = float(state.get("equity") or equity)                # aggregated → exposure gate
+    total_open_notional = float(state.get("total_ntl") or 0)         # aggregated → notional gate
     if equity <= 0:
         # Likely an HL API timeout — refuse rather than send an unsized order.
         return {
@@ -330,7 +340,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         trade_side=trade_side,
         has_binary_news_risk=has_binary_news,
         binary_news_match=binary_news_match,
-        equity=equity,
+        equity=agg_equity,
         total_open_notional=total_open_notional,
         composite_score=float(analysis.get("composite_score", 0) or 0),
         momentum_burst_fired=bool(analysis.get("momentum_burst_fired", False)),
