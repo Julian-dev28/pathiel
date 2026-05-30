@@ -408,8 +408,15 @@ def place_hl_order(
     size: float,
     mid_price: float,
     coin: str = "BTC",
+    reduce_only: bool = False,
 ) -> Dict[str, Any]:
-    """Place an IOC (immediate-or-cancel) limit order on Hyperliquid."""
+    """Place an IOC (immediate-or-cancel) limit order on Hyperliquid.
+
+    reduce_only=True for CLOSES: the size floor below bumps small orders to HL's
+    $10 minimum, so closing a sub-$10 position (e.g. an illiquid residual) would
+    OVERSHOOT and flip the position to the opposite side without this flag. With
+    reduce_only, HL fills only up to the live position size and rejects the rest
+    → clean flatten, never a flip."""
     if not PRIVATE_KEY_HEX:
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if mid_price <= 0:
@@ -446,7 +453,7 @@ def place_hl_order(
             float(size_str),
             float(price_str),
             order_type,
-            reduce_only=False,
+            reduce_only=reduce_only,
         )
 
         parsed = _parse_order_result(result)

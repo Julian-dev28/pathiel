@@ -551,7 +551,11 @@ def close_position_market(coin: str) -> Dict[str, Any]:
     tracker = dsl_exit._active_positions.get(f"{coin}_{side}")
     leverage = tracker.leverage if tracker else 1
 
-    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin)
+    # reduce_only: a close must only FLATTEN. Without it, the $10-min size floor in
+    # place_hl_order overshoots a sub-$10 position and flips it to the opposite side
+    # (the BIRD short<->long churn loop). reduce_only makes HL ignore the excess.
+    res = place_hl_order(is_buy=not is_long, size=abs(szi), mid_price=mid_price, coin=coin,
+                         reduce_only=True)
     out: Dict[str, Any] = {**res, "coin": coin, "side": side,
                             "entry_px": entry_px, "leverage": leverage}
 
