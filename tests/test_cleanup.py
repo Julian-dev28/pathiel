@@ -1116,14 +1116,14 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
-    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None: (True, None))
+    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None, wsb=False: (True, None))
     # Force include_hip3=True via the runtime config
     monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
                         lambda: {"enable_hip3": True})
 
     seen = []
     real_scan = perception._scan_single_market
-    def _capture(m, mid, cfg, ms, ws=None):
+    def _capture(m, mid, cfg, ms, ws=None, wsb=False):
         seen.append(m["coin"])
         return (True, None)
     monkeypatch.setattr(perception, "_scan_single_market", _capture)
@@ -1225,7 +1225,7 @@ def _scan_with_config(monkeypatch, cfg):
                         lambda: cfg)
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms, ws=None: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None, wsb=False: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
     return seen
 
@@ -1314,7 +1314,7 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
 
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms, ws=None: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None, wsb=False: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
 
     # Volume budget = 10 - 3 = 7 → all 5 MAJORs + 2 of the 5 MOVERs by volume
@@ -1325,6 +1325,41 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
     assert len(movers_picked) >= 3, f"expected >=3 movers, got {movers_picked}"
     # Pico-cap below the volume floor must NEVER be scanned (noise filter)
     assert "PICO" not in seen, f"pico-cap leaked through floor: {seen}"
+
+
+def test_whale_scan_bypass_surfaces_subgate_accumulation(monkeypatch):
+    """A whale-flagged coin that scores BELOW the composite gate must be:
+      - dropped when whale_scan_bypass is OFF (default), and
+      - surfaced (with whale_signal attached) when whale_scan_bypass is ON.
+
+    Regression for the dead-path bug: oi_funding_anomaly fires on FLAT price,
+    which scores ~0 on momentum/breakout triggers, so without the bypass the
+    coin never reaches the executor where the whale override lives.
+    """
+    from hermes_trader.agents import perception
+    from hermes_trader.agents.config import get_config
+
+    cfg = get_config()
+    gate = cfg["scan"]["minCompositeScore"]
+    # Flat candles → no momentum/breakout/trend triggers fire → score below gate.
+    flat = [Candle(t=i, o=100.0, h=100.0, l=100.0, c=100.0, v=10.0) for i in range(120)]
+    monkeypatch.setattr(perception, "_fetch_candles_sync",
+                        lambda coin, interval, count, ttl: flat)
+    market = {"coin": "TRX", "type": "perp", "dex": None}
+    whale_signals = {"TRX": {"signal": "oi_funding_anomaly", "score": 0.8}}
+
+    # OFF → dropped at the gate (result is None)
+    ok, res = perception._scan_single_market(market, 100.0, cfg, gate, whale_signals,
+                                             False)
+    assert ok and res is None, f"expected drop with bypass OFF, got {res}"
+
+    # ON → surfaced with the whale_signal attached so the executor can act
+    ok, res = perception._scan_single_market(market, 100.0, cfg, gate, whale_signals,
+                                             True)
+    assert ok and isinstance(res, dict), f"expected surfaced result with bypass ON, got {res}"
+    assert res["coin"] == "TRX"
+    assert res["whale_signal"] == whale_signals["TRX"]
+    assert res["composite_score"] < gate  # confirms it was genuinely sub-gate
 
 
 def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path):

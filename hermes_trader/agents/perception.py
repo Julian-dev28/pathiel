@@ -74,6 +74,7 @@ def _scan_single_market(
     config: Dict[str, Any],
     min_score: float,
     whale_signals: Optional[Dict[str, Dict[str, Any]]] = None,
+    whale_scan_bypass: bool = False,
 ) -> Tuple[bool, Dict[str, Any] | str | None]:
     """Run all triggers on a single market's candles.
 
@@ -142,7 +143,15 @@ def _scan_single_market(
         # A confirmed momentum burst is always surfaced — a large, fast move is
         # exactly the signal the composite gate must never filter out.
         burst_fired = any(h["name"] == "momentumBurst" and h["fired"] for h in hits)
-        if score < min_score and not burst_fired:
+        # Whale-accumulation bypass (gated by whale_scan_bypass, default OFF).
+        # oi_funding_anomaly / oi_surge_accumulation fire on FLAT price (smart
+        # money loading vs crowded shorts), which by definition scores low on the
+        # momentum/breakout triggers — so without this the coin is dropped here
+        # and the executor's whale override (whale_force_execute / regime bypass)
+        # never sees it. When enabled, surface the coin so the downstream whale
+        # gates can decide; they still apply min_ai_confidence + all risk gates.
+        whale_bypass = whale_scan_bypass and bool((whale_signals or {}).get(market["coin"]))
+        if score < min_score and not burst_fired and not whale_bypass:
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the
@@ -203,9 +212,11 @@ def scan_once(
         _cfg = read_agent_config()
         include_crypto = bool(_cfg.get("enable_crypto", True))
         include_hip3 = bool(_cfg.get("enable_hip3", False))
+        whale_scan_bypass = bool(_cfg.get("whale_scan_bypass", False))
     except Exception:
         include_crypto = True
         include_hip3 = False
+        whale_scan_bypass = False
 
     if not include_crypto and not include_hip3:
         logger.warning("[scan] both enable_crypto and enable_hip3 are False — nothing to scan")
@@ -379,7 +390,7 @@ def scan_once(
         batch = callables[batch_start:batch_end]
 
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hermes-scan") as pool:
-            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals) for m, md in batch]
+            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals, whale_scan_bypass) for m, md in batch]
             for i, future in enumerate(futures):
                 idx = batch_start + i
                 try:
