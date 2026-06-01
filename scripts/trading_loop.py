@@ -76,6 +76,14 @@ logger.info(
     f"Universe loaded: {len(universe)} markets"
     + (f" (HIP-3 enabled — {sum(1 for m in universe if m.get('dex'))} tokenized markets)" if _enable_hip3 else "")
 )
+# The universe carries prevDayPx / dayNtlVlm / funding which DRIFT over the
+# day; fetched once here they'd freeze at loop-start for the whole process,
+# so mover-selection + volume-ranking would rank stale 24h windows (a coin
+# ripping now would never enter the movers slot). Re-fetch on a TTL so those
+# fields track the live market. metaAndAssetCtxs is ~20 weight (+~8 POSTs for
+# HIP-3) — trivial against HL's 1200 weight/min. Env-overridable; 0 disables.
+universe_refresh_s = int(os.environ.get('HERMES_UNIVERSE_REFRESH_S', '1800'))
+_last_universe_refresh = time.time()
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 
 # Scan cadence: env-overridable, default 60s. Keep it above the candle cache
@@ -256,6 +264,17 @@ while True:
         except Exception as e:
             logger.error(f"[dsl] monitor pass failed: {e}")
             log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
+
+        # Refresh the universe on a TTL so prevDayPx / dayNtlVlm / funding track
+        # the live market instead of freezing at loop-start (stale fields make
+        # the scanner rank yesterday's movers — see HERMES_UNIVERSE_REFRESH_S).
+        if universe_refresh_s > 0 and (time.time() - _last_universe_refresh) >= universe_refresh_s:
+            try:
+                universe = get_universe(force_refresh=True, include_hip3=_enable_hip3)
+                _last_universe_refresh = time.time()
+                logger.info(f"Universe refreshed: {len(universe)} markets")
+            except Exception as e:
+                logger.warning(f"[universe] periodic refresh failed, keeping prior snapshot: {e}")
 
         logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)

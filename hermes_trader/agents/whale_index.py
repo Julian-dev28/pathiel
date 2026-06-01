@@ -7,13 +7,27 @@ to WHALE_WALLETS.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import time
 from typing import Any, Dict, List, Optional
 
 from hermes_trader.client.hl_client import _http_post
 from hermes_trader.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
+
+# Persisted OI snapshots for the self-sourced OI-surge whale detector. The HL
+# PUBLIC api has NO leaderboard endpoint (verified: vaults/leaderBoard/vaultDetails
+# all return None) — Senpi uses a private backend. So instead of a static wallet
+# list that goes stale, we build a VERIFIABLE whale signal from data we pull
+# ourselves: snapshot open-interest each scan, and flag coins where OI surges
+# (positions being built) while price stays flat = smart money loading quietly.
+_OI_HISTORY_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    ".oi-history.json",
+)
 
 # Curated whale wallet registry. Add entries from app.hyperliquid.xyz/leaderboard
 # or hyperstats.org; format: "0x...": {"name": ..., "risk": "low"|"medium"|"high"}.
@@ -135,44 +149,61 @@ def smart_money_concentration(
 
 
 def oi_funding_anomaly(
-    min_oi_usd: float = 1e7,
-    max_funding_threshold: float = -0.00005,
+    min_oi_usd: float = 5e6,
+    max_funding_threshold: float = -0.00001,
+    funding_norm: float = 0.00008,
 ) -> List[Dict[str, Any]]:
-    """Detect assets where OI is rising but price is flat while funding is
-    deeply negative — classic smart money accumulation pattern.
-    
-    Signal: whales are building long positions (increasing OI) while
-    retail is shorting (negative funding). When the crowd finally covers,
-    price squeezes up.
-    
+    """Detect assets where OI is high but price is flat while funding is
+    negative — classic smart money accumulation pattern.
+
+    Signal: whales are building long positions (high OI) while retail is
+    shorting (negative funding). When the crowd finally covers, price squeezes up.
+
+    RECALIBRATED 2026-06-02 (audit): the prior thresholds (OI>=$10M, funding<
+    -0.00005) flagged only 1 coin across the whole universe — the funding cut sat
+    at the ~p10 extreme of negative funding, so the signal was effectively dead and
+    the downstream whale force-execute + 1.3x size + regime-bypass machinery never
+    fired. Loosened to OI>=$5M and funding<-0.00001 (catches the real negative-
+    funding cohort, ~7-9 coins) AND fixed the confidence normalization: it was
+    dividing by 0.0005 (so a -0.00001 coin scored 0.02 and got filtered by the
+    0.05 min_confidence gate downstream — a second silent kill). Now normalizes
+    against `funding_norm` (0.00008 ≈ the deeply-negative end) so a real anomaly
+    clears the gate. All three tunable.
+
     Args:
-        min_oi_usd: minimum OI to consider (USDC)
-        max_funding_threshold: funding rate must be below this
+        min_oi_usd: minimum OI notional in USD (OI_coins * price)
+        max_funding_threshold: funding rate must be below this (more negative = stronger)
+        funding_norm: funding magnitude that maps to ~full confidence
     """
-    universe = get_universe()
+    universe = get_universe(include_hip3=True)
     results = []
-    
+
     for m in universe:
-        oi = m.get("openInterest", 0)
+        oi_coins = m.get("openInterest", 0)
         funding = m.get("funding", 0)
         mid_px = m.get("midPx", 0)
         prev_px = m.get("prevDayPx", 0)
-        
+
+        # BUGFIX 2026-06-02 audit: openInterest is in COIN UNITS, not USD. The old
+        # `oi < min_oi_usd` compared coins to dollars — nonsensical (BTC's 29,885-coin
+        # / $2.2B OI failed a "$5M" filter while a 10M-token meme passed). Convert to
+        # true USD notional = OI * price.
+        oi = oi_coins * mid_px if mid_px > 0 else 0
+
         if oi < min_oi_usd or funding > max_funding_threshold:
             continue
-        
+
         price_change_24h = (mid_px - prev_px) / prev_px * 100 if prev_px > 0 else 0
-        
-        # Signal: OI high + funding negative + price relatively flat
-        # (whales accumulating quietly)
-        if abs(price_change_24h) < 10:  # price not moving much
+
+        # Signal: OI high + funding negative + price relatively flat (quiet accumulation)
+        if abs(price_change_24h) < 10:
             results.append({
                 "coin": m["coin"],
                 "type": m["type"],
                 "signal": "smart_money_accumulation",
                 "confidence": (
-                    min(1.0, abs(funding) / 0.0005)  # funding magnitude
-                    * (1 - abs(price_change_24h) / 10)  # inverse price change
+                    min(1.0, abs(funding) / funding_norm)   # funding magnitude (calibrated)
+                    * (1 - abs(price_change_24h) / 10)      # flatter price = stronger
                 ),
                 "oi": oi,
                 "funding_rate": funding,
@@ -180,7 +211,7 @@ def oi_funding_anomaly(
                 "mid_price": mid_px,
                 "prev_day_px": prev_px,
             })
-    
+
     return sorted(results, key=lambda x: x["confidence"], reverse=True)
 
 
@@ -235,23 +266,108 @@ def get_trader_state(user: str) -> Optional[Dict[str, Any]]:
     }
 
 
+# ── OI-surge whale detector (self-sourced, verifiable) ───────────────
+
+def oi_surge_accumulation(
+    min_oi_usd: float = 5e6,
+    min_oi_growth_pct: float = 8.0,
+    max_price_move_pct: float = 4.0,
+    surge_norm_pct: float = 25.0,
+) -> List[Dict[str, Any]]:
+    """Flag coins whose OPEN INTEREST surged since the last scan while price stayed
+    flat — positions being built quietly = smart-money accumulation, about to move.
+
+    Fully self-sourced & verifiable: we snapshot OI from get_universe() (HL public
+    data) to `.oi-history.json` each call and compare to the prior snapshot. No
+    external leaderboard / wallet list needed (HL has no public leaderboard API).
+
+    A coin qualifies if: OI >= min_oi_usd, OI grew >= min_oi_growth_pct vs last
+    snapshot, and |price move since last snapshot| <= max_price_move_pct (the
+    "loading while flat" tell — if price already ran, the move's not ahead of us).
+    """
+    universe = get_universe()
+    now = time.time()
+    # load prior snapshot
+    prev = {}
+    try:
+        with open(_OI_HISTORY_FILE) as f:
+            blob = json.load(f)
+            prev = blob.get("oi", {})
+            prev_ts = blob.get("ts", 0)
+    except (OSError, json.JSONDecodeError):
+        prev_ts = 0
+
+    cur = {}
+    results = []
+    for m in universe:
+        coin = m.get("coin")
+        oi_coins = float(m.get("openInterest", 0) or 0)
+        mid = float(m.get("midPx", 0) or 0)
+        if not coin or oi_coins <= 0 or mid <= 0:
+            continue
+        # openInterest is in COIN UNITS. Store BOTH: coin-units (for true position
+        # growth, price-independent) and USD notional (for the size gate). OI-growth
+        # MUST be on coin units — computing it on USD notional would let a price rise
+        # masquerade as position-building (a false surge).
+        oi_usd = oi_coins * mid
+        cur[coin] = {"oi_coins": oi_coins, "oi": oi_usd, "px": mid}
+        p = prev.get(coin)
+        if oi_usd < min_oi_usd or not p:
+            continue
+        # back-compat: older snapshots only stored "oi" (was raw coins pre-fix);
+        # prefer oi_coins, fall back to oi.
+        p_oi_coins = p.get("oi_coins", p.get("oi", 0)); p_px = p.get("px", 0)
+        if p_oi_coins <= 0 or p_px <= 0:
+            continue
+        oi_growth = (oi_coins - p_oi_coins) / p_oi_coins * 100   # COIN-unit growth (price-independent)
+        px_move = abs(mid - p_px) / p_px * 100
+        if oi_growth >= min_oi_growth_pct and px_move <= max_price_move_pct:
+            results.append({
+                "coin": coin,
+                "type": m.get("type"),
+                "signal": "oi_surge_accumulation",
+                "confidence": min(1.0, oi_growth / surge_norm_pct) * (1 - px_move / max(max_price_move_pct, 1e-9)),
+                "oi": oi_usd,
+                "oi_growth_pct": round(oi_growth, 1),
+                "price_move_pct": round(px_move, 2),
+                "mid_price": mid,
+            })
+
+    # persist current snapshot (best-effort, atomic)
+    try:
+        tmp = _OI_HISTORY_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"ts": now, "oi": cur}, f)
+        os.replace(tmp, _OI_HISTORY_FILE)
+    except OSError as e:
+        logger.warning(f"[whale] OI history persist failed: {e}")
+
+    return sorted(results, key=lambda x: x["confidence"], reverse=True)
+
+
 # ── Whale Index MCP Integration ─────────────────────────────────────
 # These functions can be registered as MCP tools for autonomous agents
 # to query whale data as part of their scanning pipeline.
 
 def whale_accumulation_map(min_confidence: float = 0.05) -> Dict[str, Dict[str, Any]]:
-    """Return {coin: signal_dict} for coins flagged by oi_funding_anomaly.
+    """Return {coin: signal_dict} for coins flagged as smart-money accumulation.
 
-    This is the clean signal — small list of coins where whales are loading
-    while retail shorts (negative funding) and price is still flat (move
-    hasn't happened yet). Excludes the noisy `high_oi_concentration` signal
-    which fires on every BTC/ETH/SOL by default. Cache once per scan.
+    MERGES two self-sourced, verifiable signals (no external leaderboard needed):
+      1. oi_funding_anomaly — high OI + deeply negative funding + flat price
+         (whales long while retail shorts -> squeeze setup).
+      2. oi_surge_accumulation — OI surging vs last scan + price flat
+         (positions being built quietly, move not yet happened).
+    A coin flagged by EITHER (or both, taking the higher confidence) is returned.
+    These feed perception.whale_signal -> executor force-execute + 1.3x size + regime bypass.
     """
-    return {
-        s["coin"]: s
-        for s in oi_funding_anomaly()
-        if s.get("confidence", 0) >= min_confidence
-    }
+    merged: Dict[str, Dict[str, Any]] = {}
+    for s in oi_funding_anomaly() + oi_surge_accumulation():
+        if s.get("confidence", 0) < min_confidence:
+            continue
+        c = s["coin"]
+        if c not in merged or s["confidence"] > merged[c]["confidence"]:
+            merged[c] = s
+    return merged
 
 
 def get_whale_signals(

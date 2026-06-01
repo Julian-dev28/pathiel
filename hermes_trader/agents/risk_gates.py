@@ -167,7 +167,8 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
     }
 
 
-def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -> GateResult:
+def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
+                       block_counter_trend_bypass: bool = False) -> GateResult:
     """Block counter-regime trades unless conviction OR own-coin signal clears the bar.
 
       - aligned with regime → pass
@@ -260,18 +261,31 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7) -
         return {"pass": True, "via": "confidence", **base}
     if ctx.composite_score >= effective_min_score:
         return {"pass": True, "via": "composite", **base}
-    if ctx.momentum_burst_fired or ctx.slow_burn_fired or ctx.whale_signal_fired:
+    # Binary-trigger bypass: a strong own-coin signal (momentum_burst / slow_burn
+    # / whale) normally overrides the slow macro-regime call. `block_counter_trend_bypass`
+    # (config, default False, reversible) DISABLES this bypass here — i.e. for trades
+    # that are already counter-trend and/or against the funding crowd. Data (journal
+    # P166-P177, ~-7% drawdown) showed low-conviction LONGS forced through via
+    # `trigger:slow_burn` against a DOWN tape (SP500/MU/ORCL longs) and bleeding. With
+    # the flag on, a counter-regime trade must clear REAL conviction (conf/score); a
+    # lone momentum trigger no longer pushes it through against the regime. Aligned and
+    # neutral-regime trades returned earlier (lines above) and are UNAFFECTED, so this
+    # does NOT blanket-weaken the bypass — only where it fights a strong directional regime.
+    if (ctx.momentum_burst_fired or ctx.slow_burn_fired or ctx.whale_signal_fired) \
+            and not block_counter_trend_bypass:
         trig = ("momentum_burst" if ctx.momentum_burst_fired
                 else "slow_burn" if ctx.slow_burn_fired else "whale")
         return {"pass": True, "via": f"trigger:{trig}", **base}
 
+    blocked_via = "blocked_bypass" if block_counter_trend_bypass else "blocked"
     return {
         "pass": False,
-        "via": "blocked",
+        "via": blocked_via,
         **base,
         "reason": (f"counter-regime {ctx.trade_side} vs {regime} trend "
                    f"(funding={funding_regime}) — need conf >= {effective_min_conf:.2f} "
-                   f"or score >= {effective_min_score:.0f} or own-coin signal, "
+                   f"or score >= {effective_min_score:.0f}"
+                   f"{'' if block_counter_trend_bypass else ' or own-coin signal'}, "
                    f"have conf {ctx.confidence:.2f}, score {ctx.composite_score:.0f}"),
     }
 
@@ -319,7 +333,8 @@ def eval_all_gates(
     results["correlation"] = correlation_cap(ctx, int(config.get("max_crypto_long_correlated", 2)))
     results["equity_risk"] = equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0))  # Default 100% to allow trading with small accounts
     results["market_regime"] = market_regime_gate(
-        ctx, _cfg(config, "counter_regime_min_conf", 0.7)
+        ctx, _cfg(config, "counter_regime_min_conf", 0.7),
+        bool(_cfg(config, "block_counter_trend_bypass", False)),
     )
     results["news"] = news_blackout_gate(ctx)
 

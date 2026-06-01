@@ -535,12 +535,15 @@ def test_detect_regime_caches_and_uses_proxy(monkeypatch):
     # Second call for another alt → cache hit, no new fetch
     assert market_regime.detect_regime("WIF") == "up"
     assert calls == ["BTC"]
-    # Equity coin uses the configured equity proxy
+    # Equity coin uses its OWN trend now (audit fix #3, 2026-06-02): each equity is
+    # gated by its own chart, not the single xyz:SP500 proxy. SP500 is only the
+    # fallback when the name's own trend reads neutral/thin. _detect_for_proxy is
+    # stubbed to "up", so the own-trend ("TSLA") resolves and is used directly.
     assert market_regime.detect_regime("TSLA") == "up"
-    assert calls == ["BTC", market_regime.EQUITY_PROXY]
+    assert calls == ["BTC", "TSLA"]
     # Commodity uses its own ticker
     assert market_regime.detect_regime("NATGAS") == "up"
-    assert calls == ["BTC", market_regime.EQUITY_PROXY, "NATGAS"]
+    assert calls == ["BTC", "TSLA", "NATGAS"]
 
 
 def test_market_regime_gate_aligned_passes(monkeypatch):
@@ -1104,7 +1107,9 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
          "prevDayPx": 100.0, "midPx": 105.0 + i * 0.1}
         for i in range(10)
     ]
-    mids = {m["coin"]: "100" for m in universe}
+    # mids = the LIVE current price (production reads the 24h move from fresh
+    # mids, not the cached universe midPx) — mirror each coin's midPx here.
+    mids = {m["coin"]: str(m.get("midPx", 100)) for m in universe}
 
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
     monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "3")
@@ -1295,7 +1300,9 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
         + [{"coin": "PICO", "type": "perp", "dex": None,
             "dayNtlVlm": 50_000, "prevDayPx": 1.0, "midPx": 1.5}]  # +50% but $50k vol
     )
-    mids = {m["coin"]: "100" for m in universe}
+    # mids = the LIVE current price (production reads the 24h move from fresh
+    # mids, not the cached universe midPx) — mirror each coin's midPx here.
+    mids = {m["coin"]: str(m.get("midPx", 100)) for m in universe}
 
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "3")
@@ -1922,7 +1929,7 @@ def test_maybe_execute_default_tiers_unchanged(monkeypatch):
 def test_smart_money_concentration_accumulation_signal(monkeypatch):
     """oi>0 + negative funding → 'accumulation'; confidence scales w/ |funding|."""
     from hermes_trader.agents import whale_index
-    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+    monkeypatch.setattr(whale_index, "get_universe", lambda **_: [
         {"coin": "BTC", "type": "perp", "openInterest": 5e7,
          "dayNtlVlm": 1e9, "funding": -0.0002, "midPx": 60000},
     ])
@@ -1935,7 +1942,7 @@ def test_smart_money_concentration_accumulation_signal(monkeypatch):
 def test_smart_money_concentration_volume_floor_filters(monkeypatch):
     """Markets under min_volume_usd are skipped entirely."""
     from hermes_trader.agents import whale_index
-    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+    monkeypatch.setattr(whale_index, "get_universe", lambda **_: [
         {"coin": "TINY", "type": "perp", "openInterest": 5e7,
          "dayNtlVlm": 100.0, "funding": -0.0002, "midPx": 1},
     ])
@@ -1946,7 +1953,7 @@ def test_smart_money_concentration_high_oi_branch(monkeypatch):
     """OI > 10× daily-volume-in-millions → 'high_oi_concentration'."""
     from hermes_trader.agents import whale_index
     # vol = $2M (→ 2.0 in millions), oi = 30 → ratio 15 > 10.
-    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+    monkeypatch.setattr(whale_index, "get_universe", lambda **_: [
         {"coin": "ETH", "type": "perp", "openInterest": 30,
          "dayNtlVlm": 2e6, "funding": 0.0001, "midPx": 3000},
     ])
@@ -1994,7 +2001,7 @@ def test_oi_funding_anomaly_requires_flat_price(monkeypatch):
     """A 24h move ≥10% disqualifies the accumulation signal even with deep
     negative funding + high OI."""
     from hermes_trader.agents import whale_index
-    monkeypatch.setattr(whale_index, "get_universe", lambda: [
+    monkeypatch.setattr(whale_index, "get_universe", lambda **_: [
         {"coin": "PUMP", "type": "perp", "openInterest": 5e7,
          "funding": -0.0006, "midPx": 130, "prevDayPx": 100},  # +30%
         {"coin": "FLAT", "type": "perp", "openInterest": 5e7,

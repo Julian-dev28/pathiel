@@ -94,6 +94,7 @@ DISTRIBUTE.md
 .agent-memory.json
 .dsl-state.json
 .positions-snapshot.json
+.monitor-journal.md
 
 # Rust build artifacts
 target/
@@ -103,3 +104,9 @@ target/
 
 # Local backtest output
 backtest-trades.csv
+.oi-history.json
+
+# Local timestamped backups (config edits, etc.)
+*.bak-*
+*.bak2-*
+*.bak3-*

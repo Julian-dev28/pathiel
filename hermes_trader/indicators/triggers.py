@@ -325,6 +325,50 @@ def higher_lows_1h(candles: List[Candle], required: int = 4) -> TriggerHit:
     }
 
 
+def momentum_continuation_1h(
+    candles: List[Candle],
+    min_trend_pct: float = 8.0,
+    max_pullback_pct: float = 6.0,
+) -> TriggerHit:
+    """Sustained multi-hour uptrend with an orderly pullback (continuation setup).
+
+    LEAK #2 fix: the spike / breakout / burst triggers all fire on FRESH moves, so
+    a coin that is already well up over many hours and is now CONSOLIDATING prints
+    no signal and gets missed — even while it sits on the 24h movers leaderboard.
+    This trigger catches that state: EMA-stacked (ema9 > ema21, price > ema21),
+    gained >= `min_trend_pct` over the last ~12 1h bars, and pulled back
+    <= `max_pullback_pct` from the window high (orderly rest, not a blow-off top
+    and not a breakdown).
+
+    LONG-biased by construction (requires an up move), so it should only be enabled
+    when the macro regime is up/neutral; the counter-trend gate is the backstop.
+    Needs 1h candles; returns flat if too short.
+    """
+    if len(candles) < 24:
+        return {"name": "momentumContinuation1h", "score": 0, "reason": "insufficient_history", "fired": False}
+    closes = [candle_val(c, "c") for c in candles]
+    e9 = ema(closes, 9)
+    e21 = ema(closes, 21)
+    cur = closes[-1]
+    window = closes[-12:]
+    base = window[0]
+    hi = max(window)
+    if base <= 0 or hi <= 0:
+        return {"name": "momentumContinuation1h", "score": 0, "reason": "flat", "fired": False}
+    trend_pct = (cur - base) / base * 100
+    pullback_pct = (hi - cur) / hi * 100
+    stacked = e9[-1] > e21[-1] and cur > e21[-1]
+    fired = stacked and trend_pct >= min_trend_pct and 0 <= pullback_pct <= max_pullback_pct
+    score = min(10, max(0, trend_pct / 3)) if fired else 0
+    return {
+        "name": "momentumContinuation1h",
+        "score": score,
+        "reason": (f"+{trend_pct:.1f}% 12h uptrend, {pullback_pct:.1f}% pullback, EMA-stacked"
+                   if fired else f"trend {trend_pct:+.1f}% / pullback {pullback_pct:.1f}% / stacked={stacked}"),
+        "fired": fired,
+    }
+
+
 def composite_score(hits: List[TriggerHit], weights: Dict[str, float]) -> float:
     """Weighted composite score from triggered hits, clamped 0-100.
 

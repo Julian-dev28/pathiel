@@ -7,20 +7,21 @@ from typing import Any, Dict
 
 TRIGGER_CONFIG: Dict[str, Any] = {
     "weights": {
-        # Fast / explosive signals (5m timeframe)
-        "pctMoveSpike": 0.35,
-        "volumeSpike": 0.25,
-        "breakout": 0.20,
-        "rangeCompression": 0.10,
-        "trendStrength": 0.10,
-        "momentumBurst": 0.30,
-        # Slow-burn / accumulation signals (1h timeframe). Heavier weights so a
-        # single one can push composite past the 50 counter-regime bypass — that
-        # was the empirical gap: WLFI/ICP/AR/HMSTR-style breakouts had clean
-        # 1h structure long before any 5m trigger fired.
-        "volumeBuildup1h": 0.60,
-        "trendFlip1h": 0.55,
-        "higherLows1h": 0.40,
+        # RE-WEIGHTED 2026-06-02 to MEASURED MARGINAL LIFT (fired vs not-fired ROE,
+        # n=497 trades). Prior weights were inverted: the 1h slow-burn signals carried
+        # the heaviest weight (0.60/0.55/0.40) but had ~0/negative lift, while
+        # trendStrength (the BEST signal, +2.08% lift) was only 0.10. Weights now
+        # track lift; net-negative triggers (trendFlip1h -2.10%, rangeCompression
+        # -3.08%) are ZEROED out of scoring.
+        "trendStrength": 0.55,    # lift +2.08% (was 0.10) — strongest edge
+        "pctMoveSpike": 0.40,     # lift +1.49%
+        "breakout": 0.30,         # lift +1.29%
+        "volumeSpike": 0.25,      # lift +1.05%
+        "momentumBurst": 0.20,    # lift +0.77% (n=9, kept modest)
+        "volumeBuildup1h": 0.15,  # lift +0.41% (was 0.60 — overweighted)
+        "higherLows1h": 0.0,      # lift -0.51% — removed
+        "trendFlip1h": 0.0,       # lift -2.10% — removed (net loser)
+        "rangeCompression": 0.0,  # lift -3.08% — removed (worst)
     },
     "thresholds": {
         "sigmaThreshold": 2.0,
@@ -35,7 +36,7 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         "higherLowsRequired": 4, # of last 6 1h bars
     },
     "scan": {
-        "minCompositeScore": 20,
+        "minCompositeScore": 54,  # recalibrated for new weights: P230 zeroed 3 triggers -> denom 2.85->1.85 -> scores ~1.54x. 54 preserves the old-35 selectivity (35*1.54). Without this the gate silently loosened.
         "candleInterval": "5m",
         "candleCount": 100,
         "cacheTtlMs": 50_000,

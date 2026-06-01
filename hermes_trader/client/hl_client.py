@@ -155,12 +155,27 @@ def resolve_user_address() -> str:
     return os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
 
 
+# Short-TTL candle cache. ta_filter and research() each fetched the SAME
+# coin's 1h/4h/1d candles back-to-back per scan (6 network calls where 3 suffice),
+# doubling the API pressure behind the recurring 429 storms that kill scans. A
+# small per-(coin,interval) TTL collapses those duplicates within a cycle. TTL is
+# well under a candle period so freshness is unaffected; env-tunable / 0 disables.
+_CANDLE_CACHE: Dict[str, tuple] = {}
+_CANDLE_CACHE_TTL_S = float(os.environ.get("HERMES_CANDLE_CACHE_TTL_S", "90"))
+
+
 def fetch_hl_candles(
     coin: str,
     interval: str = "5m",
     count: int = 100,
 ) -> List[Candle]:
-    """Fetch candles via HTTP."""
+    """Fetch candles via HTTP (short-TTL cached per coin+interval+count)."""
+    cache_key = f"{coin}|{interval}|{count}"
+    if _CANDLE_CACHE_TTL_S > 0:
+        hit = _CANDLE_CACHE.get(cache_key)
+        if hit and (time.time() - hit[0]) < _CANDLE_CACHE_TTL_S:
+            return hit[1]
+
     ms = _MS_PER_CANDLE.get(interval, 300_000)
     end_time = int(time.time() * 1000)
     start_time = end_time - ms * count
@@ -176,15 +191,20 @@ def fetch_hl_candles(
     }
     raw = _http_post("/info", payload)
     if not isinstance(raw, list):
+        # Do NOT cache failures/empties (429s, timeouts) — caching a bad read would
+        # blank the coin for the whole TTL. Let the next call retry the network.
         return []
 
-    return [
+    candles = [
         Candle(
             t=c["t"], o=float(c["o"]), h=float(c["h"]),
             l=float(c["l"]), c=float(c["c"]), v=float(c.get("v", "0")),
         )
         for c in raw
     ]
+    if _CANDLE_CACHE_TTL_S > 0 and candles:
+        _CANDLE_CACHE[cache_key] = (time.time(), candles)
+    return candles
 
 
 def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]:

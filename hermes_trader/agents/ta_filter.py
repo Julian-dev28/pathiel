@@ -119,7 +119,20 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
 
         is_bullish = t4h == "bullish" or t1d == "bullish"
         is_bearish = t4h == "bearish" or t1d == "bearish"
-        trend_aligned = is_bullish or is_bearish
+        # Direction of the higher-timeframe trend. Our measured edge is
+        # LONG/trend-aligned (ledger: longs in up-regimes win; shorts are weak),
+        # so the CONFIRMED gate should NOT treat a clean downtrend the same as a
+        # clean uptrend — the old `is_bullish or is_bearish` awarded the full
+        # alignment bonus to both, sending strong-downtrend coins to paid AI as
+        # "confirmed" with equal weight. Now: bullish gets full credit, bearish
+        # gets partial (a short is tradeable but lower-edge), conflicting = none.
+        if is_bullish and not is_bearish:
+            trend_direction = "bullish"
+        elif is_bearish and not is_bullish:
+            trend_direction = "bearish"
+        else:
+            trend_direction = "flat"
+        trend_aligned = trend_direction in ("bullish", "bearish")
 
         rsi4h = _compute_rsi(c4h)
         atr4pct = _compute_atr4pct(c4h)
@@ -130,9 +143,16 @@ def analyze_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
         score = 0
         reasons = []
 
-        if trend_aligned:
+        # Directional alignment scoring (our edge is LONG/trend-aligned):
+        # bullish HTF trend = full +20; bearish = +10 (tradeable short, lower edge);
+        # flat/conflicting = 0. This stops the filter from rubber-stamping
+        # strong-downtrend coins as equally "confirmed".
+        if trend_direction == "bullish":
             score += 20
-            reasons.append("trend aligned")
+            reasons.append("trend aligned (bullish)")
+        elif trend_direction == "bearish":
+            score += 10
+            reasons.append("trend aligned (bearish)")
         if rsi4h is not None and 30 < rsi4h < 70:
             score += 15
             reasons.append(f"RSI {rsi4h:.0f}")

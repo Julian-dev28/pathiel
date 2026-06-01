@@ -116,16 +116,45 @@ def _scan_single_market(
             trigger_mod.higher_lows_1h(candles_1h, thresholds.get("higherLowsRequired", 4)),
         ]
 
+        # Momentum-continuation trigger (LEAK #2) — OFF by default. Catches a coin
+        # in a sustained multi-hour uptrend that is now consolidating (already-
+        # extended movers that print no fresh 5m spike, so the other triggers miss
+        # them). Gated so it has ZERO scoring effect when off: only when enabled is
+        # the hit appended AND its weight added to the denominator. LONG-biased —
+        # enable only when the macro regime is up/neutral (counter-trend gate backs it up).
+        _mc = config.get("momentum_continuation", {}) or {}
+        _score_weights = config["weights"]
+        if _mc.get("enabled"):
+            hits.append(trigger_mod.momentum_continuation_1h(
+                candles_1h,
+                _mc.get("min_trend_pct", 8.0),
+                _mc.get("max_pullback_pct", 6.0),
+            ))
+            _score_weights = {**config["weights"],
+                              "momentumContinuation1h": _mc.get("weight", 0.4)}
+
         # At least one trigger must fire.
         fired_count = sum(1 for h in hits if h.get("fired"))
         if fired_count < 1:
             return (True, None)
 
-        score = trigger_mod.composite_score(hits, config["weights"])
+        score = trigger_mod.composite_score(hits, _score_weights)
         # A confirmed momentum burst is always surfaced — a large, fast move is
         # exactly the signal the composite gate must never filter out.
         burst_fired = any(h["name"] == "momentumBurst" and h["fired"] for h in hits)
         if score < min_score and not burst_fired:
+            # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
+            # coins that scored just below the gate so we can see whether extended
+            # movers land just-under (tune threshold) or far-under (need the
+            # continuation trigger). Pure logging; no effect on what trades.
+            if _mc.get("log_near_miss") and score >= min_score * 0.5:
+                try:
+                    logger.info(
+                        f"[near-miss] {market['coin']} composite {score:.1f} "
+                        f"(gate {min_score}) fired={[h['name'] for h in hits if h.get('fired')]}"
+                    )
+                except Exception:
+                    pass
             return (True, None)
 
         whale = (whale_signals or {}).get(market["coin"])
@@ -242,7 +271,12 @@ def scan_once(
 
     def _abs_pct_24h(m):
         prev = float(m.get("prevDayPx") or 0)
-        cur = float(m.get("midPx") or m.get("markPx") or 0)
+        # Current price MUST come from this cycle's fresh mids — the universe
+        # dict's midPx is from the (up-to-24h-cached) metaAndAssetCtxs snapshot
+        # and freezes at loop-start, so ranking off it selects YESTERDAY's
+        # movers and misses a coin ripping right now. Fall back to the cached
+        # mid/mark only if the live mid is missing.
+        cur = float(mids.get(m["coin"]) or m.get("midPx") or m.get("markPx") or 0)
         if prev <= 0 or cur <= 0:
             return 0.0
         return abs((cur - prev) / prev * 100)

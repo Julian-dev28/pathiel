@@ -193,7 +193,23 @@ def detect_regime(coin: str, *, force: bool = False) -> Regime:
         # main dex, but `upper()` on a bare name was the prior convention.
         proxy = coin if ":" in coin else coin.upper()
     elif klass == "equity":
-        proxy = EQUITY_PROXY
+        # FIX #3 (2026-06-02 audit): equities previously ALL inherited one proxy
+        # (xyz:SP500). That mis-gated individual names — e.g. a stock ripping while
+        # SP500 was flat got "neutral/down" and its long was blocked. Now each
+        # equity is gated by ITS OWN trend; SP500 is only the fallback when the
+        # name's own candles are missing/thin (off-hours). Best of both: per-name
+        # accuracy with a macro safety net.
+        now = time.time()
+        cached_own = _regime_cache.get(coin)
+        if not force and cached_own and (now - cached_own[1]) < REGIME_TTL_S:
+            if cached_own[0] != "neutral":
+                return cached_own[0]
+        else:
+            own = _detect_for_proxy(coin)  # the coin's OWN 1h candles
+            _regime_cache[coin] = (own, time.time())
+            if own != "neutral":
+                return own
+        proxy = EQUITY_PROXY  # own-trend unclear/thin -> fall back to macro
     else:
         proxy = CRYPTO_PROXY
 

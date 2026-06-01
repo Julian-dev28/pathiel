@@ -89,6 +89,16 @@ class ExitPolicy:
     protect_pct: float = 1.5  # Price must rise this % above entry before Phase 2
     retrace_threshold: float = 0.30  # Give back 30% of peak profit (Phase 2 default)
     hard_timeout_minutes: float = 180.0  # Emergency exit after this long
+    # ── Breakeven ratchet (guaranteed-profit lock) ──────────────────────
+    # Once a position's PEAK profit clears `breakeven_trigger_pct` (spot %),
+    # the trailing floor may never fall below `breakeven_lock_pct` (spot %)
+    # above entry. This is strictly risk-REDUCING on the upside: it only ever
+    # raises the floor (for longs), never touches max_loss, and never affects
+    # a position that hasn't yet reached the arm threshold. It targets the
+    # documented leak where medium winners (peak +2–4%) round-trip back to
+    # ~flat before the retrace floor catches them. Disabled when trigger<=0.
+    breakeven_trigger_pct: float = 0.0  # Peak spot % that arms the lock (0 = off)
+    breakeven_lock_pct: float = 0.0     # Floor spot % above entry once armed
     phase2_tiers: List[RetraceTier] = field(default_factory=lambda: [
         RetraceTier(5.0, 0.30),   # 5% profit → give back 30%
         RetraceTier(10.0, 0.40),  # 10% profit → lock tighter, give back 40%
@@ -227,6 +237,21 @@ class DSLTracker:
             else:
                 floor = self.entry_px * (1 + effective_max_loss / 100)
 
+        # ── Breakeven ratchet ─────────────────────────────────────────
+        # Once PEAK profit has cleared the arm threshold, clamp the floor to a
+        # locked-in gain so the position can't round-trip back to flat. Uses
+        # PEAK (not current) so a dip after a high doesn't disarm it. Long-only
+        # raises the floor; short-only lowers it — never loosens either side.
+        if pol.breakeven_trigger_pct > 0:
+            if is_long:
+                peak_profit_pct = (self.peak_px - self.entry_px) / self.entry_px * 100
+                if peak_profit_pct >= pol.breakeven_trigger_pct:
+                    floor = max(floor, self.entry_px * (1 + pol.breakeven_lock_pct / 100))
+            else:
+                peak_profit_pct = (self.entry_px - self.peak_px) / self.entry_px * 100
+                if peak_profit_pct >= pol.breakeven_trigger_pct:
+                    floor = min(floor, self.entry_px * (1 - pol.breakeven_lock_pct / 100))
+
         # Floor should never decrease for longs (or increase for shorts)
         prev_floor = self._last_floor
         if prev_floor is not None:
@@ -310,6 +335,8 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         hard_timeout_minutes=pol_raw.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
         phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         consecutive_breaches_required=pol_raw.get("consecutive_breaches_required", 1),
+        breakeven_trigger_pct=pol_raw.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
+        breakeven_lock_pct=pol_raw.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
     )
     t = DSLTracker(d["coin"], d["side"], float(d["entry_px"]),
                    float(d.get("entry_time") or time.time()), policy,
@@ -411,6 +438,8 @@ def _policy_from_config() -> ExitPolicy:
             protect_pct=dsl.get("protect_pct", ExitPolicy.protect_pct),
             retrace_threshold=dsl.get("retrace_threshold", ExitPolicy.retrace_threshold),
             hard_timeout_minutes=dsl.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
+            breakeven_trigger_pct=dsl.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
+            breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
         )
     except Exception:
         return ExitPolicy()

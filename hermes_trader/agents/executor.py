@@ -35,7 +35,14 @@ from hermes_trader.client.hl_client import fetch_account_state, resolve_user_add
 
 logger = logging.getLogger(__name__)
 
-SL_ATR_MULT = 3.5
+# Backup server-side stop multiplier. RETUNED 2026-06-02 (microscope audit): was
+# 3.5 -> ~5.5% spot on median names, far too wide to catch anything. The data showed
+# 54% of max_loss exits GAP PAST the 1.2% DSL cap (median realized -1.56%, worst -3.6%)
+# because the DSL loop only checks every 60s. A tighter server-side backup fires
+# INSTANTLY at the exchange between our scans, catching the gap cluster. 1.5x ATR sits
+# ~2.4% on median names (above the 1.2% DSL so DSL still fires first on normal exits,
+# but tight enough to cap the gap-throughs that were the asymmetry killer). Config-tunable.
+_DEFAULT_SL_ATR_MULT = 1.5
 TP_ATR_MULT = 1.0
 
 # Default 24h volumes for coins not in the major list
@@ -409,6 +416,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         protect_pct=dsl_config.get("protect_pct", 1.5),
         retrace_threshold=dsl_config.get("retrace_threshold", 0.30),
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
+        breakeven_trigger_pct=dsl_config.get("breakeven_trigger_pct", 0.0),
+        breakeven_lock_pct=dsl_config.get("breakeven_lock_pct", 0.0),
     )
     register_position(coin, trade_side, mid_price, policy=policy, leverage=leverage)
     logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price} ({leverage}x)")
@@ -424,16 +433,19 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "executed_at": int(time.time() * 1000),
     })
 
-    # Backup exchange stop-loss bracket — DSL is the primary exit engine.
+    # Backup exchange stop-loss bracket — fires server-side (instantly, between our
+    # 60s DSL checks) to cap the gap-throughs the DSL loop misses. DSL is still the
+    # primary/normal exit; this is the fast safety net.
+    sl_atr_mult = float(config.get("sl_atr_mult", _DEFAULT_SL_ATR_MULT))
     if atr > 0 and size_in_coin > 0:
-        sl_px = mid_price - atr * SL_ATR_MULT if is_buy else mid_price + atr * SL_ATR_MULT
+        sl_px = mid_price - atr * sl_atr_mult if is_buy else mid_price + atr * sl_atr_mult
         sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
         if sl_res.get("ok"):
-            logger.info(f"[executor] Placed backup SL at {sl_px}")
+            logger.info(f"[executor] Placed backup SL at {sl_px} ({sl_atr_mult}x ATR)")
         else:
             logger.error(f"[executor] Backup SL FAILED for {coin}: {sl_res.get('error')}")
 
-    final_sl = (mid_price - atr * SL_ATR_MULT) if is_buy else (mid_price + atr * SL_ATR_MULT) if atr > 0 else stop_px
+    final_sl = (mid_price - atr * sl_atr_mult) if is_buy else (mid_price + atr * sl_atr_mult) if atr > 0 else stop_px
     final_tp = (mid_price + atr * TP_ATR_MULT) if is_buy else (mid_price - atr * TP_ATR_MULT) if atr > 0 else tp_px
 
     return {
