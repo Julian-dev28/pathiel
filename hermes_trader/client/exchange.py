@@ -121,6 +121,43 @@ def _get_info() -> Info:
     return _info_instance
 
 
+# Per-dex meta cache. szDecimals / pxDecimals / maxLeverage are static, but
+# get_coin_index / get_max_leverage used to call info.meta(dex=...) on EVERY
+# order + trigger + leverage-set. Under burst load (several executes in one
+# cycle) those uncached HTTP calls 429'd, get_coin_index fell through to
+# "Unknown coin: xyz:SMSN", and the HIP-3 backup stop-loss silently failed.
+# Cache the meta universe per dex so a transient 429 can't break coin
+# resolution and we stop hammering the API. TTL is long — meta rarely changes.
+_META_CACHE: Dict[str, Tuple[float, list]] = {}
+_META_TTL_S = float(os.environ.get("HERMES_META_TTL_S", "3600"))
+
+
+def _cached_universe(dex: Optional[str] = None) -> list:
+    """Return the meta `universe` for a dex (None = main), cached for _META_TTL_S.
+
+    On a fetch failure we serve a stale cached copy if we have one, rather than
+    raising — a transient API blip must not break coin resolution mid-execute.
+    """
+    import time as _time
+    key = dex or ""
+    hit = _META_CACHE.get(key)
+    now = _time.time()
+    if hit and (now - hit[0]) < _META_TTL_S:
+        return hit[1]
+    info = _get_info()
+    try:
+        meta = info.meta(dex=dex) if dex else info.meta()
+        universe = meta.get("universe", []) or []
+        if universe:
+            _META_CACHE[key] = (now, universe)
+        return universe
+    except Exception as e:
+        if hit:  # serve stale rather than fail the lookup
+            logger.warning(f"[_cached_universe] meta fetch failed for dex={dex!r}; serving stale: {e}")
+            return hit[1]
+        raise
+
+
 def get_coin_index(coin: str) -> Tuple[int, int, int]:
     """Resolve a coin name to (asset_index, sz_decimals, px_decimals) via the SDK meta endpoint.
 
@@ -131,14 +168,13 @@ def get_coin_index(coin: str) -> Tuple[int, int, int]:
     `perp_dexs`, so this helper is only used for sz/px decimals in our own
     rounding code.
     """
-    info = _get_info()
-    for i, u in enumerate(info.meta().get("universe", [])):
+    for i, u in enumerate(_cached_universe()):
         if u["name"] == coin:
             return i, u.get("szDecimals", 5), u.get("pxDecimals", 4)
     if ":" in coin:
         dex = coin.split(":", 1)[0]
         try:
-            for i, u in enumerate(info.meta(dex=dex).get("universe", [])):
+            for i, u in enumerate(_cached_universe(dex=dex)):
                 if u["name"] == coin:
                     return i, u.get("szDecimals", 5), u.get("pxDecimals", 4)
         except Exception as e:
@@ -154,16 +190,15 @@ def get_max_leverage(coin: str) -> int:
     HIP-3 namespaced coins (e.g. `xyz:NVDA`) are looked up in the parent dex's
     metadata when not found in the main perp universe.
     """
-    info = _get_info()
     # Main perp dex
-    for u in info.meta().get("universe", []):
+    for u in _cached_universe():
         if u["name"] == coin:
             return int(u.get("maxLeverage", 1))
     # HIP-3: derive dex name from the namespace prefix and consult that dex's meta
     if ":" in coin:
         dex = coin.split(":", 1)[0]
         try:
-            for u in info.meta(dex=dex).get("universe", []):
+            for u in _cached_universe(dex=dex):
                 if u["name"] == coin:
                     return int(u.get("maxLeverage", 1))
         except Exception as e:

@@ -246,19 +246,36 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # past max_concurrent (to ~22) and to ~17x notional. Sizing still uses the
     # MAIN-dex clearinghouse ("") equity/available below, so per-trade size is
     # unchanged; only the gate inputs are corrected to the aggregated book.
-    state = fetch_account_state(user, include_hip3=True) or {}
-    _dex_eq = state.get("dex_equity") or {}
-    _dex_av = state.get("dex_available") or {}
-    equity = float(_dex_eq.get("", state.get("equity")) or 0)        # main → sizing basis
-    available = float(_dex_av.get("", state.get("available")) or 0)  # main → margin floor
+    # The per-dex clearinghouse endpoint flakes under burst load (several
+    # executes in one cycle), returning $0 for the MAIN dex even when funds are
+    # there — which used to spuriously block real trades with "equity_unavailable
+    # (live account state returned 0)" while the account was healthy. Read once,
+    # and on a $0 main-equity read retry up to twice before believing it. A
+    # genuine $0 still refuses (never size an unsized order); a transient blip
+    # recovers.
+    def _read_state() -> tuple[dict, float, float]:
+        st = fetch_account_state(user, include_hip3=True) or {}
+        deq = st.get("dex_equity") or {}
+        dav = st.get("dex_available") or {}
+        eq = float(deq.get("", st.get("equity")) or 0)
+        av = float(dav.get("", st.get("available")) or 0)
+        return st, eq, av
+
+    state, equity, available = _read_state()
+    for _attempt in range(2):
+        if equity > 0:
+            break
+        import time as _t
+        _t.sleep(0.4)
+        state, equity, available = _read_state()
     agg_equity = float(state.get("equity") or equity)                # aggregated → exposure gate
     total_open_notional = float(state.get("total_ntl") or 0)         # aggregated → notional gate
     if equity <= 0:
-        # Likely an HL API timeout — refuse rather than send an unsized order.
+        # Persisted across retries — refuse rather than send an unsized order.
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
-            "reason": "equity_unavailable (live account state returned 0)",
+            "reason": "equity_unavailable (live account state returned 0 after retries)",
         }
 
     # Free-margin floor: leave headroom for maintenance + slippage so HL
@@ -406,7 +423,20 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     position_notional = trade_notional
 
+    # ATR drives the backup exchange stop. A coin with too little candle history
+    # (e.g. a brand-new HIP-3 listing) returns atr<=0 — research even emits
+    # stop_px/tp_px = 0.0 for it. We must NOT place a blind position there: with
+    # whale/structural force-execute now able to upgrade a PASS, a 0-ATR coin
+    # would trade with no computable stop. One retry (covers a transient candle
+    # flake), then refuse — a skipped trade costs $0; a stopless one doesn't.
     atr = get_hl_atr("4h", 14, coin)
+    if atr <= 0:
+        atr = get_hl_atr("4h", 14, coin)
+    if atr <= 0:
+        return {
+            "executed": False, "mode": mode, "analysis_id": analysis["id"],
+            "reason": f"no_atr_no_stop ({coin}: insufficient candle history to size a stop)",
+        }
 
     set_leverage(coin, leverage)
     order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin)

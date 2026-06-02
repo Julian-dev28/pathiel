@@ -1652,6 +1652,43 @@ def test_executor_whale_signal_overrides_pass_to_long(monkeypatch):
     assert isinstance(res2, dict)
 
 
+def test_maybe_execute_refuses_when_no_atr(monkeypatch):
+    """A coin with no computable ATR (insufficient candle history) must be
+    refused, never traded blind — guards force-execute of brand-new HIP-3
+    listings where research emits stop_px/tp_px = 0.0."""
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
+        "min_available_margin_pct": 0.0,
+    })
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
+        "equity": 1000.0, "available": 1000.0,
+        "dex_equity": {"": 1000.0}, "dex_available": {"": 1000.0},
+        "total_ntl": 0.0, "asset_positions": [],
+    })
+    monkeypatch.setenv("HYPERLIQUID_PRIVATE_KEY", "0xdeadbeef")
+    monkeypatch.setattr(executor, "get_hl_price", lambda c: 100.0)
+    monkeypatch.setattr(executor, "get_max_leverage", lambda c: 10)
+    monkeypatch.setattr(executor, "set_leverage", lambda c, lev: {"ok": True})
+    # gates pass
+    monkeypatch.setattr(executor, "eval_all_gates",
+                        lambda ctx, cfg, lt: {"blocked": False, "results": {}})
+    # the coin under test: no candle history → ATR 0
+    monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 0.0)
+    placed = {"n": 0}
+    monkeypatch.setattr(executor, "place_hl_order",
+                        lambda *a, **k: placed.update(n=placed["n"] + 1) or {"ok": True})
+
+    res = executor.maybe_execute({
+        "id": "no-atr", "coin": "NEWCOIN", "verdict": "LONG",
+        "side": "long", "confidence": 0.8, "composite_score": 60.0,
+    })
+    assert res["executed"] is False
+    assert "no_atr_no_stop" in res["reason"]
+    assert placed["n"] == 0  # never placed an order
+
+
 def test_whale_size_multiplier_clamps_at_2x():
     """The whale multiplier stacks on the confidence tier but clamps at 2×
     base so a high-conf whale trade can't run away."""
