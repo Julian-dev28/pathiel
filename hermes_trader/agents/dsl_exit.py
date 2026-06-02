@@ -410,6 +410,17 @@ def register_position(coin: str, side: str, entry_px: float,
     return tracker
 
 
+def active_position_coins() -> Dict[str, str]:
+    """coin -> side for every coin with an active DSL tracker.
+
+    Restart-safe backstop against re-entry stacking: the DSL registry rehydrates
+    from disk on startup, so it knows a position is held even in the window where
+    a live account read flakes/returns empty (which would otherwise let the
+    re-entry guard fail open and pyramid the position).
+    """
+    return {t.coin: t.side for t in _active_positions.values()}
+
+
 def deregister_position(coin: str, side: str) -> bool:
     """Remove a tracker (after a successful close). Returns True if removed."""
     key = f"{coin}_{side}"

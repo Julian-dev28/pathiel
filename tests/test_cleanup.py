@@ -14,10 +14,30 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 from hermes_trader.models.types import Candle
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MCP_SCRIPT = str(ROOT / "scripts" / "hermes-mcp-server.py")
+
+
+@pytest.fixture(autouse=True)
+def _clear_dsl_trackers():
+    """Isolate the DSL tracker registry between tests. The re-entry backstop in
+    maybe_execute now reads dsl_exit._active_positions, so a tracker leaked by an
+    earlier test would inject a phantom held-coin and block unrelated trades."""
+    try:
+        from hermes_trader.agents import dsl_exit
+        dsl_exit._active_positions.clear()
+    except Exception:
+        pass
+    yield
+    try:
+        from hermes_trader.agents import dsl_exit
+        dsl_exit._active_positions.clear()
+    except Exception:
+        pass
 
 
 def _candles(n=150):
@@ -1650,6 +1670,39 @@ def test_executor_whale_signal_overrides_pass_to_long(monkeypatch):
     analysis_no_whale = {**analysis, "whale_signal": None}
     res2 = executor.maybe_execute(analysis_no_whale)
     assert isinstance(res2, dict)
+
+
+def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(monkeypatch):
+    """If the live account read returns NO positions but the DSL registry still
+    tracks the coin (restart/flaky-read window), re-entry must be blocked — else
+    the position pyramids. Regression for the xyz:SP500 stacking incident."""
+    from hermes_trader.agents import executor, dsl_exit
+    dsl_exit._active_positions.clear()
+    # DSL knows we hold SP500 long, but the live read "forgot" it.
+    dsl_exit.register_position("xyz:SP500", "long", 7500.0, leverage=10)
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE", "enable_crypto": True, "enable_hip3": True,
+        "min_available_margin_pct": 0.0,
+    })
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
+        "equity": 1000.0, "available": 1000.0,
+        "dex_equity": {"": 1000.0}, "dex_available": {"": 1000.0},
+        "total_ntl": 0.0, "asset_positions": [],  # live read dropped the position
+    })
+    placed = {"n": 0}
+    monkeypatch.setattr(executor, "place_hl_order",
+                        lambda *a, **k: placed.update(n=placed["n"] + 1) or {"ok": True})
+    res = executor.maybe_execute({
+        "id": "reentry", "coin": "xyz:SP500", "verdict": "LONG", "side": "long",
+        "confidence": 0.9, "composite_score": 60.0,
+    })
+    dsl_exit._active_positions.clear()
+    assert res["executed"] is False
+    assert placed["n"] == 0  # never pyramided
+    # blocked specifically by the re-entry / opposite-direction guard
+    blk = str(res.get("blocked_by")) + str(res.get("reason"))
+    assert "holding" in blk or "re-entry" in blk or "pyramid" in blk, res
 
 
 def test_maybe_execute_refuses_when_no_atr(monkeypatch):

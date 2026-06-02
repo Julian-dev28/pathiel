@@ -16,6 +16,7 @@ from typing import Any, Dict, List
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.dsl_exit import (
     ExitPolicy,
+    active_position_coins,
     check_all_positions,
     deregister_position,
     register_position,
@@ -306,6 +307,21 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         }
         for p in state["asset_positions"]
     ]
+
+    # Restart-safe re-entry backstop: a flaky/empty live account read can drop a
+    # held position from asset_positions, letting opposite_direction_guard fail
+    # open and STACK the position (observed: xyz:SP500 pyramided to ~8x during a
+    # restart's rehydration window). The DSL registry rehydrates from disk, so
+    # merge any tracked coin the live read missed — a held position then blocks
+    # re-entry even when the API momentarily forgets it. (Skipping a trade costs
+    # $0; a silent pyramid does not.)
+    _live_coins = {p["coin"] for p in positions}
+    for _coin, _side in active_position_coins().items():
+        if _coin not in _live_coins:
+            logger.warning(
+                f"[executor] {_coin} tracked by DSL but absent from live account "
+                f"read — treating as held (re-entry backstop)")
+            positions.append({"coin": _coin, "side": _side, "size_usd": 0})
 
     # `tp_px` / `stop_px` are fallbacks for bracket calculation when ATR
     # is unavailable; the executor uses a fresh live mid as entry.
