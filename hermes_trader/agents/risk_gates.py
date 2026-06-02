@@ -102,6 +102,24 @@ def market_liquidity_floor(
     return {"pass": False, "reason": f"market 24h volume ${ctx.market_volume_24h_usd/1e6:.2f}M below floor ${floor/1e6:.2f}M"}
 
 
+def short_liquidity_floor(ctx: GateContext, min_short_volume: float) -> GateResult:
+    """SHORTS need materially more liquidity than longs — thin markets squeeze.
+
+    Data (72h short segmentation): short BLEEDERS had a median 24h volume of
+    ~$13M (XPL 0%/5 win, xyz:LITE -6.7%/10, PUMP, xyz:EWZ) while short WINNERS
+    (XMR/TON/DOGE/BTC/ETH + commodities) had ~$223M — a 17x gap. Low-liquidity
+    shorts ran to max_loss (the entire short bleed was 14 stopped shorts). Longs
+    can tolerate a thin pump; a thin short gets squeezed. Applies ONLY to shorts;
+    0/None disables (opt-in, reversible)."""
+    if ctx.trade_side != "short" or not min_short_volume:
+        return {"pass": True}
+    if ctx.market_volume_24h_usd >= min_short_volume:
+        return {"pass": True}
+    return {"pass": False,
+            "reason": (f"short on thin market: 24h vol ${ctx.market_volume_24h_usd/1e6:.1f}M "
+                       f"< short floor ${min_short_volume/1e6:.0f}M (squeeze risk)")}
+
+
 def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[str]) -> GateResult:
     if blocklist and ctx.coin in blocklist:
         return {"pass": False, "reason": f"{ctx.coin} is on the coin blocklist"}
@@ -312,7 +330,7 @@ def eval_all_gates(
     config: Dict[str, Any],
     last_trade_time: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Evaluate all 11 risk gates and collect results."""
+    """Evaluate all risk gates and collect results."""
     results = {}
     results["confidence"] = confidence_gate(ctx, _cfg(config, "min_ai_confidence", 0.8))
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
@@ -323,6 +341,8 @@ def eval_all_gates(
         config.get("min_market_volume_usd", 5_000_000),
         config.get("min_hip3_volume_usd", 500_000),
     )
+    results["short_liquidity"] = short_liquidity_floor(
+        ctx, config.get("min_short_volume_usd", 0) or 0)
     results["coin_filter"] = coin_allowlist_gate(
         ctx,
         config.get("coin_allowlist", []),

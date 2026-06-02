@@ -273,6 +273,38 @@ def test_risk_gates_pass_and_block():
     assert any("confidence" in r for r in blocked["block_reasons"])
 
 
+def test_short_liquidity_floor_blocks_thin_shorts_only():
+    """Shorts on thin markets squeeze (data: bleeders ~$13M vol, winners ~$223M).
+    The floor must block a thin SHORT, allow a thin LONG, allow a liquid short,
+    and be a no-op when unset."""
+    from hermes_trader.agents.risk_gates import short_liquidity_floor
+    FLOOR = 50_000_000
+    # thin short → blocked
+    r = short_liquidity_floor(_ctx(trade_side="short", coin="XPL", market_volume_24h_usd=16e6), FLOOR)
+    assert r["pass"] is False and "squeeze" in r["reason"]
+    # thin LONG → allowed (longs are unaffected)
+    assert short_liquidity_floor(_ctx(trade_side="long", coin="XPL", market_volume_24h_usd=16e6), FLOOR)["pass"] is True
+    # liquid short → allowed
+    assert short_liquidity_floor(_ctx(trade_side="short", coin="BTC", market_volume_24h_usd=4e9), FLOOR)["pass"] is True
+    # disabled (0) → no-op even for a thin short
+    assert short_liquidity_floor(_ctx(trade_side="short", coin="XPL", market_volume_24h_usd=1e6), 0)["pass"] is True
+
+
+def test_eval_all_gates_short_volume_floor_integration():
+    from hermes_trader.agents.risk_gates import eval_all_gates
+    cfg = {"min_ai_confidence": 0.78, "max_concurrent": 5, "max_trade_notional_usd": 500,
+           "max_daily_loss_usd": -300, "min_market_volume_usd": 8e5,
+           "max_total_notional_pct": 1.0, "cooldown_min": 60,
+           "min_short_volume_usd": 50_000_000}
+    # thin short blocked by the new floor
+    blk = eval_all_gates(_ctx(trade_side="short", coin="XPL", market_volume_24h_usd=16e6), cfg)
+    assert blk["blocked"] is True
+    assert any("short floor" in r or "squeeze" in r for r in blk["block_reasons"])
+    # same thin market as a LONG is NOT blocked by the short floor
+    lng = eval_all_gates(_ctx(trade_side="long", coin="XPL", market_volume_24h_usd=16e6), cfg)
+    assert lng["results"]["short_liquidity"]["pass"] is True
+
+
 def test_held_coin_blocks_both_pyramid_and_flip():
     """A coin we already hold must block re-entry in BOTH directions: opposite =
     no auto-flip, same side = no uncontrolled pyramid (the held-coin close-check
