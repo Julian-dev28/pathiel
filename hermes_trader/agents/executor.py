@@ -163,7 +163,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         analysis = dict(analysis)
         analysis["verdict"] = "LONG"
         analysis["side"] = "long"
-        analysis["confidence"] = max(0.70, float(analysis.get("confidence", 0) or 0))
+        # Upgrade to the configured confidence floor (not a hardcoded 0.70) so a
+        # structural/whale override still clears the confidence_gate after the bar
+        # is raised. Otherwise raising min_ai_confidence would silently kill the
+        # whale overrides — empirically the one flat-positive bucket.
+        _conf_floor = float(config.get("min_ai_confidence", 0.70))
+        analysis["confidence"] = max(_conf_floor, float(analysis.get("confidence", 0) or 0))
         analysis["reasoning"] = (
             "[structural override] " + (analysis.get("reasoning", "") or "")
         )[:500]
