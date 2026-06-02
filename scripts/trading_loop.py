@@ -16,6 +16,8 @@ Flags (tolerant — unknown flags are ignored so legacy callers keep working):
 """
 import argparse
 import os
+import sys
+import threading
 import time
 import logging
 
@@ -97,6 +99,40 @@ memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 # TTL (config.scan.cacheTtlMs) so every scan reads a fresh candle snapshot.
 scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))
 min_score = config['scan']['minCompositeScore']
+
+# ── Self-healing watchdog ──────────────────────────────────────────────────
+# There is NO external supervisor (restart.sh just launches; nothing re-spawns
+# a hung/dead loop). A local DNS/network outage froze the loop for ~7.5min once
+# (an SDK call without a timeout blocked inside a scan) — positions went
+# unmonitored by the DSL the whole time. This watchdog re-execs the process if a
+# full scan cycle hasn't completed within HERMES_WATCHDOG_TIMEOUT_S, so a hang
+# self-heals (startup rehydrates trackers from disk; the stacking backstop keeps
+# a mid-restart re-entry from pyramiding). Timeout is generous so a slow-but-
+# progressing scan (HL degradation can take minutes) is never killed.
+_last_progress_ts = time.time()
+_watchdog_timeout_s = int(os.environ.get('HERMES_WATCHDOG_TIMEOUT_S', '600'))
+
+
+def _watchdog() -> None:
+    while True:
+        time.sleep(60)
+        if _watchdog_timeout_s <= 0:
+            continue
+        stalled = time.time() - _last_progress_ts
+        if stalled >= _watchdog_timeout_s:
+            logger.error(
+                f"[watchdog] no scan progress for {stalled:.0f}s "
+                f"(> {_watchdog_timeout_s}s) — loop appears HUNG; re-execing to self-heal")
+            try:
+                log_event({"event": "error", "scope": "watchdog",
+                           "error": f"hung {stalled:.0f}s — re-exec"})
+            except Exception:
+                pass
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
+logger.info(f"[watchdog] armed: re-exec if no scan progress for {_watchdog_timeout_s}s")
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
 log_event({
@@ -461,6 +497,7 @@ while True:
                 log_event({"event": "error", "coin": coin,
                            "error": f"{type(e).__name__}: {detail}"})
 
+        _last_progress_ts = time.time()  # watchdog: a full cycle completed
         logger.info(f"Sleeping {scan_interval}s until next scan...")
         time.sleep(scan_interval)
 
