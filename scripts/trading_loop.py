@@ -49,7 +49,7 @@ from hermes_trader.agents.executor import close_position_market, maybe_execute, 
 from hermes_trader.agents.dsl_exit import rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
 from hermes_trader.agents.memory import memory
-from hermes_trader.client.exchange import get_all_hl_mids
+from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
 from hermes_trader.client.universe import get_universe
 from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
 from hermes_trader.positions_snapshot import write_snapshot
@@ -76,6 +76,13 @@ logger.info(
     f"Universe loaded: {len(universe)} markets"
     + (f" (HIP-3 enabled — {sum(1 for m in universe if m.get('dex'))} tokenized markets)" if _enable_hip3 else "")
 )
+# Warm the per-dex meta cache BEFORE the first scan/execute so the restart-time
+# 429 storm can't make coin resolution fall through to "Unknown coin" (which
+# kills the HIP-3 backup stop-loss) or blank candle fetches.
+try:
+    prewarm_meta_cache()
+except Exception as e:
+    logger.warning(f"[startup] meta prewarm failed (will warm lazily): {e}")
 # The universe carries prevDayPx / dayNtlVlm / funding which DRIFT over the
 # day; fetched once here they'd freeze at loop-start for the whole process,
 # so mover-selection + volume-ranking would rank stale 24h windows (a coin

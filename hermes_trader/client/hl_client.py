@@ -189,10 +189,21 @@ def fetch_hl_candles(
             "endTime": end_time,
         }
     }
+    # A non-list result means a transient failure (429 / timeout), NOT "no
+    # candles" — HL returns an empty LIST for a coin with no history. Those are
+    # indistinguishable downstream: research treated a 429-blanked fetch as
+    # "insufficient history" and emitted stop/tp = 0.0 (which the whale override
+    # could then force-execute stopless). So retry a transient failure a few
+    # times with backoff before giving up; a genuine empty list returns at once.
     raw = _http_post("/info", payload)
+    attempts = 0
+    while not isinstance(raw, list) and attempts < 3:
+        attempts += 1
+        time.sleep(0.3 * attempts)
+        raw = _http_post("/info", payload)
     if not isinstance(raw, list):
-        # Do NOT cache failures/empties (429s, timeouts) — caching a bad read would
-        # blank the coin for the whole TTL. Let the next call retry the network.
+        # Persisted across retries. Do NOT cache failures/empties — caching a bad
+        # read would blank the coin for the whole TTL. Let the next call retry.
         return []
 
     candles = [

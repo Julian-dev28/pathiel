@@ -158,6 +158,32 @@ def _cached_universe(dex: Optional[str] = None) -> list:
         raise
 
 
+def prewarm_meta_cache() -> int:
+    """Populate the per-dex meta cache at startup, BEFORE the first scan/execute
+    burst hammers the API. Without this the cache is cold on restart, so the
+    restart-time 429 storm makes get_coin_index/get_max_leverage fall through to
+    'Unknown coin' (killing the HIP-3 backup stop-loss) and candle fetches
+    return empty. Best-effort: a dex that 429s now will be retried lazily later.
+    Returns the number of dex universes successfully cached.
+    """
+    dexes: list = [None]  # main perp dex
+    try:
+        for d in (_resolve_perp_dexs() or []):
+            if d and d not in dexes:
+                dexes.append(d)
+    except Exception:
+        pass
+    warmed = 0
+    for d in dexes:
+        try:
+            if _cached_universe(dex=d):
+                warmed += 1
+        except Exception as e:
+            logger.warning(f"[prewarm_meta_cache] dex={d!r} failed (will retry lazily): {e}")
+    logger.info(f"[prewarm_meta_cache] warmed {warmed}/{len(dexes)} dex meta universes")
+    return warmed
+
+
 def get_coin_index(coin: str) -> Tuple[int, int, int]:
     """Resolve a coin name to (asset_index, sz_decimals, px_decimals) via the SDK meta endpoint.
 
