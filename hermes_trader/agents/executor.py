@@ -156,18 +156,18 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired):
         trigger = "whale-accumulation" if whale_fired else \
             f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
-        logger.info(
-            f"[executor] Structural override on {analysis['coin']}: "
-            f"AI PASS but {trigger} → upgrading to LONG conf 0.70"
-        )
-        analysis = dict(analysis)
-        analysis["verdict"] = "LONG"
-        analysis["side"] = "long"
         # Upgrade to the configured confidence floor (not a hardcoded 0.70) so a
         # structural/whale override still clears the confidence_gate after the bar
         # is raised. Otherwise raising min_ai_confidence would silently kill the
         # whale overrides — empirically the one flat-positive bucket.
         _conf_floor = float(config.get("min_ai_confidence", 0.70))
+        logger.info(
+            f"[executor] Structural override on {analysis['coin']}: "
+            f"AI PASS but {trigger} → upgrading to LONG conf {_conf_floor:.2f}"
+        )
+        analysis = dict(analysis)
+        analysis["verdict"] = "LONG"
+        analysis["side"] = "long"
         analysis["confidence"] = max(_conf_floor, float(analysis.get("confidence", 0) or 0))
         analysis["reasoning"] = (
             "[structural override] " + (analysis.get("reasoning", "") or "")
