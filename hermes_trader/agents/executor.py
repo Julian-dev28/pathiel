@@ -168,6 +168,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "[structural override] " + (analysis.get("reasoning", "") or "")
         )[:500]
 
+    # Safety guard: a PASS that did NOT qualify for the structural override must
+    # never reach order placement (trade_side defaults to "long" downstream, so
+    # an un-upgraded PASS would otherwise silently fire a long). route_verdict
+    # only sends a PASS here when an override HINT applies — this is the real
+    # check that no-ops cleanly when the override doesn't actually hold.
+    if analysis.get("verdict") == "PASS":
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"], "reason": "pass_no_override",
+        }
+
     # Idempotency: don't double-execute
     already = next(
         (t for t in memory.get_recent_trades(100)
@@ -507,6 +518,21 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
     if verdict == "CLOSE":
         return {"action": "close", "verdict": verdict, "result": close_fn(coin)}
     if verdict == "PASS":
+        # A hedging AI PASS can still carry a structural-override HINT: a whale
+        # accumulation signal, or a strong slow-burn composite. maybe_execute
+        # owns the real override decision (and re-checks whale_force_execute +
+        # all gates, no-opping cleanly if it doesn't hold), but it's only ever
+        # reached via this router — so route a hinted PASS to it instead of
+        # dropping it. Without this the force-execute-on-PASS code was dead:
+        # the AI hedges to PASS on exactly the contrarian whale setups it's for.
+        has_whale = bool(analysis.get("whale_signal"))
+        slow_burn_hint = (
+            float(analysis.get("composite_score", 0) or 0) >= 40
+            and int(analysis.get("slow_burn_count", 0) or 0) >= 2
+        )
+        if has_whale or slow_burn_hint:
+            return {"action": "execute", "verdict": "PASS",
+                    "result": execute_fn(analysis)}
         return {"action": "none", "verdict": "PASS", "result": None}
     # Should be unreachable (parse_verdict normalizes to one of the above),
     # but never silently drop — surface it so a new verdict can't go unhandled.

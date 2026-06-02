@@ -1765,6 +1765,59 @@ def test_route_verdict_pass_is_noop():
     assert not calls                   # nothing called
 
 
+def test_route_verdict_pass_with_whale_signal_routes_to_executor():
+    """A hedging AI PASS that carries a whale_signal must reach the executor so
+    the force-execute-on-PASS override can fire — otherwise the whale path is
+    dead (router dropped PASS before maybe_execute ever saw it)."""
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "PASS", "coin": "TRX",
+                       "whale_signal": {"signal": "oi_funding_anomaly"}},
+                      execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
+                      close_fn=lambda c: calls.setdefault("c", c))
+    assert r["action"] == "execute"
+    assert calls.get("e", {}).get("coin") == "TRX"
+    assert "c" not in calls
+
+
+def test_route_verdict_pass_with_slow_burn_hint_routes_to_executor():
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "PASS", "coin": "SOL",
+                       "composite_score": 45.0, "slow_burn_count": 2},
+                      execute_fn=lambda a: calls.setdefault("e", 1) or {"executed": True},
+                      close_fn=lambda c: calls.setdefault("c", 1))
+    assert r["action"] == "execute"
+    assert calls.get("e") == 1
+
+
+def test_route_verdict_plain_pass_still_noop():
+    """A PASS with NO override hint (no whale, weak composite) stays a no-op —
+    we don't want every hedged PASS hitting the executor."""
+    from hermes_trader.agents.executor import route_verdict
+    calls = {}
+    r = route_verdict({"verdict": "PASS", "coin": "BTC",
+                       "composite_score": 20.0, "slow_burn_count": 0},
+                      execute_fn=lambda a: calls.setdefault("e", 1),
+                      close_fn=lambda c: calls.setdefault("c", 1))
+    assert r["action"] == "none"
+    assert not calls
+
+
+def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
+    """If a PASS reaches maybe_execute but the override doesn't actually hold,
+    it must no-op (reason=pass_no_override) — never default to a long order."""
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config",
+                        lambda: {"mode": "LIVE", "enable_crypto": True,
+                                 "whale_force_execute": True})
+    # PASS, no whale_signal, weak composite → no override → must no-op safely.
+    res = executor.maybe_execute({"id": "x1", "coin": "BTC", "verdict": "PASS",
+                                  "composite_score": 10.0, "slow_burn_count": 0})
+    assert res["executed"] is False
+    assert res["reason"] == "pass_no_override"
+
+
 def test_route_verdict_unknown_is_flagged_not_dropped():
     """A novel/garbage verdict must surface as 'unknown', never silently no-op
     like a PASS — that's how the next dropped-verdict bug gets caught."""
