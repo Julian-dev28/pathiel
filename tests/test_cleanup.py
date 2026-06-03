@@ -273,6 +273,34 @@ def test_risk_gates_pass_and_block():
     assert any("confidence" in r for r in blocked["block_reasons"])
 
 
+def test_aligned_min_conf_lets_aligned_shorts_through(monkeypatch):
+    """Regime-aware confidence floor: an ALIGNED short (down regime) clears the
+    lower aligned_min_conf, while the same confidence on a non-aligned trade is
+    still blocked by the default min_ai_confidence. Enables shorting selloffs
+    (SOL SHORT 0.72 was being blocked by the 0.78 long-calibrated bar)."""
+    import hermes_trader.agents.market_regime as mr
+    from hermes_trader.agents.risk_gates import eval_all_gates
+    monkeypatch.setattr(mr, "detect_regime", lambda coin, **k: "down")
+    cfg = {"min_ai_confidence": 0.78, "aligned_min_conf": 0.70, "max_concurrent": 5,
+           "max_trade_notional_usd": 500, "max_daily_loss_usd": -300,
+           "min_market_volume_usd": 8e5, "max_total_notional_pct": 1.0,
+           "cooldown_min": 60, "counter_regime_min_conf": 0.80,
+           "min_short_volume_usd": 50_000_000}
+    # ALIGNED short (down regime + short) at 0.72 → confidence gate passes (>=0.70)
+    r = eval_all_gates(_ctx(trade_side="short", coin="SOL", confidence=0.72,
+                            market_volume_24h_usd=4e8), cfg)
+    assert r["results"]["confidence"]["pass"] is True
+    # NON-aligned (long in a down regime = counter-trend) at 0.72 → still blocked by 0.78
+    r2 = eval_all_gates(_ctx(trade_side="long", coin="SOL", confidence=0.72,
+                             market_volume_24h_usd=4e8), cfg)
+    assert r2["results"]["confidence"]["pass"] is False
+    # With aligned_min_conf UNSET, the aligned short reverts to the 0.78 bar (blocked)
+    cfg_off = {**cfg}; cfg_off.pop("aligned_min_conf")
+    r3 = eval_all_gates(_ctx(trade_side="short", coin="SOL", confidence=0.72,
+                             market_volume_24h_usd=4e8), cfg_off)
+    assert r3["results"]["confidence"]["pass"] is False
+
+
 def test_short_liquidity_floor_blocks_thin_shorts_only():
     """Shorts on thin markets squeeze (data: bleeders ~$13M vol, winners ~$223M).
     The floor must block a thin SHORT, allow a thin LONG, allow a liquid short,

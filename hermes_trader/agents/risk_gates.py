@@ -332,7 +332,25 @@ def eval_all_gates(
 ) -> Dict[str, Any]:
     """Evaluate all risk gates and collect results."""
     results = {}
-    results["confidence"] = confidence_gate(ctx, _cfg(config, "min_ai_confidence", 0.8))
+    # Regime-aware confidence floor: a WITH-TREND (aligned) trade — long in an up
+    # regime, SHORT in a DOWN regime — gets a lower bar (`aligned_min_conf`) than
+    # the default `min_ai_confidence`. The 0.78 default was calibrated on the
+    # LONG-side 0.70-0.80 leak; applying it to aligned shorts made us sit out
+    # selloffs (e.g. SOL SHORT 0.72 / -6.3% / $399M blocked). Demand full
+    # conviction only to fight the trend (neutral/counter-trend keep the default).
+    min_conf = float(_cfg(config, "min_ai_confidence", 0.8))
+    aligned_min_conf = config.get("aligned_min_conf")
+    if aligned_min_conf is not None:
+        try:
+            from hermes_trader.agents.market_regime import detect_regime
+            _rg = detect_regime(ctx.coin)  # cached (TTL); market_regime_gate reuses it
+            _aligned = (_rg == "up" and ctx.trade_side == "long") or \
+                       (_rg == "down" and ctx.trade_side == "short")
+            if _aligned:
+                min_conf = min(min_conf, float(aligned_min_conf))
+        except Exception:
+            pass
+    results["confidence"] = confidence_gate(ctx, min_conf)
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
