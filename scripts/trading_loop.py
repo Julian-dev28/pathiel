@@ -48,7 +48,7 @@ from hermes_trader.agents.perception import scan_once
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits, route_verdict
-from hermes_trader.agents.dsl_exit import rehydrate_from_exchange
+from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
@@ -194,6 +194,24 @@ def _sync_account_state():
     spot_usdc = float(state.get("spot_usdc", 0) or 0)
     positions = state.get("asset_positions", []) or []
     queried_dexes = state.get("queried_dexes") or {""}
+
+    # PARTIAL-DEX degraded-read guard: a 'successful' fetch where equity>0 (main
+    # dex fine) but a HIP-3 dex we HOLD a position on failed to respond drops that
+    # dex's equity from the aggregate — e.g. on 2026-06-03 a missing xyz dex made
+    # equity read $56.65 instead of $187.42 (a phantom -$128/-69%). The equity<=0
+    # guard above can't catch it (main was funded). Left unguarded it poisons
+    # memory equity/dailyPnl AND can FALSE-TRIP the daily-loss kill switch.
+    # Detect it: if any dex backing an open DSL tracker isn't in queried_dexes,
+    # the aggregate is incomplete → preserve last-known-good (skip memory update,
+    # queried_dexes=set() keeps trackers), same as the equity<=0 path.
+    held_dexes = {(c.split(":", 1)[0] if ":" in c else "") for c in active_position_coins()}
+    missing_dexes = held_dexes - set(queried_dexes)
+    if missing_dexes:
+        logger.warning(
+            f"[heartbeat] partial-dex degraded read: held dex(es) {missing_dexes} "
+            f"missing from queried {set(queried_dexes)} (equity read ${equity:.2f} is "
+            f"incomplete) — skipping memory update, preserving last-known-good")
+        return 0.0, [], 0.0, 0.0, set(), {}
 
     # Subtract net USDC contributions so transfers/deposits don't show
     # up as trading PnL in the equity-diff calculation.
