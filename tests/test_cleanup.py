@@ -71,6 +71,27 @@ def test_ema_sma():
     assert ema([], 8) == []
 
 
+def test_directional_momentum_triggers_are_symmetric():
+    """uptrend_momentum fires on a sustained UP move, downtrend_momentum on a
+    sustained DOWN move, and each stays silent on the opposite/flat — the
+    symmetric surfacing pair that lets the bot short downtrends."""
+    from hermes_trader.indicators.triggers import uptrend_momentum, downtrend_momentum
+    from hermes_trader.models.types import Candle
+    up = [Candle(t=i, o=100, h=101, l=99, c=100.0 * (1.0006 ** i), v=10) for i in range(80)]   # ~+5% over 80
+    down = [Candle(t=i, o=100, h=101, l=99, c=100.0 * (0.9994 ** i), v=10) for i in range(80)] # ~-5% over 80
+    flat = [Candle(t=i, o=100, h=101, l=99, c=100.0, v=10) for i in range(80)]
+    assert uptrend_momentum(up, 72, 3.0)["fired"] is True
+    assert downtrend_momentum(up, 72, 3.0)["fired"] is False
+    assert downtrend_momentum(down, 72, 3.0)["fired"] is True
+    assert uptrend_momentum(down, 72, 3.0)["fired"] is False
+    assert uptrend_momentum(flat, 72, 3.0)["fired"] is False
+    assert downtrend_momentum(flat, 72, 3.0)["fired"] is False
+    # weight 0 in config → no composite-denominator impact (gate calibration intact)
+    from hermes_trader.agents.config import get_config
+    w = get_config()["weights"]
+    assert w["uptrendMomentum"] == 0.0 and w["downtrendMomentum"] == 0.0
+
+
 def test_atr_rsi_adx_produce_finite_output():
     from hermes_trader.indicators.math import atr, rsi, adx
     cs = _candles(150)
@@ -1196,14 +1217,14 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
-    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None, wsb=False: (True, None))
+    monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None, wsb=False, tse=True: (True, None))
     # Force include_hip3=True via the runtime config
     monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
                         lambda: {"enable_hip3": True})
 
     seen = []
     real_scan = perception._scan_single_market
-    def _capture(m, mid, cfg, ms, ws=None, wsb=False):
+    def _capture(m, mid, cfg, ms, ws=None, wsb=False, tse=True):
         seen.append(m["coin"])
         return (True, None)
     monkeypatch.setattr(perception, "_scan_single_market", _capture)
@@ -1305,7 +1326,7 @@ def _scan_with_config(monkeypatch, cfg):
                         lambda: cfg)
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms, ws=None, wsb=False: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None, wsb=False, tse=True: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
     return seen
 
@@ -1394,7 +1415,7 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
 
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
-                        lambda m, mid, c, ms, ws=None, wsb=False: (seen.append(m["coin"]), (True, None))[1])
+                        lambda m, mid, c, ms, ws=None, wsb=False, tse=True: (seen.append(m["coin"]), (True, None))[1])
     perception.scan_once(min_score=0)
 
     # Volume budget = 10 - 3 = 7 → all 5 MAJORs + 2 of the 5 MOVERs by volume

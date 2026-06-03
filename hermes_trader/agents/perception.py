@@ -75,6 +75,7 @@ def _scan_single_market(
     min_score: float,
     whale_signals: Optional[Dict[str, Dict[str, Any]]] = None,
     whale_scan_bypass: bool = False,
+    trend_surface_enabled: bool = True,
 ) -> Tuple[bool, Dict[str, Any] | str | None]:
     """Run all triggers on a single market's candles.
 
@@ -115,6 +116,17 @@ def _scan_single_market(
             trigger_mod.volume_buildup_1h(candles_1h, thresholds.get("volBuildupRatio", 2.5)),
             trigger_mod.trend_flip_1h(candles_1h, thresholds.get("trendFlipBars", 3)),
             trigger_mod.higher_lows_1h(candles_1h, thresholds.get("higherLowsRequired", 4)),
+            # Symmetric directional surfacing (weight 0 → no composite-denominator
+            # impact). uptrend/downtrend momentum surface a coin in a sustained
+            # intraday trend for research REGARDLESS of the bullish-biased composite
+            # gate — the down side is what lets us short selloffs (the weighted
+            # triggers are all long-structured, so down-movers scored ~0 and never
+            # reached the AI). Acts as a bypass below; the AI + aligned-conf bar +
+            # short floor + counter-regime gate adjudicate direction/execution.
+            trigger_mod.uptrend_momentum(candles, thresholds.get("trendMomentumLookback", 72),
+                                         thresholds.get("trendMomentumPct", 3.0)),
+            trigger_mod.downtrend_momentum(candles, thresholds.get("trendMomentumLookback", 72),
+                                           thresholds.get("trendMomentumPct", 3.0)),
         ]
 
         # Momentum-continuation trigger (LEAK #2) — OFF by default. Catches a coin
@@ -151,7 +163,14 @@ def _scan_single_market(
         # never sees it. When enabled, surface the coin so the downstream whale
         # gates can decide; they still apply min_ai_confidence + all risk gates.
         whale_bypass = whale_scan_bypass and bool((whale_signals or {}).get(market["coin"]))
-        if score < min_score and not burst_fired and not whale_bypass:
+        # Directional-trend bypass: a sustained intraday up/down trend surfaces the
+        # coin for research even below the composite gate (the gate is calibrated
+        # for bullish multi-trigger setups; a lone trend signal can't clear it).
+        # This is what unblocks shorting downtrends. Gated by trend_surface_enabled
+        # (default ON) so it's reversible without a code change.
+        trend_bypass = trend_surface_enabled and any(
+            h["name"] in ("uptrendMomentum", "downtrendMomentum") and h["fired"] for h in hits)
+        if score < min_score and not burst_fired and not whale_bypass and not trend_bypass:
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the
@@ -213,10 +232,12 @@ def scan_once(
         include_crypto = bool(_cfg.get("enable_crypto", True))
         include_hip3 = bool(_cfg.get("enable_hip3", False))
         whale_scan_bypass = bool(_cfg.get("whale_scan_bypass", False))
+        trend_surface_enabled = bool(_cfg.get("trend_surface_enabled", True))
     except Exception:
         include_crypto = True
         include_hip3 = False
         whale_scan_bypass = False
+        trend_surface_enabled = True
 
     if not include_crypto and not include_hip3:
         logger.warning("[scan] both enable_crypto and enable_hip3 are False — nothing to scan")
@@ -390,7 +411,7 @@ def scan_once(
         batch = callables[batch_start:batch_end]
 
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hermes-scan") as pool:
-            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals, whale_scan_bypass) for m, md in batch]
+            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals, whale_scan_bypass, trend_surface_enabled) for m, md in batch]
             for i, future in enumerate(futures):
                 idx = batch_start + i
                 try:

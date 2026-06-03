@@ -22,9 +22,17 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         "higherLows1h": 0.0,      # lift -0.51% — removed
         "trendFlip1h": 0.0,       # lift -2.10% — removed (net loser)
         "rangeCompression": 0.0,  # lift -3.08% — removed (worst)
+        # Symmetric directional SURFACING triggers — weight 0 so they don't touch
+        # the composite denominator (no gate recalibration). They surface trending
+        # coins via the bypass in perception, not via score. Removes the long-bias
+        # in surfacing so down-movers reach research and can be shorted.
+        "uptrendMomentum": 0.0,
+        "downtrendMomentum": 0.0,
     },
     "thresholds": {
         "sigmaThreshold": 2.0,
+        "trendMomentumLookback": 72,  # 5m bars (~6h) for sustained up/down trend surfacing
+        "trendMomentumPct": 3.0,      # min |%| move over that window to surface for research
         "breakoutLookback": 48,
         "bbLength": 20,
         "bbStdDev": 2,

@@ -7,7 +7,7 @@ trend strength, plus a weighted composite score across them.
 from __future__ import annotations
 
 import math
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from hermes_trader.indicators.math import adx, ema, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
@@ -245,6 +245,61 @@ def momentum_burst(
         "name": "momentumBurst",
         "score": score if fired else 0,
         "reason": f"{move_pct:+.1f}% over {lookback} bars {direction}" if fired else "flat",
+        "fired": fired,
+    }
+
+
+def _sustained_move_pct(candles: List[Candle], lookback: int) -> Optional[float]:
+    """% change over the last `lookback` bars (close-to-close). None if too short."""
+    if len(candles) < lookback + 1:
+        return None
+    start = candle_val(candles[-lookback - 1], "c")
+    end = candle_val(candles[-1], "c")
+    if start == 0:
+        return None
+    return (end - start) / start * 100
+
+
+def uptrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0) -> TriggerHit:
+    """Sustained UPward move over `lookback` bars (default ~6h on 5m).
+
+    Surfaces a coin in a steady uptrend that the fast spike triggers (which need
+    a sharp 5m/2-bar move) miss. The symmetric counterpart to downtrend_momentum;
+    together they remove the long-bias in surfacing — both directions get a
+    sustained-trend signal so the AI sees up-movers (LONG) and down-movers (SHORT)
+    alike. Used as a surfacing BYPASS (weight 0), so it never reaches the
+    composite gate's denominator."""
+    move = _sustained_move_pct(candles, lookback)
+    if move is None:
+        return {"name": "uptrendMomentum", "score": 0, "reason": "insufficient_history", "fired": False}
+    fired = move >= pct_threshold
+    score = min(10, max(0, move / pct_threshold * 5)) if pct_threshold > 0 else 0
+    return {
+        "name": "uptrendMomentum",
+        "score": score if fired else 0,
+        "reason": f"+{move:.1f}% over {lookback} bars (uptrend)" if fired else "flat",
+        "fired": fired,
+    }
+
+
+def downtrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0) -> TriggerHit:
+    """Sustained DOWNward move over `lookback` bars (default ~6h on 5m).
+
+    The bearish mirror of uptrend_momentum — surfaces a coin in a steady
+    downtrend for SHORT research. This is what was missing: the existing weighted
+    triggers (breakout/trendStrength/higherLows) are bullish-structured, so a coin
+    grinding down -X% scored ~0 and never reached the AI. Surfacing BYPASS
+    (weight 0); downstream the AI calls SHORT, the aligned-conf bar + $50M short
+    floor + counter-regime gate adjudicate."""
+    move = _sustained_move_pct(candles, lookback)
+    if move is None:
+        return {"name": "downtrendMomentum", "score": 0, "reason": "insufficient_history", "fired": False}
+    fired = move <= -pct_threshold
+    score = min(10, max(0, abs(move) / pct_threshold * 5)) if pct_threshold > 0 else 0
+    return {
+        "name": "downtrendMomentum",
+        "score": score if fired else 0,
+        "reason": f"{move:.1f}% over {lookback} bars (downtrend)" if fired else "flat",
         "fired": fired,
     }
 
