@@ -32,7 +32,7 @@ TRIGGER_CONFIG: Dict[str, Any] = {
     "thresholds": {
         "sigmaThreshold": 2.0,
         "trendMomentumLookback": 72,  # 5m bars (~6h) for sustained up/down trend surfacing
-        "trendMomentumPct": 3.0,      # min |%| move over that window to surface for research
+        "trendMomentumPct": 5.0,      # min |%| move over ~6h to surface (5%: 3.0 over-surfaced — 22 triggers/scan, ~4.5x AI cost, flooded longs)
         "breakoutLookback": 48,
         "bbLength": 20,
         "bbStdDev": 2,
