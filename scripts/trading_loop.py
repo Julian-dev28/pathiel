@@ -59,6 +59,41 @@ from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
 
+# ── Self-healing watchdog (armed FIRST, before any network I/O) ─────────────
+# No external supervisor exists (restart.sh just launches). A local DNS/network
+# outage froze the loop twice — once mid-scan, once during STARTUP (universe
+# load / prewarm) where the watchdog wasn't armed yet, so it stayed hung ~58min.
+# Arm it before any network call so BOTH a startup hang and a mid-scan hang
+# self-heal via re-exec. `_last_progress_ts` is bumped after each completed scan
+# cycle; if it goes stale > HERMES_WATCHDOG_TIMEOUT_S (default 600s, generous so
+# a slow-but-progressing scan isn't killed) the process re-execs (startup
+# rehydrates trackers from disk; the stacking backstop prevents a re-entry
+# pyramid). A persistent DNS outage just re-execs every ~600s until it clears.
+_last_progress_ts = time.time()
+_watchdog_timeout_s = int(os.environ.get('HERMES_WATCHDOG_TIMEOUT_S', '600'))
+
+
+def _watchdog() -> None:
+    while True:
+        time.sleep(60)
+        if _watchdog_timeout_s <= 0:
+            continue
+        stalled = time.time() - _last_progress_ts
+        if stalled >= _watchdog_timeout_s:
+            logger.error(
+                f"[watchdog] no progress for {stalled:.0f}s "
+                f"(> {_watchdog_timeout_s}s) — HUNG (startup or scan); re-execing to self-heal")
+            try:
+                log_event({"event": "error", "scope": "watchdog",
+                           "error": f"hung {stalled:.0f}s — re-exec"})
+            except Exception:
+                pass
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
+logger.info(f"[watchdog] armed pre-startup: re-exec if no progress for {_watchdog_timeout_s}s")
+
 logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
 logger.info(f"Mode: LIVE  env={_args.env}  daemon={_args.daemon}")
 
@@ -99,40 +134,6 @@ memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 # TTL (config.scan.cacheTtlMs) so every scan reads a fresh candle snapshot.
 scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))
 min_score = config['scan']['minCompositeScore']
-
-# ── Self-healing watchdog ──────────────────────────────────────────────────
-# There is NO external supervisor (restart.sh just launches; nothing re-spawns
-# a hung/dead loop). A local DNS/network outage froze the loop for ~7.5min once
-# (an SDK call without a timeout blocked inside a scan) — positions went
-# unmonitored by the DSL the whole time. This watchdog re-execs the process if a
-# full scan cycle hasn't completed within HERMES_WATCHDOG_TIMEOUT_S, so a hang
-# self-heals (startup rehydrates trackers from disk; the stacking backstop keeps
-# a mid-restart re-entry from pyramiding). Timeout is generous so a slow-but-
-# progressing scan (HL degradation can take minutes) is never killed.
-_last_progress_ts = time.time()
-_watchdog_timeout_s = int(os.environ.get('HERMES_WATCHDOG_TIMEOUT_S', '600'))
-
-
-def _watchdog() -> None:
-    while True:
-        time.sleep(60)
-        if _watchdog_timeout_s <= 0:
-            continue
-        stalled = time.time() - _last_progress_ts
-        if stalled >= _watchdog_timeout_s:
-            logger.error(
-                f"[watchdog] no scan progress for {stalled:.0f}s "
-                f"(> {_watchdog_timeout_s}s) — loop appears HUNG; re-execing to self-heal")
-            try:
-                log_event({"event": "error", "scope": "watchdog",
-                           "error": f"hung {stalled:.0f}s — re-exec"})
-            except Exception:
-                pass
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
-logger.info(f"[watchdog] armed: re-exec if no scan progress for {_watchdog_timeout_s}s")
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
 log_event({
