@@ -89,6 +89,15 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Exchange reconciliation**: Each scan tick, trackers are reconciled with live exchange positions — manually-opened or externally-closed positions stay in sync; positions opened before the engine shipped are synthesized from `entryPx`
 - **Auto-close**: When a tick trips a floor/stop/timeout, the trading loop market-closes the position and logs a `dsl_exit` event to the session log. No human in the loop
 
+### Risk & Resilience Gates
+- **Regime-aware gating**: trades are scored against the BTC/ETH trend regime — aligned trades clear at `aligned_min_conf`, counter-regime trades need `counter_regime_min_conf`. `block_counter_trend_bypass` stops the force-execute path from sneaking longs into a downtrend.
+- **Short-specific liquidity floor**: shorts require deeper 24h volume (`min_short_volume_usd`) than longs — thin markets squeeze.
+- **Free-margin floor**: `min_available_margin_pct` blocks new entries once free margin gets thin, capping over-leverage and correlated stacking.
+- **Correlation cap**: `max_crypto_long_correlated` limits simultaneous correlated crypto exposure.
+- **Self-healing watchdog**: the loop re-execs itself if a scan cycle hangs; the watchdog is armed *before* startup network I/O so it also covers startup hangs.
+- **Partial-dex degraded-read guard**: a HIP-3 dex that fails to fetch no longer drops its equity from the aggregate — prevents false "huge loss" reads from poisoning memory or tripping the kill switch.
+- **Re-entry backstop**: a DSL-registry check prevents position stacking when a live read flakes (restart / 429 window).
+
 ### Hyperfeed Discovery (Native, no MCP)
 Replicates the Hyperfeed MCP plugin's data directly from HL API:
 - `leaderboard_get_markets(limit)` — top markets by OI + volume
@@ -179,15 +188,22 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 ```json
 {
   "mode": "LIVE",
-  "equity_fraction_per_trade": 0.10,
-  "leverage": 10,
-  "min_ai_confidence": 0.30,
-  "max_concurrent": 10,
-  "max_trade_notional_usd": 200,
-  "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -100,
-  "min_market_volume_usd": 5000000,
+  "equity_fraction_per_trade": 0.28,
+  "leverage": 15,
+  "min_ai_confidence": 0.78,
+  "max_concurrent": 6,
+  "max_trade_notional_usd": 100000,
+  "max_total_notional_pct": 40.0,
+  "max_daily_loss_usd": -300,
+  "min_available_margin_pct": 0.05,
+  "min_market_volume_usd": 800000,
+  "min_short_volume_usd": 50000000,
   "cooldown_min": 60,
+  "counter_regime_min_conf": 0.8,
+  "aligned_min_conf": 0.7,
+  "block_counter_trend_bypass": true,
+  "whale_scan_bypass": true,
+  "max_crypto_long_correlated": 8,
   "coin_allowlist": [],
   "coin_blocklist": []
 }
@@ -203,8 +219,15 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 | `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `200` |
 | `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
 | `max_daily_loss_usd` | Daily-loss kill switch (negative number) | `-100` |
+| `min_available_margin_pct` | Block new trades when free margin drops below this fraction of equity — caps over-leverage/stacking. Lower = deploys more aggressively | `0.10` |
 | `min_market_volume_usd` | Skip markets below this 24h volume | `5_000_000` |
+| `min_short_volume_usd` | Extra 24h-volume floor for **shorts only** — thin markets squeeze, so shorts need deeper liquidity | `0` |
 | `cooldown_min` | Minutes before re-trading the same coin | `60` |
+| `counter_regime_min_conf` | Confidence bar for a trade **against** the regime (e.g. long in a downtrend) | `0.7` |
+| `aligned_min_conf` | Confidence bar for a trade **with** the regime (trend-aligned) — typically lower than the counter-regime bar | _unset_ |
+| `block_counter_trend_bypass` | When `true`, the slow-burn/force-execute path can't bypass the counter-regime gate — stops long-into-downtrend bleed | `false` |
+| `whale_scan_bypass` | Let whale-accumulation signals bypass the scan gate so they reach research/execution | `false` |
+| `max_crypto_long_correlated` | Cap on simultaneous correlated crypto positions (concentration guard) | `2` |
 | `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
 | `coin_blocklist` | Coins that are never traded | `[]` |
 
