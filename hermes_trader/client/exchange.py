@@ -31,7 +31,12 @@ from hyperliquid.utils.signing import (
     TriggerOrderType,
 )
 
-from hermes_trader.client.hl_client import HL_API, fetch_hl_candles
+from hermes_trader.client.hl_client import (
+    HL_API,
+    _http_post,
+    fetch_hl_candles,
+    resolve_user_address,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +594,30 @@ def place_hl_trigger_order(
     except Exception as e:
         logger.error(f"Failed to place trigger order for {coin}: {e}")
         return {"ok": False, "error": str(e)}
+
+
+def cancel_open_orders_for_coin(coin: str) -> int:
+    """Best-effort: cancel all resting orders for `coin` — e.g. the reduce-only
+    SL/TP trigger bracket left stranded after a market close. Without this,
+    stale triggers accumulate and a later reduce-only order on the same coin is
+    rejected ('reduce only order would increase position'). Returns the count
+    cancelled. Never raises."""
+    try:
+        user = resolve_user_address()
+        if not user:
+            return 0
+        orders = _http_post("/info", {"type": "openOrders", "user": user}) or []
+        n = 0
+        for o in orders:
+            if o.get("coin") == coin and o.get("oid") is not None:
+                if cancel_orders(int(o["oid"]), coin).get("ok"):
+                    n += 1
+        if n:
+            logger.info(f"[cancel_open_orders_for_coin] cancelled {n} stranded order(s) for {coin}")
+        return n
+    except Exception as e:
+        logger.warning(f"[cancel_open_orders_for_coin] {coin} failed: {e}")
+        return 0
 
 
 def cancel_orders(oid: int, coin: Optional[str] = None, asset_idx: Optional[int] = None) -> Dict[str, Any]:

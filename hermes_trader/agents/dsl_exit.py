@@ -443,6 +443,8 @@ def _policy_from_config() -> ExitPolicy:
     try:
         from hermes_trader.agents.config_store import read_agent_config
         dsl = read_agent_config().get("dsl_exit", {}) or {}
+        tiers_raw = dsl.get("phase2_tiers")
+        tiers = [RetraceTier(**t) for t in tiers_raw] if tiers_raw else None
         return ExitPolicy(
             max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
             max_loss_roe_pct=dsl.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
@@ -451,6 +453,7 @@ def _policy_from_config() -> ExitPolicy:
             hard_timeout_minutes=dsl.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
             breakeven_trigger_pct=dsl.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
             breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
+            phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         )
     except Exception:
         return ExitPolicy()

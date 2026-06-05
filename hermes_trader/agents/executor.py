@@ -16,6 +16,7 @@ from typing import Any, Dict, List
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.dsl_exit import (
     ExitPolicy,
+    RetraceTier,
     active_position_coins,
     check_all_positions,
     deregister_position,
@@ -25,6 +26,7 @@ from hermes_trader.agents.memory import memory
 from hermes_trader.agents.risk_gates import GateContext, eval_all_gates
 from hermes_trader.client.exchange import (
     HL_LEVERAGE,
+    cancel_open_orders_for_coin,
     get_hl_atr,
     get_hl_price,
     get_max_leverage,
@@ -350,6 +352,15 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     leverage = min(int(config.get("leverage", HL_LEVERAGE)),
                    get_max_leverage(analysis["coin"]))
     trade_notional = equity * equity_fraction * leverage
+    # Clamp to the per-trade notional ceiling so an oversized conviction bet is
+    # SIZED DOWN to the cap rather than REJECTED by the notional gate — we want
+    # smaller positions, not fewer trades. (kelly_size already clamps; this
+    # conviction-sizing path did not, so a >cap bet was dropped entirely.)
+    _notional_cap = float(config.get("max_trade_notional_usd", 0) or 0)
+    if _notional_cap > 0 and trade_notional > _notional_cap:
+        logger.info(f"[executor] notional ${trade_notional:.0f} > cap "
+                    f"${_notional_cap:.0f} — clamping to cap")
+        trade_notional = _notional_cap
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
@@ -472,6 +483,10 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # Register the position with the DSL tracker; it re-evaluates the exit
     # floor on every scan tick (loss protection -> profit locking).
     dsl_config = config.get("dsl_exit", {})
+    # phase2_tiers is optional in config; when present it OVERRIDES the class
+    # default ladder so profit-locking tightness is tunable without code edits.
+    _tiers_raw = dsl_config.get("phase2_tiers")
+    _tiers = [RetraceTier(**t) for t in _tiers_raw] if _tiers_raw else None
     policy = ExitPolicy(
         max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
         max_loss_roe_pct=dsl_config.get("max_loss_roe_pct", 50.0),
@@ -480,6 +495,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
         breakeven_trigger_pct=dsl_config.get("breakeven_trigger_pct", 0.0),
         breakeven_lock_pct=dsl_config.get("breakeven_lock_pct", 0.0),
+        phase2_tiers=_tiers if _tiers else ExitPolicy().phase2_tiers,
     )
     register_position(coin, trade_side, mid_price, policy=policy, leverage=leverage)
     logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price} ({leverage}x)")
@@ -506,6 +522,23 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             logger.info(f"[executor] Placed backup SL at {sl_px} ({sl_atr_mult}x ATR)")
         else:
             logger.error(f"[executor] Backup SL FAILED for {coin}: {sl_res.get('error')}")
+
+    # Take-profit scale-out — the OFFENSIVE complement to the backup SL. Banks a
+    # fraction of the position SERVER-SIDE at the TP target so a winner is
+    # CAPTURED at target (instantly, between 60s DSL checks) instead of running
+    # to a peak and round-tripping back into the trailing stop — the documented
+    # "we had it all and gave it back" leak. The remainder rides the DSL trail,
+    # so we lock realized profit AND keep upside. Disable with tp_scale_fraction<=0.
+    tp_scale_fraction = float(config.get("tp_scale_fraction", 0.5))
+    if atr > 0 and size_in_coin > 0 and 0 < tp_scale_fraction <= 1.0:
+        tp_px_trig = mid_price + atr * TP_ATR_MULT if is_buy else mid_price - atr * TP_ATR_MULT
+        tp_size = size_in_coin * tp_scale_fraction
+        tp_res = place_hl_trigger_order(is_buy, tp_size, tp_px_trig, "tp", coin)
+        if tp_res.get("ok"):
+            logger.info(f"[executor] Placed TP scale-out {tp_scale_fraction:.0%} "
+                        f"at {tp_px_trig} ({TP_ATR_MULT}x ATR)")
+        else:
+            logger.error(f"[executor] TP scale-out FAILED for {coin}: {tp_res.get('error')}")
 
     final_sl = (mid_price - atr * sl_atr_mult) if is_buy else (mid_price + atr * sl_atr_mult) if atr > 0 else stop_px
     final_tp = (mid_price + atr * TP_ATR_MULT) if is_buy else (mid_price - atr * TP_ATR_MULT) if atr > 0 else tp_px
@@ -650,6 +683,9 @@ def close_position_market(coin: str) -> Dict[str, Any]:
 
     if res.get("ok"):
         deregister_position(coin, side)
+        # Cancel the now-stranded reduce-only SL/TP trigger bracket so stale
+        # orders don't pile up and reject a future reduce-only order on this coin.
+        cancel_open_orders_for_coin(coin)
         fill_px = res.get("avg_px")
         if fill_px and entry_px > 0:
             # Spot move from the perspective of the position: long earns when
