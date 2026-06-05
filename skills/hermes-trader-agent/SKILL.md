@@ -91,6 +91,8 @@ scripts/restart.sh status       # show what's running
 
 Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server (`scripts/hermes-mcp-server.py`) is intentionally NOT managed — it's a transient stdio process respawned by Hermes Agent on each tool call. If MCP code is stale: `pkill -f hermes-mcp-server.py` and the next tool call respawns fresh.
 
+**Keep-awake (laptop hosts):** `start_loop` now launches a `caffeinate -i -m -w $pid` alongside the loop so the host can't idle/maintenance-sleep mid-run. On a sleeping Mac the whole process freezes — you'll see `[watchdog] no progress for N s — HUNG` re-execs where N is *minutes-to-hours* (that's the sleep gap, NOT a code hang; the watchdog re-execs correctly on wake). During sleep only the **server-side SL/TP brackets** protect open positions. `caffeinate -i` stops idle sleep but a closed lid on battery can still clamshell-sleep → keep on AC for true 24/7. See `references/daemon-investigation.md`.
+
 **Pitfall:** `python3 scripts/trading_loop.py --env prod --daemon` does NOT daemonize — the `--daemon` flag is parsed but has no effect. The restart script uses `nohup ... &` correctly; only fall back to a manual launch if the script is unavailable.
 
 ## Asset-class toggles
@@ -145,39 +147,99 @@ equity_risk_cap, news_blackout, market_regime.
 
 Notes on specific gates:
 - **market_regime**: blocks counter-trend trades unless `confidence ≥
-  counter_regime_min_conf` OR `composite_score ≥ 50` OR `momentumBurst`
-  fired. The own-coin-momentum bypass exists because the regime proxy
-  (BTC for crypto, SP500 for equity) is slow — a strong individual signal
-  should override a stale macro call. Regime is computed from **1h
-  candles, 8-bar lookback** (was 4h × 5-bar; too slow for intraday
-  rotations).
-- **news_blackout**: skipped for tokenized-equity perps (their news
-  always mentions earnings/Fed by definition). Crypto + commodity still
-  gated.
+  counter_regime_min_conf` OR `composite_score ≥ 50` ("via composite") OR a
+  binary momentum/whale trigger fired. Aligned trades clear at the lower
+  `aligned_min_conf`. **`block_counter_trend_bypass`** (currently `true`)
+  disables ONLY the binary-trigger bypass — the composite≥50 path stays open, so
+  strong-momentum counter-trend trades (e.g. an alt long in a down regime via
+  momentum-continuation) still pass. This flag is what stopped the
+  long-into-downtrend bleed. Regime is computed from **1h candles, 8-bar
+  lookback** each scan (fresh, not stale).
+- **short_liquidity**: a SEPARATE, deeper 24h-volume floor for SHORTS only
+  (`min_short_volume_usd`, $50M) — thin markets squeeze. Distinct from the
+  long/general `market_liquidity_floor`.
+- **correlation**: `max_crypto_long_correlated` caps simultaneous correlated
+  crypto exposure (concentration guard).
+- **news_blackout**: skipped for tokenized-equity perps. Crypto + commodity gated.
+
+**Surfacing layer (what reaches research)** — beyond the weighted composite gate,
+several weight-0 "surfacing bypasses" bring a coin to the AI even below the gate;
+the AI + risk gates then adjudicate:
+- `uptrendMomentum` / `downtrendMomentum` — sustained intraday trend (both
+  directions; the down side is what lets us short selloffs).
+- `momentum_continuation_1h` — sustained ORDERLY uptrend now consolidating
+  (gated `momentum_continuation.enabled`; ENABLED — boosts composite so strong
+  momentum longs clear the regime gate's composite≥50 path).
+- `bearishReversalCandle` / `bullishReversalCandle` — shooting-star/hammer/
+  engulfing at exhaustion (gated `candlestick_patterns.enabled`; default OFF). The
+  research prompt also now includes the last 12 raw 1h OHLC bars so the LLM reads
+  price-action/chart patterns directly. See `references/exit-engine.md` siblings.
+- whale-accumulation (`whale_scan_bypass`).
 
 **Config keys are read as `snake_case` only** — legacy camelCase keys are
-silently ignored by the gates.
+silently ignored by the gates. The MCP `config` tool now writes snake_case too.
 
 ## Trade Sizing
 
-Per-trade size = `equity_fraction_per_trade × perp_equity × leverage`,
-keyed off **main-dex perp equity only** (not the cross-dex aggregated
-number — that's a dashboard semantic; sizing must be backed by main free
-margin). Each trade commits a fixed fraction, so N trades scales the
-account fully in. Bounded by `max_concurrent` (simultaneous positions),
-`max_total_notional_pct` (combined-notional ceiling), and
-`max_trade_notional_usd` (per-trade ceiling).
+Per-trade size = `equity_fraction_per_trade × perp_equity × leverage ×
+conviction_multiplier`, keyed off **main-dex perp equity only** (not the
+cross-dex aggregated number — that's a dashboard semantic; sizing must be
+backed by main free margin). `conviction_sizing` scales by AI confidence
+(`conviction_tiers`, up to 2×) and a `whale_size_multiplier`. Each trade
+commits a fixed fraction, so N trades scales the account fully in. Bounded by
+`max_concurrent`, `max_total_notional_pct`, and `max_trade_notional_usd`.
+
+**Per-trade notional now CLAMPS, not rejects** (`executor.py`): the computed
+`trade_notional` is clamped down to `max_trade_notional_usd` so an oversized
+conviction bet is *sized down to the cap and taken*, rather than dropped by the
+notional gate. (The old behavior rejected anything over the cap — which silently
+killed legitimate trades, not just the monsters. Root-caused 2026-06-04: inverted
+sizing — bigger bets on losers — was the real bleed, not a broken edge.)
 
 Free-margin floor: the executor refuses if `available / equity <
-min_available_margin_pct` (default 10%). `available` is computed as
-`accountValue - totalMarginUsed` — the same number HL shows as "Available
-to Trade". A defensive `equity_unavailable` reason fires when HL returns
+min_available_margin_pct` (config; currently **0.20**, briefly tried 0.05 then
+reverted — a low floor + unbounded notional spawns oversized correlated legs).
+`available` is `accountValue - totalMarginUsed` (matches HL "Available to
+Trade"). A defensive `equity_unavailable` reason fires when HL returns
 `equity=0` (transient outage) instead of sending an unsized order.
 
 For HIP-3 trades the executor runs a per-dex preflight (queries that
 specific dex's clearinghouse) and refuses with `hip3_dex_underfunded` if
 the target dex has < $1 — HIP-3 dexes are separate clearinghouses and
 agent wallets cannot transfer between them.
+
+## Exit Engine (DSL + server-side brackets)
+
+Every executed position gets THREE layers of exit, all set at entry:
+
+1. **DSL trailing stop** (`dsl_exit.py`, primary, re-evaluated each 60s tick):
+   - **Phase 1 — loss cap:** `max_loss_pct` (1.2% spot) AND `max_loss_roe_pct/lev`
+     (whichever is tighter). Capped each chop loss at ~−1.2% spot all session.
+   - **Phase 2 — profit lock:** engages at `protect_pct` (1.0%). Floor =
+     `entry ± peak_range × (1 − retrace_threshold)`, ratchets one-way.
+   - **`retrace_threshold` + `phase2_tiers` ladder** — this is the give-back
+     control. It now TIGHTENS with profit (was a loose 0.65 default + a
+     *loosening* ladder that round-tripped winners). Current: default 0.40,
+     tiers `+3%→0.30, +6%→0.22, +10%→0.15, +20%→0.12`. **`phase2_tiers` is now
+     wired from config** (executor entry-time + `_policy_from_config`); it was
+     silently ignored before 2026-06-04.
+   - **Breakeven ratchet:** once peak ≥ `breakeven_trigger_pct`, floor can't drop
+     below `breakeven_lock_pct` — guarantees a winner can't round-trip to flat.
+   - **Hard timeout:** `hard_timeout_minutes` (30h) — a scalp/swing horizon, NOT
+     a multi-week hold.
+2. **Backup stop-loss trigger** (server-side, `place_hl_trigger_order(...,"sl")`
+   at `sl_atr_mult`=1.5 ATR): fires on the exchange instantly between 60s ticks,
+   and is the ONLY protection while the host sleeps or the loop is restarting.
+3. **Take-profit scale-out** (server-side, the "we had it all and gave it back"
+   fix): a reduce-only TP trigger banks `tp_scale_fraction` (0.5) of the position
+   at `TP_ATR_MULT`=1 ATR past entry — **half locks at target automatically**, the
+   rest rides the DSL trail. Validated live (auto-banked ADA half; runner to +66%
+   ROE). HL accepts a 100%-SL + 50%-TP reduce-only bracket (150% total) fine.
+
+**Trigger hygiene:** `close_position_market` calls `cancel_open_orders_for_coin`
+after a market close to clear the stranded SL/TP bracket — otherwise stale
+reduce-only orders accumulate and reject a later reduce-only order ("reduce only
+order would increase position"). See `references/exit-engine.md`.
 
 ## Unified Accounts
 
@@ -361,7 +423,10 @@ itself — that's the cache wrapper).
 | Daily PnL inflated after a deposit/transfer | Contribution-aware tracking subtracts spot↔perp transfers + external deposits/withdrawals automatically. If still inflated, baseline may be stale — reset with the snippet in `references/restart-sequence.md`. |
 | Executor blocks LONG with "insufficient_free_margin" while HL UI shows plenty | `available` is `accountValue - totalMarginUsed` (matches HL UI). If they differ, the loop is on stale code — restart. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
-| MCP `config` tool silently drops a config key (e.g. `counter_regime_min_conf`) | The MCP tool only accepts a narrow schema. Edit `.agent-config.json` directly and restart the trading loop. Don't waste turns retrying through MCP. |
+| MCP `config` tool dropping a key | FIXED 2026-06-05 — the tool now exposes the full risk-knob set in snake_case (sizing, margin floor, tp_scale_fraction, regime gates, momentum_continuation toggle, ...). Older builds only took a narrow camelCase schema and silently dropped keys + wrote dup keys; if you see that, the MCP is on stale code → `pkill -f hermes-mcp-server.py`. |
+| `[watchdog] no progress for N s — HUNG` re-execs (N = minutes/hours) | NOT a code hang — the host (MacBook) idle/maintenance-slept and froze the process; the watchdog re-execs correctly on wake. Confirm with `pmset -g log \| grep -iE "Sleep\|Wake"`. Fix: `caffeinate` (now auto-launched by `restart.sh`); keep on AC for closed-lid. Positions are held by server-side brackets during sleep. |
+| `reduce only order would increase position` reject | Stranded SL/TP trigger orders from a prior closed position. `close_position_market` now auto-cancels them (`cancel_open_orders_for_coin`); if on old code, cancel manually or restart. |
+| Day PnL baseline looks stale/reset after a restart | A mid-day restart can re-baseline `startOfDayEquity` to current equity (loses the true SOD) if persisted memory loaded zeroed — would launder a pre-restart drawdown out of the kill-switch. Known issue; verify `dayStartTs` vs UTC midnight before trusting daily PnL. |
 | HIP-3 position shows "no DSL" indefinitely | `get_all_hl_mids` must be called with `include_hip3=True` so trackers receive a mid. If a HIP-3 dex query times out, trackers are preserved via `queried_dexes` until the next successful query. |
 | Coin lookup fails on HIP-3 (`XYZ:MU` → not found) | Use `_norm_coin()` in MCP handlers — only the symbol uppercases, the lowercase dex prefix stays. |
 | `@` coins as noise in scan results | Spot pairs are filtered in `perception.py`; if they appear, the filter regressed. |
@@ -457,3 +522,5 @@ start it. See `references/cron-jobs.md`.
 - `references/trading-mode.md` — execute-first reporting contract when the user is in active trading mode.
 - `references/daemon-investigation.md` — historical note on the no-op `--daemon` flag; superseded by `restart.sh`.
 - `references/hip3-tokenized-equity-handoff.md` — current HIP-3 production wiring (all 5 entry points, queried_dexes safety, sizing semantics).
+- `references/exit-engine.md` — DSL trail + tighter retrace ladder + breakeven, server-side SL/TP brackets, take-profit scale-out, trigger hygiene (the 2026-06-04/05 round-trip-fix overhaul).
+- `references/short-regime-bias.md` — regime-aware bias, counter-trend gating, and the surfacing bypasses (uptrend/downtrend/momentum-continuation/candlestick).

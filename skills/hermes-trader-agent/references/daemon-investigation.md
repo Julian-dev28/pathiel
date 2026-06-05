@@ -32,3 +32,30 @@ nohup python3 scripts/trading_loop.py > logs/trading_loop.log 2>&1 &
 - When run without backgrounding, the process dies when the terminal session ends
 - Always use `nohup ... &` or a proper process manager for persistent operation
 - Memory context notes the restart command without `nohup` -- this should be updated
+---
+
+## Watchdog "HUNG" re-execs are the host SLEEPING (2026-06-05)
+
+**Symptom:** recurring `[watchdog] no progress for N s (> 600s) — HUNG; re-execing`
+where N is far over 600 — seen up to **5940s (99 min)** and 1793s in one day (5×).
+
+**Not a code hang.** The watchdog is a 60s-tick daemon thread (`scripts/trading_loop.py`
+`_watchdog`). For it to report 5940s of no-progress, the *whole process was suspended* —
+i.e. the MacBook went to idle/maintenance **sleep** (on battery). On wake the thread runs,
+sees the wall-clock gap, and re-execs (correct self-heal). Confirm:
+
+```bash
+pmset -g log | grep -iE "Sleep|Wake|DarkWake" | tail
+# look for: "Entering Sleep state due to 'Maintenance Sleep' ... Using Batt"
+#           "Wake from Deep Idle ..."
+```
+
+**Impact during sleep:** no scans, no 60s DSL tick — open positions are protected ONLY by
+the **server-side SL/TP trigger brackets** placed at entry. (Another reason those brackets
+matter.)
+
+**Fix:** `scripts/restart.sh start_loop` now launches `caffeinate -i -m -w $pid` tied to the
+loop's lifetime (survives the in-place `os.execv` re-exec — same pid). To verify it's active:
+`pmset -g assertions | grep caffeinate`. **Caveat:** `caffeinate -i` blocks idle sleep but a
+closed lid on battery can still clamshell-sleep — keep on AC, or move to an always-on host
+(`k8s/`, `DEPLOY.md`) for true 24/7. Do NOT "fix" the watchdog — it's working as designed.
