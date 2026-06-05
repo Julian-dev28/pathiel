@@ -304,6 +304,89 @@ def downtrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold:
     }
 
 
+def bearish_reversal_candle(candles: List[Candle], wick_body_ratio: float = 2.0,
+                            context_lookback: int = 6, context_pct: float = 1.5) -> TriggerHit:
+    """Bearish reversal candlestick at the TOP of a short advance — a shooting star
+    (long upper wick rejecting higher prices) or a bearish engulfing bar. Surfaces
+    a SHORT.
+
+    Reversal candles only mean something AFTER an up-move, so a preceding advance of
+    >= `context_pct` over `context_lookback` bars is required — otherwise every red
+    bar in a downtrend would fire. This is the exhaustion/top signal the momentum
+    triggers structurally miss. Surfacing signal: the AI + risk gates adjudicate."""
+    if len(candles) < context_lookback + 2:
+        return {"name": "bearishReversalCandle", "score": 0, "reason": "insufficient_history", "fired": False}
+    o, h, l, c = (candle_val(candles[-1], k) for k in ("o", "h", "l", "c"))
+    po, pc = candle_val(candles[-2], "o"), candle_val(candles[-2], "c")
+    rng = h - l
+    if rng <= 0:
+        return {"name": "bearishReversalCandle", "score": 0, "reason": "flat", "fired": False}
+    body = abs(c - o)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    ctx = _sustained_move_pct(candles[:-1], context_lookback)  # advance into the bar
+    advanced = ctx is not None and ctx >= context_pct
+    shooting_star = (body > 0 and upper_wick >= wick_body_ratio * body
+                     and lower_wick <= body and body <= 0.4 * rng)
+    bearish_engulf = pc > po and c < o and o >= pc and c <= po  # prior green, cur red engulfs
+    if shooting_star:
+        pattern, strength = "shooting_star", min(10.0, upper_wick / body * 2.5)
+    elif bearish_engulf:
+        prior_body = abs(po - pc)
+        pattern = "bearish_engulfing"
+        strength = min(10.0, abs(o - c) / prior_body * 5.0) if prior_body > 0 else 5.0
+    else:
+        pattern, strength = None, 0.0
+    fired = bool(pattern) and advanced
+    return {
+        "name": "bearishReversalCandle",
+        "score": strength if fired else 0,
+        "reason": f"{pattern} after +{ctx:.1f}%" if fired else "flat",
+        "fired": fired,
+    }
+
+
+def bullish_reversal_candle(candles: List[Candle], wick_body_ratio: float = 2.0,
+                            context_lookback: int = 6, context_pct: float = 1.5) -> TriggerHit:
+    """Bullish reversal candlestick at the BOTTOM of a short decline — a hammer
+    (long lower wick rejecting lower prices) or a bullish engulfing bar. Surfaces
+    a LONG.
+
+    Mirror of bearish_reversal_candle: requires a preceding DECLINE of >=
+    `context_pct` over `context_lookback` bars so it fires at exhaustion, not on
+    every green bar in an uptrend. Surfacing signal: the AI + risk gates adjudicate."""
+    if len(candles) < context_lookback + 2:
+        return {"name": "bullishReversalCandle", "score": 0, "reason": "insufficient_history", "fired": False}
+    o, h, l, c = (candle_val(candles[-1], k) for k in ("o", "h", "l", "c"))
+    po, pc = candle_val(candles[-2], "o"), candle_val(candles[-2], "c")
+    rng = h - l
+    if rng <= 0:
+        return {"name": "bullishReversalCandle", "score": 0, "reason": "flat", "fired": False}
+    body = abs(c - o)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    ctx = _sustained_move_pct(candles[:-1], context_lookback)  # decline into the bar
+    declined = ctx is not None and ctx <= -context_pct
+    hammer = (body > 0 and lower_wick >= wick_body_ratio * body
+              and upper_wick <= body and body <= 0.4 * rng)
+    bullish_engulf = pc < po and c > o and o <= pc and c >= po  # prior red, cur green engulfs
+    if hammer:
+        pattern, strength = "hammer", min(10.0, lower_wick / body * 2.5)
+    elif bullish_engulf:
+        prior_body = abs(po - pc)
+        pattern = "bullish_engulfing"
+        strength = min(10.0, abs(c - o) / prior_body * 5.0) if prior_body > 0 else 5.0
+    else:
+        pattern, strength = None, 0.0
+    fired = bool(pattern) and declined
+    return {
+        "name": "bullishReversalCandle",
+        "score": strength if fired else 0,
+        "reason": f"{pattern} after {ctx:.1f}%" if fired else "flat",
+        "fired": fired,
+    }
+
+
 def volume_buildup_1h(candles: List[Candle], ratio_threshold: float = 2.5) -> TriggerHit:
     """Notional-volume surge in the last 4h vs the prior 20h baseline.
 

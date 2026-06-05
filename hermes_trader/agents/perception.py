@@ -146,6 +146,20 @@ def _scan_single_market(
             _score_weights = {**config["weights"],
                               "momentumContinuation1h": _mc.get("weight", 0.4)}
 
+        # Candlestick reversal patterns — OFF by default. Shooting-star / bearish-
+        # engulfing (top of an advance → SHORT) and hammer / bullish-engulfing
+        # (bottom of a decline → LONG). The momentum/breakout triggers are weak at
+        # calling tops & bottoms; these catch exhaustion/reversal. Surfacing bypass
+        # (weight 0, like uptrend/downtrend) — the AI (which now also sees raw OHLC)
+        # adjudicates direction/execution. Gated so it's reversible without code.
+        _cp = config.get("candlestick_patterns", {}) or {}
+        if _cp.get("enabled"):
+            _wbr = _cp.get("wick_body_ratio", 2.0)
+            _ctx_lb = int(_cp.get("context_lookback", 6))
+            _ctx_pct = _cp.get("context_pct", 1.5)
+            hits.append(trigger_mod.bearish_reversal_candle(candles, _wbr, _ctx_lb, _ctx_pct))
+            hits.append(trigger_mod.bullish_reversal_candle(candles, _wbr, _ctx_lb, _ctx_pct))
+
         # At least one trigger must fire.
         fired_count = sum(1 for h in hits if h.get("fired"))
         if fired_count < 1:
@@ -170,7 +184,13 @@ def _scan_single_market(
         # (default ON) so it's reversible without a code change.
         trend_bypass = trend_surface_enabled and any(
             h["name"] in ("uptrendMomentum", "downtrendMomentum") and h["fired"] for h in hits)
-        if score < min_score and not burst_fired and not whale_bypass and not trend_bypass:
+        # Candlestick reversal bypass: a fired shooting-star/hammer/engulfing surfaces
+        # the coin for AI research even below the composite gate (the gate is tuned for
+        # momentum, not reversals). Gated by candlestick_patterns.enabled.
+        pattern_bypass = bool(_cp.get("enabled")) and any(
+            h["name"] in ("bearishReversalCandle", "bullishReversalCandle") and h["fired"] for h in hits)
+        if (score < min_score and not burst_fired and not whale_bypass
+                and not trend_bypass and not pattern_bypass):
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the

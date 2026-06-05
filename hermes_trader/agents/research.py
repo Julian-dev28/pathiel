@@ -138,6 +138,7 @@ def _build_user_message(
     open_positions: List[Dict[str, Any]],
     mode: str,
     dex_equity: Dict[str, float] | None = None,
+    recent_candles: List[Candle] | None = None,
 ) -> str:
     """Build the user message passed to the LLM."""
     trigger_summary = (
@@ -235,6 +236,22 @@ def _build_user_message(
         else "Open positions: none"
     )
 
+    # Raw recent price action so the LLM can read candlestick/chart patterns
+    # directly (shooting star, hammer, engulfing, flags) — the indicator blocks
+    # above summarize away the candle bodies/wicks that patterns live in.
+    def _ohlc_block(candles: List[Candle] | None, n: int = 12) -> str:
+        if not candles:
+            return ""
+        rows = []
+        for i, c in enumerate(candles[-n:]):
+            idx = -(len(candles[-n:]) - i)  # ... -2, -1 (newest = last closed)
+            o, h, l, cl = (candle_val(c, k) for k in ("o", "h", "l", "c"))
+            rows.append(f"  [{idx:>3}] O={_fmt_px(o)} H={_fmt_px(h)} L={_fmt_px(l)} C={_fmt_px(cl)}")
+        return ("Recent 1h candles (oldest→newest, last row = most recent closed bar):\n"
+                + "\n".join(rows))
+
+    ohlc_block = _ohlc_block(recent_candles)
+
     return "\n".join([
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
         f"Current mid: ${_fmt_px(perception.get('mid', 0))}",
@@ -246,6 +263,8 @@ def _build_user_message(
         _indicator_block("4h", tf4h),
         _indicator_block("1d", tf1d),
         "",
+        ohlc_block,
+        "" if ohlc_block else "",
         structure_block,
         "",
         whale_block,
@@ -485,7 +504,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     user_message = _build_user_message(
         coin, perception, tf1h, tf4h, tf1d,
         funding_raw, news, equity, open_positions, mode,
-        dex_equity=dex_equity,
+        dex_equity=dex_equity, recent_candles=c1h,
     )
 
     ai_text = _call_ai(system_prompt, user_message)
