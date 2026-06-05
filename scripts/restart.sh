@@ -107,6 +107,18 @@ start_loop() {
   sleep 1
   if kill -0 "$pid" 2>/dev/null; then
     ok "trading loop: pid $pid"
+    # Keep the host awake while the loop runs. On a laptop the trading process
+    # otherwise freezes on idle/maintenance sleep (multi-minute-to-hour scan
+    # blackouts; only the server-side SL/TP brackets protect positions then).
+    # `-w $pid` ties the assertion to the loop's lifetime; the watchdog re-execs
+    # in place (same pid), so this survives a self-heal. Best-effort — a missing
+    # caffeinate (non-macOS) just means no keep-awake. Tip: stay on AC power, as
+    # battery + closed lid can still clamshell-sleep despite this.
+    if command -v caffeinate >/dev/null 2>&1; then
+      nohup caffeinate -i -m -w "$pid" >/dev/null 2>&1 &
+      disown 2>/dev/null || true
+      info "caffeinate: holding system awake while loop $pid runs"
+    fi
   else
     err "trading loop died immediately — see $LOOP_LOG"
     tail -n 20 "$LOOP_LOG" >&2 || true

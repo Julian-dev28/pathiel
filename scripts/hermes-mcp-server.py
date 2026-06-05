@@ -163,17 +163,40 @@ TOOLS = [
     },
     {
         "name": "config",
-        "description": "Get or set agent configuration (mode, risk caps, thresholds).",
+        "description": (
+            "Get or set agent configuration. Call with no params to read the full "
+            "config. Keys are snake_case and match .agent-config.json exactly. "
+            "Covers mode, sizing, risk caps, regime gates, exits, and the "
+            "momentum-continuation toggle."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "mode": {"type": "string", "enum": ["OFF", "LIVE"]},
-                "maxTradeNotionalUsd": {"type": "number"},
-                "maxConcurrent": {"type": "number"},
-                "minAiConfidence": {"type": "number"},
-                "autoAnalyzeThreshold": {"type": "number"},
-                "coinAllowlist": {"type": "array", "items": {"type": "string"}},
-                "coinBlocklist": {"type": "array", "items": {"type": "string"}},
+                # ── Sizing / leverage ────────────────────────────────────
+                "leverage": {"type": "number", "description": "Leverage ceiling per trade (min with coin max)."},
+                "equity_fraction_per_trade": {"type": "number", "description": "Fraction of equity committed as margin per trade."},
+                "max_trade_notional_usd": {"type": "number", "description": "Per-trade notional CEILING; sizing clamps to this."},
+                "tp_scale_fraction": {"type": "number", "description": "Fraction of a position auto-banked at the TP target (0=off, 0.5=half)."},
+                # ── Concurrency / margin ─────────────────────────────────
+                "max_concurrent": {"type": "number"},
+                "max_total_notional_pct": {"type": "number", "description": "Ceiling on combined open notional as a multiple of equity."},
+                "min_available_margin_pct": {"type": "number", "description": "Block new trades when free margin < this fraction of equity (caps stacking)."},
+                "max_daily_loss_usd": {"type": "number", "description": "Daily-loss kill switch (negative)."},
+                # ── Signal / regime gates ────────────────────────────────
+                "min_ai_confidence": {"type": "number"},
+                "counter_regime_min_conf": {"type": "number", "description": "Confidence bar for a trade AGAINST the regime."},
+                "aligned_min_conf": {"type": "number", "description": "Confidence bar for a trade WITH the regime."},
+                "block_counter_trend_bypass": {"type": "boolean", "description": "Stop the force-execute path bypassing the counter-regime gate."},
+                "momentum_continuation_enabled": {"type": "boolean", "description": "Enable the momentum-continuation trigger (lets strong orderly-uptrend longs through via composite>=50)."},
+                # ── Liquidity floors ─────────────────────────────────────
+                "min_market_volume_usd": {"type": "number"},
+                "min_short_volume_usd": {"type": "number", "description": "Extra 24h-volume floor for shorts (squeeze risk)."},
+                "max_crypto_long_correlated": {"type": "number", "description": "Cap on simultaneous correlated crypto positions."},
+                "cooldown_min": {"type": "number"},
+                # ── Lists ────────────────────────────────────────────────
+                "coin_allowlist": {"type": "array", "items": {"type": "string"}},
+                "coin_blocklist": {"type": "array", "items": {"type": "string"}},
             },
         },
     },
@@ -893,19 +916,31 @@ def handle_config(params: Dict[str, Any]) -> str:
 
     config = read_agent_config()
 
-    # Update if params provided
-    for key in ["mode", "maxTradeNotionalUsd", "maxConcurrent", "minAiConfidence", "autoAnalyzeThreshold"]:
-        val = params.get(key)
-        if val is not None:
-            config[key] = val
+    # Snake_case scalar/bool/list keys that map 1:1 to .agent-config.json. Writing
+    # snake_case (not the old camelCase) keeps a single canonical key per setting —
+    # the previous handler wrote camelCase and silently created duplicate keys.
+    _DIRECT_KEYS = [
+        "mode", "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
+        "tp_scale_fraction", "max_concurrent", "max_total_notional_pct",
+        "min_available_margin_pct", "max_daily_loss_usd", "min_ai_confidence",
+        "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
+        "min_market_volume_usd", "min_short_volume_usd", "max_crypto_long_correlated",
+        "cooldown_min", "coin_allowlist", "coin_blocklist",
+    ]
+    for key in _DIRECT_KEYS:
+        if key in params and params[key] is not None:
+            config[key] = params[key]
 
-    if "coinAllowlist" in params:
-        config["coinAllowlist"] = params["coinAllowlist"]
-    if "coinBlocklist" in params:
-        config["coinBlocklist"] = params["coinBlocklist"]
+    # Nested toggle: momentum_continuation lives under its own block; expose a flat
+    # boolean so the agent can flip it without resending the whole sub-object.
+    if params.get("momentum_continuation_enabled") is not None:
+        mc = dict(config.get("momentum_continuation") or {})
+        mc["enabled"] = bool(params["momentum_continuation_enabled"])
+        config["momentum_continuation"] = mc
 
-    # Save if changed
-    if params:
+    # Save only if a setting was actually passed (a bare read must not rewrite).
+    _setting_keys = set(_DIRECT_KEYS) | {"momentum_continuation_enabled"}
+    if any(k in params for k in _setting_keys):
         write_agent_config(config)
 
     return json.dumps(config)
