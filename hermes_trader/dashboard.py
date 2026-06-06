@@ -370,9 +370,20 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
 
 
 def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
-    """Series of (ts, equity) points from loop_heartbeat events within `range_s`."""
+    """Series of (ts, equity) points from loop_heartbeat events within `range_s`.
+
+    Filters PARTIAL-DEX degraded reads: a heartbeat that momentarily failed to
+    fetch a HIP-3 dex reports equity far below trend (main-dex-only, e.g. $88 vs
+    the real $220 aggregate). On a 7d/30d view those show as the account crashing
+    to ~$20 and back, and they crush the y-axis. Capped positions can't lose tens
+    of % in one 60s tick, so a point far below the TRAILING median of accepted
+    points is a bad read, not a real move — and using the *trailing* (not global)
+    median preserves genuine gradual growth across the window.
+    """
+    from statistics import median
+
     cutoff = int(time.time() * 1000) - range_s * 1000
-    series: List[Dict[str, Any]] = []
+    raw: List[tuple] = []
     for e in _read_log_lines():
         if e.get("event") != "loop_heartbeat":
             continue
@@ -381,7 +392,18 @@ def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
         eq = float(e.get("equity", 0) or 0)
         if eq <= 0:
             continue
-        series.append({"ts": e["ts"], "equity": round(eq, 2)})
+        raw.append((e["ts"], eq))
+
+    series: List[Dict[str, Any]] = []
+    window: List[float] = []  # last N accepted equities (trailing reference)
+    for ts, eq in raw:
+        ref = median(window) if window else eq
+        if window and eq < 0.7 * ref:
+            continue  # partial-dex degraded read — drop it
+        series.append({"ts": ts, "equity": round(eq, 2)})
+        window.append(eq)
+        if len(window) > 15:
+            window.pop(0)
     return series
 
 
