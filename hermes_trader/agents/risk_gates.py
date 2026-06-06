@@ -30,11 +30,13 @@ class GateContext:
         slow_burn_fired: bool = False,
         whale_signal_fired: bool = False,
         binary_news_match: str = "",
+        peak_daily_pnl: float = 0.0,
     ):
         self.confidence = confidence
         self.current_positions = current_positions
         self.trade_notional_usd = trade_notional_usd
         self.daily_pnl = daily_pnl
+        self.peak_daily_pnl = peak_daily_pnl
         self.market_volume_24h_usd = market_volume_24h_usd
         self.coin = coin
         self.trade_side = trade_side
@@ -78,6 +80,23 @@ def daily_loss_kill_switch(ctx: GateContext, max_daily_loss: float) -> GateResul
     if ctx.daily_pnl > max_daily_loss:
         return {"pass": True}
     return {"pass": False, "reason": f"daily loss killswitch triggered (PnL ${ctx.daily_pnl:.0f} <= ${max_daily_loss})"}
+
+
+def daily_giveback_gate(ctx: GateContext, halt_pct: float, min_peak_usd: float) -> GateResult:
+    """Lock in a green day: once daily PnL has peaked at >= `min_peak_usd`, block
+    NEW positions if it then retraces more than `halt_pct` from that peak. Existing
+    positions keep riding their own stops; this only stops opening fresh risk so a
+    won day can't fully round-trip. Disabled when halt_pct<=0. Resets at the UTC
+    day roll (peak_daily_pnl resets in memory.track_daily_pnl)."""
+    if halt_pct <= 0 or ctx.peak_daily_pnl < min_peak_usd:
+        return {"pass": True}
+    floor = ctx.peak_daily_pnl * (1.0 - halt_pct)
+    if ctx.daily_pnl <= floor:
+        return {"pass": False,
+                "reason": (f"daily give-back halt: PnL ${ctx.daily_pnl:.0f} retraced "
+                           f">{halt_pct*100:.0f}% from peak ${ctx.peak_daily_pnl:.0f} "
+                           f"(floor ${floor:.0f}) — no new entries until UTC roll")}
+    return {"pass": True}
 
 
 def market_liquidity_floor(
@@ -186,7 +205,8 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
 
 
 def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
-                       block_counter_trend_bypass: bool = False) -> GateResult:
+                       block_counter_trend_bypass: bool = False,
+                       crowded_with_min_conf: float = 0.0) -> GateResult:
     """Block counter-regime trades unless conviction OR own-coin signal clears the bar.
 
       - aligned with regime → pass
@@ -247,6 +267,15 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
         (funding_regime == "SHORT_CROWDED" and ctx.trade_side == "long") or
         (funding_regime == "LONG_CROWDED"  and ctx.trade_side == "short")
     )
+    # WITH-crowd (squeeze-prone): trading the SAME side the crowd is already on
+    # (short into SHORT_CROWDED / long into LONG_CROWDED). These are trend-aligned
+    # but are exactly what gets squeezed on a reversal — they round-tripped the
+    # 2026-06-06 day. Require elevated conviction so only strong setups join a
+    # crowded book. Gated by crowded_with_min_conf (0 = off).
+    with_crowd = (
+        (funding_regime == "SHORT_CROWDED" and ctx.trade_side == "short") or
+        (funding_regime == "LONG_CROWDED"  and ctx.trade_side == "long")
+    )
 
     # Effective thresholds: only elevated when against the funding regime.
     # When aligned with funding regime, use the normal counter_regime_min_conf
@@ -262,11 +291,20 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
     base = {"regime": regime, "funding": funding_regime,
             "against_funding": against_funding, "counter_trend": False}
 
-    # Aligned with trend regime AND not against funding regime → easy pass.
+    # Aligned with trend regime AND not against funding regime → easy pass,
+    # UNLESS it's a with-crowd (squeeze-prone) entry that fails the elevated
+    # conviction bar — those are the crowded shorts/longs that round-trip on a
+    # squeeze, so a weak one is blocked here.
     aligned = (regime == "up" and ctx.trade_side == "long") or \
               (regime == "down" and ctx.trade_side == "short")
     if aligned and not against_funding:
-        return {"pass": True, "via": "aligned", **base}
+        if with_crowd and crowded_with_min_conf > 0 and ctx.confidence < crowded_with_min_conf:
+            return {"pass": False, "via": "crowded_squeeze",
+                    **{**base, "with_crowd": True},
+                    "reason": (f"with-crowd {ctx.trade_side} into {funding_regime} "
+                               f"(squeeze risk) — need conf >= {crowded_with_min_conf:.2f}, "
+                               f"have {ctx.confidence:.2f}")}
+        return {"pass": True, "via": "aligned", **{**base, "with_crowd": with_crowd}}
 
     # Trend-regime neutral and not against funding regime → pass.
     if regime == "neutral" and not against_funding:
@@ -354,6 +392,11 @@ def eval_all_gates(
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
+    results["daily_giveback"] = daily_giveback_gate(
+        ctx,
+        float(config.get("daily_giveback_halt_pct", 0.0) or 0.0),
+        float(config.get("daily_giveback_min_peak_usd", 20.0) or 0.0),
+    )
     results["liquidity"] = market_liquidity_floor(
         ctx,
         config.get("min_market_volume_usd", 5_000_000),
@@ -373,6 +416,7 @@ def eval_all_gates(
     results["market_regime"] = market_regime_gate(
         ctx, _cfg(config, "counter_regime_min_conf", 0.7),
         bool(_cfg(config, "block_counter_trend_bypass", False)),
+        float(_cfg(config, "crowded_with_min_conf", 0.0) or 0.0),
     )
     results["news"] = news_blackout_gate(ctx)
 

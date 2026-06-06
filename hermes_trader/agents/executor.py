@@ -298,7 +298,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                        f"{100*available/equity:.1f}%, floor {100*min_avail_pct:.0f}%)"),
         }
 
-    memory.track_daily_pnl(equity)
+    # Track daily PnL off the AGGREGATE equity (main + HIP-3), not main-dex-only
+    # `equity` (which is kept main-only for margin sizing). Using main-only here
+    # poisoned daily_pnl/peak vs the heartbeat's aggregate — it read ~$30 low and
+    # spuriously fired the daily give-back breaker (saw day $24 vs true $54).
+    memory.track_daily_pnl(agg_equity)
     daily_pnl = memory.get_daily_pnl()
 
     positions = [
@@ -416,6 +420,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         # counter-regime gate. Default True; set False to keep the size
         # boost + override but require regime alignment.
         whale_signal_fired=bool(analysis.get("whale_signal")) and bool(config.get("whale_regime_bypass", True)),
+        peak_daily_pnl=memory.peak_daily_pnl(),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)

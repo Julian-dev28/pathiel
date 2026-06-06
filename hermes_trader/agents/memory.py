@@ -37,6 +37,7 @@ class AgentMemory:
         self._cooldowns: Dict[str, int] = {}
         self._equity: float = 0
         self._daily_pnl: float = 0
+        self._peak_daily_pnl: float = 0  # high-water mark of daily_pnl (intraday, resets at UTC roll)
         self._start_of_day_equity: float = 0
         self._day_start_ts: int = 0
         self._open_positions: List[Dict[str, Any]] = []
@@ -144,9 +145,16 @@ class AgentMemory:
             self._start_of_day_equity = current_equity
             self._day_start_ts = today_utc
             self._daily_pnl = 0
+            self._peak_daily_pnl = 0  # reset high-water mark at the UTC day roll
         else:
             self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
+        # Track the day's peak PnL so a give-back breaker can lock in green days.
+        self._peak_daily_pnl = max(self._peak_daily_pnl, self._daily_pnl)
         self._equity = current_equity
+
+    def peak_daily_pnl(self) -> float:
+        """Intraday high-water mark of daily PnL (resets at UTC midnight)."""
+        return self._peak_daily_pnl
 
     def update_open_positions(self, pos: List[Dict[str, Any]]) -> None:
         self._open_positions = list(pos)
