@@ -183,6 +183,9 @@ TOOLS = [
                 "max_total_notional_pct": {"type": "number", "description": "Ceiling on combined open notional as a multiple of equity."},
                 "min_available_margin_pct": {"type": "number", "description": "Block new trades when free margin < this fraction of equity (caps stacking)."},
                 "max_daily_loss_usd": {"type": "number", "description": "Daily-loss kill switch (negative)."},
+                "daily_giveback_halt_pct": {"type": "number", "description": "Give-back breaker: halt new entries once the day retraces this fraction from its peak (0=off)."},
+                "daily_giveback_min_peak_usd": {"type": "number", "description": "Arm threshold for the give-back breaker (day must peak >= this first)."},
+                "crowded_with_min_conf": {"type": "number", "description": "Min conf for a with-the-crowd aligned trade (short into SHORT_CROWDED / long into LONG_CROWDED); 0=off."},
                 # ── Signal / regime gates ────────────────────────────────
                 "min_ai_confidence": {"type": "number"},
                 "counter_regime_min_conf": {"type": "number", "description": "Confidence bar for a trade AGAINST the regime."},
@@ -922,7 +925,9 @@ def handle_config(params: Dict[str, Any]) -> str:
     _DIRECT_KEYS = [
         "mode", "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
         "tp_scale_fraction", "max_concurrent", "max_total_notional_pct",
-        "min_available_margin_pct", "max_daily_loss_usd", "min_ai_confidence",
+        "min_available_margin_pct", "max_daily_loss_usd",
+        "daily_giveback_halt_pct", "daily_giveback_min_peak_usd",
+        "crowded_with_min_conf", "min_ai_confidence",
         "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
         "min_market_volume_usd", "min_short_volume_usd", "max_crypto_long_correlated",
         "cooldown_min", "coin_allowlist", "coin_blocklist",

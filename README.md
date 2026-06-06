@@ -219,6 +219,10 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 | `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `200` |
 | `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
 | `max_daily_loss_usd` | Daily-loss kill switch (negative number) | `-100` |
+| `daily_giveback_halt_pct` | **Give-back breaker**: once the day peaks ≥ `daily_giveback_min_peak_usd`, halt NEW entries if it retraces more than this from peak (existing positions ride their stops; resets at UTC roll). Locks green days from round-tripping | `0` (off) |
+| `daily_giveback_min_peak_usd` | Arm threshold for the give-back breaker — stays disarmed until the day's peak PnL reaches this | `20` |
+| `tp_scale_fraction` | Fraction auto-banked at the TP target (server-side reduce-only trigger at ~1 ATR); rest rides the trail. Captures profit instead of round-tripping | `0.5` |
+| `crowded_with_min_conf` | **Squeeze caution**: a with-the-crowd aligned trade (short into `SHORT_CROWDED` / long into `LONG_CROWDED`) must clear this conf or it's blocked `via:crowded_squeeze` | `0` (off) |
 | `min_available_margin_pct` | Block new trades when free margin drops below this fraction of equity — caps over-leverage/stacking. Lower = deploys more aggressively | `0.10` |
 | `min_market_volume_usd` | Skip markets below this 24h volume | `5_000_000` |
 | `min_short_volume_usd` | Extra 24h-volume floor for **shorts only** — thin markets squeeze, so shorts need deeper liquidity | `0` |

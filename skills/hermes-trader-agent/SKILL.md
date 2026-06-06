@@ -137,24 +137,31 @@ Project state — not Hermes memory (all gitignored):
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
 - `~/.hermes-trader-session-log.jsonl` — append-only cycle summaries
 
-## Risk Gates (11 independent, no short-circuiting)
+## Risk Gates (independent, no short-circuiting)
 
 Every gate is evaluated; results are collected even when one blocks:
 confidence, max_concurrent, per_trade_notional_cap, daily_loss_killswitch,
-market_liquidity_floor (with HIP-3 floor split — see below), coin_allowlist /
-coin_blocklist, cooldown, opposite_direction_guard, correlation_cap,
-equity_risk_cap, news_blackout, market_regime.
+**daily_giveback**, market_liquidity_floor (+ HIP-3 split), short_liquidity,
+coin_allowlist / coin_blocklist, cooldown, opposite_direction_guard,
+correlation_cap, equity_risk_cap, news_blackout, market_regime.
 
 Notes on specific gates:
+- **daily_giveback** (give-back breaker, 2026-06-06): once the day's PnL peaks
+  ≥ `daily_giveback_min_peak_usd`, blocks NEW entries if it retraces >
+  `daily_giveback_halt_pct` from that peak (existing positions ride their stops;
+  resets at UTC roll). Locks green days from round-tripping. Uses the TRUE
+  aggregate account PnL (not main-dex-only — that bug spuriously halted). `0` = off.
 - **market_regime**: blocks counter-trend trades unless `confidence ≥
   counter_regime_min_conf` OR `composite_score ≥ 50` ("via composite") OR a
   binary momentum/whale trigger fired. Aligned trades clear at the lower
   `aligned_min_conf`. **`block_counter_trend_bypass`** (currently `true`)
   disables ONLY the binary-trigger bypass — the composite≥50 path stays open, so
   strong-momentum counter-trend trades (e.g. an alt long in a down regime via
-  momentum-continuation) still pass. This flag is what stopped the
-  long-into-downtrend bleed. Regime is computed from **1h candles, 8-bar
-  lookback** each scan (fresh, not stale).
+  momentum-continuation) still pass. **Crowded-squeeze caution** (`crowded_with_min_conf`):
+  a with-the-crowd aligned trade (short+`SHORT_CROWDED` / long+`LONG_CROWDED`) no
+  longer gets the free "aligned" pass — must clear that conf or it's blocked
+  `via:crowded_squeeze` (those are the entries that get squeezed). Regime is
+  computed from **1h candles, 8-bar lookback** each scan (fresh, not stale).
 - **short_liquidity**: a SEPARATE, deeper 24h-volume floor for SHORTS only
   (`min_short_volume_usd`, $50M) — thin markets squeeze. Distinct from the
   long/general `market_liquidity_floor`.

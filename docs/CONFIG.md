@@ -93,6 +93,12 @@ Daily-loss killswitch. When `daily_pnl <= this`, ALL new trades blocked until UT
 
 Too loose = catastrophic days possible. Too tight = locks you out on a normal variance day.
 
+### `daily_giveback_halt_pct` (float 0-1, default `0` = off)
+**Daily give-back breaker** (2026-06-06). Once the day's PnL has peaked at `>= daily_giveback_min_peak_usd`, block NEW entries if it then retraces more than this fraction from that peak. Existing positions keep riding their own stops; resets at the UTC roll. Locks in green days so a won day can't fully round-trip (e.g. `0.35` = halt after giving back 35% from peak). Measures TRUE account PnL (aggregate equity, not main-dex-only). `0` disables.
+
+### `daily_giveback_min_peak_usd` (float, default `20`)
+Arm threshold for the give-back breaker — it stays disarmed until the day's peak PnL reaches this, so a tiny `+$2` peak can't trip a halt. Scale to account size.
+
 ### `cooldown_min` (int, default `60`)
 Minimum minutes between trades on the same coin. Prevents over-trading a single market. 30-60 reasonable for active strategies; 120+ for slower. Also skips the paid AI research call for a non-held coin still inside this window (a re-entry would be gate-blocked anyway).
 
@@ -103,10 +109,35 @@ How often a coin you ALREADY HOLD is re-researched for a possible AI `CLOSE`. Wi
 Floor for AI-verdict confidence to execute. Raise to filter out borderline trades; lower to accept more setups. Current default 0.30 with conviction_sizing reducing those bets to 0.7×.
 
 ### `counter_regime_min_conf` (float 0-1, default `0.7`)
-For trades against the BTC/SP500 regime trend, AI confidence must clear this OR `composite_score ≥ 50` OR `momentumBurst` fired OR a slow-burn trigger fired. Loosened bypass paths added 2026-05-28.
+For trades against the BTC/SP500 regime trend, AI confidence must clear this OR `composite_score ≥ 50` OR `momentumBurst` fired OR a slow-burn trigger fired. Loosened bypass paths added 2026-05-28. The `composite ≥ 50` path is NOT disabled by `block_counter_trend_bypass` (only the binary-trigger bypass is).
+
+### `crowded_with_min_conf` (float 0-1, default `0` = off)
+**SHORT_CROWDED squeeze caution** (2026-06-06). A trend-aligned trade that is ALSO *with the crowd* (a short into `SHORT_CROWDED` funding, or a long into `LONG_CROWDED`) normally gets a free "aligned" pass — but those are exactly what gets squeezed on a reversal. When set, such a trade must clear this confidence bar or it's blocked `via:crowded_squeeze`. Filters squeeze-prone weak entries while letting strong setups through. `0.80` is a moderate filter; too high neuters the down-short edge (SHORT_CROWDED is common in downtrends). `0` disables.
+
+### `tp_scale_fraction` (float 0-1, default `0.5`)
+Fraction of a position auto-banked at the take-profit target via a server-side reduce-only TP trigger placed at entry (`1 ATR` past entry). Banks e.g. half at target while the rest rides the DSL trail — captures profit instead of round-tripping into the trailing stop. `0` = no TP scale-out (trail only).
+
+### `aligned_min_conf` (float 0-1, optional, default unset)
+Confidence bar for a trade WITH the regime (trend-aligned), typically lower than `counter_regime_min_conf`. Lets aligned shorts in a selloff / aligned longs in a rally clear at a lower bar than counter-trend trades. Unset = use `min_ai_confidence`.
+
+### `block_counter_trend_bypass` (bool, default `false`)
+When `true`, the binary-trigger bypass (momentum_burst / slow_burn / whale) can NO LONGER push a counter-trend trade through the regime gate — it must clear real conviction (conf or `composite ≥ 50`). Stops low-conviction longs being forced into a downtrend. Does NOT touch aligned/neutral trades or the composite≥50 path.
+
+### `whale_scan_bypass` (bool, default `false`)
+Let whale-accumulation signals (oi_funding_anomaly) surface a coin for research even when it scores below the composite scan gate (whale loads on FLAT price, which scores low on momentum triggers).
 
 ### `max_crypto_long_correlated` (int, default `2`)
 Cap on simultaneous correlated crypto longs. Prevents stacking 5 alt longs that all dump together. HIP-3 equity/commodity longs don't count against this.
+
+## Signal surfacing (gated)
+
+These surface extra candidates for AI research beyond the weighted composite gate; the AI + risk gates still adjudicate. All default OFF unless noted.
+
+### `momentum_continuation` (nested, `enabled` default `false`)
+`{enabled, min_trend_pct (8), max_pullback_pct (6), weight (0.4), log_near_miss}`. Surfaces a coin in a sustained ORDERLY uptrend now consolidating (already-extended movers the spike/breakout triggers miss) and adds its weight to the composite — so a strong momentum long can clear the regime gate's `composite ≥ 50` path even counter-trend. Enable when you want to ride extended momentum; the counter-trend gate + caps back it up.
+
+### `candlestick_patterns` (nested, `enabled` default `false`)
+`{enabled, wick_body_ratio (2.0), context_lookback (6), context_pct (1.5)}`. Reversal candles at exhaustion — shooting-star/bearish-engulfing (→ SHORT) and hammer/bullish-engulfing (→ LONG), each requiring a preceding move so they fire at tops/bottoms, not every bar. Weight-0 surfacing signal; the research prompt also gets the last 12 raw 1h OHLC bars so the LLM reads price action directly.
 
 ### `force_execute_composite` (float, default `40`)
 If AI says PASS but trigger composite hits this AND `force_execute_slow_burn_count` slow-burn triggers fire, the executor upgrades to LONG conf 0.70. The structure overrides the AI's hedge. Set to 999 to disable.
@@ -132,6 +163,9 @@ Crypto perps below this 24h volume are blocked. Default $5M screens illiquid mic
 
 ### `min_hip3_volume_usd` (int, default `500000`)
 HIP-3 perps below this 24h volume are blocked. Lower because HIP-3 markets carry less volume than crypto majors (xyz:CRCL at $4M is well-tradable).
+
+### `min_short_volume_usd` (int, default `0` = off)
+A SEPARATE, deeper 24h-volume floor for SHORTS only — thin markets squeeze, so a short needs more liquidity than a long in the same name. `0` disables (shorts use the general floor).
 
 ---
 
