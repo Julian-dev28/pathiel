@@ -280,6 +280,35 @@ while True:
         # was doubling HL load and tripping per-IP rate limits).
         write_snapshot(positions)
 
+        # ── HARD daily-loss kill-switch ─────────────────────────────────────
+        # The daily_loss GATE (risk_gates) only blocks NEW entries — it can't
+        # close what's already open, so a losing book OVERSHOOTS the limit as
+        # positions keep bleeding to their DSL stops (2026-06-09: hit -$35 vs a
+        # -$30 cap). Make the floor HARD: once the day's loss breaches the limit,
+        # FLATTEN every open position so the loss can't run further. The gate then
+        # keeps re-entry blocked until the UTC roll. Guarded by equity>0: every
+        # degraded/partial-read path in _sync_account_state returns equity=0 (and
+        # preserves last-known-good daily_pnl), so a bad read can NEVER trigger a
+        # flatten. Idempotent: after flattening, the next tick's positions are
+        # empty so it won't re-fire.
+        _max_daily_loss = float(_cfg.get("max_daily_loss_usd", -100) or -100)
+        if equity > 0 and positions and daily_pnl <= _max_daily_loss:
+            logger.warning(
+                f"[killswitch] HARD daily-loss floor breached: PnL ${daily_pnl:.2f} "
+                f"<= ${_max_daily_loss:.0f} — flattening {len(positions)} open "
+                f"position(s) to cap the loss")
+            for _p in positions:
+                _coin = (_p.get("position") or {}).get("coin")
+                if not _coin:
+                    continue
+                try:
+                    _res = close_position_market(_coin)
+                    logger.warning(f"[killswitch] flattened {_coin}: ok={_res.get('ok')}")
+                except Exception as _e:
+                    logger.error(f"[killswitch] failed to flatten {_coin}: {_e}")
+            log_event({"event": "hard_killswitch", "daily_pnl": round(daily_pnl, 2),
+                       "limit": _max_daily_loss, "flattened": len(positions)})
+
         # ── DSL exit pass ───────────────────────────────────────────────────
         # Reconcile trackers with live exchange positions (handles restarts,
         # manual closes, externally-filled SLs), then market-close anything
