@@ -314,12 +314,15 @@ async def _async_do_call(
                     {"role": "user", "content": user_message},
                 ],
                 "stream": False,
-                # Output is only a verdict JSON + 2-3 sentences (~150-300 tokens);
-                # 1024 was wasteful and, on a low OpenRouter balance, tripped 402
-                # "requires more credits ... can only afford N" — reserving 1024 of
-                # max cost. 512 fits the real output with margin and ~halves the
-                # reserved cost so research keeps working on a lean balance.
-                "max_tokens": 512,
+                # Output is a verdict JSON + 2-3 sentences (~150-300 visible tokens).
+                # 512 was fine for non-reasoning models (grok/gemini-flash), but
+                # REASONING models (qwen3.x-plus/max, etc.) emit ~1.5-2k hidden
+                # reasoning tokens that — depending on OpenRouter provider routing —
+                # can count against max_tokens and truncate the JSON before it's
+                # emitted, silently defaulting every verdict to PASS conf 0.0
+                # (qwen3.7-max did exactly this live). 2048 leaves room for reasoning
+                # + JSON regardless of routing; non-reasoning models ignore the extra.
+                "max_tokens": 2048,
                 "temperature": 0.1,
             },
             headers={"Authorization": f"Bearer {openrouter_key}"},
