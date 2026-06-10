@@ -535,6 +535,9 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         # AI's good/bad judgment of the recent news — drives the news gate
         # (only "negative" stands the trade down; an earnings beat is fine).
         "news_risk": parsed["news_risk"],
+        # Failure-PASS marker — must survive this whitelist or the executor's
+        # override guard never sees it (it didn't, on first deploy).
+        "ai_down": bool(parsed.get("ai_down")),
         "created_at": int(time.time() * 1000),
         # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),
