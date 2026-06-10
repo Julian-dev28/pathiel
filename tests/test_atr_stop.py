@@ -83,3 +83,27 @@ def test_entry_atr_pct_survives_state_roundtrip():
     assert t2.entry_atr_pct == 2.34
     assert t2.policy.atr_stop_enabled is True
     assert t2.policy.atr_stop_mult == 1.5
+
+
+def test_parse_verdict_tags_ai_down():
+    from hermes_trader.agents.research import parse_verdict
+    failed = parse_verdict("", "BTC", {"mid": 100.0})
+    assert failed["verdict"] == "PASS" and failed["ai_down"] is True
+    ok = parse_verdict('{"verdict": "PASS", "confidence": 0.4}', "BTC", {"mid": 100.0})
+    assert ok["ai_down"] is False
+
+
+def test_override_blocked_when_ai_down(monkeypatch):
+    """A whale-hinted failure-PASS must NOT be upgraded to a blind LONG."""
+    from hermes_trader.agents import executor as ex
+    monkeypatch.setattr(
+        ex, "read_agent_config",
+        lambda: {"mode": "LIVE", "enable_crypto": True, "whale_force_execute": True,
+                 "override_requires_ai": True},
+    )
+    res = ex.maybe_execute({
+        "id": "t1", "coin": "BTC", "verdict": "PASS", "confidence": 0.0,
+        "whale_signal": True, "ai_down": True,
+    })
+    assert res["executed"] is False
+    assert "override_blocked_ai_down" in res["reason"]

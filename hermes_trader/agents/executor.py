@@ -172,6 +172,24 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         float(analysis.get("composite_score", 0) or 0) >= override_composite
         and int(analysis.get("slow_burn_count", 0) or 0) >= override_min_slow_burn
     )
+    # A PASS produced by a FAILED LLM call (402/timeout → ai_down) is an error
+    # code, not a hedged opinion — upgrading it trades blind with no AI judgment
+    # behind the entry AND no working AI close behind the exit. Refuse the
+    # structural/whale upgrade on those unless the operator explicitly opts out
+    # via override_requires_ai=false (reversible).
+    _ai_down_block = bool(analysis.get("ai_down")) and \
+        bool(config.get("override_requires_ai", True))
+    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired) \
+            and _ai_down_block:
+        logger.info(
+            f"[executor] Structural override SKIPPED on {analysis['coin']}: "
+            f"AI research is DOWN (failure-PASS, not an opinion) — no blind upgrade"
+        )
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": "override_blocked_ai_down (research failed; PASS is an error, not a verdict)",
+        }
     if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired):
         trigger = "whale-accumulation" if whale_fired else \
             f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"

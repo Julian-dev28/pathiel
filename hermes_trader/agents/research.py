@@ -437,6 +437,13 @@ def parse_verdict(
         "tp_px": tp_px,
         "news_risk": news_risk,
         "reasoning": reasoning,
+        # Empty ai_text = the LLM call failed (402/429/timeout) and this PASS is
+        # an ERROR CODE, not an opinion. Tagged so the executor's structural/whale
+        # override won't upgrade a failure-PASS into a blind LONG — on 2026-06-11
+        # a 402 window let the override shotgun 8 PASS→LONG upgrades in one
+        # minute, filling the book with unvetted longs that then blocked real
+        # AI SHORT signals on the movers.
+        "ai_down": not ai_text.strip(),
     }
 
 
