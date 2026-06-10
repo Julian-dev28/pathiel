@@ -48,7 +48,12 @@ logger = logging.getLogger(__name__)
 _DEFAULT_SL_ATR_MULT = 1.5
 TP_ATR_MULT = 1.0
 
-# Default 24h volumes for coins not in the major list
+# Static fallback 24h volumes, used ONLY when the live universe lookup fails.
+# WIRING FIX 2026-06-11: these constants used to be the ONLY volume source for
+# the liquidity gates — every non-major coin read $10M, so min_short_volume_usd
+# (50M) blocked ALL non-major shorts (including the measured short winners) and
+# min_market_volume_usd never blocked anything. Real dayNtlVlm now feeds the
+# gates; this map is the degraded-read fallback.
 _MAJOR_VOLUMES = {
     "BTC": 1e8, "ETH": 1e8, "SOL": 1e8, "BNB": 1e8,
     "XRP": 1e8, "DOGE": 1e8, "ADA": 1e8, "AVAX": 1e8,
@@ -56,6 +61,17 @@ _MAJOR_VOLUMES = {
 
 
 def _get_market_volume_24h(coin: str) -> float:
+    """Real 24h notional volume from the (disk-cached) universe; static fallback."""
+    try:
+        from hermes_trader.client.universe import get_universe
+        for m in get_universe(include_hip3=(":" in coin)):
+            if m.get("coin") == coin:
+                vol = float(m.get("dayNtlVlm", 0) or 0)
+                if vol > 0:
+                    return vol
+                break
+    except Exception as e:
+        logger.warning(f"[executor] live volume lookup failed for {coin}: {e} — using static fallback")
     return _MAJOR_VOLUMES.get(coin, 1e7)
 
 
@@ -492,6 +508,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # default ladder so profit-locking tightness is tunable without code edits.
     _tiers_raw = dsl_config.get("phase2_tiers")
     _tiers = [RetraceTier(**t) for t in _tiers_raw] if _tiers_raw else None
+    _atr_cfg = dsl_config.get("atr_stop", {}) or {}
     policy = ExitPolicy(
         max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
         max_loss_roe_pct=dsl_config.get("max_loss_roe_pct", 50.0),
@@ -500,9 +517,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
         breakeven_trigger_pct=dsl_config.get("breakeven_trigger_pct", 0.0),
         breakeven_lock_pct=dsl_config.get("breakeven_lock_pct", 0.0),
+        atr_stop_enabled=bool(_atr_cfg.get("enabled", False)),
+        atr_stop_mult=float(_atr_cfg.get("atr_mult", 1.5)),
+        atr_stop_floor_pct=float(_atr_cfg.get("floor_pct", 1.0)),
+        atr_stop_ceiling_pct=float(_atr_cfg.get("ceiling_pct", 4.0)),
         phase2_tiers=_tiers if _tiers else ExitPolicy().phase2_tiers,
     )
-    register_position(coin, trade_side, mid_price, policy=policy, leverage=leverage)
+    # ATR as % of entry — captured once here so the DSL stop width is stable
+    # for the life of the trade (the atr_stop feature scales off this).
+    entry_atr_pct = (atr / mid_price * 100) if mid_price > 0 else 0.0
+    register_position(coin, trade_side, mid_price, policy=policy, leverage=leverage,
+                      entry_atr_pct=entry_atr_pct)
     logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price} ({leverage}x)")
 
     memory.record_trade({
@@ -520,13 +545,22 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # 60s DSL checks) to cap the gap-throughs the DSL loop misses. DSL is still the
     # primary/normal exit; this is the fast safety net.
     sl_atr_mult = float(config.get("sl_atr_mult", _DEFAULT_SL_ATR_MULT))
+    sl_missing = False
     if atr > 0 and size_in_coin > 0:
         sl_px = mid_price - atr * sl_atr_mult if is_buy else mid_price + atr * sl_atr_mult
         sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
+        if not sl_res.get("ok"):
+            # One retry after a beat — observed failures are transient 429s; a
+            # position with no server-side stop carries the full gap-through
+            # risk between 60s DSL checks, so a single retry is cheap insurance.
+            time.sleep(2)
+            sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
         if sl_res.get("ok"):
             logger.info(f"[executor] Placed backup SL at {sl_px} ({sl_atr_mult}x ATR)")
         else:
-            logger.error(f"[executor] Backup SL FAILED for {coin}: {sl_res.get('error')}")
+            sl_missing = True
+            logger.error(f"[executor] Backup SL FAILED twice for {coin} — POSITION HAS "
+                         f"NO SERVER-SIDE STOP (DSL loop is sole protection): {sl_res.get('error')}")
 
     # Take-profit scale-out — the OFFENSIVE complement to the backup SL. Banks a
     # fraction of the position SERVER-SIDE at the TP target so a winner is
@@ -558,6 +592,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "stop_px": final_sl,
         "tp_px": final_tp,
         "dsl_registered": True,
+        "sl_missing": sl_missing,
     }
 
 

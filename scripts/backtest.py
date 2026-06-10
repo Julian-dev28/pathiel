@@ -178,7 +178,10 @@ def _simulate(coin: str, candles: List[Candle], max_lev: int, *,
               equity: float, equity_fraction: float, lev_ceiling: int,
               cfg: Dict[str, Any], warmup: int = 100,
               max_loss_pct: float = 2.5, protect_pct: float = 1.5,
-              retrace_threshold: float = 0.30) -> List[Trade]:
+              retrace_threshold: float = 0.30,
+              atr_mult: float = 0.0, atr_floor: float = 1.0,
+              atr_ceiling: float = 4.0,
+              stop_widths: Optional[list] = None) -> List[Trade]:
     trades: List[Trade] = []
     open_t: Optional[Trade] = None
     open_dsl: Optional[DSL] = None
@@ -221,8 +224,15 @@ def _simulate(coin: str, candles: List[Candle], max_lev: int, *,
         margin = equity * equity_fraction
         open_t = Trade(coin=coin, side=side, entry_bar=i + 1, entry_px=next_bar.o,
                        notional=notional, margin=margin, leverage=lev)
+        # ATR-stop mode: stop width = atr_mult × ATR% at entry, clamped — mirrors
+        # the live dsl_exit.atr_stop feature. atr_mult=0 keeps the fixed stop.
+        eff_max_loss = max_loss_pct
+        if atr_mult > 0 and atr_pct is not None and atr_pct > 0:
+            eff_max_loss = min(max(atr_pct * atr_mult, atr_floor), atr_ceiling)
+            if stop_widths is not None:
+                stop_widths.append(eff_max_loss)
         open_dsl = DSL(side=side, entry_px=next_bar.o, entry_bar=i + 1,
-                       peak_px=next_bar.o, max_loss_pct=max_loss_pct,
+                       peak_px=next_bar.o, max_loss_pct=eff_max_loss,
                        protect_pct=protect_pct, retrace_threshold=retrace_threshold)
     return trades
 
@@ -281,6 +291,10 @@ def main() -> int:
     ap.add_argument("--max-loss", type=float, default=2.5, help="DSL max_loss_pct (spot %%)")
     ap.add_argument("--protect", type=float, default=1.5, help="DSL protect_pct (spot %%)")
     ap.add_argument("--retrace", type=float, default=0.30, help="DSL phase-2 retrace threshold (0-1)")
+    ap.add_argument("--atr-mult", type=float, default=0.0,
+                    help="ATR-scaled stop: width = mult x ATR%% at entry (0 = fixed --max-loss)")
+    ap.add_argument("--atr-floor", type=float, default=1.0, help="ATR stop floor (spot %%)")
+    ap.add_argument("--atr-ceiling", type=float, default=4.0, help="ATR stop ceiling (spot %%)")
     args = ap.parse_args()
 
     bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}[args.interval]
@@ -299,6 +313,7 @@ def main() -> int:
           f"momentumPct={cfg['thresholds']['momentumPct']}\n")
 
     all_trades: List[Trade] = []
+    stop_widths: List[float] = []
     for m in coins:
         coin = m["coin"]; max_lev = int(m.get("maxLeverage", 5))
         try:
@@ -310,7 +325,9 @@ def main() -> int:
                                equity=args.equity, equity_fraction=args.equity_fraction,
                                lev_ceiling=args.leverage_ceiling, cfg=cfg,
                                max_loss_pct=args.max_loss, protect_pct=args.protect,
-                               retrace_threshold=args.retrace)
+                               retrace_threshold=args.retrace,
+                               atr_mult=args.atr_mult, atr_floor=args.atr_floor,
+                               atr_ceiling=args.atr_ceiling, stop_widths=stop_widths)
             pnl = sum(t.pnl_usd for t in trades)
             w = sum(1 for t in trades if t.pnl_usd > 0)
             print(f"  {coin:8} {len(trades):3} trades  win {w:3}  PnL ${pnl:+7.2f}  (max_lev {max_lev}x)")
@@ -319,6 +336,12 @@ def main() -> int:
             print(f"  {coin:8} error: {e}")
 
     _print_summary(all_trades, args.equity, args.days)
+    if stop_widths:
+        sw = sorted(stop_widths)
+        n = len(sw)
+        print(f"\nATR stop widths (spot %): n={n}  "
+              f"min={sw[0]:.2f}  p25={sw[n//4]:.2f}  median={sw[n//2]:.2f}  "
+              f"p75={sw[3*n//4]:.2f}  max={sw[-1]:.2f}")
     return 0
 
 

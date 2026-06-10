@@ -99,6 +99,18 @@ class ExitPolicy:
     # ~flat before the retrace floor catches them. Disabled when trigger<=0.
     breakeven_trigger_pct: float = 0.0  # Peak spot % that arms the lock (0 = off)
     breakeven_lock_pct: float = 0.0     # Floor spot % above entry once armed
+    # ── ATR-scaled primary stop (volatility-aware max_loss) ─────────────
+    # A fixed max_loss_pct is wrong across a universe whose 4h ATR spans
+    # 0.8%–5%: it's noise-tight on volatile coins and slack on quiet ones.
+    # When enabled, the Phase-1 stop becomes `atr_stop_mult × entry_atr_pct`
+    # (the coin's ATR as a % of entry price, captured once at registration),
+    # clamped to [atr_stop_floor_pct, atr_stop_ceiling_pct]. The leverage-aware
+    # max_loss_roe_pct cap still applies on top. Positions registered without
+    # an ATR (entry_atr_pct<=0) fall back to the fixed max_loss_pct.
+    atr_stop_enabled: bool = False
+    atr_stop_mult: float = 1.5
+    atr_stop_floor_pct: float = 1.0
+    atr_stop_ceiling_pct: float = 4.0
     phase2_tiers: List[RetraceTier] = field(default_factory=lambda: [
         RetraceTier(5.0, 0.30),   # 5% profit → give back 30%
         RetraceTier(10.0, 0.40),  # 10% profit → lock tighter, give back 40%
@@ -115,13 +127,16 @@ class DSLTracker:
     """
     def __init__(self, coin: str, side: str, entry_px: float,
                  entry_time: float, policy: Optional[ExitPolicy] = None,
-                 leverage: int = 1) -> None:
+                 leverage: int = 1, entry_atr_pct: float = 0.0) -> None:
         self.coin = coin
         self.side = side  # "long" | "short"
         self.entry_px = entry_px
         self.entry_time = entry_time
         self.policy = policy or ExitPolicy()
         self.leverage = int(leverage) if leverage else 1
+        # ATR as % of entry price, captured ONCE at registration so the stop
+        # width is stable for the life of the trade (never recomputed per tick).
+        self.entry_atr_pct = float(entry_atr_pct or 0.0)
 
         # State
         self.peak_px = entry_px
@@ -175,7 +190,15 @@ class DSLTracker:
         # fires first. Without this leverage-aware check, a 40x BTC long
         # would happily lose 100% ROE before the 2.5% spot trigger.
         lev = max(1, self.leverage)
-        effective_max_loss = min(pol.max_loss_pct, pol.max_loss_roe_pct / lev)
+        # ATR-scaled stop: replaces the fixed spot cap when enabled AND this
+        # tracker captured an ATR at registration; clamped so an ATR spike at
+        # entry can't set an unbounded stop. ROE cap still applies after.
+        spot_cap = pol.max_loss_pct
+        if pol.atr_stop_enabled and self.entry_atr_pct > 0:
+            spot_cap = min(max(self.entry_atr_pct * pol.atr_stop_mult,
+                               pol.atr_stop_floor_pct),
+                           pol.atr_stop_ceiling_pct)
+        effective_max_loss = min(spot_cap, pol.max_loss_roe_pct / lev)
         # Reason string surfaces both inputs so it's obvious post-hoc
         # which cap was binding for a given exit.
 
@@ -201,7 +224,8 @@ class DSLTracker:
                     exit=True,
                     reason=(f"max_loss ({loss_pct:.2f}% spot / {roe_loss:.1f}% ROE "
                             f">= {effective_max_loss:.2f}% spot cap; "
-                            f"spot_cap={pol.max_loss_pct}, roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
+                            f"spot_cap={spot_cap:.2f}{'[atr]' if (pol.atr_stop_enabled and self.entry_atr_pct > 0) else ''}, "
+                            f"roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
                     floor_price=self.entry_px * (1 - effective_max_loss / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
                 )
@@ -225,7 +249,8 @@ class DSLTracker:
                     exit=True,
                     reason=(f"max_loss ({loss_pct:.2f}% spot / {roe_loss:.1f}% ROE "
                             f">= {effective_max_loss:.2f}% spot cap; "
-                            f"spot_cap={pol.max_loss_pct}, roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
+                            f"spot_cap={spot_cap:.2f}{'[atr]' if (pol.atr_stop_enabled and self.entry_atr_pct > 0) else ''}, "
+                            f"roe_cap={pol.max_loss_roe_pct}/{lev}x)"),
                     floor_price=self.entry_px * (1 + effective_max_loss / 100),
                     peak_price=self.peak_px, phase="phase1", unrealized_pct=upct,
                 )
@@ -317,6 +342,7 @@ def _tracker_to_dict(t: DSLTracker) -> Dict[str, Any]:
         "leverage": t.leverage,
         "entry_px": t.entry_px,
         "entry_time": t.entry_time,
+        "entry_atr_pct": t.entry_atr_pct,
         "peak_px": t.peak_px,
         "consecutive_breaches": t.consecutive_breaches,
         "last_floor": t._last_floor,
@@ -337,10 +363,15 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         consecutive_breaches_required=pol_raw.get("consecutive_breaches_required", 1),
         breakeven_trigger_pct=pol_raw.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
         breakeven_lock_pct=pol_raw.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
+        atr_stop_enabled=pol_raw.get("atr_stop_enabled", ExitPolicy.atr_stop_enabled),
+        atr_stop_mult=pol_raw.get("atr_stop_mult", ExitPolicy.atr_stop_mult),
+        atr_stop_floor_pct=pol_raw.get("atr_stop_floor_pct", ExitPolicy.atr_stop_floor_pct),
+        atr_stop_ceiling_pct=pol_raw.get("atr_stop_ceiling_pct", ExitPolicy.atr_stop_ceiling_pct),
     )
     t = DSLTracker(d["coin"], d["side"], float(d["entry_px"]),
                    float(d.get("entry_time") or time.time()), policy,
-                   leverage=int(d.get("leverage", 1) or 1))
+                   leverage=int(d.get("leverage", 1) or 1),
+                   entry_atr_pct=float(d.get("entry_atr_pct", 0.0) or 0.0))
     t.peak_px = float(d.get("peak_px", d["entry_px"]))
     t.consecutive_breaches = int(d.get("consecutive_breaches", 0))
     lf = d.get("last_floor")
@@ -399,14 +430,21 @@ def load_state(force: bool = False) -> None:
 def register_position(coin: str, side: str, entry_px: float,
                       entry_time: Optional[float] = None,
                       policy: Optional[ExitPolicy] = None,
-                      leverage: int = 1) -> DSLTracker:
+                      leverage: int = 1,
+                      entry_atr_pct: float = 0.0) -> DSLTracker:
     """Register a new position for DSL tracking."""
     key = f"{coin}_{side}"
     tracker = DSLTracker(coin, side, entry_px, entry_time or time.time(), policy,
-                         leverage=leverage)
+                         leverage=leverage, entry_atr_pct=entry_atr_pct)
     _active_positions[key] = tracker
     _save_state()
-    logger.info(f"[dsl] Registered {key} @ {entry_px} ({leverage}x)")
+    atr_note = ""
+    pol = tracker.policy
+    if pol.atr_stop_enabled and entry_atr_pct > 0:
+        width = min(max(entry_atr_pct * pol.atr_stop_mult, pol.atr_stop_floor_pct),
+                    pol.atr_stop_ceiling_pct)
+        atr_note = f" atr_stop={width:.2f}% ({pol.atr_stop_mult}x ATR {entry_atr_pct:.2f}%)"
+    logger.info(f"[dsl] Registered {key} @ {entry_px} ({leverage}x){atr_note}")
     return tracker
 
 
@@ -445,6 +483,7 @@ def _policy_from_config() -> ExitPolicy:
         dsl = read_agent_config().get("dsl_exit", {}) or {}
         tiers_raw = dsl.get("phase2_tiers")
         tiers = [RetraceTier(**t) for t in tiers_raw] if tiers_raw else None
+        atr_cfg = dsl.get("atr_stop", {}) or {}
         return ExitPolicy(
             max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
             max_loss_roe_pct=dsl.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
@@ -453,6 +492,10 @@ def _policy_from_config() -> ExitPolicy:
             hard_timeout_minutes=dsl.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
             breakeven_trigger_pct=dsl.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
             breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
+            atr_stop_enabled=bool(atr_cfg.get("enabled", False)),
+            atr_stop_mult=float(atr_cfg.get("atr_mult", ExitPolicy.atr_stop_mult)),
+            atr_stop_floor_pct=float(atr_cfg.get("floor_pct", ExitPolicy.atr_stop_floor_pct)),
+            atr_stop_ceiling_pct=float(atr_cfg.get("ceiling_pct", ExitPolicy.atr_stop_ceiling_pct)),
             phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         )
     except Exception:
