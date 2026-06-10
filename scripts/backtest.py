@@ -176,7 +176,9 @@ def _ta_confirmed(bullish, atr_pct, adx14, composite: float) -> bool:
 
 def _simulate(coin: str, candles: List[Candle], max_lev: int, *,
               equity: float, equity_fraction: float, lev_ceiling: int,
-              cfg: Dict[str, Any], warmup: int = 100) -> List[Trade]:
+              cfg: Dict[str, Any], warmup: int = 100,
+              max_loss_pct: float = 2.5, protect_pct: float = 1.5,
+              retrace_threshold: float = 0.30) -> List[Trade]:
     trades: List[Trade] = []
     open_t: Optional[Trade] = None
     open_dsl: Optional[DSL] = None
@@ -220,7 +222,8 @@ def _simulate(coin: str, candles: List[Candle], max_lev: int, *,
         open_t = Trade(coin=coin, side=side, entry_bar=i + 1, entry_px=next_bar.o,
                        notional=notional, margin=margin, leverage=lev)
         open_dsl = DSL(side=side, entry_px=next_bar.o, entry_bar=i + 1,
-                       peak_px=next_bar.o)
+                       peak_px=next_bar.o, max_loss_pct=max_loss_pct,
+                       protect_pct=protect_pct, retrace_threshold=retrace_threshold)
     return trades
 
 
@@ -275,6 +278,9 @@ def main() -> int:
     ap.add_argument("--equity", type=float, default=100.0)
     ap.add_argument("--equity-fraction", type=float, default=0.10)
     ap.add_argument("--leverage-ceiling", type=int, default=40)
+    ap.add_argument("--max-loss", type=float, default=2.5, help="DSL max_loss_pct (spot %%)")
+    ap.add_argument("--protect", type=float, default=1.5, help="DSL protect_pct (spot %%)")
+    ap.add_argument("--retrace", type=float, default=0.30, help="DSL phase-2 retrace threshold (0-1)")
     args = ap.parse_args()
 
     bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}[args.interval]
@@ -288,6 +294,7 @@ def main() -> int:
     print("=== hermes-trader backtest ===")
     print(f"period: {args.days} days   interval: {args.interval}   universe: top-{args.coins} by 24h volume")
     print(f"equity: ${args.equity:.0f}   fraction: {args.equity_fraction:.0%}   leverage ceiling: {args.leverage_ceiling}x")
+    print(f"DSL: max_loss={args.max_loss}%  protect={args.protect}%  retrace={args.retrace}")
     print(f"triggers config: sigma={cfg['thresholds']['sigmaThreshold']}  "
           f"momentumPct={cfg['thresholds']['momentumPct']}\n")
 
@@ -301,7 +308,9 @@ def main() -> int:
                 continue
             trades = _simulate(coin, candles, max_lev,
                                equity=args.equity, equity_fraction=args.equity_fraction,
-                               lev_ceiling=args.leverage_ceiling, cfg=cfg)
+                               lev_ceiling=args.leverage_ceiling, cfg=cfg,
+                               max_loss_pct=args.max_loss, protect_pct=args.protect,
+                               retrace_threshold=args.retrace)
             pnl = sum(t.pnl_usd for t in trades)
             w = sum(1 for t in trades if t.pnl_usd > 0)
             print(f"  {coin:8} {len(trades):3} trades  win {w:3}  PnL ${pnl:+7.2f}  (max_lev {max_lev}x)")
