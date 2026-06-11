@@ -306,12 +306,24 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # and on a $0 main-equity read retry up to twice before believing it. A
     # genuine $0 still refuses (never size an unsized order); a transient blip
     # recovers.
+    # PER-DEX FIX 2026-06-12: each dex is a separate clearinghouse, so a HIP-3
+    # trade must be sized and margin-checked against ITS OWN dex's equity and
+    # available margin — not the main dex's. Before this, xyz:DRAM was blocked
+    # with "available $0.00 / equity $39.90" (main dex) while the xyz dex held
+    # $59.04 free: HIP-3 entries starved whenever main margin was committed,
+    # and vice versa. Main-dex (crypto) trades behave exactly as before.
+    _target_dex = analysis["coin"].split(":", 1)[0] if ":" in analysis["coin"] else ""
+
     def _read_state() -> tuple[dict, float, float]:
         st = fetch_account_state(user, include_hip3=True) or {}
         deq = st.get("dex_equity") or {}
         dav = st.get("dex_available") or {}
-        eq = float(deq.get("", st.get("equity")) or 0)
-        av = float(dav.get("", st.get("available")) or 0)
+        if _target_dex:
+            eq = float(deq.get(_target_dex, 0) or 0)
+            av = float(dav.get(_target_dex, 0) or 0)
+        else:
+            eq = float(deq.get("", st.get("equity")) or 0)
+            av = float(dav.get("", st.get("available")) or 0)
         return st, eq, av
 
     state, equity, available = _read_state()
@@ -338,7 +350,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
-            "reason": (f"insufficient_free_margin "
+            "reason": (f"insufficient_free_margin on dex '{_target_dex or 'main'}' "
                        f"(available ${available:.2f} / equity ${equity:.2f} = "
                        f"{100*available/equity:.1f}%, floor {100*min_avail_pct:.0f}%)"),
         }

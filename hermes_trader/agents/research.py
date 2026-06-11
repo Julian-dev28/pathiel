@@ -303,30 +303,52 @@ async def _async_do_call(
     system_prompt: str,
     user_message: str,
 ) -> str:
-    """Async POST to the OpenRouter chat-completions endpoint."""
+    """Async POST to the OpenRouter chat-completions endpoint.
+
+    On a 402 that includes an affordability hint ("can only afford N tokens"),
+    retries ONCE with max_tokens shrunk to the affordable budget. During the
+    2026-06-11 credit drought the bot sat fully blind for ~12h while OpenRouter
+    was offering 842 affordable tokens per call — enough for a non-truncated
+    verdict on most prompts. Degraded thinking beats no thinking; if the
+    shrunken reply still truncates, parse_verdict falls back to PASS exactly
+    as before (no new failure mode).
+    """
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        resp = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
-                "stream": False,
-                # Output is a verdict JSON + 2-3 sentences (~150-300 visible tokens).
-                # 512 was fine for non-reasoning models (grok/gemini-flash), but
-                # REASONING models (qwen3.x-plus/max, etc.) emit ~1.5-2k hidden
-                # reasoning tokens that — depending on OpenRouter provider routing —
-                # can count against max_tokens and truncate the JSON before it's
-                # emitted, silently defaulting every verdict to PASS conf 0.0
-                # (qwen3.7-max did exactly this live). 2048 leaves room for reasoning
-                # + JSON regardless of routing; non-reasoning models ignore the extra.
-                "max_tokens": 2048,
-                "temperature": 0.1,
-            },
-            headers={"Authorization": f"Bearer {openrouter_key}"},
-        )
+
+        async def _post(max_toks: int):
+            return await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "stream": False,
+                    # Output is a verdict JSON + 2-3 sentences (~150-300 visible
+                    # tokens). 512 was fine for non-reasoning models, but REASONING
+                    # models (qwen3.x-plus/max, etc.) emit ~1.5-2k hidden reasoning
+                    # tokens that can count against max_tokens and truncate the JSON
+                    # (qwen3.7-max did exactly this live). 2048 leaves room for
+                    # reasoning + JSON; non-reasoning models ignore the extra.
+                    "max_tokens": max_toks,
+                    "temperature": 0.1,
+                },
+                headers={"Authorization": f"Bearer {openrouter_key}"},
+            )
+
+        resp = await _post(2048)
+        if resp.status_code == 402:
+            # "...You requested up to 2048 tokens, but can only afford 842..."
+            m = re.search(r"can only afford (\d+)", resp.text or "")
+            if m and int(m.group(1)) >= 500:
+                budget = int(m.group(1)) - 50  # headroom for billing jitter
+                logger.warning(
+                    f"[research] 402 with affordability hint — retrying DEGRADED "
+                    f"at max_tokens={budget} (add credits to restore full reasoning)"
+                )
+                resp = await _post(budget)
+
         if resp.is_success:
             data = resp.json()
             choices = data.get("choices", [])
