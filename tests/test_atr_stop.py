@@ -117,6 +117,9 @@ def test_loss_cooldown_blocks_reentry(monkeypatch):
         ex, "read_agent_config",
         lambda: {"mode": "LIVE", "enable_crypto": True, "loss_cooldown_min": 180},
     )
+    # Never flush test cooldowns into the LIVE .agent-memory.json (this test
+    # once armed a real 60min TON cooldown in production state).
+    monkeypatch.setattr(ex.memory, "flush", lambda: None)
     ex.memory.set_loss_cooldown("TON", int(_t.time() * 1000 + 60 * 60_000))
     try:
         res = ex.maybe_execute({
