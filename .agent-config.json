@@ -96,5 +96,6 @@
   "override_requires_ai": true,
   "whale_scan_bypass": true,
   "min_short_volume_usd": 50000000,
-  "aligned_min_conf": 0.7
+  "aligned_min_conf": 0.7,
+  "loss_cooldown_min": 180
 }

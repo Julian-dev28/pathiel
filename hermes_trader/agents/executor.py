@@ -221,6 +221,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"], "reason": "pass_no_override",
         }
 
+    # Loss cooldown: refuse re-entry on a coin whose last close was a LOSS and
+    # whose extended block hasn't expired (armed in close_position_market).
+    _lc_remaining = memory.loss_cooldown_remaining_min(analysis["coin"])
+    if _lc_remaining > 0:
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": (f"loss_cooldown ({analysis['coin']} closed at a loss recently — "
+                       f"{_lc_remaining:.0f}min remaining)"),
+        }
+
     # Idempotency: don't double-execute
     already = next(
         (t for t in memory.get_recent_trades(100)
@@ -758,4 +769,18 @@ def close_position_market(coin: str) -> Dict[str, Any]:
             out["spot_pct"] = round(spot_pct, 4)
             out["realized_pnl_pct"] = round(spot_pct * leverage - fees_pct, 4)
             out["fees_pct"] = round(fees_pct, 4)
+            # Loss cooldown: a losing close arms an extended re-entry block on
+            # this coin (config `loss_cooldown_min`, 0 = off). Anti-revenge rule:
+            # TON was churned 3x in one day because the standard cooldown expired
+            # and the AI re-bought the same falling name each time.
+            if out["realized_pnl_pct"] < 0:
+                try:
+                    lc_min = float(read_agent_config().get("loss_cooldown_min", 0) or 0)
+                    if lc_min > 0:
+                        until = int(time.time() * 1000 + lc_min * 60_000)
+                        memory.set_loss_cooldown(coin, until)
+                        logger.info(f"[executor] loss cooldown armed on {coin}: "
+                                    f"{lc_min:.0f}min (closed {out['realized_pnl_pct']:.2f}%)")
+                except Exception as e:
+                    logger.warning(f"[executor] loss-cooldown arm failed for {coin}: {e}")
     return out

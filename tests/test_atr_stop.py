@@ -107,3 +107,23 @@ def test_override_blocked_when_ai_down(monkeypatch):
     })
     assert res["executed"] is False
     assert "override_blocked_ai_down" in res["reason"]
+
+
+def test_loss_cooldown_blocks_reentry(monkeypatch):
+    """A coin with an active loss cooldown must be refused before any order."""
+    from hermes_trader.agents import executor as ex
+    import time as _t
+    monkeypatch.setattr(
+        ex, "read_agent_config",
+        lambda: {"mode": "LIVE", "enable_crypto": True, "loss_cooldown_min": 180},
+    )
+    ex.memory.set_loss_cooldown("TON", int(_t.time() * 1000 + 60 * 60_000))
+    try:
+        res = ex.maybe_execute({
+            "id": "t2", "coin": "TON", "verdict": "LONG", "side": "long",
+            "confidence": 0.9,
+        })
+        assert res["executed"] is False
+        assert "loss_cooldown" in res["reason"]
+    finally:
+        ex.memory._cooldowns.pop("TON", None)

@@ -156,6 +156,29 @@ class AgentMemory:
         """Intraday high-water mark of daily PnL (resets at UTC midnight)."""
         return self._peak_daily_pnl
 
+    # ── Loss cooldown (anti-revenge re-entry) ───────────────────────────────
+    # Backed by the persisted `_cooldowns` dict (coin -> expires_ms), which was
+    # serialized but never written/read until 2026-06-11 — wired up after TON
+    # was churned 3x in one day (-1.4%, -0.9%, -6.5% ROE): the AI re-bought the
+    # same falling name as soon as the standard 60min cooldown expired.
+
+    def set_loss_cooldown(self, coin: str, until_ms: int) -> None:
+        """Block re-entry on `coin` until `until_ms` (epoch ms)."""
+        self._cooldowns[coin] = int(until_ms)
+        self.flush()
+
+    def loss_cooldown_remaining_min(self, coin: str) -> float:
+        """Minutes left on `coin`'s loss cooldown (0 when expired/absent)."""
+        exp = self._cooldowns.get(coin)
+        if not exp:
+            return 0.0
+        import time as _t
+        remaining = (int(exp) - int(_t.time() * 1000)) / 60_000
+        if remaining <= 0:
+            self._cooldowns.pop(coin, None)
+            return 0.0
+        return remaining
+
     def update_open_positions(self, pos: List[Dict[str, Any]]) -> None:
         self._open_positions = list(pos)
 
