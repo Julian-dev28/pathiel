@@ -1,0 +1,100 @@
+{
+  "mode": "LIVE",
+  "enable_crypto": true,
+  "enable_hip3": true,
+  "equity_fraction_per_trade": 0.28,
+  "leverage": 4,
+  "max_trade_notional_usd": 160,
+  "tp_scale_fraction": 0.5,
+  "max_concurrent": 4,
+  "max_total_notional_pct": 3.0,
+  "max_daily_loss_usd": -25,
+  "daily_giveback_halt_pct": 0.35,
+  "daily_giveback_min_peak_usd": 25.0,
+  "crowded_with_min_conf": 0.8,
+  "min_available_margin_pct": 0.25,
+  "cooldown_min": 60,
+  "held_research_interval_min": 10,
+  "min_ai_confidence": 0.78,
+  "counter_regime_min_conf": 0.8,
+  "max_crypto_long_correlated": 8,
+  "min_market_volume_usd": 800000,
+  "min_hip3_volume_usd": 10000000,
+  "coin_allowlist": [],
+  "coin_blocklist": [],
+  "hip3_dex_allowlist": [
+    "xyz"
+  ],
+  "hip3_dex_blocklist": [],
+  "dsl_exit": {
+    "max_loss_pct": 3.5,
+    "max_loss_roe_pct": 18.0,
+    "protect_pct": 1.0,
+    "retrace_threshold": 0.4,
+    "hard_timeout_minutes": 1800.0,
+    "breakeven_trigger_pct": 1.0,
+    "breakeven_lock_pct": 0.6,
+    "atr_stop": {
+      "enabled": false,
+      "atr_mult": 1.5,
+      "floor_pct": 1.0,
+      "ceiling_pct": 4.0
+    },
+    "phase2_tiers": [
+      {
+        "pct_above_entry": 3.0,
+        "retrace_threshold": 0.3
+      },
+      {
+        "pct_above_entry": 6.0,
+        "retrace_threshold": 0.22
+      },
+      {
+        "pct_above_entry": 10.0,
+        "retrace_threshold": 0.15
+      },
+      {
+        "pct_above_entry": 20.0,
+        "retrace_threshold": 0.12
+      }
+    ]
+  },
+  "force_execute_composite": 40,
+  "force_execute_slow_burn_count": 2,
+  "conviction_sizing": true,
+  "conviction_tiers": [
+    [
+      0.85,
+      2.0
+    ],
+    [
+      0.7,
+      1.2
+    ],
+    [
+      0.0,
+      0.5
+    ]
+  ],
+  "whale_regime_bypass": true,
+  "whale_force_execute": true,
+  "whale_size_multiplier": 1.3,
+  "block_counter_trend_bypass": true,
+  "momentum_continuation": {
+    "enabled": true,
+    "log_near_miss": true,
+    "min_trend_pct": 8.0,
+    "max_pullback_pct": 6.0,
+    "weight": 0.4
+  },
+  "candlestick_patterns": {
+    "enabled": false,
+    "wick_body_ratio": 2.0,
+    "context_lookback": 6,
+    "context_pct": 1.5
+  },
+  "override_requires_ai": true,
+  "whale_scan_bypass": true,
+  "min_short_volume_usd": 50000000,
+  "aligned_min_conf": 0.7
+}
