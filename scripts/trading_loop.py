@@ -434,6 +434,23 @@ while True:
                                "score": round(float(score), 1),
                                "trigger_score": round(float(score), 1)})
                     continue
+                # Infancy hold: skip the AI close-check while the position is
+                # younger than min_ai_close_hold_min (0=off). Measured churn
+                # 2026-06-11/12: the FIRST 10-min close-check reversed the AI's
+                # own fresh entry 3x (TON 2x, ZEC 1x, each ~-1% ROE incl. fees) —
+                # flip-flopping on entry noise. DSL stop + backup SL still
+                # protect an infant position; only the AI's second-guess waits.
+                min_hold_min = float(_cfg_cd.get("min_ai_close_hold_min", 0) or 0)
+                if min_hold_min > 0:
+                    from hermes_trader.agents import dsl_exit as _dsl
+                    _tr = (_dsl._active_positions.get(f"{coin}_long")
+                           or _dsl._active_positions.get(f"{coin}_short"))
+                    if _tr is not None:
+                        age_min = (time.time() - _tr.entry_time) / 60
+                        if age_min < min_hold_min:
+                            logger.info(f"{coin}: held {age_min:.0f}min < min_hold "
+                                        f"{min_hold_min:.0f}min — infancy, skip close-check")
+                            continue
             else:
                 # Blocklisted + not held → coin_filter will reject any entry, so
                 # skip the paid LLM research entirely (this coin keeps triggering
