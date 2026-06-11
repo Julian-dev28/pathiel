@@ -1768,7 +1768,11 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
     monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
         "equity": 1000.0, "available": 1000.0,
-        "dex_equity": {"": 1000.0}, "dex_available": {"": 1000.0},
+        # Per-dex margin fix (2026-06-12): an xyz:* trade reads the xyz dex's
+        # own equity/available, so the mock must provide it to reach the
+        # re-entry guard this test exercises.
+        "dex_equity": {"": 1000.0, "xyz": 1000.0},
+        "dex_available": {"": 1000.0, "xyz": 1000.0},
         "total_ntl": 0.0, "asset_positions": [],  # live read dropped the position
     })
     placed = {"n": 0}
