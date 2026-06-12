@@ -584,6 +584,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         atr_stop_mult=float(_atr_cfg.get("atr_mult", 1.5)),
         atr_stop_floor_pct=float(_atr_cfg.get("floor_pct", 1.0)),
         atr_stop_ceiling_pct=float(_atr_cfg.get("ceiling_pct", 4.0)),
+        stale_flat_timeout_minutes=float(dsl_config.get("stale_flat_timeout_minutes", 0.0) or 0.0),
         phase2_tiers=_tiers if _tiers else ExitPolicy().phase2_tiers,
     )
     # ATR as % of entry — captured once here so the DSL stop width is stable

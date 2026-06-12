@@ -179,3 +179,23 @@ def test_breakout_force_execute_upgrades_pass(monkeypatch):
            "uptrend_momentum_fired": True, "slow_burn_count": 2, "ai_down": False}
     res3 = ex.maybe_execute(xpl)
     assert "equity_unavailable" in (res3.get("reason") or "")
+
+
+def test_stale_flat_timeout_cuts_drifters_spares_peakers():
+    """8h below protect -> cut; ever-peaked positions exempt; 0=off."""
+    import time as _t
+    old = _t.time() - 9 * 3600  # 9h ago
+    pol = _policy(stale_flat_timeout_minutes=480.0)
+    drifter = DSLTracker("DRIFT", "long", 100.0, old, pol, leverage=1,
+                         entry_atr_pct=1.0)
+    v = drifter.check(99.0)  # never peaked above protect
+    assert v.exit and "stale_flat_timeout" in v.reason
+    peaker = DSLTracker("PEAK", "long", 100.0, old, pol, leverage=1,
+                        entry_atr_pct=1.0)
+    peaker.check(102.0)      # armed phase-2 historically
+    v2 = peaker.check(100.5)
+    assert not (v2.exit and "stale_flat" in v2.reason)
+    off = DSLTracker("OFF2", "long", 100.0, old, _policy(), leverage=1,
+                     entry_atr_pct=1.0)
+    v3 = off.check(99.0)
+    assert "stale_flat" not in (v3.reason or "")

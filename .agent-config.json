@@ -59,7 +59,8 @@
         "pct_above_entry": 20.0,
         "retrace_threshold": 0.12
       }
-    ]
+    ],
+    "stale_flat_timeout_minutes": 480
   },
   "force_execute_composite": 40,
   "force_execute_slow_burn_count": 2,

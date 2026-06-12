@@ -111,6 +111,15 @@ class ExitPolicy:
     atr_stop_mult: float = 1.5
     atr_stop_floor_pct: float = 1.0
     atr_stop_ceiling_pct: float = 4.0
+    # ── Stale-flat timeout (slot opportunity cost) ──────────────────────
+    # Cut a position that has NEVER armed phase-2 (peak profit < protect_pct)
+    # after this many minutes — it is statistically a drifter occupying a
+    # scarce slot. Evidence 2026-06-12: ETH held 20h below protect at -6% ROE
+    # while SIX breakout-override candidates (incl. xyz:RKLB) died at
+    # max_concurrent. Positions that ever reached protect are EXEMPT (the
+    # hard_timeout bucket's +3.41% avg is driven by agers that peaked).
+    # 0 = off.
+    stale_flat_timeout_minutes: float = 0.0
     phase2_tiers: List[RetraceTier] = field(default_factory=lambda: [
         RetraceTier(5.0, 0.30),   # 5% profit → give back 30%
         RetraceTier(10.0, 0.40),  # 10% profit → lock tighter, give back 40%
@@ -201,6 +210,22 @@ class DSLTracker:
         effective_max_loss = min(spot_cap, pol.max_loss_roe_pct / lev)
         # Reason string surfaces both inputs so it's obvious post-hoc
         # which cap was binding for a given exit.
+
+        # ── Stale-flat timeout ────────────────────────────────────────
+        # Only for positions that never armed phase-2: peak profit < protect.
+        if pol.stale_flat_timeout_minutes > 0 and elapsed_min >= pol.stale_flat_timeout_minutes:
+            if is_long:
+                peak_profit = (self.peak_px - self.entry_px) / self.entry_px * 100
+            else:
+                peak_profit = (self.entry_px - self.peak_px) / self.entry_px * 100
+            if peak_profit < pol.protect_pct:
+                return self._verdict(
+                    exit=True,
+                    reason=(f"stale_flat_timeout ({elapsed_min:.0f}min below protect; "
+                            f"peak {peak_profit:.2f}% < {pol.protect_pct}%)"),
+                    floor_price=None, peak_price=self.peak_px, phase="timeout",
+                    unrealized_pct=upct,
+                )
 
         # ── Hard timeout ──────────────────────────────────────────────
         if elapsed_min >= pol.hard_timeout_minutes:
@@ -364,6 +389,7 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         breakeven_trigger_pct=pol_raw.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
         breakeven_lock_pct=pol_raw.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
         atr_stop_enabled=pol_raw.get("atr_stop_enabled", ExitPolicy.atr_stop_enabled),
+        stale_flat_timeout_minutes=pol_raw.get("stale_flat_timeout_minutes", 0.0),
         atr_stop_mult=pol_raw.get("atr_stop_mult", ExitPolicy.atr_stop_mult),
         atr_stop_floor_pct=pol_raw.get("atr_stop_floor_pct", ExitPolicy.atr_stop_floor_pct),
         atr_stop_ceiling_pct=pol_raw.get("atr_stop_ceiling_pct", ExitPolicy.atr_stop_ceiling_pct),
@@ -496,6 +522,7 @@ def _policy_from_config() -> ExitPolicy:
             atr_stop_mult=float(atr_cfg.get("atr_mult", ExitPolicy.atr_stop_mult)),
             atr_stop_floor_pct=float(atr_cfg.get("floor_pct", ExitPolicy.atr_stop_floor_pct)),
             atr_stop_ceiling_pct=float(atr_cfg.get("ceiling_pct", ExitPolicy.atr_stop_ceiling_pct)),
+            stale_flat_timeout_minutes=float(dsl.get("stale_flat_timeout_minutes", 0.0) or 0.0),
             phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         )
     except Exception:
