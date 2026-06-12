@@ -130,3 +130,20 @@ def test_loss_cooldown_blocks_reentry(monkeypatch):
         assert "loss_cooldown" in res["reason"]
     finally:
         ex.memory._cooldowns.pop("TON", None)
+
+
+def test_degraded_read_filter_protects_daily_pnl(monkeypatch):
+    """A >25% equity spike within 180s must be IGNORED (partial-dex read);
+    the same value re-asserted after 180s must be ACCEPTED (real move)."""
+    from hermes_trader.agents.memory import AgentMemory
+    m = AgentMemory()
+    monkeypatch.setattr(m, "flush", lambda: None)
+    m._initialized = True
+    m.track_daily_pnl(100.0)          # baseline: SOD=100
+    m.track_daily_pnl(99.0)           # normal tick: dailyPnl=-1
+    assert round(m.get_daily_pnl(), 2) == -1.0
+    m.track_daily_pnl(59.7)           # phantom: -40% in seconds -> ignored
+    assert round(m.get_daily_pnl(), 2) == -1.0  # unchanged, kill-switch safe
+    m._last_eq_reading_ts -= 200      # pretend 200s passed -> now plausible
+    m.track_daily_pnl(59.7)           # sustained -> accepted
+    assert round(m.get_daily_pnl(), 2) == -40.3

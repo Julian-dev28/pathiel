@@ -138,6 +138,33 @@ class AgentMemory:
         old behavior).
         """
         from datetime import datetime, timezone
+        import time as _time
+        # ── Partial-dex degraded-read filter ────────────────────────────
+        # A flaky per-dex query can drop a whole clearinghouse from the
+        # aggregate (observed 2026-06-12 08:06: aggregate momentarily read
+        # xyz-only $59.7 vs true $98.7 → dailyPnl printed −$39 and tripped
+        # the daily-loss gate; had it landed in the heartbeat instead, the
+        # HARD kill-switch would have flattened the whole book on fiction).
+        # A real >25% equity move inside 3 minutes is impossible at ~2x
+        # gross book without liquidation, so reject fast spikes and keep
+        # the prior reading; a SUSTAINED move re-asserts itself after 180s
+        # and is then accepted (genuine crash detection delayed ≤3min).
+        now_s = _time.time()
+        prev_eq = getattr(self, "_last_eq_reading", 0.0)
+        prev_ts = getattr(self, "_last_eq_reading_ts", 0.0)
+        if (prev_eq > 0 and current_equity > 0
+                and (now_s - prev_ts) < 180
+                and abs(current_equity - prev_eq) / prev_eq > 0.25):
+            logger.error(
+                f"[memory] IMPLAUSIBLE equity swing ${prev_eq:.2f} -> "
+                f"${current_equity:.2f} in {now_s - prev_ts:.0f}s — suspected "
+                f"partial-dex degraded read; IGNORING this tick (kill-switch "
+                f"protected). If real, it will re-assert after 180s."
+            )
+            return
+        self._last_eq_reading = current_equity
+        self._last_eq_reading_ts = now_s
+
         today_utc = int(datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         ).timestamp())
