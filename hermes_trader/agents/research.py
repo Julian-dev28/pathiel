@@ -577,6 +577,18 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
             and t.get("fired")
         ),
+        # O'Neil breakout pair — feeds the breakout force-execute (a hedged AI
+        # PASS on a 20-period-high break WITH a volume surge gets upgraded;
+        # XPL +32% 2026-06-12 was researched 38x, PASSed 21x, never traded
+        # while both of these were fired hours before the move).
+        "breakout_fired": any(
+            t.get("name") == "breakout" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        "volume_spike_fired": any(
+            t.get("name") == "volumeSpike" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
         # OI+funding accumulation signal (oi_funding_anomaly). When present,
         # the coin shows whale-loading patterns (high OI, negative funding,
         # flat price). Used as a counter-regime bypass for LONGs.

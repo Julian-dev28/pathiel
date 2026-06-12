@@ -100,5 +100,6 @@
   "min_short_volume_usd": 50000000,
   "aligned_min_conf": 0.7,
   "loss_cooldown_min": 180,
-  "min_ai_close_hold_min": 25
+  "min_ai_close_hold_min": 25,
+  "breakout_force_execute": true
 }

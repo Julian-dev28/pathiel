@@ -147,3 +147,29 @@ def test_degraded_read_filter_protects_daily_pnl(monkeypatch):
     m._last_eq_reading_ts -= 200      # pretend 200s passed -> now plausible
     m.track_daily_pnl(59.7)           # sustained -> accepted
     assert round(m.get_daily_pnl(), 2) == -40.3
+
+
+def test_breakout_force_execute_upgrades_pass(monkeypatch):
+    """O'Neil rule: breakout+volume+composite>=40 upgrades a hedged PASS to
+    LONG — but NEVER a failure-PASS (ai_down still blocks)."""
+    from hermes_trader.agents import executor as ex
+    monkeypatch.setattr(
+        ex, "read_agent_config",
+        lambda: {"mode": "LIVE", "enable_crypto": True,
+                 "breakout_force_execute": True, "override_requires_ai": True},
+    )
+    base = {"id": "bo1", "coin": "XPL", "verdict": "PASS", "confidence": 0.55,
+            "composite_score": 45.0, "slow_burn_count": 0,
+            "breakout_fired": True, "volume_spike_fired": True}
+    # ai_down failure-PASS: refused before any upgrade
+    res = ex.maybe_execute({**base, "ai_down": True})
+    assert "override_blocked_ai_down" in res["reason"]
+    # genuine hedged PASS: upgraded → proceeds past the PASS guard to the
+    # equity check (same proof pattern as the whale-override test; a
+    # non-upgraded PASS would exit earlier with pass_no_override).
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(ex, "fetch_account_state", lambda u, **kw: {
+        "equity": 0.0, "available": 0.0, "dex_equity": {"": 0.0},
+        "dex_available": {"": 0.0}, "total_ntl": 0.0, "asset_positions": []})
+    res2 = ex.maybe_execute({**base, "ai_down": False})
+    assert "equity_unavailable" in (res2.get("reason") or "")

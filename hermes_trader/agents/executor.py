@@ -172,6 +172,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         float(analysis.get("composite_score", 0) or 0) >= override_composite
         and int(analysis.get("slow_burn_count", 0) or 0) >= override_min_slow_burn
     )
+    # Breakout force-execute (O'Neil rule, added 2026-06-12): a 20-period-high
+    # break WITH a volume spike and composite >= bar is an objectively strong
+    # setup — the AI hedged these to PASS 21x on XPL while it ran +32% (38
+    # researches, zero LONG verdicts, no gate ever blocked it). LONG path only:
+    # forced shorts are the audit's worst bucket (AI shorts 0/8).
+    breakout_strong = (
+        bool(config.get("breakout_force_execute", True))
+        and bool(analysis.get("breakout_fired"))
+        and bool(analysis.get("volume_spike_fired"))
+        and float(analysis.get("composite_score", 0) or 0) >= override_composite
+    )
     # A PASS produced by a FAILED LLM call (402/timeout → ai_down) is an error
     # code, not a hedged opinion — upgrading it trades blind with no AI judgment
     # behind the entry AND no working AI close behind the exit. Refuse the
@@ -179,7 +190,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # via override_requires_ai=false (reversible).
     _ai_down_block = bool(analysis.get("ai_down")) and \
         bool(config.get("override_requires_ai", True))
-    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired) \
+    if analysis.get("verdict") == "PASS" \
+            and (slow_burn_strong or whale_fired or breakout_strong) \
             and _ai_down_block:
         logger.info(
             f"[executor] Structural override SKIPPED on {analysis['coin']}: "
@@ -190,9 +202,11 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"],
             "reason": "override_blocked_ai_down (research failed; PASS is an error, not a verdict)",
         }
-    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired):
-        trigger = "whale-accumulation" if whale_fired else \
-            f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
+    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired or breakout_strong):
+        trigger = ("whale-accumulation" if whale_fired
+                   else f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
+                   if slow_burn_strong
+                   else "breakout+volume (O'Neil)")
         # Upgrade to the configured confidence floor (not a hardcoded 0.70) so a
         # structural/whale override still clears the confidence_gate after the bar
         # is raised. Otherwise raising min_ai_confidence would silently kill the
@@ -695,7 +709,12 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
             float(analysis.get("composite_score", 0) or 0) >= 40
             and int(analysis.get("slow_burn_count", 0) or 0) >= 2
         )
-        if has_whale or slow_burn_hint:
+        breakout_hint = (
+            bool(analysis.get("breakout_fired"))
+            and bool(analysis.get("volume_spike_fired"))
+            and float(analysis.get("composite_score", 0) or 0) >= 40
+        )
+        if has_whale or slow_burn_hint or breakout_hint:
             return {"action": "execute", "verdict": "PASS",
                     "result": execute_fn(analysis)}
         return {"action": "none", "verdict": "PASS", "result": None}
