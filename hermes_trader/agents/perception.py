@@ -284,8 +284,15 @@ def scan_once(
 
     # Filter: must have valid mid, exclude spot (@ or type=spot), then apply
     # asset-class gates + budget split.
+    # Eligibility falls back to the cached midPx/markPx when the live WS mid is
+    # missing — the live feed only covers a subset of HIP-3 coins, and requiring
+    # it silently shrank the HIP-3 scan pool to ~3 names against a 25-slot
+    # budget (xyz:QNT +9.0% / xyz:NBIS +8.2% / xyz:PURRDAT +10.3% / xyz:ARM
+    # +9.3% all absent from perceptions on 2026-06-12 while only CBRS/SKHX/SMSN
+    # scanned). _abs_pct_24h already uses this exact fallback for ranking.
     eligible = [m for m in universe
-                if mids.get(m["coin"], 0) > 0
+                if (mids.get(m["coin"], 0)
+                    or float(m.get("midPx") or m.get("markPx") or 0)) > 0
                 and not m["coin"].startswith("@")
                 and m.get("type") != "spot"]
     if not include_crypto:
