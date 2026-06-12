@@ -21,7 +21,9 @@
   "min_market_volume_usd": 800000,
   "min_hip3_volume_usd": 10000000,
   "coin_allowlist": [],
-  "coin_blocklist": [],
+  "coin_blocklist": [
+    "TON"
+  ],
   "hip3_dex_allowlist": [
     "xyz"
   ],
