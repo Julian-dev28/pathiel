@@ -177,11 +177,19 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # setup — the AI hedged these to PASS 21x on XPL while it ran +32% (38
     # researches, zero LONG verdicts, no gate ever blocked it). LONG path only:
     # forced shorts are the audit's worst bucket (AI shorts 0/8).
+    # RETUNED same-day (forensic on own rule): XPL's composite never exceeded
+    # 4.6 — the >=40 bar was DEAD for volume-surge setups (normalized composite
+    # barely moves on 1-2 fired triggers), and `breakout` never co-fired at scan
+    # times. XPL's actual signature: volumeSpike + uptrendMomentum + >=1 slow-burn
+    # (volumeBuildup1h/higherLows1h). Qualify on that, with composite>=bar kept
+    # as an alternative for true high-composite breaks.
     breakout_strong = (
         bool(config.get("breakout_force_execute", True))
-        and bool(analysis.get("breakout_fired"))
         and bool(analysis.get("volume_spike_fired"))
-        and float(analysis.get("composite_score", 0) or 0) >= override_composite
+        and (bool(analysis.get("breakout_fired"))
+             or bool(analysis.get("uptrend_momentum_fired")))
+        and (int(analysis.get("slow_burn_count", 0) or 0) >= 1
+             or float(analysis.get("composite_score", 0) or 0) >= override_composite)
     )
     # A PASS produced by a FAILED LLM call (402/timeout → ai_down) is an error
     # code, not a hedged opinion — upgrading it trades blind with no AI judgment
@@ -710,9 +718,11 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
             and int(analysis.get("slow_burn_count", 0) or 0) >= 2
         )
         breakout_hint = (
-            bool(analysis.get("breakout_fired"))
-            and bool(analysis.get("volume_spike_fired"))
-            and float(analysis.get("composite_score", 0) or 0) >= 40
+            bool(analysis.get("volume_spike_fired"))
+            and (bool(analysis.get("breakout_fired"))
+                 or bool(analysis.get("uptrend_momentum_fired")))
+            and (int(analysis.get("slow_burn_count", 0) or 0) >= 1
+                 or float(analysis.get("composite_score", 0) or 0) >= 40)
         )
         if has_whale or slow_burn_hint or breakout_hint:
             return {"action": "execute", "verdict": "PASS",

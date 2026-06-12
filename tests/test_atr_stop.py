@@ -173,3 +173,9 @@ def test_breakout_force_execute_upgrades_pass(monkeypatch):
         "dex_available": {"": 0.0}, "total_ntl": 0.0, "asset_positions": []})
     res2 = ex.maybe_execute({**base, "ai_down": False})
     assert "equity_unavailable" in (res2.get("reason") or "")
+    # XPL signature (composite ~0, no breakout trigger): volumeSpike +
+    # uptrendMomentum + 1 slow-burn must also qualify post-retune.
+    xpl = {**base, "id": "bo2", "breakout_fired": False, "composite_score": 4.6,
+           "uptrend_momentum_fired": True, "slow_burn_count": 2, "ai_down": False}
+    res3 = ex.maybe_execute(xpl)
+    assert "equity_unavailable" in (res3.get("reason") or "")

@@ -589,6 +589,10 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             t.get("name") == "volumeSpike" and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
+        "uptrend_momentum_fired": any(
+            t.get("name") == "uptrendMomentum" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
         # OI+funding accumulation signal (oi_funding_anomaly). When present,
         # the coin shows whale-loading patterns (high OI, negative funding,
         # flat price). Used as a counter-regime bypass for LONGs.
