@@ -159,6 +159,18 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
             "reason": "crypto_disabled (set enable_crypto=true to trade native HL perps)",
         }
 
+    # Shadow-signals (free-signal suite): log what GEX / FINRA short-vol / whale /
+    # news WOULD say about this candidate, to validate them forward before any is
+    # allowed to gate entries. Fire-and-forget on a daemon thread so it can NEVER
+    # add latency or amplify the execute hot path. Gated + hot-read reversible.
+    _shadow_cfg = config.get("shadow_signals") or {}
+    if bool(_shadow_cfg.get("enabled", False)):
+        try:
+            from hermes_trader.agents.shadow_signals import run_shadow_async
+            run_shadow_async(analysis["coin"], analysis.get("side", "long"), _shadow_cfg)
+        except Exception as _sh_e:
+            logger.debug(f"[shadow-signals] dispatch failed (non-fatal): {_sh_e}")
+
     # Structural-override: don't let a hedging AI PASS leave an objectively
     # strong accumulation setup on the table. Upgrade to LONG conf 0.70 and
     # let the gates do the real risk check. Two independent triggers, both
@@ -169,7 +181,27 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     #       (negative funding, flat price, high OI) is a high-conviction
     #       contrarian-to-retail setup we want to capitalize on even when the
     #       AI hedges and even against trend.
-    override_composite = float(config.get("force_execute_composite", 40))
+    # Live signal enforcement (Veto + Boost, 2026-06-16): consult our free signals
+    # (GEX / FINRA short-vol / aggTrades whale / news) to gate the FORCED-OVERRIDE
+    # path. CACHE-ONLY (never fetches here — the async shadow advisor above warms
+    # the caches; cold cache => fail-open). BOOST lowers the override bar for a name
+    # with a strong catalyst (breaking news / whale buying / crowded-short squeeze)
+    # so we catch more rippers; VETO (applied below) blocks chop-traps / whales
+    # dumping. Bounded: never bypasses the risk/regime/counter-trend/kill gates.
+    _enf = None
+    _base_override_composite = float(config.get("force_execute_composite", 40))
+    override_composite = _base_override_composite
+    try:
+        from hermes_trader.agents.shadow_signals import enforce_signals
+        _enf = enforce_signals(analysis["coin"], "long", config)
+        if _enf and _enf.boost:
+            _delta = float((config.get("signal_enforcement") or {}).get("boost_bar_delta", 4))
+            override_composite = max(0.0, _base_override_composite - _delta)
+            logger.info(f"[executor] signal BOOST on {analysis['coin']}: "
+                        f"override bar {_base_override_composite:.0f}→{override_composite:.0f} "
+                        f"({_enf.boost_reason})")
+    except Exception as _enf_e:
+        logger.debug(f"[executor] signal enforcement failed (non-fatal): {_enf_e}")
     override_min_slow_burn = int(config.get("force_execute_slow_burn_count", 2))
     # whale_force_execute gates whether a whale signal alone can upgrade a PASS.
     whale_fired = bool(analysis.get("whale_signal")) and bool(config.get("whale_force_execute", True))
@@ -196,6 +228,20 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         and (int(analysis.get("slow_burn_count", 0) or 0) >= 1
              or float(analysis.get("composite_score", 0) or 0) >= override_composite)
     )
+    # Composite force-execute (validated 2026-06-15): a TA-CONFIRMED signal whose
+    # composite clears the bar enters even on an AI PASS, REGARDLESS of the
+    # breakout/whale pattern. Root cause it fixes: the AI lagged/vetoed real movers
+    # the funnel had already confirmed (GRASS confirmed at the base → AI PASS 8h;
+    # xyz equities WDC/BIRD at composite 34 → PASS, never entered). Replay across
+    # the 64 PASS'd composite-30 names was net +121.8% spot / 64% win, duds capped
+    # at the ROE stop (−1.85% @10x); xyz subset +17.4%. LONG-only; the market_regime
+    # gate STILL blocks counter-trend longs (override conf < counter_regime bar), so
+    # downtrend duds are filtered. Gated `composite_force_execute` (hot-read → revert
+    # instantly to 40/off if a down regime floods duds).
+    composite_strong = (
+        bool(config.get("composite_force_execute", False))
+        and float(analysis.get("composite_score", 0) or 0) >= override_composite
+    )
     # A PASS produced by a FAILED LLM call (402/timeout → ai_down) is an error
     # code, not a hedged opinion — upgrading it trades blind with no AI judgment
     # behind the entry AND no working AI close behind the exit. Refuse the
@@ -204,7 +250,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     _ai_down_block = bool(analysis.get("ai_down")) and \
         bool(config.get("override_requires_ai", True))
     if analysis.get("verdict") == "PASS" \
-            and (slow_burn_strong or whale_fired or breakout_strong) \
+            and (slow_burn_strong or whale_fired or breakout_strong or composite_strong) \
             and _ai_down_block:
         logger.info(
             f"[executor] Structural override SKIPPED on {analysis['coin']}: "
@@ -215,11 +261,38 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
             "analysis_id": analysis["id"],
             "reason": "override_blocked_ai_down (research failed; PASS is an error, not a verdict)",
         }
-    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired or breakout_strong):
+    # Signal VETO (Veto+Boost live, 2026-06-16): block a FORCED override LONG when
+    # our free signals say it's a trap — xyz pinned in long-gamma against the call
+    # wall (GEX pin-trap), or crypto with whales aggressively DUMPING (aggTrades).
+    # CACHE-ONLY (computed above in `_enf`, no network here). Only the forced path,
+    # LONG only — never an AI-conviction LONG, never a short. Fully reversible via
+    # signal_enforcement.enabled / .veto (hot-read). gex_signal.shadow_mode (if set)
+    # still downgrades the GEX veto to log-only.
+    if analysis.get("verdict") == "PASS" \
+            and (slow_burn_strong or whale_fired or breakout_strong or composite_strong) \
+            and _enf is not None and _enf.veto:
+        _gex_shadow = ":" in analysis["coin"] and \
+            bool((config.get("gex_signal") or {}).get("shadow_mode", False))
+        if _gex_shadow:
+            logger.info(f"[executor] signal VETO [GEX SHADOW — not blocked] on "
+                        f"{analysis['coin']}: {_enf.veto_reason}")
+            analysis = dict(analysis)
+            analysis["signal_veto"] = _enf.veto_reason
+        else:
+            logger.info(f"[executor] signal VETO — forced override SKIPPED on "
+                        f"{analysis['coin']}: {_enf.veto_reason}")
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "reason": f"signal_veto ({_enf.veto_reason})",
+            }
+
+    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired or breakout_strong or composite_strong):
         trigger = ("whale-accumulation" if whale_fired
                    else f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
                    if slow_burn_strong
-                   else "breakout+volume (O'Neil)")
+                   else "breakout+volume (O'Neil)" if breakout_strong
+                   else f"composite={analysis.get('composite_score'):.0f}>={override_composite:.0f} (momentum force)")
         # Upgrade to the configured confidence floor (not a hardcoded 0.70) so a
         # structural/whale override still clears the confidence_gate after the bar
         # is raised. Otherwise raising min_ai_confidence would silently kill the
@@ -813,6 +886,8 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
         # reached via this router — so route a hinted PASS to it instead of
         # dropping it. Without this the force-execute-on-PASS code was dead:
         # the AI hedges to PASS on exactly the contrarian whale setups it's for.
+        _rv_cfg = read_agent_config()
+        _bar = float(_rv_cfg.get("force_execute_composite", 40))
         has_whale = bool(analysis.get("whale_signal"))
         slow_burn_hint = (
             float(analysis.get("composite_score", 0) or 0) >= 40
@@ -825,7 +900,14 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
             and (int(analysis.get("slow_burn_count", 0) or 0) >= 1
                  or float(analysis.get("composite_score", 0) or 0) >= 40)
         )
-        if has_whale or slow_burn_hint or breakout_hint:
+        # Composite hint: route a TA-confirmed composite>=bar PASS to maybe_execute
+        # so its (gated) composite_force_execute path can upgrade it. No-ops cleanly
+        # in maybe_execute when the flag is off, so this is safe either way.
+        composite_hint = (
+            bool(_rv_cfg.get("composite_force_execute", False))
+            and float(analysis.get("composite_score", 0) or 0) >= _bar
+        )
+        if has_whale or slow_burn_hint or breakout_hint or composite_hint:
             return {"action": "execute", "verdict": "PASS",
                     "result": execute_fn(analysis)}
         return {"action": "none", "verdict": "PASS", "result": None}
