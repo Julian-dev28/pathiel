@@ -34,9 +34,13 @@ def _base_symbol(coin: str) -> str:
     return t
 
 
-def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = None,
+                          allow_fetch: bool = True) -> Dict[str, Any]:
     """Compute every applicable free signal for `coin`. Each is individually
-    try/excepted so one outage never blanks the rest. Returns a compact dict."""
+    try/excepted so one outage never blanks the rest. Returns a compact dict.
+
+    allow_fetch=False = CACHE-ONLY (no network) — used to snapshot the signals AT
+    ENTRY on the hot path for the forward backtest, without amplifying the path."""
     sub = sub or {}
     out: Dict[str, Any] = {}
     is_hip3 = ":" in (coin or "")
@@ -45,7 +49,7 @@ def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = 
         if sub.get("gex", True):
             try:
                 from hermes_trader.agents.options_gex import gex_signal_cached
-                r = gex_signal_cached(coin)
+                r = gex_signal_cached(coin, allow_fetch=allow_fetch)
                 if r:
                     out["gex"] = {"regime": r.regime, "call_wall": r.call_wall,
                                   "put_wall": r.put_wall, "gamma_flip": r.gamma_flip,
@@ -55,7 +59,7 @@ def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = 
         if sub.get("short_volume", True):
             try:
                 from hermes_trader.agents.short_volume import short_volume_signal
-                r = short_volume_signal(coin)
+                r = short_volume_signal(coin, allow_fetch=allow_fetch)
                 if r:
                     out["short_vol"] = {"ratio": r.ratio, "regime": r.regime, "trend": r.trend}
             except Exception as e:
@@ -64,7 +68,8 @@ def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = 
         if sub.get("crypto_whale", True):
             try:
                 from hermes_trader.agents.crypto_whale import crypto_whale_signal
-                r = crypto_whale_signal(coin, window_minutes=float(sub.get("whale_window_min", 15)))
+                r = crypto_whale_signal(coin, window_minutes=float(sub.get("whale_window_min", 15)),
+                                        allow_fetch=allow_fetch)
                 if r:
                     out["whale"] = {"bias": r.bias, "net_usd": r.net_usd,
                                     "whale_n": r.whale_n, "window_min": r.window_minutes}
@@ -74,7 +79,7 @@ def gather_shadow_signals(coin: str, side: str, sub: Optional[Dict[str, Any]] = 
     if sub.get("news", True):
         try:
             from hermes_trader.agents.news_catalyst import catalyst_scan
-            r = catalyst_scan(_base_symbol(coin), timespan="1h")
+            r = catalyst_scan(_base_symbol(coin), timespan="1h", allow_fetch=allow_fetch)
             if r and (r.breaking or r.surge_x >= 1.5):
                 top = r.headlines[0].title[:80] if r.headlines else ""
                 out["news"] = {"breaking": r.breaking, "surge_x": r.surge_x,

@@ -123,6 +123,18 @@ def test_enforce_boost_whale_buying(monkeypatch):
     assert e.boost and "buying" in e.boost_reason
 
 
+def test_entry_context_roundtrip():
+    from hermes_trader.agents.memory import AgentMemory
+    m = AgentMemory()
+    m._initialized = True   # allow flush() (writes to the conftest temp file)
+    m.record_entry_context("ETH", "long",
+                           {"entry_time": 123, "signals": {"whale": {"bias": "whale_buying"}}})
+    ctx = m.pop_entry_context("ETH", "long")
+    assert ctx["entry_time"] == 123
+    assert ctx["signals"]["whale"]["bias"] == "whale_buying"
+    assert m.pop_entry_context("ETH", "long") == {}   # cleared after pop
+
+
 def test_enforce_veto_takes_precedence_over_boost(monkeypatch):
     # whale selling (veto) should short-circuit before any boost is considered
     monkeypatch.setattr(cw_mod, "crypto_whale_signal", lambda *a, **k: WhaleReport(

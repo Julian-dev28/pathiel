@@ -767,6 +767,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
                       entry_atr_pct=entry_atr_pct)
     logger.info(f"[executor] Registered DSL exit for {coin} {trade_side} @ {mid_price} ({leverage}x)")
 
+    _entry_ts = int(time.time() * 1000)
     memory.record_trade({
         "id": str(uuid.uuid4()),
         "analysis_id": analysis["id"],
@@ -775,8 +776,30 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         "entry_px": mid_price,
         "size_usd": position_notional,
         "order_id": order_res.get("order_id"),
-        "executed_at": int(time.time() * 1000),
+        "executed_at": _entry_ts,
     })
+
+    # Entry-context snapshot for the forward signal backtest: record WHEN we opened
+    # and WHAT the free signals said at entry (cache-only — no network on the hot
+    # path) plus the enforcement decision. The matching close pulls this so each
+    # outcome row carries (entry_time, signals_at_entry) — the join the backtest
+    # needs and that the outcome store previously lacked.
+    try:
+        from hermes_trader.agents.shadow_signals import gather_shadow_signals
+        _entry_sig = gather_shadow_signals(coin, trade_side,
+                                           config.get("shadow_signals") or {}, allow_fetch=False)
+        memory.record_entry_context(coin, trade_side, {
+            "entry_time": _entry_ts,
+            "signals": _entry_sig,
+            "enforcement": ({"veto": _enf.veto, "veto_reason": _enf.veto_reason,
+                             "boost": _enf.boost, "boost_reason": _enf.boost_reason}
+                            if _enf is not None else {}),
+            "override_bar": override_composite,
+            "forced_override": analysis.get("verdict") == "LONG"
+                               and "[structural override]" in (analysis.get("reasoning") or ""),
+        })
+    except Exception as _ec_e:
+        logger.debug(f"[executor] entry-context capture failed (non-fatal): {_ec_e}")
 
     # Backup exchange stop-loss bracket — fires server-side (instantly, between our
     # 60s DSL checks) to cap the gap-throughs the DSL loop misses. DSL is still the
@@ -1000,6 +1023,14 @@ def close_position_market(coin: str) -> Dict[str, Any]:
             # Wrapped: a bookkeeping failure must never abort a close.
             try:
                 _notional_entry = abs(szi) * entry_px
+                _closed_at = int(time.time() * 1000)
+                # Pull the entry-context snapshot (entry time + signals at entry +
+                # enforcement) so this outcome row is self-contained for the forward
+                # signal backtest. Empty {} for positions opened before this shipped.
+                _ec = memory.pop_entry_context(coin, side)
+                _entry_time = _ec.get("entry_time")
+                _hold_min = (round((_closed_at - _entry_time) / 60000.0, 1)
+                             if _entry_time else None)
                 memory.record_close({
                     "coin": coin, "side": side,
                     "entry_px": entry_px, "exit_px": fill_px,
@@ -1008,7 +1039,13 @@ def close_position_market(coin: str) -> Dict[str, Any]:
                     "realized_pnl_pct": out["realized_pnl_pct"],   # leveraged, net fees
                     "realized_pnl_usd": round(_notional_entry * spot_pct / 100.0, 4),
                     "leverage": leverage,
-                    "closed_at": int(time.time() * 1000),
+                    "closed_at": _closed_at,
+                    # forward-backtest fields:
+                    "entry_time": _entry_time,
+                    "hold_minutes": _hold_min,
+                    "signals_at_entry": _ec.get("signals") or {},
+                    "enforcement_at_entry": _ec.get("enforcement") or {},
+                    "forced_override": _ec.get("forced_override"),
                 })
             except Exception as _rc_e:
                 logger.warning(f"[outcome-store] record_close failed for {coin} (non-fatal): {_rc_e}")

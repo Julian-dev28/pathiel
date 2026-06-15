@@ -36,6 +36,9 @@ class AgentMemory:
         self._analyses: List[Dict[str, Any]] = []
         self._trades: List[Dict[str, Any]] = []
         self._closes: List[Dict[str, Any]] = []  # realized exits (the trade-outcome store)
+        # Entry context keyed by "COIN_side" — entry time + the signal snapshot at
+        # entry, so the matching close can carry it for the forward signal backtest.
+        self._entry_ctx: Dict[str, Dict[str, Any]] = {}
         self._cooldowns: Dict[str, int] = {}
         self._equity: float = 0
         self._daily_pnl: float = 0
@@ -65,6 +68,7 @@ class AgentMemory:
             self._analyses = (data.get("analyses") or [])[:MAX_ANALYSES]
             self._trades = (data.get("trades") or [])[:MAX_TRADES]
             self._closes = (data.get("closes") or [])[:MAX_CLOSES]
+            self._entry_ctx = data.get("entryCtx") or {}
 
             # Rebuild cooldowns
             self._cooldowns.clear()
@@ -108,6 +112,7 @@ class AgentMemory:
                 "analyses": self._analyses,
                 "trades": self._trades,
                 "closes": self._closes,
+                "entryCtx": self._entry_ctx,
                 "cooldowns": [{"coin": coin, "expires": exp} for coin, exp in self._cooldowns.items()],
                 "equity": self._equity,
                 "dailyPnl": self._daily_pnl,
@@ -136,6 +141,19 @@ class AgentMemory:
         self._trades.append(t)
         if len(self._trades) > MAX_TRADES:
             self._trades.pop(0)
+
+    def record_entry_context(self, coin: str, side: str, ctx: Dict[str, Any]) -> None:
+        """Stash entry time + signal snapshot for an opening position, so its close
+        can carry it into the outcome store (forward signal backtest)."""
+        self._entry_ctx[f"{coin}_{side}"] = ctx
+        self.flush()
+
+    def pop_entry_context(self, coin: str, side: str) -> Dict[str, Any]:
+        """Retrieve + clear the entry context for a closing position (or {})."""
+        ctx = self._entry_ctx.pop(f"{coin}_{side}", {})
+        if ctx:
+            self.flush()
+        return ctx
 
     def record_close(self, c: Dict[str, Any]) -> None:
         """Append a realized exit to the outcome store and persist.
