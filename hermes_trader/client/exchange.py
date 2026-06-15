@@ -276,6 +276,14 @@ def get_all_hl_mids(include_hip3: bool = False) -> Dict[str, float]:
     """
     info = _get_info()
     raw = info.all_mids() or {}
+    # Freshness assertion (Phase-0 hardening): an empty main all_mids() is a
+    # degraded read, not an empty market — every perp has a mid. Silently
+    # returning {} freezes every DSL tracker (advance() short-circuits on a
+    # missing mid) with no trace. Flag it loudly.
+    if not raw:
+        logger.warning(
+            "[get_all_hl_mids] FEED-FRESHNESS: main all_mids() returned EMPTY "
+            "(degraded read) — DSL trackers will get no price this pass")
     out: Dict[str, float] = {}
     for k, v in raw.items():
         try:
@@ -285,10 +293,12 @@ def get_all_hl_mids(include_hip3: bool = False) -> Dict[str, float]:
     if include_hip3:
         try:
             from hermes_trader.client.universe import list_hip3_dexes
+            _hip3_dropped = 0
             for dex in list_hip3_dexes():
                 try:
                     dex_mids = info.all_mids(dex=dex) or {}
                 except Exception as e:
+                    _hip3_dropped += 1
                     logger.warning(f"[get_all_hl_mids] HIP-3 all_mids failed for dex={dex}: {e}")
                     continue
                 for k, v in dex_mids.items():
@@ -296,6 +306,11 @@ def get_all_hl_mids(include_hip3: bool = False) -> Dict[str, float]:
                         out[k] = float(v)
                     except (TypeError, ValueError):
                         continue
+            if _hip3_dropped:
+                logger.warning(
+                    f"[get_all_hl_mids] FEED-FRESHNESS: {_hip3_dropped} HIP-3 dex(es) "
+                    f"dropped from mids this pass — their positions' DSL trackers get "
+                    f"no price (peak/floor frozen until next good read)")
         except Exception as e:
             logger.warning(f"[get_all_hl_mids] HIP-3 dex enumeration failed: {e}")
     return out

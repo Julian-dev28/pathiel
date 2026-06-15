@@ -130,6 +130,17 @@ universe_refresh_s = int(os.environ.get('HERMES_UNIVERSE_REFRESH_S', '1800'))
 _last_universe_refresh = time.time()
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 
+# Startup grace: the prewarm burst above + the cold-cache first scan (every
+# coin's candles fetched fresh) + any tail from the just-killed process all hit
+# the SAME per-IP HL budget at once → the restart 429-storm (observed 2026-06-15:
+# ~30% scan data-gaps for ~2min, loop stalled). Pause so the rate-limiter bucket
+# refills before the first scan fires its full candle burst. Env-overridable;
+# 0 disables. Cheap one-time cost; steady-state scans are unaffected.
+_startup_grace_s = float(os.environ.get('HERMES_STARTUP_GRACE_S', '12'))
+if _startup_grace_s > 0:
+    logger.info(f"[startup] grace delay {_startup_grace_s:.0f}s — letting HL rate budget refill before the first cold scan")
+    time.sleep(_startup_grace_s)
+
 # Scan cadence: env-overridable, default 60s. Keep it above the candle cache
 # TTL (config.scan.cacheTtlMs) so every scan reads a fresh candle snapshot.
 scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))

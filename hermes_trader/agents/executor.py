@@ -125,8 +125,13 @@ def _conviction_multiplier(confidence: float, tiers: List[tuple]) -> float:
     return tiers[-1][1]
 
 
-def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute an analysis through risk gates and into the market."""
+def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Dict[str, Any]:
+    """Execute an analysis through risk gates and into the market.
+
+    `_rotation_retry` is set on the single self-retry after capital rotation
+    closed a weak position to free room — it blocks a second rotation so we can
+    never loop.
+    """
     config = read_agent_config()
     mode = str(config.get("mode", "OFF"))
 
@@ -418,32 +423,37 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # bet bigger and low-conviction trades bet smaller — same average
     # exposure across many trades, but asymmetric per-trade. Disabled by
     # setting "conviction_sizing": false in config.
-    base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
-    if bool(config.get("conviction_sizing", True)):
-        conf = float(analysis.get("confidence", 0) or 0)
-        tiers = _parse_conviction_tiers(config.get("conviction_tiers"))
-        conviction_mult = _conviction_multiplier(conf, tiers)
-        # Whale-signal boost: when smart-money accumulation is flagged on this
-        # coin, bet bigger to capitalize. Multiplies on top of the confidence
-        # tier and clamps so a whale + high-conf trade can't exceed 2× base.
-        if analysis.get("whale_signal"):
-            whale_mult = float(config.get("whale_size_multiplier", 1.3))
-            conviction_mult = min(conviction_mult * whale_mult, 2.0)
-    else:
-        conviction_mult = 1.0
-    equity_fraction = base_fraction * conviction_mult
     leverage = min(int(config.get("leverage", HL_LEVERAGE)),
                    get_max_leverage(analysis["coin"]))
-    trade_notional = equity * equity_fraction * leverage
-    # Clamp to the per-trade notional ceiling so an oversized conviction bet is
-    # SIZED DOWN to the cap rather than REJECTED by the notional gate — we want
-    # smaller positions, not fewer trades. (kelly_size already clamps; this
-    # conviction-sizing path did not, so a >cap bet was dropped entirely.)
     _notional_cap = float(config.get("max_trade_notional_usd", 0) or 0)
-    if _notional_cap > 0 and trade_notional > _notional_cap:
-        logger.info(f"[executor] notional ${trade_notional:.0f} > cap "
-                    f"${_notional_cap:.0f} — clamping to cap")
-        trade_notional = _notional_cap
+
+    # Legacy conviction sizing always runs FIRST — it's cheap (no API) and its
+    # notional is what the gates evaluate. When ATR equal-risk sizing is enabled
+    # the notional is RE-DERIVED post-gate (below), reusing the mid/atr already
+    # fetched for the order — zero extra API calls (the earlier pre-gate fetch
+    # design amplified the HL 429 storm; see the post-gate block).
+    if True:
+        # Per-trade size = equity × fraction × leverage × conviction_multiplier.
+        base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
+        if bool(config.get("conviction_sizing", True)):
+            conf = float(analysis.get("confidence", 0) or 0)
+            tiers = _parse_conviction_tiers(config.get("conviction_tiers"))
+            conviction_mult = _conviction_multiplier(conf, tiers)
+            # Whale-signal boost: when smart-money accumulation is flagged on this
+            # coin, bet bigger. Clamps so a whale + high-conf trade can't exceed 2× base.
+            if analysis.get("whale_signal"):
+                whale_mult = float(config.get("whale_size_multiplier", 1.3))
+                conviction_mult = min(conviction_mult * whale_mult, 2.0)
+        else:
+            conviction_mult = 1.0
+        equity_fraction = base_fraction * conviction_mult
+        trade_notional = equity * equity_fraction * leverage
+        # Clamp to the per-trade notional ceiling so an oversized conviction bet is
+        # SIZED DOWN to the cap rather than REJECTED by the notional gate.
+        if _notional_cap > 0 and trade_notional > _notional_cap:
+            logger.info(f"[executor] notional ${trade_notional:.0f} > cap "
+                        f"${_notional_cap:.0f} — clamping to cap")
+            trade_notional = _notional_cap
 
     recent_trades = memory.get_recent_trades(10)
     last_trade = next(
@@ -505,6 +515,61 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     gate_output = eval_all_gates(ctx, config, last_trade_time)
 
     if gate_output["blocked"]:
+        # ── Capital-rotation (Phase-1 lever) — SHADOW by default ─────────────
+        # Phase-1 finding: 94% of missed movers die at the 300% cap / max_concurrent
+        # (book full), not at the signal. When a strong fresh candidate is blocked
+        # PURELY by capital, evaluate whether it should displace the weakest stale
+        # non-winner. shadow_mode logs the decision WITHOUT acting so we validate
+        # the ranking on live data before it ever moves real money. Fully wrapped:
+        # a rotation bug can never break the (already-blocked) execution path.
+        try:
+            _rot = config.get("capital_rotation", {}) or {}
+            if bool(_rot.get("enabled", False)):
+                from hermes_trader.agents.rotation import decide_rotation
+                _now_ms = time.time() * 1000
+                _trade_ts = memory.latest_trade_ts_by_coin(50)
+                _opos = []
+                for _p in (state.get("asset_positions") or []):
+                    _pp = _p.get("position", {}) or {}
+                    _c = _pp.get("coin")
+                    if not _c:
+                        continue
+                    _opos.append({
+                        "coin": _c,
+                        "roe_pct": float(_pp.get("returnOnEquity", 0) or 0) * 100,
+                        "age_minutes": (_now_ms - _trade_ts.get(_c, _now_ms)) / 60000.0,
+                    })
+                _d = decide_rotation(
+                    candidate_coin=analysis["coin"],
+                    candidate_composite=float(analysis.get("composite_score", 0) or 0),
+                    blocked_reasons=gate_output["block_reasons"],
+                    open_positions=_opos,
+                    min_candidate_composite=float(_rot.get("min_candidate_composite", 40.0)),
+                    min_hold_minutes=float(_rot.get("min_hold_minutes", 30.0)),
+                    protect_winner_roe_pct=float(_rot.get("protect_winner_roe_pct", 3.0)),
+                )
+                if _d.should_rotate and not _rotation_retry:
+                    if bool(_rot.get("shadow_mode", True)):
+                        logger.warning(f"[rotation][SHADOW] {_d.reason} "
+                                       f"(would execute if rotation goes live)")
+                    else:
+                        # LIVE: close the weakest non-winner to free capital, then
+                        # retry THIS candidate once. The retry re-reads account state
+                        # (sees the freed margin/slot) and goes through every risk
+                        # gate again — rotation only relieves the capital constraint,
+                        # it never bypasses a real veto. _rotation_retry=True blocks a
+                        # second rotation so this can't loop.
+                        logger.warning(f"[rotation][LIVE] {_d.reason} — closing {_d.evict_coin}")
+                        _cr = close_position_market(_d.evict_coin)
+                        if _cr.get("ok"):
+                            logger.warning(f"[rotation][LIVE] evicted {_d.evict_coin} "
+                                           f"(rl {_cr.get('realized_pnl_pct')}%) → retrying {analysis['coin']}")
+                            return maybe_execute(analysis, _rotation_retry=True)
+                        logger.warning(f"[rotation][LIVE] evict {_d.evict_coin} failed "
+                                       f"({_cr.get('error')}) — no rotation")
+        except Exception as _e:
+            logger.warning(f"[rotation] eval failed (non-fatal): {_e}")
+
         # Don't write blocked attempts to memory._trades — the cooldown gate
         # keys off the most recent trade-by-coin and would self-perpetuate.
         # Visibility comes from the `execute` event in the session log.
@@ -553,6 +618,41 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "executed": False, "mode": mode, "analysis_id": analysis["id"],
             "reason": f"no_atr_no_stop ({coin}: insufficient candle history to size a stop)",
         }
+
+    # ── ATR equal-risk re-sizing (Turtle "N") — amplification-free ───────────
+    # Reuses the mid_price + atr ALREADY fetched above (ZERO extra API calls — the
+    # earlier pre-gate fetch design amplified the HL 429 storm; this runs post-gate
+    # so it only touches trades that already passed every risk gate). Re-derives
+    # the notional to risk a fixed % of equity to the stop, then clamps to BOTH the
+    # per-trade $ cap AND the remaining 300% portfolio-exposure room the gate just
+    # approved — so resizing can never exceed what the risk gates allowed.
+    # Hot-read flag → instant off via config, no restart.
+    _atr_sizing = config.get("atr_risk_sizing", {}) or {}
+    if bool(_atr_sizing.get("enabled", False)):
+        from hermes_trader.agents.sizing import atr_equal_risk_notional
+        _max_total_pct = float(config.get("max_total_notional_pct", 0) or 0)
+        _room = (_max_total_pct * agg_equity - total_open_notional) if _max_total_pct > 0 else 0.0
+        _cap = _notional_cap
+        if _room > 0:
+            _cap = min(_cap, _room) if _cap > 0 else _room
+        _sz = atr_equal_risk_notional(
+            equity=agg_equity,
+            risk_per_trade_pct=float(_atr_sizing.get("risk_per_trade_pct", 0.0075)),
+            atr_abs=atr, entry_px=mid_price,
+            sl_atr_mult=float(config.get("sl_atr_mult", _DEFAULT_SL_ATR_MULT)),
+            max_trade_notional_usd=_cap,
+            coin_max_leverage=get_max_leverage(coin),
+            config_max_leverage=int(config.get("leverage", HL_LEVERAGE)),
+        )
+        if _sz.notional_usd > 0:
+            trade_notional = _sz.notional_usd
+            position_notional = trade_notional
+            size_in_coin = trade_notional / mid_price
+            logger.info(
+                f"[executor] ATR equal-risk sizing {coin}: notional ${trade_notional:.0f} "
+                f"(impl_lev {_sz.implied_leverage:.1f}x, risk ${_sz.risk_usd:.2f} @ "
+                f"{_sz.stop_distance_frac*100:.2f}% stop"
+                f"{', clamped:'+_sz.clamped_by if _sz.clamped_by else ''})")
 
     set_leverage(coin, leverage)
     order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin)
@@ -811,6 +911,25 @@ def close_position_market(coin: str) -> Dict[str, Any]:
             out["spot_pct"] = round(spot_pct, 4)
             out["realized_pnl_pct"] = round(spot_pct * leverage - fees_pct, 4)
             out["fees_pct"] = round(fees_pct, 4)
+            # ── Trade-outcome store ─────────────────────────────────────────
+            # Persist the realized exit so win-rate / payoff / risk-of-ruin /
+            # Phase-3 stats have a real source (trades[].pnl was never written).
+            # Single chokepoint → covers DSL, AI-close, and kill-switch exits.
+            # Wrapped: a bookkeeping failure must never abort a close.
+            try:
+                _notional_entry = abs(szi) * entry_px
+                memory.record_close({
+                    "coin": coin, "side": side,
+                    "entry_px": entry_px, "exit_px": fill_px,
+                    "size_coin": abs(szi), "notional_usd": round(_notional_entry, 4),
+                    "spot_pct": out["spot_pct"],
+                    "realized_pnl_pct": out["realized_pnl_pct"],   # leveraged, net fees
+                    "realized_pnl_usd": round(_notional_entry * spot_pct / 100.0, 4),
+                    "leverage": leverage,
+                    "closed_at": int(time.time() * 1000),
+                })
+            except Exception as _rc_e:
+                logger.warning(f"[outcome-store] record_close failed for {coin} (non-fatal): {_rc_e}")
             # Loss cooldown: a losing close arms an extended re-entry block on
             # this coin (config `loss_cooldown_min`, 0 = off). Anti-revenge rule:
             # TON was churned 3x in one day because the standard cooldown expired

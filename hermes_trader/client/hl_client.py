@@ -204,6 +204,14 @@ def fetch_hl_candles(
     if not isinstance(raw, list):
         # Persisted across retries. Do NOT cache failures/empties — caching a bad
         # read would blank the coin for the whole TTL. Let the next call retry.
+        # A non-list AFTER we already retried means a real transient-failure data
+        # gap (429/timeout), NOT "no history" — warn so it isn't silently read as
+        # "no signal" downstream. (attempts==0 path can't reach here: the first
+        # raw was already non-list, so attempts is always >=1 when we land here.)
+        logger.warning(
+            f"[candles] {coin} {interval}: fetch failed across {attempts} retries "
+            f"(transient 429/timeout) — returning EMPTY; this coin reads as "
+            f"'no signal' this scan (silent data gap)")
         return []
 
     candles = [

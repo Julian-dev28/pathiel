@@ -127,6 +127,18 @@ class ExitPolicy:
         RetraceTier(50.0, 0.60),  # 50% profit → lock most profit
     ])
     consecutive_breaches_required: int = 1  # Number of consecutive floor breaches before exit
+    # ── Patch A: don't exit inside the noise band (sub-first-tier) ──────────
+    # Phase-3 finding: on strong movers we trailing-exited at +0.6–1.2% (the 0.30
+    # give-back applied to a barely-green position) while the trend kept running,
+    # then re-bought higher and stopped at the top. Below the FIRST phase-2 tier,
+    # if a floor breach would fire but the pull-back from peak is still INSIDE the
+    # name's volatility noise band, HOLD — let it clear the tier (real trend) or
+    # fall to the hard max_loss stop (which is checked earlier and NOT suppressed).
+    # The band is ATR-RELATIVE (noise_band_atr_mult × entry_atr_pct), not a
+    # hardcoded %, so it generalizes across vol regimes. Same class of fix as the
+    # old too-tight 1.2% stop: exiting inside the noise band is -EV churn.
+    noise_band_enabled: bool = False
+    noise_band_atr_mult: float = 1.0  # pull-back tolerated = this × entry ATR% (only sub-first-tier)
 
 
 class DSLTracker:
@@ -316,6 +328,26 @@ class DSLTracker:
 
         # ── Floor breach check ────────────────────────────────────────
         breached = (is_long and mark_px < floor) or (not is_long and mark_px > floor)
+        # Patch A — noise-band suppression (sub-first-tier only). The hard
+        # max_loss stop already returned above; this only governs the trailing
+        # give-back of a barely-green position. If peak profit hasn't yet cleared
+        # the first phase-2 tier AND the current pull-back from peak is inside the
+        # ATR noise band, treat it as NOT breached (hold) so we don't concede
+        # inside the noise. Requires an ATR captured at entry; degrades to current
+        # behavior when absent.
+        if breached and pol.noise_band_enabled and self.entry_atr_pct > 0:
+            first_tier_pct = min((t.pct_above_entry for t in pol.phase2_tiers), default=3.0)
+            peak_profit_pct = (abs(self.peak_px - self.entry_px) / self.entry_px) * 100
+            pullback_pct = (abs(self.peak_px - mark_px) / self.entry_px) * 100
+            band = pol.noise_band_atr_mult * self.entry_atr_pct
+            if peak_profit_pct < first_tier_pct and pullback_pct <= band:
+                self.consecutive_breaches = 0
+                self._last_floor = floor
+                return self._verdict(
+                    exit=False, reason="noise_band_hold", floor_price=floor,
+                    peak_price=self.peak_px,
+                    phase="phase1", unrealized_pct=upct,
+                )
         if breached:
             self.consecutive_breaches += 1
             if self.consecutive_breaches >= pol.consecutive_breaches_required:

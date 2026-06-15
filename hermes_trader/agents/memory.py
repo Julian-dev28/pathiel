@@ -23,6 +23,7 @@ MEMORY_FILE = os.environ.get(
 MAX_PERCEPTIONS = 500
 MAX_ANALYSES = 200
 MAX_TRADES = 100
+MAX_CLOSES = 500  # realized trade outcomes — backs win-rate / payoff / risk-of-ruin / Phase-3 stats
 
 
 class AgentMemory:
@@ -34,6 +35,7 @@ class AgentMemory:
         self._perceptions: List[Dict[str, Any]] = []
         self._analyses: List[Dict[str, Any]] = []
         self._trades: List[Dict[str, Any]] = []
+        self._closes: List[Dict[str, Any]] = []  # realized exits (the trade-outcome store)
         self._cooldowns: Dict[str, int] = {}
         self._equity: float = 0
         self._daily_pnl: float = 0
@@ -62,6 +64,7 @@ class AgentMemory:
             self._perceptions = (data.get("perceptions") or [])[:MAX_PERCEPTIONS]
             self._analyses = (data.get("analyses") or [])[:MAX_ANALYSES]
             self._trades = (data.get("trades") or [])[:MAX_TRADES]
+            self._closes = (data.get("closes") or [])[:MAX_CLOSES]
 
             # Rebuild cooldowns
             self._cooldowns.clear()
@@ -88,12 +91,23 @@ class AgentMemory:
         self._initialized = True
 
     def flush(self) -> None:
-        """Save current state to disk."""
+        """Save current state to disk.
+
+        GUARD: never flush from an un-hydrated singleton. A process that imports
+        memory but didn't call load() (a test, the dashboard server, an MCP tool)
+        has empty in-memory state; flushing it would TRUNCATE the live
+        .agent-memory.json over good data (observed 2026-06-15: a pytest run wiped
+        92 trades + the day's SOD baseline, forcing a SOD re-baseline on restart).
+        Only the loaded owner (the trading loop) may persist.
+        """
+        if not self._initialized:
+            return
         try:
             data = {
                 "perceptions": self._perceptions,
                 "analyses": self._analyses,
                 "trades": self._trades,
+                "closes": self._closes,
                 "cooldowns": [{"coin": coin, "expires": exp} for coin, exp in self._cooldowns.items()],
                 "equity": self._equity,
                 "dailyPnl": self._daily_pnl,
@@ -122,6 +136,21 @@ class AgentMemory:
         self._trades.append(t)
         if len(self._trades) > MAX_TRADES:
             self._trades.pop(0)
+
+    def record_close(self, c: Dict[str, Any]) -> None:
+        """Append a realized exit to the outcome store and persist.
+
+        This is THE source of realized PnL — previously outcomes only existed in
+        log text (trades[].pnl was never populated), so win-rate / payoff / RoR /
+        Phase-3 stats had nothing to read. Called from close_position_market so a
+        single chokepoint covers DSL, AI-close, and kill-switch exits.
+        Expected keys: coin, side, entry_px, exit_px, spot_pct, realized_pnl_pct
+        (leveraged, net fees), realized_pnl_usd, leverage, closed_at.
+        """
+        self._closes.append(c)
+        if len(self._closes) > MAX_CLOSES:
+            self._closes.pop(0)
+        self.flush()
 
     def update_equity(self, eq: float) -> None:
         self._equity = eq
@@ -262,10 +291,36 @@ class AgentMemory:
         return None
 
     def get_win_rate(self) -> Dict[str, float]:
+        # Prefer the realized outcome store; fall back to the legacy (never-
+        # populated) trades[].pnl shape for backward compat.
+        if self._closes:
+            wins = sum(1 for c in self._closes if (c.get("realized_pnl_pct") or 0) > 0)
+            total = len(self._closes)
+            return {"wins": wins, "total": total, "rate": wins / total if total else 0}
         closed = [t for t in self._trades if t.get("exitPx") is not None and t.get("pnl") is not None]
         wins = sum(1 for t in closed if (t.get("pnl") or 0) > 0)
         total = len(closed)
         return {"wins": wins, "total": total, "rate": wins / total if total > 0 else 0}
+
+    def get_payoff_stats(self, limit: int = 200) -> Dict[str, float]:
+        """Realized win-rate + payoff ratio (avg win / avg loss) from the outcome
+        store — the inputs to risk-of-ruin and the Phase-3 report. Uses leveraged
+        realized_pnl_pct (net fees). Returns zeros when there are no closes yet."""
+        rows = self._closes[-limit:]
+        wins = [float(c.get("realized_pnl_pct") or 0) for c in rows if (c.get("realized_pnl_pct") or 0) > 0]
+        losses = [abs(float(c.get("realized_pnl_pct") or 0)) for c in rows if (c.get("realized_pnl_pct") or 0) <= 0]
+        n = len(rows)
+        win_rate = len(wins) / n if n else 0.0
+        avg_win = sum(wins) / len(wins) if wins else 0.0
+        avg_loss = sum(losses) / len(losses) if losses else 0.0
+        payoff = (avg_win / avg_loss) if avg_loss > 0 else 0.0
+        return {
+            "n": n, "win_rate": win_rate, "avg_win_pct": avg_win,
+            "avg_loss_pct": avg_loss, "payoff_ratio": payoff,
+        }
+
+    def get_closes(self, limit: int = 200) -> List[Dict[str, Any]]:
+        return self._closes[-limit:]
 
     def get_daily_pnl(self) -> float:
         return self._daily_pnl

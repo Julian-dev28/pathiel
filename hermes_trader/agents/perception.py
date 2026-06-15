@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,34 @@ from hermes_trader.indicators import triggers as trigger_mod
 from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
+
+# ── Feed freshness: data-gap accounting (Phase-0 hardening) ──────────────────
+# A coin whose candle fetch comes back empty/short is treated as "no trigger"
+# (perception returns (True, None)) — which is INDISTINGUISHABLE from a real
+# no-signal. So a big mover we simply failed to read looks identical to one we
+# evaluated and skipped. We now count those per scan (thread-safe; scan fans out
+# over a ThreadPoolExecutor) and surface the count in the scan summary so a
+# silent data gap is visible, not invisible. Observability only — no behavior
+# change to what gets traded.
+_data_gap_lock = threading.Lock()
+_data_gap_count = 0
+
+
+def _reset_data_gaps() -> None:
+    global _data_gap_count
+    with _data_gap_lock:
+        _data_gap_count = 0
+
+
+def _note_data_gap() -> None:
+    global _data_gap_count
+    with _data_gap_lock:
+        _data_gap_count += 1
+
+
+def _get_data_gaps() -> int:
+    with _data_gap_lock:
+        return _data_gap_count
 
 # ── Candle cache (module-level, shared across ticks) ──────────────────────────
 
@@ -95,6 +124,12 @@ def _scan_single_market(
         )
 
         if not candles or len(candles) < 50:
+            # Empty/short can mean genuine thin history OR a fetch failure that
+            # survived retries (429/timeout). Either way we evaluated nothing
+            # here — count it as a data gap so the scan summary distinguishes
+            # "read it, no signal" from "couldn't read it". (Still returns the
+            # same (True, None) — no behavior change.)
+            _note_data_gap()
             return (True, None)  # Not an error, just no triggers
 
         # 1h candles for slow-burn / accumulation triggers. Cached far longer
@@ -240,6 +275,7 @@ def scan_once(
         parallel_workers: max concurrent market scans. Defaults to 32.
     """
     started = time.time()
+    _reset_data_gaps()
     cfg = config or get_config()
     min_score = cfg["scan"]["minCompositeScore"] if min_score == 20 else min_score
     workers = parallel_workers or cfg["scan"].get("parallelWorkers", 32)
@@ -463,7 +499,15 @@ def scan_once(
 
     # ── Step 4: Sort by composite score descending ──────────────────────
     elapsed = (time.time() - started) * 1000
-    logger.info(f"[scan] scanned {len(markets)} markets, {len(results)} triggers in {elapsed:.0f}ms ({errors} errors)")
+    data_gaps = _get_data_gaps()
+    logger.info(f"[scan] scanned {len(markets)} markets, {len(results)} triggers in {elapsed:.0f}ms ({errors} errors, {data_gaps} data-gaps)")
+    if data_gaps > 0 and len(markets) > 0 and data_gaps / len(markets) > 0.25:
+        # >25% of the universe unreadable this scan = a degraded data feed, not a
+        # quiet market. Surface loudly so a silent miss-the-move window is visible.
+        logger.warning(
+            f"[scan] FEED-FRESHNESS: {data_gaps}/{len(markets)} markets had empty/short "
+            f"candles ({data_gaps/len(markets)*100:.0f}%) — possible degraded candle feed; "
+            f"signals may be silently missed this scan")
     return sorted(results, key=lambda r: r["composite_score"], reverse=True)
 
 
