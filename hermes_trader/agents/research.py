@@ -126,6 +126,62 @@ def _fetch_news(coin: str) -> str:
         return "no news"
 
 
+def _signals_block(coin: str) -> str:
+    """Free positioning signals (GEX / aggTrades whale / FINRA short-vol / news
+    catalyst) formatted for the AI prompt. The executor already uses these, but
+    the AI was BLIND to them — so it kept PASSing rippers it couldn't see the
+    bullish context for. Surfacing them here lets the AI's own verdict reflect
+    them. Wrapped so any signal outage never breaks research."""
+    is_hip3 = ":" in (coin or "")
+    lines: List[str] = []
+    try:
+        if is_hip3:
+            from hermes_trader.agents.options_gex import gex_signal_cached
+            g = gex_signal_cached(coin)
+            if g:
+                lines.append(
+                    f"  - Dealer gamma (GEX): {g.regime}; call wall {g.call_wall} (overhead "
+                    f"resistance / ride target), put wall {g.put_wall} (support), spot {g.spot:g}. "
+                    + ("Negative gamma = squeeze-prone, lets moves RUN."
+                       if g.regime == "trend_short_gamma"
+                       else "Long gamma = pins/mean-reverts near the walls.")
+                )
+            from hermes_trader.agents.short_volume import short_volume_signal
+            sv = short_volume_signal(coin)
+            if sv:
+                lines.append(
+                    f"  - Short volume (FINRA): {sv.ratio * 100:.0f}% ({sv.regime}, {sv.trend})."
+                    + (" Crowded short = SQUEEZE FUEL for a long."
+                       if sv.regime == "crowded_short_squeeze_fuel" else "")
+                )
+        else:
+            from hermes_trader.agents.crypto_whale import crypto_whale_signal
+            w = crypto_whale_signal(coin, window_minutes=15)
+            if w and w.whale_n:
+                lines.append(
+                    f"  - Whale order-flow (Binance aggTrades, 15m): {w.bias}, net "
+                    f"${w.net_usd:+,.0f} across {w.whale_n} large prints."
+                    + (" Large buyers stepping in (bullish)." if w.bias == "whale_buying"
+                       else " Large sellers hitting bids (bearish)." if w.bias == "whale_selling"
+                       else "")
+                )
+        from hermes_trader.agents.news_catalyst import catalyst_scan
+        base = coin.split(":", 1)[1] if ":" in coin else coin
+        n = catalyst_scan(base, timespan="1h")
+        if n and (n.breaking or n.surge_x >= 1.5):
+            top = n.headlines[0].title[:90] if n.headlines else ""
+            lines.append(
+                f"  - News catalyst: {'BREAKING' if n.breaking else f'elevated ({n.surge_x}x coverage)'}"
+                f" — {top!r}"
+            )
+    except Exception as e:
+        logger.debug(f"[research] signals block failed for {coin}: {e}")
+    if not lines:
+        return "Positioning signals (GEX/whale/short-vol/news): none flagged"
+    return ("Positioning signals (free data — weigh these in your verdict):\n"
+            + "\n".join(lines))
+
+
 def _build_user_message(
     coin: str,
     perception: Dict[str, Any],
@@ -268,6 +324,8 @@ def _build_user_message(
         structure_block,
         "",
         whale_block,
+        "",
+        _signals_block(coin),
         "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
