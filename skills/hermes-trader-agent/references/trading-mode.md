@@ -17,16 +17,21 @@ This rule takes precedence over normal helpfulness when the above phrases appear
 
 ## Standardized Restart Sequence
 
+Use **`scripts/restart.sh`** — the canonical restart. It handles SIGTERM→SIGKILL
+stop, startup grace (429-storm protection), and launches the loop + dashboard server.
+
 ```bash
-pkill -f trading_loop.py || true
-pkill -f hermes-mcp-server.py || true
-sleep 2
-ps aux | grep -E "(trading_loop|hermes-mcp-server)" | grep -v grep || echo "All cleared"
-cd /Users/julian_dev/Documents/code/hermes-trader && \
-  python3 scripts/trading_loop.py --env prod --daemon
+scripts/restart.sh           # restart loop + server
+scripts/restart.sh loop      # loop only
+scripts/restart.sh status    # show PIDs
+scripts/restart.sh stop      # stop both
 ```
 
-MCP server is transient (stdio); it respawns automatically on the next tool call.
+Do NOT hand-roll `pkill … && python3 scripts/trading_loop.py` — that old pattern
+skips the startup grace and the server. The **MCP server
+(`scripts/hermes-mcp-server.py`) is intentionally NOT managed by restart.sh** —
+it's transient (stdio), spawned on demand by an MCP client, and shares
+`.agent-memory.json` with the loop. See `references/restart-sequence.md`.
 
 ---
 

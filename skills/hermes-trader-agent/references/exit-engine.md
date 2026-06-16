@@ -1,54 +1,68 @@
-# Exit Engine — DSL trail + server-side brackets (2026-06-04/05 overhaul)
+# Exit Engine — DSL trail + server-side brackets
 
-Every executed position gets three exit layers, all set at entry. This was the
-fix set for the documented **"we had it all and gave it back"** round-trips.
+Every executed position gets three exit layers, all set at entry. Originally the
+fix set for the **"we had it all and gave it back"** round-trips; materially
+re-tuned 2026-06-16 (see "Scalp vs trend-ride" below).
 
 ## 1. DSL trailing stop (`hermes_trader/agents/dsl_exit.py`) — primary, 60s tick
 
-- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct/lev)`. Config:
-  `max_loss_pct=1.2` spot, `max_loss_roe_pct=18`. Caps each loss ~−1.2% spot.
-- **Phase 2 (profit lock):** arms at `protect_pct` (1.0%). Floor =
-  `entry ± peak_range × (1 − retrace)`, ratchets one-way (never gives back).
-- **Retrace ladder — the give-back control.** `_active_tier` picks the retrace
-  by PEAK profit. It must TIGHTEN with profit. Current (post-fix):
-  - default `retrace_threshold = 0.40` (was a loose 0.65)
-  - `phase2_tiers`: `+3%→0.30, +6%→0.22, +10%→0.15, +20%→0.12` (was a
-    *loosening* `0.30→0.60` default that round-tripped winners)
-  - **`phase2_tiers` is wired from config** in BOTH builders (`executor.py`
-    entry-time `ExitPolicy(...)` + `dsl_exit._policy_from_config`). Before
-    2026-06-04 it was silently ignored — only the hardcoded class default applied.
-    Changing tiers needs a **loop restart** (code path), not just config.
-- **Breakeven ratchet:** once peak ≥ `breakeven_trigger_pct` (1.0), floor clamps
-  to ≥ `breakeven_lock_pct` (0.6) — a winner can't round-trip to flat.
-- **Hard timeout:** `hard_timeout_minutes` (1800 = 30h). Scalp/swing horizon.
+- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`. Config:
+  `max_loss_pct=3.5` spot, `max_loss_roe_pct=18`. **The ROE cap usually binds** —
+  at 10x that's 1.8% spot; at 8x, 2.25%. (This is why high leverage noise-stops:
+  18/15 = 1.2% spot at 15x = a routine wiggle stops you. See lessons-2026-06.)
+- **Phase 2 (profit lock):** arms at `protect_pct`. Floor = `entry ± peak_range ×
+  (1 − retrace)`, ratchets one-way (never gives back).
+- **Retrace ladder (`phase2_tiers`)** = the give-back control; tighter = bank faster.
+  Wired from config in BOTH builders (`executor.py` entry-time `ExitPolicy(...)` +
+  `dsl_exit._policy_from_config`). Hot-read for new entries.
+
+## Scalp vs trend-ride — the 2026-06-16 finding (THE exit lever)
+
+Controlled backtest (`scripts/reentry_backtest.py`, same lev/coins/period, only
+exit params vary):
+```
+scalp      (protect 1.5 / retrace 0.30):  61% win  +$1518   <- LIVE
+trend-ride (protect 3.0 / retrace 0.55):  47% win  -$757
+```
+**Tight (scalp) beats loose (trend-ride) hard in chop** — loose lets winners give
+it all back. Live config is scalp: `protect_pct=1.5`, `retrace_threshold=0.30`,
+`phase2_tiers=[{1.5,0.30},{8.0,0.35},{15.0,0.40}]`. Trend-ride was originally
+shipped after validating on ONE up-trend day — it rides rippers but bleeds in
+chop, the dominant regime. Caveat: scalp can amputate the fat-tail winners the
+edge depends on — `tp_scale_fraction` lets a runner ride (below).
+
+- **`regime_aware {enabled, trend_ride{…}}`** (default OFF): when
+  `detect_regime()=='up'`, swaps to looser trend-ride params (scalp chop / ride
+  trends). Backtested BELOW always-scalp in the chop sample → gated off; enable
+  only once a sustained-trend sample validates it (restart to load code, then flip).
+- **Hard timeout / stale-flat:** `hard_timeout_minutes` (1800); and
+  `stale_flat_timeout_minutes` (480) flattens a position that never reaches
+  `protect_pct`.
 
 ## 2. Backup stop-loss trigger (server-side)
 
 `place_hl_trigger_order(is_buy, size, sl_px, "sl", coin)` at `sl_atr_mult`=1.5 ATR,
-placed at entry. Fires on the exchange between 60s ticks and is the ONLY
-protection while the host sleeps or the loop restarts.
+placed at entry. Fires on the exchange between 60s ticks — the ONLY protection
+while the host sleeps or the loop restarts. `[executor] Backup SL FAILED` =
+escalate (position has no server-side stop).
 
-## 3. Take-profit scale-out (server-side) — the offensive fix
+## 3. Take-profit scale-out (server-side) — keeps the right tail
 
-`tp_scale_fraction` (default 0.5) of the position gets a reduce-only TP trigger at
-`TP_ATR_MULT`=1 ATR past entry. **Banks half at target automatically**; the rest
-rides the DSL trail. Validated live 2026-06-05: auto-banked an ADA half, runner
-rode to +66% ROE. HL accepts a 100%-SL + 50%-TP reduce-only bracket (150% total)
-without "would increase position" rejects.
+`tp_scale_fraction` (0.5) of the position gets a reduce-only TP trigger at
+`TP_ATR_MULT`=1 ATR past entry. Banks half at target; the rest rides the DSL
+trail. This is what stops scalp from fully amputating the fat tail — verify it's
+firing (`Placed TP scale-out` log). HL accepts a 100%-SL + 50%-TP reduce-only
+bracket without "would increase position" rejects.
 
 ## Trigger hygiene
 
 `close_position_market` calls `cancel_open_orders_for_coin(coin)` after a market
-close to clear the now-stranded SL/TP bracket. Without it, stale reduce-only
-orders accumulate and reject a later reduce-only order on that coin
-(`reduce only order would increase position`). HL also auto-cancels reduce-only
-triggers when a position flattens, so the call is a safe backstop (usually a no-op).
+close to clear the stranded SL/TP bracket, else stale reduce-only orders pile up
+and reject later reduce-only orders (`reduce only order would increase position`).
 
-## Why all this
+## Execution-quality capture (2026-06-16)
 
-Root cause of the round-trips (audited 2026-06-04): the strategy's edge was
-positive (6W/4L, +77.6% summed ROE) but `tp_px` was computed and never acted on,
-the retrace was loose, and `max_trade_notional_usd` was unbounded → **bigger bets
-on losers** + winners bled back. The counterfactual with the $600 cap flipped a
-−$4.2 closed-trade day to +$4.6. The fixes: clamp notional, tighten the ladder,
-and actually take profit at target.
+Each close logs `entry_slip_bps`/`exit_slip_bps` (fill vs arrival mid),
+`funding_cost_usd`, `hold_minutes`, `regime_at_entry`, `is_hip3` → the cost data
+the backtests omit. Thin HIP-3 books slip materially (xyz median ~12.5 vs crypto
+~5 bps); at n≥50 build a per-coin slippage kill-list (>~50bps).
