@@ -368,8 +368,8 @@ kills overall trade volume. Use `counter_regime_min_conf` instead.
 Live config (edit `.agent-config.json` directly — the MCP `config` tool
 does NOT accept `counter_regime_min_conf` writes):
 ```json
-{ "min_ai_confidence": 0.5, "counter_regime_min_conf": 0.85,
-  "leverage": 10, "equity_fraction_per_trade": 0.07 }
+{ "min_ai_confidence": 0.65, "counter_regime_min_conf": 0.8,
+  "leverage": 10, "equity_fraction_per_trade": 0.28 }
 ```
 
 When the user asks "regime?" / "short or long?" / "what's the regime",
