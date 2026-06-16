@@ -32,8 +32,8 @@
   "dsl_exit": {
     "max_loss_pct": 3.5,
     "max_loss_roe_pct": 18.0,
-    "protect_pct": 3.0,
-    "retrace_threshold": 0.55,
+    "protect_pct": 1.5,
+    "retrace_threshold": 0.3,
     "hard_timeout_minutes": 1800.0,
     "breakeven_trigger_pct": 0.0,
     "breakeven_lock_pct": 0.0,
@@ -45,12 +45,12 @@
     },
     "phase2_tiers": [
       {
-        "pct_above_entry": 3.0,
-        "retrace_threshold": 0.55
+        "pct_above_entry": 1.5,
+        "retrace_threshold": 0.3
       },
       {
         "pct_above_entry": 8.0,
-        "retrace_threshold": 0.45
+        "retrace_threshold": 0.35
       },
       {
         "pct_above_entry": 15.0,
@@ -137,7 +137,7 @@
     "whale_boost_min_usd": 250000
   },
   "momentum_reentry": {
-    "enabled": true,
+    "enabled": false,
     "reclaim_pct": 1.0,
     "min_composite": 30
   }
