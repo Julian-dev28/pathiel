@@ -132,6 +132,11 @@ def main() -> int:
     ap.add_argument("--equity", type=float, default=250.0)
     ap.add_argument("--dedup-min", type=int, default=30,
                     help="Treat same-coin analyses within N minutes as one trade")
+    ap.add_argument("--mode", default="ai", choices=["ai", "lowconf", "force", "sidestep"],
+                    help="ai=as-is; lowconf=lower min-conf; force=+composite-force PASS->LONG; "
+                         "sidestep=ignore AI, take all TA-confirmed LONGs")
+    ap.add_argument("--min-conf", type=float, default=0.60, help="min conf for lowconf mode")
+    ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
     args = ap.parse_args()
 
     cfg = read_agent_config()
@@ -174,31 +179,50 @@ def main() -> int:
     by_reason: Dict[str, List[float]] = {}
     trades: List[Tuple[Any, ...]] = []
 
+    n_forced = 0
     for a in analyses:
         verdict = a.get("verdict")
-        if verdict not in ("LONG", "SHORT"):
-            skipped_pass += 1
-            continue
-        coin = a["coin"]
+        coin = a.get("coin")
         ts = int(a.get("created_at", 0))
-        if ts == 0:
-            continue
-        if coin in last_trade_by_coin and (ts - last_trade_by_coin[coin]) < dedup_ms:
-            skipped_dup += 1
+        if not coin or ts == 0:
             continue
         conf = float(a.get("confidence", 0))
-        if conf < min_ai_conf:
-            skipped_conf += 1
-            continue
-        side = "long" if verdict == "LONG" else "short"
-
-        # Pull perception for composite + triggers
+        # perception (composite/triggers) — needed for force/sidestep admission
         perc = perceptions_by_id.get(a.get("perception_id"))
         composite = float(perc.get("composite_score", 0)) if perc else 0.0
         triggers = (perc or {}).get("triggers", []) or []
         burst_fired = any(t.get("name") == "momentumBurst" and t.get("fired") for t in triggers)
         slow_fired = any(t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
                          and t.get("fired") for t in triggers)
+        ta_confirmed = composite >= args.force_bar or burst_fired or slow_fired
+
+        # ── mode-aware admission ─────────────────────────────────────────────
+        ai_ls = verdict in ("LONG", "SHORT")
+        admit, side, forced = False, None, False
+        if args.mode == "ai":
+            admit = ai_ls and conf >= min_ai_conf
+            side = ("long" if verdict == "LONG" else "short") if ai_ls else None
+        elif args.mode == "lowconf":
+            admit = ai_ls and conf >= args.min_conf
+            side = ("long" if verdict == "LONG" else "short") if ai_ls else None
+        elif args.mode == "force":
+            if ai_ls and conf >= min_ai_conf:
+                admit, side = True, ("long" if verdict == "LONG" else "short")
+            elif composite >= args.force_bar:            # composite-force PASS -> LONG
+                admit, side, forced = True, "long", True
+        elif args.mode == "sidestep":                    # ignore AI; take all TA-confirmed LONGs
+            if ta_confirmed:
+                admit, side, forced = True, "long", (not ai_ls)
+            elif ai_ls and conf >= min_ai_conf:
+                admit, side = True, ("long" if verdict == "LONG" else "short")
+        if not admit:
+            skipped_pass += 1
+            continue
+        if forced:
+            n_forced += 1
+        if coin in last_trade_by_coin and (ts - last_trade_by_coin[coin]) < dedup_ms:
+            skipped_dup += 1
+            continue
 
         regime = _regime_at(ts)
         if not passes_counter_regime(side, regime, conf, composite, burst_fired, slow_fired,

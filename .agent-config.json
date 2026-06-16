@@ -15,7 +15,7 @@
   "min_available_margin_pct": 0.1,
   "cooldown_min": 60,
   "held_research_interval_min": 10,
-  "min_ai_confidence": 0.78,
+  "min_ai_confidence": 0.65,
   "counter_regime_min_conf": 0.8,
   "max_crypto_long_correlated": 8,
   "min_market_volume_usd": 800000,
@@ -72,7 +72,7 @@
     }
   },
   "force_execute_composite": 30,
-  "composite_force_execute": true,
+  "composite_force_execute": false,
   "force_execute_slow_burn_count": 2,
   "conviction_sizing": true,
   "conviction_tiers": [
