@@ -32,8 +32,13 @@ from hermes_trader.client.universe import get_universe
 
 def simulate(coin, candles, max_lev, *, policy, cfg, equity, equity_fraction,
              lev_ceiling, max_loss_pct, protect_pct, retrace_threshold,
-             cooldown_bars, reclaim_pct, min_composite, warmup=100):
-    """Returns list of trade dicts with is_reentry flag."""
+             cooldown_bars, reclaim_pct, min_composite, warmup=100,
+             exit_mode="fixed", ride_protect=3.0, ride_retrace=0.55):
+    """Returns list of trade dicts with is_reentry flag.
+
+    exit_mode: 'fixed' (use protect_pct/retrace_threshold), 'trendride' (always
+    ride params), 'regime' (ride params when the coin's trend is bullish at entry,
+    else scalp = protect_pct/retrace_threshold)."""
     trades = []
     open_t = open_dsl = None
     fee = ROUND_TRIP_FEE_BPS / 10000.0
@@ -87,12 +92,21 @@ def simulate(coin, candles, max_lev, *, policy, cfg, equity, equity_fraction,
 
         lev = min(lev_ceiling, max_lev)
         notional = equity * equity_fraction * lev
+        # regime-aware exit selection: ride params when bullish (up-regime proxy)
+        if exit_mode == "trendride":
+            use_ride = True
+        elif exit_mode == "regime":
+            use_ride = bool(bullish)
+        else:
+            use_ride = False
+        pp = ride_protect if use_ride else protect_pct
+        rt = ride_retrace if use_ride else retrace_threshold
         open_t = {"coin": coin, "side": side, "entry_px": next_bar.o,
                   "notional": notional, "leverage": lev, "exit_px": None,
                   "pnl_usd": 0.0, "reason": "", "is_reentry": is_reentry}
         open_dsl = DSL(side=side, entry_px=next_bar.o, entry_bar=i + 1,
                        peak_px=next_bar.o, max_loss_pct=max_loss_pct,
-                       protect_pct=protect_pct, retrace_threshold=retrace_threshold)
+                       protect_pct=pp, retrace_threshold=rt)
     return trades
 
 
@@ -135,34 +149,40 @@ def main():
     print(f"rule: reclaim >= +{reclaim_pct}% above stop & composite >= {min_comp}  | "
           f"cooldown {lc_min:.0f}min = {cooldown_bars} bars  | max_loss {args.max_loss}%\n")
 
-    block_all, reentry_all = [], []
+    # Regime-aware exit comparison: scalp vs trend-ride vs regime (ride when the
+    # coin's trend is bullish at entry). All with cooldown blocking re-entry.
+    tr = (live.get("dsl_exit", {}).get("regime_aware", {}) or {}).get("trend_ride", {})
+    ride_pp = float(tr.get("protect_pct", 3.0)); ride_rt = float(tr.get("retrace_threshold", 0.55))
+    scalp, ride, regime = [], [], []
     for m in coins:
         coin, max_lev = m["coin"], int(m.get("maxLeverage", 5))
         try:
             candles = fetch_hl_candles(coin, args.interval, total_bars)
             if len(candles) < 110:
                 continue
-            kw = dict(cfg=cfg, equity=args.equity, equity_fraction=args.equity_fraction,
-                      lev_ceiling=args.leverage_ceiling, max_loss_pct=args.max_loss,
-                      protect_pct=args.protect, retrace_threshold=args.retrace,
-                      cooldown_bars=cooldown_bars, reclaim_pct=reclaim_pct, min_composite=min_comp)
-            block_all += simulate(coin, candles, max_lev, policy="BLOCK", **kw)
-            reentry_all += simulate(coin, candles, max_lev, policy="REENTRY", **kw)
+            kw = dict(policy="BLOCK", cfg=cfg, equity=args.equity,
+                      equity_fraction=args.equity_fraction, lev_ceiling=args.leverage_ceiling,
+                      max_loss_pct=args.max_loss, protect_pct=args.protect,
+                      retrace_threshold=args.retrace, cooldown_bars=cooldown_bars,
+                      reclaim_pct=reclaim_pct, min_composite=min_comp,
+                      ride_protect=ride_pp, ride_retrace=ride_rt)
+            scalp += simulate(coin, candles, max_lev, exit_mode="fixed", **kw)
+            ride += simulate(coin, candles, max_lev, exit_mode="trendride", **kw)
+            regime += simulate(coin, candles, max_lev, exit_mode="regime", **kw)
         except Exception as e:
             print(f"  {coin}: skip ({e})")
 
-    bn, bw, bp = _stats(block_all)
-    rn, rw, rp = _stats(reentry_all)
-    re_only = [t for t in reentry_all if t.get("is_reentry")]
-    en, ew, ep = _stats(re_only)
-    print("=== RESULT ===")
-    print(f"  BLOCK   (cooldown blocks re-entry): {bn:4d} trades  win {bw:4.1f}%  PnL ${bp:+.2f}")
-    print(f"  REENTRY (momentum re-entry on):     {rn:4d} trades  win {rw:4.1f}%  PnL ${rp:+.2f}")
-    print(f"  --> Δ from the re-entry rule: ${rp - bp:+.2f}  ({rn - bn:+d} trades)")
-    print(f"  re-entry trades ALONE: {en} trades  win {ew:4.1f}%  PnL ${ep:+.2f}  "
-          f"(avg ${ep/en:+.2f}/trade)" if en else "  re-entry trades ALONE: 0 (none fired in sample)")
-    print("\nCaveats: heuristic entries (no LLM); 1 open pos/coin; no funding; "
-          "fills at next-bar open; past != future.")
+    print("=== REGIME-AWARE EXIT RESULT ===")
+    print(f"  (scalp base protect {args.protect}/retrace {args.retrace}; "
+          f"ride protect {ride_pp}/retrace {ride_rt}; regime = ride when bullish@entry)\n")
+    for label, tr_set in (("SCALP (always tight)", scalp),
+                          ("TREND-RIDE (always loose)", ride),
+                          ("REGIME-AWARE (auto)", regime)):
+        n, w, p = _stats(tr_set)
+        print(f"  {label:28} {n:4d} trades  win {w:4.1f}%  PnL ${p:+.2f}  "
+              f"(avg ${p/n:+.3f}/trade)" if n else f"  {label}: 0 trades")
+    print("\nCaveats: heuristic entries (no LLM); regime proxy = coin's own trend "
+          "(live uses BTC for crypto); 1 open pos/coin; no funding; past != future.")
 
 
 if __name__ == "__main__":

@@ -57,7 +57,19 @@
         "retrace_threshold": 0.4
       }
     ],
-    "stale_flat_timeout_minutes": 480
+    "stale_flat_timeout_minutes": 480,
+    "regime_aware": {
+      "enabled": false,
+      "trend_ride": {
+        "protect_pct": 3.0,
+        "retrace_threshold": 0.55,
+        "phase2_tiers": [
+          { "pct_above_entry": 3.0, "retrace_threshold": 0.55 },
+          { "pct_above_entry": 8.0, "retrace_threshold": 0.45 },
+          { "pct_above_entry": 15.0, "retrace_threshold": 0.4 }
+        ]
+      }
+    }
   },
   "force_execute_composite": 30,
   "composite_force_execute": true,

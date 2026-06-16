@@ -125,6 +125,26 @@ def _conviction_multiplier(confidence: float, tiers: List[tuple]) -> float:
     return tiers[-1][1]
 
 
+def select_exit_params(dsl_config: Dict[str, Any], regime: str) -> tuple:
+    """Regime-aware exit selection. The base dsl_config is the SCALP config
+    (bank fast — +EV in chop/down per the controlled backtest: scalp +$1536/63%
+    vs trend-ride -$757/47%). When regime=='up' (sustained up-trend) and
+    regime_aware is enabled, LOOSEN to trend-ride params so we RIDE the rippers
+    (trend-ride is +EV in trends — that's where it was originally validated).
+    Returns (protect_pct, retrace_threshold, phase2_tiers_raw, label)."""
+    base_protect = dsl_config.get("protect_pct", 1.5)
+    base_retrace = dsl_config.get("retrace_threshold", 0.30)
+    base_tiers = dsl_config.get("phase2_tiers")
+    ra = dsl_config.get("regime_aware") or {}
+    if ra.get("enabled", False) and regime == "up":
+        tr = ra.get("trend_ride") or {}
+        return (float(tr.get("protect_pct", 3.0)),
+                float(tr.get("retrace_threshold", 0.55)),
+                tr.get("phase2_tiers", base_tiers),
+                "trend_ride(up-regime)")
+    return (base_protect, base_retrace, base_tiers, "scalp")
+
+
 def momentum_reentry_allowed(last_exit_px, last_side, current_mid, composite,
                              cfg: Dict[str, Any]) -> tuple:
     """Should we BYPASS the loss-cooldown because a stopped name has RESUMED its
@@ -782,16 +802,27 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     # Register the position with the DSL tracker; it re-evaluates the exit
     # floor on every scan tick (loss protection -> profit locking).
     dsl_config = config.get("dsl_exit", {})
+    # Regime-aware exits: scalp (base) in chop/down to bank fast; trend-ride params
+    # when regime=='up' to ride rippers. detect_regime is cached (TTL) and already
+    # computed by the market_regime gate in this same execute flow — no extra fetch.
+    _regime = "neutral"
+    try:
+        from hermes_trader.agents.market_regime import detect_regime
+        _regime = detect_regime(analysis["coin"])
+    except Exception as _re_e:
+        logger.debug(f"[executor] regime lookup failed (non-fatal): {_re_e}")
+    _ex_protect, _ex_retrace, _tiers_raw, _ex_label = select_exit_params(dsl_config, _regime)
     # phase2_tiers is optional in config; when present it OVERRIDES the class
     # default ladder so profit-locking tightness is tunable without code edits.
-    _tiers_raw = dsl_config.get("phase2_tiers")
     _tiers = [RetraceTier(**t) for t in _tiers_raw] if _tiers_raw else None
     _atr_cfg = dsl_config.get("atr_stop", {}) or {}
+    logger.info(f"[executor] exit policy = {_ex_label} (regime={_regime}) "
+                f"protect={_ex_protect} retrace={_ex_retrace}")
     policy = ExitPolicy(
         max_loss_pct=dsl_config.get("max_loss_pct", 2.5),
         max_loss_roe_pct=dsl_config.get("max_loss_roe_pct", 50.0),
-        protect_pct=dsl_config.get("protect_pct", 1.5),
-        retrace_threshold=dsl_config.get("retrace_threshold", 0.30),
+        protect_pct=_ex_protect,
+        retrace_threshold=_ex_retrace,
         hard_timeout_minutes=dsl_config.get("hard_timeout_minutes", 180.0),
         breakeven_trigger_pct=dsl_config.get("breakeven_trigger_pct", 0.0),
         breakeven_lock_pct=dsl_config.get("breakeven_lock_pct", 0.0),
