@@ -141,10 +141,14 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 
 ## Configuration
 
-There are two places to configure hermes-trader: **`.env.local`** (credentials,
-API, runtime/infra — process-level, read at startup) and **`.agent-config.json`**
-(trading behaviour and risk — read fresh on every trade, no restart needed). Both
-are gitignored.
+There are two config files, and they bootstrap **differently**:
+
+| File | Ships with repo? | You… | Read |
+|------|------------------|------|------|
+| **`.agent-config.json`** | **Yes — tracked**, comes pre-populated with the live strategy | **edit** it (don't create) | fresh on every trade — no restart |
+| **`.env.local`** | **No — gitignored** | **create** it: `cp .env.local.example .env.local`, fill in keys | at process start — restart to apply |
+
+So on a fresh clone: `.agent-config.json` is already there (tweak the values); `.env.local` does not exist until you copy the example and add your credentials. If `.agent-config.json` is ever missing or malformed, the loader falls back to `{"mode": "OFF"}` (analyse-only, no orders) — it fails safe, never trades blind.
 
 ### `.env.local` — credentials & runtime
 
