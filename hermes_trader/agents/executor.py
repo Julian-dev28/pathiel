@@ -125,6 +125,37 @@ def _conviction_multiplier(confidence: float, tiers: List[tuple]) -> float:
     return tiers[-1][1]
 
 
+def momentum_reentry_allowed(last_exit_px, last_side, current_mid, composite,
+                             cfg: Dict[str, Any]) -> tuple:
+    """Should we BYPASS the loss-cooldown because a stopped name has RESUMED its
+    uptrend? (The autopsy leak: SPCX was force-entered, noise-stopped, then the
+    180m loss-cooldown locked us out of its +29% run.) The cooldown is anti-revenge
+    — correct for a FALLING name; but a name that breaks back ABOVE where it stopped
+    us, with strong composite, is a momentum-continuation re-entry, not revenge.
+
+    Conservative + whipsaw-guarded: requires price to reclaim `reclaim_pct`% ABOVE
+    the prior stop-out price AND composite >= min_composite. LONG-only. Each
+    re-entry that loses re-arms the cooldown at a NEW (higher) stop, so repeated
+    whipsaw must clear an ever-rising bar. Returns (allow, reason)."""
+    mr = cfg.get("momentum_reentry") or {}
+    if not mr.get("enabled", False):
+        return (False, "")
+    try:
+        last_exit_px = float(last_exit_px or 0)
+        current_mid = float(current_mid or 0)
+    except (TypeError, ValueError):
+        return (False, "")
+    if (last_side or "").lower() != "long" or last_exit_px <= 0 or current_mid <= 0:
+        return (False, "")
+    reclaim = float(mr.get("reclaim_pct", 1.0)) / 100.0
+    min_comp = float(mr.get("min_composite", 30))
+    if current_mid >= last_exit_px * (1 + reclaim) and float(composite or 0) >= min_comp:
+        gain = (current_mid / last_exit_px - 1) * 100
+        return (True, f"reclaimed +{gain:.1f}% above stop {last_exit_px:g}, "
+                      f"composite {float(composite or 0):.0f}")
+    return (False, "")
+
+
 def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market.
 
@@ -325,12 +356,23 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     # whose extended block hasn't expired (armed in close_position_market).
     _lc_remaining = memory.loss_cooldown_remaining_min(analysis["coin"])
     if _lc_remaining > 0:
-        return {
-            "executed": False, "mode": mode,
-            "analysis_id": analysis["id"],
-            "reason": (f"loss_cooldown ({analysis['coin']} closed at a loss recently — "
-                       f"{_lc_remaining:.0f}min remaining)"),
-        }
+        # Momentum-continuation re-entry: if the name has reclaimed above where it
+        # stopped us (resumed uptrend, strong composite), bypass the anti-revenge
+        # cooldown — that's a run we got shaken out of, not a falling knife.
+        _last = memory.last_close_for(analysis["coin"]) or {}
+        _mr_ok, _mr_why = momentum_reentry_allowed(
+            _last.get("exit_px"), _last.get("side"),
+            analysis.get("mid"), analysis.get("composite_score"), config)
+        if _mr_ok:
+            logger.info(f"[executor] momentum re-entry on {analysis['coin']}: "
+                        f"{_mr_why} — bypassing {_lc_remaining:.0f}min loss cooldown")
+        else:
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "reason": (f"loss_cooldown ({analysis['coin']} closed at a loss recently — "
+                           f"{_lc_remaining:.0f}min remaining)"),
+            }
 
     # Idempotency: don't double-execute
     already = next(

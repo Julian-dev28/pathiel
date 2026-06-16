@@ -337,6 +337,14 @@ class AgentMemory:
             "avg_loss_pct": avg_loss, "payoff_ratio": payoff,
         }
 
+    def last_close_for(self, coin: str) -> Optional[Dict[str, Any]]:
+        """Most recent realized close for `coin` (for momentum re-entry: the
+        stop-out price to compare against). None if never closed."""
+        for c in reversed(self._closes):
+            if c.get("coin") == coin:
+                return c
+        return None
+
     def get_closes(self, limit: int = 200) -> List[Dict[str, Any]]:
         return self._closes[-limit:]
 
