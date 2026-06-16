@@ -870,11 +870,24 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         if _arr_mid > 0 and _fill > 0:
             raw = (_fill - _arr_mid) / _arr_mid * 1e4
             _slip_bps = round(raw if trade_side == "long" else -raw, 1)
+        # Funding carry: capture the latest hourly funding rate at entry (one call;
+        # entries are rare so this isn't the rate-sensitive scan path). Realized
+        # funding cost is estimated at close from rate × hold_hrs × notional × side.
+        _funding_hr = None
+        try:
+            from hermes_trader.client.hl_client import fetch_funding_history
+            _fh = fetch_funding_history(coin, int(time.time() * 1000) - 86_400_000)
+            if _fh:
+                _r = float(_fh[-1].get("fundingRate", 0) or 0)
+                _funding_hr = _r if _r == _r else None  # NaN guard
+        except Exception:
+            _funding_hr = None
         memory.record_entry_context(coin, trade_side, {
             "entry_time": _entry_ts,
             "arrival_mid": _arr_mid,
             "entry_fill": _fill,
             "entry_slip_bps": _slip_bps,
+            "funding_rate_hr": _funding_hr,
             "regime": _regime,          # market_regime at entry (already computed above)
             "signals": _entry_sig,
             "enforcement": ({"veto": _enf.veto, "veto_reason": _enf.veto_reason,
@@ -1139,6 +1152,13 @@ def close_position_market(coin: str) -> Dict[str, Any]:
                                       if (fill_px and mid_price) else None),
                     "regime_at_entry": _ec.get("regime"),
                     "is_hip3": ":" in coin,
+                    # funding carry: rate_hr × hold_hrs × notional × side (long pays
+                    # when rate>0). Estimate (entry-rate held constant over the hold).
+                    "funding_cost_usd": (round(_ec["funding_rate_hr"]
+                                               * (_hold_min / 60.0 if _hold_min else 0)
+                                               * _notional_entry
+                                               * (1 if is_long else -1), 4)
+                                         if _ec.get("funding_rate_hr") is not None else None),
                 })
             except Exception as _rc_e:
                 logger.warning(f"[outcome-store] record_close failed for {coin} (non-fatal): {_rc_e}")
