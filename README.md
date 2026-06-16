@@ -168,14 +168,22 @@ HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
 
 # ── Scan tuning (optional — defaults shown) ──────────────────
 HERMES_SCAN_INTERVAL=60        # seconds between scan cycles
-HERMES_MAX_MARKETS=60          # total candle-fetch budget per scan
+HERMES_MAX_MARKETS=60          # top-vol+movers candle-fetch budget per scan
 HERMES_MAX_MARKETS_HIP3=25     # of that budget, slots reserved for HIP-3
+HERMES_UNIVERSE_SWEEP=0        # >0 = ALSO rotate N extra tail markets/cycle so the
+#                                FULL universe is covered over ceil(N_universe/N)
+#                                cycles (top-vol+movers still scanned every cycle).
+#                                Keep total (MAX_MARKETS+SWEEP) within the rate budget.
 HERMES_BATCH_SIZE=20           # markets per parallel batch
-HERMES_BATCH_SLEEP=0.3         # seconds between batches
+HERMES_BATCH_SLEEP=0.3         # seconds between batches (raise to pace a wider scan)
+HERMES_WATCHDOG_TIMEOUT_S=600  # re-exec the loop if a scan/cycle makes no progress
+#                                for this long. A scan slower than this (too many
+#                                markets / too much batch_sleep) trips it — keep
+#                                MAX_MARKETS+SWEEP fast enough that a cycle stays well under.
 # HERMES_PORT=8000             # FastAPI server port
 ```
 
-Keep `HERMES_MAX_MARKETS ≤ HERMES_SCAN_INTERVAL` — see [Rate Limit Math](#rate-limit-math).
+Keep `MAX_MARKETS + UNIVERSE_SWEEP` within HL's ~1200 weight/min budget — a wider per-cycle scan must be paced (`BATCH_SLEEP`) or it 429-storms AND trips the watchdog. For full-universe coverage prefer the **rotating sweep** (fast cycles, full coverage over time) over one giant slow scan. See [Rate Limit Math](#rate-limit-math).
 
 When `enable_hip3=true`, the budget splits into `(HERMES_MAX_MARKETS - HERMES_MAX_MARKETS_HIP3)` crypto slots + `HERMES_MAX_MARKETS_HIP3` HIP-3 slots, each sorted by 24h volume independently. Without this split, BTC/ETH/SOL/etc. dominate the single sorted list and tokenized-equity perps (e.g. `xyz:CRCL` $34M, `xyz:DRAM` $22M) never get candles fetched — so their +20% / −8% swings never surface a signal.
 
@@ -235,14 +243,35 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 | `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
 | `coin_blocklist` | Coins that are never traded | `[]` |
 
-Optional nested `dsl_exit` block tunes the trailing-stop engine —
-`max_loss_pct` (2.5), `protect_pct` (1.5), `retrace_threshold` (0.30),
-`hard_timeout_minutes` (180). Tracker state persists to `.dsl-state.json` at the
-repo root (override with `HERMES_DSL_STATE_FILE`); positions opened before the
-auto-close pass shipped are picked up automatically from the exchange.
+**Nested blocks** (all in `.agent-config.json`, all hot-read):
+
+- **`dsl_exit`** — trailing-stop engine. `max_loss_pct` (3.5) and `max_loss_roe_pct`
+  (18) are the hard stop (whichever binds first; ROE cap = `pct/leverage` in spot
+  terms). `protect_pct` (1.5) / `retrace_threshold` (0.30) = the trail tightness
+  (**low = scalp/bank-fast, high = trend-ride/let-it-run**). `phase2_tiers` =
+  profit-scaled retrace ladder. `stale_flat_timeout_minutes` = flat-position timeout.
+  Optional `regime_aware{enabled, trend_ride{…}}` swaps to looser trend-ride params
+  when `detect_regime()=='up'` (scalp in chop, ride in trends). Tracker state →
+  `.dsl-state.json` (override `HERMES_DSL_STATE_FILE`).
+- **`atr_risk_sizing`** `{enabled, risk_per_trade_pct}` — equal-risk (Turtle-N)
+  position sizing: notional = `risk_per_trade_pct × equity / stop_width`. Overrides
+  the flat `equity_fraction` per trade; volatile/wide-stop coins get smaller size.
+- **`signal_enforcement`** `{enabled, veto, boost, gex_veto, boost_bar_delta,
+  whale_*}` — lets the free signals VETO (chop-trap / whales dumping) or BOOST
+  (catalyst lowers the override bar) the **forced-override path only**. Cache-only.
+- **`shadow_signals`** `{enabled, gex, short_volume, crypto_whale, news}` — logs the
+  free signals per candidate without affecting trades (forward validation).
+- **`gex_signal` / `momentum_reentry`** — gated experiments (see commit history).
+- **`force_execute_composite` / `composite_force_execute` / `breakout_force_execute`
+  / `whale_force_execute`** — structural-override gates that can upgrade an AI PASS
+  to a trade on strong TA/whale signals (LONG-only).
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
+
+**TL;DR — where to set what:** strategy/risk knobs → `.agent-config.json` (live,
+no restart); credentials + scan/infra env → `.env.local` (restart to apply); scan
+trigger internals → `hermes_trader/agents/config.py` (restart).
 
 ---
 
