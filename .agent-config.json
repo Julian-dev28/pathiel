@@ -3,7 +3,7 @@
   "enable_crypto": true,
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.28,
-  "leverage": 8,
+  "leverage": 10,
   "max_trade_notional_usd": 160,
   "tp_scale_fraction": 0.5,
   "max_concurrent": 15,

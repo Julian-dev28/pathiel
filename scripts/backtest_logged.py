@@ -137,13 +137,15 @@ def main() -> int:
                          "sidestep=ignore AI, take all TA-confirmed LONGs")
     ap.add_argument("--min-conf", type=float, default=0.60, help="min conf for lowconf mode")
     ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
+    ap.add_argument("--leverage", type=int, default=0, help="override leverage (0=use config)")
+    ap.add_argument("--equity-fraction", type=float, default=0.0, help="override fraction (0=use config)")
     args = ap.parse_args()
 
     cfg = read_agent_config()
     dsl_cfg = cfg.get("dsl_exit", {})
     counter_regime_min_conf = float(cfg.get("counter_regime_min_conf", 0.65))
-    equity_fraction = float(cfg.get("equity_fraction_per_trade", 0.04))
-    base_leverage = int(cfg.get("leverage", 10))
+    equity_fraction = float(args.equity_fraction or cfg.get("equity_fraction_per_trade", 0.04))
+    base_leverage = int(args.leverage or cfg.get("leverage", 10))
     min_ai_conf = float(cfg.get("min_ai_confidence", 0.35))
 
     mem = json.load(open(_REPO / ".agent-memory.json"))
