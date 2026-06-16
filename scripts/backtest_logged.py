@@ -139,10 +139,16 @@ def main() -> int:
     ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
     ap.add_argument("--leverage", type=int, default=0, help="override leverage (0=use config)")
     ap.add_argument("--equity-fraction", type=float, default=0.0, help="override fraction (0=use config)")
+    ap.add_argument("--roe-cap", type=float, default=0.0, help="override max_loss_roe_pct (0=config)")
+    ap.add_argument("--max-loss", type=float, default=0.0, help="override max_loss_pct spot stop (0=config)")
     args = ap.parse_args()
 
     cfg = read_agent_config()
-    dsl_cfg = cfg.get("dsl_exit", {})
+    dsl_cfg = dict(cfg.get("dsl_exit", {}))
+    if args.roe_cap:
+        dsl_cfg["max_loss_roe_pct"] = args.roe_cap
+    if args.max_loss:
+        dsl_cfg["max_loss_pct"] = args.max_loss
     counter_regime_min_conf = float(cfg.get("counter_regime_min_conf", 0.65))
     equity_fraction = float(args.equity_fraction or cfg.get("equity_fraction_per_trade", 0.04))
     base_leverage = int(args.leverage or cfg.get("leverage", 10))

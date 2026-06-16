@@ -257,6 +257,11 @@ def _scan_single_market(
 
 # ── Main scan entry point ───────────────────────────────────────────────────
 
+# Rotating universe-sweep cursor — persists across scan_once calls in the running
+# process so successive cycles walk the FULL universe (see HERMES_UNIVERSE_SWEEP).
+_sweep_offset = 0
+
+
 def scan_once(
     universe: Optional[List[Dict[str, Any]]] = None,
     min_score: float = 20,
@@ -429,6 +434,29 @@ def scan_once(
             f"[scan] {cls} mode: {len(chosen)} by-volume + {len(movers)} by-momentum "
             f"(of {len(eligible)} eligible)"
         )
+    # ── Rotating universe sweep ─────────────────────────────────────────
+    # Cover the FULL universe over successive cycles, not just top-vol+movers.
+    # Each scan adds the next `sweep_n` eligible markets, advancing a persistent
+    # offset that wraps around — so every market is seen within
+    # ceil(len(eligible)/sweep_n) cycles, while top-vol+movers are ALWAYS scanned
+    # (never miss a live ripper). Pacing (HERMES_BATCH_SLEEP) keeps us under HL's
+    # ~1200 weight/min budget. HERMES_UNIVERSE_SWEEP=0 disables (default).
+    sweep_n = int(os.environ.get("HERMES_UNIVERSE_SWEEP", "0"))
+    if sweep_n > 0 and eligible:
+        global _sweep_offset
+        ordered = sorted(eligible, key=lambda m: m.get("coin", ""))
+        n = len(ordered)
+        off = _sweep_offset % n
+        window = ordered[off:off + sweep_n]
+        if len(window) < sweep_n:                      # wrap-around
+            window += ordered[: sweep_n - len(window)]
+        have = {m["coin"] for m in markets}
+        added = [m for m in window if m.get("coin") not in have]
+        markets = markets + added
+        _sweep_offset = (off + sweep_n) % n
+        logger.info(f"[scan] universe sweep: +{len(added)} new (offset {off}/{n}, "
+                    f"full coverage ~{(n + sweep_n - 1) // sweep_n} cycles)")
+
     if not markets:
         return []
 
