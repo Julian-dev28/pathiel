@@ -215,6 +215,33 @@ Run `scripts/config_preset.py show small_aggressive` to see the full values with
 
 ---
 
+## Exit, sizing & signal blocks (nested)
+
+All hot-read. README "Configuration" has the concise version.
+
+### `dsl_exit` — trailing-stop engine
+- `max_loss_pct` (3.5) + `max_loss_roe_pct` (18) — hard stop, whichever binds first (ROE cap = `pct / leverage` in spot terms; at 10x, 18% ROE = 1.8% spot).
+- `protect_pct` (1.5) + `retrace_threshold` (0.30) — trail tightness. **Low = scalp (bank fast); high = trend-ride (let it run).** `phase2_tiers` = profit-scaled retrace ladder.
+- `stale_flat_timeout_minutes` — flatten a position that never reaches `protect_pct` within this window.
+- `regime_aware {enabled, trend_ride{…}}` — when `detect_regime()=='up'`, swap to looser trend-ride params (scalp chop / ride trends). Default OFF.
+
+### `atr_risk_sizing` `{enabled, risk_per_trade_pct}`
+Equal-risk (Turtle-N): notional = `risk_per_trade_pct × equity / stop_width`. Overrides flat `equity_fraction` — volatile coins get smaller size, tight-stop coins bigger (capped by `max_trade_notional_usd`).
+
+### `signal_enforcement` `{enabled, veto, boost, gex_veto, boost_bar_delta, whale_*}`
+Free signal suite acting on the **forced-override path only**. VETO blocks chop-traps (GEX pin-trap) / whales dumping; BOOST lowers the override bar on a catalyst. Cache-only.
+
+### `shadow_signals` `{enabled, gex, short_volume, crypto_whale, news}`
+Logs the free signals per candidate **without affecting trades** — forward validation.
+
+### `gex_signal` / `momentum_reentry`
+Gated experiments (see commit history). `momentum_reentry` backtested net-negative → OFF.
+
+### Structural-override gates (LONG-only — upgrade an AI PASS on strong TA/whale)
+`force_execute_composite` (bar), `composite_force_execute` (forcing AI-rejects = adverse selection → OFF), `breakout_force_execute`, `whale_force_execute`, `force_execute_slow_burn_count`.
+
+---
+
 ## What to actually tune day-to-day
 
 Most of these knobs you set once and leave. The three you'd realistically touch:
