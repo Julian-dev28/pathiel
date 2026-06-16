@@ -861,8 +861,21 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         from hermes_trader.agents.shadow_signals import gather_shadow_signals
         _entry_sig = gather_shadow_signals(coin, trade_side,
                                            config.get("shadow_signals") or {}, allow_fetch=False)
+        # Execution-quality capture: arrival mid vs actual fill = real entry
+        # slippage (the # the backtests don't model). Signed as adverse cost bps
+        # (long paying above mid / short selling below = positive cost).
+        _arr_mid = float(mid_price or 0)
+        _fill = float(order_res.get("avg_px") or 0)
+        _slip_bps = None
+        if _arr_mid > 0 and _fill > 0:
+            raw = (_fill - _arr_mid) / _arr_mid * 1e4
+            _slip_bps = round(raw if trade_side == "long" else -raw, 1)
         memory.record_entry_context(coin, trade_side, {
             "entry_time": _entry_ts,
+            "arrival_mid": _arr_mid,
+            "entry_fill": _fill,
+            "entry_slip_bps": _slip_bps,
+            "regime": _regime,          # market_regime at entry (already computed above)
             "signals": _entry_sig,
             "enforcement": ({"veto": _enf.veto, "veto_reason": _enf.veto_reason,
                              "boost": _enf.boost, "boost_reason": _enf.boost_reason}
@@ -1119,6 +1132,13 @@ def close_position_market(coin: str) -> Dict[str, Any]:
                     "signals_at_entry": _ec.get("signals") or {},
                     "enforcement_at_entry": _ec.get("enforcement") or {},
                     "forced_override": _ec.get("forced_override"),
+                    # execution-quality + regime (the audit data items a/c/d):
+                    "entry_slip_bps": _ec.get("entry_slip_bps"),
+                    "exit_slip_bps": (round((((fill_px - mid_price) / mid_price * 1e4)
+                                             * (1 if is_long else -1)) * -1, 1)
+                                      if (fill_px and mid_price) else None),
+                    "regime_at_entry": _ec.get("regime"),
+                    "is_hip3": ":" in coin,
                 })
             except Exception as _rc_e:
                 logger.warning(f"[outcome-store] record_close failed for {coin} (non-fatal): {_rc_e}")
