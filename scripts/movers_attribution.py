@@ -14,6 +14,7 @@ Sources (all read-only):
 Usage: python3 scripts/movers_attribution.py [--hours 6]
 """
 import json, os, re, sys, time, glob
+from _memory_io import load_memory
 
 HOURS = 6
 if "--hours" in sys.argv:
@@ -105,7 +106,7 @@ def main():
     # window filter (keep events with no ts too — better to over-include)
     evs = [e for e in evs_all if (ts_of(e) is None or ts_of(e) >= SINCE_MS)]
     cryp, hip3 = parse_movers("logs/trading_loop.log")
-    try: mem = json.load(open(".agent-memory.json"))
+    try: mem = load_memory(".agent-memory.json")
     except Exception: mem = {}
 
     print(f"=== MOVERS ATTRIBUTION (last {HOURS}h) ===")

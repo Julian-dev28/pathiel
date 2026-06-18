@@ -172,7 +172,9 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "mode": {"type": "string", "enum": ["OFF", "LIVE"]},
+                "mode": {"type": "string", "enum": ["OFF", "SHADOW", "LIVE"]},
+                "enable_crypto": {"type": "boolean", "description": "Scan/trade native Hyperliquid crypto perps."},
+                "enable_hip3": {"type": "boolean", "description": "Scan/trade HIP-3 tokenized-equity/commodity perps; restart required to refresh universe."},
                 # ── Sizing / leverage ────────────────────────────────────
                 "leverage": {"type": "number", "description": "Leverage ceiling per trade (min with coin max)."},
                 "equity_fraction_per_trade": {"type": "number", "description": "Fraction of equity committed as margin per trade."},
@@ -191,7 +193,13 @@ TOOLS = [
                 "counter_regime_min_conf": {"type": "number", "description": "Confidence bar for a trade AGAINST the regime."},
                 "aligned_min_conf": {"type": "number", "description": "Confidence bar for a trade WITH the regime."},
                 "block_counter_trend_bypass": {"type": "boolean", "description": "Stop the force-execute path bypassing the counter-regime gate."},
+                "trend_surface_enabled": {"type": "boolean", "description": "Surface trend-only candidates below composite threshold."},
+                "whale_scan_bypass": {"type": "boolean", "description": "Surface whale-only low-composite candidates for research."},
+                "whale_force_execute": {"type": "boolean", "description": "Allow whale signal alone to upgrade an AI PASS."},
+                "composite_force_execute": {"type": "boolean", "description": "Allow high composite score to upgrade an AI PASS."},
+                "breakout_force_execute": {"type": "boolean", "description": "Allow breakout+volume setup to upgrade an AI PASS."},
                 "momentum_continuation_enabled": {"type": "boolean", "description": "Enable the momentum-continuation trigger (lets strong orderly-uptrend longs through via composite>=50)."},
+                "runner_mover_surface_enabled": {"type": "boolean", "description": "Surface large 24h movers to AI even when fresh spike triggers no longer fire."},
                 # ── Liquidity floors ─────────────────────────────────────
                 "min_market_volume_usd": {"type": "number"},
                 "min_short_volume_usd": {"type": "number", "description": "Extra 24h-volume floor for shorts (squeeze risk)."},
@@ -923,12 +931,15 @@ def handle_config(params: Dict[str, Any]) -> str:
     # snake_case (not the old camelCase) keeps a single canonical key per setting —
     # the previous handler wrote camelCase and silently created duplicate keys.
     _DIRECT_KEYS = [
-        "mode", "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
+        "mode", "enable_crypto", "enable_hip3",
+        "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
         "tp_scale_fraction", "max_concurrent", "max_total_notional_pct",
         "min_available_margin_pct", "max_daily_loss_usd",
         "daily_giveback_halt_pct", "daily_giveback_min_peak_usd",
         "crowded_with_min_conf", "min_ai_confidence",
         "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
+        "trend_surface_enabled", "whale_scan_bypass", "whale_force_execute",
+        "composite_force_execute", "breakout_force_execute",
         "min_market_volume_usd", "min_short_volume_usd", "max_crypto_long_correlated",
         "cooldown_min", "coin_allowlist", "coin_blocklist",
     ]
@@ -944,7 +955,15 @@ def handle_config(params: Dict[str, Any]) -> str:
         config["momentum_continuation"] = mc
 
     # Save only if a setting was actually passed (a bare read must not rewrite).
-    _setting_keys = set(_DIRECT_KEYS) | {"momentum_continuation_enabled"}
+    if params.get("runner_mover_surface_enabled") is not None:
+        rms = dict(config.get("runner_mover_surface") or {})
+        rms["enabled"] = bool(params["runner_mover_surface_enabled"])
+        config["runner_mover_surface"] = rms
+
+    _setting_keys = set(_DIRECT_KEYS) | {
+        "momentum_continuation_enabled",
+        "runner_mover_surface_enabled",
+    }
     if any(k in params for k in _setting_keys):
         write_agent_config(config)
 
@@ -1271,7 +1290,7 @@ def handle_close_position(params: Dict[str, Any]) -> str:
         mid_price = get_hl_price(coin)
         
         # Place opposite order to close
-        result = place_hl_order(not is_long, size, mid_price, coin=coin)
+        result = place_hl_order(not is_long, size, mid_price, coin=coin, reduce_only=True)
         return json.dumps({'closed': True, 'coin': coin, 'size': size, 'result': result}, default=str)
     except Exception as e:
         return json.dumps({'closed': False, 'error': str(e)}, default=str)

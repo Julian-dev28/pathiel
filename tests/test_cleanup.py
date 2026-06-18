@@ -505,6 +505,9 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
                             "ok": True, "order_id": "999",
                             "avg_px": 0.10522, "total_sz": 1000.0,
                         })
+    recorded = []
+    monkeypatch.setattr(executor.memory, "record_close", lambda c: recorded.append(c))
+    monkeypatch.setattr(executor.memory, "pop_entry_context", lambda coin, side: {})
 
     res = executor.close_position_market("ARB")
     assert res["ok"] is True
@@ -516,6 +519,10 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     assert abs(res["spot_pct"] - 9.9452) < 0.01
     # Realized = spot × 10 − (0.025 × 2 × 10) = 99.45 − 0.5 = 98.95
     assert abs(res["realized_pnl_pct"] - 98.95) < 0.05
+    assert recorded
+    assert abs(recorded[0]["gross_pnl_usd"] - 11.62) < 0.01
+    assert abs(recorded[0]["fee_usd"] - 0.0584) < 0.001
+    assert abs(recorded[0]["realized_pnl_usd"] - 11.5616) < 0.01
     assert "ARB_short" not in dsl_exit._active_positions
 
 
@@ -551,6 +558,22 @@ def test_latest_trade_ts_by_coin_keeps_newest():
     assert out["NEAR"] == 9_000_000  # newest, not 1_000_000
     assert out["BTC"] == 1_500_000
     assert "SOL" not in out
+
+
+def test_memory_flush_writes_atomically(monkeypatch, tmp_path):
+    """A live memory flush must not expose half-written JSON to backtests."""
+    from hermes_trader.agents import memory as memory_mod
+
+    path = tmp_path / "agent-memory.json"
+    monkeypatch.setattr(memory_mod, "MEMORY_FILE", str(path))
+    m = memory_mod.AgentMemory()
+    m._initialized = True
+    m._trades = [{"id": "t1", "coin": "BTC", "size_usd": 10}]
+
+    m.flush()
+
+    assert json.loads(path.read_text())["trades"][0]["coin"] == "BTC"
+    assert not pathlib.Path(str(path) + ".tmp").exists()
 
 
 def test_open_position_coins_filters_zero_size():
@@ -1215,6 +1238,7 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
     monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "3")
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
     monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None, wsb=False, tse=True: (True, None))
@@ -1320,6 +1344,7 @@ def _scan_with_config(monkeypatch, cfg):
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
     monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "5")
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
     monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
@@ -1408,6 +1433,7 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
     monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
     monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "3")
     monkeypatch.setenv("HERMES_MOVERS_VOL_FLOOR_USD", "1000000")
+    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
     monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
@@ -1581,9 +1607,11 @@ def test_regime_gate_bypasses_on_whale_signal():
 
 
 def test_executor_structural_override_promotes_pass_to_long(monkeypatch):
-    """When composite >= 40 AND 2+ slow-burn triggers fired, the executor
-    upgrades an AI PASS to LONG conf 0.70 — the AI hedge doesn't override
-    objective structural strength."""
+    """When explicitly enabled, composite + slow-burn can upgrade an AI PASS.
+
+    Force paths fail closed by default; this test opts in so the old aggressive
+    behavior remains covered without making it the implicit live default.
+    """
     from hermes_trader.agents import executor
 
     # Force a config that exercises ONLY the override path, then fails the
@@ -1591,6 +1619,7 @@ def test_executor_structural_override_promotes_pass_to_long(monkeypatch):
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
         "force_execute_composite": 40, "force_execute_slow_burn_count": 2,
+        "composite_force_execute": True,
     })
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
     monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
@@ -1726,12 +1755,11 @@ def test_ttl_cache_keys_are_independent():
 
 # ── Whale-signal priority (override + sizing) ────────────────────────────
 def test_executor_whale_signal_overrides_pass_to_long(monkeypatch):
-    """A whale-accumulation flag upgrades an AI PASS to LONG even with no
-    slow-burn triggers and low composite — whale signals get their own
-    structural override."""
+    """When explicitly enabled, whale accumulation can upgrade an AI PASS."""
     from hermes_trader.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
+        "whale_force_execute": True,
     })
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
     monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
@@ -1776,6 +1804,16 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
         "total_ntl": 0.0, "asset_positions": [],  # live read dropped the position
     })
     placed = {"n": 0}
+    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+                        lambda p, pl: {"marginSummary": {"accountValue": "1000"}})
+    monkeypatch.setattr(executor, "get_hl_price", lambda c: 7500.0)
+    monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 100.0)
+    monkeypatch.setattr(executor, "get_max_leverage", lambda c: 10)
+    monkeypatch.setattr(executor, "min_entry_notional_usd", lambda c, mid: 10.5)
+    monkeypatch.setattr(executor, "entry_size_for_notional", lambda c, n, mid: n / mid)
+    monkeypatch.setattr("hermes_trader.agents.market_regime.detect_regime", lambda c: "neutral")
+    monkeypatch.setattr("hermes_trader.agents.hyperfeed.market_get_funding_regime",
+                        lambda: {"regime": "NEUTRAL", "regimes_by_class": {}})
     monkeypatch.setattr(executor, "place_hl_order",
                         lambda *a, **k: placed.update(n=placed["n"] + 1) or {"ok": True})
     res = executor.maybe_execute({
@@ -1808,6 +1846,8 @@ def test_maybe_execute_refuses_when_no_atr(monkeypatch):
     monkeypatch.setenv("HYPERLIQUID_PRIVATE_KEY", "0xdeadbeef")
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 100.0)
     monkeypatch.setattr(executor, "get_max_leverage", lambda c: 10)
+    monkeypatch.setattr(executor, "min_entry_notional_usd", lambda c, mid: 10.5)
+    monkeypatch.setattr(executor, "entry_size_for_notional", lambda c, n, mid: n / mid)
     monkeypatch.setattr(executor, "set_leverage", lambda c, lev: {"ok": True})
     # gates pass
     monkeypatch.setattr(executor, "eval_all_gates",
@@ -1940,28 +1980,39 @@ def test_route_verdict_pass_is_noop():
     assert not calls                   # nothing called
 
 
-def test_route_verdict_pass_with_whale_signal_routes_to_executor():
+def test_route_verdict_pass_with_whale_signal_routes_to_executor(monkeypatch):
     """A hedging AI PASS that carries a whale_signal must reach the executor so
     the force-execute-on-PASS override can fire — otherwise the whale path is
     dead (router dropped PASS before maybe_execute ever saw it)."""
-    from hermes_trader.agents.executor import route_verdict
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config",
+                        lambda: {"whale_force_execute": True})
     calls = {}
-    r = route_verdict({"verdict": "PASS", "coin": "TRX",
-                       "whale_signal": {"signal": "oi_funding_anomaly"}},
-                      execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
-                      close_fn=lambda c: calls.setdefault("c", c))
+    r = executor.route_verdict(
+        {"verdict": "PASS", "coin": "TRX",
+         "whale_signal": {"signal": "oi_funding_anomaly"}},
+        execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
+        close_fn=lambda c: calls.setdefault("c", c),
+    )
     assert r["action"] == "execute"
     assert calls.get("e", {}).get("coin") == "TRX"
     assert "c" not in calls
 
 
-def test_route_verdict_pass_with_slow_burn_hint_routes_to_executor():
-    from hermes_trader.agents.executor import route_verdict
+def test_route_verdict_pass_with_slow_burn_hint_routes_to_executor(monkeypatch):
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "composite_force_execute": True,
+        "force_execute_composite": 40,
+        "force_execute_slow_burn_count": 2,
+    })
     calls = {}
-    r = route_verdict({"verdict": "PASS", "coin": "SOL",
-                       "composite_score": 45.0, "slow_burn_count": 2},
-                      execute_fn=lambda a: calls.setdefault("e", 1) or {"executed": True},
-                      close_fn=lambda c: calls.setdefault("c", 1))
+    r = executor.route_verdict(
+        {"verdict": "PASS", "coin": "SOL",
+         "composite_score": 45.0, "slow_burn_count": 2},
+        execute_fn=lambda a: calls.setdefault("e", 1) or {"executed": True},
+        close_fn=lambda c: calls.setdefault("c", 1),
+    )
     assert r["action"] == "execute"
     assert calls.get("e") == 1
 
@@ -1991,6 +2042,116 @@ def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
                                   "composite_score": 10.0, "slow_burn_count": 0})
     assert res["executed"] is False
     assert res["reason"] == "pass_no_override"
+
+
+def test_runner_gate_blocks_hip3_gex_pintrap_longs(monkeypatch):
+    from hermes_trader.agents import executor
+    from hermes_trader.agents import options_gex
+
+    monkeypatch.setattr(
+        options_gex,
+        "gex_override_caution",
+        lambda *a, **k: (True, "GEX pin-trap: jammed under call wall"),
+    )
+    analysis = {
+        "coin": "xyz:WDC",
+        "side": "long",
+        "confidence": 0.9,
+        "composite_score": 70,
+        "volume_spike_fired": True,
+        "breakout_fired": True,
+        "slow_burn_count": 1,
+    }
+    cfg = {
+        "runner_entry_gate": {"enabled": True, "min_confidence": 0.7,
+                              "min_composite": 30, "min_hip3_composite": 50},
+        "signal_enforcement": {"enabled": True, "veto": True, "gex_veto": True},
+        "gex_signal": {"enabled": True, "shadow_mode": False,
+                       "caution_near_wall_pct": 10.0},
+    }
+
+    reason = executor._runner_entry_block_reason(analysis, cfg)
+
+    assert "GEX pin-trap" in reason
+
+
+def test_runner_gate_gex_shadow_mode_does_not_block(monkeypatch):
+    from hermes_trader.agents import executor
+    from hermes_trader.agents import options_gex
+
+    monkeypatch.setattr(
+        options_gex,
+        "gex_override_caution",
+        lambda *a, **k: (True, "GEX pin-trap: jammed under call wall"),
+    )
+    analysis = {
+        "coin": "xyz:WDC",
+        "side": "long",
+        "confidence": 0.9,
+        "composite_score": 70,
+        "volume_spike_fired": True,
+        "breakout_fired": True,
+        "slow_burn_count": 1,
+    }
+    cfg = {
+        "runner_entry_gate": {"enabled": True, "min_confidence": 0.7,
+                              "min_composite": 30, "min_hip3_composite": 50},
+        "signal_enforcement": {"enabled": True, "veto": True, "gex_veto": True},
+        "gex_signal": {"enabled": True, "shadow_mode": True,
+                       "caution_near_wall_pct": 10.0},
+    }
+
+    assert executor._runner_entry_block_reason(analysis, cfg) == ""
+
+
+def test_runner_gate_allows_quality_downtrend_short():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "SOL",
+        "side": "short",
+        "confidence": 0.74,
+        "composite_score": 26,
+        "downtrend_momentum_fired": True,
+        "slow_burn_count": 0,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "allow_shorts": True,
+            "min_confidence": 0.70,
+            "min_short_confidence": 0.72,
+            "min_short_composite": 25,
+        },
+    }
+
+    assert executor._runner_entry_block_reason(analysis, cfg) == ""
+
+
+def test_runner_gate_blocks_weak_short_even_when_shorts_enabled():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "SOL",
+        "side": "short",
+        "confidence": 0.74,
+        "composite_score": 10,
+        "downtrend_momentum_fired": False,
+        "slow_burn_count": 0,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "allow_shorts": True,
+            "min_confidence": 0.70,
+            "min_short_confidence": 0.72,
+            "min_short_composite": 25,
+        },
+    }
+
+    reason = executor._runner_entry_block_reason(analysis, cfg)
+
+    assert "short needs downtrend momentum" in reason
 
 
 def test_route_verdict_unknown_is_flagged_not_dropped():
@@ -2043,6 +2204,8 @@ def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 100.0)
     monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 2.0)
     monkeypatch.setattr(executor, "get_max_leverage", lambda c: 40)
+    monkeypatch.setattr(executor, "min_entry_notional_usd", lambda c, mid: 10.5)
+    monkeypatch.setattr(executor, "entry_size_for_notional", lambda c, n, mid: n / mid)
     monkeypatch.setattr(executor, "set_leverage", lambda c, l: {"ok": True})
     monkeypatch.setattr(executor, "place_hl_trigger_order", lambda *a, **k: {"ok": True})
     # _http_post is imported locally inside maybe_execute (hip3 preflight) —
@@ -2120,6 +2283,30 @@ def test_maybe_execute_success_path(monkeypatch):
     assert captured["is_buy"] is True
     # notional = equity 1000 × frac 0.10 × lev 10 × conviction(0.70→1.0) = 1000; /mid 100 = 10 coins
     assert abs(captured["size"] - 10.0) < 1e-6
+
+
+def test_maybe_execute_primary_stop_sizing_uses_dsl_risk(monkeypatch):
+    ex, captured, _ = _exec_baseline(
+        monkeypatch,
+        {
+            "leverage": 12,
+            "max_trade_notional_usd": 500,
+            "atr_risk_sizing": {
+                "enabled": True,
+                "risk_per_trade_pct": 0.01,
+                "sizing_basis": "primary_stop",
+            },
+            "dsl_exit": {"max_loss_pct": 0.75, "max_loss_roe_pct": 6.0,
+                         "protect_pct": 1.5, "retrace_threshold": 0.3,
+                         "hard_timeout_minutes": 1800.0},
+        },
+        {"equity": 250.0, "available": 250.0, "total_ntl": 0.0},
+    )
+    r = ex.maybe_execute(_analysis(confidence=0.75, composite_score=60))
+    assert r["executed"] is True, r
+    # risk target = $250 * 1%; primary stop = min(0.75%, 6% ROE / 12x) = 0.5%.
+    # $2.50 / 0.5% = $500 notional; price is stubbed at $100.
+    assert abs(captured["size"] - 5.0) < 1e-6
 
 
 def test_maybe_execute_order_failed(monkeypatch):

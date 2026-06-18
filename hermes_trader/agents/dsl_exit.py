@@ -425,6 +425,8 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         atr_stop_mult=pol_raw.get("atr_stop_mult", ExitPolicy.atr_stop_mult),
         atr_stop_floor_pct=pol_raw.get("atr_stop_floor_pct", ExitPolicy.atr_stop_floor_pct),
         atr_stop_ceiling_pct=pol_raw.get("atr_stop_ceiling_pct", ExitPolicy.atr_stop_ceiling_pct),
+        noise_band_enabled=pol_raw.get("noise_band_enabled", ExitPolicy.noise_band_enabled),
+        noise_band_atr_mult=pol_raw.get("noise_band_atr_mult", ExitPolicy.noise_band_atr_mult),
     )
     t = DSLTracker(d["coin"], d["side"], float(d["entry_px"]),
                    float(d.get("entry_time") or time.time()), policy,
@@ -542,6 +544,7 @@ def _policy_from_config() -> ExitPolicy:
         tiers_raw = dsl.get("phase2_tiers")
         tiers = [RetraceTier(**t) for t in tiers_raw] if tiers_raw else None
         atr_cfg = dsl.get("atr_stop", {}) or {}
+        noise_cfg = dsl.get("noise_band", {}) or {}
         return ExitPolicy(
             max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
             max_loss_roe_pct=dsl.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
@@ -555,6 +558,9 @@ def _policy_from_config() -> ExitPolicy:
             atr_stop_floor_pct=float(atr_cfg.get("floor_pct", ExitPolicy.atr_stop_floor_pct)),
             atr_stop_ceiling_pct=float(atr_cfg.get("ceiling_pct", ExitPolicy.atr_stop_ceiling_pct)),
             stale_flat_timeout_minutes=float(dsl.get("stale_flat_timeout_minutes", 0.0) or 0.0),
+            consecutive_breaches_required=int(dsl.get("consecutive_breaches_required", 1) or 1),
+            noise_band_enabled=bool(noise_cfg.get("enabled", False)),
+            noise_band_atr_mult=float(noise_cfg.get("atr_mult", ExitPolicy.noise_band_atr_mult)),
             phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         )
     except Exception:

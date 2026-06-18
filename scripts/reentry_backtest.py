@@ -124,14 +124,25 @@ def main():
     ap.add_argument("--coins", type=int, default=25)
     ap.add_argument("--interval", default="1h", choices=["5m", "15m", "1h", "4h"])
     ap.add_argument("--equity", type=float, default=180.0)
-    ap.add_argument("--equity-fraction", type=float, default=0.28)
-    ap.add_argument("--leverage-ceiling", type=int, default=8)
-    ap.add_argument("--max-loss", type=float, default=2.25)   # 18% ROE / 8x
-    ap.add_argument("--protect", type=float, default=3.0)
-    ap.add_argument("--retrace", type=float, default=0.55)
+    ap.add_argument("--equity-fraction", type=float, default=0.0,
+                    help="margin fraction per trade (default: .agent-config.json)")
+    ap.add_argument("--leverage-ceiling", type=int, default=0,
+                    help="max leverage to simulate (default: .agent-config.json)")
+    ap.add_argument("--max-loss", type=float, default=None,
+                    help="DSL max_loss_pct spot stop (default: .agent-config.json)")
+    ap.add_argument("--protect", type=float, default=None,
+                    help="DSL protect_pct spot profit threshold (default: .agent-config.json)")
+    ap.add_argument("--retrace", type=float, default=None,
+                    help="DSL phase-2 retrace threshold (default: .agent-config.json)")
     args = ap.parse_args()
 
     live = _live_cfg()
+    live_dsl = live.get("dsl_exit", {}) or {}
+    equity_fraction = float(args.equity_fraction or live.get("equity_fraction_per_trade", 0.12))
+    leverage_ceiling = int(args.leverage_ceiling or live.get("leverage", 8))
+    max_loss = float(args.max_loss if args.max_loss is not None else live_dsl.get("max_loss_pct", 0.75))
+    protect = float(args.protect if args.protect is not None else live_dsl.get("protect_pct", 1.5))
+    retrace = float(args.retrace if args.retrace is not None else live_dsl.get("retrace_threshold", 0.30))
     mr = live.get("momentum_reentry", {})
     reclaim_pct = float(mr.get("reclaim_pct", 1.0))
     min_comp = float(mr.get("min_composite", 30))
@@ -145,9 +156,9 @@ def main():
     coins = sorted(perps, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[: args.coins]
 
     print("=== RE-ENTRY backtest ===")
-    print(f"period {args.days}d  interval {args.interval}  top-{args.coins}  lev<= {args.leverage_ceiling}x")
+    print(f"period {args.days}d  interval {args.interval}  top-{args.coins}  lev<= {leverage_ceiling}x")
     print(f"rule: reclaim >= +{reclaim_pct}% above stop & composite >= {min_comp}  | "
-          f"cooldown {lc_min:.0f}min = {cooldown_bars} bars  | max_loss {args.max_loss}%\n")
+          f"cooldown {lc_min:.0f}min = {cooldown_bars} bars  | max_loss {max_loss}%\n")
 
     # Regime-aware exit comparison: scalp vs trend-ride vs regime (ride when the
     # coin's trend is bullish at entry). All with cooldown blocking re-entry.
@@ -161,9 +172,9 @@ def main():
             if len(candles) < 110:
                 continue
             kw = dict(policy="BLOCK", cfg=cfg, equity=args.equity,
-                      equity_fraction=args.equity_fraction, lev_ceiling=args.leverage_ceiling,
-                      max_loss_pct=args.max_loss, protect_pct=args.protect,
-                      retrace_threshold=args.retrace, cooldown_bars=cooldown_bars,
+                      equity_fraction=equity_fraction, lev_ceiling=leverage_ceiling,
+                      max_loss_pct=max_loss, protect_pct=protect,
+                      retrace_threshold=retrace, cooldown_bars=cooldown_bars,
                       reclaim_pct=reclaim_pct, min_composite=min_comp,
                       ride_protect=ride_pp, ride_retrace=ride_rt)
             scalp += simulate(coin, candles, max_lev, exit_mode="fixed", **kw)
@@ -173,7 +184,7 @@ def main():
             print(f"  {coin}: skip ({e})")
 
     print("=== REGIME-AWARE EXIT RESULT ===")
-    print(f"  (scalp base protect {args.protect}/retrace {args.retrace}; "
+    print(f"  (scalp base protect {protect}/retrace {retrace}; "
           f"ride protect {ride_pp}/retrace {ride_rt}; regime = ride when bullish@entry)\n")
     for label, tr_set in (("SCALP (always tight)", scalp),
                           ("TREND-RIDE (always loose)", ride),

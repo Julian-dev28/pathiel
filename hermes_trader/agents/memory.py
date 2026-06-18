@@ -120,8 +120,10 @@ class AgentMemory:
                 "dayStartTs": self._day_start_ts,
                 "openPositions": self._open_positions,
             }
-            with open(MEMORY_FILE, "w") as f:
+            tmp = MEMORY_FILE + ".tmp"
+            with open(tmp, "w") as f:
                 json.dump(data, f, indent=2)
+            os.replace(tmp, MEMORY_FILE)
         except Exception as e:
             logger.error(f"[memory] save failed: {e}")
 
@@ -163,7 +165,7 @@ class AgentMemory:
         Phase-3 stats had nothing to read. Called from close_position_market so a
         single chokepoint covers DSL, AI-close, and kill-switch exits.
         Expected keys: coin, side, entry_px, exit_px, spot_pct, realized_pnl_pct
-        (leveraged, net fees), realized_pnl_usd, leverage, closed_at.
+        (leveraged, net fees), realized_pnl_usd (net USD), leverage, closed_at.
         """
         self._closes.append(c)
         if len(self._closes) > MAX_CLOSES:

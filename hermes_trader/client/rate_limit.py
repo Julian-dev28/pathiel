@@ -12,6 +12,7 @@ are smoothed against the real per-minute budget regardless of which code path
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -74,11 +75,12 @@ class TokenBucket:
 
 
 # NOTE: this bucket is PER-PROCESS, but HL limits per-IP. The live loop and
-# the dashboard server are separate processes sharing one IP, so neither
-# sees the other's usage — the limiter can't fully prevent cross-process
-# 429s (those get retried by the candle fetcher). Its real job is capping
-# the pathological single-process burst (a backtest firing thousands of
-# requests instantly). So: generous capacity/refill matched to HL's observed
-# tolerance (~the pre-limiter loop sustained ~133 w/s fine) so live scans
-# aren't slowed, while still throttling a runaway backtest to a paced stream.
-HL_LIMITER = TokenBucket(capacity=600, refill_per_sec=130.0)
+# dashboard server are separate processes sharing one IP, so neither sees the
+# other's usage. Still, each process must respect the documented budget. A live
+# scan legitimately bursts ~50 candleSnapshot calls (weight ~= 1000) then sleeps;
+# the refill stays at 1200 weight/min, while the burst cap is large enough that
+# those workers queue instead of timing out and producing fake candle gaps.
+HL_LIMITER = TokenBucket(
+    capacity=int(os.environ.get("HERMES_HL_RATE_CAPACITY", "600")),
+    refill_per_sec=float(os.environ.get("HERMES_HL_RATE_REFILL_PER_SEC", "20")),
+)

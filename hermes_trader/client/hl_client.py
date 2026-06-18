@@ -126,11 +126,18 @@ def _get_session() -> "requests.Session":
 def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
     """Direct HTTP POST over the shared keep-alive connection pool.
 
-    Acquires a rate-limit token first (HL: 1200 weight/min). On budget
-    exhaustion, raises so the caller's existing retry/backoff handles it
+    Acquires a rate-limit token first (HL: ~1200 weight/min). On budget
+    exhaustion, returns None so the caller's existing retry/backoff handles it
     rather than firing into a 429.
     """
-    _HL_LIMITER.acquire(_endpoint_weight(payload.get("type")))
+    weight = _endpoint_weight(payload.get("type"))
+    max_wait = float(os.environ.get("HERMES_HL_RATE_MAX_WAIT_S", "30"))
+    if not _HL_LIMITER.acquire(weight, max_wait=max_wait):
+        logger.warning(
+            f"[hl] rate budget exhausted for {payload.get('type') or 'unknown'} "
+            f"(weight={weight}, waited {max_wait:g}s) — skipping request this retry"
+        )
+        return None
     try:
         resp = _get_session().post(f"{HL_API}{path}", json=payload, timeout=timeout)
         resp.raise_for_status()

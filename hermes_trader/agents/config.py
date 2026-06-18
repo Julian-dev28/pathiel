@@ -28,6 +28,7 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # in surfacing so down-movers reach research and can be shorted.
         "uptrendMomentum": 0.0,
         "downtrendMomentum": 0.0,
+        "dailyMover": 0.0,
     },
     "thresholds": {
         "sigmaThreshold": 2.0,

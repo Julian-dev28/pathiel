@@ -2,24 +2,25 @@
   "mode": "LIVE",
   "enable_crypto": true,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.28,
-  "leverage": 10,
-  "max_trade_notional_usd": 250,
+  "equity_fraction_per_trade": 0.2,
+  "leverage": 9,
+  "max_trade_notional_usd": 650,
   "tp_scale_fraction": 0.5,
-  "max_concurrent": 15,
-  "max_total_notional_pct": 8.0,
-  "max_daily_loss_usd": -90,
+  "max_concurrent": 10,
+  "max_total_notional_pct": 10.0,
+  "max_daily_loss_usd": -30,
   "daily_giveback_halt_pct": 0.35,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
   "min_available_margin_pct": 0.1,
   "cooldown_min": 60,
   "held_research_interval_min": 10,
-  "min_ai_confidence": 0.65,
+  "min_ai_confidence": 0.7,
   "counter_regime_min_conf": 0.8,
-  "max_crypto_long_correlated": 8,
-  "min_market_volume_usd": 800000,
-  "min_hip3_volume_usd": 1500000,
+  "max_crypto_long_correlated": 3,
+  "min_market_volume_usd": 5000000,
+  "min_hip3_volume_usd": 5000000,
+  "min_short_volume_usd": 50000000,
   "coin_allowlist": [],
   "coin_blocklist": [
     "TON",
@@ -30,8 +31,8 @@
   ],
   "hip3_dex_blocklist": [],
   "dsl_exit": {
-    "max_loss_pct": 3.5,
-    "max_loss_roe_pct": 18.0,
+    "max_loss_pct": 0.5,
+    "max_loss_roe_pct": 4.0,
     "protect_pct": 1.5,
     "retrace_threshold": 0.3,
     "hard_timeout_minutes": 1800.0,
@@ -44,10 +45,6 @@
       "ceiling_pct": 4.0
     },
     "phase2_tiers": [
-      {
-        "pct_above_entry": 1.5,
-        "retrace_threshold": 0.3
-      },
       {
         "pct_above_entry": 8.0,
         "retrace_threshold": 0.35
@@ -64,9 +61,18 @@
         "protect_pct": 3.0,
         "retrace_threshold": 0.55,
         "phase2_tiers": [
-          { "pct_above_entry": 3.0, "retrace_threshold": 0.55 },
-          { "pct_above_entry": 8.0, "retrace_threshold": 0.45 },
-          { "pct_above_entry": 15.0, "retrace_threshold": 0.4 }
+          {
+            "pct_above_entry": 3.0,
+            "retrace_threshold": 0.55
+          },
+          {
+            "pct_above_entry": 8.0,
+            "retrace_threshold": 0.45
+          },
+          {
+            "pct_above_entry": 15.0,
+            "retrace_threshold": 0.4
+          }
         ]
       }
     }
@@ -74,27 +80,25 @@
   "force_execute_composite": 30,
   "composite_force_execute": false,
   "force_execute_slow_burn_count": 2,
-  "conviction_sizing": true,
-  "conviction_tiers": [
-    [
-      0.85,
-      2.0
-    ],
-    [
-      0.7,
-      1.2
-    ],
-    [
-      0.0,
-      0.5
-    ]
-  ],
-  "whale_regime_bypass": true,
-  "whale_force_execute": true,
-  "whale_size_multiplier": 1.3,
+  "conviction_sizing": false,
+  "whale_regime_bypass": false,
+  "whale_force_execute": false,
+  "whale_size_multiplier": 1.0,
   "block_counter_trend_bypass": true,
-  "momentum_continuation": {
+  "trend_surface_enabled": true,
+  "runner_entry_gate": {
     "enabled": true,
+    "allow_shorts": true,
+    "min_confidence": 0.7,
+    "min_composite": 30.0,
+    "min_hip3_composite": 50.0,
+    "min_short_confidence": 0.72,
+    "min_short_composite": 25.0,
+    "mover_min_confidence": 0.72,
+    "mover_min_composite": 20.0
+  },
+  "momentum_continuation": {
+    "enabled": false,
     "log_near_miss": true,
     "min_trend_pct": 8.0,
     "max_pullback_pct": 6.0,
@@ -107,19 +111,18 @@
     "context_pct": 1.5
   },
   "override_requires_ai": true,
-  "whale_scan_bypass": true,
-  "min_short_volume_usd": 50000000,
-  "aligned_min_conf": 0.7,
+  "whale_scan_bypass": false,
   "loss_cooldown_min": 180,
   "min_ai_close_hold_min": 25,
-  "breakout_force_execute": true,
+  "breakout_force_execute": false,
   "sl_atr_mult": 1.5,
   "atr_risk_sizing": {
     "enabled": true,
-    "risk_per_trade_pct": 0.035
+    "risk_per_trade_pct": 0.025,
+    "sizing_basis": "primary_stop"
   },
   "capital_rotation": {
-    "enabled": true,
+    "enabled": false,
     "shadow_mode": false,
     "min_candidate_composite": 40.0,
     "min_hold_minutes": 30,
@@ -128,7 +131,7 @@
   "gex_signal": {
     "enabled": true,
     "shadow_mode": false,
-    "caution_near_wall_pct": 1.0
+    "caution_near_wall_pct": 10.0
   },
   "shadow_signals": {
     "enabled": true,
@@ -152,5 +155,11 @@
     "enabled": false,
     "reclaim_pct": 1.0,
     "min_composite": 30
+  },
+  "runner_mover_surface": {
+    "enabled": true,
+    "min_crypto_24h_pct": 10.0,
+    "min_hip3_24h_pct": 8.0,
+    "min_volume_usd": 5000000
   }
 }

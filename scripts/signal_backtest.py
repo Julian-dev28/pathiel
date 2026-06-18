@@ -8,17 +8,33 @@ opened AFTER the entry-context wiring shipped). Until then it says so.
 
 Usage: python3 scripts/signal_backtest.py [path-to-.agent-memory.json]
 """
-import json
 import sys
 from collections import defaultdict
+from _memory_io import load_memory
+
+
+def _f(v, default=0.0):
+    try:
+        return default if v is None else float(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _pnl_usd(row):
+    pct = row.get("realized_pnl_pct")
+    notional = _f(row.get("notional_usd"))
+    leverage = _f(row.get("leverage"), 1.0)
+    if pct is not None and notional > 0 and leverage > 0:
+        return (notional / leverage) * _f(pct) / 100.0
+    return _f(row.get("realized_pnl_usd"))
 
 
 def _stats(rows):
     n = len(rows)
     if not n:
         return (0, 0.0, 0.0)
-    wins = sum(1 for r in rows if (r.get("realized_pnl_usd") or 0) > 0)
-    net = sum(r.get("realized_pnl_usd") or 0 for r in rows)
+    wins = sum(1 for r in rows if _pnl_usd(r) > 0)
+    net = sum(_pnl_usd(r) for r in rows)
     return (n, wins / n * 100, net)
 
 
@@ -30,7 +46,7 @@ def _line(label, rows):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else ".agent-memory.json"
-    closes = json.load(open(path)).get("closes", [])
+    closes = load_memory(path).get("closes", [])
     tagged = [c for c in closes if c.get("signals_at_entry")]
     print(f"\n=== Signal backtest — {len(closes)} closes, {len(tagged)} with entry signals ===")
     if not tagged:

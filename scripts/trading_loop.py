@@ -50,6 +50,7 @@ from hermes_trader.agents.research import research
 from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits, route_verdict
 from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
+from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
 from hermes_trader.client.universe import get_universe
@@ -95,17 +96,18 @@ threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
 logger.info(f"[watchdog] armed pre-startup: re-exec if no progress for {_watchdog_timeout_s}s")
 
 logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
-logger.info(f"Mode: LIVE  env={_args.env}  daemon={_args.daemon}")
 
 config = get_config()
+startup_agent_config = read_agent_config()
+startup_mode = str(startup_agent_config.get("mode", "OFF")).upper()
+logger.info(f"Mode: {startup_mode}  env={_args.env}  daemon={_args.daemon}")
 # HIP-3 toggle: read once at startup so the prefetched universe includes
 # tokenized-equity / commodity perps if enabled. The agent config is
 # hot-reloaded per cycle inside the executor / perception layer for other
 # fields; the universe itself is fetched once at startup, so flipping
 # enable_hip3 mid-run requires a loop restart to pick up new markets.
 try:
-    from hermes_trader.agents.config_store import read_agent_config
-    _enable_hip3 = bool(read_agent_config().get("enable_hip3", False))
+    _enable_hip3 = bool(startup_agent_config.get("enable_hip3", False))
 except Exception:
     _enable_hip3 = False
 universe = get_universe(include_hip3=_enable_hip3)
@@ -115,11 +117,32 @@ logger.info(
 )
 # Warm the per-dex meta cache BEFORE the first scan/execute so the restart-time
 # 429 storm can't make coin resolution fall through to "Unknown coin" (which
-# kills the HIP-3 backup stop-loss) or blank candle fetches.
-try:
-    prewarm_meta_cache()
-except Exception as e:
-    logger.warning(f"[startup] meta prewarm failed (will warm lazily): {e}")
+# kills the HIP-3 backup stop-loss) or blank candle fetches. Bound it: the SDK
+# meta call has hung during startup, which left the bot neither scanning nor
+# monitoring exits until an external restart.
+def _prewarm_meta_cache_bounded(timeout_s: float) -> None:
+    state = {"done": False, "error": None}
+
+    def _run() -> None:
+        try:
+            prewarm_meta_cache()
+        except Exception as e:
+            state["error"] = e
+        finally:
+            state["done"] = True
+
+    t = threading.Thread(target=_run, name="hermes-meta-prewarm", daemon=True)
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        logger.warning(
+            f"[startup] meta prewarm exceeded {timeout_s:.0f}s — continuing; "
+            "coin metadata will warm lazily")
+    elif state["error"] is not None:
+        logger.warning(f"[startup] meta prewarm failed (will warm lazily): {state['error']}")
+
+
+_prewarm_meta_cache_bounded(float(os.environ.get('HERMES_META_PREWARM_TIMEOUT_S', '3')))
 # The universe carries prevDayPx / dayNtlVlm / funding which DRIFT over the
 # day; fetched once here they'd freeze at loop-start for the whole process,
 # so mover-selection + volume-ranking would rank stale 24h windows (a coin
@@ -154,7 +177,7 @@ log_event({
     # Full config snapshot at startup so the feed shows exactly what the bot
     # is configured to do — useful for postmortems ("what was the cap when
     # this trade happened?") and for the operator UI to surface drift.
-    "config": read_agent_config(),
+    "config": startup_agent_config,
 })
 
 
@@ -326,7 +349,7 @@ while True:
         # whose dynamic floor was breached.
         try:
             rehydrate_from_exchange(positions,
-                                    default_leverage=int(config.get("leverage", 1) or 1),
+                                    default_leverage=int(_cfg.get("leverage", 1) or 1),
                                     queried_dexes=queried_dexes)
             # include_hip3=True so xyz:MU / vntl:* etc. get fresh mids each
             # cycle — without them, monitor_exits has no price for HIP-3
@@ -366,6 +389,13 @@ while True:
         except Exception as e:
             logger.error(f"[dsl] monitor pass failed: {e}")
             log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
+
+        if str(_cfg.get("mode", "OFF")).upper() == "OFF":
+            logger.info("[mode] OFF — skipping scan/research/execution; exits still monitored")
+            _last_progress_ts = time.time()
+            logger.info(f"Sleeping {scan_interval}s until next scan...")
+            time.sleep(scan_interval)
+            continue
 
         # Refresh the universe on a TTL so prevDayPx / dayNtlVlm / funding track
         # the live market instead of freezing at loop-start (stale fields make

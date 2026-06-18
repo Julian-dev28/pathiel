@@ -195,6 +195,40 @@ def _scan_single_market(
             hits.append(trigger_mod.bearish_reversal_candle(candles, _wbr, _ctx_lb, _ctx_pct))
             hits.append(trigger_mod.bullish_reversal_candle(candles, _wbr, _ctx_lb, _ctx_pct))
 
+        # Daily mover surfacing: the scan already reserves slots for top 24h
+        # movers, but the trigger gate can still drop an orderly runner once the
+        # fresh spike/breakout bar has passed. Surface large liquid movers to AI
+        # as a weight-0 trigger so SHADOW can tell us whether they are late-chase
+        # junk or real continuation setups. Execution is still governed by the
+        # runner gate, liquidity gate, AI confidence, and SHADOW/LIVE mode.
+        _rms = config.get("runner_mover_surface") or {}
+        daily_mover_fired = False
+        daily_mover_reason = ""
+        if bool(_rms.get("enabled", False)):
+            prev = float(market.get("prevDayPx") or 0)
+            cur = float(mid or market.get("midPx") or market.get("markPx") or 0)
+            vol = float(market.get("dayNtlVlm") or 0)
+            if prev > 0 and cur > 0:
+                move_pct = (cur - prev) / prev * 100
+                is_hip3 = bool(market.get("dex"))
+                min_move = float(_rms.get(
+                    "min_hip3_24h_pct" if is_hip3 else "min_crypto_24h_pct",
+                    8.0 if is_hip3 else 10.0,
+                ))
+                min_vol = float(_rms.get("min_volume_usd", 3_000_000))
+                daily_mover_fired = move_pct >= min_move and vol >= min_vol
+                daily_mover_reason = (
+                    f"{move_pct:+.1f}% 24h mover, vol ${vol/1e6:.2f}M"
+                    if daily_mover_fired
+                    else f"{move_pct:+.1f}% 24h / vol ${vol/1e6:.2f}M"
+                )
+        hits.append({
+            "name": "dailyMover",
+            "score": 10 if daily_mover_fired else 0,
+            "reason": daily_mover_reason or "not a configured 24h mover",
+            "fired": daily_mover_fired,
+        })
+
         # At least one trigger must fire.
         fired_count = sum(1 for h in hits if h.get("fired"))
         if fired_count < 1:
@@ -224,13 +258,14 @@ def _scan_single_market(
         # momentum, not reversals). Gated by candlestick_patterns.enabled.
         pattern_bypass = bool(_cp.get("enabled")) and any(
             h["name"] in ("bearishReversalCandle", "bullishReversalCandle") and h["fired"] for h in hits)
+        daily_mover_bypass = any(h["name"] == "dailyMover" and h["fired"] for h in hits)
         if (score < min_score and not burst_fired and not whale_bypass
-                and not trend_bypass and not pattern_bypass):
+                and not trend_bypass and not pattern_bypass and not daily_mover_bypass):
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the
             # continuation trigger). Pure logging; no effect on what trades.
-            if _mc.get("log_near_miss") and score >= min_score * 0.5:
+            if _mc.get("enabled") and _mc.get("log_near_miss") and score >= min_score * 0.5:
                 try:
                     logger.info(
                         f"[near-miss] {market['coin']} composite {score:.1f} "
@@ -293,12 +328,19 @@ def scan_once(
         include_crypto = bool(_cfg.get("enable_crypto", True))
         include_hip3 = bool(_cfg.get("enable_hip3", False))
         whale_scan_bypass = bool(_cfg.get("whale_scan_bypass", False))
-        trend_surface_enabled = bool(_cfg.get("trend_surface_enabled", True))
+        trend_surface_enabled = bool(_cfg.get("trend_surface_enabled", False))
     except Exception:
+        _cfg = {}
         include_crypto = True
         include_hip3 = False
         whale_scan_bypass = False
-        trend_surface_enabled = True
+        trend_surface_enabled = False
+
+    # `get_config()` owns static trigger weights/thresholds; `.agent-config.json`
+    # owns hot strategy toggles. Merge root-level live keys so optional scan
+    # features such as momentum_continuation / candlestick_patterns actually
+    # follow the live config instead of being dead knobs.
+    scan_cfg = {**cfg, **_cfg}
 
     if not include_crypto and not include_hip3:
         logger.warning("[scan] both enable_crypto and enable_hip3 are False — nothing to scan")
@@ -368,6 +410,8 @@ def scan_once(
     # low-volume HIP-3 pumpers that would never make a vol cut). The HIP-3
     # universe is bounded so this doesn't expose us to crypto-microcap noise.
     hip3_movers_floor = float(os.environ.get("HERMES_HIP3_MOVERS_FLOOR_USD", "50000"))
+    crypto_sweep_floor = float(_cfg.get("min_market_volume_usd", movers_vol_floor) or movers_vol_floor)
+    hip3_sweep_floor = float(_cfg.get("min_hip3_volume_usd", hip3_movers_floor) or hip3_movers_floor)
 
     def _abs_pct_24h(m):
         prev = float(m.get("prevDayPx") or 0)
@@ -444,7 +488,17 @@ def scan_once(
     sweep_n = int(os.environ.get("HERMES_UNIVERSE_SWEEP", "0"))
     if sweep_n > 0 and eligible:
         global _sweep_offset
-        ordered = sorted(eligible, key=lambda m: m.get("coin", ""))
+        sweep_pool = [
+            m for m in eligible
+            if float(m.get("dayNtlVlm") or 0) >= (
+                hip3_sweep_floor if m.get("dex") else crypto_sweep_floor
+            )
+        ]
+        ordered = sorted(sweep_pool, key=lambda m: m.get("coin", ""))
+        if not ordered:
+            logger.info("[scan] universe sweep: no markets above liquidity floor")
+            ordered = []
+    if sweep_n > 0 and eligible and ordered:
         n = len(ordered)
         off = _sweep_offset % n
         window = ordered[off:off + sweep_n]
@@ -478,19 +532,28 @@ def scan_once(
     total = len(callables)
     logger.info(f"[scan] scanning {total} markets in batches of {batch_size} ({workers} workers/batch)...")
 
-    # Fetch the whale-accumulation map ONCE per scan (it's universe-derived
-    # so all markets share the same snapshot). If the call fails, perceptions
-    # just won't have whale signals attached — no other effect.
-    try:
-        from hermes_trader.agents.whale_index import whale_accumulation_map
-        whale_signals = whale_accumulation_map()
-        if whale_signals:
-            logger.info(
-                f"[scan] whale accumulation: {len(whale_signals)} coins flagged "
-                f"({', '.join(list(whale_signals.keys())[:5])})"
-            )
-    except Exception as e:
-        logger.warning(f"[scan] whale_accumulation_map failed: {e}")
+    whale_enabled = any([
+        whale_scan_bypass,
+        bool(_cfg.get("whale_force_execute", False)),
+        bool(_cfg.get("whale_regime_bypass", False)),
+        float(_cfg.get("whale_size_multiplier", 1.0) or 1.0) != 1.0,
+    ])
+    # Fetch the whale-accumulation map only when a downstream whale feature can
+    # actually use it. Keeping disabled signals out of the research prompt avoids
+    # stale "shadow" context nudging verdicts while force/regime/size paths are off.
+    if whale_enabled:
+        try:
+            from hermes_trader.agents.whale_index import whale_accumulation_map
+            whale_signals = whale_accumulation_map()
+            if whale_signals:
+                logger.info(
+                    f"[scan] whale accumulation: {len(whale_signals)} coins flagged "
+                    f"({', '.join(list(whale_signals.keys())[:5])})"
+                )
+        except Exception as e:
+            logger.warning(f"[scan] whale_accumulation_map failed: {e}")
+            whale_signals = {}
+    else:
         whale_signals = {}
 
     results: List[Dict[str, Any]] = []
@@ -502,7 +565,7 @@ def scan_once(
         batch = callables[batch_start:batch_end]
 
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hermes-scan") as pool:
-            futures = [pool.submit(_scan_single_market, m, md, cfg, min_score, whale_signals, whale_scan_bypass, trend_surface_enabled) for m, md in batch]
+            futures = [pool.submit(_scan_single_market, m, md, scan_cfg, min_score, whale_signals, whale_scan_bypass, trend_surface_enabled) for m, md in batch]
             for i, future in enumerate(futures):
                 idx = batch_start + i
                 try:
@@ -537,5 +600,3 @@ def scan_once(
             f"candles ({data_gaps/len(markets)*100:.0f}%) — possible degraded candle feed; "
             f"signals may be silently missed this scan")
     return sorted(results, key=lambda r: r["composite_score"], reverse=True)
-
-

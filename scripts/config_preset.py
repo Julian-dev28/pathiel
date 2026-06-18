@@ -158,6 +158,14 @@ PRESETS: dict[str, dict] = {
 }
 
 
+LEGACY_RISK_PRESETS = {
+    "small_aggressive",
+    "small_conservative",
+    "medium_balanced",
+    "large_steady",
+}
+
+
 def _load() -> dict:
     return json.loads(CONFIG_FILE.read_text())
 
@@ -196,7 +204,12 @@ def cmd_show(name: str) -> int:
     return 0
 
 
-def cmd_apply(name: str | None, account_size: float | None, yes: bool) -> int:
+def cmd_apply(
+    name: str | None,
+    account_size: float | None,
+    yes: bool,
+    allow_legacy_risk_preset: bool,
+) -> int:
     if name is None:
         if account_size is None:
             print("provide --account-size or a preset name")
@@ -206,6 +219,17 @@ def cmd_apply(name: str | None, account_size: float | None, yes: bool) -> int:
 
     if name not in PRESETS:
         print(f"unknown preset: {name}")
+        return 2
+
+    if name in LEGACY_RISK_PRESETS and not allow_legacy_risk_preset:
+        print(
+            f"refusing to apply legacy risk preset `{name}`.\n"
+            "These presets predate the current PnL audit and would overwrite "
+            "audited live-risk gates (leverage, confidence floors, force "
+            "thresholds, and notional caps). Update the preset from fresh "
+            "evidence first, or rerun with --allow-legacy-risk-preset if you "
+            "intentionally want this unsafe override."
+        )
         return 2
 
     cur = _load()
@@ -264,6 +288,8 @@ def main() -> int:
     p_apply.add_argument("--account-size", type=float, default=None,
                         help="auto-pick preset based on equity")
     p_apply.add_argument("--yes", "-y", action="store_true", help="skip confirm")
+    p_apply.add_argument("--allow-legacy-risk-preset", action="store_true",
+                         help="permit old account-size presets that overwrite live risk gates")
     args = ap.parse_args()
 
     if args.cmd == "list":
@@ -271,7 +297,7 @@ def main() -> int:
     if args.cmd == "show":
         return cmd_show(args.name)
     if args.cmd == "apply":
-        return cmd_apply(args.name, args.account_size, args.yes)
+        return cmd_apply(args.name, args.account_size, args.yes, args.allow_legacy_risk_preset)
     return 0
 
 

@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,13 +32,77 @@ if _env.exists():
             os.environ.setdefault(k.strip(), v.strip())
 
 from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.sizing import atr_equal_risk_notional
+from hermes_trader.client.exchange import get_max_leverage
+from hermes_trader.indicators.math import atr as calc_atr
 from hermes_trader.client.hl_client import _http_post
 from hermes_trader.models.types import Candle
+from _memory_io import load_memory
 
-_INTERVAL_MS = {"5m": 300_000, "1h": 3_600_000}
+_INTERVAL_MS = {"5m": 300_000, "1h": 3_600_000, "4h": 14_400_000}
+_CANDLE_CACHE: Dict[Tuple[str, str, int, int], Optional[List[Candle]]] = {}
+_DISK_CANDLE_CACHE: Dict[str, Any] = {}
+_DISK_CACHE_FILE = ""
+_API_FAILURES = 0
+_API_SLEEP_S = 0.0
 
 
-def fetch_candles_at(coin: str, interval: str, count: int, end_ms: int) -> List[Candle]:
+def _cache_key(coin: str, interval: str, count: int, end_ms: int) -> str:
+    return json.dumps([coin, interval, count, end_ms], separators=(",", ":"))
+
+
+def _load_disk_cache(path: str) -> None:
+    global _DISK_CANDLE_CACHE
+    if not path:
+        return
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            _DISK_CANDLE_CACHE = raw
+    except FileNotFoundError:
+        _DISK_CANDLE_CACHE = {}
+    except Exception:
+        _DISK_CANDLE_CACHE = {}
+
+
+def _save_disk_cache(path: str) -> None:
+    if not path:
+        return
+    try:
+        tmp = f"{path}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(_DISK_CANDLE_CACHE, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _candles_from_json(raw: Any) -> Optional[List[Candle]]:
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        return None
+    return [Candle(t=c["t"], o=float(c["o"]), h=float(c["h"]), l=float(c["l"]),
+                   c=float(c["c"]), v=float(c.get("v", "0"))) for c in raw]
+
+
+def _candles_to_json(candles: List[Candle]) -> List[Dict[str, Any]]:
+    return [{"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v} for c in candles]
+
+
+def fetch_candles_at(coin: str, interval: str, count: int, end_ms: int) -> Optional[List[Candle]]:
+    global _API_FAILURES
+    key = (coin, interval, count, end_ms)
+    if key in _CANDLE_CACHE:
+        return _CANDLE_CACHE[key]
+    disk_key = _cache_key(coin, interval, count, end_ms)
+    if disk_key in _DISK_CANDLE_CACHE:
+        candles = _candles_from_json(_DISK_CANDLE_CACHE[disk_key])
+        _CANDLE_CACHE[key] = candles
+        return candles
+    if _API_SLEEP_S > 0:
+        time.sleep(_API_SLEEP_S)
     step = _INTERVAL_MS[interval]
     payload = {"type": "candleSnapshot",
                "req": {"coin": coin, "interval": interval,
@@ -45,17 +110,22 @@ def fetch_candles_at(coin: str, interval: str, count: int, end_ms: int) -> List[
     try:
         raw = _http_post("/info", payload)
     except Exception:
-        return []
+        raw = None
     if not isinstance(raw, list):
-        return []
-    return [Candle(t=c["t"], o=float(c["o"]), h=float(c["h"]), l=float(c["l"]),
-                   c=float(c["c"]), v=float(c.get("v", "0"))) for c in raw]
+        _API_FAILURES += 1
+        _CANDLE_CACHE[key] = None
+        return None
+    candles = [Candle(t=c["t"], o=float(c["o"]), h=float(c["h"]), l=float(c["l"]),
+                      c=float(c["c"]), v=float(c.get("v", "0"))) for c in raw]
+    _CANDLE_CACHE[key] = candles
+    _DISK_CANDLE_CACHE[disk_key] = _candles_to_json(candles)
+    return candles
 
 
 def detect_regime_at(end_ms: int, proxy: str = "BTC") -> str:
     from hermes_trader.indicators.math import ema
     candles = fetch_candles_at(proxy, "1h", 100, end_ms)
-    if len(candles) < 50:
+    if not candles or len(candles) < 50:
         return "neutral"
     closes = [c.c for c in candles]
     fast = ema(closes, 20)
@@ -71,6 +141,73 @@ def detect_regime_at(end_ms: int, proxy: str = "BTC") -> str:
     if fast[-1] < slow[-1] and slope < -0.002:
         return "down"
     return "neutral"
+
+
+def entry_atr4h(coin: str, end_ms: int) -> float:
+    candles = fetch_candles_at(coin, "4h", 80, end_ms)
+    if not candles or len(candles) < 20:
+        return 0.0
+    vals = [
+        float(v) for v in calc_atr(candles, 14)
+        if not (v != v or v in (float("inf"), float("-inf")))
+    ]
+    return vals[-1] if vals else 0.0
+
+
+def max_leverage_for(coin: str, fallback: int) -> int:
+    try:
+        lev = int(get_max_leverage(coin))
+    except Exception:
+        lev = int(fallback)
+    return max(1, min(int(fallback), lev))
+
+
+def live_sized_notional(
+    *,
+    coin: str,
+    entry_px: float,
+    entry_ms: int,
+    equity: float,
+    equity_fraction: float,
+    leverage: int,
+    cfg: Dict[str, Any],
+    dsl_cfg: Dict[str, Any],
+) -> Tuple[float, str]:
+    cap = float(cfg.get("max_trade_notional_usd", 0) or 0)
+    coin_lev = max_leverage_for(coin, leverage)
+    atr_cfg = cfg.get("atr_risk_sizing", {}) or {}
+    if bool(atr_cfg.get("enabled", False)):
+        risk_pct = float(atr_cfg.get("risk_per_trade_pct", 0.0075) or 0.0)
+        basis = str(atr_cfg.get("sizing_basis", "atr_stop") or "atr_stop").lower()
+        if basis in ("primary_stop", "dsl_stop"):
+            stop_frac = min(
+                float(dsl_cfg.get("max_loss_pct", 2.0) or 2.0),
+                float(dsl_cfg.get("max_loss_roe_pct", 40.0) or 40.0) / max(1, coin_lev),
+            ) / 100.0
+            if equity <= 0 or risk_pct <= 0 or stop_frac <= 0:
+                return 0.0, "primary_stop_invalid"
+            notional = (risk_pct * equity) / stop_frac
+            notional = min(notional, equity * coin_lev)
+            if cap > 0:
+                notional = min(notional, cap)
+            return notional, f"primary_stop risk={risk_pct:g}"
+        atr4h = entry_atr4h(coin, entry_ms)
+        sz = atr_equal_risk_notional(
+            equity=equity,
+            risk_per_trade_pct=risk_pct,
+            atr_abs=atr4h,
+            entry_px=entry_px,
+            sl_atr_mult=float(cfg.get("sl_atr_mult", 1.5) or 1.5),
+            max_trade_notional_usd=cap,
+            coin_max_leverage=coin_lev,
+            config_max_leverage=leverage,
+        )
+        return sz.notional_usd, f"atr_stop risk={risk_pct:g}"
+
+    notional = equity * equity_fraction * coin_lev
+    if cap > 0:
+        notional = min(notional, cap)
+    return notional, "legacy_fraction"
 
 
 def passes_counter_regime(side: str, regime: str, conf: float, composite: float,
@@ -127,11 +264,13 @@ def simulate_dsl_exit(entry_px: float, side: str, leverage: int,
 
 
 def main() -> int:
+    global _API_SLEEP_S, _DISK_CACHE_FILE
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=int, default=24)
     ap.add_argument("--equity", type=float, default=250.0)
-    ap.add_argument("--dedup-min", type=int, default=30,
-                    help="Treat same-coin analyses within N minutes as one trade")
+    ap.add_argument("--dedup-min", type=int, default=None,
+                    help="Treat same-coin analyses within N minutes as one trade "
+                         "(default: live cooldown_min)")
     ap.add_argument("--mode", default="ai", choices=["ai", "lowconf", "force", "sidestep"],
                     help="ai=as-is; lowconf=lower min-conf; force=+composite-force PASS->LONG; "
                          "sidestep=ignore AI, take all TA-confirmed LONGs")
@@ -139,11 +278,52 @@ def main() -> int:
     ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
     ap.add_argument("--leverage", type=int, default=0, help="override leverage (0=use config)")
     ap.add_argument("--equity-fraction", type=float, default=0.0, help="override fraction (0=use config)")
+    ap.add_argument("--max-notional", type=float, default=0.0, help="override max_trade_notional_usd (0=config)")
+    ap.add_argument("--risk-pct", type=float, default=0.0, help="override atr_risk_sizing.risk_per_trade_pct (0=config)")
+    ap.add_argument("--sizing-basis", default="", help="override atr_risk_sizing.sizing_basis")
     ap.add_argument("--roe-cap", type=float, default=0.0, help="override max_loss_roe_pct (0=config)")
     ap.add_argument("--max-loss", type=float, default=0.0, help="override max_loss_pct spot stop (0=config)")
+    ap.add_argument("--taker-fee-bps", type=float, default=2.5,
+                    help="Per-side taker fee in bps, converted to ROE by leverage")
+    ap.add_argument("--slippage-bps", type=float, default=0.0,
+                    help="Optional adverse slippage per side in bps for stress tests")
+    ap.add_argument("--exclude-hip3", action="store_true",
+                    help="Skip colon-namespaced HIP-3 markets in the replay")
+    ap.add_argument("--api-sleep", type=float, default=0.0,
+                    help="Seconds to sleep before uncached Hyperliquid candle requests")
+    ap.add_argument("--summary-only", action="store_true",
+                    help="Suppress per-trade rows; print only aggregate results")
+    ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "hermes_backtest_logged_candles.json"),
+                    help="Disk cache for historical candles; set empty string to disable")
+    ap.add_argument("--apply-runner-gate", action="store_true",
+                    help="Apply executor.runner_entry_gate to admitted trades")
+    ap.add_argument("--runner-min-confidence", type=float, default=None,
+                    help="Override runner_entry_gate.min_confidence for this replay")
+    ap.add_argument("--runner-min-composite", type=float, default=None,
+                    help="Override runner_entry_gate.min_composite for this replay")
+    ap.add_argument("--runner-min-hip3-composite", type=float, default=None,
+                    help="Override runner_entry_gate.min_hip3_composite for this replay")
+    ap.add_argument("--runner-mover-min-confidence", type=float, default=None,
+                    help="Override runner_entry_gate.mover_min_confidence for this replay")
+    ap.add_argument("--runner-mover-min-composite", type=float, default=None,
+                    help="Override runner_entry_gate.mover_min_composite for this replay")
     args = ap.parse_args()
+    _API_SLEEP_S = max(0.0, float(args.api_sleep or 0.0))
+    _DISK_CACHE_FILE = args.cache_file
+    _load_disk_cache(_DISK_CACHE_FILE)
 
     cfg = read_agent_config()
+    if args.max_notional:
+        cfg = dict(cfg)
+        cfg["max_trade_notional_usd"] = args.max_notional
+    if args.risk_pct or args.sizing_basis:
+        cfg = dict(cfg)
+        atr_cfg = dict(cfg.get("atr_risk_sizing", {}) or {})
+        if args.risk_pct:
+            atr_cfg["risk_per_trade_pct"] = args.risk_pct
+        if args.sizing_basis:
+            atr_cfg["sizing_basis"] = args.sizing_basis
+        cfg["atr_risk_sizing"] = atr_cfg
     dsl_cfg = dict(cfg.get("dsl_exit", {}))
     if args.roe_cap:
         dsl_cfg["max_loss_roe_pct"] = args.roe_cap
@@ -153,24 +333,53 @@ def main() -> int:
     equity_fraction = float(args.equity_fraction or cfg.get("equity_fraction_per_trade", 0.04))
     base_leverage = int(args.leverage or cfg.get("leverage", 10))
     min_ai_conf = float(cfg.get("min_ai_confidence", 0.35))
+    dedup_min = int(args.dedup_min if args.dedup_min is not None
+                    else cfg.get("cooldown_min", 30))
 
-    mem = json.load(open(_REPO / ".agent-memory.json"))
+    runner_cfg = cfg
+    runner_overrides = {
+        "min_confidence": args.runner_min_confidence,
+        "min_composite": args.runner_min_composite,
+        "min_hip3_composite": args.runner_min_hip3_composite,
+        "mover_min_confidence": args.runner_mover_min_confidence,
+        "mover_min_composite": args.runner_mover_min_composite,
+    }
+    if args.apply_runner_gate and any(v is not None for v in runner_overrides.values()):
+        gate = dict(cfg.get("runner_entry_gate") or {})
+        for key, val in runner_overrides.items():
+            if val is not None:
+                gate[key] = float(val)
+        runner_cfg = dict(cfg)
+        runner_cfg["runner_entry_gate"] = gate
+
+    mem = load_memory(_REPO / ".agent-memory.json")
     analyses = mem.get("analyses", [])
     perceptions_by_id = {p["id"]: p for p in mem.get("perceptions", []) if "id" in p}
 
     now_ms = int(time.time() * 1000)
     cutoff = now_ms - args.hours * 3600_000
     analyses = [a for a in analyses if a.get("created_at", 0) >= cutoff]
+    if args.exclude_hip3:
+        analyses = [a for a in analyses if ":" not in (a.get("coin") or "")]
     analyses.sort(key=lambda a: a.get("created_at", 0))
 
     print(f"# Counterfactual replay of {len(analyses)} logged analyses (last {args.hours}h)")
     print(f"# Equity ${args.equity:.0f} | leverage {base_leverage}x | fraction {equity_fraction}")
+    print(f"# Sizing: {cfg.get('atr_risk_sizing', {}) if cfg.get('atr_risk_sizing') else 'legacy fraction'} "
+          f"| cap ${float(cfg.get('max_trade_notional_usd', 0) or 0):g}")
+    print(f"# Same-coin cooldown/dedup: {dedup_min}min")
+    round_trip_cost_roe = ((args.taker_fee_bps + args.slippage_bps) * 2 * base_leverage / 100.0)
+    print(f"# Costs: taker {args.taker_fee_bps:g}bps/side"
+          f"{' + slippage ' + str(args.slippage_bps) + 'bps/side' if args.slippage_bps else ''}"
+          f" = {round_trip_cost_roe:.2f}% ROE/trade")
+    if args.apply_runner_gate:
+        print(f"# Runner gate: {runner_cfg.get('runner_entry_gate', {})}")
     print(f"# DSL: max_loss={dsl_cfg.get('max_loss_pct')}% / {dsl_cfg.get('max_loss_roe_pct')}% ROE | "
           f"protect={dsl_cfg.get('protect_pct')}% | timeout={dsl_cfg.get('hard_timeout_minutes')}min")
     print()
 
     # Dedup window: skip same-coin within N minutes of a previous trade
-    dedup_ms = args.dedup_min * 60_000
+    dedup_ms = dedup_min * 60_000
     last_trade_by_coin: Dict[str, int] = {}
 
     # Cache regime per coarse 30-min bucket to save HL calls
@@ -183,9 +392,12 @@ def main() -> int:
 
     pnl_total = 0.0
     wins, losses = [], []
-    skipped_pass, skipped_dup, skipped_conf, skipped_regime, skipped_nodata = 0, 0, 0, 0, 0
+    skipped_pass, skipped_dup, skipped_conf, skipped_regime, skipped_nodata, skipped_size = 0, 0, 0, 0, 0, 0
     by_reason: Dict[str, List[float]] = {}
+    by_reason_pnl: Dict[str, List[float]] = {}
     trades: List[Tuple[Any, ...]] = []
+    notionals: List[float] = []
+    sizing_labels: Dict[str, int] = {}
 
     n_forced = 0
     for a in analyses:
@@ -232,6 +444,21 @@ def main() -> int:
             skipped_dup += 1
             continue
 
+        if args.apply_runner_gate:
+            from hermes_trader.agents.executor import _runner_entry_block_reason
+            gate_analysis = dict(a)
+            gate_analysis["side"] = side
+            if forced:
+                gate_analysis["reasoning"] = "[structural override] " + str(gate_analysis.get("reasoning") or "")
+                gate_analysis["confidence"] = max(
+                    float(gate_analysis.get("confidence", 0) or 0),
+                    float(cfg.get("min_ai_confidence", 0.70)),
+                )
+            blocked = _runner_entry_block_reason(gate_analysis, runner_cfg)
+            if blocked:
+                skipped_pass += 1
+                continue
+
         regime = _regime_at(ts)
         if not passes_counter_regime(side, regime, conf, composite, burst_fired, slow_fired,
                                      counter_regime_min_conf):
@@ -242,6 +469,9 @@ def main() -> int:
         timeout_min = float(dsl_cfg.get("hard_timeout_minutes", 180.0))
         forward_end = ts + int(timeout_min * 60_000) + 600_000  # +10min padding
         forward = fetch_candles_at(coin, "5m", int(timeout_min // 5) + 10, forward_end)
+        if forward is None:
+            skipped_nodata += 1
+            continue
         forward = [b for b in forward if b.t >= ts]
         if not forward:
             skipped_nodata += 1
@@ -252,17 +482,39 @@ def main() -> int:
             skipped_nodata += 1
             continue
         forward = forward[1:]  # bars STRICTLY after entry bar's open
+        if not forward:
+            skipped_nodata += 1
+            continue
 
-        roe, reason, bars, exit_px = simulate_dsl_exit(entry_px, side, base_leverage, forward, dsl_cfg)
-        margin = (args.equity * equity_fraction)  # margin = fraction × equity
+        notional, sizing_label = live_sized_notional(
+            coin=coin,
+            entry_px=entry_px,
+            entry_ms=ts,
+            equity=args.equity,
+            equity_fraction=equity_fraction,
+            leverage=base_leverage,
+            cfg=cfg,
+            dsl_cfg=dsl_cfg,
+        )
+        if notional < 10.5:
+            skipped_size += 1
+            continue
+
+        gross_roe, reason, bars, exit_px = simulate_dsl_exit(entry_px, side, base_leverage, forward, dsl_cfg)
+        roe = gross_roe - round_trip_cost_roe
+        margin = notional / max(1, base_leverage)
         pnl_usd = roe / 100 * margin
         pnl_total += pnl_usd
+        notionals.append(notional)
+        sizing_labels[sizing_label] = sizing_labels.get(sizing_label, 0) + 1
         last_trade_by_coin[coin] = ts
         (wins if pnl_usd > 0 else losses).append(pnl_usd)
         by_reason.setdefault(reason, []).append(roe)
+        by_reason_pnl.setdefault(reason, []).append(pnl_usd)
         trades.append((ts, coin, side, conf, composite, roe, reason, pnl_usd))
-        print(f"  {_iso(ts)}  {coin:<14} {side:<5} conf={conf:.2f} comp={composite:>4.0f}  "
-              f"entry={entry_px:.6g} exit={exit_px:.6g}  {reason:<14} ROE={roe:+6.1f}%  ${pnl_usd:+6.2f}")
+        if not args.summary_only:
+            print(f"  {_iso(ts)}  {coin:<14} {side:<5} conf={conf:.2f} comp={composite:>4.0f}  "
+                  f"entry={entry_px:.6g} exit={exit_px:.6g}  {reason:<14} ROE={roe:+6.1f}%  ${pnl_usd:+6.2f}")
 
     n = len(trades)
     wr = len(wins) / n if n else 0
@@ -270,15 +522,19 @@ def main() -> int:
     print("=" * 80)
     print(f"Trades:       {n}  ({len(wins)}W / {len(losses)}L, win rate {wr*100:.0f}%)")
     print(f"Total PnL:    ${pnl_total:+.2f}  ({pnl_total/args.equity*100:+.1f}% on ${args.equity:.0f})")
+    if notionals:
+        print(f"Avg notional: ${sum(notionals)/len(notionals):.0f}  sizing={sizing_labels}")
     print(f"Skipped:      {skipped_pass} PASS, {skipped_dup} dedup, {skipped_conf} low-conf, "
-          f"{skipped_regime} counter-regime, {skipped_nodata} no-data")
+          f"{skipped_regime} counter-regime, {skipped_nodata} no-data, {skipped_size} below-size")
+    print(f"API failures: {_API_FAILURES}")
     print()
     print("Exits by reason:")
-    for reason in sorted(by_reason.keys(), key=lambda r: -sum(by_reason[r])):
+    for reason in sorted(by_reason.keys(), key=lambda r: -sum(by_reason_pnl.get(r, []))):
         roes = by_reason[reason]
         avg = sum(roes)/len(roes)
-        tot_pnl = sum((r/100) * (args.equity * equity_fraction) for r in roes)
+        tot_pnl = sum(by_reason_pnl.get(reason, []))
         print(f"  {reason:<14} n={len(roes):>3}  avg ROE {avg:+6.1f}%  total ${tot_pnl:+7.2f}")
+    _save_disk_cache(_DISK_CACHE_FILE)
     return 0
 
 

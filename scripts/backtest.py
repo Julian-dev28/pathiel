@@ -40,14 +40,15 @@ if _env.is_file():
 sys.path.insert(0, str(_REPO))
 
 from hermes_trader.agents.config import get_config
+from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.client.hl_client import fetch_hl_candles
 from hermes_trader.client.universe import get_universe
 from hermes_trader.indicators import math as ind
 from hermes_trader.indicators import triggers as trig
 from hermes_trader.models.types import Candle
 
-# Hyperliquid perp taker fee (round-trip)
-ROUND_TRIP_FEE_BPS = 9.0  # 4.5 bps in + 4.5 bps out
+# Hyperliquid perp taker fee model used by the live executor: 2.5 bps per side.
+ROUND_TRIP_FEE_BPS = 5.0
 
 
 @dataclass
@@ -286,16 +287,38 @@ def main() -> int:
     ap.add_argument("--coins", type=int, default=20)
     ap.add_argument("--interval", default="1h", choices=["5m", "15m", "1h", "4h", "1d"])
     ap.add_argument("--equity", type=float, default=100.0)
-    ap.add_argument("--equity-fraction", type=float, default=0.10)
-    ap.add_argument("--leverage-ceiling", type=int, default=40)
-    ap.add_argument("--max-loss", type=float, default=2.5, help="DSL max_loss_pct (spot %%)")
-    ap.add_argument("--protect", type=float, default=1.5, help="DSL protect_pct (spot %%)")
-    ap.add_argument("--retrace", type=float, default=0.30, help="DSL phase-2 retrace threshold (0-1)")
-    ap.add_argument("--atr-mult", type=float, default=0.0,
-                    help="ATR-scaled stop: width = mult x ATR%% at entry (0 = fixed --max-loss)")
-    ap.add_argument("--atr-floor", type=float, default=1.0, help="ATR stop floor (spot %%)")
-    ap.add_argument("--atr-ceiling", type=float, default=4.0, help="ATR stop ceiling (spot %%)")
+    ap.add_argument("--equity-fraction", type=float, default=0.0,
+                    help="margin fraction per trade (default: .agent-config.json)")
+    ap.add_argument("--leverage-ceiling", type=int, default=0,
+                    help="max leverage to simulate (default: .agent-config.json)")
+    ap.add_argument("--max-loss", type=float, default=None,
+                    help="DSL max_loss_pct spot stop (default: .agent-config.json)")
+    ap.add_argument("--protect", type=float, default=None,
+                    help="DSL protect_pct spot profit threshold (default: .agent-config.json)")
+    ap.add_argument("--retrace", type=float, default=None,
+                    help="DSL phase-2 retrace threshold 0-1 (default: .agent-config.json)")
+    ap.add_argument("--atr-mult", type=float, default=None,
+                    help="ATR stop mult (default: live atr_stop setting; 0 = fixed --max-loss)")
+    ap.add_argument("--atr-floor", type=float, default=None,
+                    help="ATR stop floor spot pct (default: .agent-config.json)")
+    ap.add_argument("--atr-ceiling", type=float, default=None,
+                    help="ATR stop ceiling spot pct (default: .agent-config.json)")
     args = ap.parse_args()
+
+    live = read_agent_config()
+    live_dsl = live.get("dsl_exit", {}) or {}
+    live_atr = live_dsl.get("atr_stop", {}) or {}
+    equity_fraction = float(args.equity_fraction or live.get("equity_fraction_per_trade", 0.10))
+    leverage_ceiling = int(args.leverage_ceiling or live.get("leverage", 8))
+    max_loss = float(args.max_loss if args.max_loss is not None else live_dsl.get("max_loss_pct", 2.5))
+    protect = float(args.protect if args.protect is not None else live_dsl.get("protect_pct", 1.5))
+    retrace = float(args.retrace if args.retrace is not None else live_dsl.get("retrace_threshold", 0.30))
+    if args.atr_mult is not None:
+        atr_mult = float(args.atr_mult)
+    else:
+        atr_mult = float(live_atr.get("atr_mult", 0.0)) if bool(live_atr.get("enabled", False)) else 0.0
+    atr_floor = float(args.atr_floor if args.atr_floor is not None else live_atr.get("floor_pct", 1.0))
+    atr_ceiling = float(args.atr_ceiling if args.atr_ceiling is not None else live_atr.get("ceiling_pct", 4.0))
 
     bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}[args.interval]
     total_bars = args.days * bars_per_day + 100  # +warmup
@@ -307,8 +330,8 @@ def main() -> int:
 
     print("=== hermes-trader backtest ===")
     print(f"period: {args.days} days   interval: {args.interval}   universe: top-{args.coins} by 24h volume")
-    print(f"equity: ${args.equity:.0f}   fraction: {args.equity_fraction:.0%}   leverage ceiling: {args.leverage_ceiling}x")
-    print(f"DSL: max_loss={args.max_loss}%  protect={args.protect}%  retrace={args.retrace}")
+    print(f"equity: ${args.equity:.0f}   fraction: {equity_fraction:.0%}   leverage ceiling: {leverage_ceiling}x")
+    print(f"DSL: max_loss={max_loss}%  protect={protect}%  retrace={retrace}  atr_mult={atr_mult}")
     print(f"triggers config: sigma={cfg['thresholds']['sigmaThreshold']}  "
           f"momentumPct={cfg['thresholds']['momentumPct']}\n")
 
@@ -321,13 +344,15 @@ def main() -> int:
             if len(candles) < 110:
                 print(f"  {coin:8} skip ({len(candles)} bars — insufficient)")
                 continue
-            trades = _simulate(coin, candles, max_lev,
-                               equity=args.equity, equity_fraction=args.equity_fraction,
-                               lev_ceiling=args.leverage_ceiling, cfg=cfg,
-                               max_loss_pct=args.max_loss, protect_pct=args.protect,
-                               retrace_threshold=args.retrace,
-                               atr_mult=args.atr_mult, atr_floor=args.atr_floor,
-                               atr_ceiling=args.atr_ceiling, stop_widths=stop_widths)
+            trades = _simulate(
+                coin, candles, max_lev,
+                equity=args.equity, equity_fraction=equity_fraction,
+                lev_ceiling=leverage_ceiling, cfg=cfg,
+                max_loss_pct=max_loss, protect_pct=protect,
+                retrace_threshold=retrace,
+                atr_mult=atr_mult, atr_floor=atr_floor,
+                atr_ceiling=atr_ceiling, stop_widths=stop_widths,
+            )
             pnl = sum(t.pnl_usd for t in trades)
             w = sum(1 for t in trades if t.pnl_usd > 0)
             print(f"  {coin:8} {len(trades):3} trades  win {w:3}  PnL ${pnl:+7.2f}  (max_lev {max_lev}x)")

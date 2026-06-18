@@ -490,8 +490,10 @@ async def place_order(request: Request):
 
     try:
         from hermes_trader.client.exchange import (
+            entry_size_for_notional,
             get_hl_atr,
             get_hl_price,
+            min_entry_notional_usd,
             place_hl_order,
             place_hl_trigger_order,
             set_leverage,
@@ -511,18 +513,39 @@ async def place_order(request: Request):
             equity = await _fetch_live_equity()
             risk_usd = max(2, equity * risk_pct)
 
+        cfg = read_agent_config()
         position_notional = risk_usd * leverage
-        size_in_coin = position_notional / mid_price
+        min_notional = min_entry_notional_usd(coin, mid_price)
+        if min_notional > 0 and position_notional < min_notional:
+            raise HTTPException(
+                400,
+                f"order notional ${position_notional:.2f} is below HL minimum ${min_notional:.2f}",
+            )
+        size_in_coin = entry_size_for_notional(coin, position_notional, mid_price)
 
         result = place_hl_order(is_buy, size_in_coin, mid_price, coin)
 
         if not result.get("ok"):
             raise HTTPException(400, f"order failed: {result.get('error')}")
 
+        try:
+            fill_px = float(result.get("avg_px") or 0.0)
+        except (TypeError, ValueError):
+            fill_px = 0.0
+        try:
+            fill_sz = float(result.get("total_sz") or 0.0)
+        except (TypeError, ValueError):
+            fill_sz = 0.0
+        entry_px = fill_px if fill_px > 0 else mid_price
+        if fill_sz > 0:
+            size_in_coin = fill_sz
+
         brackets = []
         if atr > 0 and size_in_coin > 0:
-            sl_px = mid_price - atr * 3.5 if is_buy else mid_price + atr * 3.5
-            tp_px = mid_price + atr * 1.0 if is_buy else mid_price - atr * 1.0
+            sl_mult = float(cfg.get("sl_atr_mult", 1.5) or 1.5)
+            tp_mult = float(cfg.get("tp_atr_mult", 1.0) or 1.0)
+            sl_px = entry_px - atr * sl_mult if is_buy else entry_px + atr * sl_mult
+            tp_px = entry_px + atr * tp_mult if is_buy else entry_px - atr * tp_mult
 
             sl = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
             tp = place_hl_trigger_order(is_buy, size_in_coin, tp_px, "tp", coin)
@@ -544,6 +567,7 @@ async def place_order(request: Request):
             "side": side,
             "size": size_in_coin,
             "midPrice": mid_price,
+            "entryPrice": entry_px,
             "brackets": brackets,
         })
     except HTTPException:

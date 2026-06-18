@@ -551,7 +551,12 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             "created_at": int(time.time() * 1000),
             "composite_score": float(perception.get("composite_score", 0) or 0),
             "momentum_burst_fired": False, "slow_burn_fired": False,
-            "slow_burn_count": 0, "whale_signal": perception.get("whale_signal"),
+            "slow_burn_count": 0,
+            "daily_mover_fired": any(
+                t.get("name") == "dailyMover" and t.get("fired")
+                for t in (perception.get("triggers") or [])
+            ),
+            "whale_signal": perception.get("whale_signal"),
         }
         memory.record_analysis(analysis)
         return analysis
@@ -649,6 +654,14 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         ),
         "uptrend_momentum_fired": any(
             t.get("name") == "uptrendMomentum" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        "downtrend_momentum_fired": any(
+            t.get("name") == "downtrendMomentum" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        "daily_mover_fired": any(
+            t.get("name") == "dailyMover" and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
         # OI+funding accumulation signal (oi_funding_anomaly). When present,

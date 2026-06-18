@@ -85,6 +85,17 @@ def test_entry_atr_pct_survives_state_roundtrip():
     assert t2.policy.atr_stop_mult == 1.5
 
 
+def test_noise_band_policy_survives_state_roundtrip():
+    pol = _policy(noise_band_enabled=True, noise_band_atr_mult=1.75,
+                  consecutive_breaches_required=2)
+    t = DSLTracker("NB", "long", 100.0, time.time(), pol,
+                   leverage=2, entry_atr_pct=1.2)
+    t2 = _tracker_from_dict(_tracker_to_dict(t))
+    assert t2.policy.noise_band_enabled is True
+    assert t2.policy.noise_band_atr_mult == 1.75
+    assert t2.policy.consecutive_breaches_required == 2
+
+
 def test_parse_verdict_tags_ai_down():
     from hermes_trader.agents.research import parse_verdict
     failed = parse_verdict("", "BTC", {"mid": 100.0})

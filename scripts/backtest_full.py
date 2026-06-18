@@ -242,6 +242,10 @@ def main() -> int:
     ap.add_argument("--no-llm", action="store_true",
                     help="skip OpenRouter; use deterministic direction heuristic")
     ap.add_argument("--equity", type=float, default=250.0)
+    ap.add_argument("--taker-fee-bps", type=float, default=2.5,
+                    help="Per-side taker fee in bps, converted to ROE by leverage")
+    ap.add_argument("--slippage-bps", type=float, default=0.0,
+                    help="Optional adverse slippage per side in bps for stress tests")
     args = ap.parse_args()
 
     cfg = get_config()
@@ -253,6 +257,7 @@ def main() -> int:
     equity_fraction = float(live_cfg.get("equity_fraction_per_trade", 0.04))
     base_leverage = int(live_cfg.get("leverage", 10))
     min_ai_conf = float(live_cfg.get("min_ai_confidence", 0.35))
+    round_trip_cost_roe = ((args.taker_fee_bps + args.slippage_bps) * 2 * base_leverage / 100.0)
 
     now_ms = int(time.time() * 1000)
     start_ms = now_ms - args.hours * 3600_000
@@ -278,6 +283,9 @@ def main() -> int:
     print(f"  DSL config:   max_loss={dsl_cfg.get('max_loss_pct')}% spot / "
           f"{dsl_cfg.get('max_loss_roe_pct')}% ROE  protect={dsl_cfg.get('protect_pct')}%  "
           f"timeout={dsl_cfg.get('hard_timeout_minutes')}min")
+    print(f"  costs:        taker {args.taker_fee_bps:g}bps/side"
+          f"{' + slippage ' + str(args.slippage_bps) + 'bps/side' if args.slippage_bps else ''}"
+          f" = {round_trip_cost_roe:.2f}% ROE/trade")
     print(f"  gates:        counter_regime_min_conf={counter_regime_min_conf}  min_ai_conf={min_ai_conf}")
     print()
 
@@ -352,7 +360,9 @@ def main() -> int:
             candle_fetches += 1
             # We need bars STRICTLY AFTER entry. Filter.
             forward_5m = [b for b in forward_5m if b.t > tick_ms_t]
-            roe, exit_reason, bars, exit_px = simulate_dsl_exit(entry_px, side, base_leverage, forward_5m, dsl_cfg)
+            gross_roe, exit_reason, bars, exit_px = simulate_dsl_exit(
+                entry_px, side, base_leverage, forward_5m, dsl_cfg)
+            roe = gross_roe - round_trip_cost_roe
             margin = notional / base_leverage
             pnl_usd = roe / 100 * margin
 

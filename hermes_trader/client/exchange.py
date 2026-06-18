@@ -459,6 +459,34 @@ def _min_order_size(price: float, sz_decimals: int) -> float:
     return math.ceil((MIN_ORDER_USD / price) / tick) * tick
 
 
+def min_entry_notional_usd(coin: str, mid_price: float) -> float:
+    """Minimum entry notional after HL size precision is applied.
+
+    This is higher than MIN_ORDER_USD on integer-size markets because the
+    smallest valid size may overshoot the dollar floor. Executors should compare
+    their intended notional to this before gates so the order layer never
+    silently up-sizes a trade after risk checks have passed.
+    """
+    if mid_price <= 0:
+        return 0.0
+    _, sz_dec, _ = get_coin_index(coin)
+    return _min_order_size(mid_price, sz_dec) * mid_price
+
+
+def entry_size_for_notional(coin: str, notional_usd: float, mid_price: float) -> float:
+    """Coin size the entry order will submit for an intended dollar notional.
+
+    Mirrors place_hl_order's size precision and minimum-order logic, without
+    placing anything. Callers can feed this into risk gates and SL/TP sizing so
+    their bookkeeping matches the order that will actually be sent.
+    """
+    if notional_usd <= 0 or mid_price <= 0:
+        return 0.0
+    _, sz_dec, _ = get_coin_index(coin)
+    size = max(notional_usd / mid_price, _min_order_size(mid_price, sz_dec))
+    return float(f"{size:.{sz_dec}f}")
+
+
 def _ioc_cross_price(coin: str, is_buy: bool, mid_price: float) -> float:
     """Limit price for an IOC order that reliably crosses the live book.
 

@@ -11,11 +11,13 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
     the move). The AI defaults to a direction call whenever ANY structure
     is present and only refuses on full multi-TF conflict.
     """
-    mode_desc = (
-        "You are in OFF mode — output your verdict for analysis only. No execution will occur."
-        if mode == "OFF"
-        else "You are in LIVE mode — your verdict auto-executes against real funds. Be precise but DECISIVE."
-    )
+    normalized_mode = str(mode or "OFF").upper()
+    if normalized_mode == "LIVE":
+        mode_desc = "You are in LIVE mode — your verdict auto-executes against real funds. Be precise but DECISIVE."
+    elif normalized_mode == "SHADOW":
+        mode_desc = "You are in SHADOW mode — output your verdict for validation only. No new entry order will be placed."
+    else:
+        mode_desc = "You are in OFF mode — output your verdict for analysis only. No execution will occur."
 
     track_record = (
         "No trade history yet."
@@ -73,7 +75,8 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "  'earnings', 'Fed' or 'SEC'. Only a THIS-COIN-specific catastrophe is negative.",
         "",
         "HARD RULES:",
-        "1. SL must be ATR-sized (3.5× ATR default). TP ≥ 1.5× ATR (you want positive R:R).",
+        "1. SL/TP JSON must be sensible and nonzero, but execution owns the live bracket:",
+        "   backup SL defaults to 1.5× ATR and TP scale-out defaults to 1.0× ATR.",
         "2. Never output entryPx without stopPx and tpPx — incomplete orders are rejected.",
         "3. If already in a position on this coin → CLOSE if the structure has flipped against it,",
         "   else HOLD (just output PASS — the position keeps running).",
