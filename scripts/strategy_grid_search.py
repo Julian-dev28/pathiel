@@ -45,6 +45,7 @@ class Candidate:
     daily_mover: bool
     downtrend: bool
     is_hip3: bool
+    sidestep_override: bool
     regime: str
     analysis: dict[str, Any]
     entry_px: float
@@ -88,6 +89,7 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
     cutoff = int(time.time() * 1000) - args.hours * 3600_000
     timeout_min = float((cfg.get("dsl_exit") or {}).get("hard_timeout_minutes", 1800.0))
     counter_min = float(cfg.get("counter_regime_min_conf", 0.8))
+    min_conf_default = float(cfg.get("min_ai_confidence", 0.70))
     out: list[Candidate] = []
     regime_cache: dict[int, str] = {}
 
@@ -96,12 +98,11 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
         if ts < cutoff:
             continue
         verdict = str(a.get("verdict") or "")
-        if verdict not in ("LONG", "SHORT"):
-            continue
         coin = str(a.get("coin") or "")
         if not coin:
             continue
-        side = "long" if verdict == "LONG" else "short"
+        ai_ls = verdict in ("LONG", "SHORT")
+        side = "long" if verdict == "LONG" else "short" if verdict == "SHORT" else ""
         conf = _f(a.get("confidence"))
         perc = percs.get(a.get("perception_id")) or {}
         composite = _f(a.get("composite_score"), _f(perc.get("composite_score")))
@@ -119,10 +120,38 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
         downtrend = bool(a.get("downtrend_momentum_fired", tmap.get("downtrendMomentum", False)))
         daily_mover = bool(a.get("daily_mover_fired", tmap.get("dailyMover", False)))
         fresh = burst or breakout or volume_spike
+        ta_confirmed = (
+            composite >= float(args.force_bar)
+            or burst
+            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
+        )
+        sidestep_override = False
+        if args.mode == "ai":
+            if not ai_ls:
+                continue
+        elif args.mode == "force":
+            if not ai_ls:
+                if composite < float(args.force_bar):
+                    continue
+                side = "long"
+                conf = max(conf, min_conf_default)
+                sidestep_override = True
+        elif args.mode == "sidestep":
+            if ta_confirmed:
+                side = "long"
+                conf = max(conf, min_conf_default)
+                sidestep_override = True
+            elif not ai_ls:
+                continue
+        else:
+            raise ValueError(f"unknown mode {args.mode}")
         bucket = ts // (30 * 60_000)
-        if bucket not in regime_cache:
-            regime_cache[bucket] = btlog.detect_regime_at(ts)
-        regime = regime_cache[bucket]
+        if args.regime_mode == "live":
+            if bucket not in regime_cache:
+                regime_cache[bucket] = btlog.detect_regime_at(ts)
+            regime = regime_cache[bucket]
+        else:
+            regime = args.regime_mode
         if not btlog.passes_counter_regime(side, regime, conf, composite, burst, slow, counter_min):
             continue
 
@@ -148,6 +177,9 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
         aa["fresh_impulse_fired"] = fresh
         aa["daily_mover_fired"] = daily_mover
         aa["slow_burn_count"] = slow_count
+        aa["confidence"] = conf
+        if sidestep_override:
+            aa["sidestep_override"] = True
         out.append(Candidate(
             ts=ts,
             coin=coin,
@@ -161,6 +193,7 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
             daily_mover=daily_mover,
             downtrend=downtrend,
             is_hip3=(":" in coin),
+            sidestep_override=sidestep_override,
             regime=regime,
             analysis=aa,
             entry_px=entry_px,
@@ -195,6 +228,9 @@ def _admitted(c: Candidate, cfg: dict[str, Any], opt: dict[str, Any]) -> bool:
         return False
     if c.side == "short" and not opt["allow_shorts"]:
         return False
+    gate = cfg.get("runner_entry_gate") or {}
+    if c.sidestep_override and bool(gate.get("bypass_sidestep_overrides", False)):
+        return True
     blocked = _runner_entry_block_reason(c.analysis, cfg)
     return not blocked
 
@@ -363,7 +399,116 @@ def evaluate(
     }
 
 
-def _option_space(args: argparse.Namespace) -> list[dict[str, Any]]:
+def _current_option(cfg: dict[str, Any]) -> dict[str, Any]:
+    current_sizing = "atr_backup"
+    _current_basis = str(((cfg.get("atr_risk_sizing") or {}).get("sizing_basis", "")) or "").lower()
+    if _current_basis in ("primary_stop", "dsl_stop"):
+        current_sizing = "dsl_stop"
+    gate = cfg.get("runner_entry_gate") or {}
+    dsl = cfg.get("dsl_exit") or {}
+    return {
+        "sizing": current_sizing,
+        "leverage": int(cfg.get("leverage", 8)),
+        "fraction": float(cfg.get("equity_fraction_per_trade", 0.12)),
+        "risk_pct": float((cfg.get("atr_risk_sizing") or {}).get("risk_per_trade_pct", 0.01)),
+        "max_notional": float(cfg.get("max_trade_notional_usd", 120.0)),
+        "max_loss": float(dsl.get("max_loss_pct", 0.75)),
+        "roe_cap": float(dsl.get("max_loss_roe_pct", 6.0)),
+        "protect": float(dsl.get("protect_pct", 1.5)),
+        "retrace": float(dsl.get("retrace_threshold", 0.30)),
+        "sl_atr_mult": float(cfg.get("sl_atr_mult", 1.5)),
+        "cooldown": int(cfg.get("cooldown_min", 60)),
+        "min_conf": float(cfg.get("min_ai_confidence", 0.70)),
+        "counter_conf": float(cfg.get("counter_regime_min_conf", 0.80)),
+        "min_composite": float(gate.get("min_composite", 30.0)),
+        "min_hip3_composite": float(gate.get("min_hip3_composite", 50.0)),
+        "allow_shorts": bool(gate.get("allow_shorts", False)),
+        "min_short_conf": float(gate.get("min_short_confidence", 0.72)),
+        "min_short_composite": float(gate.get("min_short_composite", 25.0)),
+        "mover_conf": float(gate.get("mover_min_confidence", 0.72)),
+        "mover_composite": float(gate.get("mover_min_composite", 20.0)),
+    }
+
+
+def _option_space(args: argparse.Namespace, cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    base = _current_option(cfg)
+    if args.profile == "gate":
+        opts: list[dict[str, Any]] = []
+        for min_conf in (0.65, 0.68, 0.70, 0.72, 0.75, 0.78, 0.80):
+            for counter_conf in (0.70, 0.75, 0.80, 0.85):
+                for min_composite in (20.0, 25.0, 30.0, 35.0, 40.0):
+                    for min_hip3 in (40.0, 50.0, 60.0):
+                        for allow_shorts in (True, False):
+                            for min_short_conf in (0.68, 0.70, 0.72, 0.75):
+                                for min_short_comp in (15.0, 20.0, 25.0, 30.0):
+                                    for mover_conf in (0.68, 0.70, 0.72, 0.75, 0.80):
+                                        for mover_comp in (0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0):
+                                            opt = dict(base)
+                                            opt.update({
+                                                "min_conf": min_conf,
+                                                "counter_conf": counter_conf,
+                                                "min_composite": min_composite,
+                                                "min_hip3_composite": min_hip3,
+                                                "allow_shorts": allow_shorts,
+                                                "min_short_conf": min_short_conf,
+                                                "min_short_composite": min_short_comp,
+                                                "mover_conf": mover_conf,
+                                                "mover_composite": mover_comp,
+                                            })
+                                            opts.append(opt)
+        return opts
+
+    if args.profile == "exit":
+        opts = []
+        for max_loss, roe_cap in (
+            (0.40, 3.0), (0.40, 4.0), (0.50, 3.0), (0.50, 4.0),
+            (0.50, 5.0), (0.60, 4.0), (0.60, 6.0), (0.75, 6.0),
+        ):
+            for protect in (0.75, 1.0, 1.25, 1.5, 2.0, 3.0):
+                for retrace in (0.20, 0.25, 0.30, 0.35, 0.40, 0.50):
+                    for cooldown in (0, 30, 60, 90, 120):
+                        opt = dict(base)
+                        opt.update({
+                            "max_loss": max_loss,
+                            "roe_cap": roe_cap,
+                            "protect": protect,
+                            "retrace": retrace,
+                            "cooldown": cooldown,
+                        })
+                        opts.append(opt)
+        return opts
+
+    if args.profile == "blend":
+        opts = []
+        for leverage in (5, 7, 9, 12, 15, 20):
+            for risk_pct in (0.015, 0.020, 0.025, 0.030):
+                for max_notional in (400.0, 500.0, 650.0, 800.0):
+                    for max_loss, roe_cap in (
+                        (0.40, 3.0), (0.40, 4.0), (0.50, 3.0),
+                        (0.50, 4.0), (0.50, 5.0), (0.60, 4.0), (0.60, 6.0),
+                    ):
+                        for protect in (1.0, 1.25, 1.5, 2.0):
+                            for retrace in (0.20, 0.25, 0.30, 0.40):
+                                for cooldown in (30, 60, 90):
+                                    for min_conf in (0.68, 0.70, 0.72, 0.75):
+                                        for mover_comp in (10.0, 15.0, 20.0, 25.0):
+                                            opt = dict(base)
+                                            opt.update({
+                                                "sizing": "dsl_stop",
+                                                "leverage": leverage,
+                                                "risk_pct": risk_pct,
+                                                "max_notional": max_notional,
+                                                "max_loss": max_loss,
+                                                "roe_cap": roe_cap,
+                                                "protect": protect,
+                                                "retrace": retrace,
+                                                "cooldown": cooldown,
+                                                "min_conf": min_conf,
+                                                "mover_composite": mover_comp,
+                                            })
+                                            opts.append(opt)
+        return opts
+
     opts: list[dict[str, Any]] = []
     if args.dense:
         leverages = range(1, 21)
@@ -422,7 +567,11 @@ def _fmt(r: dict[str, Any]) -> str:
         f"{r['admitted']:>3}/{r['size_skips']:<2} "
         f"{r['sizing']:<10} lev={r['leverage']:<2} frac={r['fraction']:<4.2f} "
         f"risk={r['risk_pct']:<4.3f} cap={r['max_notional']:<5.0f} "
-        f"stop={r['max_loss']}/{r['roe_cap']} mover={r['mover_composite']:<4.0f}"
+        f"stop={r['max_loss']}/{r['roe_cap']} prot={r['protect']:<4.2f} "
+        f"ret={r['retrace']:<4.2f} cd={r['cooldown']:<3} "
+        f"conf={r['min_conf']:<4.2f} comp={r['min_composite']:<4.0f} "
+        f"hip3={r['min_hip3_composite']:<4.0f} short={int(r['allow_shorts'])} "
+        f"mconf={r['mover_conf']:<4.2f} mover={r['mover_composite']:<4.0f}"
     )
 
 
@@ -432,8 +581,18 @@ def main() -> int:
     ap.add_argument("--equity", type=float, default=250.0)
     ap.add_argument("--top", type=int, default=25)
     ap.add_argument("--min-trades", type=int, default=6)
+    ap.add_argument("--mode", choices=("ai", "force", "sidestep"), default="ai",
+                    help="Candidate admission model before grid evaluation.")
+    ap.add_argument("--force-bar", type=float, default=30.0,
+                    help="Composite bar for force/sidestep PASS->LONG candidates.")
+    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1,
+                    help="Slow-burn count required for sidestep PASS->LONG candidates.")
+    ap.add_argument("--regime-mode", choices=("live", "neutral", "up", "down"), default="live",
+                    help="Counter-regime model. Fixed modes avoid live HL/BTC calls.")
     ap.add_argument("--dense", action="store_true",
                     help="Search every integer leverage 1..20 and wider cap/risk/stop/gate grids.")
+    ap.add_argument("--profile", choices=("sizing", "gate", "exit", "blend"), default="sizing",
+                    help="Staged search profile. sizing is the historical dense/default grid.")
     ap.add_argument("--slippage-bps", type=float, default=2.0)
     ap.add_argument("--taker-fee-bps", type=float, default=2.5)
     ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "hermes_backtest_logged_candles.json"))
@@ -443,7 +602,8 @@ def main() -> int:
     cfg = read_agent_config()
     candidates = build_candidates(args, cfg)
     split_ts = sorted(c.ts for c in candidates)[len(candidates) // 2] if candidates else None
-    print(f"# candidates={len(candidates)} hours={args.hours} equity=${args.equity:.0f} "
+    print(f"# profile={args.profile} mode={args.mode} regime={args.regime_mode} "
+          f"candidates={len(candidates)} hours={args.hours} equity=${args.equity:.0f} "
           f"costs={args.taker_fee_bps:g}bps + {args.slippage_bps:g}bps slippage per side")
     if not candidates:
         return 1
@@ -456,7 +616,7 @@ def main() -> int:
                  taker_bps=args.taker_fee_bps, slippage_bps=args.slippage_bps,
                  split_ts=split_ts, admission_cache=admission_cache,
                  notional_cache=notional_cache, exit_cache=exit_cache)
-        for opt in _option_space(args)
+        for opt in _option_space(args, cfg)
     ]
     results = [r for r in results if r["trades"] >= args.min_trades]
     stable = [r for r in results if r["first"] > 0 and r["second"] > 0 and r["pf"] >= 1.2]
@@ -494,32 +654,7 @@ def main() -> int:
             continue
         print(_fmt(max(sizing_rows, key=lambda r: (r["net"], r["pf"], -r["max_dd"]))))
     print("\n# Current-live approximation")
-    current_sizing = "atr_backup"
-    _current_basis = str(((cfg.get("atr_risk_sizing") or {}).get("sizing_basis", "")) or "").lower()
-    if _current_basis in ("primary_stop", "dsl_stop"):
-        current_sizing = "dsl_stop"
-    current = {
-        "sizing": current_sizing,
-        "leverage": int(cfg.get("leverage", 8)),
-        "fraction": float(cfg.get("equity_fraction_per_trade", 0.12)),
-        "risk_pct": float((cfg.get("atr_risk_sizing") or {}).get("risk_per_trade_pct", 0.01)),
-        "max_notional": float(cfg.get("max_trade_notional_usd", 120.0)),
-        "max_loss": float((cfg.get("dsl_exit") or {}).get("max_loss_pct", 0.75)),
-        "roe_cap": float((cfg.get("dsl_exit") or {}).get("max_loss_roe_pct", 6.0)),
-        "protect": float((cfg.get("dsl_exit") or {}).get("protect_pct", 1.5)),
-        "retrace": float((cfg.get("dsl_exit") or {}).get("retrace_threshold", 0.30)),
-        "sl_atr_mult": float(cfg.get("sl_atr_mult", 1.5)),
-        "cooldown": int(cfg.get("cooldown_min", 60)),
-        "min_conf": float(cfg.get("min_ai_confidence", 0.70)),
-        "counter_conf": float(cfg.get("counter_regime_min_conf", 0.80)),
-        "min_composite": float((cfg.get("runner_entry_gate") or {}).get("min_composite", 30.0)),
-        "min_hip3_composite": float((cfg.get("runner_entry_gate") or {}).get("min_hip3_composite", 50.0)),
-        "allow_shorts": bool((cfg.get("runner_entry_gate") or {}).get("allow_shorts", False)),
-        "min_short_conf": float((cfg.get("runner_entry_gate") or {}).get("min_short_confidence", 0.72)),
-        "min_short_composite": float((cfg.get("runner_entry_gate") or {}).get("min_short_composite", 25.0)),
-        "mover_conf": float((cfg.get("runner_entry_gate") or {}).get("mover_min_confidence", 0.72)),
-        "mover_composite": float((cfg.get("runner_entry_gate") or {}).get("mover_min_composite", 20.0)),
-    }
+    current = _current_option(cfg)
     print(header)
     print(_fmt(evaluate(candidates, cfg, current, equity=args.equity,
                         taker_bps=args.taker_fee_bps, slippage_bps=args.slippage_bps,

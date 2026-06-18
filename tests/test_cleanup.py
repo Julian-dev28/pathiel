@@ -294,6 +294,16 @@ def test_risk_gates_pass_and_block():
     assert any("confidence" in r for r in blocked["block_reasons"])
 
 
+def test_notional_cap_allows_exchange_precision_dust():
+    from hermes_trader.agents.risk_gates import per_trade_notional_cap_gate
+
+    assert per_trade_notional_cap_gate(_ctx(trade_notional_usd=650.05), 650)["pass"] is True
+    assert per_trade_notional_cap_gate(_ctx(trade_notional_usd=0.01), 0)["pass"] is True
+    blocked = per_trade_notional_cap_gate(_ctx(trade_notional_usd=660.0), 650)
+    assert blocked["pass"] is False
+    assert "exceeds cap" in blocked["reason"]
+
+
 def test_aligned_min_conf_lets_aligned_shorts_through(monkeypatch):
     """Regime-aware confidence floor: an ALIGNED short (down regime) clears the
     lower aligned_min_conf, while the same confidence on a non-aligned trade is
@@ -2017,6 +2027,42 @@ def test_route_verdict_pass_with_slow_burn_hint_routes_to_executor(monkeypatch):
     assert calls.get("e") == 1
 
 
+def test_route_verdict_pass_with_ta_sidestep_hint_routes_to_executor(monkeypatch):
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "ta_sidestep_force_execute": True,
+        "force_execute_composite": 20,
+    })
+    calls = {}
+    r = executor.route_verdict(
+        {"verdict": "PASS", "coin": "PURR", "slow_burn_count": 1,
+         "composite_score": 0.0},
+        execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
+        close_fn=lambda c: calls.setdefault("c", c),
+    )
+    assert r["action"] == "execute"
+    assert calls.get("e", {}).get("coin") == "PURR"
+    assert "c" not in calls
+
+
+def test_route_verdict_ta_sidestep_respects_min_slow_burn(monkeypatch):
+    from hermes_trader.agents import executor
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "ta_sidestep_force_execute": True,
+        "ta_sidestep_min_slow_burn_count": 2,
+        "force_execute_composite": 20,
+    })
+    calls = {}
+    r = executor.route_verdict(
+        {"verdict": "PASS", "coin": "PURR", "slow_burn_count": 1,
+         "composite_score": 0.0},
+        execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
+        close_fn=lambda c: calls.setdefault("c", c),
+    )
+    assert r["action"] == "none"
+    assert not calls
+
+
 def test_route_verdict_plain_pass_still_noop():
     """A PASS with NO override hint (no whale, weak composite) stays a no-op —
     we don't want every hedged PASS hitting the executor."""
@@ -2042,6 +2088,38 @@ def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
                                   "composite_score": 10.0, "slow_burn_count": 0})
     assert res["executed"] is False
     assert res["reason"] == "pass_no_override"
+
+
+def test_maybe_execute_ta_sidestep_can_bypass_runner_gate(monkeypatch):
+    from hermes_trader.agents import executor
+
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE",
+        "enable_crypto": True,
+        "enable_hip3": False,
+        "min_ai_confidence": 0.70,
+        "ta_sidestep_force_execute": True,
+        "force_execute_composite": 20,
+        "runner_entry_gate": {
+            "enabled": True,
+            "bypass_sidestep_overrides": True,
+        },
+    })
+    monkeypatch.setattr(executor, "_runner_entry_block_reason",
+                        lambda analysis, config: "runner_gate_blocked")
+    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
+    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
+
+    res = executor.maybe_execute({
+        "id": "sidestep-pass",
+        "coin": "PURR",
+        "verdict": "PASS",
+        "confidence": 0.30,
+        "composite_score": 0.0,
+        "slow_burn_count": 1,
+    })
+
+    assert "equity_unavailable" in (res.get("reason") or "")
 
 
 def test_runner_gate_blocks_hip3_gex_pintrap_longs(monkeypatch):
@@ -2442,6 +2520,7 @@ def test_whale_accumulation_map_keys_by_coin(monkeypatch):
         {"coin": "ARB", "confidence": 0.9},
         {"coin": "OP", "confidence": 0.01},  # below floor
     ])
+    monkeypatch.setattr(whale_index, "oi_surge_accumulation", lambda: [])
     m = whale_index.whale_accumulation_map(min_confidence=0.05)
     assert set(m) == {"ARB"}
     assert m["ARB"]["confidence"] == 0.9

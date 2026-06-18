@@ -271,11 +271,19 @@ def main() -> int:
     ap.add_argument("--dedup-min", type=int, default=None,
                     help="Treat same-coin analyses within N minutes as one trade "
                          "(default: live cooldown_min)")
+    ap.add_argument("--loss-cooldown-min", type=int, default=None,
+                    help="Block same-coin re-entry for N minutes after a simulated loss "
+                         "(default: off; live uses loss_cooldown_min)")
     ap.add_argument("--mode", default="ai", choices=["ai", "lowconf", "force", "sidestep"],
                     help="ai=as-is; lowconf=lower min-conf; force=+composite-force PASS->LONG; "
                          "sidestep=ignore AI, take all TA-confirmed LONGs")
     ap.add_argument("--min-conf", type=float, default=0.60, help="min conf for lowconf mode")
     ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
+    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1,
+                    help="slow_burn_count required for sidestep admission (default=live legacy 1)")
+    ap.add_argument("--long-only", action="store_true", help="Skip admitted SHORT entries")
+    ap.add_argument("--regime-mode", choices=["live", "neutral", "up", "down"], default="live",
+                    help="Counter-regime model. live calls HL/BTC regime; fixed modes are deterministic.")
     ap.add_argument("--leverage", type=int, default=0, help="override leverage (0=use config)")
     ap.add_argument("--equity-fraction", type=float, default=0.0, help="override fraction (0=use config)")
     ap.add_argument("--max-notional", type=float, default=0.0, help="override max_trade_notional_usd (0=config)")
@@ -283,6 +291,8 @@ def main() -> int:
     ap.add_argument("--sizing-basis", default="", help="override atr_risk_sizing.sizing_basis")
     ap.add_argument("--roe-cap", type=float, default=0.0, help="override max_loss_roe_pct (0=config)")
     ap.add_argument("--max-loss", type=float, default=0.0, help="override max_loss_pct spot stop (0=config)")
+    ap.add_argument("--protect", type=float, default=0.0, help="override dsl_exit.protect_pct (0=config)")
+    ap.add_argument("--retrace", type=float, default=0.0, help="override dsl_exit.retrace_threshold (0=config)")
     ap.add_argument("--taker-fee-bps", type=float, default=2.5,
                     help="Per-side taker fee in bps, converted to ROE by leverage")
     ap.add_argument("--slippage-bps", type=float, default=0.0,
@@ -329,6 +339,10 @@ def main() -> int:
         dsl_cfg["max_loss_roe_pct"] = args.roe_cap
     if args.max_loss:
         dsl_cfg["max_loss_pct"] = args.max_loss
+    if args.protect:
+        dsl_cfg["protect_pct"] = args.protect
+    if args.retrace:
+        dsl_cfg["retrace_threshold"] = args.retrace
     counter_regime_min_conf = float(cfg.get("counter_regime_min_conf", 0.65))
     equity_fraction = float(args.equity_fraction or cfg.get("equity_fraction_per_trade", 0.04))
     base_leverage = int(args.leverage or cfg.get("leverage", 10))
@@ -385,6 +399,8 @@ def main() -> int:
     # Cache regime per coarse 30-min bucket to save HL calls
     regime_cache: Dict[int, str] = {}
     def _regime_at(t: int) -> str:
+        if args.regime_mode != "live":
+            return args.regime_mode
         bucket = t // (30 * 60_000)
         if bucket not in regime_cache:
             regime_cache[bucket] = detect_regime_at(t)
@@ -392,7 +408,8 @@ def main() -> int:
 
     pnl_total = 0.0
     wins, losses = [], []
-    skipped_pass, skipped_dup, skipped_conf, skipped_regime, skipped_nodata, skipped_size = 0, 0, 0, 0, 0, 0
+    skipped_pass, skipped_dup, skipped_conf, skipped_regime = 0, 0, 0, 0
+    skipped_nodata, skipped_size, skipped_loss_cooldown = 0, 0, 0
     by_reason: Dict[str, List[float]] = {}
     by_reason_pnl: Dict[str, List[float]] = {}
     trades: List[Tuple[Any, ...]] = []
@@ -400,6 +417,10 @@ def main() -> int:
     sizing_labels: Dict[str, int] = {}
 
     n_forced = 0
+    loss_block_until: Dict[str, int] = {}
+    loss_cooldown_ms = 0
+    if args.loss_cooldown_min is not None:
+        loss_cooldown_ms = max(0, int(args.loss_cooldown_min) * 60_000)
     for a in analyses:
         verdict = a.get("verdict")
         coin = a.get("coin")
@@ -409,16 +430,31 @@ def main() -> int:
         conf = float(a.get("confidence", 0))
         # perception (composite/triggers) — needed for force/sidestep admission
         perc = perceptions_by_id.get(a.get("perception_id"))
-        composite = float(perc.get("composite_score", 0)) if perc else 0.0
+        composite = float(
+            (perc or {}).get("composite_score", a.get("composite_score", 0)) or 0
+        )
         triggers = (perc or {}).get("triggers", []) or []
-        burst_fired = any(t.get("name") == "momentumBurst" and t.get("fired") for t in triggers)
-        slow_fired = any(t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
-                         and t.get("fired") for t in triggers)
-        ta_confirmed = composite >= args.force_bar or burst_fired or slow_fired
+        burst_fired = (
+            any(t.get("name") == "momentumBurst" and t.get("fired") for t in triggers)
+            or bool(a.get("momentum_burst_fired", False))
+        )
+        slow_count = sum(
+            1 for t in triggers
+            if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
+            and t.get("fired")
+        )
+        if slow_count <= 0:
+            slow_count = int(a.get("slow_burn_count", 0) or 0)
+        slow_fired = slow_count > 0
+        ta_confirmed = (
+            composite >= args.force_bar
+            or burst_fired
+            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
+        )
 
         # ── mode-aware admission ─────────────────────────────────────────────
         ai_ls = verdict in ("LONG", "SHORT")
-        admit, side, forced = False, None, False
+        admit, side, forced, sidestep_override = False, None, False, False
         if args.mode == "ai":
             admit = ai_ls and conf >= min_ai_conf
             side = ("long" if verdict == "LONG" else "short") if ai_ls else None
@@ -430,18 +466,26 @@ def main() -> int:
                 admit, side = True, ("long" if verdict == "LONG" else "short")
             elif composite >= args.force_bar:            # composite-force PASS -> LONG
                 admit, side, forced = True, "long", True
+                conf = max(conf, min_ai_conf)
         elif args.mode == "sidestep":                    # ignore AI; take all TA-confirmed LONGs
             if ta_confirmed:
-                admit, side, forced = True, "long", (not ai_ls)
+                admit, side, forced, sidestep_override = True, "long", (not ai_ls), True
+                conf = max(conf, min_ai_conf)
             elif ai_ls and conf >= min_ai_conf:
                 admit, side = True, ("long" if verdict == "LONG" else "short")
         if not admit:
+            skipped_pass += 1
+            continue
+        if args.long_only and side == "short":
             skipped_pass += 1
             continue
         if forced:
             n_forced += 1
         if coin in last_trade_by_coin and (ts - last_trade_by_coin[coin]) < dedup_ms:
             skipped_dup += 1
+            continue
+        if loss_cooldown_ms > 0 and ts < loss_block_until.get(coin, 0):
+            skipped_loss_cooldown += 1
             continue
 
         if args.apply_runner_gate:
@@ -450,14 +494,16 @@ def main() -> int:
             gate_analysis["side"] = side
             if forced:
                 gate_analysis["reasoning"] = "[structural override] " + str(gate_analysis.get("reasoning") or "")
-                gate_analysis["confidence"] = max(
-                    float(gate_analysis.get("confidence", 0) or 0),
-                    float(cfg.get("min_ai_confidence", 0.70)),
-                )
-            blocked = _runner_entry_block_reason(gate_analysis, runner_cfg)
-            if blocked:
-                skipped_pass += 1
-                continue
+                gate_analysis["confidence"] = conf
+            if sidestep_override:
+                gate_analysis["sidestep_override"] = True
+            gate = runner_cfg.get("runner_entry_gate") or {}
+            skip_runner = sidestep_override and bool(gate.get("bypass_sidestep_overrides", False))
+            if not skip_runner:
+                blocked = _runner_entry_block_reason(gate_analysis, runner_cfg)
+                if blocked:
+                    skipped_pass += 1
+                    continue
 
         regime = _regime_at(ts)
         if not passes_counter_regime(side, regime, conf, composite, burst_fired, slow_fired,
@@ -508,6 +554,9 @@ def main() -> int:
         notionals.append(notional)
         sizing_labels[sizing_label] = sizing_labels.get(sizing_label, 0) + 1
         last_trade_by_coin[coin] = ts
+        if pnl_usd < 0 and loss_cooldown_ms > 0:
+            exit_ts = ts + int(bars * 5 * 60_000)
+            loss_block_until[coin] = exit_ts + loss_cooldown_ms
         (wins if pnl_usd > 0 else losses).append(pnl_usd)
         by_reason.setdefault(reason, []).append(roe)
         by_reason_pnl.setdefault(reason, []).append(pnl_usd)
@@ -525,7 +574,8 @@ def main() -> int:
     if notionals:
         print(f"Avg notional: ${sum(notionals)/len(notionals):.0f}  sizing={sizing_labels}")
     print(f"Skipped:      {skipped_pass} PASS, {skipped_dup} dedup, {skipped_conf} low-conf, "
-          f"{skipped_regime} counter-regime, {skipped_nodata} no-data, {skipped_size} below-size")
+          f"{skipped_regime} counter-regime, {skipped_nodata} no-data, "
+          f"{skipped_size} below-size, {skipped_loss_cooldown} loss-cooldown")
     print(f"API failures: {_API_FAILURES}")
     print()
     print("Exits by reason:")

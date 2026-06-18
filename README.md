@@ -8,14 +8,14 @@
 ## CLI Quick Start
 
 ```bash
-# 1. Start autonomous trading loop (background)
-python3 scripts/trading_loop.py --env prod --daemon
+# 1. Start/restart autonomous trading loop + dashboard API
+scripts/restart.sh
 
-# 2. Start dashboard + API server
-python3 -m hermes_trader.server
-# or: python3 -m uvicorn hermes_trader.server:app --host 0.0.0.0 --port 8000
+# 2. Confirm there is one loop process and one API server
+scripts/restart.sh status
 
 # 3. Monitor
+tail -f logs/trading_loop.log
 python3 scripts/status.py
 ```
 
@@ -30,7 +30,7 @@ Trading signals appear constantly — 5-minute spikes, hourly trends, daily brea
 1. **Scan** — 500+ markets in parallel with volume pre-filtering and rate-limit-aware batching
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
 3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst
-4. **Execution** — Kelly-sized orders with DSL dynamic stop-loss exits (loss protection → profit locking)
+4. **Execution** — ATR equal-risk sizing, Hyperliquid-valid order normalization, and DSL dynamic exits (loss protection → profit locking)
 5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
 
 This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving signal quality.
@@ -81,9 +81,9 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
-- **Phase 1 — Loss Protection**: Hard stop at `max_loss_pct` below entry (default 2.5%)
-- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` (1.5%) in your favor — trailing floor at `entry + (peak − entry) × (1 − retrace)`; retrace tightens by tier (30% @ +5%, 40% @ +10%, 50% @ +20%, 60% @ +50%); floor ratchets one-way and never gives back locked profit
-- **Hard timeout**: Emergency exit after `hard_timeout_minutes` (180 min default), regardless of PnL
+- **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms. Current live new-entry config is `0.4%` spot / `3%` ROE.
+- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` in your favor. Current live new-entry config arms at `1.25%`, trails with `retrace_threshold=0.20`, then uses tiers at `+8%` and `+15%`; the floor ratchets one-way and never gives back locked profit.
+- **Hard/stale timeout**: `hard_timeout_minutes` is the maximum hold horizon; `stale_flat_timeout_minutes` exits positions that never reach the profit-lock phase.
 - **Auto-registration**: Every executed position is registered for DSL tracking
 - **Persisted across restarts**: Tracker state (peak, floor, breach counter) is written to `.dsl-state.json` on every advance, so a daemon restart doesn't reset the ratchet
 - **Exchange reconciliation**: Each scan tick, trackers are reconciled with live exchange positions — manually-opened or externally-closed positions stay in sync; positions opened before the engine shipped are synthesized from `entryPx`
@@ -118,7 +118,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_trader/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
 | `hermes_trader/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
 | `hermes_trader/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
-| `hermes_trader/agents/executor.py` | Kelly sizing + EIP-712 order signing + DSL exit registration |
+| `hermes_trader/agents/executor.py` | ATR/fallback sizing + Hyperliquid precision normalization + EIP-712 order signing + DSL exit registration |
 | `hermes_trader/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
 | `hermes_trader/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
 | `hermes_trader/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
@@ -200,31 +200,61 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 ```json
 {
   "mode": "LIVE",
-  "equity_fraction_per_trade": 0.28,
-  "leverage": 15,
-  "min_ai_confidence": 0.78,
-  "max_concurrent": 6,
-  "max_trade_notional_usd": 100000,
-  "max_total_notional_pct": 40.0,
-  "max_daily_loss_usd": -300,
-  "min_available_margin_pct": 0.05,
-  "min_market_volume_usd": 800000,
+  "enable_crypto": true,
+  "enable_hip3": true,
+  "equity_fraction_per_trade": 0.2,
+  "leverage": 12,
+  "max_trade_notional_usd": 800,
+  "tp_scale_fraction": 0.5,
+  "max_concurrent": 10,
+  "max_total_notional_pct": 10.0,
+  "max_daily_loss_usd": -30,
+  "daily_giveback_halt_pct": 0.35,
+  "daily_giveback_min_peak_usd": 25.0,
+  "min_available_margin_pct": 0.10,
+  "min_market_volume_usd": 5000000,
+  "min_hip3_volume_usd": 5000000,
   "min_short_volume_usd": 50000000,
-  "cooldown_min": 60,
+  "cooldown_min": 30,
+  "min_ai_confidence": 0.7,
   "counter_regime_min_conf": 0.8,
-  "aligned_min_conf": 0.7,
   "block_counter_trend_bypass": true,
-  "whale_scan_bypass": true,
-  "max_crypto_long_correlated": 8,
+  "max_crypto_long_correlated": 3,
   "coin_allowlist": [],
-  "coin_blocklist": []
+  "coin_blocklist": ["TON", "TRX"],
+  "dsl_exit": {
+    "max_loss_pct": 0.4,
+    "max_loss_roe_pct": 3.0,
+    "protect_pct": 1.25,
+    "retrace_threshold": 0.20
+  },
+  "atr_risk_sizing": {
+    "enabled": true,
+    "risk_per_trade_pct": 0.02,
+    "sizing_basis": "primary_stop"
+  },
+  "ta_sidestep_force_execute": true,
+  "ta_sidestep_min_slow_burn_count": 99,
+  "force_execute_composite": 30,
+  "runner_entry_gate": {
+    "enabled": true,
+    "allow_shorts": false,
+    "bypass_sidestep_overrides": true,
+    "min_confidence": 0.7,
+    "min_composite": 30.0,
+    "min_hip3_composite": 50.0
+  }
 }
 ```
 
-| Key | What it does | Default |
+The snippet above is the current live strategy shape, not a guarantee that those
+values are optimal in future market regimes. The code has separate fallback
+defaults for missing keys; keep the tracked `.agent-config.json` explicit.
+
+| Key | What it does | Fallback/default |
 |-----|--------------|---------|
 | `mode` | `OFF` = analyse only, no orders · `LIVE` = place real orders | `OFF` |
-| `equity_fraction_per_trade` | Fraction of perp equity committed as margin per trade — see [Trade Sizing](#trade-sizing) | `0.01` |
+| `equity_fraction_per_trade` | Fraction of perp equity committed as margin per trade when ATR risk sizing is disabled — see [Trade Sizing](#trade-sizing) | `0.01` |
 | `leverage` | Leverage **ceiling** — each trade uses `min(this, the coin's own max)`. Coin maxes differ (BOME 3×, BTC 40×). Set high (e.g. 40) to ride each coin's max. Also multiplies position notional. | `5` |
 | `min_ai_confidence` | Minimum AI confidence for a LONG/SHORT to execute | `0.8` |
 | `max_concurrent` | Max simultaneous open positions | `3` |
@@ -247,19 +277,23 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 | `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
 | `coin_blocklist` | Coins that are never traded | `[]` |
 
-**Nested blocks** (all in `.agent-config.json`, all hot-read):
+**Nested blocks** (all in `.agent-config.json`, all hot-read for new entries):
 
-- **`dsl_exit`** — trailing-stop engine. `max_loss_pct` (3.5) and `max_loss_roe_pct`
-  (18) are the hard stop (whichever binds first; ROE cap = `pct/leverage` in spot
-  terms). `protect_pct` (1.5) / `retrace_threshold` (0.30) = the trail tightness
-  (**low = scalp/bank-fast, high = trend-ride/let-it-run**). `phase2_tiers` =
-  profit-scaled retrace ladder. `stale_flat_timeout_minutes` = flat-position timeout.
-  Optional `regime_aware{enabled, trend_ride{…}}` swaps to looser trend-ride params
-  when `detect_regime()=='up'` (scalp in chop, ride in trends). Tracker state →
-  `.dsl-state.json` (override `HERMES_DSL_STATE_FILE`).
-- **`atr_risk_sizing`** `{enabled, risk_per_trade_pct}` — equal-risk (Turtle-N)
-  position sizing: notional = `risk_per_trade_pct × equity / stop_width`. Overrides
-  the flat `equity_fraction` per trade; volatile/wide-stop coins get smaller size.
+- **`dsl_exit`** — trailing-stop engine. `max_loss_pct` and `max_loss_roe_pct`
+  are the hard stop, with the tighter spot-equivalent value binding. Current live
+  new-entry values are `max_loss_pct=0.4`, `max_loss_roe_pct=3.0`,
+  `protect_pct=1.25`, and `retrace_threshold=0.20`. `phase2_tiers` is the
+  profit-scaled give-back ladder. `stale_flat_timeout_minutes` is the flat-position
+  timeout. Optional `regime_aware{enabled, trend_ride{…}}` swaps to looser
+  trend-ride params when `detect_regime()=='up'`; this is off until a sustained
+  trend sample validates it. Tracker state → `.dsl-state.json` (override
+  `HERMES_DSL_STATE_FILE`). Existing open positions keep the policy captured at
+  entry; config edits affect new entries and synthesized trackers.
+- **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
+  equal-risk position sizing: target risk = `risk_per_trade_pct × equity`, converted
+  to notional from the configured stop distance. Current live uses
+  `risk_per_trade_pct=0.02` and `sizing_basis="primary_stop"`. This overrides the
+  flat `equity_fraction_per_trade` path; volatile/wide-stop coins get smaller size.
 - **`signal_enforcement`** `{enabled, veto, boost, gex_veto, boost_bar_delta,
   whale_*}` — lets the free signals VETO (chop-trap / whales dumping) or BOOST
   (catalyst lowers the override bar) the **forced-override path only**. Cache-only.
@@ -267,8 +301,11 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   free signals per candidate without affecting trades (forward validation).
 - **`gex_signal` / `momentum_reentry`** — gated experiments (see commit history).
 - **`force_execute_composite` / `composite_force_execute` / `breakout_force_execute`
-  / `whale_force_execute`** — structural-override gates that can upgrade an AI PASS
-  to a trade on strong TA/whale signals (LONG-only).
+  / `whale_force_execute` / `ta_sidestep_force_execute`** — structural-override
+  gates that can upgrade an AI PASS to a trade on strong TA/whale signals. Current
+  live keeps the broad composite override disabled, keeps sidestep modeling enabled
+  with `ta_sidestep_min_slow_burn_count=99`, and lets the runner gate bypass that
+  sidestep suppression for high-quality runner entries.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -306,31 +343,41 @@ cp .env.local.example .env.local
 
 ## Running
 
-### API Server (Optional)
+### Trading Loop + API Server
 ```bash
-# Start the FastAPI server (port 8000)
-python -m hermes_trader.server
+# Start or restart both long-running processes
+scripts/restart.sh
 
-# Or use uvicorn directly:
-uvicorn hermes_trader.server:app --host 0.0.0.0 --port 8000
+# Check process status
+scripts/restart.sh status
+
+# Follow logs
+tail -f logs/trading_loop.log
 ```
 The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Hermes-Trader", "version": "0.3.0", "status": "running"}`.
 
-### Continuous Trading Loop (Recommended)
+`scripts/restart.sh` manages the autonomous trading loop and the FastAPI server,
+including stop/verify/start and log files under `logs/`. The MCP stdio server is
+not managed by this script; Hermes Agent respawns it on tool calls.
+
+### Manual Process Launch
 ```bash
-# Start the autonomous trading loop (scans every 60s)
+# Foreground loop, useful while debugging
 python scripts/trading_loop.py
 
-# Or run in background:
-nohup python scripts/trading_loop.py > /tmp/hermes-trader.log 2>&1 &
+# API server only
+python -m hermes_trader.server
+# or: uvicorn hermes_trader.server:app --host 0.0.0.0 --port 8000
 ```
-Monitor logs: `tail -f /tmp/hermes-trader.log`
+
+The `--env prod --daemon` flags are informational only; they do not fork the
+process. Use `scripts/restart.sh` for normal operation.
 
 **Trading Loop Behavior:**
 - Scans top 60 markets every 60 seconds
 - Each tick, reconciles DSL trackers with live exchange positions and runs an exit pass — market-closes anything whose dynamic floor, hard stop, or timeout has tripped
 - Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
-- Researches qualifying signals with AI (qwen/qwen3-235b-a22b)
+- Researches qualifying signals with the OpenRouter model configured in `.env.local`
 - Executes trades that clear all 11 risk gates
 - Runs continuously until stopped
 
@@ -347,6 +394,25 @@ HERMES_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls th
 `online` and `live` tests are deselected by default. The `live` suite spends
 real funds (a ~$14 round-trip order plus a billable OpenRouter call) and is
 additionally gated behind `HERMES_E2E=1` so it can never run by accident.
+
+### Backtests and Grid Sweeps
+
+Logged-replay backtests use the real saved AI verdicts from `.agent-memory.json`
+and route them through the current gates/exits:
+
+```bash
+.venv/bin/python scripts/backtest_logged.py --hours 168 --summary-only \
+  --mode sidestep --force-bar 30 --sidestep-min-slow-burn 99 \
+  --apply-runner-gate --regime-mode neutral --slippage-bps 5
+
+.venv/bin/python scripts/strategy_grid_search.py --hours 168 --profile blend \
+  --mode sidestep --force-bar 30 --sidestep-min-slow-burn 99 \
+  --regime-mode neutral --slippage-bps 5
+```
+
+Treat these as replay diagnostics, not proof of future profit. The live outcome
+store, with slippage/funding/hold-time capture, is the source of truth once the
+sample is large enough.
 
 ---
 
@@ -409,9 +475,9 @@ server are picked up.
 | **Stop continuous trading** | *Stop the hermes-trader trading loop.* |
 | **Monitor (in session)** | *Check hermes-trader's status and tell me if anything changed since the last report.* |
 
-"Start continuous trading" runs `python scripts/trading_loop.py`, which scans ->
-TA-filters -> researches -> executes on its own every `HERMES_SCAN_INTERVAL`
-seconds, independent of the Hermes session.
+"Start continuous trading" should use `scripts/restart.sh loop`, which starts
+the same scan -> TA-filter -> research -> execute loop on its own every
+`HERMES_SCAN_INTERVAL` seconds, independent of the Hermes session.
 
 For **hands-off monitoring**, resume the hourly status cron job (zero AI cost — it
 just runs `status.py`; see [`references/cron-jobs.md`](skills/hermes-trader-agent/references/cron-jobs.md)):
@@ -424,30 +490,39 @@ hermes cron resume <job-id> # start hourly status delivery
 
 ## Trade Sizing
 
-Every trade's position size comes from one formula in `executor.py`:
+The current live path uses ATR equal-risk sizing in `executor.py`:
 
 ```
-trade_notional = perp_equity  ×  equity_fraction_per_trade  ×  leverage
+target_risk_usd = perp_equity × atr_risk_sizing.risk_per_trade_pct
+raw_notional    = target_risk_usd / primary_stop_distance_pct
+trade_notional  = clamp(raw_notional, max_trade_notional_usd, leverage caps)
 ```
 
-Both knobs live in `.agent-config.json`:
+Then the executor converts the target notional into the exact Hyperliquid-valid
+coin size before risk gates run. That prevents a small intended trade from
+passing gates and then being silently enlarged by exchange minimum-order logic.
+
+Relevant knobs live in `.agent-config.json`:
 
 | Key | Meaning | Example |
 |-----|---------|---------|
-| `equity_fraction_per_trade` | Fraction of **total perp equity** committed as margin per trade | `0.10` = 10% |
+| `atr_risk_sizing.enabled` | Use stop-distance-based equal-risk sizing | `true` |
+| `atr_risk_sizing.risk_per_trade_pct` | Fraction of equity risked at the primary stop | `0.02` = 2% |
+| `atr_risk_sizing.sizing_basis` | Stop source for sizing | `primary_stop` |
 | `leverage` | Leverage ceiling — each trade uses `min(this, coin's own max)`; pushed to the exchange via `set_leverage` | `10` = up to 10× |
+| `max_trade_notional_usd` | Hard cap on a single trade's notional | `800` |
+| `equity_fraction_per_trade` | Fallback margin fraction when ATR sizing is disabled | `0.20` = 20% |
 
-Sizing keys off **total perp equity**, not free margin — so each trade commits a
-*fixed* amount and `N` trades scales the account fully in. With
-`equity_fraction_per_trade: 0.10`, every trade commits 10% of equity as margin,
-so ~10 trades deploys the whole account linearly. (Sizing off *free* margin
-instead would decay geometrically and never fully deploy.)
+When ATR sizing is disabled, the fallback formula is:
 
-Caps that bound it: `maxConcurrent` (max simultaneous positions — set it ≥ the
-number of trades you want open at once), `max_total_notional_pct` (ceiling on
-combined open notional as a multiple of equity — at 10× leverage, `10.0` ≈ fully
-deployed), and `maxTradeNotionalUsd` (hard ceiling on a single trade's notional).
-Config keys are read tolerantly — `snake_case` or `camelCase` both work.
+```
+trade_notional = perp_equity × equity_fraction_per_trade × leverage
+```
+
+Caps that bound both sizing paths: `max_concurrent`, `max_total_notional_pct`,
+`max_trade_notional_usd`, exchange max leverage, available margin, and the
+coin-specific precision/minimum order. Config keys are read tolerantly —
+`snake_case` or `camelCase` both work.
 
 Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage = 5`.
 
@@ -498,7 +573,7 @@ hermes-trader/
 │   ├── agents/                    # Core agent logic
 │   │   ├── config.py              # Agent configuration model
 │   │   ├── config_store.py        # Config persistence
-│   │   ├── executor.py            # Kelly sizing + order execution + DSL registration
+│   │   ├── executor.py            # ATR/fallback sizing + order execution + DSL registration
 │   │   ├── memory.py              # File-backed state
 │   │   ├── perception.py          # Volume-filtered parallel scanner
 │   │   ├── research.py            # AI research pipeline
@@ -536,7 +611,7 @@ hermes-trader/
 ## Built With
 
 - FastAPI — Python web framework
-- OpenRouter (Qwen3-235B-A22B) — AI research pipeline
+- OpenRouter-configured model — AI research pipeline
 - Hyperliquid Python SDK — perpetual futures DEX
 - Brave Search API (optional, for news signals)
 - Prometheus (`prometheus-client`) — `/metrics` instrumentation + observability

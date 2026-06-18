@@ -2,34 +2,36 @@
 
 Every executed position gets three exit layers, all set at entry. Originally the
 fix set for the **"we had it all and gave it back"** round-trips; materially
-re-tuned 2026-06-16 (see "Scalp vs trend-ride" below).
+re-tuned 2026-06-16 (see "Scalp vs trend-ride" below) and tightened again in the
+2026-06-18 PnL audit.
 
 ## 1. DSL trailing stop (`hermes_trader/agents/dsl_exit.py`) — primary, 60s tick
 
-- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`. Config:
-  `max_loss_pct=3.5` spot, `max_loss_roe_pct=18`. **The ROE cap usually binds** —
-  at 10x that's 1.8% spot; at 8x, 2.25%. (This is why high leverage noise-stops:
-  18/15 = 1.2% spot at 15x = a routine wiggle stops you. See lessons-2026-06.)
+- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`. Current
+  live new-entry config: `max_loss_pct=0.4` spot, `max_loss_roe_pct=3.0`. **The
+  ROE cap usually binds** — at 12x that is 0.25% spot; at 9x, 0.33%. This is
+  intentionally a fast invalidation stop for the current runner/scalp profile.
 - **Phase 2 (profit lock):** arms at `protect_pct`. Floor = `entry ± peak_range ×
   (1 − retrace)`, ratchets one-way (never gives back).
 - **Retrace ladder (`phase2_tiers`)** = the give-back control; tighter = bank faster.
   Wired from config in BOTH builders (`executor.py` entry-time `ExitPolicy(...)` +
   `dsl_exit._policy_from_config`). Hot-read for new entries.
 
-## Scalp vs trend-ride — the 2026-06-16 finding (THE exit lever)
+## Scalp vs trend-ride — the 2026-06-16 finding (the exit lever)
 
 Controlled backtest (`scripts/reentry_backtest.py`, same lev/coins/period, only
 exit params vary):
 ```
-scalp      (protect 1.5 / retrace 0.30):  61% win  +$1518   <- LIVE
+scalp      (protect 1.5 / retrace 0.30):  61% win  +$1518   <- 2026-06-16 live baseline
 trend-ride (protect 3.0 / retrace 0.55):  47% win  -$757
 ```
 **Tight (scalp) beats loose (trend-ride) hard in chop** — loose lets winners give
-it all back. Live config is scalp: `protect_pct=1.5`, `retrace_threshold=0.30`,
-`phase2_tiers=[{1.5,0.30},{8.0,0.35},{15.0,0.40}]`. Trend-ride was originally
-shipped after validating on ONE up-trend day — it rides rippers but bleeds in
-chop, the dominant regime. Caveat: scalp can amputate the fat-tail winners the
-edge depends on — `tp_scale_fraction` lets a runner ride (below).
+it all back. Current live new-entry config keeps the scalp profile but uses the
+latest audit's values: `protect_pct=1.25`, `retrace_threshold=0.20`,
+`phase2_tiers=[{8.0,0.35},{15.0,0.40}]`. Trend-ride was originally shipped after
+validating on ONE up-trend day — it rides rippers but bleeds in chop, the dominant
+regime. Caveat: scalp can amputate the fat-tail winners the edge depends on —
+`tp_scale_fraction` lets a runner ride (below).
 
 - **`regime_aware {enabled, trend_ride{…}}`** (default OFF): when
   `detect_regime()=='up'`, swaps to looser trend-ride params (scalp chop / ride

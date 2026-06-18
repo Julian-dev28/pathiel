@@ -42,7 +42,8 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
    perception is persisted via `memory.record_perception`.
 
    Env knobs: `HERMES_MAX_MARKETS=60`, `HERMES_MAX_MARKETS_HIP3=25`,
-   `HERMES_MAX_MARKETS_MOVERS=10`, `HERMES_MOVERS_VOL_FLOOR_USD=1000000`.
+   `HERMES_MAX_MARKETS_MOVERS=10`, `HERMES_MOVERS_VOL_FLOOR_USD=300000`,
+   `HERMES_HIP3_MOVERS_FLOOR_USD=50000`.
 2. **Pre-research cooldown** — `trading_loop.py` checks the most recent
    trade per coin and skips paid AI research if the coin is still inside its
    `cooldown_min` window. The execute-time `cooldown_gate` remains as the
@@ -52,34 +53,19 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
    (score ≥ 45) reach AI research; WEAK / REJECTED are dropped. A perception
    whose `momentumBurst` trigger fired bypasses the gate.
 4. **AI Research** — deep AI analysis via OpenRouter on triggered candidates.
-5. **Execution** — equity-sized orders (`equity_fraction_per_trade × equity ×
-   leverage`, defaults to 0.05 × current equity × per-coin-max leverage), SDK
-   order signing, an ATR-based backup stop-loss, and DSL dynamic exits.
+5. **Execution** — ATR equal-risk sizing when `atr_risk_sizing.enabled=true`
+   (current live path), with fraction-based sizing as the explicit fallback.
+   Orders are clamped by per-trade notional and leverage caps, normalized to
+   Hyperliquid coin precision before gates, signed through the SDK, protected
+   by a server-side backup stop-loss, and registered with DSL dynamic exits.
    Blocked attempts are NOT written to `memory._trades` — only successful
    executions appear there, so `cooldown_gate` keys off real history rather
    than its own rejection log.
 
 ## Running
 
-The trading loop is a standalone process (no Hermes command wraps it yet):
-
-```bash
-python scripts/trading_loop.py        # continuous scan -> research -> execute
-# background: nohup python scripts/trading_loop.py > logs/trading_loop.log 2>&1 &
-```
-
-Recommended production start (background daemon):
-```bash
-nohup python3 scripts/trading_loop.py > logs/trading_loop.log 2>&1 &
-```
-The `--env prod --daemon` flags are parsed but **informational only** — the script does NOT actually fork or daemonize itself. Use `nohup ... &` or run the loop as a background process from your terminal/task runner. The loop already has its own `while True` with periodic sleeps.
-
-Cadence is `HERMES_SCAN_INTERVAL` (default 60s). Or drive the steps individually
-through the MCP `scan` / `research` / `execute` tools.
-
-### Restarting the Trading Loop + Server
-
-Use `scripts/restart.sh` — handles stop (SIGTERM → SIGKILL fallback), verify, background start with logs, and a status readout:
+Use `scripts/restart.sh` as the canonical process manager for the loop and API
+server:
 
 ```bash
 scripts/restart.sh              # restart both trading loop + FastAPI server
@@ -89,11 +75,38 @@ scripts/restart.sh stop         # stop both, don't start
 scripts/restart.sh status       # show what's running
 ```
 
-Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server (`scripts/hermes-mcp-server.py`) is intentionally NOT managed — it's a transient stdio process respawned by Hermes Agent on each tool call. If MCP code is stale: `pkill -f hermes-mcp-server.py` and the next tool call respawns fresh.
+Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server
+(`scripts/hermes-mcp-server.py`) is intentionally NOT managed — it's a transient
+stdio process respawned by Hermes Agent on each tool call. If MCP code is stale:
+`pkill -f hermes-mcp-server.py` and the next tool call respawns fresh.
+
+Manual foreground launch is only for debugging:
+
+```bash
+python scripts/trading_loop.py        # continuous scan -> research -> execute
+python -m hermes_trader.server        # API server only
+```
+
+The `--env prod --daemon` flags are parsed but **informational only** — the
+script does NOT actually fork or daemonize itself. The loop already has its own
+`while True` with periodic sleeps; use `scripts/restart.sh` when it needs to
+survive the terminal session.
+
+Cadence is `HERMES_SCAN_INTERVAL` (default 60s). Or drive the steps individually
+through the MCP `scan` / `research` / `execute` tools.
+
+### Restarting the Trading Loop + Server
+
+`scripts/restart.sh` handles stop (SIGTERM → SIGKILL fallback), verify,
+background start with logs, and a status readout. `status` may show the process
+group (`screen`/shell/python/`caffeinate`); the invariant is exactly one
+`python ... scripts/trading_loop.py` process. If logs show overlapping scan
+cadences, check for an orphan with `ps ax | rg "scripts/trading_loop.py"` and
+stop the older process before trusting live behavior.
 
 **Keep-awake (laptop hosts):** `start_loop` now launches a `caffeinate -i -m -w $pid` alongside the loop so the host can't idle/maintenance-sleep mid-run. On a sleeping Mac the whole process freezes — you'll see `[watchdog] no progress for N s — HUNG` re-execs where N is *minutes-to-hours* (that's the sleep gap, NOT a code hang; the watchdog re-execs correctly on wake). During sleep only the **server-side SL/TP brackets** protect open positions. `caffeinate -i` stops idle sleep but a closed lid on battery can still clamshell-sleep → keep on AC for true 24/7. See `references/daemon-investigation.md`.
 
-**Pitfall:** `python3 scripts/trading_loop.py --env prod --daemon` does NOT daemonize — the `--daemon` flag is parsed but has no effect. The restart script uses `nohup ... &` correctly; only fall back to a manual launch if the script is unavailable.
+**Pitfall:** `python3 scripts/trading_loop.py --env prod --daemon` does NOT daemonize — the `--daemon` flag is parsed but has no effect. Use the restart script for persistent operation; only fall back to a manual launch if the script is unavailable.
 
 ## Asset-class toggles
 
@@ -183,29 +196,30 @@ the AI + risk gates then adjudicate:
   price-action/chart patterns directly. See `references/exit-engine.md` siblings.
 - whale-accumulation (`whale_scan_bypass`).
 
-**Config keys are read as `snake_case` only** — legacy camelCase keys are
-silently ignored by the gates. The MCP `config` tool now writes snake_case too.
+**Config keys are read tolerantly** — current gates accept snake_case and the
+legacy camelCase form for common knobs. Prefer snake_case in `.agent-config.json`
+and MCP writes so diffs stay predictable.
 
 ## Trade Sizing
 
-Per-trade size = `equity_fraction_per_trade × perp_equity × leverage ×
-conviction_multiplier`, keyed off **main-dex perp equity only** (not the
-cross-dex aggregated number — that's a dashboard semantic; sizing must be
-backed by main free margin). `conviction_sizing` scales by AI confidence
-(`conviction_tiers`, up to 2×) and a `whale_size_multiplier`. Each trade
-commits a fixed fraction, so N trades scales the account fully in. Bounded by
-`max_concurrent`, `max_total_notional_pct`, and `max_trade_notional_usd`.
+Current live sizing uses `atr_risk_sizing`: target risk is
+`equity × risk_per_trade_pct`, converted to notional using the primary stop
+distance (`sizing_basis=primary_stop`) and then clamped by
+`max_trade_notional_usd`, configured leverage, and the coin's max leverage.
+When ATR sizing is disabled, the fallback is
+`equity_fraction_per_trade × equity × leverage × conviction_multiplier`.
+`conviction_sizing` scales that fallback by AI confidence (`conviction_tiers`,
+up to 2×) and a `whale_size_multiplier`. Bounded by `max_concurrent`,
+`max_total_notional_pct`, and `max_trade_notional_usd`.
 
-**Per-trade notional now CLAMPS, not rejects** (`executor.py`): the computed
+**Per-trade notional CLAMPS, not rejects** (`executor.py`): the computed
 `trade_notional` is clamped down to `max_trade_notional_usd` so an oversized
-conviction bet is *sized down to the cap and taken*, rather than dropped by the
-notional gate. (The old behavior rejected anything over the cap — which silently
-killed legitimate trades, not just the monsters. Root-caused 2026-06-04: inverted
-sizing — bigger bets on losers — was the real bleed, not a broken edge.)
+candidate is sized down to the cap and can still be taken. The executor then
+normalizes to the exact exchange-valid coin size before gates; tiny precision
+dust around the cap is tolerated, while real overshoots are still blocked.
 
 Free-margin floor: the executor refuses if `available / equity <
-min_available_margin_pct` (config; currently **0.20**, briefly tried 0.05 then
-reverted — a low floor + unbounded notional spawns oversized correlated legs).
+min_available_margin_pct` (config; currently **0.10**).
 `available` is `accountValue - totalMarginUsed` (matches HL "Available to
 Trade"). A defensive `equity_unavailable` reason fires when HL returns
 `equity=0` (transient outage) instead of sending an unsized order.
@@ -220,16 +234,14 @@ agent wallets cannot transfer between them.
 Every executed position gets THREE layers of exit, all set at entry:
 
 1. **DSL trailing stop** (`dsl_exit.py`, primary, re-evaluated each 60s tick):
-   - **Phase 1 — loss cap:** `max_loss_pct` (1.2% spot) AND `max_loss_roe_pct/lev`
-     (whichever is tighter). Capped each chop loss at ~−1.2% spot all session.
-   - **Phase 2 — profit lock:** engages at `protect_pct` (1.0%). Floor =
+   - **Phase 1 — loss cap:** `max_loss_pct` (current live 0.4% spot) AND
+     `max_loss_roe_pct/lev` (current live 3% ROE, whichever is tighter).
+   - **Phase 2 — profit lock:** engages at `protect_pct` (current live 1.25% for new entries).
+     Floor =
      `entry ± peak_range × (1 − retrace_threshold)`, ratchets one-way.
-   - **`retrace_threshold` + `phase2_tiers` ladder** — this is the give-back
-     control. It now TIGHTENS with profit (was a loose 0.65 default + a
-     *loosening* ladder that round-tripped winners). Current: default 0.40,
-     tiers `+3%→0.30, +6%→0.22, +10%→0.15, +20%→0.12`. **`phase2_tiers` is now
-     wired from config** (executor entry-time + `_policy_from_config`); it was
-     silently ignored before 2026-06-04.
+   - **`retrace_threshold` + `phase2_tiers` ladder** — give-back control.
+     Current live default retrace is 0.20 with tiers at +8% and +15% spot.
+     `phase2_tiers` is wired from config at entry and on state synthesis.
    - **Breakeven ratchet:** once peak ≥ `breakeven_trigger_pct`, floor can't drop
      below `breakeven_lock_pct` — guarantees a winner can't round-trip to flat.
    - **Hard timeout:** `hard_timeout_minutes` (30h) — a scalp/swing horizon, NOT
@@ -267,7 +279,7 @@ For agent-wallet setup and the `approveAgent` flow, see the
 Scanner uses a **bucketed budget** (default 60 candle fetches per scan):
 - `HERMES_MAX_MARKETS_HIP3` (25) HIP-3 markets by 24h volume
 - `HERMES_MAX_MARKETS_MOVERS` (10) crypto markets by `|24h%|` above a
-  `HERMES_MOVERS_VOL_FLOOR_USD` ($1M) floor
+  `HERMES_MOVERS_VOL_FLOOR_USD` ($300k) floor
 - Remainder (25) crypto markets by 24h volume
 
 This catches three regimes: high-volume majors, tokenized equities, and
@@ -368,8 +380,17 @@ kills overall trade volume. Use `counter_regime_min_conf` instead.
 Live config (edit `.agent-config.json` directly — the MCP `config` tool
 does NOT accept `counter_regime_min_conf` writes):
 ```json
-{ "min_ai_confidence": 0.65, "counter_regime_min_conf": 0.8,
-  "leverage": 10, "equity_fraction_per_trade": 0.28 }
+{
+  "min_ai_confidence": 0.7,
+  "counter_regime_min_conf": 0.8,
+  "leverage": 12,
+  "max_trade_notional_usd": 800,
+  "atr_risk_sizing": {
+    "enabled": true,
+    "risk_per_trade_pct": 0.02,
+    "sizing_basis": "primary_stop"
+  }
+}
 ```
 
 When the user asks "regime?" / "short or long?" / "what's the regime",
@@ -429,6 +450,7 @@ itself — that's the cache wrapper).
 | Dashboard equity ≠ HL UI total | The dashboard reads aggregated (`fetch_account_state(include_hip3=True)`). If the loop is running old code that uses main-only, restart it. |
 | Daily PnL inflated after a deposit/transfer | Contribution-aware tracking subtracts spot↔perp transfers + external deposits/withdrawals automatically. If still inflated, baseline may be stale — reset with the snippet in `references/restart-sequence.md`. |
 | Executor blocks LONG with "insufficient_free_margin" while HL UI shows plenty | `available` is `accountValue - totalMarginUsed` (matches HL UI). If they differ, the loop is on stale code — restart. |
+| Logs show overlapping scan cycles or doubled cadence | There is likely an orphan loop. Run `scripts/restart.sh status` and `ps ax \| rg "scripts/trading_loop.py"`; keep exactly one Python loop process. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
 | MCP `config` tool dropping a key | FIXED 2026-06-05 — the tool now exposes the full risk-knob set in snake_case (sizing, margin floor, tp_scale_fraction, regime gates, momentum_continuation toggle, ...). Older builds only took a narrow camelCase schema and silently dropped keys + wrote dup keys; if you see that, the MCP is on stale code → `pkill -f hermes-mcp-server.py`. |
 | `[watchdog] no progress for N s — HUNG` re-execs (N = minutes/hours) | NOT a code hang — the host (MacBook) idle/maintenance-slept and froze the process; the watchdog re-execs correctly on wake. Confirm with `pmset -g log \| grep -iE "Sleep\|Wake"`. Fix: `caffeinate` (now auto-launched by `restart.sh`); keep on AC for closed-lid. Positions are held by server-side brackets during sleep. |

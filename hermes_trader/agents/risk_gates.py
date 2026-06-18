@@ -71,9 +71,17 @@ def max_concurrent_positions_gate(ctx: GateContext, max_concurrent: int) -> Gate
 
 
 def per_trade_notional_cap_gate(ctx: GateContext, cap_usd: float) -> GateResult:
-    if ctx.trade_notional_usd <= cap_usd:
+    cap = float(cap_usd or 0)
+    if cap <= 0:
         return {"pass": True}
-    return {"pass": False, "reason": f"trade notional ${ctx.trade_notional_usd:.0f} exceeds cap ${cap_usd}"}
+    # The executor normalizes the target notional into an exchange-valid coin
+    # size before gates. Coin precision can create a few cents/dollars of cap
+    # dust, e.g. target $650.00 -> valid size worth $650.05. Treat that as
+    # still capped; larger overshoots remain blocked.
+    precision_tolerance = max(0.25, cap * 0.005)
+    if ctx.trade_notional_usd <= cap + precision_tolerance:
+        return {"pass": True}
+    return {"pass": False, "reason": f"trade notional ${ctx.trade_notional_usd:.2f} exceeds cap ${cap:.2f}"}
 
 
 def daily_loss_kill_switch(ctx: GateContext, max_daily_loss: float) -> GateResult:

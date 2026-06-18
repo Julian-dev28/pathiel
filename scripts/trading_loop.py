@@ -15,6 +15,7 @@ Flags (tolerant — unknown flags are ignored so legacy callers keep working):
                     `nohup ... &` / Hermes background. Kept for skill scripts.
 """
 import argparse
+import math
 import os
 import sys
 import threading
@@ -59,6 +60,11 @@ from hermes_trader.positions_snapshot import write_snapshot
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
+
+
+def _remaining_minutes(ms_remaining: float) -> int:
+    """Human log label for a positive millisecond cooldown."""
+    return max(1, int(math.ceil(max(0.0, ms_remaining) / 60_000)))
 
 # ── Self-healing watchdog (armed FIRST, before any network I/O) ─────────────
 # No external supervisor exists (restart.sh just launches). A local DNS/network
@@ -468,7 +474,7 @@ while True:
                 # PASS on every scan. (A re-entry is gate-blocked anyway.)
                 last_research = _last_research_by_coin.get(coin, 0)
                 if (now_ms - last_research) < held_research_ms:
-                    remaining_min = int((held_research_ms - (now_ms - last_research)) / 60_000)
+                    remaining_min = _remaining_minutes(held_research_ms - (now_ms - last_research))
                     logger.info(f"{coin}: held — next AI close-check in {remaining_min}min — skip")
                     log_event({"event": "ta_skip", "coin": coin,
                                "signal": "HELD_THROTTLE",
@@ -508,7 +514,7 @@ while True:
                 # gate-blocked, so skip the paid AI call.
                 last_ms = recent_trades_by_coin.get(coin)
                 if last_ms and (now_ms - last_ms) < cooldown_ms:
-                    remaining_min = int((cooldown_ms - (now_ms - last_ms)) / 60_000)
+                    remaining_min = _remaining_minutes(cooldown_ms - (now_ms - last_ms))
                     logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
                     log_event({"event": "ta_skip", "coin": coin,
                                "signal": "COOLDOWN",
@@ -519,7 +525,7 @@ while True:
                 # don't re-pay the LLM until research_cooldown_min lapses.
                 last_research = _last_research_by_coin.get(coin, 0)
                 if (now_ms - last_research) < research_cooldown_ms:
-                    remaining_min = int((research_cooldown_ms - (now_ms - last_research)) / 60_000)
+                    remaining_min = _remaining_minutes(research_cooldown_ms - (now_ms - last_research))
                     logger.info(f"{coin}: re-research throttle ({remaining_min}min remaining) — skip")
                     log_event({"event": "ta_skip", "coin": coin,
                                "signal": "RESEARCH_THROTTLE",

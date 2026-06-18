@@ -298,6 +298,19 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         bool(config.get("composite_force_execute", False))
         and float(analysis.get("composite_score", 0) or 0) >= override_composite
     )
+    ta_sidestep_strong = (
+        bool(config.get("ta_sidestep_force_execute", False))
+        and (
+            float(analysis.get("composite_score", 0) or 0) >= override_composite
+            or bool(analysis.get("momentum_burst_fired"))
+            or int(analysis.get("slow_burn_count", 0) or 0) >=
+            int(config.get("ta_sidestep_min_slow_burn_count", 1) or 1)
+        )
+    )
+    override_strong = (
+        slow_burn_strong or whale_fired or breakout_strong
+        or composite_strong or ta_sidestep_strong
+    )
     # A PASS produced by a FAILED LLM call (402/timeout → ai_down) is an error
     # code, not a hedged opinion — upgrading it trades blind with no AI judgment
     # behind the entry AND no working AI close behind the exit. Refuse the
@@ -306,7 +319,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     _ai_down_block = bool(analysis.get("ai_down")) and \
         bool(config.get("override_requires_ai", True))
     if analysis.get("verdict") == "PASS" \
-            and (slow_burn_strong or whale_fired or breakout_strong or composite_strong) \
+            and override_strong \
             and _ai_down_block:
         logger.info(
             f"[executor] Structural override SKIPPED on {analysis['coin']}: "
@@ -325,7 +338,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     # Fully reversible via signal_enforcement.enabled / .veto (hot-read).
     # gex_signal.shadow_mode (if set) still downgrades the GEX veto to log-only.
     if analysis.get("verdict") == "PASS" \
-            and (slow_burn_strong or whale_fired or breakout_strong or composite_strong) \
+            and override_strong \
             and _enf is not None and _enf.veto:
         _gex_shadow = ":" in analysis["coin"] and \
             bool((config.get("gex_signal") or {}).get("shadow_mode", False))
@@ -343,11 +356,12 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
                 "reason": f"signal_veto ({_enf.veto_reason})",
             }
 
-    if analysis.get("verdict") == "PASS" and (slow_burn_strong or whale_fired or breakout_strong or composite_strong):
+    if analysis.get("verdict") == "PASS" and override_strong:
         trigger = ("whale-accumulation" if whale_fired
                    else f"composite={analysis.get('composite_score'):.0f}+{analysis.get('slow_burn_count')} slow-burn"
                    if slow_burn_strong
                    else "breakout+volume (O'Neil)" if breakout_strong
+                   else "TA sidestep" if ta_sidestep_strong
                    else f"composite={analysis.get('composite_score'):.0f}>={override_composite:.0f} (momentum force)")
         # Upgrade to the configured confidence floor (not a hardcoded 0.70) so a
         # structural/whale override still clears the confidence_gate after the bar
@@ -362,6 +376,8 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         analysis["verdict"] = "LONG"
         analysis["side"] = "long"
         analysis["confidence"] = max(_conf_floor, float(analysis.get("confidence", 0) or 0))
+        if ta_sidestep_strong:
+            analysis["sidestep_override"] = True
         analysis["reasoning"] = (
             "[structural override] " + (analysis.get("reasoning", "") or "")
         )[:500]
@@ -377,12 +393,18 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
             "analysis_id": analysis["id"], "reason": "pass_no_override",
         }
 
-    runner_block = _runner_entry_block_reason(analysis, config)
-    if runner_block:
-        return {
-            "executed": False, "mode": mode,
-            "analysis_id": analysis["id"], "reason": runner_block,
-        }
+    _runner_cfg = config.get("runner_entry_gate") or {}
+    _sidestep_bypasses_runner = (
+        bool(analysis.get("sidestep_override"))
+        and bool(_runner_cfg.get("bypass_sidestep_overrides", False))
+    )
+    if not _sidestep_bypasses_runner:
+        runner_block = _runner_entry_block_reason(analysis, config)
+        if runner_block:
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"], "reason": runner_block,
+            }
 
     # Loss cooldown: refuse re-entry on a coin whose last close was a LOSS and
     # whose extended block hasn't expired (armed in close_position_market).
@@ -1133,7 +1155,16 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
             bool(_rv_cfg.get("composite_force_execute", False))
             and float(analysis.get("composite_score", 0) or 0) >= _bar
         )
-        if has_whale or slow_burn_hint or breakout_hint or composite_hint:
+        sidestep_hint = (
+            bool(_rv_cfg.get("ta_sidestep_force_execute", False))
+            and (
+                float(analysis.get("composite_score", 0) or 0) >= _bar
+                or bool(analysis.get("momentum_burst_fired"))
+                or int(analysis.get("slow_burn_count", 0) or 0) >=
+                int(_rv_cfg.get("ta_sidestep_min_slow_burn_count", 1) or 1)
+            )
+        )
+        if has_whale or slow_burn_hint or breakout_hint or composite_hint or sidestep_hint:
             return {"action": "execute", "verdict": "PASS",
                     "result": execute_fn(analysis)}
         return {"action": "none", "verdict": "PASS", "result": None}

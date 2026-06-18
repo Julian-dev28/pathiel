@@ -65,5 +65,12 @@ The next Hermes tool call respawns it fresh from `~/.hermes/config.yaml`.
 
 ```bash
 scripts/restart.sh status
-ps aux | grep -E "(trading_loop|hermes-mcp-server|hermes_trader.server)" | grep -v grep
+ps ax | rg "(scripts/trading_loop.py|hermes-mcp-server.py|hermes_trader.server)"
 ```
+
+`status` may show the process group that owns the loop (`screen`, shell,
+`python`, and `caffeinate`). The important invariant is exactly one
+`python ... scripts/trading_loop.py` process. If the log shows overlapping scan
+cadences, an older orphan loop is probably still alive; stop the older process
+before trusting fills, cooldowns, or PnL attribution. `scripts/restart.sh` has a
+`ps` fallback for environments where `pgrep -f` is unreliable.

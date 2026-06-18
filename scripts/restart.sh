@@ -61,8 +61,27 @@ err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 # Find PIDs matching a pattern, excluding our own shell + grep.
 pids_for() {
   local pattern="$1"
-  # -f matches the full command line; filter out this script and any grep.
-  pgrep -f "$pattern" 2>/dev/null | grep -v "^${SELF_PID}$" || true
+  local pids=""
+  # -f matches the full command line. On some managed macOS shells pgrep can
+  # temporarily fail when sysmond is unavailable; fall back to ps so orphaned
+  # screen/nohup loops are still found before starting another trader.
+  if command -v pgrep >/dev/null 2>&1; then
+    pids="$(pgrep -f "$pattern" 2>/dev/null || true)"
+  fi
+  if [[ -z "$pids" ]]; then
+    pids="$(
+      ps ax -o pid= -o command= | awk -v pat="$pattern" -v self="$SELF_PID" '
+        {
+          pid=$1
+          $1=""
+          sub(/^ +/, "", $0)
+          if (pid != self && $0 ~ pat && $0 !~ /scripts\/restart\.sh/ && $0 !~ /awk -v pat/) {
+            print pid
+          }
+        }'
+    )"
+  fi
+  printf "%s\n" "$pids" | awk -v self="$SELF_PID" 'NF && $1 != self && !seen[$1]++ {print $1}'
 }
 
 stop_proc() {

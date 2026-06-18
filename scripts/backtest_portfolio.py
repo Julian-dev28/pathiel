@@ -42,9 +42,10 @@ ROUND_TRIP_FEE_RATE = 0.0005  # live executor model: 2.5 bps in + 2.5 bps out
 
 class Position:
     """One open trade; step(bar) returns (exit_px, reason) or None."""
-    def __init__(self, coin, side, entry_px, lev, notional, margin, dsl):
+    def __init__(self, coin, side, entry_px, lev, notional, margin, dsl, cost_rate):
         self.coin, self.side, self.entry_px = coin, side, entry_px
         self.lev, self.notional, self.margin = lev, notional, margin
+        self.cost_rate = cost_rate
         self.peak = entry_px
         self.max_loss = min(float(dsl.get("max_loss_pct", 0.75)),
                             float(dsl.get("max_loss_roe_pct", 6.0)) / max(1, lev))
@@ -76,7 +77,7 @@ class Position:
     def pnl_usd(self, exit_px):
         gross = (exit_px - self.entry_px) / self.entry_px if self.side == "long" \
             else (self.entry_px - exit_px) / self.entry_px
-        return self.notional * (gross - ROUND_TRIP_FEE_RATE)
+        return self.notional * (gross - self.cost_rate)
 
 
 def build_candidates(args, cfg) -> List[Dict[str, Any]]:
@@ -95,20 +96,58 @@ def build_candidates(args, cfg) -> List[Dict[str, Any]]:
         if a.get("created_at", 0) < cutoff:
             continue
         v = a.get("verdict")
-        if v not in ("LONG", "SHORT"):
-            continue
         conf = float(a.get("confidence", 0))
-        if conf < min_conf:
-            continue
         ts = int(a.get("created_at", 0))
         coin = a.get("coin")
-        side = "long" if v == "LONG" else "short"
+        if not coin:
+            continue
         perc = percs.get(a.get("perception_id"))
         comp = float(perc.get("composite_score", 0)) if perc else 0.0
         trg = (perc or {}).get("triggers", []) or []
         burst = any(t.get("name") == "momentumBurst" and t.get("fired") for t in trg)
-        slow = any(t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
-                   and t.get("fired") for t in trg)
+        slow_count = sum(
+            1 for t in trg
+            if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
+            and t.get("fired")
+        )
+        slow = slow_count > 0
+        ai_ls = v in ("LONG", "SHORT")
+        ta_confirmed = (
+            comp >= args.force_bar
+            or burst
+            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
+        )
+        side: Optional[str] = None
+        sidestep_override = False
+        if args.mode == "ai":
+            if not ai_ls or conf < min_conf:
+                continue
+            side = "long" if v == "LONG" else "short"
+        elif args.mode == "lowconf":
+            if not ai_ls or conf < min_conf:
+                continue
+            side = "long" if v == "LONG" else "short"
+        elif args.mode == "force":
+            if ai_ls and conf >= min_conf:
+                side = "long" if v == "LONG" else "short"
+            elif comp >= args.force_bar:
+                side = "long"
+                conf = max(conf, min_conf)
+            else:
+                continue
+        elif args.mode == "sidestep":
+            if ta_confirmed:
+                side = "long"
+                conf = max(conf, min_conf)
+                sidestep_override = True
+            elif ai_ls and conf >= min_conf:
+                side = "long" if v == "LONG" else "short"
+            else:
+                continue
+        else:
+            raise ValueError(f"unknown mode {args.mode}")
+        if args.long_only and side == "short":
+            continue
         bk = ts // (30 * 60_000)
         if bk not in regime_cache:
             regime_cache[bk] = "neutral" if args.cache_only else detect_regime_at(ts)
@@ -117,10 +156,16 @@ def build_candidates(args, cfg) -> List[Dict[str, Any]]:
         if not args.skip_runner_gate:
             gate_analysis = dict(a)
             gate_analysis["side"] = side
+            gate_analysis["confidence"] = conf
             gate_analysis["composite_score"] = comp
-            blocked = _runner_entry_block_reason(gate_analysis, cfg)
-            if blocked:
-                continue
+            if sidestep_override:
+                gate_analysis["sidestep_override"] = True
+            gate = cfg.get("runner_entry_gate") or {}
+            skip_runner = sidestep_override and bool(gate.get("bypass_sidestep_overrides", False))
+            if not skip_runner:
+                blocked = _runner_entry_block_reason(gate_analysis, cfg)
+                if blocked:
+                    continue
         candle_count = int(timeout_min // 5) + 10
         candle_end = ts + int(timeout_min * 60_000) + 600_000
         if args.cache_only:
@@ -157,8 +202,12 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
         by_entry.setdefault(c["ts"] // STEP_MS, []).append(c)
 
     open_pos: Dict[str, Dict[str, Any]] = {}
+    last_entry_by_coin: Dict[str, int] = {}
+    loss_block_until: Dict[str, int] = {}
     closes, peak_eq, max_dd = [], equity, 0.0
-    blk_conc = blk_notional = blk_margin = blk_dup = blk_size = 0
+    blk_conc = blk_notional = blk_margin = blk_dup = blk_size = blk_cooldown = blk_loss_cool = 0
+    cooldown_ms = int(float(cfg.get("cooldown_min", 0) or 0) * 60_000)
+    loss_cooldown_ms = int(float(args.loss_cooldown_min or 0) * 60_000)
     clock = t0
     while clock <= t1 or open_pos:
         # exits
@@ -172,6 +221,8 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
                     pnl = pos.pnl_usd(px)
                     equity += pnl
                     closes.append({"coin": coin, "pnl": pnl, "reason": reason})
+                    if pnl < 0 and loss_cooldown_ms > 0:
+                        loss_block_until[coin] = clock + loss_cooldown_ms
                     del open_pos[coin]
                     break
             else:
@@ -180,15 +231,22 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
                     if last:
                         gross = (last.c - pos.entry_px) / pos.entry_px if pos.side == "long" \
                             else (pos.entry_px - last.c) / pos.entry_px
-                        pnl = pos.notional * (gross - ROUND_TRIP_FEE_RATE)
+                        pnl = pos.notional * (gross - pos.cost_rate)
                         equity += pnl
                         closes.append({"coin": coin, "pnl": pnl, "reason": "end"})
+                        if pnl < 0 and loss_cooldown_ms > 0:
+                            loss_block_until[coin] = clock + loss_cooldown_ms
                     del open_pos[coin]
         # entries this step
         for c in by_entry.get(clock // STEP_MS, []):
             coin = c["coin"]
             if coin in open_pos:
                 blk_dup += 1; continue
+            if loss_cooldown_ms > 0 and c["ts"] < loss_block_until.get(coin, 0):
+                blk_loss_cool += 1; continue
+            last_entry = last_entry_by_coin.get(coin)
+            if last_entry is not None and cooldown_ms > 0 and c["ts"] - last_entry < cooldown_ms:
+                blk_cooldown += 1; continue
             if len(open_pos) >= max_concurrent:
                 blk_conc += 1; continue
             eff_lev = btlog.max_leverage_for(coin, lev)
@@ -211,9 +269,11 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
             new_margin = new_notional / max(1, eff_lev)
             if (equity - used_margin - new_margin) / equity < min_margin:
                 blk_margin += 1; continue
+            cost_rate = ROUND_TRIP_FEE_RATE + (float(args.slippage_bps or 0.0) * 2.0 / 10000.0)
             pos = Position(coin, c["side"], c["entry_px"], eff_lev, new_notional,
-                           new_margin, dsl_cfg)
+                           new_margin, dsl_cfg, cost_rate)
             open_pos[coin] = {"pos": pos, "candles": c["candles"], "i": 0}
+            last_entry_by_coin[coin] = c["ts"]
         peak_eq = max(peak_eq, equity)
         max_dd = max(max_dd, peak_eq - equity)
         clock += STEP_MS
@@ -224,7 +284,8 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
     return {"trades": n, "win": (len(wins) / n * 100 if n else 0),
             "net": net, "exp": (net / n if n else 0), "end_eq": equity,
             "max_dd": max_dd, "blk_conc": blk_conc, "blk_notional": blk_notional,
-            "blk_margin": blk_margin, "blk_size": blk_size}
+            "blk_margin": blk_margin, "blk_size": blk_size, "blk_cooldown": blk_cooldown,
+            "blk_loss_cool": blk_loss_cool}
 
 
 _CANDS: List[Dict[str, Any]] = []
@@ -234,14 +295,30 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=int, default=48)
     ap.add_argument("--equity", type=float, default=200.0)
+    ap.add_argument("--mode", default="ai", choices=["ai", "lowconf", "force", "sidestep"])
+    ap.add_argument("--force-bar", type=float, default=30.0)
+    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1)
+    ap.add_argument("--long-only", action="store_true")
+    ap.add_argument("--loss-cooldown-min", type=float, default=0.0)
     ap.add_argument("--leverage", type=int, default=0)
     ap.add_argument("--max-notional", type=float, default=0.0)
     ap.add_argument("--risk-pct", type=float, default=0.0)
     ap.add_argument("--sizing-basis", default="")
     ap.add_argument("--max-loss", type=float, default=0.0)
     ap.add_argument("--roe-cap", type=float, default=0.0)
+    ap.add_argument("--protect", type=float, default=0.0)
+    ap.add_argument("--retrace", type=float, default=0.0)
+    ap.add_argument("--cooldown", type=float, default=None)
+    ap.add_argument("--slippage-bps", type=float, default=0.0)
     ap.add_argument("--min-margin", type=float, default=None)
     ap.add_argument("--min-conf", type=float, default=0.0)
+    ap.add_argument("--runner-min-confidence", type=float, default=None)
+    ap.add_argument("--runner-min-composite", type=float, default=None)
+    ap.add_argument("--runner-min-hip3-composite", type=float, default=None)
+    ap.add_argument("--runner-min-short-confidence", type=float, default=None)
+    ap.add_argument("--runner-min-short-composite", type=float, default=None)
+    ap.add_argument("--runner-mover-min-confidence", type=float, default=None)
+    ap.add_argument("--runner-mover-min-composite", type=float, default=None)
     ap.add_argument("--max-concurrent", type=int, default=0)
     ap.add_argument("--max-notional-pct", type=float, default=0.0)
     ap.add_argument("--sweep-concurrent", default="", help="e.g. 4,6,8,10,15")
@@ -264,14 +341,37 @@ def main():
         if args.sizing_basis:
             atr_cfg["sizing_basis"] = args.sizing_basis
         cfg["atr_risk_sizing"] = atr_cfg
-    if args.max_loss or args.roe_cap:
+    if args.max_loss or args.roe_cap or args.protect or args.retrace:
         cfg = dict(cfg)
         dsl = dict(cfg.get("dsl_exit", {}) or {})
         if args.max_loss:
             dsl["max_loss_pct"] = args.max_loss
         if args.roe_cap:
             dsl["max_loss_roe_pct"] = args.roe_cap
+        if args.protect:
+            dsl["protect_pct"] = args.protect
+        if args.retrace:
+            dsl["retrace_threshold"] = args.retrace
         cfg["dsl_exit"] = dsl
+    if args.cooldown is not None:
+        cfg = dict(cfg)
+        cfg["cooldown_min"] = args.cooldown
+    runner_overrides = {
+        "min_confidence": args.runner_min_confidence,
+        "min_composite": args.runner_min_composite,
+        "min_hip3_composite": args.runner_min_hip3_composite,
+        "min_short_confidence": args.runner_min_short_confidence,
+        "min_short_composite": args.runner_min_short_composite,
+        "mover_min_confidence": args.runner_mover_min_confidence,
+        "mover_min_composite": args.runner_mover_min_composite,
+    }
+    if any(v is not None for v in runner_overrides.values()):
+        cfg = dict(cfg)
+        gate = dict(cfg.get("runner_entry_gate") or {})
+        for key, val in runner_overrides.items():
+            if val is not None:
+                gate[key] = float(val)
+        cfg["runner_entry_gate"] = gate
     if args.min_margin is not None:
         cfg = dict(cfg)
         cfg["min_available_margin_pct"] = args.min_margin
@@ -287,14 +387,15 @@ def main():
     concs = [int(x) for x in args.sweep_concurrent.split(",")] if args.sweep_concurrent \
         else [args.max_concurrent or int(cfg.get("max_concurrent", 15))]
     print(f"{'max_conc':>9} {'trades':>7} {'win%':>6} {'exp/trade':>10} {'net':>9} "
-          f"{'endEq':>8} {'maxDD':>7}  blocks(conc/notnl/margin/size)")
+          f"{'endEq':>8} {'maxDD':>7}  blocks(conc/notnl/margin/size/cool/loss)")
     for mc in concs:
         r = run(args, cfg, mc, mnp)
         if not r.get("trades"):
             print(f"{mc:>9}  no trades"); continue
         print(f"{mc:>9} {r['trades']:>7} {r['win']:>5.0f}% {r['exp']:>+9.2f} "
               f"{r['net']:>+8.2f} {r['end_eq']:>7.0f} {r['max_dd']:>6.1f}  "
-              f"{r['blk_conc']}/{r['blk_notional']}/{r['blk_margin']}/{r['blk_size']}")
+              f"{r['blk_conc']}/{r['blk_notional']}/{r['blk_margin']}/{r['blk_size']}/"
+              f"{r['blk_cooldown']}/{r['blk_loss_cool']}")
     _save_disk_cache(args.cache_file)
 
 
