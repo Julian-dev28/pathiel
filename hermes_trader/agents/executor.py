@@ -381,6 +381,28 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
                        f"{_lc_remaining:.0f}min remaining)"),
         }
 
+    # Per-coin re-entry cap: block re-entering the SAME coin more than N times in a
+    # rolling window — limits the churn/fee-bleed that makes win-and-reenter -EV
+    # (backtested 2026-06-21: fee-dominated; JUP churned 5x in a day, net negative).
+    # Config-gated + hot-read; the SELECTION layer (AI/gates) is the real edge, this is
+    # just a guardrail against pathological over-churn of one name.
+    _rc = config.get("reentry_cap") or {}
+    if bool(_rc.get("enabled", False)):
+        try:
+            _cap = int(_rc.get("max_per_coin", 3))
+            _win_h = float(_rc.get("window_hours", 24.0))
+            _n_recent = memory.count_entries_since(
+                analysis["coin"], time.time() * 1000 - _win_h * 3_600_000)
+            if _cap > 0 and _n_recent >= _cap:
+                return {
+                    "executed": False, "mode": mode,
+                    "analysis_id": analysis["id"],
+                    "reason": (f"reentry_cap ({analysis['coin']} {_n_recent} entries in "
+                               f"{_win_h:.0f}h >= cap {_cap} — anti-churn)"),
+                }
+        except Exception as _e:
+            logger.warning(f"[executor] reentry_cap check failed (non-fatal): {_e}")
+
     # Idempotency: don't double-execute
     already = next(
         (t for t in memory.get_recent_trades(100)
@@ -484,6 +506,17 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         state, equity, available = _read_state()
     agg_equity = float(state.get("equity") or equity)                # aggregated → exposure gate
     total_open_notional = float(state.get("total_ntl") or 0)         # aggregated → notional gate
+    # Per-account sizing equity: a trade is FUNDED by ONE account (main for crypto,
+    # the specific HIP-3 dex for colon coins), so size the risk budget against THAT
+    # account's equity — NOT the aggregate. Sizing on aggregate over-sizes a trade vs
+    # the balance that actually funds it (e.g. $170 agg but only $60 on main → positions
+    # ~3x too big → main saturates after 1-2 trades, blocking every other mover). This
+    # keeps sizing proportional to fundable capital at ANY account size (works at $20).
+    # Falls back to aggregate if the per-dex breakdown is missing (degraded read).
+    _sz_dex = coin.split(":", 1)[0] if ":" in (coin or "") else ""
+    size_equity = float((state.get("dex_equity") or {}).get(_sz_dex, agg_equity) or agg_equity)
+    if size_equity <= 0:
+        size_equity = agg_equity
     if equity <= 0:
         # Persisted across retries — refuse rather than send an unsized order.
         return {
@@ -590,14 +623,14 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
             _max_roe = float(_dsl.get("max_loss_roe_pct", 40.0) or 40.0)
             _lev = max(1, leverage)
             _stop_frac = min(_max_loss, _max_roe / _lev) / 100.0
-            if agg_equity <= 0 or _risk_pct <= 0 or _stop_frac <= 0:
+            if size_equity <= 0 or _risk_pct <= 0 or _stop_frac <= 0:
                 return {
                     "executed": False, "mode": mode, "analysis_id": analysis["id"],
                     "reason": f"primary_stop_sizing_zero ({coin}: invalid inputs)",
                 }
-            trade_notional = (_risk_pct * agg_equity) / _stop_frac
+            trade_notional = (_risk_pct * size_equity) / _stop_frac
             _lev_cap = min(get_max_leverage(coin), int(config.get("leverage", HL_LEVERAGE)))
-            _max_by_lev = max(1, _lev_cap) * agg_equity
+            _max_by_lev = max(1, _lev_cap) * size_equity
             _clamped = []
             if trade_notional > _max_by_lev:
                 trade_notional = _max_by_lev
@@ -611,7 +644,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
                 f"{', clamped:'+','.join(_clamped) if _clamped else ''})")
         else:
             _sz = atr_equal_risk_notional(
-                equity=agg_equity,
+                equity=size_equity,
                 risk_per_trade_pct=_risk_pct,
                 atr_abs=atr,
                 entry_px=mid_price,
@@ -637,7 +670,7 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         # whale multipliers were removed because they changed exposure without
         # improving realized EV.
         base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
-        trade_notional = equity * base_fraction * leverage
+        trade_notional = size_equity * base_fraction * leverage
         # Clamp to the per-trade notional ceiling so an oversized fallback bet is
         # SIZED DOWN to the cap rather than REJECTED by the notional gate.
         if _notional_cap > 0 and trade_notional > _notional_cap:

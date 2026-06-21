@@ -136,6 +136,11 @@
     "max_ext_pct": 30.0,
     "min_volume_usd": 5000000
   },
+  "reentry_cap": {
+    "enabled": true,
+    "max_per_coin": 3,
+    "window_hours": 24.0
+  },
   "volstop_shadow": {
     "enabled": true,
     "atr_mult": 2.0,

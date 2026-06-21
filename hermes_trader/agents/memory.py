@@ -304,6 +304,17 @@ class AgentMemory:
                 out[t["coin"]] = t["executed_at"]
         return out
 
+    def count_entries_since(self, coin: str, since_ms: float) -> int:
+        """Count executed ENTRIES on `coin` at/after `since_ms`. Backs the per-coin
+        re-entry cap that limits churn/fee-bleed from re-entering one coin repeatedly
+        (backtested 2026-06-21: win-and-reenter momentum churn is fee-dominated -EV)."""
+        return sum(
+            1 for t in self._trades
+            if t.get("coin") == coin
+            and float(t.get("executed_at", 0) or 0) >= since_ms
+            and float(t.get("size_usd", 0) or 0) > 0
+        )
+
     def get_all_trades(self) -> List[Dict[str, Any]]:
         return list(self._trades)
 
