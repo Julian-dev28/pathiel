@@ -543,7 +543,6 @@ def _policy_from_config() -> ExitPolicy:
         dsl = read_agent_config().get("dsl_exit", {}) or {}
         tiers_raw = dsl.get("phase2_tiers")
         tiers = [RetraceTier(**t) for t in tiers_raw] if tiers_raw else None
-        atr_cfg = dsl.get("atr_stop", {}) or {}
         noise_cfg = dsl.get("noise_band", {}) or {}
         return ExitPolicy(
             max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
@@ -553,10 +552,6 @@ def _policy_from_config() -> ExitPolicy:
             hard_timeout_minutes=dsl.get("hard_timeout_minutes", ExitPolicy.hard_timeout_minutes),
             breakeven_trigger_pct=dsl.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
             breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
-            atr_stop_enabled=bool(atr_cfg.get("enabled", False)),
-            atr_stop_mult=float(atr_cfg.get("atr_mult", ExitPolicy.atr_stop_mult)),
-            atr_stop_floor_pct=float(atr_cfg.get("floor_pct", ExitPolicy.atr_stop_floor_pct)),
-            atr_stop_ceiling_pct=float(atr_cfg.get("ceiling_pct", ExitPolicy.atr_stop_ceiling_pct)),
             stale_flat_timeout_minutes=float(dsl.get("stale_flat_timeout_minutes", 0.0) or 0.0),
             consecutive_breaches_required=int(dsl.get("consecutive_breaches_required", 1) or 1),
             noise_band_enabled=bool(noise_cfg.get("enabled", False)),
@@ -570,7 +565,7 @@ def _policy_from_config() -> ExitPolicy:
 def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
                             policy: Optional[ExitPolicy] = None,
                             default_leverage: int = 1,
-                            queried_dexes: Optional[set] = None) -> None:
+                            queried_dexes: Optional[set] = None) -> List[Dict[str, Any]]:
     """Reconcile the tracker registry with the exchange's live position list.
 
     Synthesizes a tracker for any open position without one (entry_time =
@@ -625,7 +620,18 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
 
     stale = [k for k in _active_positions
              if k not in live_keys and _key_in_queried_scope(k)]
+    stale_infos: List[Dict[str, Any]] = []
     for k in stale:
+        tracker = _active_positions[k]
+        stale_infos.append({
+            "key": k,
+            "coin": tracker.coin,
+            "side": tracker.side,
+            "entry_px": tracker.entry_px,
+            "leverage": tracker.leverage,
+            "opened_at": tracker.entry_time,
+            "peak_px": tracker.peak_px,
+        })
         del _active_positions[k]
         logger.info(f"[dsl] Dropped stale tracker {k} (no live exchange position)")
     skipped = [k for k in _active_positions
@@ -639,6 +645,7 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
 
     if added or stale:
         _save_state()
+    return stale_infos
 
 
 def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:

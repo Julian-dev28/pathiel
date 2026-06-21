@@ -223,7 +223,7 @@ def gex_signal_cached(coin_or_ticker: str, ttl: float = _GEX_TTL_S,
     """gex_signal() with a process-wide TTL cache. Caches misses too (as None)
     so a CBOE outage can't hammer the hot path. Thread-safe.
 
-    allow_fetch=False = CACHE-ONLY: return the last cached value (or None) WITHOUT
+    allow_fetch=False = CACHE-ONLY: return a fresh cached value (or None) WITHOUT
     any network call — for the execute hot path, which must never fetch."""
     ticker = underlying_for(coin_or_ticker)
     now = time.time()
@@ -232,7 +232,7 @@ def gex_signal_cached(coin_or_ticker: str, ttl: float = _GEX_TTL_S,
         if hit and (now - hit[0]) < ttl:
             return hit[1]
     if not allow_fetch:
-        return hit[1] if hit else None
+        return None
     rep = None
     try:
         rep = gex_signal(coin_or_ticker)

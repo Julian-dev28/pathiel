@@ -3,18 +3,17 @@
 Classifies each coin into crypto / equity / commodity, then picks the right
 trend proxy:
 
-  crypto    → BTC 4h trend (everything in crypto correlates to BTC)
-  equity    → NVDA 4h trend (most-liquid HL single-stock perp; proxy for
-              risk-on/off in the tradfi single-stock basket; switch via
-              EQUITY_PROXY)
-  commodity → the coin's own 4h trend (commodities aren't correlated to each
-              other — gas, silver, copper, oil all move on their own drivers)
+  crypto    -> BTC 1h trend (crypto beta proxy)
+  equity    -> the coin's own 1h trend, falling back to xyz:SP500 when the
+               own series is thin/neutral
+  commodity -> the coin's own 1h trend (commodities aren't correlated to each
+               other; gas, silver, copper, oil all move on their own drivers)
 
-Trend itself is EMA20 vs EMA50 on 4h closes, with a short slope check on the
+Trend itself is EMA20 vs EMA50 on 1h closes, with a short slope check on the
 fast EMA so we don't whipsaw at the cross. Three states: 'up', 'down',
 'neutral' (no strong direction → gate stays out of the way).
 
-Regimes are cached per-proxy for `REGIME_TTL_S` (default 10 min) so the gate
+Regimes are cached per-proxy for `REGIME_TTL_S` (default 5 min) so the gate
 doesn't re-fetch candles for every trade attempt in a scan cycle.
 """
 from __future__ import annotations

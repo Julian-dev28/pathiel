@@ -161,9 +161,8 @@ def oi_funding_anomaly(
 
     RECALIBRATED 2026-06-02 (audit): the prior thresholds (OI>=$10M, funding<
     -0.00005) flagged only 1 coin across the whole universe — the funding cut sat
-    at the ~p10 extreme of negative funding, so the signal was effectively dead and
-    the downstream whale force-execute + 1.3x size + regime-bypass machinery never
-    fired. Loosened to OI>=$5M and funding<-0.00001 (catches the real negative-
+    at the ~p10 extreme of negative funding, so the signal was effectively dead.
+    Loosened to OI>=$5M and funding<-0.00001 (catches the real negative-
     funding cohort, ~7-9 coins) AND fixed the confidence normalization: it was
     dividing by 0.0005 (so a -0.00001 coin scored 0.02 and got filtered by the
     0.05 min_confidence gate downstream — a second silent kill). Now normalizes
@@ -358,7 +357,8 @@ def whale_accumulation_map(min_confidence: float = 0.05) -> Dict[str, Dict[str, 
       2. oi_surge_accumulation — OI surging vs last scan + price flat
          (positions being built quietly, move not yet happened).
     A coin flagged by EITHER (or both, taking the higher confidence) is returned.
-    These feed perception.whale_signal -> executor force-execute + 1.3x size + regime bypass.
+    This remains available for MCP/manual inspection; live execution no longer
+    uses it as an execution, size, or regime-bypass input.
     """
     merged: Dict[str, Dict[str, Any]] = {}
     for s in oi_funding_anomaly() + oi_surge_accumulation():

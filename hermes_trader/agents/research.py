@@ -229,24 +229,6 @@ def _build_user_message(
     else:
         structure_block = "1h structure signals: none fired (no accumulation / breakout setup detected)"
 
-    # Whale-accumulation block: oi_funding_anomaly flag (deep-negative funding +
-    # flat price + high OI = whales loading while retail shorts). When present
-    # this is a strong LONG-bias signal — don't fight it.
-    whale = perception.get("whale_signal")
-    if whale:
-        whale_block = (
-            "Whale accumulation flag (oi_funding_anomaly):\n"
-            f"  - funding rate: {whale.get('funding_rate', 0):.6f} (deeply negative = retail shorting)\n"
-            f"  - 24h price change: {whale.get('price_24h_change_pct', 0):+.2f}% (relatively flat)\n"
-            f"  - open interest: ${whale.get('oi', 0):,.0f}\n"
-            f"  - confidence: {whale.get('confidence', 0):.2f}\n"
-            "Interpretation: smart money is building long positions while retail pays them "
-            "to short. When the shorts cover, price tends to squeeze UP. Bias LONG unless "
-            "structure is overwhelmingly bearish."
-        )
-    else:
-        whale_block = "Whale accumulation flag: not flagged for this coin"
-
     def _fmt_px(p: float) -> str:
         """Adaptive precision so sub-cent coins (HMSTR at $0.000173 etc.) don't
         all read as '0.0002' to the LLM. Without this the AI returned identical
@@ -323,8 +305,6 @@ def _build_user_message(
         "" if ohlc_block else "",
         structure_block,
         "",
-        whale_block,
-        "",
         _signals_block(coin),
         "",
         f"Funding rate (latest): {funding_rate}",
@@ -395,9 +375,15 @@ async def _async_do_call(
                 headers={"Authorization": f"Bearer {openrouter_key}"},
             )
 
-        resp = await _post(2048)
+        try:
+            initial_max_tokens = int(os.environ.get("OPENROUTER_MAX_TOKENS", "2048"))
+        except (TypeError, ValueError):
+            initial_max_tokens = 2048
+        initial_max_tokens = max(500, min(initial_max_tokens, 4096))
+
+        resp = await _post(initial_max_tokens)
         if resp.status_code == 402:
-            # "...You requested up to 2048 tokens, but can only afford 842..."
+            # "...You requested up to N tokens, but can only afford 842..."
             m = re.search(r"can only afford (\d+)", resp.text or "")
             if m and int(m.group(1)) >= 500:
                 budget = int(m.group(1)) - 50  # headroom for billing jitter
@@ -556,7 +542,8 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
                 t.get("name") == "dailyMover" and t.get("fired")
                 for t in (perception.get("triggers") or [])
             ),
-            "whale_signal": perception.get("whale_signal"),
+            "daily_move_pct": perception.get("daily_move_pct"),
+            "daily_volume_usd": perception.get("daily_volume_usd"),
         }
         memory.record_analysis(analysis)
         return analysis
@@ -640,12 +627,13 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
             and t.get("fired")
         ),
-        # O'Neil breakout pair — feeds the breakout force-execute (a hedged AI
-        # PASS on a 20-period-high break WITH a volume surge gets upgraded;
-        # XPL +32% 2026-06-12 was researched 38x, PASSed 21x, never traded
-        # while both of these were fired hours before the move).
+        # O'Neil-style context for the runner gate and post-trade analysis.
         "breakout_fired": any(
             t.get("name") == "breakout" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        "shock_day_fired": any(
+            t.get("name") == "shockDay" and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
         "volume_spike_fired": any(
@@ -664,10 +652,8 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
             t.get("name") == "dailyMover" and t.get("fired")
             for t in (perception.get("triggers") or [])
         ),
-        # OI+funding accumulation signal (oi_funding_anomaly). When present,
-        # the coin shows whale-loading patterns (high OI, negative funding,
-        # flat price). Used as a counter-regime bypass for LONGs.
-        "whale_signal": perception.get("whale_signal"),
+        "daily_move_pct": perception.get("daily_move_pct"),
+        "daily_volume_usd": perception.get("daily_volume_usd"),
     }
 
     memory.record_analysis(analysis)

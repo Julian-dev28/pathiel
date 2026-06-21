@@ -172,7 +172,7 @@ def crypto_whale_signal(coin: str, min_usd: float = 100_000.0,
     """Free whale-flow report for a crypto coin via Binance public aggTrades over a
     rolling time WINDOW. Returns None for xyz: equities or on fetch failure.
 
-    allow_fetch=False = CACHE-ONLY (return last cached value or None, no network)."""
+    allow_fetch=False = CACHE-ONLY (return a fresh cached value or None, no network)."""
     sym = binance_symbol(coin)
     if not sym:
         return None
@@ -183,7 +183,7 @@ def crypto_whale_signal(coin: str, min_usd: float = 100_000.0,
         if hit and (now - hit[0]) < ttl:
             return hit[1]
     if not allow_fetch:
-        return hit[1] if hit else None
+        return None
     prints = fetch_aggtrades_window(sym, window_minutes=window_minutes, max_pages=max_pages)
     rep = compute_whale_flow(prints, min_usd=min_usd, symbol=sym) if prints else None
     if rep is not None:

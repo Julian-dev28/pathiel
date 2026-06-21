@@ -188,7 +188,7 @@ def catalyst_scan(query: str, timespan: str = "1h", max_records: int = 30,
     """Free catalyst scan for a topic/ticker via GDELT: latest headlines + a
     coverage-surge ('breaking') read. Cached per (query, timespan).
 
-    allow_fetch=False = CACHE-ONLY (return last cached value or None, no network)."""
+    allow_fetch=False = CACHE-ONLY (return a fresh cached value or None, no network)."""
     key = f"gdelt::{query}::{timespan}"
     now = time.time()
     with _lock:
@@ -196,7 +196,7 @@ def catalyst_scan(query: str, timespan: str = "1h", max_records: int = 30,
         if hit and (now - hit[0]) < ttl:
             return hit[1]
     if not allow_fetch:
-        return hit[1] if hit else None
+        return None
 
     q = urllib.parse.quote(query)
     art = _get_json(f"{_GDELT}?query={q}&mode=ArtList&maxrecords={max_records}"

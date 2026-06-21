@@ -32,6 +32,14 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         return default
 
 
+def _get_universe(include_hip3: bool = False) -> List[Dict[str, Any]]:
+    """Call get_universe with HIP-3 support while preserving older test stubs."""
+    try:
+        return get_universe(include_hip3=include_hip3)
+    except TypeError:
+        return get_universe()
+
+
 # ═══════════════════════════════════════════════════════════════
 # Leaderboard tools
 # ═══════════════════════════════════════════════════════════════
@@ -43,7 +51,7 @@ def leaderboard_get_markets(limit: int = 100) -> Dict[str, Any]:
     Returns {"markets": [{asset, rank, oi, volume_24h, funding_rate,
     prev_day_px, mark_px, mid_px}, ...]}.
     """
-    universe = get_universe()
+    universe = _get_universe(include_hip3=True)
     perp = [m for m in universe if m.get("type") == "perp"]
     perp = sorted(perp, key=lambda x: x.get("dayNtlVlm", 0), reverse=True)[:limit]
 
@@ -114,8 +122,8 @@ def leaderboard_get_top(time_frame: str = "DAILY",
                 "positions": positions,
                 "position_count": len(positions),
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[hyperfeed] leaderboard state failed for {addr}: {e}")
 
     results = sorted(results, key=lambda x: x["account_value"], reverse=True)[:limit]
     return {"traders": results}
@@ -230,8 +238,8 @@ def discovery_get_top_traders(
                 continue
 
             results.append(entry)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[hyperfeed] trader discovery failed for {addr}: {e}")
 
     sort_key = "roi_pct" if sort_by == "RETURN_ON_INVESTMENT" else "pnl_usd"
     results = sorted(results, key=lambda x: x.get(sort_key, 0), reverse=True)[:limit]
@@ -294,8 +302,8 @@ def discovery_get_trader_state(trader_addresses: List[str]) -> Dict[str, Any]:
                 "open_positions": len(positions),
                 "positions": positions,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[hyperfeed] trader state failed for {addr}: {e}")
 
     return {"data": {"traders": traders}}
 
@@ -319,10 +327,11 @@ def market_get_asset_data(asset: str,
                 {"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v}
                 for c in candle_data
             ]
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[hyperfeed] candles failed for {asset} {interval}: {e}")
             candles[interval] = []
 
-    universe = get_universe()
+    universe = _get_universe(include_hip3=(":" in asset))
     asset_data = next((m for m in universe if m["coin"] == asset), {})
 
     return {
@@ -381,7 +390,7 @@ def _compute_funding_regime() -> Dict[str, Any]:
     # (xyz:CL), semis (xyz:ARM), gold (xyz:GOLD), etc. would silently be
     # excluded — and the gate would default them to a stale crypto regime.
     from hermes_trader.agents.market_regime import classify_asset
-    universe = get_universe(include_hip3=True)
+    universe = _get_universe(include_hip3=True)
     assets = []
     # Per-class counters: {"crypto": {"long": N, "short": M}, ...}
     counts: Dict[str, Dict[str, int]] = {
@@ -439,7 +448,7 @@ def _compute_funding_regime() -> Dict[str, Any]:
 
 def market_list_instruments() -> Dict[str, Any]:
     """List all tradable instruments (perps + spot) with metadata."""
-    universe = get_universe()
+    universe = _get_universe(include_hip3=True)
 
     perps = [m for m in universe if m.get("type") == "perp"]
     spots = [m for m in universe if m.get("type") == "spot"]
@@ -464,4 +473,4 @@ def market_list_instruments() -> Dict[str, Any]:
 
 def market_get_mids() -> Dict[str, str]:
     """Get all current mid prices."""
-    return fetch_all_mids()
+    return fetch_all_mids(include_hip3=True)

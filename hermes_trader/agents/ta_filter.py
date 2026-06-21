@@ -73,7 +73,7 @@ def _check_volume_confirm(candles: List[Candle]) -> bool:
         return False
     last_vol = candle_val(candles[-1], "v")
     avg_vol = sum(candle_val(c, "v") for c in candles[-21:-1]) / 20
-    return avg_vol == 0 or last_vol >= avg_vol * 0.8
+    return avg_vol > 0 and last_vol >= avg_vol * 0.8
 
 
 def _check_ema_cross_recent(candles: List[Candle]) -> bool:

@@ -175,7 +175,12 @@ class AgentMemory:
     def update_equity(self, eq: float) -> None:
         self._equity = eq
 
-    def track_daily_pnl(self, current_equity: float, net_contributions: float = 0.0) -> None:
+    def track_daily_pnl(
+        self,
+        current_equity: float,
+        net_contributions: float = 0.0,
+        force_accept: bool = False,
+    ) -> None:
         """Reset baseline at UTC midnight so dailyPnl reflects today's gains.
 
         `net_contributions` is the cumulative USDC flow into the tradeable
@@ -201,7 +206,8 @@ class AgentMemory:
         now_s = _time.time()
         prev_eq = getattr(self, "_last_eq_reading", 0.0)
         prev_ts = getattr(self, "_last_eq_reading_ts", 0.0)
-        if (prev_eq > 0 and current_equity > 0
+        if (not force_accept
+                and prev_eq > 0 and current_equity > 0
                 and (now_s - prev_ts) < 180
                 and abs(current_equity - prev_eq) / prev_eq > 0.25):
             logger.error(

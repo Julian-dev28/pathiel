@@ -16,7 +16,7 @@ def _pos(coin, roe, age):
 def test_rotates_weakest_nonwinner_when_capital_blocked_and_strong_candidate():
     d = decide_rotation(
         candidate_coin="ZRO", candidate_composite=55,
-        blocked_reasons=["total notional $728 would exceed 300% of equity ($607)"],
+        blocked_reasons=["total notional $1500 would exceed 1000% of equity ($1490)"],
         open_positions=[_pos("AAA", -5.0, 60), _pos("BBB", 1.0, 90), _pos("CCC", 8.0, 120)],
         **BASE,
     )

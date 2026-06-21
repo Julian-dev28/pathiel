@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections import deque
 from typing import Any, Dict, List
 
 SESSION_LOG_FILE = os.environ.get(
@@ -25,20 +26,28 @@ def append(event: Dict[str, Any]) -> None:
     """
     record = {"ts": int(time.time() * 1000), **event}
     try:
+        directory = os.path.dirname(SESSION_LOG_FILE)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         with open(SESSION_LOG_FILE, "a") as f:
-            f.write(json.dumps(record) + "\n")
-    except OSError:
+            f.write(json.dumps(record, default=str, separators=(",", ":")) + "\n")
+    except Exception:
         pass
 
 
 def tail(n: int = 10) -> List[Dict[str, Any]]:
     """Return the last `n` parseable events, oldest first."""
+    if n <= 0:
+        return []
     try:
-        lines = [ln for ln in open(SESSION_LOG_FILE).read().splitlines() if ln.strip()]
+        with open(SESSION_LOG_FILE) as f:
+            lines = deque((ln.strip() for ln in f if ln.strip()), maxlen=n)
     except FileNotFoundError:
         return []
+    except OSError:
+        return []
     out: List[Dict[str, Any]] = []
-    for ln in lines[-n:]:
+    for ln in lines:
         try:
             out.append(json.loads(ln))
         except json.JSONDecodeError:

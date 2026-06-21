@@ -1677,7 +1677,7 @@ _CONFIG_HTML = """<!doctype html>
 // not in the explicit grouping falls into "other" so future config keys
 // still appear without code changes.
 const SECTIONS = [
-  { label: 'mode + sizing', keys: ['mode','equity_fraction_per_trade','leverage','max_concurrent','max_trade_notional_usd','max_total_notional_pct'] },
+  { label: 'mode + sizing', keys: ['mode','equity_fraction_per_trade','leverage','max_concurrent','max_trade_notional_usd','asset_notional_multiplier','max_total_notional_pct'] },
   { label: 'safety',        keys: ['max_daily_loss_usd','cooldown_min','min_ai_confidence','counter_regime_min_conf','max_crypto_long_correlated'] },
   { label: 'liquidity',     keys: ['min_market_volume_usd','min_hip3_volume_usd'] },
   { label: 'filters',       keys: ['coin_allowlist','coin_blocklist'] },
@@ -2140,27 +2140,14 @@ def register_routes(app: FastAPI) -> None:
         # ── positions: live list grouped by winners / losers ───────────
         if verb == "positions":
             try:
-                user = resolve_user_address()
-                state = fetch_account_state(user, include_hip3=True) if user else {}
-                rows = []
-                for p in state.get("asset_positions", []) or []:
-                    pos = p.get("position", {})
-                    szi = float(pos.get("szi", "0") or 0)
-                    if szi == 0:
-                        continue
-                    rows.append({
-                        "coin": pos.get("coin"),
-                        "side": "long" if szi > 0 else "short",
-                        "size": abs(szi),
-                        "entry": float(pos.get("entryPx", "0") or 0),
-                        "uPnL": float(pos.get("unrealizedPnl", "0") or 0),
-                    })
+                rows = _positions_payload()
                 if not rows:
                     return JSONResponse({"response": "no open positions", "kind": "info"})
-                rows.sort(key=lambda r: -r["uPnL"])
-                lines = [f"  {r['coin']:<14} {r['side']:<5} size={r['size']:>9.4f} entry={r['entry']:<10} uPnL={r['uPnL']:+.2f}"
+                rows.sort(key=lambda r: -float(r.get("unrealized_pnl_usd") or 0))
+                lines = [f"  {r['coin']:<14} {r['side']:<5} size={r['size']:>9.4f} "
+                         f"entry={r['entry_px']:<10} uPnL={float(r.get('unrealized_pnl_usd') or 0):+.2f}"
                          for r in rows]
-                total = sum(r["uPnL"] for r in rows)
+                total = sum(float(r.get("unrealized_pnl_usd") or 0) for r in rows)
                 head = f"{len(rows)} open · total uPnL ${total:+.2f}\n"
                 return JSONResponse({"response": head + "\n".join(lines), "kind": "status"})
             except Exception as e:

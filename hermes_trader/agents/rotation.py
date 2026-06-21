@@ -1,6 +1,6 @@
 """Capital rotation — the Phase-1 fix for the #1 cause of missed moves.
 
-Phase-1 audit finding: 94% of missed big movers die at the 300% notional cap or
+Phase-1 audit finding: many missed big movers die at the portfolio notional cap or
 max_concurrent — i.e. the book is FULL, not the signal absent. Capital is
 allocated first-come-first-served with no ranking, so a strong fresh signal can
 never displace a weak, stale position. This module decides when it should.
@@ -52,10 +52,12 @@ def decide_rotation(
 
     # 1. Only capital-saturation blocks are rotatable. If ANY other gate vetoed
     #    the trade, rotation must not resurrect it.
-    capital_markers = ("exceed 300% of equity", "max positions reached")
     if not blocked_reasons:
         return NO
-    if not all(any(m in r for m in capital_markers) for r in blocked_reasons):
+    if not all(
+        ("max positions reached" in r) or ("total notional" in r and "would exceed" in r)
+        for r in blocked_reasons
+    ):
         return RotationDecision(False, None, 0.0,
                                 "blocked by a non-capital gate — not rotatable")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Dict
 
 
@@ -52,10 +53,13 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # 1h candles don't change mid-hour; cache 10min so we only refetch
         # every 10 scans, keeping the per-cycle weight budget intact.
         "cacheTtlMs1h": 600_000,
+        # Keep static defaults aligned with the loop's rate-limit-safe pacing.
+        # HERMES_SCAN_WORKERS can still override this at runtime.
+        "parallelWorkers": 8,
     },
 }
 
 
 def get_config() -> Dict[str, Any]:
-    """Return the default trigger configuration."""
-    return TRIGGER_CONFIG
+    """Return an isolated copy of the default trigger configuration."""
+    return copy.deepcopy(TRIGGER_CONFIG)

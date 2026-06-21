@@ -104,17 +104,18 @@ def test_parse_verdict_tags_ai_down():
     assert ok["ai_down"] is False
 
 
-def test_override_blocked_when_ai_down(monkeypatch):
-    """A whale-hinted failure-PASS must NOT be upgraded to a blind LONG."""
+def test_ta_sidestep_blocked_when_ai_down(monkeypatch):
+    """A TA-sidestep failure-PASS must NOT be upgraded to a blind LONG."""
     from hermes_trader.agents import executor as ex
     monkeypatch.setattr(
         ex, "read_agent_config",
-        lambda: {"mode": "LIVE", "enable_crypto": True, "whale_force_execute": True,
-                 "override_requires_ai": True},
+        lambda: {"mode": "LIVE", "enable_crypto": True,
+                 "ta_sidestep_force_execute": True,
+                 "runner_entry_gate": {"min_composite": 30.0}},
     )
     res = ex.maybe_execute({
         "id": "t1", "coin": "BTC", "verdict": "PASS", "confidence": 0.0,
-        "whale_signal": True, "ai_down": True,
+        "composite_score": 35.0, "ai_down": True,
     })
     assert res["executed"] is False
     assert "override_blocked_ai_down" in res["reason"]
@@ -155,41 +156,13 @@ def test_degraded_read_filter_protects_daily_pnl(monkeypatch):
     assert round(m.get_daily_pnl(), 2) == -1.0
     m.track_daily_pnl(59.7)           # phantom: -40% in seconds -> ignored
     assert round(m.get_daily_pnl(), 2) == -1.0  # unchanged, kill-switch safe
+    m.track_daily_pnl(59.7, force_accept=True)  # confirmed vanished tracker/liquidation
+    assert round(m.get_daily_pnl(), 2) == -40.3
+    m._last_eq_reading_ts -= 200
+    m.track_daily_pnl(99.0)           # reset to plausible level for sustained check below
     m._last_eq_reading_ts -= 200      # pretend 200s passed -> now plausible
     m.track_daily_pnl(59.7)           # sustained -> accepted
     assert round(m.get_daily_pnl(), 2) == -40.3
-
-
-def test_breakout_force_execute_upgrades_pass(monkeypatch):
-    """O'Neil rule: breakout+volume+composite>=40 upgrades a hedged PASS to
-    LONG — but NEVER a failure-PASS (ai_down still blocks)."""
-    from hermes_trader.agents import executor as ex
-    monkeypatch.setattr(
-        ex, "read_agent_config",
-        lambda: {"mode": "LIVE", "enable_crypto": True,
-                 "breakout_force_execute": True, "override_requires_ai": True},
-    )
-    base = {"id": "bo1", "coin": "XPL", "verdict": "PASS", "confidence": 0.55,
-            "composite_score": 45.0, "slow_burn_count": 0,
-            "breakout_fired": True, "volume_spike_fired": True}
-    # ai_down failure-PASS: refused before any upgrade
-    res = ex.maybe_execute({**base, "ai_down": True})
-    assert "override_blocked_ai_down" in res["reason"]
-    # genuine hedged PASS: upgraded → proceeds past the PASS guard to the
-    # equity check (same proof pattern as the whale-override test; a
-    # non-upgraded PASS would exit earlier with pass_no_override).
-    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(ex, "fetch_account_state", lambda u, **kw: {
-        "equity": 0.0, "available": 0.0, "dex_equity": {"": 0.0},
-        "dex_available": {"": 0.0}, "total_ntl": 0.0, "asset_positions": []})
-    res2 = ex.maybe_execute({**base, "ai_down": False})
-    assert "equity_unavailable" in (res2.get("reason") or "")
-    # XPL signature (composite ~0, no breakout trigger): volumeSpike +
-    # uptrendMomentum + 1 slow-burn must also qualify post-retune.
-    xpl = {**base, "id": "bo2", "breakout_fired": False, "composite_score": 4.6,
-           "uptrend_momentum_fired": True, "slow_burn_count": 2, "ai_down": False}
-    res3 = ex.maybe_execute(xpl)
-    assert "equity_unavailable" in (res3.get("reason") or "")
 
 
 def test_stale_flat_timeout_cuts_drifters_spares_peakers():

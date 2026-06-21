@@ -142,3 +142,34 @@ def test_enforce_veto_takes_precedence_over_boost(monkeypatch):
         net_usd=-600000, bias="whale_selling", min_usd=100000, window_minutes=15))
     e = enforce_signals("SOL", "long", _EN)
     assert e.veto and not e.boost
+
+
+def test_cache_only_signals_ignore_stale_entries(monkeypatch):
+    """Hot-path enforcement must fail open on stale cached signal data."""
+    whale = WhaleReport(
+        symbol="ETHUSDT", window_n=6000, whale_n=3, buy_usd=900000, sell_usd=0,
+        net_usd=900000, bias="whale_buying", min_usd=100000, window_minutes=15)
+    short = ShortVolReport(
+        symbol="WDC", date="20260615", ratio=0.62,
+        regime="crowded_short_squeeze_fuel", trend="rising", series=[0.5, 0.62])
+    gex = GexReport(
+        ticker="WDC", spot=50.0, total_gex=10.0, regime="pin_long_gamma",
+        gamma_flip=49.0, call_wall=51.0, put_wall=48.0, max_pain=50.0,
+        n_contracts=5)
+    news = news_mod.CatalystReport(
+        query="SOL", n_recent=20, breaking=True, surge_x=5.0, headlines=[])
+
+    monkeypatch.setattr(cw_mod, "_cache", {"ETHUSDT::100000::15.0": (0.0, whale)})
+    monkeypatch.setattr(sv_mod, "_cache", {"WDC": (0.0, short)})
+    monkeypatch.setattr(gex_mod, "_gex_cache", {"WDC": (0.0, gex)})
+    monkeypatch.setattr(news_mod, "_cache", {"gdelt::SOL::1h": (0.0, news)})
+
+    assert cw_mod.crypto_whale_signal("ETH", ttl=1.0, allow_fetch=False) is None
+    assert sv_mod.short_volume_signal("xyz:WDC", ttl=1.0, allow_fetch=False) is None
+    assert gex_mod.gex_signal_cached("xyz:WDC", ttl=1.0, allow_fetch=False) is None
+    assert news_mod.catalyst_scan("SOL", ttl=1.0, allow_fetch=False) is None
+
+    assert cw_mod.crypto_whale_signal("ETH", ttl=10**12, allow_fetch=False) is whale
+    assert sv_mod.short_volume_signal("xyz:WDC", ttl=10**12, allow_fetch=False) is short
+    assert gex_mod.gex_signal_cached("xyz:WDC", ttl=10**12, allow_fetch=False) is gex
+    assert news_mod.catalyst_scan("SOL", ttl=10**12, allow_fetch=False) is news

@@ -33,6 +33,9 @@ SNAPSHOT_FILE = os.environ.get(
 def write_snapshot(asset_positions: List[Dict[str, Any]]) -> None:
     """Atomically persist the raw HL position list. Best-effort, never raises."""
     try:
+        directory = os.path.dirname(SNAPSHOT_FILE)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         payload = {
             "saved_at": int(time.time() * 1000),
             "asset_positions": asset_positions or [],
@@ -40,6 +43,9 @@ def write_snapshot(asset_positions: List[Dict[str, Any]]) -> None:
         tmp = SNAPSHOT_FILE + ".tmp"
         with open(tmp, "w") as f:
             json.dump(payload, f)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, SNAPSHOT_FILE)
     except OSError as e:
         logger.warning(f"[snapshot] failed to persist positions: {e}")
@@ -61,8 +67,16 @@ def read_snapshot(max_age_s: float = 120.0) -> Optional[Dict[str, Any]]:
         logger.warning(f"[snapshot] file unreadable, ignoring: {e}")
         return None
 
-    saved_at = payload.get("saved_at", 0)
+    if not isinstance(payload, dict):
+        return None
+    try:
+        saved_at = float(payload.get("saved_at", 0) or 0)
+    except (TypeError, ValueError):
+        return None
     age_s = (time.time() * 1000 - saved_at) / 1000.0
     if age_s > max_age_s:
         return None
-    return {"asset_positions": payload.get("asset_positions", [])}
+    asset_positions = payload.get("asset_positions", [])
+    if not isinstance(asset_positions, list):
+        return None
+    return {"asset_positions": asset_positions}

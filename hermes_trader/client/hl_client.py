@@ -200,13 +200,20 @@ def fetch_hl_candles(
     # candles" — HL returns an empty LIST for a coin with no history. Those are
     # indistinguishable downstream: research treated a 429-blanked fetch as
     # "insufficient history" and emitted stop/tp = 0.0 (which the whale override
-    # could then force-execute stopless). So retry a transient failure a few
+    # could then execute without a valid stop). So retry a transient failure a few
     # times with backoff before giving up; a genuine empty list returns at once.
+    # INTEGRITY OVER PERFORMANCE (owner directive): a 429-blanked candle fetch makes a
+    # coin silently "read as no signal" — a missed setup, and historically the path that
+    # let a stop=0 trade slip through. So retry HARDER with exponential backoff before
+    # giving up. Bounded (cap per-attempt + total) so a persistent outage can't hang the
+    # scan loop and starve monitor_exits. Env-tunable: HERMES_CANDLE_RETRIES / _BACKOFF_CAP_S.
+    _max_retries = int(os.environ.get("HERMES_CANDLE_RETRIES", "6"))
+    _backoff_cap = float(os.environ.get("HERMES_CANDLE_BACKOFF_CAP_S", "8"))
     raw = _http_post("/info", payload)
     attempts = 0
-    while not isinstance(raw, list) and attempts < 3:
+    while not isinstance(raw, list) and attempts < _max_retries:
         attempts += 1
-        time.sleep(0.3 * attempts)
+        time.sleep(min(0.5 * (2 ** (attempts - 1)), _backoff_cap))   # .5,1,2,4,8,8s
         raw = _http_post("/info", payload)
     if not isinstance(raw, list):
         # Persisted across retries. Do NOT cache failures/empties — caching a bad

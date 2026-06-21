@@ -28,7 +28,6 @@ class GateContext:
         composite_score: float = 0.0,
         momentum_burst_fired: bool = False,
         slow_burn_fired: bool = False,
-        whale_signal_fired: bool = False,
         binary_news_match: str = "",
         peak_daily_pnl: float = 0.0,
     ):
@@ -49,10 +48,6 @@ class GateContext:
         # trendFlip1h / higherLows1h). Used as a counter-regime bypass: a
         # clean 1h accumulation pattern overrides the slow BTC proxy.
         self.slow_burn_fired = slow_burn_fired
-        # True iff whale_index oi_funding_anomaly flagged this coin
-        # (negative funding + flat price + high OI = whale accumulation).
-        # Same gate-bypass role as slow_burn_fired; orthogonal signal.
-        self.whale_signal_fired = whale_signal_fired
         # The headline + matched term that tripped the binary-news gate, for
         # log visibility ("which article blocked this?").
         self.binary_news_match = binary_news_match
@@ -215,20 +210,19 @@ def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResu
 def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
                        block_counter_trend_bypass: bool = False,
                        crowded_with_min_conf: float = 0.0) -> GateResult:
-    """Block counter-regime trades unless conviction OR own-coin signal clears the bar.
+    """Block counter-regime trades unless conviction or configured own-signal bypass clears the bar.
 
       - aligned with regime → pass
       - regime neutral      → pass (subject to funding-regime override below)
       - counter-trend trade → pass if any of:
           * confidence >= counter_regime_min_conf
           * composite_score >= 50
-          * momentumBurst fired (large fast move on 5m)
-          * slow_burn_fired (1h vol surge or EMA cross — accumulation breakout)
+          * momentumBurst/slow_burn fired AND block_counter_trend_bypass is false
         else block.
 
-    The own-signal bypasses exist because the regime proxy (BTC for crypto,
-    SP500 for equity) is slow; a strong individual signal should override
-    a stale macro call.
+    The own-signal bypasses exist for older/wider configs where the regime
+    proxy can be slow. Current live config sets block_counter_trend_bypass=true,
+    so a lone binary trigger does not rescue counter-regime entries.
 
     Funding-regime overlay (added 2026): SYMMETRIC enforcement — when the
     market-wide funding regime is crowded, any trade going AGAINST the crowd
@@ -242,11 +236,7 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
 
     Elevated bar = confidence >= max(counter_regime_min_conf, 0.85)
                    OR composite_score >= 60
-                   OR any binary trigger (momentumBurst / slow_burn / whale_signal)
-
-    The bypass triggers are preserved on both sides — those are explicit
-    "the regime proxy is stale" signals and we never want to hard-block on
-    a clear individual setup, just enforce regime discipline by default.
+                   OR, only when configured, a binary trigger.
     """
     from hermes_trader.agents.market_regime import detect_regime
     regime = detect_regime(ctx.coin)
@@ -325,8 +315,8 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
         return {"pass": True, "via": "confidence", **base}
     if ctx.composite_score >= effective_min_score:
         return {"pass": True, "via": "composite", **base}
-    # Binary-trigger bypass: a strong own-coin signal (momentum_burst / slow_burn
-    # / whale) normally overrides the slow macro-regime call. `block_counter_trend_bypass`
+    # Binary-trigger bypass: a strong own-coin signal (momentum_burst / slow_burn)
+    # normally overrides the slow macro-regime call. `block_counter_trend_bypass`
     # (config, default False, reversible) DISABLES this bypass here — i.e. for trades
     # that are already counter-trend and/or against the funding crowd. Data (journal
     # P166-P177, ~-7% drawdown) showed low-conviction LONGS forced through via
@@ -335,10 +325,10 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
     # lone momentum trigger no longer pushes it through against the regime. Aligned and
     # neutral-regime trades returned earlier (lines above) and are UNAFFECTED, so this
     # does NOT blanket-weaken the bypass — only where it fights a strong directional regime.
-    if (ctx.momentum_burst_fired or ctx.slow_burn_fired or ctx.whale_signal_fired) \
+    if (ctx.momentum_burst_fired or ctx.slow_burn_fired) \
             and not block_counter_trend_bypass:
         trig = ("momentum_burst" if ctx.momentum_burst_fired
-                else "slow_burn" if ctx.slow_burn_fired else "whale")
+                else "slow_burn")
         return {"pass": True, "via": f"trigger:{trig}", **base}
 
     blocked_via = "blocked_bypass" if block_counter_trend_bypass else "blocked"

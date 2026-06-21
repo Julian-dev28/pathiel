@@ -81,6 +81,31 @@ def volume_spike(candles: List[Candle], sigma_threshold: float = 3) -> TriggerHi
     }
 
 
+def shock_day(candles: List[Candle]) -> TriggerHit:
+    """Shock/Impact bar: this bar OPENED beyond the prior close and CLOSED further in that
+    direction (gap + continuation = momentum ignition). Backtested (scripts/edge_barpatterns.py)
+    as the one OOS-robust new pattern: +0.20%/trade (12bps) / +0.12% (20bps), n=2217 — thin,
+    cost-sensitive, liquid-coins-only. Surfaced as an entry-timing trigger; the runner gate
+    treats it as fresh-impulse (with AI + all gates still applying)."""
+    if len(candles) < 2:
+        return {"name": "shockDay", "score": 0, "reason": "sparse", "fired": False}
+    p, c = candles[-2], candles[-1]
+    pc = candle_val(p, "c")
+    o, h, l, cl = (candle_val(c, k) for k in ("o", "h", "l", "c"))
+    rng = h - l
+    if pc <= 0 or rng <= 0:
+        return {"name": "shockDay", "score": 0, "reason": "flat", "fired": False}
+    if o > pc and cl > o:                                  # up shock (gap up + bullish close)
+        gap = (o - pc) / pc * 100
+        return {"name": "shockDay", "score": min(10, gap * 3 + 3),
+                "reason": f"up-shock: gap +{gap:.2f}% + continuation", "fired": True}
+    if o < pc and cl < o:                                  # down shock
+        gap = (pc - o) / pc * 100
+        return {"name": "shockDay", "score": min(10, gap * 3 + 3),
+                "reason": f"down-shock: gap -{gap:.2f}% + continuation", "fired": True}
+    return {"name": "shockDay", "score": 0, "reason": "no shock", "fired": False}
+
+
 def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
     """Breakout detection against the prior range high/low over lookback bars."""
     if len(candles) < lookback + 2:
@@ -459,50 +484,6 @@ def higher_lows_1h(candles: List[Candle], required: int = 4) -> TriggerHit:
         "name": "higherLows1h",
         "score": score if fired else 0,
         "reason": f"{higher}/6 higher lows" if fired else f"{higher}/6 (need {required})",
-        "fired": fired,
-    }
-
-
-def momentum_continuation_1h(
-    candles: List[Candle],
-    min_trend_pct: float = 8.0,
-    max_pullback_pct: float = 6.0,
-) -> TriggerHit:
-    """Sustained multi-hour uptrend with an orderly pullback (continuation setup).
-
-    LEAK #2 fix: the spike / breakout / burst triggers all fire on FRESH moves, so
-    a coin that is already well up over many hours and is now CONSOLIDATING prints
-    no signal and gets missed — even while it sits on the 24h movers leaderboard.
-    This trigger catches that state: EMA-stacked (ema9 > ema21, price > ema21),
-    gained >= `min_trend_pct` over the last ~12 1h bars, and pulled back
-    <= `max_pullback_pct` from the window high (orderly rest, not a blow-off top
-    and not a breakdown).
-
-    LONG-biased by construction (requires an up move), so it should only be enabled
-    when the macro regime is up/neutral; the counter-trend gate is the backstop.
-    Needs 1h candles; returns flat if too short.
-    """
-    if len(candles) < 24:
-        return {"name": "momentumContinuation1h", "score": 0, "reason": "insufficient_history", "fired": False}
-    closes = [candle_val(c, "c") for c in candles]
-    e9 = ema(closes, 9)
-    e21 = ema(closes, 21)
-    cur = closes[-1]
-    window = closes[-12:]
-    base = window[0]
-    hi = max(window)
-    if base <= 0 or hi <= 0:
-        return {"name": "momentumContinuation1h", "score": 0, "reason": "flat", "fired": False}
-    trend_pct = (cur - base) / base * 100
-    pullback_pct = (hi - cur) / hi * 100
-    stacked = e9[-1] > e21[-1] and cur > e21[-1]
-    fired = stacked and trend_pct >= min_trend_pct and 0 <= pullback_pct <= max_pullback_pct
-    score = min(10, max(0, trend_pct / 3)) if fired else 0
-    return {
-        "name": "momentumContinuation1h",
-        "score": score,
-        "reason": (f"+{trend_pct:.1f}% 12h uptrend, {pullback_pct:.1f}% pullback, EMA-stacked"
-                   if fired else f"trend {trend_pct:+.1f}% / pullback {pullback_pct:.1f}% / stacked={stacked}"),
         "fired": fired,
     }
 

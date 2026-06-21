@@ -155,7 +155,7 @@ def short_volume_signal(coin_or_ticker: str, lookback_days: int = 5,
     today over `lookback_days` trading days, skipping weekends/holidays (missing
     files just 404 and are skipped). Cached per symbol.
 
-    allow_fetch=False = CACHE-ONLY (return last cached value or None, no network)."""
+    allow_fetch=False = CACHE-ONLY (return a fresh cached value or None, no network)."""
     symbol = underlying_for(coin_or_ticker)
     # FINRA files key on the plain ticker, not CBOE's "_SPX" index form.
     symbol = symbol.lstrip("_")
@@ -165,7 +165,7 @@ def short_volume_signal(coin_or_ticker: str, lookback_days: int = 5,
         if hit and (now - hit[0]) < ttl:
             return hit[1]
     if not allow_fetch:
-        return hit[1] if hit else None
+        return None
 
     rows: List[ShortVolDay] = []
     d = datetime.now(timezone.utc).date()

@@ -92,6 +92,156 @@ def test_directional_momentum_triggers_are_symmetric():
     assert w["uptrendMomentum"] == 0.0 and w["downtrendMomentum"] == 0.0
 
 
+def test_get_config_returns_isolated_copy():
+    from hermes_trader.agents.config import get_config
+
+    cfg = get_config()
+    cfg["weights"]["trendStrength"] = 0.0
+
+    assert get_config()["weights"]["trendStrength"] == 0.55
+    assert get_config()["scan"]["parallelWorkers"] == 8
+
+
+def test_config_store_rejects_non_object_json(monkeypatch, tmp_path):
+    from hermes_trader.agents import config_store
+
+    path = tmp_path / ".agent-config.json"
+    path.write_text("[]")
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(path))
+
+    cfg = config_store.read_agent_config()
+    assert cfg["mode"] == "OFF"
+    assert cfg["runner_entry_gate"]["min_hip3_composite"] == 45.0
+
+
+def test_config_store_normalizes_partial_live_config(monkeypatch, tmp_path):
+    from hermes_trader.agents import config_store
+
+    path = tmp_path / ".agent-config.json"
+    path.write_text('{"mode":"LIVE","dsl_exit":null}')
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(path))
+
+    cfg = config_store.read_agent_config()
+    assert cfg["mode"] == "LIVE"
+    assert cfg["max_concurrent"] == 10
+    assert cfg["max_trade_notional_usd"] == 350
+    assert cfg["asset_notional_multiplier"]["crypto"] == 1.0
+    assert cfg["asset_notional_multiplier"]["hip3"] == 1.0
+    assert cfg["dsl_exit"]["max_loss_pct"] == 0.4
+    assert cfg["runner_entry_gate"]["min_crypto_composite"] == 20.0
+    assert cfg["runner_entry_gate"]["mover_min_composite"] == 40.0
+    assert cfg["atr_risk_sizing"]["sizing_basis"] == "primary_stop"
+
+
+def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
+    from hermes_trader.agents import config_store
+
+    path = tmp_path / "nested" / ".agent-config.json"
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(path))
+
+    config_store.write_agent_config({"mode": "LIVE", "max_concurrent": 10})
+
+    assert config_store.read_agent_config()["mode"] == "LIVE"
+
+
+def test_config_store_deep_merge_preserves_nested_safety_keys():
+    from hermes_trader.agents.config_store import merge_agent_config
+
+    base = {
+        "mode": "LIVE",
+        "dsl_exit": {
+            "max_loss_pct": 0.4,
+            "max_loss_roe_pct": 3.0,
+            "protect_pct": 1.25,
+        },
+    }
+
+    merged = merge_agent_config(base, {"dsl_exit": {"protect_pct": 1.0}})
+
+    assert merged["dsl_exit"]["protect_pct"] == 1.0
+    assert merged["dsl_exit"]["max_loss_pct"] == 0.4
+    assert merged["dsl_exit"]["max_loss_roe_pct"] == 3.0
+    assert base["dsl_exit"]["protect_pct"] == 1.25
+
+    ignored = merge_agent_config(base, {"dsl_exit": None})
+    assert ignored["dsl_exit"]["max_loss_pct"] == 0.4
+    assert ignored["dsl_exit"]["protect_pct"] == 1.25
+
+
+def test_agent_scan_endpoint_honors_hip3_config(monkeypatch):
+    from fastapi.testclient import TestClient
+    from hermes_trader import server
+
+    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "test-token")
+    seen = {}
+    monkeypatch.setattr(server, "read_agent_config",
+                        lambda: {"enable_hip3": True, "mode": "OFF"})
+
+    def fake_universe(*, include_hip3=False):
+        seen["include_hip3"] = include_hip3
+        return [{"coin": "xyz:IBM", "type": "perp", "dex": "xyz"}]
+
+    monkeypatch.setattr(server, "get_universe", fake_universe)
+    monkeypatch.setattr(server, "scan_once",
+                        lambda universe=None, min_score=20: [{"coin": "xyz:IBM"}])
+    monkeypatch.setattr(server, "_last_scan_at", 0)
+
+    client = TestClient(server.app)
+    resp = client.post(
+        "/api/agent/scan",
+        headers={"X-Operator-Token": "test-token"},
+        json={"minScore": 54},
+    )
+
+    assert resp.status_code == 200
+    assert seen["include_hip3"] is True
+    assert resp.json()["count"] == 1
+
+
+def test_agent_scan_endpoint_rejects_invalid_json(monkeypatch):
+    from fastapi.testclient import TestClient
+    from hermes_trader import server
+
+    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "test-token")
+    monkeypatch.setattr(server, "_last_scan_at", 0)
+
+    client = TestClient(server.app)
+    resp = client.post(
+        "/api/agent/scan",
+        headers={"X-Operator-Token": "test-token"},
+        content="{",
+    )
+
+    assert resp.status_code == 400
+
+
+def test_ta_volume_confirm_requires_nonzero_history():
+    from hermes_trader.agents.ta_filter import _check_volume_confirm
+
+    zero_history = [
+        Candle(t=i, o=1, h=1, l=1, c=1, v=0)
+        for i in range(21)
+    ]
+    confirmed = [
+        Candle(t=i, o=1, h=1, l=1, c=1, v=100)
+        for i in range(20)
+    ] + [Candle(t=20, o=1, h=1, l=1, c=1, v=90)]
+
+    assert _check_volume_confirm(zero_history) is False
+    assert _check_volume_confirm(confirmed) is True
+
+
+def test_asset_notional_multiplier_scales_only_configured_bucket():
+    from hermes_trader.agents.executor import _asset_notional_multiplier
+
+    cfg = {"asset_notional_multiplier": {"crypto": 0.35, "hip3": 1.0}}
+
+    assert _asset_notional_multiplier("BTC", cfg) == 0.35
+    assert _asset_notional_multiplier("xyz:SKHX", cfg) == 1.0
+    assert _asset_notional_multiplier("BTC", {"asset_notional_multiplier": []}) == 1.0
+    assert _asset_notional_multiplier("BTC", {"asset_notional_multiplier": {"crypto": 9}}) == 1.0
+
+
 def test_atr_rsi_adx_produce_finite_output():
     from hermes_trader.indicators.math import atr, rsi, adx
     cs = _candles(150)
@@ -536,6 +686,49 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     assert "ARB_short" not in dsl_exit._active_positions
 
 
+def test_record_external_position_close_captures_liquidation_fill(monkeypatch):
+    from hermes_trader.agents import executor
+
+    recorded = []
+    monkeypatch.setattr(executor.memory, "record_close", lambda c: recorded.append(c))
+    monkeypatch.setattr(executor.memory, "pop_entry_context", lambda c, s: {
+        "entry_time": 1_000_000,
+        "forced_override": True,
+        "signals": {"daily_mover": True},
+        "regime": "neutral",
+    })
+    monkeypatch.setattr(executor.memory, "get_recent_trades", lambda n=100: [])
+    monkeypatch.setattr(executor.memory, "set_loss_cooldown", lambda *a, **k: None)
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {"loss_cooldown_min": 180})
+    monkeypatch.setattr(executor, "get_hl_price", lambda c: 5.98)
+
+    def fake_post(path, body):
+        assert body["type"] == "userFills"
+        return [{
+            "coin": "xyz:BIRD",
+            "dir": "Liquidation",
+            "px": "5.9839",
+            "sz": "125.8",
+            "closedPnl": "-63.99",
+            "fee": "0.00",
+            "time": 1_100_000,
+        }]
+
+    monkeypatch.setattr("hermes_trader.client.hl_client._http_post", fake_post)
+    out = executor.record_external_position_close({
+        "coin": "xyz:BIRD",
+        "side": "long",
+        "entry_px": 6.38812,
+        "leverage": 10,
+        "opened_at": 1_000_000 / 1000,
+    }, user="0xUSER")
+
+    assert out["ok"] is True
+    assert recorded and recorded[0]["liquidated"] is True
+    assert recorded[0]["realized_pnl_usd"] == -63.99
+    assert recorded[0]["external_close"] is True
+
+
 # ── market regime + gate ─────────────────────────────────────────────────
 def test_classify_asset():
     from hermes_trader.agents.market_regime import classify_asset
@@ -876,7 +1069,7 @@ def test_funding_regime_neutral_doesnt_change_behavior(monkeypatch):
 
 
 def test_funding_regime_overlay_respects_binary_triggers(monkeypatch):
-    """momentum_burst / slow_burn / whale_signal bypasses MUST be preserved
+    """momentum_burst / slow_burn bypasses MUST be preserved
     even against the crowded funding regime — those are explicit overrides
     for stale macro calls, and the user's spec said do not weaken them."""
     from hermes_trader.agents import market_regime
@@ -890,10 +1083,10 @@ def test_funding_regime_overlay_respects_binary_triggers(monkeypatch):
         counter_regime_min_conf=0.70,
     )
     assert r["pass"] is True
-    # Same setup, whale_signal instead → still passes
+    # Same setup, slow_burn instead → still passes
     r2 = market_regime_gate(
         _ctx(confidence=0.30, trade_side="long",
-             composite_score=10, whale_signal_fired=True),
+             composite_score=10, slow_burn_fired=True),
         counter_regime_min_conf=0.70,
     )
     assert r2["pass"] is True
@@ -1271,6 +1464,51 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     assert len(hip3_seen) == 3, f"hip3 picked: {hip3_seen}"
 
 
+def test_scan_single_market_skips_1h_when_no_surface_signal(monkeypatch):
+    """A flat market should not spend an extra 1h candleSnapshot call."""
+    from hermes_trader.agents import perception
+    from hermes_trader.models.types import Candle
+
+    candles = [
+        Candle(t=i, o=100.0, h=100.0, l=100.0, c=100.0, v=1000.0)
+        for i in range(100)
+    ]
+    calls = []
+
+    def fake_fetch(_coin, interval="5m", count=100):
+        calls.append(interval)
+        return candles[:count]
+
+    monkeypatch.setattr(perception, "_candle_cache", {})
+    monkeypatch.setattr(perception, "fetch_hl_candles", fake_fetch)
+    for name in (
+        "pct_move_spike", "volume_spike", "breakout", "range_compression",
+        "trend_strength", "momentum_burst", "uptrend_momentum",
+        "downtrend_momentum",
+    ):
+        monkeypatch.setattr(
+            perception.trigger_mod,
+            name,
+            lambda *a, _name=name, **k: {
+                "name": _name,
+                "score": 0,
+                "reason": "flat",
+                "fired": False,
+            },
+        )
+
+    cfg = perception.get_config()
+    ok, result = perception._scan_single_market(
+        {"coin": "BTC", "type": "perp", "dayNtlVlm": 1e9},
+        100.0,
+        cfg,
+        min_score=0,
+    )
+
+    assert ok is True and result is None
+    assert calls == ["5m"]
+
+
 # ── Contribution-aware daily PnL ────────────────────────────────────────
 def test_fetch_aggregate_contributions_classifies_send_events(monkeypatch):
     """`fetch_aggregate_contributions_since` distinguishes pool-boundary
@@ -1464,41 +1702,6 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
     assert "PICO" not in seen, f"pico-cap leaked through floor: {seen}"
 
 
-def test_whale_scan_bypass_surfaces_subgate_accumulation(monkeypatch):
-    """A whale-flagged coin that scores BELOW the composite gate must be:
-      - dropped when whale_scan_bypass is OFF (default), and
-      - surfaced (with whale_signal attached) when whale_scan_bypass is ON.
-
-    Regression for the dead-path bug: oi_funding_anomaly fires on FLAT price,
-    which scores ~0 on momentum/breakout triggers, so without the bypass the
-    coin never reaches the executor where the whale override lives.
-    """
-    from hermes_trader.agents import perception
-    from hermes_trader.agents.config import get_config
-
-    cfg = get_config()
-    gate = cfg["scan"]["minCompositeScore"]
-    # Flat candles → no momentum/breakout/trend triggers fire → score below gate.
-    flat = [Candle(t=i, o=100.0, h=100.0, l=100.0, c=100.0, v=10.0) for i in range(120)]
-    monkeypatch.setattr(perception, "_fetch_candles_sync",
-                        lambda coin, interval, count, ttl: flat)
-    market = {"coin": "TRX", "type": "perp", "dex": None}
-    whale_signals = {"TRX": {"signal": "oi_funding_anomaly", "score": 0.8}}
-
-    # OFF → dropped at the gate (result is None)
-    ok, res = perception._scan_single_market(market, 100.0, cfg, gate, whale_signals,
-                                             False)
-    assert ok and res is None, f"expected drop with bypass OFF, got {res}"
-
-    # ON → surfaced with the whale_signal attached so the executor can act
-    ok, res = perception._scan_single_market(market, 100.0, cfg, gate, whale_signals,
-                                             True)
-    assert ok and isinstance(res, dict), f"expected surfaced result with bypass ON, got {res}"
-    assert res["coin"] == "TRX"
-    assert res["whale_signal"] == whale_signals["TRX"]
-    assert res["composite_score"] < gate  # confirms it was genuinely sub-gate
-
-
 def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path):
     """A timeout on the `xyz` HIP-3 dex used to drop every xyz tracker as
     stale and reset peak/floor/phase-2 state on the next cycle. Now the
@@ -1523,7 +1726,8 @@ def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path)
         {"position": {"coin": "BTC", "szi": "0.1", "entryPx": "60000"}},
         {"position": {"coin": "vntl:NVDA", "szi": "1", "entryPx": "500"}},
     ]
-    dsl_exit.rehydrate_from_exchange(positions, queried_dexes={"", "vntl"})
+    stale = dsl_exit.rehydrate_from_exchange(positions, queried_dexes={"", "vntl"})
+    assert stale == []
 
     # xyz:MU was NOT in queried_dexes → preserved with phase-2 state intact.
     assert "xyz:MU_long" in dsl_exit._active_positions, "xyz tracker wrongly dropped"
@@ -1532,7 +1736,8 @@ def test_rehydrate_preserves_trackers_for_unqueried_dexes(monkeypatch, tmp_path)
 
     # And the legacy behavior still works: pass queried_dexes=None and any
     # missing position gets dropped exactly like before.
-    dsl_exit.rehydrate_from_exchange(positions, queried_dexes=None)
+    stale = dsl_exit.rehydrate_from_exchange(positions, queried_dexes=None)
+    assert stale and stale[0]["coin"] == "xyz:MU"
     assert "xyz:MU_long" not in dsl_exit._active_positions
 
 
@@ -1587,75 +1792,6 @@ def test_higher_lows_1h_counts_structure():
     flat = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(7)]
     res = higher_lows_1h(flat, required=4)
     assert res["fired"] is False
-
-
-def test_regime_gate_bypasses_on_whale_signal():
-    """A counter-regime LONG should pass when whale_signal_fired is True,
-    even at low confidence and zero composite — the oi_funding_anomaly
-    signal (whale accumulation, negative funding, flat price) is its own
-    bypass path, parallel to slow_burn_fired."""
-    from hermes_trader.agents.risk_gates import market_regime_gate, GateContext
-    import hermes_trader.agents.market_regime as mr
-    mr._regime_cache.clear()
-    mr._regime_cache["BTC"] = ("down", 99999999999)
-
-    ctx = GateContext(
-        confidence=0.45,
-        current_positions=[], trade_notional_usd=100, daily_pnl=0,
-        market_volume_24h_usd=5_000_000, coin="ALT", trade_side="long",
-        has_binary_news_risk=False, equity=200, total_open_notional=0,
-        composite_score=10, momentum_burst_fired=False,
-        slow_burn_fired=False, whale_signal_fired=True,
-    )
-    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
-    assert res["pass"] is True, res
-
-    # Without whale signal, same setup blocks.
-    ctx.whale_signal_fired = False
-    res = market_regime_gate(ctx, counter_regime_min_conf=0.65)
-    assert res["pass"] is False
-
-
-def test_executor_structural_override_promotes_pass_to_long(monkeypatch):
-    """When explicitly enabled, composite + slow-burn can upgrade an AI PASS.
-
-    Force paths fail closed by default; this test opts in so the old aggressive
-    behavior remains covered without making it the implicit live default.
-    """
-    from hermes_trader.agents import executor
-
-    # Force a config that exercises ONLY the override path, then fails the
-    # next stage so we can verify the upgrade happened without HL calls.
-    monkeypatch.setattr(executor, "read_agent_config", lambda: {
-        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
-        "force_execute_composite": 40, "force_execute_slow_burn_count": 2,
-        "composite_force_execute": True,
-    })
-    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
-
-    analysis = {
-        "id": "test-override",
-        "coin": "WLFI",
-        "verdict": "PASS",
-        "confidence": 0.0,
-        "composite_score": 45.0,
-        "slow_burn_count": 3,
-    }
-    res = executor.maybe_execute(analysis)
-    # The override happens; then execution fails at equity_unavailable (equity=0).
-    # That tells us we passed the PASS-block and reached the equity check.
-    assert "equity_unavailable" in (res.get("reason") or "")
-
-    # Without the override conditions (composite below 40), the PASS verdict
-    # would never reach the equity check — it would short-circuit elsewhere.
-    # Sanity check: low-composite PASS doesn't trigger override.
-    analysis2 = {**analysis, "composite_score": 30.0}
-    res2 = executor.maybe_execute(analysis2)
-    # PASS verdict with no override → would still try to execute (since the
-    # executor doesn't directly gate on verdict; it relies on side). With
-    # equity=0 it'll hit the same gate. We're just verifying no crash.
-    assert isinstance(res2, dict)
 
 
 def test_regime_gate_bypasses_on_slow_burn():
@@ -1763,34 +1899,6 @@ def test_ttl_cache_keys_are_independent():
     assert d._ttl_cached("a", 5.0, lambda: 99) == 1
 
 
-# ── Whale-signal priority (override + sizing) ────────────────────────────
-def test_executor_whale_signal_overrides_pass_to_long(monkeypatch):
-    """When explicitly enabled, whale accumulation can upgrade an AI PASS."""
-    from hermes_trader.agents import executor
-    monkeypatch.setattr(executor, "read_agent_config", lambda: {
-        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
-        "whale_force_execute": True,
-    })
-    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {"equity": 0})
-
-    analysis = {
-        "id": "whale-override", "coin": "ALT", "verdict": "PASS",
-        "confidence": 0.0, "composite_score": 10.0, "slow_burn_count": 0,
-        "whale_signal": {"signal": "smart_money_accumulation", "confidence": 0.5},
-    }
-    res = executor.maybe_execute(analysis)
-    # Override fires → upgraded to LONG → reaches equity check (equity=0).
-    assert "equity_unavailable" in (res.get("reason") or "")
-
-    # No whale signal + weak composite → no override; PASS stays PASS,
-    # the executor doesn't upgrade. (verdict gate is downstream; we just
-    # confirm it didn't crash and didn't force a trade via override path.)
-    analysis_no_whale = {**analysis, "whale_signal": None}
-    res2 = executor.maybe_execute(analysis_no_whale)
-    assert isinstance(res2, dict)
-
-
 def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(monkeypatch):
     """If the live account read returns NO positions but the DSL registry still
     tracks the coin (restart/flaky-read window), re-entry must be blocked — else
@@ -1840,7 +1948,7 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
 
 def test_maybe_execute_refuses_when_no_atr(monkeypatch):
     """A coin with no computable ATR (insufficient candle history) must be
-    refused, never traded blind — guards force-execute of brand-new HIP-3
+    refused, never traded blind — guards execution of brand-new HIP-3
     listings where research emits stop_px/tp_px = 0.0."""
     from hermes_trader.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
@@ -1875,28 +1983,6 @@ def test_maybe_execute_refuses_when_no_atr(monkeypatch):
     assert res["executed"] is False
     assert "no_atr_no_stop" in res["reason"]
     assert placed["n"] == 0  # never placed an order
-
-
-def test_whale_size_multiplier_clamps_at_2x():
-    """The whale multiplier stacks on the confidence tier but clamps at 2×
-    base so a high-conf whale trade can't run away."""
-    # Pure arithmetic mirror of the executor sizing logic.
-    def sized(conf, whale, base=0.07, whale_mult=1.3):
-        if conf >= 0.80:
-            m = 1.5
-        elif conf >= 0.65:
-            m = 1.0
-        else:
-            m = 0.7
-        if whale:
-            m = min(m * whale_mult, 2.0)
-        return base * m
-    # high conf + whale: 1.5 × 1.3 = 1.95 (under 2.0 cap)
-    assert abs(sized(0.85, True) - 0.07 * 1.95) < 1e-9
-    # mid conf + whale: 1.0 × 1.3 = 1.3
-    assert abs(sized(0.70, True) - 0.07 * 1.3) < 1e-9
-    # no whale: plain tier
-    assert abs(sized(0.85, False) - 0.07 * 1.5) < 1e-9
 
 
 # ── Shakedown: parse_verdict edge cases (silent-breakage guards) ─────────
@@ -1990,53 +2076,15 @@ def test_route_verdict_pass_is_noop():
     assert not calls                   # nothing called
 
 
-def test_route_verdict_pass_with_whale_signal_routes_to_executor(monkeypatch):
-    """A hedging AI PASS that carries a whale_signal must reach the executor so
-    the force-execute-on-PASS override can fire — otherwise the whale path is
-    dead (router dropped PASS before maybe_execute ever saw it)."""
-    from hermes_trader.agents import executor
-    monkeypatch.setattr(executor, "read_agent_config",
-                        lambda: {"whale_force_execute": True})
-    calls = {}
-    r = executor.route_verdict(
-        {"verdict": "PASS", "coin": "TRX",
-         "whale_signal": {"signal": "oi_funding_anomaly"}},
-        execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
-        close_fn=lambda c: calls.setdefault("c", c),
-    )
-    assert r["action"] == "execute"
-    assert calls.get("e", {}).get("coin") == "TRX"
-    assert "c" not in calls
-
-
-def test_route_verdict_pass_with_slow_burn_hint_routes_to_executor(monkeypatch):
-    from hermes_trader.agents import executor
-    monkeypatch.setattr(executor, "read_agent_config", lambda: {
-        "composite_force_execute": True,
-        "force_execute_composite": 40,
-        "force_execute_slow_burn_count": 2,
-    })
-    calls = {}
-    r = executor.route_verdict(
-        {"verdict": "PASS", "coin": "SOL",
-         "composite_score": 45.0, "slow_burn_count": 2},
-        execute_fn=lambda a: calls.setdefault("e", 1) or {"executed": True},
-        close_fn=lambda c: calls.setdefault("c", 1),
-    )
-    assert r["action"] == "execute"
-    assert calls.get("e") == 1
-
-
-def test_route_verdict_pass_with_ta_sidestep_hint_routes_to_executor(monkeypatch):
+def test_route_verdict_pass_with_ta_sidestep_composite_routes_to_executor(monkeypatch):
     from hermes_trader.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
-        "force_execute_composite": 20,
+        "runner_entry_gate": {"min_composite": 20},
     })
     calls = {}
     r = executor.route_verdict(
-        {"verdict": "PASS", "coin": "PURR", "slow_burn_count": 1,
-         "composite_score": 0.0},
+        {"verdict": "PASS", "coin": "PURR", "composite_score": 25.0},
         execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
         close_fn=lambda c: calls.setdefault("c", c),
     )
@@ -2045,22 +2093,21 @@ def test_route_verdict_pass_with_ta_sidestep_hint_routes_to_executor(monkeypatch
     assert "c" not in calls
 
 
-def test_route_verdict_ta_sidestep_respects_min_slow_burn(monkeypatch):
+def test_route_verdict_pass_with_ta_sidestep_burst_routes_to_executor(monkeypatch):
     from hermes_trader.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
-        "ta_sidestep_min_slow_burn_count": 2,
-        "force_execute_composite": 20,
+        "runner_entry_gate": {"min_composite": 30},
     })
     calls = {}
     r = executor.route_verdict(
-        {"verdict": "PASS", "coin": "PURR", "slow_burn_count": 1,
-         "composite_score": 0.0},
+        {"verdict": "PASS", "coin": "PURR", "composite_score": 0.0,
+         "momentum_burst_fired": True},
         execute_fn=lambda a: calls.setdefault("e", a) or {"executed": True},
         close_fn=lambda c: calls.setdefault("c", c),
     )
-    assert r["action"] == "none"
-    assert not calls
+    assert r["action"] == "execute"
+    assert calls.get("e", {}).get("coin") == "PURR"
 
 
 def test_route_verdict_plain_pass_still_noop():
@@ -2082,15 +2129,57 @@ def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
     from hermes_trader.agents import executor
     monkeypatch.setattr(executor, "read_agent_config",
                         lambda: {"mode": "LIVE", "enable_crypto": True,
-                                 "whale_force_execute": True})
-    # PASS, no whale_signal, weak composite → no override → must no-op safely.
+                                 "ta_sidestep_force_execute": True})
+    # PASS, weak composite and no burst → no override → must no-op safely.
     res = executor.maybe_execute({"id": "x1", "coin": "BTC", "verdict": "PASS",
                                   "composite_score": 10.0, "slow_burn_count": 0})
     assert res["executed"] is False
     assert res["reason"] == "pass_no_override"
 
 
-def test_maybe_execute_ta_sidestep_can_bypass_runner_gate(monkeypatch):
+def test_maybe_execute_ta_sidestep_blocks_parabolic_daily_mover(monkeypatch):
+    from hermes_trader.agents import executor
+
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "mode": "LIVE",
+        "enable_crypto": True,
+        "enable_hip3": True,
+        "ta_sidestep_force_execute": True,
+        "override_max_daily_extension_pct": 30.0,
+        "runner_entry_gate": {"min_composite": 30.0},
+    })
+    res = executor.maybe_execute({
+        "id": "bird-like-pass",
+        "coin": "xyz:BIRD",
+        "verdict": "PASS",
+        "confidence": 0.70,
+        "composite_score": 35.0,
+        "daily_move_pct": 60.0,
+    })
+
+    assert res["executed"] is False
+    assert "sidestep_extension_blocked" in res["reason"]
+
+
+def test_backup_sl_capped_inside_liquidation_buffer():
+    from hermes_trader.agents.executor import _backup_sl_price
+
+    entry = 6.38812
+    # BIRD-like: raw 1.5x ATR stop would sit ~14% below entry.
+    sl, capped = _backup_sl_price(
+        entry_px=entry,
+        atr_abs=0.60,
+        is_long_position=True,
+        sl_atr_mult=1.5,
+        leverage=10,
+        max_frac_of_liq=0.60,
+    )
+
+    assert capped is True
+    assert abs((entry - sl) / entry - 0.06) < 1e-9
+
+
+def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):
     from hermes_trader.agents import executor
 
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
@@ -2099,10 +2188,9 @@ def test_maybe_execute_ta_sidestep_can_bypass_runner_gate(monkeypatch):
         "enable_hip3": False,
         "min_ai_confidence": 0.70,
         "ta_sidestep_force_execute": True,
-        "force_execute_composite": 20,
         "runner_entry_gate": {
             "enabled": True,
-            "bypass_sidestep_overrides": True,
+            "min_composite": 20,
         },
     })
     monkeypatch.setattr(executor, "_runner_entry_block_reason",
@@ -2115,11 +2203,50 @@ def test_maybe_execute_ta_sidestep_can_bypass_runner_gate(monkeypatch):
         "coin": "PURR",
         "verdict": "PASS",
         "confidence": 0.30,
+        "composite_score": 25.0,
+        "slow_burn_count": 0,
+    })
+
+    assert res["executed"] is False
+    assert res["reason"] == "runner_gate_blocked"
+
+
+def test_route_verdict_default_ta_sidestep_does_not_route_one_slow_burn(monkeypatch):
+    from hermes_trader.agents import executor
+
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "ta_sidestep_force_execute": True,
+        "runner_entry_gate": {"min_composite": 30},
+    })
+
+    res = executor.route_verdict({
+        "id": "slow-one-pass",
+        "coin": "PURR",
+        "verdict": "PASS",
         "composite_score": 0.0,
         "slow_burn_count": 1,
     })
 
-    assert "equity_unavailable" in (res.get("reason") or "")
+    assert res["action"] == "none"
+
+
+def test_route_verdict_ta_sidestep_does_not_use_whale_hint(monkeypatch):
+    from hermes_trader.agents import executor
+
+    monkeypatch.setattr(executor, "read_agent_config", lambda: {
+        "ta_sidestep_force_execute": True,
+        "runner_entry_gate": {"min_composite": 30},
+    })
+
+    res = executor.route_verdict({
+        "id": "whale-pass",
+        "coin": "TRX",
+        "verdict": "PASS",
+        "composite_score": 0.0,
+        "whale_signal": {"signal": "oi_funding_anomaly"},
+    }, execute_fn=lambda a: {"executed": False})
+
+    assert res["action"] == "none"
 
 
 def test_runner_gate_blocks_hip3_gex_pintrap_longs(monkeypatch):
@@ -2177,6 +2304,140 @@ def test_runner_gate_gex_shadow_mode_does_not_block(monkeypatch):
         "signal_enforcement": {"enabled": True, "veto": True, "gex_veto": True},
         "gex_signal": {"enabled": True, "shadow_mode": True,
                        "caution_near_wall_pct": 10.0},
+    }
+
+    assert executor._runner_entry_block_reason(analysis, cfg) == ""
+
+
+def test_runner_gate_allows_structured_hip3_daily_mover_below_hip3_floor():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "xyz:INTC",
+        "side": "long",
+        "confidence": 0.72,
+        "composite_score": 26,
+        "daily_mover_fired": True,
+        "slow_burn_count": 1,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "min_confidence": 0.70,
+            "min_composite": 30,
+            "min_hip3_composite": 50,
+            "mover_min_confidence": 0.72,
+            "mover_min_composite": 20,
+        },
+    }
+
+    assert executor._runner_entry_block_reason(analysis, cfg) == ""
+
+
+def test_runner_gate_blocks_zero_composite_hip3_daily_mover_at_mover_floor():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "xyz:INTC",
+        "side": "long",
+        "confidence": 0.72,
+        "composite_score": 0,
+        "daily_mover_fired": True,
+        "slow_burn_count": 1,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "min_confidence": 0.70,
+            "min_composite": 30,
+            "min_hip3_composite": 50,
+            "mover_min_confidence": 0.72,
+            "mover_min_composite": 20,
+        },
+    }
+
+    reason = executor._runner_entry_block_reason(analysis, cfg)
+
+    assert "HIP-3 composite 0 < 50" in reason
+
+
+def test_runner_gate_blocks_weak_crypto_nonburst_fresh_setup():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "WLD",
+        "side": "long",
+        "confidence": 0.78,
+        "composite_score": 8.4,
+        "volume_spike_fired": True,
+        "breakout_fired": True,
+        "momentum_burst_fired": False,
+        "slow_burn_count": 2,
+        "uptrend_momentum_fired": True,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "min_confidence": 0.70,
+            "min_composite": 30,
+            "min_crypto_composite": 20,
+            "min_hip3_composite": 50,
+        },
+    }
+
+    reason = executor._runner_entry_block_reason(analysis, cfg)
+
+    assert "crypto composite 8 < 20" in reason
+
+
+def test_runner_gate_allows_crypto_fresh_setup_with_composite_support():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "JTO",
+        "side": "long",
+        "confidence": 0.78,
+        "composite_score": 22.0,
+        "volume_spike_fired": True,
+        "breakout_fired": True,
+        "momentum_burst_fired": False,
+        "slow_burn_count": 2,
+        "uptrend_momentum_fired": True,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "min_confidence": 0.70,
+            "min_composite": 30,
+            "min_crypto_composite": 20,
+            "min_hip3_composite": 50,
+        },
+    }
+
+    assert executor._runner_entry_block_reason(analysis, cfg) == ""
+
+
+def test_runner_gate_allows_crypto_momentum_burst_without_crypto_floor():
+    from hermes_trader.agents import executor
+
+    analysis = {
+        "coin": "ARB",
+        "side": "long",
+        "confidence": 0.78,
+        "composite_score": 12.0,
+        "volume_spike_fired": True,
+        "breakout_fired": False,
+        "momentum_burst_fired": True,
+        "slow_burn_count": 1,
+    }
+    cfg = {
+        "runner_entry_gate": {
+            "enabled": True,
+            "min_confidence": 0.70,
+            "min_composite": 30,
+            "min_crypto_composite": 20,
+            "min_hip3_composite": 50,
+        },
     }
 
     assert executor._runner_entry_block_reason(analysis, cfg) == ""
@@ -2265,7 +2526,7 @@ def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
         "min_available_margin_pct": 0.10, "cooldown_min": 60,
         "min_ai_confidence": 0.30, "counter_regime_min_conf": 0.65,
         "max_crypto_long_correlated": 5, "min_market_volume_usd": 5_000_000,
-        "min_hip3_volume_usd": 500_000, "conviction_sizing": True,
+        "min_hip3_volume_usd": 500_000,
         "dsl_exit": {"max_loss_pct": 2.0, "max_loss_roe_pct": 30.0,
                      "protect_pct": 0.5, "retrace_threshold": 0.3,
                      "hard_timeout_minutes": 180.0},
@@ -2393,64 +2654,6 @@ def test_maybe_execute_order_failed(monkeypatch):
                         lambda b, s, m, c: {"ok": False, "error": "no match"})
     r = ex.maybe_execute(_analysis())
     assert r["executed"] is False and "order_failed" in r["reason"]
-
-
-def test_maybe_execute_conviction_sizing_high_conf(monkeypatch):
-    """conf >= 0.80 → 1.5× size."""
-    ex, captured, _ = _exec_baseline(monkeypatch)
-    ex.maybe_execute(_analysis(confidence=0.85))
-    # 1000 × 0.10 × 10 × 1.5 / 100 = 15 coins
-    assert abs(captured["size"] - 15.0) < 1e-6
-
-
-def test_maybe_execute_whale_boosts_size(monkeypatch):
-    """Whale signal multiplies sizing by 1.3 on top of the conf tier."""
-    ex, captured, _ = _exec_baseline(monkeypatch)
-    ex.maybe_execute(_analysis(confidence=0.70, whale_signal={"confidence": 0.5}))
-    # 1000 × 0.10 × 10 × (1.0 × 1.3) / 100 = 13 coins
-    assert abs(captured["size"] - 13.0) < 1e-6
-
-
-# ── Coverage: configurable conviction-sizing tiers ──────────────────────
-def test_parse_conviction_tiers_default_and_malformed():
-    from hermes_trader.agents.executor import (
-        _parse_conviction_tiers, _DEFAULT_CONVICTION_TIERS)
-    assert _parse_conviction_tiers(None) == _DEFAULT_CONVICTION_TIERS
-    assert _parse_conviction_tiers([]) == _DEFAULT_CONVICTION_TIERS
-    # malformed entries → fall back to defaults, never raise
-    assert _parse_conviction_tiers([["x", "y"]]) == _DEFAULT_CONVICTION_TIERS
-    # non-positive multipliers dropped; remaining sorted highest-threshold-first
-    assert _parse_conviction_tiers([[0.5, 0.8], [0.9, 2.0], [0.3, 0]]) == [
-        (0.9, 2.0), (0.5, 0.8)]
-
-
-def test_conviction_multiplier_tier_selection():
-    from hermes_trader.agents.executor import _conviction_multiplier
-    tiers = [(0.85, 2.0), (0.7, 1.2), (0.0, 0.5)]
-    assert _conviction_multiplier(0.90, tiers) == 2.0
-    assert _conviction_multiplier(0.85, tiers) == 2.0  # inclusive
-    assert _conviction_multiplier(0.72, tiers) == 1.2
-    assert _conviction_multiplier(0.10, tiers) == 0.5
-    # below every threshold when no 0.0 floor → lowest tier's mult
-    assert _conviction_multiplier(0.10, [(0.9, 2.0), (0.7, 1.2)]) == 1.2
-
-
-def test_maybe_execute_custom_conviction_tiers(monkeypatch):
-    """A config-supplied aggressive tier (0.85→2.0×) sizes bigger than default."""
-    ex, captured, _ = _exec_baseline(
-        monkeypatch,
-        cfg_overrides={"conviction_tiers": [[0.85, 2.0], [0.65, 1.0], [0.0, 0.5]]})
-    ex.maybe_execute(_analysis(confidence=0.90))
-    # 1000 × 0.10 × 10 × 2.0 / 100 = 20 coins (vs 15 under the default 1.5×)
-    assert abs(captured["size"] - 20.0) < 1e-6
-
-
-def test_maybe_execute_default_tiers_unchanged(monkeypatch):
-    """Absent conviction_tiers → identical to the prior hardcoded behavior."""
-    ex, captured, _ = _exec_baseline(monkeypatch)
-    ex.maybe_execute(_analysis(confidence=0.50))  # below 0.65 → 0.7×
-    # 1000 × 0.10 × 10 × 0.7 / 100 = 7 coins
-    assert abs(captured["size"] - 7.0) < 1e-6
 
 
 # ── Coverage: whale_index signal heuristics ─────────────────────────────
@@ -2667,8 +2870,13 @@ def test_market_list_instruments_counts_and_strips(monkeypatch):
 
 def test_market_get_mids_passthrough(monkeypatch):
     from hermes_trader.agents import hyperfeed
-    monkeypatch.setattr(hyperfeed, "fetch_all_mids", lambda: {"BTC": "60000"})
-    assert hyperfeed.market_get_mids() == {"BTC": "60000"}
+    seen = {}
+    def fake_mids(*, include_hip3=False):
+        seen["include_hip3"] = include_hip3
+        return {"BTC": "60000", "xyz:IBM": "280"}
+    monkeypatch.setattr(hyperfeed, "fetch_all_mids", fake_mids)
+    assert hyperfeed.market_get_mids() == {"BTC": "60000", "xyz:IBM": "280"}
+    assert seen["include_hip3"] is True
 
 
 def test_compute_funding_regime_long_crowded_margin(monkeypatch):
@@ -2753,22 +2961,20 @@ def test_fetch_funding_rate_na_when_empty(monkeypatch):
     assert research._fetch_funding_rate("BTC") == "N/A"
 
 
-def test_build_user_message_includes_whale_and_structure_blocks():
+def test_build_user_message_includes_structure_block_without_whale_force_context():
     from hermes_trader.agents.research import _build_user_message
     perception = {
         "type": "perp", "mid": 0.000173, "composite_score": 62,
         "triggers": [
             {"name": "higherLows1h", "reason": "3 HL", "fired": True},
         ],
-        "whale_signal": {"funding_rate": -0.0006, "price_24h_change_pct": 1.2,
-                         "oi": 5e7, "confidence": 0.8},
     }
     snap = {"ema8": None, "ema21": None, "last_close": 0.000173}
     msg = _build_user_message(
         "HMSTR", perception, snap, snap, snap, "0.01%/hr", "no news",
         250.0, [], "LIVE",
     )
-    assert "Whale accumulation flag (oi_funding_anomaly)" in msg
+    assert "Whale accumulation flag" not in msg
     assert "1h structure signals (entry-timing" in msg
     # sub-cent mid must NOT collapse to 0.0002 — adaptive precision keeps it.
     assert "0.000173" in msg and "0.0002" not in msg
@@ -2962,6 +3168,30 @@ def test_positions_snapshot_stale_returns_none(tmp_path, monkeypatch):
     f.write_text(_json.dumps({"saved_at": 0, "asset_positions": [{"x": 1}]}))
     monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(f))
     assert ps.read_snapshot(max_age_s=60.0) is None  # saved_at=epoch 0 → ancient
+
+
+def test_positions_snapshot_rejects_malformed_payload(tmp_path, monkeypatch):
+    from hermes_trader import positions_snapshot as ps
+
+    f = tmp_path / "snap.json"
+    monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(f))
+    f.write_text('{"saved_at":"bad","asset_positions":[]}')
+    assert ps.read_snapshot(max_age_s=60.0) is None
+    f.write_text('{"saved_at":9999999999999,"asset_positions":{}}')
+    assert ps.read_snapshot(max_age_s=60.0) is None
+
+
+def test_session_log_tail_streams_last_events(tmp_path, monkeypatch):
+    from hermes_trader import session_log
+
+    path = tmp_path / "nested" / "session.jsonl"
+    monkeypatch.setattr(session_log, "SESSION_LOG_FILE", str(path))
+    for i in range(20):
+        session_log.append({"event": "tick", "i": i})
+
+    tail = session_log.tail(3)
+    assert [e["i"] for e in tail] == [17, 18, 19]
+    assert session_log.tail(0) == []
 
 
 def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):

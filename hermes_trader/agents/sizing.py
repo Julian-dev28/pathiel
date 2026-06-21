@@ -3,15 +3,11 @@
 PURE FUNCTIONS ONLY. No network, no config reads, no side effects — so they are
 trivially testable and carry zero live impact until a caller wires them in.
 
-The production sizing today (executor.py) is:
-    notional = equity * equity_fraction * leverage * conviction_mult
-which is volatility-BLIND: a high-ATR 10x memecoin and a low-ATR 3x major sized
-by the same formula carry wildly different dollar-risk-to-stop by accident
-(Phase-1/Phase-2 audit finding). These helpers replace that with EQUAL DOLLAR
-RISK PER TRADE: size so that, if the stop is hit, every trade loses the same
-fixed fraction of equity regardless of the instrument's volatility or leverage.
-
-Nothing here is enforced until the executor calls it (gated, default-off).
+The executor uses this module when `atr_risk_sizing.enabled=true`. In live
+config the primary sizing basis is the DSL stop, while the ATR basis remains
+available for backup-stop experiments and legacy replays. Both modes share the
+same risk-first idea: size so that, if the configured stop is hit, the loss is a
+fixed fraction of equity, then clamp by exchange leverage and notional caps.
 """
 
 from __future__ import annotations

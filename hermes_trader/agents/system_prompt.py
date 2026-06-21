@@ -93,8 +93,6 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "   - Uptrend + 1h accumulation → LONG entry (buy the pullback).",
         "   - Downtrend + 1h bounce     → SHORT entry (sell the rip) — a 1h pop in a downtrend is a",
         "     SHORTING opportunity, not a long. Never LONG when BOTH 4h AND 1d are bearish.",
-        "   (EXCEPTION: an explicit whale-accumulation / oi_funding_anomaly flag is the ONE sanctioned",
-        "   counter-trend LONG — smart money loading vs crowded shorts. Only that flag overrides.)",
         "7. A HIGH composite_score WITH clean multi-TF trend alignment → take the trend side decisively.",
         "   A low/borderline composite or muddled trend → PASS. The score gate is already strict; if a",
         "   setup reached you it cleared scanning, but you still judge whether the alignment is genuinely",

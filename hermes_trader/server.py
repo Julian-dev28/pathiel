@@ -44,7 +44,11 @@ from hermes_trader.metrics import render_metrics                      # noqa: E4
 
 from hermes_trader import __version__, dashboard, session_log         # noqa: E402
 from hermes_trader.dashboard import _require_operator                 # noqa: E402
-from hermes_trader.agents.config_store import read_agent_config, write_agent_config  # noqa: E402
+from hermes_trader.agents.config_store import (                       # noqa: E402
+    merge_agent_config,
+    read_agent_config,
+    write_agent_config,
+)
 from hermes_trader.agents.executor import maybe_execute               # noqa: E402
 from hermes_trader.agents.memory import memory                        # noqa: E402
 from hermes_trader.agents.perception import scan_once                 # noqa: E402
@@ -189,10 +193,19 @@ async def run_scan(request: Request):
             detail=f"Rate limited. Try again in {remaining}s",
         )
 
-    body = await request.json() if await request.body() else {}
+    raw_body = await request.body()
+    if raw_body:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "invalid JSON")
+    else:
+        body = {}
+    if not isinstance(body, dict):
+        raise HTTPException(400, "JSON body must be an object")
     min_score = body.get("minScore", 20)
 
-    universe = get_universe()
+    universe = get_universe(include_hip3=_hip3_on())
     _last_scan_at = time.time()
 
     perceptions = scan_once(universe=universe, min_score=min_score)
@@ -338,7 +351,10 @@ async def update_config(request: Request):
     except Exception:
         raise HTTPException(400, "invalid JSON")
 
-    merged = {**existing, **body}
+    if not isinstance(body, dict):
+        raise HTTPException(400, "JSON body must be an object")
+
+    merged = merge_agent_config(existing, body)
     write_agent_config(merged)
     return JSONResponse(content={"ok": True, "config": merged})
 
