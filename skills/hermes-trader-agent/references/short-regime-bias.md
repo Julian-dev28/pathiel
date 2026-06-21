@@ -45,7 +45,7 @@ The funding-regime overlay lives inside
 
 ```json
 {
-  "min_ai_confidence": 0.7,
+  "min_ai_confidence": 0.67,
   "counter_regime_min_conf": 0.8,
   "leverage": 12,
   "equity_fraction_per_trade": 0.2,

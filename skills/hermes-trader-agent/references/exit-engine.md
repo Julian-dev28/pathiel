@@ -7,10 +7,14 @@ re-tuned 2026-06-16 (see "Scalp vs trend-ride" below) and tightened again in the
 
 ## 1. DSL trailing stop (`hermes_trader/agents/dsl_exit.py`) — primary, 60s tick
 
-- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`. Current
-  live new-entry config: `max_loss_pct=0.4` spot, `max_loss_roe_pct=3.0`. **The
-  ROE cap usually binds** — at 12x that is 0.25% spot; at 9x, 0.33%. This is
-  intentionally a fast invalidation stop for the current runner/scalp profile.
+- **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`, optionally
+  widened to a volatility-scaled `atr_stop` (`atr_mult`×ATR clamped floor/ceiling).
+  Current live new-entry config: `max_loss_pct=2.5` spot, `max_loss_roe_pct=15`,
+  `atr_stop` ON (1.5× ATR, 1.0–2.5% clamp). At 12x the 15% ROE cap = 1.25% spot but
+  the atr_stop widens it toward ~2.5% on volatile movers. **2026-06-21: widened from
+  the old 0.4%/3% fast-invalidation stop** — that tight stop was whipsawing volatile
+  movers out of trend (EIGEN entered→stopped in 1min→ran +5%; AERO rode +10% on the
+  wide stop). The fast stop was a measured −EV leak (noise-band).
 - **Phase 2 (profit lock):** arms at `protect_pct`. Floor = `entry ± peak_range ×
   (1 − retrace)`, ratchets one-way (never gives back).
 - **Retrace ladder (`phase2_tiers`)** = the give-back control; tighter = bank faster.
@@ -26,9 +30,12 @@ scalp      (protect 1.5 / retrace 0.30):  61% win  +$1518   <- 2026-06-16 live b
 trend-ride (protect 3.0 / retrace 0.55):  47% win  -$757
 ```
 **Tight (scalp) beats loose (trend-ride) hard in chop** — loose lets winners give
-it all back. Current live new-entry config keeps the scalp profile but uses the
-latest audit's values: `protect_pct=1.25`, `retrace_threshold=0.20`,
-`phase2_tiers=[{8.0,0.35},{15.0,0.40}]`. Trend-ride was originally shipped after
+it all back. Current live new-entry config keeps the scalp profile, tightened
+further on 2026-06-21: `protect_pct=1.25`, `retrace_threshold=0.10` (was 0.20 —
+banks give-backs earlier; validated live, JUP banked +16%/+12% ROE in serial
+trail exits), `phase2_tiers=[{8.0,0.35},{15.0,0.40}]` so proven runners still
+breathe. The wider Phase-1 stop (above) + the tight 0.10 trail is the current
+stack: ride through noise, bank the give-back. Trend-ride was originally shipped after
 validating on ONE up-trend day — it rides rippers but bleeds in chop, the dominant
 regime. Caveat: scalp can amputate the fat-tail winners the edge depends on —
 `tp_scale_fraction` lets a runner ride (below).

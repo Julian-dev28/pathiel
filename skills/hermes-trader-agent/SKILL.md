@@ -22,10 +22,11 @@ operates it through the **MCP server** registered in `~/.hermes/config.yaml`
 trading engine itself has no Hermes-framework dependency; it is
 Hermes-*operated*, not Hermes-*built*.
 
-Repo: `/Users/julian_dev/Documents/code/hermes-trader`. The user develops on
-branch `python` and fast-forward-merges to `daily-push-v2` (the deploy
-branch) after each batch of changes. **Never push directly to other branches
-without explicit confirmation.**
+Repo: `/Users/julian_dev/Documents/code/hermes-trader`. The user develops on a
+working branch (currently `able`) and merges to the deploy branch
+(`daily-push-v2` / `main`) after each batch of changes. **Commit/push only when
+the user asks, and never push directly to other branches without explicit
+confirmation.**
 
 ## Architecture
 
@@ -191,6 +192,22 @@ the AI + risk gates then adjudicate:
 - `dailyMover` — large liquid 24h movers. Raw `daily_move_pct` is carried into
   analysis so TA sidestep can block parabolic PASS upgrades.
 
+**Newer entry-side levers (2026-06, backtest-gated):**
+- **`late_chase_relax`** (LIVE) — narrows the runner gate's "late trend-only
+  chase; no fresh breakout/burst" block. Admits trend-aligned no-breakout entries
+  ONLY on liquid coins (vol ≥ `min_volume_usd`, default $5M) inside the
+  `[min_ext_pct, max_ext_pct]` daily-extension band (20–30%) — the one pocket
+  backtested +EV/OOS-robust (`scripts/edge_extension.py`). Low-liq and >30% chases
+  stay blocked (measured −EV: low-liq 20–30% is −1.27% gross — pump-and-dumps that
+  reverse). `shadow_mode` logs `would admit` without trading. This is why we miss
+  parabolic low-liquidity runners like TNSR +70% on purpose — they enter our
+  universe only after they're already extended, and chasing them loses.
+- **`capital_rotation`** (SHADOW) — when a strong fresh candidate is blocked
+  purely by capital (book full / notional / margin), evicts the weakest non-winner
+  (roe < `protect_winner_roe_pct`, age ≥ `min_hold_minutes`) for it. Wired at both
+  the executor stage AND (newer) the pre-research margin preflight. Backtest-validated
+  near-inert and held in shadow; flip `shadow_mode:false` only on forward evidence.
+
 **Config keys are read tolerantly** — current gates accept snake_case and the
 legacy camelCase form for common knobs. Prefer snake_case in `.agent-config.json`
 and MCP writes so diffs stay predictable.
@@ -228,14 +245,19 @@ agent wallets cannot transfer between them.
 Every executed position gets THREE layers of exit, all set at entry:
 
 1. **DSL trailing stop** (`dsl_exit.py`, primary, re-evaluated each 60s tick):
-   - **Phase 1 — loss cap:** `max_loss_pct` (current live 0.4% spot) AND
-     `max_loss_roe_pct/lev` (current live 3% ROE, whichever is tighter).
+   - **Phase 1 — loss cap:** `max_loss_pct` (current live 2.5% spot) AND
+     `max_loss_roe_pct/lev` (current live 15% ROE, whichever is tighter),
+     optionally widened to a volatility-scaled `atr_stop` (current live ON:
+     1.5× ATR clamped 1.0–2.5%). The wider stop was validated to stop whipsawing
+     volatile movers out of trend (the EIGEN/AERO leak).
    - **Phase 2 — profit lock:** engages at `protect_pct` (current live 1.25% for new entries).
      Floor =
      `entry ± peak_range × (1 − retrace_threshold)`, ratchets one-way.
    - **`retrace_threshold` + `phase2_tiers` ladder** — give-back control.
-     Current live default retrace is 0.20 with tiers at +8% and +15% spot.
-     `phase2_tiers` is wired from config at entry and on state synthesis.
+     Current live retrace is a tight **0.10** (banks give-backs early; validated
+     live — JUP banked +16%/+12% ROE), loosening via tiers at +8% (0.35) and
+     +15% (0.40) so proven runners breathe. `phase2_tiers` is wired from config
+     at entry and on state synthesis.
    - **Breakeven ratchet:** once peak ≥ `breakeven_trigger_pct`, floor can't drop
      below `breakeven_lock_pct` — guarantees a winner can't round-trip to flat.
    - **Hard timeout:** `hard_timeout_minutes` (30h) — a scalp/swing horizon, NOT
@@ -323,8 +345,8 @@ checks aren't fooled by cross-dex idle USDC.
 **Liquidity floor split**: HIP-3 markets carry less volume than BTC/ETH
 (most `xyz:*` markets sit in the $1M–$50M range vs $1B+ for BTC). The
 risk gate uses two floors:
-- `min_market_volume_usd` (default 5,000,000) — applies to native crypto
-- `min_hip3_volume_usd` (default 5,000,000) — applies to colon-namespaced markets
+- `min_market_volume_usd` (current live 700,000) — applies to native crypto
+- `min_hip3_volume_usd` (current live 700,000) — applies to colon-namespaced markets
 
 Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
 tokenized equities flow.
@@ -377,7 +399,7 @@ Live config (edit `.agent-config.json` directly — the MCP `config` tool
 does NOT accept `counter_regime_min_conf` writes):
 ```json
 {
-  "min_ai_confidence": 0.7,
+  "min_ai_confidence": 0.67,
   "counter_regime_min_conf": 0.8,
   "leverage": 12,
   "max_trade_notional_usd": 350,

@@ -18,6 +18,14 @@ scripts/restart.sh status       # show PIDs
 
 Logs: `logs/trading_loop.log`, `logs/server.log`.
 
+**Loop vs server restart:** `restart.sh server` restarts ONLY the dashboard — it
+does not touch open positions or DSL trackers, so it's safe any time. `restart.sh
+loop` restarts the trading loop; it rehydrates DSL trackers from `.dsl-state.json`
+(positions survive), but prefer doing it when the book is flat. `start_server` now
+launches the dashboard with a hard-throttled HL rate bucket
+(`HERMES_HL_RATE_REFILL_PER_SEC`/`_CAPACITY`, ~¼ budget) so a server restart can't
+burst the shared per-IP rate budget the loop relies on.
+
 ## When to restart
 
 - After code changes to `trading_loop.py`, anything under `hermes_trader/`,

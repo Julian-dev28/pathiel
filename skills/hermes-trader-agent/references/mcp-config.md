@@ -26,8 +26,9 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 100 tools; the 5 trading-core tools are the ones you call
-directly. The rest are Hyperliquid data passthroughs.
+The server exposes 100 tools (52 implemented + 48 honest `not_implemented` stubs
+for Hyperliquid SDK calls not yet wired). The 5 trading-core tools below are the
+ones you call directly.
 
 | Tool | Args | Returns |
 |------|------|---------|

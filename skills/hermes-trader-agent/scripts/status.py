@@ -157,7 +157,9 @@ def main() -> int:
         print(f"mode  : {config.get('mode', 'OFF')}")
         caps = {k: config[k] for k in (
             "maxTradeNotionalUsd", "max_trade_notional_usd",
-            "maxConcurrent", "minAiConfidence") if k in config}
+            "maxConcurrent", "max_concurrent",
+            "minAiConfidence", "min_ai_confidence",
+            "leverage", "max_daily_loss_usd") if k in config}
         if caps:
             print(f"caps  : {caps}")
 

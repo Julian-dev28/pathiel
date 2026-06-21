@@ -61,8 +61,8 @@ of getting nuked and re-synthesized fresh.
 
 ## Liquidity floor split
 
-- `min_market_volume_usd` (default $5M) — applies to native crypto
-- `min_hip3_volume_usd` (default $5M) — applies to colon-namespaced
+- `min_market_volume_usd` (current live $700k) — applies to native crypto
+- `min_hip3_volume_usd` (current live $700k) — applies to colon-namespaced
   markets (most `xyz:*` markets sit in $1M–$50M vs $1B+ for BTC)
 
 ## Asset-class routing

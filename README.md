@@ -81,8 +81,8 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_SCAN_WORKERS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
-- **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms. Current live new-entry config is `0.4%` spot / `3%` ROE.
-- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` in your favor. Current live new-entry config arms at `1.25%`, trails with `retrace_threshold=0.20`, then uses tiers at `+8%` and `+15%`; the floor ratchets one-way and never gives back locked profit.
+- **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms, optionally widened to a volatility-scaled `atr_stop` (ATR×mult, clamped to floor/ceiling). Current live new-entry config is `2.5%` spot / `15%` ROE with `atr_stop` enabled (1.5× ATR, 1.0–2.5% clamp).
+- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` in your favor. Current live new-entry config arms at `1.25%`, trails with a tight `retrace_threshold=0.10` (banks give-backs early), then loosens via `phase2_tiers` at `+8%` (0.35) and `+15%` (0.40) so proven runners get room; the floor ratchets one-way and never gives back locked profit.
 - **Hard/stale timeout**: `hard_timeout_minutes` is the maximum hold horizon; `stale_flat_timeout_minutes` exits positions that never reach the profit-lock phase.
 - **Auto-registration**: Every executed position is registered for DSL tracking
 - **Persisted across restarts**: Tracker state (peak, floor, breach counter) is written to `.dsl-state.json` on every advance, so a daemon restart doesn't reset the ratchet
@@ -206,32 +206,34 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   "equity_fraction_per_trade": 0.2,
   "leverage": 12,
   "max_trade_notional_usd": 350,
-  "asset_notional_multiplier": {
-    "crypto": 1.0,
-    "hip3": 1.0
-  },
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -100,
+  "max_daily_loss_usd": -30,
   "daily_giveback_halt_pct": 0.35,
   "daily_giveback_min_peak_usd": 25.0,
   "min_available_margin_pct": 0.10,
-  "min_market_volume_usd": 5000000,
-  "min_hip3_volume_usd": 5000000,
+  "min_market_volume_usd": 700000,
+  "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 50000000,
   "cooldown_min": 30,
-  "min_ai_confidence": 0.7,
+  "min_ai_confidence": 0.67,
   "counter_regime_min_conf": 0.8,
   "block_counter_trend_bypass": true,
   "max_crypto_long_correlated": 3,
   "coin_allowlist": [],
-  "coin_blocklist": ["TON", "TRX"],
+  "coin_blocklist": [],
   "dsl_exit": {
-    "max_loss_pct": 0.4,
-    "max_loss_roe_pct": 3.0,
+    "max_loss_pct": 2.5,
+    "max_loss_roe_pct": 15.0,
+    "atr_stop": { "enabled": true, "atr_mult": 1.5, "floor_pct": 1.0, "ceiling_pct": 2.5 },
     "protect_pct": 1.25,
-    "retrace_threshold": 0.20
+    "retrace_threshold": 0.1,
+    "phase2_tiers": [
+      { "pct_above_entry": 8.0, "retrace_threshold": 0.35 },
+      { "pct_above_entry": 15.0, "retrace_threshold": 0.4 }
+    ],
+    "stale_flat_timeout_minutes": 480
   },
   "atr_risk_sizing": {
     "enabled": true,
@@ -240,19 +242,25 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   },
   "ta_sidestep_force_execute": true,
   "override_max_daily_extension_pct": 30.0,
-  "backup_sl_max_frac_of_liq": 0.6,
+  "override_volume_confirm": { "enabled": true, "min_ratio": 1.5 },
+  "trend_filter_200ma": { "enabled": true, "period": 200 },
   "runner_entry_gate": {
     "enabled": true,
-    "allow_shorts": false,
-    "min_confidence": 0.7,
-    "min_composite": 30.0,
+    "allow_shorts": true,
+    "shock_day_fresh_impulse": true,
+    "min_confidence": 0.67,
     "min_crypto_composite": 20.0,
     "min_hip3_composite": 45.0,
-    "mover_min_confidence": 0.72,
-    "mover_min_composite": 40.0
-  }
+    "mover_min_composite": 20.0
+  },
+  "late_chase_relax": { "enabled": true, "shadow_mode": false, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
+  "capital_rotation": { "enabled": true, "shadow_mode": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 }
 }
 ```
+
+Additional signal/shadow blocks not shown above (all hot-read): `gex_signal`,
+`shadow_signals`, `signal_enforcement`, `smart_money`, `basis_gap`,
+`volstop_shadow`, `runner_mover_surface`. They wire the free signal suite + forward-validation loggers.
 
 The snippet above is the current live strategy shape, not a guarantee that those
 values are optimal in future market regimes. Missing keys are filled from
@@ -281,7 +289,7 @@ values are optimal in future market regimes. Missing keys are filled from
 | `counter_regime_min_conf` | Confidence bar for a trade **against** the regime (e.g. long in a downtrend) | `0.7` |
 | `aligned_min_conf` | Confidence bar for a trade **with** the regime (trend-aligned) — typically lower than the counter-regime bar | _unset_ |
 | `block_counter_trend_bypass` | When `true`, own-coin trigger bypasses cannot override the counter-regime gate — stops long-into-downtrend bleed | `false` |
-| `override_max_daily_extension_pct` | Max positive 24h move allowed for PASS→LONG TA sidestep. Blocks parabolic chase entries like BIRD +60%. `0` disables | `30` |
+| `override_max_daily_extension_pct` | Max positive 24h move allowed for PASS→LONG TA sidestep. Blocks parabolic chase entries (e.g. TNSR +70%, which backtests −EV above 30% extension). `0` disables | `30` |
 | `backup_sl_max_frac_of_liq` | Caps server-side backup stop distance to this fraction of the approximate liquidation buffer | `0.60` |
 | `max_crypto_long_correlated` | Cap on simultaneous correlated crypto positions (concentration guard) | `2` |
 | `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
@@ -290,11 +298,14 @@ values are optimal in future market regimes. Missing keys are filled from
 **Nested blocks** (all in `.agent-config.json`, all hot-read for new entries):
 
 - **`dsl_exit`** — trailing-stop engine. `max_loss_pct` and `max_loss_roe_pct`
-  are the hard stop, with the tighter spot-equivalent value binding. Current live
-  new-entry values are `max_loss_pct=0.4`, `max_loss_roe_pct=3.0`,
-  `protect_pct=1.25`, and `retrace_threshold=0.20`. `phase2_tiers` is the
-  profit-scaled give-back ladder. `stale_flat_timeout_minutes` is the flat-position
-  timeout. Tracker state → `.dsl-state.json` (override
+  are the hard stop, with the tighter spot-equivalent value binding; the optional
+  `atr_stop` sub-block widens it to a volatility-scaled stop (`atr_mult` × ATR,
+  clamped to `floor_pct`/`ceiling_pct`). Current live new-entry values are
+  `max_loss_pct=2.5`, `max_loss_roe_pct=15`, `atr_stop` enabled (1.5×, 1.0–2.5%),
+  `protect_pct=1.25`, and a tight `retrace_threshold=0.10`. `phase2_tiers` is the
+  profit-scaled give-back ladder (loosens the trail on proven runners: +8%→0.35,
+  +15%→0.40). `stale_flat_timeout_minutes` (480) exits positions that never reach
+  the profit-lock phase. Tracker state → `.dsl-state.json` (override
   `HERMES_DSL_STATE_FILE`). Existing open positions keep the policy captured at
   entry; config edits affect new entries and synthesized trackers.
 - **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
@@ -313,6 +324,19 @@ values are optimal in future market regimes. Missing keys are filled from
   never on slow-burn alone, never when AI is down, and never above
   `override_max_daily_extension_pct`. The upgraded LONG still must pass the
   normal runner gate.
+- **`late_chase_relax`** `{enabled, shadow_mode, min_ext_pct, max_ext_pct,
+  min_volume_usd}` — narrows the runner gate's "late trend-only chase" block:
+  trend-aligned entries with no fresh breakout are admitted ONLY on liquid coins
+  (vol ≥ `min_volume_usd`) inside the `[min_ext_pct, max_ext_pct]` daily-extension
+  band — the one pocket backtested +EV / OOS-robust (20–30% ext, +0.15–0.20%/t).
+  Low-liquidity and out-of-band chases stay blocked (measured −EV). `shadow_mode`
+  logs `would admit` without trading.
+- **`capital_rotation`** `{enabled, shadow_mode, min_candidate_composite,
+  min_hold_minutes, protect_winner_roe_pct}` — when a strong fresh candidate is
+  blocked purely by capital (book full / notional cap), evicts the weakest
+  non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
+  room. `shadow_mode` logs the decision without acting. (Validated near-inert; left
+  in shadow.)
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -381,7 +405,7 @@ The `--env prod --daemon` flags are informational only; they do not fork the
 process. Use `scripts/restart.sh` for normal operation.
 
 **Trading Loop Behavior:**
-- Scans top 60 markets every 60 seconds
+- Scans the top ~45 markets (by 24h volume) plus mover slots and a rotating universe sweep, every 60 seconds
 - Each tick, reconciles DSL trackers with live exchange positions and runs an exit pass — market-closes anything whose dynamic floor, hard stop, or timeout has tripped
 - Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
 - Researches qualifying signals with the OpenRouter model configured in `.env.local`

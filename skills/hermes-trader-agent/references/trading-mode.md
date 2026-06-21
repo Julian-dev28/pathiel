@@ -32,7 +32,3 @@ skips the startup grace and the server. The **MCP server
 (`scripts/hermes-mcp-server.py`) is intentionally NOT managed by restart.sh** —
 it's transient (stdio), spawned on demand by an MCP client, and shares
 `.agent-memory.json` with the loop. See `references/restart-sequence.md`.
-
----
-
-**Related support file:** `references/trading-mode.md` — full transcript of user corrections that led to this rule.

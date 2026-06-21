@@ -9,8 +9,8 @@ Parses the server with the `ast` module (no import, no execution) and checks
 the invariant from references/mcp-server.md:
 
     every name in TOOLS is covered by exactly one handler, where
-        covered = explicit tool_handlers keys  +  _STUB_RESPONSES keys
-    no name appears in both the explicit dict and _STUB_RESPONSES
+        covered = explicit tool_handlers keys  +  _STUB_TOOL_NAMES (stub list)
+    no name appears in both the explicit dict and the stub list
     no duplicate handle_* function definitions
     every explicit tool_handlers value references a defined handle_* function
     no orphan tool_handlers keys without a TOOLS entry
@@ -57,7 +57,12 @@ def audit(path: Path) -> int:
                             if getattr(k, "value", None) == "name" and isinstance(v, ast.Constant):
                                 tool_names.append(v.value)
             elif name == "_STUB_RESPONSES" and isinstance(node.value, ast.Dict):
-                stub_keys = {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+                # legacy structure (dict of name -> response)
+                stub_keys |= {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
+            elif name == "_STUB_TOOL_NAMES" and isinstance(node.value, ast.List):
+                # current structure: a list of names registered via
+                # `for n in _STUB_TOOL_NAMES: tool_handlers[n] = _make_stub_handler(n)`
+                stub_keys |= {e.value for e in node.value.elts if isinstance(e, ast.Constant)}
             elif name == "tool_handlers" and isinstance(node.value, ast.Dict):
                 for k, v in zip(node.value.keys, node.value.values):
                     if isinstance(k, ast.Constant):
@@ -93,7 +98,7 @@ def audit(path: Path) -> int:
     if orphans:
         fails.append(f"handler entries with no TOOLS definition: {orphans}")
     if both:
-        fails.append(f"names in BOTH explicit dict and _STUB_RESPONSES: {both}")
+        fails.append(f"names in BOTH explicit dict and the stub list: {both}")
     if bad_refs:
         fails.append(f"tool_handlers references undefined functions: {bad_refs}")
     if unwired:

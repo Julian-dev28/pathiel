@@ -51,9 +51,13 @@ not add `spot_usdc` on top, or equity double-counts.
 
 ## Sizing
 
-`executor.py` sizes a trade at `equity * 0.01 * HL_LEVERAGE` (1% of equity at
-5×). The leverage is already in that figure — `position_notional = trade_notional`,
-never `trade_notional * HL_LEVERAGE` again.
+`executor.py`'s current live path is ATR equal-risk: `notional = (equity ×
+risk_per_trade_pct) / primary_stop_distance`, clamped by `max_trade_notional_usd`
+and the leverage caps. The explicit fallback (ATR sizing off) is
+`equity × equity_fraction_per_trade × leverage`. Either way, **leverage is already
+baked into the notional** — `position_notional = trade_notional`, never
+`trade_notional × leverage` again. (Older docs showed `equity × 0.01 × 5×`; that
+fixed-fraction default is superseded.)
 
 ## Info endpoint payloads
 
