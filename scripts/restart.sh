@@ -120,7 +120,9 @@ start_loop() {
     return 0
   fi
   info "starting trading loop (log: $LOOP_LOG)"
-  nohup "$PY" "$ROOT/scripts/trading_loop.py" >> "$LOOP_LOG" 2>&1 &
+  HERMES_STARTUP_GRACE_S="${HERMES_STARTUP_GRACE_S:-0}" \
+  HERMES_META_PREWARM_TIMEOUT_S="${HERMES_META_PREWARM_TIMEOUT_S:-3}" \
+    nohup "$PY" "$ROOT/scripts/trading_loop.py" >> "$LOOP_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 1
@@ -154,7 +156,13 @@ start_server() {
   fi
   local port="${HERMES_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
-  nohup "$PY" -m hermes_trader.server >> "$SERVER_LOG" 2>&1 &
+  # Dashboard shares the IP with the trading loop; HL rate-limits per-IP. Give the
+  # server a HARD-throttled token bucket (~1/4 budget) so its background polls yield
+  # to the loop's fetches — cuts the chronic ~24% /info 429 collisions. The loop keeps
+  # its full budget (it's the money path). Tunable: bump if the dashboard feels sluggish.
+  nohup env HERMES_HL_RATE_REFILL_PER_SEC="${HERMES_SERVER_RATE_REFILL:-5}" \
+    HERMES_HL_RATE_CAPACITY="${HERMES_SERVER_RATE_CAPACITY:-200}" \
+    "$PY" -m hermes_trader.server >> "$SERVER_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 2
