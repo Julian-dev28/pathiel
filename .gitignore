@@ -110,3 +110,22 @@ backtest-trades.csv
 *.bak-*
 *.bak2-*
 *.bak3-*
+*.bak2
+
+# --- Hermes Python bot: runtime state / research caches / scratch (generated, not source) ---
+# self-collected runtime time-series + shadow/tracker state (per-machine, never commit)
+.oi-timeseries.jsonl
+.volstop-shadow.json
+.volstop-shadow.jsonl
+.smart-money-seen.json
+.smart-money-traders.json
+.heartbeat.json
+.agent-snapshot.json
+
+# backtest / edge-research disk caches (regenerated on demand)
+*-cache*.json
+
+# local backup snapshots + one-off scratch
+.backups/
+.claude_prompt_regime.txt
+.clean-slate.json
