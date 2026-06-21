@@ -48,7 +48,14 @@ logging.basicConfig(
 from hermes_trader.agents.perception import scan_once
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
-from hermes_trader.agents.executor import close_position_market, maybe_execute, monitor_exits, route_verdict
+from hermes_trader.agents.executor import (
+    _runner_entry_block_reason,
+    close_position_market,
+    maybe_execute,
+    monitor_exits,
+    record_external_position_close,
+    route_verdict,
+)
 from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
 from hermes_trader.agents.config_store import read_agent_config
@@ -58,6 +65,73 @@ from hermes_trader.client.universe import get_universe
 from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
 from hermes_trader.positions_snapshot import write_snapshot
 from hermes_trader.session_log import append as log_event
+
+# Last wall-clock time the (heavy) external-alpha poll ran — throttles it off the
+# 60s scan cadence so it can't add ~40s of latency to every exit-monitor cycle.
+_last_external_alpha_ts = 0.0
+
+
+def _run_external_alpha(config) -> None:
+    """Validated external-alpha edges (smart_money copy + basis_gap) run alongside the
+    AI scan. Each source is independently shadow/live via its own `shadow_mode`. A LIVE
+    signal becomes a synthetic analysis routed through route_verdict -> maybe_execute, so
+    EVERY safety gate (kill-switch, caps, margin, liquidation stop, sizing) still applies;
+    only the candle-impulse runner gate is bypassed (different alpha source). Sized small
+    via external_alpha_notional_usd. Wrapped by the caller so an outage can't break scan."""
+    sm = bool((config.get("smart_money") or {}).get("enabled", False))
+    bg = bool((config.get("basis_gap") or {}).get("enabled", False))
+    if not (sm or bg):
+        return
+    # Throttle: the poll (30 traders' fills + stock feeds) takes ~40s — far too heavy to
+    # run every 60s scan and starve monitor_exits. Signals stay fresh for ~30min, so a
+    # ~5min cadence loses nothing. Gated by external_alpha_interval_min.
+    global _last_external_alpha_ts
+    interval_s = float(config.get("external_alpha_interval_min", 5)) * 60
+    _now = time.time()
+    if _now - _last_external_alpha_ts < interval_s:
+        return
+    _last_external_alpha_ts = _now
+    import uuid as _uuid
+    from hermes_trader.agents.external_alpha import external_alpha_signals
+    # 0 (or unset) = FULL sizing (use the normal max_trade_notional_usd); a positive
+    # value caps external-alpha trades smaller than normal.
+    ext_notional = float(config.get("external_alpha_notional_usd", 0) or 0)
+    held = set(memory.open_position_coins())
+    for s in external_alpha_signals(config):
+        shadow = bool((config.get(s["source"]) or {}).get("shadow_mode", True))
+        log_event({"event": "external_alpha", "coin": s["coin"], "side": s["side"],
+                   "source": s["source"], "reason": s["reason"],
+                   "strength": round(float(s.get("strength", 0)), 2), "shadow": shadow})
+        if shadow:
+            logger.info(f"[external-alpha] SHADOW would-trade {s['coin']} {s['side']} "
+                        f"via {s['source']} — {s['reason']}")
+            continue
+        if s["coin"] in held:
+            logger.info(f"[external-alpha] {s['coin']} already held — skip {s['source']}")
+            continue
+        # Synthetic analysis: marked external_alpha so the runner gate bypasses it; all
+        # downstream safety gates + sizing run normally. stop/tp left 0 -> executor's
+        # ATR backup-SL (clamped to liq buffer) places the protective bracket.
+        analysis = {
+            "id": str(_uuid.uuid4()), "coin": s["coin"],
+            "verdict": "LONG" if s["side"] == "long" else "SHORT", "side": s["side"],
+            "confidence": 0.80, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+            "reasoning": f"[{s['source']}] {s['reason']}", "news_risk": "none",
+            "ai_down": False, "created_at": int(time.time() * 1000),
+            "composite_score": 0.0, "external_alpha": s["source"],
+            "external_alpha_notional": ext_notional,
+        }
+        logger.info(f"[external-alpha] LIVE {s['coin']} {s['side']} via {s['source']} "
+                    f"(${ext_notional:.0f}) — {s['reason']}")
+        try:
+            routed = route_verdict(analysis)
+            log_event({"event": "external_alpha_exec", "coin": s["coin"],
+                       "source": s["source"], "action": routed.get("action"),
+                       "executed": bool((routed.get("result") or {}).get("executed")),
+                       "detail": (routed.get("result") or {}).get("reason")
+                       or (routed.get("result") or {}).get("order_id")})
+        except Exception as _xe:
+            logger.warning(f"[external-alpha] execute failed for {s['coin']}: {_xe}")
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +267,222 @@ def _burst_fired(perception):
                for t in perception.get("triggers", []))
 
 
+def _trigger_fired(perception, name: str) -> bool:
+    return any(t.get("name") == name and t.get("fired")
+               for t in perception.get("triggers", []))
+
+
+def _slow_burn_count(perception) -> int:
+    return sum(
+        1 for t in perception.get("triggers", [])
+        if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h")
+        and t.get("fired")
+    )
+
+
+def _pre_research_runner_block_reason(perception, config):
+    """Return the entry gate reason for non-held candidates before paid AI.
+
+    The AI can still research held positions for CLOSE decisions. For fresh
+    entries, avoid paying the LLM for a candidate the live runner gate would
+    deterministically reject after research anyway. This intentionally only
+    pre-blocks when shorts are disabled; if shorts are enabled, the AI may still
+    need to choose direction on downtrend candidates.
+    """
+    gate = config.get("runner_entry_gate") or {}
+    if not bool(gate.get("enabled", False)):
+        return ""
+    if bool(gate.get("allow_shorts", False)):
+        return ""
+    min_conf = float(gate.get("min_confidence", config.get("min_ai_confidence", 0.70)))
+    analysis_stub = {
+        "coin": perception.get("coin"),
+        "side": "long",
+        "confidence": min_conf,
+        "composite_score": float(perception.get("composite_score", 0) or 0),
+        "volume_spike_fired": _trigger_fired(perception, "volumeSpike"),
+        "breakout_fired": _trigger_fired(perception, "breakout"),
+        "momentum_burst_fired": _trigger_fired(perception, "momentumBurst"),
+        "daily_mover_fired": _trigger_fired(perception, "dailyMover"),
+        "uptrend_momentum_fired": _trigger_fired(perception, "uptrendMomentum"),
+        "downtrend_momentum_fired": _trigger_fired(perception, "downtrendMomentum"),
+        "slow_burn_count": _slow_burn_count(perception),
+    }
+    return _runner_entry_block_reason(analysis_stub, config)
+
+
+def _capital_rotation_live(config) -> bool:
+    rot = config.get("capital_rotation") or {}
+    return bool(rot.get("enabled", False)) and not bool(rot.get("shadow_mode", True))
+
+
+def _rotation_preflight_eval(coin, perception, positions, config):
+    """Would capital-rotation free room for a margin-blocked fresh `coin`? Returns the
+    RotationDecision (or None). The pre-research margin preflight is UPSTREAM of the
+    executor-stage rotation, so a strong margin-blocked mover (the missed-mover case)
+    dies before rotation ever sees it. This mirrors the executor's rotation eval so the
+    preflight can (a) let it through when rotation is LIVE, or (b) shadow-log it for
+    forward validation. Fully guarded — never raises into the preflight; on any error
+    returns None so the normal block stands."""
+    try:
+        rot = config.get("capital_rotation") or {}
+        if not bool(rot.get("enabled", False)):
+            return None
+        from hermes_trader.agents.rotation import decide_rotation
+        from hermes_trader.agents import dsl_exit as _dsl
+        now = time.time()
+        opos = []
+        for p in (positions or []):
+            pp = p.get("position", p) if isinstance(p, dict) else {}
+            c = pp.get("coin")
+            if not c or c == coin:
+                continue
+            tr = (_dsl._active_positions.get(f"{c}_long")
+                  or _dsl._active_positions.get(f"{c}_short"))
+            age = (now - tr.entry_time) / 60.0 if tr is not None else 0.0
+            opos.append({"coin": c,
+                         "roe_pct": float(pp.get("returnOnEquity", 0) or 0) * 100.0,
+                         "age_minutes": age})
+        return decide_rotation(
+            candidate_coin=coin,
+            candidate_composite=float((perception or {}).get("composite_score", 0) or 0),
+            blocked_reasons=["total notional would exceed"],   # margin saturation == capital block
+            open_positions=opos,
+            min_candidate_composite=float(rot.get("min_candidate_composite", 40.0)),
+            min_hold_minutes=float(rot.get("min_hold_minutes", 30.0)),
+            protect_winner_roe_pct=float(rot.get("protect_winner_roe_pct", 3.0)),
+        )
+    except Exception:
+        return None
+
+
+def _position_value_usd(row) -> float:
+    pos = (row or {}).get("position", row or {})
+    try:
+        val = float(pos.get("positionValue", 0) or 0)
+        if val > 0:
+            return abs(val)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return abs(float(pos.get("szi", 0) or 0)) * float(pos.get("entryPx", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
+                                 positions, state, daily_pnl):
+    """Cheap deterministic gates before paid AI research on fresh entries."""
+    is_hip3 = ":" in (coin or "")
+    mode = str(config.get("mode", "OFF")).upper()
+    if mode == "LIVE" and not os.environ.get("HYPERLIQUID_PRIVATE_KEY"):
+        return "private_key_missing (fresh entries cannot execute)"
+    if is_hip3 and not bool(config.get("enable_hip3", False)):
+        return "hip3_disabled"
+    if (not is_hip3) and not bool(config.get("enable_crypto", True)):
+        return "crypto_disabled"
+
+    blocklist = set(config.get("coin_blocklist", []) or [])
+    allowlist = set(config.get("coin_allowlist", []) or [])
+    if coin in blocklist:
+        return f"{coin} is on the coin blocklist"
+    if allowlist and coin not in allowlist:
+        return f"{coin} not on the coin allowlist"
+
+    loss_remaining = memory.loss_cooldown_remaining_min(coin)
+    if loss_remaining > 0:
+        return f"loss_cooldown ({loss_remaining:.0f}min remaining)"
+
+    try:
+        max_daily_loss = float(config.get("max_daily_loss_usd", -100) or -100)
+    except (TypeError, ValueError):
+        max_daily_loss = -100.0
+    if daily_pnl <= max_daily_loss:
+        return f"daily_loss_gate (PnL ${daily_pnl:.2f} <= ${max_daily_loss:.0f})"
+
+    try:
+        halt_pct = float(config.get("daily_giveback_halt_pct", 0.0) or 0.0)
+        min_peak = float(config.get("daily_giveback_min_peak_usd", 20.0) or 0.0)
+        peak = float(memory.peak_daily_pnl())
+    except (TypeError, ValueError):
+        halt_pct, min_peak, peak = 0.0, 0.0, 0.0
+    if halt_pct > 0 and peak >= min_peak:
+        floor = peak * (1.0 - halt_pct)
+        if daily_pnl <= floor:
+            return (f"daily_giveback_gate (PnL ${daily_pnl:.2f} <= "
+                    f"${floor:.2f} floor from ${peak:.2f} peak)")
+
+    if equity <= 0:
+        return "account_state_unavailable (equity<=0)"
+
+    rotation_live = _capital_rotation_live(config)
+    try:
+        max_concurrent = int(config.get("max_concurrent", 3) or 3)
+    except (TypeError, ValueError):
+        max_concurrent = 3
+    if max_concurrent > 0 and len(positions or []) >= max_concurrent and not rotation_live:
+        return f"max_positions_reached ({len(positions or [])}/{max_concurrent})"
+
+    total_ntl = 0.0
+    try:
+        total_ntl = float((state or {}).get("total_ntl", 0) or 0)
+    except (TypeError, ValueError):
+        total_ntl = sum(_position_value_usd(p) for p in (positions or []))
+    try:
+        max_total_pct = float(config.get("max_total_notional_pct", 0) or 0)
+    except (TypeError, ValueError):
+        max_total_pct = 0.0
+    if max_total_pct > 0 and total_ntl >= equity * max_total_pct and not rotation_live:
+        return (f"notional_room_full (${total_ntl:.0f} >= "
+                f"${equity * max_total_pct:.0f} cap)")
+
+    try:
+        min_avail_pct = float(config.get("min_available_margin_pct", 0.10) or 0.0)
+    except (TypeError, ValueError):
+        min_avail_pct = 0.10
+    dex = coin.split(":", 1)[0] if is_hip3 else ""
+    dex_equity = (state or {}).get("dex_equity") or {}
+    dex_available = (state or {}).get("dex_available") or {}
+    try:
+        target_equity = float(dex_equity.get(dex, equity) or 0)
+        target_available = float(dex_available.get(dex, available) or 0)
+    except (TypeError, ValueError):
+        target_equity, target_available = equity, available
+    if target_equity > 0 and min_avail_pct > 0:
+        avail_pct = target_available / target_equity
+        if avail_pct < min_avail_pct:
+            label = dex or "main"
+            # Upstream capital-rotation hook — mirrors the concurrency/notional bypass at
+            # max_concurrent/notional above. A strong margin-blocked mover is the exact
+            # missed-mover case rotation exists for, but it dies HERE (pre-research),
+            # before the executor-stage rotation can see it. When rotation is LIVE and it
+            # would free room, fall through (let it reach research + executor rotation);
+            # in shadow, log what it WOULD do so the margin case can be validated forward.
+            _rd = _rotation_preflight_eval(coin, perception, positions, config)
+            _can_rotate = _rd is not None and _rd.should_rotate
+            if not (rotation_live and _can_rotate):
+                if _can_rotate:
+                    logger.warning(
+                        f"[rotation-preflight][SHADOW] {coin} "
+                        f"(comp {float((perception or {}).get('composite_score', 0) or 0):.0f}) "
+                        f"margin-blocked ({label} {avail_pct*100:.1f}%<{min_avail_pct*100:.0f}%); "
+                        f"rotation WOULD {_rd.reason}")
+                return (f"insufficient_free_margin_preflight ({label}: "
+                        f"{avail_pct*100:.1f}% < {min_avail_pct*100:.0f}%)")
+            # rotation_live and would free room → fall through to remaining preflight gates
+
+    try:
+        vol = float(perception.get("daily_volume_usd", 0) or 0)
+        vol_floor = float(config.get("min_hip3_volume_usd" if is_hip3 else "min_market_volume_usd",
+                                     0) or 0)
+    except (TypeError, ValueError):
+        vol, vol_floor = 0.0, 0.0
+    if vol_floor > 0 and 0 < vol < vol_floor:
+        return f"liquidity_floor_preflight (${vol/1e6:.2f}M < ${vol_floor/1e6:.2f}M)"
+
+    return ""
+
+
 def _sync_account_state():
     """Pull live aggregated equity + positions from HL, persist to memory.
 
@@ -234,6 +524,11 @@ def _sync_account_state():
     spot_usdc = float(state.get("spot_usdc", 0) or 0)
     positions = state.get("asset_positions", []) or []
     queried_dexes = state.get("queried_dexes") or {""}
+    live_position_coins = {
+        (p.get("position") or {}).get("coin")
+        for p in positions
+        if (p.get("position") or {}).get("coin")
+    }
 
     # PARTIAL-DEX degraded-read guard: a 'successful' fetch where equity>0 (main
     # dex fine) but a HIP-3 dex we HOLD a position on failed to respond drops that
@@ -253,6 +548,12 @@ def _sync_account_state():
             f"incomplete) — skipping memory update, preserving last-known-good")
         return 0.0, [], 0.0, 0.0, set(), {}
 
+    vanished_tracked = {
+        c for c in active_position_coins()
+        if ((c.split(":", 1)[0] if ":" in c else "") in set(queried_dexes)
+            and c not in live_position_coins)
+    }
+
     # Subtract net USDC contributions so transfers/deposits don't show
     # up as trading PnL in the equity-diff calculation.
     sod_ts_ms = memory.get_day_start_ts() * 1000
@@ -263,7 +564,12 @@ def _sync_account_state():
         except Exception as e:
             logger.warning(f"[heartbeat] contribution fetch failed: {e}")
 
-    memory.track_daily_pnl(equity, contributions)
+    if vanished_tracked:
+        logger.error(
+            f"[heartbeat] tracked position(s) vanished from live account after "
+            f"successful dex query: {sorted(vanished_tracked)} — accepting equity "
+            f"move as real for daily PnL/kill-switch")
+    memory.track_daily_pnl(equity, contributions, force_accept=bool(vanished_tracked))
     memory.update_open_positions(positions)
     memory.flush()
     return equity, positions, available, spot_usdc, queried_dexes, state
@@ -354,21 +660,41 @@ while True:
         # manual closes, externally-filled SLs), then market-close anything
         # whose dynamic floor was breached.
         try:
-            rehydrate_from_exchange(positions,
-                                    default_leverage=int(_cfg.get("leverage", 1) or 1),
-                                    queried_dexes=queried_dexes)
+            stale_trackers = rehydrate_from_exchange(
+                positions,
+                default_leverage=int(_cfg.get("leverage", 1) or 1),
+                queried_dexes=queried_dexes,
+            )
+            for _stale in stale_trackers:
+                try:
+                    record_external_position_close(_stale, user=resolve_user_address())
+                except Exception as _e:
+                    logger.error(f"[outcome-store] vanished tracker record failed "
+                                 f"for {_stale.get('coin')}: {_e}")
             # include_hip3=True so xyz:MU / vntl:* etc. get fresh mids each
             # cycle — without them, monitor_exits has no price for HIP-3
             # trackers and their peak/floor never advance (dashboard shows
             # "no DSL" indefinitely and DSL stop never fires on HIP-3).
             mids = get_all_hl_mids(include_hip3=True)
             exits = monitor_exits(mids)
+            # Forward-shadow the wider VOL ATR-stop on the same marks (no live effect).
+            try:
+                from hermes_trader.agents.volstop_shadow import update_and_log as _vs_update
+                _vs_update(mids, read_agent_config())
+            except Exception as _vse:
+                logger.debug(f"[volstop-shadow] cycle hook failed: {_vse}")
             for ex in exits:
                 coin = ex["coin"]
                 lev = ex.get("leverage", 1)
                 lpct = ex.get("leveraged_pct", ex["unrealized_pct"] * lev)
                 logger.info(f"[dsl] Closing {coin} {ex.get('side','?')} ({lev}x): "
                             f"{ex['reason']} (margin {lpct:+.2f}% · spot {ex['unrealized_pct']:+.2f}%)")
+                # Tag the shadow with the live exit ROE for side-by-side comparison.
+                try:
+                    from hermes_trader.agents.volstop_shadow import record_live_exit as _vs_exit
+                    _vs_exit(coin, ex.get("side"), lpct)
+                except Exception:
+                    pass
                 res = close_position_market(coin)
                 # The close response carries authoritative realized PnL when
                 # the order filled with a parseable avgPx — prefer it over the
@@ -414,6 +740,16 @@ while True:
             except Exception as e:
                 logger.warning(f"[universe] periodic refresh failed, keeping prior snapshot: {e}")
 
+        # OI time-series logger — self-collect open interest forward (HL exposes no OI
+        # history) so the OI/price four-quadrant positioning filter can be backtested
+        # later. Piggybacks the universe already in hand (no extra API call), throttled +
+        # size-capped, wrapped so it can never break the scan.
+        try:
+            from hermes_trader.agents.oi_logger import append_oi
+            append_oi(universe)
+        except Exception as _oie:
+            logger.debug(f"[oi-logger] append failed (non-fatal): {_oie}")
+
         logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
@@ -426,6 +762,16 @@ while True:
                                     "score": round(p.get('composite_score', 0), 1),
                                     "triggers": [t['name'] for t in p.get('triggers', []) if t.get('fired')]}
                                    for p in results]})
+
+        # External-alpha edges (smart_money copy + basis_gap) — validated OOS, run beside
+        # the AI scan. MUST use the AGENT config (.agent-config.json), NOT the loop's
+        # scanner `config` (get_config()) which lacks the smart_money/basis_gap keys — a
+        # mismatch silently early-returned the whole hook. read_agent_config() is hot-read
+        # so enable/shadow/sizing changes take effect with no restart.
+        try:
+            _run_external_alpha(read_agent_config())
+        except Exception as _eae:
+            logger.warning(f"[external-alpha] cycle failed: {_eae}")
 
         # Pre-research dedupe cache: coin → last research timestamp this run.
         # Prevents burning AI tokens on a setup that's still in cooldown from a
@@ -451,11 +797,6 @@ while True:
         # in the window paid for redundant LLM research every cycle).
         recent_trades_by_coin = memory.latest_trade_ts_by_coin(20)
         held_coins = memory.open_position_coins()
-        # Blocklisted coins can never execute (coin_filter gate blocks them), so
-        # we skip the paid LLM research for any we don't hold — see the else
-        # branch below. Held blocklisted coins are exempt (AI must keep the
-        # ability to CLOSE). Read once per scan from the hot-reloaded config.
-        _blocklist = set(_cfg_cd.get("coin_blocklist", []) or [])
         now_ms = int(time.time() * 1000)
 
         for perception in results:
@@ -499,16 +840,21 @@ while True:
                                         f"{min_hold_min:.0f}min — infancy, skip close-check")
                             continue
             else:
-                # Blocklisted + not held → coin_filter will reject any entry, so
-                # skip the paid LLM research entirely (this coin keeps triggering
-                # every scan otherwise). Held blocklisted coins took the held
-                # branch above and still get their AI close-check.
-                if coin in _blocklist:
-                    logger.info(f"{coin}: on coin blocklist — skip research")
+                # Fresh entry preflight: skip paid research when deterministic
+                # downstream gates already prove this entry cannot execute.
+                # Held positions took the branch above and still get their
+                # periodic AI close-check.
+                entry_preblock = _fresh_entry_preblock_reason(
+                    coin, perception, _cfg_cd, equity, available,
+                    positions, state, daily_pnl,
+                )
+                if entry_preblock:
+                    logger.info(f"{coin}: pre-research {entry_preblock} — skip AI research")
                     log_event({"event": "ta_skip", "coin": coin,
-                               "signal": "BLOCKLISTED",
+                               "signal": "ENTRY_PREFLIGHT",
                                "score": round(float(score), 1),
-                               "trigger_score": round(float(score), 1)})
+                               "trigger_score": round(float(score), 1),
+                               "reason": entry_preblock})
                     continue
                 # Not held but executed within cooldown_min → re-entry would be
                 # gate-blocked, so skip the paid AI call.
@@ -542,6 +888,16 @@ while True:
                            "score": round(float(ta.get('score', 0)), 1),
                            "trigger_score": round(float(score), 1)})
                 continue
+            if coin not in held_coins:
+                runner_preblock = _pre_research_runner_block_reason(perception, _cfg_cd)
+                if runner_preblock:
+                    logger.info(f"{coin}: pre-research {runner_preblock} — skip AI research")
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "PRE_RESEARCH_RUNNER_GATE",
+                               "score": round(float(ta.get('score', 0)), 1),
+                               "trigger_score": round(float(score), 1),
+                               "reason": runner_preblock})
+                    continue
             gate = 'CONFIRMED' if ta['signal'] == 'CONFIRMED' else f"{ta['signal']}+burst"
             logger.info(f"Researching {coin} (trigger {score:.1f}, TA {gate})...")
             # Record the paid-research time so the held-coin throttle above can
@@ -565,6 +921,10 @@ while True:
 
                 # All verdict→action routing lives in executor.route_verdict
                 # (unit-tested) so no verdict can be silently dropped again.
+                # Capture the AI's own verdict BEFORE route_verdict/maybe_execute can
+                # mutate it (a TA-sidestep override rewrites PASS→LONG in place) so the
+                # execute event can show WHY a PASS still fired.
+                _ai_verdict = (analysis.get("verdict") or "").upper()
                 routed = route_verdict(analysis)
                 action = routed["action"]
                 result = routed["result"] or {}
@@ -578,6 +938,14 @@ while True:
                     log_event({"event": "execute", "coin": coin,
                                "side": analysis['side'],
                                "executed": executed,
+                               # WHY it fired: the AI's own verdict + the entry path, so a
+                               # PASS that still executes (TA-sidestep override on a strong
+                               # composite) is explicit in the feed instead of looking like
+                               # a contradiction.
+                               "ai_verdict": _ai_verdict,
+                               "entry_via": ("ta_sidestep" if analysis.get("sidestep_override")
+                                             else "override" if _ai_verdict not in ("LONG", "SHORT")
+                                             else "ai"),
                                "detail": result.get("order_id")
                                or result.get("reason")
                                or result.get("blocked_by"),
