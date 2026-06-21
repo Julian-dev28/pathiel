@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Full-pipeline backtest: replays the last N hours through current strategy.
+"""LEGACY full-pipeline experiment.
 
 Walks back HOURS_BACK in TICK_MIN-minute intervals. At each tick:
   - fetches historical 5m + 1h candles ending at that tick
   - runs perception → triggers → composite scoring
   - applies counter-regime / momentum / slow_burn bypass logic
   - for surviving candidates, calls real OpenRouter research (caps total)
-  - for LONG/SHORT verdicts, runs the simulated trade through current
-    sizing + DSL forward-walk on subsequent 5m bars
+  - for LONG/SHORT verdicts, runs a simulated trade through a local DSL walk
 
-Outputs a per-trade table + summary PnL with honest caveats.
+This script is expensive, can call real OpenRouter unless --no-llm is passed,
+and is not the current strategy truth. Prefer:
+  - scripts/backtest_logged.py for logged AI verdict replay
+  - scripts/backtest_portfolio.py for concurrency/gross/margin contention
+  - scripts/strategy_grid_search.py for config-family sweeps
 
 Usage:
     python3 scripts/backtest_full.py                        # defaults: 12h, 30min ticks
@@ -200,7 +203,7 @@ def simulate_dsl_exit(entry_px: float, side: str, leverage: int,
 
 
 def call_ai_research(coin: str, mid: float, composite: float, c1h: List[Candle], c4h: List[Candle], c1d: List[Candle],
-                     slow_burn_hits: List[Dict[str, Any]]) -> Tuple[str, float, str]:
+                     slow_burn_hits: List[Dict[str, Any]], prompt_mode: str = "current") -> Tuple[str, float, str]:
     """Real OpenRouter call. Returns (verdict, confidence, reasoning)."""
     from hermes_trader.agents.research import _build_user_message, _call_ai, parse_verdict, _compute_indicators
     from hermes_trader.agents.system_prompt import build_system_prompt
@@ -216,6 +219,17 @@ def call_ai_research(coin: str, mid: float, composite: float, c1h: List[Candle],
     msg = _build_user_message(coin, perception, tf1h, tf4h, tf1d,
                               "n/a (backtest)", "no news (backtest)", 250.0, [], "LIVE")
     sys_prompt = build_system_prompt("LIVE", 0.0, 0)
+    if prompt_mode == "soften":
+        # A/B treatment: let a clean multi-TF trend stand on its own, even at low/zero
+        # composite. Tests whether the AI's habit of PASSing clean-trend low-composite
+        # movers (e.g. EIGEN) is leaving EV on the table. Muddled setups still PASS.
+        sys_prompt += (
+            "\n\nADDENDUM (mover A/B test): A CLEAN multi-timeframe EMA trend (4h AND 1d "
+            "aligned in the same direction) ALONE justifies a directional call at confidence "
+            "0.70 — even when the composite trigger score is low or zero and no catalyst is "
+            "present. Do NOT PASS a cleanly trend-aligned mover solely because its composite "
+            "is low. Muddled or conflicting multi-TF setups still PASS as before."
+        )
     text = _call_ai(sys_prompt, msg)
     parsed = parse_verdict(text, coin, perception)
     return (parsed["verdict"], float(parsed["confidence"]), parsed.get("reasoning", "")[:80])
@@ -246,6 +260,12 @@ def main() -> int:
                     help="Per-side taker fee in bps, converted to ROE by leverage")
     ap.add_argument("--slippage-bps", type=float, default=0.0,
                     help="Optional adverse slippage per side in bps for stress tests")
+    ap.add_argument("--prompt-mode", choices=["current", "soften"], default="current",
+                    help="A/B: 'soften' relaxes the prompt's composite-gating so a clean-trend "
+                         "low-composite mover can LONG instead of PASS")
+    ap.add_argument("--min-comp-gate", type=float, default=20.0,
+                    help="Composite floor before the AI call (default 20; lower to admit "
+                         "low-composite movers so the A/B can test them)")
     args = ap.parse_args()
 
     cfg = get_config()
@@ -316,7 +336,7 @@ def main() -> int:
             if not fired:
                 continue
             burst_fired = any(h["name"] == "momentumBurst" and h["fired"] for h in hits)
-            if composite < 20 and not burst_fired:
+            if composite < args.min_comp_gate and not burst_fired:
                 continue
 
             slow_burn_hits = [h for h in hits if h.get("name") in
@@ -333,7 +353,7 @@ def main() -> int:
                 c1d = fetch_candles_at(coin, "1d", 60, tick_ms_t)
                 candle_fetches += 2
                 try:
-                    verdict, conf, reasoning = call_ai_research(coin, c5m[-1].c, composite, c1h, c4h, c1d, hits)
+                    verdict, conf, reasoning = call_ai_research(coin, c5m[-1].c, composite, c1h, c4h, c1d, hits, args.prompt_mode)
                     llm_calls += 1
                     source = "ai"
                 except Exception as e:

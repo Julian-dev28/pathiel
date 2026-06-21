@@ -6,8 +6,9 @@ perception for composite/triggers, then simulates execution + DSL exit
 on historical 5m bars using the live config. Tells you "what would
 today's strategy have done on yesterday's actual AI verdicts."
 
-Free (no LLM calls). Runs in ~30s. The complement to backtest_full.py:
-that one re-asks the AI fresh; this one trusts yesterday's AI verdicts.
+Free (no LLM calls). This is the primary current per-trade replay for strategy
+EV work. Use backtest_portfolio.py when concurrency, gross exposure, and margin
+contention matter.
 """
 from __future__ import annotations
 
@@ -162,6 +163,18 @@ def max_leverage_for(coin: str, fallback: int) -> int:
     return max(1, min(int(fallback), lev))
 
 
+def asset_notional_multiplier(coin: str, cfg: Dict[str, Any]) -> float:
+    raw = cfg.get("asset_notional_multiplier", {}) or {}
+    if not isinstance(raw, dict):
+        return 1.0
+    key = "hip3" if ":" in (coin or "") else "crypto"
+    try:
+        mult = float(raw.get(key, 1.0))
+    except (TypeError, ValueError):
+        return 1.0
+    return max(0.0, min(mult, 1.0))
+
+
 def live_sized_notional(
     *,
     coin: str,
@@ -175,10 +188,11 @@ def live_sized_notional(
 ) -> Tuple[float, str]:
     cap = float(cfg.get("max_trade_notional_usd", 0) or 0)
     coin_lev = max_leverage_for(coin, leverage)
+    sizing_label = "legacy_fraction"
     atr_cfg = cfg.get("atr_risk_sizing", {}) or {}
     if bool(atr_cfg.get("enabled", False)):
         risk_pct = float(atr_cfg.get("risk_per_trade_pct", 0.0075) or 0.0)
-        basis = str(atr_cfg.get("sizing_basis", "atr_stop") or "atr_stop").lower()
+        basis = str(atr_cfg.get("sizing_basis", "backup_stop") or "backup_stop").lower()
         if basis in ("primary_stop", "dsl_stop"):
             stop_frac = min(
                 float(dsl_cfg.get("max_loss_pct", 2.0) or 2.0),
@@ -190,7 +204,12 @@ def live_sized_notional(
             notional = min(notional, equity * coin_lev)
             if cap > 0:
                 notional = min(notional, cap)
-            return notional, f"primary_stop risk={risk_pct:g}"
+            sizing_label = f"primary_stop risk={risk_pct:g}"
+            mult = asset_notional_multiplier(coin, cfg)
+            if mult < 1.0:
+                notional *= mult
+                sizing_label += f" asset_mult={mult:g}"
+            return notional, sizing_label
         atr4h = entry_atr4h(coin, entry_ms)
         sz = atr_equal_risk_notional(
             equity=equity,
@@ -202,12 +221,22 @@ def live_sized_notional(
             coin_max_leverage=coin_lev,
             config_max_leverage=leverage,
         )
-        return sz.notional_usd, f"atr_stop risk={risk_pct:g}"
+        notional = sz.notional_usd
+        sizing_label = f"backup_stop risk={risk_pct:g}"
+        mult = asset_notional_multiplier(coin, cfg)
+        if mult < 1.0:
+            notional *= mult
+            sizing_label += f" asset_mult={mult:g}"
+        return notional, sizing_label
 
     notional = equity * equity_fraction * coin_lev
     if cap > 0:
         notional = min(notional, cap)
-    return notional, "legacy_fraction"
+    mult = asset_notional_multiplier(coin, cfg)
+    if mult < 1.0:
+        notional *= mult
+        sizing_label += f" asset_mult={mult:g}"
+    return notional, sizing_label
 
 
 def passes_counter_regime(side: str, regime: str, conf: float, composite: float,
@@ -279,8 +308,6 @@ def main() -> int:
                          "sidestep=ignore AI, take all TA-confirmed LONGs")
     ap.add_argument("--min-conf", type=float, default=0.60, help="min conf for lowconf mode")
     ap.add_argument("--force-bar", type=float, default=30.0, help="composite bar for force/sidestep")
-    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1,
-                    help="slow_burn_count required for sidestep admission (default=live legacy 1)")
     ap.add_argument("--long-only", action="store_true", help="Skip admitted SHORT entries")
     ap.add_argument("--regime-mode", choices=["live", "neutral", "up", "down"], default="live",
                     help="Counter-regime model. live calls HL/BTC regime; fixed modes are deterministic.")
@@ -311,6 +338,8 @@ def main() -> int:
                     help="Override runner_entry_gate.min_confidence for this replay")
     ap.add_argument("--runner-min-composite", type=float, default=None,
                     help="Override runner_entry_gate.min_composite for this replay")
+    ap.add_argument("--runner-min-crypto-composite", type=float, default=None,
+                    help="Override runner_entry_gate.min_crypto_composite for this replay")
     ap.add_argument("--runner-min-hip3-composite", type=float, default=None,
                     help="Override runner_entry_gate.min_hip3_composite for this replay")
     ap.add_argument("--runner-mover-min-confidence", type=float, default=None,
@@ -354,6 +383,7 @@ def main() -> int:
     runner_overrides = {
         "min_confidence": args.runner_min_confidence,
         "min_composite": args.runner_min_composite,
+        "min_crypto_composite": args.runner_min_crypto_composite,
         "min_hip3_composite": args.runner_min_hip3_composite,
         "mover_min_confidence": args.runner_mover_min_confidence,
         "mover_min_composite": args.runner_mover_min_composite,
@@ -449,7 +479,6 @@ def main() -> int:
         ta_confirmed = (
             composite >= args.force_bar
             or burst_fired
-            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
         )
 
         # ── mode-aware admission ─────────────────────────────────────────────
@@ -493,17 +522,13 @@ def main() -> int:
             gate_analysis = dict(a)
             gate_analysis["side"] = side
             if forced:
-                gate_analysis["reasoning"] = "[structural override] " + str(gate_analysis.get("reasoning") or "")
                 gate_analysis["confidence"] = conf
             if sidestep_override:
                 gate_analysis["sidestep_override"] = True
-            gate = runner_cfg.get("runner_entry_gate") or {}
-            skip_runner = sidestep_override and bool(gate.get("bypass_sidestep_overrides", False))
-            if not skip_runner:
-                blocked = _runner_entry_block_reason(gate_analysis, runner_cfg)
-                if blocked:
-                    skipped_pass += 1
-                    continue
+            blocked = _runner_entry_block_reason(gate_analysis, runner_cfg)
+            if blocked:
+                skipped_pass += 1
+                continue
 
         regime = _regime_at(ts)
         if not passes_counter_regime(side, regime, conf, composite, burst_fired, slow_fired,

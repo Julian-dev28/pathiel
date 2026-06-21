@@ -33,6 +33,7 @@ from backtest_logged import (  # reuse validated primitives
 )
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.executor import _runner_entry_block_reason
+from hermes_trader.agents.rotation import decide_rotation  # validate the REAL mechanism
 from hermes_trader.models.types import Candle
 from _memory_io import load_memory
 
@@ -115,7 +116,6 @@ def build_candidates(args, cfg) -> List[Dict[str, Any]]:
         ta_confirmed = (
             comp >= args.force_bar
             or burst
-            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
         )
         side: Optional[str] = None
         sidestep_override = False
@@ -160,12 +160,9 @@ def build_candidates(args, cfg) -> List[Dict[str, Any]]:
             gate_analysis["composite_score"] = comp
             if sidestep_override:
                 gate_analysis["sidestep_override"] = True
-            gate = cfg.get("runner_entry_gate") or {}
-            skip_runner = sidestep_override and bool(gate.get("bypass_sidestep_overrides", False))
-            if not skip_runner:
-                blocked = _runner_entry_block_reason(gate_analysis, cfg)
-                if blocked:
-                    continue
+            blocked = _runner_entry_block_reason(gate_analysis, cfg)
+            if blocked:
+                continue
         candle_count = int(timeout_min // 5) + 10
         candle_end = ts + int(timeout_min * 60_000) + 600_000
         if args.cache_only:
@@ -182,12 +179,44 @@ def build_candidates(args, cfg) -> List[Dict[str, Any]]:
         if not fwd:
             continue
         out.append({"ts": ts, "coin": coin, "side": side, "entry_px": fwd[0].o,
-                    "candles": fwd[1:], "conf": conf})
+                    "candles": fwd[1:], "conf": conf, "comp": comp})
     return out
 
 
-def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
+def _attempt_rotation(open_pos, cand, clock, closes, rot_cfg, block_kind):
+    """Mirror the LIVE rotation decision: when `cand` is blocked purely by a capital
+    gate, ask the real decide_rotation() whether to evict the weakest non-winner.
+    If yes, realize that position at its current mark (incl. its own round-trip cost)
+    and free the slot. Returns (freed: bool, realized_pnl: float)."""
+    descs = []
+    for ec, st in open_pos.items():
+        p = st["pos"]
+        gross = (st["last_px"] - p.entry_px) / p.entry_px if p.side == "long" \
+            else (p.entry_px - st["last_px"]) / p.entry_px
+        descs.append({"coin": ec, "roe_pct": gross * p.lev * 100.0,
+                      "age_minutes": (clock - st["entry_ts"]) / 60_000.0})
+    dec = decide_rotation(
+        candidate_coin=cand["coin"],
+        candidate_composite=float(cand.get("comp", 0.0)),
+        blocked_reasons=[block_kind],
+        open_positions=descs,
+        min_candidate_composite=float(rot_cfg.get("min_candidate_composite", 40.0)),
+        min_hold_minutes=float(rot_cfg.get("min_hold_minutes", 30.0)),
+        protect_winner_roe_pct=float(rot_cfg.get("protect_winner_roe_pct", 3.0)),
+    )
+    if not dec.should_rotate:
+        return (False, 0.0)
+    st = open_pos[dec.evict_coin]
+    pnl = st["pos"].pnl_usd(st["last_px"])   # realize evictee at current price + cost
+    closes.append({"coin": dec.evict_coin, "pnl": pnl, "reason": "rotated_out"})
+    del open_pos[dec.evict_coin]
+    return (True, pnl)
+
+
+def run(args, cfg, max_concurrent, max_notional_pct, rotate=False) -> Dict[str, Any]:
     dsl_cfg = cfg.get("dsl_exit", {})
+    rot_cfg = cfg.get("capital_rotation", {}) or {}
+    rotations = 0
     frac = float(cfg.get("equity_fraction_per_trade", 0.12))
     lev = args.leverage or int(cfg.get("leverage", 10))
     min_margin = float(cfg.get("min_available_margin_pct", 0.10))
@@ -215,6 +244,7 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
             pos, cs = st["pos"], st["candles"]
             while st["i"] < len(cs) and cs[st["i"]].t <= clock:
                 ex = pos.step(cs[st["i"]])
+                st["last_px"] = cs[st["i"]].c
                 st["i"] += 1
                 if ex:
                     px, reason = ex
@@ -248,7 +278,15 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
             if last_entry is not None and cooldown_ms > 0 and c["ts"] - last_entry < cooldown_ms:
                 blk_cooldown += 1; continue
             if len(open_pos) >= max_concurrent:
-                blk_conc += 1; continue
+                if rotate:
+                    freed, dpnl = _attempt_rotation(open_pos, c, clock, closes,
+                                                    rot_cfg, "max positions reached")
+                    if freed:
+                        equity += dpnl; rotations += 1
+                    else:
+                        blk_conc += 1; continue
+                else:
+                    blk_conc += 1; continue
             eff_lev = btlog.max_leverage_for(coin, lev)
             open_notional = sum(s["pos"].notional for s in open_pos.values())
             new_notional, _sizing = btlog.live_sized_notional(
@@ -264,7 +302,16 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
             if new_notional < 10.5:
                 blk_size += 1; continue
             if open_notional + new_notional > equity * max_notional_pct:
-                blk_notional += 1; continue
+                if rotate:
+                    freed, dpnl = _attempt_rotation(open_pos, c, clock, closes,
+                                                    rot_cfg, "total notional would exceed")
+                    if freed:
+                        equity += dpnl; rotations += 1
+                        open_notional = sum(s["pos"].notional for s in open_pos.values())
+                    if open_notional + new_notional > equity * max_notional_pct:
+                        blk_notional += 1; continue
+                else:
+                    blk_notional += 1; continue
             used_margin = sum(s["pos"].margin for s in open_pos.values())
             new_margin = new_notional / max(1, eff_lev)
             if (equity - used_margin - new_margin) / equity < min_margin:
@@ -272,7 +319,8 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
             cost_rate = ROUND_TRIP_FEE_RATE + (float(args.slippage_bps or 0.0) * 2.0 / 10000.0)
             pos = Position(coin, c["side"], c["entry_px"], eff_lev, new_notional,
                            new_margin, dsl_cfg, cost_rate)
-            open_pos[coin] = {"pos": pos, "candles": c["candles"], "i": 0}
+            open_pos[coin] = {"pos": pos, "candles": c["candles"], "i": 0,
+                              "entry_ts": c["ts"], "last_px": c["entry_px"]}
             last_entry_by_coin[coin] = c["ts"]
         peak_eq = max(peak_eq, equity)
         max_dd = max(max_dd, peak_eq - equity)
@@ -281,11 +329,13 @@ def run(args, cfg, max_concurrent, max_notional_pct) -> Dict[str, Any]:
     n = len(closes)
     wins = [c for c in closes if c["pnl"] > 0]
     net = sum(c["pnl"] for c in closes)
+    rot_out = [c for c in closes if c.get("reason") == "rotated_out"]
     return {"trades": n, "win": (len(wins) / n * 100 if n else 0),
             "net": net, "exp": (net / n if n else 0), "end_eq": equity,
             "max_dd": max_dd, "blk_conc": blk_conc, "blk_notional": blk_notional,
             "blk_margin": blk_margin, "blk_size": blk_size, "blk_cooldown": blk_cooldown,
-            "blk_loss_cool": blk_loss_cool}
+            "blk_loss_cool": blk_loss_cool, "rotations": rotations,
+            "rot_out_pnl": sum(c["pnl"] for c in rot_out)}
 
 
 _CANDS: List[Dict[str, Any]] = []
@@ -297,7 +347,6 @@ def main():
     ap.add_argument("--equity", type=float, default=200.0)
     ap.add_argument("--mode", default="ai", choices=["ai", "lowconf", "force", "sidestep"])
     ap.add_argument("--force-bar", type=float, default=30.0)
-    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1)
     ap.add_argument("--long-only", action="store_true")
     ap.add_argument("--loss-cooldown-min", type=float, default=0.0)
     ap.add_argument("--leverage", type=int, default=0)
@@ -324,6 +373,9 @@ def main():
     ap.add_argument("--sweep-concurrent", default="", help="e.g. 4,6,8,10,15")
     ap.add_argument("--skip-runner-gate", action="store_true",
                     help="Do not apply the current live runner_entry_gate to candidates")
+    ap.add_argument("--rotate", action="store_true",
+                    help="Add a ROTATE arm (capital_rotation: evict weakest non-winner for a "
+                         "stronger capital-blocked candidate) and compare vs HOLD baseline")
     ap.add_argument("--cache-file", default=f"{tempfile.gettempdir()}/hermes_backtest_logged_candles.json",
                     help="Disk candle cache shared with backtest_logged.py")
     ap.add_argument("--cache-only", action="store_true",
@@ -386,16 +438,26 @@ def main():
     print(f"# runner gate: {'skipped' if args.skip_runner_gate else cfg.get('runner_entry_gate', {})}\n")
     concs = [int(x) for x in args.sweep_concurrent.split(",")] if args.sweep_concurrent \
         else [args.max_concurrent or int(cfg.get("max_concurrent", 15))]
-    print(f"{'max_conc':>9} {'trades':>7} {'win%':>6} {'exp/trade':>10} {'net':>9} "
-          f"{'endEq':>8} {'maxDD':>7}  blocks(conc/notnl/margin/size/cool/loss)")
+    arms = [("HOLD", False)] + ([("ROTATE", True)] if args.rotate else [])
+    if args.rotate:
+        print(f"# capital_rotation: {cfg.get('capital_rotation', {})}\n")
+    print(f"{'arm':>7} {'max_conc':>9} {'trades':>7} {'win%':>6} {'exp/trade':>10} {'net':>9} "
+          f"{'endEq':>8} {'maxDD':>7} {'rot':>4}  blocks(conc/notnl/margin/size/cool/loss)")
     for mc in concs:
-        r = run(args, cfg, mc, mnp)
-        if not r.get("trades"):
-            print(f"{mc:>9}  no trades"); continue
-        print(f"{mc:>9} {r['trades']:>7} {r['win']:>5.0f}% {r['exp']:>+9.2f} "
-              f"{r['net']:>+8.2f} {r['end_eq']:>7.0f} {r['max_dd']:>6.1f}  "
-              f"{r['blk_conc']}/{r['blk_notional']}/{r['blk_margin']}/{r['blk_size']}/"
-              f"{r['blk_cooldown']}/{r['blk_loss_cool']}")
+        base_net = None
+        for label, rot in arms:
+            r = run(args, cfg, mc, mnp, rotate=rot)
+            if not r.get("trades"):
+                print(f"{label:>7} {mc:>9}  no trades"); continue
+            delta = ""
+            if label == "HOLD":
+                base_net = r["net"]
+            elif base_net is not None:
+                delta = f"  (Δnet {r['net'] - base_net:+.2f})"
+            print(f"{label:>7} {mc:>9} {r['trades']:>7} {r['win']:>5.0f}% {r['exp']:>+9.2f} "
+                  f"{r['net']:>+8.2f} {r['end_eq']:>7.0f} {r['max_dd']:>6.1f} {r['rotations']:>4}  "
+                  f"{r['blk_conc']}/{r['blk_notional']}/{r['blk_margin']}/{r['blk_size']}/"
+                  f"{r['blk_cooldown']}/{r['blk_loss_cool']}{delta}")
     _save_disk_cache(args.cache_file)
 
 

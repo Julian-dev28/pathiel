@@ -59,7 +59,6 @@ def _policy(cfg, noise_band=False, noise_band_atr_mult=1.0):
     d = cfg.get("dsl_exit", {}) or {}
     tiers = d.get("phase2_tiers")
     tiers = [RetraceTier(**t) for t in tiers] if tiers else None
-    a = d.get("atr_stop", {}) or {}
     return ExitPolicy(
         noise_band_enabled=noise_band,
         noise_band_atr_mult=noise_band_atr_mult,
@@ -70,10 +69,6 @@ def _policy(cfg, noise_band=False, noise_band_atr_mult=1.0):
         hard_timeout_minutes=d.get("hard_timeout_minutes", 1800.0),
         breakeven_trigger_pct=d.get("breakeven_trigger_pct", 0.0),
         breakeven_lock_pct=d.get("breakeven_lock_pct", 0.0),
-        atr_stop_enabled=bool(a.get("enabled", False)),
-        atr_stop_mult=float(a.get("atr_mult", 1.5)),
-        atr_stop_floor_pct=float(a.get("floor_pct", 1.0)),
-        atr_stop_ceiling_pct=float(a.get("ceiling_pct", 4.0)),
         stale_flat_timeout_minutes=float(d.get("stale_flat_timeout_minutes", 0.0) or 0.0),
         phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
     )

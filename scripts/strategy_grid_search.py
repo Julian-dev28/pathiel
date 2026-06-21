@@ -9,7 +9,6 @@ more aggressive alternatives before changing .agent-config.json.
 from __future__ import annotations
 
 import argparse
-import copy
 import math
 import os
 import sys
@@ -123,7 +122,6 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
         ta_confirmed = (
             composite >= float(args.force_bar)
             or burst
-            or slow_count >= max(1, int(args.sidestep_min_slow_burn or 1))
         )
         sidestep_override = False
         if args.mode == "ai":
@@ -204,7 +202,7 @@ def build_candidates(args: argparse.Namespace, cfg: dict[str, Any]) -> list[Cand
 
 
 def _gate_cfg(base: dict[str, Any], opt: dict[str, Any]) -> dict[str, Any]:
-    cfg = copy.deepcopy(base)
+    cfg = dict(base)
     cfg["min_ai_confidence"] = opt["min_conf"]
     cfg["counter_regime_min_conf"] = opt["counter_conf"]
     gate = dict(cfg.get("runner_entry_gate") or {})
@@ -213,6 +211,7 @@ def _gate_cfg(base: dict[str, Any], opt: dict[str, Any]) -> dict[str, Any]:
         "allow_shorts": opt["allow_shorts"],
         "min_confidence": opt["min_conf"],
         "min_composite": opt["min_composite"],
+        "min_crypto_composite": opt["min_crypto_composite"],
         "min_hip3_composite": opt["min_hip3_composite"],
         "min_short_confidence": opt["min_short_conf"],
         "min_short_composite": opt["min_short_composite"],
@@ -228,9 +227,6 @@ def _admitted(c: Candidate, cfg: dict[str, Any], opt: dict[str, Any]) -> bool:
         return False
     if c.side == "short" and not opt["allow_shorts"]:
         return False
-    gate = cfg.get("runner_entry_gate") or {}
-    if c.sidestep_override and bool(gate.get("bypass_sidestep_overrides", False)):
-        return True
     blocked = _runner_entry_block_reason(c.analysis, cfg)
     return not blocked
 
@@ -240,7 +236,8 @@ def _notional(c: Candidate, opt: dict[str, Any], equity: float) -> float:
     cap = float(opt["max_notional"])
     if opt["sizing"] == "legacy":
         raw = equity * float(opt["fraction"]) * lev
-        return min(raw, cap) if cap > 0 else raw
+        notional = min(raw, cap) if cap > 0 else raw
+        return notional * (float(opt["hip3_mult"]) if c.is_hip3 else float(opt["crypto_mult"]))
 
     if opt["sizing"] == "atr_backup":
         sz = atr_equal_risk_notional(
@@ -252,7 +249,7 @@ def _notional(c: Candidate, opt: dict[str, Any], equity: float) -> float:
             max_trade_notional_usd=cap,
             config_max_leverage=lev,
         )
-        return sz.notional_usd
+        return sz.notional_usd * (float(opt["hip3_mult"]) if c.is_hip3 else float(opt["crypto_mult"]))
 
     if opt["sizing"] == "dsl_stop":
         spot_stop = min(float(opt["max_loss"]), float(opt["roe_cap"]) / max(1, lev)) / 100.0
@@ -260,19 +257,21 @@ def _notional(c: Candidate, opt: dict[str, Any], equity: float) -> float:
             return 0.0
         raw = equity * float(opt["risk_pct"]) / spot_stop
         raw = min(raw, equity * lev)
-        return min(raw, cap) if cap > 0 else raw
+        notional = min(raw, cap) if cap > 0 else raw
+        return notional * (float(opt["hip3_mult"]) if c.is_hip3 else float(opt["crypto_mult"]))
 
     if opt["sizing"] == "hybrid":
         dsl_stop = min(float(opt["max_loss"]), float(opt["roe_cap"]) / max(1, lev)) / 100.0
-        atr_stop = float(opt["sl_atr_mult"]) * c.atr4h / c.entry_px if c.atr4h > 0 else 0.0
+        backup_stop_width = float(opt["sl_atr_mult"]) * c.atr4h / c.entry_px if c.atr4h > 0 else 0.0
         # Avoid sizing to an ultra-wide disaster stop, but still respect some
         # volatility by not going tighter than one-third of 1.5x 4h ATR.
-        stop = max(dsl_stop, atr_stop / 3.0) if atr_stop > 0 else dsl_stop
+        stop = max(dsl_stop, backup_stop_width / 3.0) if backup_stop_width > 0 else dsl_stop
         if stop <= 0:
             return 0.0
         raw = equity * float(opt["risk_pct"]) / stop
         raw = min(raw, equity * lev)
-        return min(raw, cap) if cap > 0 else raw
+        notional = min(raw, cap) if cap > 0 else raw
+        return notional * (float(opt["hip3_mult"]) if c.is_hip3 else float(opt["crypto_mult"]))
 
     raise ValueError(f"unknown sizing mode {opt['sizing']}")
 
@@ -291,7 +290,7 @@ def evaluate(
     exit_cache: dict[tuple[Any, ...], tuple[float, str]] | None = None,
 ) -> dict[str, Any]:
     cfg = _gate_cfg(base_cfg, opt)
-    dsl = copy.deepcopy(base_cfg.get("dsl_exit") or {})
+    dsl = dict(base_cfg.get("dsl_exit") or {})
     dsl["max_loss_pct"] = opt["max_loss"]
     dsl["max_loss_roe_pct"] = opt["roe_cap"]
     dsl["protect_pct"] = opt["protect"]
@@ -307,7 +306,7 @@ def evaluate(
         admit_key = (
             c.ts, c.coin, c.side,
             opt["allow_shorts"], opt["min_conf"], opt["min_composite"],
-            opt["min_hip3_composite"], opt["min_short_conf"],
+            opt["min_crypto_composite"], opt["min_hip3_composite"], opt["min_short_conf"],
             opt["min_short_composite"], opt["mover_conf"], opt["mover_composite"],
         )
         if admission_cache is not None and admit_key in admission_cache:
@@ -326,7 +325,7 @@ def evaluate(
         notional_key = (
             c.ts, c.coin, opt["sizing"], equity, opt["leverage"], opt["fraction"],
             opt["risk_pct"], opt["max_notional"], opt["max_loss"], opt["roe_cap"],
-            opt["sl_atr_mult"],
+            opt["sl_atr_mult"], opt["crypto_mult"], opt["hip3_mult"],
         )
         if notional_cache is not None and notional_key in notional_cache:
             notional = notional_cache[notional_key]
@@ -406,6 +405,7 @@ def _current_option(cfg: dict[str, Any]) -> dict[str, Any]:
         current_sizing = "dsl_stop"
     gate = cfg.get("runner_entry_gate") or {}
     dsl = cfg.get("dsl_exit") or {}
+    mult = cfg.get("asset_notional_multiplier") or {}
     return {
         "sizing": current_sizing,
         "leverage": int(cfg.get("leverage", 8)),
@@ -421,12 +421,15 @@ def _current_option(cfg: dict[str, Any]) -> dict[str, Any]:
         "min_conf": float(cfg.get("min_ai_confidence", 0.70)),
         "counter_conf": float(cfg.get("counter_regime_min_conf", 0.80)),
         "min_composite": float(gate.get("min_composite", 30.0)),
+        "min_crypto_composite": float(gate.get("min_crypto_composite", 20.0)),
         "min_hip3_composite": float(gate.get("min_hip3_composite", 50.0)),
         "allow_shorts": bool(gate.get("allow_shorts", False)),
         "min_short_conf": float(gate.get("min_short_confidence", 0.72)),
         "min_short_composite": float(gate.get("min_short_composite", 25.0)),
         "mover_conf": float(gate.get("mover_min_confidence", 0.72)),
         "mover_composite": float(gate.get("mover_min_composite", 20.0)),
+        "crypto_mult": float(mult.get("crypto", 1.0)) if isinstance(mult, dict) else 1.0,
+        "hip3_mult": float(mult.get("hip3", 1.0)) if isinstance(mult, dict) else 1.0,
     }
 
 
@@ -437,25 +440,27 @@ def _option_space(args: argparse.Namespace, cfg: dict[str, Any]) -> list[dict[st
         for min_conf in (0.65, 0.68, 0.70, 0.72, 0.75, 0.78, 0.80):
             for counter_conf in (0.70, 0.75, 0.80, 0.85):
                 for min_composite in (20.0, 25.0, 30.0, 35.0, 40.0):
-                    for min_hip3 in (40.0, 50.0, 60.0):
-                        for allow_shorts in (True, False):
-                            for min_short_conf in (0.68, 0.70, 0.72, 0.75):
-                                for min_short_comp in (15.0, 20.0, 25.0, 30.0):
-                                    for mover_conf in (0.68, 0.70, 0.72, 0.75, 0.80):
-                                        for mover_comp in (0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0):
-                                            opt = dict(base)
-                                            opt.update({
-                                                "min_conf": min_conf,
-                                                "counter_conf": counter_conf,
-                                                "min_composite": min_composite,
-                                                "min_hip3_composite": min_hip3,
-                                                "allow_shorts": allow_shorts,
-                                                "min_short_conf": min_short_conf,
-                                                "min_short_composite": min_short_comp,
-                                                "mover_conf": mover_conf,
-                                                "mover_composite": mover_comp,
-                                            })
-                                            opts.append(opt)
+                    for min_crypto in (15.0, 20.0, 25.0, 30.0):
+                        for min_hip3 in (40.0, 50.0, 60.0):
+                            for allow_shorts in (True, False):
+                                for min_short_conf in (0.68, 0.70, 0.72, 0.75):
+                                    for min_short_comp in (15.0, 20.0, 25.0, 30.0):
+                                        for mover_conf in (0.68, 0.70, 0.72, 0.75, 0.80):
+                                            for mover_comp in (0.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0):
+                                                opt = dict(base)
+                                                opt.update({
+                                                    "min_conf": min_conf,
+                                                    "counter_conf": counter_conf,
+                                                    "min_composite": min_composite,
+                                                    "min_crypto_composite": min_crypto,
+                                                    "min_hip3_composite": min_hip3,
+                                                    "allow_shorts": allow_shorts,
+                                                    "min_short_conf": min_short_conf,
+                                                    "min_short_composite": min_short_comp,
+                                                    "mover_conf": mover_conf,
+                                                    "mover_composite": mover_comp,
+                                                })
+                                                opts.append(opt)
         return opts
 
     if args.profile == "exit":
@@ -549,6 +554,7 @@ def _option_space(args: argparse.Namespace, cfg: dict[str, Any]) -> list[dict[st
                                     "min_conf": 0.70,
                                     "counter_conf": 0.80,
                                     "min_composite": 30.0,
+                                    "min_crypto_composite": 20.0,
                                     "min_hip3_composite": 50.0,
                                     "allow_shorts": True,
                                     "min_short_conf": 0.72,
@@ -570,7 +576,8 @@ def _fmt(r: dict[str, Any]) -> str:
         f"stop={r['max_loss']}/{r['roe_cap']} prot={r['protect']:<4.2f} "
         f"ret={r['retrace']:<4.2f} cd={r['cooldown']:<3} "
         f"conf={r['min_conf']:<4.2f} comp={r['min_composite']:<4.0f} "
-        f"hip3={r['min_hip3_composite']:<4.0f} short={int(r['allow_shorts'])} "
+        f"crypto={r['min_crypto_composite']:<4.0f} hip3={r['min_hip3_composite']:<4.0f} "
+        f"short={int(r['allow_shorts'])} "
         f"mconf={r['mover_conf']:<4.2f} mover={r['mover_composite']:<4.0f}"
     )
 
@@ -585,8 +592,6 @@ def main() -> int:
                     help="Candidate admission model before grid evaluation.")
     ap.add_argument("--force-bar", type=float, default=30.0,
                     help="Composite bar for force/sidestep PASS->LONG candidates.")
-    ap.add_argument("--sidestep-min-slow-burn", type=int, default=1,
-                    help="Slow-burn count required for sidestep PASS->LONG candidates.")
     ap.add_argument("--regime-mode", choices=("live", "neutral", "up", "down"), default="live",
                     help="Counter-regime model. Fixed modes avoid live HL/BTC calls.")
     ap.add_argument("--dense", action="store_true",
@@ -595,9 +600,12 @@ def main() -> int:
                     help="Staged search profile. sizing is the historical dense/default grid.")
     ap.add_argument("--slippage-bps", type=float, default=2.0)
     ap.add_argument("--taker-fee-bps", type=float, default=2.5)
+    ap.add_argument("--api-sleep", type=float, default=0.0,
+                    help="Seconds to sleep before uncached Hyperliquid candle requests")
     ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "hermes_backtest_logged_candles.json"))
     args = ap.parse_args()
 
+    btlog._API_SLEEP_S = max(0.0, float(args.api_sleep or 0.0))
     btlog._load_disk_cache(args.cache_file)
     cfg = read_agent_config()
     candidates = build_candidates(args, cfg)

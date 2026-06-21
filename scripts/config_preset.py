@@ -41,9 +41,6 @@ PRESETS: dict[str, dict] = {
         "max_crypto_long_correlated": 5,
         "min_market_volume_usd": 5000000,
         "min_hip3_volume_usd": 500000,
-        "force_execute_composite": 40,
-        "force_execute_slow_burn_count": 2,
-        "conviction_sizing": True,
         "dsl_exit": {
             "max_loss_pct": 2.0,
             "max_loss_roe_pct": 30.0,
@@ -68,9 +65,6 @@ PRESETS: dict[str, dict] = {
         "max_crypto_long_correlated": 2,
         "min_market_volume_usd": 10000000,
         "min_hip3_volume_usd": 1000000,
-        "force_execute_composite": 999,  # disabled
-        "force_execute_slow_burn_count": 99,
-        "conviction_sizing": False,
         "dsl_exit": {
             "max_loss_pct": 3.0,
             "max_loss_roe_pct": 40.0,
@@ -96,9 +90,6 @@ PRESETS: dict[str, dict] = {
         "max_crypto_long_correlated": 3,
         "min_market_volume_usd": 5000000,
         "min_hip3_volume_usd": 500000,
-        "force_execute_composite": 50,
-        "force_execute_slow_burn_count": 2,
-        "conviction_sizing": True,
         "dsl_exit": {
             "max_loss_pct": 2.5,
             "max_loss_roe_pct": 35.0,
@@ -125,9 +116,6 @@ PRESETS: dict[str, dict] = {
         "max_crypto_long_correlated": 3,
         "min_market_volume_usd": 10000000,
         "min_hip3_volume_usd": 1000000,
-        "force_execute_composite": 999,  # disabled — let AI decide on bigger accounts
-        "force_execute_slow_burn_count": 99,
-        "conviction_sizing": True,
         "dsl_exit": {
             "max_loss_pct": 2.0,
             "max_loss_roe_pct": 50.0,

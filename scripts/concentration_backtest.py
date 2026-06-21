@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Concentration backtest: does allocating the SAME total gross into FEWER, LARGER,
-higher-conviction positions beat spreading thin across many? Tests collision #2
-(capital saturation → can't hold rippers). Real candles, heuristic composite
-ranking, no lookahead. Same DSL exit engine for every K.
+"""LEGACY HEURISTIC concentration sandbox.
 
-For each K (slot count): total gross budget = equity * GROSS_MULT, split into K
-slots → each slot = (GROSS_MULT/K) x equity notional. K=2 = concentrated (4x legs),
-K=12 = spread (0.67x legs, ~today). Each bar: rank free candidates by composite,
-fill open slots with the BEST. Measures net, win%, avgW/avgL, maxDD, ripper-capture.
+This answers one narrow question with deterministic candle heuristics: if a fixed
+gross budget is split across K slots, does concentration improve capture? It does
+not replay logged AI verdicts, current runner gates, primary-stop sizing, or live
+portfolio margin logic. Use backtest_portfolio.py for current capital-contention
+evidence.
 
 Usage: python3 scripts/concentration_backtest.py --days 21 --coins 40 --interval 1h
 """
@@ -19,9 +17,9 @@ from hermes_trader.agents.config import get_config
 from hermes_trader.client.hl_client import fetch_hl_candles
 from hermes_trader.client.universe import get_universe
 
-GROSS_MULT = 2.5           # total gross exposure (= live max_total_notional_pct)
-MAX_LOSS = 0.75            # live DSL spot stop
-PROTECT, RETRACE = 1.5, 0.30   # live scalp
+GROSS_MULT = 10.0
+MAX_LOSS = 0.40
+PROTECT, RETRACE = 1.25, 0.20
 
 
 def run_k(K, coins_data, cfg, equity0, warmup=100):
@@ -102,7 +100,7 @@ def main():
                 data[m["coin"]] = (c, int(m.get("maxLeverage", 5)))
         except Exception:
             pass
-    print(f"=== CONCENTRATION backtest | {args.days}d {args.interval} {len(data)} coins | "
+    print(f"=== LEGACY CONCENTRATION backtest | {args.days}d {args.interval} {len(data)} coins | "
           f"total gross {GROSS_MULT:.0f}x split into K slots | scalp exits ===")
     print(f"{'K(slots)':>9} {'legsize':>8} {'n':>5} {'win%':>5} {'net$':>9} {'avgW':>7} "
           f"{'avgL':>7} {'PF':>5} {'maxDD$':>8} {'rippers':>7} {'endEq':>8}")
@@ -111,8 +109,8 @@ def main():
         print(f"{K:>9} {GROSS_MULT/K:>7.1f}x {r['n']:>5} {r['win']:>5.0f} {r['net']:>+9.1f} "
               f"{r['aw']:>+7.2f} {r['al']:>+7.2f} {r['pf']:>5.2f} {r['maxdd']:>+8.1f} "
               f"{r['rippers']:>7} {r['endeq']:>8.0f}")
-    print("\nRead: if LOW K (concentrated) lifts net/avgW/rippers, collision#2 is real "
-          "& concentration is the fix. Watch maxDD — concentration adds single-name risk.")
+    print("\nRead: if LOW K lifts net/avgW/rippers here, confirm in "
+          "backtest_portfolio.py before changing live concurrency or gross caps.")
 
 
 if __name__ == "__main__":

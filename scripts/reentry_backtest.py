@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Dedicated backtest of the momentum-continuation RE-ENTRY rule.
+"""LEGACY HEURISTIC exit/regime comparison.
 
-Isolates the rule's PnL by replaying the SAME entry/exit engine under two policies:
-  BLOCK    — after a losing close, loss-cooldown blocks ALL re-entry (old live behavior)
-  REENTRY  — during cooldown, allow re-entry IF price reclaims >= reclaim_pct ABOVE
-             the stop-out price AND composite >= min_composite (the shipped fix)
-
-Δ(REENTRY − BLOCK) = the rule's contribution. We also report the re-entry trades'
-OWN win-rate/PnL — do the re-entries themselves make money, or whipsaw?
+Despite the filename, main() currently compares fixed scalp, trend-ride, and
+regime-aware exit modes using deterministic entries. The simulate() helper still
+supports BLOCK/REENTRY policies for focused experiments, but the CLI output is
+not a current live re-entry EV report.
 
 No lookahead: entry decision uses only the window up to bar i; fills at next bar open.
 
@@ -119,7 +116,7 @@ def _stats(trades):
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--coins", type=int, default=25)
     ap.add_argument("--interval", default="1h", choices=["5m", "15m", "1h", "4h"])
@@ -143,9 +140,10 @@ def main():
     max_loss = float(args.max_loss if args.max_loss is not None else live_dsl.get("max_loss_pct", 0.75))
     protect = float(args.protect if args.protect is not None else live_dsl.get("protect_pct", 1.5))
     retrace = float(args.retrace if args.retrace is not None else live_dsl.get("retrace_threshold", 0.30))
-    mr = live.get("momentum_reentry", {})
-    reclaim_pct = float(mr.get("reclaim_pct", 1.0))
-    min_comp = float(mr.get("min_composite", 30))
+    # Legacy fixed experiment params. The corresponding production config
+    # blocks were removed; this script remains a historical comparison.
+    reclaim_pct = 1.0
+    min_comp = 30.0
     lc_min = float(live.get("loss_cooldown_min", 180) or 180)
     bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6}[args.interval]
     cooldown_bars = max(1, round(lc_min / (1440 / bars_per_day)))
@@ -155,15 +153,16 @@ def main():
     perps = [m for m in get_universe() if m["type"] == "perp" and not m["coin"].startswith("@")]
     coins = sorted(perps, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[: args.coins]
 
-    print("=== RE-ENTRY backtest ===")
+    print("=== LEGACY EXIT/REGIME backtest ===")
     print(f"period {args.days}d  interval {args.interval}  top-{args.coins}  lev<= {leverage_ceiling}x")
-    print(f"rule: reclaim >= +{reclaim_pct}% above stop & composite >= {min_comp}  | "
-          f"cooldown {lc_min:.0f}min = {cooldown_bars} bars  | max_loss {max_loss}%\n")
+    print(f"reentry helper params: reclaim >= +{reclaim_pct}% above stop & "
+          f"composite >= {min_comp}  | cooldown {lc_min:.0f}min = "
+          f"{cooldown_bars} bars  | max_loss {max_loss}%\n")
 
-    # Regime-aware exit comparison: scalp vs trend-ride vs regime (ride when the
-    # coin's trend is bullish at entry). All with cooldown blocking re-entry.
-    tr = (live.get("dsl_exit", {}).get("regime_aware", {}) or {}).get("trend_ride", {})
-    ride_pp = float(tr.get("protect_pct", 3.0)); ride_rt = float(tr.get("retrace_threshold", 0.55))
+    # Legacy regime-aware exit comparison: scalp vs trend-ride vs regime (ride
+    # when the coin's trend is bullish at entry). This is not a live config path.
+    ride_pp = 3.0
+    ride_rt = 0.55
     scalp, ride, regime = [], [], []
     for m in coins:
         coin, max_lev = m["coin"], int(m.get("maxLeverage", 5))

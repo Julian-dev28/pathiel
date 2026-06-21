@@ -167,18 +167,22 @@ TOOLS = [
             "Get or set agent configuration. Call with no params to read the full "
             "config. Keys are snake_case and match .agent-config.json exactly. "
             "Covers mode, sizing, risk caps, regime gates, exits, and the "
-            "momentum-continuation toggle."
+            "runner gate."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "mode": {"type": "string", "enum": ["OFF", "SHADOW", "LIVE"]},
                 "enable_crypto": {"type": "boolean", "description": "Scan/trade native Hyperliquid crypto perps."},
-                "enable_hip3": {"type": "boolean", "description": "Scan/trade HIP-3 tokenized-equity/commodity perps; restart required to refresh universe."},
+                "enable_hip3": {"type": "boolean", "description": "Scan/trade HIP-3 tokenized-equity/commodity perps."},
                 # ── Sizing / leverage ────────────────────────────────────
                 "leverage": {"type": "number", "description": "Leverage ceiling per trade (min with coin max)."},
                 "equity_fraction_per_trade": {"type": "number", "description": "Fraction of equity committed as margin per trade."},
                 "max_trade_notional_usd": {"type": "number", "description": "Per-trade notional CEILING; sizing clamps to this."},
+                "asset_notional_multiplier": {
+                    "type": "object",
+                    "description": "Post-sizing exposure scale by bucket, e.g. {\"crypto\":0.35,\"hip3\":1.0}.",
+                },
                 "tp_scale_fraction": {"type": "number", "description": "Fraction of a position auto-banked at the TP target (0=off, 0.5=half)."},
                 # ── Concurrency / margin ─────────────────────────────────
                 "max_concurrent": {"type": "number"},
@@ -192,13 +196,8 @@ TOOLS = [
                 "min_ai_confidence": {"type": "number"},
                 "counter_regime_min_conf": {"type": "number", "description": "Confidence bar for a trade AGAINST the regime."},
                 "aligned_min_conf": {"type": "number", "description": "Confidence bar for a trade WITH the regime."},
-                "block_counter_trend_bypass": {"type": "boolean", "description": "Stop the force-execute path bypassing the counter-regime gate."},
+                "block_counter_trend_bypass": {"type": "boolean", "description": "Require counter-regime trades to clear confidence/score instead of binary trigger bypass."},
                 "trend_surface_enabled": {"type": "boolean", "description": "Surface trend-only candidates below composite threshold."},
-                "whale_scan_bypass": {"type": "boolean", "description": "Surface whale-only low-composite candidates for research."},
-                "whale_force_execute": {"type": "boolean", "description": "Allow whale signal alone to upgrade an AI PASS."},
-                "composite_force_execute": {"type": "boolean", "description": "Allow high composite score to upgrade an AI PASS."},
-                "breakout_force_execute": {"type": "boolean", "description": "Allow breakout+volume setup to upgrade an AI PASS."},
-                "momentum_continuation_enabled": {"type": "boolean", "description": "Enable the momentum-continuation trigger (lets strong orderly-uptrend longs through via composite>=50)."},
                 "runner_mover_surface_enabled": {"type": "boolean", "description": "Surface large 24h movers to AI even when fresh spike triggers no longer fire."},
                 # ── Liquidity floors ─────────────────────────────────────
                 "min_market_volume_usd": {"type": "number"},
@@ -938,21 +937,13 @@ def handle_config(params: Dict[str, Any]) -> str:
         "daily_giveback_halt_pct", "daily_giveback_min_peak_usd",
         "crowded_with_min_conf", "min_ai_confidence",
         "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
-        "trend_surface_enabled", "whale_scan_bypass", "whale_force_execute",
-        "composite_force_execute", "breakout_force_execute",
+        "trend_surface_enabled",
         "min_market_volume_usd", "min_short_volume_usd", "max_crypto_long_correlated",
         "cooldown_min", "coin_allowlist", "coin_blocklist",
     ]
     for key in _DIRECT_KEYS:
         if key in params and params[key] is not None:
             config[key] = params[key]
-
-    # Nested toggle: momentum_continuation lives under its own block; expose a flat
-    # boolean so the agent can flip it without resending the whole sub-object.
-    if params.get("momentum_continuation_enabled") is not None:
-        mc = dict(config.get("momentum_continuation") or {})
-        mc["enabled"] = bool(params["momentum_continuation_enabled"])
-        config["momentum_continuation"] = mc
 
     # Save only if a setting was actually passed (a bare read must not rewrite).
     if params.get("runner_mover_surface_enabled") is not None:
@@ -961,7 +952,6 @@ def handle_config(params: Dict[str, Any]) -> str:
         config["runner_mover_surface"] = rms
 
     _setting_keys = set(_DIRECT_KEYS) | {
-        "momentum_continuation_enabled",
         "runner_mover_surface_enabled",
     }
     if any(k in params for k in _setting_keys):

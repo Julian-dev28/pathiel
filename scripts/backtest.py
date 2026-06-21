@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Backtest the hermes-trader strategy on historical Hyperliquid candles.
+"""LEGACY HEURISTIC sandbox for hermes-trader trigger/exit experiments.
 
-Walks 1h-bar history per coin, evaluates the same triggers + TA-filter
-logic as the live scanner, simulates entries with the current sizing
-formula (equity_fraction x per-coin-max leverage), and exits via the DSL
-two-phase trailing-stop engine. PnL is net of round-trip taker fees.
+This is not the current live-strategy backtest. It walks candle history per
+coin, evaluates trigger/TA heuristics, substitutes AI research with a fixed
+direction heuristic, and exits via a local DSL approximation.
 
-The AI research step is *substituted* with a deterministic heuristic that
-mirrors the system prompt's entry rules — calling OpenRouter per signal
-over historical bars would be too expensive. The mechanical edge is
-tested; real AI judgment is not.
+It intentionally does not replay logged AI verdicts, runner-gate behavior,
+primary-stop ATR risk sizing, portfolio/margin gates, loss cooldown, slippage,
+funding, or live exchange size floors. Use these for current EV work instead:
+  - scripts/backtest_logged.py
+  - scripts/backtest_portfolio.py
+  - scripts/strategy_grid_search.py
 
-Caveats reported in the summary so they aren't lost.
+Keep this file only for low-cost hypothesis exploration where a deterministic
+heuristic is acceptable.
 
 Usage:
     python3 scripts/backtest.py                    # defaults: 14 days, 20 coins
@@ -225,8 +227,8 @@ def _simulate(coin: str, candles: List[Candle], max_lev: int, *,
         margin = equity * equity_fraction
         open_t = Trade(coin=coin, side=side, entry_bar=i + 1, entry_px=next_bar.o,
                        notional=notional, margin=margin, leverage=lev)
-        # ATR-stop mode: stop width = atr_mult × ATR% at entry, clamped — mirrors
-        # the live dsl_exit.atr_stop feature. atr_mult=0 keeps the fixed stop.
+        # Legacy ATR-stop experiment: stop width = atr_mult × ATR% at entry,
+        # clamped. atr_mult=0 keeps the fixed stop.
         eff_max_loss = max_loss_pct
         if atr_mult > 0 and atr_pct is not None and atr_pct > 0:
             eff_max_loss = min(max(atr_pct * atr_mult, atr_floor), atr_ceiling)
@@ -298,27 +300,23 @@ def main() -> int:
     ap.add_argument("--retrace", type=float, default=None,
                     help="DSL phase-2 retrace threshold 0-1 (default: .agent-config.json)")
     ap.add_argument("--atr-mult", type=float, default=None,
-                    help="ATR stop mult (default: live atr_stop setting; 0 = fixed --max-loss)")
+                    help="legacy ATR stop mult (default: 0 = fixed --max-loss)")
     ap.add_argument("--atr-floor", type=float, default=None,
-                    help="ATR stop floor spot pct (default: .agent-config.json)")
+                    help="legacy ATR stop floor spot pct (default: 1.0)")
     ap.add_argument("--atr-ceiling", type=float, default=None,
-                    help="ATR stop ceiling spot pct (default: .agent-config.json)")
+                    help="legacy ATR stop ceiling spot pct (default: 4.0)")
     args = ap.parse_args()
 
     live = read_agent_config()
     live_dsl = live.get("dsl_exit", {}) or {}
-    live_atr = live_dsl.get("atr_stop", {}) or {}
     equity_fraction = float(args.equity_fraction or live.get("equity_fraction_per_trade", 0.10))
     leverage_ceiling = int(args.leverage_ceiling or live.get("leverage", 8))
     max_loss = float(args.max_loss if args.max_loss is not None else live_dsl.get("max_loss_pct", 2.5))
     protect = float(args.protect if args.protect is not None else live_dsl.get("protect_pct", 1.5))
     retrace = float(args.retrace if args.retrace is not None else live_dsl.get("retrace_threshold", 0.30))
-    if args.atr_mult is not None:
-        atr_mult = float(args.atr_mult)
-    else:
-        atr_mult = float(live_atr.get("atr_mult", 0.0)) if bool(live_atr.get("enabled", False)) else 0.0
-    atr_floor = float(args.atr_floor if args.atr_floor is not None else live_atr.get("floor_pct", 1.0))
-    atr_ceiling = float(args.atr_ceiling if args.atr_ceiling is not None else live_atr.get("ceiling_pct", 4.0))
+    atr_mult = float(args.atr_mult if args.atr_mult is not None else 0.0)
+    atr_floor = float(args.atr_floor if args.atr_floor is not None else 1.0)
+    atr_ceiling = float(args.atr_ceiling if args.atr_ceiling is not None else 4.0)
 
     bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}[args.interval]
     total_bars = args.days * bars_per_day + 100  # +warmup
