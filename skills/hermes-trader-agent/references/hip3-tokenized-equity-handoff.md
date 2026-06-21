@@ -29,7 +29,7 @@ The `include_hip3=True` parameter is honored at five entry points:
 
 Two flags govern what gets scanned/traded:
 - `enable_crypto` (default `true`) — native HL perps
-- `enable_hip3` (default `false`) — HIP-3 dexes
+- `enable_hip3` (default `true`) — HIP-3 dexes
 
 The executor enforces these at execute-time too, so stale perceptions in
 memory can't sneak through after a flag flip.
@@ -62,7 +62,7 @@ of getting nuked and re-synthesized fresh.
 ## Liquidity floor split
 
 - `min_market_volume_usd` (default $5M) — applies to native crypto
-- `min_hip3_volume_usd` (default $500k) — applies to colon-namespaced
+- `min_hip3_volume_usd` (default $5M) — applies to colon-namespaced
   markets (most `xyz:*` markets sit in $1M–$50M vs $1B+ for BTC)
 
 ## Asset-class routing

@@ -34,16 +34,17 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
 1. **Scan** — fetch all mids (native + HIP-3 dexes when `enable_hip3=true`),
    evaluate 6 triggers per market (pctMoveSpike, volumeSpike, breakout,
    rangeCompression, trendStrength, momentumBurst). The candle-fetch budget
-   is bucketed (default 60 total): top-N crypto by volume + top-M crypto
+   is bucketed (default 45 core markets plus optional sweep): top-N crypto by volume + top-M crypto
    by `|24h%|` (movers) + top-K HIP-3 by volume, so HIP-3 tokenized equities
    and low-volume native big-movers each get scanned regardless of where
    they rank against the BTC/ETH volume leaders. `momentumBurst` bypasses
    the composite-score gate so explosive moves always surface. Every
    perception is persisted via `memory.record_perception`.
 
-   Env knobs: `HERMES_MAX_MARKETS=60`, `HERMES_MAX_MARKETS_HIP3=25`,
-   `HERMES_MAX_MARKETS_MOVERS=10`, `HERMES_MOVERS_VOL_FLOOR_USD=300000`,
-   `HERMES_HIP3_MOVERS_FLOOR_USD=50000`.
+   Env knobs: `HERMES_MAX_MARKETS`, `HERMES_MAX_MARKETS_HIP3`,
+   `HERMES_MAX_MARKETS_MOVERS`, `HERMES_UNIVERSE_SWEEP`,
+   `HERMES_SCAN_WORKERS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`,
+   `HERMES_MOVERS_VOL_FLOOR_USD`, `HERMES_HIP3_MOVERS_FLOOR_USD`.
 2. **Pre-research cooldown** — `trading_loop.py` checks the most recent
    trade per coin and skips paid AI research if the coin is still inside its
    `cooldown_min` window. The execute-time `cooldown_gate` remains as the
@@ -114,7 +115,7 @@ stop the older process before trusting live behavior.
 and executor will trade:
 
 - `enable_crypto` (default `true`) — scan native HL perps (BTC, ETH, SOL, ...).
-- `enable_hip3` (default `false`) — scan HIP-3 perpDexes (xyz / vntl / km / ...).
+- `enable_hip3` (default `true`) — scan HIP-3 perpDexes (xyz / vntl / km / ...).
 
 Both false = no-op scan (logged loudly). Single-class runs hand the full
 candle budget to that class. The executor enforces the same gating at
@@ -170,7 +171,7 @@ Notes on specific gates:
   `aligned_min_conf`. **`block_counter_trend_bypass`** (currently `true`)
   disables ONLY the binary-trigger bypass — the composite≥50 path stays open, so
   strong-momentum counter-trend trades (e.g. an alt long in a down regime via
-  momentum-continuation) still pass. **Crowded-squeeze caution** (`crowded_with_min_conf`):
+  composite strength) still pass. **Crowded-squeeze caution** (`crowded_with_min_conf`):
   a with-the-crowd aligned trade (short+`SHORT_CROWDED` / long+`LONG_CROWDED`) no
   longer gets the free "aligned" pass — must clear that conf or it's blocked
   `via:crowded_squeeze` (those are the entries that get squeezed). Regime is
@@ -187,14 +188,8 @@ several weight-0 "surfacing bypasses" bring a coin to the AI even below the gate
 the AI + risk gates then adjudicate:
 - `uptrendMomentum` / `downtrendMomentum` — sustained intraday trend (both
   directions; the down side is what lets us short selloffs).
-- `momentum_continuation_1h` — sustained ORDERLY uptrend now consolidating
-  (gated `momentum_continuation.enabled`; ENABLED — boosts composite so strong
-  momentum longs clear the regime gate's composite≥50 path).
-- `bearishReversalCandle` / `bullishReversalCandle` — shooting-star/hammer/
-  engulfing at exhaustion (gated `candlestick_patterns.enabled`; default OFF). The
-  research prompt also now includes the last 12 raw 1h OHLC bars so the LLM reads
-  price-action/chart patterns directly. See `references/exit-engine.md` siblings.
-- whale-accumulation (`whale_scan_bypass`).
+- `dailyMover` — large liquid 24h movers. Raw `daily_move_pct` is carried into
+  analysis so TA sidestep can block parabolic PASS upgrades.
 
 **Config keys are read tolerantly** — current gates accept snake_case and the
 legacy camelCase form for common knobs. Prefer snake_case in `.agent-config.json`
@@ -207,9 +202,8 @@ Current live sizing uses `atr_risk_sizing`: target risk is
 distance (`sizing_basis=primary_stop`) and then clamped by
 `max_trade_notional_usd`, configured leverage, and the coin's max leverage.
 When ATR sizing is disabled, the fallback is
-`equity_fraction_per_trade × equity × leverage × conviction_multiplier`.
-`conviction_sizing` scales that fallback by AI confidence (`conviction_tiers`,
-up to 2×) and a `whale_size_multiplier`. Bounded by `max_concurrent`,
+`equity_fraction_per_trade × equity × leverage`.
+It is bounded by `max_concurrent`,
 `max_total_notional_pct`, and `max_trade_notional_usd`.
 
 **Per-trade notional CLAMPS, not rejects** (`executor.py`): the computed
@@ -276,11 +270,11 @@ For agent-wallet setup and the `approveAgent` flow, see the
 
 ## Market Coverage & Scan Scope
 
-Scanner uses a **bucketed budget** (default 60 candle fetches per scan):
-- `HERMES_MAX_MARKETS_HIP3` (25) HIP-3 markets by 24h volume
+Scanner uses a **bucketed budget** (default 45 core candle fetches per scan):
+- `HERMES_MAX_MARKETS_HIP3` (18) HIP-3 markets by 24h volume
 - `HERMES_MAX_MARKETS_MOVERS` (10) crypto markets by `|24h%|` above a
   `HERMES_MOVERS_VOL_FLOOR_USD` ($300k) floor
-- Remainder (25) crypto markets by 24h volume
+- Remainder (17) crypto markets by 24h volume
 
 This catches three regimes: high-volume majors, tokenized equities, and
 low-volume native-crypto big movers (the IO/SEI/DYDX/GRASS cohort). Without
@@ -330,14 +324,15 @@ checks aren't fooled by cross-dex idle USDC.
 (most `xyz:*` markets sit in the $1M–$50M range vs $1B+ for BTC). The
 risk gate uses two floors:
 - `min_market_volume_usd` (default 5,000,000) — applies to native crypto
-- `min_hip3_volume_usd` (default 500,000) — applies to colon-namespaced markets
+- `min_hip3_volume_usd` (default 5,000,000) — applies to colon-namespaced markets
 
 Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
 tokenized equities flow.
 
 **Market regime classifier** (`agents/market_regime.py`) strips the dex
 prefix before lookup, so `xyz:NVDA` correctly classifies as `equity` (not
-crypto) and uses `EQUITY_PROXY = "xyz:SP500"` for its regime trend.
+crypto). Equity names are checked against their own 1h trend first; `xyz:SP500`
+is only the fallback when that name's own candles are neutral or too thin.
 Tokenized commodities (`xyz:GOLD`, `xyz:CL`, `xyz:BRENTOIL`, `km:USOIL`)
 classify as `commodity` and use their own candle stream as the proxy.
 
@@ -365,9 +360,10 @@ whether the bot should bias toward longs or shorts. Implementation is
 
 - Trades aligned with the funding regime → normal bar.
 - Trades against the funding regime → elevated bar (conf ≥ 0.85 OR
-  composite ≥ 60 OR any binary bypass).
-- Binary bypasses (momentumBurst / slow_burn / whale_signal) preserved on
-  both sides. Never weaken these — the user has explicitly refused.
+  composite ≥ 60).
+- Binary trigger bypasses are no longer a broad force path. With the current
+  live config, `block_counter_trend_bypass=true`, a lone slow-burn/momentum
+  trigger does not rescue counter-regime trades.
 
 Core logic lives in `risk_gates.py::market_regime_gate`. The funding regime
 is read via `hyperfeed.py::market_get_funding_regime` (5-min cache —
@@ -384,7 +380,7 @@ does NOT accept `counter_regime_min_conf` writes):
   "min_ai_confidence": 0.7,
   "counter_regime_min_conf": 0.8,
   "leverage": 12,
-  "max_trade_notional_usd": 800,
+  "max_trade_notional_usd": 350,
   "atr_risk_sizing": {
     "enabled": true,
     "risk_per_trade_pct": 0.02,
@@ -397,29 +393,12 @@ When the user asks "regime?" / "short or long?" / "what's the regime",
 always answer with a fresh `market_get_funding_regime` call — do not cache
 the answer in session memory across turns.
 
-**Cross-asset-class leak (KNOWN ISSUE)**: `market_get_funding_regime` only
-scans the crypto perp universe (BTC/ETH/alts). It does **not** see HIP-3
-equity or commodity funding. So when the crypto regime is SHORT_CROWDED:
-
-- A `xyz:CL` (oil) long whose own commodity trend is "up" passes the
-  `aligned and not against_funding` branch because `against_funding` only
-  reflects the crypto crowd, not oil's own crowd.
-- Same for `xyz:ARM`, `xyz:META`, equity perps aligned with `xyz:SP500` up
-  trend.
-
-This is by design (we don't want a crypto-only crowding signal to
-overweight equity/commodity decisions), but it means **longs on HIP-3
-equity/commodity assets can open even during a crypto SHORT_CROWDED regime
-if their own trend regime is up.** When the user asks "how did these
-sneak through?" about an `xyz:` long, this is almost always the answer.
-
-Three possible fixes if the user wants to close this:
-1. Make funding overlay crypto-only (cleanest — leave equity/commodity to
-   their own trend regimes).
-2. Block binary trigger bypass for cross-asset-class trades (breaks the
-   "don't weaken bypasses" rule — needs explicit user approval).
-3. Add HIP-3 namespaced assets to the funding regime scan with their own
-   per-class threshold.
+**Per-class funding overlay**: `market_get_funding_regime()` fetches
+`get_universe(include_hip3=True)` and returns `regimes_by_class` for crypto,
+equity, and commodity. `market_regime_gate()` looks up the class for the
+current coin, so a crypto `SHORT_CROWDED` state no longer leaks onto oil or
+tokenized equities. If `regimes_by_class` is missing from an older stub, the
+gate falls back to the legacy top-level `regime`.
 
 See `references/short-regime-bias.md` for the full prompt template, code
 locations, and pitfalls.
@@ -452,7 +431,7 @@ itself — that's the cache wrapper).
 | Executor blocks LONG with "insufficient_free_margin" while HL UI shows plenty | `available` is `accountValue - totalMarginUsed` (matches HL UI). If they differ, the loop is on stale code — restart. |
 | Logs show overlapping scan cycles or doubled cadence | There is likely an orphan loop. Run `scripts/restart.sh status` and `ps ax \| rg "scripts/trading_loop.py"`; keep exactly one Python loop process. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
-| MCP `config` tool dropping a key | FIXED 2026-06-05 — the tool now exposes the full risk-knob set in snake_case (sizing, margin floor, tp_scale_fraction, regime gates, momentum_continuation toggle, ...). Older builds only took a narrow camelCase schema and silently dropped keys + wrote dup keys; if you see that, the MCP is on stale code → `pkill -f hermes-mcp-server.py`. |
+| MCP `config` tool dropping a key | FIXED 2026-06-05 and pruned later — the tool exposes the current risk-knob set in snake_case. Removed experiment knobs are intentionally absent. Older builds took a narrow camelCase schema, silently dropped keys, and wrote dup keys; if you see that, the MCP is on stale code → `pkill -f hermes-mcp-server.py`. |
 | `[watchdog] no progress for N s — HUNG` re-execs (N = minutes/hours) | NOT a code hang — the host (MacBook) idle/maintenance-slept and froze the process; the watchdog re-execs correctly on wake. Confirm with `pmset -g log \| grep -iE "Sleep\|Wake"`. Fix: `caffeinate` (now auto-launched by `restart.sh`); keep on AC for closed-lid. Positions are held by server-side brackets during sleep. |
 | `reduce only order would increase position` reject | Stranded SL/TP trigger orders from a prior closed position. `close_position_market` now auto-cancels them (`cancel_open_orders_for_coin`); if on old code, cancel manually or restart. |
 | Day PnL baseline looks stale/reset after a restart | A mid-day restart can re-baseline `startOfDayEquity` to current equity (loses the true SOD) if persisted memory loaded zeroed — would launder a pre-restart drawdown out of the kill-switch. Known issue; verify `dayStartTs` vs UTC midnight before trusting daily PnL. |
@@ -552,4 +531,4 @@ start it. See `references/cron-jobs.md`.
 - `references/daemon-investigation.md` — historical note on the no-op `--daemon` flag; superseded by `restart.sh`.
 - `references/hip3-tokenized-equity-handoff.md` — current HIP-3 production wiring (all 5 entry points, queried_dexes safety, sizing semantics).
 - `references/exit-engine.md` — DSL trail + tighter retrace ladder + breakeven, server-side SL/TP brackets, take-profit scale-out, trigger hygiene (the 2026-06-04/05 round-trip-fix overhaul).
-- `references/short-regime-bias.md` — regime-aware bias, counter-trend gating, and the surfacing bypasses (uptrend/downtrend/momentum-continuation/candlestick).
+- `references/short-regime-bias.md` — regime-aware bias, counter-trend gating, and symmetric up/down trend surfacing.

@@ -150,7 +150,7 @@ def main() -> int:
 
     config = _load_json(ROOT / ".agent-config.json")
     if config is None:
-        print("config: .agent-config.json not found (defaults: mode OFF)")
+        print("config: .agent-config.json not found (defaults: mode OFF + tuned strategy)")
     elif "_error" in config:
         print(f"config: unreadable — {config['_error']}")
     else:

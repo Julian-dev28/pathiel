@@ -19,8 +19,8 @@ re-tuned 2026-06-16 (see "Scalp vs trend-ride" below) and tightened again in the
 
 ## Scalp vs trend-ride — the 2026-06-16 finding (the exit lever)
 
-Controlled backtest (`scripts/reentry_backtest.py`, same lev/coins/period, only
-exit params vary):
+Legacy heuristic backtest (`scripts/reentry_backtest.py`, same lev/coins/period,
+only exit params vary; confirm current decisions with logged/portfolio replays):
 ```
 scalp      (protect 1.5 / retrace 0.30):  61% win  +$1518   <- 2026-06-16 live baseline
 trend-ride (protect 3.0 / retrace 0.55):  47% win  -$757
@@ -33,10 +33,6 @@ validating on ONE up-trend day — it rides rippers but bleeds in chop, the domi
 regime. Caveat: scalp can amputate the fat-tail winners the edge depends on —
 `tp_scale_fraction` lets a runner ride (below).
 
-- **`regime_aware {enabled, trend_ride{…}}`** (default OFF): when
-  `detect_regime()=='up'`, swaps to looser trend-ride params (scalp chop / ride
-  trends). Backtested BELOW always-scalp in the chop sample → gated off; enable
-  only once a sustained-trend sample validates it (restart to load code, then flip).
 - **Hard timeout / stale-flat:** `hard_timeout_minutes` (1800); and
   `stale_flat_timeout_minutes` (480) flattens a position that never reaches
   `protect_pct`.

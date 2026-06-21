@@ -8,13 +8,13 @@ keyed off `funding_regime` vs `trade_side`.
 
 ## Core principle
 
-> Enforce regime discipline by default, but never *hinder* aligned trades and
-> never hard-block on a clear individual setup.
+> Enforce regime discipline by default, but never add friction to aligned
+> trades.
 
 - Trades **aligned** with the funding regime → normal bar (no friction added).
 - Trades **against** the funding regime → elevated bar.
-- Bypass triggers (momentumBurst / slow_burn / whale_signal) preserved on
-  BOTH sides — those are explicit "regime proxy is stale" signals.
+- With current live settings, `block_counter_trend_bypass=true`, so a lone
+  momentumBurst/slow_burn trigger no longer rescues counter-regime trades.
 
 Separate the "counter-regime is hard" knob (`counter_regime_min_conf`) from
 the overall activity knob (`min_ai_confidence`). **Never** solve regime bias
@@ -38,17 +38,18 @@ The funding-regime overlay lives inside
 4. When `against_funding`, raises the effective bar:
    - `effective_min_conf = max(counter_regime_min_conf, 0.85)`
    - `effective_min_score = 60.0` (vs default 50)
-5. Bypass triggers (momentumBurst / slow_burn / whale_signal) still pass —
-   do not weaken them. The user explicitly called this out.
+5. Binary trigger bypasses only matter when `block_counter_trend_bypass=false`;
+   current live config keeps them blocked for counter-regime trades.
 
 ## Live config (`.agent-config.json`) recommended values
 
 ```json
 {
-  "min_ai_confidence": 0.5,
-  "counter_regime_min_conf": 0.85,
-  "leverage": 10,
-  "equity_fraction_per_trade": 0.07
+  "min_ai_confidence": 0.7,
+  "counter_regime_min_conf": 0.8,
+  "leverage": 12,
+  "equity_fraction_per_trade": 0.2,
+  "block_counter_trend_bypass": true
 }
 ```
 
@@ -83,20 +84,18 @@ Requirements:
    (close to a hard block unless the signal is exceptionally strong).
 2. Trades aligned with the regime use the normal bar — never raise friction
    for aligned trades.
-3. Preserve momentumBurst / slow_burn / whale_signal bypasses on BOTH sides.
+3. Keep broad slow-burn force behavior out of the execute path.
 4. Trade frequency is secondary to regime alignment.
 
 Constraints:
 - Do NOT change max_daily_loss_usd.
-- Do NOT weaken or remove the binary trigger bypasses.
 - Do NOT create new bypasses just to increase trade count.
 - Do NOT solve this by raising min_ai_confidence globally.
 
 Suggested changes:
 - Raise counter_regime_min_conf to 0.85 in .agent-config.json (not via MCP).
 - Make market_regime_gate in risk_gates.py stricter for against-funding-regime
-  trades (require either high confidence OR high composite score OR a binary
-  bypass trigger).
+  trades (require either high confidence OR high composite score).
 - Cache market_get_funding_regime so the gate doesn't refetch per call.
 - Restart the trading loop to pick up code + config changes.
 
@@ -116,10 +115,8 @@ Files to review:
 - **MCP `config` tool silently drops `counter_regime_min_conf`** — edit
   `.agent-config.json` directly and restart the loop. Trying to push
   through the MCP tool wastes a turn and looks like the bot ignored you.
-- **Don't kill the binary-trigger bypasses.** The user has repeatedly
-  refused to weaken `momentum_burst` / `slow_burn` / `whale_signal` bypasses
-  — those exist because the regime proxy is slow and a strong individual
-  signal should win.
+- **Do not reintroduce broad slow-burn execution.** The live cleanup removed
+  that path because it admitted too many weak PASS upgrades.
 - **Verify regime via `market_get_funding_regime`** before assuming. The
   user explicitly asks "regime?" / "short or long?" — answer with a fresh
   tool call, not from session memory. The regime can flip; don't cache it
@@ -127,21 +124,10 @@ Files to review:
 - **The aligned + funding-neutral case must still pass cleanly.** The gate
   fall-through for `regime == "neutral" and not against_funding` is the
   default path for most trades; if you add new short-circuits, preserve it.
-- **Cross-asset-class leak.** `market_get_funding_regime` only scans
-  crypto perps. HIP-3 equity (`xyz:ARM`, `xyz:META`, `xyz:TSLA`) and
-  commodity (`xyz:CL`, `xyz:SILVER`, `xyz:GOLD`) markets have their own
-  funding markets that are NOT in the regime scan. Result: a `xyz:CL` long
-  whose own commodity trend regime is "up" will pass the
-  `aligned and not against_funding` branch because `against_funding`
-  only reflects the crypto crowd. **When the user asks "how did this
-  HIP-3 long sneak through during SHORT_CROWDED?" — this is the answer.**
-  Don't redesign the symmetric overlay; the right fix (if the user wants
-  one) is one of:
-  1. Make the overlay crypto-only (cleanest; preserves intent).
-  2. Block binary bypasses for cross-asset-class trades (requires explicit
-     user approval — they have refused to weaken bypasses before).
-  3. Scan HIP-3 namespaced assets too with their own per-class threshold.
-  Confirm which fix the user wants before patching.
+- **Per-class funding overlay.** `market_get_funding_regime` now scans
+  `get_universe(include_hip3=True)` and returns `regimes_by_class`; the gate
+  applies the funding crowd for this coin's asset class. Older tests/stubs that
+  omit `regimes_by_class` intentionally fall back to the top-level `regime`.
 - **Test mocking gotcha.** Every test that exercises `market_regime_gate`
   must mock BOTH `market_regime.detect_regime` AND
   `hyperfeed.market_get_funding_regime`. The gate calls both, and an

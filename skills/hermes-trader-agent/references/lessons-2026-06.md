@@ -12,14 +12,14 @@ slippage-adjusted). Sooner = malpractice.**
 ## 2. Exits: TIGHT beats LOOSE (in chop)
 Controlled backtest: scalp (protect 1.5/retrace 0.30) = 61% win / +$1518 vs
 trend-ride (3.0/0.55) = 47% / −$757. Loose lets winners give it back. Live = scalp.
-Regime-dependent (trend-ride wins in *sustained* up-trends) → `regime_aware` exists
-but is gated OFF until a trend sample proves it. See `exit-engine.md`.
+Regime-dependent trend-ride was tested as a historical experiment, but the live
+config block has been removed. See `exit-engine.md`.
 
 ## 3. The AI is a GOOD FILTER set TOO STRICT — loosen, don't bypass
 AI-replay (real verdicts, 4 modes): sidestep-the-AI = WORST (−$20/38%); force its
 rejects = mediocre (adverse selection — it rejects them for a reason); **lower its
 conf bar = BEST** (+$40/24h). AI PASS'd 87% of everything (16797/19218 verdicts).
-Fix: `min_ai_confidence` 0.78→0.65, `composite_force_execute` OFF. And feed signals
+Fix: `min_ai_confidence` 0.78→0.65, broad force paths removed. And feed signals
 INTO the prompt (`research.py`) — for months they only fed the executor, so the AI
 decided blind. NEVER guarantee returns; never lever an unproven edge.
 

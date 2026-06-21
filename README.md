@@ -75,10 +75,10 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 ## Key Features
 
 ### Rate-Limit-Aware Scan Pipeline
-- **Volume pre-filtering**: Top-N markets by 24h notional volume (default 50)
+- **Volume pre-filtering**: Top-N markets by 24h notional volume plus mover and rotating-sweep slots
 - **Parallel batch scanning**: Workers fan out within batches, sleep between
-- **TTL caching**: Candles cached 15 minutes, 4-scan cost ≈ 600 weight (vs. 10,000+ raw)
-- **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
+- **TTL caching**: 5m candles are cached inside the scan interval; 1h enrichment is cached longer and only fetched for surfaced markets
+- **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_SCAN_WORKERS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
 - **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms. Current live new-entry config is `0.4%` spot / `3%` ROE.
@@ -90,7 +90,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Auto-close**: When a tick trips a floor/stop/timeout, the trading loop market-closes the position and logs a `dsl_exit` event to the session log. No human in the loop
 
 ### Risk & Resilience Gates
-- **Regime-aware gating**: trades are scored against the BTC/ETH trend regime — aligned trades clear at `aligned_min_conf`, counter-regime trades need `counter_regime_min_conf`. `block_counter_trend_bypass` stops the force-execute path from sneaking longs into a downtrend.
+- **Regime-aware gating**: trades are scored against the asset's applicable trend regime — BTC for native crypto, own-trend-first for tokenized equities, and own trend for commodities. Aligned trades clear at `aligned_min_conf`; counter-regime trades need `counter_regime_min_conf`. `block_counter_trend_bypass` stops weak own-coin trigger bypasses from sneaking longs into a downtrend.
 - **Short-specific liquidity floor**: shorts require deeper 24h volume (`min_short_volume_usd`) than longs — thin markets squeeze.
 - **Free-margin floor**: `min_available_margin_pct` blocks new entries once free margin gets thin, capping over-leverage and correlated stacking.
 - **Correlation cap**: `max_crypto_long_correlated` limits simultaneous correlated crypto exposure.
@@ -148,7 +148,7 @@ There are two config files, and they bootstrap **differently**:
 | **`.agent-config.json`** | **Yes — tracked**, comes pre-populated with the live strategy | **edit** it (don't create) | fresh on every trade — no restart |
 | **`.env.local`** | **No — gitignored** | **create** it: `cp .env.local.example .env.local`, fill in keys | at process start — restart to apply |
 
-So on a fresh clone: `.agent-config.json` is already there (tweak the values); `.env.local` does not exist until you copy the example and add your credentials. If `.agent-config.json` is ever missing or malformed, the loader falls back to `{"mode": "OFF"}` (analyse-only, no orders) — it fails safe, never trades blind.
+So on a fresh clone: `.agent-config.json` is already there (tweak the values); `.env.local` does not exist until you copy the example and add your credentials. If `.agent-config.json` is ever missing or malformed, the loader falls back to the tuned default config with `"mode": "OFF"` (analyse-only, no orders) — it fails safe, never trades blind. Partial configs are normalized against the same defaults, and bad nested strategy blocks are ignored rather than wiping stop/gate settings.
 
 ### `.env.local` — credentials & runtime
 
@@ -172,14 +172,15 @@ HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
 
 # ── Scan tuning (optional — defaults shown) ──────────────────
 HERMES_SCAN_INTERVAL=60        # seconds between scan cycles
-HERMES_MAX_MARKETS=60          # top-vol+movers candle-fetch budget per scan
-HERMES_MAX_MARKETS_HIP3=25     # of that budget, slots reserved for HIP-3
+HERMES_MAX_MARKETS=45          # top-vol+movers candle-fetch budget per scan
+HERMES_MAX_MARKETS_HIP3=18     # of that budget, slots reserved for HIP-3
 HERMES_UNIVERSE_SWEEP=0        # >0 = ALSO rotate N extra tail markets/cycle so the
 #                                FULL universe is covered over ceil(N_universe/N)
 #                                cycles (top-vol+movers still scanned every cycle).
 #                                Keep total (MAX_MARKETS+SWEEP) within the rate budget.
-HERMES_BATCH_SIZE=20           # markets per parallel batch
-HERMES_BATCH_SLEEP=0.3         # seconds between batches (raise to pace a wider scan)
+HERMES_SCAN_WORKERS=8          # max concurrent market scans per batch
+HERMES_BATCH_SIZE=10           # markets per parallel batch
+HERMES_BATCH_SLEEP=1.0         # seconds between batches (raise to pace a wider scan)
 HERMES_WATCHDOG_TIMEOUT_S=600  # re-exec the loop if a scan/cycle makes no progress
 #                                for this long. A scan slower than this (too many
 #                                markets / too much batch_sleep) trips it — keep
@@ -204,11 +205,15 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.2,
   "leverage": 12,
-  "max_trade_notional_usd": 800,
+  "max_trade_notional_usd": 350,
+  "asset_notional_multiplier": {
+    "crypto": 1.0,
+    "hip3": 1.0
+  },
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -30,
+  "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.35,
   "daily_giveback_min_peak_usd": 25.0,
   "min_available_margin_pct": 0.10,
@@ -234,22 +239,25 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
     "sizing_basis": "primary_stop"
   },
   "ta_sidestep_force_execute": true,
-  "ta_sidestep_min_slow_burn_count": 99,
-  "force_execute_composite": 30,
+  "override_max_daily_extension_pct": 30.0,
+  "backup_sl_max_frac_of_liq": 0.6,
   "runner_entry_gate": {
     "enabled": true,
     "allow_shorts": false,
-    "bypass_sidestep_overrides": true,
     "min_confidence": 0.7,
     "min_composite": 30.0,
-    "min_hip3_composite": 50.0
+    "min_crypto_composite": 20.0,
+    "min_hip3_composite": 45.0,
+    "mover_min_confidence": 0.72,
+    "mover_min_composite": 40.0
   }
 }
 ```
 
 The snippet above is the current live strategy shape, not a guarantee that those
-values are optimal in future market regimes. The code has separate fallback
-defaults for missing keys; keep the tracked `.agent-config.json` explicit.
+values are optimal in future market regimes. Missing keys are filled from
+`hermes_trader.agents.config_store.DEFAULT_CONFIG`; keep the tracked
+`.agent-config.json` explicit so reviews show intentional strategy changes.
 
 | Key | What it does | Fallback/default |
 |-----|--------------|---------|
@@ -258,7 +266,8 @@ defaults for missing keys; keep the tracked `.agent-config.json` explicit.
 | `leverage` | Leverage **ceiling** — each trade uses `min(this, the coin's own max)`. Coin maxes differ (BOME 3×, BTC 40×). Set high (e.g. 40) to ride each coin's max. Also multiplies position notional. | `5` |
 | `min_ai_confidence` | Minimum AI confidence for a LONG/SHORT to execute | `0.8` |
 | `max_concurrent` | Max simultaneous open positions | `3` |
-| `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `200` |
+| `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `350` |
+| `asset_notional_multiplier` | Optional asset-bucket sizing scale applied after risk sizing. Defaults neutral; use it only for controlled risk experiments, not as the primary alpha fix. | `{"crypto": 1.0, "hip3": 1.0}` |
 | `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
 | `max_daily_loss_usd` | Daily-loss kill switch (negative number) | `-100` |
 | `daily_giveback_halt_pct` | **Give-back breaker**: once the day peaks ≥ `daily_giveback_min_peak_usd`, halt NEW entries if it retraces more than this from peak (existing positions ride their stops; resets at UTC roll). Locks green days from round-tripping | `0` (off) |
@@ -271,8 +280,9 @@ defaults for missing keys; keep the tracked `.agent-config.json` explicit.
 | `cooldown_min` | Minutes before re-trading the same coin | `60` |
 | `counter_regime_min_conf` | Confidence bar for a trade **against** the regime (e.g. long in a downtrend) | `0.7` |
 | `aligned_min_conf` | Confidence bar for a trade **with** the regime (trend-aligned) — typically lower than the counter-regime bar | _unset_ |
-| `block_counter_trend_bypass` | When `true`, the slow-burn/force-execute path can't bypass the counter-regime gate — stops long-into-downtrend bleed | `false` |
-| `whale_scan_bypass` | Let whale-accumulation signals bypass the scan gate so they reach research/execution | `false` |
+| `block_counter_trend_bypass` | When `true`, own-coin trigger bypasses cannot override the counter-regime gate — stops long-into-downtrend bleed | `false` |
+| `override_max_daily_extension_pct` | Max positive 24h move allowed for PASS→LONG TA sidestep. Blocks parabolic chase entries like BIRD +60%. `0` disables | `30` |
+| `backup_sl_max_frac_of_liq` | Caps server-side backup stop distance to this fraction of the approximate liquidation buffer | `0.60` |
 | `max_crypto_long_correlated` | Cap on simultaneous correlated crypto positions (concentration guard) | `2` |
 | `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
 | `coin_blocklist` | Coins that are never traded | `[]` |
@@ -284,9 +294,7 @@ defaults for missing keys; keep the tracked `.agent-config.json` explicit.
   new-entry values are `max_loss_pct=0.4`, `max_loss_roe_pct=3.0`,
   `protect_pct=1.25`, and `retrace_threshold=0.20`. `phase2_tiers` is the
   profit-scaled give-back ladder. `stale_flat_timeout_minutes` is the flat-position
-  timeout. Optional `regime_aware{enabled, trend_ride{…}}` swaps to looser
-  trend-ride params when `detect_regime()=='up'`; this is off until a sustained
-  trend sample validates it. Tracker state → `.dsl-state.json` (override
+  timeout. Tracker state → `.dsl-state.json` (override
   `HERMES_DSL_STATE_FILE`). Existing open positions keep the policy captured at
   entry; config edits affect new entries and synthesized trackers.
 - **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
@@ -295,17 +303,16 @@ defaults for missing keys; keep the tracked `.agent-config.json` explicit.
   `risk_per_trade_pct=0.02` and `sizing_basis="primary_stop"`. This overrides the
   flat `equity_fraction_per_trade` path; volatile/wide-stop coins get smaller size.
 - **`signal_enforcement`** `{enabled, veto, boost, gex_veto, boost_bar_delta,
-  whale_*}` — lets the free signals VETO (chop-trap / whales dumping) or BOOST
-  (catalyst lowers the override bar) the **forced-override path only**. Cache-only.
+  whale_*}` — lets the free signals veto chop-traps / whales dumping and provide
+  forward-validation context. Cache-only on the execute path, using fresh TTL
+  entries only.
 - **`shadow_signals`** `{enabled, gex, short_volume, crypto_whale, news}` — logs the
   free signals per candidate without affecting trades (forward validation).
-- **`gex_signal` / `momentum_reentry`** — gated experiments (see commit history).
-- **`force_execute_composite` / `composite_force_execute` / `breakout_force_execute`
-  / `whale_force_execute` / `ta_sidestep_force_execute`** — structural-override
-  gates that can upgrade an AI PASS to a trade on strong TA/whale signals. Current
-  live keeps the broad composite override disabled, keeps sidestep modeling enabled
-  with `ta_sidestep_min_slow_burn_count=99`, and lets the runner gate bypass that
-  sidestep suppression for high-quality runner entries.
+- **`ta_sidestep_force_execute`** — the only remaining PASS upgrade path. It can
+  upgrade an AI PASS to LONG only on composite>=runner minimum or momentumBurst,
+  never on slow-burn alone, never when AI is down, and never above
+  `override_max_daily_extension_pct`. The upgraded LONG still must pass the
+  normal runner gate.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -402,11 +409,11 @@ and route them through the current gates/exits:
 
 ```bash
 .venv/bin/python scripts/backtest_logged.py --hours 168 --summary-only \
-  --mode sidestep --force-bar 30 --sidestep-min-slow-burn 99 \
+  --mode sidestep --force-bar 30 \
   --apply-runner-gate --regime-mode neutral --slippage-bps 5
 
 .venv/bin/python scripts/strategy_grid_search.py --hours 168 --profile blend \
-  --mode sidestep --force-bar 30 --sidestep-min-slow-burn 99 \
+  --mode sidestep --force-bar 30 \
   --regime-mode neutral --slippage-bps 5
 ```
 
@@ -510,7 +517,7 @@ Relevant knobs live in `.agent-config.json`:
 | `atr_risk_sizing.risk_per_trade_pct` | Fraction of equity risked at the primary stop | `0.02` = 2% |
 | `atr_risk_sizing.sizing_basis` | Stop source for sizing | `primary_stop` |
 | `leverage` | Leverage ceiling — each trade uses `min(this, coin's own max)`; pushed to the exchange via `set_leverage` | `10` = up to 10× |
-| `max_trade_notional_usd` | Hard cap on a single trade's notional | `800` |
+| `max_trade_notional_usd` | Hard cap on a single trade's notional | `350` |
 | `equity_fraction_per_trade` | Fallback margin fraction when ATR sizing is disabled | `0.20` = 20% |
 
 When ATR sizing is disabled, the fallback formula is:
@@ -531,7 +538,7 @@ Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage =
 ## Design Decisions
 
 ### Why volume pre-filtering?
-HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight → instant 429. Volume pre-filtering to the top 60 markets keeps a scan at ~1,200 weight. Sustained usage is `1200 × markets ÷ interval` weight/min, so the safe rule is **markets ≤ scan-interval-in-seconds** (the default 60/60 sits right at the limit's edge).
+HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight -> instant 429. Volume pre-filtering to 45 core markets plus a small rotating sweep leaves room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. Sustained usage is roughly `1200 * markets / interval` weight/min, so the safe rule is **markets plus sweep should stay below the scan interval in seconds**.
 
 ### Why DSL exit engine?
 Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. State is persisted on disk so a daemon restart doesn't reset the ratchet, and the registry is reconciled against the exchange each tick so manually-opened or externally-closed positions stay coherent. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
@@ -552,11 +559,11 @@ Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration 
 | `metaAndAssetCtxs` | 20 | Universe + volume + OI (perp) |
 | `spotMetaAndAssetCtxs` | 20 | Universe + volume + OI (spot) |
 | `candleSnapshot` (per coin) | 20 | Plus per-item weight |
-| **Total per scan cycle** | ~1,200 | Top 60 markets, one candle fetch each |
+| **Total per scan cycle** | ~900-1,100 | Top 45 markets plus a small sweep, one 5m candle fetch each |
 
-With `HERMES_MAX_MARKETS=60` and a 50s candle-cache TTL, each 60s scan fetches fresh candles (~1,200 weight). The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
+With `HERMES_MAX_MARKETS=45`, a small `HERMES_UNIVERSE_SWEEP`, and a 50s candle-cache TTL, each 60s scan fetches fresh 5m candles while keeping room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
 
-The crypto/HIP-3 budget split (`HERMES_MAX_MARKETS_HIP3`, default 25) is a *partition* of the same 60-slot budget, not extra calls — total candle weight stays at ~1,200/scan regardless of how the split is tuned.
+The crypto/HIP-3 budget split (`HERMES_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `HERMES_UNIVERSE_SWEEP` or increase `HERMES_BATCH_SLEEP` before tightening strategy gates.
 
 When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio`/`close` handlers; the executor's sizing path stays main-only so free-margin checks aren't fooled by cross-dex idle USDC.
 

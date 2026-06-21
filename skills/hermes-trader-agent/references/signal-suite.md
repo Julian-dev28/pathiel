@@ -36,11 +36,12 @@ executor — the AI decided blind and PASS'd rippers. See `signal-vs-action-gap.
 
 | Tool | What it does |
 |---|---|
-| `backtest.py` | Strategy on historical candles, **heuristic** entries (no LLM) |
-| `backtest_logged.py` | Replays the **real logged AI verdicts** through current gates/exits. Useful flags: `--mode {ai,lowconf,force,sidestep}`, `--force-bar`, `--sidestep-min-slow-burn`, `--apply-runner-gate`, `--regime-mode`, `--loss-cooldown-min`, `--slippage-bps`, `--leverage`, `--roe-cap`, `--max-loss`, `--protect`, `--retrace` |
-| `backtest_portfolio.py` | **Portfolio-level**: shared equity, concurrency + gross-notional + margin gates (the only one that models capital contention / correlated drawdown). Useful flags: `--sweep-concurrent`, `--max-notional-pct`, `--mode`, `--force-bar`, `--sidestep-min-slow-burn`, `--apply-runner-gate`, `--loss-cooldown-min`, `--slippage-bps` |
+| `backtest.py` | **Legacy heuristic sandbox** on historical candles; not current live-strategy truth |
+| `backtest_logged.py` | Primary per-trade replay: **real logged AI verdicts** through current gates/exits. Useful flags: `--mode {ai,lowconf,force,sidestep}`, `--force-bar`, `--apply-runner-gate`, `--regime-mode`, `--loss-cooldown-min`, `--slippage-bps`, `--leverage`, `--roe-cap`, `--max-loss`, `--protect`, `--retrace` |
+| `backtest_portfolio.py` | **Portfolio-level**: shared equity, concurrency + gross-notional + margin gates (the only one that models capital contention / correlated drawdown). Useful flags: `--sweep-concurrent`, `--max-notional-pct`, `--mode`, `--force-bar`, `--apply-runner-gate`, `--loss-cooldown-min`, `--slippage-bps` |
 | `strategy_grid_search.py` | Grid-search wrapper over logged replay. Profiles include `sizing`, `gate`, `exit`, and `blend`; modes include `ai`, `force`, and `sidestep`. Use it to test candidate config families before editing live risk knobs. |
-| `reentry_backtest.py` | Exit-mode + re-entry comparison (scalp vs trend-ride vs regime) |
+| `reentry_backtest.py` | **Legacy heuristic** exit/regime comparison; filename is historical, CLI is not a current re-entry EV report |
+| `asymmetry_backtest.py` / `concentration_backtest.py` | **Legacy heuristic** exit/concentration sandboxes; confirm any idea with logged/portfolio replay |
 | `signal_backtest.py` | Forward read: realized PnL by signal-at-entry, from the outcome store |
 
 **Discipline:** backtests are slippage-free + often small-n + single-regime — they
