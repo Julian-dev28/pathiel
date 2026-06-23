@@ -218,6 +218,13 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         }
     shadow_mode = mode == "SHADOW"
 
+    # Bind `coin` EARLY. The per-account sizing block (~L516, `_sz_dex = coin.split(...)`)
+    # reads `coin` BEFORE the original `coin = analysis["coin"]` assignment ~60 lines below —
+    # an ordering bug introduced with per-account sizing (2026-06-22) that UnboundLocalError'd
+    # EVERY gate-passing trade (incl. all external_alpha rebalancer opens; surfaced live by the
+    # vol-dispersion flip 2026-06-23). Binding here fixes all paths; the later re-assign is a harmless no-op.
+    coin = analysis["coin"]
+
     # Asset-class gate. Mirrors the perception-time filter so a stale
     # perception (e.g. one re-evaluated from memory after the operator
     # flips the flag) can't sneak through to a real trade. Crypto =
@@ -580,6 +587,12 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     # External-alpha trades size to their own (smaller) cap — these edges are real but
     # thin/regime-volatile, so they ride at reduced notional until live data confirms.
     _ext_notional = float(analysis.get("external_alpha_notional", 0) or 0)
+    if _ext_notional <= 0 and analysis.get("external_alpha"):
+        # Rebalancer _analysis builders (xs_momentum/vol_dispersion/sortino/amihud/pairs/extreme_fade)
+        # don't set an explicit notional → fall back to the config ext-alpha cap so these edges ride
+        # SMALL, not at the full max_trade_notional_usd. Without this they'd size ~6× too large on a
+        # tiny account. (No-op while external_alpha_notional_usd=0 → must be set >0 to actually go live.)
+        _ext_notional = float(config.get("external_alpha_notional_usd", 0) or 0)
     if _ext_notional > 0:
         _notional_cap = min(_notional_cap, _ext_notional) if _notional_cap > 0 else _ext_notional
     # SHORTS ride at a small dedicated cap — newly-enabled, validated only in the current

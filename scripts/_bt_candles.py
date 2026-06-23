@@ -25,11 +25,16 @@ def _save():
 
 def get(coin, interval="1d", n=260, max_age_h=12):
     """Return candles as list[dict(t,o,h,l,c,v)]. Disk-cached; refetch only if older than
-    max_age_h. Exponential backoff on 429/timeout; returns [] if it can't fetch."""
+    max_age_h. Exponential backoff on 429/timeout; returns [] if it can't fetch.
+
+    BT_CACHE_ONLY=1 → never fetch (return cached or []). Used by the parallel research swarm so
+    multiple agents can read the pre-warmed cache concurrently with no HL 429-storm / write-race."""
     key = f"{coin}:{interval}:{n}"
     hit = _mem.get(key)
     if hit and (time.time() * 1000 - hit.get("at", 0)) < max_age_h * 3600 * 1000:
         return hit["c"]
+    if os.environ.get("BT_CACHE_ONLY"):
+        return hit["c"] if hit else []
     for k in range(6):
         try:
             raw = fetch_hl_candles(coin, interval, n)

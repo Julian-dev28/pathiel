@@ -150,6 +150,130 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "vol_gate": True,
         "vol_short": 14,
         "vol_long": 90,
+        # Vol-managed sizing (W6, Moreira-Muir): scale exposure by target_vol/realized_vol,
+        # clamped to [0.3, cap]. Realized vol = pstdev of last ~20 rebalance-period returns,
+        # persisted to .xs_volmgd_history. OFF by default — enable after history accumulates.
+        "vol_managed": {
+            "enabled": False,
+            "target_vol": 0.02,   # per-period return vol target (rebalance-period units)
+            "cap": 2.0,           # max exposure scalar (2x = never more than double notional)
+        },
+    },
+    # Vol-dispersion edge (W1 — long high-idio-vol / short low, BETA-NEUTRAL via within-β-tercile).
+    # Pure engine: hermes_trader/agents/vol_dispersion.py
+    # Live wiring: hermes_trader/agents/vol_dispersion_live.py (shadow_mode=true default).
+    # Research agent still tuning best idio_vol_window — parameterized, not hardcoded.
+    "vol_dispersion": {
+        "enabled": False,        # master gate — loop hook is a no-op while False
+        "shadow_mode": True,     # always log before risking capital
+        "idio_vol_window": 30,   # trailing days for per-coin idiosyncratic vol (BTC-residual stdev)
+        "k_per_tercile": 3,      # names per leg per beta-tercile (3 terciles × 3 = 9-name legs)
+        "hold_days": 10,         # rebalance interval
+        "universe_top_n": 50,    # liquid-universe cap
+        "min_volume_usd": 5_000_000,
+    },
+
+    # ── NEW EDGES (wired here, all OFF + shadow by default) ──────────────────────
+
+    # Sortino factor (V2 — +3.66%/rebal, beta-neutral, regime-stable).
+    # Scores coins by mean(daily return)/downside-deviation over `window` days within each BTC-beta
+    # tercile. More regime-stable than idio-vol (holds in down-regime: +2.24%). Corr +0.07 to
+    # momentum / +0.37 to vol-dispersion → partially orthogonal.
+    # Pure engine: vol_dispersion.py with score_fn="sortino"
+    # Live wiring: hermes_trader/agents/sortino_live.py (shadow_mode=True default).
+    # Small k=1-2 for a ~$60 main-perp account (6 total names per side at k=2).
+    "sortino_factor": {
+        "enabled": False,        # master gate — loop hook is a no-op while False
+        "shadow_mode": True,     # log before risking capital
+        "window": 60,            # trailing days for Sortino scoring (validated ~60d)
+        "k_per_tercile": 2,      # names per leg per beta-tercile (k=2 → 6-name legs)
+        "hold_days": 10,         # rebalance interval (matches vol_dispersion)
+        "universe_top_n": 50,
+        "min_volume_usd": 5_000_000,
+    },
+
+    # Amihud illiquidity factor (W6 — BORDERLINE: +2.33%/rebal but lumpy, 2/4 quarters negative).
+    # Scores coins by mean(|daily ret|/daily $volume) over `window` days. LONG illiquid/SHORT liquid
+    # within each BTC-beta tercile. Use minimal k=1 and validate forward before increasing.
+    # Pure engine: vol_dispersion.py with score_fn="amihud"
+    # Live wiring: hermes_trader/agents/amihud_live.py (shadow_mode=True default).
+    "amihud_factor": {
+        "enabled": False,        # BORDERLINE — keep off until multi-quarter live validation
+        "shadow_mode": True,
+        "window": 30,            # trailing days for Amihud ratio (validated ~30d)
+        "k_per_tercile": 1,      # MINIMAL — lumpy edge, small allocation only
+        "hold_days": 10,
+        "universe_top_n": 50,
+        "min_volume_usd": 5_000_000,
+    },
+
+    # Kurtosis factor (V2 — +1.71%/rebal, beta-neutral, within-β-tercile, HIGH kurtosis = LONG).
+    # Scores coins by excess kurtosis of daily returns over ~60 days. Fat-tailed coins (high
+    # kurtosis) are longed; thin-tailed coins (low kurtosis) are shorted — within each BTC-beta
+    # tercile. MODEST edge — bleeds in sustained down-regimes. Use k=1 + shadow first.
+    # Pure engine: vol_dispersion.py with score_fn="kurtosis"
+    # Live wiring: hermes_trader/agents/kurtosis_live.py (shadow_mode=True default).
+    "kurtosis_factor": {
+        "enabled": False,        # MODEST edge — keep off until forward validation complete
+        "shadow_mode": True,     # log before risking capital; bleeds in down-regime
+        "window": 60,            # trailing days for excess-kurtosis scoring (~60d validated V2)
+        "k_per_tercile": 1,      # minimal — modest edge, small allocation only
+        "hold_days": 10,         # rebalance interval (matches other factor rebalancers)
+        "universe_top_n": 50,
+        "min_volume_usd": 5_000_000,
+    },
+
+    # Pairs stat-arb (validated +1.08%/trade, V4: entry_z=2.5, exit_z=0.5, corr>0.6).
+    # Market-neutral mean-reversion of log-spread between co-moving coins.
+    # ORTHOGONAL to momentum (profits from reversion) → stacking diversifies.
+    # Pure engine: hermes_trader/agents/pairs_engine.py
+    # Live wiring: hermes_trader/agents/pairs_live.py (shadow_mode=True default).
+    # For a ~$60 main-perp account: max_open_pairs=2 (each pair = 2 legs = 4 positions).
+    "pairs_statarb": {
+        "enabled": False,        # master gate
+        "shadow_mode": True,
+        "entry_z": 2.5,          # validated V4 (up from 2.0 → +1.98%/trade at 2.5)
+        "exit_z": 0.5,           # reversion exit threshold (validated 0.5)
+        "min_corr": 0.6,         # min trailing return correlation to form a pair
+        "window": 30,            # trailing window days for z-score and correlation
+        "scan_interval_hours": 6, # re-scan every 6h (pairs change slowly on daily bars)
+        "max_open_pairs": 2,     # SMALL account: cap at 2 pairs (4 legs total)
+        "universe_top_n": 40,    # fewer coins → fewer but higher-quality pairs
+        "min_volume_usd": 5_000_000,
+    },
+
+    # Correlation-regime sizing gate (V3 — validated by edge_regime_timing.py).
+    # Scales momentum exposure UP in low-corr periods (more cross-sectional dispersion)
+    # and vol-dispersion exposure UP in high-corr periods.
+    # Validated: momentum Sharpe 4.95→8.36 (low-corr) / vol-disp 9.06→13.27 (high-corr).
+    # Pure engine: hermes_trader/agents/corr_gate.py
+    # Wired into xs_momentum_live.py and vol_dispersion_live.py (reads this config key).
+    "correlation_gate": {
+        "enabled": False,        # master gate — no scaling while disabled (scalar=1.0)
+        "window": 14,            # rolling pairwise-correlation window (validated 14d)
+        "low_corr_scalar": 1.2,  # multiply momentum exposure in low-corr regime
+        "high_corr_scalar": 1.2, # multiply vol-dispersion exposure in high-corr regime
+        "cap": 1.5,              # maximum scalar (never more than 1.5x from this gate alone)
+    },
+
+    # Day-of-week tilt (calendar edge; MULTIPLE-TESTING CAVEAT — treat as tilt not standalone).
+    # Monday +0.78% (OOS robust) → long-bias (scalar >1); Thursday −1.64% → reduce (scalar <1).
+    # Orthogonal to momentum + pairs (different mechanism). Apply as a small sizing scalar overlay.
+    # Pure engine: hermes_trader/agents/day_of_week_tilt.py
+    "day_of_week_tilt": {
+        "enabled": False,
+        "monday_scalar": 1.15,   # increase size 15% on Monday (positive bias)
+        "thursday_scalar": 0.75, # reduce size 25% on Thursday (negative bias)
+    },
+
+    # Extreme-fade overlay (MARGINAL: +0.23–0.59% per trade net of 10bps).
+    # After |daily return| > threshold_pct, fade it the next day (short big-up, long big-down).
+    # Not a primary edge — small overlay. Runs inside scanner loop (not a rebalancer).
+    # Pure engine: hermes_trader/agents/extreme_fade.py
+    "extreme_fade": {
+        "enabled": False,
+        "shadow_mode": True,
+        "threshold_pct": 12.0,   # validated range 12–18%; 12% has most trades, 18% highest EV
     },
 }
 

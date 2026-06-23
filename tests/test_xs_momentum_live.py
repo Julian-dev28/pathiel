@@ -1,4 +1,7 @@
 """Cross-sectional momentum LIVE wiring tests — timer gating, shadow=no-orders, live=diff-exec."""
+import json
+import os
+import tempfile
 import hermes_trader.agents.xs_momentum_live as xl
 
 
@@ -45,8 +48,15 @@ def test_shadow_builds_book_but_places_no_orders(monkeypatch):
     assert not ex and not cl                                   # SHADOW: nothing executed
 
 
-def test_live_executes_the_diff(monkeypatch):
+def test_live_executes_the_diff(monkeypatch, tmp_path):
     cfg = {"xs_momentum": {**_CFG["xs_momentum"], "shadow_mode": False}}
+    # Pre-populate the owned state: xs_momentum previously opened C as long
+    owned_path = str(tmp_path / ".xs_momentum_positions.json")
+    with open(owned_path, "w") as fh:
+        json.dump({"longs": ["C"], "shorts": []}, fh)
+    monkeypatch.setattr(xl, "_OWNED_FILE", owned_path)
+    monkeypatch.setattr(xl, "_owned", None)
+
     monkeypatch.setattr(xl, "_last_ts", lambda: 0.0)
     monkeypatch.setattr(xl, "_save_ts", lambda t: None)
     monkeypatch.setattr(xl, "log_event", lambda e: None)
@@ -56,7 +66,7 @@ def test_live_executes_the_diff(monkeypatch):
     xl.maybe_rebalance(cfg, _uni(_RETS), positions, _fetch_factory(_RETS), ef, cf)
     opened = {a["coin"]: a["side"] for a in ex}
     assert opened == {"A": "long", "B": "long", "E": "short", "F": "short"}
-    assert cl == ["C"]                                         # C dropped → closed
+    assert cl == ["C"]                                         # C dropped → closed (we owned it)
     # every opened analysis is external_alpha (bypasses thought-engine gates, safety gates apply)
     assert all(a["external_alpha"] == "xs_momentum" for a in ex)
 

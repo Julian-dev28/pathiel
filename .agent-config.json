@@ -12,7 +12,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -30,
+  "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.35,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -85,7 +85,7 @@
   },
   "capital_rotation": {
     "enabled": true,
-    "shadow_mode": true,
+    "shadow_mode": false,
     "min_candidate_composite": 40.0,
     "min_hold_minutes": 30,
     "protect_winner_roe_pct": 3.0
@@ -148,7 +148,7 @@
     "ceiling_pct": 5.0,
     "max_hold_min": 1440
   },
-  "external_alpha_notional_usd": 0,
+  "external_alpha_notional_usd": 15,
   "short_notional_usd": 100,
   "smart_money": {
     "enabled": true,
@@ -177,5 +177,14 @@
     "vol_gate": true,
     "vol_short": 14,
     "vol_long": 90
+  },
+  "vol_dispersion": {
+    "enabled": true,
+    "shadow_mode": false,
+    "idio_vol_window": 30,
+    "k_per_tercile": 1,
+    "hold_days": 10,
+    "universe_top_n": 50,
+    "min_volume_usd": 5000000
   }
 }

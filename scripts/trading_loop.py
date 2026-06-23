@@ -49,6 +49,12 @@ from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.xs_momentum_live import maybe_rebalance as _xs_maybe_rebalance
+from hermes_trader.agents.vol_dispersion_live import maybe_rebalance as _vd_maybe_rebalance
+from hermes_trader.agents.sortino_live import maybe_rebalance as _sortino_maybe_rebalance
+from hermes_trader.agents.amihud_live import maybe_rebalance as _amihud_maybe_rebalance
+from hermes_trader.agents.kurtosis_live import maybe_rebalance as _kurtosis_maybe_rebalance
+from hermes_trader.agents.pairs_live import maybe_run as _pairs_maybe_run
+from hermes_trader.agents.extreme_fade import compute_signals as _ef_compute, log_signals as _ef_log
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
     close_position_market,
@@ -766,6 +772,86 @@ while True:
             )
         except Exception as _xse:
             logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
+
+        # Vol-dispersion rebalancer (W1 — long high-idio-vol / short low, beta-neutral via
+        # within-β-tercile). Self-gating on hold-days timer; enabled=False in DEFAULT_CONFIG so
+        # this call is an unconditional no-op until the operator flips enabled=True.
+        # Shadow by default: logs target book, places NO orders (shadow_mode=True default).
+        try:
+            _vd_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _vde:
+            logger.warning(f"[vol-dispersion] rebalance failed (non-fatal): {_vde}")
+
+        # Sortino factor rebalancer (V2 — +3.66%/rebal, regime-stable, beta-neutral).
+        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
+        try:
+            _sortino_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _sfe:
+            logger.warning(f"[sortino-factor] rebalance failed (non-fatal): {_sfe}")
+
+        # Amihud illiquidity factor (W6 — BORDERLINE +2.33%/rebal, lumpy).
+        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
+        try:
+            _amihud_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _afe:
+            logger.warning(f"[amihud-factor] rebalance failed (non-fatal): {_afe}")
+
+        # Kurtosis factor (V2 — +1.71%/rebal, MODEST, bleeds in down-regime).
+        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
+        try:
+            _kurtosis_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _kfe:
+            logger.warning(f"[kurtosis-factor] rebalance failed (non-fatal): {_kfe}")
+
+        # Pairs stat-arb (validated +1.08%/trade, entry_z=2.5, exit_z=0.5, corr>0.6).
+        # Market-neutral, orthogonal to momentum. Enabled=False + shadow by default (no-op).
+        try:
+            _pairs_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _pre:
+            logger.warning(f"[pairs-statarb] scan failed (non-fatal): {_pre}")
+
+        # Extreme-fade overlay (marginal +0.23–0.59%/trade). Enabled=False + shadow by default.
+        # Logs candidates when enabled; does NOT inject into scan queue in shadow mode.
+        try:
+            _ef_cfg = read_agent_config()
+            if bool((_ef_cfg.get("extreme_fade") or {}).get("enabled", False)):
+                # Build a minimal candles_by_coin from the universe mids (uses cached candles)
+                _ef_cbc = {}
+                for _m in (universe or []):
+                    _ef_coin = _m.get("coin") or ""
+                    if not _ef_coin or _ef_coin.startswith("@") or ":" in _ef_coin:
+                        continue
+                    try:
+                        _ef_bars = _fetch_candles_sync(_ef_coin, "1d", 5, 6 * 3600 * 1000)
+                        if _ef_bars and len(_ef_bars) >= 2:
+                            _ef_cbc[_ef_coin] = _ef_bars
+                    except Exception:
+                        pass
+                _ef_sigs = _ef_compute(_ef_cbc, _ef_cfg)
+                _ef_log(_ef_sigs, _ef_cfg)
+        except Exception as _efe:
+            logger.warning(f"[extreme-fade] scan failed (non-fatal): {_efe}")
+
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
         # feed can show *why* a coin was picked, not just that it was.
