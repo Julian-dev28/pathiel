@@ -45,9 +45,10 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from hermes_trader.agents.perception import scan_once
+from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
+from hermes_trader.agents.xs_momentum_live import maybe_rebalance as _xs_maybe_rebalance
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
     close_position_market,
@@ -753,6 +754,18 @@ while True:
         logger.info("Scanning markets...")
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
+
+        # Cross-sectional momentum rebalancer (validated +EV edge). Self-gates on the hold-days
+        # timer; SHADOW by default (logs the target long-K/short-K book, places NO orders) until
+        # forward-validated. Wrapped so it can never break the scan loop.
+        try:
+            _xs_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _xse:
+            logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
         # feed can show *why* a coin was picked, not just that it was.

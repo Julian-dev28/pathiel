@@ -132,6 +132,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_hip3_24h_pct": 8.0,
         "min_volume_usd": 5_000_000,
     },
+    # Cross-sectional momentum rebalancer (validated +EV edge, ALPHA-PLAN.md). Market-neutral:
+    # long top-K / short bottom-K by trailing return, rebalanced every hold_days. shadow_mode=True
+    # logs the target book WITHOUT placing orders — forward-validate before going live.
+    "xs_momentum": {
+        "enabled": True,
+        "shadow_mode": True,
+        "lookback_days": 7,
+        "hold_days": 10,
+        "k_per_leg": 8,
+        "universe_top_n": 50,
+        "min_volume_usd": 5_000_000,
+    },
 }
 
 

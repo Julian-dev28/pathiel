@@ -163,5 +163,14 @@
     "min_gap_pct": 0.5,
     "catchup_hours": 4,
     "basket": ["xyz:SNDK", "xyz:AMD", "xyz:INTC", "xyz:ARM", "xyz:MU", "xyz:MRVL"]
+  },
+  "xs_momentum": {
+    "enabled": true,
+    "shadow_mode": true,
+    "lookback_days": 7,
+    "hold_days": 10,
+    "k_per_leg": 8,
+    "universe_top_n": 50,
+    "min_volume_usd": 5000000
   }
 }
