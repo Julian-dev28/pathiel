@@ -129,3 +129,8 @@ backtest-trades.csv
 .backups/
 .claude_prompt_regime.txt
 .clean-slate.json
+
+# alpha-hunt data caches
+.bt_candle_cache.json
+.bt_funding_cache.json
+.catalyst_gdelt_cache.json
