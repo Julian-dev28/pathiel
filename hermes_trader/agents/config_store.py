@@ -143,6 +143,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "k_per_leg": 8,
         "universe_top_n": 50,
         "min_volume_usd": 5_000_000,
+        # audit-driven upgrades: rank on the BTC-neutral RESIDUAL (stronger + smoother), and GATE
+        # on BTC vol (momentum lives in low-vol; go flat in high-vol = the dead regime).
+        "residual": True,
+        "beta_window": 30,
+        "vol_gate": True,
+        "vol_short": 14,
+        "vol_long": 90,
     },
 }
 

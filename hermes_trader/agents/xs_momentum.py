@@ -36,12 +36,45 @@ def trailing_return(bars: List[Any], lb: int) -> Optional[float]:
     return c_now / c_past - 1.0
 
 
-def rank_universe(candles_by_coin: Dict[str, List[Any]], lb: int, k: int) -> TargetBook:
-    """Rank coins by trailing `lb`-day return; top-`k` = longs, bottom-`k` = shorts. Returns an
-    empty book if fewer than 2k coins have enough history (can't form a clean spread)."""
+def _daily_rets(bars: List[Any], window: int) -> List[float]:
+    closes = [candle_val(b, "c") for b in bars[-(window + 1):]]
+    return [closes[i] / closes[i - 1] - 1.0 for i in range(1, len(closes)) if closes[i - 1] > 0]
+
+
+def _beta(coin_rets: List[float], bench_rets: List[float]) -> float:
+    """OLS beta of coin returns on benchmark returns (1.0 if too short / degenerate)."""
+    n = min(len(coin_rets), len(bench_rets))
+    if n < 8:
+        return 1.0
+    cr, br = coin_rets[-n:], bench_rets[-n:]
+    mb = sum(br) / n
+    vb = sum((x - mb) ** 2 for x in br)
+    if vb <= 0:
+        return 1.0
+    mc = sum(cr) / n
+    return sum((a - mc) * (b - mb) for a, b in zip(cr, br)) / vb
+
+
+def residual_score(bars: List[Any], bench_bars: List[Any], lb: int, beta_window: int = 30) -> Optional[float]:
+    """Idiosyncratic (benchmark-neutral) momentum: coin's lb-return minus beta×benchmark lb-return.
+    Validated (edge_sweep4.py) to be both stronger AND smoother across regimes than total return."""
+    rc = trailing_return(bars, lb)
+    rb = trailing_return(bench_bars, lb)
+    if rc is None or rb is None:
+        return None
+    beta = _beta(_daily_rets(bars, beta_window), _daily_rets(bench_bars, beta_window))
+    return rc - beta * rb
+
+
+def rank_universe(candles_by_coin: Dict[str, List[Any]], lb: int, k: int,
+                  bench_bars: Optional[List[Any]] = None, beta_window: int = 30) -> TargetBook:
+    """Rank coins by trailing `lb`-day momentum; top-`k` = longs, bottom-`k` = shorts. When
+    `bench_bars` is given, ranks on the RESIDUAL (benchmark-neutral) score — the validated, smoother
+    core. Else total return. Empty book if < 2k coins have enough history (can't form a clean spread)."""
     scored = []
     for coin, bars in (candles_by_coin or {}).items():
-        r = trailing_return(bars, lb)
+        r = (residual_score(bars, bench_bars, lb, beta_window) if bench_bars is not None
+             else trailing_return(bars, lb))
         if r is not None:
             scored.append((coin, r))
     if len(scored) < 2 * k:

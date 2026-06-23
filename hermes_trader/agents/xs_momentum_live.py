@@ -12,11 +12,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import statistics
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
-from hermes_trader.agents.xs_momentum import rank_universe, rebalance_plan, is_empty_plan
+from hermes_trader.agents.xs_momentum import rank_universe, rebalance_plan, is_empty_plan, TargetBook
+from hermes_trader.indicators.math import candle_val
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -60,16 +62,42 @@ def _target_book(universe, cfg, fetch_candles):
     xs = cfg.get("xs_momentum") or {}
     lb = int(xs.get("lookback_days", 14))
     k = int(xs.get("k_per_leg", 8))
-    nbars = lb + 10
+    beta_window = int(xs.get("beta_window", 30))
+    nbars = max(lb + 10, beta_window + 5, 40)
     cbc = {}
     for coin in _eligible(universe, cfg):
         try:
-            bars = fetch_candles(coin, "1d", max(nbars, 30))
+            bars = fetch_candles(coin, "1d", nbars)
         except Exception:
             bars = None
         if bars and len(bars) >= lb + 1:               # trailing_return(lb) needs lb+1 bars
             cbc[coin] = bars
-    return rank_universe(cbc, lb, k)
+    # RESIDUAL (BTC-neutral) ranking — validated stronger + smoother than total return (edge_sweep4).
+    bench = None
+    if bool(xs.get("residual", True)):
+        try:
+            bench = fetch_candles("BTC", "1d", nbars)
+        except Exception:
+            bench = None
+    return rank_universe(cbc, lb, k, bench_bars=bench, beta_window=beta_window)
+
+
+def _btc_vol_regime(fetch_candles, short: int = 14, long: int = 90) -> str:
+    """'high' if BTC's current `short`-day return-vol exceeds its trailing `long`-day median, else
+    'low'. The momentum edge concentrates in LOW vol (edge_sweep3); fail-open to 'low' on bad data."""
+    try:
+        bars = fetch_candles("BTC", "1d", long + short + 5)
+    except Exception:
+        return "low"
+    closes = [candle_val(b, "c") for b in (bars or [])]
+    if len(closes) < short + 10:
+        return "low"
+    rets = [closes[i] / closes[i - 1] - 1 for i in range(1, len(closes)) if closes[i - 1] > 0]
+    vols = [statistics.pstdev(rets[i - short:i]) for i in range(short, len(rets) + 1)]
+    if len(vols) < 10:
+        return "low"
+    med = statistics.median(vols[-long:] if len(vols) >= long else vols)
+    return "high" if vols[-1] > med else "low"
 
 
 def _book_from_positions(positions) -> (List[str], List[str]):
@@ -112,23 +140,32 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
     if now - _last_ts() < hold_days * 86400:
         return None                                            # not time to rebalance yet
 
-    book = _target_book(universe, config, fetch_candles)
-    if not book.longs or not book.shorts:
-        logger.info("[xs-momentum] no target book (too few coins) — skip rebalance")
-        return None
+    # VOL-REGIME GATE: the momentum edge concentrates in LOW BTC-vol (audit/edge_sweep3). In a
+    # HIGH-vol regime, go FLAT (empty target → close everything) to sit out the dead/choppy periods.
+    regime = "low"
+    if bool(xs.get("vol_gate", True)):
+        regime = _btc_vol_regime(fetch_candles, int(xs.get("vol_short", 14)), int(xs.get("vol_long", 90)))
+    if regime == "high":
+        book = TargetBook([], [], {})
+    else:
+        book = _target_book(universe, config, fetch_candles)
+        if not book.longs or not book.shorts:
+            logger.info("[xs-momentum] no target book (too few coins) — skip rebalance")
+            return None
     cur_long, cur_short = _book_from_positions(positions)
     plan = rebalance_plan(book, cur_long, cur_short)
     _save_ts(now)                                              # arm the timer regardless of shadow/live
 
     shadow = bool(xs.get("shadow_mode", True))
-    log_event({"event": "xs_rebalance", "shadow": shadow,
+    log_event({"event": "xs_rebalance", "shadow": shadow, "regime": regime,
                "longs": book.longs, "shorts": book.shorts,
                "open_long": plan["open_long"], "open_short": plan["open_short"],
                "close": plan["close_long"] + plan["close_short"]})
-    logger.info(f"[xs-momentum]{' SHADOW' if shadow else ' LIVE'} rebalance — "
+    logger.info(f"[xs-momentum]{' SHADOW' if shadow else ' LIVE'} rebalance [{regime}-vol] — "
                 f"target {len(book.longs)}L/{len(book.shorts)}S; "
                 f"open {len(plan['open_long'])}L+{len(plan['open_short'])}S, "
-                f"close {len(plan['close_long']) + len(plan['close_short'])}")
+                f"close {len(plan['close_long']) + len(plan['close_short'])}"
+                + ("  (flat: high-vol regime)" if regime == "high" else ""))
 
     if shadow or is_empty_plan(plan):
         return plan                                            # SHADOW: logged the target book, no orders

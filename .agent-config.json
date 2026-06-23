@@ -171,6 +171,11 @@
     "hold_days": 10,
     "k_per_leg": 8,
     "universe_top_n": 50,
-    "min_volume_usd": 5000000
+    "min_volume_usd": 5000000,
+    "residual": true,
+    "beta_window": 30,
+    "vol_gate": true,
+    "vol_short": 14,
+    "vol_long": 90
   }
 }
