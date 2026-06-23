@@ -39,7 +39,19 @@ Shape: 45% win / neg median → many small losses + fewer big convergence wins (
 - skip-momentum (12-1, LB=14/skip=3): +0.81% robust · TSMOM absolute (LB=40/thr=5%): +0.53% robust
   (directional, has market beta). Both robust but weaker than the xs core.
 
-### 4. Extreme-move fade — MARGINAL  (`edge_sweep.py`)
+### 4. Day-of-week seasonality — INDEPENDENT (calendar) family  (`edge_sweep3.py`)
+Cross-coin mean daily return by weekday: **Monday +0.78% (OOS +0.87/+0.68 robust)**, **Thursday
+−1.64% (robust negative)**, Sat +0.27%. Tradeable as a long-Mon / flat-or-short-Thu bias (net of a
+daily round-trip ~+0.6% Mon). ⚠ CAVEAT: 7 weekdays tested → multiple-comparisons risk; the OOS
+consistency (both halves agree) lends some confidence but treat as a tilt, validate forward. Calendar
+edge ⇒ orthogonal to momentum + pairs.
+
+### 5. VOL-REGIME FILTER for momentum — ENHANCEMENT (high value)  (`edge_sweep3.py`)
+The xs-momentum edge CONCENTRATES in low volatility: **+3.45% (win 65%, OOS +2.78/+4.12) when BTC
+trailing-vol is BELOW median**, vs a fragile +0.54% (OOS +1.17/−0.08) above. ⇒ **gate the rebalancer
+on BTC vol** (run / up-size only in low-vol regimes). Materially lifts the wired edge.
+
+### 6. Extreme-move fade — MARGINAL  (`edge_sweep.py`)
 After a single-day move > |12–18%|, fade it next day: +0.23–0.59%, robust but OOS-2nd-half ~flat.
 Thin — small overlay / confirmation at best.
 
@@ -85,12 +97,18 @@ the current per-coin scan→research→execute loop. Plan:
 - **Risk**: keep the bare safety gates (kill-switch, margin floor, per-name + gross caps). Market-
   neutral lowers directional risk but adds short-squeeze tail — cap per-name short size.
 
+## AUDIT LOG (truth-check — re-run core edges, confirm plan numbers reproduce)
+- 2026-06-23: xs-momentum LB=7/h=10 re-ran +2.37% OOS +2.49/+2.25 ✓ EXACT match. pairs +1.08%
+  OOS +1.10/+1.06 ✓ EXACT match. No drift/overstatement. Caches deterministic. (Re-audit each batch.)
+
 ## STATUS
-- **2 INDEPENDENT robust edge families validated** (the real prize, > 10 momentum lookalikes):
-  (1) **Momentum** — xs core +2.37%, vol-scaled +1.7% (steadier), skip/TSMOM variants. Directional-relative.
+- **3 INDEPENDENT robust edge families validated** (the real prize, not 10 momentum lookalikes):
+  (1) **Momentum** — xs core +2.37%, vol-scaled +1.7% (steadier); **concentrates in LOW BTC-vol
+      (+3.45%)** ⇒ add the vol-regime gate. Directional-relative.
   (2) **Pairs stat-arb** +1.08% — relative mean-reversion, ORTHOGONAL → stack for diversification.
-  + extreme-fade overlay (marginal). ~10 refuted (price patterns, Williams, catalysts, funding,
-  reversal, low-vol, lead-lag).
+  (3) **Day-of-week seasonality** — Mon +0.78%/Thu −1.64% robust (calendar; multiple-testing caveat).
+  + extreme-fade overlay (marginal). ~11 refuted (price patterns, Williams, catalysts, funding,
+  reversal, low-vol, lead-lag, turn-of-month).
 - **xs_momentum REBALANCER — wired + SHADOW-deployed + VERIFIED** (logged 8L/8S target book, 0 orders):
   - ✅ Pure engine `agents/xs_momentum.py` (rank_universe + rebalance_plan) + 6 unit tests (green).
   - ✅ Shadow runner `scripts/xs_momentum_run.py` — builds the live target book + plan, no orders.
