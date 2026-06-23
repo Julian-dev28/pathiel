@@ -101,9 +101,16 @@ the current per-coin scan→research→execute loop. Plan:
 - **Risk**: keep the bare safety gates (kill-switch, margin floor, per-name + gross caps). Market-
   neutral lowers directional risk but adds short-squeeze tail — cap per-name short size.
 
-## AUDIT LOG (truth-check — re-run core edges, confirm plan numbers reproduce)
-- 2026-06-23: xs-momentum LB=7/h=10 re-ran +2.37% OOS +2.49/+2.25 ✓ EXACT match. pairs +1.08%
-  OOS +1.10/+1.06 ✓ EXACT match. No drift/overstatement. Caches deterministic. (Re-audit each batch.)
+## AUDIT LOG (truth-check — re-run + STRESS-TEST, confirm robustness not just reproduction)
+- 2026-06-23 #1: xs-momentum +2.37% / pairs +1.08% reproduce EXACTLY. No drift.
+- 2026-06-23 #2 (`edge_audit.py`, perturbation stress-test of the WIRED xs-momentum):
+  - ROBUST to cost (+1.97% even at 30bps/name), K (+EV at 4/8/12), universe (+EV top-20/30/40). ✓
+  - long-only FRAGILE (+0.23%, OOS −3.33/+3.77) ⇒ edge IS the market-neutral spread, not beta. ✓
+  - ⚠ **FRAGILITY: regime-dependent.** 4 sub-period quartiles = +5.28% / +0.14% / −0.14% / +4.12%.
+    The edge is LUMPY — ~2-month flat/negative stretches (Q2/Q3). The 2-half OOS masked it. ⇒ the
+    **vol-regime gate is NECESSARY** (those dead periods ≈ high-vol/choppy), and expect multi-month
+    drawdowns live. The stack-test Sharpe (~4.95) is OPTIMISTIC (gross + smoothed); real Sharpe lower.
+  - ⚠ ALL backtests cover ONE ~6-month window (Mar–Jun 2026) — not proven across a bear/crash regime.
 
 ## STATUS
 - **3 INDEPENDENT robust edge families validated** (the real prize, not 10 momentum lookalikes):
