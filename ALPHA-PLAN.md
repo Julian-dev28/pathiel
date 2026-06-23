@@ -12,6 +12,14 @@ Goal: assemble ≥10 validated +EV helpers, wire the keepers (alone or stacked),
 
 ## ✅ VALIDATED EDGES (keepers)
 
+### ★ UPGRADE — RESIDUAL (BTC-neutral) momentum is the CORRECT core  (`edge_sweep4.py`)
+Ranking on each coin's return MINUS beta×BTC return (the idiosyncratic residual) both RAISES the
+return AND SMOOTHS it across regimes — directly fixing the lumpiness the audit found:
+total momentum +1.53% (quartiles +2.71/−0.79/−0.55/+4.77, 2/4 negative) → **residual momentum
++2.47% (quartiles +2.71/+2.48/+0.34/+4.37, ZERO negative quarters)**. ⇒ **the rebalancer should
+rank on the residual, not total return** (add a trailing-beta-neutral score to rank_universe).
+Acceleration (momentum-of-momentum) REFUTED (−0.68%, 3/4 neg).
+
 ### 1. Cross-sectional momentum — STRONG  (`edge_xsectional.py`)
 Rank the liquid universe by trailing return each rebalance; **LONG the top-8, SHORT the bottom-8**
 (market-neutral). Long-short spread is robust +EV at **every** lookback/hold tested:
