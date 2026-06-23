@@ -76,7 +76,11 @@ NEXT (independent structures preferred — momentum variants cluster, diminishin
 - **liquidation-cascade fade** (buy forced-sell wicks — needs liq data)
 - **Kalman/OU dynamic-hedge pairs** (improve the validated pairs edge: dynamic beta vs ratio)
 - **Hurst-regime switch** (run momentum when trending, pairs when mean-reverting)
-- **STACK**: momentum core (vol-scaled) + pairs stat-arb + extreme-fade overlay — combined vs each alone
+- ✅ **STACK tested** (`edge_stack.py`): momentum + pairs daily streams are UNCORRELATED (corr +0.05,
+  confirms orthogonality), but momentum's Sharpe dominates (gross ann ~4.95 vs pairs ~1.27) so 50/50 ≈
+  momentum. ⇒ momentum = primary book, pairs = SMALL uncorrelated allocation (not equal-weight).
+  Sharpes are GROSS of rebalance cost (optimistic); the orthogonality is the durable result.
+NEXT: OI-quadrant · 4h-momentum · liq-fade · Kalman/OU pairs · Hurst regime-switch · Sharpe-optimal blend weights
 
 ---
 
