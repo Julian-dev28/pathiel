@@ -76,5 +76,13 @@ the current per-coin scan→research→execute loop. Plan:
 
 ## STATUS
 - Validated: 2 edges (xs-momentum strong, extreme-fade marginal). 8+ refuted.
-- Next: test candidates 3–12 toward ≥10; build the `xs_momentum` rebalancer (validate-first) as the
-  first live wiring of a *proven* edge.
+- **xs_momentum REBALANCER — build in progress (validate-first):**
+  - ✅ Pure engine `agents/xs_momentum.py` (rank_universe + rebalance_plan) + 6 unit tests (green).
+  - ✅ Shadow runner `scripts/xs_momentum_run.py` — builds the live target book + plan, no orders.
+  - ✅ **Universe filter fixed** (exclude `@` spot/index markets — shadow caught untradeable shorts
+    @109/@144/@155) and **edge RE-VALIDATED on tradeable perps only**: LB=7d/hold=10d +2.37%,
+    OOS +2.49/+2.25 robust (most configs still robust; LB=30/hold=5 now borderline).
+  - ⏳ NEXT: loop integration — timer-based rebalance (every hold-days) + executor diff-execution
+    (close drops / open adds, BOTH legs incl. shorts), SHADOW mode default → live small-gross on sign-off.
+- Note: the `able` branch has ~10 PRE-EXISTING test_cleanup failures (executor news/shadow-signals
+  path) unrelated to this work — flagged, not introduced here.

@@ -24,7 +24,8 @@ def _ymd(ms): return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime
 
 def load():
     uni = [m for m in get_universe(include_hip3=False)
-           if ":" not in (m.get("coin") or "") and float(m.get("dayNtlVlm") or 0) >= VOL_FLOOR]
+           if ":" not in (m.get("coin") or "") and not (m.get("coin") or "").startswith("@")
+           and m.get("type") != "spot" and float(m.get("dayNtlVlm") or 0) >= VOL_FLOOR]
     uni = sorted(uni, key=lambda m: float(m.get("dayNtlVlm") or 0), reverse=True)[:TOPN]
     data = {}
     for m in uni:
