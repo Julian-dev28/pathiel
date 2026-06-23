@@ -27,33 +27,44 @@ Rank the liquid universe by trailing return each rebalance; **LONG the top-8, SH
 (+0.3% to −0.5%). Capturing it REQUIRES both legs — a market-neutral book, not the per-coin loop.
 **Recommended config: LB=14d, hold=5d** (most balanced OOS).
 
-### 2. Extreme-move fade — MARGINAL  (`edge_sweep.py`)
-After a single-day move > |12–18%|, fade it next day (big up→short, big down→long): +0.23–0.59%,
-robust but OOS-2nd-half ~flat. Real but thin — best as a small overlay / confirmation, not standalone.
+### 2. Pairs / cointegration stat-arb — STRONG, INDEPENDENT FAMILY  (`edge_pairs.py`)
+Mean-reversion of a market-neutral log-spread between co-moving coins (corr>0.6): trade z>2
+divergence, exit on reversion. **+1.08%/trade, n=2413, OOS +1.10/+1.06 (rock-solid)**. ORTHOGONAL
+to momentum (profits from relative mean-reversion, not trend) → stacking the two diversifies.
+Shape: 45% win / neg median → many small losses + fewer big convergence wins (size for that).
+
+### 3. Momentum variants/enhancements (same family as #1)  (`edge_sweep2.py`)
+- **vol-scaled xs-momentum** (inverse-vol legs): +0.92–1.70%, OOS +0.89/+0.95 — MORE STABLE than
+  plain. **Fold this weighting into the live rebalancer.**
+- skip-momentum (12-1, LB=14/skip=3): +0.81% robust · TSMOM absolute (LB=40/thr=5%): +0.53% robust
+  (directional, has market beta). Both robust but weaker than the xs core.
+
+### 4. Extreme-move fade — MARGINAL  (`edge_sweep.py`)
+After a single-day move > |12–18%|, fade it next day: +0.23–0.59%, robust but OOS-2nd-half ~flat.
+Thin — small overlay / confirmation at best.
 
 ---
 
 ## ❌ REFUTED (−EV, tested + rejected — do not revisit without a new angle)
 price breakout / oversold bounce / volume-momentum / trend-filtered breakout (`edge_movers.py`) ·
 Williams bar patterns (`edge_williams_patterns.py`) · daily news catalyst surge (`edge_catalyst.py`) ·
-funding-rate extremes (`edge_funding.py`) · short-term cross-sectional reversal · low-vol anomaly
-(`edge_sweep.py`). Common cause: on daily data, by the time an *absolute* single-coin signal is
-visible, the move already happened — we're structurally late. The cross-sectional (relative) frame
-is what broke through.
+funding-rate extremes (`edge_funding.py`) · short-term cross-sectional reversal · low-vol anomaly ·
+BTC lead-lag (alts don't follow BTC's prior-day move) (`edge_sweep.py`/`edge_sweep2.py`). Common
+cause: on daily data, by the time an *absolute* single-coin signal is visible, the move already
+happened — we're late. The RELATIVE frames (cross-sectional momentum, pairs spread) broke through.
 
 ---
 
-## 🔬 CANDIDATE QUEUE (toward ≥10 — test next)
-3. xs-momentum **vol-scaled** (weight legs by inverse realized vol — usually sharpens the spread)
-4. xs-momentum **with a market/BTC-regime filter** (only run net-long tilt when BTC trend up)
-5. **dual momentum** (xs rank + absolute trend filter on each leg)
-6. **time-of-day / weekend** seasonality (needs intraday cache)
-7. **pairs / correlation reversion** (cointegrated majors)
-8. **OI/price 4-quadrant** (the OI logger has been collecting — `oi_quadrant_backtest.py`)
-9. xs-momentum on **4h** bars (faster rebalance — more turns, check cost drag)
-10. **basis/spot-perp** dislocation (market-neutral carry)
-11. **liquidation-cascade fade** (buy forced-sell wicks)
-12. **stacking**: xs-momentum core + extreme-fade overlay + regime gate — test the combination vs each alone
+## 🔬 CANDIDATE QUEUE (the infinite quest continues)
+DONE: ✅ vol-scaled xs · ✅ skip-momentum · ✅ TSMOM · ✅ pairs stat-arb · ❌ BTC lead-lag · ❌ funding · ❌ low-vol
+NEXT (independent structures preferred — momentum variants cluster, diminishing returns):
+- **time-of-day / day-of-week / turn-of-month** seasonality (needs intraday cache)
+- **OI/price 4-quadrant** (OI logger collecting — `oi_quadrant_backtest.py`)
+- xs-momentum on **4h** bars (faster rebalance — check cost drag)
+- **liquidation-cascade fade** (buy forced-sell wicks — needs liq data)
+- **Kalman/OU dynamic-hedge pairs** (improve the validated pairs edge: dynamic beta vs ratio)
+- **Hurst-regime switch** (run momentum when trending, pairs when mean-reverting)
+- **STACK**: momentum core (vol-scaled) + pairs stat-arb + extreme-fade overlay — combined vs each alone
 
 ---
 
@@ -75,8 +86,12 @@ the current per-coin scan→research→execute loop. Plan:
   neutral lowers directional risk but adds short-squeeze tail — cap per-name short size.
 
 ## STATUS
-- Validated: 2 edges (xs-momentum strong, extreme-fade marginal). 8+ refuted.
-- **xs_momentum REBALANCER — build in progress (validate-first):**
+- **2 INDEPENDENT robust edge families validated** (the real prize, > 10 momentum lookalikes):
+  (1) **Momentum** — xs core +2.37%, vol-scaled +1.7% (steadier), skip/TSMOM variants. Directional-relative.
+  (2) **Pairs stat-arb** +1.08% — relative mean-reversion, ORTHOGONAL → stack for diversification.
+  + extreme-fade overlay (marginal). ~10 refuted (price patterns, Williams, catalysts, funding,
+  reversal, low-vol, lead-lag).
+- **xs_momentum REBALANCER — wired + SHADOW-deployed + VERIFIED** (logged 8L/8S target book, 0 orders):
   - ✅ Pure engine `agents/xs_momentum.py` (rank_universe + rebalance_plan) + 6 unit tests (green).
   - ✅ Shadow runner `scripts/xs_momentum_run.py` — builds the live target book + plan, no orders.
   - ✅ **Universe filter fixed** (exclude `@` spot/index markets — shadow caught untradeable shorts
