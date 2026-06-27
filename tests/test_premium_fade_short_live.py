@@ -21,6 +21,14 @@ def _daily_bars(n=40, vol=250_000, close=100.0):
     return bars
 
 
+def _stale_daily_bars(n=40, vol=250_000, close=100.0, age_days=12):
+    """Daily bars whose LAST completed bar is `age_days` old (stale price feed, e.g. TON)."""
+    last_t = NOW_MS - age_days * DAY
+    start = last_t - (n - 1) * DAY
+    return [{"t": start + i * DAY, "o": close, "h": close * 1.02, "l": close * 0.98,
+             "c": close, "v": vol} for i in range(n)]
+
+
 def _spike_funding(last_premium):
     """31 daily premium rows ending at NOW_MS; flat-ish history + a final spike."""
     rows = []
@@ -139,6 +147,21 @@ def test_btc_excluded_from_candidates(monkeypatch):
     rec = pfs.maybe_run(_cfg(), [{"coin": "BTC", "type": "perp"}, {"coin": "ALT", "type": "perp"}],
                         [], _fetch, lambda a: {"executed": True})
     assert all(s["coin"] != "BTC" for s in rec["candidates"])
+
+
+def test_stale_price_candle_skipped(monkeypatch):
+    """A live premium spike on a coin with a stale daily candle (TON-like) must NOT record —
+    no valid current entry reference."""
+    _setup(monkeypatch)   # ALT premium spikes
+    calls = []
+
+    def _fetch_stale(coin, interval, n):
+        return _stale_daily_bars()   # last bar 12 days old
+
+    rec = pfs.maybe_run(_cfg(), [{"coin": "ALT", "type": "perp", "dayNtlVlm": 30_000_000}],
+                        [], _fetch_stale, lambda a: calls.append(a) or {"executed": True})
+    assert rec["signals"] == 0
+    assert calls == []
 
 
 def test_blocked_executor_releases_claim(monkeypatch):

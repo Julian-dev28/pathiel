@@ -254,6 +254,11 @@ def _candidate_signals(config: Dict[str, Any], universe, fetch_candles: Callable
     regime_window = int(config.get("btc_window", 20))
     history_bars = max(vol_window + 3, regime_window + 2, int(config.get("history_bars", 40)))
     max_eval = int(config.get("max_eval_coins", 60))
+    # staleness cap on the PRICE candle: a coin with a live premium spike but a stale/missing
+    # daily bar (e.g. delisted/sparse feed) has no valid current entry reference — skip it, or it
+    # records an ungradeable junk candidate that pollutes the forward verdict. (premium updates
+    # hourly, so this is NOT the daily-roll entry-window the price-signal books use.)
+    stale_cap_ms = float(config.get("max_bar_age_hours", 48.0)) * 3_600_000
 
     try:
         btc = _completed_bars(fetch_candles("BTC", "1d", history_bars), now_ms)
@@ -277,6 +282,9 @@ def _candidate_signals(config: Dict[str, Any], universe, fetch_candles: Callable
             bars = []
         if len(bars) < 3:
             continue
+        sig_t = _bar_t(bars[-1])
+        if sig_t and (now_ms - (sig_t + _DAY_MS)) > stale_cap_ms:
+            continue  # stale daily candle -> no valid current entry reference
         dvol = _trailing_dvol(bars, vol_window)
         if dvol < min_dvol:
             continue
@@ -284,7 +292,6 @@ def _candidate_signals(config: Dict[str, Any], universe, fetch_candles: Callable
         z = _premium_z(coin, now_ms, lookback_days)
         if z is None or z < z_threshold:
             continue
-        sig_t = _bar_t(bars[-1])
         signals.append({
             "coin": coin,
             "side": "short",
