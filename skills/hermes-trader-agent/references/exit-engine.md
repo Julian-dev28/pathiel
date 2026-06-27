@@ -9,8 +9,8 @@ re-tuned 2026-06-16 (see "Scalp vs trend-ride" below) and tightened again in the
 
 - **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`, optionally
   widened to a volatility-scaled `atr_stop` (`atr_mult`×ATR clamped floor/ceiling).
-  Current live new-entry config: `max_loss_pct=2.5` spot, `max_loss_roe_pct=15`,
-  `atr_stop` ON (1.5× ATR, 1.0–2.5% clamp). At 12x the 15% ROE cap = 1.25% spot but
+  Current live new-entry config: `max_loss_pct=2.5` spot, `max_loss_roe_pct=25`,
+  `atr_stop` ON (1.5× ATR, 1.0–2.5% clamp). At 12x the 25% ROE cap = 2.08% spot but
   the atr_stop widens it toward ~2.5% on volatile movers. **2026-06-21: widened from
   the old 0.4%/3% fast-invalidation stop** — that tight stop was whipsawing volatile
   movers out of trend (EIGEN entered→stopped in 1min→ran +5%; AERO rode +10% on the

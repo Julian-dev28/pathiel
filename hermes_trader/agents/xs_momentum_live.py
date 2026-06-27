@@ -1,9 +1,8 @@
-"""Live wiring for the cross-sectional momentum rebalancer (SHADOW-first).
+"""Live wiring for the cross-sectional momentum rebalancer.
 
 Drives the pure engine (agents/xs_momentum.py) on a hold-days timer: builds the target book from
-cached daily candles, diffs vs the live book, then SHADOW-logs the plan (no orders) or LIVE-executes
-the diff. Default shadow_mode=True — validate forward before risking capital. The rebalance timer is
-persisted so a loop restart doesn't re-fire it.
+cached daily candles, diffs vs the live book, then executes the diff. The rebalance timer is
+persisted so a loop restart does not re-fire it.
 
 Vol-managed sizing (Moreira-Muir, W6): when xs_momentum.vol_managed.enabled=true, each rebalance's
 exposure is scaled by w_t = target_vol / realized_vol, clamped to [0.3, 2.0]. Realized vol is the
@@ -17,24 +16,21 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import statistics
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents.xs_momentum import rank_universe, rebalance_plan, is_empty_plan, TargetBook
-from hermes_trader.agents.rebalancer_owned import OwnedPositions, _live_coin_set
-from hermes_trader.agents.corr_gate import compute_corr_regime
+from hermes_trader.agents.rebalancer_owned import OwnedPositions, _live_coin_set, get_claims_registry, state_file
 from hermes_trader.indicators.math import candle_val
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
 
-_TS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                        ".xs_rebalance_ts")
-_OWNED_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                           ".xs_momentum_positions.json")
+_TS_FILE = state_file(".xs_rebalance_ts")
+_OWNED_FILE = state_file(".xs_momentum_positions.json")
+_BOOK_NAME = "xs_momentum"
 
 # Module-level singleton — loaded lazily on first maybe_rebalance call.
 _owned: Optional[OwnedPositions] = None
@@ -46,38 +42,42 @@ def _get_owned() -> OwnedPositions:
         _owned = OwnedPositions(_OWNED_FILE)
     return _owned.load()
 
+
+def prune_state_to_live(positions) -> Dict[str, List[str]]:
+    """Drop xs_momentum-owned coins that are no longer live, independent of rebalance cadence."""
+    owned = _get_owned()
+    live = _live_coin_set(positions)
+    before_longs = set(owned.longs)
+    before_shorts = set(owned.shorts)
+    owned.prune(live)
+    dropped_longs = before_longs - set(owned.longs)
+    dropped_shorts = before_shorts - set(owned.shorts)
+    if dropped_longs or dropped_shorts:
+        owned.save()
+        logger.info(
+            "[xs-momentum] pruned non-live owned coins "
+            f"longs={sorted(dropped_longs)} shorts={sorted(dropped_shorts)}"
+        )
+    claims = get_claims_registry()
+    before_claims = claims.claims()
+    claims.prune_to(live, _BOOK_NAME)
+    after_claims = claims.claims()
+    dropped_claims = sorted(
+        coin for coin, owner in before_claims.items()
+        if owner == _BOOK_NAME and after_claims.get(coin) != owner
+    )
+    if dropped_claims:
+        claims.save()
+        logger.info(f"[xs-momentum] pruned non-live claims {dropped_claims}")
+    return {
+        "longs": sorted(dropped_longs),
+        "shorts": sorted(dropped_shorts),
+        "claims": dropped_claims,
+    }
+
 # ── Vol-managed sizing state (W6: Moreira-Muir) ────────────────────────────────
-_VOLMGD_HISTORY_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    ".xs_volmgd_history",
-)
-_VOLMGD_WINDOW = 20   # default rolling window; matches edge_volmgd_amihud.py
-
-# Corr-regime history file — persists rolling avg pairwise corr values across restarts.
-_CORR_HISTORY_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    ".xs_corr_history",
-)
-
-
-def _load_corr_history() -> List[float]:
-    try:
-        with open(_CORR_HISTORY_FILE) as fh:
-            data = json.load(fh)
-        if isinstance(data, list):
-            return [float(x) for x in data]
-    except Exception:
-        pass
-    return []
-
-
-def _save_corr_history(history: List[float], max_len: int = 200) -> None:
-    try:
-        with open(_CORR_HISTORY_FILE, "w") as fh:
-            json.dump(history[-max_len:], fh)
-    except Exception:
-        pass
-
+_VOLMGD_HISTORY_FILE = state_file(".xs_volmgd_history")
+_VOLMGD_WINDOW = 20   # default rolling window for realized rebalance-period returns
 
 def _load_volmgd_history() -> List[float]:
     """Load persisted rebalance-return history (list of floats, most recent last)."""
@@ -150,14 +150,25 @@ def _eligible(universe: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[str]:
 
 def _target_book(universe, cfg, fetch_candles):
     """Build the target TargetBook. Returns (book, cbc) where cbc is the candles dict;
-    cbc is passed to the corr-gate so it can reuse already-fetched (cached) candles."""
+    cbc is passed to the corr-gate so it can reuse already-fetched (cached) candles.
+
+    Coins claimed by other factor books are excluded from the candidate universe before
+    ranking so no two books ever target the same coin simultaneously (cross-book claim
+    registry — rebalancer_owned.ClaimsRegistry)."""
     xs = cfg.get("xs_momentum") or {}
     lb = int(xs.get("lookback_days", 14))
     k = int(xs.get("k_per_leg", 8))
     beta_window = int(xs.get("beta_window", 30))
-    nbars = max(lb + 10, beta_window + 5, 40)
+    ranking = str(xs.get("ranking", "raw"))          # "raw" (validated original) | "z_ext" (validated upgrade)
+    zext_window = int(xs.get("zext_window", 14))
+    nbars = max(lb + 10, beta_window + 5, zext_window + 5, 40)
+    # Exclude coins already claimed by a different book.
+    _blocked = get_claims_registry().claimed_by_others(_BOOK_NAME)
     cbc = {}
     for coin in _eligible(universe, cfg):
+        if coin in _blocked:
+            logger.debug(f"[xs-momentum] skipping {coin} — claimed by another book")
+            continue
         try:
             bars = fetch_candles(coin, "1d", nbars)
         except Exception:
@@ -171,7 +182,8 @@ def _target_book(universe, cfg, fetch_candles):
             bench = fetch_candles("BTC", "1d", nbars)
         except Exception:
             bench = None
-    return rank_universe(cbc, lb, k, bench_bars=bench, beta_window=beta_window), cbc
+    return rank_universe(cbc, lb, k, bench_bars=bench, beta_window=beta_window,
+                         ranking=ranking, zext_window=zext_window), cbc
 
 
 def _btc_vol_regime(fetch_candles, short: int = 14, long: int = 90) -> str:
@@ -209,7 +221,7 @@ def _book_from_positions(positions) -> (List[str], List[str]):
 
 
 def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0) -> Dict[str, Any]:
-    """Synthetic analysis for the executor. external_alpha bypasses the thought-engine entry gates
+    """Synthetic analysis for the executor. strategy_book bypasses the thought-engine entry gates
     (runner/trend) — this is a separate validated edge — while every SAFETY gate still applies.
     vol_scalar (Moreira-Muir W6) is stored in the analysis so the executor can note the scaling
     intent; actual position sizing is done by the executor via the standard notional path."""
@@ -220,16 +232,46 @@ def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0) 
         "reasoning": (f"[xs_momentum] {side} (trailing {rank_score*100:+.1f}%)"
                       + (f" [vol_scalar={vol_scalar:.2f}]" if vol_scalar != 1.0 else "")),
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
-        "composite_score": 0.0, "external_alpha": "xs_momentum",
+        "composite_score": 0.0, "strategy_book": "xs_momentum",
         "xs_vol_scalar": vol_scalar,   # downstream hooks may read this for sizing
     }
+
+
+def _execute_opened(result: Any) -> bool:
+    """True when execute_fn actually opened risk.
+
+    maybe_execute returns {"executed": false, ...} for gate/order/margin blocks.
+    Tests and some call sites use a simple spy that returns None after accepting
+    the analysis; keep that legacy shape as success.
+    """
+    if isinstance(result, dict):
+        nested = result.get("result")
+        if isinstance(nested, dict):
+            return bool(nested.get("executed"))
+        if "executed" in result:
+            return bool(result.get("executed"))
+        if "ok" in result:
+            return bool(result.get("ok"))
+    return result is None
+
+
+def _execute_block_detail(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+    return (
+        result.get("reason")
+        or result.get("error")
+        or result.get("blocked_by")
+        or result.get("gate_results")
+        or result
+    )
 
 
 def maybe_rebalance(config: Dict[str, Any], universe, positions,
                     fetch_candles: Callable, execute_fn: Callable, close_fn: Callable,
                     _last_rebal_return: Optional[float] = None) -> Optional[Dict]:
     """Self-gating rebalance: fires at most once per hold-days. Returns the plan (or None if not
-    time / disabled / empty). SHADOW logs only; LIVE executes the diff (close drops, open adds).
+    time / disabled / empty). Enabled books execute the diff (close drops, open adds).
 
     _last_rebal_return: if provided by the caller, appended to the vol-managed history before
     computing the scalar for this rebalance (correct Moreira-Muir: update history with t-1 return,
@@ -276,82 +318,83 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
             logger.info("[xs-momentum] no target book (too few coins) — skip rebalance")
             return None
 
-    # ── Correlation-regime gate (V3 — validated: momentum Sharpe 4.95→8.36 in low-corr).
-    # When correlation_gate.enabled=True, scale momentum notional UP in low-corr regimes (more
-    # cross-sectional dispersion → momentum pays more). Pure no-op while enabled=False (scalar=1.0).
-    cg_cfg = config.get("correlation_gate") or {}
-    corr_scalar = 1.0
-    if bool(cg_cfg.get("enabled", False)) and cbc_for_corr:
-        corr_history = _load_corr_history()
-        cg_state = compute_corr_regime(
-            cbc_for_corr, corr_history,
-            window=int(cg_cfg.get("window", 14)),
-            cap=float(cg_cfg.get("cap", 1.5)),
-            low_scalar=float(cg_cfg.get("low_corr_scalar", 1.2)),
-            high_scalar=float(cg_cfg.get("high_corr_scalar", 1.2)),
-        )
-        if cg_state.avg_corr > 0:
-            corr_history.append(cg_state.avg_corr)
-            _save_corr_history(corr_history)
-        corr_scalar = cg_state.momentum_scalar
-        logger.debug(f"[xs-momentum] corr_gate: avg_corr={cg_state.avg_corr:.3f} "
-                     f"high={cg_state.corr_high} momentum_scalar={corr_scalar:.3f}")
-
     # ── Ownership-scoped current book ─────────────────────────────────────────
     # cur_long/cur_short ONLY contain coins this rebalancer opened (intersected with
     # live positions). This guarantees close_long/close_short never contain foreign
     # positions opened by the thought-engine or other rebalancers.
     owned = _get_owned()
-    owned.prune(_live_coin_set(positions))
+    _live = _live_coin_set(positions)
+    owned.prune(_live)
+    # Mirror prune into the cross-book claims registry: if a coin we claimed was
+    # stopped out externally, release the claim so other books can pick it up.
+    get_claims_registry().prune_to(_live, _BOOK_NAME)
     cur_long, cur_short = owned.filter_to_owned(positions)
 
     plan = rebalance_plan(book, cur_long, cur_short)
-    _save_ts(now)                                              # arm the timer regardless of shadow/live
+    _save_ts(now)                                              # arm the timer before live execution
 
-    shadow = bool(xs.get("shadow_mode", True))
-    log_event({"event": "xs_rebalance", "shadow": shadow, "regime": regime,
+    log_event({"event": "xs_rebalance", "regime": regime,
                "longs": book.longs, "shorts": book.shorts,
                "open_long": plan["open_long"], "open_short": plan["open_short"],
                "close": plan["close_long"] + plan["close_short"],
-               "vol_scalar": vol_scalar, "vol_managed": vm_enabled,
-               "corr_scalar": corr_scalar})
-    logger.info(f"[xs-momentum]{' SHADOW' if shadow else ' LIVE'} rebalance [{regime}-vol] — "
+               "vol_scalar": vol_scalar, "vol_managed": vm_enabled})
+    logger.info(f"[xs-momentum] LIVE rebalance [{regime}-vol] — "
                 f"target {len(book.longs)}L/{len(book.shorts)}S; "
                 f"open {len(plan['open_long'])}L+{len(plan['open_short'])}S, "
                 f"close {len(plan['close_long']) + len(plan['close_short'])}"
                 + (f"  [vol_scalar={vol_scalar:.2f}]" if vm_enabled else "")
-                + (f"  [corr_scalar={corr_scalar:.2f}]" if corr_scalar != 1.0 else "")
                 + ("  (flat: high-vol regime)" if regime == "high" else ""))
 
-    if shadow or is_empty_plan(plan):
-        return plan                                            # SHADOW: logged the target book, no orders
+    if is_empty_plan(plan):
+        return plan
 
     # LIVE: close drops first (free capital), then open adds — both legs.
-    # corr_scalar multiplies the per-trade notional (via external_alpha_notional in the analysis).
-    # While correlation_gate.enabled=False corr_scalar=1.0 → no change in behaviour.
+    claims = get_claims_registry()
     for coin in plan["close_long"] + plan["close_short"]:
         try:
             close_fn(coin)
             owned.remove(coin)
+            claims.release(coin, _BOOK_NAME)
         except Exception as e:
             logger.warning(f"[xs-momentum] close {coin} failed: {e}")
     for coin in plan["open_long"]:
         try:
+            if not claims.claim(coin, _BOOK_NAME):
+                logger.warning(f"[xs-momentum] open long {coin} skipped — claimed by {claims.owner_of(coin)}")
+                continue
             a = _analysis(coin, "long", book.scores.get(coin, 0.0), vol_scalar)
-            if corr_scalar != 1.0 and a.get("external_alpha_notional", 0):
-                a["external_alpha_notional"] = a["external_alpha_notional"] * corr_scalar
-            execute_fn(a)
-            owned.add(coin, "long")
+            result = execute_fn(a)
+            if _execute_opened(result):
+                owned.add(coin, "long")
+            else:
+                claims.release(coin, _BOOK_NAME)
+                reason = _execute_block_detail(result)
+                logger.warning(
+                    f"[xs-momentum] open long {coin} not recorded — executor did not open"
+                    + (f": {reason}" if reason else "")
+                )
         except Exception as e:
+            claims.release(coin, _BOOK_NAME)
             logger.warning(f"[xs-momentum] open long {coin} failed: {e}")
     for coin in plan["open_short"]:
         try:
+            if not claims.claim(coin, _BOOK_NAME):
+                logger.warning(f"[xs-momentum] open short {coin} skipped — claimed by {claims.owner_of(coin)}")
+                continue
             a = _analysis(coin, "short", book.scores.get(coin, 0.0), vol_scalar)
-            if corr_scalar != 1.0 and a.get("external_alpha_notional", 0):
-                a["external_alpha_notional"] = a["external_alpha_notional"] * corr_scalar
-            execute_fn(a)
-            owned.add(coin, "short")
+            result = execute_fn(a)
+            if _execute_opened(result):
+                owned.add(coin, "short")
+            else:
+                claims.release(coin, _BOOK_NAME)
+                reason = _execute_block_detail(result)
+                logger.warning(
+                    f"[xs-momentum] open short {coin} not recorded — executor did not open"
+                    + (f": {reason}" if reason else "")
+                )
         except Exception as e:
+            claims.release(coin, _BOOK_NAME)
             logger.warning(f"[xs-momentum] open short {coin} failed: {e}")
+    claims.save()
     owned.save()
     return plan

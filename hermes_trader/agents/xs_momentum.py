@@ -66,15 +66,61 @@ def residual_score(bars: List[Any], bench_bars: List[Any], lb: int, beta_window:
     return rc - beta * rb
 
 
+def zext_score(bars: List[Any], n: int = 14) -> Optional[float]:
+    """Z-scored extension: (close − mean) / std over the last `n` daily closes. The VALIDATED upgrade
+    to the raw trailing-return ranking (reaudit_zmomentum.py: de-survivored +2.11% ROBUST vs RAW +0.36%
+    fragile; robust in BOTH bull and bear sub-regimes; orthogonal residual +2.17%). A price-vs-own-recent-
+    mean z-score (NOT beta-neutralized — that's how it was validated). None if too little history."""
+    closes = [candle_val(b, "c") for b in (bars or [])[-n:]]
+    closes = [c for c in closes if c is not None and c > 0]
+    if len(closes) < max(4, n // 2):
+        return None
+    m = sum(closes) / len(closes)
+    sd = (sum((c - m) ** 2 for c in closes) / len(closes)) ** 0.5
+    if sd <= 0:
+        return None
+    return (closes[-1] - m) / sd
+
+
+def pctk_score(bars: List[Any], n: int = 14) -> Optional[float]:
+    """Percent-location in the trailing high/low channel, centered at zero.
+
+    This is the daily stochastic %K core: +0.5 means the close is at the trailing
+    high, -0.5 means it is at the trailing low. Codex alpha-miner found it to be
+    a cleaner expression of the same cross-sectional extension alpha as z_ext,
+    but not additive to z_ext.
+    """
+    bars = list((bars or [])[-n:])
+    if len(bars) < max(4, n // 2):
+        return None
+    hi = max(candle_val(b, "h") for b in bars)
+    lo = min(candle_val(b, "l") for b in bars)
+    cur = candle_val(bars[-1], "c")
+    if hi <= lo or cur is None:
+        return None
+    return (cur - lo) / (hi - lo) - 0.5
+
+
 def rank_universe(candles_by_coin: Dict[str, List[Any]], lb: int, k: int,
-                  bench_bars: Optional[List[Any]] = None, beta_window: int = 30) -> TargetBook:
-    """Rank coins by trailing `lb`-day momentum; top-`k` = longs, bottom-`k` = shorts. When
-    `bench_bars` is given, ranks on the RESIDUAL (benchmark-neutral) score — the validated, smoother
-    core. Else total return. Empty book if < 2k coins have enough history (can't form a clean spread)."""
+                  bench_bars: Optional[List[Any]] = None, beta_window: int = 30,
+                  ranking: str = "raw", zext_window: int = 14) -> TargetBook:
+    """Rank coins; top-`k` = longs, bottom-`k` = shorts. `ranking`:
+      "raw"   — trailing `lb`-day momentum; RESIDUAL (benchmark-neutral) when `bench_bars` given,
+                else total return. The validated original.
+      "z_ext" — (close − MA_n)/σ_n z-scored extension (`zext_score`), the validated UPGRADE
+                (reaudit_zmomentum.py); ignores bench_bars (not beta-neutralized, as validated).
+      "pct_k" — trailing-channel percent location (`pctk_score`), Codex A/B candidate that is
+                not additive to z_ext but survives catalyst strip better in the current cache.
+    Empty book if < 2k coins have enough history (can't form a clean spread)."""
     scored = []
     for coin, bars in (candles_by_coin or {}).items():
-        r = (residual_score(bars, bench_bars, lb, beta_window) if bench_bars is not None
-             else trailing_return(bars, lb))
+        if ranking == "z_ext":
+            r = zext_score(bars, zext_window)
+        elif ranking == "pct_k":
+            r = pctk_score(bars, zext_window)
+        else:
+            r = (residual_score(bars, bench_bars, lb, beta_window) if bench_bars is not None
+                 else trailing_return(bars, lb))
         if r is not None:
             scored.append((coin, r))
     if len(scored) < 2 * k:

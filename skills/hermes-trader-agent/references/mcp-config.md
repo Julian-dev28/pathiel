@@ -26,17 +26,19 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 100 tools (52 implemented + 48 honest `not_implemented` stubs
-for Hyperliquid SDK calls not yet wired). The 5 trading-core tools below are the
+The server exposes 99 tools (52 implemented + 47 honest `not_implemented` stubs
+for Hyperliquid SDK calls not yet wired). The 7 trading-core tools below are the
 ones you call directly.
 
 | Tool | Args | Returns |
 |------|------|---------|
 | `scan` | `minScore: number` (0-100), `maxMarkets?: number` | Triggered candidates |
-| `research` | `coin: string` | AI analysis verdict |
+| `research` | `coin: string` | AI analysis verdict from the configured brain provider |
+| `submit_verdict` | verdict payload | Store an agent-authored verdict and return `analysisId` |
 | `execute` | `analysisId: string` | Trade result |
+| `close_position` | `coin: string` | Delegates to `executor.close_position_market()` |
 | `state` | none | Full agent state |
-| `config` | see SKILL.md | Current or updated config |
+| `config` | see SKILL.md | Current or updated config, including `ai_brain` |
 
 ## Environment Variables
 
@@ -47,6 +49,10 @@ HYPERLIQUID_WALLET_ADDRESS=0x...
 HYPERLIQUID_PRIVATE_KEY=0x...
 # HYPERLIQUID_MASTER_ADDRESS=0x...   # optional, for agent-wallet setups
 OPENROUTER_API_KEY=sk-or-...
+# AI_BRAIN_PROVIDER=openrouter   # openrouter | claude_cli | codex_cli
+# AI_BRAIN_TIMEOUT_S=120
+# CLAUDE_CLI_COMMAND=claude
+# CODEX_CLI_COMMAND=codex
 ```
 
 ## Testing Tools

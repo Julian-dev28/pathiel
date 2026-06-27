@@ -74,6 +74,22 @@ python-service/research_cache.json
 logs/
 python-service/logs/
 
+# Hermes-Trader runtime state (per-strategy timers, position claims, telemetry —
+# generated at runtime, never source). The bot recreates these on start.
+.data_funding_oi.jsonl
+.data_logger_ts
+.extreme_fade_live_ts
+.extreme_fade_state.json
+.hail_mary_short_ts
+.rally_exhaustion_live_seen.json
+.rally_exhaustion_live_ts
+.rebalancer_claims.json
+.xs_momentum_positions.json
+.xs_rebalance_ts
+.xs_volmgd_history
+socket_full.json
+socket_full.txt
+
 # sentient-trader-mcp build artifacts
 sentient-trader-mcp/dist/
 sentient-trader-mcp/*.egg-info/

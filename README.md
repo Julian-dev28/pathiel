@@ -1,5 +1,5 @@
 # Hermes-Trader
-> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). A standalone Python system built with FastAPI and OpenRouter, operated by [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP server.
+> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP server.
 
 **What it does:** Scans every Hyperliquid market (500+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with DSL-managed dynamic exits — no human in the loop.
 
@@ -29,7 +29,7 @@ Trading signals appear constantly — 5-minute spikes, hourly trends, daily brea
 
 1. **Scan** — 500+ markets in parallel with volume pre-filtering and rate-limit-aware batching
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
-3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst
+3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst, through the selected AI brain provider
 4. **Execution** — ATR equal-risk sizing, Hyperliquid-valid order normalization, and DSL dynamic exits (loss protection → profit locking)
 5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
 
@@ -43,14 +43,14 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 +---------------------------------------------------------------+
 |          hermes-trader — autonomous trading pipeline          |
 |                                                               |
-|  Scan ➜ TA Filter ➜ AI Research ➜ Risk Gates ➜ Execute ➜ DSL Monitor ──▶ Auto-Close
+|  Scan ➜ TA Filter ➜ AI Brain ➜ Risk Gates ➜ Execute ➜ DSL Monitor ──▶ Auto-Close
 |        (cheap)          (expensive)     (11 gates)            (per-tick, 2-phase)
 │                       |
 │                  Only CONFIRMED
 │                  signals proceed
 ├───────────────────────────────────────────────────────────────┤
 │               Hyperfeed Discovery                             |
-│  Leaderboard • Smart Money • OI Anomaly • Whale Tracking      |
+│  Leaderboard • Whale Flow • OI Anomaly • Whale Tracking       |
 +---------------------------------------------------------------+
 ```
 
@@ -58,14 +58,14 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────┐    ┌──────────┐
-│  Perception │───>│  TA Filter   │───>│   AI Research   │───>│  Risk    │───>│  Executor│
-│   Scanner   │    │  (TA Filter) │    │ (OpenRouter API)│    │  Gates   │    │ (HL + DSL)│
+│  Perception │───>│  TA Filter   │───>│    AI Brain     │───>│  Risk    │───>│  Executor│
+│   Scanner   │    │  (TA Filter) │    │ provider seam   │    │  Gates   │    │ (HL + DSL)│
 │ 5m/1h/4h    │    │  EMA/RSI/ATR│    │ Verdict + Price │    │  11 gates│    │ SL/TP    │
 │ Volume-N    │    └──────────────┘    └─────────────────┘    └──────────┘    └──────────┘
 └─────────────┘
      │
      ├── Hyperfeed Discovery (leaderboard, whale index, OI anomaly)
-     │     ↳ smart_money_concentration(), oi_funding_anomaly()
+     │     ↳ whale_concentration(), oi_funding_anomaly()
      │     ↳ discovery_get_top_traders(), leaderboard_get_trader_positions()
      └── Rate-Limit Pipeline (1200 weight/min — batch + cache)
 ```
@@ -79,6 +79,13 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 - **Parallel batch scanning**: Workers fan out within batches, sleep between
 - **TTL caching**: 5m candles are cached inside the scan interval; 1h enrichment is cached longer and only fetched for surfaced markets
 - **Configurable**: `HERMES_SCAN_INTERVAL`, `HERMES_MAX_MARKETS`, `HERMES_SCAN_WORKERS`, `HERMES_BATCH_SIZE`, `HERMES_BATCH_SLEEP`
+
+### Pluggable AI Brain
+- **Single seam**: `research._call_ai()` delegates to `hermes_trader/agents/ai_brain.py`; every provider returns verdict text for the same `parse_verdict()` contract.
+- **Providers**: `openrouter` (default), `claude_cli`, and `codex_cli`.
+- **Hot switch**: set `AI_BRAIN_PROVIDER` or `.agent-config.json` → `ai_brain.provider` to switch without code changes. Config is read on each research call.
+- **Failure-safe**: provider failure, timeout, empty output, or CLI JSON-less output returns `""`, which becomes `ai_down=True` and a PASS that cannot be upgraded by the TA sidestep path.
+- **OpenRouter preserved**: the 402 affordability retry still downgrades `max_tokens` once before failing closed.
 
 ### DSL (Dynamic Stop-Loss) Exit Engine
 - **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms, optionally widened to a volatility-scaled `atr_stop` (ATR×mult, clamped to floor/ceiling). Current live new-entry config is `2.5%` spot / `15%` ROE with `atr_stop` enabled (1.5× ATR, 1.0–2.5% clamp).
@@ -102,7 +109,7 @@ This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving s
 Replicates the Hyperfeed MCP plugin's data directly from HL API:
 - `leaderboard_get_markets(limit)` — top markets by OI + volume
 - `market_get_funding_regime()` — LONG_CROWDED / SHORT_CROWDED / NEUTRAL analysis
-- `smart_money_concentration()` — identifies assets with whale accumulation
+- `whale_concentration()` — identifies assets with whale accumulation
 - `oi_funding_anomaly()` — OI spike + negative funding + flat price = accumulation signal
 - `discovery_get_top_traders(...)` — trader rankings with win rates
 - `market_get_asset_data(asset)` — candles + funding + OI for any coin
@@ -116,12 +123,12 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_trader/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
 | `hermes_trader/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
 | `hermes_trader/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
-| `hermes_trader/agents/research.py` | AI research pipeline — fetches candles, builds context, calls OpenRouter for verdict |
+| `hermes_trader/agents/research.py` | AI research pipeline — fetches candles, builds context, dispatches to the configured AI brain |
+| `hermes_trader/agents/ai_brain.py` | Pluggable verdict providers: OpenRouter HTTP, Claude CLI, Codex CLI |
 | `hermes_trader/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
 | `hermes_trader/agents/executor.py` | ATR/fallback sizing + Hyperliquid precision normalization + EIP-712 order signing + DSL exit registration |
 | `hermes_trader/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
-| `hermes_trader/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, smart money signals |
-| `hermes_trader/agents/whale_index.py` | Whale detection — OI concentration + funding anomaly signals |
+| `hermes_trader/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, OI/funding context |
 | `hermes_trader/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
 | `hermes_trader/agents/config_store.py` | Config persistence layer |
 | `hermes_trader/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
@@ -155,9 +162,15 @@ So on a fresh clone: `.agent-config.json` is already there (tweak the values); `
 Copy `.env.local.example` → `.env.local` and fill in:
 
 ```bash
-# ── OpenRouter (AI research) ─────────────────────────────────
-OPENROUTER_API_KEY=sk-or-...your-key      # required
-OPENROUTER_MODEL=x-ai/grok-4.3            # optional — this is the default
+# ── AI brain / OpenRouter (default research provider) ─────────
+AI_BRAIN_PROVIDER=openrouter              # openrouter | claude_cli | codex_cli
+OPENROUTER_API_KEY=sk-or-...your-key      # required when provider=openrouter
+OPENROUTER_MODEL=x-ai/grok-4.3            # optional — this is the OpenRouter default
+# OPENROUTER_MAX_TOKENS=2048              # optional; 402 retry can shrink this once
+# AI_BRAIN_TIMEOUT_S=120                  # CLI providers are capped at 120s
+# CLAUDE_CLI_COMMAND=claude               # optional override for provider=claude_cli
+# CLAUDE_CLI_MAX_TURNS=1                  # cheap mode default
+# CODEX_CLI_COMMAND=codex                 # optional override for provider=codex_cli
 
 # ── Hyperliquid ──────────────────────────────────────────────
 HYPERLIQUID_WALLET_ADDRESS=0x...          # required — the signing (agent) wallet
@@ -201,6 +214,12 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 ```json
 {
   "mode": "LIVE",
+  "ai_brain": {
+    "provider": "openrouter",
+    "timeout_s": 120,
+    "claude_cli": { "command": "claude", "max_turns": 1 },
+    "codex_cli": { "command": "codex" }
+  },
   "enable_crypto": true,
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.2,
@@ -242,25 +261,26 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   },
   "ta_sidestep_force_execute": true,
   "override_max_daily_extension_pct": 30.0,
-  "override_volume_confirm": { "enabled": true, "min_ratio": 1.5 },
-  "trend_filter_200ma": { "enabled": true, "period": 200 },
+  "override_volume_confirm": { "enabled": true, "min_ratio": 1.2 },
+  "trend_filter_200ma": { "enabled": true, "period": 200, "allow_daily_mover_long_bypass": true },
   "runner_entry_gate": {
     "enabled": true,
-    "allow_shorts": true,
+    "allow_shorts": false,
+    "require_daily_mover_longs": false,
     "shock_day_fresh_impulse": true,
     "min_confidence": 0.67,
     "min_crypto_composite": 20.0,
-    "min_hip3_composite": 45.0,
+    "min_hip3_composite": 32.0,
     "mover_min_composite": 20.0
   },
-  "late_chase_relax": { "enabled": true, "shadow_mode": false, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
-  "capital_rotation": { "enabled": true, "shadow_mode": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 }
+  "late_chase_relax": { "enabled": true, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
+  "capital_rotation": { "enabled": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 },
+  "xs_momentum": { "enabled": true, "ranking": "pct_k", "lookback_days": 7, "hold_days": 5, "k_per_leg": 4 },
+  "extreme_fade": { "enabled": true, "crash_pct": -0.12, "max_new_per_cycle": 2, "scan_interval_min": 30 },
+  "rally_exhaustion": { "enabled": true, "threshold_pct": 12.0, "min_volume_usd": 20000000, "leverage": 1 },
+  "hail_mary_short": { "enabled": true, "shadow_only": true, "min_breadth_bearish_pct": 0.55, "min_volume_usd": 20000000 }
 }
 ```
-
-Additional signal/shadow blocks not shown above (all hot-read): `gex_signal`,
-`shadow_signals`, `signal_enforcement`, `smart_money`, `basis_gap`,
-`volstop_shadow`, `runner_mover_surface`. They wire the free signal suite + forward-validation loggers.
 
 The snippet above is the current live strategy shape, not a guarantee that those
 values are optimal in future market regimes. Missing keys are filled from
@@ -297,11 +317,15 @@ values are optimal in future market regimes. Missing keys are filled from
 
 **Nested blocks** (all in `.agent-config.json`, all hot-read for new entries):
 
+- **`ai_brain`** — verdict provider selection. `provider` can be `openrouter`,
+  `claude_cli`, or `codex_cli`; `AI_BRAIN_PROVIDER` overrides it. CLI providers
+  run in cheap/headless mode by default and must emit the same final-line verdict
+  JSON as OpenRouter. On any provider failure the result is `ai_down=True` PASS.
 - **`dsl_exit`** — trailing-stop engine. `max_loss_pct` and `max_loss_roe_pct`
   are the hard stop, with the tighter spot-equivalent value binding; the optional
   `atr_stop` sub-block widens it to a volatility-scaled stop (`atr_mult` × ATR,
   clamped to `floor_pct`/`ceiling_pct`). Current live new-entry values are
-  `max_loss_pct=2.5`, `max_loss_roe_pct=15`, `atr_stop` enabled (1.5×, 1.0–2.5%),
+  `max_loss_pct=2.5`, `max_loss_roe_pct=25`, `atr_stop` enabled (1.5×, 1.0–2.5%),
   `protect_pct=1.25`, and a tight `retrace_threshold=0.10`. `phase2_tiers` is the
   profit-scaled give-back ladder (loosens the trail on proven runners: +8%→0.35,
   +15%→0.40). `stale_flat_timeout_minutes` (480) exits positions that never reach
@@ -311,32 +335,35 @@ values are optimal in future market regimes. Missing keys are filled from
 - **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
   equal-risk position sizing: target risk = `risk_per_trade_pct × equity`, converted
   to notional from the configured stop distance. Current live uses
-  `risk_per_trade_pct=0.02` and `sizing_basis="primary_stop"`. This overrides the
+  `risk_per_trade_pct=0.2` and `sizing_basis="primary_stop"`. This overrides the
   flat `equity_fraction_per_trade` path; volatile/wide-stop coins get smaller size.
-- **`signal_enforcement`** `{enabled, veto, boost, gex_veto, boost_bar_delta,
-  whale_*}` — lets the free signals veto chop-traps / whales dumping and provide
-  forward-validation context. Cache-only on the execute path, using fresh TTL
-  entries only.
-- **`shadow_signals`** `{enabled, gex, short_volume, crypto_whale, news}` — logs the
-  free signals per candidate without affecting trades (forward validation).
 - **`ta_sidestep_force_execute`** — the only remaining PASS upgrade path. It can
   upgrade an AI PASS to LONG only on composite>=runner minimum or momentumBurst,
   never on slow-burn alone, never when AI is down, and never above
   `override_max_daily_extension_pct`. The upgraded LONG still must pass the
   normal runner gate.
-- **`late_chase_relax`** `{enabled, shadow_mode, min_ext_pct, max_ext_pct,
-  min_volume_usd}` — narrows the runner gate's "late trend-only chase" block:
+- **`late_chase_relax`** `{enabled, min_ext_pct, max_ext_pct, min_volume_usd}` —
+  narrows the runner gate's "late trend-only chase" block:
   trend-aligned entries with no fresh breakout are admitted ONLY on liquid coins
   (vol ≥ `min_volume_usd`) inside the `[min_ext_pct, max_ext_pct]` daily-extension
   band — the one pocket backtested +EV / OOS-robust (20–30% ext, +0.15–0.20%/t).
-  Low-liquidity and out-of-band chases stay blocked (measured −EV). `shadow_mode`
-  logs `would admit` without trading.
-- **`capital_rotation`** `{enabled, shadow_mode, min_candidate_composite,
+  Low-liquidity and out-of-band chases stay blocked.
+- **`capital_rotation`** `{enabled, min_candidate_composite,
   min_hold_minutes, protect_winner_roe_pct}` — when a strong fresh candidate is
   blocked purely by capital (book full / notional cap), evicts the weakest
   non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
-  room. `shadow_mode` logs the decision without acting. (Validated near-inert; left
-  in shadow.)
+  room.
+- **`xs_momentum`** — live cross-sectional momentum book using the validated
+  `pct_k` rank.
+- **`extreme_fade`** — live long-only crash-fade book, crash-bar deduped and
+  cadence-throttled by `scan_interval_min` so it cannot block later hooks every
+  scan.
+- **`rally_exhaustion`** — live short-only post-rally exhaustion book, isolated
+  from crash-fade long logic.
+- **`hail_mary_short`** — AI/semis HIP-3 short basket, currently shadow-only.
+  It logs when basket breadth and proxy trend are bearish, then waits for fresh
+  daily breakdowns before it would become tradeable. Do not set
+  `shadow_only=false` until the shadow/backtest sample is EV+.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -352,7 +379,7 @@ trigger internals → `hermes_trader/agents/config.py` (restart).
 ### Prerequisites
 - Python 3.11+
 - Hyperliquid wallet with private key
-- OpenRouter API key ([openrouter.ai](https://openrouter.ai))
+- OpenRouter API key ([openrouter.ai](https://openrouter.ai)) for the default `openrouter` brain, or non-interactive Claude/Codex CLI auth for `claude_cli` / `codex_cli`
 - (Optional) Brave Search API key for news
 
 ### Setup
@@ -408,7 +435,7 @@ process. Use `scripts/restart.sh` for normal operation.
 - Scans the top ~45 markets (by 24h volume) plus mover slots and a rotating universe sweep, every 60 seconds
 - Each tick, reconciles DSL trackers with live exchange positions and runs an exit pass — market-closes anything whose dynamic floor, hard stop, or timeout has tripped
 - Runs the TA filter on each trigger — only CONFIRMED signals (or fired momentum bursts) reach AI research
-- Researches qualifying signals with the OpenRouter model configured in `.env.local`
+- Researches qualifying signals with the selected AI brain provider (`openrouter`, `claude_cli`, or `codex_cli`)
 - Executes trades that clear all 11 risk gates
 - Runs continuously until stopped
 
@@ -423,7 +450,7 @@ HERMES_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls th
 ```
 
 `online` and `live` tests are deselected by default. The `live` suite spends
-real funds (a ~$14 round-trip order plus a billable OpenRouter call) and is
+real funds (a ~$14 round-trip order plus a billable AI-brain call) and is
 additionally gated behind `HERMES_E2E=1` so it can never run by accident.
 
 ### Backtests and Grid Sweeps
@@ -451,16 +478,18 @@ sample is large enough.
 
 hermes-trader is a standalone Python application; **Hermes Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Hermes-framework dependency.
 
-The MCP server (`scripts/hermes-mcp-server.py`) exposes 100 tools over stdio transport. The 14 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
+The MCP server (`scripts/hermes-mcp-server.py`) exposes 99 tools over stdio transport. The 16 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
 
 | Tool | Description |
 |------|-------------|
 | **Trading Core** | |
 | `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
-| `research` | Deep AI analysis on a coin with OpenRouter |
+| `research` | Deep AI analysis on a coin with the configured AI brain provider |
+| `submit_verdict` | Store an agent-authored verdict as an analysis for MCP-native brain mode |
 | `execute` | Execute trade through risk gates + DSL registration |
+| `close_position` | Close a coin through the same reduce-only executor close helper used by loop exits |
 | `state` | Get full agent state (mode, equity, positions, trades) |
-| `config` | Get/set agent configuration (mode, risk caps, thresholds) |
+| `config` | Get/set agent configuration (mode, risk caps, thresholds, `ai_brain`) |
 | **Hyperfeed Discovery** | |
 | `leaderboard_get_markets` | Top markets by OI + volume |
 | `leaderboard_get_top_traders` | Trader rankings with win rates |
@@ -567,6 +596,13 @@ HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **wei
 ### Why DSL exit engine?
 Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. State is persisted on disk so a daemon restart doesn't reset the ratchet, and the registry is reconciled against the exchange each tick so manually-opened or externally-closed positions stay coherent. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
 
+### Why pluggable AI brain?
+The research prompt and verdict parser are stable; only the transport changes.
+Keeping OpenRouter, Claude CLI, and Codex CLI behind one provider interface lets
+the operator switch the decision-maker without adding another executor or another
+prompt/parse path. LONG/SHORT/CLOSE verdicts still flow through the same risk
+gates, kill switch, close helper, and DSL exit engine.
+
 ### Why Hyperfeed Discovery?
 The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
 
@@ -589,7 +625,7 @@ With `HERMES_MAX_MARKETS=45`, a small `HERMES_UNIVERSE_SWEEP`, and a 50s candle-
 
 The crypto/HIP-3 budget split (`HERMES_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `HERMES_UNIVERSE_SWEEP` or increase `HERMES_BATCH_SLEEP` before tightening strategy gates.
 
-When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio`/`close` handlers; the executor's sizing path stays main-only so free-margin checks aren't fooled by cross-dex idle USDC.
+When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio` handlers. MCP `close_position` delegates to `executor.close_position_market()`, so closes share the same reduce-only order path, DSL cleanup, trigger-order cancellation, and loss-cooldown behavior as loop exits.
 
 ---
 
@@ -604,6 +640,7 @@ hermes-trader/
 │   ├── agents/                    # Core agent logic
 │   │   ├── config.py              # Agent configuration model
 │   │   ├── config_store.py        # Config persistence
+│   │   ├── ai_brain.py            # Pluggable AI brain providers
 │   │   ├── executor.py            # ATR/fallback sizing + order execution + DSL registration
 │   │   ├── memory.py              # File-backed state
 │   │   ├── perception.py          # Volume-filtered parallel scanner
@@ -612,8 +649,7 @@ hermes-trader/
 │   │   ├── system_prompt.py       # Agent system prompt
 │   │   ├── ta_filter.py           # Pre-AI TA filter
 │   │   ├── dsl_exit.py            # Two-phase trailing stop engine
-│   │   ├── hyperfeed.py           # Discovery API (leaderboard, whale index, etc.)
-│   │   └── whale_index.py         # Smart money + OI anomaly signals
+│   │   └── hyperfeed.py           # Discovery API (leaderboard, funding regime, OI context)
 │   ├── client/                    # External API clients
 │   │   ├── exchange.py            # HL order placement
 │   │   ├── hl_client.py           # HL REST + WebSocket client
@@ -629,11 +665,12 @@ hermes-trader/
 │   └── models/                    # Shared data types
 │       └── types.py               # Candle (OHLCV)
 ├── scripts/
-│   ├── hermes-mcp-server.py       # MCP server (stdio, 100 tools)
+│   ├── hermes-mcp-server.py       # MCP server (stdio, 99 tools)
 │   └── trading_loop.py            # Continuous trading loop
 ├── skills/hermes-trader-agent/    # Hermes Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e
 └── docs/
+    ├── AI_BRAIN_OPERATOR_WIRING.md # Codex/Claude/Hermes/OpenClaw brain wiring
     └── journal-schema.md          # Trade journal schema
 ```
 
@@ -642,7 +679,7 @@ hermes-trader/
 ## Built With
 
 - FastAPI — Python web framework
-- OpenRouter-configured model — AI research pipeline
+- OpenRouter / Claude CLI / Codex CLI — AI research brain providers
 - Hyperliquid Python SDK — perpetual futures DEX
 - Brave Search API (optional, for news signals)
 - Prometheus (`prometheus-client`) — `/metrics` instrumentation + observability

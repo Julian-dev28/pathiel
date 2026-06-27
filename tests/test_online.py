@@ -126,6 +126,7 @@ def test_research_pipeline_live_without_llm(monkeypatch):
     PASS — so this exercises candle/funding/indicator fetching without spending.
     """
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setenv("AI_BRAIN_PROVIDER", "openrouter")
     from hermes_trader.agents.research import research
     perception = {"coin": "BTC", "type": "perp", "mid": 0,
                   "composite_score": 0, "triggers": []}

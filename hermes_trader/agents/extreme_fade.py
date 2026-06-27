@@ -1,19 +1,9 @@
-"""Extreme-fade overlay (SHADOW-first, disabled by default).
+"""Extreme-fade overlay.
 
-VALIDATED but marginal — from ALPHA-PLAN.md: "+0.23–0.59% per fade" (net of 10bps cost).
-Works as an OVERLAY on top of the existing scanner: when a coin has moved > threshold% in the
-prior trading day, flag it for a COUNTER-TREND fade entry the next day.
-
-Signal: single-bar reversal — after |daily return| > threshold, fade it (short after big up,
-long after big down). Hold for 1 day. Net cost-adjusted EV: +0.23–0.59% depending on threshold
-(8%, 12%, 18% tested; 12–18% sweet spot).
-
-⚠  MARGINAL edge — small per-trade EV, needs many trades. Treat as a small overlay, NOT a
-   primary signal. The runner_entry_gate and all safety gates still apply (this tag doesn't
-   bypass them — it's NOT external_alpha).
+Validated live behavior is long-only after a completed daily crash. Rally-exhaustion shorts
+are handled by their own gated module with separate regime, volume, sizing, and stop rules.
 
 CONFIG: ``extreme_fade`` block. enabled=False → no signals emitted (no-op).
-shadow_mode=True → logs candidates but does NOT inject them into the scan queue.
 
 PURE module — no network, no orders. Returns a list of FadeSignal objects.
 """
@@ -30,7 +20,7 @@ logger = logging.getLogger(__name__)
 class FadeSignal:
     """A candidate extreme-fade entry for the next trading day."""
     coin: str
-    side: str              # "long" (fade big down) or "short" (fade big up)
+    side: str              # always "long" for the validated crash-fade leg
     prior_daily_ret: float # the move that triggered the fade
     threshold_pct: float   # the threshold it exceeded (e.g. 12.0 for 12%)
 
@@ -62,26 +52,26 @@ def compute_signals(
     if not bool(ef.get("enabled", False)):
         return []
 
-    threshold_pct = float(ef.get("threshold_pct", 12.0))
-    threshold = threshold_pct / 100.0
+    # crash_pct: the NEGATIVE threshold for the long-after-crash leg (e.g. -0.12 = -12%)
+    crash_pct = float(ef.get("crash_pct", -0.12))
+    threshold_pct = abs(crash_pct) * 100.0
 
     signals: List[FadeSignal] = []
     for coin, bars in candles_by_coin.items():
         ret = _daily_return(bars)
-        if ret is None or abs(ret) < threshold:
+        if ret is None:
             continue
-        # Fade: big up → short, big down → long
-        side = "short" if ret > 0 else "long"
+        if ret > crash_pct:
+            continue
         signals.append(FadeSignal(
-            coin=coin, side=side,
+            coin=coin, side="long",
             prior_daily_ret=ret,
             threshold_pct=threshold_pct,
         ))
 
     if signals:
-        shadow = bool(ef.get("shadow_mode", True))
         logger.info(
-            f"[extreme-fade]{' SHADOW' if shadow else ' LIVE'} {len(signals)} candidates: "
+            f"[extreme-fade] {len(signals)} candidates: "
             + ", ".join(f"{s.coin}({s.side},{s.prior_daily_ret*100:+.1f}%)" for s in signals)
         )
 
@@ -97,7 +87,6 @@ def log_signals(signals: List[FadeSignal], config: Dict[str, Any]) -> None:
         ef = config.get("extreme_fade") or {}
         log_event({
             "event": "extreme_fade_candidates",
-            "shadow": bool(ef.get("shadow_mode", True)),
             "n": len(signals),
             "signals": [{"coin": s.coin, "side": s.side,
                          "ret_pct": round(s.prior_daily_ret * 100, 2)} for s in signals],

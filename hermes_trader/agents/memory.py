@@ -79,6 +79,7 @@ class AgentMemory:
 
             self._equity = data.get("equity", 0)
             self._daily_pnl = data.get("dailyPnl", 0)
+            self._peak_daily_pnl = data.get("peakDailyPnl", self._daily_pnl)
             self._start_of_day_equity = data.get("startOfDayEquity", 0)
             self._day_start_ts = data.get("dayStartTs", 0)
             self._open_positions = data.get("openPositions", [])
@@ -116,6 +117,7 @@ class AgentMemory:
                 "cooldowns": [{"coin": coin, "expires": exp} for coin, exp in self._cooldowns.items()],
                 "equity": self._equity,
                 "dailyPnl": self._daily_pnl,
+                "peakDailyPnl": self._peak_daily_pnl,
                 "startOfDayEquity": self._start_of_day_equity,
                 "dayStartTs": self._day_start_ts,
                 "openPositions": self._open_positions,

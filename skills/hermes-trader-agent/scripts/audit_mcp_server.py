@@ -90,7 +90,7 @@ def audit(path: Path) -> int:
     if dup_tools:
         fails.append(f"duplicate TOOLS names: {dup_tools}")
     if dup_defs:
-        fails.append(f"duplicate handle_* defs (a dup silently shadows): {dup_defs}")
+        fails.append(f"duplicate handle_* defs (a dup silently overrides the first): {dup_defs}")
     if dup_keys:
         fails.append(f"duplicate tool_handlers keys: {dup_keys}")
     if missing:

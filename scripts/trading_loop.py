@@ -48,13 +48,15 @@ logging.basicConfig(
 from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
-from hermes_trader.agents.xs_momentum_live import maybe_rebalance as _xs_maybe_rebalance
-from hermes_trader.agents.vol_dispersion_live import maybe_rebalance as _vd_maybe_rebalance
-from hermes_trader.agents.sortino_live import maybe_rebalance as _sortino_maybe_rebalance
-from hermes_trader.agents.amihud_live import maybe_rebalance as _amihud_maybe_rebalance
-from hermes_trader.agents.kurtosis_live import maybe_rebalance as _kurtosis_maybe_rebalance
-from hermes_trader.agents.pairs_live import maybe_run as _pairs_maybe_run
-from hermes_trader.agents.extreme_fade import compute_signals as _ef_compute, log_signals as _ef_log
+from hermes_trader.agents.xs_momentum_live import (
+    maybe_rebalance as _xs_maybe_rebalance,
+    prune_state_to_live as _xs_prune_state_to_live,
+)
+from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
+from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
+from hermes_trader.agents.hail_mary_short_live import maybe_run as _hail_mary_short_maybe_run
+from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
+from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
     close_position_market,
@@ -72,73 +74,6 @@ from hermes_trader.client.universe import get_universe
 from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
 from hermes_trader.positions_snapshot import write_snapshot
 from hermes_trader.session_log import append as log_event
-
-# Last wall-clock time the (heavy) external-alpha poll ran — throttles it off the
-# 60s scan cadence so it can't add ~40s of latency to every exit-monitor cycle.
-_last_external_alpha_ts = 0.0
-
-
-def _run_external_alpha(config) -> None:
-    """Validated external-alpha edges (smart_money copy + basis_gap) run alongside the
-    AI scan. Each source is independently shadow/live via its own `shadow_mode`. A LIVE
-    signal becomes a synthetic analysis routed through route_verdict -> maybe_execute, so
-    EVERY safety gate (kill-switch, caps, margin, liquidation stop, sizing) still applies;
-    only the candle-impulse runner gate is bypassed (different alpha source). Sized small
-    via external_alpha_notional_usd. Wrapped by the caller so an outage can't break scan."""
-    sm = bool((config.get("smart_money") or {}).get("enabled", False))
-    bg = bool((config.get("basis_gap") or {}).get("enabled", False))
-    if not (sm or bg):
-        return
-    # Throttle: the poll (30 traders' fills + stock feeds) takes ~40s — far too heavy to
-    # run every 60s scan and starve monitor_exits. Signals stay fresh for ~30min, so a
-    # ~5min cadence loses nothing. Gated by external_alpha_interval_min.
-    global _last_external_alpha_ts
-    interval_s = float(config.get("external_alpha_interval_min", 5)) * 60
-    _now = time.time()
-    if _now - _last_external_alpha_ts < interval_s:
-        return
-    _last_external_alpha_ts = _now
-    import uuid as _uuid
-    from hermes_trader.agents.external_alpha import external_alpha_signals
-    # 0 (or unset) = FULL sizing (use the normal max_trade_notional_usd); a positive
-    # value caps external-alpha trades smaller than normal.
-    ext_notional = float(config.get("external_alpha_notional_usd", 0) or 0)
-    held = set(memory.open_position_coins())
-    for s in external_alpha_signals(config):
-        shadow = bool((config.get(s["source"]) or {}).get("shadow_mode", True))
-        log_event({"event": "external_alpha", "coin": s["coin"], "side": s["side"],
-                   "source": s["source"], "reason": s["reason"],
-                   "strength": round(float(s.get("strength", 0)), 2), "shadow": shadow})
-        if shadow:
-            logger.info(f"[external-alpha] SHADOW would-trade {s['coin']} {s['side']} "
-                        f"via {s['source']} — {s['reason']}")
-            continue
-        if s["coin"] in held:
-            logger.info(f"[external-alpha] {s['coin']} already held — skip {s['source']}")
-            continue
-        # Synthetic analysis: marked external_alpha so the runner gate bypasses it; all
-        # downstream safety gates + sizing run normally. stop/tp left 0 -> executor's
-        # ATR backup-SL (clamped to liq buffer) places the protective bracket.
-        analysis = {
-            "id": str(_uuid.uuid4()), "coin": s["coin"],
-            "verdict": "LONG" if s["side"] == "long" else "SHORT", "side": s["side"],
-            "confidence": 0.80, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
-            "reasoning": f"[{s['source']}] {s['reason']}", "news_risk": "none",
-            "ai_down": False, "created_at": int(time.time() * 1000),
-            "composite_score": 0.0, "external_alpha": s["source"],
-            "external_alpha_notional": ext_notional,
-        }
-        logger.info(f"[external-alpha] LIVE {s['coin']} {s['side']} via {s['source']} "
-                    f"(${ext_notional:.0f}) — {s['reason']}")
-        try:
-            routed = route_verdict(analysis)
-            log_event({"event": "external_alpha_exec", "coin": s["coin"],
-                       "source": s["source"], "action": routed.get("action"),
-                       "executed": bool((routed.get("result") or {}).get("executed")),
-                       "detail": (routed.get("result") or {}).get("reason")
-                       or (routed.get("result") or {}).get("order_id")})
-        except Exception as _xe:
-            logger.warning(f"[external-alpha] execute failed for {s['coin']}: {_xe}")
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +174,13 @@ _prewarm_meta_cache_bounded(float(os.environ.get('HERMES_META_PREWARM_TIMEOUT_S'
 universe_refresh_s = int(os.environ.get('HERMES_UNIVERSE_REFRESH_S', '1800'))
 _last_universe_refresh = time.time()
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
+try:
+    _claims = get_claims_registry()
+    _claim_count = len(_claims.claims())
+    _claims.save()
+    logger.info(f"[rebalancer_claims] startup scrub complete: {_claim_count} active claim(s)")
+except Exception as _claim_exc:
+    logger.warning(f"[rebalancer_claims] startup scrub failed (non-fatal): {_claim_exc}")
 
 # Startup grace: the prewarm burst above + the cold-cache first scan (every
 # coin's candles fetched fresh) + any tail from the just-killed process all hit
@@ -320,17 +262,16 @@ def _pre_research_runner_block_reason(perception, config):
 
 def _capital_rotation_live(config) -> bool:
     rot = config.get("capital_rotation") or {}
-    return bool(rot.get("enabled", False)) and not bool(rot.get("shadow_mode", True))
+    return bool(rot.get("enabled", False))
 
 
 def _rotation_preflight_eval(coin, perception, positions, config):
-    """Would capital-rotation free room for a margin-blocked fresh `coin`? Returns the
-    RotationDecision (or None). The pre-research margin preflight is UPSTREAM of the
-    executor-stage rotation, so a strong margin-blocked mover (the missed-mover case)
-    dies before rotation ever sees it. This mirrors the executor's rotation eval so the
-    preflight can (a) let it through when rotation is LIVE, or (b) shadow-log it for
-    forward validation. Fully guarded — never raises into the preflight; on any error
-    returns None so the normal block stands."""
+    """Would capital rotation free room for a margin-blocked fresh `coin`?
+
+    The pre-research margin preflight is upstream of executor-stage rotation, so a
+    strong margin-blocked mover would otherwise die before rotation sees it. This
+    mirrors the executor's rotation eval and is fully guarded.
+    """
     try:
         rot = config.get("capital_rotation") or {}
         if not bool(rot.get("enabled", False)):
@@ -459,21 +400,13 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
         avail_pct = target_available / target_equity
         if avail_pct < min_avail_pct:
             label = dex or "main"
-            # Upstream capital-rotation hook — mirrors the concurrency/notional bypass at
-            # max_concurrent/notional above. A strong margin-blocked mover is the exact
-            # missed-mover case rotation exists for, but it dies HERE (pre-research),
-            # before the executor-stage rotation can see it. When rotation is LIVE and it
-            # would free room, fall through (let it reach research + executor rotation);
-            # in shadow, log what it WOULD do so the margin case can be validated forward.
+            # Upstream capital-rotation hook: a strong margin-blocked mover is the
+            # exact missed-mover case rotation exists for, but it dies here before
+            # executor-stage rotation can see it. When rotation would free room,
+            # fall through and let research + executor rotation handle the live action.
             _rd = _rotation_preflight_eval(coin, perception, positions, config)
             _can_rotate = _rd is not None and _rd.should_rotate
             if not (rotation_live and _can_rotate):
-                if _can_rotate:
-                    logger.warning(
-                        f"[rotation-preflight][SHADOW] {coin} "
-                        f"(comp {float((perception or {}).get('composite_score', 0) or 0):.0f}) "
-                        f"margin-blocked ({label} {avail_pct*100:.1f}%<{min_avail_pct*100:.0f}%); "
-                        f"rotation WOULD {_rd.reason}")
                 return (f"insufficient_free_margin_preflight ({label}: "
                         f"{avail_pct*100:.1f}% < {min_avail_pct*100:.0f}%)")
             # rotation_live and would free room → fall through to remaining preflight gates
@@ -684,24 +617,12 @@ while True:
             # "no DSL" indefinitely and DSL stop never fires on HIP-3).
             mids = get_all_hl_mids(include_hip3=True)
             exits = monitor_exits(mids)
-            # Forward-shadow the wider VOL ATR-stop on the same marks (no live effect).
-            try:
-                from hermes_trader.agents.volstop_shadow import update_and_log as _vs_update
-                _vs_update(mids, read_agent_config())
-            except Exception as _vse:
-                logger.debug(f"[volstop-shadow] cycle hook failed: {_vse}")
             for ex in exits:
                 coin = ex["coin"]
                 lev = ex.get("leverage", 1)
                 lpct = ex.get("leveraged_pct", ex["unrealized_pct"] * lev)
                 logger.info(f"[dsl] Closing {coin} {ex.get('side','?')} ({lev}x): "
                             f"{ex['reason']} (margin {lpct:+.2f}% · spot {ex['unrealized_pct']:+.2f}%)")
-                # Tag the shadow with the live exit ROE for side-by-side comparison.
-                try:
-                    from hermes_trader.agents.volstop_shadow import record_live_exit as _vs_exit
-                    _vs_exit(coin, ex.get("side"), lpct)
-                except Exception:
-                    pass
                 res = close_position_market(coin)
                 # The close response carries authoritative realized PnL when
                 # the order filled with a parseable avgPx — prefer it over the
@@ -728,6 +649,25 @@ while True:
         except Exception as e:
             logger.error(f"[dsl] monitor pass failed: {e}")
             log_event({"event": "error", "scope": "dsl_monitor", "error": str(e)})
+
+        # Keep cross-book ownership state tied to the authoritative live account
+        # even when a book's own cadence has not fired. Without this, stopped or
+        # AI-closed xs_momentum coins can remain claimed for days and suppress
+        # other EV+ books.
+        if equity > 0:
+            try:
+                _dropped_claims = prune_claims_to_live(positions)
+                _xs_dropped = _xs_prune_state_to_live(positions)
+                if _dropped_claims or any(_xs_dropped.values()):
+                    logger.info(
+                        f"[rebalancer_claims] live-position scrub claims={_dropped_claims} "
+                        f"xs={_xs_dropped}"
+                    )
+            except Exception as _claim_prune_exc:
+                logger.warning(
+                    f"[rebalancer_claims] live-position scrub failed (non-fatal): "
+                    f"{_claim_prune_exc}"
+                )
 
         if str(_cfg.get("mode", "OFF")).upper() == "OFF":
             logger.info("[mode] OFF — skipping scan/research/execution; exits still monitored")
@@ -762,8 +702,7 @@ while True:
         logger.info(f"Scan found {len(results)} triggers")
 
         # Cross-sectional momentum rebalancer (validated +EV edge). Self-gates on the hold-days
-        # timer; SHADOW by default (logs the target long-K/short-K book, places NO orders) until
-        # forward-validated. Wrapped so it can never break the scan loop.
+        # timer and routes live orders through maybe_execute so account/margin/order gates still apply.
         try:
             _xs_maybe_rebalance(
                 read_agent_config(), universe, positions,
@@ -773,84 +712,49 @@ while True:
         except Exception as _xse:
             logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
 
-        # Vol-dispersion rebalancer (W1 — long high-idio-vol / short low, beta-neutral via
-        # within-β-tercile). Self-gating on hold-days timer; enabled=False in DEFAULT_CONFIG so
-        # this call is an unconditional no-op until the operator flips enabled=True.
-        # Shadow by default: logs target book, places NO orders (shadow_mode=True default).
+        # Extreme-fade edge (validated LONG-only @ -12% = +4.71%/trade, SETTLE-2 2026-06-24).
+        # strategy_book execution: a counter-trend fade can't clear the runner/trend ENTRY gates by
+        # design, so it bypasses them while every SAFETY gate still applies. held-coin de-dup +
+        # max_new_per_cycle cap live inside maybe_run.
         try:
-            _vd_maybe_rebalance(
+            _ef_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
                 maybe_execute, close_position_market,
             )
-        except Exception as _vde:
-            logger.warning(f"[vol-dispersion] rebalance failed (non-fatal): {_vde}")
-
-        # Sortino factor rebalancer (V2 — +3.66%/rebal, regime-stable, beta-neutral).
-        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
-        try:
-            _sortino_maybe_rebalance(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
-            )
-        except Exception as _sfe:
-            logger.warning(f"[sortino-factor] rebalance failed (non-fatal): {_sfe}")
-
-        # Amihud illiquidity factor (W6 — BORDERLINE +2.33%/rebal, lumpy).
-        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
-        try:
-            _amihud_maybe_rebalance(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
-            )
-        except Exception as _afe:
-            logger.warning(f"[amihud-factor] rebalance failed (non-fatal): {_afe}")
-
-        # Kurtosis factor (V2 — +1.71%/rebal, MODEST, bleeds in down-regime).
-        # Enabled=False by default (no-op). Shadow by default (logs, no orders).
-        try:
-            _kurtosis_maybe_rebalance(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
-            )
-        except Exception as _kfe:
-            logger.warning(f"[kurtosis-factor] rebalance failed (non-fatal): {_kfe}")
-
-        # Pairs stat-arb (validated +1.08%/trade, entry_z=2.5, exit_z=0.5, corr>0.6).
-        # Market-neutral, orthogonal to momentum. Enabled=False + shadow by default (no-op).
-        try:
-            _pairs_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
-            )
-        except Exception as _pre:
-            logger.warning(f"[pairs-statarb] scan failed (non-fatal): {_pre}")
-
-        # Extreme-fade overlay (marginal +0.23–0.59%/trade). Enabled=False + shadow by default.
-        # Logs candidates when enabled; does NOT inject into scan queue in shadow mode.
-        try:
-            _ef_cfg = read_agent_config()
-            if bool((_ef_cfg.get("extreme_fade") or {}).get("enabled", False)):
-                # Build a minimal candles_by_coin from the universe mids (uses cached candles)
-                _ef_cbc = {}
-                for _m in (universe or []):
-                    _ef_coin = _m.get("coin") or ""
-                    if not _ef_coin or _ef_coin.startswith("@") or ":" in _ef_coin:
-                        continue
-                    try:
-                        _ef_bars = _fetch_candles_sync(_ef_coin, "1d", 5, 6 * 3600 * 1000)
-                        if _ef_bars and len(_ef_bars) >= 2:
-                            _ef_cbc[_ef_coin] = _ef_bars
-                    except Exception:
-                        pass
-                _ef_sigs = _ef_compute(_ef_cbc, _ef_cfg)
-                _ef_log(_ef_sigs, _ef_cfg)
         except Exception as _efe:
-            logger.warning(f"[extreme-fade] scan failed (non-fatal): {_efe}")
+            logger.warning(f"[extreme-fade] cycle failed (non-fatal): {_efe}")
+
+        # Rally-exhaustion short. Self-gated by rally_exhaustion.enabled.
+        # LIVE uses tiny notional, 1x default leverage, wide stop,
+        # held/claim/dedup preflight, and still routes through maybe_execute.
+        try:
+            _rally_exhaustion_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _ree:
+            logger.warning(f"[rally-exhaustion] cycle failed (non-fatal): {_ree}")
+
+        # Hail-Mary AI/semis short basket. Default live config is shadow-only:
+        # it logs trigger quality without allocating capital until promoted.
+        try:
+            _hail_mary_short_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _hmse:
+            logger.warning(f"[hail-mary-short] cycle failed (non-fatal): {_hmse}")
+
+        # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
+        # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
+        # OI-divergence backtests once ~1-2 weeks of history accrue).
+        try:
+            _data_logger_maybe_log(read_agent_config(), universe)
+        except Exception as _dle:
+            logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
@@ -861,16 +765,6 @@ while True:
                                     "score": round(p.get('composite_score', 0), 1),
                                     "triggers": [t['name'] for t in p.get('triggers', []) if t.get('fired')]}
                                    for p in results]})
-
-        # External-alpha edges (smart_money copy + basis_gap) — validated OOS, run beside
-        # the AI scan. MUST use the AGENT config (.agent-config.json), NOT the loop's
-        # scanner `config` (get_config()) which lacks the smart_money/basis_gap keys — a
-        # mismatch silently early-returned the whole hook. read_agent_config() is hot-read
-        # so enable/shadow/sizing changes take effect with no restart.
-        try:
-            _run_external_alpha(read_agent_config())
-        except Exception as _eae:
-            logger.warning(f"[external-alpha] cycle failed: {_eae}")
 
         # Pre-research dedupe cache: coin → last research timestamp this run.
         # Prevents burning AI tokens on a setup that's still in cooldown from a
@@ -949,8 +843,7 @@ while True:
                 )
                 if entry_preblock:
                     logger.info(f"{coin}: pre-research {entry_preblock} — skip AI research")
-                    log_event({"event": "ta_skip", "coin": coin,
-                               "signal": "ENTRY_PREFLIGHT",
+                    log_event({"event": "entry_preflight", "coin": coin,
                                "score": round(float(score), 1),
                                "trigger_score": round(float(score), 1),
                                "reason": entry_preblock})
@@ -1005,7 +898,10 @@ while True:
 
             try:
                 analysis = research(coin, perception)
-                logger.info(f"Verdict: {analysis['verdict']}, Confidence: {analysis['confidence']}")
+                logger.info(
+                    f"Verdict: {analysis['verdict']}, Confidence: {analysis['confidence']}, "
+                    f"Brain: {analysis.get('ai_brain_provider', 'unknown')}"
+                )
                 # Store the full LLM reasoning verbatim — no character cap.
                 # The feed shows the complete rationale.
                 _r = (analysis.get('reasoning') or '').strip()
@@ -1013,6 +909,7 @@ while True:
                            "verdict": analysis['verdict'],
                            "confidence": round(float(analysis['confidence']), 2),
                            "reasoning": _r,
+                           "ai_brain_provider": analysis.get('ai_brain_provider'),
                            "news_risk": analysis.get('news_risk'),
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),

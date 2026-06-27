@@ -1,6 +1,6 @@
 """Cross-sectional momentum rebalancer — pure-engine tests (the validated +EV edge)."""
 from hermes_trader.agents.xs_momentum import (
-    trailing_return, rank_universe, rebalance_plan, is_empty_plan, TargetBook,
+    trailing_return, pctk_score, rank_universe, rebalance_plan, is_empty_plan, TargetBook,
 )
 
 
@@ -29,6 +29,19 @@ def test_rank_universe_top_long_bottom_short():
 def test_rank_universe_empty_when_too_few_coins():
     cbc = {"A": _bars([100, 150]), "B": _bars([100, 70])}
     assert rank_universe(cbc, lb=1, k=2).longs == []     # need >= 2k=4 coins
+
+
+def test_pctk_rank_universe_top_channel_long_bottom_short():
+    cbc = {
+        "HIGH": _bars([100, 101, 102, 103, 104, 105]),
+        "MID": _bars([100, 102, 101, 102, 101, 102]),
+        "LOW": _bars([105, 104, 103, 102, 101, 100]),
+        "FLAT": _bars([100, 100, 100, 100, 100, 100]),
+    }
+    assert pctk_score(cbc["HIGH"], 6) > pctk_score(cbc["LOW"], 6)
+    book = rank_universe(cbc, lb=1, k=1, ranking="pct_k", zext_window=6)
+    assert book.longs == ["HIGH"]
+    assert book.shorts == ["LOW"]
 
 
 def test_rebalance_plan_open_close_hold():

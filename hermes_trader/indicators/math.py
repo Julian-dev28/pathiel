@@ -1,4 +1,5 @@
-"""Technical indicators (ema, sma, atr, rsi, adx) computed over OHLCV candles."""
+"""Technical indicators (ema, sma, atr, rsi, adx, ttf, connors_rsi, fib-retracement, trailing_up)
+computed over OHLCV candles. The canonical home for all TA used by the agents / rebalancers."""
 
 from __future__ import annotations
 
@@ -142,3 +143,74 @@ def adx(candles: List[Candle], period: int = 14) -> List[float]:
         out[i] = (out[i - 1] * (period - 1) + dx[i]) / period
 
     return out
+
+
+def rsi_values(values: List[float], period: int = 14) -> List[float]:
+    """RSI over an arbitrary value series (not candles) — wraps each value as a flat candle so the
+    Wilder `rsi` above can be reused (used by Connors RSI's streak/RSI legs)."""
+    return rsi([{"o": v, "h": v, "l": v, "c": v} for v in values], period)
+
+
+def ttf(candles: List[Candle], period: int = 15) -> float | None:
+    """Trend Trigger Factor (LazyBear): 100·(BP−SP)/(0.5·(BP+SP)), BP = HH(recent)−LL(prior),
+    SP = HH(prior)−LL(recent). > 100 = uptrend trigger. Validated mom-corr ≈ 0 (orthogonal to
+    return-momentum); bull-regime signal (tv_lazybear5.py). None if < 2·period bars."""
+    if len(candles) < 2 * period:
+        return None
+    h = [candle_val(c, "h") for c in candles]
+    l = [candle_val(c, "l") for c in candles]
+    hh_r, ll_r = max(h[-period:]), min(l[-period:])
+    hh_p, ll_p = max(h[-2 * period:-period]), min(l[-2 * period:-period])
+    bp, sp = hh_r - ll_p, hh_p - ll_r
+    denom = 0.5 * (bp + sp)
+    return None if denom == 0 else 100.0 * (bp - sp) / denom
+
+
+def connors_rsi(candles: List[Candle], rsi_period: int = 3, streak_period: int = 2,
+                rank_period: int = 100) -> float | None:
+    """Connors RSI = avg( RSI(close, 3), RSI(streak, 2), percentrank(ROC1, 100) ). < 30 = oversold
+    dip-bounce (tv_qqe_coppock.py). None if too little history."""
+    closes = [candle_val(c, "c") for c in candles]
+    if len(closes) < max(rsi_period + 1, rank_period + 2):
+        return None
+    r1 = rsi_values(closes, rsi_period)
+    streaks = [0.0]
+    for i in range(1, len(closes)):
+        if closes[i] > closes[i - 1]:
+            streaks.append(streaks[-1] + 1 if streaks[-1] > 0 else 1.0)
+        elif closes[i] < closes[i - 1]:
+            streaks.append(streaks[-1] - 1 if streaks[-1] < 0 else -1.0)
+        else:
+            streaks.append(0.0)
+    r2 = rsi_values(streaks, streak_period)
+    rocs = [closes[i] / closes[i - 1] - 1 for i in range(1, len(closes)) if closes[i - 1] > 0]
+    window = rocs[-rank_period:]
+    pr = 100.0 * sum(1 for x in window[:-1] if x < rocs[-1]) / max(1, len(window) - 1)
+    a, b = r1[-1], r2[-1]
+    if a != a or b != b:                                   # NaN guard (insufficient data)
+        return None
+    return (a + b + pr) / 3.0
+
+
+def fib_618_retracement_long(candles: List[Candle], swing: int = 20, band_pct: float = 0.025) -> bool | None:
+    """True when close sits within `band_pct` of the 0.618 retracement of the recent `swing`-bar
+    up-range — a retracement-bounce long candidate (tv_pivots_fib.py, bull-regime). None if short."""
+    if len(candles) < swing + 1:
+        return None
+    h = [candle_val(c, "h") for c in candles[-swing:]]
+    l = [candle_val(c, "l") for c in candles[-swing:]]
+    cur = candle_val(candles[-1], "c")
+    lo, hi = min(l), max(h)
+    rng = hi - lo
+    if rng <= 0 or cur <= 0:
+        return None
+    return abs(cur - (hi - 0.618 * rng)) <= band_pct * cur
+
+
+def trailing_up(candles: List[Candle], period: int = 20) -> bool | None:
+    """Regime helper: True if the trailing `period`-bar close return > 0 (e.g. the BTC up-regime gate
+    for long-only regime filters). None if too little history."""
+    closes = [candle_val(c, "c") for c in candles]
+    if len(closes) < period + 1 or closes[-1 - period] <= 0:
+        return None
+    return (closes[-1] / closes[-1 - period] - 1.0) > 0

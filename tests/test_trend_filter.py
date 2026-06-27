@@ -50,8 +50,52 @@ def test_unknown_history_blocked_when_strict(monkeypatch):
     assert "insufficient daily history" in ex._trend_filter_block_reason({"coin": "xyz:NEW", "side": "long"}, cfg)
 
 
-def test_external_alpha_exempt(monkeypatch):
+def test_strategy_book_exempt(monkeypatch):
     _patch_direction(monkeypatch, -1)  # would block a normal long
     cfg = {"trend_filter_200ma": {"enabled": True}}
-    a = {"coin": "BTC", "side": "long", "external_alpha": "smart_money"}
+    a = {"coin": "BTC", "side": "long", "strategy_book": "xs_momentum"}
     assert ex._trend_filter_block_reason(a, cfg) == ""
+
+
+def test_daily_mover_long_bypass_exempts_downtrend(monkeypatch):
+    _patch_direction(monkeypatch, -1)  # would block a normal long
+    cfg = {
+        "trend_filter_200ma": {
+            "enabled": True,
+            "allow_daily_mover_long_bypass": True,
+            "daily_mover_min_ext_pct": 10.0,
+            "daily_mover_max_ext_pct": 30.0,
+        }
+    }
+    a = {
+        "coin": "IP",
+        "side": "long",
+        "daily_mover_fired": True,
+        "uptrend_momentum_fired": True,
+        "slow_burn_count": 1,
+        "daily_move_pct": 24.0,
+    }
+
+    assert ex._trend_filter_block_reason(a, cfg) == ""
+
+
+def test_daily_mover_long_bypass_requires_full_pocket(monkeypatch):
+    _patch_direction(monkeypatch, -1)
+    cfg = {
+        "trend_filter_200ma": {
+            "enabled": True,
+            "allow_daily_mover_long_bypass": True,
+            "daily_mover_min_ext_pct": 10.0,
+            "daily_mover_max_ext_pct": 30.0,
+        }
+    }
+    a = {
+        "coin": "IP",
+        "side": "long",
+        "daily_mover_fired": True,
+        "uptrend_momentum_fired": False,
+        "slow_burn_count": 1,
+        "daily_move_pct": 24.0,
+    }
+
+    assert "trend_filter" in ex._trend_filter_block_reason(a, cfg)

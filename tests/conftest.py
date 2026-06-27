@@ -14,3 +14,8 @@ _tmp = tempfile.mkdtemp(prefix="hermes-test-state-")
 os.environ["HERMES_AGENT_MEMORY_FILE"] = os.path.join(_tmp, ".agent-memory.json")
 os.environ["HERMES_AGENT_CONFIG_FILE"] = os.path.join(_tmp, ".agent-config.json")
 os.environ["HERMES_DSL_STATE_FILE"] = os.path.join(_tmp, ".dsl-state.json")
+# Rebalancer state files (timers, owned-position sets, the claims registry, vol-managed history,
+# pairs state) all route through rebalancer_owned.state_file(), which honors HERMES_STATE_DIR.
+# Point it at the temp dir so the suite never pollutes the live .rebalancer_claims.json /
+# .*_positions.json / *_ts / .xs_volmgd_history (builder tests wrote fake coins to these 2026-06-24).
+os.environ["HERMES_STATE_DIR"] = _tmp

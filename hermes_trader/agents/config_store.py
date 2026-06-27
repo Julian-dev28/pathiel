@@ -28,6 +28,17 @@ CONFIG_PATH = os.environ.get(
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": "OFF",
+    "ai_brain": {
+        "provider": "openrouter",
+        "timeout_s": 120,
+        "claude_cli": {
+            "command": "claude",
+            "max_turns": 1,
+        },
+        "codex_cli": {
+            "command": "codex",
+        },
+    },
     "enable_crypto": True,
     "enable_hip3": True,
     "equity_fraction_per_trade": 0.2,
@@ -78,6 +89,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "runner_entry_gate": {
         "enabled": True,
         "allow_shorts": False,
+        "require_daily_mover_longs": False,
         "min_confidence": 0.7,
         "min_composite": 30.0,
         "min_crypto_composite": 20.0,
@@ -98,33 +110,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "capital_rotation": {
         "enabled": True,
-        "shadow_mode": True,
         "min_candidate_composite": 40.0,
         "min_hold_minutes": 30,
         "protect_winner_roe_pct": 3.0,
     },
     "gex_signal": {
         "enabled": True,
-        "shadow_mode": False,
         "caution_near_wall_pct": 15.0,
-    },
-    "shadow_signals": {
-        "enabled": True,
-        "gex": True,
-        "short_volume": True,
-        "crypto_whale": True,
-        "news": True,
-        "whale_window_min": 15,
-    },
-    "signal_enforcement": {
-        "enabled": True,
-        "veto": True,
-        "boost": True,
-        "gex_veto": True,
-        "boost_bar_delta": 4,
-        "whale_window_min": 15,
-        "whale_veto_min_usd": 250_000,
-        "whale_boost_min_usd": 250_000,
     },
     "runner_mover_surface": {
         "enabled": True,
@@ -132,12 +124,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_hip3_24h_pct": 8.0,
         "min_volume_usd": 5_000_000,
     },
-    # Cross-sectional momentum rebalancer (validated +EV edge, ALPHA-PLAN.md). Market-neutral:
-    # long top-K / short bottom-K by trailing return, rebalanced every hold_days. shadow_mode=True
-    # logs the target book WITHOUT placing orders — forward-validate before going live.
+    # Strategy-book (rebalancer) position sizing.
+    # strategy_book_equity_frac: fraction of the FUNDING account's equity × leverage used to size
+    # each rebalancer trade. Default 0.1 → notional = size_equity × 0.1 × leverage (e.g. $60 main,
+    # 12x lev → $72/trade). This replaces the old flat $15 cap with a properly equity-scaled size
+    # while keeping the same safety gates (margin floor, max_total_notional_pct, per-name cap).
+    # strategy_book_notional_usd: optional ABSOLUTE ceiling in USD (0 = inactive). When >0 the
+    # equity-fraction result is min()'d with this cap so the operator can hard-bound per-trade size.
+    # NOTE: if strategy_book_equity_frac=0 (disabled), the old fallback to strategy_book_notional_usd
+    # is used directly (backward-compatible); set notional_usd=0 too for a full no-op until enabled.
+    "strategy_book_equity_frac": 0.1,
+    "strategy_book_notional_usd": 0,
+
+    # Cross-sectional momentum rebalancer (validated +EV edge). Market-neutral:
+    # long top-K / short bottom-K by trailing return, rebalanced every hold_days.
     "xs_momentum": {
         "enabled": True,
-        "shadow_mode": True,
         "lookback_days": 7,
         "hold_days": 10,
         "k_per_leg": 8,
@@ -146,6 +148,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # audit-driven upgrades: rank on the BTC-neutral RESIDUAL (stronger + smoother), and GATE
         # on BTC vol (momentum lives in low-vol; go flat in high-vol = the dead regime).
         "residual": True,
+        "ranking": "pct_k",       # Codex audit: cleaner robust expression than z_ext; do not stack both
+        "zext_window": 14,        # shared channel window for pct_k / z_ext rankers
         "beta_window": 30,
         "vol_gate": True,
         "vol_short": 14,
@@ -159,121 +163,76 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "cap": 2.0,           # max exposure scalar (2x = never more than double notional)
         },
     },
-    # Vol-dispersion edge (W1 — long high-idio-vol / short low, BETA-NEUTRAL via within-β-tercile).
-    # Pure engine: hermes_trader/agents/vol_dispersion.py
-    # Live wiring: hermes_trader/agents/vol_dispersion_live.py (shadow_mode=true default).
-    # Research agent still tuning best idio_vol_window — parameterized, not hardcoded.
-    "vol_dispersion": {
-        "enabled": False,        # master gate — loop hook is a no-op while False
-        "shadow_mode": True,     # always log before risking capital
-        "idio_vol_window": 30,   # trailing days for per-coin idiosyncratic vol (BTC-residual stdev)
-        "k_per_tercile": 3,      # names per leg per beta-tercile (3 terciles × 3 = 9-name legs)
-        "hold_days": 10,         # rebalance interval
-        "universe_top_n": 50,    # liquid-universe cap
-        "min_volume_usd": 5_000_000,
-    },
-
-    # ── NEW EDGES (wired here, all OFF + shadow by default) ──────────────────────
-
-    # Sortino factor (V2 — +3.66%/rebal, beta-neutral, regime-stable).
-    # Scores coins by mean(daily return)/downside-deviation over `window` days within each BTC-beta
-    # tercile. More regime-stable than idio-vol (holds in down-regime: +2.24%). Corr +0.07 to
-    # momentum / +0.37 to vol-dispersion → partially orthogonal.
-    # Pure engine: vol_dispersion.py with score_fn="sortino"
-    # Live wiring: hermes_trader/agents/sortino_live.py (shadow_mode=True default).
-    # Small k=1-2 for a ~$60 main-perp account (6 total names per side at k=2).
-    "sortino_factor": {
-        "enabled": False,        # master gate — loop hook is a no-op while False
-        "shadow_mode": True,     # log before risking capital
-        "window": 60,            # trailing days for Sortino scoring (validated ~60d)
-        "k_per_tercile": 2,      # names per leg per beta-tercile (k=2 → 6-name legs)
-        "hold_days": 10,         # rebalance interval (matches vol_dispersion)
-        "universe_top_n": 50,
-        "min_volume_usd": 5_000_000,
-    },
-
-    # Amihud illiquidity factor (W6 — BORDERLINE: +2.33%/rebal but lumpy, 2/4 quarters negative).
-    # Scores coins by mean(|daily ret|/daily $volume) over `window` days. LONG illiquid/SHORT liquid
-    # within each BTC-beta tercile. Use minimal k=1 and validate forward before increasing.
-    # Pure engine: vol_dispersion.py with score_fn="amihud"
-    # Live wiring: hermes_trader/agents/amihud_live.py (shadow_mode=True default).
-    "amihud_factor": {
-        "enabled": False,        # BORDERLINE — keep off until multi-quarter live validation
-        "shadow_mode": True,
-        "window": 30,            # trailing days for Amihud ratio (validated ~30d)
-        "k_per_tercile": 1,      # MINIMAL — lumpy edge, small allocation only
-        "hold_days": 10,
-        "universe_top_n": 50,
-        "min_volume_usd": 5_000_000,
-    },
-
-    # Kurtosis factor (V2 — +1.71%/rebal, beta-neutral, within-β-tercile, HIGH kurtosis = LONG).
-    # Scores coins by excess kurtosis of daily returns over ~60 days. Fat-tailed coins (high
-    # kurtosis) are longed; thin-tailed coins (low kurtosis) are shorted — within each BTC-beta
-    # tercile. MODEST edge — bleeds in sustained down-regimes. Use k=1 + shadow first.
-    # Pure engine: vol_dispersion.py with score_fn="kurtosis"
-    # Live wiring: hermes_trader/agents/kurtosis_live.py (shadow_mode=True default).
-    "kurtosis_factor": {
-        "enabled": False,        # MODEST edge — keep off until forward validation complete
-        "shadow_mode": True,     # log before risking capital; bleeds in down-regime
-        "window": 60,            # trailing days for excess-kurtosis scoring (~60d validated V2)
-        "k_per_tercile": 1,      # minimal — modest edge, small allocation only
-        "hold_days": 10,         # rebalance interval (matches other factor rebalancers)
-        "universe_top_n": 50,
-        "min_volume_usd": 5_000_000,
-    },
-
-    # Pairs stat-arb (validated +1.08%/trade, V4: entry_z=2.5, exit_z=0.5, corr>0.6).
-    # Market-neutral mean-reversion of log-spread between co-moving coins.
-    # ORTHOGONAL to momentum (profits from reversion) → stacking diversifies.
-    # Pure engine: hermes_trader/agents/pairs_engine.py
-    # Live wiring: hermes_trader/agents/pairs_live.py (shadow_mode=True default).
-    # For a ~$60 main-perp account: max_open_pairs=2 (each pair = 2 legs = 4 positions).
-    "pairs_statarb": {
-        "enabled": False,        # master gate
-        "shadow_mode": True,
-        "entry_z": 2.5,          # validated V4 (up from 2.0 → +1.98%/trade at 2.5)
-        "exit_z": 0.5,           # reversion exit threshold (validated 0.5)
-        "min_corr": 0.6,         # min trailing return correlation to form a pair
-        "window": 30,            # trailing window days for z-score and correlation
-        "scan_interval_hours": 6, # re-scan every 6h (pairs change slowly on daily bars)
-        "max_open_pairs": 2,     # SMALL account: cap at 2 pairs (4 legs total)
-        "universe_top_n": 40,    # fewer coins → fewer but higher-quality pairs
-        "min_volume_usd": 5_000_000,
-    },
-
-    # Correlation-regime sizing gate (V3 — validated by edge_regime_timing.py).
-    # Scales momentum exposure UP in low-corr periods (more cross-sectional dispersion)
-    # and vol-dispersion exposure UP in high-corr periods.
-    # Validated: momentum Sharpe 4.95→8.36 (low-corr) / vol-disp 9.06→13.27 (high-corr).
-    # Pure engine: hermes_trader/agents/corr_gate.py
-    # Wired into xs_momentum_live.py and vol_dispersion_live.py (reads this config key).
-    "correlation_gate": {
-        "enabled": False,        # master gate — no scaling while disabled (scalar=1.0)
-        "window": 14,            # rolling pairwise-correlation window (validated 14d)
-        "low_corr_scalar": 1.2,  # multiply momentum exposure in low-corr regime
-        "high_corr_scalar": 1.2, # multiply vol-dispersion exposure in high-corr regime
-        "cap": 1.5,              # maximum scalar (never more than 1.5x from this gate alone)
-    },
-
-    # Day-of-week tilt (calendar edge; MULTIPLE-TESTING CAVEAT — treat as tilt not standalone).
-    # Monday +0.78% (OOS robust) → long-bias (scalar >1); Thursday −1.64% → reduce (scalar <1).
-    # Orthogonal to momentum + pairs (different mechanism). Apply as a small sizing scalar overlay.
-    # Pure engine: hermes_trader/agents/day_of_week_tilt.py
-    "day_of_week_tilt": {
-        "enabled": False,
-        "monday_scalar": 1.15,   # increase size 15% on Monday (positive bias)
-        "thursday_scalar": 0.75, # reduce size 25% on Thursday (negative bias)
-    },
-
-    # Extreme-fade overlay (MARGINAL: +0.23–0.59% per trade net of 10bps).
-    # After |daily return| > threshold_pct, fade it the next day (short big-up, long big-down).
+    # Extreme-fade overlay: validated long-after-crash only.
+    # Rally-exhaustion shorts use their own gated module and config.
+    # After a completed daily crash, fade it near the next daily open.
     # Not a primary edge — small overlay. Runs inside scanner loop (not a rebalancer).
     # Pure engine: hermes_trader/agents/extreme_fade.py
     "extreme_fade": {
         "enabled": False,
-        "shadow_mode": True,
-        "threshold_pct": 12.0,   # validated range 12–18%; 12% has most trades, 18% highest EV
+        "crash_pct": -0.12,      # negative threshold for long leg (e.g. -0.12 = prior day ≤ -12%)
+        "scan_interval_min": 30,
+    },
+    # Codex-discovered rally-exhaustion short. Live wiring uses tiny notional,
+    # low leverage, a wide strategy-specific stop, held/claim/dedup preflight,
+    # and still routes through maybe_execute for margin/liquidity/news/concurrency/order gates.
+    "rally_exhaustion": {
+        "enabled": False,
+        "scan_interval_hours": 6,
+        "entry_window_hours": 8,
+        "lookback_days": 2,
+        "threshold_pct": 12.0,
+        "btc_window": 20,
+        "min_volume_usd": 20_000_000,
+        "executor_short_volume_floor_usd": 20_000_000,
+        "volume_window": 30,
+        "hold_days": 5,
+        "stop_pct": 25.0,
+        "notional_usd": 20.0,
+        "leverage": 1,
+        "tp_scale_fraction": 0.0,
+        "max_new_per_cycle": 1,
+        "history_bars": 40,
+    },
+    # AI/semis HIP-3 short basket. This is watchlist-driven but trigger-gated:
+    # basket breadth and proxy trend must be bearish before any fresh daily
+    # breakdown can trade. Keep shadow_only=True until backtest/forward logs are
+    # strong enough to promote.
+    "hail_mary_short": {
+        "enabled": False,
+        "shadow_only": True,
+        "names": [
+            "NVDA", "SMCI", "AVGO", "AMD", "TSM", "ASML", "ARM", "MSFT", "AMZN", "GOOGL",
+            "META", "PLTR", "CRM", "ADBE", "NOW", "WDAY", "PATH", "AI", "SOUN", "UPST",
+            "TSLA", "VRT", "MU", "CRWD", "SNOW", "DDOG", "HUBS", "ZS", "NET", "ARKK",
+            "SOXX", "SMH", "OPENAI", "ANTHROPIC",
+        ],
+        "dex_allowlist": ["xyz", "vntl"],
+        "proxy_coins": ["xyz:SMH", "xyz:SP500", "xyz:XYZ100"],
+        "require_proxy_down": True,
+        "scan_interval_hours": 6,
+        "entry_window_hours": 10,
+        "min_volume_usd": 20_000_000,
+        "executor_short_volume_floor_usd": 20_000_000,
+        "min_breadth_bearish_pct": 0.55,
+        "breakdown_lookback_days": 20,
+        "breakdown_buffer_pct": 0.0,
+        "ema_fast": 8,
+        "ema_slow": 21,
+        "ema_trend": 50,
+        "min_history_bars": 24,
+        "history_bars": 90,
+        "drawdown_lookback_days": 20,
+        "min_basket_drawdown_pct": 6.0,
+        "recent_drop_days": 5,
+        "min_recent_drop_pct": 6.0,
+        "hold_days": 10,
+        "stop_pct": 12.0,
+        "notional_usd": 20.0,
+        "leverage": 1,
+        "tp_scale_fraction": 0.0,
+        "max_new_per_cycle": 1,
+        "max_attempts_per_cycle": 1,
     },
 }
 

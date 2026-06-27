@@ -1,6 +1,6 @@
 ---
 name: hermes-trader-agent
-description: Use when operating, maintaining, or debugging hermes-trader — the standalone autonomous Hyperliquid trading system that Hermes Agent drives through its MCP server. Covers the scan/research/execute pipeline, the 11 risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
+description: Use when operating, maintaining, or debugging hermes-trader — the standalone autonomous Hyperliquid trading system that Hermes Agent drives through its MCP server. Covers the scan/research/execute pipeline, pluggable AI-brain providers, live EV+ strategy books, risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
 version: 1.0.0
 author: Hermes Agent
 license: MIT
@@ -22,11 +22,10 @@ operates it through the **MCP server** registered in `~/.hermes/config.yaml`
 trading engine itself has no Hermes-framework dependency; it is
 Hermes-*operated*, not Hermes-*built*.
 
-Repo: `/Users/julian_dev/Documents/code/hermes-trader`. The user develops on a
-working branch (currently `able`) and merges to the deploy branch
-(`daily-push-v2` / `main`) after each batch of changes. **Commit/push only when
-the user asks, and never push directly to other branches without explicit
-confirmation.**
+Repo: `/Users/julian_dev/Documents/code/hermes-trader`. The user may work on
+dirty local branches and switch deploy branches between sessions. **Commit/push
+only when the user asks, and never push directly to another branch without
+explicit confirmation.**
 
 ## Architecture
 
@@ -54,7 +53,10 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
    EMA, RSI, ATR, ADX, volume) at zero AI cost. Only CONFIRMED perceptions
    (score ≥ 45) reach AI research; WEAK / REJECTED are dropped. A perception
    whose `momentumBurst` trigger fired bypasses the gate.
-4. **AI Research** — deep AI analysis via OpenRouter on triggered candidates.
+4. **AI Research** — deep AI analysis via the selected brain provider
+   (`openrouter`, `claude_cli`, or `codex_cli`) on triggered candidates. The
+   provider returns verdict text only; `parse_verdict()` and the executor path
+   are shared.
 5. **Execution** — ATR equal-risk sizing when `atr_risk_sizing.enabled=true`
    (current live path), with fraction-based sizing as the explicit fallback.
    Orders are clamped by per-trade notional and leverage caps, normalized to
@@ -81,6 +83,16 @@ Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server
 (`scripts/hermes-mcp-server.py`) is intentionally NOT managed — it's a transient
 stdio process respawned by Hermes Agent on each tool call. If MCP code is stale:
 `pkill -f hermes-mcp-server.py` and the next tool call respawns fresh.
+
+When `restart.sh` is run from Codex and background children are reaped by the
+execution wrapper, launch the long-lived processes in `screen` instead:
+
+```bash
+screen -dmS hermes-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/hermes-trader && HERMES_HL_RATE_REFILL_PER_SEC=5 HERMES_HL_RATE_CAPACITY=200 .venv/bin/python -m hermes_trader.server >> logs/server.log 2>&1'
+screen -dmS hermes-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/hermes-trader && HERMES_STARTUP_GRACE_S=0 HERMES_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
+screen -ls
+curl -s -o /tmp/hermes-dashboard.html -w "%{http_code}\n" http://localhost:8000/
+```
 
 Manual foreground launch is only for debugging:
 
@@ -123,9 +135,41 @@ candle budget to that class. The executor enforces the same gating at
 execute-time so stale perceptions can't sneak through if the flag flips
 mid-cycle (`hip3_disabled` / `crypto_disabled` reasons).
 
+## AI Brain Providers
+
+Research has one provider seam:
+
+```
+research._call_ai(system_prompt, user_message)
+  -> hermes_trader.agents.ai_brain.get_brain(provider).complete(...)
+  -> parse_verdict(...)
+```
+
+Valid providers are:
+
+- `openrouter` — default HTTP completion provider. Keeps the 402 affordability
+  retry that shrinks `max_tokens` once when OpenRouter reports an affordable
+  token budget.
+- `claude_cli` — `claude -p --output-format json` headless provider. The
+  handler parses the envelope, rejects `is_error`, and passes `.result` to the
+  shared verdict parser.
+- `codex_cli` — `codex exec --sandbox read-only --ephemeral -` provider. The
+  handler passes stdout to the shared verdict parser.
+
+Selector precedence: `AI_BRAIN_PROVIDER` env var, then
+`.agent-config.json` → `ai_brain.provider`, then `openrouter`. The selector is
+hot-read per research call; code changes still require a loop restart.
+
+Failure contract is load-bearing: provider failure, timeout, non-zero exit,
+empty stdout, or output without verdict JSON returns `""`. That becomes
+`ai_down=True` PASS and the TA sidestep override must not upgrade it.
+
+CLI provider auth is outside Hermes. Verify `claude -p` / `codex exec` works
+non-interactively in the loop's actual environment before switching live.
+
 ## MCP Integration
 
-The server (`scripts/hermes-mcp-server.py`, stdio, 100 tools) is registered in
+The server (`scripts/hermes-mcp-server.py`, stdio, 99 tools) is registered in
 `~/.hermes/config.yaml`:
 
 ```yaml
@@ -141,16 +185,68 @@ mcp_servers:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
 ```
 
-Primary tools: `scan`, `research`, `execute`, `state`, `config`. Adding tools and
-the audit invariant: see `references/mcp-server.md`. After editing the server,
-restart it: `pkill -f hermes-mcp-server.py` (the next call respawns it fresh).
+Primary tools: `scan`, `research`, `submit_verdict`, `execute`,
+`close_position`, `state`, `config`. Adding tools and the audit invariant: see
+`references/mcp-server.md`. After editing the server, restart it:
+`pkill -f hermes-mcp-server.py` (the next call respawns it fresh).
+
+`close_position` delegates to `executor.close_position_market()`. Do not
+re-implement close logic in MCP handlers; that helper owns reduce-only close
+orders, DSL tracker cleanup, stale trigger-order cancellation, realized PnL
+capture, and loss-cooldown arming.
+
+`submit_verdict` is the MCP-native verdict-authority seam: external operators
+such as Codex, Claude Code, Hermes Agent, or OpenClaw submit their own
+PASS/LONG/SHORT/CLOSE analysis, then call `execute(analysisId)` to route it
+through the existing gates and close helper.
 
 ## State Files
 
 Project state — not Hermes memory (all gitignored):
-- `.agent-config.json` — mode (OFF/LIVE), risk caps, thresholds
+- `.agent-config.json` — mode (OFF/LIVE), AI brain provider, risk caps, thresholds
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
-- `~/.hermes-trader-session-log.jsonl` — append-only cycle summaries
+- `.data_funding_oi.jsonl` / `.data_logger_ts` — live funding/OI data logger
+- `.extreme_fade_state.json` / `.extreme_fade_live_ts` — crash-bar dedup and
+  cadence throttle for the live fade book
+- `.hail_mary_short_ts` / `.hail_mary_short_seen.json` — shadow/live cadence and
+  dedup for the AI/semis HIP-3 short basket
+- `.rally_exhaustion_live_ts` / `.rally_exhaustion_live_seen.json` — live
+  rally-exhaustion cadence and dedup
+- `.rebalancer_claims.json` — cross-book claim registry
+- `.xs_momentum_positions.json`, `.xs_rebalance_ts`, `.xs_volmgd_history` —
+  live cross-sectional momentum state
+- `logs/trading_loop.log` and `logs/server.log` — process logs
+
+Claim registry invariant: only active claim books may own `.rebalancer_claims.json`
+entries. Current owners are `xs_momentum`, `rally_exhaustion`, and
+`hail_mary_short`; stale owners from deleted books are auto-scrubbed by the
+registry and surfaced by `status.py`.
+If a new live book uses `get_claims_registry()`, add its book name to
+`rebalancer_owned.active_claim_books()` coverage before enabling it live.
+
+## Live EV+ Books
+
+Only validated EV+ methods should be enabled live. Current live books:
+
+- `xs_momentum` — cross-sectional momentum rebalance, live, claim-scoped.
+- `extreme_fade` — long-only crash fade, live, crash-bar deduped and cadence
+  throttled.
+- `rally_exhaustion` — short-only rally exhaustion, live, cadence/dedup gated.
+
+Shadow / research book:
+
+- `hail_mary_short` — AI/semis HIP-3 short basket (`NVDA`, `AMD`, `MSFT`,
+  `GOOGL`, `MU`, etc.). It is watchlist-driven but trigger-gated by basket
+  breadth, proxy trend, and fresh daily breakdowns. Current live config keeps it
+  `shadow_only=true`; do not promote it to live capital until its shadow/backtest
+  sample is EV+.
+
+`gex_signal` is not standalone alpha. It is a HIP-3 option gamma guardrail that
+vetoes longs under nearby call-wall risk.
+
+Removed/refuted/shadow methods should stay gone from config, docs, tests, and
+MCP tools. Do not reintroduce shadow logging or disabled alpha paths without a
+fresh EV+ audit and explicit user request.
 
 ## Risk Gates (independent, no short-circuiting)
 
@@ -168,7 +264,7 @@ Notes on specific gates:
   aggregate account PnL (not main-dex-only — that bug spuriously halted). `0` = off.
 - **market_regime**: blocks counter-trend trades unless `confidence ≥
   counter_regime_min_conf` OR `composite_score ≥ 50` ("via composite") OR a
-  binary momentum/whale trigger fired. Aligned trades clear at the lower
+  binary momentum trigger fired. Aligned trades clear at the lower
   `aligned_min_conf`. **`block_counter_trend_bypass`** (currently `true`)
   disables ONLY the binary-trigger bypass — the composite≥50 path stays open, so
   strong-momentum counter-trend trades (e.g. an alt long in a down regime via
@@ -192,21 +288,19 @@ the AI + risk gates then adjudicate:
 - `dailyMover` — large liquid 24h movers. Raw `daily_move_pct` is carried into
   analysis so TA sidestep can block parabolic PASS upgrades.
 
-**Newer entry-side levers (2026-06, backtest-gated):**
+**Entry-side guardrails (2026-06, backtest-gated):**
 - **`late_chase_relax`** (LIVE) — narrows the runner gate's "late trend-only
   chase; no fresh breakout/burst" block. Admits trend-aligned no-breakout entries
   ONLY on liquid coins (vol ≥ `min_volume_usd`, default $5M) inside the
   `[min_ext_pct, max_ext_pct]` daily-extension band (20–30%) — the one pocket
-  backtested +EV/OOS-robust (`scripts/edge_extension.py`). Low-liq and >30% chases
-  stay blocked (measured −EV: low-liq 20–30% is −1.27% gross — pump-and-dumps that
-  reverse). `shadow_mode` logs `would admit` without trading. This is why we miss
-  parabolic low-liquidity runners like TNSR +70% on purpose — they enter our
-  universe only after they're already extended, and chasing them loses.
-- **`capital_rotation`** (SHADOW) — when a strong fresh candidate is blocked
-  purely by capital (book full / notional / margin), evicts the weakest non-winner
-  (roe < `protect_winner_roe_pct`, age ≥ `min_hold_minutes`) for it. Wired at both
-  the executor stage AND (newer) the pre-research margin preflight. Backtest-validated
-  near-inert and held in shadow; flip `shadow_mode:false` only on forward evidence.
+  retained in the live config. Low-liquidity and out-of-band chases stay blocked.
+- **`capital_rotation`** (LIVE) — when a strong fresh candidate is blocked purely by
+  capital (book full / notional / margin), evicts the weakest non-winner (roe <
+  `protect_winner_roe_pct`, age ≥ `min_hold_minutes`) for it. Wired at both the
+  executor stage and the pre-research margin preflight.
+- **`gex_signal`** (LIVE, HIP-3 only) — option gamma call-wall guardrail for
+  tokenized equities. It is a veto, not standalone alpha: longs jammed under a
+  nearby long-gamma call wall are blocked at the configured wall distance.
 
 **Config keys are read tolerantly** — current gates accept snake_case and the
 legacy camelCase form for common knobs. Prefer snake_case in `.agent-config.json`
@@ -246,7 +340,7 @@ Every executed position gets THREE layers of exit, all set at entry:
 
 1. **DSL trailing stop** (`dsl_exit.py`, primary, re-evaluated each 60s tick):
    - **Phase 1 — loss cap:** `max_loss_pct` (current live 2.5% spot) AND
-     `max_loss_roe_pct/lev` (current live 15% ROE, whichever is tighter),
+     `max_loss_roe_pct/lev` (current live 25% ROE, whichever is tighter),
      optionally widened to a volatility-scaled `atr_stop` (current live ON:
      1.5× ATR clamped 1.0–2.5%). The wider stop was validated to stop whipsawing
      volatile movers out of trend (the EIGEN/AERO leak).
@@ -288,7 +382,7 @@ For agent-wallet setup and the `approveAgent` flow, see the
 
 - Real orders only — no simulation or dry-run; mode is `OFF` or `LIVE`.
 - Full autonomy — do not ask permission for individual trade decisions.
-- Token-cost aware — a flat market with 0 triggers = $0 spent = correct behavior.
+- Token-cost aware — a flat market with 0 triggers = $0 AI-brain spend = correct behavior.
 
 ## Market Coverage & Scan Scope
 
@@ -310,120 +404,31 @@ To force coverage of a specific coin not in the buckets:
 
 ## HIP-3 Tokenized Equity / Commodity Perps
 
-Hyperliquid hosts a separate family of perp dexes for tokenized stocks,
-indices, commodities, and FX (`xyz`, `km`, `vntl`, `flx`, `hyna`, `abcd`,
-`cash`, `para`). Markets are namespaced as `<dex>:<symbol>` — e.g.
-`xyz:NVDA`, `xyz:GOLD`, `xyz:SP500`, `km:US500`, `km:USOIL`.
+HIP-3 markets are namespaced as `<dex>:<symbol>` and live on separate
+clearinghouses (`xyz`, `km`, `vntl`, `flx`, `hyna`, `abcd`, `cash`, `para`).
+`enable_hip3` requires a loop restart because the universe is loaded once at
+startup. Dashboard/status reads use `fetch_account_state(..., include_hip3=True)`
+for aggregated equity; the executor still checks the target dex before placing a
+HIP-3 order and refuses underfunded dexes. See
+`references/hip3-tokenized-equity-handoff.md` for the exact five threaded entry
+points, `queried_dexes` DSL safety, and SDK gotchas.
 
-**Enabling**: set `"enable_hip3": true` in `.agent-config.json` and **restart
-the trading loop** (the universe is fetched once at startup). The flag is
-threaded through every entry point:
+**Pitfall:** assuming "we scanned everything" when the log says "50 markets".
+Check MCP market-list tools when the user mentions an asset that was not reported.
 
-1. `get_universe(include_hip3=True)` — auto-discovers registered HIP-3 dexes
-   via `/info perpDexs` and merges each dex's markets into the unified list.
-2. `fetch_all_mids(include_hip3=True)` — adds one HTTP POST per HIP-3 dex
-   so colon-namespaced mids populate.
-3. `get_all_hl_mids(include_hip3=True)` — same for the DSL exit pass; without
-   this, HIP-3 trackers receive no mid and peak/floor never advance.
-4. `fetch_account_state(user, include_hip3=True)` — aggregates equity +
-   `total_ntl` across main + every HIP-3 clearinghouse, concatenates
-   `asset_positions` with bare coins prefixed `<dex>:`. Returns
-   `dex_equity` (per-dex breakdown) and `queried_dexes` (the dexes that
-   actually responded — used by `rehydrate_from_exchange` to skip
-   dropping DSL trackers on a timed-out dex).
-5. `Info(perp_dexs=[""]+dex_names)` / `Exchange(perp_dexs=...)` — teaches
-   the HL SDK to resolve colon names at order-placement time. **CRITICAL**:
-   the empty string `""` must be prepended; the SDK treats the list as
-   exclusive — pass only HIP-3 dexes and BTC/ETH start raising `KeyError`
-   at `update_leverage` / `order`.
+## Funding-Regime Bias
 
-**Dashboard vs sizing semantics**: callers that pass `include_hip3=True`
-see total aggregated equity (dashboard, heartbeat, portfolio API, CLI).
-The executor sizes against `include_hip3=False` (main-only) so free margin
-checks aren't fooled by cross-dex idle USDC.
+`risk_gates.py::market_regime_gate` applies the funding-regime overlay
+symmetrically: trades aligned with the current funding crowd use the normal bar,
+while trades against it face the elevated `counter_regime_min_conf` / composite
+bar. With current live settings, broad binary-trigger force paths stay blocked
+for counter-regime trades. Do not solve regime bias by raising
+`min_ai_confidence` globally.
 
-**Liquidity floor split**: HIP-3 markets carry less volume than BTC/ETH
-(most `xyz:*` markets sit in the $1M–$50M range vs $1B+ for BTC). The
-risk gate uses two floors:
-- `min_market_volume_usd` (current live 700,000) — applies to native crypto
-- `min_hip3_volume_usd` (current live 700,000) — applies to colon-namespaced markets
-
-Thin HIP-3 (e.g. `hyna:XRP` $33k) still correctly blocks; mid-volume
-tokenized equities flow.
-
-**Market regime classifier** (`agents/market_regime.py`) strips the dex
-prefix before lookup, so `xyz:NVDA` correctly classifies as `equity` (not
-crypto). Equity names are checked against their own 1h trend first; `xyz:SP500`
-is only the fallback when that name's own candles are neutral or too thin.
-Tokenized commodities (`xyz:GOLD`, `xyz:CL`, `xyz:BRENTOIL`, `km:USOIL`)
-classify as `commodity` and use their own candle stream as the proxy.
-
-**Price lookup gotcha**: `info.all_mids()` only returns the native HL perp
-dex — colon-namespaced coins need `info.all_mids(dex=<prefix>)`. Both
-`get_hl_price()` (`client/exchange.py`) and `fetch_all_mids(include_hip3=True)`
-(`client/hl_client.py`) handle this. Outside those helpers, look up the
-prefix manually before calling SDK methods.
-
-**Off-hours behavior**: HIP-3 equity markets only trade during US equity
-hours; outside those hours volume drops to ~zero, so the scanner naturally
-skips them (filtered by `min_hip3_volume_usd`). No explicit hours-gate is
-implemented — the volume floor handles it.
-
-See `references/hip3-tokenized-equity-handoff.md` for the original task
-brief and the post-implementation audit findings.
-
-**Pitfall:** assuming “we scanned everything” when the log simply says “50 markets”. Always check via the MCP market-list tools when the user mentions an asset that was not reported.
-
-## Funding-regime bias (symmetric — works in either direction)
-
-The funding regime (`market_get_funding_regime`) is the primary signal for
-whether the bot should bias toward longs or shorts. Implementation is
-**direction-agnostic** so it works the same when the regime flips:
-
-- Trades aligned with the funding regime → normal bar.
-- Trades against the funding regime → elevated bar (conf ≥ 0.85 OR
-  composite ≥ 60).
-- Binary trigger bypasses are no longer a broad force path. With the current
-  live config, `block_counter_trend_bypass=true`, a lone slow-burn/momentum
-  trigger does not rescue counter-regime trades.
-
-Core logic lives in `risk_gates.py::market_regime_gate`. The funding regime
-is read via `hyperfeed.py::market_get_funding_regime` (5-min cache —
-funding settles hourly so a longer TTL would still be safe; shorter is
-wasteful).
-
-Do **not** solve regime bias by raising `min_ai_confidence` globally — that
-kills overall trade volume. Use `counter_regime_min_conf` instead.
-
-Live config (edit `.agent-config.json` directly — the MCP `config` tool
-does NOT accept `counter_regime_min_conf` writes):
-```json
-{
-  "min_ai_confidence": 0.67,
-  "counter_regime_min_conf": 0.8,
-  "leverage": 12,
-  "max_trade_notional_usd": 350,
-  "atr_risk_sizing": {
-    "enabled": true,
-    "risk_per_trade_pct": 0.02,
-    "sizing_basis": "primary_stop"
-  }
-}
-```
-
-When the user asks "regime?" / "short or long?" / "what's the regime",
-always answer with a fresh `market_get_funding_regime` call — do not cache
-the answer in session memory across turns.
-
-**Per-class funding overlay**: `market_get_funding_regime()` fetches
-`get_universe(include_hip3=True)` and returns `regimes_by_class` for crypto,
-equity, and commodity. `market_regime_gate()` looks up the class for the
-current coin, so a crypto `SHORT_CROWDED` state no longer leaks onto oil or
-tokenized equities. If `regimes_by_class` is missing from an older stub, the
-gate falls back to the legacy top-level `regime`.
-
-See `references/short-regime-bias.md` for the full prompt template, code
-locations, and pitfalls.
+When the user asks "regime?", "short or long?", or similar, answer from a fresh
+`market_get_funding_regime` call. Do not rely on session memory. See
+`references/short-regime-bias.md` for code locations, exact thresholds, prompt
+template, and pitfalls.
 
 ### Testing the regime gate
 
@@ -454,6 +459,7 @@ itself — that's the cache wrapper).
 | Logs show overlapping scan cycles or doubled cadence | There is likely an orphan loop. Run `scripts/restart.sh status` and `ps ax \| rg "scripts/trading_loop.py"`; keep exactly one Python loop process. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
 | MCP `config` tool dropping a key | FIXED 2026-06-05 and pruned later — the tool exposes the current risk-knob set in snake_case. Removed experiment knobs are intentionally absent. Older builds took a narrow camelCase schema, silently dropped keys, and wrote dup keys; if you see that, the MCP is on stale code → `pkill -f hermes-mcp-server.py`. |
+| CLI brain returns PASS for every coin | Check whether the research event has `ai_down`/empty reasoning or logs show CLI timeout/non-zero exit. Provider failures intentionally return `""`; fix CLI auth/env or switch `AI_BRAIN_PROVIDER=openrouter`. Do not loosen TA sidestep to compensate. |
 | `[watchdog] no progress for N s — HUNG` re-execs (N = minutes/hours) | NOT a code hang — the host (MacBook) idle/maintenance-slept and froze the process; the watchdog re-execs correctly on wake. Confirm with `pmset -g log \| grep -iE "Sleep\|Wake"`. Fix: `caffeinate` (now auto-launched by `restart.sh`); keep on AC for closed-lid. Positions are held by server-side brackets during sleep. |
 | `reduce only order would increase position` reject | Stranded SL/TP trigger orders from a prior closed position. `close_position_market` now auto-cancels them (`cancel_open_orders_for_coin`); if on old code, cancel manually or restart. |
 | Day PnL baseline looks stale/reset after a restart | A mid-day restart can re-baseline `startOfDayEquity` to current equity (loses the true SOD) if persisted memory loaded zeroed — would launder a pre-restart drawdown out of the kill-switch. Known issue; verify `dayStartTs` vs UTC midnight before trusting daily PnL. |
@@ -464,7 +470,7 @@ itself — that's the cache wrapper).
 | Order rejected on price/size | Hyperliquid `szDecimals` ≠ `pxDecimals` — see `references/hyperliquid-gotchas.md`. |
 | MCP tool runs stale code after a fix | The server is a separate process — `pkill -f hermes-mcp-server.py` to respawn. |
 | Scan returns 0 triggers | Often correct (quiet market). Lower minScore only to widen deliberately. |
-| Scanner fires triggers but zero executes (Signal vs Action Gap) | See `references/signal-vs-action-gap.md`. Scanner is healthy; second-stage filter (TA + AI confidence) is the knob. |
+| Scanner fires triggers but zero executes | See `references/signal-vs-action-gap.md`. First bucket the feed by `entry_preflight`, `ta_skip`, `research`, and `execute.detail`; do not lower thresholds or re-enable removed methods without fresh EV evidence. |
 
 ## Bundled Scripts
 
@@ -482,7 +488,7 @@ does a read-only Hyperliquid query for live equity:
   drift between the two surfaces a broken loop heartbeat immediately. Falls
   back to cache-only when no wallet env var is set.
 - `scripts/feed.py` — human-readable activity feed from the session log. The
-  trading loop appends every scan / heartbeat / TA filter / research /
+  trading loop appends every scan / heartbeat / preflight / skip / research /
   execute / error event; `feed.py` renders them with timestamps and symbols.
   Examples:
   ```bash
@@ -493,8 +499,10 @@ does a read-only Hyperliquid query for live equity:
   python3 scripts/feed.py --filter execute,error  # only those types
   ```
   Event types emitted by the loop: `loop_start`, `loop_stop`, `loop_heartbeat`
-  (per-cycle equity/positions sync), `scan` (trigger count + coins), `ta_skip`
-  (TA filter dropped a perception), `research` (verdict + confidence),
+  (per-cycle equity/positions sync), `scan` (trigger count + coins),
+  `entry_preflight` (deterministic live gate skipped paid AI), `ta_skip`
+  (TA filter, held/cooldown/research throttle, or pre-research runner skip),
+  `research` (verdict + confidence + `ai_brain_provider` when present),
   `execute` (order outcome), `error`. `status.py` also prints TA verdict counts
   (CONFIRMED / WEAK / REJECTED + avg composite score over the last 30) so you
   immediately see if the statistical gate is over-filtering early signals.
@@ -545,9 +553,10 @@ start it. See `references/cron-jobs.md`.
 
 - `references/mcp-config.md` — MCP server config and tool list.
 - `references/mcp-server.md` — server structure, adding tools, the audit invariant.
+- `../../docs/AI_BRAIN_OPERATOR_WIRING.md` — Codex/Claude/Hermes/OpenClaw brain-provider and MCP-operator wiring.
 - `references/hyperliquid-gotchas.md` — order-placement gotchas (decimals, tick size, $10 min, singletons).
 - `references/cron-jobs.md` — Hermes cron wiring for the hourly status report.
-- `references/signal-vs-action-gap.md` — "scanner fires, trader stays silent" pattern, including the 2026-05-28 direction-asymmetric gap diagnosis (counter-regime blocking 60 LONGs in 24h).
+- `references/signal-vs-action-gap.md` — current gate-first diagnostic flow for "scanner fires, trader stays silent".
 - `references/restart-sequence.md` — `scripts/restart.sh` usage + baseline-reset snippet.
 - `references/trading-mode.md` — execute-first reporting contract when the user is in active trading mode.
 - `references/daemon-investigation.md` — historical note on the no-op `--daemon` flag; superseded by `restart.sh`.

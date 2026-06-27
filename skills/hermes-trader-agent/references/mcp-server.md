@@ -1,7 +1,7 @@
 # MCP Server Structure
 
-`scripts/hermes-mcp-server.py` — a stdio JSON-RPC MCP server exposing 100 tools
-(52 implemented + 48 honest `not_implemented` stubs for unwired Hyperliquid SDK
+`scripts/hermes-mcp-server.py` — a stdio JSON-RPC MCP server exposing 99 tools
+(52 implemented + 47 honest `not_implemented` stubs for unwired Hyperliquid SDK
 calls). Registered in `~/.hermes/config.yaml` under `mcp_servers.hermes-trader`.
 
 ## Layout
@@ -48,6 +48,17 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
 - A bad import from `hermes_trader.client.exchange` fails at *handler-call* time,
   not file load — a `python -c 'import ...'` smoke test will not catch it. Check
   the import against the actual module.
+- `close_position` is a thin adapter over
+  `hermes_trader.agents.executor.close_position_market(coin)`. Do not call
+  `place_hl_order` inline from the MCP server; the executor helper owns
+  reduce-only handling, DSL deregistration, trigger-order cleanup, realized PnL
+  capture, and loss-cooldown arming.
+- `submit_verdict` is the MCP-native brain adapter. It records an agent-authored
+  verdict as an analysis and returns an `analysisId`; `execute` then calls
+  `executor.route_verdict()` so LONG/SHORT entries hit gates and CLOSE hits the
+  close helper.
+- `config` whitelists nested updates, including `ai_brain`, so MCP clients can
+  hot-switch the research provider without editing `.agent-config.json` by hand.
 
 ## Audit invariant
 
@@ -56,7 +67,7 @@ Every tool in `TOOLS` must resolve to exactly one handler, with no orphans:
 ```
 len(TOOLS) == len(tool_handlers explicit keys) + len(_STUB_TOOL_NAMES)
 no tool name appears in both the explicit dict and _STUB_TOOL_NAMES
-no duplicate handle_* function definitions (a dup silently shadows the first)
+no duplicate handle_* function definitions (a dup silently overrides the first)
 every TOOLS entry has a resolvable handler; no unwired handlers; no orphan dict keys
 ```
 

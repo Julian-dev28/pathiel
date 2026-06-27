@@ -15,8 +15,7 @@ from hermes_trader.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 
-# Wallets to treat as "smart money". Empty by default — populate to enable
-# leaderboard_get_top / discovery_get_top_traders.
+# Optional trusted leaderboard wallets. Empty by default.
 TRUSTED_WALLETS: set[str] = set()
 
 # Funding-regime cache. Funding rates settle hourly so a 5-min TTL is safe

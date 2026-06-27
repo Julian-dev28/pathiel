@@ -45,7 +45,7 @@ The funding-regime overlay lives inside
 
 ```json
 {
-  "min_ai_confidence": 0.67,
+  "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
   "leverage": 12,
   "equity_fraction_per_trade": 0.2,
@@ -53,10 +53,8 @@ The funding-regime overlay lives inside
 }
 ```
 
-Apply by editing `.agent-config.json` directly — the MCP `config` tool does
-NOT accept `counter_regime_min_conf` writes (it silently drops anything not
-in its narrow schema). Always restart the trading loop after editing the
-file.
+Apply through MCP `config` or by editing `.agent-config.json` directly. Restart
+the trading loop after editing the file by hand.
 
 ## Funding-regime cache
 
@@ -93,7 +91,8 @@ Constraints:
 - Do NOT solve this by raising min_ai_confidence globally.
 
 Suggested changes:
-- Raise counter_regime_min_conf to 0.85 in .agent-config.json (not via MCP).
+- Raise counter_regime_min_conf to 0.85 through MCP `config` or in
+  `.agent-config.json`.
 - Make market_regime_gate in risk_gates.py stricter for against-funding-regime
   trades (require either high confidence OR high composite score).
 - Cache market_get_funding_regime so the gate doesn't refetch per call.
@@ -112,9 +111,8 @@ Files to review:
   "short-crowded → easy shorts, hard longs" as a special case. When the
   regime flips, that logic doesn't migrate. The symmetric `against_funding`
   check covers both states from one code path.
-- **MCP `config` tool silently drops `counter_regime_min_conf`** — edit
-  `.agent-config.json` directly and restart the loop. Trying to push
-  through the MCP tool wastes a turn and looks like the bot ignored you.
+- **Stale MCP server after a config-tool fix** — kill `hermes-mcp-server.py`
+  so the next MCP call respawns the updated handler.
 - **Do not reintroduce broad slow-burn execution.** The live cleanup removed
   that path because it admitted too many weak PASS upgrades.
 - **Verify regime via `market_get_funding_regime`** before assuming. The

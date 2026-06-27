@@ -139,21 +139,6 @@ These surface extra candidates for AI research beyond the weighted composite gat
 ### `candlestick_patterns` (nested, `enabled` default `false`)
 `{enabled, wick_body_ratio (2.0), context_lookback (6), context_pct (1.5)}`. Reversal candles at exhaustion — shooting-star/bearish-engulfing (→ SHORT) and hammer/bullish-engulfing (→ LONG), each requiring a preceding move so they fire at tops/bottoms, not every bar. Weight-0 surfacing signal; the research prompt also gets the last 12 raw 1h OHLC bars so the LLM reads price action directly.
 
-### `force_execute_composite` (float, default `40`)
-If AI says PASS but trigger composite hits this AND `force_execute_slow_burn_count` slow-burn triggers fire, the executor upgrades to LONG conf 0.70. The structure overrides the AI's hedge. Set to 999 to disable.
-
-### `force_execute_slow_burn_count` (int, default `2`)
-Min slow-burn triggers (volumeBuildup1h / trendFlip1h / higherLows1h) required for the structural override. Combined with `force_execute_composite`.
-
-### Whale-signal priority (oi_funding_anomaly accumulation flag)
-Three independent knobs, all default-on, to capitalize on smart-money accumulation (deeply-negative funding + flat price + high OI):
-
-- `whale_regime_bypass` (bool, default `true`) — a whale signal lets a trade bypass the counter-regime gate (even against trend).
-- `whale_force_execute` (bool, default `true`) — a whale signal alone upgrades an AI PASS to LONG conf 0.70 (the structural override).
-- `whale_size_multiplier` (float, default `1.3`) — whale-backed trades multiply their conviction sizing by this, clamped at 2× base. Set `1.0` to keep override/bypass but no size boost.
-
-Set all three off (`false`/`false`/`1.0`) to treat whale signals as informational only (still shown in the AI prompt, no gate/sizing effect).
-
 ---
 
 ## Liquidity (volume floors)
@@ -228,17 +213,8 @@ All hot-read. README "Configuration" has the concise version.
 ### `atr_risk_sizing` `{enabled, risk_per_trade_pct}`
 Equal-risk (Turtle-N): notional = `risk_per_trade_pct × equity / stop_width`. Overrides flat `equity_fraction` — volatile coins get smaller size, tight-stop coins bigger (capped by `max_trade_notional_usd`).
 
-### `signal_enforcement` `{enabled, veto, boost, gex_veto, boost_bar_delta, whale_*}`
-Free signal suite acting on the **forced-override path only**. VETO blocks chop-traps (GEX pin-trap) / whales dumping; BOOST lowers the override bar on a catalyst. Cache-only.
-
-### `shadow_signals` `{enabled, gex, short_volume, crypto_whale, news}`
-Logs the free signals per candidate **without affecting trades** — forward validation.
-
-### `gex_signal` / `momentum_reentry`
-Gated experiments (see commit history). `momentum_reentry` backtested net-negative → OFF.
-
-### Structural-override gates (LONG-only — upgrade an AI PASS on strong TA/whale)
-`force_execute_composite` (bar), `composite_force_execute` (forcing AI-rejects = adverse selection → OFF), `breakout_force_execute`, `whale_force_execute`, `force_execute_slow_burn_count`.
+### `gex_signal`
+HIP-3 options-wall caution flag. When enabled, the runner gate blocks long entries jammed under a nearby long-gamma call wall.
 
 ---
 

@@ -50,6 +50,7 @@ import json
 m = json.load(open('.agent-memory.json'))
 m['startOfDayEquity'] = m.get('equity', 0)
 m['dailyPnl'] = 0
+m['peakDailyPnl'] = 0
 json.dump(m, open('.agent-memory.json','w'), indent=2)
 "
 scripts/restart.sh restart
@@ -82,3 +83,13 @@ ps ax | rg "(scripts/trading_loop.py|hermes-mcp-server.py|hermes_trader.server)"
 cadences, an older orphan loop is probably still alive; stop the older process
 before trusting fills, cooldowns, or PnL attribution. `scripts/restart.sh` has a
 `ps` fallback for environments where `pgrep -f` is unreliable.
+
+If Codex launches `restart.sh` and the execution wrapper reaps detached
+background children, use persistent `screen` sessions:
+
+```bash
+screen -dmS hermes-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/hermes-trader && HERMES_HL_RATE_REFILL_PER_SEC=5 HERMES_HL_RATE_CAPACITY=200 .venv/bin/python -m hermes_trader.server >> logs/server.log 2>&1'
+screen -dmS hermes-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/hermes-trader && HERMES_STARTUP_GRACE_S=0 HERMES_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
+screen -ls
+curl -s -o /tmp/hermes-dashboard.html -w "%{http_code}\n" http://localhost:8000/
+```

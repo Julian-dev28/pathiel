@@ -75,11 +75,22 @@ def _fmt_event(e: dict) -> str:
                 body += f" (+{len(coins)-8})"
         return f"[{ts}] •  scan       {body}"
     if ev == "ta_skip":
-        return f"[{ts}] ✗  ta_skip    {e.get('coin')} ({e.get('signal')})"
+        sig = e.get("signal")
+        label = "ta_skip" if sig in {"WEAK", "REJECTED"} else "skip"
+        reason = e.get("reason")
+        body = f"{e.get('coin')} ({sig})"
+        if reason:
+            body += f" — {reason}"
+        return f"[{ts}] ✗  {label:<9} {body}"
+    if ev == "entry_preflight":
+        reason = e.get("reason") or ""
+        return f"[{ts}] ✗  preflight  {e.get('coin')} — {reason}"
     if ev == "research":
         v = e.get("verdict")
         c = e.get("confidence", 0)
-        return f"[{ts}] ?  research   {e.get('coin')} → {v} (conf {c})"
+        brain = e.get("ai_brain_provider")
+        via = f" via {brain}" if brain else ""
+        return f"[{ts}] ?  research   {e.get('coin')} → {v} (conf {c}{via})"
     if ev == "execute":
         ok = "✓" if e.get("executed") else "✗"
         return (f"[{ts}] {ok}  execute    {e.get('coin')} {e.get('side','?')}  "

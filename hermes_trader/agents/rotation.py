@@ -5,8 +5,9 @@ max_concurrent — i.e. the book is FULL, not the signal absent. Capital is
 allocated first-come-first-served with no ranking, so a strong fresh signal can
 never displace a weak, stale position. This module decides when it should.
 
-PURE FUNCTION — no network, no side effects, fully testable. The caller (executor,
-in SHADOW mode first) logs the decision; only when shadow_mode is off does it act.
+PURE FUNCTION — no network, no side effects, fully testable. The caller (executor)
+acts on positive decisions after the normal gate stack has already blocked solely
+on capital constraints.
 
 Principle blend of the greats:
   - ride winners (Seykota/Livermore): NEVER evict a position that's still working
@@ -29,7 +30,7 @@ class RotationDecision:
     should_rotate: bool
     evict_coin: Optional[str]      # position to close, if rotating
     evict_roe_pct: float
-    reason: str                    # human-readable rationale (logged in shadow + live)
+    reason: str                    # human-readable rationale
 
 
 def decide_rotation(

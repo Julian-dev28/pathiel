@@ -12,7 +12,7 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # n=497 trades). Prior weights were inverted: the 1h slow-burn signals carried
         # the heaviest weight (0.60/0.55/0.40) but had ~0/negative lift, while
         # trendStrength (the BEST signal, +2.08% lift) was only 0.10. Weights now
-        # track lift; net-negative triggers (trendFlip1h -2.10%, rangeCompression
+        # track lift; weak historical triggers (trendFlip1h, rangeCompression
         # -3.08%) are ZEROED out of scoring.
         "trendStrength": 0.55,    # lift +2.08% (was 0.10) — strongest edge
         "pctMoveSpike": 0.40,     # lift +1.49%

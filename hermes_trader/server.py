@@ -687,7 +687,7 @@ async def metrics():
 
 
 # Dashboard, SSE feed, and operator console all live in hermes_trader.dashboard.
-# Mounting after the JSON API routes so the dashboard's "/" doesn't shadow them.
+# Mounting after the JSON API routes so the dashboard's "/" cannot override them.
 dashboard.register_routes(app)
 
 

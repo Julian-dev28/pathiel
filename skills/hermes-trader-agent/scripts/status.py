@@ -50,14 +50,25 @@ def _load_env_local(repo_root: Path) -> None:
         os.environ.setdefault(key.strip(), val.strip())
 
 
-def _process_running(pattern: str) -> bool:
+def _process_running(pattern: str):
+    blocked = False
     try:
         out = subprocess.run(
             ["pgrep", "-f", pattern], capture_output=True, text=True, timeout=5
         )
-        return out.returncode == 0 and bool(out.stdout.strip())
+        if out.returncode == 0 and bool(out.stdout.strip()):
+            return True
+        if "sysmond" in (out.stderr or "") or "Cannot get process list" in (out.stderr or ""):
+            blocked = True
     except (OSError, subprocess.SubprocessError):
-        return False
+        blocked = True
+    try:
+        out = subprocess.run(
+            ["ps", "ax", "-o", "command="], capture_output=True, text=True, timeout=5
+        )
+        return out.returncode == 0 and pattern in out.stdout
+    except (OSError, subprocess.SubprocessError):
+        return None if blocked else False
 
 
 def _fetch_live_state(repo_root: Path):
@@ -78,9 +89,68 @@ def _fetch_live_state(repo_root: Path):
         user = resolve_user_address()
         if not user:
             return None
-        return fetch_account_state(user)
+        return fetch_account_state(user, include_hip3=True)
     except Exception as e:
         return {"_error": f"HL fetch failed: {e}"}
+
+
+def _active_claim_books(repo_root: Path) -> set[str]:
+    sys.path.insert(0, str(repo_root))
+    try:
+        from hermes_trader.agents.rebalancer_owned import active_claim_books
+        return active_claim_books()
+    except Exception:
+        return {"xs_momentum", "rally_exhaustion"}
+
+
+def _print_claims_audit(repo_root: Path, live_positions=None) -> None:
+    """Surface stale/mismatched book claims before they suppress strategy books."""
+    active_books = _active_claim_books(repo_root)
+    data = _load_json(repo_root / ".rebalancer_claims.json")
+    if data is None:
+        print("claims       : none yet")
+        return
+    if isinstance(data, dict) and "_error" in data:
+        print(f"claims       : unreadable — {data['_error']}")
+        return
+    raw = data.get("claims") if isinstance(data, dict) else {}
+    claims = {str(k): str(v) for k, v in (raw or {}).items()}
+    owners = sorted(set(claims.values()))
+    print(f"claims       : {len(claims)} coin(s), owners={owners or 'none'}")
+
+    stale = {coin: owner for coin, owner in claims.items() if owner not in active_books}
+    if stale:
+        sample = ", ".join(f"{c}={b}" for c, b in sorted(stale.items())[:10])
+        more = f" (+{len(stale) - 10} more)" if len(stale) > 10 else ""
+        print(f"  ⚠ stale claims block live books until scrubbed: {sample}{more}")
+
+    xs_state = _load_json(repo_root / ".xs_momentum_positions.json") or {}
+    if isinstance(xs_state, dict) and "_error" in xs_state:
+        print(f"  ⚠ xs_momentum state unreadable — {xs_state['_error']}")
+        return
+    xs_owned = set(xs_state.get("longs") or []) | set(xs_state.get("shorts") or [])
+    xs_claimed = {coin for coin, owner in claims.items() if owner == "xs_momentum"}
+    missing_claims = sorted(xs_owned - xs_claimed)
+    orphan_claims = sorted(xs_claimed - xs_owned)
+    if missing_claims:
+        print(f"  ⚠ xs_momentum owns without claims: {missing_claims}")
+    if orphan_claims:
+        print(f"  ⚠ xs_momentum claims without owned state: {orphan_claims}")
+
+    if live_positions is not None and xs_owned:
+        live_coins = set()
+        for ap in live_positions or []:
+            p = ap.get("position", {}) if isinstance(ap, dict) else {}
+            coin = p.get("coin")
+            try:
+                szi = float(p.get("szi", 0) or 0)
+            except (TypeError, ValueError):
+                szi = 0.0
+            if coin and szi != 0:
+                live_coins.add(coin)
+        vanished = sorted(xs_owned - live_coins)
+        if vanished:
+            print(f"  ⚠ xs_momentum state has non-live coins; next rebalance should prune: {vanished}")
 
 
 def _clock(ts_ms) -> str:
@@ -100,10 +170,20 @@ def _fmt_event(e: dict) -> str:
         coins = ", ".join(e.get("coins", [])) or "none"
         return f"{when}  scan      {n} trigger(s): {coins}"
     if ev == "ta_skip":
-        return f"{when}  ta-skip   {e.get('coin')} ({e.get('signal')})"
+        sig = e.get("signal")
+        label = "ta-skip" if sig in {"WEAK", "REJECTED"} else "skip"
+        reason = e.get("reason")
+        body = f"{e.get('coin')} ({sig})"
+        if reason:
+            body += f" — {reason}"
+        return f"{when}  {label:<9} {body}"
+    if ev == "entry_preflight":
+        return f"{when}  preflight {e.get('coin')} — {e.get('reason')}"
     if ev == "research":
+        brain = e.get("ai_brain_provider")
+        via = f" via {brain}" if brain else ""
         return (f"{when}  research  {e.get('coin')} -> {e.get('verdict')} "
-                f"(conf {e.get('confidence')})")
+                f"(conf {e.get('confidence')}{via})")
     if ev == "execute":
         ok = "EXECUTED" if e.get("executed") else "not executed"
         return (f"{when}  execute   {e.get('coin')} {e.get('side', '')} "
@@ -147,6 +227,7 @@ def _print_session_tail(n: int = 8) -> None:
 def main() -> int:
     print("=== hermes-trader status ===")
     print(f"repo: {ROOT}")
+    live_positions_for_claim_audit = None
 
     config = _load_json(ROOT / ".agent-config.json")
     if config is None:
@@ -155,10 +236,14 @@ def main() -> int:
         print(f"config: unreadable — {config['_error']}")
     else:
         print(f"mode  : {config.get('mode', 'OFF')}")
+        ai_brain = config.get("ai_brain") or {}
+        provider = os.environ.get("AI_BRAIN_PROVIDER") or ai_brain.get("provider", "openrouter")
+        source = "env" if os.environ.get("AI_BRAIN_PROVIDER") else "config"
+        print(f"brain : {provider} ({source})")
         caps = {k: config[k] for k in (
-            "maxTradeNotionalUsd", "max_trade_notional_usd",
-            "maxConcurrent", "max_concurrent",
-            "minAiConfidence", "min_ai_confidence",
+            "max_trade_notional_usd",
+            "max_concurrent",
+            "min_ai_confidence",
             "leverage", "max_daily_loss_usd") if k in config}
         if caps:
             print(f"caps  : {caps}")
@@ -195,8 +280,19 @@ def main() -> int:
         spot_usdc = float(live.get("spot_usdc", 0) or 0)
         total_ntl = float(live.get("total_ntl", 0) or 0)
         positions = live.get("asset_positions", []) or []
+        live_positions_for_claim_audit = positions
         print(f"LIVE perp     : equity ${live_equity:.2f}   "
               f"available ${available:.2f}   notional ${total_ntl:.2f}")
+        dex_equity = live.get("dex_equity") or {}
+        if dex_equity:
+            parts = []
+            for dex, val in dex_equity.items():
+                label = dex or "main"
+                try:
+                    parts.append(f"{label}:${float(val):.2f}")
+                except (TypeError, ValueError):
+                    parts.append(f"{label}:{val}")
+            print("LIVE dex      : " + "  ".join(parts))
         print(f"LIVE spot     : ${spot_usdc:.2f} USDC   "
               f"(total controlled ${live_equity + spot_usdc:.2f})")
         if live_equity <= 0 and spot_usdc > 0:
@@ -218,10 +314,14 @@ def main() -> int:
         elif abs(drift) > max(1.0, 0.05 * live_equity):
             print(f"  ⚠ cached ↔ live drift = ${drift:+.2f} — heartbeat is stale.")
 
+    _print_claims_audit(ROOT, live_positions_for_claim_audit)
+
     loop = _process_running("trading_loop.py")
     mcp = _process_running("hermes-mcp-server.py")
-    print(f"trading loop : {'RUNNING' if loop else 'stopped'}")
-    print(f"MCP server   : {'RUNNING' if mcp else 'stopped (Hermes spawns it on demand)'}")
+    loop_label = "RUNNING" if loop is True else "stopped" if loop is False else "unknown (process list unavailable)"
+    mcp_label = "RUNNING" if mcp is True else "stopped (Hermes spawns it on demand)" if mcp is False else "unknown (process list unavailable)"
+    print(f"trading loop : {loop_label}")
+    print(f"MCP server   : {mcp_label}")
 
     _print_session_tail()
 

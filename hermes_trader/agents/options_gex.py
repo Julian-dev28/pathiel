@@ -1,5 +1,5 @@
-"""FREE options-positioning signals — our own build of the Unusual Whales GEX /
-max-pain / gamma-wall analytics, with NO paid feed.
+"""FREE options-positioning signals — our own build of GEX / max-pain /
+gamma-wall analytics, with NO paid feed.
 
 Data source: CBOE's free delayed (~15min) options JSON — which already carries
 per-contract gamma, delta, IV and open interest, so dealer gamma exposure is

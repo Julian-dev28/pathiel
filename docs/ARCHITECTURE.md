@@ -30,7 +30,7 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 Two entry processes:
   scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
   hermes_trader/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/hermes-mcp-server.py — MCP stdio server: exposes 100 tools to Hermes Agent
+  scripts/hermes-mcp-server.py — MCP stdio server: exposes 99 tools to Hermes Agent
 ```
 
 All three share the same on-disk state and the same Python modules under
@@ -70,7 +70,7 @@ hermes-trader:
 |---|---|
 | **DSL (Dynamic Stop Loss) two-phase exit** | `hermes_trader/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
 | **Skill-shaped trading strategies** | The `skills/hermes-trader-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Hermes Agent skill is portable in shape, if not in runtime. |
-| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; hermes-trader does the same with `scripts/hermes-mcp-server.py` (100 tools). Same pattern, open implementation. |
+| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; hermes-trader does the same with `scripts/hermes-mcp-server.py` (99 tools). Same pattern, open implementation. |
 
 The crucial difference: **Senpi's runtime and MCP server are closed.** Their
 open skills can't execute trades without their proprietary infrastructure.
@@ -339,7 +339,7 @@ for the original task brief and the post-implementation audit findings.
 | `.agent-config.json` | operator + UI | live trading knobs: mode, sizing, risk caps, DSL params, regime thresholds | persistent |
 | `.agent-memory.json` | trading loop | rolling cache of perceptions, analyses, trades, watchlist, cooldowns, equity history | persistent |
 | `.dsl-state.json` | DSL engine | per-position trackers (peak, floor, breach counter, leverage, policy) | persistent |
-| `~/.hermes-trader-session-log.jsonl` | every component | append-only event log: heartbeat, scan, ta_skip, research, execute, dsl_exit, error | rolling |
+| `~/.hermes-trader-session-log.jsonl` | every component | append-only event log: heartbeat, scan, entry_preflight, ta_skip, research, execute, dsl_exit, error | rolling |
 
 All four are env-overridable for containerized deployment (see `Dockerfile`
 and `fly.toml`). On Fly they live under `/data/` on a mounted volume so they
@@ -354,25 +354,23 @@ user scale.
 
 ## The MCP server
 
-`scripts/hermes-mcp-server.py` — 100 tools over MCP stdio. The contract that
+`scripts/hermes-mcp-server.py` — 99 tools over MCP stdio. The contract that
 lets Hermes Agent (and any MCP client) operate the engine.
 
 Tool categories:
 
 | Category | Examples | Count |
 |---|---|---|
-| Trading core | `scan`, `research`, `execute`, `state`, `config` | 5 |
-| Hyperfeed discovery | `leaderboard_get_markets`, `discovery_get_top_traders`, `smart_money_concentration`, `oi_funding_anomaly` | ~10 |
+| Trading core | `scan`, `research`, `submit_verdict`, `execute`, `close_position`, `state`, `config` | 7 |
+| Hyperfeed discovery | `leaderboard_get_markets`, `discovery_get_top_traders`, `whale_concentration`, `oi_funding_anomaly` | ~10 |
 | Market data | `market_get_asset_data`, `market_get_funding_regime`, `market_get_mids`, `market_list_instruments` | ~15 |
 | Direct HL passthrough | account state, candles, mids, l2 book, place order, cancel order, etc. | ~70 |
 
-Some of the passthroughs are stubs pending SDK wiring — they exist so the
-tool surface is complete from the agent's perspective. Stubs return a
-deterministic `{note: "SDK method pending"}` payload, which keeps prompts
-consistent and lets you replace them one at a time without changing the
-agent's behavior.
+Some of the passthroughs are stubs pending SDK wiring — they exist so clients
+get a clean `not_implemented` error instead of fake zeros or "tool not found."
+Never treat stub responses as data.
 
-The 100-tool surface is intentionally wide because **the MCP server can't be
+The 99-tool surface is intentionally wide because **the MCP server can't be
 modified at runtime** without a Hermes restart. Better to expose more than
 the agent needs than to have to teach the agent a new tool mid-session.
 
@@ -409,7 +407,7 @@ Single-file static HTML, no build step. The dashboard intentionally has
 personality:
 
 - **Press Start 2P font + NES.css** — pixel-bordered cards with hard 4px
-  shadows on every section. Title block (`HERMES-TRADER`) is an emerald-glow
+  depth offsets on every section. Title block (`HERMES-TRADER`) is an emerald-glow
   LCD strip.
 - **Matrix-rain sidebar** — the live activity feed sits in a sticky 440px
   right column with CRT scanline overlay, fade-in row animation, and
@@ -491,7 +489,7 @@ hermes-trader/
 │   │   ├── market_regime.py     # per-asset-class regime detection (new)
 │   │   ├── memory.py            # disk-backed singleton state
 │   │   ├── config.py / config_store.py  # config read/write
-│   │   ├── hyperfeed.py         # leaderboard + smart money + OI anomaly (Hyperfeed clone)
+│   │   ├── hyperfeed.py         # leaderboard + whale-flow + OI anomaly (Hyperfeed clone)
 │   │   ├── whale_index.py       # whale tracking on top of public HL endpoints
 │   │   └── system_prompt.py     # the LLM's operating instructions
 │   ├── client/             # HL + WS + caching plumbing
@@ -509,7 +507,7 @@ hermes-trader/
 │   └── session_log.py      # JSONL append-only event log
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
-│   ├── hermes-mcp-server.py     # MCP stdio server, 100 tools
+│   ├── hermes-mcp-server.py     # MCP stdio server, 99 tools
 │   └── backtest.py              # historical-candle backtest
 ├── skills/hermes-trader-agent/  # Hermes Agent skill (operator's manual + helper scripts)
 ├── tests/                       # offline unit + online + live-e2e

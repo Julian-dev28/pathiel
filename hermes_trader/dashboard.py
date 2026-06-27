@@ -1334,6 +1334,12 @@ function renderEvent(e) {
     const scoreNote = e.score != null ? ` ta=${e.score}` : '';
     const trigNote = e.trigger_score != null ? ` trig=${e.trigger_score}` : '';
     text = `ta_skip    ${e.coin} (${e.signal})${scoreNote}${trigNote}`;
+  } else if (ev === 'entry_preflight') {
+    glyph = '✗'; cls = 'scan';
+    const scoreNote = e.score != null ? ` ta=${e.score}` : '';
+    const trigNote = e.trigger_score != null ? ` trig=${e.trigger_score}` : '';
+    text = `preflight  ${e.coin}${scoreNote}${trigNote}`;
+    detail = e.reason ? ` — ${e.reason}` : '';
   } else if (ev === 'research') {
     glyph = '?'; cls = 'research';
     text = `research   ${e.coin} → ${e.verdict} (conf ${e.confidence})`;
@@ -2277,7 +2283,7 @@ def register_routes(app: FastAPI) -> None:
                 return JSONResponse({"response": "Hermes chat unavailable: OPENROUTER_API_KEY not set", "kind": "error"})
 
             # Real trades come from memory (the 100-entry trade ring buffer);
-            # the feed supplies recent DSL exits + ta_skips so "why did X close"
+            # the feed supplies recent DSL exits + skips so "why did X close"
             # questions have context.
             from hermes_trader.agents.memory import memory as _mem
             _mem.load()
@@ -2309,6 +2315,7 @@ def register_routes(app: FastAPI) -> None:
 
             recent_dsl_exits = [e for e in events if e.get("event") == "dsl_exit"][-5:]
             recent_ta_skips = [e for e in events if e.get("event") == "ta_skip"][-5:]
+            recent_entry_preflights = [e for e in events if e.get("event") == "entry_preflight"][-5:]
             recent_research = [e for e in events if e.get("event") == "research"][-5:]
 
             ctx = {
@@ -2336,6 +2343,10 @@ def register_routes(app: FastAPI) -> None:
                     {"coin": e.get("coin"), "signal": e.get("signal"), "score": e.get("score"), "ts": e.get("ts")}
                     for e in recent_ta_skips
                 ],
+                "recent_entry_preflights": [
+                    {"coin": e.get("coin"), "reason": e.get("reason"), "score": e.get("score"), "ts": e.get("ts")}
+                    for e in recent_entry_preflights
+                ],
                 "recent_research_verdicts": [
                     {"coin": e.get("coin"), "verdict": e.get("verdict"),
                      "confidence": e.get("confidence"),
@@ -2352,7 +2363,8 @@ def register_routes(app: FastAPI) -> None:
                 "  • recent_trades = last 8 actually-filled trades from memory (with size_usd > 0)\n"
                 "  • recent_dsl_exits = positions the DSL exit engine closed (and why)\n"
                 "  • recent_research_verdicts = analysis results that fed execution decisions\n"
-                "  • recent_ta_skips = signals the TA filter rejected before paid AI research\n\n"
+                "  • recent_ta_skips = signals the TA filter rejected before paid AI research\n"
+                "  • recent_entry_preflights = deterministic live gates that skipped paid AI research\n\n"
                 "Rules: if asked about \"the last trade\", look at recent_trades[-1]. If asked "
                 "\"why X\", check recent_research_verdicts for the reasoning. If asked why a "
                 "position closed, check recent_dsl_exits. NEVER predict future prices.\n\n"

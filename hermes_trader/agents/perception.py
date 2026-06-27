@@ -152,9 +152,9 @@ def _scan_single_market(
         # Daily mover surfacing: the scan already reserves slots for top 24h
         # movers, but the trigger gate can still drop an orderly runner once the
         # fresh spike/breakout bar has passed. Surface large liquid movers to AI
-        # as a weight-0 trigger so SHADOW can tell us whether they are late-chase
-        # junk or real continuation setups. Execution is still governed by the
-        # runner gate, liquidity gate, AI confidence, and SHADOW/LIVE mode.
+        # as a weight-0 trigger so the live gate can decide whether they are
+        # late-chase junk or real continuation setups. Execution is still governed
+        # by the runner gate, liquidity gate, and AI confidence.
         _rms = config.get("runner_mover_surface") or {}
         daily_mover_fired = False
         daily_mover_reason = ""

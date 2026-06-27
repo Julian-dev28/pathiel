@@ -1,7 +1,7 @@
 """Open-interest time-series logger. HL exposes only CURRENT OI (metaAndAssetCtxs /
 get_universe's `openInterest`), no history — so to ever backtest the OI/price four-quadrant
 positioning filter we must self-collect a time-series going forward. This APPENDS a
-snapshot each call (distinct from whale_index's single overwriting .oi-history.json).
+snapshot each call.
 Throttled + size-capped so it's cheap and bounded. Piggybacks the universe the loop
 already fetches — no extra API calls.
 """
