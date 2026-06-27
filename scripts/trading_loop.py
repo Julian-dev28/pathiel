@@ -55,6 +55,7 @@ from hermes_trader.agents.xs_momentum_live import (
 from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
 from hermes_trader.agents.hail_mary_short_live import maybe_run as _hail_mary_short_maybe_run
+from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -747,6 +748,19 @@ while True:
             )
         except Exception as _hmse:
             logger.warning(f"[hail-mary-short] cycle failed (non-fatal): {_hmse}")
+
+        # Crash-continuation divergent-weakness short. Swarm-discovered (extreme_surface 2026-06-27):
+        # BTC-up tape + coin -8%/2d divergent weakness -> short continuation. DEFAULT SHADOW
+        # (shadow_only:true) — logs candidates + a forward-validation jsonl, allocates ZERO capital
+        # until the forward log confirms and an operator flips it. Self-gated by .enabled.
+        try:
+            _crash_continue_div_short_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _ccdse:
+            logger.warning(f"[crash-continue-div-short] cycle failed (non-fatal): {_ccdse}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
