@@ -56,6 +56,7 @@ from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
 from hermes_trader.agents.hail_mary_short_live import maybe_run as _hail_mary_short_maybe_run
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
+from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -761,6 +762,19 @@ while True:
             )
         except Exception as _ccdse:
             logger.warning(f"[crash-continue-div-short] cycle failed (non-fatal): {_ccdse}")
+
+        # Cross-sectional bearish-engulf short. Swarm-discovered (Lane C/C2 2026-06-27): a daily bearish
+        # full-body engulf predicts next-day weakness; SHORT-only (long leg refuted), orthogonal to momentum.
+        # DEFAULT SHADOW — records candidates (all regimes, regime-tagged) to forward-confirm the up-regime
+        # excess the down-tape backtest couldn't. ZERO capital until a VALIDATED verdict + operator flip.
+        try:
+            _engulf_short_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _ese:
+            logger.warning(f"[engulf-short] cycle failed (non-fatal): {_ese}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
