@@ -180,7 +180,7 @@
   },
   "crash_continue_div_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "scan_interval_hours": 6,
     "entry_window_hours": 8,
     "lookback_days": 2,
@@ -218,7 +218,7 @@
   },
   "engulf_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "scan_interval_hours": 6,
     "entry_window_hours": 8,
     "min_body_ratio": 1.0,
