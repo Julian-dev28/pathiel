@@ -1,4 +1,3 @@
-import json
 import os
 
 from hermes_trader.agents import crash_continue_div_short_live as ccd
@@ -81,8 +80,10 @@ def _cfg(**overrides):
 
 def _setup(monkeypatch, tmp_path):
     ro._claims_registry = None
-    # redirect shadow jsonl into the test tmp dir so we never touch live state
-    monkeypatch.setattr(ccd, "_SHADOW_FILE", str(tmp_path / "shadow.jsonl"))
+    # capture shadow-ledger writes instead of touching the live ledger
+    captured: list = []
+    monkeypatch.setattr(ccd.shadow_ledger, "record_many",
+                        lambda book, rows: captured.append((book, list(rows))) or len(rows))
     for path in (ccd._SEEN_FILE, ccd._TS_FILE):
         try:
             os.remove(path)
@@ -93,6 +94,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(ccd, "_save_ts", lambda t: None)
     monkeypatch.setattr(ccd.time, "time", lambda: NOW_MS / 1000.0)
     monkeypatch.setattr(ccd, "active_position_coins", lambda: {})
+    return captured
 
 
 def _fetch_up(coin, interval, n):
@@ -127,7 +129,7 @@ def test_live_opens_short_with_strategy_overrides(monkeypatch, tmp_path):
 
 
 def test_shadow_mode_logs_but_never_executes(monkeypatch, tmp_path):
-    _setup(monkeypatch, tmp_path)
+    captured = _setup(monkeypatch, tmp_path)
     calls = []
     rec = ccd.maybe_run(
         _cfg(shadow_only=True),
@@ -140,14 +142,18 @@ def test_shadow_mode_logs_but_never_executes(monkeypatch, tmp_path):
     assert rec["opened"] == 0
     assert rec["signals"] == 1
     assert calls == []  # zero capital allocated
-    # forward-validation record written for offline grading
-    lines = (tmp_path / "shadow.jsonl").read_text().strip().splitlines()
-    assert len(lines) == 1
-    row = json.loads(lines[0])
+    # one normalized record routed to the unified shadow ledger
+    assert len(captured) == 1
+    book, rows = captured[0]
+    assert book == "crash_continue_div_short"
+    assert len(rows) == 1
+    row = rows[0]
     assert row["coin"] == "ALT"
-    assert row["btc_up"] is True
-    assert row["move_pct"] <= -8.0
+    assert row["side"] == "short"
     assert row["stop_pct"] == 8.0
+    assert row["horizon_days"] == 10.0
+    assert row["meta"]["btc_up"] is True
+    assert row["meta"]["move_pct"] <= -8.0
 
 
 def test_btc_down_regime_blocks_all_signals(monkeypatch, tmp_path):

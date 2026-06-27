@@ -19,6 +19,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.indicators.math import candle_val, ema
@@ -457,6 +458,18 @@ def maybe_run(
 
     if shadow_only:
         _save_ts(now)
+        # record candidates to the unified shadow ledger for survey + forward grade.
+        shadow_ledger.record_many("hail_mary_short", [{
+            "coin": s.get("coin"),
+            "side": "short",
+            "signal_bar_t": s.get("signal_bar_t"),
+            "entry_ref_px": s.get("close"),
+            "horizon_days": float(cfg.get("hold_days", 10.0)),
+            "stop_pct": float(cfg.get("stop_pct", 12.0)),
+            "ts": now_ms,
+            "meta": {"score": s.get("score"), "breadth_pct": s.get("breadth_pct"),
+                     "recent_ret_pct": s.get("recent_ret_pct")},
+        } for s in signals])
         rec = {
             "event": "hail_mary_short",
             "ts": now_ms,

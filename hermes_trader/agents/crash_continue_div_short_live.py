@@ -29,6 +29,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
+from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.session_log import append as log_event
@@ -39,7 +40,6 @@ _BOOK_NAME = "crash_continue_div_short"
 _DAY_MS = 86_400_000
 _TS_FILE = state_file(".crash_continue_div_short_live_ts")
 _SEEN_FILE = state_file(".crash_continue_div_short_live_seen.json")
-_SHADOW_FILE = state_file(".crash_continue_div_short_shadow.jsonl")
 
 
 def _bar_t(bar) -> int:
@@ -122,18 +122,6 @@ def _save_seen(seen: Dict[str, int]) -> None:
     try:
         with open(_SEEN_FILE, "w") as fh:
             json.dump(seen, fh, sort_keys=True)
-    except Exception:
-        pass
-
-
-def _append_shadow(rows: List[Dict[str, Any]]) -> None:
-    """Append forward-validation records (one per candidate) for offline grading."""
-    if not rows:
-        return
-    try:
-        with open(_SHADOW_FILE, "a") as fh:
-            for r in rows:
-                fh.write(json.dumps(r, sort_keys=True) + "\n")
     except Exception:
         pass
 
@@ -307,18 +295,19 @@ def maybe_run(config: Dict[str, Any], universe, positions,
 
     if shadow_only:
         _save_ts(now)
-        # one forward-validation record per candidate so an offline grader can
-        # fetch the realized 10d-or-stop outcome and confirm before any live flip.
-        _append_shadow([{
-            "ts": now_ms,
+        # record each candidate to the unified shadow ledger so scripts/shadow_status.py
+        # can survey + forward-grade (refute/validate) before any operator live flip.
+        shadow_ledger.record_many(_BOOK_NAME, [{
             "coin": s["coin"],
+            "side": "short",
             "signal_bar_t": s.get("signal_bar_t"),
             "entry_ref_px": s.get("entry_ref_px"),
-            "move_pct": s.get("move_pct"),
-            "trailing_dvol": s.get("trailing_dvol"),
-            "btc_up": btc_up,
+            "horizon_days": float(cfg.get("hold_days", 10.0)),
             "stop_pct": float(cfg.get("stop_pct", 8.0)),
-            "hold_days": float(cfg.get("hold_days", 10.0)),
+            "ts": now_ms,
+            "meta": {"move_pct": s.get("move_pct"),
+                     "trailing_dvol": s.get("trailing_dvol"),
+                     "btc_up": btc_up},
         } for s in signals])
         rec = {
             "event": "crash_continue_div_short",

@@ -76,6 +76,10 @@ python-service/logs/
 
 # Hermes-Trader runtime state (per-strategy timers, position claims, telemetry —
 # generated at runtime, never source). The bot recreates these on start.
+.crash_continue_div_short_live_seen.json
+.crash_continue_div_short_live_ts
+.crash_continue_div_short_shadow.jsonl
+shadow_ledger/
 .data_funding_oi.jsonl
 .data_logger_ts
 .extreme_fade_live_ts
