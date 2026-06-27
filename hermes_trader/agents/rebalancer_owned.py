@@ -73,7 +73,8 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # This prevents claims left behind by deleted strategy modules from blocking
 # active EV+ books after a refactor or cleanup.
 _ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "rally_exhaustion", "hail_mary_short",
-                                 "crash_continue_div_short", "engulf_short"})
+                                 "crash_continue_div_short", "engulf_short",
+                                 "premium_fade_short"})
 
 
 def active_claim_books() -> Set[str]:

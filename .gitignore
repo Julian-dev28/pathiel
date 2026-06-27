@@ -83,6 +83,8 @@ research/alpha_swarm/**/__pycache__/
 .crash_continue_div_short_live_seen.json
 .crash_continue_div_short_live_ts
 .crash_continue_div_short_shadow.jsonl
+.premium_fade_short_live_seen.json
+.premium_fade_short_live_ts
 .engulf_short_live_seen.json
 .engulf_short_live_ts
 shadow_ledger/

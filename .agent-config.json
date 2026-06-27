@@ -197,6 +197,25 @@
     "max_new_per_cycle": 1,
     "history_bars": 40
   },
+  "premium_fade_short": {
+    "enabled": true,
+    "shadow_only": true,
+    "scan_interval_hours": 6,
+    "z_threshold": 2.0,
+    "premium_lookback_days": 30,
+    "btc_window": 20,
+    "min_volume_usd": 20000000,
+    "executor_short_volume_floor_usd": 20000000,
+    "volume_window": 30,
+    "max_eval_coins": 60,
+    "hold_days": 5,
+    "stop_pct": 20.0,
+    "notional_usd": 20.0,
+    "leverage": 1,
+    "tp_scale_fraction": 0.0,
+    "max_new_per_cycle": 1,
+    "history_bars": 40
+  },
   "engulf_short": {
     "enabled": true,
     "shadow_only": true,
