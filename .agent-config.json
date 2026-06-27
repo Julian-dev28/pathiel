@@ -208,7 +208,7 @@
     "executor_short_volume_floor_usd": 20000000,
     "volume_window": 30,
     "max_eval_coins": 60,
-    "hold_days": 5,
+    "hold_days": 7,
     "stop_pct": 20.0,
     "notional_usd": 20.0,
     "leverage": 1,
