@@ -139,6 +139,29 @@ W-C6 ⬜ 🕯️ `engulf_1h` — does the engulf edge exist on 1h candles (≫ s
   p-value, but watch fees (1h re-trades more). Report net-of-25bps EV + OOS halves.
 
 ═══════════════════════════════════════════════════════════════════════
+## LANE D — DATA FRONTIER (funding/OI)  (agent `laneD`) — the post-candle pivot
+═══════════════════════════════════════════════════════════════════════
+Candle-space is saturated. THE frontier is data the candle agents never had. HL exposes REAL hourly
+funding history → `funding.json` (built via lib/build_funding_dataset.py, loader `funding_lib.py`).
+Load price via `alpha_lib`, funding via `funding_lib`, align by timestamp. OI is still snapshot-only
+(data_logger accruing) → OI items stay BLOCKED-DATA. Same gates: lookahead-safe, OOS both-halves,
+slippage sweep, EXCESS over matched null, mc_null p-value. Funding is small per-hour — a carry edge must
+clear fees; report net. Survivorship still applies (today's liquid set = upper bound).
+D1 ⬜ 💰✅ `funding_carry` — market-neutral: short top-positive-funding / long top-negative-funding coins,
+  vol-weighted, rebal each funding epoch / daily. Collect the carry while delta-neutral. The canonical perp trade.
+D2 ⬜ 💰✅ `funding_momentum` — does the funding TREND (persistent positive/negative) predict the next price move?
+  Persistent funding = persistent directional pressure. Long persistent-neg-funding / short persistent-pos.
+D3 ⬜ 💰✅ `carry_plus_trend` — combine funding-carry with price-momentum (the two strongest perp factors). Does
+  the combo beat either alone (diversification / confirmation)? This was A15, finally unblocked.
+D4 ⬜ 💰✅ `funding_extreme_reversion` — extreme funding = crowded positioning. Does a funding spike (top decile
+  |rate|) precede a price REVERSAL (fade the crowded side)? Funding as a contrarian sentiment gauge.
+D5 ⬜ 💰✅ `basis_premium_signal` — the `premium` field (perp vs oracle) as a basis signal distinct from funding;
+  trade premium extremes expecting convergence.
+D6 ⬜ 💰✅ `funding_price_divergence` — price up + funding down (shorts paying) or price down + funding up =
+  positioning/price divergence; does the funding side win?
+D7 ⬜ 💰⏳ `oi_divergence` / `oi_buildup` — BLOCKED until data_logger OI history accrues (~1-2wk). Stub + revisit.
+
+═══════════════════════════════════════════════════════════════════════
 ## TIER 4 — parked (needs feeds not wired): macro_event_drift 🌐 · news_catalyst_reaction 🌐 (free_signals_suite exists) · perp_spot_basis · gex_maxpain_crypto · liquidation_heatmap
 ═══════════════════════════════════════════════════════════════════════
 

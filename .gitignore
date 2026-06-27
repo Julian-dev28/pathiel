@@ -78,6 +78,7 @@ python-service/logs/
 # generated at runtime, never source). The bot recreates these on start.
 # alpha_swarm candle dataset — 17MB data, rebuild with research/alpha_swarm/lib/build_dataset.py
 research/alpha_swarm/dataset.json
+research/alpha_swarm/funding.json
 research/alpha_swarm/**/__pycache__/
 .crash_continue_div_short_live_seen.json
 .crash_continue_div_short_live_ts
