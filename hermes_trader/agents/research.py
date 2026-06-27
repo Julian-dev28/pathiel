@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
@@ -15,6 +14,7 @@ from typing import Any, Dict, List
 
 import httpx
 
+from hermes_trader.agents.ai_brain import get_brain, selected_ai_brain_provider
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.agents.system_prompt import build_system_prompt
@@ -126,60 +126,31 @@ def _fetch_news(coin: str) -> str:
         return "no news"
 
 
-def _signals_block(coin: str) -> str:
-    """Free positioning signals (GEX / aggTrades whale / FINRA short-vol / news
-    catalyst) formatted for the AI prompt. The executor already uses these, but
-    the AI was BLIND to them — so it kept PASSing rippers it couldn't see the
-    bullish context for. Surfacing them here lets the AI's own verdict reflect
-    them. Wrapped so any signal outage never breaks research."""
-    is_hip3 = ":" in (coin or "")
-    lines: List[str] = []
+def _gex_block(coin: str) -> str:
+    """HIP-3 options-wall context for the prompt and executor cache.
+
+    The executor's GEX veto reads the cache only, so this fetch is the warm path
+    for researched HIP-3 candidates.
+    """
+    if ":" not in (coin or ""):
+        return ""
     try:
-        if is_hip3:
-            from hermes_trader.agents.options_gex import gex_signal_cached
-            g = gex_signal_cached(coin)
-            if g:
-                lines.append(
-                    f"  - Dealer gamma (GEX): {g.regime}; call wall {g.call_wall} (overhead "
-                    f"resistance / ride target), put wall {g.put_wall} (support), spot {g.spot:g}. "
-                    + ("Negative gamma = squeeze-prone, lets moves RUN."
-                       if g.regime == "trend_short_gamma"
-                       else "Long gamma = pins/mean-reverts near the walls.")
-                )
-            from hermes_trader.agents.short_volume import short_volume_signal
-            sv = short_volume_signal(coin)
-            if sv:
-                lines.append(
-                    f"  - Short volume (FINRA): {sv.ratio * 100:.0f}% ({sv.regime}, {sv.trend})."
-                    + (" Crowded short = SQUEEZE FUEL for a long."
-                       if sv.regime == "crowded_short_squeeze_fuel" else "")
-                )
-        else:
-            from hermes_trader.agents.crypto_whale import crypto_whale_signal
-            w = crypto_whale_signal(coin, window_minutes=15)
-            if w and w.whale_n:
-                lines.append(
-                    f"  - Whale order-flow (Binance aggTrades, 15m): {w.bias}, net "
-                    f"${w.net_usd:+,.0f} across {w.whale_n} large prints."
-                    + (" Large buyers stepping in (bullish)." if w.bias == "whale_buying"
-                       else " Large sellers hitting bids (bearish)." if w.bias == "whale_selling"
-                       else "")
-                )
-        from hermes_trader.agents.news_catalyst import catalyst_scan
-        base = coin.split(":", 1)[1] if ":" in coin else coin
-        n = catalyst_scan(base, timespan="1h")
-        if n and (n.breaking or n.surge_x >= 1.5):
-            top = n.headlines[0].title[:90] if n.headlines else ""
-            lines.append(
-                f"  - News catalyst: {'BREAKING' if n.breaking else f'elevated ({n.surge_x}x coverage)'}"
-                f" — {top!r}"
+        from hermes_trader.agents.options_gex import gex_signal_cached
+        g = gex_signal_cached(coin)
+        if not g:
+            return "HIP-3 GEX: no options-wall report available"
+        return (
+            f"HIP-3 GEX: {g.regime}; call wall {g.call_wall}, put wall {g.put_wall}, "
+            f"gamma flip {g.gamma_flip}, spot {g.spot:g}. "
+            + (
+                "Negative gamma = squeeze-prone; do not fade trend impulse."
+                if g.regime == "trend_short_gamma"
+                else "Long gamma = pin/mean-revert risk near walls."
             )
+        )
     except Exception as e:
-        logger.debug(f"[research] signals block failed for {coin}: {e}")
-    if not lines:
-        return "Positioning signals (GEX/whale/short-vol/news): none flagged"
-    return ("Positioning signals (free data — weigh these in your verdict):\n"
-            + "\n".join(lines))
+        logger.debug(f"[research] GEX block failed for {coin}: {e}")
+        return "HIP-3 GEX: unavailable"
 
 
 def _build_user_message(
@@ -305,8 +276,8 @@ def _build_user_message(
         "" if ohlc_block else "",
         structure_block,
         "",
-        _signals_block(coin),
-        "",
+        _gex_block(coin),
+        "" if ":" in (coin or "") else "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
         position_block,
@@ -319,95 +290,42 @@ def _build_user_message(
     ])
 
 
-def _call_ai(system_prompt: str, user_message: str) -> str:
-    """Call the OpenRouter LLM API (runs the async client in a fresh event loop)."""
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
-    model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.3")
-
-    if not openrouter_key:
-        logger.warning("[research] OPENROUTER_API_KEY not set — returning empty response")
-        return ""
-
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(_async_do_call(openrouter_key, model, system_prompt, user_message))
-    finally:
-        loop.close()
-
-
-async def _async_do_call(
-    openrouter_key: str,
-    model: str,
+def _call_ai(
     system_prompt: str,
     user_message: str,
+    provider: str | None = None,
+    brain: Any | None = None,
 ) -> str:
-    """Async POST to the OpenRouter chat-completions endpoint.
+    """Call the AI brain for the verdict completion.
 
-    On a 402 that includes an affordability hint ("can only afford N tokens"),
-    retries ONCE with max_tokens shrunk to the affordable budget. During the
-    2026-06-11 credit drought the bot sat fully blind for ~12h while OpenRouter
-    was offering 842 affordable tokens per call — enough for a non-truncated
-    verdict on most prompts. Degraded thinking beats no thinking; if the
-    shrunken reply still truncates, parse_verdict falls back to PASS exactly
-    as before (no new failure mode).
+    An injected ``brain`` wins (e.g. the MCP sampling brain, which routes the
+    completion through the calling agent harness's own model instead of any
+    LLM API). If it yields nothing we fall back to the configured provider so a
+    verdict is never silently lost when the host cannot sample.
     """
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-
-        async def _post(max_toks: int):
-            return await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json={
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "stream": False,
-                    # Output is a verdict JSON + 2-3 sentences (~150-300 visible
-                    # tokens). 512 was fine for non-reasoning models, but REASONING
-                    # models (qwen3.x-plus/max, etc.) emit ~1.5-2k hidden reasoning
-                    # tokens that can count against max_tokens and truncate the JSON
-                    # (qwen3.7-max did exactly this live). 2048 leaves room for
-                    # reasoning + JSON; non-reasoning models ignore the extra.
-                    "max_tokens": max_toks,
-                    "temperature": 0.1,
-                },
-                headers={"Authorization": f"Bearer {openrouter_key}"},
-            )
-
+    if brain is not None:
+        injected = getattr(brain, "provider", "injected")
+        logger.info(f"[research] ai_brain provider={injected} (injected)")
         try:
-            initial_max_tokens = int(os.environ.get("OPENROUTER_MAX_TOKENS", "2048"))
-        except (TypeError, ValueError):
-            initial_max_tokens = 2048
-        initial_max_tokens = max(500, min(initial_max_tokens, 4096))
-
-        resp = await _post(initial_max_tokens)
-        if resp.status_code == 402:
-            # "...You requested up to N tokens, but can only afford 842..."
-            m = re.search(r"can only afford (\d+)", resp.text or "")
-            if m and int(m.group(1)) >= 500:
-                budget = int(m.group(1)) - 50  # headroom for billing jitter
-                logger.warning(
-                    f"[research] 402 with affordability hint — retrying DEGRADED "
-                    f"at max_tokens={budget} (add credits to restore full reasoning)"
-                )
-                resp = await _post(budget)
-
-        if resp.is_success:
-            data = resp.json()
-            choices = data.get("choices", [])
-            if choices:
-                return choices[0].get("message", {}).get("content", "")
-            logger.error("[research] LLM returned 200 but no choices — empty response")
-            return ""
-        # LOUD failure. A non-200 (esp. 402 Payment Required = out of OpenRouter
-        # credits, or 401/429) previously returned "" silently → parse_verdict
-        # defaulted every coin to PASS conf 0.0, so a billing/API outage looked
-        # identical to "no setups" and the bot sat blind for hours. Make it scream.
-        body = resp.text[:200] if resp.text else ""
+            text = brain.complete(system_prompt, user_message)
+        except Exception as exc:
+            logger.error(
+                f"[research] injected brain {injected} failed: {type(exc).__name__}: {exc}"
+            )
+            text = ""
+        if (text or "").strip():
+            return text
+        logger.warning(
+            f"[research] injected brain {injected} returned empty — "
+            "falling back to the configured provider"
+        )
+    selected = provider or selected_ai_brain_provider()
+    logger.info(f"[research] ai_brain provider={selected}")
+    try:
+        return get_brain(selected).complete(system_prompt, user_message)
+    except Exception as exc:
         logger.error(
-            f"[research] LLM call FAILED: HTTP {resp.status_code} — AI research is "
-            f"DOWN, all verdicts will default to PASS until fixed. {body}"
+            f"[research] ai_brain provider={selected} failed: {type(exc).__name__}: {exc}"
         )
     return ""
 
@@ -504,7 +422,7 @@ def parse_verdict(
         "news_risk": news_risk,
         "reasoning": reasoning,
         # Empty ai_text = the LLM call failed (402/429/timeout) and this PASS is
-        # an ERROR CODE, not an opinion. Tagged so the executor's structural/whale
+        # an ERROR CODE, not an opinion. Tagged so the executor's structural
         # override won't upgrade a failure-PASS into a blind LONG — on 2026-06-11
         # a 402 window let the override shotgun 8 PASS→LONG upgrades in one
         # minute, filling the book with unvetted longs that then blocked real
@@ -513,8 +431,13 @@ def parse_verdict(
     }
 
 
-def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
-    """Full AI research pipeline for a perception — returns an analysis dict."""
+def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) -> Dict[str, Any]:
+    """Full AI research pipeline for a perception — returns an analysis dict.
+
+    ``brain`` optionally overrides the verdict completion backend (the MCP
+    server passes a sampling brain so research routes through the calling
+    harness's model, not OpenRouter). ``None`` keeps the configured provider.
+    """
     c1h = fetch_hl_candles(coin, "1h", 100)
     c4h = fetch_hl_candles(coin, "4h", 100)
     c1d = fetch_hl_candles(coin, "1d", 60)
@@ -589,7 +512,10 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         dex_equity=dex_equity, recent_candles=c1h,
     )
 
-    ai_text = _call_ai(system_prompt, user_message)
+    ai_brain_provider = selected_ai_brain_provider(config)
+    if brain is not None:
+        ai_brain_provider = getattr(brain, "provider", ai_brain_provider)
+    ai_text = _call_ai(system_prompt, user_message, provider=ai_brain_provider, brain=brain)
     parsed = parse_verdict(ai_text, coin, perception)
 
     analysis = {
@@ -610,6 +536,7 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         # Failure-PASS marker — must survive this whitelist or the executor's
         # override guard never sees it (it didn't, on first deploy).
         "ai_down": bool(parsed.get("ai_down")),
+        "ai_brain_provider": ai_brain_provider,
         "created_at": int(time.time() * 1000),
         # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),

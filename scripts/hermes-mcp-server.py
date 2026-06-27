@@ -4,7 +4,9 @@
 Exposes trading tools to Hermes Agent:
   - scan(minScore, maxMarkets)
   - research(coin)
+  - submit_verdict(coin, verdict, ...)
   - execute(analysisId)
+  - close_position(coin)
   - state()
   - config()
 
@@ -17,6 +19,7 @@ import json
 import sys
 import os
 import time
+import uuid
 from typing import Any, Dict
 
 # Auto-load .env.local from project root
@@ -50,6 +53,14 @@ from hermes_trader.agents.hyperfeed import (
 
 # Per-subprocess perception cache so research can access the data from last scan
 _perception_cache: Dict[str, Dict[str, Any]] = {}
+
+# Set True at `initialize` if the connected client advertised the MCP `sampling`
+# capability. When set, the `research` tool routes its verdict completion through
+# the calling harness's own model (server -> client `sampling/createMessage`)
+# instead of ai_brain/OpenRouter. So the harness that drives the bot is also the
+# brain that researches — no sidestep. Falls back to ai_brain when unset/failed.
+_CLIENT_SUPPORTS_SAMPLING = False
+_server_request_seq = 0
 
 
 def _norm_coin(raw: str) -> str:
@@ -90,7 +101,7 @@ _STUB_TOOL_NAMES = [
     'get_api_rate_limits', 'get_user_orders_history', 'get_price_impact',
     'get_slippage_estimate', 'get_withdrawal_status', 'get_deposit_address',
     'get_transfer_history', 'get_governance_proposals', 'get_validator_info',
-    'get_network_stats', 'get_sub_account_balances', 'get_whale_alerts',
+    'get_network_stats', 'get_sub_account_balances',
 ]
 
 
@@ -143,6 +154,31 @@ TOOLS = [
         },
     },
     {
+        "name": "submit_verdict",
+        "description": (
+            "Submit an agent-authored verdict as a stored analysis. Use this when "
+            "Claude/Codex/OpenClaw is the brain. The returned analysisId can be "
+            "passed to execute, which still routes through risk gates / close helper."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "Coin ticker (e.g. BTC or xyz:NVDA)"},
+                "verdict": {"type": "string", "enum": ["PASS", "LONG", "SHORT", "CLOSE"]},
+                "confidence": {"type": "number", "description": "0.0-1.0"},
+                "side": {"type": ["string", "null"], "enum": ["long", "short", None]},
+                "entryPx": {"type": "number"},
+                "stopPx": {"type": "number"},
+                "tpPx": {"type": "number"},
+                "reasoning": {"type": "string"},
+                "newsRisk": {"type": "string", "enum": ["none", "positive", "negative"]},
+                "compositeScore": {"type": "number"},
+                "source": {"type": "string", "description": "Operator label, e.g. codex_mcp"},
+            },
+            "required": ["coin", "verdict", "confidence", "reasoning"],
+        },
+    },
+    {
         "name": "execute",
         "description": "Execute a trade based on a prior analysis. Passes through risk gates and DSL exit registration.",
         "inputSchema": {
@@ -150,7 +186,7 @@ TOOLS = [
             "properties": {
                 "analysisId": {
                     "type": "string",
-                    "description": "Analysis ID from a research call",
+                    "description": "Analysis ID from a research or submit_verdict call",
                 },
             },
             "required": ["analysisId"],
@@ -166,15 +202,17 @@ TOOLS = [
         "description": (
             "Get or set agent configuration. Call with no params to read the full "
             "config. Keys are snake_case and match .agent-config.json exactly. "
-            "Covers mode, sizing, risk caps, regime gates, exits, and the "
-            "runner gate."
+            "Covers mode, sizing, risk caps, regime gates, exits, GEX, and the "
+            "live strategy blocks."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "mode": {"type": "string", "enum": ["OFF", "SHADOW", "LIVE"]},
+                "mode": {"type": "string", "enum": ["OFF", "LIVE"]},
                 "enable_crypto": {"type": "boolean", "description": "Scan/trade native Hyperliquid crypto perps."},
                 "enable_hip3": {"type": "boolean", "description": "Scan/trade HIP-3 tokenized-equity/commodity perps."},
+                "hip3_dex_allowlist": {"type": "array", "items": {"type": "string"}},
+                "hip3_dex_blocklist": {"type": "array", "items": {"type": "string"}},
                 # ── Sizing / leverage ────────────────────────────────────
                 "leverage": {"type": "number", "description": "Leverage ceiling per trade (min with coin max)."},
                 "equity_fraction_per_trade": {"type": "number", "description": "Fraction of equity committed as margin per trade."},
@@ -201,12 +239,38 @@ TOOLS = [
                 "runner_mover_surface_enabled": {"type": "boolean", "description": "Surface large 24h movers to AI even when fresh spike triggers no longer fire."},
                 # ── Liquidity floors ─────────────────────────────────────
                 "min_market_volume_usd": {"type": "number"},
+                "min_hip3_volume_usd": {"type": "number"},
                 "min_short_volume_usd": {"type": "number", "description": "Extra 24h-volume floor for shorts (squeeze risk)."},
                 "max_crypto_long_correlated": {"type": "number", "description": "Cap on simultaneous correlated crypto positions."},
                 "cooldown_min": {"type": "number"},
+                "held_research_interval_min": {"type": "number"},
+                "loss_cooldown_min": {"type": "number"},
+                "min_ai_close_hold_min": {"type": "number"},
+                "override_max_daily_extension_pct": {"type": "number"},
+                "sl_atr_mult": {"type": "number"},
+                "backup_sl_max_frac_of_liq": {"type": "number"},
+                "strategy_book_notional_usd": {"type": "number"},
+                "strategy_book_equity_frac": {"type": "number"},
+                "short_notional_usd": {"type": "number"},
                 # ── Lists ────────────────────────────────────────────────
                 "coin_allowlist": {"type": "array", "items": {"type": "string"}},
                 "coin_blocklist": {"type": "array", "items": {"type": "string"}},
+                # ── Nested blocks are deep-merged with existing config ────
+                "dsl_exit": {"type": "object", "description": "DSL trailing-stop block; partial objects are deep-merged."},
+                "atr_risk_sizing": {"type": "object", "description": "ATR equal-risk sizing block; partial objects are deep-merged."},
+                "runner_entry_gate": {"type": "object", "description": "Runner gate block; partial objects are deep-merged."},
+                "capital_rotation": {"type": "object", "description": "Live capital rotation block; partial objects are deep-merged."},
+                "gex_signal": {"type": "object", "description": "HIP-3 GEX call-wall guardrail block; partial objects are deep-merged."},
+                "runner_mover_surface": {"type": "object", "description": "Large-mover surfacing block; partial objects are deep-merged."},
+                "trend_filter_200ma": {"type": "object", "description": "200MA trend filter block; partial objects are deep-merged."},
+                "override_volume_confirm": {"type": "object", "description": "Volume-confirm override block; partial objects are deep-merged."},
+                "late_chase_relax": {"type": "object", "description": "Late-chase live guardrail block; partial objects are deep-merged."},
+                "reentry_cap": {"type": "object", "description": "Per-coin reentry cap block; partial objects are deep-merged."},
+                "xs_momentum": {"type": "object", "description": "Live cross-sectional momentum block; partial objects are deep-merged."},
+                "extreme_fade": {"type": "object", "description": "Live crash-fade block; partial objects are deep-merged."},
+                "rally_exhaustion": {"type": "object", "description": "Live rally-exhaustion block; partial objects are deep-merged."},
+                "data_logger": {"type": "object", "description": "Funding/OI data logger block; partial objects are deep-merged."},
+                "ai_brain": {"type": "object", "description": "AI brain provider block; partial objects are deep-merged."},
             },
         },
     },
@@ -294,17 +358,6 @@ TOOLS = [
         "name": "market_get_mids",
         "description": "Get all current mid prices for all assets.",
         "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "whale_index",
-        "description": "Get whale concentration + OI/funding anomaly signals.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "minConfidence": {"type": "number", "description": "Minimum signal confidence (default 0.1)"},
-                "topN": {"type": "number", "description": "Max signals to return (default 10)"}
-            }
-        }
     },
     {
         "name": "close_position",
@@ -817,13 +870,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_whale_alerts",
-        "description": "Get recent whale trading alerts.",
-        "inputSchema": {"type": "object", "properties": {
-            "min_value": {"type": "number", "description": "Minimum USD value (default 100000)"}
-        }}
-    },
-    {
         "name": "get_liquidation_price",
         "description": "Calculate liquidation price for a position.",
         "inputSchema": {"type": "object", "properties": {
@@ -922,7 +968,11 @@ def handle_state(params: Dict[str, Any]) -> str:
 
 
 def handle_config(params: Dict[str, Any]) -> str:
-    from hermes_trader.agents.config_store import read_agent_config, write_agent_config
+    from hermes_trader.agents.config_store import (
+        merge_agent_config,
+        read_agent_config,
+        write_agent_config,
+    )
 
     config = read_agent_config()
 
@@ -931,30 +981,51 @@ def handle_config(params: Dict[str, Any]) -> str:
     # the previous handler wrote camelCase and silently created duplicate keys.
     _DIRECT_KEYS = [
         "mode", "enable_crypto", "enable_hip3",
+        "hip3_dex_allowlist", "hip3_dex_blocklist",
         "leverage", "equity_fraction_per_trade", "max_trade_notional_usd",
+        "asset_notional_multiplier",
         "tp_scale_fraction", "max_concurrent", "max_total_notional_pct",
         "min_available_margin_pct", "max_daily_loss_usd",
         "daily_giveback_halt_pct", "daily_giveback_min_peak_usd",
         "crowded_with_min_conf", "min_ai_confidence",
         "counter_regime_min_conf", "aligned_min_conf", "block_counter_trend_bypass",
         "trend_surface_enabled",
-        "min_market_volume_usd", "min_short_volume_usd", "max_crypto_long_correlated",
-        "cooldown_min", "coin_allowlist", "coin_blocklist",
+        "min_market_volume_usd", "min_hip3_volume_usd", "min_short_volume_usd",
+        "max_crypto_long_correlated", "cooldown_min", "held_research_interval_min",
+        "loss_cooldown_min", "min_ai_close_hold_min",
+        "override_max_daily_extension_pct", "sl_atr_mult",
+        "backup_sl_max_frac_of_liq", "strategy_book_notional_usd",
+        "strategy_book_equity_frac", "short_notional_usd",
+        "coin_allowlist", "coin_blocklist",
     ]
+    _NESTED_KEYS = [
+        "dsl_exit", "atr_risk_sizing", "runner_entry_gate",
+        "capital_rotation", "gex_signal", "runner_mover_surface",
+        "trend_filter_200ma", "override_volume_confirm", "late_chase_relax",
+        "reentry_cap", "xs_momentum", "extreme_fade", "rally_exhaustion",
+        "data_logger", "ai_brain",
+    ]
+
+    updates: Dict[str, Any] = {}
     for key in _DIRECT_KEYS:
         if key in params and params[key] is not None:
-            config[key] = params[key]
+            updates[key] = params[key]
+
+    for key in _NESTED_KEYS:
+        if key not in params or params[key] is None:
+            continue
+        if not isinstance(params[key], dict):
+            return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        updates[key] = params[key]
 
     # Save only if a setting was actually passed (a bare read must not rewrite).
     if params.get("runner_mover_surface_enabled") is not None:
-        rms = dict(config.get("runner_mover_surface") or {})
-        rms["enabled"] = bool(params["runner_mover_surface_enabled"])
-        config["runner_mover_surface"] = rms
+        updates.setdefault("runner_mover_surface", {})["enabled"] = bool(
+            params["runner_mover_surface_enabled"]
+        )
 
-    _setting_keys = set(_DIRECT_KEYS) | {
-        "runner_mover_surface_enabled",
-    }
-    if any(k in params for k in _setting_keys):
+    if updates:
+        config = merge_agent_config(config, updates)
         write_agent_config(config)
 
     return json.dumps(config)
@@ -983,7 +1054,7 @@ def handle_research(params: Dict[str, Any]) -> str:
         }
     
     try:
-        analysis = research(coin, perception)
+        analysis = research(coin, perception, brain=_research_brain())
         return json.dumps({
             "status": "complete",
             "analysisId": analysis["id"],
@@ -1004,8 +1075,136 @@ def handle_research(params: Dict[str, Any]) -> str:
         })
 
 
+def _float_param(params: Dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key not in params or params[key] is None:
+            continue
+        try:
+            return float(params[key])
+        except (TypeError, ValueError):
+            return default
+    return default
+
+
+def _clamp_confidence(raw: Any) -> float:
+    try:
+        conf = float(raw)
+    except (TypeError, ValueError):
+        conf = 0.0
+    return max(0.0, min(1.0, conf))
+
+
+def _analysis_flags_from_perception(perception: Dict[str, Any]) -> Dict[str, Any]:
+    triggers = perception.get("triggers") or []
+    return {
+        "momentum_burst_fired": any(
+            t.get("name") == "momentumBurst" and t.get("fired") for t in triggers
+        ),
+        "slow_burn_fired": any(
+            t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h") and t.get("fired")
+            for t in triggers
+        ),
+        "slow_burn_count": sum(
+            1 for t in triggers
+            if t.get("name") in ("volumeBuildup1h", "trendFlip1h", "higherLows1h") and t.get("fired")
+        ),
+        "daily_mover_fired": any(
+            t.get("name") == "dailyMover" and t.get("fired") for t in triggers
+        ),
+        "breakout_fired": any(
+            t.get("name") == "breakout" and t.get("fired") for t in triggers
+        ),
+        "shock_day_fired": any(
+            t.get("name") == "shockDay" and t.get("fired") for t in triggers
+        ),
+        "volume_spike_fired": any(
+            t.get("name") == "volumeSpike" and t.get("fired") for t in triggers
+        ),
+        "uptrend_momentum_fired": any(
+            t.get("name") == "uptrendMomentum" and t.get("fired") for t in triggers
+        ),
+        "downtrend_momentum_fired": any(
+            t.get("name") == "downtrendMomentum" and t.get("fired") for t in triggers
+        ),
+    }
+
+
+def handle_submit_verdict(params: Dict[str, Any]) -> str:
+    """Store an agent-authored verdict as an analysis for execute()."""
+    from hermes_trader.agents.memory import memory
+
+    coin = _norm_coin(params.get("coin", ""))
+    if not coin:
+        return json.dumps({"status": "error", "error": "coin is required"})
+
+    verdict = str(params.get("verdict", "")).upper()
+    if verdict not in {"PASS", "LONG", "SHORT", "CLOSE"}:
+        return json.dumps({
+            "status": "error",
+            "error": "verdict must be PASS, LONG, SHORT, or CLOSE",
+        })
+
+    confidence = _clamp_confidence(params.get("confidence"))
+    raw_side = params.get("side")
+    side = raw_side if raw_side in ("long", "short") else None
+    if verdict == "LONG":
+        side = "long"
+    elif verdict == "SHORT":
+        side = "short"
+
+    perception = _perception_cache.get(coin) or {}
+    mid = _float_param(params, "entryPx", "entry_px", default=float(perception.get("mid", 0) or 0))
+    news_risk = str(params.get("newsRisk") or params.get("news_risk") or "none").lower()
+    if news_risk not in {"none", "positive", "negative"}:
+        news_risk = "none"
+
+    composite_score = _float_param(
+        params,
+        "compositeScore",
+        "composite_score",
+        default=float(perception.get("composite_score", 0) or 0),
+    )
+    analysis = {
+        "id": str(uuid.uuid4()),
+        "perception_id": params.get("perceptionId") or perception.get("id", "mcp-submitted"),
+        "coin": coin,
+        "verdict": verdict,
+        "confidence": confidence,
+        "side": side,
+        "entry_px": mid,
+        "stop_px": _float_param(params, "stopPx", "stop_px", default=0.0),
+        "tp_px": _float_param(params, "tpPx", "tp_px", default=0.0),
+        "reasoning": str(params.get("reasoning") or ""),
+        "news_context": params.get("newsContext") or "",
+        "news_risk": news_risk,
+        "ai_down": False,
+        "ai_brain_provider": str(params.get("source") or "mcp_agent"),
+        "created_at": int(time.time() * 1000),
+        "composite_score": composite_score,
+        "daily_move_pct": params.get("dailyMovePct") or perception.get("daily_move_pct"),
+        "daily_volume_usd": params.get("dailyVolumeUsd") or perception.get("daily_volume_usd"),
+        "mcp_submitted": True,
+    }
+    analysis.update(_analysis_flags_from_perception(perception))
+
+    memory.record_analysis(analysis)
+    return json.dumps({
+        "status": "complete",
+        "analysisId": analysis["id"],
+        "coin": coin,
+        "verdict": verdict,
+        "confidence": confidence,
+        "side": side,
+        "entryPx": analysis["entry_px"],
+        "stopPx": analysis["stop_px"],
+        "tpPx": analysis["tp_px"],
+        "reasoning": analysis["reasoning"],
+        "ai_brain_provider": analysis["ai_brain_provider"],
+    })
+
+
 def handle_execute(params: Dict[str, Any]) -> str:
-    from hermes_trader.agents.executor import maybe_execute
+    from hermes_trader.agents.executor import route_verdict
     from hermes_trader.agents.memory import memory
 
     analysis_id = params.get("analysisId", "")
@@ -1026,17 +1225,24 @@ def handle_execute(params: Dict[str, Any]) -> str:
             "error": f"Analysis {analysis_id} not found",
         })
 
-    if analysis.get("verdict") not in ("LONG", "SHORT"):
+    try:
+        routed = route_verdict(analysis)
+        if routed.get("action") == "execute":
+            return json.dumps(routed.get("result") or {})
+        if routed.get("action") == "close":
+            return json.dumps({
+                "status": "closed" if (routed.get("result") or {}).get("ok") else "error",
+                "action": "close",
+                "coin": analysis.get("coin"),
+                "result": routed.get("result") or {},
+            })
         return json.dumps({
             "status": "skipped",
+            "action": routed.get("action"),
             "coin": analysis.get("coin"),
             "verdict": analysis.get("verdict"),
-            "reason": f"Verdict {analysis.get('verdict')} — no trade action needed",
+            "reason": "no executable action for verdict",
         })
-
-    try:
-        result = maybe_execute(analysis)
-        return json.dumps(result)
     except Exception as e:
         return json.dumps({
             "status": "error",
@@ -1102,22 +1308,13 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
     return json.dumps(market_get_mids())
 
 
-def handle_whale_index(params: Dict[str, Any]) -> str:
-    """Handle whale_index tool call."""
-    from hermes_trader.agents.whale_index import get_whale_signals
-    
-    min_confidence = params.get("minConfidence", 0.1)
-    top_n = params.get("topN", 10)
-    
-    signals = get_whale_signals(min_confidence=min_confidence, top_n=top_n)
-    return json.dumps(signals, indent=2, default=str)
-
 # MCP server loop
 def run() -> None:
     # Initialize tool handlers
     tool_handlers = {
         "scan": handle_scan,
         "research": handle_research,
+        "submit_verdict": handle_submit_verdict,
         "execute": handle_execute,
         "state": handle_state,
         "config": handle_config,
@@ -1130,7 +1327,6 @@ def run() -> None:
         "market_get_funding_regime": handle_market_get_funding_regime,
         "market_list_instruments": handle_market_list_instruments,
         "market_get_mids": handle_market_get_mids,
-        "whale_index": handle_whale_index,
         "close_position": handle_close_position,
         "get_portfolio": handle_get_portfolio,
         "get_price": handle_get_price,
@@ -1186,6 +1382,13 @@ def run() -> None:
             params = msg.get("params")
 
             if method == "initialize":
+                global _CLIENT_SUPPORTS_SAMPLING
+                _client_caps = (params or {}).get("capabilities") or {}
+                _CLIENT_SUPPORTS_SAMPLING = "sampling" in _client_caps
+                sys.stderr.write(
+                    f"[mcp] client sampling capability: {_CLIENT_SUPPORTS_SAMPLING}\n"
+                )
+                sys.stderr.flush()
                 write_response(msg_id, {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {
@@ -1256,32 +1459,17 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
-    from hermes_trader.client.exchange import get_hl_price, place_hl_order
+    from hermes_trader.agents.executor import close_position_market
     
     coin = _norm_coin(params.get('coin', 'BTC'))
-    user = resolve_user_address()
     
     try:
-        # Fetch position — include_hip3=True so HIP-3 coins are findable.
-        state = fetch_account_state(user, include_hip3=True)
-        pos = None
-        for p in (state.get('asset_positions') or []):
-            if p.get('position', {}).get('coin') == coin:
-                pos = p
-                break
-        
-        if not pos:
-            return json.dumps({'closed': False, 'reason': f'No position found for {coin}'})
-        
-        # Get position details
-        szi = float(pos['position']['szi'])
-        is_long = szi > 0
-        size = abs(szi)
-        mid_price = get_hl_price(coin)
-        
-        # Place opposite order to close
-        result = place_hl_order(not is_long, size, mid_price, coin=coin, reduce_only=True)
-        return json.dumps({'closed': True, 'coin': coin, 'size': size, 'result': result}, default=str)
+        result = close_position_market(coin)
+        closed = bool(result.get('ok')) and not bool(result.get('noop'))
+        payload = {'closed': closed, 'coin': coin, 'result': result}
+        if not closed:
+            payload['reason'] = result.get('noop') or result.get('error') or 'close_failed'
+        return json.dumps(payload, default=str)
     except Exception as e:
         return json.dumps({'closed': False, 'error': str(e)}, default=str)
 
@@ -1411,6 +1599,77 @@ def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
     }
     sys.stdout.write(json.dumps(msg) + "\n")
     sys.stdout.flush()
+
+
+def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.0) -> Dict[str, Any]:
+    """Send a server -> client JSON-RPC request and block for its response.
+
+    Safe to call from inside a tools/call handler: the main loop is parked in the
+    handler, so reading stdin here consumes the client's reply without racing it.
+    Non-matching messages (notifications, stray requests) are skipped.
+    """
+    global _server_request_seq
+    _server_request_seq += 1
+    req_id = f"srv-{_server_request_seq}"
+    sys.stdout.write(json.dumps({
+        "jsonrpc": "2.0", "id": req_id, "method": method, "params": params,
+    }) + "\n")
+    sys.stdout.flush()
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        line = sys.stdin.readline()
+        if not line:
+            raise RuntimeError("stdin closed while awaiting server request response")
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("id") == req_id:
+            if "error" in msg:
+                raise RuntimeError(f"client returned error for {method}: {msg['error']}")
+            return msg.get("result") or {}
+        sys.stderr.write(f"[mcp] skipped non-matching message while awaiting {req_id}\n")
+        sys.stderr.flush()
+    raise TimeoutError(f"server request {method} timed out after {timeout_s:.0f}s")
+
+
+class _McpSamplingBrain:
+    """AiBrain backend that asks the connected harness's model for the verdict via
+    MCP `sampling/createMessage`. Routes research through the caller, not OpenRouter."""
+
+    provider = "mcp_sampling"
+
+    def complete(self, system_prompt: str, user_message: str) -> str:
+        params = {
+            "messages": [
+                {"role": "user", "content": {"type": "text", "text": user_message}}
+            ],
+            "systemPrompt": system_prompt,
+            "maxTokens": int(os.environ.get("HERMES_MCP_SAMPLING_MAX_TOKENS", "2048")),
+            "temperature": 0.1,
+        }
+        result = _server_request("sampling/createMessage", params)
+        content = result.get("content")
+        if isinstance(content, list):
+            return " ".join(
+                c.get("text", "") for c in content if isinstance(c, dict)
+            ).strip()
+        if isinstance(content, dict):
+            return str(content.get("text", "") or "")
+        return ""
+
+
+def _sampling_disabled() -> bool:
+    return os.environ.get("HERMES_MCP_DISABLE_SAMPLING", "").strip().lower() in (
+        "1", "true", "yes",
+    )
+
+
+def _research_brain():
+    """Sampling brain when the harness can be the model, else None (configured provider)."""
+    if _CLIENT_SUPPORTS_SAMPLING and not _sampling_disabled():
+        return _McpSamplingBrain()
+    return None
 
 
 def handle_get_price_history(params: Dict[str, Any]) -> str:
