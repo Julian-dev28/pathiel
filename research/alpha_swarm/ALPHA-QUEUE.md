@@ -122,6 +122,22 @@ W-A6 ⬜ 🕯️ `factor_combo_v2` — combine the genuine survivors (XS-momentu
   skew-arm) into one vol-weighted market-neutral book; report diversification lift over the best single. Only
   include A13 if W-A1 says it's orthogonal — else this is double-counting one factor.
 
+### Lane C Wave-2 (microstructure — Wave-1 found C9 engulfing ROBUST + C5 nday-high MARGINAL; harden them)
+W-C1 ⬜ 🕯️ `engulf_spec` — pin C9 into a shadow-wire spec: best engulf definition (body-ratio, prior-bar
+  overlap, optional gap), best hold (1 vs 2 days), and whether a volume-confirm filter sharpens it. Output the
+  exact entry rule + the MC p-value at the chosen spec.
+W-C2 ⬜ 🕯️ `engulf_leg_decomp` — split C9 into long-bullish-engulf-only vs short-bearish-engulf-only. Score
+  each as EXCESS over a matched SAME-SIDE null (the −44% tape flatters shorts). Which leg is real, which is beta?
+W-C3 ⬜ 🕯️ `engulf_orthogonality` — is C9 additive to the live XS-momentum book, or a fast 1-day momentum
+  restatement? Return correlation + residual-alpha t-stat vs the live book (same method as W-A1).
+W-C4 ⬜ 🕯️ `candle_pattern_family` — is engulf special or is the whole 2-bar reversal family alive? Test harami,
+  piercing/dark-cloud, hammer/shooting-star cross-sectional under the same null. If only engulf survives, that's
+  a flag for overfitting; if the family survives, it's a real reversal effect.
+W-C5 ⬜ 🕯️ `entropy_on_engulf` — bolt C12's permutation-entropy filter onto C9 (Lane-C suggested this); does
+  restricting to low-entropy names lift the engulf edge at the now-higher n? Measure dud-rate cut.
+W-C6 ⬜ 🕯️ `engulf_1h` — does the engulf edge exist on 1h candles (≫ samples) or only daily? More n = a cleaner
+  p-value, but watch fees (1h re-trades more). Report net-of-25bps EV + OOS halves.
+
 ═══════════════════════════════════════════════════════════════════════
 ## TIER 4 — parked (needs feeds not wired): macro_event_drift 🌐 · news_catalyst_reaction 🌐 (free_signals_suite exists) · perp_spot_basis · gex_maxpain_crypto · liquidation_heatmap
 ═══════════════════════════════════════════════════════════════════════
