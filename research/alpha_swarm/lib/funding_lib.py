@@ -11,7 +11,7 @@ from typing import Any
 
 FUNDING = Path(os.environ.get(
     "HERMES_ALPHA_FUNDING",
-    Path(__file__).resolve().parent.parent / "funding.json",
+    Path(__file__).resolve().parent / "funding.json",
 ))
 
 T, RATE, PREM = 0, 1, 2
