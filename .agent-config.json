@@ -230,15 +230,15 @@
     "volume_window": 30,
     "hold_days": 1,
     "stop_pct": 20.0,
-    "notional_usd": 200.0,
-    "leverage": 12,
+    "notional_usd": 20.0,
+    "leverage": 1,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 2,
     "history_bars": 40
   },
   "hail_mary_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "names": [
       "NVDA",
       "SMCI",
