@@ -35,7 +35,7 @@
   "max_crypto_long_correlated": 3,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
-  "min_short_volume_usd": 50000000,
+  "min_short_volume_usd": 20000000,
   "coin_allowlist": [],
   "coin_blocklist": [],
   "hip3_dex_allowlist": [
