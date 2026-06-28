@@ -1325,7 +1325,16 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
     shock = bool(analysis.get("shock_day_fired")) and bool(gate.get("shock_day_fresh_impulse", False))
 
     fresh_impulse = (volume and (breakout or burst or shock)) or (burst and score >= min_score) or (shock and breakout)
-    if conf < min_conf:
+    # A TA-sidestep override is the deliberate "AI PASSed but the TA breakout is confirmed"
+    # path (executor upgrades it to LONG @ min_ai_confidence). The forward audit (2026-06-28)
+    # proved the AI's confidence is INVERTED on exactly these: 54 sidestep rescues were ALL
+    # re-blocked here (conf 0.62 < gate 0.67) while the coins ran +21-75% (AAVE/JTO/RESOLV/BIRD).
+    # Re-blocking a force-executed TA breakout on an AI-confidence floor IS the entry-latency
+    # leak. So exempt sidestep overrides from the CONFIDENCE check only — the structure /
+    # composite / freshness checks below still gate them. Reversible: runner_entry_gate.
+    # sidestep_exempt_conf (default true).
+    _sidestep_ok = bool(analysis.get("sidestep_override")) and bool(gate.get("sidestep_exempt_conf", True))
+    if conf < min_conf and not _sidestep_ok:
         return f"runner_gate_blocked (confidence {conf:.2f} < {min_conf:.2f})"
 
     if side == "short":

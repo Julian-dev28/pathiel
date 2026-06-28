@@ -75,6 +75,7 @@
   "trend_surface_enabled": true,
   "runner_entry_gate": {
     "enabled": true,
+    "sidestep_exempt_conf": true,
     "allow_shorts": false,
     "require_daily_mover_longs": false,
     "shock_day_fresh_impulse": true,
@@ -229,8 +230,8 @@
     "volume_window": 30,
     "hold_days": 1,
     "stop_pct": 20.0,
-    "notional_usd": 20.0,
-    "leverage": 1,
+    "notional_usd": 200.0,
+    "leverage": 12,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 2,
     "history_bars": 40
