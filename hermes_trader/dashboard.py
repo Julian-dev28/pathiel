@@ -249,6 +249,16 @@ def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
                 ) else "phase1",
             }
 
+        # "why is this open" — the originating book + signal, captured at entry.
+        _ec = {}
+        try:
+            from hermes_trader.agents.memory import memory as _mem
+            _ec = _mem.peek_entry_context(coin, side) or {}
+        except Exception:
+            _ec = {}
+        _reason = str(_ec.get("reason") or "").replace('"', "'").replace("<", "(").replace(">", ")")[:160]
+        _book = str(_ec.get("book") or "")
+
         rows.append({
             "coin": coin,
             "side": side,
@@ -260,6 +270,8 @@ def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "unrealized_pct": roe_pct,       # leveraged ROE — matches HL
             "spot_pct": spot_pct,            # bare price move, for the curious
             "dsl": dsl_info,
+            "open_reason": _reason,          # why this opened (book + signal)
+            "open_book": _book,
         })
     return rows
 
@@ -1128,7 +1140,10 @@ async function refreshPositions() {
         ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}% × ${p.leverage}x leverage = ROE shown">(spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}%)</span>`
         : '';
       return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
-        <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${p.coin}</span>${sideTag} ${levTag}</div>
+        <div class="col-span-2 flex flex-col justify-center min-w-0">
+          <div class="flex items-baseline gap-2"><span class="font-bold text-sm">${p.coin}</span>${sideTag} ${levTag}</div>
+          ${p.open_reason ? `<span class="text-[9px] text-zinc-600 leading-tight truncate" title="${p.open_book ? '['+p.open_book+'] ' : ''}${p.open_reason}">${p.open_book ? '['+p.open_book+'] ' : ''}${p.open_reason}</span>` : ''}
+        </div>
         <div class="col-span-2 text-zinc-400">${sizeFmt} @ ${pxFmt(p.entry_px)}</div>
         <div class="col-span-2 text-zinc-400">mark ${pxFmt(p.mark_px)}</div>
         <div class="col-span-3 ${pnlColor} text-sm font-semibold">${usdStr} (${p.unrealized_pct >= 0 ? '+' : ''}${p.unrealized_pct.toFixed(1)}%)${spotNote}</div>

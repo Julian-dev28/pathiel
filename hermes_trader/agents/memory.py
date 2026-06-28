@@ -159,6 +159,11 @@ class AgentMemory:
             self.flush()
         return ctx
 
+    def peek_entry_context(self, coin: str, side: str) -> Dict[str, Any]:
+        """Non-destructive read of an OPEN position's entry context (for display,
+        e.g. the dashboard 'why is this open' line). Does not clear it."""
+        return dict(self._entry_ctx.get(f"{coin}_{side}", {}))
+
     def record_close(self, c: Dict[str, Any]) -> None:
         """Append a realized exit to the outcome store and persist.
 

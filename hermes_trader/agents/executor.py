@@ -1039,6 +1039,9 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
             "regime": _entry_regime,
             "override_bar": sidestep_bar,
             "forced_override": bool(analysis.get("sidestep_override")),
+            # Human-readable "why this opened" for the dashboard open-positions box.
+            "book": analysis.get("strategy_book") or "main-engine",
+            "reason": (analysis.get("reasoning") or "")[:160],
         })
     except Exception as _ec_e:
         logger.debug(f"[executor] entry-context capture failed (non-fatal): {_ec_e}")
