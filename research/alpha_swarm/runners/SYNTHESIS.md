@@ -20,3 +20,13 @@ ANSWER: there IS a real signal, but it's a ~2x SELECTION lift, not a way to ride
 
 USABLE: a momentum-led runner-quality SCORE to RANK/SIZE breakout entries (~2x EV select), banked with the
 tight floor. NOT a MANTA-predictor. Survivorship makes runner rates an upper bound. See [[project_early_runner_no_tell]].
+
+## HEAD-TO-HEAD (does the equation beat the bot's existing composite trigger?) — 2026-06-28
+Computed the REAL composite (actual trigger fns + config weights) per breakout, nested OOS AUC:
+  A composite-only 0.594  |  B runner-equation 0.671  |  C combined 0.685.
+Runner density top-q: equation 1.7%/rest 0.3% (5.7x) BEATS composite 1.3%/0.4% (3.3x).
+=> The equation is ADDITIVE, not redundant. The composite weights IMPULSE (ADX/spike/volume-spike);
+the equation weights momentum-PERSISTENCE + extension, which predicts CONTINUATION better. Combining wins.
+USABLE: add a momentum-persistence runner-quality score to the bot's entry RANK/SIZE (shadow-prototype first;
+still banked with the tight floor — wide-trail/tail-ride is dead). Modest (AUC 0.685, ~30% tighter runner
+concentration), 20 OOS runners, survivorship upper bound. The validation gate (additive vs existing) PASSED.
