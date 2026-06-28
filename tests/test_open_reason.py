@@ -35,6 +35,19 @@ def test_row_open_reason_empty_when_no_context():
     assert rows[0]["open_book"] == ""
 
 
+def test_reload_entry_ctx_rereads_disk(tmp_path, monkeypatch):
+    import json
+    from hermes_trader.agents import memory as memmod
+    # simulate the loop process having flushed an entry ctx to disk
+    f = tmp_path / "mem.json"
+    f.write_text(json.dumps({"entryCtx": {"RLDT_long": {"book": "main-engine", "reason": "x"}}}))
+    monkeypatch.setattr(memmod, "MEMORY_FILE", str(f))
+    memory._entry_ctx = {}                      # a separate consumer frozen at startup
+    memory.reload_entry_ctx()                   # re-read from disk
+    assert memory.peek_entry_context("RLDT", "long")["book"] == "main-engine"
+    memory.pop_entry_context("RLDT", "long")
+
+
 def test_open_reason_sanitized_for_html():
     memory.record_entry_context("SANT", "long", {"book": "x", "reason": 'a "quote" <tag>'})
     rows = _rows_from_state(_state("SANT", 1))

@@ -164,6 +164,18 @@ class AgentMemory:
         e.g. the dashboard 'why is this open' line). Does not clear it."""
         return dict(self._entry_ctx.get(f"{coin}_{side}", {}))
 
+    def reload_entry_ctx(self) -> None:
+        """Force-re-read the entry-context map from disk. load() is one-shot (the
+        _initialized guard), so a read-only consumer in a SEPARATE process (the
+        dashboard server) would otherwise freeze entryCtx at its startup and never see
+        the contexts the trading-loop process writes on each new entry. Cheap: one file."""
+        try:
+            with open(MEMORY_FILE, "r") as f:
+                data = json.load(f)
+            self._entry_ctx = data.get("entryCtx") or {}
+        except Exception:
+            pass
+
     def record_close(self, c: Dict[str, Any]) -> None:
         """Append a realized exit to the outcome store and persist.
 

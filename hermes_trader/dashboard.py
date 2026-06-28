@@ -181,6 +181,14 @@ def _positions_payload() -> List[Dict[str, Any]]:
 
 def _positions_payload_uncached() -> List[Dict[str, Any]]:
     dsl_exit.load_state(force=True)
+    # The loop process writes each position's entry context (book + open reason) to disk;
+    # the dashboard runs in a SEPARATE process whose memory is frozen at startup, so re-read
+    # the entry-context map here to surface the 'why this opened' line for live positions.
+    try:
+        from hermes_trader.agents.memory import memory as _mem
+        _mem.reload_entry_ctx()
+    except Exception:
+        pass
 
     # Prefer the loop's snapshot: it already fetched account state this cycle,
     # so reading the file avoids a duplicate fetch_account_state (~9 HL POSTs)
