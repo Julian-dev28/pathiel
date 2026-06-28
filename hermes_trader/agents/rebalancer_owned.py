@@ -74,7 +74,7 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # active EV+ books after a refactor or cleanup.
 _ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "rally_exhaustion", "hail_mary_short",
                                  "crash_continue_div_short", "engulf_short",
-                                 "premium_fade_short"})
+                                 "premium_fade_short", "vol_breakout_long"})
 
 
 def active_claim_books() -> Set[str]:

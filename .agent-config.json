@@ -236,6 +236,27 @@
     "max_new_per_cycle": 2,
     "history_bars": 40
   },
+  "vol_breakout_long": {
+    "enabled": true,
+    "shadow_only": false,
+    "scan_interval_minutes": 5,
+    "entry_window_minutes": 7,
+    "vol_window": 48,
+    "breakout_vol_x": 3.0,
+    "confirm_vol_x": 1.5,
+    "min_mover_pct": 8.0,
+    "min_volume_usd": 5000000,
+    "max_scan_coins": 25,
+    "history_bars": 70,
+    "hold_hours": 4.0,
+    "retrace_threshold": 0.1,
+    "protect_pct": 1.0,
+    "stop_pct": 20.0,
+    "notional_usd": 8.0,
+    "leverage": 1,
+    "tp_scale_fraction": 0.0,
+    "max_new_per_cycle": 1
+  },
   "hail_mary_short": {
     "enabled": true,
     "shadow_only": false,

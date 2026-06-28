@@ -60,6 +60,7 @@ from hermes_trader.agents.hail_mary_short_live import maybe_run as _hail_mary_sh
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
 from hermes_trader.agents.premium_fade_short_live import maybe_run as _premium_fade_short_maybe_run
+from hermes_trader.agents.vol_breakout_long_live import maybe_run as _vol_breakout_long_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -816,6 +817,21 @@ while True:
             )
         except Exception as _pfse:
             logger.warning(f"[premium-fade-short] cycle failed (non-fatal): {_pfse}")
+
+        # Volume-follow-through breakout LONG. Operator's-eye discovery (MANTA 5m read, 2026-06-29),
+        # validated on 180 small-cap movers: a 5m breakout whose volume spike is CONFIRMED by the next
+        # candle holding elevated volume runs >=20% at ~5x the unconfirmed rate. 5m cadence with a fresh-
+        # bar entry window; scan bounded to active movers (cheap universe pre-filter, no extra API).
+        # SMALL live forward test ($8/1x, tight floor) — relative quality filter, not proven +EV;
+        # revert with vol_breakout_long.shadow_only=true (hot-read). Short 5m TTL so candles are fresh.
+        try:
+            _vol_breakout_long_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
+                maybe_execute, close_position_market,
+            )
+        except Exception as _vble:
+            logger.warning(f"[vol-breakout-long] cycle failed (non-fatal): {_vble}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
