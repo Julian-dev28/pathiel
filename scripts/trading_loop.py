@@ -46,6 +46,7 @@ logging.basicConfig(
 )
 
 from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
+from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.xs_momentum_live import (
@@ -422,6 +423,15 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
         vol, vol_floor = 0.0, 0.0
     if vol_floor > 0 and 0 < vol < vol_floor:
         return f"liquidity_floor_preflight (${vol/1e6:.2f}M < ${vol_floor/1e6:.2f}M)"
+
+    # History-age floor (swarm-found gap): a high-volume NEW listing passes the volume
+    # floor with ~6 daily bars; gate it on minimum daily-bar history. Bounded cost — only
+    # coins that already cleared margin/liquidity run this one daily-candle fetch.
+    hist_reason = _history_floor_reason(
+        coin, int(config.get("min_history_bars", 0) or 0),
+        lambda c, n: _fetch_candles_sync(c, "1d", n, 6 * 3600 * 1000))
+    if hist_reason:
+        return hist_reason
 
     return ""
 
