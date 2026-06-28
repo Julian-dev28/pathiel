@@ -1150,7 +1150,7 @@ async function refreshPositions() {
       return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
         <div class="col-span-2 flex flex-col justify-center min-w-0">
           <div class="flex items-baseline gap-2"><span class="font-bold text-sm">${p.coin}</span>${sideTag} ${levTag}</div>
-          ${p.open_reason ? `<span class="text-[9px] text-zinc-600 leading-tight truncate" title="${p.open_book ? '['+p.open_book+'] ' : ''}${p.open_reason}">${p.open_book ? '['+p.open_book+'] ' : ''}${p.open_reason}</span>` : ''}
+          ${(() => { if (!p.open_reason) return ''; const tag = (p.open_book && !p.open_reason.startsWith('[')) ? '['+p.open_book+'] ' : ''; const txt = tag + p.open_reason; return `<span class="text-[9px] text-zinc-600 leading-tight truncate" title="${txt}">${txt}</span>`; })()}
         </div>
         <div class="col-span-2 text-zinc-400">${sizeFmt} @ ${pxFmt(p.entry_px)}</div>
         <div class="col-span-2 text-zinc-400">mark ${pxFmt(p.mark_px)}</div>
