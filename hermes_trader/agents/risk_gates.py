@@ -173,6 +173,28 @@ def history_floor_reason(coin: str, min_history_bars: int, fetch_daily) -> str:
     return ""
 
 
+def reentry_cap_reason(coin: str, recent_entry_count: int, cap: int) -> str:
+    """Block the (cap+1)-th entry on the same coin within the rolling window.
+
+    The PnL audit found the book is fee-dominated by over-churned longs (BTC re-entered
+    44x, ZEC/SOL 43x over ~8wk; $115 of the $165 fees). A per-coin re-entry cap recovers
+    those fees — validated cost-swept: N=3 / rolling-24h ≈ +$24/56d with near-zero
+    continuation risk (it only cuts the 3rd+ re-entry/coin/day, leaving legit rides intact).
+    Risk-REDUCING. `recent_entry_count` = this coin's executed entries in the window
+    (caller supplies it, e.g. memory.count_entries_since). cap <= 0 disables.
+    """
+    try:
+        cap = int(cap or 0)
+    except (TypeError, ValueError):
+        cap = 0
+    if cap <= 0:
+        return ""
+    n = int(recent_entry_count or 0)
+    if n >= cap:
+        return f"reentry_cap ({n} entries in window >= cap {cap})"
+    return ""
+
+
 def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[str]) -> GateResult:
     if blocklist and ctx.coin in blocklist:
         return {"pass": False, "reason": f"{ctx.coin} is on the coin blocklist"}

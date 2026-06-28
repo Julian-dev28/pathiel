@@ -1,5 +1,5 @@
-"""Tests for the history-age preflight gate (risk_gates.history_floor_reason)."""
-from hermes_trader.agents.risk_gates import history_floor_reason
+"""Tests for the preflight gates (history_floor_reason + reentry_cap_reason)."""
+from hermes_trader.agents.risk_gates import history_floor_reason, reentry_cap_reason
 
 
 def _bars(n):
@@ -40,3 +40,23 @@ def test_requests_enough_bars():
         return _bars(n)
     history_floor_reason("ALT", 60, fetch)
     assert seen["n"] >= 60
+
+
+# ── reentry cap ───────────────────────────────────────────────────────────────
+def test_reentry_disabled_when_cap_zero():
+    assert reentry_cap_reason("ALT", 99, 0) == ""
+    assert reentry_cap_reason("ALT", 99, None) == ""
+
+
+def test_reentry_blocks_at_or_over_cap():
+    assert reentry_cap_reason("BTC", 2, 2).startswith("reentry_cap")   # 3rd entry blocked at cap=2
+    assert reentry_cap_reason("BTC", 5, 2).startswith("reentry_cap")
+
+
+def test_reentry_passes_under_cap():
+    assert reentry_cap_reason("BTC", 0, 2) == ""   # first entry
+    assert reentry_cap_reason("BTC", 1, 2) == ""   # second entry (cap=2 allows 2)
+
+
+def test_reentry_handles_bad_count():
+    assert reentry_cap_reason("BTC", None, 2) == ""

@@ -47,6 +47,7 @@ logging.basicConfig(
 
 from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
+from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.xs_momentum_live import (
@@ -432,6 +433,21 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
         lambda c, n: _fetch_candles_sync(c, "1d", n, 6 * 3600 * 1000))
     if hist_reason:
         return hist_reason
+
+    # Per-coin re-entry cap (audit fix): the book is fee-dominated by over-churned longs
+    # (BTC re-entered 44x). Block the (cap+1)-th entry on a coin within the rolling window.
+    # memory already tracks executed entries — no new state. Risk-REDUCING.
+    _rc = config.get("reentry_cap") or {}
+    if bool(_rc.get("enabled", False)):
+        try:
+            _cap = int(_rc.get("max_per_coin", 0) or 0)
+            _win_ms = float(_rc.get("window_hours", 24.0) or 24.0) * 3_600_000
+            _n = memory.count_entries_since(coin, time.time() * 1000 - _win_ms)
+        except Exception:
+            _cap, _n = 0, 0
+        cap_reason = _reentry_cap_reason(coin, _n, _cap)
+        if cap_reason:
+            return cap_reason
 
     return ""
 
