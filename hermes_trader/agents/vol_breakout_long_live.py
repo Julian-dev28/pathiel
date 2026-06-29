@@ -79,7 +79,8 @@ def _mean(xs: List[float]) -> float:
 
 def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float,
                            require_new_high: bool = True,
-                           confirm_require_green: bool = False) -> Optional[Dict[str, Any]]:
+                           confirm_require_green: bool = False,
+                           min_influx_dollar: float = 0.0) -> Optional[Dict[str, Any]]:
     """cb = COMPLETED 5m bars. breakout = cb[-2], confirm = cb[-1]. Returns a signal
     dict if the confirmed-breakout pattern fires on the freshly-closed bars, else None.
 
@@ -101,6 +102,8 @@ def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float,
     # green 5m candle whose volume >= bx * the short trailing mean.
     if not (bc > bo and bv >= bx * vmean):
         return None
+    if min_influx_dollar > 0 and bc * bv < min_influx_dollar:   # absolute $-volume floor (anti-thin/game)
+        return None
     if require_new_high and not (bc > hi):
         return None
     conf = cb[bi + 1]
@@ -117,16 +120,24 @@ def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float,
     }
 
 
-def _immediate_signal(cb: List[Any], window: int, bx: float, vol_ref: str) -> Optional[Dict[str, Any]]:
+def _immediate_signal(cb: List[Any], window: int, bx: float, vol_ref: str,
+                      min_influx_dollar: float = 0.0) -> Optional[Dict[str, Any]]:
     """Operator's method (2026-06-29): the LAST completed bar is a GREEN candle whose volume
     is >= bx * the reference, entered IMMEDIATELY next bar (no confirm-candle lag, no SMA-at-
     climax). vol_ref='prev' = vs the immediately previous candle (catches the expansion off a
-    quiet base, median entry at +0.00% extension); 'sma' = vs the trailing-`window` mean."""
+    quiet base, median entry at +0.00% extension); 'sma' = vs the trailing-`window` mean.
+
+    min_influx_dollar: the influx candle must also trade >= this many DOLLARS (close*volume).
+    '1.5x of nothing is still nothing' - the relative gate alone is gameable on thin coins and
+    fires on noise; the absolute floor removes that and took the crypto backtest from breakeven
+    (OOS h2 -0.07%) to OOS-positive (+0.096% / +0.16/+0.03 at $250k). 0 disables."""
     if len(cb) < window + 1:
         return None
     bi = len(cb) - 1
     o, c, v = _val(cb[bi], "o"), _val(cb[bi], "c"), _val(cb[bi], "v")
     if not (c > o):                       # same direction = green for a long
+        return None
+    if min_influx_dollar > 0 and c * v < min_influx_dollar:
         return None
     if vol_ref == "prev":
         ref = _val(cb[bi - 1], "v")
@@ -292,6 +303,7 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
     # preserves the existing book behavior.
     entry_mode = str(cfg.get("entry_mode", "confirm"))
     vol_ref = str(cfg.get("vol_ref", "sma"))
+    min_influx_dollar = float(cfg.get("min_influx_dollar_vol", 0.0) or 0.0)
     history_bars = max(window + 5, int(cfg.get("history_bars", 70)))
     entry_window_ms = float(cfg.get("entry_window_minutes", 7.0)) * 60_000
 
@@ -302,9 +314,10 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
         except Exception:
             continue
         if entry_mode == "immediate":
-            sig = _immediate_signal(cb, window, bx, vol_ref)
+            sig = _immediate_signal(cb, window, bx, vol_ref, min_influx_dollar)
         else:
-            sig = _is_confirmed_breakout(cb, window, bx, cx, require_new_high, confirm_require_green)
+            sig = _is_confirmed_breakout(cb, window, bx, cx, require_new_high,
+                                         confirm_require_green, min_influx_dollar)
         if not sig:
             continue
         # Freshness: only act while the confirm bar just closed (enter near the next

@@ -113,6 +113,21 @@ def test_immediate_signal_prev_candle_green():
     assert vb._immediate_signal(cb3, 2, 1.5, "prev") is None
 
 
+def test_min_influx_dollar_floor_rejects_thin_spike():
+    """Anti-game/anti-noise: a 1.5x-prev green spike on a THIN coin (small close*volume) is
+    rejected by the absolute $-volume floor; a real one passes."""
+    seq = [(100, 101, 99, 100, 100)] * 6
+    seq += [(100, 103, 99.5, 102, 90)]
+    seq += [(102, 105, 101, 104, 160)]   # 1.5x prev (90), close 104, $-vol = 104*160 = 16,640
+    cb = vb._completed_bars(_bars(seq), NOW_MS)
+    # $-vol 16,640 < 50,000 floor -> rejected
+    assert vb._immediate_signal(cb, 2, 1.5, "prev", min_influx_dollar=50_000) is None
+    # no floor -> fires
+    assert vb._immediate_signal(cb, 2, 1.5, "prev", min_influx_dollar=0) is not None
+    # floor it clears (16,640 >= 10,000) -> fires
+    assert vb._immediate_signal(cb, 2, 1.5, "prev", min_influx_dollar=10_000) is not None
+
+
 def test_green_confirm_required_rejects_red_followthrough():
     seq = [(100, 101, 99, 100, 100)] * 6
     seq += [(100, 106, 99.5, 105, 160)]                      # green influx
