@@ -106,6 +106,40 @@ def _analysis_daily_move_pct(analysis: Dict[str, Any]) -> float | None:
     return _get_daily_move_pct(str(analysis.get("coin") or ""))
 
 
+def _sidestep_bearish_block_reason(analysis: Dict[str, Any], config: Dict[str, Any]) -> str:
+    """Block a PASS->LONG sidestep that is actually a BEARISH impulse.
+
+    The sidestep upgrades an AI PASS to LONG when the composite/burst setup cleared. But
+    the composite triggers (pctMoveSpike, volumeSpike, shockDay, momentumBurst) are
+    MAGNITUDE-based (`abs(move)`), so a violent SELLOFF — a big red candle on huge volume —
+    fires them just as hard as a breakout and produces a high composite. With no direction
+    check, the sidestep buys the falling knife (xyz:SMSN 2026-06-29: bought the open of a
+    big red breakdown bar, -9.3% ROE). The short runner gate already requires `downtrend`;
+    this restores the symmetric requirement for the long sidestep.
+
+    Bearish impulse = downtrend momentum fired AND uptrend did not, OR the 24h move is
+    clearly negative with no uptrend confirmation. Flag-gated (sidestep_require_bullish,
+    default true), hot-read, reversible. Returns a reason to block, or "" to allow."""
+    gate = config.get("runner_entry_gate") or {}
+    if not bool(gate.get("sidestep_require_bullish", True)):
+        return ""
+    uptrend = bool(analysis.get("uptrend_momentum_fired"))
+    if uptrend:
+        return ""  # explicit bullish momentum — a real upside setup, allow
+    downtrend = bool(analysis.get("downtrend_momentum_fired"))
+    move_pct = _analysis_daily_move_pct(analysis)
+    try:
+        min_neg = float(gate.get("sidestep_bearish_move_pct", -3.0))
+    except (TypeError, ValueError):
+        min_neg = -3.0
+    bearish_move = move_pct is not None and move_pct <= min_neg
+    if downtrend or bearish_move:
+        why = "downtrend momentum fired" if downtrend else f"24h move {move_pct:+.1f}% <= {min_neg:.1f}%"
+        return (f"sidestep_bearish_blocked ({analysis.get('coin')}: {why}, no uptrend — "
+                f"would buy a selloff, not a breakout)")
+    return ""
+
+
 def _sidestep_extension_block_reason(analysis: Dict[str, Any], config: Dict[str, Any]) -> str:
     """Block PASS->LONG sidestep on already-parabolic daily movers."""
     try:
@@ -317,6 +351,16 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
                 "executed": False, "mode": mode,
                 "analysis_id": analysis["id"],
                 "reason": _ext_block,
+            }
+
+    if analysis.get("verdict") == "PASS" and ta_sidestep_strong:
+        _bear_block = _sidestep_bearish_block_reason(analysis, config)
+        if _bear_block:
+            logger.info(f"[executor] TA sidestep SKIPPED on {analysis['coin']}: {_bear_block}")
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "reason": _bear_block,
             }
 
     if analysis.get("verdict") == "PASS" and ta_sidestep_strong:
