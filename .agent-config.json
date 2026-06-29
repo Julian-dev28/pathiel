@@ -259,7 +259,8 @@
     "notional_usd": 8.0,
     "leverage": 1,
     "tp_scale_fraction": 0.0,
-    "max_new_per_cycle": 1
+    "max_new_per_cycle": 1,
+    "max_book_positions": 3
   },
   "hail_mary_short": {
     "enabled": true,

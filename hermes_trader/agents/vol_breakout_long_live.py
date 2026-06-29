@@ -334,11 +334,27 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     claims.prune_to(held, _BOOK_NAME)
     blocked_by_claim = claims.claimed_by_others(_BOOK_NAME)
     max_new = int(cfg.get("max_new_per_cycle", 1))
+    # Per-book concurrency cap: the looser 1.5x trigger fires often, so cap how many
+    # positions THIS book may hold at once. Leaves the rest of max_concurrent for the
+    # main engine — no slot collision. Counted from the claims registry (post-prune =
+    # live). 0 disables the cap.
+    max_book = int(cfg.get("max_book_positions", 3))
+    book_open = sum(1 for owner in claims.claims().values() if owner == _BOOK_NAME)
+    room = max_new if max_book <= 0 else max(0, min(max_new, max_book - book_open))
+    if room <= 0:
+        skipped["book_cap"] = max_book
+        _save_ts(now)
+        rec = {"event": "vol_breakout_long", "ts": now_ms, "shadow": False,
+               "signals": len(signals), "opened": 0, "skipped": skipped,
+               "book_open": book_open, "candidates": signals[:10]}
+        log_event(rec)
+        logger.info(f"[vol-breakout-long] at book cap ({book_open}/{max_book}) — leaving slots for main engine")
+        return rec
 
     for sig in signals:
         coin = sig["coin"]
         sig_t = int(sig.get("confirm_bar_t") or 0)
-        if opened >= max_new:
+        if opened >= room:
             break
         if coin in held:
             skipped["held"] += 1

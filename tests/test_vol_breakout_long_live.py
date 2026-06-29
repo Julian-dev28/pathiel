@@ -208,3 +208,29 @@ def test_blocked_executor_releases_claim(monkeypatch):
                        lambda a: {"executed": False, "reason": "blocked"})
     assert rec["opened"] == 0 and rec["skipped"]["blocked"] == 1
     assert ro.get_claims_registry().owner_of("ALT") is None
+
+
+def test_book_position_cap_leaves_slots_for_main_engine(monkeypatch):
+    """At max_book_positions the book opens nothing — no slot collision with the main engine."""
+    _setup(monkeypatch)
+    reg = ro.get_claims_registry()
+    reg.claim("AAA", vb._BOOK_NAME)
+    reg.claim("BBB", vb._BOOK_NAME)
+    reg.claim("CCC", vb._BOOK_NAME)  # book already holds 3
+    calls = []
+    # held must include the 3 claimed coins so prune_to keeps them
+    held = [{"position": {"coin": c, "szi": "1.0"}} for c in ("AAA", "BBB", "CCC")]
+    rec = vb.maybe_run(_cfg(max_book_positions=3), _uni(), held, _fetch,
+                       lambda a: calls.append(a) or {"executed": True})
+    assert rec["opened"] == 0 and rec["skipped"].get("book_cap") == 3 and calls == []
+
+
+def test_book_cap_allows_up_to_room(monkeypatch):
+    _setup(monkeypatch)
+    reg = ro.get_claims_registry()
+    reg.claim("AAA", vb._BOOK_NAME)  # 1 held, cap 3 -> room for 2 more (max_new caps to 1)
+    calls = []
+    held = [{"position": {"coin": "AAA", "szi": "1.0"}}]
+    rec = vb.maybe_run(_cfg(max_book_positions=3, max_new_per_cycle=1), _uni(), held, _fetch,
+                       lambda a: calls.append(a) or {"executed": True})
+    assert rec["opened"] == 1
