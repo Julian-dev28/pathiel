@@ -62,6 +62,7 @@ from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _cra
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
 from hermes_trader.agents.premium_fade_short_live import maybe_run as _premium_fade_short_maybe_run
 from hermes_trader.agents.vol_breakout_long_live import maybe_run as _vol_breakout_long_maybe_run
+from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -848,6 +849,20 @@ while True:
             )
         except Exception as _vble:
             logger.warning(f"[vol-breakout-long] cycle failed (non-fatal): {_vble}")
+
+        # Negative-funding volume-influx FADE (short). Swarm-validated 2026-06-29: a coin with deep-negative
+        # 8h funding (crowded shorts) that prints a green 5m vol-influx pop FAILS it and continues down -> short
+        # the failed pop. +EV both OOS halves net of funding cost (influx_funding_fade.md). LIVE small ($20/1x/25%
+        # stop), records to the shadow ledger for forward grading. 5m TTL for fresh candles; funding fetched only
+        # for influx candidates. Revert with neg_funding_fade.shadow_only=true (hot-read).
+        try:
+            _neg_funding_fade_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
+                _book_execute, close_position_market,
+            )
+        except Exception as _nffe:
+            logger.warning(f"[neg-funding-fade] cycle failed (non-fatal): {_nffe}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
