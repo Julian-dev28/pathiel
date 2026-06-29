@@ -95,6 +95,24 @@ def test_pure_volume_influx_variant_no_new_high():
     assert sig is not None and sig["breakout_vol_x"] == 1.6
 
 
+def test_immediate_signal_prev_candle_green():
+    """Operator method: last bar green + vol >= 1.5x the PREVIOUS candle -> immediate signal."""
+    seq = [(100, 101, 99, 100, 100)] * 6
+    seq += [(100, 103, 99.5, 102, 90)]    # prev candle vol 90
+    seq += [(102, 105, 101, 104, 160)]    # last bar: green, vol 160 >= 1.5*90=135
+    cb = vb._completed_bars(_bars(seq), NOW_MS)
+    sig = vb._immediate_signal(cb, 2, 1.5, "prev")
+    assert sig is not None and sig["breakout_vol_x"] == round(160 / 90, 2)
+    # a red last bar must NOT fire (same-direction requirement)
+    seq2 = seq[:-1] + [(104, 104.5, 100, 101, 200)]  # red
+    cb2 = vb._completed_bars(_bars(seq2), NOW_MS)
+    assert vb._immediate_signal(cb2, 2, 1.5, "prev") is None
+    # vol not 1.5x the previous candle -> no fire
+    seq3 = seq[:-1] + [(102, 105, 101, 104, 100)]    # 100 < 1.5*90
+    cb3 = vb._completed_bars(_bars(seq3), NOW_MS)
+    assert vb._immediate_signal(cb3, 2, 1.5, "prev") is None
+
+
 def test_green_confirm_required_rejects_red_followthrough():
     seq = [(100, 101, 99, 100, 100)] * 6
     seq += [(100, 106, 99.5, 105, 160)]                      # green influx

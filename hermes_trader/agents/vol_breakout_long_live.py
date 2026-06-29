@@ -117,6 +117,28 @@ def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float,
     }
 
 
+def _immediate_signal(cb: List[Any], window: int, bx: float, vol_ref: str) -> Optional[Dict[str, Any]]:
+    """Operator's method (2026-06-29): the LAST completed bar is a GREEN candle whose volume
+    is >= bx * the reference, entered IMMEDIATELY next bar (no confirm-candle lag, no SMA-at-
+    climax). vol_ref='prev' = vs the immediately previous candle (catches the expansion off a
+    quiet base, median entry at +0.00% extension); 'sma' = vs the trailing-`window` mean."""
+    if len(cb) < window + 1:
+        return None
+    bi = len(cb) - 1
+    o, c, v = _val(cb[bi], "o"), _val(cb[bi], "c"), _val(cb[bi], "v")
+    if not (c > o):                       # same direction = green for a long
+        return None
+    if vol_ref == "prev":
+        ref = _val(cb[bi - 1], "v")
+    else:
+        ref = _mean([_val(b, "v") for b in cb[bi - window:bi]])
+    if ref <= 0 or v < bx * ref:
+        return None
+    return {"breakout_bar_t": _bar_t(cb[bi]), "confirm_bar_t": _bar_t(cb[bi]),
+            "entry_ref_px": round(c, 8), "breakout_vol_x": round(v / ref, 2),
+            "confirm_vol_x": round(v / ref, 2)}
+
+
 def _last_ts() -> float:
     try:
         return float(open(_TS_FILE).read().strip())
@@ -265,6 +287,11 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
     cx = float(cfg.get("confirm_vol_x", 1.5))
     require_new_high = bool(cfg.get("require_new_high", True))
     confirm_require_green = bool(cfg.get("confirm_require_green", False))
+    # entry_mode 'immediate' = operator's rule (green + vol>=bx*ref, enter on the next bar,
+    # no confirm lag). vol_ref 'prev' = vs the previous candle. Default 'confirm'/'sma'
+    # preserves the existing book behavior.
+    entry_mode = str(cfg.get("entry_mode", "confirm"))
+    vol_ref = str(cfg.get("vol_ref", "sma"))
     history_bars = max(window + 5, int(cfg.get("history_bars", 70)))
     entry_window_ms = float(cfg.get("entry_window_minutes", 7.0)) * 60_000
 
@@ -274,7 +301,10 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
             cb = _completed_bars(fetch_candles(coin, "5m", history_bars), now_ms)
         except Exception:
             continue
-        sig = _is_confirmed_breakout(cb, window, bx, cx, require_new_high, confirm_require_green)
+        if entry_mode == "immediate":
+            sig = _immediate_signal(cb, window, bx, vol_ref)
+        else:
+            sig = _is_confirmed_breakout(cb, window, bx, cx, require_new_high, confirm_require_green)
         if not sig:
             continue
         # Freshness: only act while the confirm bar just closed (enter near the next
