@@ -195,6 +195,31 @@ def reentry_cap_reason(coin: str, recent_entry_count: int, cap: int) -> str:
     return ""
 
 
+def book_block_event(analysis: Dict[str, Any], result: Any) -> Optional[Dict[str, Any]]:
+    """Build the activity-feed `execute` BLOCK event for a strategy-book entry the
+    executor refused to open. Returns None when there is nothing to surface (the entry
+    executed, the result is malformed, or it's not a strategy-book entry).
+
+    The executor never touches the feed and the main loop only emits `execute` events
+    for its OWN entries, so book denials (FOGO below the liquidity floor, a young HIP-3
+    name, etc.) were log-only until now. Reuses the existing `execute` renderer
+    (executed:false → 'BLOCKED: ...'), tagged with the book name."""
+    if not isinstance(result, dict) or result.get("executed"):
+        return None
+    if not analysis.get("strategy_book"):
+        return None
+    blocked = (result.get("blocked_by") or result.get("reason")
+               or result.get("gate_results") or result.get("error"))
+    return {
+        "event": "execute",
+        "executed": False,
+        "coin": analysis.get("coin"),
+        "side": analysis.get("side"),
+        "book": analysis.get("strategy_book"),
+        "blocked_by": blocked,
+    }
+
+
 def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[str]) -> GateResult:
     if blocklist and ctx.coin in blocklist:
         return {"pass": False, "reason": f"{ctx.coin} is on the coin blocklist"}

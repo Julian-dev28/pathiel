@@ -1374,14 +1374,15 @@ function renderEvent(e) {
   } else if (ev === 'execute') {
     const ok = e.executed;
     glyph = ok ? '✓' : '✗'; cls = ok ? 'execute' : 'execute-fail';
+    const bookTag = e.book ? `[${e.book}] ` : '';
     if (ok) {
       const sz = e.size_usd != null ? ' ' + maskDollar('$'+e.size_usd.toFixed(2)) : '';
       const ep = e.entry_px != null ? ` @ ${fmtPx(e.entry_px)}` : '';
-      text = `execute    ${e.coin} ${e.side || '?'}${sz}${ep}  ${e.detail || ''}`;
+      text = `execute    ${bookTag}${e.coin} ${e.side || '?'}${sz}${ep}  ${e.detail || ''}`;
       if (e.stop_px || e.tp_px) tooltip = `entry ${fmtPx(e.entry_px)}\nstop ${fmtPx(e.stop_px)}\ntp ${fmtPx(e.tp_px)}\nsize $${(e.size_usd||0).toFixed(2)}\norder ${e.detail || ''}`;
     } else {
       const blocked = Array.isArray(e.blocked_by) ? e.blocked_by.join(' · ') : (e.blocked_by || e.detail || '');
-      text = `execute    ${e.coin} ${e.side || '?'}  BLOCKED: ${blocked}`;
+      text = `execute    ${bookTag}${e.coin} ${e.side || '?'}  BLOCKED: ${blocked}`;
       if (Array.isArray(e.blocked_by) && e.blocked_by.length > 1) tooltip = e.blocked_by.join('\\n');
     }
   } else if (ev === 'dsl_exit') {

@@ -48,6 +48,7 @@ logging.basicConfig(
 from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
 from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
+from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.xs_momentum_live import (
@@ -73,6 +74,21 @@ from hermes_trader.agents.executor import (
 )
 from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from hermes_trader.agents.config import get_config
+
+
+def _book_execute(analysis):
+    """execute_fn for the strategy books: run the real executor, but surface a BLOCK
+    to the activity feed. Logic lives in risk_gates.book_block_event (pure + tested);
+    here we just emit it. The executor never touches the feed and the main loop only
+    emits `execute` events for its own entries, so book denials were log-only before."""
+    result = maybe_execute(analysis)
+    try:
+        evt = _book_block_event(analysis, result)
+        if evt:
+            log_event(evt)
+    except Exception:
+        pass
+    return result
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
@@ -737,7 +753,7 @@ while True:
             _xs_maybe_rebalance(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _xse:
             logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
@@ -750,7 +766,7 @@ while True:
             _ef_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _efe:
             logger.warning(f"[extreme-fade] cycle failed (non-fatal): {_efe}")
@@ -762,7 +778,7 @@ while True:
             _rally_exhaustion_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _ree:
             logger.warning(f"[rally-exhaustion] cycle failed (non-fatal): {_ree}")
@@ -773,7 +789,7 @@ while True:
             _hail_mary_short_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _hmse:
             logger.warning(f"[hail-mary-short] cycle failed (non-fatal): {_hmse}")
@@ -786,7 +802,7 @@ while True:
             _crash_continue_div_short_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _ccdse:
             logger.warning(f"[crash-continue-div-short] cycle failed (non-fatal): {_ccdse}")
@@ -799,7 +815,7 @@ while True:
             _engulf_short_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _ese:
             logger.warning(f"[engulf-short] cycle failed (non-fatal): {_ese}")
@@ -813,7 +829,7 @@ while True:
             _premium_fade_short_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _pfse:
             logger.warning(f"[premium-fade-short] cycle failed (non-fatal): {_pfse}")
@@ -828,7 +844,7 @@ while True:
             _vol_breakout_long_maybe_run(
                 read_agent_config(), universe, positions,
                 lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
-                maybe_execute, close_position_market,
+                _book_execute, close_position_market,
             )
         except Exception as _vble:
             logger.warning(f"[vol-breakout-long] cycle failed (non-fatal): {_vble}")
