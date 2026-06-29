@@ -260,7 +260,7 @@
     "protect_pct": 1.0,
     "stop_pct": 15.0,
     "notional_usd": 12.0,
-    "leverage": 3,
+    "leverage": 5,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "max_book_positions": 3
