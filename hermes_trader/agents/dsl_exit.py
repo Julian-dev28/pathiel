@@ -544,6 +544,11 @@ def _policy_from_config() -> ExitPolicy:
         tiers_raw = dsl.get("phase2_tiers")
         tiers = [RetraceTier(**t) for t in tiers_raw] if tiers_raw else None
         noise_cfg = dsl.get("noise_band", {}) or {}
+        # The nested atr_stop block maps to the flat atr_stop_* policy fields. Omitting
+        # it (the original bug) left a post-blackout synthesized tracker with
+        # atr_stop_enabled=False, silently falling back to the fixed max_loss_pct stop
+        # instead of the configured ATR stop a fresh entry gets.
+        atr_cfg = dsl.get("atr_stop", {}) or {}
         return ExitPolicy(
             max_loss_pct=dsl.get("max_loss_pct", ExitPolicy.max_loss_pct),
             max_loss_roe_pct=dsl.get("max_loss_roe_pct", ExitPolicy.max_loss_roe_pct),
@@ -554,6 +559,10 @@ def _policy_from_config() -> ExitPolicy:
             breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
             stale_flat_timeout_minutes=float(dsl.get("stale_flat_timeout_minutes", 0.0) or 0.0),
             consecutive_breaches_required=int(dsl.get("consecutive_breaches_required", 1) or 1),
+            atr_stop_enabled=bool(atr_cfg.get("enabled", ExitPolicy.atr_stop_enabled)),
+            atr_stop_mult=float(atr_cfg.get("atr_mult", ExitPolicy.atr_stop_mult)),
+            atr_stop_floor_pct=float(atr_cfg.get("floor_pct", ExitPolicy.atr_stop_floor_pct)),
+            atr_stop_ceiling_pct=float(atr_cfg.get("ceiling_pct", ExitPolicy.atr_stop_ceiling_pct)),
             noise_band_enabled=bool(noise_cfg.get("enabled", False)),
             noise_band_atr_mult=float(noise_cfg.get("atr_mult", ExitPolicy.noise_band_atr_mult)),
             phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,

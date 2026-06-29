@@ -96,11 +96,11 @@
     "backup_sl_max_frac_of_liq": 0.6,
     "atr_risk_sizing": {
     "enabled": true,
-    "risk_per_trade_pct": 0.2,
+    "risk_per_trade_pct": 0.02,
     "sizing_basis": "primary_stop"
   },
   "capital_rotation": {
-    "enabled": true,
+    "enabled": false,
     "min_candidate_composite": 40.0,
     "min_hold_minutes": 30,
     "protect_winner_roe_pct": 3.0
@@ -263,7 +263,7 @@
     "max_book_positions": 3
   },
   "hail_mary_short": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": false,
     "names": [
       "NVDA",
