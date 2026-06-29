@@ -77,9 +77,16 @@ def _mean(xs: List[float]) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
-def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float) -> Optional[Dict[str, Any]]:
+def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float,
+                           require_new_high: bool = True,
+                           confirm_require_green: bool = False) -> Optional[Dict[str, Any]]:
     """cb = COMPLETED 5m bars. breakout = cb[-2], confirm = cb[-1]. Returns a signal
-    dict if the confirmed-breakout pattern fires on the freshly-closed bars, else None."""
+    dict if the confirmed-breakout pattern fires on the freshly-closed bars, else None.
+
+    require_new_high: gate the entry candle on a new W-bar high (breakout). When false,
+    the entry is the pure volume-influx (green candle + vol >= bx*trailing-mean), which is
+    the operator's forward-test variant.
+    confirm_require_green: also require the follow-through candle to close green."""
     if len(cb) < window + 2:
         return None
     bi = len(cb) - 2                      # breakout bar index
@@ -89,10 +96,17 @@ def _is_confirmed_breakout(cb: List[Any], window: int, bx: float, cx: float) -> 
         return None
     hi = max(_val(b, "h") for b in win)
     bo, bc, bv = _val(cb[bi], "o"), _val(cb[bi], "c"), _val(cb[bi], "v")
-    if not (bc > hi and bc > bo and bv >= bx * vmean):   # breakout: new high, green, vol spike
+    # Entry candle: green + volume influx, and (optionally) a new W-bar high. The pure
+    # volume-influx variant (operator forward-test) sets require_new_high=false: just a
+    # green 5m candle whose volume >= bx * the short trailing mean.
+    if not (bc > bo and bv >= bx * vmean):
+        return None
+    if require_new_high and not (bc > hi):
         return None
     conf = cb[bi + 1]
     if _val(conf, "v") < cx * vmean:                     # follow-through: volume persists
+        return None
+    if confirm_require_green and not (_val(conf, "c") >= _val(conf, "o")):  # 2nd candle holds up
         return None
     return {
         "breakout_bar_t": _bar_t(cb[bi]),
@@ -249,6 +263,8 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
     window = int(cfg.get("vol_window", 48))
     bx = float(cfg.get("breakout_vol_x", 3.0))
     cx = float(cfg.get("confirm_vol_x", 1.5))
+    require_new_high = bool(cfg.get("require_new_high", True))
+    confirm_require_green = bool(cfg.get("confirm_require_green", False))
     history_bars = max(window + 5, int(cfg.get("history_bars", 70)))
     entry_window_ms = float(cfg.get("entry_window_minutes", 7.0)) * 60_000
 
@@ -258,7 +274,7 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
             cb = _completed_bars(fetch_candles(coin, "5m", history_bars), now_ms)
         except Exception:
             continue
-        sig = _is_confirmed_breakout(cb, window, bx, cx)
+        sig = _is_confirmed_breakout(cb, window, bx, cx, require_new_high, confirm_require_green)
         if not sig:
             continue
         # Freshness: only act while the confirm bar just closed (enter near the next

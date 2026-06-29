@@ -80,6 +80,32 @@ def test_detects_confirmed_breakout():
     assert sig["breakout_vol_x"] == 4.0 and sig["confirm_vol_x"] == 1.6
 
 
+def test_pure_volume_influx_variant_no_new_high():
+    """Operator forward-test variant: require_new_high=false fires on a green vol-influx
+    candle that does NOT make a new high, as long as confirm holds green volume."""
+    # entry candle green + 1.5x vol but BELOW the prior high (no breakout)
+    seq = [(100, 108, 99, 100, 100)] * 6                      # prior high 108
+    seq += [(101, 104, 100.5, 103, 160)]                      # green, vol 1.6x, close 103 < 108 (no new high)
+    seq += [(103, 105, 102, 104, 120)]                        # confirm: green, vol 1.2x
+    cb = vb._completed_bars(_bars(seq), NOW_MS)
+    # with the new-high requirement it must NOT fire (close 103 < high 108)
+    assert vb._is_confirmed_breakout(cb, 6, 1.5, 1.0, require_new_high=True, confirm_require_green=True) is None
+    # the pure-influx variant fires
+    sig = vb._is_confirmed_breakout(cb, 6, 1.5, 1.0, require_new_high=False, confirm_require_green=True)
+    assert sig is not None and sig["breakout_vol_x"] == 1.6
+
+
+def test_green_confirm_required_rejects_red_followthrough():
+    seq = [(100, 101, 99, 100, 100)] * 6
+    seq += [(100, 106, 99.5, 105, 160)]                      # green influx
+    seq += [(105, 105.5, 101, 102, 130)]                     # RED confirm (close < open), vol ok
+    cb = vb._completed_bars(_bars(seq), NOW_MS)
+    # green-confirm required -> reject the red follow-through
+    assert vb._is_confirmed_breakout(cb, 6, 1.5, 1.0, require_new_high=False, confirm_require_green=True) is None
+    # without the green requirement it fires (volume alone)
+    assert vb._is_confirmed_breakout(cb, 6, 1.5, 1.0, require_new_high=False, confirm_require_green=False) is not None
+
+
 def test_live_opens_long_with_overrides(monkeypatch):
     _setup(monkeypatch)
     calls = []
