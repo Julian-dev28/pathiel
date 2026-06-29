@@ -63,6 +63,7 @@ from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_ma
 from hermes_trader.agents.premium_fade_short_live import maybe_run as _premium_fade_short_maybe_run
 from hermes_trader.agents.vol_breakout_long_live import maybe_run as _vol_breakout_long_maybe_run
 from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
+from hermes_trader.agents.vol_breakout_wide_live import maybe_run as _vol_breakout_wide_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -849,6 +850,18 @@ while True:
             )
         except Exception as _vble:
             logger.warning(f"[vol-breakout-long] cycle failed (non-fatal): {_vble}")
+
+        # Wide-stop runner sandbox (operator 2026-06-29). SAME volume-influx entry as vol_breakout_long, but a
+        # WIDE 30% stop + arm-late (+10%) trail to test "catch runs without whipsaw" at $3/1x (~$0.90 risk). Not
+        # +EV on this entry (the structure is right, the entry is breakeven) - it's a live look at runner-capture.
+        try:
+            _vol_breakout_wide_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
+                _book_execute, close_position_market,
+            )
+        except Exception as _vbwe:
+            logger.warning(f"[vol-breakout-wide] cycle failed (non-fatal): {_vbwe}")
 
         # Negative-funding volume-influx FADE (short). Swarm-validated 2026-06-29: a coin with deep-negative
         # 8h funding (crowded shorts) that prints a green 5m vol-influx pop FAILS it and continues down -> short

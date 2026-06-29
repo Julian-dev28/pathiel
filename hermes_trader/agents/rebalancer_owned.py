@@ -75,7 +75,7 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 _ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "rally_exhaustion", "hail_mary_short",
                                  "crash_continue_div_short", "engulf_short",
                                  "premium_fade_short", "vol_breakout_long",
-                                 "neg_funding_fade"})
+                                 "neg_funding_fade", "vol_breakout_wide"})
 
 
 def active_claim_books() -> Set[str]:
