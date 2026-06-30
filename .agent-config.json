@@ -13,9 +13,9 @@
   },
   "enable_crypto": true,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.1,
-  "leverage": 12,
-  "max_trade_notional_usd": 200,
+  "equity_fraction_per_trade": 0.33,
+  "leverage": 15,
+  "max_trade_notional_usd": 1000,
   "asset_notional_multiplier": {
     "crypto": 1.0,
     "hip3": 1.0
@@ -23,7 +23,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -40,
+  "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -69,9 +69,9 @@
     ],
     "stale_flat_timeout_minutes": 480
   },
-    "ta_sidestep_force_execute": true,
-    "override_max_daily_extension_pct": 30.0,
-    "block_counter_trend_bypass": true,
+  "ta_sidestep_force_execute": true,
+  "override_max_daily_extension_pct": 30.0,
+  "block_counter_trend_bypass": true,
   "trend_surface_enabled": true,
   "runner_entry_gate": {
     "enabled": true,
@@ -90,13 +90,13 @@
     "mover_min_confidence": 0.65,
     "mover_min_composite": 20.0
   },
-    "loss_cooldown_min": 180,
-    "min_ai_close_hold_min": 25,
-    "sl_atr_mult": 1.5,
-    "backup_sl_max_frac_of_liq": 0.6,
-    "atr_risk_sizing": {
+  "loss_cooldown_min": 180,
+  "min_ai_close_hold_min": 25,
+  "sl_atr_mult": 1.5,
+  "backup_sl_max_frac_of_liq": 0.6,
+  "atr_risk_sizing": {
     "enabled": true,
-    "risk_per_trade_pct": 0.02,
+    "risk_per_trade_pct": 0.33,
     "sizing_basis": "primary_stop"
   },
   "capital_rotation": {
@@ -156,7 +156,9 @@
     "vol_gate": true,
     "vol_short": 14,
     "vol_long": 90,
-    "vol_managed": {"enabled": true}
+    "vol_managed": {
+      "enabled": true
+    }
   },
   "extreme_fade": {
     "enabled": true,
@@ -176,8 +178,8 @@
     "volume_window": 30,
     "hold_days": 5,
     "stop_pct": 25.0,
-    "notional_usd": 20.0,
-    "leverage": 1,
+    "notional_usd": 100.0,
+    "leverage": 10,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "history_bars": 40
@@ -239,7 +241,7 @@
     "history_bars": 40
   },
   "vol_breakout_long": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": false,
     "entry_mode": "immediate",
     "vol_ref": "prev",
@@ -259,14 +261,14 @@
     "retrace_threshold": 0.1,
     "protect_pct": 1.0,
     "stop_pct": 15.0,
-    "notional_usd": 12.0,
-    "leverage": 5,
+    "notional_usd": 100.0,
+    "leverage": 12,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "max_book_positions": 3
   },
   "vol_breakout_wide": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": false,
     "entry_mode": "immediate",
     "vol_ref": "prev",
@@ -285,10 +287,15 @@
     "hold_hours": 8.0,
     "protect_pct": 10.0,
     "retrace_threshold": 0.35,
-    "phase2_tiers": [{"pct_above_entry": 30.0, "retrace_threshold": 0.45}],
+    "phase2_tiers": [
+      {
+        "pct_above_entry": 30.0,
+        "retrace_threshold": 0.45
+      }
+    ],
     "stop_pct": 30.0,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 200.0,
+    "leverage": 12,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "max_book_positions": 3
@@ -389,5 +396,8 @@
     "max_new_per_cycle": 1,
     "max_attempts_per_cycle": 1
   },
-  "data_logger": {"enabled": true, "interval_hours": 1.0}
+  "data_logger": {
+    "enabled": true,
+    "interval_hours": 1.0
+  }
 }
