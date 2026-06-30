@@ -15,7 +15,7 @@
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.33,
   "leverage": 15,
-  "max_trade_notional_usd": 1000,
+  "max_trade_notional_usd": 2000,
   "asset_notional_multiplier": {
     "crypto": 1.0,
     "hip3": 1.0
@@ -95,8 +95,8 @@
   "sl_atr_mult": 1.5,
   "backup_sl_max_frac_of_liq": 0.6,
   "atr_risk_sizing": {
-    "enabled": true,
-    "risk_per_trade_pct": 0.33,
+    "enabled": false,
+    "risk_per_trade_pct": 0.02,
     "sizing_basis": "primary_stop"
   },
   "capital_rotation": {
