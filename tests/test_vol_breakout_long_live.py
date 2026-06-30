@@ -113,6 +113,18 @@ def test_immediate_signal_prev_candle_green():
     assert vb._immediate_signal(cb3, 2, 1.5, "prev") is None
 
 
+def test_side_short_produces_a_short_fade():
+    """side='short' flips the book to FADE the green vol-pop (validated: short the blow-off)."""
+    sig = {"breakout_vol_x": 2.0, "confirm_vol_x": 2.0, "confirm_bar_t": CONFIRM_T, "entry_ref_px": 104.0}
+    a = vb._analysis("ALT", sig, _cfg(side="short", executor_short_volume_floor_usd=5_000_000)["vol_breakout_long"])
+    assert a["verdict"] == "SHORT" and a["side"] == "short"
+    assert "FADE" in a["reasoning"] and "SHORT" in a["reasoning"]
+    assert a["min_short_volume_usd_override"] == 5_000_000
+    # default (no side) stays long
+    al = vb._analysis("ALT", sig, _cfg()["vol_breakout_long"])
+    assert al["verdict"] == "LONG" and al["side"] == "long" and "min_short_volume_usd_override" not in al
+
+
 def test_min_influx_dollar_floor_rejects_thin_spike():
     """Anti-game/anti-noise: a 1.5x-prev green spike on a THIN coin (small close*volume) is
     rejected by the absolute $-volume floor; a real one passes."""

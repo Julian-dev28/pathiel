@@ -241,7 +241,7 @@
     "history_bars": 40
   },
   "vol_breakout_long": {
-    "enabled": false,
+    "enabled": true,
     "shadow_only": false,
     "entry_mode": "immediate",
     "vol_ref": "prev",
@@ -261,14 +261,16 @@
     "retrace_threshold": 0.1,
     "protect_pct": 1.0,
     "stop_pct": 15.0,
-    "notional_usd": 100.0,
-    "leverage": 12,
+    "notional_usd": 20.0,
+    "leverage": 1,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
-    "max_book_positions": 3
+    "max_book_positions": 3,
+    "side": "short",
+    "executor_short_volume_floor_usd": 5000000
   },
   "vol_breakout_wide": {
-    "enabled": false,
+    "enabled": true,
     "shadow_only": false,
     "entry_mode": "immediate",
     "vol_ref": "prev",
@@ -294,11 +296,13 @@
       }
     ],
     "stop_pct": 30.0,
-    "notional_usd": 200.0,
-    "leverage": 12,
+    "notional_usd": 20.0,
+    "leverage": 1,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
-    "max_book_positions": 3
+    "max_book_positions": 3,
+    "side": "short",
+    "executor_short_volume_floor_usd": 5000000
   },
   "neg_funding_fade": {
     "enabled": true,

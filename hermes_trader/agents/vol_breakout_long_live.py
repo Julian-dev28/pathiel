@@ -252,18 +252,25 @@ def _analysis(coin: str, sig: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, 
     hold_hours = float(cfg.get("hold_hours", 4.0))
     retrace = float(cfg.get("retrace_threshold", 0.10))   # TIGHT floor — do NOT loosen
     protect = float(cfg.get("protect_pct", 1.0))
-    return {
+    # side: 'long' = ride the breakout (refuted, no edge). 'short' = FADE the green
+    # volume pop (validated 2026-06-29: with the $250k $-floor, shorting the 1.5x-vol
+    # green candle beats a random-short null by +0.120% — the pop is a blow-off that reverts).
+    side = "short" if str(cfg.get("side", "long")).lower() == "short" else "long"
+    is_short = side == "short"
+    out = {
         "id": str(uuid.uuid4()),
         "coin": coin,
-        "verdict": "LONG",
-        "side": "long",
+        "verdict": "SHORT" if is_short else "LONG",
+        "side": side,
         "confidence": 0.99,
         "entry_px": 0.0,
         "stop_px": 0.0,
         "tp_px": 0.0,
         "reasoning": (
-            f"[vol_breakout_long] confirmed 5m breakout: breakout vol {sig['breakout_vol_x']:.1f}x, "
-            f"confirm vol {sig['confirm_vol_x']:.1f}x (follow-through)"
+            (f"[{_BOOK_NAME}] FADE the 5m green vol-pop "
+             if is_short else f"[{_BOOK_NAME}] confirmed 5m breakout: ")
+            + f"breakout vol {sig['breakout_vol_x']:.1f}x, confirm vol {sig['confirm_vol_x']:.1f}x"
+            + (" -> SHORT the blow-off" if is_short else " (follow-through)")
         ),
         "news_risk": "none",
         "ai_down": False,
@@ -289,6 +296,10 @@ def _analysis(coin: str, sig: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, 
             # No phase-2 loosening: breakout-longs mean-revert fast (exit_strategy_kaito.md).
         },
     }
+    if is_short:
+        out["min_short_volume_usd_override"] = float(cfg.get("executor_short_volume_floor_usd",
+                                                             cfg.get("min_volume_usd", 5_000_000.0)))
+    return out
 
 
 def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
@@ -418,7 +429,7 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
-                logger.info(f"[vol-breakout-long] LIVE opened long {coin} "
+                logger.info(f"[vol-breakout-long] LIVE opened {cfg.get("side","long")} {coin} "
                             f"(breakout {sig['breakout_vol_x']:.1f}x, confirm {sig['confirm_vol_x']:.1f}x)")
             else:
                 skipped["blocked"] += 1

@@ -75,16 +75,19 @@ def _analysis(coin: str, sig: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, 
     arm_pct = float(cfg.get("protect_pct", 10.0))          # arm the trail LATE (+10%)
     retrace = float(cfg.get("retrace_threshold", 0.35))    # give back 35% of peak gain
     tiers = cfg.get("phase2_tiers") or [{"pct_above_entry": 30.0, "retrace_threshold": 0.45}]
-    return {
+    side = "short" if str(cfg.get("side", "long")).lower() == "short" else "long"
+    is_short = side == "short"
+    out = {
         "id": str(uuid.uuid4()),
         "coin": coin,
-        "verdict": "LONG",
-        "side": "long",
+        "verdict": "SHORT" if is_short else "LONG",
+        "side": side,
         "confidence": 0.99,
         "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
         "reasoning": (
-            f"[vol_breakout_wide] 5m vol-influx {sig['breakout_vol_x']:.1f}x + confirm "
-            f"{sig['confirm_vol_x']:.1f}x; WIDE {stop_pct:.0f}% stop, arm-late +{arm_pct:.0f}% trail"
+            (f"[{_BOOK_NAME}] FADE the 5m green vol-pop {sig['breakout_vol_x']:.1f}x -> SHORT, WIDE {stop_pct:.0f}% stop"
+             if is_short else
+             f"[{_BOOK_NAME}] 5m vol-influx {sig['breakout_vol_x']:.1f}x; WIDE {stop_pct:.0f}% stop, arm-late +{arm_pct:.0f}% trail")
         ),
         "news_risk": "none", "ai_down": False,
         "created_at": int(time.time() * 1000),
@@ -109,6 +112,10 @@ def _analysis(coin: str, sig: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, 
             "phase2_tiers": tiers,        # loosen further on a real runner (ride the tail)
         },
     }
+    if is_short:
+        out["min_short_volume_usd_override"] = float(cfg.get("executor_short_volume_floor_usd",
+                                                             cfg.get("min_volume_usd", 5_000_000.0)))
+    return out
 
 
 def maybe_run(config: Dict[str, Any], universe, positions,
@@ -187,7 +194,7 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
-                logger.info(f"[vol-breakout-wide] LIVE opened long {coin} "
+                logger.info(f"[vol-breakout-wide] LIVE opened {cfg.get("side","long")} {coin} "
                             f"(influx {sig['breakout_vol_x']:.1f}x, wide stop)")
             else:
                 skipped["blocked"] += 1
