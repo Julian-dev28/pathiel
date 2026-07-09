@@ -1038,6 +1038,26 @@ while True:
                 log_event({"event": "error", "coin": coin,
                            "error": f"{type(e).__name__}: {detail}"})
 
+        # Second DSL pass with fresh mids (audit 2026-07-10): the scan+books
+        # phase takes 20-100s, so a breach right after the first pass waited a
+        # full period (measured overshoot median +0.26% spot, tail +3.16%).
+        # One extra allMids fetch (weight 2) halves the worst-case reaction.
+        try:
+            for ex in monitor_exits(get_all_hl_mids(include_hip3=True)):
+                _c = ex["coin"]
+                _lev = ex.get("leverage", 1)
+                logger.info(f"[dsl#2] Closing {_c} {ex.get('side', '?')} ({_lev}x): {ex['reason']}")
+                _res = close_position_market(_c)
+                log_event({"event": "dsl_exit", "coin": _c, "side": ex.get("side"),
+                           "leverage": _lev, "reason": ex["reason"], "pass": 2,
+                           "unrealized_pct": round(ex["unrealized_pct"], 4),
+                           "leveraged_pct": round(ex.get("leveraged_pct",
+                                                         ex["unrealized_pct"] * _lev), 4),
+                           "executed": bool(_res.get("ok")),
+                           "detail": _res.get("order_id") or _res.get("noop") or _res.get("error")})
+        except Exception as _e2:
+            logger.error(f"[dsl#2] pass failed (non-fatal): {_e2}")
+
         _last_progress_ts = time.time()  # watchdog: a full cycle completed
         logger.info(f"Sleeping {scan_interval}s until next scan...")
         time.sleep(scan_interval)

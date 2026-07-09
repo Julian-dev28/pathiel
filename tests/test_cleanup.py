@@ -274,7 +274,8 @@ def test_triggers_return_shape():
     cs = _candles(150)
     for fn in (pct_move_spike, volume_spike, breakout, range_compression, trend_strength):
         h = fn(cs)
-        assert set(h) == {"name", "score", "reason", "fired"}
+        assert {"name", "score", "reason", "fired"} <= set(h)
+        assert set(h) <= {"name", "score", "reason", "fired", "direction"}
         assert isinstance(h["fired"], bool)
 
 
@@ -1975,7 +1976,8 @@ def test_endpoint_weight_mapping():
     assert endpoint_weight("candleSnapshot") == 20
     assert endpoint_weight("allMids") == 2
     assert endpoint_weight("clearinghouseState") == 2
-    assert endpoint_weight("userNonFundingLedgerUpdates") == 2
+    # 2026-07-10: was undercounted 10x (real HL weight is 20)
+    assert endpoint_weight("userNonFundingLedgerUpdates") == 20
     assert endpoint_weight(None) == 20         # unknown → expensive bucket
     assert endpoint_weight("madeUpType") == 20
 
@@ -3428,3 +3430,71 @@ def test_thin_short_relax_requires_thin_to_be_only_failure(monkeypatch):
     a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.85
     r = ex.maybe_execute(a)
     assert r.get("executed") is False
+
+
+def test_impulse_triggers_expose_direction():
+    """2026-07-10: a +12% rally and a -12% crash must no longer be indistinguishable."""
+    from hermes_trader.indicators.triggers import (breakout, momentum_burst,
+                                                   pct_move_spike, shock_day)
+    def bars(closes, base=100.0):
+        out, prev = [], base
+        for c in closes:
+            out.append({"t": 0, "o": prev, "h": max(prev, c) + 0.1,
+                        "l": min(prev, c) - 0.1, "c": c, "v": 1e6})
+            prev = c
+        return out
+    noisy = [100.0 + (i % 5) * 0.15 for i in range(60)]
+    up = bars(noisy + [112.0])
+    down = bars(noisy + [88.0])
+    assert momentum_burst(up)["direction"] == "up"
+    assert momentum_burst(down)["direction"] == "down"
+    assert breakout(up)["direction"] == "up"
+    assert breakout(down)["direction"] == "down"
+    assert pct_move_spike(up)["direction"] == "up"
+    assert pct_move_spike(down)["direction"] == "down"
+    gap_up = bars([100.0] * 5) + [{"t": 0, "o": 103, "h": 106, "l": 102.5, "c": 105, "v": 1e6}]
+    gap_dn = bars([100.0] * 5) + [{"t": 0, "o": 97, "h": 97.5, "l": 94, "c": 95, "v": 1e6}]
+    assert shock_day(gap_up)["direction"] == "up"
+    assert shock_day(gap_dn)["direction"] == "down"
+
+
+def test_runner_gate_demotes_down_impulse_longs(monkeypatch):
+    """A LONG whose 'structure' is a DOWN impulse must be blocked; the same
+    structure pointing UP passes; shorts and legacy events unaffected."""
+    from hermes_trader.agents.executor import _runner_entry_block_reason
+    cfg = {"runner_entry_gate": {"enabled": True, "min_confidence": 0.65,
+                                 "min_composite": 30.0, "min_crypto_composite": 20.0}}
+    base = {"coin": "ALT", "side": "long", "confidence": 0.9, "composite_score": 48.6,
+            "volume_spike_fired": True, "breakout_fired": True,
+            "momentum_burst_fired": True, "slow_burn_count": 1,
+            "daily_move_pct": 0.0}
+    # down-impulse long: blocked
+    r = _runner_entry_block_reason({**base, "up_impulse_fired": False}, cfg)
+    assert r and "runner_gate_blocked" in r
+    # up-impulse long: passes
+    assert _runner_entry_block_reason({**base, "up_impulse_fired": True}, cfg) == ""
+    # legacy analysis without the key: unaffected (explicit-False-only)
+    assert _runner_entry_block_reason(dict(base), cfg) == ""
+    # hot-revert flag
+    cfg_off = {"runner_entry_gate": {**cfg["runner_entry_gate"],
+                                     "require_long_up_impulse": False}}
+    assert _runner_entry_block_reason({**base, "up_impulse_fired": False}, cfg_off) == ""
+
+
+def test_backup_sl_aligned_to_dsl_cap(monkeypatch):
+    """Audit 2026-07-10: stops overshot the DSL cap by up to +3.16% between
+    cycles. The ATR backup SL must clamp to buffer x the effective DSL stop."""
+    ex, captured, _ = _exec_baseline(monkeypatch, {
+        "sl_atr_mult": 1.5,
+        "backup_sl_dsl_buffer": 1.4,
+        "dsl_exit": {"max_loss_pct": 1.0, "max_loss_roe_pct": 100.0},
+    })
+    triggers = []
+    monkeypatch.setattr(ex, "place_hl_trigger_order",
+                        lambda is_buy, sz, px, kind, coin: triggers.append((kind, px)) or {"ok": True})
+    r = ex.maybe_execute(_analysis())
+    assert r.get("executed") is True, r
+    sls = [px for kind, px in triggers if kind == "sl"]
+    assert sls, triggers
+    # entry ~100 (mid), ATR 40 -> raw 1.5xATR = 60% away; DSL cap 1% x 1.4 = 1.4%
+    assert abs(100.0 - sls[0]) / 100.0 <= 0.015 + 1e-6

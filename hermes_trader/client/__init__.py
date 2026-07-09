@@ -7,7 +7,6 @@ from hermes_trader.client.hl_client import (
     fetch_all_mids,
     fetch_hl_candles,
     get_info,
-    start_ws_mids,
     stop_ws_mids,
 )
 from hermes_trader.client.universe import get_market_by_coin, get_universe
@@ -21,7 +20,6 @@ __all__ = [
     "fetch_all_mids",
     "fetch_hl_candles",
     "get_info",
-    "start_ws_mids",
     "stop_ws_mids",
     # Universe
     "get_universe",

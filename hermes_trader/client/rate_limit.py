@@ -28,10 +28,10 @@ _ENDPOINT_WEIGHT = {
     "clearinghouseState": 2,
     "spotClearinghouseState": 2,
     "l2Book": 2,
-    "userNonFundingLedgerUpdates": 2,
-    "perpDexs": 2,
-    "portfolio": 2,
-    "userFills": 2,
+    "userNonFundingLedgerUpdates": 20,
+    "perpDexs": 20,
+    "portfolio": 20,
+    "userFills": 20,
 }
 
 
@@ -80,7 +80,13 @@ class TokenBucket:
 # scan legitimately bursts ~50 candleSnapshot calls (weight ~= 1000) then sleeps;
 # the refill stays at 1200 weight/min, while the burst cap is large enough that
 # those workers queue instead of timing out and producing fake candle gaps.
+# Sized so loop + server FIT the per-IP budget (audit 2026-07-10: the old
+# 600cap+20/s loop plus 200cap+5/s server allowed 2,300 weight/min against
+# HL's 1,200 — the limiter never braked while the exchange returned 522 real
+# 429s/14d). Loop: 300 burst + 15/s = 900/min sustained; server (restart.sh
+# env) gets 60 burst + 2/s = 120/min. Combined ~1,020/min, margin for the SDK
+# calls that bypass this bucket.
 HL_LIMITER = TokenBucket(
-    capacity=int(os.environ.get("HERMES_HL_RATE_CAPACITY", "600")),
-    refill_per_sec=float(os.environ.get("HERMES_HL_RATE_REFILL_PER_SEC", "20")),
+    capacity=int(os.environ.get("HERMES_HL_RATE_CAPACITY", "300")),
+    refill_per_sec=float(os.environ.get("HERMES_HL_RATE_REFILL_PER_SEC", "15")),
 )

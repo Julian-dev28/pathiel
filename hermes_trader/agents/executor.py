@@ -1042,6 +1042,28 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 leverage=leverage,
                 max_frac_of_liq=backup_sl_max_frac,
             )
+            # Align the server-side net with the DSL's INTENT (audit 2026-07-10:
+            # the 60-90s DSL cadence let stops overshoot a median +0.26% spot,
+            # tail +3.16% — DYDX realized -23.5% ROE vs the 12.5% intended).
+            # Cap the ATR-based backup SL at buffer x the effective DSL stop so
+            # the exchange enforces roughly the intended loss between cycles;
+            # the buffer keeps the DSL as the primary (maker-timed) exit.
+            _dsl_buffer = float(config.get("backup_sl_dsl_buffer", 1.4) or 0.0)
+            if _dsl_buffer > 0 and entry_px > 0:
+                try:
+                    _eff_stop_pct = min(
+                        float(dsl_config.get("max_loss_pct", 0) or 0) or 1e9,
+                        (float(dsl_config.get("max_loss_roe_pct", 0) or 0) / max(1, leverage)) or 1e9,
+                    )
+                except (TypeError, ValueError):
+                    _eff_stop_pct = 0.0
+                if 0 < _eff_stop_pct < 1e9:
+                    _dsl_dist = entry_px * (_eff_stop_pct * _dsl_buffer) / 100.0
+                    _cur_dist = abs(entry_px - sl_px)
+                    if _cur_dist > _dsl_dist > 0:
+                        sl_px = entry_px - _dsl_dist if is_buy else entry_px + _dsl_dist
+                        sl_capped = True
+                        sl_label = f"DSL-aligned {_eff_stop_pct * _dsl_buffer:.2f}% spot"
         backup_sl_px = sl_px
         sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
         if not sl_res.get("ok"):
@@ -1288,6 +1310,17 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
     shock = bool(analysis.get("shock_day_fired")) and bool(gate.get("shock_day_fresh_impulse", False))
 
     fresh_impulse = (volume and (breakout or burst or shock)) or (burst and score >= min_score) or (shock and breakout)
+    # Direction gate (audit 2026-07-10): the impulse triggers were magnitude-only,
+    # so a -12% crash counted as LONG "structure" (+12% rally ≡ -12% crash at
+    # composite 48.6; shorts already required a downtrend — the asymmetry was
+    # backwards). When research computed up_impulse_fired (present key) and it is
+    # False, a LONG's fresh_impulse is demoted. Explicit-False-only keeps old
+    # events/tests and book entries (which bypass this gate) unaffected.
+    # Hot-revert: runner_entry_gate.require_long_up_impulse=false.
+    if (side != "short" and fresh_impulse
+            and bool(gate.get("require_long_up_impulse", True))
+            and analysis.get("up_impulse_fired") is False):
+        fresh_impulse = False
     # A TA-sidestep override is the deliberate "AI PASSed but the TA breakout is confirmed"
     # path (executor upgrades it to LONG @ min_ai_confidence). The forward audit (2026-06-28)
     # proved the AI's confidence is INVERTED on exactly these: 54 sidestep rescues were ALL

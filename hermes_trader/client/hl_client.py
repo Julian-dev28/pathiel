@@ -30,7 +30,7 @@ from hermes_trader.models.types import Candle
 
 if TYPE_CHECKING:
     from hyperliquid.info import Info
-    from hermes_trader.client.ws_client import HyperliquidWebSocket
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,9 @@ def init_info() -> None:
             # skip_ws=True prevents blocking WS connect + meta fetch
             # We already have meta from HTTP above
             _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta)
-            logger.info("[hl] Info client initialized (HTTP-only)")
+            from hermes_trader.client.exchange import _set_session_timeout
+            _set_session_timeout(_info_instance)
+            logger.info("[hl] Info client initialized (HTTP-only, 10s timeout)")
         except Exception as e:
             logger.warning(f"[hl] Failed to create Info: {e}")
             _info_instance = None
@@ -421,37 +423,14 @@ def fetch_aggregate_contributions_since(user: str, start_ms: int) -> float:
 # The persistent WebSocket connection gives sub-second latency for all 500+
 # market prices. It's used by the autonomous scanning loop for real-time data.
 
-_ws_mids_instance: "HyperliquidWebSocket | None" = None
-_ws_mids_lock = threading.Lock()
 
 
-def _get_ws_mids_instance() -> "HyperliquidWebSocket | None":
-    """Return the active WebSocket mids instance, or None if not started."""
-    with _ws_mids_lock:
-        return _ws_mids_instance
-
-
-def _try_ws_mids() -> Dict[str, str] | None:
-    """Try to get mids from the persistent WebSocket (non-blocking).
-
-    Returns None immediately if WS isn't running. Caller decides whether
-    to fall back to HTTP.
-    """
-    ws = _get_ws_mids_instance()
-    if ws is None:
-        return None
-    mids = ws.get_all_mids()
-    if mids:
-        return {k: str(v) for k, v in mids.items()}
-    return None
 
 
 def fetch_all_mids(include_hip3: bool = False) -> Dict[str, str]:
     """Get all mid prices.
 
-    For one-shot commands: uses HTTP POST (reliable, fast).
-    For the autonomous loop: use start_ws_mids() to keep a persistent
-    WebSocket running, then call ws.get_all_mids() for sub-second data.
+    HTTP POST only (the never-invoked WebSocket path was deleted 2026-07-10).
 
     Args:
         include_hip3: when True, also fetches `allMids` for each HIP-3 perpDex
@@ -459,19 +438,11 @@ def fetch_all_mids(include_hip3: bool = False) -> Dict[str, str]:
             ~8 small POSTs per call — only enable from contexts that need
             tokenized-equity / commodity prices.
     """
-    ws_result = _try_ws_mids()
-    if ws_result and not include_hip3:
-        # WebSocket only carries the native HL perp mids; if HIP-3 is needed
-        # we fall through to per-dex HTTP fetches below.
-        return ws_result
-
     # Native perp + spot mids (one HTTP POST).
     raw = _http_post("/info", {"type": "allMids"})
     out: Dict[str, str] = {}
     if raw and isinstance(raw, dict):
         out = {k: str(v) for k, v in raw.items()}
-    elif ws_result:
-        out = dict(ws_result)
 
     if include_hip3:
         # HIP-3 mids live behind a `dex` parameter. Walk the registered dex list
@@ -485,21 +456,6 @@ def fetch_all_mids(include_hip3: bool = False) -> Dict[str, str]:
     return out
 
 
-def start_ws_mids() -> "HyperliquidWebSocket | None":
-    """Start the persistent WebSocket for real-time mids (call once at startup)."""
-    global _ws_mids_instance
-    with _ws_mids_lock:
-        if _ws_mids_instance is None:
-            try:
-                from hermes_trader.client.ws_client import HyperliquidWebSocket
-                ws = HyperliquidWebSocket()
-                ws.start()
-                _ws_mids_instance = ws
-                logger.info("[hl] WebSocket started for real-time mids")
-            except Exception as e:
-                logger.warning(f"[hl] WebSocket init failed: {e}")
-                return None
-        return _ws_mids_instance
 
 
 def stop_ws_mids() -> None:

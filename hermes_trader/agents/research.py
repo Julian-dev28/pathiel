@@ -438,7 +438,15 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
                 t.get("name") == "dailyMover" and t.get("fired")
                 for t in (perception.get("triggers") or [])
             ),
-            "daily_move_pct": perception.get("daily_move_pct"),
+            # Direction-aware impulse (2026-07-10): True iff any IMPULSE trigger
+        # fired pointing UP. The runner gate requires this for LONG structure —
+        # a -12% crash used to score identically to a +12% rally.
+        "up_impulse_fired": any(
+            t.get("fired") and t.get("direction") == "up"
+            and t.get("name") in ("pctMoveSpike", "breakout", "momentumBurst", "shockDay")
+            for t in (perception.get("triggers") or [])
+        ),
+        "daily_move_pct": perception.get("daily_move_pct"),
             "daily_volume_usd": perception.get("daily_volume_usd"),
         }
         memory.record_analysis(analysis)
@@ -550,6 +558,14 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         ),
         "daily_mover_fired": any(
             t.get("name") == "dailyMover" and t.get("fired")
+            for t in (perception.get("triggers") or [])
+        ),
+        # Direction-aware impulse (2026-07-10): True iff any IMPULSE trigger
+        # fired pointing UP. The runner gate requires this for LONG structure —
+        # a -12% crash used to score identically to a +12% rally.
+        "up_impulse_fired": any(
+            t.get("fired") and t.get("direction") == "up"
+            and t.get("name") in ("pctMoveSpike", "breakout", "momentumBurst", "shockDay")
             for t in (perception.get("triggers") or [])
         ),
         "daily_move_pct": perception.get("daily_move_pct"),

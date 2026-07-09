@@ -247,6 +247,15 @@ class AgentMemory:
             self._day_start_ts = today_utc
             self._daily_pnl = 0
             self._peak_daily_pnl = 0  # reset high-water mark at the UTC day roll
+            # Flush the fresh baseline IMMEDIATELY: on days with no bot trades
+            # nothing else flushes, so a mid-day restart reloads yesterday's
+            # dayStartTs and re-baselines SOD to CURRENT equity — laundering the
+            # day's drawdown out of the kill-switch (observed 2026-07-09/10:
+            # five restarts across a -$75 night, kill never saw it).
+            try:
+                self.flush()
+            except Exception:
+                pass
         else:
             self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
         # Track the day's peak PnL so a give-back breaker can lock in green days.
