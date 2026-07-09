@@ -3401,3 +3401,25 @@ def test_thin_short_block_records_shadow_counterfactual(monkeypatch):
     a2["verdict"], a2["side"], a2["confidence"] = "SHORT", "short", 0.55
     ex.maybe_execute(a2)
     assert [x for x in recorded if x[0] == "thin_short_relax"] == []
+
+
+def test_ai_long_notional_cap_applies_only_to_main_engine_longs(monkeypatch):
+    """W-G1 lever: anti-calibrated AI longs get SIZE-capped (not conf-floored —
+    higher confidence was WORSE). Books and shorts are untouched."""
+    # main-engine AI long: equity 1000 x 0.10 x 10 = $1000 -> capped to $100
+    ex, captured, _ = _exec_baseline(monkeypatch, {"ai_long_notional_usd": 100})
+    r = ex.maybe_execute(_analysis())
+    assert r.get("executed") is True, r
+    assert captured["size"] * 100.0 <= 110       # size x mid(100) = notional ~<= $100
+    # strategy-book long is EXEMPT (validated edges keep their sizing)
+    ex, captured, _ = _exec_baseline(monkeypatch, {"ai_long_notional_usd": 100})
+    a = _analysis()
+    a["strategy_book"] = "extreme_fade"
+    a["strategy_book_notional"] = 400
+    r = ex.maybe_execute(a)
+    assert r.get("executed") is True, r
+    assert captured["size"] * 100.0 > 300        # book cap ($400), not the AI-long cap
+    # 0 disables
+    ex, captured, _ = _exec_baseline(monkeypatch, {"ai_long_notional_usd": 0})
+    r = ex.maybe_execute(_analysis())
+    assert r.get("executed") is True and captured["size"] * 100.0 > 500

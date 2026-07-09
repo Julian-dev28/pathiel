@@ -131,6 +131,7 @@
   "strategy_book_notional_usd": 50,
   "strategy_book_equity_frac": 0,
   "short_notional_usd": 100,
+  "ai_long_notional_usd": 100,
   "xs_momentum": {
     "enabled": true,
     "lookback_days": 7,

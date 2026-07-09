@@ -678,6 +678,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     _short_notional = float(config.get("short_notional_usd", 0) or 0)
     if (analysis.get("side") == "short") and _short_notional > 0:
         _notional_cap = min(_notional_cap, _short_notional) if _notional_cap > 0 else _short_notional
+    # AI-LONG size cap (W-G1, 2026-07-09): the AI's long verdicts are ANTI-calibrated
+    # — conf 0.70-0.80 longs ran -2.13%@24h (n=609, both halves, below matched
+    # random-time null) and HIGHER confidence did worse, so a confidence floor
+    # can't fix it. Cap the main engine's AI-long notional instead: exposure
+    # drops ~10x while entries keep flowing for the confirmation window.
+    # Strategy books (validated long edges like extreme_fade) are EXEMPT.
+    # 0 disables (hot-read, reversible).
+    _ai_long_notional = float(config.get("ai_long_notional_usd", 0) or 0)
+    if (analysis.get("side") != "short" and not analysis.get("strategy_book")
+            and _ai_long_notional > 0):
+        _notional_cap = min(_notional_cap, _ai_long_notional) if _notional_cap > 0 else _ai_long_notional
     mid_price = 0.0
     atr = 0.0
     size_in_coin = 0.0
