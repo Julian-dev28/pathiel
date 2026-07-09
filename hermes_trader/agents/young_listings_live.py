@@ -249,11 +249,14 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     signals = _candidate_signals(cfg, universe, fetch_candles, now_ms)
     shadow_only = bool(cfg.get("shadow_only", True))
 
-    # Record EVERY trigger in the continuation frame (side = move direction);
-    # the fade hypothesis grades as its mirror. Both modes, always.
+    # Record EVERY trigger as a hypothetical LONG (W-Y1 spec 2026-07-10): for
+    # down-moves that IS the one non-refuted hypothesis (crash-fade-long,
+    # +1.17% young / +1.63% mature @25bps); for up-moves it is the refuted
+    # chase, kept as the null control. Go-live rule: >=60 forward days with
+    # young EV25 > 0, mature EV25 > 0, young n >= 15 -> down_action="long".
     shadow_ledger.record_many(_BOOK_NAME, [{
         "coin": s["coin"],
-        "side": "long" if s["direction"] == "up" else "short",
+        "side": "long",
         "signal_bar_t": s["signal_bar_t"], "entry_ref_px": s["entry_ref_px"],
         "horizon_days": float(cfg.get("hold_days", 2.0)),
         "stop_pct": float(cfg.get("stop_pct", 15.0)),

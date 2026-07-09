@@ -97,7 +97,9 @@ def test_non_xyz_and_thin_coins_excluded(monkeypatch):
 
 
 # ---------------------------------------------------------------- actions + recording
-def test_shadow_records_continuation_frame(monkeypatch):
+def test_shadow_records_fade_long_frame(monkeypatch):
+    """W-Y1 spec: down-moves record as hypothetical fade-LONG (the one
+    non-refuted hypothesis); direction meta separates the refuted-chase control."""
     captured, _ = _setup(monkeypatch)
     calls = []
     rec = yl.maybe_run(_cfg(shadow_only=True), _uni(), [], _fetch(move=-11.0),
@@ -106,7 +108,7 @@ def test_shadow_records_continuation_frame(monkeypatch):
     book, rows = captured[0]
     assert book == "young_listings"
     r = rows[0]
-    assert r["side"] == "short" and r["meta"]["direction"] == "down"
+    assert r["side"] == "long" and r["meta"]["direction"] == "down"
     assert r["meta"]["age_bars"] == 18 and r["stop_pct"] == 15.0
 
 

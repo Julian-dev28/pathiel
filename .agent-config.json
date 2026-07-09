@@ -128,6 +128,11 @@
   "strategy_book_equity_frac": 0,
   "short_notional_usd": 100,
   "ai_long_notional_usd": 100,
+  "thin_short_relax": {
+    "enabled": true,
+    "min_confidence": 0.72,
+    "notional_usd": 20.0
+  },
   "xs_momentum": {
     "enabled": true,
     "lookback_days": 7,
@@ -165,7 +170,7 @@
       "enabled": true,
       "window": 20,
       "threshold": 0.0,
-      "enforce": false
+      "enforce": true
     }
   },
   "rally_exhaustion": {
@@ -248,7 +253,7 @@
   },
   "funding_spike_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "scan_interval_hours": 6,
     "entry_z": 2.0,
     "exit_z": 1.0,
@@ -273,7 +278,7 @@
     "min_volume_usd": 3000000,
     "executor_short_volume_floor_usd": 3000000,
     "entry_window_hours": 8.0,
-    "hold_days": 2.0,
+    "hold_days": 1.0,
     "stop_pct": 15.0,
     "notional_usd": 15.0,
     "leverage": 1,

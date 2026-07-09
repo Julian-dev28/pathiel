@@ -3302,7 +3302,7 @@ def test_thin_short_block_records_shadow_counterfactual(monkeypatch):
     ex, captured, _ = _exec_baseline(monkeypatch, {
         "min_short_volume_usd": 50_000_000,   # floor above the stubbed volume
     })
-    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 1_000_000.0)  # thin
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)  # thin
     recorded = []
     from hermes_trader.agents import shadow_ledger as SL
     monkeypatch.setattr(SL, "record",
@@ -3381,3 +3381,50 @@ def test_book_capital_carveout_bypasses_aggregate_gates():
     # config kill restores the aggregate gates for books
     off = eval_all_gates(ctx, {**cfg, "book_capital_carveout": False}, None, is_book=True)
     assert off["blocked"] is True
+
+
+def test_thin_short_relax_live_path(monkeypatch):
+    """Operator flip 2026-07-10: conf>=0.72 short whose ONLY failing gate is the
+    thin floor is ADMITTED at the dedicated $20 cap; everything else still blocks."""
+    ex, captured, _ = _exec_baseline(monkeypatch, {
+        "min_short_volume_usd": 50_000_000,
+        "thin_short_relax": {"enabled": True, "min_confidence": 0.72, "notional_usd": 20.0},
+    })
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)
+    a = _analysis()
+    a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.85
+    r = ex.maybe_execute(a)
+    assert r.get("executed") is True, r
+    assert r["size_usd"] <= 22          # relax cap binds (mid=100 -> 0.2 coins)
+    # below min_confidence: still blocked (and shadow-recorded)
+    ex, captured, _ = _exec_baseline(monkeypatch, {
+        "min_short_volume_usd": 50_000_000,
+        "thin_short_relax": {"enabled": True, "min_confidence": 0.72, "notional_usd": 20.0},
+    })
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)
+    a = _analysis()
+    a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.71
+    r = ex.maybe_execute(a)
+    assert r.get("executed") is False
+    # relax disabled: blocked even at high confidence
+    ex, captured, _ = _exec_baseline(monkeypatch, {"min_short_volume_usd": 50_000_000})
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)
+    a = _analysis()
+    a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.85
+    r = ex.maybe_execute(a)
+    assert r.get("executed") is False
+
+
+def test_thin_short_relax_requires_thin_to_be_only_failure(monkeypatch):
+    """If ANY other gate also fails (here: confidence floor), the relax must NOT
+    override the block — it is a thin-floor carve, not a general bypass."""
+    ex, captured, _ = _exec_baseline(monkeypatch, {
+        "min_short_volume_usd": 50_000_000,
+        "min_ai_confidence": 0.9,       # confidence gate fails too
+        "thin_short_relax": {"enabled": True, "min_confidence": 0.72, "notional_usd": 20.0},
+    })
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)
+    a = _analysis()
+    a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.85
+    r = ex.maybe_execute(a)
+    assert r.get("executed") is False

@@ -806,37 +806,58 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                                  is_book=bool(analysis.get("strategy_book")))
 
     if gate_output["blocked"]:
-        # Lane G shadow counterfactual (W-G1, 2026-07-09): the thin-short floor
-        # blocked 314 conf>=0.70 shorts that averaged +1.12% forward (MC p=0.001,
-        # beats matched null). Record those exact rejections to the ledger so the
-        # forward grade can confirm/refute BEFORE any floor change. Recording
-        # only — no order path. Promotion bar: >=30 entries, +EV net 25bps.
-        try:
-            if (analysis.get("side") == "short"
-                    and float(analysis.get("confidence", 0) or 0) >= 0.70
-                    and not analysis.get("strategy_book")
-                    and mid_price > 0
-                    and any("short on thin market" in str(r)
-                            for r in gate_output["block_reasons"])):
-                from hermes_trader.agents import shadow_ledger as _sl
-                _now_ms = int(time.time() * 1000)
-                _sl.record("thin_short_relax", coin=coin, side="short",
-                           signal_bar_t=(_now_ms // 3_600_000) * 3_600_000,
-                           entry_ref_px=mid_price, horizon_days=1.0, stop_pct=20.0,
-                           meta={"confidence": float(analysis.get("confidence", 0) or 0),
-                                 "blocked_by": "thin_short_floor", "shadow": True})
-        except Exception:
-            pass
+        # thin_short_relax (W-G1, 2026-07-09): the thin-short floor blocked 314
+        # conf>=0.70 shorts that averaged +1.12% forward (MC p=0.001, beats the
+        # matched null, both halves). LIVE path (operator flip 2026-07-10): when
+        # the ONLY failing gate is the thin-short floor and confidence clears
+        # min_confidence, admit at a small dedicated notional. Everything that
+        # doesn't clear the live bar still records to the shadow ledger.
+        _is_thin_short_reject = (
+            analysis.get("side") == "short"
+            and not analysis.get("strategy_book")
+            and mid_price > 0
+            and any("short on thin market" in str(r)
+                    for r in gate_output["block_reasons"]))
+        _tsr = config.get("thin_short_relax") or {}
+        _failing = {k for k, r in gate_output["results"].items() if not r.get("pass")}
+        _relax_admit = (
+            _is_thin_short_reject
+            and bool(_tsr.get("enabled", False))
+            and _failing == {"short_liquidity"}
+            and float(analysis.get("confidence", 0) or 0)
+                >= float(_tsr.get("min_confidence", 0.72)))
 
-        # Don't write blocked attempts to memory._trades — the cooldown gate
-        # keys off the most recent trade-by-coin and would self-perpetuate.
-        # Visibility comes from the `execute` event in the session log.
-        return {
-            "executed": False, "mode": mode,
-            "analysis_id": analysis["id"],
-            "blocked_by": gate_output["block_reasons"],
-            "gate_results": gate_output["results"],
-        }
+        if _relax_admit:
+            _relax_cap = float(_tsr.get("notional_usd", 20.0))
+            if trade_notional > _relax_cap:
+                trade_notional = _relax_cap
+                size_in_coin = entry_size_for_notional(coin, trade_notional, mid_price)
+            logger.warning(
+                f"[executor] thin_short_relax ADMIT {coin} short "
+                f"(conf {float(analysis.get('confidence', 0) or 0):.2f}, "
+                f"notional capped ${trade_notional:.0f} — W-G1 counterfactual path)")
+        else:
+            if _is_thin_short_reject and float(analysis.get("confidence", 0) or 0) >= 0.70:
+                try:
+                    from hermes_trader.agents import shadow_ledger as _sl
+                    _now_ms = int(time.time() * 1000)
+                    _sl.record("thin_short_relax", coin=coin, side="short",
+                               signal_bar_t=(_now_ms // 3_600_000) * 3_600_000,
+                               entry_ref_px=mid_price, horizon_days=1.0, stop_pct=20.0,
+                               meta={"confidence": float(analysis.get("confidence", 0) or 0),
+                                     "blocked_by": "thin_short_floor", "shadow": True})
+                except Exception:
+                    pass
+
+            # Don't write blocked attempts to memory._trades — the cooldown gate
+            # keys off the most recent trade-by-coin and would self-perpetuate.
+            # Visibility comes from the `execute` event in the session log.
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "blocked_by": gate_output["block_reasons"],
+                "gate_results": gate_output["results"],
+            }
 
     if not os.environ.get("HYPERLIQUID_PRIVATE_KEY"):
         return {
