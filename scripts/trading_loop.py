@@ -57,13 +57,9 @@ from hermes_trader.agents.xs_momentum_live import (
 )
 from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
-from hermes_trader.agents.hail_mary_short_live import maybe_run as _hail_mary_short_maybe_run
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
-from hermes_trader.agents.premium_fade_short_live import maybe_run as _premium_fade_short_maybe_run
-from hermes_trader.agents.vol_breakout_long_live import maybe_run as _vol_breakout_long_maybe_run
 from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
-from hermes_trader.agents.vol_breakout_wide_live import maybe_run as _vol_breakout_wide_maybe_run
 from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
@@ -285,49 +281,6 @@ def _pre_research_runner_block_reason(perception, config):
     return _runner_entry_block_reason(analysis_stub, config)
 
 
-def _capital_rotation_live(config) -> bool:
-    rot = config.get("capital_rotation") or {}
-    return bool(rot.get("enabled", False))
-
-
-def _rotation_preflight_eval(coin, perception, positions, config):
-    """Would capital rotation free room for a margin-blocked fresh `coin`?
-
-    The pre-research margin preflight is upstream of executor-stage rotation, so a
-    strong margin-blocked mover would otherwise die before rotation sees it. This
-    mirrors the executor's rotation eval and is fully guarded.
-    """
-    try:
-        rot = config.get("capital_rotation") or {}
-        if not bool(rot.get("enabled", False)):
-            return None
-        from hermes_trader.agents.rotation import decide_rotation
-        from hermes_trader.agents import dsl_exit as _dsl
-        now = time.time()
-        opos = []
-        for p in (positions or []):
-            pp = p.get("position", p) if isinstance(p, dict) else {}
-            c = pp.get("coin")
-            if not c or c == coin:
-                continue
-            tr = (_dsl._active_positions.get(f"{c}_long")
-                  or _dsl._active_positions.get(f"{c}_short"))
-            age = (now - tr.entry_time) / 60.0 if tr is not None else 0.0
-            opos.append({"coin": c,
-                         "roe_pct": float(pp.get("returnOnEquity", 0) or 0) * 100.0,
-                         "age_minutes": age})
-        return decide_rotation(
-            candidate_coin=coin,
-            candidate_composite=float((perception or {}).get("composite_score", 0) or 0),
-            blocked_reasons=["total notional would exceed"],   # margin saturation == capital block
-            open_positions=opos,
-            min_candidate_composite=float(rot.get("min_candidate_composite", 40.0)),
-            min_hold_minutes=float(rot.get("min_hold_minutes", 30.0)),
-            protect_winner_roe_pct=float(rot.get("protect_winner_roe_pct", 3.0)),
-        )
-    except Exception:
-        return None
-
 
 def _position_value_usd(row) -> float:
     pos = (row or {}).get("position", row or {})
@@ -388,12 +341,11 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
     if equity <= 0:
         return "account_state_unavailable (equity<=0)"
 
-    rotation_live = _capital_rotation_live(config)
     try:
         max_concurrent = int(config.get("max_concurrent", 3) or 3)
     except (TypeError, ValueError):
         max_concurrent = 3
-    if max_concurrent > 0 and len(positions or []) >= max_concurrent and not rotation_live:
+    if max_concurrent > 0 and len(positions or []) >= max_concurrent:
         return f"max_positions_reached ({len(positions or [])}/{max_concurrent})"
 
     total_ntl = 0.0
@@ -405,7 +357,7 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
         max_total_pct = float(config.get("max_total_notional_pct", 0) or 0)
     except (TypeError, ValueError):
         max_total_pct = 0.0
-    if max_total_pct > 0 and total_ntl >= equity * max_total_pct and not rotation_live:
+    if max_total_pct > 0 and total_ntl >= equity * max_total_pct:
         return (f"notional_room_full (${total_ntl:.0f} >= "
                 f"${equity * max_total_pct:.0f} cap)")
 
@@ -425,16 +377,8 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
         avail_pct = target_available / target_equity
         if avail_pct < min_avail_pct:
             label = dex or "main"
-            # Upstream capital-rotation hook: a strong margin-blocked mover is the
-            # exact missed-mover case rotation exists for, but it dies here before
-            # executor-stage rotation can see it. When rotation would free room,
-            # fall through and let research + executor rotation handle the live action.
-            _rd = _rotation_preflight_eval(coin, perception, positions, config)
-            _can_rotate = _rd is not None and _rd.should_rotate
-            if not (rotation_live and _can_rotate):
-                return (f"insufficient_free_margin_preflight ({label}: "
-                        f"{avail_pct*100:.1f}% < {min_avail_pct*100:.0f}%)")
-            # rotation_live and would free room → fall through to remaining preflight gates
+            return (f"insufficient_free_margin_preflight ({label}: "
+                    f"{avail_pct*100:.1f}% < {min_avail_pct*100:.0f}%)")
 
     try:
         vol = float(perception.get("daily_volume_usd", 0) or 0)
@@ -786,17 +730,6 @@ while True:
         except Exception as _ree:
             logger.warning(f"[rally-exhaustion] cycle failed (non-fatal): {_ree}")
 
-        # Hail-Mary AI/semis short basket. Default live config is shadow-only:
-        # it logs trigger quality without allocating capital until promoted.
-        try:
-            _hail_mary_short_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _hmse:
-            logger.warning(f"[hail-mary-short] cycle failed (non-fatal): {_hmse}")
-
         # Crash-continuation divergent-weakness short. Swarm-discovered (extreme_surface 2026-06-27):
         # BTC-up tape + coin -8%/2d divergent weakness -> short continuation. DEFAULT SHADOW
         # (shadow_only:true) — logs candidates + a forward-validation jsonl, allocates ZERO capital
@@ -822,47 +755,6 @@ while True:
             )
         except Exception as _ese:
             logger.warning(f"[engulf-short] cycle failed (non-fatal): {_ese}")
-
-        # Premium-extreme crowded-long fade short. Data-frontier discovery (Lane D D4/D5 2026-06-27):
-        # a perp whose trailing-24h premium z>=2 vs its own 30d dist is a crowded long that reverts.
-        # Orthogonal to the price-based short books (18% overlap). Reads funding history per liquid coin
-        # (6h interval bounds the API cost). DEFAULT SHADOW — records (regime-tagged) to forward-confirm
-        # the regime-tilted/up-regime end. ZERO capital until VALIDATED + operator flip.
-        try:
-            _premium_fade_short_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _pfse:
-            logger.warning(f"[premium-fade-short] cycle failed (non-fatal): {_pfse}")
-
-        # Volume-follow-through breakout LONG. Operator's-eye discovery (MANTA 5m read, 2026-06-29),
-        # validated on 180 small-cap movers: a 5m breakout whose volume spike is CONFIRMED by the next
-        # candle holding elevated volume runs >=20% at ~5x the unconfirmed rate. 5m cadence with a fresh-
-        # bar entry window; scan bounded to active movers (cheap universe pre-filter, no extra API).
-        # SMALL live forward test ($8/1x, tight floor) — relative quality filter, not proven +EV;
-        # revert with vol_breakout_long.shadow_only=true (hot-read). Short 5m TTL so candles are fresh.
-        try:
-            _vol_breakout_long_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _vble:
-            logger.warning(f"[vol-breakout-long] cycle failed (non-fatal): {_vble}")
-
-        # Wide-stop runner sandbox (operator 2026-06-29). SAME volume-influx entry as vol_breakout_long, but a
-        # WIDE 30% stop + arm-late (+10%) trail to test "catch runs without whipsaw" at $3/1x (~$0.90 risk). Not
-        # +EV on this entry (the structure is right, the entry is breakeven) - it's a live look at runner-capture.
-        try:
-            _vol_breakout_wide_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _vbwe:
-            logger.warning(f"[vol-breakout-wide] cycle failed (non-fatal): {_vbwe}")
 
         # Negative-funding volume-influx FADE (short). Swarm-validated 2026-06-29: a coin with deep-negative
         # 8h funding (crowded shorts) that prints a green 5m vol-influx pop FAILS it and continues down -> short

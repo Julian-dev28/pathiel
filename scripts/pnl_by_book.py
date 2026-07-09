@@ -80,6 +80,9 @@ LEGACY_EVENT_BOOKS = (
 # Priority order when multiple books could match (most specific / live first).
 # MUST list every book that can open a position: omitting neg_funding_fade and
 # the vol books silently rebadged their PnL as main-engine (audit 2026-07-09).
+# DELETED books (vol_breakout_*, premium_fade_short, hail_mary_short, ripped out
+# 2026-07-09) stay listed: their historical fills exist and must keep attributing
+# to them, not to main-engine.
 BOOK_PRIORITY = (
     "rally_exhaustion", "engulf_short", "crash_continue_div_short",
     "premium_fade_short", "hail_mary_short", "neg_funding_fade",

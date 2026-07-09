@@ -26,16 +26,110 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents import shadow_ledger
+from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.client.hl_client import fetch_funding_history
 from hermes_trader.session_log import append as log_event
-# Reuse the volume-influx detection primitives (DRY).
-from hermes_trader.agents.vol_breakout_long_live import (
-    _completed_bars, _val, _bar_t, _mean, _mover_universe,
-    _held_coins, _execute_opened, _execute_block_detail, _BAR_MS,
-)
-
 logger = logging.getLogger(__name__)
+
+_BAR_MS = 300_000  # 5m
+
+# Volume-influx detection primitives — inlined 2026-07-09 when the refuted
+# vol_breakout books (their original home) were deleted.
+
+
+def _bar_t(bar) -> int:
+    try:
+        return int(bar.get("t") if isinstance(bar, dict) else getattr(bar, "t", 0))
+    except Exception:
+        return 0
+
+
+def _val(bar, key: str) -> float:
+    try:
+        return float(bar.get(key) if isinstance(bar, dict) else getattr(bar, key))
+    except Exception:
+        return 0.0
+
+
+def _completed_bars(bars, now_ms: int):
+    """Drop the still-forming last bar (its close ts is in the future)."""
+    if not bars:
+        return []
+    out = list(bars)
+    last_t = _bar_t(out[-1])
+    if last_t and (now_ms - last_t) < _BAR_MS:
+        out = out[:-1]
+    return out
+
+
+def _mean(xs):
+    return sum(xs) / len(xs) if xs else 0.0
+
+
+def _is_tradeable_perp(m: Dict[str, Any]) -> bool:
+    coin = m.get("coin") or ""
+    return bool(coin) and not coin.startswith("@") and ":" not in coin and m.get("type") != "spot"
+
+
+def _mover_universe(universe, cfg: Dict[str, Any]):
+    """Cheap pre-filter from the cached universe (NO extra API): coins moving >=
+    min_mover_pct over 24h AND >= min_volume_usd dollar volume, top max_scan_coins
+    by dollar volume. Bounds the 5m candle fetches."""
+    min_pct = float(cfg.get("min_mover_pct", 8.0))
+    min_vol = float(cfg.get("min_volume_usd", 5_000_000.0))
+    cap = int(cfg.get("max_scan_coins", 25))
+    rows = []
+    for m in universe or []:
+        if not _is_tradeable_perp(m) or (m.get("coin") or "") == "BTC":
+            continue
+        prev = _val(m, "prevDayPx")
+        cur = _val(m, "midPx") or _val(m, "markPx")
+        dvol = _val(m, "dayNtlVlm")
+        if prev <= 0 or cur <= 0 or dvol < min_vol:
+            continue
+        if abs(cur / prev - 1.0) * 100.0 < min_pct:
+            continue
+        rows.append((dvol, m["coin"]))
+    rows.sort(reverse=True)
+    return [c for _, c in rows[:cap]]
+
+
+def _held_coins(positions) -> set:
+    held = set()
+    for p in positions or []:
+        pos = p.get("position", p) if isinstance(p, dict) else {}
+        coin = pos.get("coin")
+        try:
+            szi = float(pos.get("szi", 0) or 0)
+        except (TypeError, ValueError):
+            szi = 0.0
+        if coin and szi != 0:
+            held.add(coin)
+    try:
+        held.update(active_position_coins().keys())
+    except Exception:
+        pass
+    return held
+
+
+def _execute_opened(result: Any) -> bool:
+    if isinstance(result, dict):
+        nested = result.get("result")
+        if isinstance(nested, dict):
+            return bool(nested.get("executed"))
+        if "executed" in result:
+            return bool(result.get("executed"))
+        if "ok" in result:
+            return bool(result.get("ok"))
+    return result is None
+
+
+def _execute_block_detail(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+    return (result.get("reason") or result.get("error")
+            or result.get("blocked_by") or result.get("gate_results") or result)
 
 _BOOK_NAME = "neg_funding_fade"
 _DAY_MS = 86_400_000

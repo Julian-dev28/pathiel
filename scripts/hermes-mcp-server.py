@@ -257,9 +257,7 @@ TOOLS = [
                 "coin_blocklist": {"type": "array", "items": {"type": "string"}},
                 # ── Nested blocks are deep-merged with existing config ────
                 "dsl_exit": {"type": "object", "description": "DSL trailing-stop block; partial objects are deep-merged."},
-                "atr_risk_sizing": {"type": "object", "description": "ATR equal-risk sizing block; partial objects are deep-merged."},
                 "runner_entry_gate": {"type": "object", "description": "Runner gate block; partial objects are deep-merged."},
-                "capital_rotation": {"type": "object", "description": "Live capital rotation block; partial objects are deep-merged."},
                 "gex_signal": {"type": "object", "description": "HIP-3 GEX call-wall guardrail block; partial objects are deep-merged."},
                 "runner_mover_surface": {"type": "object", "description": "Large-mover surfacing block; partial objects are deep-merged."},
                 "trend_filter_200ma": {"type": "object", "description": "200MA trend filter block; partial objects are deep-merged."},
@@ -999,8 +997,7 @@ def handle_config(params: Dict[str, Any]) -> str:
         "coin_allowlist", "coin_blocklist",
     ]
     _NESTED_KEYS = [
-        "dsl_exit", "atr_risk_sizing", "runner_entry_gate",
-        "capital_rotation", "gex_signal", "runner_mover_surface",
+        "dsl_exit", "runner_entry_gate", "gex_signal", "runner_mover_surface",
         "trend_filter_200ma", "override_volume_confirm", "late_chase_relax",
         "reentry_cap", "xs_momentum", "extreme_fade", "rally_exhaustion",
         "data_logger", "ai_brain",

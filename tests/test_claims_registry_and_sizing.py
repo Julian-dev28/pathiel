@@ -192,27 +192,31 @@ class TestClaimsRegistryUnit:
         cr = ro.ClaimsRegistry(path, active_books=ro.active_claim_books()).load()
         cr.claim("A", "xs_momentum")
         cr.claim("B", "rally_exhaustion")
-        cr.claim("C", "hail_mary_short")
+        cr.claim("C", "engulf_short")
         cr.save()
         monkeypatch.setattr(ro, "_claims_registry", cr)
 
         dropped = ro.prune_claims_to_live([_pos("B", -1.0)])
 
-        assert dropped == {"A": "xs_momentum", "C": "hail_mary_short"}
+        assert dropped == {"A": "xs_momentum", "C": "engulf_short"}
         assert cr.claims() == {"B": "rally_exhaustion"}
         saved = json.loads((tmp_path / "claims.json").read_text())
         assert saved["claims"] == {"B": "rally_exhaustion"}
 
     def test_active_claim_books_include_live_claimants(self):
         from hermes_trader.agents.rebalancer_owned import active_claim_books
-        import hermes_trader.agents.hail_mary_short_live as hms
-        import hermes_trader.agents.xs_momentum_live as xl
+        import hermes_trader.agents.majors_swing_live as msl
+        import hermes_trader.agents.neg_funding_fade_live as nfl
         import hermes_trader.agents.rally_exhaustion_live as rel
 
         active = active_claim_books()
-        assert hms._BOOK_NAME in active
-        assert xl._BOOK_NAME in active
+        assert msl._BOOK_NAME in active
+        assert nfl._BOOK_NAME in active
         assert rel._BOOK_NAME in active
+        assert "xs_momentum" in active
+        # ripped-out books (2026-07-09) must NOT hold claims
+        assert "hail_mary_short" not in active
+        assert "vol_breakout_long" not in active
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -273,13 +273,8 @@ def kelly_size(
     return min(notional, max_trade_notional)
 
 
-def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Dict[str, Any]:
-    """Execute an analysis through risk gates and into the market.
-
-    `_rotation_retry` is set on the single self-retry after capital rotation
-    closed a weak position to free room — it blocks a second rotation so we can
-    never loop.
-    """
+def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute an analysis through risk gates and into the market."""
     config = read_agent_config()
     mode = str(config.get("mode", "OFF")).upper()
 
@@ -683,94 +678,22 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     _short_notional = float(config.get("short_notional_usd", 0) or 0)
     if (analysis.get("side") == "short") and _short_notional > 0:
         _notional_cap = min(_notional_cap, _short_notional) if _notional_cap > 0 else _short_notional
-    _atr_sizing = config.get("atr_risk_sizing", {}) or {}
-    _atr_sizing_enabled = bool(_atr_sizing.get("enabled", False))
     mid_price = 0.0
     atr = 0.0
     size_in_coin = 0.0
 
-    if _atr_sizing_enabled:
-        mid_price = get_hl_price(coin)
-        if mid_price <= 0:
-            return {"executed": False, "mode": mode, "analysis_id": analysis["id"],
-                    "reason": f"invalid_price_for_{coin}"}
-        atr = get_hl_atr("4h", 14, coin)
-        if atr <= 0:
-            atr = get_hl_atr("4h", 14, coin)
-        if atr <= 0:
-            return {
-                "executed": False, "mode": mode, "analysis_id": analysis["id"],
-                "reason": f"no_atr_no_stop ({coin}: insufficient candle history to size a stop)",
-            }
-
-        from hermes_trader.agents.sizing import atr_equal_risk_notional
-        _max_total_pct = float(config.get("max_total_notional_pct", 0) or 0)
-        _room = (_max_total_pct * agg_equity - total_open_notional) if _max_total_pct > 0 else 0.0
-        _cap = _notional_cap
-        if _room > 0:
-            _cap = min(_cap, _room) if _cap > 0 else _room
-        _risk_pct = float(_atr_sizing.get("risk_per_trade_pct", 0.0075))
-        _sizing_basis = str(_atr_sizing.get("sizing_basis", "backup_stop") or "backup_stop").lower()
-        if _sizing_basis in ("primary_stop", "dsl_stop"):
-            _dsl = dsl_config
-            _max_loss = float(_dsl.get("max_loss_pct", 2.0) or 2.0)
-            _max_roe = float(_dsl.get("max_loss_roe_pct", 40.0) or 40.0)
-            _lev = max(1, leverage)
-            _stop_frac = min(_max_loss, _max_roe / _lev) / 100.0
-            if size_equity <= 0 or _risk_pct <= 0 or _stop_frac <= 0:
-                return {
-                    "executed": False, "mode": mode, "analysis_id": analysis["id"],
-                    "reason": f"primary_stop_sizing_zero ({coin}: invalid inputs)",
-                }
-            trade_notional = (_risk_pct * size_equity) / _stop_frac
-            _lev_cap = leverage
-            _max_by_lev = max(1, _lev_cap) * size_equity
-            _clamped = []
-            if trade_notional > _max_by_lev:
-                trade_notional = _max_by_lev
-                _clamped.append("max_leverage")
-            if _cap > 0 and trade_notional > _cap:
-                trade_notional = _cap
-                _clamped.append("notional_cap")
-            logger.info(
-                f"[executor] primary-stop equal-risk sizing {coin}: notional ${trade_notional:.0f} "
-                f"(risk ${trade_notional*_stop_frac:.2f} @ {_stop_frac*100:.2f}% stop"
-                f"{', clamped:'+','.join(_clamped) if _clamped else ''})")
-        else:
-            _sz = atr_equal_risk_notional(
-                equity=size_equity,
-                risk_per_trade_pct=_risk_pct,
-                atr_abs=atr,
-                entry_px=mid_price,
-                sl_atr_mult=float(config.get("sl_atr_mult", _DEFAULT_SL_ATR_MULT)),
-                max_trade_notional_usd=_cap,
-                coin_max_leverage=get_max_leverage(coin),
-                config_max_leverage=leverage,
-            )
-            if _sz.notional_usd <= 0:
-                return {
-                    "executed": False, "mode": mode, "analysis_id": analysis["id"],
-                    "reason": f"atr_sizing_zero ({coin}: {_sz.clamped_by or 'invalid inputs'})",
-                }
-            trade_notional = _sz.notional_usd
-            logger.info(
-                f"[executor] ATR equal-risk sizing {coin}: notional ${trade_notional:.0f} "
-                f"(impl_lev {_sz.implied_leverage:.1f}x, risk ${_sz.risk_usd:.2f} @ "
-                f"{_sz.stop_distance_frac*100:.2f}% stop"
-                f"{', clamped:'+_sz.clamped_by if _sz.clamped_by else ''})")
-    else:
-        # Legacy fallback when ATR equal-risk sizing is explicitly disabled:
-        # equity × fraction × leverage. Keep this deterministic; old signal
-        # multipliers were removed because they changed exposure without
-        # improving realized EV.
-        base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
-        trade_notional = size_equity * base_fraction * leverage
-        # Clamp to the per-trade notional ceiling so an oversized fallback bet is
-        # SIZED DOWN to the cap rather than REJECTED by the notional gate.
-        if _notional_cap > 0 and trade_notional > _notional_cap:
-            logger.info(f"[executor] notional ${trade_notional:.0f} > cap "
-                        f"${_notional_cap:.0f} — clamping to cap")
-            trade_notional = _notional_cap
+    # Sizing: equity × fraction × leverage, deterministic. (The ATR equal-risk
+    # branch was ripped out 2026-07-09 with its enabled:false config — it had been
+    # gated off since the 429-amplification incident; the pure functions survive
+    # in sizing.py for the research harnesses.)
+    base_fraction = float(config.get("equity_fraction_per_trade", 0.01))
+    trade_notional = size_equity * base_fraction * leverage
+    # Clamp to the per-trade notional ceiling so an oversized bet is SIZED DOWN
+    # to the cap rather than REJECTED by the notional gate.
+    if _notional_cap > 0 and trade_notional > _notional_cap:
+        logger.info(f"[executor] notional ${trade_notional:.0f} > cap "
+                    f"${_notional_cap:.0f} — clamping to cap")
+        trade_notional = _notional_cap
 
     _asset_mult = _asset_notional_multiplier(coin, config)
     if _asset_mult < 1.0:
@@ -886,54 +809,6 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
     gate_output = eval_all_gates(ctx, gate_config, last_trade_time)
 
     if gate_output["blocked"]:
-        # ── Capital-rotation (Phase-1 lever) ────────────────────────────────
-        # Phase-1 finding: 94% of missed movers die at the 300% cap / max_concurrent
-        # (book full), not at the signal. When a strong fresh candidate is blocked
-        # PURELY by capital, evaluate whether it should displace the weakest stale
-        # non-winner. Fully wrapped: a rotation bug can never break the
-        # already-blocked execution path.
-        try:
-            _rot = config.get("capital_rotation", {}) or {}
-            if bool(_rot.get("enabled", False)):
-                from hermes_trader.agents.rotation import decide_rotation
-                _now_ms = time.time() * 1000
-                _trade_ts = memory.latest_trade_ts_by_coin(50)
-                _opos = []
-                for _p in (state.get("asset_positions") or []):
-                    _pp = _p.get("position", {}) or {}
-                    _c = _pp.get("coin")
-                    if not _c:
-                        continue
-                    _opos.append({
-                        "coin": _c,
-                        "roe_pct": float(_pp.get("returnOnEquity", 0) or 0) * 100,
-                        "age_minutes": (_now_ms - _trade_ts.get(_c, _now_ms)) / 60000.0,
-                    })
-                _d = decide_rotation(
-                    candidate_coin=analysis["coin"],
-                    candidate_composite=float(analysis.get("composite_score", 0) or 0),
-                    blocked_reasons=gate_output["block_reasons"],
-                    open_positions=_opos,
-                    min_candidate_composite=float(_rot.get("min_candidate_composite", 40.0)),
-                    min_hold_minutes=float(_rot.get("min_hold_minutes", 30.0)),
-                    protect_winner_roe_pct=float(_rot.get("protect_winner_roe_pct", 3.0)),
-                )
-                if _d.should_rotate and not _rotation_retry:
-                    # LIVE: close the weakest non-winner to free capital, then
-                    # retry THIS candidate once. The retry re-reads account state
-                    # and goes through every risk gate again; rotation only
-                    # relieves the capital constraint.
-                    logger.warning(f"[rotation][LIVE] {_d.reason} — closing {_d.evict_coin}")
-                    _cr = close_position_market(_d.evict_coin)
-                    if _cr.get("ok"):
-                        logger.warning(f"[rotation][LIVE] evicted {_d.evict_coin} "
-                                       f"(rl {_cr.get('realized_pnl_pct')}%) → retrying {analysis['coin']}")
-                        return maybe_execute(analysis, _rotation_retry=True)
-                    logger.warning(f"[rotation][LIVE] evict {_d.evict_coin} failed "
-                                   f"({_cr.get('error')}) — no rotation")
-        except Exception as _e:
-            logger.warning(f"[rotation] eval failed (non-fatal): {_e}")
-
         # Don't write blocked attempts to memory._trades — the cooldown gate
         # keys off the most recent trade-by-coin and would self-perpetuate.
         # Visibility comes from the `execute` event in the session log.

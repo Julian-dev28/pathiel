@@ -103,17 +103,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "min_ai_close_hold_min": 25,
     "sl_atr_mult": 1.5,
     "backup_sl_max_frac_of_liq": 0.6,
-    "atr_risk_sizing": {
-        "enabled": True,
-        "risk_per_trade_pct": 0.02,
-        "sizing_basis": "primary_stop",
-    },
-    "capital_rotation": {
-        "enabled": True,
-        "min_candidate_composite": 40.0,
-        "min_hold_minutes": 30,
-        "protect_winner_roe_pct": 3.0,
-    },
     "gex_signal": {
         "enabled": True,
         "caution_near_wall_pct": 15.0,
@@ -193,46 +182,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "tp_scale_fraction": 0.0,
         "max_new_per_cycle": 1,
         "history_bars": 40,
-    },
-    # AI/semis HIP-3 short basket. This is watchlist-driven but trigger-gated:
-    # basket breadth and proxy trend must be bearish before any fresh daily
-    # breakdown can trade. Keep shadow_only=True until backtest/forward logs are
-    # strong enough to promote.
-    "hail_mary_short": {
-        "enabled": False,
-        "shadow_only": True,
-        "names": [
-            "NVDA", "SMCI", "AVGO", "AMD", "TSM", "ASML", "ARM", "MSFT", "AMZN", "GOOGL",
-            "META", "PLTR", "CRM", "ADBE", "NOW", "WDAY", "PATH", "AI", "SOUN", "UPST",
-            "TSLA", "VRT", "MU", "CRWD", "SNOW", "DDOG", "HUBS", "ZS", "NET", "ARKK",
-            "SOXX", "SMH", "OPENAI", "ANTHROPIC",
-        ],
-        "dex_allowlist": ["xyz", "vntl"],
-        "proxy_coins": ["xyz:SMH", "xyz:SP500", "xyz:XYZ100"],
-        "require_proxy_down": True,
-        "scan_interval_hours": 6,
-        "entry_window_hours": 10,
-        "min_volume_usd": 20_000_000,
-        "executor_short_volume_floor_usd": 20_000_000,
-        "min_breadth_bearish_pct": 0.55,
-        "breakdown_lookback_days": 20,
-        "breakdown_buffer_pct": 0.0,
-        "ema_fast": 8,
-        "ema_slow": 21,
-        "ema_trend": 50,
-        "min_history_bars": 24,
-        "history_bars": 90,
-        "drawdown_lookback_days": 20,
-        "min_basket_drawdown_pct": 6.0,
-        "recent_drop_days": 5,
-        "min_recent_drop_pct": 6.0,
-        "hold_days": 10,
-        "stop_pct": 12.0,
-        "notional_usd": 20.0,
-        "leverage": 1,
-        "tp_scale_fraction": 0.0,
-        "max_new_per_cycle": 1,
-        "max_attempts_per_cycle": 1,
     },
 }
 

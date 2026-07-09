@@ -130,7 +130,6 @@ def test_config_store_normalizes_partial_live_config(monkeypatch, tmp_path):
     assert cfg["dsl_exit"]["max_loss_pct"] == 0.4
     assert cfg["runner_entry_gate"]["min_crypto_composite"] == 20.0
     assert cfg["runner_entry_gate"]["mover_min_composite"] == 40.0
-    assert cfg["atr_risk_sizing"]["sizing_basis"] == "primary_stop"
 
 
 def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
@@ -2785,30 +2784,6 @@ def test_maybe_execute_success_path(monkeypatch):
     assert captured["is_buy"] is True
     # notional = equity 1000 × frac 0.10 × lev 10 × conviction(0.70→1.0) = 1000; /mid 100 = 10 coins
     assert abs(captured["size"] - 10.0) < 1e-6
-
-
-def test_maybe_execute_primary_stop_sizing_uses_dsl_risk(monkeypatch):
-    ex, captured, _ = _exec_baseline(
-        monkeypatch,
-        {
-            "leverage": 12,
-            "max_trade_notional_usd": 500,
-            "atr_risk_sizing": {
-                "enabled": True,
-                "risk_per_trade_pct": 0.01,
-                "sizing_basis": "primary_stop",
-            },
-            "dsl_exit": {"max_loss_pct": 0.75, "max_loss_roe_pct": 6.0,
-                         "protect_pct": 1.5, "retrace_threshold": 0.3,
-                         "hard_timeout_minutes": 1800.0},
-        },
-        {"equity": 250.0, "available": 250.0, "total_ntl": 0.0},
-    )
-    r = ex.maybe_execute(_analysis(confidence=0.75, composite_score=60))
-    assert r["executed"] is True, r
-    # risk target = $250 * 1%; primary stop = min(0.75%, 6% ROE / 12x) = 0.5%.
-    # $2.50 / 0.5% = $500 notional; price is stubbed at $100.
-    assert abs(captured["size"] - 5.0) < 1e-6
 
 
 def test_maybe_execute_honors_strategy_specific_overrides(monkeypatch):
