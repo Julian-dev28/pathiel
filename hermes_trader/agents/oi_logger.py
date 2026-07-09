@@ -12,7 +12,9 @@ import os
 import time
 from typing import Any, Dict, List
 
-_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".oi-timeseries.jsonl")
+from hermes_trader.agents.rebalancer_owned import state_file
+
+_FILE = state_file(".oi-timeseries.jsonl")
 _MIN_INTERVAL_S = 600.0     # one snapshot per ~10min (OI moves slowly; keeps file small)
 _MAX_LINES = 40_000         # ~9 months at 10min; rotate oldest beyond this
 _last_log_ts = 0.0

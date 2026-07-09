@@ -163,3 +163,6 @@ backtest-trades.csv
 .bt_candle_cache.json
 .bt_funding_cache.json
 .catalyst_gdelt_cache.json
+
+# consolidated runtime state dir (HERMES_STATE_DIR, 2026-07-09)
+.state/

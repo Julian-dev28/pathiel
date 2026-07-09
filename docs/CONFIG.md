@@ -11,6 +11,21 @@ scripts/config_preset.py apply small_aggressive        # apply (with diff previe
 scripts/config_preset.py apply --account-size 250      # auto-pick by equity
 ```
 
+## Runtime state files
+
+All per-book runtime state (dedup `*_seen.json`, scan-timer `*_ts`, the claims
+registry, `shadow_ledger/`, the funding/OI data loggers, the positions snapshot)
+lives under **`.state/`** at the repo root, via `HERMES_STATE_DIR` +
+`HERMES_POSITIONS_SNAPSHOT_FILE` set in `.env.local` (moved out of the repo
+root 2026-07-09). Everything routes through
+`rebalancer_owned.state_file()`, which is frozen at import — so the env var
+must be set before the process starts (`.env.local` is loaded first by the
+loop, server, and MCP server alike; tests override it to a temp dir in
+`tests/conftest.py`).
+
+Still at the repo root on purpose (their own paths/env vars):
+`.agent-config.json`, `.agent-memory.json`, `.dsl-state.json`.
+
 ---
 
 ## Mode + asset class
