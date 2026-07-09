@@ -220,12 +220,19 @@ def _book_from_positions(positions) -> (List[str], List[str]):
     return longs, shorts
 
 
-def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0) -> Dict[str, Any]:
+def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
+              short_floor_usd: Optional[float] = None) -> Dict[str, Any]:
     """Synthetic analysis for the executor. strategy_book bypasses the thought-engine entry gates
     (runner/trend) — this is a separate validated edge — while every SAFETY gate still applies.
     vol_scalar (Moreira-Muir W6) is stored in the analysis so the executor can note the scaling
-    intent; actual position sizing is done by the executor via the standard notional path."""
-    return {
+    intent; actual position sizing is done by the executor via the standard notional path.
+
+    short_floor_usd: per-book short volume floor. Without it, the executor's global
+    min_short_volume_usd ($20M) silently blocked every short on 5-20M-vol coins, so the
+    "market-neutral" book ran net-LONG — carrying the market beta it was validated to
+    hedge (audit 2026-07-09). The book's own universe filter already enforces its
+    min_volume_usd, so shorts use that same floor."""
+    out = {
         "id": str(uuid.uuid4()), "coin": coin,
         "verdict": "LONG" if side == "long" else "SHORT", "side": side,
         "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
@@ -235,6 +242,9 @@ def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0) 
         "composite_score": 0.0, "strategy_book": "xs_momentum",
         "xs_vol_scalar": vol_scalar,   # downstream hooks may read this for sizing
     }
+    if side == "short" and short_floor_usd and short_floor_usd > 0:
+        out["min_short_volume_usd_override"] = float(short_floor_usd)
+    return out
 
 
 def _execute_opened(result: Any) -> bool:
@@ -381,7 +391,9 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
             if not claims.claim(coin, _BOOK_NAME):
                 logger.warning(f"[xs-momentum] open short {coin} skipped — claimed by {claims.owner_of(coin)}")
                 continue
-            a = _analysis(coin, "short", book.scores.get(coin, 0.0), vol_scalar)
+            a = _analysis(coin, "short", book.scores.get(coin, 0.0), vol_scalar,
+                          short_floor_usd=float(xs.get("executor_short_volume_floor_usd",
+                                                       xs.get("min_volume_usd", 5_000_000.0))))
             result = execute_fn(a)
             if _execute_opened(result):
                 owned.add(coin, "short")

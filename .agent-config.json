@@ -156,6 +156,7 @@
     "vol_gate": true,
     "vol_short": 14,
     "vol_long": 90,
+    "executor_short_volume_floor_usd": 5000000,
     "vol_managed": {
       "enabled": true
     }
@@ -164,7 +165,18 @@
     "enabled": true,
     "crash_pct": -0.12,
     "max_new_per_cycle": 2,
-    "scan_interval_min": 30
+    "scan_interval_min": 30,
+    "stop_pct": 20.0,
+    "leverage": 1,
+    "hold_days": 3.0,
+    "equity_fraction": 0.4,
+    "tp_scale_fraction": 0.0,
+    "skew_arm": {
+      "enabled": true,
+      "window": 20,
+      "threshold": 0.0,
+      "enforce": false
+    }
   },
   "rally_exhaustion": {
     "enabled": true,
@@ -204,7 +216,7 @@
     "history_bars": 40
   },
   "premium_fade_short": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": true,
     "scan_interval_hours": 6,
     "z_threshold": 2.0,

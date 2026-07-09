@@ -106,3 +106,17 @@ def test_disabled_is_noop(monkeypatch):
     ex, cl, ef, cf = _spies()
     assert xl.maybe_rebalance(cfg, _uni(_RETS), [], _fetch_factory(_RETS), ef, cf) is None
     assert not ex and not cl
+
+
+def test_short_analysis_carries_volume_floor_override():
+    """Audit 2026-07-09: without a per-book floor the executor's global
+    min_short_volume_usd ($20M) silently blocked every 5-20M-vol short and the
+    market-neutral book ran net-long. The short leg must carry the book's own floor."""
+    from hermes_trader.agents.xs_momentum_live import _analysis
+    a = _analysis("ALT", "short", -0.05, short_floor_usd=5_000_000.0)
+    assert a["min_short_volume_usd_override"] == 5_000_000.0
+    # long leg untouched; floor param inert without a short side
+    b = _analysis("ALT", "long", 0.05, short_floor_usd=5_000_000.0)
+    assert "min_short_volume_usd_override" not in b
+    c = _analysis("ALT", "short", -0.05)
+    assert "min_short_volume_usd_override" not in c

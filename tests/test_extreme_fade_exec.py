@@ -130,3 +130,107 @@ def test_non_crash_does_not_fire():
     efl.maybe_run(_cfg(), _universe(["CALM"]), [],
                   _fetch(), lambda a: calls.append(a))
     assert calls == []
+
+
+# ── validated structure + W-B2 skew-arm (2026-07-09) ─────────────────────────────
+
+def test_carries_validated_exit_structure():
+    """The fade must trade the structure it was validated with (W-B2 base: 20% stop,
+    1x, 3d stop-or-horizon, NO trail) — inheriting the main engine's 15x + tight ATR
+    stop clipped the post-crash wobble and turned +4.5%/trade into a live bleed."""
+    calls = []
+    efl.maybe_run(_cfg(), _universe(["VSTRUCT"]), [],
+                  _fetch(fresh={"VSTRUCT"}), lambda a: calls.append(a))
+    a = calls[0]
+    assert a["leverage_override"] == 1
+    assert a["backup_sl_pct_override"] == 20.0
+    dsl = a["dsl_exit_override"]
+    assert dsl["max_loss_pct"] == 20.0 and dsl["max_loss_roe_pct"] == 20.0
+    assert dsl["protect_pct"] == 9999.0            # trail never arms: stop-or-horizon
+    assert dsl["hard_timeout_minutes"] == 3.0 * 1440
+    assert dsl["atr_stop"] == {"enabled": False}
+    assert "strategy_book_equity_frac_override" not in a   # off unless configured
+
+
+def test_equity_fraction_flows_through():
+    calls = []
+    efl.maybe_run(_cfg(equity_fraction=0.4), _universe(["VFRAC"]), [],
+                  _fetch(fresh={"VFRAC"}), lambda a: calls.append(a))
+    assert calls[0]["strategy_book_equity_frac_override"] == 0.4
+
+
+def _skew_cbc(daily_rets, n_coins=12):
+    """cbc where EVERY coin follows the same daily return path -> the equal-weight
+    market return equals that path exactly."""
+    start = NOW - (len(daily_rets) + 2) * DAY
+    cbc = {}
+    for k in range(n_coins):
+        px, bars = 100.0, []
+        bars.append({"t": start, "o": px, "h": px, "l": px, "c": px, "v": 1e7})
+        for i, r in enumerate(daily_rets):
+            px *= (1 + r)
+            t = start + (i + 1) * DAY
+            bars.append({"t": t, "o": px, "h": px, "l": px, "c": px, "v": 1e7})
+        cbc[f"C{k}"] = bars
+    return cbc
+
+
+def test_market_skew_sign():
+    # many small up days + a few large crashes -> negative skew (armed regime)
+    neg = _skew_cbc([0.01] * 17 + [-0.06, 0.01, -0.07])
+    s = efl._market_skew(neg, window=20)
+    assert s is not None and s < 0
+    # many small down days + a few large rips -> positive skew (disarmed regime)
+    pos = _skew_cbc([-0.01] * 17 + [0.06, -0.01, 0.07])
+    s = efl._market_skew(pos, window=20)
+    assert s is not None and s > 0
+
+
+def test_market_skew_thin_data_is_none():
+    assert efl._market_skew(_skew_cbc([0.01] * 3), window=20) is None       # too few days
+    assert efl._market_skew(_skew_cbc([0.01] * 22, n_coins=3), window=20) is None  # too few coins
+
+
+def test_skew_arm_shadow_tags_but_does_not_block(monkeypatch):
+    """Default (enforce=false): disarmed regime still trades — the arm only TAGS,
+    building the forward evidence before any enforcement flip."""
+    monkeypatch.setattr(efl, "_market_skew", lambda cbc, w, min_coins=10: 0.8)
+    calls = []
+    out = efl.maybe_run(_cfg(), _universe(["VSHADOW"]), [],
+                        _fetch(fresh={"VSHADOW"}), lambda a: calls.append(a))
+    assert len(calls) == 1
+    assert out["armed"] is False and out["skew"] == 0.8
+
+
+def test_skew_arm_enforce_blocks_disarmed(monkeypatch):
+    monkeypatch.setattr(efl, "_market_skew", lambda cbc, w, min_coins=10: 0.8)
+    calls = []
+    out = efl.maybe_run(_cfg(skew_arm={"enabled": True, "enforce": True}),
+                        _universe(["VBLOCK"]), [],
+                        _fetch(fresh={"VBLOCK"}), lambda a: calls.append(a))
+    assert calls == []
+    assert out["opened"] == 0 and out["armed"] is False
+
+
+def test_skew_arm_enforce_allows_armed(monkeypatch):
+    monkeypatch.setattr(efl, "_market_skew", lambda cbc, w, min_coins=10: -0.6)
+    calls = []
+    out = efl.maybe_run(_cfg(skew_arm={"enabled": True, "enforce": True}),
+                        _universe(["VALLOW"]), [],
+                        _fetch(fresh={"VALLOW"}), lambda a: calls.append(a))
+    assert len(calls) == 1 and out["armed"] is True
+
+
+def test_signals_recorded_to_ledger_with_arm_meta(monkeypatch):
+    monkeypatch.setattr(efl, "_market_skew", lambda cbc, w, min_coins=10: -0.42)
+    captured = []
+    monkeypatch.setattr(efl.shadow_ledger, "record_many",
+                        lambda book, rows: captured.append((book, list(rows))) or len(rows))
+    efl.maybe_run(_cfg(), _universe(["VLEDGER"]), [],
+                  _fetch(fresh={"VLEDGER"}), lambda a: {"executed": True})
+    book, rows = captured[0]
+    assert book == "extreme_fade" and len(rows) == 1
+    r = rows[0]
+    assert r["side"] == "long" and r["horizon_days"] == 3.0 and r["stop_pct"] == 20.0
+    assert r["entry_ref_px"] > 0
+    assert r["meta"]["armed"] is True and r["meta"]["skew"] == -0.42
