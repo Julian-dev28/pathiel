@@ -136,15 +136,20 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     opened = 0
     skipped = {"held": 0, "claimed": 0, "dedup": 0, "blocked": 0}
 
+    # Record in BOTH modes with the CONFIGURED side: hard-coded "long" + shadow-only
+    # recording meant the live short-the-pop phase was never gradeable (audit 2026-07-09).
+    _book_side = "short" if str(cfg.get("side", "long")).lower() == "short" else "long"
+    shadow_ledger.record_many(_BOOK_NAME, [{
+        "coin": s["coin"], "side": _book_side,
+        "signal_bar_t": s.get("confirm_bar_t"), "entry_ref_px": s.get("entry_ref_px"),
+        "horizon_days": float(cfg.get("hold_hours", 8.0)) / 24.0,
+        "stop_pct": float(cfg.get("stop_pct", 30.0)), "ts": now_ms,
+        "meta": {"breakout_vol_x": s.get("breakout_vol_x"), "confirm_vol_x": s.get("confirm_vol_x"),
+                 "shadow": shadow_only},
+    } for s in signals])
+
     if shadow_only:
         _save_ts(now)
-        shadow_ledger.record_many(_BOOK_NAME, [{
-            "coin": s["coin"], "side": "long",
-            "signal_bar_t": s.get("confirm_bar_t"), "entry_ref_px": s.get("entry_ref_px"),
-            "horizon_days": float(cfg.get("hold_hours", 8.0)) / 24.0,
-            "stop_pct": float(cfg.get("stop_pct", 30.0)), "ts": now_ms,
-            "meta": {"breakout_vol_x": s.get("breakout_vol_x"), "confirm_vol_x": s.get("confirm_vol_x")},
-        } for s in signals])
         rec = {"event": "vol_breakout_wide", "ts": now_ms, "shadow": True,
                "signals": len(signals), "opened": 0, "skipped": skipped, "candidates": signals[:10]}
         log_event(rec)
@@ -194,7 +199,9 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
-                logger.info(f"[vol-breakout-wide] LIVE opened {cfg.get("side","long")} {coin} "
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": _book_side, "sig_t": sig_t})
+                logger.info(f"[vol-breakout-wide] LIVE opened {_book_side} {coin} "
                             f"(influx {sig['breakout_vol_x']:.1f}x, wide stop)")
             else:
                 skipped["blocked"] += 1

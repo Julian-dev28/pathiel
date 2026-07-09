@@ -19,6 +19,10 @@ os.environ["HERMES_DSL_STATE_FILE"] = os.path.join(_tmp, ".dsl-state.json")
 # Point it at the temp dir so the suite never pollutes the live .rebalancer_claims.json /
 # .*_positions.json / *_ts / .xs_volmgd_history (builder tests wrote fake coins to these 2026-06-24).
 os.environ["HERMES_STATE_DIR"] = _tmp
+# Session log too: session_log.py freezes SESSION_LOG_PATH at import. This was the ONE
+# state file not redirected — pytest wrote fabricated C1/C2/C3 book events into the LIVE
+# activity feed, which pnl_by_book attribution reads (audit 2026-07-09).
+os.environ["SESSION_LOG_PATH"] = os.path.join(_tmp, "session-log.jsonl")
 
 
 import pytest

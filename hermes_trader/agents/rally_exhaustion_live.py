@@ -309,6 +309,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": sig_t})
                 logger.info(
                     f"[rally-exhaustion] LIVE opened short {coin} "
                     f"(rally {sig['rally_pct']:+.1f}%, dvol ${sig['trailing_dvol']/1e6:.1f}M)"

@@ -38,15 +38,34 @@ if _env.is_file():
 from hermes_trader.agents import shadow_ledger as SL  # noqa: E402
 
 
+_BAR_MS = {"1h": 3_600_000, "1d": 86_400_000}
+
+
 def _make_fetch_fwd():
-    """Real forward-candle fetch (lazy import so --inventory needs no network)."""
+    """Real forward-candle fetch (lazy import so --inventory needs no network).
+    Lookback is sized from the signal's AGE, not a fixed pad — a fixed +45 pad
+    silently mis-windowed any signal older than ~50d (grader window rot)."""
     from hermes_trader.client.hl_client import fetch_hl_candles
 
-    def fetch_fwd(coin: str, signal_bar_t: int, n_bars: int) -> List[Any]:
-        bars = fetch_hl_candles(coin, "1d", n_bars + 45)
+    def fetch_fwd(coin: str, signal_bar_t: int, n_bars: int, interval: str = "1d") -> List[Any]:
+        bar_ms = _BAR_MS.get(interval, 86_400_000)
+        age_bars = max(0, int((time.time() * 1000 - int(signal_bar_t)) // bar_ms))
+        bars = fetch_hl_candles(coin, interval, n_bars + age_bars + 3)
         return [b for b in bars if int(getattr(b, "t", 0)) > int(signal_bar_t)]
 
     return fetch_fwd
+
+
+def _make_fetch_funding():
+    """Real funding-history fetch so graded returns are NET of funding (a
+    funding-gated short book pays every hour held; price-only grading
+    overstated neg_funding_fade by ~1%/sig — audit 2026-07-09)."""
+    from hermes_trader.client.hl_client import fetch_funding_history
+
+    def fetch_funding(coin: str, start_ms: int, end_ms: int) -> List[Any]:
+        return fetch_funding_history(coin, int(start_ms), int(end_ms))
+
+    return fetch_funding
 
 
 def main() -> int:
@@ -71,7 +90,8 @@ def main() -> int:
         entry: dict = {"book": book, "inventory": row}
         if not args.inventory:
             recs = SL.load(book)
-            grade = SL.grade_records(recs, _make_fetch_fwd(), now_ms=now_ms) if recs else {"n": 0}
+            grade = SL.grade_records(recs, _make_fetch_fwd(), now_ms=now_ms,
+                                     fetch_funding=_make_fetch_funding()) if recs else {"n": 0}
             grade.pop("detail", None) if not args.json else None
             entry["grade"] = grade
             entry["verdict"] = grade.get("verdict") or SL.classify(grade, min_n=args.min_n)

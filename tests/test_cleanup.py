@@ -2336,6 +2336,10 @@ def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):
         "confidence": 0.30,
         "composite_score": 25.0,
         "slow_burn_count": 0,
+        # Deterministic: without this the sidestep bearish guard falls through to
+        # _get_daily_move_pct -> get_universe (real network / live cache), and the
+        # test red/greens with the actual market (PURR was -4.7% on 2026-07-09).
+        "daily_move_pct": 0.0,
     })
 
     assert res["executed"] is False

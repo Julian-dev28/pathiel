@@ -34,6 +34,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents.extreme_fade import FadeSignal, compute_signals, log_signals
 from hermes_trader.agents.rebalancer_owned import state_file
+from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
             if _execute_opened(result):
                 faded[s.coin] = bt
                 opened += 1
+                log_event({"event": "book_open", "book": "extreme_fade", "coin": s.coin,
+                           "side": s.side, "sig_t": bt})
                 logger.info(f"[extreme-fade] LIVE opened {s.side} {s.coin} "
                             f"(prior {s.prior_daily_ret * 100:+.1f}%)")
             else:

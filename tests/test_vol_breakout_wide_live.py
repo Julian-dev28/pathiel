@@ -100,3 +100,23 @@ def test_shadow_zero_capital(monkeypatch):
     rec = vw.maybe_run(_cfg(shadow_only=True), _uni(), [], _fetch,
                        lambda a: calls.append(a) or {"executed": True})
     assert rec["shadow"] is True and rec["signals"] == 1 and calls == []
+
+
+def test_live_mode_records_config_side_and_book_open(monkeypatch):
+    """Audit 2026-07-09: side was hard-coded 'long' in the ledger row and recording
+    happened only in shadow — the live short phase was ungradeable."""
+    _setup(monkeypatch)
+    captured = []
+    monkeypatch.setattr(vw.shadow_ledger, "record_many",
+                        lambda book, rows: captured.append((book, list(rows))) or len(rows))
+    events = []
+    monkeypatch.setattr(vw, "log_event", lambda e: events.append(e))
+    rec = vw.maybe_run(_cfg(side="short"), _uni(), [], _fetch,
+                       lambda a: {"executed": True})
+    assert rec["shadow"] is False and rec["opened"] == 1
+    book, rows = captured[0]
+    assert book == "vol_breakout_wide"
+    assert rows[0]["side"] == "short"
+    assert rows[0]["meta"]["shadow"] is False
+    opens = [e for e in events if e.get("event") == "book_open"]
+    assert len(opens) == 1 and opens[0]["side"] == "short" and opens[0]["coin"] == "ALT"

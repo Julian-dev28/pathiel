@@ -175,3 +175,23 @@ def test_skips_held_coin(monkeypatch):
     assert rec["opened"] == 0
     assert rec["skipped"]["held"] == 1
     assert calls == []
+
+
+def test_live_mode_records_to_ledger_and_logs_book_open(monkeypatch):
+    """Audit 2026-07-09: shadow-only recording froze grading the moment the book
+    went live. Live mode must record the same ledger rows (meta.shadow=False) and
+    emit an exact book_open footprint for PnL attribution."""
+    captured = _setup(monkeypatch)
+    events = []
+    monkeypatch.setattr(es, "log_event", lambda e: events.append(e))
+    rec = es.maybe_run(_cfg(), [{"coin": "ALT", "type": "perp", "dayNtlVlm": 30_000_000}],
+                       [], _fetch_up, lambda a: {"executed": True})
+    assert rec["shadow"] is False and rec["opened"] == 1
+    book, rows = captured[0]
+    assert book == "engulf_short"
+    assert rows and rows[0]["side"] == "short"
+    assert rows[0]["meta"]["shadow"] is False
+    opens = [e for e in events if e.get("event") == "book_open"]
+    assert len(opens) == 1
+    assert opens[0]["book"] == "engulf_short" and opens[0]["coin"] == "ALT"
+    assert opens[0]["side"] == "short"

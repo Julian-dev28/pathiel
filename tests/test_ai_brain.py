@@ -70,6 +70,13 @@ def test_openrouter_402_affordability_retry_preserved(monkeypatch):
 def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
     from hermes_trader.agents import ai_brain
 
+    # server.py loads .env.local into os.environ at import time, and the env var
+    # outranks the mocked config in _cli_timeout_s — without this the test
+    # red/greens with the dev machine's .env.local (AI_BRAIN_TIMEOUT_S=120).
+    monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_MAX_TURNS", raising=False)
+
     seen: dict[str, object] = {}
     monkeypatch.setattr(
         ai_brain,

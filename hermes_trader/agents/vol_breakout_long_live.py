@@ -337,7 +337,9 @@ def _candidate_signals(cfg: Dict[str, Any], universe, fetch_candles: Callable,
         if now_ms - confirm_close > entry_window_ms:
             continue
         sig["coin"] = coin
-        sig["side"] = "long"
+        # The live side comes from config (flipped to short-the-pop 2026-06-30); a
+        # hard-coded "long" here graded every ledger record on the WRONG direction.
+        sig["side"] = "short" if str(cfg.get("side", "long")).lower() == "short" else "long"
         signals.append(sig)
     return signals
 
@@ -360,19 +362,23 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     opened = 0
     skipped = {"held": 0, "claimed": 0, "dedup": 0, "blocked": 0}
 
+    # Record in BOTH modes: a book that stops writing the ledger the moment it goes
+    # live trades exactly when it is no longer being measured (audit 2026-07-09).
+    shadow_ledger.record_many(_BOOK_NAME, [{
+        "coin": s["coin"],
+        "side": s["side"],
+        "signal_bar_t": s.get("confirm_bar_t"),
+        "entry_ref_px": s.get("entry_ref_px"),
+        "horizon_days": float(cfg.get("hold_hours", 4.0)) / 24.0,
+        "stop_pct": float(cfg.get("stop_pct", 20.0)),
+        "ts": now_ms,
+        "meta": {"breakout_vol_x": s.get("breakout_vol_x"),
+                 "confirm_vol_x": s.get("confirm_vol_x"),
+                 "shadow": shadow_only},
+    } for s in signals])
+
     if shadow_only:
         _save_ts(now)
-        shadow_ledger.record_many(_BOOK_NAME, [{
-            "coin": s["coin"],
-            "side": "long",
-            "signal_bar_t": s.get("confirm_bar_t"),
-            "entry_ref_px": s.get("entry_ref_px"),
-            "horizon_days": float(cfg.get("hold_hours", 4.0)) / 24.0,
-            "stop_pct": float(cfg.get("stop_pct", 20.0)),
-            "ts": now_ms,
-            "meta": {"breakout_vol_x": s.get("breakout_vol_x"),
-                     "confirm_vol_x": s.get("confirm_vol_x")},
-        } for s in signals])
         rec = {
             "event": "vol_breakout_long", "ts": now_ms, "shadow": True,
             "signals": len(signals), "opened": 0, "skipped": skipped,
@@ -429,7 +435,9 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
-                logger.info(f"[vol-breakout-long] LIVE opened {cfg.get("side","long")} {coin} "
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": sig["side"], "sig_t": sig_t})
+                logger.info(f"[vol-breakout-long] LIVE opened {sig['side']} {coin} "
                             f"(breakout {sig['breakout_vol_x']:.1f}x, confirm {sig['confirm_vol_x']:.1f}x)")
             else:
                 skipped["blocked"] += 1

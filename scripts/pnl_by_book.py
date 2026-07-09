@@ -26,25 +26,24 @@ DATA SOURCES
    Attribution therefore JOINS each position's open-time against the book's own
    log events near that time.
 
-ATTRIBUTION RULE (fuzzy coin+time join — stated explicitly)
------------------------------------------------------------
-For each book we collect "intent" footprints (coin, side, ts) from its own events:
-  - rally_exhaustion / engulf_short / crash_continue_div_short /
-    premium_fade_short / hail_mary_short:  events with opened>=1 -> candidate coins.
-  - extreme_fade:   extreme_fade_candidates with shadow=false -> signal coins.
-  - xs_momentum:    xs_rebalance with shadow=false -> open_long / open_short coins.
-  - external_alpha: external_alpha_exec with executed=true -> coin.
-A reconstructed position EPISODE (coin, side, open_ts) is attributed to a book iff
-that book has a footprint with the SAME coin, matching side (when the footprint
-carries a side), and ts within +/- MATCH_WINDOW_MS of the episode open. The first
-book to match (checked in a fixed priority order) wins. Everything unmatched ->
-main-engine.
-
-Why this is sound here: in the audited window every short book except
-rally_exhaustion ran in SHADOW (opened=0) and xs_momentum/external_alpha never
-executed, so the only non-main footprints that can ever match are
-rally_exhaustion (1 coin) and extreme_fade (candidate list). The window join is
-fuzzy by nature; we report the unmatched % and never silently drop a fill.
+ATTRIBUTION RULE (exact-first, fuzzy fallback)
+----------------------------------------------
+EXACT sources, checked first (audit 2026-07-09: the fuzzy candidates-join
+misattributed ALL vol-book/neg_funding_fade PnL to main-engine, and the
+"main engine bleeds -$58" number that drove the b7881e9 sizing decision was
+actually vol_breakout losses — true main-engine was +$2.51):
+  1. session-log `book_open` events {book, coin, side, ts} — written by every
+     book at the moment the executor confirms the open (since 2026-07-09).
+  2. loop-log "LIVE opened <side> <coin>" lines (logs/trading_loop.log) — the
+     module name identifies the book exactly; covers history before book_open.
+LEGACY fuzzy fallback (only when no exact source matches): per-book "intent"
+footprints from session events with opened>=1 (candidates list — over-attributes
+because candidates include coins that never opened), extreme_fade_candidates,
+xs_rebalance, external_alpha_exec.
+An episode (coin, side, open_ts) matches a footprint iff same coin, matching
+side (when the footprint carries one), and ts within +/- MATCH_WINDOW_MS.
+Everything unmatched -> main-engine. We report exact/legacy match counts and
+never silently drop a fill.
 
 USAGE
 -----
@@ -57,6 +56,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
@@ -66,19 +66,32 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) \
     else "/Users/julian_dev/Documents/code/hermes-trader"
 ENV_FILE = os.path.join(REPO, ".env.local")
 SESSION_LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
+LOOP_LOG = os.path.join(REPO, "logs", "trading_loop.log")
 
 MATCH_WINDOW_MS = 15 * 60 * 1000   # +/-15 min coin+time join tolerance
 EPS = 1e-9                          # position-flat epsilon
 
-SHORT_BOOKS = (
+# Books whose session event carries opened>=1 + a candidates list (legacy fuzzy source).
+LEGACY_EVENT_BOOKS = (
     "rally_exhaustion", "engulf_short", "crash_continue_div_short",
-    "premium_fade_short", "hail_mary_short",
+    "premium_fade_short", "hail_mary_short", "neg_funding_fade",
+    "vol_breakout_long", "vol_breakout_wide",
 )
 # Priority order when multiple books could match (most specific / live first).
+# MUST list every book that can open a position: omitting neg_funding_fade and
+# the vol books silently rebadged their PnL as main-engine (audit 2026-07-09).
 BOOK_PRIORITY = (
     "rally_exhaustion", "engulf_short", "crash_continue_div_short",
-    "premium_fade_short", "hail_mary_short", "extreme_fade",
+    "premium_fade_short", "hail_mary_short", "neg_funding_fade",
+    "vol_breakout_long", "vol_breakout_wide", "extreme_fade",
     "xs_momentum", "external_alpha",
+)
+
+# "2026-06-27 08:07:01,658 INFO:hermes_trader.agents.rally_exhaustion_live:[rally-exhaustion] LIVE opened short XPL ..."
+OPEN_LINE_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3}) "
+    r"INFO:hermes_trader\.agents\.([A-Za-z0-9_]+):\[[^\]]+\] "
+    r"LIVE opened (long|short) (\S+)"
 )
 
 
@@ -173,8 +186,54 @@ def build_episodes(fills: List[Dict[str, Any]]) -> List[Episode]:
 
 
 # ----------------------------------------------------------------------------- book footprints
+def _log_module_to_book(mod: str) -> str:
+    """hermes_trader.agents.<mod> logger name -> book name (strip the _live suffix)."""
+    return mod[:-5] if mod.endswith("_live") else mod
+
+
+def extract_exact_footprints(start_ms: int,
+                             loop_log: str = LOOP_LOG,
+                             session_log: str = SESSION_LOG) -> Dict[str, List[Tuple[str, Optional[str], int]]]:
+    """EXACT per-book open records (coin, side, ts) from two sources:
+    session-log `book_open` events, and loop-log 'LIVE opened' lines (whose
+    timestamps are this machine's LOCAL time -> epoch ms via mktime)."""
+    foot: Dict[str, List[Tuple[str, Optional[str], int]]] = {b: [] for b in BOOK_PRIORITY}
+    if os.path.exists(session_log):
+        for line in open(session_log):
+            if '"book_open"' not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            if e.get("event") != "book_open":
+                continue
+            ts = e.get("ts", 0)
+            book = e.get("book")
+            if book in foot and isinstance(ts, (int, float)) and ts >= start_ms:
+                foot[book].append((e.get("coin"), e.get("side"), int(ts)))
+    if os.path.exists(loop_log):
+        for line in open(loop_log, errors="replace"):
+            m = OPEN_LINE_RE.match(line)
+            if not m:
+                continue
+            stamp, ms, mod, side, coin = m.groups()
+            book = _log_module_to_book(mod)
+            if book not in foot:
+                continue
+            try:
+                ts = int(time.mktime(time.strptime(stamp, "%Y-%m-%d %H:%M:%S")) * 1000) + int(ms)
+            except Exception:
+                continue
+            if ts >= start_ms:
+                foot[book].append((coin, side, ts))
+    return foot
+
+
 def extract_footprints(start_ms: int) -> Dict[str, List[Tuple[str, Optional[str], int]]]:
-    """Stream the session log -> per-book list of (coin, side, ts) open intents."""
+    """LEGACY fuzzy source: per-book (coin, side, ts) open INTENTS from session
+    events. The candidates list includes coins that never opened, so this
+    over-attributes — used only when no exact source matched."""
     foot: Dict[str, List[Tuple[str, Optional[str], int]]] = {b: [] for b in BOOK_PRIORITY}
     if not os.path.exists(SESSION_LOG):
         return foot
@@ -190,7 +249,7 @@ def extract_footprints(start_ms: int) -> Dict[str, List[Tuple[str, Optional[str]
         if not isinstance(ts, (int, float)) or ts < start_ms:
             continue
         ts = int(ts)
-        if ev in SHORT_BOOKS:
+        if ev in LEGACY_EVENT_BOOKS:
             if (e.get("opened") or 0) > 0:
                 for c in e.get("candidates", []):
                     foot[ev].append((c.get("coin"), c.get("side"), ts))
@@ -207,8 +266,7 @@ def extract_footprints(start_ms: int) -> Dict[str, List[Tuple[str, Optional[str]
     return foot
 
 
-def attribute(ep: Episode, foot: Dict[str, List[Tuple[str, Optional[str], int]]]) -> str:
-    """Return the book that opened this episode, or 'main-engine'."""
+def _match(ep: Episode, foot: Dict[str, List[Tuple[str, Optional[str], int]]]) -> Optional[str]:
     for book in BOOK_PRIORITY:
         for (coin, side, ts) in foot[book]:
             if coin != ep.coin:
@@ -217,13 +275,26 @@ def attribute(ep: Episode, foot: Dict[str, List[Tuple[str, Optional[str], int]]]
                 continue
             if abs(ts - ep.open_ts) <= MATCH_WINDOW_MS:
                 return book
-    return "main-engine"
+    return None
+
+
+def attribute(ep: Episode, exact: Dict[str, List[Tuple[str, Optional[str], int]]],
+              legacy: Dict[str, List[Tuple[str, Optional[str], int]]]) -> Tuple[str, str]:
+    """(book, source) for this episode; exact sources win over the fuzzy join."""
+    book = _match(ep, exact)
+    if book is not None:
+        return book, "exact"
+    book = _match(ep, legacy)
+    if book is not None:
+        return book, "legacy"
+    return "main-engine", "default"
 
 
 # ----------------------------------------------------------------------------- aggregation
-def aggregate(episodes: List[Episode], foot) -> Tuple[Dict[str, dict], Dict[str, Dict[str, dict]]]:
+def aggregate(episodes: List[Episode], exact, legacy) -> Tuple[Dict[str, dict], Dict[str, Dict[str, dict]], Dict[str, int]]:
     books: Dict[str, dict] = {}
     per_coin: Dict[str, Dict[str, dict]] = {}
+    sources: Dict[str, int] = {"exact": 0, "legacy": 0, "default": 0}
 
     def blank() -> dict:
         return dict(n=0, gross=0.0, fees=0.0, net=0.0, wins=0, losses=0,
@@ -231,7 +302,8 @@ def aggregate(episodes: List[Episode], foot) -> Tuple[Dict[str, dict], Dict[str,
                     long_net=0.0, short_net=0.0, open_n=0)
 
     for ep in episodes:
-        book = attribute(ep, foot)
+        book, source = attribute(ep, exact, legacy)
+        sources[source] += 1
         b = books.setdefault(book, blank())
         net = ep.closed_pnl - ep.fee
         b["n"] += 1
@@ -261,7 +333,7 @@ def aggregate(episodes: List[Episode], foot) -> Tuple[Dict[str, dict], Dict[str,
             pc["longs"] += 1
         else:
             pc["shorts"] += 1
-    return books, per_coin
+    return books, per_coin, sources
 
 
 def fmt_book_table(books: Dict[str, dict]) -> str:
@@ -309,8 +381,10 @@ def main() -> None:
     span1 = time.strftime("%Y-%m-%d %H:%M", time.localtime(fills[-1]["time"] / 1000))
 
     episodes = build_episodes(fills)
-    foot = extract_footprints(fills[0]["time"] - MATCH_WINDOW_MS)
-    books, per_coin = aggregate(episodes, foot)
+    start = fills[0]["time"] - MATCH_WINDOW_MS
+    exact = extract_exact_footprints(start)
+    legacy = extract_footprints(start)
+    books, per_coin, sources = aggregate(episodes, exact, legacy)
 
     tot_net = sum(b["net"] for b in books.values())
     tot_gross = sum(b["gross"] for b in books.values())
@@ -323,6 +397,10 @@ def main() -> None:
     print(f"episodes: {n_eps}  attributed-to-a-book: {non_main} "
           f"({100*non_main/n_eps:.1f}%)  -> main-engine: {n_eps-non_main} "
           f"({100*(n_eps-non_main)/n_eps:.1f}%)")
+    print(f"match sources: exact={sources['exact']} legacy-fuzzy={sources['legacy']} "
+          f"default-main={sources['default']}"
+          + ("   (WARNING: legacy matches over-attribute — candidates != opens)"
+             if sources["legacy"] else ""))
     print(f"TOTAL  gross {tot_gross:+.2f}  fees {tot_fees:.2f}  net {tot_net:+.2f}\n")
     print(fmt_book_table(books))
 

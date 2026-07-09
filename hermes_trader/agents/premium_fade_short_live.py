@@ -322,20 +322,24 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     opened = 0
     skipped = {"held": 0, "claimed": 0, "dedup": 0, "blocked": 0}
 
+    # Record in BOTH modes: shadow-only recording froze grading the moment the
+    # book went live (audit 2026-07-09).
+    shadow_ledger.record_many(_BOOK_NAME, [{
+        "coin": s["coin"],
+        "side": "short",
+        "signal_bar_t": s.get("signal_bar_t"),
+        "entry_ref_px": s.get("entry_ref_px"),
+        "horizon_days": float(cfg.get("hold_days", 5.0)),
+        "stop_pct": float(cfg.get("stop_pct", 20.0)),
+        "ts": now_ms,
+        "meta": {"premium_z": s.get("premium_z"),
+                 "trailing_dvol": s.get("trailing_dvol"),
+                 "btc_up": s.get("btc_up"),
+                 "shadow": shadow_only},
+    } for s in signals])
+
     if shadow_only:
         _save_ts(now)
-        shadow_ledger.record_many(_BOOK_NAME, [{
-            "coin": s["coin"],
-            "side": "short",
-            "signal_bar_t": s.get("signal_bar_t"),
-            "entry_ref_px": s.get("entry_ref_px"),
-            "horizon_days": float(cfg.get("hold_days", 5.0)),
-            "stop_pct": float(cfg.get("stop_pct", 20.0)),
-            "ts": now_ms,
-            "meta": {"premium_z": s.get("premium_z"),
-                     "trailing_dvol": s.get("trailing_dvol"),
-                     "btc_up": s.get("btc_up")},
-        } for s in signals])
         rec = {
             "event": "premium_fade_short", "ts": now_ms, "shadow": True, "btc_up": btc_up,
             "signals": len(signals), "opened": 0, "skipped": skipped,
@@ -376,6 +380,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": sig_t})
                 logger.info(f"[premium-fade-short] LIVE opened short {coin} "
                             f"(premium_z {sig['premium_z']:.2f}, dvol ${sig['trailing_dvol']/1e6:.1f}M)")
             else:

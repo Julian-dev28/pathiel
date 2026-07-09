@@ -456,20 +456,23 @@ def maybe_run(
     opened = 0
     skipped = {"held": 0, "claimed": 0, "dedup": 0, "blocked": 0}
 
+    # Record candidates in BOTH modes for survey + forward grade — shadow-only
+    # recording froze grading the moment a book went live (audit 2026-07-09).
+    shadow_ledger.record_many("hail_mary_short", [{
+        "coin": s.get("coin"),
+        "side": "short",
+        "signal_bar_t": s.get("signal_bar_t"),
+        "entry_ref_px": s.get("close"),
+        "horizon_days": float(cfg.get("hold_days", 10.0)),
+        "stop_pct": float(cfg.get("stop_pct", 12.0)),
+        "ts": now_ms,
+        "meta": {"score": s.get("score"), "breadth_pct": s.get("breadth_pct"),
+                 "recent_ret_pct": s.get("recent_ret_pct"),
+                 "shadow": shadow_only},
+    } for s in signals])
+
     if shadow_only:
         _save_ts(now)
-        # record candidates to the unified shadow ledger for survey + forward grade.
-        shadow_ledger.record_many("hail_mary_short", [{
-            "coin": s.get("coin"),
-            "side": "short",
-            "signal_bar_t": s.get("signal_bar_t"),
-            "entry_ref_px": s.get("close"),
-            "horizon_days": float(cfg.get("hold_days", 10.0)),
-            "stop_pct": float(cfg.get("stop_pct", 12.0)),
-            "ts": now_ms,
-            "meta": {"score": s.get("score"), "breadth_pct": s.get("breadth_pct"),
-                     "recent_ret_pct": s.get("recent_ret_pct")},
-        } for s in signals])
         rec = {
             "event": "hail_mary_short",
             "ts": now_ms,
@@ -524,6 +527,8 @@ def maybe_run(
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": sig_t})
                 logger.info(
                     f"[hail-mary-short] LIVE opened short {coin} "
                     f"(score {float(sig.get('score', 0.0)):.1f}, dvol ${float(sig.get('day_volume_usd', 0.0))/1e6:.1f}M)"

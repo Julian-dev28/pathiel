@@ -212,7 +212,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
         "signal_bar_t": s.get("influx_bar_t"), "entry_ref_px": s.get("entry_ref_px"),
         "horizon_days": float(cfg.get("hold_hours", 8.0)) / 24.0,
         "stop_pct": float(cfg.get("stop_pct", 25.0)), "ts": now_ms,
-        "meta": {"funding_8h": s.get("funding_8h"), "influx_vol_x": s.get("influx_vol_x")},
+        "meta": {"funding_8h": s.get("funding_8h"), "influx_vol_x": s.get("influx_vol_x"),
+                 "shadow": shadow_only},
     } for s in signals])
 
     if shadow_only:
@@ -266,6 +267,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": sig_t})
                 logger.info(f"[neg-funding-fade] LIVE opened short {coin} "
                             f"(funding {sig['funding_8h']:.2f}%/8h, influx {sig['influx_vol_x']:.1f}x)")
             else:

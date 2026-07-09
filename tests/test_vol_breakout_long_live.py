@@ -279,3 +279,31 @@ def test_book_cap_allows_up_to_room(monkeypatch):
     rec = vb.maybe_run(_cfg(max_book_positions=3, max_new_per_cycle=1), _uni(), held, _fetch,
                        lambda a: calls.append(a) or {"executed": True})
     assert rec["opened"] == 1
+
+
+def test_live_mode_records_to_ledger_with_config_side(monkeypatch):
+    """Audit 2026-07-09: recording only in shadow + a hard-coded side:'long' meant
+    the live short-the-pop phase was never gradeable (and would have graded the
+    WRONG direction). Live mode must record too, with the CONFIGURED side."""
+    captured = _setup(monkeypatch)
+    events = []
+    monkeypatch.setattr(vb, "log_event", lambda e: events.append(e))
+    rec = vb.maybe_run(_cfg(side="short"), _uni(), [], _fetch,
+                       lambda a: {"executed": True})
+    assert rec["shadow"] is False and rec["opened"] == 1
+    book, rows = captured[0]
+    assert book == "vol_breakout_long"
+    assert rows[0]["side"] == "short"
+    assert rows[0]["meta"]["shadow"] is False
+    opens = [e for e in events if e.get("event") == "book_open"]
+    assert opens == [{"event": "book_open", "book": "vol_breakout_long",
+                      "coin": "ALT", "side": "short", "sig_t": CONFIRM_T}]
+
+
+def test_shadow_records_carry_config_side(monkeypatch):
+    captured = _setup(monkeypatch)
+    vb.maybe_run(_cfg(shadow_only=True, side="short"), _uni(), [], _fetch,
+                 lambda a: {"executed": True})
+    _, rows = captured[0]
+    assert rows[0]["side"] == "short"
+    assert rows[0]["meta"]["shadow"] is True

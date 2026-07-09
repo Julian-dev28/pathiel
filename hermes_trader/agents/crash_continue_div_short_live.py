@@ -293,22 +293,25 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     opened = 0
     skipped = {"held": 0, "claimed": 0, "dedup": 0, "blocked": 0}
 
+    # Record each candidate in BOTH modes so scripts/shadow_status.py can survey +
+    # forward-grade continuously — shadow-only recording froze grading the moment
+    # the book went live (audit 2026-07-09).
+    shadow_ledger.record_many(_BOOK_NAME, [{
+        "coin": s["coin"],
+        "side": "short",
+        "signal_bar_t": s.get("signal_bar_t"),
+        "entry_ref_px": s.get("entry_ref_px"),
+        "horizon_days": float(cfg.get("hold_days", 10.0)),
+        "stop_pct": float(cfg.get("stop_pct", 8.0)),
+        "ts": now_ms,
+        "meta": {"move_pct": s.get("move_pct"),
+                 "trailing_dvol": s.get("trailing_dvol"),
+                 "btc_up": btc_up,
+                 "shadow": shadow_only},
+    } for s in signals])
+
     if shadow_only:
         _save_ts(now)
-        # record each candidate to the unified shadow ledger so scripts/shadow_status.py
-        # can survey + forward-grade (refute/validate) before any operator live flip.
-        shadow_ledger.record_many(_BOOK_NAME, [{
-            "coin": s["coin"],
-            "side": "short",
-            "signal_bar_t": s.get("signal_bar_t"),
-            "entry_ref_px": s.get("entry_ref_px"),
-            "horizon_days": float(cfg.get("hold_days", 10.0)),
-            "stop_pct": float(cfg.get("stop_pct", 8.0)),
-            "ts": now_ms,
-            "meta": {"move_pct": s.get("move_pct"),
-                     "trailing_dvol": s.get("trailing_dvol"),
-                     "btc_up": btc_up},
-        } for s in signals])
         rec = {
             "event": "crash_continue_div_short",
             "ts": now_ms,
@@ -356,6 +359,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                 held.add(coin)
                 if sig_t:
                     seen[coin] = sig_t
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": sig_t})
                 logger.info(
                     f"[crash-continue-div-short] LIVE opened short {coin} "
                     f"(div {sig['move_pct']:+.1f}%, dvol ${sig['trailing_dvol']/1e6:.1f}M)"
