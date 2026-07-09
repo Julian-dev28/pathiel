@@ -262,6 +262,26 @@
     "leverage": 1,
     "max_new_per_cycle": 1
   },
+  "young_listings": {
+    "enabled": true,
+    "shadow_only": true,
+    "dex_allowlist": ["xyz"],
+    "scan_interval_minutes": 30,
+    "min_age_bars": 2,
+    "max_age_bars": 60,
+    "trigger_pct": 8.0,
+    "min_volume_usd": 3000000,
+    "executor_short_volume_floor_usd": 3000000,
+    "entry_window_hours": 8.0,
+    "hold_days": 2.0,
+    "stop_pct": 15.0,
+    "notional_usd": 15.0,
+    "leverage": 1,
+    "up_action": "off",
+    "down_action": "off",
+    "max_new_per_cycle": 1,
+    "max_book_positions": 1
+  },
   "majors_swing": {
     "enabled": true,
     "shadow_only": true,

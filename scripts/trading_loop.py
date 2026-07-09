@@ -62,6 +62,7 @@ from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_ma
 from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
 from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
 from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
+from hermes_trader.agents.young_listings_live import maybe_run as _young_listings_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -770,6 +771,20 @@ while True:
             )
         except Exception as _nffe:
             logger.warning(f"[neg-funding-fade] cycle failed (non-fatal): {_nffe}")
+
+        # Young-listing lane (2026-07-10): xyz coins UNDER the 60-bar history floor
+        # — the floor still protects the main engine; this bounded lane (min 2 bars,
+        # $3M vol, max 1 position, $15/1x) covers the excluded population. Actions
+        # are OFF until W-Y1 validates continuation vs fade; every trigger records
+        # to the shadow ledger for forward grading either way.
+        try:
+            _young_listings_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                _book_execute, close_position_market,
+            )
+        except Exception as _yle:
+            logger.warning(f"[young-listings] cycle failed (non-fatal): {_yle}")
 
         # Funding-spike crowded-long fade (W-F2A, VALIDATED 2026-07-09: +6.2%/ep
         # net, MC p=0.0027, n=25 dedup). SHADOW until the forward ledger confirms;
