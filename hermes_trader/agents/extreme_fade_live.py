@@ -166,6 +166,14 @@ def _fade_analysis(sig: FadeSignal, ef: Optional[Dict[str, Any]] = None) -> Dict
         },
     }
     frac = float(ef.get("equity_fraction", 0.0) or 0.0)
+    # Deep-crash satellite tier (alpha rescrape 2026-07-09): crashes <= deep
+    # crash_pct (default -20%) validated at higher EV on two independent
+    # datasets (extreme_surface + the SETTLE-2 cross-check) — same structure,
+    # bigger size.
+    deep = ef.get("deep_tier") or {}
+    if deep and sig.prior_daily_ret <= float(deep.get("crash_pct", -0.20)):
+        frac = float(deep.get("equity_fraction", frac) or frac)
+        out["reasoning"] += " [deep-tier]"
     if frac > 0:
         out["strategy_book_equity_frac_override"] = frac
     return out

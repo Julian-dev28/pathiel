@@ -234,3 +234,25 @@ def test_signals_recorded_to_ledger_with_arm_meta(monkeypatch):
     assert r["side"] == "long" and r["horizon_days"] == 3.0 and r["stop_pct"] == 20.0
     assert r["entry_ref_px"] > 0
     assert r["meta"]["armed"] is True and r["meta"]["skew"] == -0.42
+
+
+def test_deep_crash_tier_sizes_up():
+    """Alpha rescrape 2026-07-09: crashes <= -20% validated at higher EV on two
+    independent datasets -> distinct size tier, same 20%/1x/3d structure."""
+    calls = []
+    # _mk_bars crashes -15% (base tier)
+    efl.maybe_run(_cfg(equity_fraction=0.4,
+                       deep_tier={"crash_pct": -0.20, "equity_fraction": 0.6}),
+                  _universe(["VBASE"]), [], _fetch(fresh={"VBASE"}),
+                  lambda a: calls.append(a))
+    assert calls[0]["strategy_book_equity_frac_override"] == 0.4
+    assert "[deep-tier]" not in calls[0]["reasoning"]
+
+
+def test_deep_crash_tier_triggers_below_threshold(monkeypatch):
+    from hermes_trader.agents.extreme_fade import FadeSignal
+    a = efl._fade_analysis(FadeSignal(coin="X", side="long", prior_daily_ret=-0.25, threshold_pct=12.0),
+                           {"equity_fraction": 0.4,
+                            "deep_tier": {"crash_pct": -0.20, "equity_fraction": 0.6}})
+    assert a["strategy_book_equity_frac_override"] == 0.6
+    assert "[deep-tier]" in a["reasoning"]

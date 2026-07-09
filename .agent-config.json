@@ -170,6 +170,10 @@
     "leverage": 1,
     "hold_days": 3.0,
     "equity_fraction": 0.4,
+    "deep_tier": {
+      "crash_pct": -0.20,
+      "equity_fraction": 0.6
+    },
     "tp_scale_fraction": 0.0,
     "skew_arm": {
       "enabled": true,
