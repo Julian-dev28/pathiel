@@ -13,9 +13,9 @@
   },
   "enable_crypto": true,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.33,
+  "equity_fraction_per_trade": 0.50,
   "leverage": 15,
-  "max_trade_notional_usd": 2000,
+  "max_trade_notional_usd": 5000,
   "asset_notional_multiplier": {
     "crypto": 1.0,
     "hip3": 1.0
@@ -23,7 +23,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -100,
+  "max_daily_loss_usd": -25,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -178,8 +178,8 @@
     "volume_window": 30,
     "hold_days": 5,
     "stop_pct": 25.0,
-    "notional_usd": 100.0,
-    "leverage": 10,
+    "notional_usd": 20.0,
+    "leverage": 1,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "history_bars": 40
@@ -241,8 +241,8 @@
     "history_bars": 40
   },
   "vol_breakout_long": {
-    "enabled": true,
-    "shadow_only": false,
+    "enabled": false,
+    "shadow_only": true,
     "entry_mode": "immediate",
     "vol_ref": "prev",
     "scan_interval_minutes": 2,
@@ -261,8 +261,8 @@
     "retrace_threshold": 0.1,
     "protect_pct": 1.0,
     "stop_pct": 15.0,
-    "notional_usd": 20.0,
-    "leverage": 1,
+    "notional_usd": 200.0,
+    "leverage": 12,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "max_book_positions": 3,
@@ -270,8 +270,8 @@
     "executor_short_volume_floor_usd": 5000000
   },
   "vol_breakout_wide": {
-    "enabled": true,
-    "shadow_only": false,
+    "enabled": false,
+    "shadow_only": true,
     "entry_mode": "immediate",
     "vol_ref": "prev",
     "scan_interval_minutes": 2,
@@ -296,8 +296,8 @@
       }
     ],
     "stop_pct": 30.0,
-    "notional_usd": 20.0,
-    "leverage": 1,
+    "notional_usd": 200.0,
+    "leverage": 12,
     "tp_scale_fraction": 0.0,
     "max_new_per_cycle": 1,
     "max_book_positions": 3,
@@ -306,7 +306,7 @@
   },
   "neg_funding_fade": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "scan_interval_minutes": 5,
     "entry_window_minutes": 7,
     "vol_window": 6,
