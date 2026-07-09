@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import os
-import signal
 import sys
 
 from hermes_trader import __version__
@@ -316,54 +315,6 @@ def cmd_config(*args):
         print("\n  ✓ Config updated.\n")
 
 
-def cmd_start():
-    """Start autonomous scanning loop in background."""
-    import subprocess
-
-    pid_file = os.path.expanduser("~/.hermes.pid")
-    if os.path.exists(pid_file):
-        old_pid = open(pid_file).read().strip()
-        try:
-            os.kill(int(old_pid), 0)
-            print(f"  Scanner already running (PID {old_pid}). Run 'hermes stop' first.\n")
-            return
-        except (OSError, ValueError):
-            pass
-
-    print("  Starting autonomous scanner...\n")
-    env = os.environ.copy()
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "hermes_trader"],
-        env=env,
-        start_new_session=True,
-    )
-
-    open(pid_file, "w").write(str(proc.pid))
-    print(f"  Scanner running (PID {proc.pid}).\n")
-    print("  To stop:  hermes stop")
-    print("  Monitor:  hermes status\n")
-
-
-def cmd_stop():
-    """Stop autonomous scanning loop."""
-    pid_file = os.path.expanduser("~/.hermes.pid")
-    if not os.path.exists(pid_file):
-        print("  Scanner not running.\n")
-        return
-
-    pid = open(pid_file).read().strip()
-    try:
-        os.kill(int(pid), signal.SIGTERM)
-        print(f"  Scanner stopped (PID {pid}).\n")
-    except (OSError, ValueError):
-        print("  Scanner not running (stale PID).\n")
-    finally:
-        try:
-            os.remove(pid_file)
-        except OSError:
-            pass
-
-
 def cmd_version():
     print_banner()
     print(f"  Hermes-Trader v{__version__}\n")
@@ -379,8 +330,6 @@ COMMANDS = {
     "trades": cmd_trades,
     "account": cmd_account,
     "config": cmd_config,
-    "start": cmd_start,
-    "stop": cmd_stop,
     "version": cmd_version,
 }
 

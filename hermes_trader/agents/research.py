@@ -126,32 +126,6 @@ def _fetch_news(coin: str) -> str:
         return "no news"
 
 
-def _gex_block(coin: str) -> str:
-    """HIP-3 options-wall context for the prompt and executor cache.
-
-    The executor's GEX veto reads the cache only, so this fetch is the warm path
-    for researched HIP-3 candidates.
-    """
-    if ":" not in (coin or ""):
-        return ""
-    try:
-        from hermes_trader.agents.options_gex import gex_signal_cached
-        g = gex_signal_cached(coin)
-        if not g:
-            return "HIP-3 GEX: no options-wall report available"
-        return (
-            f"HIP-3 GEX: {g.regime}; call wall {g.call_wall}, put wall {g.put_wall}, "
-            f"gamma flip {g.gamma_flip}, spot {g.spot:g}. "
-            + (
-                "Negative gamma = squeeze-prone; do not fade trend impulse."
-                if g.regime == "trend_short_gamma"
-                else "Long gamma = pin/mean-revert risk near walls."
-            )
-        )
-    except Exception as e:
-        logger.debug(f"[research] GEX block failed for {coin}: {e}")
-        return "HIP-3 GEX: unavailable"
-
 
 def _build_user_message(
     coin: str,
@@ -276,7 +250,6 @@ def _build_user_message(
         "" if ohlc_block else "",
         structure_block,
         "",
-        _gex_block(coin),
         "" if ":" in (coin or "") else "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",

@@ -94,10 +94,6 @@
   "min_ai_close_hold_min": 25,
   "sl_atr_mult": 1.5,
   "backup_sl_max_frac_of_liq": 0.6,
-  "gex_signal": {
-    "enabled": true,
-    "caution_near_wall_pct": 8.0
-  },
   "runner_mover_surface": {
     "enabled": true,
     "min_crypto_24h_pct": 10.0,

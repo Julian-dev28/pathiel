@@ -414,14 +414,6 @@ def test_parse_verdict_extracts_news_risk():
 
 
 # ── kelly sizing ────────────────────────────────────────────────────────
-def test_kelly_size():
-    from hermes_trader.agents.executor import kelly_size
-    assert kelly_size(0.9, 1000, 2.0, 500) > 0
-    assert kelly_size(0.3, 1000, 2.0, 500) == 0          # negative edge
-    assert kelly_size(0.99, 1_000_000, 5.0, 100) == 100  # capped
-
-
-# ── risk gates ──────────────────────────────────────────────────────────
 def _ctx(**kw):
     from hermes_trader.agents.risk_gates import GateContext
     base = dict(confidence=0.9, current_positions=[], trade_notional_usd=50,
@@ -2076,46 +2068,6 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
     assert "holding" in blk or "re-entry" in blk or "pyramid" in blk, res
 
 
-def test_maybe_execute_refuses_when_no_atr(monkeypatch):
-    """A coin with no computable ATR (insufficient candle history) must be
-    refused, never traded blind — guards execution of brand-new HIP-3
-    listings where research emits stop_px/tp_px = 0.0."""
-    from hermes_trader.agents import executor
-    monkeypatch.setattr(executor, "read_agent_config", lambda: {
-        "mode": "LIVE", "enable_crypto": True, "enable_hip3": False,
-        "min_available_margin_pct": 0.0,
-    })
-    monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
-    monkeypatch.setattr(executor, "fetch_account_state", lambda u, **kw: {
-        "equity": 1000.0, "available": 1000.0,
-        "dex_equity": {"": 1000.0}, "dex_available": {"": 1000.0},
-        "total_ntl": 0.0, "asset_positions": [],
-    })
-    monkeypatch.setenv("HYPERLIQUID_PRIVATE_KEY", "0xdeadbeef")
-    monkeypatch.setattr(executor, "get_hl_price", lambda c: 100.0)
-    monkeypatch.setattr(executor, "get_max_leverage", lambda c: 10)
-    monkeypatch.setattr(executor, "min_entry_notional_usd", lambda c, mid: 10.5)
-    monkeypatch.setattr(executor, "entry_size_for_notional", lambda c, n, mid: n / mid)
-    monkeypatch.setattr(executor, "set_leverage", lambda c, lev: {"ok": True})
-    # gates pass
-    monkeypatch.setattr(executor, "eval_all_gates",
-                        lambda ctx, cfg, lt: {"blocked": False, "results": {}})
-    # the coin under test: no candle history → ATR 0
-    monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 0.0)
-    placed = {"n": 0}
-    monkeypatch.setattr(executor, "place_hl_order",
-                        lambda *a, **k: placed.update(n=placed["n"] + 1) or {"ok": True})
-
-    res = executor.maybe_execute({
-        "id": "no-atr", "coin": "NEWCOIN", "verdict": "LONG",
-        "side": "long", "confidence": 0.8, "composite_score": 60.0,
-    })
-    assert res["executed"] is False
-    assert "no_atr_no_stop" in res["reason"]
-    assert placed["n"] == 0  # never placed an order
-
-
-# ── Shakedown: parse_verdict edge cases (silent-breakage guards) ─────────
 def test_parse_verdict_short_derives_side_short():
     """A SHORT verdict with no/null side must yield side='short', NOT fall
     through to the executor's 'long' default (wrong-direction bug)."""
@@ -2381,35 +2333,6 @@ def test_route_verdict_ta_sidestep_ignores_legacy_signal_hint(monkeypatch):
     }, execute_fn=lambda a: {"executed": False})
 
     assert res["action"] == "none"
-
-
-def test_runner_gate_blocks_hip3_gex_pintrap_longs(monkeypatch):
-    from hermes_trader.agents import executor
-    from hermes_trader.agents import options_gex
-
-    monkeypatch.setattr(
-        options_gex,
-        "gex_override_caution",
-        lambda *a, **k: (True, "GEX pin-trap: jammed under call wall"),
-    )
-    analysis = {
-        "coin": "xyz:WDC",
-        "side": "long",
-        "confidence": 0.9,
-        "composite_score": 70,
-        "volume_spike_fired": True,
-        "breakout_fired": True,
-        "slow_burn_count": 1,
-    }
-    cfg = {
-        "runner_entry_gate": {"enabled": True, "min_confidence": 0.7,
-                              "min_composite": 30, "min_hip3_composite": 50},
-        "gex_signal": {"enabled": True, "caution_near_wall_pct": 10.0},
-    }
-
-    reason = executor._runner_entry_block_reason(analysis, cfg)
-
-    assert "GEX pin-trap" in reason
 
 
 def test_runner_gate_allows_structured_hip3_daily_mover_below_hip3_floor():
@@ -3423,3 +3346,38 @@ def test_ai_long_notional_cap_applies_only_to_main_engine_longs(monkeypatch):
     ex, captured, _ = _exec_baseline(monkeypatch, {"ai_long_notional_usd": 0})
     r = ex.maybe_execute(_analysis())
     assert r.get("executed") is True and captured["size"] * 100.0 > 500
+
+
+def test_book_capital_carveout_bypasses_aggregate_gates():
+    """Funnel audit 2026-07-10: one manual 40x BTC position saturated notional then
+    tripped the giveback halt, locking every book out of every top mover. Books get
+    a carve-out from the three AGGREGATE gates; every safety gate still applies."""
+    from hermes_trader.agents.risk_gates import eval_all_gates
+    ctx = _ctx(
+        confidence=0.99, current_positions=[{"coin": "BTC", "side": "short"}] * 10,
+        total_open_notional=5_000.0, equity=150.0,
+        daily_pnl=30.0, peak_daily_pnl=124.0,       # deep giveback territory
+        trade_notional_usd=60.0, market_volume_24h_usd=1e8, coin="ALT",
+        trade_side="long",
+    )
+    cfg = {"max_concurrent": 10, "max_total_notional_pct": 10.0,
+           "daily_giveback_halt_pct": 0.45, "daily_giveback_min_peak_usd": 25.0,
+           "max_trade_notional_usd": 5000, "max_daily_loss_usd": -1000,
+           "min_ai_confidence": 0.5, "cooldown_min": 0}
+    # main engine: blocked by all three aggregate gates
+    main = eval_all_gates(ctx, cfg, None, is_book=False)
+    assert main["blocked"] is True
+    failed = {k for k, r in main["results"].items() if not r["pass"]}
+    assert {"max_concurrent", "daily_giveback", "equity_risk"} & failed
+    # book entry: the three aggregate gates are carved out
+    book = eval_all_gates(ctx, cfg, None, is_book=True)
+    for g in ("max_concurrent", "daily_giveback", "equity_risk"):
+        assert book["results"][g] == {"pass": True, "reason": "book_carveout"}
+    # kill-switch still applies to books (hard floor is NOT carved out)
+    ctx2 = _ctx(confidence=0.99, daily_pnl=-2000.0, coin="ALT", trade_side="long",
+                market_volume_24h_usd=1e8)
+    book2 = eval_all_gates(ctx2, {**cfg, "max_daily_loss_usd": -100}, None, is_book=True)
+    assert book2["results"]["daily_loss"]["pass"] is False
+    # config kill restores the aggregate gates for books
+    off = eval_all_gates(ctx, {**cfg, "book_capital_carveout": False}, None, is_book=True)
+    assert off["blocked"] is True

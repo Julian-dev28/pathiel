@@ -443,9 +443,21 @@ def eval_all_gates(
     ctx: GateContext,
     config: Dict[str, Any],
     last_trade_time: Optional[int] = None,
+    is_book: bool = False,
 ) -> Dict[str, Any]:
-    """Evaluate all risk gates and collect results."""
+    """Evaluate all risk gates and collect results.
+
+    is_book: strategy-book entries get a CAPITAL CARVE-OUT from the three
+    AGGREGATE gates (daily_giveback, max_concurrent, equity_risk) when
+    `book_capital_carveout` is on (default). Funnel audit 2026-07-10: a single
+    manual 40x BTC position saturated the notional budget all day, then its
+    unrealized swing tripped the giveback halt at 21:09 and locked EVERY book
+    out of EVERY top mover (VINE +38%, ARB +18%, SNDK +9% — all died at these
+    two gates, zero died at signal). Books stay bounded by their own
+    max_book_positions x notional plus the margin preflight, the hard
+    daily-loss kill, liquidity floors, and every other safety gate."""
     results = {}
+    carveout = is_book and bool(config.get("book_capital_carveout", True))
     # Regime-aware confidence floor: a WITH-TREND (aligned) trade — long in an up
     # regime, SHORT in a DOWN regime — gets a lower bar (`aligned_min_conf`) than
     # the default `min_ai_confidence`. The 0.78 default was calibrated on the
@@ -465,14 +477,16 @@ def eval_all_gates(
         except Exception:
             pass
     results["confidence"] = confidence_gate(ctx, min_conf)
-    results["max_concurrent"] = max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3))
+    results["max_concurrent"] = ({"pass": True, "reason": "book_carveout"} if carveout
+                                 else max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3)))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
-    results["daily_giveback"] = daily_giveback_gate(
+    results["daily_giveback"] = ({"pass": True, "reason": "book_carveout"} if carveout
+                                 else daily_giveback_gate(
         ctx,
         float(config.get("daily_giveback_halt_pct", 0.0) or 0.0),
         float(config.get("daily_giveback_min_peak_usd", 20.0) or 0.0),
-    )
+    ))
     results["liquidity"] = market_liquidity_floor(
         ctx,
         config.get("min_market_volume_usd", 5_000_000),
@@ -488,7 +502,8 @@ def eval_all_gates(
     results["cooldown"] = cooldown_gate(ctx, last_trade_time, config.get("cooldown_min", 60))
     results["opposite_guard"] = opposite_direction_guard(ctx)
     results["correlation"] = correlation_cap(ctx, int(config.get("max_crypto_long_correlated", 2)))
-    results["equity_risk"] = equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0))  # Default 100% to allow trading with small accounts
+    results["equity_risk"] = ({"pass": True, "reason": "book_carveout"} if carveout
+                              else equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0)))  # Default 100% to allow trading with small accounts
     results["market_regime"] = market_regime_gate(
         ctx, _cfg(config, "counter_regime_min_conf", 0.7),
         bool(_cfg(config, "block_counter_trend_bypass", False)),

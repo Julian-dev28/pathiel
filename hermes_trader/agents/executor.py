@@ -257,21 +257,6 @@ def _asset_notional_multiplier(coin: str, config: Dict[str, Any]) -> float:
     return max(0.0, min(mult, 1.0))
 
 
-def kelly_size(
-    confidence: float,
-    equity: float,
-    reward_risk_ratio: float,
-    max_trade_notional: float,
-) -> float:
-    """Calculate trade size using the half-Kelly criterion."""
-    p = confidence
-    q = 1 - p
-    b = reward_risk_ratio
-    f_star = max(0, (p * b - q) / b) if b != 0 else 0
-    half_kelly = f_star / 2
-    notional = half_kelly * equity
-    return min(notional, max_trade_notional)
-
 
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market."""
@@ -817,7 +802,8 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             gate_config = config
 
-    gate_output = eval_all_gates(ctx, gate_config, last_trade_time)
+    gate_output = eval_all_gates(ctx, gate_config, last_trade_time,
+                                 is_book=bool(analysis.get("strategy_book")))
 
     if gate_output["blocked"]:
         # Lane G shadow counterfactual (W-G1, 2026-07-09): the thin-short floor
@@ -1337,19 +1323,6 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
         return (f"runner_gate_blocked (crypto composite {score:.0f} "
                 f"< {min_crypto_score:.0f} for fresh non-burst setup)")
 
-    if is_hip3:
-        gex_cfg = config.get("gex_signal") or {}
-        if bool(gex_cfg.get("enabled", True)):
-            try:
-                from hermes_trader.agents.options_gex import gex_override_caution
-                near = float(gex_cfg.get("caution_near_wall_pct", 1.0))
-                suppress, why = gex_override_caution(
-                    coin, "long", near_wall_pct=near, allow_fetch=False
-                )
-                if suppress:
-                    return f"runner_gate_blocked ({why})"
-            except Exception as e:
-                logger.debug(f"[executor] GEX entry veto check failed for {coin}: {e}")
     if is_hip3 and score < min_hip3_score and not structured_daily_mover:
         return (f"runner_gate_blocked (HIP-3 composite {score:.0f} "
                 f"< {min_hip3_score:.0f})")

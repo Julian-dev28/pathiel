@@ -103,10 +103,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "min_ai_close_hold_min": 25,
     "sl_atr_mult": 1.5,
     "backup_sl_max_frac_of_liq": 0.6,
-    "gex_signal": {
-        "enabled": True,
-        "caution_near_wall_pct": 15.0,
-    },
     "runner_mover_surface": {
         "enabled": True,
         "min_crypto_24h_pct": 10.0,

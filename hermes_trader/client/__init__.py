@@ -12,10 +12,6 @@ from hermes_trader.client.hl_client import (
 )
 from hermes_trader.client.universe import get_market_by_coin, get_universe
 
-from hermes_trader.client.cache import _Cache, _CacheEntry, cached_api_call, get_global_cache
-from hermes_trader.client.lock import scanner_lock, check_lock_status
-from hermes_trader.client.parallel import parallel
-from hermes_trader.client.daemon import producer_daemon, check_daemon_state
 
 __all__ = [
     # HL API
@@ -31,13 +27,4 @@ __all__ = [
     "get_universe",
     "get_market_by_coin",
     # Utilities
-    "_Cache",
-    "_CacheEntry",
-    "cached_api_call",
-    "get_global_cache",
-    "scanner_lock",
-    "check_lock_status",
-    "parallel",
-    "producer_daemon",
-    "check_daemon_state",
 ]
