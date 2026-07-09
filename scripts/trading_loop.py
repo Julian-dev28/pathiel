@@ -64,6 +64,7 @@ from hermes_trader.agents.premium_fade_short_live import maybe_run as _premium_f
 from hermes_trader.agents.vol_breakout_long_live import maybe_run as _vol_breakout_long_maybe_run
 from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
 from hermes_trader.agents.vol_breakout_wide_live import maybe_run as _vol_breakout_wide_maybe_run
+from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -876,6 +877,20 @@ while True:
             )
         except Exception as _nffe:
             logger.warning(f"[neg-funding-fade] cycle failed (non-fatal): {_nffe}")
+
+        # Majors-swing book (operator-designed 2026-07-09): trend + pullback-resume
+        # LONGS on the fixed deep-liquidity allowlist (BTC/ETH/SOL/AAVE + xyz:SP500/
+        # xyz:XYZ100) at equity_fraction x leverage sizing. UNVALIDATED entry — starts
+        # shadow_only=true and must earn a VALIDATED forward verdict from
+        # scripts/shadow_status.py before any live flip. Daily bars, 6h candle TTL.
+        try:
+            _majors_swing_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                _book_execute, close_position_market,
+            )
+        except Exception as _mse:
+            logger.warning(f"[majors-swing] cycle failed (non-fatal): {_mse}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /

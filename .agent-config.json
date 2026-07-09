@@ -327,6 +327,28 @@
     "max_new_per_cycle": 1,
     "max_book_positions": 3
   },
+  "majors_swing": {
+    "enabled": true,
+    "shadow_only": true,
+    "coins": ["BTC", "ETH", "SOL", "AAVE", "xyz:SP500", "xyz:XYZ100"],
+    "scan_interval_minutes": 30,
+    "trend_ma_period": 200,
+    "min_trend_bars": 60,
+    "high_lookback": 20,
+    "pullback_lookback": 5,
+    "pullback_min_pct": 3.0,
+    "pullback_max_pct": 8.0,
+    "entry_window_hours": 8.0,
+    "hold_days": 7.0,
+    "stop_pct": 2.2,
+    "equity_fraction": 0.25,
+    "leverage": 25,
+    "protect_pct": 6.0,
+    "retrace_threshold": 0.35,
+    "tp_scale_fraction": 0.0,
+    "max_new_per_cycle": 1,
+    "max_book_positions": 2
+  },
   "hail_mary_short": {
     "enabled": false,
     "shadow_only": false,

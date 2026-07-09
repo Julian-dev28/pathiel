@@ -83,8 +83,8 @@ LEGACY_EVENT_BOOKS = (
 BOOK_PRIORITY = (
     "rally_exhaustion", "engulf_short", "crash_continue_div_short",
     "premium_fade_short", "hail_mary_short", "neg_funding_fade",
-    "vol_breakout_long", "vol_breakout_wide", "extreme_fade",
-    "xs_momentum", "external_alpha",
+    "vol_breakout_long", "vol_breakout_wide", "majors_swing",
+    "extreme_fade", "xs_momentum", "external_alpha",
 )
 
 # "2026-06-27 08:07:01,658 INFO:hermes_trader.agents.rally_exhaustion_live:[rally-exhaustion] LIVE opened short XPL ..."

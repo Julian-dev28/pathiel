@@ -653,7 +653,11 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         # further clips the result so the operator can bound the per-trade size in USD
         # terms as well; when 0 (default) it is inactive.
         # Example: size_equity=$60, leverage=12, frac=0.1 → notional = $60×0.1×12 = $72.
-        _ea_frac = float(config.get("strategy_book_equity_frac", 0.0) or 0.0)
+        # Per-analysis override first (majors_swing sizes at its own fraction of the
+        # funding account without coupling every other book to the global knob).
+        _ea_frac = float(analysis.get("strategy_book_equity_frac_override", 0) or 0)
+        if _ea_frac <= 0:
+            _ea_frac = float(config.get("strategy_book_equity_frac", 0.0) or 0.0)
         if _ea_frac > 0:
             _ea_notional = size_equity * _ea_frac * leverage
             _ea_abs_cap = float(config.get("strategy_book_notional_usd", 0) or 0)

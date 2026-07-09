@@ -28,7 +28,7 @@ def test_every_book_is_in_priority(pbb):
     for book in ("neg_funding_fade", "vol_breakout_long", "vol_breakout_wide",
                  "rally_exhaustion", "engulf_short", "crash_continue_div_short",
                  "premium_fade_short", "hail_mary_short", "extreme_fade",
-                 "xs_momentum", "external_alpha"):
+                 "xs_momentum", "external_alpha", "majors_swing"):
         assert book in pbb.BOOK_PRIORITY, f"{book} missing from BOOK_PRIORITY"
 
 

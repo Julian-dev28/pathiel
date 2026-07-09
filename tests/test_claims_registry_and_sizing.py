@@ -476,6 +476,34 @@ class TestStrategyBookEquityFracSizing:
         assert 60 <= result["size_usd"] <= 80, \
             f"Expected size_usd ~$72 (0.1-frac), got ${result['size_usd']:.2f}"
 
+    def test_per_analysis_frac_override_beats_global(self, tmp_path, monkeypatch):
+        """majors_swing seam: analysis-level strategy_book_equity_frac_override (0.25)
+        must win over the global strategy_book_equity_frac (0.1). The book frac is a
+        CAP on the normal-path notional, so the normal fraction (0.5 here, matching
+        live) must sit above it: cap = $60 × 0.25 × 12 = $180 < normal $360."""
+        a = _make_analysis(book_name="majors_swing")
+        a["strategy_book_equity_frac_override"] = 0.25
+        result = self._run_execute({"equity_fraction_per_trade": 0.5}, a, monkeypatch)
+        assert result.get("executed") is True, f"Unexpected block: {result}"
+        assert 160 <= result["size_usd"] <= 200, \
+            f"Expected size_usd ~$180 (0.25 override cap), got ${result['size_usd']:.2f}"
+
+    def test_frac_override_ignored_without_strategy_book(self, tmp_path, monkeypatch):
+        """The override key on a NON-book trade must not touch normal sizing
+        ($60 × 0.2 equity_fraction_per_trade × 12 = $144)."""
+        import uuid, time
+        a = {
+            "id": str(uuid.uuid4()), "coin": "ETH", "verdict": "LONG", "side": "long",
+            "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+            "reasoning": "[test]", "news_risk": "none", "ai_down": False,
+            "created_at": int(time.time() * 1000), "composite_score": 0.0,
+            "strategy_book_equity_frac_override": 0.9,   # must be inert
+        }
+        result = self._run_execute({}, a, monkeypatch)
+        assert result.get("executed") is True
+        assert 120 <= result["size_usd"] <= 160, \
+            f"Expected normal ~$144 sizing, got ${result['size_usd']:.2f}"
+
     def test_equity_frac_larger_than_old_15_cap(self, tmp_path, monkeypatch):
         """With equity-frac, strategy_book notional should exceed the old $15 cap."""
         a = _make_analysis()
