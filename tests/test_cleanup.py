@@ -3371,3 +3371,33 @@ def test_news_blackout_gate_reason_includes_match():
     r = news_blackout_gate(blocked)
     assert r["pass"] is False
     assert "Coin hacked for $1M" in r["reason"]
+
+
+def test_thin_short_block_records_shadow_counterfactual(monkeypatch):
+    """Lane G (W-G1): a conf>=0.70 non-book SHORT blocked by the thin-market floor
+    must land in the thin_short_relax shadow ledger — recording only, no order."""
+    ex, captured, _ = _exec_baseline(monkeypatch, {
+        "min_short_volume_usd": 50_000_000,   # floor above the stubbed volume
+    })
+    monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 1_000_000.0)  # thin
+    recorded = []
+    from hermes_trader.agents import shadow_ledger as SL
+    monkeypatch.setattr(SL, "record",
+                        lambda book, **kw: recorded.append((book, kw)) or {})
+    a = _analysis()
+    a["verdict"], a["side"], a["confidence"] = "SHORT", "short", 0.85
+    r = ex.maybe_execute(a)
+    assert r["executed"] is False
+    assert any("short on thin market" in str(b) for b in r.get("blocked_by", []))
+    thin = [x for x in recorded if x[0] == "thin_short_relax"]
+    assert len(thin) == 1
+    book, kw = thin[0]
+    assert kw["side"] == "short" and kw["horizon_days"] == 1.0
+    assert kw["entry_ref_px"] > 0
+    assert kw["meta"]["blocked_by"] == "thin_short_floor"
+    # low-confidence rejections must NOT record (the counterfactual was conf>=0.70)
+    recorded.clear()
+    a2 = _analysis()
+    a2["verdict"], a2["side"], a2["confidence"] = "SHORT", "short", 0.55
+    ex.maybe_execute(a2)
+    assert [x for x in recorded if x[0] == "thin_short_relax"] == []

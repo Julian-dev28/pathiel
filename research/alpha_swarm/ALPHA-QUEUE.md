@@ -171,3 +171,11 @@ appends to findings/_SCOREBOARD_<lane>.md, then moves on WITHOUT keeping prior s
 When a lane empties or the agent comes to rest, the orchestrator synthesizes, generates fresh
 hypotheses from what survived, refills the lane, and re-dispatches. ✅ robust → shadow-deploy
 proposal (operator sign-off before any live flip). This loop is meant to run for hours.
+
+## Wave W-E/F/G/H follow-ups (2026-07-09 creative swarm)
+- **W-F4 OI x price quadrants**: PRE-REGISTERED, frozen thresholds — re-run `hypotheses/W-F4.py` UNCHANGED on 2026-07-30 (comfortable 2026-08-19). No tuning allowed.
+- **crash_continue_hourly** (Lane H spec): hourly idio-flush SHORT continuation arm — post-hoc inversion (mc_p 0.048, n=23), needs a shadow recorder before any trust. Spec in findings/W-H3.md.
+- **W-E2 open-reversal MOMO-RESID** (MARGINAL shadow-wire candidate, both MC nulls <0.05 but thin @25bps): consider a shadow recorder next wave; spec in findings/W-E2_open_reversal.md.
+- **W-E1 weekend gap-fade**: MARGINAL at n=31 weekends — accrues ~1 episode/week passively; re-score after ~15 more weekends (~2026-10-20).
+- **Lane G follow-ups**: AI long anti-calibration (0.70-0.80 band −2.13%@24h) — candidate config lever AFTER a second window confirms (raise long conf floor / down-weight AI longs vs shorts); killswitch counterfactual weakly negative (n=29, p=0.156) — re-examine at n>=60.
+- **WIRED 2026-07-09**: funding_spike_short shadow book (W-F2A VALIDATED, +6.2%/ep, p=0.0027); thin_short_relax shadow recorder in executor (W-G1, +1.12% counterfactual, p=0.001; promotion bar >=30 entries +EV net 25bps).

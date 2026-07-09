@@ -61,6 +61,7 @@ from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _cra
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
 from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
 from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
+from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -769,6 +770,19 @@ while True:
             )
         except Exception as _nffe:
             logger.warning(f"[neg-funding-fade] cycle failed (non-fatal): {_nffe}")
+
+        # Funding-spike crowded-long fade (W-F2A, VALIDATED 2026-07-09: +6.2%/ep
+        # net, MC p=0.0027, n=25 dedup). SHADOW until the forward ledger confirms;
+        # KILL if forward EV25 < 0 over 15 episodes. 6h cadence, funding history
+        # fetched per liquid coin only.
+        try:
+            _funding_spike_short_maybe_run(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                _book_execute, close_position_market,
+            )
+        except Exception as _fsse:
+            logger.warning(f"[funding-spike-short] cycle failed (non-fatal): {_fsse}")
 
         # Majors-swing book (operator-designed 2026-07-09): trend + pullback-resume
         # LONGS on the fixed deep-liquidity allowlist (BTC/ETH/SOL/AAVE + xyz:SP500/

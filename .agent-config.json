@@ -249,6 +249,22 @@
     "max_new_per_cycle": 1,
     "max_book_positions": 3
   },
+  "funding_spike_short": {
+    "enabled": true,
+    "shadow_only": true,
+    "scan_interval_hours": 6,
+    "entry_z": 2.0,
+    "exit_z": 1.0,
+    "lookback_days": 30,
+    "min_volume_usd": 20000000,
+    "executor_short_volume_floor_usd": 20000000,
+    "max_scan_coins": 40,
+    "hold_days": 5.0,
+    "stop_pct": 15.0,
+    "notional_usd": 20.0,
+    "leverage": 1,
+    "max_new_per_cycle": 1
+  },
   "majors_swing": {
     "enabled": true,
     "shadow_only": true,

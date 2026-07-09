@@ -809,6 +809,28 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     gate_output = eval_all_gates(ctx, gate_config, last_trade_time)
 
     if gate_output["blocked"]:
+        # Lane G shadow counterfactual (W-G1, 2026-07-09): the thin-short floor
+        # blocked 314 conf>=0.70 shorts that averaged +1.12% forward (MC p=0.001,
+        # beats matched null). Record those exact rejections to the ledger so the
+        # forward grade can confirm/refute BEFORE any floor change. Recording
+        # only — no order path. Promotion bar: >=30 entries, +EV net 25bps.
+        try:
+            if (analysis.get("side") == "short"
+                    and float(analysis.get("confidence", 0) or 0) >= 0.70
+                    and not analysis.get("strategy_book")
+                    and mid_price > 0
+                    and any("short on thin market" in str(r)
+                            for r in gate_output["block_reasons"])):
+                from hermes_trader.agents import shadow_ledger as _sl
+                _now_ms = int(time.time() * 1000)
+                _sl.record("thin_short_relax", coin=coin, side="short",
+                           signal_bar_t=(_now_ms // 3_600_000) * 3_600_000,
+                           entry_ref_px=mid_price, horizon_days=1.0, stop_pct=20.0,
+                           meta={"confidence": float(analysis.get("confidence", 0) or 0),
+                                 "blocked_by": "thin_short_floor", "shadow": True})
+        except Exception:
+            pass
+
         # Don't write blocked attempts to memory._trades — the cooldown gate
         # keys off the most recent trade-by-coin and would self-perpetuate.
         # Visibility comes from the `execute` event in the session log.
