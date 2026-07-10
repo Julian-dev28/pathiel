@@ -105,6 +105,8 @@ class AgentMemory:
         92 trades + the day's SOD baseline, forcing a SOD re-baseline on restart).
         Only the loaded owner (the trading loop) may persist.
         """
+        if os.environ.get("HERMES_STATE_READONLY"):
+            return  # dashboard-server process: never clobber the loop's live file
         if not self._initialized:
             return
         try:

@@ -441,6 +441,8 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
 
 def _save_state() -> None:
     """Atomically write the tracker registry to disk. Best-effort — never raises."""
+    if os.environ.get("HERMES_STATE_READONLY"):
+        return  # dashboard-server process: never clobber the loop's live DSL state
     try:
         payload = {
             "version": _STATE_VERSION,

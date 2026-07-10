@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import collections
 import os
 import threading
 import time
@@ -88,20 +89,47 @@ def _ttl_cached(key: str, ttl: float, fn):
     return val
 
 
+_LOG_STATE: Dict[str, Any] = {"offset": 0, "ino": None,
+                              "events": collections.deque(maxlen=250_000),
+                              "lock": threading.Lock()}
+
+
 def _read_log_lines() -> List[Dict[str, Any]]:
+    """Incremental tail-parse of the session log.
+
+    Audit 2026-07-10: the old full-file re-parse burned 0.83s CPU on the
+    uvloop event-loop thread per cache miss against a 101MB log — 178
+    CPU-hours and the page jank. Now only bytes appended since the last call
+    are parsed; truncation/rotation resets the state. Bounded to the last
+    250k events (~several days) — panels degrade gracefully past that."""
     if not _LOG_PATH.exists():
         return []
-    out: List[Dict[str, Any]] = []
-    with _LOG_PATH.open() as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return out
+    st = _LOG_STATE
+    with st["lock"]:
+        try:
+            stat = _LOG_PATH.stat()
+            if stat.st_ino != st["ino"] or stat.st_size < st["offset"]:
+                st["events"].clear()
+                st["offset"] = 0
+                st["ino"] = stat.st_ino
+            if stat.st_size > st["offset"]:
+                with _LOG_PATH.open("rb") as f:
+                    f.seek(st["offset"])
+                    chunk = f.read()
+                last_nl = chunk.rfind(b"\n")
+                if last_nl >= 0:
+                    for line in chunk[:last_nl].split(b"\n"):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            st["events"].append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+                    st["offset"] += last_nl + 1
+        except OSError:
+            pass
+        return list(st["events"])
 
 
 def _last_event(events: List[Dict[str, Any]], name: str) -> Optional[Dict[str, Any]]:
@@ -128,11 +156,11 @@ def _summary_payload() -> Dict[str, Any]:
     now_ms = int(time.time() * 1000)
     last_tick_age_s = max(0, (now_ms - last_event_ts) // 1000) if last_event_ts else None
 
-    # Heuristic status: "scanning" if a heartbeat hit in the last 3min;
-    # "stale" if older; "offline" if no heartbeat ever.
+    # Heuristic status: heartbeat cadence is p50 ~90s / p99 ~420s on healthy
+    # days, so 180s flickered "stale" on ordinary cycles (audit 2026-07-10).
     if not heartbeat:
         status = "offline"
-    elif last_tick_age_s is None or last_tick_age_s > 180:
+    elif last_tick_age_s is None or last_tick_age_s > 300:
         status = "stale"
     else:
         status = "scanning"
@@ -379,8 +407,8 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
                 "leverage": _estimate_leverage(coin),
                 "leverage_estimated": True,
                 "reason": "manual_close",
-                "pnl_pct": 0.0,
-                "spot_pct": 0.0,
+                "pnl_pct": None,     # not recorded in the session log — do not fake 0.0
+                "spot_pct": None,
                 "executed": bool(e.get("ok")),
                 "detail": None,
             })
@@ -416,10 +444,19 @@ def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
 
     series: List[Dict[str, Any]] = []
     window: List[float] = []  # last N accepted equities (trailing reference)
+    rejected_streak = 0
     for ts, eq in raw:
         ref = median(window) if window else eq
         if window and eq < 0.7 * ref:
-            continue  # partial-dex degraded read — drop it
+            # Partial-dex degraded reads are SPIKES (1-2 ticks). A real crash
+            # re-asserts — after 3 consecutive sub-70% readings, believe it
+            # (the old unconditional drop froze the curve forever after any
+            # genuine >30% loss; audit 2026-07-10).
+            rejected_streak += 1
+            if rejected_streak < 3:
+                continue
+            window.clear()          # re-anchor on the new regime
+        rejected_streak = 0
         series.append({"ts": ts, "equity": round(eq, 2)})
         window.append(eq)
         if len(window) > 15:
@@ -1171,7 +1208,8 @@ async function refreshCloses() {
     el.innerHTML = cs.map(c => {
       const ageMin = Math.max(0, Math.round((Date.now() - c.ts) / 60000));
       const ageStr = ageMin < 60 ? ageMin + 'm ago' : ageMin < 1440 ? Math.floor(ageMin/60) + 'h ago' : Math.floor(ageMin/1440) + 'd ago';
-      const pnlColor = c.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
+      const hasPnl = c.pnl_pct !== null && c.pnl_pct !== undefined;
+      const pnlColor = !hasPnl ? 'text-zinc-500' : c.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
       const sideTag = c.side === 'long' ? '<span class="text-emerald-400 text-[10px] font-semibold">LONG</span>'
                     : c.side === 'short' ? '<span class="text-red-400 text-[10px] font-semibold">SHORT</span>'
                     : '<span class="text-zinc-500 text-[10px]">—</span>';
@@ -1181,18 +1219,18 @@ async function refreshCloses() {
                                            : '<span class="text-zinc-500 text-[10px]">manual</span>';
       const failedTag = c.executed ? '' : ' <span class="text-red-400 text-[10px]">FAILED</span>';
       const pnlExactMark = c.pnl_source === 'fill' ? '' : '~';
-      const tipLines = [
-        `spot move × ${c.leverage}x = ${c.pnl_pct_gross.toFixed(2)}% gross`,
-        `minus ${c.fees_pct.toFixed(2)}% taker fees`,
+      const tipLines = hasPnl ? [
+        `spot move × ${c.leverage}x = ${(c.pnl_pct_gross ?? 0).toFixed(2)}% gross`,
+        `minus ${(c.fees_pct ?? 0).toFixed(2)}% taker fees`,
         `= ${c.pnl_pct.toFixed(2)}% net`,
         c.pnl_source === 'fill' ? `realized at fill ${c.fill_px} (entry ${c.entry_px})` : 'estimated from DSL trigger mark (no fill captured)',
-      ].join(' · ');
-      const spotNote = c.spot_pct && c.leverage > 1
+      ].join(' · ') : 'manual close — PnL not recorded in the session log';
+      const spotNote = hasPnl && c.spot_pct && c.leverage > 1
         ? `<span class="text-zinc-600 text-[10px] ml-1" title="${tipLines}">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
       return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
         <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${c.coin}</span>${sideTag} ${levTag}</div>
         <div class="col-span-5 text-zinc-400 truncate" title="${c.reason}">${c.reason}${failedTag}</div>
-        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${pnlExactMark}${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%${spotNote}</div>
+        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${hasPnl ? `${pnlExactMark}${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%` : `<span title="${tipLines}">n/a</span>`}${spotNote}</div>
         <div class="col-span-1 text-zinc-500">${sourceTag}</div>
         <div class="col-span-1 text-zinc-500 text-right">${ageStr}</div>
       </div>`;
@@ -1983,7 +2021,7 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:
-        return JSONResponse(_ttl_cached("summary", 2.0, _summary_payload))
+        return JSONResponse(_ttl_cached("summary", 6.0, _summary_payload))
 
     @app.get("/api/dashboard/positions")
     async def dashboard_positions() -> JSONResponse:
@@ -1991,12 +2029,12 @@ def register_routes(app: FastAPI) -> None:
 
     @app.get("/api/dashboard/equity-curve")
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 30.0,
+        return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 65.0,
                                         lambda: _equity_curve_payload(range_s)))
 
     @app.get("/api/dashboard/closed-trades")
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 10.0,
+        return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 25.0,
                                         lambda: _closed_trades_payload(limit)))
 
     @app.get("/api/feed/stream")

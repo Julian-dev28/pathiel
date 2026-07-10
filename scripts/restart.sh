@@ -160,7 +160,8 @@ start_server() {
   # server a HARD-throttled token bucket (~1/4 budget) so its background polls yield
   # to the loop's fetches — cuts the chronic ~24% /info 429 collisions. The loop keeps
   # its full budget (it's the money path). Tunable: bump if the dashboard feels sluggish.
-  nohup env HERMES_HL_RATE_REFILL_PER_SEC="${HERMES_SERVER_RATE_REFILL:-2}" \
+  nohup env HERMES_STATE_READONLY=1 \
+    HERMES_HL_RATE_REFILL_PER_SEC="${HERMES_SERVER_RATE_REFILL:-2}" \
     HERMES_HL_RATE_CAPACITY="${HERMES_SERVER_RATE_CAPACITY:-60}" \
     "$PY" -m hermes_trader.server >> "$SERVER_LOG" 2>&1 &
   local pid=$!

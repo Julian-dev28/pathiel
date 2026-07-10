@@ -36,12 +36,24 @@ def append(event: Dict[str, Any]) -> None:
 
 
 def tail(n: int = 10) -> List[Dict[str, Any]]:
-    """Return the last `n` parseable events, oldest first."""
+    """Return the last `n` parseable events, oldest first.
+
+    Reads a bounded block from the END of the file (audit 2026-07-10: the old
+    line-iterator streamed the whole 101MB log per call — every SSE connect
+    paid it)."""
     if n <= 0:
         return []
     try:
-        with open(SESSION_LOG_FILE) as f:
-            lines = deque((ln.strip() for ln in f if ln.strip()), maxlen=n)
+        with open(SESSION_LOG_FILE, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            block = min(size, max(65_536, n * 1_024))
+            f.seek(size - block)
+            data = f.read()
+        if block < size:
+            data = data.split(b"\n", 1)[-1]      # drop the partial first line
+        lines = deque((ln.strip().decode("utf-8", "replace")
+                       for ln in data.split(b"\n") if ln.strip()), maxlen=n)
     except FileNotFoundError:
         return []
     except OSError:

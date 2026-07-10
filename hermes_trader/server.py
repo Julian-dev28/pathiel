@@ -104,12 +104,15 @@ _SCAN_MIN_SECONDS = 30
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load persisted memory on startup, flush it on shutdown."""
+    """Load persisted memory on startup. NO shutdown flush (audit 2026-07-10:
+    the server's copy goes stale minutes after boot while the LOOP keeps
+    writing .agent-memory.json — a graceful shutdown could roll live trade
+    memory back to server-start time). HERMES_STATE_READONLY guards the
+    other write doors (executor-triggered flush / DSL saves) the same way."""
     memory.load()
-    logger.info("Hermes server started — memory loaded")
+    logger.info("Hermes server started — memory loaded (state writes read-only)")
     yield
-    memory.flush()
-    logger.info("Hermes server stopped — memory flushed")
+    logger.info("Hermes server stopped — no state flush by design")
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -700,4 +703,6 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("HERMES_PORT", 8000))
     logger.info(f"Starting Hermes server on port {port}")
-    uvicorn.run("hermes_trader.server:app", host="0.0.0.0", port=port, reload=False)
+    host = os.environ.get("HERMES_BIND", "127.0.0.1")   # audit 2026-07-10: was 0.0.0.0
+    uvicorn.run("hermes_trader.server:app", host=host, port=port, reload=False,
+                access_log=False)
