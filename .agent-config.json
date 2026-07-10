@@ -1,7 +1,7 @@
 {
   "mode": "LIVE",
   "ai_brain": {
-    "provider": "openrouter",
+    "provider": "claude_cli",
     "timeout_s": 120,
     "codex_cli": {
       "command": "/Users/julian_dev/.local/bin/codex"
