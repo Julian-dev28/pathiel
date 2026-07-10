@@ -536,9 +536,9 @@ _PUBLIC_HTML = """<!doctype html>
 <!-- NES.css — pixel-perfect Nintendo-flavored UI primitives. Spike: wraps the
      hamster habitat as a proper Tamagotchi enclosure. Tiny (~30KB), no JS. -->
 <link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="/static/tailwind.js"></script>
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5;image-rendering:pixelated}
   /* Discreet mode — show `•••` instead of every dollar value. The mask span
@@ -1497,21 +1497,23 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
   applyI18n();
 });
 
-// ── Highlight the active page in the primary navbar + carry the operator
-// token across navigation. Without the token-carry, clicking OPERATOR after
-// entering operator mode on / would land on a 401-locked operator page.
+// ── Highlight the active page in the primary navbar. The operator token
+// lives ONLY in localStorage now (audit 2026-07-10: carrying ?token= in
+// every nav URL leaked it into history/referrers); pages read localStorage
+// and send X-Operator-Token headers. Legacy ?token= URLs are absorbed:
+// persisted once, then stripped from the address bar.
 (function(){
   const here = window.location.pathname.replace(/[/]$/, '') || '/';
-  const tok = new URLSearchParams(window.location.search).get('token')
-           || localStorage.getItem('hermes-op-token') || '';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
-    if (tok) {
-      const u = new URL(a.href, window.location.origin);
-      u.searchParams.set('token', tok);
-      a.href = u.toString();
-    }
   });
+  const urlTok = new URLSearchParams(window.location.search).get('token');
+  if (urlTok) {
+    localStorage.setItem('hermes-op-token', urlTok);
+    const u = new URL(window.location.href);
+    u.searchParams.delete('token');
+    history.replaceState(null, '', u.toString());
+  }
 })();
 
 // ── Operator-mode toggle: lets the user paste their HERMES_OPERATOR_TOKEN
@@ -1533,10 +1535,7 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
     if (current) {
       if (confirm('Clear operator token and revert to read-only?')) {
         localStorage.removeItem('hermes-op-token');
-        // Strip ?token= from URL for a clean reload
-        const u = new URL(window.location.href);
-        u.searchParams.delete('token');
-        window.location.replace(u.toString());
+        window.location.reload();
       }
       return;
     }
@@ -1544,10 +1543,7 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
     if (!tok || !tok.trim()) return;
     const clean = tok.trim();
     localStorage.setItem('hermes-op-token', clean);
-    // Reload with ?token= so backend SSE / page-token-reading consumers pick it up.
-    const u = new URL(window.location.href);
-    u.searchParams.set('token', clean);
-    window.location.replace(u.toString());
+    window.location.reload();   // pages read localStorage; APIs get the header
   });
 })();
 
@@ -1590,9 +1586,10 @@ document.getElementById('lang-sel')?.addEventListener('change', (e) => {
       return;
     }
     try {
-      const r = await fetch('/api/dashboard/operator/terminal?token=' + encodeURIComponent(operatorToken), {
+      const r = await fetch('/api/dashboard/operator/terminal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json',
+                   'X-Operator-Token': operatorToken || '' },
         body: JSON.stringify({ command: cmd }),
       });
       if (!r.ok) {
@@ -1674,7 +1671,7 @@ _CONFIG_HTML = """<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="/static/tailwind.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
   .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
@@ -1838,7 +1835,7 @@ _OPERATOR_HTML = """<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<script src="https://cdn.tailwindcss.com"></script>
+<script src="/static/tailwind.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
   .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}

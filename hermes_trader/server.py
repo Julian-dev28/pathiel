@@ -39,6 +39,7 @@ _load_env_local_early()
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware                   # noqa: E402
 from fastapi.responses import JSONResponse                            # noqa: E402
+from fastapi.staticfiles import StaticFiles                           # noqa: E402
 
 from hermes_trader.metrics import render_metrics                      # noqa: E402
 
@@ -124,6 +125,21 @@ app = FastAPI(title="Hermes-Trader", version=__version__, lifespan=lifespan)
 # ?token=, neither of which is a credential the browser auto-sends, so we don't
 # need credentialed CORS. Keep wildcard origins for tool/curl access; flip
 # credentials off so a future cookie-auth flow can't be abused cross-origin.
+
+# Optional hard read-only mode: HERMES_DASHBOARD_READONLY=1 refuses every
+# mutating request (all mutators here are POSTs) regardless of token — for
+# exposing the dashboard anywhere you don't fully trust (audit 2026-07-10).
+@app.middleware("http")
+async def _readonly_guard(request: Request, call_next):
+    if request.method == "POST" and os.environ.get("HERMES_DASHBOARD_READONLY"):
+        return JSONResponse({"detail": "dashboard is read-only (HERMES_DASHBOARD_READONLY)"},
+                            status_code=403)
+    return await call_next(request)
+
+
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
