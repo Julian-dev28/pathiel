@@ -3498,3 +3498,27 @@ def test_backup_sl_aligned_to_dsl_cap(monkeypatch):
     assert sls, triggers
     # entry ~100 (mid), ATR 40 -> raw 1.5xATR = 60% away; DSL cap 1% x 1.4 = 1.4%
     assert abs(100.0 - sls[0]) / 100.0 <= 0.015 + 1e-6
+
+
+def test_stale_flat_requires_book_contention(monkeypatch):
+    """Counterfactual 2026-07-11 (n=28): stale-flat closes forfeit +0.75% median
+    while the freed capital has no queue on a small book (LIT +14% overnight
+    after a flat close). Staleness only fires when >= stale_flat_min_positions
+    trackers are active; the position otherwise keeps stop/hard-timeout exits."""
+    import time as _t
+    from hermes_trader.agents import dsl_exit as dx
+    pol = dx.ExitPolicy(max_loss_pct=20.0, max_loss_roe_pct=20.0, protect_pct=1.25,
+                        retrace_threshold=0.3, hard_timeout_minutes=10_000.0,
+                        stale_flat_timeout_minutes=480.0, stale_flat_min_positions=3)
+    def mk(coin):
+        return dx.DSLTracker(coin=coin, side="long", entry_px=100.0,
+                             entry_time=_t.time() - 500 * 60,   # > 480min stale window
+                             policy=pol, leverage=1)
+    monkeypatch.setattr(dx, "_active_positions", {})
+    dx._active_positions["A_long"] = mk("A")
+    v = dx._active_positions["A_long"].check(100.1)   # flat, below protect
+    assert not (v.exit and "stale_flat" in v.reason), v.reason   # 1 tracker < 3: rides
+    dx._active_positions["B_long"] = mk("B")
+    dx._active_positions["C_long"] = mk("C")
+    v = dx._active_positions["A_long"].check(100.1)
+    assert v.exit and "stale_flat" in v.reason        # contended book: fires

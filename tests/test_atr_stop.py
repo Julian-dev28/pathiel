@@ -169,7 +169,9 @@ def test_stale_flat_timeout_cuts_drifters_spares_peakers():
     """8h below protect -> cut; ever-peaked positions exempt; 0=off."""
     import time as _t
     old = _t.time() - 9 * 3600  # 9h ago
-    pol = _policy(stale_flat_timeout_minutes=480.0)
+    # min_positions=0: this test exercises the timeout mechanics in isolation;
+    # contention gating has its own test (test_stale_flat_requires_book_contention)
+    pol = _policy(stale_flat_timeout_minutes=480.0, stale_flat_min_positions=0)
     drifter = DSLTracker("DRIFT", "long", 100.0, old, pol, leverage=1,
                          entry_atr_pct=1.0)
     v = drifter.check(99.0)  # never peaked above protect

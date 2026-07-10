@@ -120,6 +120,7 @@ class ExitPolicy:
     # hard_timeout bucket's +3.41% avg is driven by agers that peaked).
     # 0 = off.
     stale_flat_timeout_minutes: float = 0.0
+    stale_flat_min_positions: int = 3
     phase2_tiers: List[RetraceTier] = field(default_factory=lambda: [
         RetraceTier(5.0, 0.30),   # 5% profit → give back 30%
         RetraceTier(10.0, 0.40),  # 10% profit → lock tighter, give back 40%
@@ -225,7 +226,15 @@ class DSLTracker:
 
         # ── Stale-flat timeout ────────────────────────────────────────
         # Only for positions that never armed phase-2: peak profit < protect.
-        if pol.stale_flat_timeout_minutes > 0 and elapsed_min >= pol.stale_flat_timeout_minutes:
+        # AND only when the book is actually CONTENDED (counterfactual
+        # 2026-07-11, n=28 closes: median +0.75% forfeited per close — LIT
+        # closed flat at 19:35 and rallied +14% overnight — while the
+        # timeout's whole purpose is freeing capital for a queue that, on a
+        # small book, does not exist. Below the contention floor the position
+        # keeps its protect/stop/hard-timeout exits and simply rides.)
+        _stale_min_pos = int(getattr(pol, "stale_flat_min_positions", 3) or 0)
+        if (pol.stale_flat_timeout_minutes > 0 and elapsed_min >= pol.stale_flat_timeout_minutes
+                and len(_active_positions) >= _stale_min_pos):
             if is_long:
                 peak_profit = (self.peak_px - self.entry_px) / self.entry_px * 100
             else:
@@ -422,6 +431,7 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
         breakeven_lock_pct=pol_raw.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
         atr_stop_enabled=pol_raw.get("atr_stop_enabled", ExitPolicy.atr_stop_enabled),
         stale_flat_timeout_minutes=pol_raw.get("stale_flat_timeout_minutes", 0.0),
+        stale_flat_min_positions=int(pol_raw.get("stale_flat_min_positions", 3) or 0),
         atr_stop_mult=pol_raw.get("atr_stop_mult", ExitPolicy.atr_stop_mult),
         atr_stop_floor_pct=pol_raw.get("atr_stop_floor_pct", ExitPolicy.atr_stop_floor_pct),
         atr_stop_ceiling_pct=pol_raw.get("atr_stop_ceiling_pct", ExitPolicy.atr_stop_ceiling_pct),
@@ -560,6 +570,7 @@ def _policy_from_config() -> ExitPolicy:
             breakeven_trigger_pct=dsl.get("breakeven_trigger_pct", ExitPolicy.breakeven_trigger_pct),
             breakeven_lock_pct=dsl.get("breakeven_lock_pct", ExitPolicy.breakeven_lock_pct),
             stale_flat_timeout_minutes=float(dsl.get("stale_flat_timeout_minutes", 0.0) or 0.0),
+            stale_flat_min_positions=int(dsl.get("stale_flat_min_positions", 3) or 0),
             consecutive_breaches_required=int(dsl.get("consecutive_breaches_required", 1) or 1),
             atr_stop_enabled=bool(atr_cfg.get("enabled", ExitPolicy.atr_stop_enabled)),
             atr_stop_mult=float(atr_cfg.get("atr_mult", ExitPolicy.atr_stop_mult)),
