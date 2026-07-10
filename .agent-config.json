@@ -23,7 +23,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -25,
+  "max_daily_loss_usd": -12,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
