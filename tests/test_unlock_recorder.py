@@ -107,10 +107,13 @@ def test_hot_kill(monkeypatch):
 
 
 def test_extract_upcoming_merges_same_day_and_filters():
+    # Day-anchored so the +1h sibling can never cross a UTC day boundary
+    # (a wall-clock-dependent flake caught live on 2026-07-11 at 23:47 UTC).
+    ev_base = (_NOW // _D + 5) * _D + 6 * _H
     idx = {"data": [
         {"name": "Arbitrum", "circSupply": 1000.0, "events": [
-            {"timestamp": (_NOW + 5 * _D) / 1000, "noOfTokens": [6.0]},
-            {"timestamp": (_NOW + 5 * _D + _H) / 1000, "noOfTokens": [7.0]},  # same day -> merged
+            {"timestamp": ev_base / 1000, "noOfTokens": [6.0]},
+            {"timestamp": (ev_base + _H) / 1000, "noOfTokens": [7.0]},        # same day -> merged
             {"timestamp": (_NOW - 2 * _D) / 1000, "noOfTokens": [50.0]},      # past -> dropped
             {"timestamp": (_NOW + 90 * _D) / 1000, "noOfTokens": [90.0]},     # beyond 45d -> dropped
         ]},

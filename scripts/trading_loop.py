@@ -1027,10 +1027,17 @@ while True:
                 # The feed shows the complete rationale.
                 _r = (analysis.get('reasoning') or '').strip()
                 log_event({"event": "research", "coin": coin,
+                           "analysis_id": analysis.get('id'),
                            "verdict": analysis['verdict'],
                            "confidence": round(float(analysis['confidence']), 2),
                            "reasoning": _r,
                            "ai_brain_provider": analysis.get('ai_brain_provider'),
+                           "web_search_requested": bool(analysis.get('web_search_requested')),
+                           "web_search_used": bool(analysis.get('web_search_used')),
+                           "web_search_request_count": int(
+                               analysis.get('web_search_request_count') or 0),
+                           "web_search_citations": analysis.get('web_search_citations') or [],
+                           "daily_move_pct": analysis.get('daily_move_pct'),
                            "news_risk": analysis.get('news_risk'),
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),

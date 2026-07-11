@@ -14,7 +14,13 @@ from typing import Any, Dict, List
 
 import httpx
 
-from hermes_trader.agents.ai_brain import get_brain, selected_ai_brain_provider
+from hermes_trader.agents.ai_brain import (
+    completion_citations,
+    completion_text,
+    completion_web_search_requests,
+    get_brain,
+    selected_ai_brain_provider,
+)
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.agents.system_prompt import build_system_prompt
@@ -28,6 +34,9 @@ from hermes_trader.indicators.math import adx, atr, candle_val, ema, rsi
 from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
+
+MAX_WEB_CITATIONS = 5
+MAX_WEB_CITATION_CHARS = 500
 
 
 def _compute_indicators(candles: List[Candle]) -> Dict[str, Any]:
@@ -279,7 +288,7 @@ def _call_ai(
     provider: str | None = None,
     brain: Any | None = None,
     web_search: bool = False,
-) -> str:
+) -> Any:
     """Call the AI brain for the verdict completion.
 
     An injected ``brain`` wins (e.g. the MCP sampling brain, which routes the
@@ -319,6 +328,41 @@ def _call_ai(
             f"[research] ai_brain provider={selected} failed: {type(exc).__name__}: {exc}"
         )
     return ""
+
+
+def _web_search_telemetry(completion: Any, *, requested: bool) -> Dict[str, Any]:
+    """Return truthful, JSON-safe web-search telemetry for one completion.
+
+    ``requested`` is the research eligibility decision; ``used`` is evidence
+    the search actually ran. Two independent evidence channels, because
+    providers report differently (verified live 2026-07-12): Anthropic returns
+    ``usage.server_tool_use.web_search_requests`` but no annotations here;
+    OpenRouter returns citation annotations but NO server_tool_use block, so
+    a count-only rule mislabeled real searches as unused and dropped their
+    citations. A request count OR at least one provider citation counts as
+    used. A model that answers from memory produces neither, so fabrication
+    still reads as used=false.
+    """
+    try:
+        request_count = max(0, int(completion_web_search_requests(completion)))
+    except (TypeError, ValueError):
+        request_count = 0
+
+    citations: List[str] = []
+    for raw in completion_citations(completion) or ():
+        citation = str(raw).strip()
+        if not citation:
+            continue
+        citations.append(citation[:MAX_WEB_CITATION_CHARS])
+        if len(citations) >= MAX_WEB_CITATIONS:
+            break
+
+    return {
+        "web_search_requested": bool(requested),
+        "web_search_used": request_count > 0 or bool(citations),
+        "web_search_request_count": request_count,
+        "web_search_citations": citations,
+    }
 
 
 def _should_web_search(
@@ -553,11 +597,13 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
     use_web = _should_web_search(coin, perception, open_positions, config)
     if use_web:
         user_message = f"{user_message}\n\n{_WEB_SEARCH_BLOCK}"
-    ai_text = _call_ai(
+    completion = _call_ai(
         system_prompt, user_message,
         provider=ai_brain_provider, brain=brain, web_search=use_web,
     )
+    ai_text = completion_text(completion)
     parsed = parse_verdict(ai_text, coin, perception)
+    web_telemetry = _web_search_telemetry(completion, requested=use_web)
 
     analysis = {
         "id": str(uuid.uuid4()),
@@ -578,9 +624,10 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         # override guard never sees it (it didn't, on first deploy).
         "ai_down": bool(parsed.get("ai_down")),
         "ai_brain_provider": ai_brain_provider,
-        # Calibration tag: verdicts formed WITH live web search get compared
-        # against the no-search baseline before the flag earns permanence.
-        "web_search_used": use_web,
+        # Requested means the eligibility gate fired. Used requires an actual
+        # provider-reported tool request, so ignored/failed requests cannot
+        # contaminate the forward calibration sample.
+        **web_telemetry,
         "created_at": int(time.time() * 1000),
         # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),

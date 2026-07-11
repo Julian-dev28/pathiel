@@ -10,7 +10,7 @@ import re
 import shlex
 import signal
 import subprocess
-from typing import Any, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol
 
 import httpx
 
@@ -21,6 +21,111 @@ logger = logging.getLogger(__name__)
 AI_BRAIN_PROVIDERS = {"openrouter", "claude_cli", "codex_cli"}
 DEFAULT_AI_BRAIN_PROVIDER = "openrouter"
 MAX_CLI_TIMEOUT_S = 120.0
+_OPENROUTER_WEB_ENGINES = {
+    "auto", "native", "exa", "firecrawl", "parallel", "perplexity",
+}
+
+
+class AiBrainResult(str):
+    """Completion text with optional provider metadata.
+
+    This remains a real ``str`` so existing parsing, truthiness, logging, and
+    injected-brain call sites keep working unchanged.  Callers that need audit
+    data can inspect ``usage``, ``citations``, and ``web_search_requests``.
+    """
+
+    usage: Mapping[str, Any]
+    citations: tuple[Mapping[str, Any], ...]
+    metadata: Mapping[str, Any]
+
+    def __new__(
+        cls,
+        value: object = "",
+        *,
+        usage: Mapping[str, Any] | None = None,
+        citations: Iterable[Mapping[str, Any]] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "AiBrainResult":
+        obj = super().__new__(cls, str(value or ""))
+        obj.usage = dict(usage) if isinstance(usage, Mapping) else {}
+        obj.citations = tuple(dict(c) for c in (citations or ()) if isinstance(c, Mapping))
+        obj.metadata = dict(metadata) if isinstance(metadata, Mapping) else {}
+        return obj
+
+    @property
+    def web_search_requests(self) -> int:
+        server_use = self.usage.get("server_tool_use", {})
+        if not isinstance(server_use, Mapping):
+            return 0
+        try:
+            return max(0, int(server_use.get("web_search_requests", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+
+def completion_text(completion: object) -> str:
+    """Return completion text from new metadata results or legacy strings."""
+    if completion is None:
+        return ""
+    if isinstance(completion, str):
+        return str(completion)
+    text = getattr(completion, "text", None)
+    if text is not None:
+        return str(text)
+    if isinstance(completion, Mapping):
+        return str(completion.get("text") or completion.get("content") or "")
+    return str(completion)
+
+
+def completion_web_search_requests(completion: object) -> int:
+    """Extract provider-reported search calls without inferring from the gate."""
+    direct = getattr(completion, "web_search_requests", None)
+    if direct is not None:
+        try:
+            return max(0, int(direct or 0))
+        except (TypeError, ValueError):
+            return 0
+    usage = getattr(completion, "usage", None)
+    if usage is None and isinstance(completion, Mapping):
+        usage = completion.get("usage")
+    if not isinstance(usage, Mapping):
+        return 0
+    server_use = usage.get("server_tool_use", {})
+    if not isinstance(server_use, Mapping):
+        return 0
+    try:
+        return max(0, int(server_use.get("web_search_requests", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def completion_citations(completion: object) -> tuple[str, ...]:
+    """Return bounded-persistence-friendly citation URLs/titles.
+
+    ``AiBrainResult.citations`` retains the raw annotations.  This accessor
+    normalizes OpenRouter's ``url_citation`` envelope for logs and analysis
+    records while continuing to accept providers that already return strings.
+    """
+    raw = getattr(completion, "citations", None)
+    if raw is None and isinstance(completion, Mapping):
+        raw = completion.get("citations")
+    if not isinstance(raw, (list, tuple)):
+        return ()
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            value = item.strip()
+        elif isinstance(item, Mapping):
+            nested = item.get("url_citation")
+            source = nested if isinstance(nested, Mapping) else item
+            url = str(source.get("url") or "").strip()
+            title = str(source.get("title") or "").strip()
+            value = f"{title} — {url}" if title and url else url or title
+        else:
+            value = str(item or "").strip()
+        if value:
+            out.append(value)
+    return tuple(out)
 
 
 class AiBrain(Protocol):
@@ -97,12 +202,7 @@ class OpenRouterBrain:
 
     def complete(self, system_prompt: str, user_message: str,
                  web_search: bool = False) -> str:
-        """Call OpenRouter (runs the async client in a fresh event loop).
-
-        ``web_search`` is ignored: OpenRouter chat completions have no
-        harness-side web tool here."""
-        if web_search:
-            logger.debug("[ai-brain] web_search requested but openrouter has no web tool — ignored")
+        """Call OpenRouter (runs the async client in a fresh event loop)."""
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.3")
 
@@ -113,7 +213,10 @@ class OpenRouterBrain:
         loop = asyncio.new_event_loop()
         try:
             return loop.run_until_complete(
-                self._async_do_call(openrouter_key, model, system_prompt, user_message)
+                self._async_do_call(
+                    openrouter_key, model, system_prompt, user_message,
+                    web_search=web_search,
+                )
             )
         except Exception as exc:
             logger.error(
@@ -130,26 +233,31 @@ class OpenRouterBrain:
         model: str,
         system_prompt: str,
         user_message: str,
+        web_search: bool = False,
     ) -> str:
         """Async POST to OpenRouter, including the 402 degraded-token retry."""
+        tools = [_openrouter_web_search_tool()] if web_search else None
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
 
             async def _post(max_toks: int):
+                payload: dict[str, Any] = {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "stream": False,
+                    # Output is a verdict JSON + 2-3 sentences (~150-300
+                    # visible tokens). Reasoning models can burn hidden
+                    # tokens before the JSON, so leave headroom.
+                    "max_tokens": max_toks,
+                    "temperature": 0.1,
+                }
+                if tools is not None:
+                    payload["tools"] = tools
                 return await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_message},
-                        ],
-                        "stream": False,
-                        # Output is a verdict JSON + 2-3 sentences (~150-300
-                        # visible tokens). Reasoning models can burn hidden
-                        # tokens before the JSON, so leave headroom.
-                        "max_tokens": max_toks,
-                        "temperature": 0.1,
-                    },
+                    json=payload,
                     headers={"Authorization": f"Bearer {openrouter_key}"},
                 )
 
@@ -175,7 +283,14 @@ class OpenRouterBrain:
                 data = resp.json()
                 choices = data.get("choices", [])
                 if choices:
-                    return choices[0].get("message", {}).get("content", "")
+                    message = choices[0].get("message", {}) or {}
+                    annotations = message.get("annotations", [])
+                    return AiBrainResult(
+                        message.get("content", ""),
+                        usage=data.get("usage"),
+                        citations=annotations if isinstance(annotations, list) else None,
+                        metadata={"id": data.get("id"), "model": data.get("model")},
+                    )
                 logger.error("[research] LLM returned 200 but no choices — empty response")
                 return ""
 
@@ -185,6 +300,37 @@ class OpenRouterBrain:
                 f"DOWN, all verdicts will default to PASS until fixed. {body}"
             )
         return ""
+
+
+def _openrouter_web_search_tool() -> dict[str, Any]:
+    """Build the bounded OpenRouter server-tool declaration.
+
+    Native search is the deliberate default for Grok.  The result and total
+    caps keep an agentic model from growing search cost/context without bound;
+    OpenRouter may ignore the per-call result cap for native providers, but the
+    total cap still documents and enforces the request-level budget where the
+    provider supports it.
+    """
+    engine = str(os.environ.get("OPENROUTER_WEB_ENGINE", "native") or "native").lower()
+    if engine not in _OPENROUTER_WEB_ENGINES:
+        logger.warning(f"[ai-brain] invalid OpenRouter web engine {engine!r}; using native")
+        engine = "native"
+    max_results = _bounded_int(
+        os.environ.get("OPENROUTER_WEB_MAX_RESULTS"),
+        default=5, minimum=1, maximum=10,
+    )
+    max_total_results = _bounded_int(
+        os.environ.get("OPENROUTER_WEB_MAX_TOTAL_RESULTS"),
+        default=10, minimum=max_results, maximum=25,
+    )
+    return {
+        "type": "openrouter:web_search",
+        "parameters": {
+            "engine": engine,
+            "max_results": max_results,
+            "max_total_results": max_total_results,
+        },
+    }
 
 
 class ClaudeCliBrain:
@@ -240,7 +386,19 @@ class ClaudeCliBrain:
             logger.error(f"[ai-brain] claude_cli error envelope: {envelope.get('result') or envelope}")
             return ""
         result = str(envelope.get("result") or "")
-        return _validated_cli_result(self.provider, result)
+        validated = _validated_cli_result(self.provider, result)
+        if not validated:
+            return ""
+        envelope_meta = {
+            key: envelope[key]
+            for key in ("modelUsage", "total_cost_usd", "num_turns", "duration_ms", "duration_api_ms")
+            if key in envelope
+        }
+        return AiBrainResult(
+            validated,
+            usage=envelope.get("usage"),
+            metadata=envelope_meta,
+        )
 
 
 class CodexCliBrain:

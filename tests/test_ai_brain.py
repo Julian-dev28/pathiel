@@ -25,10 +25,121 @@ def test_selected_provider_hot_read_env_overrides_config(monkeypatch):
     assert selected_ai_brain_provider(cfg) == "openrouter"
 
 
-def test_openrouter_402_affordability_retry_preserved(monkeypatch):
+def test_openrouter_web_tool_only_sent_when_gated(monkeypatch):
     from hermes_trader.agents import ai_brain
 
-    calls: list[int] = []
+    payloads: list[dict] = []
+    monkeypatch.delenv("OPENROUTER_WEB_ENGINE", raising=False)
+    monkeypatch.delenv("OPENROUTER_WEB_MAX_RESULTS", raising=False)
+    monkeypatch.delenv("OPENROUTER_WEB_MAX_TOTAL_RESULTS", raising=False)
+
+    class Response:
+        status_code = 200
+        text = ""
+        is_success = True
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            payloads.append(json)
+            return Response()
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_brain.httpx, "AsyncClient", FakeAsyncClient)
+
+    assert ai_brain.OpenRouterBrain().complete("system", "user", web_search=False) == "ok"
+    assert "tools" not in payloads[-1]
+
+    assert ai_brain.OpenRouterBrain().complete("system", "user", web_search=True) == "ok"
+    assert payloads[-1]["tools"] == [{
+        "type": "openrouter:web_search",
+        "parameters": {
+            "engine": "native",
+            "max_results": 5,
+            "max_total_results": 10,
+        },
+    }]
+
+
+def test_openrouter_web_tool_caps_env_overrides(monkeypatch):
+    from hermes_trader.agents import ai_brain
+
+    monkeypatch.setenv("OPENROUTER_WEB_ENGINE", "exa")
+    monkeypatch.setenv("OPENROUTER_WEB_MAX_RESULTS", "999")
+    monkeypatch.setenv("OPENROUTER_WEB_MAX_TOTAL_RESULTS", "999")
+    tool = ai_brain._openrouter_web_search_tool()
+    assert tool["parameters"] == {
+        "engine": "exa",
+        "max_results": 10,
+        "max_total_results": 25,
+    }
+
+
+def test_openrouter_result_preserves_usage_citations_and_string_api(monkeypatch):
+    from hermes_trader.agents import ai_brain
+
+    annotation = {
+        "type": "url_citation",
+        "url_citation": {"url": "https://example.test/news", "title": "News"},
+    }
+
+    class Response:
+        status_code = 200
+        text = ""
+        is_success = True
+
+        def json(self):
+            return {
+                "id": "gen-test",
+                "model": "x-ai/grok-test",
+                "choices": [{"message": {"content": "grounded answer", "annotations": [annotation]}}],
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "server_tool_use": {"web_search_requests": 2},
+                },
+            }
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, json, headers):
+            return Response()
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai_brain.httpx, "AsyncClient", FakeAsyncClient)
+
+    result = ai_brain.OpenRouterBrain().complete("system", "user", web_search=True)
+    assert isinstance(result, str)
+    assert result.upper() == "GROUNDED ANSWER"
+    assert result.usage["input_tokens"] == 11
+    assert result.web_search_requests == 2
+    assert result.citations == (annotation,)
+    assert result.metadata == {"id": "gen-test", "model": "x-ai/grok-test"}
+
+
+def test_openrouter_402_retry_preserves_web_tool_and_final_metadata(monkeypatch):
+    from hermes_trader.agents import ai_brain
+
+    payloads: list[dict] = []
 
     class Response:
         def __init__(self, status_code: int, *, text: str = "", data: dict | None = None):
@@ -45,7 +156,7 @@ def test_openrouter_402_affordability_retry_preserved(monkeypatch):
 
     class FakeAsyncClient:
         def __init__(self, timeout):
-            self.timeout = timeout
+            pass
 
         async def __aenter__(self):
             return self
@@ -54,17 +165,23 @@ def test_openrouter_402_affordability_retry_preserved(monkeypatch):
             return False
 
         async def post(self, url, json, headers):
-            calls.append(int(json["max_tokens"]))
-            if len(calls) == 1:
+            payloads.append(json)
+            if len(payloads) == 1:
                 return Response(402, text="You requested too much, can only afford 842 tokens")
-            return Response(200, data={"choices": [{"message": {"content": "ok"}}]})
+            return Response(200, data={
+                "choices": [{"message": {"content": "ok", "annotations": []}}],
+                "usage": {"server_tool_use": {"web_search_requests": 1}},
+            })
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("OPENROUTER_MAX_TOKENS", raising=False)
     monkeypatch.setattr(ai_brain.httpx, "AsyncClient", FakeAsyncClient)
 
-    assert ai_brain.OpenRouterBrain().complete("system", "user") == "ok"
-    assert calls == [2048, 792]
+    result = ai_brain.OpenRouterBrain().complete("system", "user", web_search=True)
+    assert result == "ok"
+    assert result.web_search_requests == 1
+    assert [p["max_tokens"] for p in payloads] == [2048, 792]
+    assert payloads[0]["tools"] == payloads[1]["tools"]
 
 
 def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
@@ -88,7 +205,13 @@ def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
         seen["args"] = args
         seen["prompt"] = prompt
         seen["timeout_s"] = timeout_s
-        return json.dumps({"result": _verdict_text("LONG"), "is_error": False})
+        return json.dumps({
+            "result": _verdict_text("LONG"),
+            "is_error": False,
+            "usage": {"input_tokens": 9, "output_tokens": 4},
+            "total_cost_usd": 0.01,
+            "num_turns": 1,
+        })
 
     monkeypatch.setattr(ai_brain, "_run_cli", fake_run)
 
@@ -97,6 +220,8 @@ def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
     assert seen["prompt"] == "SYSTEM\n\nUSER"
     assert "--tools" in seen["args"]
     assert seen["timeout_s"] == 5
+    assert out.usage == {"input_tokens": 9, "output_tokens": 4}
+    assert out.metadata == {"total_cost_usd": 0.01, "num_turns": 1}
 
 
 def test_claude_cli_error_envelope_maps_to_ai_down(monkeypatch):
