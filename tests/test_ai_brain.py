@@ -129,3 +129,77 @@ def test_codex_cli_uses_read_only_sandbox_and_rejects_jsonless_output(monkeypatc
     assert "--sandbox" in args
     assert "read-only" in args
     assert "--ephemeral" in args
+
+def test_claude_cli_web_search_flag_switches_tools_and_turns(monkeypatch):
+    """web_search=True must grant exactly the WebSearch tool with multi-turn
+    headroom; web_search=False keeps the sealed zero-tool single-turn call."""
+    from hermes_trader.agents import ai_brain
+
+    monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_MAX_TURNS", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_WEB_MAX_TURNS", raising=False)
+    monkeypatch.setattr(
+        ai_brain,
+        "_read_ai_brain_config",
+        lambda: {"timeout_s": 5, "claude_cli": {"command": "claude", "max_turns": 1}},
+    )
+
+    seen: dict[str, list] = {}
+
+    def fake_run(args, prompt, timeout_s):
+        seen["args"] = args
+        return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
+
+    monkeypatch.setattr(ai_brain, "_run_cli", fake_run)
+
+    ai_brain.ClaudeCliBrain().complete("S", "U", web_search=True)
+    args = seen["args"]
+    assert args[args.index("--tools") + 1] == "WebSearch"
+    assert args[args.index("--max-turns") + 1] == "8"
+    assert "--safe-mode" in args
+
+    ai_brain.ClaudeCliBrain().complete("S", "U", web_search=False)
+    args = seen["args"]
+    assert args[args.index("--tools") + 1] == ""
+    assert args[args.index("--max-turns") + 1] == "1"
+
+
+def test_claude_cli_web_max_turns_config_override(monkeypatch):
+    from hermes_trader.agents import ai_brain
+
+    monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_WEB_MAX_TURNS", raising=False)
+    monkeypatch.setattr(
+        ai_brain,
+        "_read_ai_brain_config",
+        lambda: {"timeout_s": 5, "claude_cli": {"web_search_max_turns": 4}},
+    )
+    seen: dict[str, list] = {}
+
+    def fake_run(args, prompt, timeout_s):
+        seen["args"] = args
+        return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
+
+    monkeypatch.setattr(ai_brain, "_run_cli", fake_run)
+    ai_brain.ClaudeCliBrain().complete("S", "U", web_search=True)
+    args = seen["args"]
+    assert args[args.index("--max-turns") + 1] == "4"
+
+
+def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
+    """The research seam passes web_search unconditionally to the configured
+    provider — non-claude providers must swallow it, not raise."""
+    from hermes_trader.agents import ai_brain
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    assert ai_brain.OpenRouterBrain().complete("S", "U", web_search=True) == ""
+
+    monkeypatch.setattr(ai_brain, "_read_ai_brain_config", lambda: {"timeout_s": 5})
+    monkeypatch.setattr(
+        ai_brain,
+        "_run_cli",
+        lambda args, prompt, timeout_s: json.dumps({"result": "no json", "is_error": False}),
+    )
+    assert ai_brain.CodexCliBrain().complete("S", "U", web_search=True) == ""

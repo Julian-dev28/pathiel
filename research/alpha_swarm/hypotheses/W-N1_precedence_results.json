@@ -1,0 +1,818 @@
+[
+ {
+  "coin": "FARTCOIN",
+  "sym": "FARTCOIN",
+  "day": "2026-03-16",
+  "ret": 0.24375112931397935,
+  "ignition_ms": 1773637200000,
+  "open_ms": 1773619200000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-07-06",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "FARTCOIN",
+  "sym": "FARTCOIN",
+  "day": "2026-04-07",
+  "ret": 0.18264621284755522,
+  "ignition_ms": 1775581200000,
+  "open_ms": 1775520000000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-01-28",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 1.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 1.0,
+   "sig24_count": 1.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "FARTCOIN",
+  "sym": "FARTCOIN",
+  "day": "2026-07-02",
+  "ret": 0.17931542142068446,
+  "ignition_ms": 1782986400000,
+  "open_ms": 1782950400000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2025-12-26",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 2.0,
+   "baseline_hourly": 0.006,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 1.0,
+   "sig24_count": 1.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "FET",
+  "sym": "FET",
+  "day": "2026-03-16",
+  "ret": 0.21146023998372998,
+  "ignition_ms": 1773648000000,
+  "open_ms": 1773619200000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 2.0,
+   "baseline_hourly": 0.0119,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-06-29",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 4.0,
+   "baseline_hourly": 0.0238,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "HYPE",
+  "sym": "HYPE",
+  "day": "2026-01-27",
+  "ret": 0.23616961527660774,
+  "ignition_ms": 1769486400000,
+  "open_ms": 1769472000000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 70.0,
+   "baseline_hourly": 0.3155,
+   "thin": false,
+   "fires": true,
+   "first_fire_end_ms": 1769389200000,
+   "peak_ratio": 6.0,
+   "sig24_count": 6.0
+  },
+  "control_day": "2026-02-14",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 87.0,
+   "baseline_hourly": 0.4583,
+   "thin": false,
+   "fires": true,
+   "first_fire_end_ms": 1770944400000,
+   "peak_ratio": 5.82,
+   "sig24_count": 8.0
+  },
+  "lead_h": 28.0
+ },
+ {
+  "coin": "IP",
+  "sym": "IP",
+  "day": "2026-01-13",
+  "ret": 0.3595594835324174,
+  "ignition_ms": 1768280400000,
+  "open_ms": 1768262400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-02-14",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "JTO",
+  "sym": "JTO",
+  "day": "2026-02-17",
+  "ret": 0.202065658428624,
+  "ignition_ms": 1771326000000,
+  "open_ms": 1771286400000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-05-23",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 1.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "JTO",
+  "sym": "JTO",
+  "day": "2026-05-07",
+  "ret": 0.4106470223620844,
+  "ignition_ms": 1778148000000,
+  "open_ms": 1778112000000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 1.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 1.0,
+   "sig24_count": 1.0
+  },
+  "control_day": "2026-05-11",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "JTO",
+  "sym": "JTO",
+  "day": "2026-06-07",
+  "ret": 0.2318594330947905,
+  "ignition_ms": 1780801200000,
+  "open_ms": 1780790400000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-05-10",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 1.0,
+   "baseline_hourly": 0.006,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "JTO",
+  "sym": "JTO",
+  "day": "2026-06-15",
+  "ret": 0.30860730511930723,
+  "ignition_ms": 1781496000000,
+  "open_ms": 1781481600000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-07-05",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "JUP",
+  "sym": "JUP",
+  "day": "2026-05-08",
+  "ret": 0.1878581835842641,
+  "ignition_ms": 1778252400000,
+  "open_ms": 1778198400000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-06-17",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 3600000,
+   "total9d": 0.0,
+   "baseline_hourly": 0.0,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "LIT",
+  "sym": "LIT",
+  "day": "2026-05-19",
+  "ret": 0.1953147938425399,
+  "ignition_ms": 1779206400000,
+  "open_ms": 1779148800000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 7.0,
+   "baseline_hourly": 0.0417,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 0.0,
+   "sig24_count": 0.0
+  },
+  "control_day": "2026-01-22",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "LIT",
+  "sym": "LIT",
+  "day": "2026-06-02",
+  "ret": 0.2035775765287029,
+  "ignition_ms": 1780369200000,
+  "open_ms": 1780358400000,
+  "event": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 6.0,
+   "baseline_hourly": 0.0298,
+   "thin": true,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 1.0,
+   "sig24_count": 1.0
+  },
+  "control_day": "2026-06-17",
+  "control": {
+   "status": "OK",
+   "bucket_ms": 86400000,
+   "total9d": 10.0,
+   "baseline_hourly": 0.0476,
+   "thin": false,
+   "fires": false,
+   "first_fire_end_ms": null,
+   "peak_ratio": 1.0,
+   "sig24_count": 1.0
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "MON",
+  "sym": "MON",
+  "day": "2026-01-27",
+  "ret": 0.17961810541992462,
+  "ignition_ms": 1769515200000,
+  "open_ms": 1769472000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-05-03",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "NEAR",
+  "sym": "NEAR",
+  "day": "2026-02-25",
+  "ret": 0.21287666414953832,
+  "ignition_ms": 1772017200000,
+  "open_ms": 1771977600000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2025-12-21",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ONDO",
+  "sym": "ONDO",
+  "day": "2026-05-08",
+  "ret": 0.2812739070070551,
+  "ignition_ms": 1778230800000,
+  "open_ms": 1778198400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-01-06",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "SUI",
+  "sym": "SUI",
+  "day": "2026-05-10",
+  "ret": 0.24721936629591545,
+  "ignition_ms": 1778407200000,
+  "open_ms": 1778371200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-01-21",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "TAO",
+  "sym": "TAO",
+  "day": "2026-06-13",
+  "ret": 0.24040184888218086,
+  "ignition_ms": 1781334000000,
+  "open_ms": 1781308800000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-01-23",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "TRUMP",
+  "sym": "TRUMP",
+  "day": "2026-03-13",
+  "ret": 0.31455575269550984,
+  "ignition_ms": 1773378000000,
+  "open_ms": 1773360000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-01",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "TRUMP",
+  "sym": "TRUMP",
+  "day": "2026-06-12",
+  "ret": 0.23630196055884545,
+  "ignition_ms": 1781251200000,
+  "open_ms": 1781222400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-06-03",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "UNI",
+  "sym": "UNI",
+  "day": "2025-12-20",
+  "ret": 0.17754637896359227,
+  "ignition_ms": 1766214000000,
+  "open_ms": 1766188800000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2025-12-29",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "UNI",
+  "sym": "UNI",
+  "day": "2026-02-25",
+  "ret": 0.21508019787138366,
+  "ignition_ms": 1772010000000,
+  "open_ms": 1771977600000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-08",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "VVV",
+  "sym": "VVV",
+  "day": "2026-01-11",
+  "ret": 0.2016905628076182,
+  "ignition_ms": 1768140000000,
+  "open_ms": 1768089600000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-06-19",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "VVV",
+  "sym": "VVV",
+  "day": "2026-02-13",
+  "ret": 0.6076885165105963,
+  "ignition_ms": 1770955200000,
+  "open_ms": 1770940800000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-05-28",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "VVV",
+  "sym": "VVV",
+  "day": "2026-05-06",
+  "ret": 0.19483545286865356,
+  "ignition_ms": 1778058000000,
+  "open_ms": 1778025600000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-06-17",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "WIF",
+  "sym": "WIF",
+  "day": "2026-01-04",
+  "ret": 0.20012400720422807,
+  "ignition_ms": 1767513600000,
+  "open_ms": 1767484800000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-05-02",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "WLD",
+  "sym": "WLD",
+  "day": "2026-01-28",
+  "ret": 0.2538224984408939,
+  "ignition_ms": 1769634000000,
+  "open_ms": 1769558400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-31",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "WLD",
+  "sym": "WLD",
+  "day": "2026-05-30",
+  "ret": 0.1886173811002967,
+  "ignition_ms": 1780146000000,
+  "open_ms": 1780099200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-02-16",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "WLD",
+  "sym": "WLD",
+  "day": "2026-06-03",
+  "ret": 0.41859187357735284,
+  "ignition_ms": 1780459200000,
+  "open_ms": 1780444800000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-04-04",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "XPL",
+  "sym": "XPL",
+  "day": "2026-06-11",
+  "ret": 0.23337581282880748,
+  "ignition_ms": 1781175600000,
+  "open_ms": 1781136000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-22",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "XPL",
+  "sym": "XPL",
+  "day": "2026-06-17",
+  "ret": 0.23467198038013493,
+  "ignition_ms": 1781697600000,
+  "open_ms": 1781654400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2025-12-14",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "XRP",
+  "sym": "XRP",
+  "day": "2026-02-06",
+  "ret": 0.20997115780799325,
+  "ignition_ms": 1770354000000,
+  "open_ms": 1770336000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-02-11",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZEC",
+  "sym": "ZEC",
+  "day": "2026-02-14",
+  "ret": 0.20983128203209755,
+  "ignition_ms": 1771052400000,
+  "open_ms": 1771027200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-04-20",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZEC",
+  "sym": "ZEC",
+  "day": "2026-03-16",
+  "ret": 0.20521640686231835,
+  "ignition_ms": 1773680400000,
+  "open_ms": 1773619200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-28",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZEC",
+  "sym": "ZEC",
+  "day": "2026-04-07",
+  "ret": 0.270970819750338,
+  "ignition_ms": 1775548800000,
+  "open_ms": 1775520000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-03-03",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZEC",
+  "sym": "ZEC",
+  "day": "2026-05-05",
+  "ret": 0.22241138776571856,
+  "ignition_ms": 1778007600000,
+  "open_ms": 1777939200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-01-24",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZEC",
+  "sym": "ZEC",
+  "day": "2026-06-07",
+  "ret": 0.21607804123141539,
+  "ignition_ms": 1780808400000,
+  "open_ms": 1780790400000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-02-20",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "ZRO",
+  "sym": "ZRO",
+  "day": "2026-02-11",
+  "ret": 0.17788755064661133,
+  "ignition_ms": 1770768000000,
+  "open_ms": 1770768000000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-04-16",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "kPEPE",
+  "sym": "PEPE",
+  "day": "2026-01-01",
+  "ret": 0.22123015873015883,
+  "ignition_ms": 1767283200000,
+  "open_ms": 1767225600000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-02-03",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ },
+ {
+  "coin": "kPEPE",
+  "sym": "PEPE",
+  "day": "2026-02-14",
+  "ret": 0.27992584745762716,
+  "ignition_ms": 1771077600000,
+  "open_ms": 1771027200000,
+  "event": {
+   "status": "FETCH_FAILED"
+  },
+  "control_day": "2026-01-30",
+  "control": {
+   "status": "FETCH_FAILED"
+  },
+  "lead_h": null
+ }
+]

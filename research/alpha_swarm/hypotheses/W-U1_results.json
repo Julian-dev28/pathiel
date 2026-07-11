@@ -1,0 +1,54 @@
+{
+ "registered": "short close(T-1d)->close(T+2d), stop 15%, >=1% circ, net 25bps",
+ "n_events_total": 915,
+ "PRIMARY_short_1pct": {
+  "n": 411,
+  "mean_pct": 0.76,
+  "median_pct": 0.967,
+  "win": 0.545,
+  "p_mc": 0.1,
+  "half1": {
+   "n": 206,
+   "mean_pct": -0.237,
+   "median_pct": -0.137,
+   "win": 0.495
+  },
+  "half2": {
+   "n": 205,
+   "mean_pct": 1.762,
+   "median_pct": 2.374,
+   "win": 0.595
+  }
+ },
+ "EXPL_short_3pct": {
+  "n": 173,
+  "mean_pct": -0.228,
+  "median_pct": -0.402,
+  "win": 0.474,
+  "p_mc": 0.64,
+  "half1": {
+   "n": 87,
+   "mean_pct": -1.617,
+   "median_pct": -1.764,
+   "win": 0.46
+  },
+  "half2": {
+   "n": 86,
+   "mean_pct": 1.176,
+   "median_pct": -0.232,
+   "win": 0.488
+  }
+ },
+ "EXPL_runin_Tm3_T": {
+  "n": 408,
+  "mean_pct": -2.105,
+  "median_pct": -2.138,
+  "win": 0.395
+ },
+ "EXPL_post_T_Tp3": {
+  "n": 426,
+  "mean_pct": 0.149,
+  "median_pct": -0.655,
+  "win": 0.465
+ }
+}

@@ -278,6 +278,7 @@ def _call_ai(
     user_message: str,
     provider: str | None = None,
     brain: Any | None = None,
+    web_search: bool = False,
 ) -> str:
     """Call the AI brain for the verdict completion.
 
@@ -285,6 +286,9 @@ def _call_ai(
     completion through the calling agent harness's own model instead of any
     LLM API). If it yields nothing we fall back to the configured provider so a
     verdict is never silently lost when the host cannot sample.
+
+    ``web_search`` is only forwarded to the configured provider — injected
+    brains have an unknown signature and get the plain two-arg call.
     """
     if brain is not None:
         injected = getattr(brain, "provider", "injected")
@@ -303,14 +307,54 @@ def _call_ai(
             "falling back to the configured provider"
         )
     selected = provider or selected_ai_brain_provider()
-    logger.info(f"[research] ai_brain provider={selected}")
+    logger.info(f"[research] ai_brain provider={selected}" + (" web_search=on" if web_search else ""))
     try:
-        return get_brain(selected).complete(system_prompt, user_message)
+        configured = get_brain(selected)
+        # kwarg only when on: keeps two-arg custom/legacy brains working
+        if web_search:
+            return configured.complete(system_prompt, user_message, web_search=True)
+        return configured.complete(system_prompt, user_message)
     except Exception as exc:
         logger.error(
             f"[research] ai_brain provider={selected} failed: {type(exc).__name__}: {exc}"
         )
     return ""
+
+
+def _should_web_search(
+    coin: str,
+    perception: Dict[str, Any],
+    open_positions: List[Dict[str, Any]],
+    config: Dict[str, Any],
+) -> bool:
+    """Selective live web search: big movers and held coins only.
+
+    Every web call costs 20-60s of latency and subscription usage, so the
+    default gate is |24h move| >= 8% (a real mover, where a catalyst matters)
+    or a coin we currently hold (where the AI must be able to CLOSE on news).
+    Hot-killed by ai_brain.web_search.enabled=false.
+    """
+    cfg = (config.get("ai_brain") or {}).get("web_search") or {}
+    if not bool(cfg.get("enabled", False)):
+        return False
+    if bool(cfg.get("held", True)) and any(p.get("coin") == coin for p in open_positions):
+        return True
+    try:
+        move = abs(float(perception.get("daily_move_pct") or 0.0))
+    except (TypeError, ValueError):
+        move = 0.0
+    return move >= float(cfg.get("min_move_pct", 8.0))
+
+
+_WEB_SEARCH_BLOCK = (
+    "You have the WebSearch tool for THIS candidate. Before deciding, run 1-2 "
+    "searches for very recent news that could move this token (listing, hack, "
+    "unlock, partnership, regulatory action, funding). Quote what you actually "
+    "find, with the source. If the searches return nothing relevant, say "
+    "'web: no relevant news found' in your reasoning and decide from the data "
+    "above. NEVER invent, paraphrase from memory, or backfill a headline you "
+    "did not retrieve this turn — a fabricated catalyst is worse than none."
+)
 
 
 def parse_verdict(
@@ -506,7 +550,13 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
     ai_brain_provider = selected_ai_brain_provider(config)
     if brain is not None:
         ai_brain_provider = getattr(brain, "provider", ai_brain_provider)
-    ai_text = _call_ai(system_prompt, user_message, provider=ai_brain_provider, brain=brain)
+    use_web = _should_web_search(coin, perception, open_positions, config)
+    if use_web:
+        user_message = f"{user_message}\n\n{_WEB_SEARCH_BLOCK}"
+    ai_text = _call_ai(
+        system_prompt, user_message,
+        provider=ai_brain_provider, brain=brain, web_search=use_web,
+    )
     parsed = parse_verdict(ai_text, coin, perception)
 
     analysis = {
@@ -528,6 +578,9 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         # override guard never sees it (it didn't, on first deploy).
         "ai_down": bool(parsed.get("ai_down")),
         "ai_brain_provider": ai_brain_provider,
+        # Calibration tag: verdicts formed WITH live web search get compared
+        # against the no-search baseline before the flag earns permanence.
+        "web_search_used": use_web,
         "created_at": int(time.time() * 1000),
         # Carry forward so risk gates can read own-coin signal strength.
         "composite_score": float(perception.get("composite_score", 0) or 0),

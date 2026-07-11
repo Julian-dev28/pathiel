@@ -8,12 +8,18 @@
     },
     "claude_cli": {
       "command": "/Users/julian_dev/.local/bin/claude",
-      "max_turns": 1
+      "max_turns": 1,
+      "web_search_max_turns": 8
+    },
+    "web_search": {
+      "enabled": true,
+      "min_move_pct": 8.0,
+      "held": true
     }
   },
   "enable_crypto": true,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.50,
+  "equity_fraction_per_trade": 0.5,
   "leverage": 15,
   "max_trade_notional_usd": 5000,
   "asset_notional_multiplier": {
@@ -162,7 +168,7 @@
     "hold_days": 3.0,
     "equity_fraction": 0.4,
     "deep_tier": {
-      "crash_pct": -0.20,
+      "crash_pct": -0.2,
       "equity_fraction": 0.6
     },
     "tp_scale_fraction": 0.0,
@@ -214,7 +220,7 @@
     "enabled": true,
     "shadow_only": false,
     "protect_pct": 3.0,
-    "retrace_threshold": 0.10,
+    "retrace_threshold": 0.1,
     "scan_interval_hours": 6,
     "entry_window_hours": 8,
     "min_body_ratio": 1.0,
@@ -272,7 +278,9 @@
   "young_listings": {
     "enabled": true,
     "shadow_only": true,
-    "dex_allowlist": ["xyz"],
+    "dex_allowlist": [
+      "xyz"
+    ],
     "scan_interval_minutes": 30,
     "min_age_bars": 2,
     "max_age_bars": 60,
@@ -292,7 +300,14 @@
   "majors_swing": {
     "enabled": true,
     "shadow_only": true,
-    "coins": ["BTC", "ETH", "SOL", "AAVE", "xyz:SP500", "xyz:XYZ100"],
+    "coins": [
+      "BTC",
+      "ETH",
+      "SOL",
+      "AAVE",
+      "xyz:SP500",
+      "xyz:XYZ100"
+    ],
     "scan_interval_minutes": 30,
     "trend_ma_period": 200,
     "min_trend_bars": 60,
@@ -314,5 +329,15 @@
   "data_logger": {
     "enabled": true,
     "interval_hours": 1.0
+  },
+  "unlock_recorder": {
+    "enabled": true,
+    "min_pct_circ": 1.0,
+    "refresh_hours": 12.0
+  },
+  "news_catalyst": {
+    "enabled": true,
+    "shadow_only": true,
+    "scan_interval_min": 30
   }
 }

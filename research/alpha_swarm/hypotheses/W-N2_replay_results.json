@@ -1,0 +1,124 @@
+{
+ "A": {
+  "summary": {
+   "n": 1,
+   "slip0": {
+    "mean_ret_pct": 1.9779,
+    "total_pct": 1.98,
+    "win_rate": 1.0,
+    "sharpe_like": 19779325.314
+   },
+   "slip6": {
+    "mean_ret_pct": 1.9179,
+    "total_pct": 1.92,
+    "win_rate": 1.0,
+    "sharpe_like": 19179325.314
+   },
+   "slip12": {
+    "mean_ret_pct": 1.8579,
+    "total_pct": 1.86,
+    "win_rate": 1.0,
+    "sharpe_like": 18579325.314
+   },
+   "slip25": {
+    "mean_ret_pct": 1.7279,
+    "total_pct": 1.73,
+    "win_rate": 1.0,
+    "sharpe_like": 17279325.314
+   },
+   "slip50": {
+    "mean_ret_pct": 1.4779,
+    "total_pct": 1.48,
+    "win_rate": 1.0,
+    "sharpe_like": 14779325.314
+   },
+   "oos_12bps": {
+    "first_half_mean_pct": 1.8579,
+    "second_half_mean_pct": null,
+    "n_first": 1,
+    "n_second": 0
+   },
+   "verdict": "thin sample"
+  },
+  "p_null": 0.5425,
+  "null_mean": 0.008304427233639815,
+  "mae_p50": -0.010852853396038808,
+  "mae_p90": -0.010852853396038808,
+  "oos_halves_ev0_pct": [
+   1.98,
+   null
+  ],
+  "trades": [
+   {
+    "ret": 0.019779325314280616,
+    "exit": "trail",
+    "hold": 9,
+    "mae": -0.010852853396038808,
+    "t": 1769389200000,
+    "coin": "HYPE",
+    "day": "2026-01-27"
+   }
+  ]
+ },
+ "B": {
+  "summary": {
+   "n": 1,
+   "slip0": {
+    "mean_ret_pct": 14.475,
+    "total_pct": 14.47,
+    "win_rate": 1.0,
+    "sharpe_like": 144749932.17
+   },
+   "slip6": {
+    "mean_ret_pct": 14.415,
+    "total_pct": 14.41,
+    "win_rate": 1.0,
+    "sharpe_like": 144149932.17
+   },
+   "slip12": {
+    "mean_ret_pct": 14.355,
+    "total_pct": 14.35,
+    "win_rate": 1.0,
+    "sharpe_like": 143549932.17
+   },
+   "slip25": {
+    "mean_ret_pct": 14.225,
+    "total_pct": 14.22,
+    "win_rate": 1.0,
+    "sharpe_like": 142249932.17
+   },
+   "slip50": {
+    "mean_ret_pct": 13.975,
+    "total_pct": 13.97,
+    "win_rate": 1.0,
+    "sharpe_like": 139749932.17
+   },
+   "oos_12bps": {
+    "first_half_mean_pct": 14.355,
+    "second_half_mean_pct": null,
+    "n_first": 1,
+    "n_second": 0
+   },
+   "verdict": "thin sample"
+  },
+  "p_null": 0.0168,
+  "null_mean": 0.00976698522433045,
+  "mae_p50": -0.010852853396038808,
+  "mae_p90": -0.010852853396038808,
+  "oos_halves_ev0_pct": [
+   14.47,
+   null
+  ],
+  "trades": [
+   {
+    "ret": 0.14474993216966636,
+    "exit": "horizon",
+    "hold": 24,
+    "mae": -0.010852853396038808,
+    "t": 1769389200000,
+    "coin": "HYPE",
+    "day": "2026-01-27"
+   }
+  ]
+ }
+}

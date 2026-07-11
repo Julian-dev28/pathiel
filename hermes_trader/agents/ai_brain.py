@@ -28,8 +28,13 @@ class AiBrain(Protocol):
 
     provider: str
 
-    def complete(self, system_prompt: str, user_message: str) -> str:
-        """Return model text ending in verdict JSON, or ``""`` on failure."""
+    def complete(self, system_prompt: str, user_message: str,
+                 web_search: bool = False) -> str:
+        """Return model text ending in verdict JSON, or ``""`` on failure.
+
+        ``web_search=True`` asks the backend to allow live web lookups for the
+        completion. Only claude_cli honors it; the other providers ignore the
+        flag (no error) so the research seam can request it unconditionally."""
 
 
 def _read_ai_brain_config() -> Mapping[str, Any]:
@@ -90,8 +95,14 @@ def get_brain(provider: str | None = None) -> AiBrain:
 class OpenRouterBrain:
     provider = "openrouter"
 
-    def complete(self, system_prompt: str, user_message: str) -> str:
-        """Call OpenRouter (runs the async client in a fresh event loop)."""
+    def complete(self, system_prompt: str, user_message: str,
+                 web_search: bool = False) -> str:
+        """Call OpenRouter (runs the async client in a fresh event loop).
+
+        ``web_search`` is ignored: OpenRouter chat completions have no
+        harness-side web tool here."""
+        if web_search:
+            logger.debug("[ai-brain] web_search requested but openrouter has no web tool — ignored")
         openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
         model = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-4.3")
 
@@ -179,16 +190,30 @@ class OpenRouterBrain:
 class ClaudeCliBrain:
     provider = "claude_cli"
 
-    def complete(self, system_prompt: str, user_message: str) -> str:
+    def complete(self, system_prompt: str, user_message: str,
+                 web_search: bool = False) -> str:
         brain_cfg = _read_ai_brain_config()
         provider_cfg = _provider_config(brain_cfg, self.provider)
         prompt = _combined_prompt(system_prompt, user_message)
-        max_turns = _bounded_int(
-            os.environ.get("CLAUDE_CLI_MAX_TURNS") or provider_cfg.get("max_turns"),
-            default=1,
-            minimum=1,
-            maximum=20,
-        )
+        # A web-search completion needs turns for the tool round-trips
+        # (verified live: search + verdict lands in 2-4 turns; 8 is headroom).
+        if web_search:
+            max_turns = _bounded_int(
+                os.environ.get("CLAUDE_CLI_WEB_MAX_TURNS")
+                or provider_cfg.get("web_search_max_turns"),
+                default=8,
+                minimum=2,
+                maximum=20,
+            )
+            tools = "WebSearch"
+        else:
+            max_turns = _bounded_int(
+                os.environ.get("CLAUDE_CLI_MAX_TURNS") or provider_cfg.get("max_turns"),
+                default=1,
+                minimum=1,
+                maximum=20,
+            )
+            tools = ""
         args = _command_parts(
             os.environ.get("CLAUDE_CLI_COMMAND") or provider_cfg.get("command"),
             ["claude"],
@@ -199,7 +224,7 @@ class ClaudeCliBrain:
             "--max-turns",
             str(max_turns),
             "--tools",
-            "",
+            tools,
             "--safe-mode",
             "--no-session-persistence",
         ]
@@ -221,7 +246,10 @@ class ClaudeCliBrain:
 class CodexCliBrain:
     provider = "codex_cli"
 
-    def complete(self, system_prompt: str, user_message: str) -> str:
+    def complete(self, system_prompt: str, user_message: str,
+                 web_search: bool = False) -> str:
+        if web_search:
+            logger.debug("[ai-brain] web_search requested but codex_cli runs read-only sandbox — ignored")
         brain_cfg = _read_ai_brain_config()
         provider_cfg = _provider_config(brain_cfg, self.provider)
         prompt = _combined_prompt(system_prompt, user_message)

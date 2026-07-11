@@ -68,6 +68,8 @@ from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
     record_b15_crossings as _record_b15_crossings,
 )
+from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
+from hermes_trader.agents.news_catalyst_live import maybe_run as _news_catalyst_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
@@ -848,6 +850,22 @@ while True:
             _record_b15_crossings(universe, _btc_up, read_agent_config())
         except Exception as _bre:
             logger.debug(f"[mover-recorders] b15 pass failed (non-fatal): {_bre}")
+
+        # W-U unlock recorder: zero-capital shadow SHORTs when an HL coin
+        # enters the 24h window before a >=1%-of-circ scheduled unlock
+        # (DefiLlama calendar, refreshed twice a day inside the module).
+        try:
+            _unlock_maybe_record(universe, read_agent_config())
+        except Exception as _ure:
+            logger.debug(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
+
+        # W-N3 news-catalyst recorder: zero-capital ledger reads of the live
+        # Google News coverage-surge signal on the cycle's scan candidates
+        # (30-min throttle inside the module; non-breaking reads = the null).
+        try:
+            _news_catalyst_maybe_run(read_agent_config(), results)
+        except Exception as _nce:
+            logger.debug(f"[news-catalyst-live] pass failed (non-fatal): {_nce}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the

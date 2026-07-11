@@ -166,3 +166,7 @@ backtest-trades.csv
 
 # consolidated runtime state dir (HERMES_STATE_DIR, 2026-07-09)
 .state/
+
+# W-U re-fetchable data caches (regenerate: W-U1_unlock_backtest.py)
+research/alpha_swarm/hypotheses/W-U_cache_daily.json
+research/alpha_swarm/hypotheses/W-U_cache_emissions_index.json
