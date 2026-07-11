@@ -114,7 +114,7 @@
     "lookback": 20
   },
   "late_chase_relax": {
-    "enabled": true,
+    "enabled": false,
     "min_ext_pct": 20.0,
     "max_ext_pct": 30.0,
     "min_volume_usd": 5000000
