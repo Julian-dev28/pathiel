@@ -374,11 +374,20 @@ def test_parse_verdict_empty_defaults_to_pass():
 
 
 def test_fetch_news_no_key_returns_no_news(monkeypatch):
-    """Without BRAVE_API_KEY, news fetch degrades to 'no news' — never raises."""
+    """With Google News unavailable AND no Brave key, degrade to 'no news'
+    (2026-07-11: Google News RSS is now the keyless primary source)."""
+    from hermes_trader.agents import research, news_catalyst as nc
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
-    from hermes_trader.agents.research import _fetch_news
-    assert _fetch_news("BTC") == "no news"
+    monkeypatch.setattr(nc, "google_news_search", lambda *a, **kw: [])
+    assert research._fetch_news("BTC") == "no news"
 
+
+def test_fetch_news_google_primary_no_key_needed(monkeypatch):
+    from hermes_trader.agents import research, news_catalyst as nc
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    monkeypatch.setattr(nc, "google_news_search",
+                        lambda *a, **kw: [nc.Article("ETF approved", "u", "d", None, "s")])
+    assert "ETF approved" in research._fetch_news("BTC")
 
 def test_fetch_news_sends_freshness_window(monkeypatch):
     """The Brave request must carry a freshness range so year-old articles

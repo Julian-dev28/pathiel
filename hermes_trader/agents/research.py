@@ -101,6 +101,16 @@ def _fetch_news(coin: str) -> str:
     BRAVE_API_KEY is set or the request fails — news is a supplementary
     signal, so a fetch failure degrades gracefully and never blocks research.
     """
+    # Primary: Google News RSS — free, keyless, 0.5s, per-coin query
+    # (2026-07-11; Brave demoted to fallback: metered single source).
+    try:
+        from hermes_trader.agents.news_catalyst import google_news_search
+        from hermes_trader.agents.news_catalyst import _coin_query
+        arts = google_news_search(_coin_query(coin), when="1d", limit=5, ttl=300.0)
+        if arts:
+            return " | ".join(a.title.strip() for a in arts if a.title)[:600]
+    except Exception:
+        pass
     key = os.environ.get("BRAVE_API_KEY", "")
     if not key:
         return "no news"

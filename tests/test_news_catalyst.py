@@ -65,3 +65,47 @@ def test_parse_rss_malformed_safe():
 def test_filter_no_keywords_passthrough():
     arts = parse_rss(_RSS)
     assert filter_keywords(arts, []) == arts
+
+
+def test_google_news_search_parses_and_caches(monkeypatch):
+    from hermes_trader.agents import news_catalyst as nc
+    xml = """<rss><channel>
+      <item><title>Bitcoin ETF sees record inflow</title><link>https://a.example/1</link>
+        <pubDate>Fri, 11 Jul 2026 01:00:00 +0000</pubDate></item>
+      <item><title>Exchange hacked for $40M</title><link>https://b.example/2</link>
+        <pubDate>Fri, 11 Jul 2026 00:30:00 +0000</pubDate></item>
+    </channel></rss>"""
+    calls = []
+    monkeypatch.setattr(nc, "_get_text", lambda url, timeout=25.0: calls.append(url) or xml)
+    nc._cache.clear()
+    arts = nc.google_news_search("bitcoin", when="1h")
+    assert len(arts) == 2 and arts[0].title.startswith("Bitcoin ETF")
+    assert "when%3A1h" in calls[0] or "when:1h" in calls[0]
+    # cached: second call makes no fetch
+    nc.google_news_search("bitcoin", when="1h")
+    assert len(calls) == 1
+
+
+def test_coin_catalyst_surge_math(monkeypatch):
+    from hermes_trader.agents import news_catalyst as nc
+    def fake_search(query, when="1d", limit=25, ttl=0):
+        n = 6 if when == "1h" else 24        # 6/h vs 1/h baseline -> surge 6x
+        return [nc.Article(title=f"t{i}", url="u", domain="d", seen=None, source="s")
+                for i in range(min(n, limit))]
+    monkeypatch.setattr(nc, "google_news_search", fake_search)
+    rep = nc.coin_catalyst("VIRTUAL")
+    assert rep.breaking is True and rep.surge_x == 6.0
+    def quiet(query, when="1d", limit=25, ttl=0):
+        return [] if when == "1h" else [nc.Article("t","u","d",None,"s")] * 12
+    monkeypatch.setattr(nc, "google_news_search", quiet)
+    rep = nc.coin_catalyst("QUIET")
+    assert rep.breaking is False and rep.n_recent == 0
+
+
+def test_fetch_news_prefers_google(monkeypatch):
+    from hermes_trader.agents import research, news_catalyst as nc
+    monkeypatch.setattr(nc, "google_news_search",
+                        lambda q, when="1d", limit=5, ttl=0: [
+                            nc.Article("SOL upgrade ships", "u", "d", None, "s")])
+    out = research._fetch_news("SOL")
+    assert "SOL upgrade ships" in out

@@ -259,3 +259,61 @@ def rss_headlines(keywords: Optional[List[str]] = None, feeds: Optional[List[str
     with _lock:
         _cache[key] = (now, arts)
     return arts
+
+
+# ── Google News RSS (2026-07-11): the live query engine ─────────────────────
+# Measured head-to-head: GDELT 1/5 success at 10-20s even politely paced vs
+# Google News RSS 0.4-0.7s with per-coin queries (100 items for "bitcoin").
+# GDELT keeps ONE role — historical date-range search for offline research —
+# and must never sit on a live path.
+_GOOGLE_NEWS = "https://news.google.com/rss/search"
+
+
+_QUERY_NOISE = '-casino -gambling -"price prediction" -giveaway'
+
+
+def _coin_query(coin: str) -> str:
+    """Query hygiene: quote the symbol (LIT/VIRTUAL are English words) + crypto
+    context + negations for the SEO-spam classes observed live 2026-07-11."""
+    sym = coin.split(":")[-1]
+    return f'"{sym}" crypto {_QUERY_NOISE}'
+
+
+
+def google_news_search(query: str, when: str = "1d", limit: int = 25,
+                       ttl: float = _CACHE_TTL_S) -> List[Article]:
+    """Per-query news via Google News RSS (free, keyless, fast). `when` is a
+    Google window like '1h' / '1d' / '7d'. Cached per (query, when)."""
+    key = f"gnews::{query}::{when}"
+    now = time.time()
+    with _lock:
+        hit = _cache.get(key)
+        if hit and (now - hit[0]) < ttl:
+            return hit[1][:limit]
+    url = (f"{_GOOGLE_NEWS}?q={urllib.parse.quote(query)}+when:{when}"
+           f"&hl=en-US&gl=US&ceid=US:en")
+    txt = _get_text(url)
+    arts = parse_rss(txt, source="news.google.com") if txt else []
+    arts.sort(key=lambda a: a.seen or datetime.min.replace(tzinfo=timezone.utc),
+              reverse=True)
+    with _lock:
+        _cache[key] = (now, arts)
+    return arts[:limit]
+
+
+def coin_catalyst(coin: str, ttl: float = _CACHE_TTL_S) -> CatalystReport:
+    """Live catalyst read for one coin: fresh headlines + a coverage-surge
+    signal computed from headline COUNTS (last 1h vs the trailing-24h hourly
+    baseline). Two cached Google News queries; no GDELT on this path."""
+    q = _coin_query(coin)
+    recent = google_news_search(q, when="1h", limit=50, ttl=ttl)
+    daily = google_news_search(q, when="1d", limit=100, ttl=ttl)
+    baseline_per_h = max(len(daily) / 24.0, 0.25)
+    surge_x = round(len(recent) / baseline_per_h, 2)
+    breaking = len(recent) >= 3 and surge_x >= 3.0
+    return CatalystReport(
+        query=coin, n_recent=len(recent), breaking=breaking, surge_x=surge_x,
+        headlines=recent[:10],
+        note=("⚡ BREAKING — coverage surging" if breaking
+              else "elevated coverage" if surge_x >= 1.5 else ""),
+    )
