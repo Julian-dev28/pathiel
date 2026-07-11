@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "subject": "@KillaXBT methodology reconstruction (SPEC Part 2)",
+    "built": "2026-07-11",
+    "rule": "evidence-based only; every component cites recovered text; nothing inferred from chart arrows alone; confidence reflects source quality and repetition across independent posts",
+    "initial_hypothesis": "HTF regime classification + range geometry + deviation-vs-acceptance + time-in-structure + scenario pathing + avoiding mid-range entries",
+    "hypothesis_outcome": "CONFIRMED as a description of his public process (components 1-4, 7 below are all directly evidenced). NOT confirmed as a mechanical edge: the quantifiable projections of these components failed walk-forward tests in this repo (see validation_results.json, owned by the quantitative lane)."
+  },
+  "components": [
+    {
+      "component": "HTF regime / cycle classification",
+      "description": "Every call is framed by a higher-timeframe state first: 'Overall HTF plan hasn't changed', 'Redistribution range', 'daily and weekly structure still remains bearish', 'macro base' required before a bottom. Trades and scenarios are subordinated to this state.",
+      "evidence": ["K03 direct text", "K10 direct text", "K05/K01 article-quoted model stages (distribution band, capitulation, macro base)"],
+      "confidence": "high",
+      "can_be_quantified": "partially",
+      "possible_definition": "state machine over 4h/1d bars: TREND_UP/DOWN, RANGE, BREAKOUT_*_CANDIDATE, ACCUMULATION/REDISTRIBUTION_CANDIDATE via ADX level+slope, EMA slopes, range width/ATR, boundary touches (implemented in hermes_trader/indicators/range_structure.py)",
+      "lookahead_risk": "HIGH in his usage: 'redistribution' vs 'accumulation' is only knowable after resolution; any honest implementation must use _CANDIDATE labels from trailing data only",
+      "implementation_risk": "state thresholds are free parameters; regime labels are regime-fit magnets"
+    },
+    {
+      "component": "Range geometry + fade-the-extremes discipline",
+      "description": "Inside a recognized range: do nothing special mid-range, do not chase boundaries ('Don't get overly bullish at the highs, and definitely don't ape shorts at the lows', 'enjoy the range'). Entries belong at range extremes or on failed moves, not mid-structure.",
+      "evidence": ["K03 direct text", "K06 direct text (prior range highs retest)"],
+      "confidence": "high",
+      "can_be_quantified": "yes",
+      "possible_definition": "range_high/low/mid from trailing envelope; price_location 0..1; location buckets 0-.2/.2-.35/.35-.65/.65-.8/.8-1; PASS on mid-location in RANGE state",
+      "lookahead_risk": "boundary definition must exclude the current bar and never be future-confirmed",
+      "implementation_risk": "TESTED (quant lane): loc_fade REFUTED out-of-sample; in the 2026 bear tape, range-LOW longs were the worst bucket (range lows resolved lower), i.e. the classic version of this rule was upside-down"
+    },
+    {
+      "component": "Deviation vs acceptance around boundaries",
+      "description": "The core boundary grammar: a poke beyond a level that closes back inside is a 'scam wick' / deviation (fade it); sustained closes beyond are 'accepting' (go with it). 'USDT.D had the scam wick... retested the prior range highs... and rejected. Now it's showing signs of accepting back below, a textbook...'",
+      "evidence": ["K06 direct text (scam wick / accepting back below)", "K09 direct text (first-retest rejection prior)"],
+      "confidence": "high",
+      "can_be_quantified": "yes",
+      "possible_definition": "deviation = trade >{0.10,0.25,0.50} ATR beyond boundary then close back inside; acceptance = {1,2,3} consecutive closes beyond (frozen run-start boundary); implemented in range_structure.py",
+      "lookahead_risk": "must classify at bar close with prior-bar ATR; a big poke must not raise its own threshold",
+      "implementation_risk": "TESTED (quant lane): dev_reject and acceptance_bo both failed matched-null walk-forward on 4h (2026) and on 6y daily majors; his usage is discretionary (which wick at which level matters), and the mechanical translation carries no measurable edge here"
+    },
+    {
+      "component": "Time-in-structure / time-based targets",
+      "description": "Time, not just price, drives his roadmap: 'Timebased capitulation is likely before the next leg down', 'Bottoms take time to form, developing through multiple smaller ranges', 'building spot over the next 3-4 months', ~300d path on the May-2025 chart.",
+      "evidence": ["K03 direct text", "K12 article quote", "K10 direct text"],
+      "confidence": "high",
+      "can_be_quantified": "partially (as contextual features: bars_in_range, bars_since_impulse, prior impulse/consolidation duration ratio — implemented as features, never standalone signals)",
+      "possible_definition": "range_age percentile vs prior consolidations",
+      "lookahead_risk": "low if trailing-only",
+      "implementation_risk": "untested as a timing signal (no falsifiable statement of the mapping recovered)"
+    },
+    {
+      "component": "'Rotational market mathematics' / swing counts",
+      "description": "The signature framing of the famous May-2025 chart: counting rotations/swings inside consolidation blocks to judge liquidity exhaustion ('(2x2)+1 = 5', '(5x2)+1 = 11', exhaustion clusters '(2x5)+1 = 9').",
+      "evidence": ["K01/K05 article quotes ONLY (bitcoinist 2026-02-09); no direct post with the formal rule recovered"],
+      "confidence": "low (article-mediated; the arithmetic as quoted is numerology-shaped and no generative rule is stated)",
+      "can_be_quantified": "no, as evidenced — there is no reproducible definition of what is counted or why",
+      "possible_definition": "none defensible; any implementation would be researcher invention, not reconstruction",
+      "lookahead_risk": "unknowable",
+      "implementation_risk": "maximal — DO NOT implement; flagging per SPEC Part 2 (no named-methodology claims beyond evidence)"
+    },
+    {
+      "component": "First-retest rejection prior",
+      "description": "'Significant weekly resistance levels rarely get flipped on the first attempt' — a base-rate belief that first tests of major HTF levels reject.",
+      "evidence": ["K09 direct text (stated as an oft-repeated warning)"],
+      "confidence": "medium (single direct post, phrased as a recurring claim; the 'countless' prior warnings were not recovered)",
+      "can_be_quantified": "yes (first touch of an N-week extreme -> forward return)",
+      "possible_definition": "first tag of a 26/52-week high after >=K weeks below it; measure rejection frequency vs base rate",
+      "lookahead_risk": "low",
+      "implementation_risk": "overlaps the deviation-short family that already failed OOS here; untested in its weekly-level form"
+    },
+    {
+      "component": "Scenario pathing with explicit invalidation",
+      "description": "Calls are stated as branching scenarios with a level that kills the thesis: 'two likely scenarios... bullish unless price falls below 100K'. Process discipline rather than a signal.",
+      "evidence": ["K02 direct text", "K07 article quote (conditional on $64,700)"],
+      "confidence": "high",
+      "can_be_quantified": "as audit protocol, yes (it is what makes K02 strictly gradable); as a signal, no",
+      "possible_definition": "n/a — adopt in OUR call-auditing: every thesis carries an invalidation level",
+      "lookahead_risk": "none",
+      "implementation_risk": "none; note K02 — his one crisply-invalidated public call in this sample self-invalidated (strict MISS)"
+    },
+    {
+      "component": "Spot-accumulation vs leveraged-trade separation",
+      "description": "Explicit two-book mental model: DCA spot into weakness with no timing pretension ('I think we go lower. I'm buying anyway... every $5,000 lower, 3 BTC more'), leverage only after daily+weekly structure flips bullish.",
+      "evidence": ["K10 direct text", "K08 article quote (accumulating while keeping a trader's short)"],
+      "confidence": "high",
+      "can_be_quantified": "yes (regime-gated sizing), but it is risk management, not alpha",
+      "possible_definition": "n/a for signal research",
+      "lookahead_risk": "none",
+      "implementation_risk": "none"
+    },
+    {
+      "component": "Positioning / sentiment overlays",
+      "description": "Crowd-positioning arguments: 'unrealised PnL of participants is sitting in extreme red' (bullish), 'people keep lowering their targets until the market front runs them', greed/fear framing.",
+      "evidence": ["K13 direct text", "K12 article quotes"],
+      "confidence": "medium",
+      "can_be_quantified": "partially (needs on-chain unrealised-PnL data, not in this repo's datasets)",
+      "possible_definition": "NUPL-style metric thresholds",
+      "lookahead_risk": "low",
+      "implementation_risk": "new external data dependency; out of scope here"
+    },
+    {
+      "component": "Cycle mathematics (diminishing-returns break thesis)",
+      "description": "Long-horizon model: diminishing returns above each ATH and shallower bear retracements cannot extrapolate forever; expects the pattern to break UP via higher-than-projected bear lows (projected extrapolation bottoms 38K/46K/55K/65K that he argues will not print).",
+      "evidence": ["K14 direct text"],
+      "confidence": "high that he holds it; untestable for years",
+      "can_be_quantified": "eventually (multi-cycle)",
+      "possible_definition": "n/a",
+      "lookahead_risk": "n/a",
+      "implementation_risk": "n/a"
+    }
+  ],
+  "summary": {
+    "what_is_real": "A coherent, repeatedly-evidenced discretionary framework: HTF state first; ranges with deviation/acceptance grammar at boundaries; time-based structure maturation; explicit invalidations; spot/leverage separation. The public record (survivor-biased) contains one spectacular multi-stage path call (K01, 3/4 stages), one clean strict miss (K02), and mostly hedged or open calls.",
+    "what_is_not_reconstructible": "'Rotational market mathematics' swing counting — the signature element — has no recoverable formal definition and cannot honestly be implemented.",
+    "quantitative_translation_verdict": "The mechanically-translatable components (range state, location, deviation/acceptance) were implemented lookahead-safe and failed net-of-cost matched-null walk-forward tests in this repo (quant lane's validation_results.json). The evidence supports KillaXBT as a disciplined discretionary narrator, not as a source of extractable systematic entry rules."
+  }
+}

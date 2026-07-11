@@ -1,0 +1,604 @@
+{
+  "meta": {
+    "subject": "@KillaXBT (Killa), pseudonymous 'quantitative trader', ~211k followers (2026-07)",
+    "audit_window": "2024-07-01 .. 2026-07-10",
+    "collected": "2026-07-11",
+    "collection_method": "WebSearch + article fetches + api.fxtwitter.com status lookups (direct X scraping unavailable; nitter and archive.org/archive.ph blocked from this environment)",
+    "coverage_gaps": [
+      "Jul 2024 - Apr 2025: NO recoverable calls found. The account's media footprint starts with the 2025-05-13 chart; earlier posts are not indexed by any reachable source. This period is a hard gap, not evidence of absence of calls.",
+      "Full timeline enumeration impossible without X API: the sample below is ARTICLE-SELECTED and therefore survivor-biased toward hits (articles cover him because the May-2025 call hit).",
+      "Chart images could not be inspected (only their article descriptions); levels attributed to charts are article-mediated."
+    ],
+    "bias_flags_considered": "deleted-post bias (uncheckable), survivorship (severe, documented), post-hoc screenshots (none used as primary), edits (fxtwitter returns live text; deleted/edited posts would be missing), conflicting scenarios (flagged per-call as dual_path), no-expiry calls (flagged), target-after-adverse (machine-graded), selective reposting (the 2026-02-08 recirculation is exactly this and is not counted as a second call)",
+    "headline_win_rate_policy": "NONE PUBLISHED. Sample is incomplete and survivor-biased; per SPEC Part 1 no headline win rate is computed. Per-call grades below are conditional on this caveat.",
+    "grading": "machine-gradable fields under 'machine' are graded by scripts/research_killa_xbt.py against Hyperliquid BTC daily candles (research/killa_xbt/daily_majors.json); rules in that script (Part 8). Calls without 'machine' get no win/loss grade.",
+    "source_quality_levels": [
+      "direct (fxtwitter live-API text)",
+      "archived",
+      "article_quote",
+      "screenshot",
+      "unverified"
+    ],
+    "audit_counts": {
+      "total": 14,
+      "machine_graded": 9,
+      "no_grade": 5,
+      "buckets": {
+        "fully_testable": [
+          "K02",
+          "K08"
+        ],
+        "partially_testable": [
+          "K01"
+        ],
+        "directionally_testable": [
+          "K03",
+          "K10"
+        ],
+        "pending": [
+          "K05",
+          "K07",
+          "K11",
+          "K12"
+        ],
+        "unverifiable_or_vague": [
+          "K04",
+          "K06",
+          "K09",
+          "K13",
+          "K14"
+        ]
+      },
+      "strict": {
+        "NOT_GRADABLE": 7,
+        "MISS": 1,
+        "HIT": 1
+      },
+      "relaxed_target": {
+        "PARTIAL": 1,
+        "MISS_INVALIDATED_FIRST": 1,
+        "PENDING": 3,
+        "HIT": 1,
+        "PENDING_ON_TRACK": 1
+      },
+      "relaxed_direction": {
+        "MISS_INVALIDATED_FIRST": 1,
+        "HIT": 2
+      },
+      "source_quality": {
+        "direct": 8,
+        "unverified": 1,
+        "article_quote": 5
+      }
+    },
+    "graded_at": "2026-07-11",
+    "price_source": "Hyperliquid BTC 1d (daily_majors.json)"
+  },
+  "calls": [
+    {
+      "id": "K01",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/1922185937666109504",
+      "posted_at": "2025-05-13T07:03:34Z",
+      "retrieved_from": [
+        "api.fxtwitter.com (text+date, 2026-07-11)",
+        "bitcoinist.com 2026-02-09 (chart levels)",
+        "thestreet/yahoo 2026-06 (credited outcome)"
+      ],
+      "source_quality": "direct for existence/date/text; article_quote for the chart's numeric path",
+      "original_text": "Your welcome. I have just saved you all. $BTC [chart]",
+      "prediction_type": "target+cycle (multi-stage path, chart-only)",
+      "direction": "up then down",
+      "reference_price": 104000,
+      "target_low": 50000,
+      "target_high": 126000,
+      "invalidation_price": null,
+      "prediction_horizon": "none stated (~300d path per article descriptions)",
+      "methodology_tags": [
+        "rotational market mathematics",
+        "swing counts",
+        "consolidation blocks",
+        "distribution band",
+        "capitulation",
+        "macro base"
+      ],
+      "ambiguities": "tweet text contains no numbers; every level ($115-120k distribution, ~$100k mid consolidation, ~$70k lower band, ~$50k capitulation) comes from article descriptions of the chart image; the Part-12 'attributed May 2025 long-cycle chart' provenance IS this post (15.4M views), but the path detail is article-mediated",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2025-05-13",
+        "kind": "path",
+        "path_levels": [
+          120000,
+          100000,
+          70000,
+          50000
+        ],
+        "path_directions": [
+          "up",
+          "down",
+          "down",
+          "down"
+        ],
+        "invalidation": null,
+        "horizon_days": null
+      },
+      "subsequent_market_result": "up 120000: HIT 2025-07-14; down 100000: HIT 2025-11-04; down 70000: HIT 2026-02-05; down 50000: PENDING",
+      "grade": {
+        "path_stages_hit": 3,
+        "path_stages_total": 4,
+        "target": "PARTIAL",
+        "no_expiry": true,
+        "strict": "NOT_GRADABLE"
+      },
+      "confidence_in_grade": "medium (levels article-mediated)"
+    },
+    {
+      "id": "K02",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/1933105564482981940",
+      "posted_at": "2025-06-12T10:14:00Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11"
+      ],
+      "source_quality": "direct",
+      "original_text": "$BTC | Analysis. As of now, structure is still bullish. Bitcoin rejected local supply & is now pushing into demand around 106-107K... if we are unable to hold, we likely fill the CME gap below. 114-116K is a HTF [target for the month]... two likely scenarios: holding support to form higher lows, or breaking down to fill CME gap. Overall trend remains bullish unless price falls below 100K.",
+      "prediction_type": "direction+target+invalidated_setup",
+      "direction": "up (primary), with stated bearish alternate",
+      "reference_price": 106500,
+      "target_low": 114000,
+      "target_high": 116000,
+      "invalidation_price": 100000,
+      "prediction_horizon": "~1 month ('for the month')",
+      "methodology_tags": [
+        "supply/demand zones",
+        "HTF structure",
+        "CME gap",
+        "scenario pathing",
+        "invalidation level"
+      ],
+      "ambiguities": "dual-path call, but primary stated ('structure is still bullish... bullish unless below 100K') -> graded on the primary incl. self-invalidation",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2025-06-12",
+        "kind": "target",
+        "direction": "up",
+        "target": 114000,
+        "invalidation": 100000,
+        "horizon_days": 30,
+        "dual_path": true,
+        "primary_stated": true
+      },
+      "subsequent_market_result": "invalidation 100000 traded 2025-06-22 before target 114000.0",
+      "grade": {
+        "no_expiry": false,
+        "horizon_imposed": false,
+        "target": "MISS_INVALIDATED_FIRST",
+        "timing": "MISS",
+        "direction": "MISS_INVALIDATED_FIRST",
+        "strict": "MISS"
+      },
+      "confidence_in_grade": "high (direct text, crisp levels)"
+    },
+    {
+      "id": "K03",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/1998834473975063001",
+      "posted_at": "2025-12-10T19:17:00Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11 (SPEC Part 12 lead \u2014 verified; note actual date is Dec 10, not Dec 11)"
+      ],
+      "source_quality": "direct",
+      "original_text": "$BTC. Overall HTF plan hasn't changed. Redistribution range. Timebased capitulation is likely before the next leg down. As mentioned before: enjoy the range, because we'll probably be stuck in it for a bit. Don't get overly bullish at the highs, and definitely don't ape shorts at the lows.",
+      "prediction_type": "range+direction (next leg down) + timing (time-based, unquantified)",
+      "direction": "sideways then down",
+      "reference_price": 90500,
+      "target_low": null,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "none stated ('for a bit')",
+      "methodology_tags": [
+        "redistribution",
+        "range trading",
+        "time-in-structure",
+        "fade range extremes",
+        "avoid chasing boundaries"
+      ],
+      "ambiguities": "no numeric levels, no expiry; 'mid-$60ks path' in SPEC Part 12 is from the chart/thread, not this text; direction grade uses researcher-imposed 180d window (flagged)",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2025-12-10",
+        "kind": "direction",
+        "direction": "down",
+        "horizon_days": 180,
+        "horizon_imposed_by_researcher": true
+      },
+      "subsequent_market_result": "close 91961 -> 63058 (-31.4%) over 180d",
+      "grade": {
+        "horizon_imposed": true,
+        "strict": "NOT_GRADABLE",
+        "direction": "HIT"
+      },
+      "confidence_in_grade": "medium (direction clear, window imposed)"
+    },
+    {
+      "id": "K04",
+      "asset": "BTC",
+      "post_url": null,
+      "posted_at": "2026-01-10 (article date)",
+      "retrieved_from": [
+        "cryptorank.io news tag page (headline only): 'Bitcoin Maintains Mid-$90k Levels: Possible Price Targets \u2014 Analyst' after failing $94k resistance"
+      ],
+      "source_quality": "unverified (headline only; underlying post not recovered)",
+      "original_text": null,
+      "prediction_type": "unknown",
+      "direction": null,
+      "reference_price": 90000,
+      "target_low": null,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": null,
+      "methodology_tags": [
+        "resistance retest"
+      ],
+      "ambiguities": "cannot grade: no recoverable claim text",
+      "subsequent_market_result": null,
+      "grade": "NO GRADE (unverifiable)",
+      "confidence_in_grade": null
+    },
+    {
+      "id": "K05",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/2020348141258571872 (recirculation quote-RT); underlying model levels per bitcoinist.com 2026-02-09",
+      "posted_at": "2026-02-08T04:05:07Z (recirculation) / model stance as of 2026-02-09 article",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11",
+        "bitcoinist.com 2026-02-09"
+      ],
+      "source_quality": "article_quote (model stance); direct (recirculation event)",
+      "original_text": "Recirc text: 'Where do these guys get their knowledge from. Amazing!' quoting K01. Article: distribution band ~$70,000; capitulation target $50,000 area; 'true bottom is not yet in'; relief rallies corrective.",
+      "prediction_type": "direction+target",
+      "direction": "down",
+      "reference_price": 70000,
+      "target_low": 50000,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "none stated",
+      "methodology_tags": [
+        "distribution band",
+        "capitulation",
+        "macro base",
+        "corrective vs impulsive rallies"
+      ],
+      "ambiguities": "no expiry; '$50,000 area' width unstated (graded as touch of <=55,000); this is a re-statement of the K01 model, counted once as the model's Feb-2026 stance, and the recirculation itself is an instance of selective reposting (flagged, not separately graded)",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-02-09",
+        "kind": "target",
+        "direction": "down",
+        "target": 55000,
+        "invalidation": null,
+        "horizon_days": null
+      },
+      "subsequent_market_result": "target 55000.0 not yet traded (data to 2026-07-10)",
+      "grade": {
+        "no_expiry": true,
+        "horizon_imposed": false,
+        "target": "PENDING",
+        "strict": "NOT_GRADABLE"
+      },
+      "confidence_in_grade": "medium"
+    },
+    {
+      "id": "K06",
+      "asset": "BTC (via USDT.D)",
+      "post_url": "https://x.com/KillaXBT/status/2027377648914030911",
+      "posted_at": "2026-02-27T13:37:00Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11"
+      ],
+      "source_quality": "direct",
+      "original_text": "$BTC I believe this is the most important chart we need to be paying attention to right now. USDT.D had the scam wick (the 59K BTC wick). It then moved up and retested the prior range highs on the left and rejected. Now it's showing signs of accepting back below, a textbook [continuation cut off / chart]",
+      "prediction_type": "invalidated_setup/conditional (chart-dependent)",
+      "direction": "ambiguous without chart (USDT.D down => BTC up implied)",
+      "reference_price": null,
+      "target_low": null,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": null,
+      "methodology_tags": [
+        "deviation ('scam wick')",
+        "retest-and-reject",
+        "acceptance back inside range",
+        "dominance charts"
+      ],
+      "ambiguities": "text truncated at 'a textbook'; the actionable claim lives in the chart; NOT gradable",
+      "subsequent_market_result": null,
+      "grade": "NO GRADE (vague/chart-dependent)",
+      "confidence_in_grade": null
+    },
+    {
+      "id": "K07",
+      "asset": "BTC",
+      "post_url": null,
+      "posted_at": "2026-03-26 (article date)",
+      "retrieved_from": [
+        "bingx.com news (republishing Daily Hodl): 'KillaXBT Flags Bitcoin Downside Risk if $64,700 Breaks, Says Panic Could Mark a Bottom'; BTC $70,646 at writing"
+      ],
+      "source_quality": "article_quote",
+      "original_text": "Paraphrase: downside risk if BTC fails to hold $64,700; if it breaks, downside to the $50,000 range; panic selling could mark a market bottom; Middle-East tensions could accelerate capitulation.",
+      "prediction_type": "invalidated_setup/conditional target",
+      "direction": "down if $64,700 breaks",
+      "reference_price": 70646,
+      "target_low": 50000,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "none stated",
+      "methodology_tags": [
+        "support break",
+        "capitulation-as-bottom"
+      ],
+      "ambiguities": "conditional; '$50,000 range' width unstated (graded as touch of <=55,000); no expiry",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-03-26",
+        "kind": "conditional_target",
+        "condition_level": 64700,
+        "condition_direction": "down",
+        "direction": "down",
+        "target": 55000,
+        "invalidation": null,
+        "horizon_days": null
+      },
+      "subsequent_market_result": "condition traded 2026-06-03; target 55000 not traded (post-trigger low 57768)",
+      "grade": {
+        "no_expiry": true,
+        "strict": "NOT_GRADABLE",
+        "condition": "TRIGGERED 2026-06-03",
+        "target": "PENDING"
+      },
+      "confidence_in_grade": "medium (article-mediated)"
+    },
+    {
+      "id": "K08",
+      "asset": "BTC",
+      "post_url": null,
+      "posted_at": "2026-04-01 (article date)",
+      "retrieved_from": [
+        "bingx.com news (republishing Daily Hodl 2026-04-01): accumulating after ~51% drawdown; 'another 10%-15% downside is possible before a macro bottom forms'; sideways chop possibly until September; BTC $67,723 at writing"
+      ],
+      "source_quality": "article_quote",
+      "original_text": "Paraphrase per article: begun gradually accumulating BTC after the post-October sell-off while keeping a separate trader's short; expects chop potentially into September; 10-15% more downside possible before macro bottom.",
+      "prediction_type": "range+target (downside band) + timing",
+      "direction": "sideways-down then bottom",
+      "reference_price": 67723,
+      "target_low": 57565,
+      "target_high": 60951,
+      "invalidation_price": null,
+      "prediction_horizon": "to 2026-09-30 (chop-until-September)",
+      "methodology_tags": [
+        "macro bottom",
+        "accumulation",
+        "time-based bottoming"
+      ],
+      "ambiguities": "'possible' hedging; band derived from 10-15% of $67,723",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-04-01",
+        "kind": "band_touch",
+        "direction": "down",
+        "band_low": 57565,
+        "band_high": 60951,
+        "horizon_days": 182
+      },
+      "subsequent_market_result": "band [57565,60951] traded 2026-06-05",
+      "grade": {
+        "no_expiry": false,
+        "target": "HIT",
+        "strict": "HIT",
+        "timing": "HIT"
+      },
+      "confidence_in_grade": "medium (article-mediated, hedged)"
+    },
+    {
+      "id": "K09",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/2059952216228651275",
+      "posted_at": "2026-05-28T10:57:35Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11"
+      ],
+      "source_quality": "direct",
+      "original_text": "$BTC Don't say I didn't warn you countless times. Significant weekly resistance levels rarely get flipped on the first attempt, and this was no exception.",
+      "prediction_type": "post-hoc claim of prior warnings (not a forward call)",
+      "direction": null,
+      "reference_price": null,
+      "target_low": null,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": null,
+      "methodology_tags": [
+        "first-retest rejection prior",
+        "weekly resistance"
+      ],
+      "ambiguities": "victory-lap post; the claimed prior warnings were not recovered; classic selective-reposting risk",
+      "subsequent_market_result": null,
+      "grade": "NO GRADE (post-hoc, not falsifiable forward)",
+      "confidence_in_grade": null
+    },
+    {
+      "id": "K10",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/2061544169605390707",
+      "posted_at": "2026-06-01T20:23:26Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11",
+        "thestreet via aol/sg-yahoo 2026-06-03 (3 BTC @ $74k detail)"
+      ],
+      "source_quality": "direct (text); article_quote (position sizes)",
+      "original_text": "I Think We Go Lower. I'm Buying Anyway... Could $BTC drop another 31% from here? Absolutely. But a move to $160K from current prices is a 121% gain... As an investor, I am building my long term spot positions over the next 3-4 months. When it comes to building leveraged longs... waiting for daily and weekly structure to flip bullish... The daily and weekly structure still remains bearish.",
+      "prediction_type": "direction (short-term down) + target (long-term $160k, no horizon)",
+      "direction": "down short-term, up long-term",
+      "reference_price": 66000,
+      "target_low": null,
+      "target_high": 160000,
+      "invalidation_price": null,
+      "prediction_horizon": "short-term ~1 month (researcher-imposed 30d for the 'lower' leg); $160k leg open",
+      "methodology_tags": [
+        "HTF structure flip as trigger",
+        "spot vs leverage separation",
+        "scenario pathing",
+        "accumulation"
+      ],
+      "ambiguities": "'lower' has no level; explicitly hedged both ways as investment-vs-trade; $160k leg has no expiry (pending)",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-06-01",
+        "kind": "direction",
+        "direction": "down",
+        "horizon_days": 30,
+        "horizon_imposed_by_researcher": true
+      },
+      "subsequent_market_result": "close 71411 -> 60010 (-16.0%) over 30d",
+      "grade": {
+        "horizon_imposed": true,
+        "strict": "NOT_GRADABLE",
+        "direction": "HIT"
+      },
+      "confidence_in_grade": "medium (window imposed)"
+    },
+    {
+      "id": "K11",
+      "asset": "BTC",
+      "post_url": null,
+      "posted_at": "2026-06-10 (article date)",
+      "retrieved_from": [
+        "cryptorank.io tag page: 'Analyst Who Called Bitcoin's 2024 Peak Now Sees Potential Drop to $52,000'; corroborated by thestreet/dailyhodl 2026-06-24 ('may tag the $52,000 level before entering a bullish trend')"
+      ],
+      "source_quality": "article_quote",
+      "original_text": "Paraphrase: BTC may tag ~$52,000 before the next bullish trend.",
+      "prediction_type": "target",
+      "direction": "down then up",
+      "reference_price": 62000,
+      "target_low": 52000,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "none stated (implied before the 2027 rally)",
+      "methodology_tags": [
+        "capitulation target",
+        "bottoming ranges"
+      ],
+      "ambiguities": "'may tag' hedging; no expiry; PENDING as of 2026-07-10 (BTC low since: $58.2k)",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-06-10",
+        "kind": "target",
+        "direction": "down",
+        "target": 52000,
+        "invalidation": null,
+        "horizon_days": null
+      },
+      "subsequent_market_result": "target 52000.0 not yet traded (data to 2026-07-10)",
+      "grade": {
+        "no_expiry": true,
+        "horizon_imposed": false,
+        "target": "PENDING",
+        "strict": "NOT_GRADABLE"
+      },
+      "confidence_in_grade": "low (hedged, open)"
+    },
+    {
+      "id": "K12",
+      "asset": "BTC",
+      "post_url": null,
+      "posted_at": "2026-06-22..24 (articles)",
+      "retrieved_from": [
+        "dailyhodl 2026-06-24 headline + search summaries",
+        "yahoo/thestreet 2026-06-26: 'Anyone expecting $100K before then is getting way ahead of themselves' \u2014 $100k in 2027 (late Q2/Q3), sideways for months first; possible revisit of $50k range; new ATH eventually"
+      ],
+      "source_quality": "article_quote",
+      "original_text": "Quote fragments: 'Anyone expecting $100K before then is getting way ahead of themselves.' 'Bottoms take time to form, developing through multiple smaller ranges before a significant expansion occurs.'",
+      "prediction_type": "timing+cycle",
+      "direction": "sideways 2026, up 2027",
+      "reference_price": 59160,
+      "target_low": 50000,
+      "target_high": 100000,
+      "invalidation_price": null,
+      "prediction_horizon": "2027 Q2/Q3 for $100k; NOT $100k in 2026",
+      "methodology_tags": [
+        "time-based bottoming",
+        "multiple smaller ranges",
+        "historical precedence"
+      ],
+      "ambiguities": "long-horizon; PENDING (gradable end-2026 for the negative claim, 2027 for the positive)",
+      "machine": {
+        "asset": "BTC",
+        "ref_date": "2026-06-24",
+        "kind": "negative_target",
+        "direction": "up",
+        "target": 100000,
+        "not_before": "2027-01-01",
+        "horizon_days": 190
+      },
+      "subsequent_market_result": "not traded so far; window runs to 2027-01-01",
+      "grade": {
+        "strict": "NOT_GRADABLE",
+        "target": "PENDING_ON_TRACK"
+      },
+      "confidence_in_grade": "medium"
+    },
+    {
+      "id": "K13",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/2070576321558696431",
+      "posted_at": "2026-06-26T18:33:59Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11"
+      ],
+      "source_quality": "direct",
+      "original_text": "It's kinda funny how the targets for $BTC keep getting lower and lower... People keep lowering their targets until the market eventually front runs them. Trust me, you do not want to be underexposed this cycle. The unrealised PnL of particpants is sitting in extreme red. I'm pretty sure you know what that means.",
+      "prediction_type": "direction (implied bottom-forming, long bias)",
+      "direction": "up (positioning claim, no level/horizon)",
+      "reference_price": 59000,
+      "target_low": null,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "none ('this cycle')",
+      "methodology_tags": [
+        "sentiment/positioning (unrealised PnL)",
+        "front-running the crowd"
+      ],
+      "ambiguities": "no level, no horizon; PENDING/vague \u2014 no grade",
+      "subsequent_market_result": null,
+      "grade": "NO GRADE (vague)",
+      "confidence_in_grade": null
+    },
+    {
+      "id": "K14",
+      "asset": "BTC",
+      "post_url": "https://x.com/KillaXBT/status/2071923637922251067",
+      "posted_at": "2026-06-30T11:47:00Z",
+      "retrieved_from": [
+        "api.fxtwitter.com 2026-07-11",
+        "WebSearch summary (projected bottoms 38K/46K/55K/65K per the diminishing model he argues will break)"
+      ],
+      "source_quality": "direct",
+      "original_text": "Bitcoin will eventually break the diminishing cycles pattern. I ran the numbers on both the diminishing returns above each previous ATH and the progressively shallower bear market retracements since $BTC's first cycle. Following that trajectory forever simply doesn't make sense... [chart with projected bottoms per the extrapolation: 38K this cycle, then 46K, 55K, 65K]",
+      "prediction_type": "cycle (model-break thesis: bottoms will come in HIGHER than the diminishing extrapolation)",
+      "direction": "structural-up",
+      "reference_price": 60000,
+      "target_low": 38000,
+      "target_high": null,
+      "invalidation_price": null,
+      "prediction_horizon": "multi-cycle",
+      "methodology_tags": [
+        "cycle mathematics",
+        "diminishing returns",
+        "bear-market retracement depth"
+      ],
+      "ambiguities": "testable only over years; PENDING \u2014 no grade",
+      "subsequent_market_result": null,
+      "grade": "NO GRADE (multi-year horizon)",
+      "confidence_in_grade": null
+    }
+  ]
+}
