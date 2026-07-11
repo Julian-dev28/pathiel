@@ -64,6 +64,10 @@ from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_ma
 from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
 from hermes_trader.agents.young_listings_live import maybe_run as _young_listings_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
+from hermes_trader.agents.mover_recorders import (
+    record_mover_pass as _record_mover_pass,
+    record_b15_crossings as _record_b15_crossings,
+)
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
@@ -832,6 +836,19 @@ while True:
         except Exception as _dle:
             logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
 
+        # W-M1 near-miss forward test (b15_up): zero-capital ledger records of
+        # +15% crossings in BTC-20d-up regime — settles the p=0.022 cell.
+        try:
+            _btc_bars = _fetch_candles_sync("BTC", "1d", 25, 6 * 3600 * 1000)
+            _btc_up = None
+            if _btc_bars and len(_btc_bars) >= 21:
+                _c0 = float(getattr(_btc_bars[-21], "c", 0) or 0)
+                _c1 = float(getattr(_btc_bars[-1], "c", 0) or 0)
+                _btc_up = (_c1 > _c0) if _c0 > 0 else None
+            _record_b15_crossings(universe, _btc_up, read_agent_config())
+        except Exception as _bre:
+            logger.debug(f"[mover-recorders] b15 pass failed (non-fatal): {_bre}")
+
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
         # feed can show *why* a coin was picked, not just that it was.
@@ -1000,6 +1017,16 @@ while True:
                 routed = route_verdict(analysis)
                 action = routed["action"]
                 result = routed["result"] or {}
+                if action == "none":
+                    # W-M4: AI PASS on a researched mover forfeited +4.5% mean fwd-24h.
+                    # Zero-capital ledger record; promotion needs >=30 graded episodes.
+                    try:
+                        _mid = next((float(m.get("midPx") or m.get("markPx") or 0)
+                                     for m in universe if m.get("coin") == coin), 0.0)
+                        analysis["last_price"] = _mid
+                        _record_mover_pass(analysis, read_agent_config())
+                    except Exception:
+                        pass
                 if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))
