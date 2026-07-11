@@ -339,5 +339,17 @@
     "enabled": true,
     "shadow_only": true,
     "scan_interval_min": 30
+  },
+  "unlock_short": {
+    "enabled": true,
+    "shadow_only": false,
+    "notional_usd": 20.0,
+    "leverage": 1,
+    "stop_pct": 15.0,
+    "min_pct_circ": 1.0,
+    "min_volume_usd": 5000000.0,
+    "window_lo_h": 48.0,
+    "window_hi_h": 72.0,
+    "max_new_per_cycle": 1
   }
 }

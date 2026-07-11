@@ -87,7 +87,8 @@ BOOK_PRIORITY = (
     "rally_exhaustion", "engulf_short", "crash_continue_div_short",
     "premium_fade_short", "hail_mary_short", "neg_funding_fade",
     "vol_breakout_long", "vol_breakout_wide", "majors_swing",
-    "funding_spike_short", "young_listings", "extreme_fade", "xs_momentum",
+    "funding_spike_short", "young_listings", "unlock_short_runin",
+    "extreme_fade", "xs_momentum",
     "external_alpha",
 )
 

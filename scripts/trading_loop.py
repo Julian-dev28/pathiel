@@ -69,6 +69,7 @@ from hermes_trader.agents.mover_recorders import (
     record_b15_crossings as _record_b15_crossings,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
+from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_catalyst_live import maybe_run as _news_catalyst_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -858,6 +859,15 @@ while True:
             _unlock_maybe_record(universe, read_agent_config())
         except Exception as _ure:
             logger.debug(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
+
+        # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
+        # inside the 48-72h pre-unlock window, exits AT the event. Kill:
+        # unlock_short.shadow_only=true after 10 episodes if forward EV25 < 0.
+        try:
+            _unlock_short_maybe_run(read_agent_config(), universe, positions,
+                                    _book_execute)
+        except Exception as _use:
+            logger.warning(f"[unlock-short-live] cycle failed (non-fatal): {_use}")
 
         # W-N3 news-catalyst recorder: zero-capital ledger reads of the live
         # Google News coverage-surge signal on the cycle's scan candidates
