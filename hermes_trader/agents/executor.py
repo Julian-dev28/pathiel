@@ -157,29 +157,6 @@ def _sidestep_extension_block_reason(analysis: Dict[str, Any], config: Dict[str,
     return ""
 
 
-def _late_chase_relax_ok(analysis: Dict[str, Any], config: Dict[str, Any], coin: str) -> bool:
-    """Validated pocket (2026-06-21 edge_extension.py): trend-aligned 'late chase' entries
-    (uptrend, no fresh breakout/burst) are +EV / OOS-robust ONLY on LIQUID coins in the
-    20-30% daily-extension band (+0.15-0.20%/t, ~60% win). The same chase is -EV elsewhere
-    (>30% ext, and -1.27% GROSS on low-liquidity coins, which reverse). So the late-chase
-    gate may pass ONLY inside that measured pocket. Config-gated."""
-    rc = config.get("late_chase_relax") or {}
-    if not bool(rc.get("enabled", False)):
-        return False
-    ext = _analysis_daily_move_pct(analysis)
-    if ext is None:
-        return False
-    lo = float(rc.get("min_ext_pct", 20.0))
-    hi = float(rc.get("max_ext_pct", 30.0))
-    if not (lo <= ext <= hi):
-        return False
-    try:
-        vol = _get_market_volume_24h(coin)
-    except Exception:
-        return False
-    return vol >= float(rc.get("min_volume_usd", 5_000_000.0))
-
-
 def _daily_mover_long_bypass_ok(analysis: Dict[str, Any], config: Dict[str, Any]) -> bool:
     """Narrow replay-positive exception for daily-mover/uptrend long pockets."""
     tf = config.get("trend_filter_200ma") or {}
@@ -1381,11 +1358,8 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
         return (f"runner_gate_blocked (HIP-3 composite {score:.0f} "
                 f"< {min_hip3_score:.0f})")
     if uptrend and not (fresh_impulse or structured_daily_mover):
-        if _late_chase_relax_ok(analysis, config, coin):
-            _ext = _analysis_daily_move_pct(analysis)
-            logger.info(f"[executor] late-chase-relax ADMIT {coin} "
-                        f"(ext {_ext:.1f}%, liquid 20-30% pocket — backtested +EV)")
-            return ""   # validated +EV pocket passes the runner gate
+        # late_chase_relax RIPPED 2026-07-11: W-M 624-cell re-run showed the
+        # June 20-30% extension pocket was a crash-tape artifact (flat refuted).
         return "runner_gate_blocked (late trend-only chase; no fresh breakout/burst)"
     if not (structured_runner or structured_daily_mover):
         return (f"runner_gate_blocked (needs volume+breakout/burst and structure; "

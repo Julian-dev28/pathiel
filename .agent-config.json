@@ -29,7 +29,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -40,
+  "max_daily_loss_usd": -12,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -118,12 +118,6 @@
     "enabled": true,
     "min_ratio": 1.2,
     "lookback": 20
-  },
-  "late_chase_relax": {
-    "enabled": false,
-    "min_ext_pct": 20.0,
-    "max_ext_pct": 30.0,
-    "min_volume_usd": 5000000
   },
   "reentry_cap": {
     "enabled": true,

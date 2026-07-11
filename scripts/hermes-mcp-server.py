@@ -261,7 +261,6 @@ TOOLS = [
                 "runner_mover_surface": {"type": "object", "description": "Large-mover surfacing block; partial objects are deep-merged."},
                 "trend_filter_200ma": {"type": "object", "description": "200MA trend filter block; partial objects are deep-merged."},
                 "override_volume_confirm": {"type": "object", "description": "Volume-confirm override block; partial objects are deep-merged."},
-                "late_chase_relax": {"type": "object", "description": "Late-chase live guardrail block; partial objects are deep-merged."},
                 "reentry_cap": {"type": "object", "description": "Per-coin reentry cap block; partial objects are deep-merged."},
                 "xs_momentum": {"type": "object", "description": "Live cross-sectional momentum block; partial objects are deep-merged."},
                 "extreme_fade": {"type": "object", "description": "Live crash-fade block; partial objects are deep-merged."},
@@ -997,7 +996,7 @@ def handle_config(params: Dict[str, Any]) -> str:
     ]
     _NESTED_KEYS = [
         "dsl_exit", "runner_entry_gate", "runner_mover_surface",
-        "trend_filter_200ma", "override_volume_confirm", "late_chase_relax",
+        "trend_filter_200ma", "override_volume_confirm",
         "reentry_cap", "xs_momentum", "extreme_fade", "rally_exhaustion",
         "data_logger", "ai_brain",
     ]
