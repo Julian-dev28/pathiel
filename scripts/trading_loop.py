@@ -77,6 +77,17 @@ from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_
 from hermes_trader.agents.config import get_config
 
 
+
+def _staggered_ttl_ms(coin: str, base_ms: int, spread_ms: int = 7_200_000) -> int:
+    """Per-coin jittered candle-cache TTL. With a uniform 6h TTL every coin's
+    cache expires in the SAME scan, so extreme_fade's universe refresh burst
+    (~231 coins x 20 weight = 4,620) saturated the per-IP budget for 4-5 min
+    and queued DSL exits behind it (client audit 2026-07-10). A stable
+    per-coin offset spreads the expiries across the window."""
+    import zlib
+    return base_ms + (zlib.crc32(coin.encode()) % spread_ms) - spread_ms // 2
+
+
 def _book_execute(analysis):
     """execute_fn for the strategy books: run the real executor, but surface a BLOCK
     to the activity feed. Logic lives in risk_gates.book_block_event (pure + tested);
@@ -714,7 +725,7 @@ while True:
         try:
             _ef_maybe_run(
                 read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 6 * 3600 * 1000)),
                 _book_execute, close_position_market,
             )
         except Exception as _efe:
