@@ -110,6 +110,12 @@ refuted −2.0%/ep, dies at n≥8 negative).
 
 ## Standing operator rules
 
+- **AUTO-FLIP ORDER (2026-07-12, "make everything live if it's ev+ expected
+  go")**: when shadow_status grades a book VALIDATED (EV25>0 both halves at
+  its bar), flip it live the SAME DAY at $20/1x with a kill criterion —
+  commit, restart, inform; do not re-ask. Symmetric: REFUTED → shadow the
+  same day. PENDING books never blanket-flip.
+
 - Evidence promotes; the operator can order live flips — implement BOUNDED
   ($20/1x + kill criterion) and state plainly which parts the evidence does
   not support (precedent: today's unlock flip shipped the validated arm only).
