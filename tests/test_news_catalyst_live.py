@@ -85,3 +85,90 @@ def test_hot_kill(monkeypatch):
     assert ncl.maybe_run({"news_catalyst": {"enabled": False}},
                          [{"coin": "A", "mid": 1.0}]) == 0
     assert out == []
+
+
+class _FakeClaims:
+    def __init__(self):
+        self.claimed, self.released = [], []
+
+    def prune_to(self, held, book):
+        pass
+
+    def claimed_by_others(self, book):
+        return set()
+
+    def claim(self, coin, book):
+        self.claimed.append(coin)
+        return True
+
+    def release(self, coin, book):
+        self.released.append(coin)
+
+    def save(self):
+        pass
+
+
+def _live_cfg(shadow_only=False):
+    return {"news_catalyst": {"enabled": True, "shadow_only": shadow_only,
+                              "notional_usd": 20.0, "leverage": 1,
+                              "stop_pct": 15.0, "hold_days": 1.0,
+                              "max_new_per_cycle": 1}}
+
+
+@pytest.fixture()
+def _live_iso(tmp_path, monkeypatch):
+    monkeypatch.setattr(ncl, "_SEEN_FILE", str(tmp_path / "live_seen.json"))
+    monkeypatch.setattr(ncl, "active_position_coins", lambda: {})
+    claims = _FakeClaims()
+    monkeypatch.setattr(ncl, "get_claims_registry", lambda: claims)
+    return claims
+
+
+def test_breaking_read_opens_live_long(monkeypatch, _live_iso):
+    _captured(monkeypatch)
+    monkeypatch.setattr(ncl, "coin_catalyst",
+                        lambda c: _report(breaking=(c == "HOT"), surge=5.0 if c == "HOT" else 0.4))
+    opened = []
+
+    def execute(a):
+        opened.append(a)
+        return {"executed": True}
+
+    ncl.maybe_run(_live_cfg(), [{"coin": "HOT", "mid": 2.0}, {"coin": "COLD", "mid": 1.0}],
+                  [], execute)
+    assert [a["coin"] for a in opened] == ["HOT"]
+    a = opened[0]
+    assert a["strategy_book"] == "news_catalyst" and a["side"] == "long"
+    assert a["strategy_book_notional"] == 20.0 and a["leverage_override"] == 1
+    assert a["dsl_exit_override"]["hard_timeout_minutes"] == 1440.0
+    assert a["dsl_exit_override"]["protect_pct"] == 9999.0
+
+
+def test_live_arm_daily_dedup_and_shadow_kill(monkeypatch, _live_iso, tmp_path):
+    _captured(monkeypatch)
+    monkeypatch.setattr(ncl, "coin_catalyst", lambda c: _report(breaking=True, surge=4.0))
+    opened = []
+    execute = lambda a: opened.append(a) or {"executed": True}
+    percs = [{"coin": "HOT", "mid": 2.0}]
+
+    ncl.maybe_run(_live_cfg(), percs, [], execute)
+    assert len(opened) == 1
+    # next pass same UTC day: throttle bypassed via fresh ts file, dedup holds
+    monkeypatch.setattr(ncl, "_TS_FILE", str(tmp_path / "ts2.json"))
+    ncl.maybe_run(_live_cfg(), percs, [], execute)
+    assert len(opened) == 1
+
+    # shadow_only=true never executes
+    monkeypatch.setattr(ncl, "_TS_FILE", str(tmp_path / "ts3.json"))
+    monkeypatch.setattr(ncl, "_SEEN_FILE", str(tmp_path / "seen3.json"))
+    ncl.maybe_run(_live_cfg(shadow_only=True), percs, [], execute)
+    assert len(opened) == 1
+
+
+def test_ledger_rows_never_carry_live_handle(monkeypatch, _live_iso):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(ncl, "coin_catalyst", lambda c: _report(breaking=True, surge=4.0))
+    ncl.maybe_run(_live_cfg(), [{"coin": "HOT", "mid": 2.0}], [], lambda a: {"executed": True})
+    _, rows = out[0]
+    assert all("_rep" not in r["meta"] for r in rows)
+    assert rows[0]["meta"]["shadow"] is False

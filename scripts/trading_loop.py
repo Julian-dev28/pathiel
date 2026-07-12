@@ -873,7 +873,8 @@ while True:
         # Google News coverage-surge signal on the cycle's scan candidates
         # (30-min throttle inside the module; non-breaking reads = the null).
         try:
-            _news_catalyst_maybe_run(read_agent_config(), results)
+            _news_catalyst_maybe_run(read_agent_config(), results,
+                                     positions, _book_execute)
         except Exception as _nce:
             logger.debug(f"[news-catalyst-live] pass failed (non-fatal): {_nce}")
 
@@ -1059,7 +1060,8 @@ while True:
                         _mid = next((float(m.get("midPx") or m.get("markPx") or 0)
                                      for m in universe if m.get("coin") == coin), 0.0)
                         analysis["last_price"] = _mid
-                        _record_mover_pass(analysis, read_agent_config())
+                        _record_mover_pass(analysis, read_agent_config(),
+                                           execute_fn=_book_execute)
                     except Exception:
                         pass
                 if action == "execute":

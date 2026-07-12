@@ -56,3 +56,44 @@ def test_b15_records_crossings_in_up_regime_only(monkeypatch):
     assert n == 1 and out[0][0] == "mover_b15_up" and out[0][1]["coin"] == "RUN"
     # second scan same day: deduped
     assert mr.record_b15_crossings(uni, btc_up=True, config={}) == 0
+
+
+def test_pass_live_opens_bounded_long(monkeypatch):
+    out = _captured(monkeypatch)
+
+    class _Claims:
+        def claimed_by_others(self, book):
+            return set()
+
+        def claim(self, coin, book):
+            return True
+
+        def release(self, coin, book):
+            pass
+
+        def save(self):
+            pass
+
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    opened = []
+    cfg = {"mover_recorders": {"pass_live": {"enabled": True, "shadow_only": False,
+                                             "notional_usd": 20.0, "leverage": 1,
+                                             "stop_pct": 15.0, "hold_days": 1.0}}}
+    a = {"coin": "RIP", "daily_move_pct": 12.0, "daily_volume_usd": 9e6,
+         "confidence": 0.5, "last_price": 3.0}
+    assert mr.record_mover_pass(a, cfg, execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert len(opened) == 1
+    o = opened[0]
+    assert o["strategy_book"] == "mover_pass" and o["side"] == "long"
+    assert o["strategy_book_notional"] == 20.0
+    assert o["dsl_exit_override"]["max_loss_pct"] == 15.0
+    # ledger row marked live
+    assert out[0][1]["meta"]["shadow"] is False
+
+
+def test_pass_live_disabled_records_only(monkeypatch):
+    out = _captured(monkeypatch)
+    opened = []
+    a = {"coin": "RIP2", "daily_move_pct": 12.0, "daily_volume_usd": 9e6, "last_price": 3.0}
+    assert mr.record_mover_pass(a, {}, execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert opened == [] and out[0][1]["meta"]["shadow"] is True

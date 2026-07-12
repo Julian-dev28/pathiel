@@ -293,7 +293,7 @@
   },
   "majors_swing": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "coins": [
       "BTC",
       "ETH",
@@ -331,8 +331,13 @@
   },
   "news_catalyst": {
     "enabled": true,
-    "shadow_only": true,
-    "scan_interval_min": 30
+    "shadow_only": false,
+    "scan_interval_min": 30,
+    "notional_usd": 20.0,
+    "leverage": 1,
+    "stop_pct": 15.0,
+    "hold_days": 1.0,
+    "max_new_per_cycle": 1
   },
   "unlock_short": {
     "enabled": true,
@@ -345,5 +350,15 @@
     "window_lo_h": 48.0,
     "window_hi_h": 72.0,
     "max_new_per_cycle": 1
+  },
+  "mover_recorders": {
+    "pass_live": {
+      "enabled": true,
+      "shadow_only": false,
+      "notional_usd": 20.0,
+      "leverage": 1,
+      "stop_pct": 15.0,
+      "hold_days": 1.0
+    }
   }
 }
