@@ -179,3 +179,14 @@ proposal (operator sign-off before any live flip). This loop is meant to run for
 - **W-E1 weekend gap-fade**: MARGINAL at n=31 weekends — accrues ~1 episode/week passively; re-score after ~15 more weekends (~2026-10-20).
 - **Lane G follow-ups**: AI long anti-calibration (0.70-0.80 band −2.13%@24h) — candidate config lever AFTER a second window confirms (raise long conf floor / down-weight AI longs vs shorts); killswitch counterfactual weakly negative (n=29, p=0.156) — re-examine at n>=60.
 - **WIRED 2026-07-09**: funding_spike_short shadow book (W-F2A VALIDATED, +6.2%/ep, p=0.0027); thin_short_relax shadow recorder in executor (W-G1, +1.12% counterfactual, p=0.001; promotion bar >=30 entries +EV net 25bps).
+
+## W-N3 clean-epoch verdict — due 2026-07-26
+News-catalyst ledger RESTARTED 2026-07-12 (relevance bug fixed 18d596c: symbol
+presence mandatory, equity queries for xyz:). Every pre-fix read is tainted —
+archived at hypotheses/W-N_tainted_news_ledger_pre_20260712.jsonl, NOT to be
+graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
+- EV25(breaking) > 0 AND > EV25(non-breaking) -> news book keeps its live arm
+  AND build the EDGAR full-text layer for xyz equities (8-K/earnings triggers,
+  free, ~half-day; spec sketch: poll EDGAR full-text search API for the xyz
+  ticker set, map filings to coins, record + gate exactly like breaking reads).
+- Otherwise -> news_catalyst.shadow_only=true and EDGAR stays unbuilt.
