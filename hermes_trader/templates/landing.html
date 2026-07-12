@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · live</title>
 <script src="/static/tailwind.js"></script>
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
   .num{font-variant-numeric:tabular-nums}
@@ -26,6 +28,9 @@
   body.discreet .dollar-value{display:none}
   body.discreet .dollar-mask{display:inline;color:#71717a}
   .scroll-x{overflow-x:auto}
+  .range-btn{padding:3px 10px;font-size:10px;background:#18181b;border:1px solid #3f3f46;color:#71717a;cursor:pointer}
+  .range-btn:hover{border-color:#047857;color:#a7f3d0}
+  .range-btn.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
 </style>
 </head>
 <body class="min-h-screen">
@@ -72,6 +77,23 @@
   <section class="card p-5 mb-6 text-sm leading-relaxed text-zinc-300">
     <div class="text-zinc-500 mb-2 uppercase tracking-wider text-[11px]">how it works</div>
     <p>Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, commodities. Every minute the engine scans 60+ markets for statistical triggers (volume spikes, breakouts, momentum bursts), runs a free TA filter, and only spends AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly, and exit through a two-phase dynamic stop-loss (loss protection → profit locking with one-way trailing floor). Live on one wallet. Not financial advice.</p>
+  </section>
+
+  <section class="card p-5 mb-6">
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-zinc-500 uppercase tracking-wider text-[11px]">equity curve</div>
+      <div class="flex gap-1">
+        <button data-range="86400" class="range-btn on">24h</button>
+        <button data-range="604800" class="range-btn">7d</button>
+        <button data-range="2592000" class="range-btn">30d</button>
+      </div>
+    </div>
+    <div class="relative">
+      <canvas id="equity-chart" height="110"></canvas>
+      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
+        no heartbeats yet in this window
+      </div>
+    </div>
   </section>
 
   <section class="card p-5 mb-6">
@@ -127,8 +149,93 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
     const on = document.body.classList.toggle('discreet');
     localStorage.setItem('hermes-discreet', on ? '1' : '0');
     btn.textContent = on ? '\u{1F648}' : '\u{1F441}';
+    if (chart) chart.update('none');   // re-mask the y-axis/tooltip
   });
 })();
+
+// ── equity curve (vendored chart.js + date adapter, no CDN) ──
+const isDiscreet = () => document.body.classList.contains('discreet');
+const maskMoney = v => isDiscreet() ? '•••' : fmtMoney(v);
+let chart = null;
+let currentRange = 86400;
+const RANGE_UNIT = { 86400: 'hour', 604800: 'day', 2592000: 'day' };
+
+function makeGradient(ctx, area) {
+  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+  g.addColorStop(0,   'rgba(16, 185, 129, 0.28)');
+  g.addColorStop(0.6, 'rgba(16, 185, 129, 0.06)');
+  g.addColorStop(1,   'rgba(16, 185, 129, 0)');
+  return g;
+}
+
+async function refreshChart(rangeSec) {
+  currentRange = rangeSec;
+  try {
+    const series = await (await fetch('/api/dashboard/equity-curve?range_s=' + rangeSec)).json();
+    const data = series.map(p => ({ x: p.ts, y: p.equity }));
+    document.getElementById('equity-empty').classList.toggle('hidden', data.length > 0);
+    if (!chart) {
+      const ctx = document.getElementById('equity-chart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: [{
+          data,
+          borderColor: '#34d399',
+          borderWidth: 1.75,
+          cubicInterpolationMode: 'monotone',
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          pointHoverBackgroundColor: '#34d399',
+          pointHoverBorderColor: '#0a0a0a',
+          pointHoverBorderWidth: 2,
+          fill: true,
+          backgroundColor: (c) => {
+            const { ctx, chartArea } = c.chart;
+            return chartArea ? makeGradient(ctx, chartArea) : 'rgba(16,185,129,0.1)';
+          },
+        }] },
+        options: {
+          responsive: true, animation: false, parsing: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            decimation: { enabled: true, algorithm: 'lttb', samples: 80, threshold: 100 },
+            tooltip: {
+              backgroundColor: '#18181b', borderColor: '#27272a', borderWidth: 1,
+              titleColor: '#a1a1aa', bodyColor: '#e5e5e5', padding: 8, displayColors: false,
+              callbacks: {
+                title: (items) => new Date(items[0].parsed.x).toLocaleString(),
+                label: (item) => maskMoney(item.parsed.y),
+              },
+            },
+          },
+          scales: {
+            x: {
+              type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
+              ticks: { color: '#52525b', maxTicksLimit: 6, font: { size: 10 } },
+              grid: { display: false }, border: { display: false },
+            },
+            y: {
+              ticks: { color: '#52525b', callback: v => maskMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
+              grid: { color: '#18181b', drawTicks: false }, border: { display: false },
+            },
+          },
+        },
+      });
+    } else {
+      chart.data.datasets[0].data = data;
+      chart.options.scales.x.time.unit = RANGE_UNIT[rangeSec] || 'hour';
+      chart.update('none');
+    }
+  } catch (e) {}
+}
+document.querySelectorAll('.range-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.range-btn').forEach(x => x.classList.toggle('on', x === b));
+    refreshChart(parseInt(b.dataset.range));
+  });
+});
 
 async function refreshSummary() {
   try {
@@ -184,9 +291,10 @@ async function refreshBooks() {
   } catch (e) {}
 }
 
-refreshSummary(); refreshBooks();
+refreshSummary(); refreshBooks(); refreshChart(86400);
 setInterval(refreshSummary, 6000);
 setInterval(refreshBooks, 30000);
+setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
 </script>
 </body>
 </html>

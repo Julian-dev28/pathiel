@@ -747,13 +747,23 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
     return {"type": "other", "ts": ts, "name": ev, "fields": fields}
 
 
-def _activity_payload(limit: int = 150, book: str = "", etype: str = "") -> Dict[str, Any]:
-    """Newest-first classified events, optionally filtered by book / type."""
+def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
+                      since_ts: int = 0) -> Dict[str, Any]:
+    """Newest-first classified events, optionally filtered by book / type.
+
+    `since_ts` > 0 returns only events strictly newer — the incremental-poll
+    path the /activity page uses to PREPEND fresh rows instead of re-rendering
+    the whole stream. Log ts stamps are wall-clock at append time, so once the
+    reversed walk reaches an event at/older than since_ts it stops:
+    incremental polls cost O(new events), not O(window).
+    """
     events = _read_log_lines()
     if len(events) > _ACTIVITY_SCAN_CAP:
         events = events[-_ACTIVITY_SCAN_CAP:]
     out: List[Dict[str, Any]] = []
     for e in reversed(events):
+        if since_ts and (e.get("ts") or 0) <= since_ts:
+            break
         c = _classify_event(e)
         if etype and c.get("type") != etype:
             continue
@@ -1212,8 +1222,15 @@ def register_routes(app: FastAPI) -> None:
         limit: int = Query(150, ge=1, le=500),
         book: str = Query("", max_length=64),
         etype: str = Query("", alias="type", max_length=32),
+        since: int = Query(0, ge=0),
     ) -> JSONResponse:
-        # TTL (8s) >= the page's poll interval (8s) so polls hit the cache.
+        if since:
+            # Incremental poll: the reversed walk breaks at the first event
+            # <= since, so cost is O(new events). NOT TTL-cached on purpose —
+            # every poll carries a fresh `since`, so caching would only grow
+            # _TTL_CACHE with dead one-shot keys.
+            return JSONResponse(_activity_payload(limit, book, etype, since))
+        # Full-window load: TTL (8s) >= the page's poll interval (8s).
         return JSONResponse(_ttl_cached(
             f"activity:{limit}:{book}:{etype}", 8.0,
             lambda: _activity_payload(limit, book, etype)))

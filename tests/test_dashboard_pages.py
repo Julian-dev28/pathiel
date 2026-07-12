@@ -158,6 +158,16 @@ def test_activity_filters_and_limit(monkeypatch):
     assert len(limited) == 2 and limited[0]["ts"] == 700
 
 
+def test_activity_since_returns_only_newer(monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
+    out = db._activity_payload(since_ts=500)
+    assert [e["ts"] for e in out["events"]] == [700, 650, 600]
+    assert db._activity_payload(since_ts=700)["events"] == []
+    # since + filter compose: only newer events of the requested type
+    only_book = db._activity_payload(etype="book", since_ts=500)["events"]
+    assert [e["ts"] for e in only_book] == [650, 600]
+
+
 def test_unknown_event_graceful_key_value(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: [UNKNOWN_EVT])
     e = db._activity_payload()["events"][0]
@@ -291,6 +301,38 @@ def test_activity_endpoint_filters(client, monkeypatch):
     assert len(data["events"]) == 1
     assert data["events"][0]["book"] == "neg_funding_fade"
     assert "types" in data and "book" in data["types"]
+
+
+def test_activity_endpoint_since_bypasses_cache(client, monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
+    r = client.get("/api/dashboard/activity?since=500")
+    assert r.status_code == 200
+    assert [e["ts"] for e in r.json()["events"]] == [700, 650, 600]
+    # incremental polls carry a fresh `since` every time — they must NOT
+    # accumulate one-shot keys in the TTL cache
+    with db._TTL_CACHE_LOCK:
+        assert not any(k.startswith("activity:") for k in db._TTL_CACHE)
+
+
+def test_landing_has_equity_curve(client):
+    r = client.get("/")
+    assert 'id="equity-chart"' in r.text
+    assert "/static/chart.umd.min.js" in r.text
+    assert "/static/chartjs-adapter-date-fns.min.js" in r.text
+    assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
+
+
+def test_stream_pages_flow_and_respect_reduced_motion(client):
+    act = client.get("/activity").text
+    news = client.get("/news").text
+    for page in (act, news):
+        assert "prefers-reduced-motion" in page   # CSS-only animations, opt-out honored
+        assert "ev-enter" in page                 # arrival animation class
+    assert "prependEvent" in act                  # polls prepend, no full re-render
+    assert "flash-green" in act and "flash-red" in act   # trade emphasis
+    assert "groupNode" in act                     # scan/gate/heartbeat runs collapse
+    assert "quiet stream" in news                 # sparse-ledger empty state copy
+    assert "breaking-pulse" in news               # stronger pulse on breaking items
 
 
 def test_books_endpoint(client, monkeypatch):

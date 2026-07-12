@@ -8,7 +8,6 @@
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
   .num{font-variant-numeric:tabular-nums}
-  .card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10}
   .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
   .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
   .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
@@ -21,11 +20,18 @@
   .b-pass{color:#a1a1aa;background:#27272a}
   .b-ok{color:#6ee7b7;background:#064e3b}
   .b-fail{color:#fca5a5;background:#450a0a}
-  .b-info{color:#a5b4fc;background:#1e1b4b}
   .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
   .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
   .chip.chip-amber{border-color:#78350f;color:#fbbf24;background:#1f1300}
-  .ev{border:1px solid #1f2937;background:#0c0d0e;padding:8px 12px;margin-bottom:8px}
+  /* ── the flowing stream: one continuous timeline, newest on top ── */
+  #feed{border-left:2px solid #1f2937;padding-left:14px}
+  .ev{border:1px solid #1f2937;background:#0c0d0e;padding:8px 12px;margin-bottom:8px;position:relative}
+  .ev::before{content:'';position:absolute;left:-19px;top:14px;width:8px;height:8px;background:#3f3f46;border:1px solid #0a0a0a}
+  .ev.k-research::before{background:#a5b4fc}
+  .ev.k-execute::before{background:#86efac}
+  .ev.k-close::before{background:#fbbf24}
+  .ev.k-book::before{background:#5eead4}
+  .ev.k-error::before{background:#f87171}
   .ev-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
   .ev-ts{color:#52525b;font-size:10px;white-space:nowrap}
   .ev-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
@@ -37,22 +43,48 @@
   .kv{display:grid;grid-template-columns:minmax(120px,26%) 1fr;gap:2px 12px;font-size:11px;margin-top:4px}
   .kv .k{color:#71717a}
   .kv .v{color:#d4d4d8;word-break:break-word}
-  .fbtn{padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;background:#18181b;border:1px solid #3f3f46;color:#a3a3a3;cursor:pointer}
-  .fbtn:hover{border-color:#047857;color:#a7f3d0}
-  .fbtn.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
-  select.fsel{background:#18181b;border:1px solid #3f3f46;color:#d4d4d8;font-size:11px;padding:4px 8px}
+  /* slim rows for noise events (scan / gate / heartbeat) */
+  .ev-slim{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5;word-break:break-word}
+  .ev-slim b{color:#a3a3a3;font-weight:600}
+  /* collapsed run of noise events — <details> so expansion is CSS/HTML-only */
+  .ev-group{margin-bottom:6px}
+  .ev-group summary{cursor:pointer;list-style:none;font-size:11px;color:#71717a;padding:4px 12px;border:1px dashed #27272a;background:#0c0d0e}
+  .ev-group summary::-webkit-details-marker{display:none}
+  .ev-group summary::before{content:'▸ ';color:#52525b}
+  .ev-group[open] summary::before{content:'▾ '}
+  .ev-group summary:hover{color:#a3a3a3;border-color:#3f3f46}
+  .ev-group .gbody{padding:4px 0 0 10px;max-height:300px;overflow-y:auto}
+  /* ── arrival animations — CSS only, reduced-motion respected ── */
+  .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
+  @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
+  .flash-green{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-g 1.8s ease-out}
+  @keyframes glow-g{0%{border-color:#34d399;box-shadow:0 0 16px rgba(52,211,153,.45);background:#052e1c}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  .flash-red{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-r 1.8s ease-out}
+  @keyframes glow-r{0%{border-color:#f87171;box-shadow:0 0 16px rgba(248,113,113,.4);background:#2b0a0a}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  .flash-indigo{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-i 1.5s ease-out}
+  @keyframes glow-i{0%{border-color:#818cf8;box-shadow:0 0 12px rgba(129,140,248,.35);background:#14142b}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  .group-tick{animation:group-tick .6s ease-out}
+  @keyframes group-tick{0%{color:#a7f3d0;border-color:#047857}100%{color:#71717a;border-color:#27272a}}
+  @media (prefers-reduced-motion: reduce){
+    .ev-enter,.flash-green,.flash-red,.flash-indigo,.group-tick{animation:none}
+  }
+  /* light filter chips — thin the stream, default = everything flows */
+  .fchip{padding:3px 10px;font-size:10px;letter-spacing:.06em;background:transparent;border:1px solid #3f3f46;color:#71717a;cursor:pointer}
+  .fchip:hover{border-color:#047857;color:#a7f3d0}
+  .fchip.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
+  select.fsel{background:#18181b;border:1px solid #3f3f46;color:#d4d4d8;font-size:11px;padding:3px 8px}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-[1100px] mx-auto px-6 py-6">
+<div class="max-w-[1000px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
     <span class="lcd text-sm">HERMES-TRADER · ACTIVITY</span>
     <span class="text-[10px] text-zinc-500" id="feed-meta"></span>
   </header>
 
-  <nav class="flex items-center gap-2 mb-6 flex-wrap">
+  <nav class="flex items-center gap-2 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
@@ -60,21 +92,12 @@
     <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
   </nav>
 
-  <section class="card p-4 mb-4">
-    <div class="flex items-center gap-2 flex-wrap" id="type-filters"></div>
-    <div class="flex items-center gap-3 mt-3 flex-wrap">
-      <label class="text-[11px] text-zinc-500">book</label>
-      <select id="book-filter" class="fsel"><option value="">all books</option></select>
-      <label class="text-[11px] text-zinc-500 ml-4">rows</label>
-      <select id="limit-filter" class="fsel">
-        <option value="80">80</option>
-        <option value="150" selected>150</option>
-        <option value="300">300</option>
-      </select>
-    </div>
-  </section>
+  <div class="flex items-center gap-2 flex-wrap mb-5" id="filter-bar">
+    <span id="type-filters" class="flex items-center gap-1.5 flex-wrap"></span>
+    <select id="book-filter" class="fsel"><option value="">all books</option></select>
+  </div>
 
-  <div id="feed"><div class="text-zinc-500 text-xs">loading&hellip;</div></div>
+  <div id="feed"><div class="ev-slim">loading&hellip;</div></div>
 
   <footer class="text-[10px] text-zinc-600 mt-6 text-center">
     one wallet · live · not financial advice
@@ -99,7 +122,7 @@ const fmtNum = v => {
 const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
 
 // Readable scalar for any value — arrays join, objects flatten to "k: v" pairs.
-// This is the guaranteed no-raw-JSON path for unknown shapes.
+// The guaranteed no-raw-JSON path for unknown shapes.
 function readable(v, depth) {
   depth = depth || 0;
   if (v == null) return '—';
@@ -148,6 +171,7 @@ function candChip(c) {
   return `<span class="chip">${bits.join(' ')}</span>`;
 }
 
+// ── card renderers (rich event types) ───────────────────────────────────────
 const RENDER = {
   research(e) {
     const conf = e.confidence != null ? `<span class="text-zinc-500 text-[11px] num">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
@@ -219,26 +243,9 @@ const RENDER = {
     return head(e, 'book', 'book', [`<b>${esc(e.book)}</b>`, shadowBadge(e.shadow), countStr])
       + chipRow + kvBlock(e.extra);
   },
-  scan(e) {
-    const coins = (e.coins || []).slice(0, 8).map(c =>
-      typeof c === 'object' ? `<span class="chip">${esc(c.coin)} ${esc(fmtNum(c.score))}</span>` : `<span class="chip">${esc(c)}</span>`).join('');
-    return head(e, 'scan', 'scan', [`<span class="text-zinc-400 text-[11px] num">${e.triggers ?? 0} triggers</span>`])
-      + (coins ? `<div class="mt-1">${coins}</div>` : '');
-  },
-  gate(e) {
-    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
-      .filter(Boolean).join(' · ');
-    return head(e, e.kind === 'ta_skip' ? 'ta skip' : 'preflight', 'gate',
-        [`<b>${esc(e.coin)}</b>`, scores ? `<span class="text-zinc-600 text-[11px] num">${scores}</span>` : ''])
-      + (e.reason ? `<div class="ev-sub">${esc(e.reason)}</div>` : '');
-  },
   error(e) {
     return head(e, 'error', 'error', [`<b>${esc(e.scope || 'loop')}</b>`])
       + `<div class="ev-body text-red-300">${esc(e.error)}</div>`;
-  },
-  heartbeat(e) {
-    return head(e, 'heartbeat', 'heartbeat',
-      [`<span class="text-zinc-600 text-[11px] num">equity $${Number(e.equity ?? 0).toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · open ${e.open_positions ?? 0}</span>`]);
   },
   system(e) {
     return head(e, e.name || 'system', 'system', []) + kvBlock(e.fields);
@@ -248,18 +255,181 @@ const RENDER = {
   },
 };
 
-let curType = '', curBook = '', timer = null;
+// ── slim rows + collapsed groups for noise types ────────────────────────────
+const NOISE = new Set(['scan', 'gate', 'heartbeat']);
 
-function renderFeed(data) {
-  const feed = document.getElementById('feed');
-  const evs = data.events || [];
-  if (!evs.length) {
-    feed.innerHTML = '<div class="text-zinc-500 text-xs">no events match this filter</div>';
-  } else {
-    feed.innerHTML = evs.map(e => `<div class="ev">${(RENDER[e.type] || RENDER.other)(e)}</div>`).join('');
+function slimText(e) {
+  if (e.type === 'scan') {
+    const tops = (e.coins || []).slice(0, 4).map(c =>
+      typeof c === 'object' ? `${c.coin}(${fmtNum(c.score)})` : String(c)).join(', ');
+    return `<b>scan</b> · ${e.triggers ?? 0} triggers${tops ? ' — ' + esc(tops) : ''}`;
   }
+  if (e.type === 'gate') {
+    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
+      .filter(Boolean).join(' ');
+    return `<b>${e.kind === 'ta_skip' ? 'ta skip' : 'preflight'}</b> · ${esc(e.coin)}${scores ? ' · ' + scores : ''}${e.reason ? ' — ' + esc(e.reason) : ''}`;
+  }
+  if (e.type === 'heartbeat') {
+    return `<b>♥</b> equity $${Number(e.equity ?? 0).toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · open ${e.open_positions ?? 0}`;
+  }
+  return esc(readable(e));
+}
+function slimNode(e) {
+  const div = document.createElement('div');
+  div.className = 'ev-slim num';
+  div.dataset.single = e.type;
+  div.innerHTML = `<span class="ev-ts">${fmtTime(e.ts)}</span> ${slimText(e)}`;
+  return div;
+}
+function groupLabel(type, count, latest) {
+  if (type === 'scan') return `${count} scans · latest: ${latest.triggers ?? 0} triggers`;
+  if (type === 'gate') return `${count} gate skips (ta filter / preflight) · latest: ${latest.coin ?? '?'}`;
+  if (type === 'heartbeat') return `${count} heartbeats · latest: equity $${Number(latest.equity ?? 0).toFixed(2)} · open ${latest.open_positions ?? 0}`;
+  return `${count} ${type} events`;
+}
+function groupNode(evs) {   // evs newest-first
+  const d = document.createElement('details');
+  d.className = 'ev-group';
+  d.dataset.group = evs[0].type;
+  d.dataset.count = evs.length;
+  d.dataset.t0 = evs[evs.length - 1].ts;
+  const sum = document.createElement('summary');
+  sum.innerHTML = `<span class="ev-ts num">${fmtTime(Number(d.dataset.t0))}–${fmtTime(evs[0].ts)}</span> `
+    + esc(groupLabel(evs[0].type, evs.length, evs[0]));
+  const body = document.createElement('div');
+  body.className = 'gbody';
+  for (const e of evs) body.appendChild(slimNode(e));
+  d.appendChild(sum); d.appendChild(body);
+  return d;
+}
+function mergeIntoGroup(g, e) {
+  const count = Number(g.dataset.count) + 1;
+  g.dataset.count = count;
+  const sum = g.querySelector('summary');
+  sum.innerHTML = `<span class="ev-ts num">${fmtTime(Number(g.dataset.t0))}–${fmtTime(e.ts)}</span> `
+    + esc(groupLabel(e.type, count, e));
+  sum.classList.remove('group-tick'); void sum.offsetWidth; sum.classList.add('group-tick');
+  const body = g.querySelector('.gbody');
+  body.prepend(slimNode(e));
+  while (body.childNodes.length > 60) body.removeChild(body.lastChild);
+}
+
+function cardNode(e) {
+  const div = document.createElement('div');
+  div.className = `ev k-${e.type}`;
+  div.innerHTML = (RENDER[e.type] || RENDER.other)(e);
+  return div;
+}
+
+// Arrival emphasis: fills + book opens glow green, blocks/losses/errors red,
+// actionable verdicts indigo; PASS verdicts get only the subtle fade-in.
+function emphasisClass(e) {
+  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
+  if (e.type === 'error') return 'flash-red';
+  if (e.type === 'research') return (e.verdict === 'LONG' || e.verdict === 'SHORT' || e.verdict === 'CLOSE')
+    ? 'flash-indigo' : 'ev-enter';
+  if (e.type === 'book' && (e.subtype === 'open' || (e.opened ?? 0) > 0)) return 'flash-green';
+  return 'ev-enter';
+}
+
+// ── stream state: initial build collapses noise runs; polls PREPEND ─────────
+const feed = document.getElementById('feed');
+const seen = new Set();          // dedupe keys, bounded to the last 1500
+const seenOrder = [];
+let newestTs = 0;
+let curType = '', curBook = '';
+let streamed = 0;
+
+const keyOf = e => `${e.ts}|${e.type}|${e.coin || e.book || e.name || ''}|${String(e.reason || e.verdict || e.error || '').slice(0, 24)}`;
+
+function remember(e) {
+  const k = keyOf(e);
+  if (seen.has(k)) return false;
+  seen.add(k); seenOrder.push(k);
+  while (seenOrder.length > 1500) seen.delete(seenOrder.shift());
+  if ((e.ts || 0) > newestTs) newestTs = e.ts;
+  return true;
+}
+
+function buildStream(events) {   // full render; noise runs of >=3 collapse
+  feed.innerHTML = '';
+  let i = 0;
+  while (i < events.length) {
+    const e = events[i];
+    if (NOISE.has(e.type)) {
+      let j = i;
+      while (j < events.length && events[j].type === e.type) j++;
+      const run = events.slice(i, j);
+      if (run.length >= 3) feed.appendChild(groupNode(run));
+      else run.forEach(x => feed.appendChild(slimNode(x)));
+      i = j;
+    } else {
+      feed.appendChild(cardNode(e));
+      i++;
+    }
+  }
+  if (!events.length) {
+    feed.innerHTML = '<div class="ev-slim">nothing in the stream yet — the loop will start talking soon</div>';
+  }
+}
+
+function prependEvent(e) {       // one fresh event, animated in at the top
+  if (NOISE.has(e.type)) {
+    const first = feed.firstElementChild;
+    if (first && first.dataset.group === e.type) { mergeIntoGroup(first, e); return; }
+    if (first && first.dataset.single === e.type) {
+      // second consecutive noise row of the same kind → collapse into a group
+      const g = groupNode([e]);
+      g.dataset.count = 2;
+      g.querySelector('.gbody').appendChild(first.cloneNode(true));
+      g.querySelector('summary').innerHTML =
+        `<span class="ev-ts num">${fmtTime(e.ts)}</span> ` + esc(groupLabel(e.type, 2, e));
+      first.replaceWith(g);
+      g.classList.add('ev-enter');
+      return;
+    }
+    const node = slimNode(e);
+    node.classList.add('ev-enter');
+    feed.prepend(node);
+  } else {
+    const node = cardNode(e);
+    node.classList.add(emphasisClass(e));
+    feed.prepend(node);
+  }
+  while (feed.children.length > 250) feed.removeChild(feed.lastChild);
+}
+
+function setMeta() {
   document.getElementById('feed-meta').textContent =
-    `${evs.length} events · newest first · refreshed ${fmtTime(Date.now())}`;
+    `${streamed} events streamed · newest first · updated ${fmtTime(Date.now())}`;
+}
+
+async function fullLoad() {
+  const qs = new URLSearchParams({ limit: 200 });
+  if (curType) qs.set('type', curType);
+  if (curBook) qs.set('book', curBook);
+  const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+  buildFilters(data);
+  seen.clear(); seenOrder.length = 0; newestTs = 0;
+  (data.events || []).forEach(remember);
+  buildStream(data.events || []);
+  streamed = (data.events || []).length;
+  setMeta();
+}
+
+async function pollNew() {
+  if (!newestTs) return fullLoad().catch(() => {});
+  // since = newest-1 + client dedupe, so two events sharing one ms never slip through
+  const qs = new URLSearchParams({ limit: 100, since: String(newestTs - 1) });
+  if (curType) qs.set('type', curType);
+  if (curBook) qs.set('book', curBook);
+  try {
+    const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+    const fresh = (data.events || []).filter(remember);
+    for (const e of fresh.reverse()) prependEvent(e);   // oldest first → newest lands on top
+    if (fresh.length) { streamed += fresh.length; setMeta(); }
+  } catch (e) {}
 }
 
 function buildFilters(data) {
@@ -267,13 +437,13 @@ function buildFilters(data) {
   if (wrap.childElementCount) return;    // build once
   const mk = (label, val) => {
     const b = document.createElement('button');
-    b.className = 'fbtn' + (val === curType ? ' on' : '');
+    b.className = 'fchip' + (val === curType ? ' on' : '');
     b.textContent = label;
     b.dataset.type = val;
     b.addEventListener('click', () => {
       curType = val;
-      wrap.querySelectorAll('.fbtn').forEach(x => x.classList.toggle('on', x.dataset.type === val));
-      load();
+      wrap.querySelectorAll('.fchip').forEach(x => x.classList.toggle('on', x.dataset.type === val));
+      fullLoad().catch(() => {});
     });
     wrap.appendChild(b);
   };
@@ -285,22 +455,7 @@ function buildFilters(data) {
     o.value = b; o.textContent = b;
     sel.appendChild(o);
   }
-  sel.addEventListener('change', () => { curBook = sel.value; load(); });
-  document.getElementById('limit-filter').addEventListener('change', load);
-}
-
-async function load() {
-  try {
-    const limit = document.getElementById('limit-filter').value || 150;
-    const qs = new URLSearchParams({ limit });
-    if (curType) qs.set('type', curType);
-    if (curBook) qs.set('book', curBook);
-    const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
-    buildFilters(data);
-    renderFeed(data);
-  } catch (e) {
-    document.getElementById('feed').innerHTML = '<div class="text-red-400 text-xs">feed load failed — is the server up?</div>';
-  }
+  sel.addEventListener('change', () => { curBook = sel.value; fullLoad().catch(() => {}); });
 }
 
 (function () {
@@ -310,8 +465,10 @@ async function load() {
   });
 })();
 
-load();
-timer = setInterval(load, 8000);
+fullLoad().catch(() => {
+  feed.innerHTML = '<div class="ev-slim">feed load failed — is the server up?</div>';
+});
+setInterval(pollNew, 8000);
 </script>
 </body>
 </html>
