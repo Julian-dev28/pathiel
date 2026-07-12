@@ -71,6 +71,7 @@ from hermes_trader.agents.mover_recorders import (
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_catalyst_live import maybe_run as _news_catalyst_maybe_run
+from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
@@ -867,6 +868,13 @@ while True:
                                      positions, _book_execute)
         except Exception as _nce:
             logger.debug(f"[news-catalyst-live] pass failed (non-fatal): {_nce}")
+
+        # whale_flow recorder: Binance aggTrades whale prints on the cycle's
+        # crypto candidates (30-min throttle; balanced reads = control rows).
+        try:
+            _whale_flow_maybe_run(read_agent_config(), results)
+        except Exception as _wfe:
+            logger.debug(f"[whale-flow] pass failed (non-fatal): {_wfe}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the

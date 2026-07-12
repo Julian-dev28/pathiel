@@ -29,7 +29,7 @@
   "tp_scale_fraction": 0.5,
   "max_concurrent": 10,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -12,
+  "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -248,7 +248,7 @@
   },
   "young_listings": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "dex_allowlist": [
       "xyz"
     ],
@@ -337,5 +337,11 @@
       "stop_pct": 15.0,
       "hold_days": 1.0
     }
+  },
+  "whale_flow": {
+    "enabled": true,
+    "scan_interval_min": 30,
+    "min_print_usd": 100000.0,
+    "window_minutes": 15.0
   }
 }
