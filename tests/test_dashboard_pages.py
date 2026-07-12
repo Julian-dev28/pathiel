@@ -463,23 +463,49 @@ def test_landing_has_equity_curve(client):
     assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
 
 
-def test_landing_books_dropdown_collapsed_by_default(client):
+def test_landing_books_flow_always_visible(client):
+    """Supersedes the dropdown order: all books render in ONE flowing window —
+    no collapse, no chevron, no localStorage state."""
     r = client.get("/").text
-    assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
-    assert "hermes-books-open" in r                  # state remembered in localStorage
-    assert 'class="books-wrap"' in r                 # static HTML ships collapsed
-    assert "books-open .books-wrap" in r             # CSS max-height/opacity transition
-    assert "live books" in r                         # header row always visible
+    assert 'id="books-flow"' in r and "book-row" in r
+    assert "live books" in r                         # count summary header stays
+    assert "books-toggle" not in r                   # collapse behavior removed
+    assert "hermes-books-open" not in r
+    assert "books-wrap" not in r
+    assert "overflow-y:auto" in r                    # scroll within the window if needed
 
 
 def test_no_emoji_glyphs_anywhere(client):
-    """Brand order 2026-07-12: geometric CSS shapes only — no emoji/mascots."""
-    banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙",
+    """Brand order 2026-07-12: no emoji glyphs — the cat is crafted SVG
+    markup, geometric shapes are CSS. This sweep must stay green."""
+    banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙", "🐈", "🐱",
               "🤖", "😴", "💰", "💀", "🤑", "😱", "😎", "🔒", "🔓", "🐹", "🐰"]
     for path in ("/", "/activity", "/news"):
         page = client.get(path).text
         for ch in banned:
             assert ch not in page, f"{path} still renders glyph {ch!r}"
+
+
+def test_landing_pixel_cat(client):
+    """The cat is back — crafted 16x16 SVG pixel art with status-driven
+    states, not an emoji."""
+    r = client.get("/").text
+    assert 'id="pixel-cat"' in r
+    assert "<rect" in r and "crispEdges" in r        # rect-grid pixel art
+    for state in ("cat-sleep", "cat-sad", "cat-alert", "cat-bounce"):
+        assert state in r, f"missing cat state {state}"
+    assert "c-tail-a" in r and "c-tail-b" in r       # two-frame tail flick
+    assert "c-zzz" in r                              # sleep pixels
+    assert "c-ears-p" in r and "c-ears-f" in r       # perked + flattened ears
+    assert "updateCat" in r                          # state driven by summary data
+    assert "prefers-reduced-motion" in r             # static cat under reduced motion
+
+
+def test_eight_bit_texture_everywhere(client):
+    for path in ("/", "/activity", "/news"):
+        page = client.get(path).text
+        assert "4px 4px 0" in page, f"{path}: missing hard pixel offset shadow"
+        assert "repeating-linear-gradient" in page, f"{path}: missing scanline texture"
 
 
 def test_activity_has_time_decay_flow(client):

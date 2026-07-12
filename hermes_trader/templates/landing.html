@@ -31,32 +31,33 @@
   /* wordmark: the pixel accent — mono, letter-spaced, gradient pixel mark */
   .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
   .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
-  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:8px;text-decoration:none;border:1px solid transparent}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
   .nav-link:hover{color:var(--txt);background:var(--card)}
   .nav-link:active{transform:translateY(1px)}
   .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
-  /* cards: soft depth — larger radius, faint inner top border, hover lift */
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+  /* cards: 8-bit x premium — near-square corners, hard pixel offset shadow,
+     faint inner top border, chunky lift on hover */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:3px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
         transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-  .card:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 20px rgba(0,0,0,.35)}
+  .card:hover{transform:translate(-1px,-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5)}
   /* low-opacity violet glow behind the KPI strip + chart (very Phantom) */
-  .glow{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 0 70px -25px rgba(139,92,246,.4)}
-  .glow:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 0 70px -25px rgba(139,92,246,.4),0 8px 20px rgba(0,0,0,.35)}
+  .glow{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
+  .glow:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5),0 0 70px -25px rgba(139,92,246,.4)}
   /* section labels: pixel identity — mono small-caps, letter-spaced */
-  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
   /* KPI chips: big mono number, tiny uppercase label */
-  .kv{font-size:24px;font-weight:750;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .kv{font-size:24px;font-weight:800;letter-spacing:.02em;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
   .kv.pos{color:var(--up)}.kv.neg{color:var(--dn)}
   .ksub{font-size:10.5px;color:var(--dim)}
   /* status pill: geometric pulse dot + word — no glyphs */
-  .pill{display:inline-flex;align-items:center;gap:7px;padding:3px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:999px;border:1px solid transparent}
-  .pill::before{content:'';width:6px;height:6px;border-radius:999px;background:currentColor;animation:pulse 2.2s ease-in-out infinite}
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:3px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:3px;border:1px solid transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .pill::before{content:'';width:6px;height:6px;border-radius:1px;background:currentColor;animation:pulse 2.2s ease-in-out infinite}
   .pill.scanning{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
   .pill.stale{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .pill.offline{color:#fca5a5;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .badge{display:inline-block;padding:1px 9px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid transparent}
+  .badge{display:inline-block;padding:1px 9px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent}
   /* LIVE = brand gradient (primary badge); direction keeps green/red */
   .badge.b-live{color:#e4defc;background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(168,85,247,.28));border-color:rgba(139,92,246,.5)}
   .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
@@ -64,42 +65,78 @@
   .badge.b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .badge.b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   /* ticker-style chip for coins + book names */
-  .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
+  .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
   .tk.off{opacity:.45}
   .dollar-mask{display:none}
   body.discreet .dollar-value{display:none}
   body.discreet .dollar-mask{display:inline;color:var(--dim)}
   .scroll-x{overflow-x:auto}
   /* range picker: quiet segmented control with pressed state */
-  .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:9px;padding:2px}
-  .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:7px;color:var(--dim);cursor:pointer}
+  .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px}
+  .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:2px;color:var(--dim);cursor:pointer}
   .range-btn:hover{color:var(--txt)}
   .range-btn:active{transform:translateY(1px)}
   .range-btn.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
-  .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:8px;color:var(--mut);padding:4px 10px;cursor:pointer;font-size:10.5px;font-weight:700;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);padding:4px 10px;cursor:pointer;font-size:10.5px;font-weight:700;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .icon-btn:hover{color:var(--txt);border-color:var(--line2)}
   .icon-btn:active{transform:translateY(1px)}
   /* open positions: money/direction carry the color, liq gets the danger tint */
   .pnl-cell{font-weight:750}
   .pnl-cell.pos{color:var(--up)}.pnl-cell.neg{color:var(--dn)}
   .liq-danger{color:#fca5a5;font-weight:700;text-shadow:0 0 8px rgba(239,68,68,.35)}
-  .o-badge{display:inline-block;padding:1px 8px;font-size:9.5px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap}
+  .o-badge{display:inline-block;padding:1px 8px;font-size:9.5px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap}
   .o-badge.o-manual{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .tick-up{animation:tick-g .9s ease-out}
   @keyframes tick-g{0%{background:rgba(34,197,94,.18)}100%{background:transparent}}
   .tick-dn{animation:tick-r .9s ease-out}
   @keyframes tick-r{0%{background:rgba(239,68,68,.18)}100%{background:transparent}}
-  /* live books dropdown: header always visible, body slides open */
-  .books-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:18px 20px}
-  .books-head:active{transform:translateY(1px)}
-  .books-head .chev{margin-left:auto;width:9px;height:9px;border-right:2px solid var(--dim);border-bottom:2px solid var(--dim);transform:rotate(45deg);transition:transform .3s ease}
-  .books-head:hover .chev{border-color:var(--mut)}
-  .books-open .books-head .chev{transform:rotate(-135deg)}
-  .books-wrap{max-height:0;opacity:0;overflow:hidden;transition:max-height .4s ease,opacity .3s ease}
-  .books-open .books-wrap{max-height:1400px;opacity:1}
+  /* live books: ONE flowing window — all books always visible as a
+     continuous strip of mini-cards, inner scroll if the strip outgrows it */
+  .books-flow{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+  .books-flow::-webkit-scrollbar{width:8px}
+  .books-flow::-webkit-scrollbar-track{background:#101216}
+  .books-flow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+  .book-row{border:1px solid var(--line);border-radius:3px;background:var(--card2);padding:9px 12px;
+            box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+  .book-row.off{opacity:.5}
+  .book-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .book-thesis{font-size:12px;color:var(--mut);line-height:1.55;margin-top:4px}
+  /* scanline texture behind the header — very low opacity, pure CSS */
+  header{position:relative}
+  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
+        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
+  /* ── the pixel cat: 16x16 SVG rect grid, states driven by summary data ──
+     scanning = tail flick · alert (position open) = perked ears, wide eyes ·
+     sad (red day) = flat ears · sleep (stale/offline) = closed eyes + zzz ·
+     win tick = bounce. Reduced motion: static cat. */
+  .cat{width:40px;height:40px;display:inline-block;margin-right:10px}
+  .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+  .cat .c-ears-p,.cat .c-ears-f,.cat .c-eyes-w,.cat .c-eyes-c,.cat .c-zzz{display:none}
+  .cat.cat-alert .c-ears-n,.cat.cat-alert .c-eyes-n{display:none}
+  .cat.cat-alert .c-ears-p,.cat.cat-alert .c-eyes-w{display:block}
+  .cat.cat-sad .c-ears-n{display:none}
+  .cat.cat-sad .c-ears-f{display:block}
+  .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
+  .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
+  /* two-frame tail flick, classic steps() */
+  .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
+  .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
+  @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes tail-b{0%,49%{opacity:0}50%,100%{opacity:1}}
+  .cat.cat-sleep .c-tail-a{animation:none;opacity:1}
+  .cat.cat-sleep .c-tail-b{animation:none;opacity:0}
+  .cat.cat-sleep svg{animation:cat-breathe 3.2s ease-in-out infinite;transform-origin:50% 100%}
+  @keyframes cat-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.93)}}
+  .cat .c-zzz rect{animation:zzz 2.4s steps(1) infinite}
+  .cat .c-zzz rect:nth-child(2){animation-delay:.8s}
+  .cat .c-zzz rect:nth-child(3){animation-delay:1.6s}
+  @keyframes zzz{0%,60%{opacity:1}61%,100%{opacity:.15}}
+  .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
+  @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
   @media (prefers-reduced-motion: reduce){
-    .card,.books-wrap,.books-head .chev{transition:none}
+    .card{transition:none}
     .tick-up,.tick-dn,.pill::before{animation:none}
+    .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
   }
 </style>
 </head>
@@ -107,7 +144,47 @@
 <div class="max-w-[1100px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER</span>
+    <span class="brand flex items-center">
+      <!-- the cat: hand-placed 16x16 pixel grid — white coat, heterochromia
+           (green left / blue right), violet collar tying it to the brand -->
+      <span id="pixel-cat" class="cat" title="the cat watches the tape">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g class="c-ears-n">
+            <rect x="3" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="12" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="4" y="3" width="1" height="1" fill="#f0abfc"/><rect x="11" y="3" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-p">
+            <rect x="3" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="12" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="4" y="2" width="1" height="1" fill="#f0abfc"/><rect x="11" y="2" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-f">
+            <rect x="2" y="3" width="4" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="4" height="1" fill="#f4f6fa"/>
+          </g>
+          <rect x="2" y="4" width="12" height="9" fill="#f4f6fa"/>
+          <g class="c-eyes-n">
+            <rect x="4" y="7" width="2" height="2" fill="#22c55e"/><rect x="10" y="7" width="2" height="2" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-w">
+            <rect x="4" y="6" width="2" height="3" fill="#22c55e"/><rect x="10" y="6" width="2" height="3" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-c">
+            <rect x="4" y="8" width="2" height="1" fill="#5c6370"/><rect x="10" y="8" width="2" height="1" fill="#5c6370"/>
+          </g>
+          <rect x="7" y="10" width="2" height="1" fill="#f0abfc"/>
+          <rect x="0" y="10" width="2" height="1" fill="#5c6370"/><rect x="14" y="10" width="2" height="1" fill="#5c6370"/>
+          <rect x="2" y="12" width="12" height="1" fill="#8b5cf6"/>
+          <rect x="3" y="14" width="2" height="1" fill="#c9ced8"/><rect x="11" y="14" width="2" height="1" fill="#c9ced8"/>
+          <g class="c-tail-a"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="11" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-tail-b"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="13" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-zzz">
+            <rect x="12" y="2" width="1" height="1" fill="#8b5cf6"/><rect x="13" y="1" width="1" height="1" fill="#a78bfa"/><rect x="14" y="0" width="1" height="1" fill="#c4b5fd"/>
+          </g>
+        </svg>
+      </span>
+      <span class="dot"></span>HERMES-TRADER
+    </span>
     <div class="flex items-center gap-2 text-xs">
       <button id="discreet-toggle" type="button" class="icon-btn" title="hide all $ amounts (keep percentages)">HIDE $</button>
       <span id="status-pill" class="pill offline">offline</span>
@@ -191,28 +268,13 @@
     </div>
   </section>
 
-  <section class="card p-0 mb-6" id="books-section">
-    <button id="books-toggle" class="books-head" type="button" aria-expanded="false">
-      <span class="sec-label">live books</span>
-      <span class="text-[10px] mono" style="color:var(--dim)" id="books-count"></span>
-      <span class="chev"></span>
-    </button>
-    <div class="books-wrap" id="books-wrap">
-      <div class="scroll-x px-5 pb-5">
-        <table class="w-full text-xs">
-          <thead>
-            <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
-              <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
-              <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
-              <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">thesis</th>
-              <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">status</th>
-            </tr>
-          </thead>
-          <tbody id="books-body">
-            <tr><td colspan="4" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
-          </tbody>
-        </table>
-      </div>
+  <section class="card p-5 mb-6" id="books-section">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">live books</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="books-count"></div>
+    </div>
+    <div id="books-flow" class="books-flow">
+      <div class="text-xs" style="color:var(--dim)">loading&hellip;</div>
     </div>
   </section>
 
@@ -272,21 +334,6 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
     localStorage.setItem('hermes-discreet', on ? '1' : '0');
     sync();
     if (chart) chart.update('none');   // re-mask the y-axis/tooltip
-  });
-})();
-
-// live books dropdown — collapsed by default, state remembered
-(function () {
-  const section = document.getElementById('books-section');
-  const btn = document.getElementById('books-toggle');
-  if (localStorage.getItem('hermes-books-open') === '1') {
-    section.classList.add('books-open');
-    btn.setAttribute('aria-expanded', 'true');
-  }
-  btn.addEventListener('click', () => {
-    const open = section.classList.toggle('books-open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    localStorage.setItem('hermes-books-open', open ? '1' : '0');
   });
 })();
 
@@ -410,7 +457,26 @@ async function refreshSummary() {
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
+    updateCat(s);
   } catch (e) {}
+}
+
+// ── the cat reacts to the tape: sleep > red-day flat ears > position-open
+// alert > idle tail flick; equity uptick = bounce ─────────────────────────────
+let catLastEquity = null;
+function updateCat(s) {
+  const cat = document.getElementById('pixel-cat');
+  if (!cat) return;
+  cat.classList.remove('cat-sleep', 'cat-sad', 'cat-alert');
+  if (s.status !== 'scanning') cat.classList.add('cat-sleep');
+  else if ((s.daily_pnl ?? 0) < 0) cat.classList.add('cat-sad');
+  else if ((s.open_positions ?? 0) > 0) cat.classList.add('cat-alert');
+  if (catLastEquity != null && (s.equity ?? 0) > catLastEquity + 0.004) {
+    cat.classList.remove('cat-bounce');
+    void cat.offsetWidth;
+    cat.classList.add('cat-bounce');
+  }
+  catLastEquity = s.equity ?? catLastEquity;
 }
 
 // ── open positions ──────────────────────────────────────────────────────────
@@ -477,18 +543,21 @@ const BADGE = { live: '<span class="badge b-live">LIVE</span>',
 async function refreshBooks() {
   try {
     const books = await (await fetch('/api/dashboard/books')).json();
-    const body = document.getElementById('books-body');
+    const flow = document.getElementById('books-flow');
     if (!Array.isArray(books) || !books.length) {
-      body.innerHTML = '<tr><td colspan="4" class="py-3" style="color:var(--dim)">no books configured</td></tr>';
+      flow.innerHTML = '<div class="text-xs" style="color:var(--dim)">no books configured</div>';
       return;
     }
-    body.innerHTML = books.map(b => `
-      <tr class="border-b last:border-0 align-top" style="border-color:var(--line)">
-        <td class="py-2.5 pr-3 whitespace-nowrap"><span class="tk${b.status === 'off' ? ' off' : ''}">${esc(b.name)}</span></td>
-        <td class="py-2.5 pr-3 mono whitespace-nowrap" style="color:var(--mut)">${esc(b.size)}</td>
-        <td class="py-2.5 pr-3 text-[12px] leading-relaxed" style="color:var(--mut)">${esc(b.thesis)}</td>
-        <td class="py-2.5 text-right">${BADGE[b.status] || esc(b.status)}</td>
-      </tr>`).join('');
+    // one flowing strip: every book always visible, badges + sizes at a glance
+    flow.innerHTML = books.map(b => `
+      <div class="book-row${b.status === 'off' ? ' off' : ''}">
+        <div class="book-head">
+          <span class="tk">${esc(b.name)}</span>
+          <span class="mono text-[11px]" style="color:var(--mut)">${esc(b.size)}</span>
+          <span class="ml-auto">${BADGE[b.status] || esc(b.status)}</span>
+        </div>
+        <div class="book-thesis">${esc(b.thesis)}</div>
+      </div>`).join('');
     const live = books.filter(b => b.status === 'live').length;
     const shadow = books.filter(b => b.status === 'shadow').length;
     document.getElementById('books-count').textContent = `${live} live · ${shadow} shadow · ${books.length - live - shadow} off`;
