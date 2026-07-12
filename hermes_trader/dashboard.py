@@ -268,6 +268,12 @@ def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         if szi == 0 or not coin:
             continue
+        # Liquidation price — None when HL omits it (cross positions far from
+        # liq report null). The landing page flags liq within 10% of mark.
+        try:
+            liq_px: Optional[float] = float(pos.get("liquidationPx") or 0) or None
+        except (TypeError, ValueError):
+            liq_px = None
         side = "long" if szi > 0 else "short"
 
         # HL stores leverage as {"value": N, "type": "cross"|"isolated"}; older
@@ -313,6 +319,7 @@ def _rows_from_state(state: Dict[str, Any]) -> List[Dict[str, Any]]:
             "leverage": leverage,
             "entry_px": entry,
             "mark_px": mark,
+            "liq_px": liq_px,
             "unrealized_pnl_usd": unrealized_usd,
             "unrealized_pct": roe_pct,       # leveraged ROE — matches HL
             "spot_pct": spot_pct,            # bare price move, for the curious

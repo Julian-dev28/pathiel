@@ -46,6 +46,8 @@
   .badge.b-live{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
   .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .badge.b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
+  .badge.b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .badge.b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   /* ticker-style chip for book names */
   .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
   .tk.off{opacity:.45}
@@ -60,7 +62,17 @@
   .range-btn.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
   .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:8px;color:var(--mut);padding:4px 9px;cursor:pointer;font-size:12px}
   .icon-btn:hover{color:var(--txt);border-color:var(--line2)}
-  @media (prefers-reduced-motion: reduce){.card{transition:none}}
+  /* open positions: money/direction carry the color, liq gets the danger tint */
+  .pnl-cell{font-weight:750}
+  .pnl-cell.pos{color:var(--up)}.pnl-cell.neg{color:var(--dn)}
+  .liq-danger{color:#fca5a5;font-weight:700;text-shadow:0 0 8px rgba(239,68,68,.35)}
+  .o-badge{display:inline-block;padding:1px 8px;font-size:9.5px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap}
+  .o-badge.o-manual{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .tick-up{animation:tick-g .9s ease-out}
+  @keyframes tick-g{0%{background:rgba(34,197,94,.18)}100%{background:transparent}}
+  .tick-dn{animation:tick-r .9s ease-out}
+  @keyframes tick-r{0%{background:rgba(239,68,68,.18)}100%{background:transparent}}
+  @media (prefers-reduced-motion: reduce){.card{transition:none}.tick-up,.tick-dn{animation:none}}
 </style>
 </head>
 <body class="min-h-screen">
@@ -99,6 +111,33 @@
       <div class="sec-label mb-1">last tick</div>
       <div class="kv" id="kpi-tick">&mdash;</div>
       <div class="ksub" id="kpi-tick-detail">no scan yet</div>
+    </div>
+  </section>
+
+  <section class="card p-5 mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">open positions</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="positions-count"></div>
+    </div>
+    <div class="scroll-x">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">coin</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">side</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">notional</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">lev</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">entry</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">mark</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">liq</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">uPnL</th>
+            <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">origin</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body">
+          <tr><td colspan="9" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
@@ -319,6 +358,63 @@ async function refreshSummary() {
   } catch (e) {}
 }
 
+// ── open positions ──────────────────────────────────────────────────────────
+const fmtPx = v => { if (v == null || !isFinite(v)) return '—'; return v < 1 ? Number(v).toFixed(5) : v < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2); };
+const posPnl = new Map();   // coin|side -> last uPnL, drives the tick animation
+
+// origin: book badge when the entry context names one; "main" when the main
+// engine recorded a reason; MANUAL when no bot entry matches (operator trade).
+function originBadge(p) {
+  if (p.open_book) return `<span class="o-badge" title="${esc(p.open_reason || '')}">${esc(p.open_book)}</span>`;
+  if (p.open_reason) return `<span class="o-badge" title="${esc(p.open_reason)}">main</span>`;
+  return '<span class="o-badge o-manual" title="no matching bot entry — opened outside the engine">MANUAL</span>';
+}
+
+async function refreshPositions() {
+  try {
+    const ps = await (await fetch('/api/dashboard/positions')).json();
+    const body = document.getElementById('positions-body');
+    const count = document.getElementById('positions-count');
+    if (!Array.isArray(ps) || !ps.length) {
+      body.innerHTML = '<tr><td colspan="9" class="py-3" style="color:var(--dim)">flat — no open positions</td></tr>';
+      count.textContent = '';
+      posPnl.clear();
+      return;
+    }
+    ps.sort((a, b) => (b.unrealized_pnl_usd ?? 0) - (a.unrealized_pnl_usd ?? 0));
+    let totalPnl = 0, totalNtl = 0;
+    body.innerHTML = ps.map(p => {
+      const key = `${p.coin}|${p.side}`;
+      const pnlUsd = Number(p.unrealized_pnl_usd ?? 0);
+      const prev = posPnl.get(key);
+      const tick = (prev !== undefined && Math.abs(pnlUsd - prev) > 0.004)
+        ? (pnlUsd > prev ? ' tick-up' : ' tick-dn') : '';
+      posPnl.set(key, pnlUsd);
+      const notional = (p.size ?? 0) * (p.mark_px ?? 0);
+      totalPnl += pnlUsd; totalNtl += notional;
+      const pnlCls = pnlUsd >= 0 ? 'pos' : 'neg';
+      const side = p.side === 'long' ? '<span class="badge b-long">LONG</span>' : '<span class="badge b-short">SHORT</span>';
+      const liqNear = p.liq_px && p.mark_px && Math.abs(p.mark_px - p.liq_px) / p.mark_px <= 0.10;
+      const liqCell = p.liq_px
+        ? `<span class="${liqNear ? 'liq-danger' : ''}" ${liqNear ? 'title="liquidation within 10% of mark"' : ''}>${liqNear ? '⚠ ' : ''}${fmtPx(p.liq_px)}</span>`
+        : '<span style="color:var(--dim)">—</span>';
+      return `<tr class="border-b last:border-0 align-middle" style="border-color:var(--line)">
+        <td class="py-2.5 pr-3 whitespace-nowrap"><span class="tk">${esc(p.coin)}</span></td>
+        <td class="py-2.5 pr-3">${side}</td>
+        <td class="py-2.5 pr-3 mono text-right whitespace-nowrap" style="color:var(--mut)">${dollarHTML(fmtMoney(notional))}</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${p.leverage}x</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${fmtPx(p.entry_px)}</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${fmtPx(p.mark_px)}</td>
+        <td class="py-2.5 pr-3 mono text-right">${liqCell}</td>
+        <td class="py-2.5 pr-3 mono text-right whitespace-nowrap pnl-cell ${pnlCls}${tick}">${dollarHTML(fmtMoney(pnlUsd))} <span class="text-[10px]">(${fmtPct(p.unrealized_pct ?? 0)})</span></td>
+        <td class="py-2.5 text-right">${originBadge(p)}</td>
+      </tr>`;
+    }).join('');
+    const totCls = totalPnl >= 0 ? 'pos' : 'neg';
+    count.innerHTML = `${ps.length} open · ${dollarHTML(fmtMoney(totalNtl))} notional · <span class="pnl-cell ${totCls}">${dollarHTML(fmtMoney(totalPnl))}</span> uPnL`;
+  } catch (e) {}
+}
+
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
                 off: '<span class="badge b-off">OFF</span>' };
@@ -344,8 +440,9 @@ async function refreshBooks() {
   } catch (e) {}
 }
 
-refreshSummary(); refreshBooks(); refreshChart(86400);
+refreshSummary(); refreshPositions(); refreshBooks(); refreshChart(86400);
 setInterval(refreshSummary, 6000);
+setInterval(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
 setInterval(refreshBooks, 30000);
 setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
 </script>

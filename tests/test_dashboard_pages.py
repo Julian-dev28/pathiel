@@ -440,6 +440,39 @@ def test_landing_has_equity_curve(client):
     assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
 
 
+def test_positions_rows_expose_liq_px():
+    state = {"asset_positions": [
+        {"position": {"coin": "BTC", "szi": "0.5", "entryPx": "100000",
+                      "positionValue": "55000", "unrealizedPnl": "5000",
+                      "marginUsed": "11000", "leverage": {"value": 5},
+                      "liquidationPx": "80000"}},
+        {"position": {"coin": "ETH", "szi": "-2", "entryPx": "3000",
+                      "positionValue": "5800", "unrealizedPnl": "200",
+                      "marginUsed": "1160", "leverage": {"value": 5},
+                      "liquidationPx": None}},   # cross far from liq → null
+    ]}
+    rows = db._rows_from_state(state)
+    btc = next(r for r in rows if r["coin"] == "BTC")
+    eth = next(r for r in rows if r["coin"] == "ETH")
+    assert btc["liq_px"] == 80000.0 and btc["mark_px"] == 110000.0
+    assert btc["side"] == "long"
+    assert eth["liq_px"] is None and eth["side"] == "short"
+
+
+def test_landing_has_open_positions_section(client):
+    r = client.get("/").text
+    assert 'id="positions-body"' in r
+    assert "open positions" in r
+    assert "refreshPositions" in r
+    # placed between the KPI row and the equity curve
+    assert r.index('id="positions-body"') < r.index('id="equity-chart"')
+    assert r.index("last tick") < r.index('id="positions-body"')
+    # liq proximity danger treatment + origin badges + PnL tick animation
+    assert "liq-danger" in r
+    assert "MANUAL" in r and "originBadge" in r
+    assert "tick-up" in r and "tick-dn" in r
+
+
 def test_stream_pages_flow_and_respect_reduced_motion(client):
     act = client.get("/activity").text
     news = client.get("/news").text
