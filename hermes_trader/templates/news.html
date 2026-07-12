@@ -41,13 +41,19 @@
   .titles div::before{content:'· ';color:#52525b}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11px}
   .empty{font-size:12px;color:#71717a;padding:14px;border:1px dashed #27272a;line-height:1.7}
+  /* T3: quiet (non-breaking) reads coalesce — ONE line per coin per hour */
+  .read-coal{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5}
+  .read-coal b{color:#a3a3a3;font-weight:600}
+  .read-coal .cnt{color:#fbbf24;font-weight:700}
   /* arrival animations — reduced-motion respected */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
   .flash-amber{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-a 1.8s ease-out}
   @keyframes glow-a{0%{border-color:#fbbf24;box-shadow:0 0 16px rgba(251,191,36,.45);background:#241a03}100%{background:#0c0d0e}}
+  .coal-tick{animation:coal-tick .6s ease-out}
+  @keyframes coal-tick{0%{color:#a7f3d0;border-left-color:#047857}100%{color:#71717a;border-left-color:#27272a}}
   @media (prefers-reduced-motion: reduce){
-    .ev-enter,.flash-amber,.item.breaking,.b-breaking{animation:none}
+    .ev-enter,.flash-amber,.coal-tick,.item.breaking,.b-breaking{animation:none}
   }
 </style>
 </head>
@@ -63,8 +69,6 @@
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
-    <a href="/config" data-nav="/config" class="nav-link">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
   </nav>
 
   <div class="text-zinc-500 uppercase tracking-wider text-[11px] mb-3">
@@ -145,10 +149,12 @@ function makeNode(row) {
   return div;
 }
 
-// ── merged flowing stream with keyed prepend ─────────────────────────────────
+// ── merged flowing stream: breaking + research = cards; quiet reads coalesce
+// into ONE line per coin per hour, merged in place on incremental polls. ─────
 const stream = document.getElementById('stream');
 const seen = new Set();
 const seenOrder = [];
+const coalIndex = new Map();   // "coin|hour" -> element
 let total = 0, breakingCount = 0, loaded = false;
 
 const keyOf = r => `${r.kind}|${r.ts}|${r.coin}|${(r.titles || []).length}|${String(r.verdict || '').slice(0, 8)}`;
@@ -161,12 +167,63 @@ function remember(r) {
   return true;
 }
 
-function mergeRows(data) {   // interleave reads + research by ts, newest first
+function mergeRows(data) {
   const rows = [];
   for (const it of (data.items || [])) rows.push({ kind: 'read', ...it });
   for (const c of (data.research_context || [])) rows.push({ kind: 'research', ...c });
-  rows.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  rows.sort((a, b) => (a.ts || 0) - (b.ts || 0));   // chronological in, newest ends on top
   return rows;
+}
+
+const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
+
+function coalLabel(st) {
+  const surge = st.surge_x != null ? ` · surge ×${Number(st.surge_x).toFixed(2)}` : '';
+  const heads = st.headlines ? ` · ${st.headlines} headline${st.headlines === 1 ? '' : 's'}` : '';
+  return `<b>${esc(st.coin)}</b> ${esc(st.side || '')} · <span class="cnt">×${st.n}</span> quiet read${st.n === 1 ? '' : 's'}${surge}${heads} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+}
+function ingestRow(r, animate) {
+  if (!remember(r)) return;
+  const isQuietRead = r.kind === 'read' && !r.breaking;
+  if (isQuietRead) {
+    const gkey = `${r.coin}|${Math.floor((r.ts || 0) / 3600000)}`;
+    const existing = coalIndex.get(gkey);
+    if (existing) {
+      const st = JSON.parse(existing.dataset.st);
+      st.n += 1;
+      st.t1 = Math.max(st.t1, r.ts || 0);
+      st.t0 = Math.min(st.t0, r.ts || st.t0);
+      if (r.surge_x != null) st.surge_x = r.surge_x;
+      st.headlines += (r.titles || []).length;
+      existing.dataset.st = JSON.stringify(st);
+      existing.innerHTML = coalLabel(st);
+      if (stream.firstElementChild !== existing) stream.prepend(existing);
+      if (animate) { existing.classList.remove('coal-tick'); void existing.offsetWidth; existing.classList.add('coal-tick'); }
+    } else {
+      const el = document.createElement('div');
+      el.className = 'read-coal num';
+      el.dataset.gkey = gkey;
+      const st = { n: 1, t0: r.ts, t1: r.ts, coin: r.coin, side: r.side,
+                   surge_x: r.surge_x, headlines: (r.titles || []).length };
+      el.dataset.st = JSON.stringify(st);
+      el.innerHTML = coalLabel(st);
+      el.title = (r.titles || []).join(' · ') || 'no headlines captured';
+      coalIndex.set(gkey, el);
+      if (animate) el.classList.add('ev-enter');
+      stream.prepend(el);
+    }
+  } else {
+    const node = makeNode(r);
+    if (animate) node.classList.add(r.breaking ? 'flash-amber' : 'ev-enter');
+    stream.prepend(node);
+    if (r.breaking) breakingCount++;
+  }
+  total++;
+  while (stream.children.length > 150) {
+    const last = stream.lastElementChild;
+    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
+    last.remove();
+  }
 }
 
 const EMPTY_HTML = `<div class="empty">
@@ -185,26 +242,14 @@ async function load() {
     const rows = mergeRows(data);
     if (!loaded) {
       stream.innerHTML = '';
-      if (!rows.length) { stream.innerHTML = EMPTY_HTML; }
-      for (const r of rows) {
-        remember(r);
-        stream.appendChild(makeNode(r));
-      }
-      total = rows.length;
-      breakingCount = rows.filter(r => r.breaking).length;
+      for (const r of rows) ingestRow(r, false);
+      if (!stream.children.length) stream.innerHTML = EMPTY_HTML;
       loaded = true;
     } else {
-      const fresh = rows.filter(remember);
-      if (fresh.length && stream.querySelector('.empty')) stream.innerHTML = '';
-      // prepend oldest-first so the newest row lands on top, animated
-      for (const r of fresh.sort((a, b) => (a.ts || 0) - (b.ts || 0))) {
-        const node = makeNode(r);
-        node.classList.add(r.breaking ? 'flash-amber' : 'ev-enter');
-        stream.prepend(node);
-        total++;
-        if (r.breaking) breakingCount++;
-      }
-      while (stream.children.length > 150) stream.removeChild(stream.lastChild);
+      const hadEmpty = stream.querySelector('.empty');
+      const before = total;
+      for (const r of rows) ingestRow(r, true);
+      if (hadEmpty && total > before) hadEmpty.remove();
     }
     setMeta();
   } catch (e) {

@@ -23,7 +23,14 @@
   .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
   .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
   .chip.chip-amber{border-color:#78350f;color:#fbbf24;background:#1f1300}
-  /* ── the flowing stream: one continuous timeline, newest on top ── */
+  /* ── session strip: the "what's happening" answer, pinned ── */
+  .strip{position:sticky;top:0;z-index:20;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;
+         background:#0c0d0e;border:2px solid #1f2937;border-left:2px solid #34d399;
+         padding:8px 14px;margin-bottom:14px;font-size:11px;color:#a3a3a3;box-shadow:0 6px 12px rgba(0,0,0,.6)}
+  .strip .s-label{color:#52525b;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+  .strip b{color:#e5e5e5;font-weight:700}
+  .strip .pos{color:#34d399}.strip .neg{color:#f87171}
+  /* ── the journal: T1 cards, T2 lines, T3 coalesced rows ── */
   #feed{border-left:2px solid #1f2937;padding-left:14px}
   .ev{border:1px solid #1f2937;background:#0c0d0e;padding:8px 12px;margin-bottom:8px;position:relative}
   .ev::before{content:'';position:absolute;left:-19px;top:14px;width:8px;height:8px;background:#3f3f46;border:1px solid #0a0a0a}
@@ -36,24 +43,23 @@
   .ev-ts{color:#52525b;font-size:10px;white-space:nowrap}
   .ev-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
   .ev-type.t-research{color:#a5b4fc}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fbbf24}
-  .ev-type.t-book{color:#5eead4}.ev-type.t-scan{color:#9ca3af}.ev-type.t-gate{color:#71717a}
-  .ev-type.t-error{color:#f87171}.ev-type.t-heartbeat{color:#52525b}.ev-type.t-system{color:#9ca3af}.ev-type.t-other{color:#d4d4d8}
+  .ev-type.t-book{color:#5eead4}.ev-type.t-error{color:#f87171}
   .ev-body{font-size:12px;color:#d4d4d8;margin-top:3px;line-height:1.55;word-break:break-word}
   .ev-sub{font-size:11px;color:#71717a;margin-top:2px}
-  .kv{display:grid;grid-template-columns:minmax(120px,26%) 1fr;gap:2px 12px;font-size:11px;margin-top:4px}
-  .kv .k{color:#71717a}
-  .kv .v{color:#d4d4d8;word-break:break-word}
-  /* slim rows for noise events (scan / gate / heartbeat) */
-  .ev-slim{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5;word-break:break-word}
-  .ev-slim b{color:#a3a3a3;font-weight:600}
-  /* collapsed run of noise events — <details> so expansion is CSS/HTML-only */
-  .ev-group{margin-bottom:6px}
-  .ev-group summary{cursor:pointer;list-style:none;font-size:11px;color:#71717a;padding:4px 12px;border:1px dashed #27272a;background:#0c0d0e}
-  .ev-group summary::-webkit-details-marker{display:none}
-  .ev-group summary::before{content:'▸ ';color:#52525b}
-  .ev-group[open] summary::before{content:'▾ '}
-  .ev-group summary:hover{color:#a3a3a3;border-color:#3f3f46}
-  .ev-group .gbody{padding:4px 0 0 10px;max-height:300px;overflow-y:auto}
+  /* T2: compact one-liners */
+  .ev-line{font-size:11px;color:#a3a3a3;padding:3px 12px;margin-bottom:4px;border-left:2px solid #3f3f46;line-height:1.5;word-break:break-word}
+  .ev-line b{color:#d4d4d8;font-weight:600}
+  .ev-line.l-research{border-left-color:#4c4f8f}
+  .ev-line.l-book{border-left-color:#134e4a}
+  .ev-line.l-system{border-left-color:#3f3f46;color:#71717a}
+  .ev-line .conf{color:#71717a}
+  /* T3: coalesced rows + dividers */
+  .ev-coal{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5}
+  .ev-coal b{color:#a3a3a3;font-weight:600}
+  .ev-coal .cnt{color:#fbbf24;font-weight:700}
+  .ev-div{font-size:10px;color:#52525b;text-align:center;padding:3px 0;margin-bottom:4px;letter-spacing:.06em}
+  .ev-div .cnt{color:#71717a;font-weight:700}
+  .empty-tape{font-size:12px;color:#71717a;padding:14px;border:1px dashed #27272a;margin-bottom:10px;line-height:1.7}
   /* ── arrival animations — CSS only, reduced-motion respected ── */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
@@ -63,12 +69,12 @@
   @keyframes glow-r{0%{border-color:#f87171;box-shadow:0 0 16px rgba(248,113,113,.4);background:#2b0a0a}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
   .flash-indigo{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-i 1.5s ease-out}
   @keyframes glow-i{0%{border-color:#818cf8;box-shadow:0 0 12px rgba(129,140,248,.35);background:#14142b}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
-  .group-tick{animation:group-tick .6s ease-out}
-  @keyframes group-tick{0%{color:#a7f3d0;border-color:#047857}100%{color:#71717a;border-color:#27272a}}
+  .coal-tick{animation:coal-tick .6s ease-out}
+  @keyframes coal-tick{0%{color:#a7f3d0;border-left-color:#047857}100%{color:#71717a;border-left-color:#27272a}}
   @media (prefers-reduced-motion: reduce){
-    .ev-enter,.flash-green,.flash-red,.flash-indigo,.group-tick{animation:none}
+    .ev-enter,.flash-green,.flash-red,.flash-indigo,.coal-tick{animation:none}
   }
-  /* light filter chips — thin the stream, default = everything flows */
+  /* light filter chips */
   .fchip{padding:3px 10px;font-size:10px;letter-spacing:.06em;background:transparent;border:1px solid #3f3f46;color:#71717a;cursor:pointer}
   .fchip:hover{border-color:#047857;color:#a7f3d0}
   .fchip.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
@@ -88,16 +94,18 @@
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
-    <a href="/config" data-nav="/config" class="nav-link">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
   </nav>
+
+  <div class="strip" id="session-strip">
+    <span class="s-label">last 6h</span><span>loading&hellip;</span>
+  </div>
 
   <div class="flex items-center gap-2 flex-wrap mb-5" id="filter-bar">
     <span id="type-filters" class="flex items-center gap-1.5 flex-wrap"></span>
     <select id="book-filter" class="fsel"><option value="">all books</option></select>
   </div>
 
-  <div id="feed"><div class="ev-slim">loading&hellip;</div></div>
+  <div id="feed"><div class="ev-coal">loading&hellip;</div></div>
 
   <footer class="text-[10px] text-zinc-600 mt-6 text-center">
     one wallet · live · not financial advice
@@ -107,8 +115,14 @@
 <script>
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtTime = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 8); };
+const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
 const fmtDay = ms => { const d = new Date(ms || Date.now()); return (d.getMonth() + 1) + '/' + d.getDate(); };
 const fmtTs = ms => fmtDay(ms) + ' ' + fmtTime(ms);
+const fmtDur = ms => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return m + 'm';
+  return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+};
 const fmtNum = v => {
   if (v == null || typeof v !== 'number' || !isFinite(v)) return String(v);
   const a = Math.abs(v);
@@ -121,8 +135,7 @@ const fmtNum = v => {
 };
 const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
 
-// Readable scalar for any value — arrays join, objects flatten to "k: v" pairs.
-// The guaranteed no-raw-JSON path for unknown shapes.
+// Readable scalar for any value — no raw JSON, ever.
 function readable(v, depth) {
   depth = depth || 0;
   if (v == null) return '—';
@@ -135,12 +148,6 @@ function readable(v, depth) {
   }
   return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
 }
-function kvBlock(obj) {
-  const entries = Object.entries(obj || {}).filter(([, v]) => v !== null && v !== undefined);
-  if (!entries.length) return '';
-  return '<div class="kv">' + entries.map(([k, v]) =>
-    `<span class="k">${esc(k)}</span><span class="v">${esc(readable(v))}</span>`).join('') + '</div>';
-}
 
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
@@ -148,31 +155,14 @@ const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>
                         : v === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
                         : v === 'CLOSE' ? '<span class="badge b-fail">CLOSE</span>'
                         : `<span class="badge b-pass">${esc(v || '?')}</span>`;
-const shadowBadge = sh => sh ? '<span class="badge b-shadow">SHADOW</span>' : '<span class="badge b-live">LIVE</span>';
 
 function head(e, label, cls, bits) {
   return `<div class="ev-head"><span class="ev-ts num">${fmtTs(e.ts)}</span>` +
          `<span class="ev-type t-${cls}">${label}</span>` + bits.join(' ') + '</div>';
 }
 
-// candidate → chip: coin + side + up to 3 informative fields
-function candChip(c) {
-  if (c == null || typeof c !== 'object') return `<span class="chip">${esc(readable(c))}</span>`;
-  const skip = new Set(['coin', 'side', 'signal_bar_t', 'influx_bar_t']);
-  const bits = [];
-  if (c.coin) bits.push(`<b>${esc(c.coin)}</b>`);
-  if (c.side) bits.push(esc(c.side));
-  let n = 0;
-  for (const [k, v] of Object.entries(c)) {
-    if (skip.has(k) || v == null || n >= 3) continue;
-    if (typeof v === 'boolean') { if (v) { bits.push(esc(k)); n++; } continue; }
-    bits.push(`${esc(k)}=${esc(readable(v))}`); n++;
-  }
-  return `<span class="chip">${bits.join(' ')}</span>`;
-}
-
-// ── card renderers (rich event types) ───────────────────────────────────────
-const RENDER = {
+// ── TIER 1: full cards, always ───────────────────────────────────────────────
+const CARD = {
   research(e) {
     const conf = e.confidence != null ? `<span class="text-zinc-500 text-[11px] num">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
     const prov = e.provider ? `<span class="chip">${esc(e.provider)}</span>` : '';
@@ -225,216 +215,294 @@ const RENDER = {
       + (e.reason ? `<div class="ev-body">${esc(e.reason)}</div>` : '')
       + fills;
   },
-  book(e) {
-    if (e.subtype === 'open') {
-      return head(e, 'book', 'book',
-          [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', `<b>${esc(e.coin)}</b>`, sideBadge(e.side)])
-        + kvBlock(e.extra);
-    }
-    const counts = [];
-    if (e.signals != null) counts.push(`signals ${e.signals}`);
-    if (e.opened != null) counts.push(`opened ${e.opened}`);
-    const countStr = counts.length ? `<span class="text-zinc-400 text-[11px] num">${counts.join(' · ')}</span>` : '';
-    const skips = Object.entries(e.skipped || {})
-      .filter(([, v]) => Number(v) > 0)
-      .map(([k, v]) => `<span class="chip chip-amber">skipped ${esc(k)}: ${v}</span>`).join('');
-    const cands = (e.candidates || []).map(candChip).join('');
-    const chipRow = (skips || cands) ? `<div class="mt-1">${cands}${skips}</div>` : '';
-    return head(e, 'book', 'book', [`<b>${esc(e.book)}</b>`, shadowBadge(e.shadow), countStr])
-      + chipRow + kvBlock(e.extra);
+  book(e) {   // only book_open reaches tier 1
+    return head(e, 'book', 'book',
+        [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', `<b>${esc(e.coin)}</b>`, sideBadge(e.side)]);
   },
   error(e) {
     return head(e, 'error', 'error', [`<b>${esc(e.scope || 'loop')}</b>`])
       + `<div class="ev-body text-red-300">${esc(e.error)}</div>`;
   },
-  system(e) {
-    return head(e, e.name || 'system', 'system', []) + kvBlock(e.fields);
-  },
-  other(e) {
-    return head(e, e.name || '?', 'other', []) + kvBlock(e.fields);
-  },
 };
 
-// ── slim rows + collapsed groups for noise types ────────────────────────────
-const NOISE = new Set(['scan', 'gate', 'heartbeat']);
-
-function slimText(e) {
-  if (e.type === 'scan') {
-    const tops = (e.coins || []).slice(0, 4).map(c =>
-      typeof c === 'object' ? `${c.coin}(${fmtNum(c.score)})` : String(c)).join(', ');
-    return `<b>scan</b> · ${e.triggers ?? 0} triggers${tops ? ' — ' + esc(tops) : ''}`;
-  }
-  if (e.type === 'gate') {
-    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
-      .filter(Boolean).join(' ');
-    return `<b>${e.kind === 'ta_skip' ? 'ta skip' : 'preflight'}</b> · ${esc(e.coin)}${scores ? ' · ' + scores : ''}${e.reason ? ' — ' + esc(e.reason) : ''}`;
-  }
-  if (e.type === 'heartbeat') {
-    return `<b>♥</b> equity $${Number(e.equity ?? 0).toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · open ${e.open_positions ?? 0}`;
-  }
-  return esc(readable(e));
-}
-function slimNode(e) {
+// ── TIER 2: compact one-liners ───────────────────────────────────────────────
+function lineNode(e) {
   const div = document.createElement('div');
-  div.className = 'ev-slim num';
-  div.dataset.single = e.type;
-  div.innerHTML = `<span class="ev-ts">${fmtTime(e.ts)}</span> ${slimText(e)}`;
+  let cls = 'ev-line', html = '';
+  const t = `<span class="ev-ts num">${fmtTime(e.ts)}</span>`;
+  if (e.type === 'research') {   // PASS verdicts: coin, conf, one-line reason
+    cls += ' l-research';
+    const reason = String(e.reasoning || '').slice(0, 160);
+    html = `${t} <b>${esc(e.coin)}</b> PASS <span class="conf num">conf ${Number(e.confidence ?? 0).toFixed(2)}</span>${reason ? ' — ' + esc(reason) : ''}`;
+  } else if (e.type === 'book') {   // cycles that produced signals
+    cls += ' l-book';
+    const bits = [`<b>${esc(e.book)}</b>`];
+    if (e.shadow != null) bits.push(e.shadow ? 'shadow' : 'live');
+    if (e.signals != null) bits.push(`${e.signals} signal${e.signals === 1 ? '' : 's'}`);
+    if (e.opened) bits.push(`<b>${e.opened} opened</b>`);
+    const cands = (e.candidates || []).slice(0, 3).map(c =>
+      c && c.coin ? `${c.coin} ${c.side || ''}`.trim() : readable(c)).join(', ');
+    if (cands) bits.push(esc(cands));
+    else if (e.signals == null && e.extra) bits.push(esc(readable(e.extra).slice(0, 140)));
+    html = `${t} ${bits.join(' · ')}`;
+  } else if (e.type === 'system') {
+    cls += ' l-system';
+    const f = e.fields || {};
+    if (e.name === 'loop_start') {
+      html = `${t} ⟳ loop restarted${f.mode ? ' · ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}${f.min_score ? ' · min score ' + esc(f.min_score) : ''}`;
+    } else if (e.name === 'loop_stop') {
+      html = `${t} ■ loop stopped`;
+    } else {
+      html = `${t} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
+    }
+  } else {   // other / unknown shapes → one readable line, never raw JSON
+    cls += ' l-system';
+    html = `${t} <b>${esc(e.name || e.type)}</b> ${esc(readable(e.fields || {}).slice(0, 200))}`;
+  }
+  div.className = cls;
+  div.innerHTML = html;
   return div;
 }
-function groupLabel(type, count, latest) {
-  if (type === 'scan') return `${count} scans · latest: ${latest.triggers ?? 0} triggers`;
-  if (type === 'gate') return `${count} gate skips (ta filter / preflight) · latest: ${latest.coin ?? '?'}`;
-  if (type === 'heartbeat') return `${count} heartbeats · latest: equity $${Number(latest.equity ?? 0).toFixed(2)} · open ${latest.open_positions ?? 0}`;
-  return `${count} ${type} events`;
+
+// ── TIER 3: coalesced rows — one DOM row per group key, merges bump counters
+// and float the row to the top so the tape orders by "latest happening". ─────
+const coalIndex = new Map();   // gkey -> element
+
+function coalLabel(kind, st) {
+  if (kind === 'gate')
+    return `<b>${esc(st.coin ?? '?')}</b> blocked <span class="cnt">×${st.n}</span> · ${esc(st.reason || 'gate skip')} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+  if (kind === 'quiet')
+    return `<b>${esc(st.book)}</b> · <span class="cnt">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+  if (kind === 'scan') {
+    const h = st.hour * 3600000;
+    return `${fmtHM(h)}-${fmtHM(h + 3600000)} · <span class="cnt">${st.n}</span> scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades`;
+  }
+  if (kind === 'steady')
+    return `── steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)} ──`;
+  return `${st.n} events`;
 }
-function groupNode(evs) {   // evs newest-first
-  const d = document.createElement('details');
-  d.className = 'ev-group';
-  d.dataset.group = evs[0].type;
-  d.dataset.count = evs.length;
-  d.dataset.t0 = evs[evs.length - 1].ts;
-  const sum = document.createElement('summary');
-  sum.innerHTML = `<span class="ev-ts num">${fmtTime(Number(d.dataset.t0))}–${fmtTime(evs[0].ts)}</span> `
-    + esc(groupLabel(evs[0].type, evs.length, evs[0]));
-  const body = document.createElement('div');
-  body.className = 'gbody';
-  for (const e of evs) body.appendChild(slimNode(e));
-  d.appendChild(sum); d.appendChild(body);
-  return d;
+function coalState(el) { return JSON.parse(el.dataset.st); }
+function coalRender(el) {
+  const st = coalState(el);
+  el.innerHTML = coalLabel(el.dataset.kind, st);
+  el.title = `${st.n} events between ${fmtTs(st.t0)} and ${fmtTs(st.t1)}`;
 }
-function mergeIntoGroup(g, e) {
-  const count = Number(g.dataset.count) + 1;
-  g.dataset.count = count;
-  const sum = g.querySelector('summary');
-  sum.innerHTML = `<span class="ev-ts num">${fmtTime(Number(g.dataset.t0))}–${fmtTime(e.ts)}</span> `
-    + esc(groupLabel(e.type, count, e));
-  sum.classList.remove('group-tick'); void sum.offsetWidth; sum.classList.add('group-tick');
-  const body = g.querySelector('.gbody');
-  body.prepend(slimNode(e));
-  while (body.childNodes.length > 60) body.removeChild(body.lastChild);
+function coalNode(kind, gkey, st) {
+  const el = document.createElement('div');
+  el.className = (kind === 'steady' || kind === 'scan') ? 'ev-div num' : 'ev-coal num';
+  el.dataset.kind = kind;
+  el.dataset.gkey = gkey;
+  el.dataset.st = JSON.stringify(st);
+  coalRender(el);
+  coalIndex.set(gkey, el);
+  return el;
+}
+function coalMerge(el, patch, animate) {
+  const st = coalState(el);
+  st.n += 1;
+  st.t1 = Math.max(st.t1, patch.t1 || 0);
+  st.t0 = Math.min(st.t0, patch.t0 || st.t0);
+  if (patch.triggers) st.triggers = (st.triggers || 0) + patch.triggers;
+  if (patch.equity !== undefined) st.equity = patch.equity;
+  if (patch.open !== undefined) st.open = patch.open;
+  el.dataset.st = JSON.stringify(st);
+  coalRender(el);
+  if (feed.firstElementChild !== el) feed.prepend(el);   // active groups float up
+  if (animate) { el.classList.remove('coal-tick'); void el.offsetWidth; el.classList.add('coal-tick'); }
+}
+// research/executed counts fold into the matching hour's scan divider
+function bumpHourStats(e, field) {
+  const el = coalIndex.get('scan|' + Math.floor((e.ts || 0) / 3600000));
+  if (!el) return;
+  const st = coalState(el);
+  st[field] = (st[field] || 0) + 1;
+  el.dataset.st = JSON.stringify(st);
+  coalRender(el);
+}
+
+// ── heartbeat state machine: line only when equity moves >$0.05 or the open
+// count changes; unchanged runs collapse into ONE "steady" divider. ──────────
+let lastHB = null;
+let steadyRun = 0;
+function routeHeartbeat(e) {
+  const eq = Number(e.equity ?? 0), open = Number(e.open_positions ?? 0);
+  const changed = !lastHB || Math.abs(eq - lastHB.equity) > 0.05 || open !== lastHB.open;
+  lastHB = { equity: eq, open };
+  if (changed) {
+    steadyRun++;
+    const div = document.createElement('div');
+    div.className = 'ev-line l-system num';
+    div.innerHTML = `<span class="ev-ts num">${fmtTime(e.ts)}</span> ♥ equity $${eq.toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · ${open} open`;
+    return { node: div };
+  }
+  return { gkey: `hbsteady|${steadyRun}`, kind: 'steady',
+           st: { n: 1, t0: e.ts, t1: e.ts, equity: eq, open } };
+}
+
+// ── stream state ─────────────────────────────────────────────────────────────
+const feed = document.getElementById('feed');
+const seen = new Set();
+const seenOrder = [];
+let newestTs = 0;
+let curType = '', curBook = '';
+let t12Count = 0;         // tier-1/2 rows rendered (drives empty-tape mode)
+
+const keyOf = e => `${e.ts}|${e.type}|${e.coin || e.book || e.name || ''}|${String(e.reason || e.verdict || e.error || '').slice(0, 24)}`;
+function remember(e) {
+  const k = keyOf(e);
+  if (seen.has(k)) return false;
+  seen.add(k); seenOrder.push(k);
+  while (seenOrder.length > 2500) seen.delete(seenOrder.shift());
+  if ((e.ts || 0) > newestTs) newestTs = e.ts;
+  return true;
+}
+
+function emphasisClass(e) {
+  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
+  if (e.type === 'error') return 'flash-red';
+  if (e.type === 'research') return 'flash-indigo';   // only LONG/SHORT/CLOSE reach tier 1
+  if (e.type === 'book') return 'flash-green';        // book_open
+  return 'ev-enter';
 }
 
 function cardNode(e) {
   const div = document.createElement('div');
   div.className = `ev k-${e.type}`;
-  div.innerHTML = (RENDER[e.type] || RENDER.other)(e);
+  div.innerHTML = (CARD[e.type] || CARD.error)(e);
   return div;
 }
 
-// Arrival emphasis: fills + book opens glow green, blocks/losses/errors red,
-// actionable verdicts indigo; PASS verdicts get only the subtle fade-in.
-function emphasisClass(e) {
-  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
-  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
-  if (e.type === 'error') return 'flash-red';
-  if (e.type === 'research') return (e.verdict === 'LONG' || e.verdict === 'SHORT' || e.verdict === 'CLOSE')
-    ? 'flash-indigo' : 'ev-enter';
-  if (e.type === 'book' && (e.subtype === 'open' || (e.opened ?? 0) > 0)) return 'flash-green';
-  return 'ev-enter';
+function clearEmptyTape() {
+  const b = feed.querySelector('.empty-tape');
+  if (b) b.remove();
 }
 
-// ── stream state: initial build collapses noise runs; polls PREPEND ─────────
-const feed = document.getElementById('feed');
-const seen = new Set();          // dedupe keys, bounded to the last 1500
-const seenOrder = [];
-let newestTs = 0;
-let curType = '', curBook = '';
-let streamed = 0;
+// One event, chronological order in → one journal mutation at the top.
+function ingest(e, animate) {
+  if (!remember(e)) return;
+  if (e.type === 'research') bumpHourStats(e, 'researched');
+  if (e.type === 'execute' && e.executed) bumpHourStats(e, 'trades');
 
-const keyOf = e => `${e.ts}|${e.type}|${e.coin || e.book || e.name || ''}|${String(e.reason || e.verdict || e.error || '').slice(0, 24)}`;
-
-function remember(e) {
-  const k = keyOf(e);
-  if (seen.has(k)) return false;
-  seen.add(k); seenOrder.push(k);
-  while (seenOrder.length > 1500) seen.delete(seenOrder.shift());
-  if ((e.ts || 0) > newestTs) newestTs = e.ts;
-  return true;
-}
-
-function buildStream(events) {   // full render; noise runs of >=3 collapse
-  feed.innerHTML = '';
-  let i = 0;
-  while (i < events.length) {
-    const e = events[i];
-    if (NOISE.has(e.type)) {
-      let j = i;
-      while (j < events.length && events[j].type === e.type) j++;
-      const run = events.slice(i, j);
-      if (run.length >= 3) feed.appendChild(groupNode(run));
-      else run.forEach(x => feed.appendChild(slimNode(x)));
-      i = j;
+  if (e.tier === 3) {
+    let gkey = e.gkey, kind, st;
+    if (e.type === 'heartbeat') {
+      const r = routeHeartbeat(e);
+      if (r.node) {                 // changed heartbeat → compact line
+        if (animate) r.node.classList.add('ev-enter');
+        feed.prepend(r.node);
+        trim();
+        return;
+      }
+      gkey = r.gkey; kind = r.kind; st = r.st;
+    } else if (e.type === 'gate') {
+      kind = 'gate';
+      st = { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason };
+    } else if (e.type === 'scan') {
+      kind = 'scan';
+      st = { n: 1, t0: e.ts, t1: e.ts, hour: Math.floor((e.ts || 0) / 3600000),
+             triggers: Number(e.triggers || 0), researched: 0, trades: 0 };
+    } else {                        // quiet book cycle
+      kind = 'quiet';
+      st = { n: 1, t0: e.ts, t1: e.ts, book: e.book };
+    }
+    const existing = coalIndex.get(gkey);
+    if (existing) {
+      coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: st.triggers,
+                            equity: st.equity, open: st.open }, animate);
     } else {
-      feed.appendChild(cardNode(e));
-      i++;
+      const node = coalNode(kind, gkey, st);
+      if (animate) node.classList.add('ev-enter');
+      feed.prepend(node);
     }
+    trim();
+    return;
   }
-  if (!events.length) {
-    feed.innerHTML = '<div class="ev-slim">nothing in the stream yet — the loop will start talking soon</div>';
+
+  clearEmptyTape();
+  t12Count++;
+  const node = e.tier === 1 ? cardNode(e) : lineNode(e);
+  if (animate) node.classList.add(e.tier === 1 ? emphasisClass(e) : 'ev-enter');
+  feed.prepend(node);
+  trim();
+}
+
+function trim() {
+  while (feed.children.length > 300) {
+    const last = feed.lastElementChild;
+    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
+    last.remove();
   }
 }
 
-function prependEvent(e) {       // one fresh event, animated in at the top
-  if (NOISE.has(e.type)) {
-    const first = feed.firstElementChild;
-    if (first && first.dataset.group === e.type) { mergeIntoGroup(first, e); return; }
-    if (first && first.dataset.single === e.type) {
-      // second consecutive noise row of the same kind → collapse into a group
-      const g = groupNode([e]);
-      g.dataset.count = 2;
-      g.querySelector('.gbody').appendChild(first.cloneNode(true));
-      g.querySelector('summary').innerHTML =
-        `<span class="ev-ts num">${fmtTime(e.ts)}</span> ` + esc(groupLabel(e.type, 2, e));
-      first.replaceWith(g);
-      g.classList.add('ev-enter');
-      return;
-    }
-    const node = slimNode(e);
-    node.classList.add('ev-enter');
-    feed.prepend(node);
-  } else {
-    const node = cardNode(e);
-    node.classList.add(emphasisClass(e));
-    feed.prepend(node);
-  }
-  while (feed.children.length > 250) feed.removeChild(feed.lastChild);
+// ── empty-tape mode ──────────────────────────────────────────────────────────
+function maybeEmptyTape(session) {
+  if (t12Count > 0 || feed.querySelector('.empty-tape')) return;
+  const b = document.createElement('div');
+  b.className = 'empty-tape';
+  const since = session && session.since_ts ? fmtHM(session.since_ts) : '—';
+  const scans = session ? session.scans : 0;
+  const blocks = session ? session.blocks : 0;
+  b.textContent = `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`;
+  feed.prepend(b);
 }
 
+// ── session strip ────────────────────────────────────────────────────────────
+function renderStrip(s) {
+  if (!s) return;
+  const el = document.getElementById('session-strip');
+  const pnlCls = (s.realized_pnl_pct ?? 0) >= 0 ? 'pos' : 'neg';
+  el.innerHTML =
+    `<span class="s-label">last ${s.window_h}h</span>` +
+    `<span class="num">scans <b>${s.scans}</b></span>` +
+    `<span class="num">candidates <b>${s.candidates}</b></span>` +
+    `<span class="num">researched <b>${s.researched}</b></span>` +
+    `<span class="num">opened <b>${s.opened}</b></span>` +
+    `<span class="num">closed <b>${s.closed}</b></span>` +
+    `<span class="num">realized <b class="${pnlCls}">${fmtPct(s.realized_pnl_pct)}</b></span>` +
+    `<span class="num">equity <b>${s.equity != null ? '$' + Number(s.equity).toFixed(2) : '—'}</b>` +
+    `${s.open_positions != null ? ' · ' + s.open_positions + ' open' : ''}</span>`;
+}
+
+// ── load + poll ──────────────────────────────────────────────────────────────
 function setMeta() {
   document.getElementById('feed-meta').textContent =
-    `${streamed} events streamed · newest first · updated ${fmtTime(Date.now())}`;
+    `journal · newest first · updated ${fmtTime(Date.now())}`;
 }
 
 async function fullLoad() {
-  const qs = new URLSearchParams({ limit: 200 });
+  const qs = new URLSearchParams({ limit: 300 });
   if (curType) qs.set('type', curType);
   if (curBook) qs.set('book', curBook);
   const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
   buildFilters(data);
-  seen.clear(); seenOrder.length = 0; newestTs = 0;
-  (data.events || []).forEach(remember);
-  buildStream(data.events || []);
-  streamed = (data.events || []).length;
+  renderStrip(data.session);
+  feed.innerHTML = '';
+  coalIndex.clear(); seen.clear(); seenOrder.length = 0;
+  newestTs = 0; lastHB = null; steadyRun = 0; t12Count = 0;
+  const chrono = (data.events || []).slice().reverse();   // oldest → newest
+  for (const e of chrono) ingest(e, false);
+  maybeEmptyTape(data.session);
   setMeta();
 }
 
 async function pollNew() {
   if (!newestTs) return fullLoad().catch(() => {});
-  // since = newest-1 + client dedupe, so two events sharing one ms never slip through
   const qs = new URLSearchParams({ limit: 100, since: String(newestTs - 1) });
   if (curType) qs.set('type', curType);
   if (curBook) qs.set('book', curBook);
   try {
     const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
-    const fresh = (data.events || []).filter(remember);
-    for (const e of fresh.reverse()) prependEvent(e);   // oldest first → newest lands on top
-    if (fresh.length) { streamed += fresh.length; setMeta(); }
+    renderStrip(data.session);
+    const chrono = (data.events || []).slice().reverse();
+    for (const e of chrono) ingest(e, true);
+    setMeta();
   } catch (e) {}
 }
 
 function buildFilters(data) {
   const wrap = document.getElementById('type-filters');
-  if (wrap.childElementCount) return;    // build once
+  if (wrap.childElementCount) return;
   const mk = (label, val) => {
     const b = document.createElement('button');
     b.className = 'fchip' + (val === curType ? ' on' : '');
@@ -466,7 +534,7 @@ function buildFilters(data) {
 })();
 
 fullLoad().catch(() => {
-  feed.innerHTML = '<div class="ev-slim">feed load failed — is the server up?</div>';
+  feed.innerHTML = '<div class="ev-coal">feed load failed — is the server up?</div>';
 });
 setInterval(pollNew, 8000);
 </script>

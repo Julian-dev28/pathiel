@@ -48,8 +48,6 @@
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
-    <a href="/config" data-nav="/config" class="nav-link">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
   </nav>
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -119,7 +117,8 @@
   </section>
 
   <footer class="text-[10px] text-zinc-600 mt-6 text-center">
-    one wallet · live · not financial advice
+    one wallet · live · not financial advice ·
+    <button id="op-token-btn" type="button" class="underline hover:text-zinc-400 bg-transparent border-0 cursor-pointer text-[10px] text-zinc-600 p-0">set token</button>
   </footer>
 </div>
 
@@ -135,6 +134,30 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
   const here = window.location.pathname.replace(/\/$/, '') || '/';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+// operator token entry — localStorage ONLY, sent as X-Operator-Token by
+// tooling that calls the token-gated /api/agent + /api/hl endpoints.
+(function () {
+  const btn = document.getElementById('op-token-btn');
+  if (!btn) return;
+  const sync = () => {
+    btn.textContent = localStorage.getItem('hermes-op-token') ? 'clear token' : 'set token';
+  };
+  sync();
+  btn.addEventListener('click', () => {
+    const current = localStorage.getItem('hermes-op-token') || '';
+    if (current) {
+      if (confirm('Clear operator token from this browser?')) {
+        localStorage.removeItem('hermes-op-token');
+        sync();
+      }
+      return;
+    }
+    const t = prompt('Paste your HERMES_OPERATOR_TOKEN:\n(stored only in this browser via localStorage)');
+    if (t && t.trim()) localStorage.setItem('hermes-op-token', t.trim());
+    sync();
   });
 })();
 

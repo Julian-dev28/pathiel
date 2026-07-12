@@ -3,17 +3,17 @@
 Pages (markup in hermes_trader/templates/*.html, assets vendored in /static):
 
   GET /                          — landing one-pager: how it works, equity +
-                                   today's PnL, live-books table
-  GET /activity                  — live activity feed with book/type filters
+                                   today's PnL, equity curve, live-books table
+  GET /activity                  — the trading-desk journal: tiered flowing
+                                   stream + 6h session strip
   GET /news                      — news-catalyst reads + research news context
-  GET /config                    — live agent-config viewer
-  GET /operator                  — operator console (token-gated APIs)
 
 JSON APIs:
 
   GET /api/dashboard/summary     — hero numbers + status
   GET /api/dashboard/books       — live-books table rows
-  GET /api/dashboard/activity    — classified session-log events (filterable)
+  GET /api/dashboard/activity    — classified session-log events (tiered,
+                                   filterable, incremental via ?since=)
   GET /api/dashboard/news        — news ledger reads, newest first
   GET /api/dashboard/positions   — open positions + DSL tracker state
   GET /api/dashboard/equity-curve?range=24h|7d|30d
@@ -34,6 +34,7 @@ import asyncio
 import json
 import collections
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -565,8 +566,8 @@ _BOOKS: List[tuple] = [
     ("news_catalyst", "news_catalyst",
      "News-volume surge on a coin's headlines — ride the catalyst for a 1-day hold."),
     ("mover_pass", None,
-     "Counterfactual recorder — tracks daily movers the AI passed on, so "
-     "vetoes stay measurable."),
+     "Buy the mover the AI just PASSed — its vetoes measured -4.5%/day "
+     "forfeited."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
@@ -635,14 +636,27 @@ _ACTIVITY_SCAN_CAP = 20_000
 
 
 def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
-    """Map one raw session-log event to a typed activity view model. Pure."""
+    """Map one raw session-log event to a typed activity view model. Pure.
+
+    Every model carries a `tier` (the editorial hierarchy the /activity page
+    renders) and — for tier 3 — a `gkey` the client coalesces on:
+
+      tier 1: full card, always — executes, closes, book opens, actionable
+              research verdicts (LONG/SHORT/CLOSE), errors.
+      tier 2: compact one-liner — research PASS, book cycles with signals,
+              loop start/stop, unknown shapes.
+      tier 3: never an individual row — gate skips group by (coin, reason),
+              scans fold into hourly buckets, quiet book cycles per book,
+              heartbeats resolve client-side (changed → line, steady → run).
+    """
     ev = str(e.get("event") or "?")
     ts = e.get("ts")
 
     if ev == "research":
+        verdict = e.get("verdict")
         return {
             "type": "research", "ts": ts, "coin": e.get("coin"),
-            "verdict": e.get("verdict"), "confidence": e.get("confidence"),
+            "verdict": verdict, "confidence": e.get("confidence"),
             "reasoning": e.get("reasoning"),
             "provider": e.get("ai_brain_provider"),
             "web_search_used": bool(e.get("web_search_used")),
@@ -650,6 +664,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "news_risk": e.get("news_risk"),
             "entry_px": e.get("entry_px"), "stop_px": e.get("stop_px"),
             "tp_px": e.get("tp_px"),
+            "tier": 1 if verdict in ("LONG", "SHORT", "CLOSE") else 2,
         }
 
     if ev == "execute":
@@ -669,6 +684,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "gates": [str(b) for b in (blocked or [])],
             "detail": detail if isinstance(detail, str) else None,
             "regime": e.get("regime"),
+            "tier": 1,
         }
 
     if ev == "dsl_exit":
@@ -684,6 +700,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "spot_pct": e.get("realized_spot_pct", e.get("unrealized_pct")),
             "fill_px": e.get("fill_px"), "entry_px": e.get("entry_px"),
             "executed": bool(e.get("executed")), "source": "dsl",
+            "tier": 1,
         }
 
     if ev == "ai_close":
@@ -694,6 +711,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "pnl_pct": None, "spot_pct": None,
             "fill_px": None, "entry_px": None,
             "executed": bool(e.get("executed")), "source": "ai_close",
+            "tier": 1,
         }
 
     if ev == "book_open":
@@ -701,50 +719,79 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
                  if k not in ("ts", "event", "book", "coin", "side")}
         return {"type": "book", "subtype": "open", "ts": ts,
                 "book": e.get("book"), "coin": e.get("coin"),
-                "side": e.get("side"), "extra": extra}
+                "side": e.get("side"), "extra": extra, "tier": 1}
 
     book = _EVENT_BOOK_ALIASES.get(ev, ev)
     if (book in _KNOWN_BOOK_NAMES or isinstance(e.get("skipped"), dict)
             or "candidates" in e or ("signals" in e and "opened" in e)):
         core = {"ts", "event", "shadow", "signals", "opened", "skipped", "candidates"}
         extra = {k: v for k, v in e.items() if k not in core}
-        return {
+        signals = e.get("signals")
+        # A cycle earns a row only when it produced something: signals, opens,
+        # candidates — or a signal-less shape that still carries content
+        # (xs_rebalance's longs/shorts land in extra with signals=None).
+        meaningful = bool((signals or 0) or (e.get("opened") or 0)
+                          or e.get("candidates") or (signals is None and extra))
+        out = {
             "type": "book", "ts": ts, "book": book,
             "shadow": e.get("shadow"),
-            "signals": e.get("signals"), "opened": e.get("opened"),
+            "signals": signals, "opened": e.get("opened"),
             "skipped": e.get("skipped") or {},
             "candidates": e.get("candidates") or [],
             "extra": extra,
+            "tier": 2 if meaningful else 3,
         }
+        if out["tier"] == 3:
+            out["gkey"] = f"quiet|{book}"
+        return out
 
     if ev == "scan":
         coins = e.get("coin_scores") or e.get("coins") or []
         return {"type": "scan", "ts": ts,
                 "triggers": e.get("triggers", e.get("perceptions", 0)),
-                "coins": coins}
+                "coins": coins,
+                "tier": 3, "gkey": f"scan|{int((ts or 0) // 3_600_000)}"}
 
     if ev in ("ta_skip", "entry_preflight"):
+        reason = e.get("reason") or e.get("signal")
+        # Group key normalizes digits away: "runner_gate_blocked (score=57)"
+        # and "(score=61)" are the SAME editorial fact — without this, one
+        # coin's repeated skips shatter into per-score groups.
+        gkey_reason = re.sub(r"[\d.]+", "", str(reason or ""))
         return {"type": "gate", "ts": ts, "kind": ev, "coin": e.get("coin"),
-                "reason": e.get("reason") or e.get("signal"),
-                "score": e.get("score"), "trigger_score": e.get("trigger_score")}
+                "reason": reason,
+                "score": e.get("score"), "trigger_score": e.get("trigger_score"),
+                "tier": 3, "gkey": f"gate|{e.get('coin')}|{gkey_reason}"}
 
     if ev == "error":
         return {"type": "error", "ts": ts,
                 "scope": e.get("coin") or e.get("scope"),
-                "error": str(e.get("error") or "")[:300]}
+                "error": str(e.get("error") or "")[:300], "tier": 1}
 
     if ev == "loop_heartbeat":
+        # tier 3, no server gkey: the client's state machine renders a line
+        # only when equity moves >$0.05 or the open count changes; unchanged
+        # runs collapse into a "steady" divider.
         return {"type": "heartbeat", "ts": ts,
                 "equity": e.get("equity"), "daily_pnl": e.get("daily_pnl"),
-                "open_positions": e.get("open_positions")}
+                "open_positions": e.get("open_positions"), "tier": 3}
 
     if ev in ("loop_start", "loop_stop"):
-        fields = {k: v for k, v in e.items() if k not in ("ts", "event")}
-        return {"type": "system", "ts": ts, "name": ev, "fields": fields}
+        # ONE line. The raw event embeds the entire agent config — that dump
+        # must never render inline (operator order 2026-07-12), so only the
+        # three facts that matter survive classification.
+        cfg = e.get("config") or {}
+        fields = {k: v for k, v in {
+            "mode": cfg.get("mode"),
+            "scan_interval": e.get("scan_interval"),
+            "min_score": e.get("min_score"),
+        }.items() if v is not None}
+        return {"type": "system", "ts": ts, "name": ev, "fields": fields,
+                "tier": 2}
 
     # Unknown shape → graceful key-value rendering, never raw JSON.
     fields = {k: v for k, v in e.items() if k not in ("ts", "event")}
-    return {"type": "other", "ts": ts, "name": ev, "fields": fields}
+    return {"type": "other", "ts": ts, "name": ev, "fields": fields, "tier": 2}
 
 
 def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
@@ -775,6 +822,53 @@ def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
     return {"events": out,
             "books": sorted(_KNOWN_BOOK_NAMES),
             "types": _ACTIVITY_TYPES}
+
+
+_SESSION_WINDOW_S = 6 * 3600
+
+
+def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
+    """Rolled-up tape stats for the strip pinned above the /activity stream:
+    what happened in the last N hours, at a glance. Pure log walk, no network."""
+    cutoff = int(time.time() * 1000) - window_s * 1000
+    events = _read_log_lines()
+    if len(events) > _ACTIVITY_SCAN_CAP:
+        events = events[-_ACTIVITY_SCAN_CAP:]
+    scans = triggers = researched = opened = closed = blocks = 0
+    realized = 0.0
+    equity = open_positions = None
+    for e in reversed(events):
+        if (e.get("ts") or 0) < cutoff:
+            break
+        ev = e.get("event")
+        if ev == "scan":
+            scans += 1
+            triggers += int(e.get("triggers") or 0)
+        elif ev == "research":
+            researched += 1
+        elif ev == "execute":
+            if e.get("executed"):
+                opened += 1
+            else:
+                blocks += 1
+        elif ev in ("ta_skip", "entry_preflight"):
+            blocks += 1
+        elif ev == "dsl_exit":
+            closed += 1
+            pnl = e.get("realized_pnl_pct")
+            if pnl is None:
+                pnl = e.get("leveraged_pct")
+            if pnl is None:
+                pnl = e.get("unrealized_pct")
+            realized += float(pnl or 0)
+        elif ev == "loop_heartbeat" and equity is None:
+            equity = e.get("equity")
+            open_positions = e.get("open_positions")
+    return {"window_h": window_s // 3600, "since_ts": cutoff,
+            "scans": scans, "candidates": triggers, "researched": researched,
+            "opened": opened, "closed": closed,
+            "realized_pnl_pct": round(realized, 2), "blocks": blocks,
+            "equity": equity, "open_positions": open_positions}
 
 
 # ── news feed ────────────────────────────────────────────────────────────────
@@ -842,338 +936,17 @@ _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 
 
-_CONFIG_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>hermes-trader · config</title>
-<script src="/static/tailwind.js"></script>
-<style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
-  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
-  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
-  /* Config rows render as a two-col grid: pixel-font key on the left,
-     value (color-coded by type) on the right. */
-  .cfg-grid{display:grid;grid-template-columns:minmax(220px,32%) 1fr;gap:6px 16px;align-items:baseline}
-  .cfg-key{font-family:'Press Start 2P',monospace;font-size:9px;color:#34d399;text-shadow:0 0 4px rgba(52,211,153,0.45);padding:6px 0;letter-spacing:.06em;word-break:break-all}
-  .cfg-val{font-family:ui-monospace,monospace;font-size:13px;padding:6px 0;border-left:2px solid #1f2937;padding-left:14px;word-break:break-word}
-  .cfg-val.num{color:#a7f3d0}
-  .cfg-val.bool{color:#fde68a}
-  .cfg-val.str{color:#bae6fd}
-  .cfg-val.null{color:#71717a;font-style:italic}
-  .cfg-val.obj{color:#f9a8d4}
-  .cfg-val pre{margin:0;font-family:ui-monospace,monospace;font-size:11px;white-space:pre-wrap;color:#e5e5e5;background:#020a05;border:1px solid #064e3b;padding:6px 8px;max-width:100%;overflow-x:auto}
-  /* Section break inside the cfg grid */
-  .cfg-section-head{grid-column:1/-1;font-family:'Press Start 2P',monospace;font-size:8px;color:#71717a;letter-spacing:.2em;padding:12px 0 4px;border-top:1px solid #1f2937;margin-top:8px}
-  .cfg-section-head:first-child{border-top:0;margin-top:0;padding-top:4px}
-  /* Tip pill at the bottom */
-  .cfg-tip{font-family:'Press Start 2P',monospace;font-size:9px;color:#fbbf24;letter-spacing:.06em;text-align:center;padding:8px;margin-top:14px;border:2px dashed #78350f;background:#1f1300}
-  /* Mode pill */
-  .cfg-mode{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;font-family:'Press Start 2P',monospace;font-size:10px;border:2px solid currentColor;letter-spacing:.1em}
-  .cfg-mode.LIVE{background:#064e3b;color:#6ee7b7}
-  .cfg-mode.OFF{background:#450a0a;color:#fca5a5}
-  /* Primary navbar — must match dashboard.html's nav-link rules */
-  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-</style>
-</head>
-<body class="min-h-screen">
-<div class="max-w-[1100px] mx-auto px-6 py-6">
-
-  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
-    <div class="flex items-center gap-3">
-      <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER · CONFIG</span>
-    </div>
-  </header>
-
-  <nav class="flex items-center gap-2 mb-6 flex-wrap" id="hermes-nav">
-    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
-    <a href="/activity" data-nav="/activity" class="nav-link pixel">ACTIVITY</a>
-    <a href="/news" data-nav="/news" class="nav-link pixel">NEWS</a>
-    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
-  </nav>
-
-  <section class="bg-zinc-900 p-6 mb-6">
-    <div class="flex items-center justify-between mb-4">
-      <span class="pixel text-[10px] text-zinc-500">.agent-config.json (live, hot-reloaded every cycle)</span>
-      <span id="cfg-mode-pill" class="cfg-mode OFF">—</span>
-    </div>
-    <div id="cfg-grid" class="cfg-grid">
-      <div class="cfg-section-head">loading…</div>
-    </div>
-    <div class="cfg-tip">
-      to change a value: edit .agent-config.json (hot-reloaded every cycle) or POST the operator terminal API: `set &lt;key&gt; &lt;value&gt;`
-    </div>
-  </section>
-
-  <footer class="text-[10px] text-zinc-600 mt-6 text-center pixel">
-    one wallet · live · not financial advice
-  </footer>
-</div>
-
-<script>
-// Group the live agent config into named sections for readability. Anything
-// not in the explicit grouping falls into "other" so future config keys
-// still appear without code changes.
-const SECTIONS = [
-  { label: 'mode + sizing', keys: ['mode','equity_fraction_per_trade','leverage','max_concurrent','max_trade_notional_usd','asset_notional_multiplier','max_total_notional_pct'] },
-  { label: 'safety',        keys: ['max_daily_loss_usd','cooldown_min','min_ai_confidence','counter_regime_min_conf','max_crypto_long_correlated'] },
-  { label: 'liquidity',     keys: ['min_market_volume_usd','min_hip3_volume_usd'] },
-  { label: 'filters',       keys: ['coin_allowlist','coin_blocklist'] },
-  { label: 'markets',       keys: ['enable_crypto','enable_hip3'] },
-  { label: 'dsl exit',      keys: ['dsl_exit'] },
-];
-const SECTION_KEYS = new Set(SECTIONS.flatMap(s => s.keys));
-
-function classifyVal(v) {
-  if (v === null || v === undefined) return 'null';
-  const t = typeof v;
-  if (t === 'number') return 'num';
-  if (t === 'boolean') return 'bool';
-  if (t === 'string') return 'str';
-  return 'obj';
-}
-function formatVal(v) {
-  if (v === null || v === undefined) return 'null';
-  if (typeof v === 'object') return `<pre>${JSON.stringify(v, null, 2)}</pre>`;
-  if (typeof v === 'string') return `"${v}"`;
-  return String(v);
-}
-
-async function loadConfig() {
-  try {
-    const r = await fetch('/api/dashboard/config');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const cfg = await r.json();
-    const grid = document.getElementById('cfg-grid');
-    grid.innerHTML = '';
-    // Mode pill at the top
-    const mode = cfg.mode || 'OFF';
-    const pill = document.getElementById('cfg-mode-pill');
-    pill.textContent = '◆ ' + mode;
-    pill.className = 'cfg-mode ' + (mode === 'LIVE' ? 'LIVE' : 'OFF');
-    // Render section by section
-    const renderSection = (label, keys) => {
-      const present = keys.filter(k => k in cfg);
-      if (!present.length) return;
-      const head = document.createElement('div');
-      head.className = 'cfg-section-head';
-      head.textContent = '── ' + label + ' ──';
-      grid.appendChild(head);
-      for (const k of present) {
-        const keyEl = document.createElement('div'); keyEl.className = 'cfg-key'; keyEl.textContent = k;
-        const valEl = document.createElement('div'); valEl.className = 'cfg-val ' + classifyVal(cfg[k]);
-        valEl.innerHTML = formatVal(cfg[k]);
-        grid.appendChild(keyEl); grid.appendChild(valEl);
-      }
-    };
-    for (const s of SECTIONS) renderSection(s.label, s.keys);
-    // "other" — anything not in the grouping
-    const otherKeys = Object.keys(cfg).filter(k => !SECTION_KEYS.has(k));
-    if (otherKeys.length) renderSection('other', otherKeys);
-  } catch (e) {
-    document.getElementById('cfg-grid').innerHTML =
-      '<div class="cfg-section-head">load failed: ' + (e.message || e) + '</div>';
-  }
-}
-
-loadConfig();
-setInterval(loadConfig, 5000); // hot-reloads alongside the trading loop
-
-// Highlight the active page. Token stays in localStorage only — never
-// appended to nav URLs (audit 2026-07-10: ?token= leaked into history).
-(function(){
-  const here = window.location.pathname.replace(/\\/$/, '') || '/';
-  document.querySelectorAll('a[data-nav]').forEach(a => {
-    if (a.dataset.nav === here) a.classList.add('nav-active');
-  });
-})();
-</script>
-</body>
-</html>
-"""
-
-
-_OPERATOR_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>hermes-trader · operator</title>
-<script src="/static/tailwind.js"></script>
-<style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
-  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
-  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
-  .btn{padding:6px 12px;border-radius:6px;background:#27272a;color:#e5e5e5;font-size:12px}
-  .btn:hover{background:#3f3f46}
-  .btn.danger{background:#7f1d1d;color:#fecaca}
-  .btn.danger:hover{background:#991b1b}
-  pre{font-size:11px;line-height:1.5}
-  /* Primary navbar (mirrors / and /config) */
-  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-  .op-banner{font-family:'Press Start 2P',monospace;font-size:9px;color:#fbbf24;text-align:center;padding:6px;border:2px dashed #78350f;background:#1f1300;margin-bottom:14px;letter-spacing:.06em}
-  .op-banner.op-ok{color:#6ee7b7;border-color:#047857;background:#022c1e}
-</style>
-</head>
-<body class="min-h-screen">
-<div class="max-w-[1100px] mx-auto px-6 py-6">
-
-  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
-    <div class="flex items-center gap-3">
-      <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER · OPERATOR</span>
-    </div>
-    <button id="op-token-btn" class="btn" title="paste/clear HERMES_OPERATOR_TOKEN (localStorage only)">set token</button>
-  </header>
-
-  <nav class="flex items-center gap-2 mb-4 flex-wrap" id="hermes-nav">
-    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
-    <a href="/activity" data-nav="/activity" class="nav-link pixel">ACTIVITY</a>
-    <a href="/news" data-nav="/news" class="nav-link pixel">NEWS</a>
-    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
-  </nav>
-
-  <div id="op-banner" class="op-banner">checking operator token…</div>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="text-xs text-zinc-500 mb-2">positions — force close</div>
-    <div id="positions" class="text-sm">loading…</div>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="text-xs text-zinc-500 mb-2">DSL trackers (in-memory + persisted)</div>
-    <pre id="trackers" class="text-zinc-300 overflow-x-auto">loading…</pre>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="text-xs text-zinc-500 mb-2">danger zone</div>
-    <button class="btn danger" onclick="setMode('OFF')">set mode OFF (halt new trades)</button>
-    <button class="btn" onclick="setMode('LIVE')">set mode LIVE</button>
-  </section>
-</div>
-
-<script>
-// Token resolution mirrors the public dashboard: ?token= in URL wins,
-// then localStorage `hermes-op-token`, else empty. If a fresh URL token
-// is present, persist it so navigating between pages keeps the session.
-const params = new URLSearchParams(location.search);
-const tokenFromUrl = params.get('token') || '';
-const tokenFromStore = localStorage.getItem('hermes-op-token') || '';
-const token = tokenFromUrl || tokenFromStore;
-if (tokenFromUrl) localStorage.setItem('hermes-op-token', tokenFromUrl);
-const auth = () => ({'X-Operator-Token': token || ''});
-
-function setBanner(msg, ok) {
-  const el = document.getElementById('op-banner');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = 'op-banner' + (ok ? ' op-ok' : '');
-}
-
-// Highlight the active page in the navbar. Token stays in localStorage only —
-// never appended to nav URLs (audit 2026-07-10: ?token= leaked into history).
-(function(){
-  const here = window.location.pathname.replace(/\\/$/, '') || '/';
-  document.querySelectorAll('a[data-nav]').forEach(a => {
-    if (a.dataset.nav === here) a.classList.add('nav-active');
-  });
-})();
-
-if (!token) {
-  setBanner('NO TOKEN · click "set token" to paste HERMES_OPERATOR_TOKEN', false);
-} else {
-  setBanner('operator session ACTIVE · token loaded', true);
-}
-
-// Token entry lives here now (the landing page no longer has operator chrome).
-// Stored ONLY in this browser's localStorage; sent as X-Operator-Token.
-document.getElementById('op-token-btn')?.addEventListener('click', () => {
-  const current = localStorage.getItem('hermes-op-token') || '';
-  if (current) {
-    if (confirm('Clear operator token and revert to read-only?')) {
-      localStorage.removeItem('hermes-op-token');
-      location.reload();
-    }
-    return;
-  }
-  const t = prompt('Paste your HERMES_OPERATOR_TOKEN:\\n(stored only in this browser via localStorage)');
-  if (!t || !t.trim()) return;
-  localStorage.setItem('hermes-op-token', t.trim());
-  location.reload();
-});
-
-// Config dump moved to its own /config page (linked in the navbar above) —
-// the operator console focuses on actions (close, set mode) and live state.
-async function loadTrackers() {
-  if (!token) return;
-  const r = await fetch('/api/dashboard/operator/trackers', {headers: auth()});
-  if (r.status === 401) { setBanner('TOKEN REJECTED by server (401) · re-enter via 🔒 op', false); return; }
-  const data = await r.json();
-  const el = document.getElementById('trackers');
-  if (!Array.isArray(data) || data.length === 0) {
-    el.textContent = 'no active DSL trackers — nothing currently being managed.\n(this is normal when 0 positions are open.)';
-    el.style.color = '#71717a';
-    el.style.fontStyle = 'italic';
-  } else {
-    el.textContent = JSON.stringify(data, null, 2);
-    el.style.color = '';
-    el.style.fontStyle = '';
-  }
-}
-async function loadPositions() {
-  const r = await fetch('/api/dashboard/positions');
-  const ps = await r.json();
-  const el = document.getElementById('positions');
-  if (!ps.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none</div>'; return; }
-  el.innerHTML = ps.map(p => `<div class="flex items-center justify-between py-1 border-b border-zinc-800 last:border-0">
-    <span><b>${p.coin}</b> ${p.side} ${p.size.toFixed(4)} @ ${p.entry_px.toFixed(2)} (${p.unrealized_pct >= 0 ? '+' : ''}${p.unrealized_pct.toFixed(2)}%)</span>
-    <button class="btn danger" onclick="closeCoin('${p.coin}')">close</button>
-  </div>`).join('');
-}
-async function closeCoin(coin) {
-  if (!confirm('Force close ' + coin + '?')) return;
-  const r = await fetch('/api/dashboard/operator/close', {
-    method: 'POST', headers: {...auth(), 'Content-Type': 'application/json'},
-    body: JSON.stringify({coin})
-  });
-  alert(JSON.stringify(await r.json(), null, 2));
-  loadPositions();
-}
-async function setMode(mode) {
-  if (mode === 'LIVE' && !confirm('Switch to LIVE mode?')) return;
-  const r = await fetch('/api/dashboard/operator/mode', {
-    method: 'POST', headers: {...auth(), 'Content-Type': 'application/json'},
-    body: JSON.stringify({mode})
-  });
-  alert('mode → ' + (await r.json()).mode);
-}
-
-loadTrackers(); loadPositions();
-setInterval(loadTrackers, 10000);
-setInterval(loadPositions, 10000);
-</script>
-</body>
-</html>
-"""
-
-
 # ── route registration ──────────────────────────────────────────────────────
 
 
 def register_routes(app: FastAPI) -> None:
-    """Mount dashboard + SSE + operator routes onto an existing FastAPI app."""
+    """Mount the dashboard pages, JSON APIs, and SSE feed onto an existing
+    FastAPI app. Pages: / (landing), /activity, /news. The former /config and
+    /operator pages were deleted by operator order 2026-07-12 — those paths
+    404 by design; token-gated actions live in server.py's /api/agent + /api/hl
+    endpoints, with the token entered via the landing footer (localStorage)."""
 
-    # no-store on both dashboards so a server restart isn't masked by a cached
+    # no-store on the pages so a server restart isn't masked by a cached
     # HTML shell that pre-dates the new JS. The JSON endpoints below are fine
     # to cache for their poll interval.
     _NO_CACHE_HEADERS = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
@@ -1181,19 +954,6 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/", response_class=HTMLResponse)
     async def public_dashboard() -> HTMLResponse:
         return HTMLResponse(content=_PUBLIC_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/operator", response_class=HTMLResponse)
-    async def operator_console() -> HTMLResponse:
-        # No token gate on the HTML itself — the page is a shell that calls
-        # token-gated APIs. Without a valid ?token=… the AJAX calls 401 and the
-        # page shows "loading…" with no data. Cheap defense, no auth library.
-        return HTMLResponse(content=_OPERATOR_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/config", response_class=HTMLResponse)
-    async def config_page() -> HTMLResponse:
-        """Live agent-config viewer. Read-only — mutations happen via the
-        Cmd+K terminal's `set <key> <value>` command."""
-        return HTMLResponse(content=_CONFIG_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/activity", response_class=HTMLResponse)
     async def activity_page() -> HTMLResponse:
@@ -1205,12 +965,6 @@ def register_routes(app: FastAPI) -> None:
     async def news_page() -> HTMLResponse:
         """News-catalyst reads (shadow ledger) + research events with news context."""
         return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
-
-    @app.get("/api/dashboard/config")
-    async def dashboard_config() -> JSONResponse:
-        """Read-only JSON dump of `.agent-config.json` for the /config page.
-        Hot-reloads alongside the trading loop (no caching)."""
-        return JSONResponse(read_agent_config())
 
     @app.get("/api/dashboard/books")
     async def dashboard_books() -> JSONResponse:
@@ -1224,16 +978,19 @@ def register_routes(app: FastAPI) -> None:
         etype: str = Query("", alias="type", max_length=32),
         since: int = Query(0, ge=0),
     ) -> JSONResponse:
+        session = _ttl_cached("session-strip", 30.0, _session_strip)
         if since:
             # Incremental poll: the reversed walk breaks at the first event
             # <= since, so cost is O(new events). NOT TTL-cached on purpose —
             # every poll carries a fresh `since`, so caching would only grow
             # _TTL_CACHE with dead one-shot keys.
-            return JSONResponse(_activity_payload(limit, book, etype, since))
-        # Full-window load: TTL (8s) >= the page's poll interval (8s).
-        return JSONResponse(_ttl_cached(
-            f"activity:{limit}:{book}:{etype}", 8.0,
-            lambda: _activity_payload(limit, book, etype)))
+            payload = _activity_payload(limit, book, etype, since)
+        else:
+            # Full-window load: TTL (8s) >= the page's poll interval (8s).
+            payload = _ttl_cached(
+                f"activity:{limit}:{book}:{etype}", 8.0,
+                lambda: _activity_payload(limit, book, etype))
+        return JSONResponse({**payload, "session": session})
 
     @app.get("/api/dashboard/news")
     async def dashboard_news(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
@@ -1270,416 +1027,3 @@ def register_routes(app: FastAPI) -> None:
                 "Connection": "keep-alive",
             },
         )
-
-    # ── operator (token-gated) ──
-
-    @app.get("/api/dashboard/operator/config")
-    async def operator_config(request: Request) -> JSONResponse:
-        _require_operator(request)
-        return JSONResponse(read_agent_config())
-
-    @app.get("/api/dashboard/operator/trackers")
-    async def operator_trackers(request: Request) -> JSONResponse:
-        _require_operator(request)
-        dsl_exit.load_state(force=True)
-        out = []
-        for key, t in dsl_exit._active_positions.items():
-            out.append({
-                "key": key, "coin": t.coin, "side": t.side,
-                "entry_px": t.entry_px, "peak_px": t.peak_px,
-                "floor_px": t._last_floor, "entry_time": t.entry_time,
-                "consecutive_breaches": t.consecutive_breaches,
-            })
-        return JSONResponse(out)
-
-    @app.post("/api/dashboard/operator/close")
-    async def operator_close(request: Request) -> JSONResponse:
-        _require_operator(request)
-        body = await request.json()
-        coin = (body.get("coin") or "").upper()
-        if not coin:
-            raise HTTPException(400, "coin required")
-        from hermes_trader.agents.executor import close_position_market
-        return JSONResponse(close_position_market(coin))
-
-    @app.post("/api/dashboard/operator/mode")
-    async def operator_mode(request: Request) -> JSONResponse:
-        _require_operator(request)
-        from hermes_trader.agents.config_store import write_agent_config
-        body = await request.json()
-        mode = (body.get("mode") or "").upper()
-        if mode not in {"OFF", "LIVE"}:
-            raise HTTPException(400, "mode must be OFF or LIVE")
-        cfg = read_agent_config()
-        cfg["mode"] = mode
-        write_agent_config(cfg)
-        return JSONResponse({"mode": mode})
-
-    @app.post("/api/dashboard/operator/terminal")
-    async def operator_terminal(request: Request) -> JSONResponse:
-        """Hermes command-center terminal — routes a free-form command line.
-
-        Built-in commands resolve locally (no LLM call): `status`, `pause`,
-        `resume`, `close <coin>`, `regime`, `config`, `help`. Anything else
-        falls through to Nous Hermes via OpenRouter, primed with a compact
-        snapshot of recent agent state so the chat is grounded in the bot's
-        actual world. Requires the operator token like every operator route.
-        """
-        _require_operator(request)
-        body = await request.json()
-        cmd = (body.get("command") or "").strip()
-        if not cmd:
-            return JSONResponse({"response": "", "kind": "noop"})
-        parts = cmd.split()
-        verb = parts[0].lower()
-
-        # ── built-in commands ─────────────────────────────────────────────
-        if verb in ("help", "?"):
-            return JSONResponse({"response": (
-                "commands:\n"
-                "  status                — equity, daily PnL, open, tick, scan triggers\n"
-                "  positions             — live positions w/ uPnL (winners + losers grouped)\n"
-                "  trades [n]            — last n real fills from memory (default 10)\n"
-                "  config                — dump current .agent-config.json\n"
-                "  dump                  — full state (config + positions + last events)\n"
-                "  regime                — cached regime per proxy\n"
-                "  pause / resume        — flip mode OFF/LIVE\n"
-                "  close <coin>          — market-close a single position\n"
-                "  close all             — market-close every open position\n"
-                "  close losing          — market-close every position with uPnL < 0\n"
-                "  close winning         — market-close every position with uPnL > 0\n"
-                "  set <key> <value>     — update .agent-config.json (int/float/bool/str inferred)\n"
-                "  kill                  — pause trading then close all (panic button)\n"
-                "  help                  — this list. anything else → ask the chat model"
-            ), "kind": "help"})
-
-        if verb == "status":
-            try:
-                events = session_log.tail(50) or []
-                last_hb = next((e for e in reversed(events) if e.get("event") == "loop_heartbeat"), {})
-                last_scan = next((e for e in reversed(events) if e.get("event") == "scan"), {})
-                age_s = max(0, int(time.time() - (last_hb.get("ts", 0) / 1000))) if last_hb else None
-                msg = (f"equity ${last_hb.get('equity', 0):.2f}  "
-                       f"daily {last_hb.get('daily_pnl', 0):+.2f}  "
-                       f"open {last_hb.get('open_positions', 0)}  "
-                       f"tick {age_s}s ago  "
-                       f"last scan: {last_scan.get('triggers', 0)} triggers")
-                return JSONResponse({"response": msg, "kind": "status"})
-            except Exception as e:
-                return JSONResponse({"response": f"status read failed: {e}", "kind": "error"})
-
-        if verb in ("pause", "resume"):
-            new_mode = "OFF" if verb == "pause" else "LIVE"
-            from hermes_trader.agents.config_store import write_agent_config
-            cfg = read_agent_config()
-            old = cfg.get("mode", "?")
-            cfg["mode"] = new_mode
-            write_agent_config(cfg)
-            return JSONResponse({"response": f"mode {old} → {new_mode}", "kind": "action"})
-
-        # ── close: single coin, all, losing, or winning ─────────────────
-        if verb == "close" and len(parts) >= 2:
-            from hermes_trader.agents.executor import close_position_market
-            target = parts[1].lower()
-            if target in ("all", "losing", "winning"):
-                # Bulk close — iterate live positions, filter, close each.
-                try:
-                    user = resolve_user_address()
-                    # include_hip3=True so `close all` also closes xyz:/vntl:/...
-                    # positions, not just main-dex.
-                    state = fetch_account_state(user, include_hip3=True) if user else {}
-                    open_pos = [
-                        {
-                            "coin": p.get("position", {}).get("coin"),
-                            "szi": float(p.get("position", {}).get("szi", "0") or 0),
-                            "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0),
-                        }
-                        for p in state.get("asset_positions", []) or []
-                        if float(p.get("position", {}).get("szi", "0") or 0) != 0
-                    ]
-                except Exception as e:
-                    return JSONResponse({"response": f"could not read live positions: {e}", "kind": "error"})
-
-                if target == "losing":
-                    targets = [p for p in open_pos if p["uPnL"] < 0]
-                elif target == "winning":
-                    targets = [p for p in open_pos if p["uPnL"] > 0]
-                else:  # all
-                    targets = open_pos
-
-                if not targets:
-                    return JSONResponse({"response": f"no positions matched `close {target}`", "kind": "info"})
-
-                results = []
-                for p in targets:
-                    coin = p["coin"]
-                    try:
-                        r = close_position_market(coin)
-                        ok = bool(r.get("ok") or r.get("executed"))
-                        results.append(f"  {coin:<14} {('✓' if ok else '✗')} uPnL={p['uPnL']:+.2f}")
-                    except Exception as e:
-                        results.append(f"  {coin:<14} ✗ {e}")
-                head = f"closed {len(targets)} position(s) [{target}]:\n"
-                return JSONResponse({"response": head + "\n".join(results), "kind": "action"})
-
-            # Single-coin close (preserve original behavior)
-            coin = parts[1] if ":" in parts[1] else parts[1].upper()
-            result = close_position_market(coin)
-            return JSONResponse({"response": f"close {coin}: {result}", "kind": "action"})
-
-        # ── positions: live list grouped by winners / losers ───────────
-        if verb == "positions":
-            try:
-                rows = _positions_payload()
-                if not rows:
-                    return JSONResponse({"response": "no open positions", "kind": "info"})
-                rows.sort(key=lambda r: -float(r.get("unrealized_pnl_usd") or 0))
-                lines = [f"  {r['coin']:<14} {r['side']:<5} size={r['size']:>9.4f} "
-                         f"entry={r['entry_px']:<10} uPnL={float(r.get('unrealized_pnl_usd') or 0):+.2f}"
-                         for r in rows]
-                total = sum(float(r.get("unrealized_pnl_usd") or 0) for r in rows)
-                head = f"{len(rows)} open · total uPnL ${total:+.2f}\n"
-                return JSONResponse({"response": head + "\n".join(lines), "kind": "status"})
-            except Exception as e:
-                return JSONResponse({"response": f"positions read failed: {e}", "kind": "error"})
-
-        # ── trades [n]: last n real fills from memory ──────────────────
-        if verb == "trades":
-            try:
-                from hermes_trader.agents.memory import memory as _mem
-                _mem.load()
-                n = 10
-                if len(parts) >= 2:
-                    try: n = max(1, min(50, int(parts[1])))
-                    except ValueError: pass
-                real = [t for t in (_mem.get_recent_trades(50) or []) if float(t.get("size_usd") or 0) > 0]
-                last_n = real[-n:]
-                if not last_n:
-                    return JSONResponse({"response": "no real trades in memory yet", "kind": "info"})
-                from datetime import datetime
-                lines = []
-                for t in last_n:
-                    ts = datetime.fromtimestamp(t["executed_at"]/1000).strftime("%m-%d %H:%M:%S")
-                    lines.append(f"  {ts}  {t.get('coin'):<14} {t.get('side','?'):<5} "
-                                 f"entry={t.get('entry_px',0):<10} size=${float(t.get('size_usd') or 0):.2f}")
-                return JSONResponse({"response": f"last {len(last_n)} fills:\n" + "\n".join(lines), "kind": "info"})
-            except Exception as e:
-                return JSONResponse({"response": f"trades read failed: {e}", "kind": "error"})
-
-        # ── set <key> <value>: update agent config (type-inferred) ─────
-        if verb == "set" and len(parts) >= 3:
-            from hermes_trader.agents.config_store import write_agent_config
-            key = parts[1]
-            raw = " ".join(parts[2:]).strip()
-            # Type coercion: int, float, bool, json, else string.
-            def _coerce(s: str):
-                if s.lower() in ("true", "false"):
-                    return s.lower() == "true"
-                if s.lower() in ("null", "none"):
-                    return None
-                try: return int(s)
-                except ValueError: pass
-                try: return float(s)
-                except ValueError: pass
-                if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
-                    try: return json.loads(s)
-                    except Exception: pass
-                return s
-            new_val = _coerce(raw)
-            cfg = read_agent_config()
-            old_val = cfg.get(key, "<unset>")
-            cfg[key] = new_val
-            write_agent_config(cfg)
-            return JSONResponse({"response": f"config[{key}]: {old_val} → {new_val}  (type={type(new_val).__name__})",
-                                  "kind": "action"})
-
-        # ── kill: pause + close all (panic button) ─────────────────────
-        if verb == "kill":
-            from hermes_trader.agents.config_store import write_agent_config
-            from hermes_trader.agents.executor import close_position_market
-            cfg = read_agent_config()
-            cfg["mode"] = "OFF"
-            write_agent_config(cfg)
-            try:
-                user = resolve_user_address()
-                state = fetch_account_state(user, include_hip3=True) if user else {}
-                open_coins = [
-                    p["position"]["coin"]
-                    for p in state.get("asset_positions", []) or []
-                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
-                ]
-            except Exception as e:
-                return JSONResponse({"response": f"mode → OFF, but position-list fetch failed: {e}", "kind": "error"})
-            closed = []
-            for c in open_coins:
-                try:
-                    r = close_position_market(c)
-                    closed.append(f"  {c}: {'✓' if (r.get('ok') or r.get('executed')) else '✗'}")
-                except Exception as e:
-                    closed.append(f"  {c}: ✗ {e}")
-            head = f"KILL · mode → OFF · closed {len(open_coins)} position(s):\n"
-            return JSONResponse({"response": head + ("\n".join(closed) if closed else "  (no positions to close)"),
-                                  "kind": "action"})
-
-        # ── dump: full state snapshot (config + positions + last events) ─
-        if verb == "dump":
-            try:
-                user = resolve_user_address()
-                state = fetch_account_state(user, include_hip3=True) if user else {}
-                events = session_log.tail(10) or []
-                positions = [
-                    {"coin": p.get("position", {}).get("coin"),
-                     "szi": float(p.get("position", {}).get("szi", "0") or 0),
-                     "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0)}
-                    for p in state.get("asset_positions", []) or []
-                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
-                ]
-                snap = {
-                    "config": read_agent_config(),
-                    "equity": float(state.get("equity", 0) or 0),
-                    "open_positions": positions,
-                    "recent_events": [{k: v for k, v in e.items() if k != "ts"} for e in events],
-                }
-                return JSONResponse({"response": json.dumps(snap, indent=2, default=str), "kind": "info"})
-            except Exception as e:
-                return JSONResponse({"response": f"dump failed: {e}", "kind": "error"})
-
-        if verb == "regime":
-            try:
-                from hermes_trader.agents.market_regime import regime_snapshot
-                snap = regime_snapshot()
-                lines = [f"  {p}: {info.get('regime', '?')}  ({int(info.get('age_s', 0))}s old)"
-                         for p, info in snap.items()]
-                return JSONResponse({"response": "regime snapshot:\n" + "\n".join(lines) if lines else "no cached regimes yet",
-                                      "kind": "info"})
-            except Exception as e:
-                return JSONResponse({"response": f"regime fetch failed: {e}", "kind": "error"})
-
-        if verb == "config":
-            cfg = read_agent_config()
-            return JSONResponse({"response": json.dumps(cfg, indent=2), "kind": "info"})
-
-        # ── LLM fallback (Nous Hermes via OpenRouter) ─────────────────────
-        try:
-            import httpx
-            key = os.environ.get("OPENROUTER_API_KEY", "")
-            if not key:
-                return JSONResponse({"response": "Hermes chat unavailable: OPENROUTER_API_KEY not set", "kind": "error"})
-
-            # Real trades come from memory (the 100-entry trade ring buffer);
-            # the feed supplies recent DSL exits + skips so "why did X close"
-            # questions have context.
-            from hermes_trader.agents.memory import memory as _mem
-            _mem.load()
-            events = session_log.tail(80) or []
-            last_hb = next((e for e in reversed(events) if e.get("event") == "loop_heartbeat"), {})
-
-            # Last 8 executed trades (size_usd > 0 means it actually placed)
-            mem_trades = _mem.get_recent_trades(50) or []
-            real_trades = [t for t in mem_trades if float(t.get("size_usd") or 0) > 0][-8:]
-
-            # Open positions from the live exchange state (already maintained
-            # by the heartbeat sync); fall back to memory if heartbeat is stale.
-            try:
-                user = resolve_user_address()
-                state = fetch_account_state(user, include_hip3=True) if user else {}
-                open_pos = [
-                    {
-                        "coin": p.get("position", {}).get("coin"),
-                        "side": "long" if float(p.get("position", {}).get("szi", "0") or 0) > 0 else "short",
-                        "szi": float(p.get("position", {}).get("szi", "0") or 0),
-                        "entry": float(p.get("position", {}).get("entryPx", "0") or 0),
-                        "uPnL": float(p.get("position", {}).get("unrealizedPnl", "0") or 0),
-                    }
-                    for p in state.get("asset_positions", []) or []
-                    if float(p.get("position", {}).get("szi", "0") or 0) != 0
-                ]
-            except Exception:
-                open_pos = []
-
-            recent_dsl_exits = [e for e in events if e.get("event") == "dsl_exit"][-5:]
-            recent_ta_skips = [e for e in events if e.get("event") == "ta_skip"][-5:]
-            recent_entry_preflights = [e for e in events if e.get("event") == "entry_preflight"][-5:]
-            recent_research = [e for e in events if e.get("event") == "research"][-5:]
-
-            ctx = {
-                "equity": last_hb.get("equity"),
-                "daily_pnl": last_hb.get("daily_pnl"),
-                "open_position_count": last_hb.get("open_positions"),
-                "config_snippet": last_hb.get("config", {}),
-                "open_positions": open_pos[:20],
-                "recent_trades": [
-                    {
-                        "coin": t.get("coin"),
-                        "side": t.get("side"),
-                        "entry_px": t.get("entry_px"),
-                        "size_usd": t.get("size_usd"),
-                        "executed_at": t.get("executed_at"),
-                    } for t in real_trades
-                ],
-                "recent_dsl_exits": [
-                    {"coin": e.get("coin"), "reason": e.get("reason"),
-                     "pnl_pct": e.get("realized_pnl_pct") or e.get("unrealized_pct"),
-                     "ts": e.get("ts")}
-                    for e in recent_dsl_exits
-                ],
-                "recent_ta_skips": [
-                    {"coin": e.get("coin"), "signal": e.get("signal"), "score": e.get("score"), "ts": e.get("ts")}
-                    for e in recent_ta_skips
-                ],
-                "recent_entry_preflights": [
-                    {"coin": e.get("coin"), "reason": e.get("reason"), "score": e.get("score"), "ts": e.get("ts")}
-                    for e in recent_entry_preflights
-                ],
-                "recent_research_verdicts": [
-                    {"coin": e.get("coin"), "verdict": e.get("verdict"),
-                     "confidence": e.get("confidence"),
-                     "reasoning": (e.get("reasoning") or "")[:160], "ts": e.get("ts")}
-                    for e in recent_research
-                ],
-            }
-            system_msg = (
-                "You are Hermes, the autonomous trading agent's voice. You're embedded in "
-                "a Tamagotchi-style dashboard. Be concise (2-4 sentences max), specific, and "
-                "operator-grade — no hedging fluff. Answer using ONLY the LIVE STATE below.\n\n"
-                "Field map:\n"
-                "  • open_positions = live exchange state (the source of truth for what's open)\n"
-                "  • recent_trades = last 8 actually-filled trades from memory (with size_usd > 0)\n"
-                "  • recent_dsl_exits = positions the DSL exit engine closed (and why)\n"
-                "  • recent_research_verdicts = analysis results that fed execution decisions\n"
-                "  • recent_ta_skips = signals the TA filter rejected before paid AI research\n"
-                "  • recent_entry_preflights = deterministic live gates that skipped paid AI research\n\n"
-                "Rules: if asked about \"the last trade\", look at recent_trades[-1]. If asked "
-                "\"why X\", check recent_research_verdicts for the reasoning. If asked why a "
-                "position closed, check recent_dsl_exits. NEVER predict future prices.\n\n"
-                f"LIVE STATE: {json.dumps(ctx, default=str)}"
-            )
-            # Model is env-overridable so the operator can swap without a
-            # code change. Default is xAI Grok 4.3 — fast, strong on
-            # numeric/financial reasoning, and the operator picked it.
-            # Override with HERMES_CHAT_MODEL=<openrouter-slug> in .env.local.
-            # Catalog: https://openrouter.ai/models
-            chat_model = os.environ.get("HERMES_CHAT_MODEL", "x-ai/grok-4.3")
-            async def _call():
-                async with httpx.AsyncClient(timeout=20.0) as client:
-                    r = await client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                        json={
-                            "model": chat_model,
-                            "messages": [
-                                {"role": "system", "content": system_msg},
-                                {"role": "user", "content": cmd},
-                            ],
-                            "max_tokens": 240,
-                            "temperature": 0.6,
-                        },
-                    )
-                    r.raise_for_status()
-                    return r.json()
-            # We're inside FastAPI's event loop here, so just await directly.
-            data = await _call()
-            content = data["choices"][0]["message"]["content"].strip()
-            return JSONResponse({"response": content, "kind": "chat", "model": chat_model})
-        except Exception as e:
-            return JSONResponse({"response": f"chat error: {e}", "kind": "error"})

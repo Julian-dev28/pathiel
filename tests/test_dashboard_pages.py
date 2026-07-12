@@ -1,13 +1,16 @@
-"""Web UI rebuild (2026-07-12): landing one-pager, /activity feed, /news page.
+"""Web UI rebuild (2026-07-12): landing one-pager, /activity journal, /news page.
 
 Gate tests — fixture log lines + ledger rows only, no network, no live state.
-Covers: event classification (research/execute/close/book/unknown), activity
-filters, the books table payload, the news payload, page rendering (exact
-how-it-works copy, terminal/operator chrome removed, self-contained assets).
+Covers: event classification + the T1/T2/T3 editorial hierarchy (cards /
+one-liners / coalesced groups), the 6h session strip, activity filters, the
+books table payload, the news payload, page rendering (exact how-it-works
+copy, self-contained assets), and the deleted /config + /operator pages (404
+is the expected behavior).
 """
 
 import json
 import os
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -158,6 +161,97 @@ def test_activity_filters_and_limit(monkeypatch):
     assert len(limited) == 2 and limited[0]["ts"] == 700
 
 
+def test_tier_hierarchy(monkeypatch):
+    """T1 = card-worthy, T2 = one-liner, T3 = coalesce-only, per operator order."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
+    by_ts = {e["ts"]: e for e in db._activity_payload(limit=50)["events"]}
+    assert by_ts[100]["tier"] == 2          # research PASS → compact line
+    assert by_ts[150]["tier"] == 1          # research LONG → card
+    assert by_ts[200]["tier"] == 1          # blocked execute → card
+    assert by_ts[300]["tier"] == 1          # filled execute → card
+    assert by_ts[400]["tier"] == 1          # dsl close → card
+    assert by_ts[500]["tier"] == 2          # book cycle with signals → line
+    assert by_ts[600]["tier"] == 2          # xs_rebalance (content, no counts) → line
+    assert by_ts[650]["tier"] == 1          # book_open → card
+    assert by_ts[700]["tier"] == 2          # unknown shape → line
+
+
+def test_quiet_book_cycles_coalesce(monkeypatch):
+    quiet = {"ts": 10, "event": "neg_funding_fade", "shadow": True,
+             "signals": 0, "opened": 0,
+             "skipped": {"held": 0, "claimed": 0}, "candidates": []}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [quiet])
+    e = db._activity_payload()["events"][0]
+    assert e["tier"] == 3 and e["gkey"] == "quiet|neg_funding_fade"
+
+
+def test_gate_skips_group_by_coin_and_reason(monkeypatch):
+    """The operator's paste: the same CASHCAT+SNX pair rendered ~40 times.
+    That exact tape must resolve to exactly TWO group keys."""
+    events = []
+    for i in range(40):
+        # varying digits (bar counts, scores) must NOT split the groups
+        events.append({"ts": 1000 + i * 120_000, "event": "entry_preflight",
+                       "coin": "CASHCAT", "reason": f"history floor ({2 + i % 3}d<60d)"})
+        events.append({"ts": 1001 + i * 120_000, "event": "entry_preflight",
+                       "coin": "SNX", "reason": f"runner_gate_blocked (score={50 + i})"})
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    out = db._activity_payload(limit=200)["events"]
+    assert len(out) == 80 and all(e["tier"] == 3 for e in out)
+    assert len({e["gkey"] for e in out}) == 2
+
+
+def test_scans_bucket_hourly_and_heartbeats_tier3(monkeypatch):
+    h = 3_600_000
+    events = [
+        {"ts": 1 * h + 100, "event": "scan", "triggers": 2},
+        {"ts": 1 * h + 200, "event": "scan", "triggers": 0},
+        {"ts": 2 * h + 100, "event": "scan", "triggers": 1},
+        {"ts": 2 * h + 200, "event": "loop_heartbeat", "equity": 39.91,
+         "open_positions": 0},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    out = db._activity_payload()["events"]
+    scans = [e for e in out if e["type"] == "scan"]
+    assert {e["gkey"] for e in scans} == {"scan|1", "scan|2"}
+    hb = next(e for e in out if e["type"] == "heartbeat")
+    assert hb["tier"] == 3
+
+
+def test_loop_start_never_carries_the_config_dump(monkeypatch):
+    evt = {"ts": 5, "event": "loop_start", "scan_interval": 60, "min_score": 20,
+           "config": {"mode": "LIVE", "leverage": 15, "coin_blocklist": [],
+                      "dsl_exit": {"max_loss_pct": 2.5}, "equity_fraction_per_trade": 0.5}}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
+    e = db._activity_payload()["events"][0]
+    assert e["type"] == "system" and e["tier"] == 2
+    assert e["fields"] == {"mode": "LIVE", "scan_interval": 60, "min_score": 20}
+    assert "leverage" not in json.dumps(e)   # the dump must never reach the page
+
+
+def test_session_strip(monkeypatch):
+    now = int(time.time() * 1000)
+    events = [   # chronological, one event outside the 6h window first
+        {"ts": now - 7 * 3_600_000, "event": "scan", "triggers": 99},
+        {"ts": now - 9000, "event": "dsl_exit", "leveraged_pct": -2.2},
+        {"ts": now - 8000, "event": "dsl_exit", "realized_pnl_pct": 7.2},
+        {"ts": now - 7000, "event": "entry_preflight", "coin": "C"},
+        {"ts": now - 6000, "event": "execute", "executed": False},
+        {"ts": now - 5000, "event": "execute", "executed": True},
+        {"ts": now - 4000, "event": "research", "coin": "X"},
+        {"ts": now - 3000, "event": "scan", "triggers": 1},
+        {"ts": now - 2000, "event": "scan", "triggers": 3},
+        {"ts": now - 1000, "event": "loop_heartbeat", "equity": 39.91, "open_positions": 1},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    s = db._session_strip()
+    assert s["scans"] == 2 and s["candidates"] == 4      # 99 is outside the window
+    assert s["researched"] == 1 and s["opened"] == 1 and s["closed"] == 2
+    assert s["blocks"] == 2                              # blocked execute + preflight
+    assert s["realized_pnl_pct"] == pytest.approx(5.0)
+    assert s["equity"] == 39.91 and s["open_positions"] == 1
+
+
 def test_activity_since_returns_only_newer(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
     out = db._activity_payload(since_ts=500)
@@ -208,6 +302,9 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     assert rows["majors_swing"]["size"] == "0.25x eq @ 25x"
     assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
     assert all(r["thesis"] for r in rows.values())
+    # mover_pass trades LIVE now — thesis must say so, not "recorder"
+    assert "PASSed" in rows["mover_pass"]["thesis"]
+    assert "recorder" not in rows["mover_pass"]["thesis"].lower()
 
 
 def test_books_payload_missing_config_is_off(monkeypatch):
@@ -282,10 +379,30 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert "operator-toggle" not in r.text        # operator chrome removed
     assert "matrix-feed" not in r.text            # old sidebar feed removed
     assert 'data-nav="/activity"' in r.text and 'data-nav="/news"' in r.text
+    # nav is DASHBOARD · ACTIVITY · NEWS — config/operator tabs deleted
+    assert 'data-nav="/config"' not in r.text
+    assert 'data-nav="/operator"' not in r.text
+    # token entry moved to the landing footer (localStorage only)
+    assert "op-token-btn" in r.text
+
+
+def test_config_and_operator_pages_are_gone(client):
+    """Operator order 2026-07-12: /config and /operator are deleted — 404 is
+    the EXPECTED behavior, and no page links to them anymore."""
+    assert client.get("/config").status_code == 404
+    assert client.get("/operator").status_code == 404
+    assert client.get("/api/dashboard/config").status_code == 404
+    assert client.get("/api/dashboard/operator/trackers").status_code == 404
+    assert client.post("/api/dashboard/operator/terminal",
+                       json={"command": "status"}).status_code == 404
+    for path in ("/", "/activity", "/news"):
+        page = client.get(path).text
+        assert 'data-nav="/config"' not in page, path
+        assert 'data-nav="/operator"' not in page, path
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news", "/config", "/operator"):
+    for path in ("/", "/activity", "/news"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
@@ -301,6 +418,8 @@ def test_activity_endpoint_filters(client, monkeypatch):
     assert len(data["events"]) == 1
     assert data["events"][0]["book"] == "neg_funding_fade"
     assert "types" in data and "book" in data["types"]
+    # session strip rides along on every activity response
+    assert "session" in data and data["session"]["window_h"] == 6
 
 
 def test_activity_endpoint_since_bypasses_cache(client, monkeypatch):
@@ -328,11 +447,16 @@ def test_stream_pages_flow_and_respect_reduced_motion(client):
     for page in (act, news):
         assert "prefers-reduced-motion" in page   # CSS-only animations, opt-out honored
         assert "ev-enter" in page                 # arrival animation class
-    assert "prependEvent" in act                  # polls prepend, no full re-render
+    assert "function ingest" in act               # polls merge/prepend, no full re-render
     assert "flash-green" in act and "flash-red" in act   # trade emphasis
-    assert "groupNode" in act                     # scan/gate/heartbeat runs collapse
+    assert "session-strip" in act                 # pinned last-6h answer
+    assert "quiet cycle" in act                   # signal-less book runs coalesce
+    assert "steady" in act                        # unchanged-heartbeat divider
+    assert "nothing actionable since" in act      # empty-tape mode copy
+    assert "blocked <span" in act                 # gate groups: "COIN blocked ×N"
     assert "quiet stream" in news                 # sparse-ledger empty state copy
     assert "breaking-pulse" in news               # stronger pulse on breaking items
+    assert "quiet read" in news                   # non-breaking reads coalesce per coin/hour
 
 
 def test_books_endpoint(client, monkeypatch):
