@@ -6,60 +6,66 @@
 <title>hermes-trader · activity</title>
 <script src="/static/tailwind.js"></script>
 <style>
-  /* ── design tokens: sans for words, mono for numbers/tickers/time.
-     The ONLY saturated green/red on the page is money + direction. ── */
+  /* ── design system: sans for words, mono/pixel identity in wordmark +
+     section labels; signature indigo→violet gradient reserved for wordmark
+     mark, active nav, LIVE badges. Green/red = money + direction only. ── */
   :root{
     --card:#14161b; --card2:#181b21;
     --line:#23262e; --line2:#2c313c;
     --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
     --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
+    --vio:#8b5cf6;
+    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
   }
   body{
     font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     color:var(--txt);
     background:#0a0b0d;
-    background-image:radial-gradient(1100px 520px at 50% -160px,#181c24 0%,#0e1014 50%,#0a0b0d 100%);
+    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
     background-repeat:no-repeat;background-attachment:fixed;
   }
   .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  /* brand + nav */
-  .brand{font-weight:800;font-size:15px;letter-spacing:.14em;color:var(--txt)}
-  .brand .dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--up);margin-right:9px;vertical-align:2px;box-shadow:0 0 8px rgba(34,197,94,.7)}
+  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
   .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
   .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:8px;text-decoration:none;border:1px solid transparent}
   .nav-link:hover{color:var(--txt);background:var(--card)}
-  .nav-link.nav-active{color:var(--txt);background:var(--card2);border-color:var(--line2)}
-  /* ticker chip — the eye's anchor for every coin symbol */
+  .nav-link:active{transform:translateY(1px)}
+  .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+  /* geometric glyphs — no emoji anywhere */
+  .gi{display:inline-block;vertical-align:0}
+  .gi-hb{width:7px;height:7px;border-radius:2px;background:var(--up);opacity:.75}
+  .gi-stop{width:7px;height:7px;border-radius:1px;background:var(--dn);opacity:.8}
+  .gi-restart{width:9px;height:9px;border:1.5px solid var(--mut);border-radius:999px;border-top-color:transparent;vertical-align:-1px}
   .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap;vertical-align:baseline}
-  /* badges: direction gets the saturated colors, everything else stays cool */
   .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid transparent;white-space:nowrap}
   .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   .b-ok{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .b-fail{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   .b-pass{color:var(--mut);background:#1d212b;border-color:var(--line2)}
-  .b-live{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
+  .b-live{color:#e4defc;background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(168,85,247,.28));border-color:rgba(139,92,246,.5)}
   .b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .chip{display:inline-block;padding:2px 9px;font-size:10.5px;border-radius:999px;border:1px solid var(--line2);background:#171a20;color:var(--mut);margin:2px 5px 2px 0;white-space:nowrap}
   .chip.chip-red{border-color:rgba(239,68,68,.35);color:#fca5a5;background:rgba(239,68,68,.08)}
   .chip.chip-amber{border-color:rgba(245,158,11,.35);color:#fcd34d;background:rgba(245,158,11,.08)}
-  /* ── session strip: KPI chips, sticky with blur + elevation ── */
+  /* ── session strip: KPI chips, sticky, blur + soft violet glow ── */
   .strip{position:sticky;top:10px;z-index:20;display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;
          background:rgba(14,16,20,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-         border:1px solid var(--line);border-radius:14px;padding:10px 8px;margin-bottom:18px;
-         box-shadow:0 12px 30px rgba(0,0,0,.45)}
+         border:1px solid var(--line);border-radius:16px;padding:10px 8px;margin-bottom:18px;
+         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 12px 30px rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
   .kpi{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:4px 14px;border-right:1px solid var(--line)}
   .kpi:last-child{border-right:0}
   .kpi .v{font-size:18px;font-weight:750;line-height:1.15;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
-  .kpi .l{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  .kpi .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
   .kpi .v.pos{color:var(--up)}.kpi .v.neg{color:var(--dn)}
   /* ── the journal: timeline rail + three visual weights ── */
   #feed{position:relative;border-left:2px solid var(--line);padding-left:18px}
-  /* T1: elevated cards with a 4px semantic accent bar */
-  .ev{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+  .ev{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:12px;
       padding:12px 15px;margin-bottom:14px;position:relative;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
       transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-  .ev:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .ev:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 8px 20px rgba(0,0,0,.35)}
   .ev::before{content:'';position:absolute;left:-25px;top:16px;width:9px;height:9px;border-radius:999px;background:var(--dim);border:2px solid #0a0b0d}
   .ev.acc-green{border-left-color:var(--up)}   .ev.acc-green::before{background:var(--up)}
   .ev.acc-red{border-left-color:var(--dn)}     .ev.acc-red::before{background:var(--dn)}
@@ -67,7 +73,7 @@
   .ev.acc-teal{border-left-color:var(--teal)}  .ev.acc-teal::before{background:var(--teal)}
   .ev-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
   .ev-ts{color:var(--dim);font-size:10.5px;white-space:nowrap}
-  .ev-type{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+  .ev-type{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
   .ev-type.t-research{color:var(--ind)}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fcd34d}
   .ev-type.t-book{color:var(--teal)}.ev-type.t-error{color:#fca5a5}
   .ev-body{font-size:13px;color:#cfd4dd;margin-top:5px;line-height:1.6;word-break:break-word}
@@ -83,7 +89,14 @@
   .ev-line.l-book{border-left-color:rgba(45,212,191,.4)}
   .ev-line.l-book::before{background:var(--teal)}
   .ev-line .conf{color:var(--dim);font-size:11px}
-  /* T3: coalesced noise — visibly recessed (~55%) */
+  /* T3 fresh (last ~15 min): INDIVIDUAL slim rows — the constant flow.
+     max-height set so the fold into a group animates smoothly. */
+  .ev-fresh{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:5px;border-left:2px solid var(--line);line-height:1.6;opacity:.62;word-break:break-word;max-height:72px;overflow:hidden;
+            transition:max-height .4s ease,opacity .35s ease,margin .4s ease,padding .4s ease}
+  .ev-fresh b{color:var(--mut);font-weight:650}
+  .ev-fresh:hover{opacity:.95}
+  .ev-fold{max-height:0 !important;opacity:0 !important;margin-bottom:0 !important;padding-top:0 !important;padding-bottom:0 !important}
+  /* T3 aged: coalesced rows — recessed history */
   .ev-coal{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:6px;border-left:2px solid var(--line);line-height:1.7;opacity:.55;transition:opacity .15s ease}
   .ev-coal:hover{opacity:.9}
   .ev-coal b{color:var(--mut);font-weight:650}
@@ -92,12 +105,14 @@
   /* dividers: centered thin rule + small-caps chip */
   .ev-div{display:flex;align-items:center;gap:12px;margin:10px 0 12px;opacity:.65}
   .ev-div::before,.ev-div::after{content:'';flex:1;height:1px;background:var(--line)}
-  .ev-div .dv{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  .ev-div .dv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
               background:#12141a;border:1px solid var(--line);border-radius:999px;padding:2px 12px;white-space:nowrap}
-  .empty-tape{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:10px;margin-bottom:12px;line-height:1.7}
+  .empty-tape{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:12px;margin-bottom:12px;line-height:1.7}
   /* ── arrival animations — CSS only, reduced-motion respected ── */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
+  .ev-fresh.ev-enter{animation:fresh-in .5s cubic-bezier(.2,.7,.3,1)}
+  @keyframes fresh-in{0%{opacity:0;transform:translateY(-8px)}100%{opacity:.62;transform:none}}
   .flash-green{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-g 1.8s ease-out}
   @keyframes glow-g{0%{border-color:var(--up);box-shadow:0 0 18px rgba(34,197,94,.4);background:#0d2416}100%{}}
   .flash-red{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-r 1.8s ease-out}
@@ -107,13 +122,14 @@
   .coal-tick{animation:coal-tick .6s ease-out}
   @keyframes coal-tick{0%{opacity:1;color:#d3f9e4}100%{opacity:.55}}
   @media (prefers-reduced-motion: reduce){
-    .ev-enter,.flash-green,.flash-red,.flash-indigo,.coal-tick{animation:none}
-    .ev,.ev-coal{transition:none}
+    .ev-enter,.flash-green,.flash-red,.flash-indigo,.coal-tick,.ev-fresh.ev-enter{animation:none}
+    .ev,.ev-coal,.ev-fresh{transition:none}
   }
-  /* ── filters: one quiet segmented control ── */
+  /* ── filters: one quiet segmented control with pressed state ── */
   .seg{display:inline-flex;flex-wrap:wrap;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:10px;padding:3px}
   .fchip{padding:4px 12px;font-size:11px;font-weight:600;letter-spacing:.04em;background:transparent;border:0;border-radius:7px;color:var(--dim);cursor:pointer;transition:color .12s ease,background .12s ease}
   .fchip:hover{color:var(--txt)}
+  .fchip:active{transform:translateY(1px)}
   .fchip.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
   select.fsel{background:#12141a;border:1px solid var(--line);border-radius:10px;color:var(--mut);font-size:11px;font-weight:600;padding:6px 10px}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
@@ -123,7 +139,7 @@
 <div class="max-w-[980px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand"><span class="dot"></span>HERMES-TRADER <small>/ ACTIVITY</small></span>
+    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ ACTIVITY</small></span>
     <span class="text-[10px] mono" style="color:var(--dim)" id="feed-meta"></span>
   </header>
 
@@ -186,8 +202,11 @@ function readable(v, depth) {
   return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
 }
 
-// ticker chip: the eye's anchor for every coin symbol
+// ticker chip + geometric glyphs (no emoji)
 const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
+const GI_HB = '<span class="gi gi-hb"></span>';
+const GI_STOP = '<span class="gi gi-stop"></span>';
+const GI_RESTART = '<span class="gi gi-restart"></span>';
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
 const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>'
@@ -200,7 +219,7 @@ function head(e, label, cls, bits) {
          `<span class="ev-type t-${cls}">${label}</span>` + bits.join(' ') + '</div>';
 }
 
-// ── TIER 1: full cards, always ───────────────────────────────────────────────
+// ── TIER 1: full cards, always — they never fold ─────────────────────────────
 const CARD = {
   research(e) {
     const conf = e.confidence != null ? `<span class="ev-sub mono" style="margin-top:0">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
@@ -264,7 +283,7 @@ const CARD = {
   },
 };
 
-// ── TIER 2: compact one-liners ───────────────────────────────────────────────
+// ── TIER 2: compact one-liners (persist, never fold) ─────────────────────────
 function lineNode(e) {
   const div = document.createElement('div');
   let cls = 'ev-line', html = '';
@@ -287,9 +306,9 @@ function lineNode(e) {
   } else if (e.type === 'system') {
     const f = e.fields || {};
     if (e.name === 'loop_start') {
-      html = `${t} ⟳ loop restarted${f.mode ? ' · ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}${f.min_score ? ' · min score ' + esc(f.min_score) : ''}`;
+      html = `${t} ${GI_RESTART} loop restarted${f.mode ? ' · ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}${f.min_score ? ' · min score ' + esc(f.min_score) : ''}`;
     } else if (e.name === 'loop_stop') {
-      html = `${t} ■ loop stopped`;
+      html = `${t} ${GI_STOP} loop stopped`;
     } else {
       html = `${t} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
     }
@@ -301,8 +320,35 @@ function lineNode(e) {
   return div;
 }
 
-// ── TIER 3: coalesced rows — one DOM row per group key, merges bump counters
-// and float the row to the top so the tape orders by "latest happening". ─────
+// ── TIER 3 · FRESH (last ~15 min): individual slim rows — constant flow ─────
+let FRESH_MS = 15 * 60 * 1000;   // refined from the server's fresh_window_s
+
+function freshText(e) {
+  if (e.type === 'gate') {
+    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
+      .filter(Boolean).join(' ');
+    return `${tk(e.coin)} <b>${e.kind === 'ta_skip' ? 'ta skip' : 'blocked'}</b>${scores ? ' · <span class="mono">' + scores + '</span>' : ''}${e.reason ? ' — ' + esc(String(e.reason).slice(0, 110)) : ''}`;
+  }
+  if (e.type === 'scan') {
+    const tops = (e.coins || []).slice(0, 4).map(c =>
+      typeof c === 'object' ? `${c.coin}(${fmtNum(c.score)})` : String(c)).join(', ');
+    return `<b>scan</b> · <span class="mono">${e.triggers ?? 0}</span> trigger${(e.triggers ?? 0) === 1 ? '' : 's'}${tops ? ' — ' + esc(tops) : ''}`;
+  }
+  if (e.type === 'heartbeat') {
+    return `${GI_HB} <b>hb</b> · equity <span class="mono">$${Number(e.equity ?? 0).toFixed(2)}</span> · ${e.open_positions ?? 0} open`;
+  }
+  return `<b>${esc(e.book)}</b> · quiet cycle`;
+}
+function freshNode(e) {
+  const div = document.createElement('div');
+  div.className = 'ev-fresh';
+  div.dataset.ev = JSON.stringify(e);
+  div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ${freshText(e)}`;
+  return div;
+}
+
+// ── TIER 3 · AGED: coalesced rows. Live merges float to top; FOLDS from the
+// fresh window merge in place so the curated history below stays put. ────────
 const coalIndex = new Map();   // gkey -> element
 
 function coalLabel(kind, st) {
@@ -312,10 +358,10 @@ function coalLabel(kind, st) {
     return `<b>${esc(st.book)}</b> · <span class="cnt mono">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
   if (kind === 'scan') {
     const h = st.hour * 3600000;
-    return `<span class="dv mono">${fmtHM(h)}–${fmtHM(h + 3600000)} · ${st.n} scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades</span>`;
+    return `<span class="dv">${fmtHM(h)}–${fmtHM(h + 3600000)} · ${st.n} scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades</span>`;
   }
   if (kind === 'steady')
-    return `<span class="dv mono">steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)}</span>`;
+    return `<span class="dv">steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)}</span>`;
   return `${st.n} events`;
 }
 function coalState(el) { return JSON.parse(el.dataset.st); }
@@ -334,7 +380,7 @@ function coalNode(kind, gkey, st) {
   coalIndex.set(gkey, el);
   return el;
 }
-function coalMerge(el, patch, animate) {
+function coalMerge(el, patch, animate, floatTop) {
   const st = coalState(el);
   st.n += 1;
   st.t1 = Math.max(st.t1, patch.t1 || 0);
@@ -344,7 +390,7 @@ function coalMerge(el, patch, animate) {
   if (patch.open !== undefined) st.open = patch.open;
   el.dataset.st = JSON.stringify(st);
   coalRender(el);
-  if (feed.firstElementChild !== el) feed.prepend(el);   // active groups float up
+  if (floatTop && feed.firstElementChild !== el) feed.prepend(el);
   if (animate) { el.classList.remove('coal-tick'); void el.offsetWidth; el.classList.add('coal-tick'); }
 }
 // research/executed counts fold into the matching hour's scan divider
@@ -357,8 +403,9 @@ function bumpHourStats(e, field) {
   coalRender(el);
 }
 
-// ── heartbeat state machine: line only when equity moves >$0.05 or the open
-// count changes; unchanged runs collapse into ONE "steady" divider. ──────────
+// heartbeat state machine — AGED path only (initial history + folds, both
+// strictly chronological): line when equity moves >$0.05 or the open count
+// changes; unchanged runs collapse into ONE "steady" divider.
 let lastHB = null;
 let steadyRun = 0;
 function routeHeartbeat(e) {
@@ -369,11 +416,24 @@ function routeHeartbeat(e) {
     steadyRun++;
     const div = document.createElement('div');
     div.className = 'ev-line';
-    div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ♥ equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
+    div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ${GI_HB} equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
     return { node: div };
   }
   return { gkey: `hbsteady|${steadyRun}`, kind: 'steady',
            st: { n: 1, t0: e.ts, t1: e.ts, equity: eq, open } };
+}
+
+// group routing shared by the aged-ingest path and the fold sweep
+function groupPlan(e) {
+  if (e.type === 'gate')
+    return { gkey: e.gkey, kind: 'gate',
+             st: { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason } };
+  if (e.type === 'scan')
+    return { gkey: e.gkey, kind: 'scan',
+             st: { n: 1, t0: e.ts, t1: e.ts, hour: Math.floor((e.ts || 0) / 3600000),
+                   triggers: Number(e.triggers || 0), researched: 0, trades: 0 } };
+  return { gkey: e.gkey, kind: 'quiet',
+           st: { n: 1, t0: e.ts, t1: e.ts, book: e.book } };
 }
 
 // ── stream state ─────────────────────────────────────────────────────────────
@@ -425,13 +485,23 @@ function clearEmptyTape() {
 }
 
 // One event, chronological order in → one journal mutation at the top.
+// T3 inside the fresh window renders an INDIVIDUAL slim row (constant flow);
+// aged T3 goes straight to its coalesced group.
 function ingest(e, animate) {
   if (!remember(e)) return;
   if (e.type === 'research') bumpHourStats(e, 'researched');
   if (e.type === 'execute' && e.executed) bumpHourStats(e, 'trades');
 
   if (e.tier === 3) {
-    let gkey = e.gkey, kind, st;
+    const isFresh = e.fresh && (e.ts || 0) >= Date.now() - FRESH_MS;
+    if (isFresh) {
+      const node = freshNode(e);
+      if (animate) node.classList.add('ev-enter');
+      feed.prepend(node);
+      trim();
+      return;
+    }
+    let gkey, kind, st;
     if (e.type === 'heartbeat') {
       const r = routeHeartbeat(e);
       if (r.node) {                 // changed heartbeat → compact line
@@ -441,21 +511,14 @@ function ingest(e, animate) {
         return;
       }
       gkey = r.gkey; kind = r.kind; st = r.st;
-    } else if (e.type === 'gate') {
-      kind = 'gate';
-      st = { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason };
-    } else if (e.type === 'scan') {
-      kind = 'scan';
-      st = { n: 1, t0: e.ts, t1: e.ts, hour: Math.floor((e.ts || 0) / 3600000),
-             triggers: Number(e.triggers || 0), researched: 0, trades: 0 };
-    } else {                        // quiet book cycle
-      kind = 'quiet';
-      st = { n: 1, t0: e.ts, t1: e.ts, book: e.book };
+    } else {
+      const plan = groupPlan(e);
+      gkey = plan.gkey; kind = plan.kind; st = plan.st;
     }
     const existing = coalIndex.get(gkey);
     if (existing) {
       coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: st.triggers,
-                            equity: st.equity, open: st.open }, animate);
+                            equity: st.equity, open: st.open }, animate, true);
     } else {
       const node = coalNode(kind, gkey, st);
       if (animate) node.classList.add('ev-enter');
@@ -473,8 +536,53 @@ function ingest(e, animate) {
   trim();
 }
 
+// ── time-decay fold: fresh rows that aged out slide into their groups ───────
+const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function removeFolded(el) {
+  if (REDUCED_MOTION) { el.remove(); return; }
+  el.classList.add('ev-fold');
+  setTimeout(() => el.remove(), 450);
+}
+
+function foldOne(el, e) {
+  if (e.type === 'heartbeat') {
+    const r = routeHeartbeat(e);
+    if (r.node) { el.replaceWith(r.node); return; }   // changed → persistent line, in place
+    const existing = coalIndex.get(r.gkey);
+    if (existing) {
+      coalMerge(existing, { t0: e.ts, t1: e.ts, equity: r.st.equity, open: r.st.open }, true, false);
+      removeFolded(el);
+    } else {
+      el.replaceWith(coalNode(r.kind, r.gkey, r.st));   // group takes the row's slot
+    }
+    return;
+  }
+  const plan = groupPlan(e);
+  const existing = coalIndex.get(plan.gkey);
+  if (existing) {
+    coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: plan.st.triggers }, true, false);
+    removeFolded(el);
+  } else {
+    el.replaceWith(coalNode(plan.kind, plan.gkey, plan.st));
+  }
+}
+
+function foldAged() {
+  const cutoff = Date.now() - FRESH_MS;
+  const nodes = feed.querySelectorAll('.ev-fresh:not(.ev-fold)');
+  // oldest first (DOM is newest-first) so the heartbeat machine stays chronological
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const el = nodes[i];
+    let e;
+    try { e = JSON.parse(el.dataset.ev); } catch { el.remove(); continue; }
+    if ((e.ts || 0) >= cutoff) continue;
+    foldOne(el, e);
+  }
+}
+
 function trim() {
-  while (feed.children.length > 300) {
+  while (feed.children.length > 350) {
     const last = feed.lastElementChild;
     if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
     last.remove();
@@ -516,7 +624,7 @@ function renderStrip(s) {
 // ── load + poll ──────────────────────────────────────────────────────────────
 function setMeta() {
   document.getElementById('feed-meta').textContent =
-    `journal · newest first · updated ${fmtTime(Date.now())}`;
+    `live feed · newest first · updated ${fmtTime(Date.now())}`;
 }
 
 async function fullLoad() {
@@ -524,6 +632,7 @@ async function fullLoad() {
   if (curType) qs.set('type', curType);
   if (curBook) qs.set('book', curBook);
   const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+  if (data.fresh_window_s) FRESH_MS = data.fresh_window_s * 1000;
   buildFilters(data);
   renderStrip(data.session);
   feed.innerHTML = '';
@@ -545,6 +654,7 @@ async function pollNew() {
     renderStrip(data.session);
     const chrono = (data.events || []).slice().reverse();
     for (const e of chrono) ingest(e, true);
+    foldAged();          // sweep anything that aged past the fresh window
     setMeta();
   } catch (e) {}
 }
@@ -586,6 +696,7 @@ fullLoad().catch(() => {
   feed.innerHTML = '<div class="ev-coal">feed load failed — is the server up?</div>';
 });
 setInterval(pollNew, 8000);
+setInterval(foldAged, 20000);   // time-decay sweep between polls
 </script>
 </body>
 </html>

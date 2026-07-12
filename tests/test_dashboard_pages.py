@@ -252,6 +252,29 @@ def test_session_strip(monkeypatch):
     assert s["equity"] == 39.91 and s["open_positions"] == 1
 
 
+def test_activity_fresh_boundary(monkeypatch):
+    """Time-decay coalescing: T3 events inside the fresh window are flagged
+    fresh (client renders them as individual rows); older ones are not
+    (client folds them straight into coalesced groups)."""
+    now = 10_000_000_000
+    window_ms = db._FRESH_WINDOW_S * 1000
+    events = [
+        {"ts": now - window_ms - 1, "event": "scan", "triggers": 2},      # 1ms too old
+        {"ts": now - window_ms, "event": "entry_preflight", "coin": "A",
+         "reason": "history floor"},                                       # exactly on cutoff
+        {"ts": now - 60_000, "event": "loop_heartbeat", "equity": 39.9},   # 1 min old
+        {"ts": now - 1_000, "event": "scan", "triggers": 0},               # 1 s old
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    out = db._activity_payload(now_ms=now)["events"]
+    by_ts = {e["ts"]: e for e in out}
+    assert by_ts[now - window_ms - 1]["fresh"] is False
+    assert by_ts[now - window_ms]["fresh"] is True      # >= cutoff counts as fresh
+    assert by_ts[now - 60_000]["fresh"] is True
+    assert by_ts[now - 1_000]["fresh"] is True
+    assert db._activity_payload(now_ms=now)["fresh_window_s"] == db._FRESH_WINDOW_S
+
+
 def test_activity_since_returns_only_newer(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: list(ALL_EVENTS))
     out = db._activity_payload(since_ts=500)
@@ -438,6 +461,34 @@ def test_landing_has_equity_curve(client):
     assert "/static/chart.umd.min.js" in r.text
     assert "/static/chartjs-adapter-date-fns.min.js" in r.text
     assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
+
+
+def test_landing_books_dropdown_collapsed_by_default(client):
+    r = client.get("/").text
+    assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
+    assert "hermes-books-open" in r                  # state remembered in localStorage
+    assert 'class="books-wrap"' in r                 # static HTML ships collapsed
+    assert "books-open .books-wrap" in r             # CSS max-height/opacity transition
+    assert "live books" in r                         # header row always visible
+
+
+def test_no_emoji_glyphs_anywhere(client):
+    """Brand order 2026-07-12: geometric CSS shapes only — no emoji/mascots."""
+    banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙",
+              "🤖", "😴", "💰", "💀", "🤑", "😱", "😎", "🔒", "🔓", "🐹", "🐰"]
+    for path in ("/", "/activity", "/news"):
+        page = client.get(path).text
+        for ch in banned:
+            assert ch not in page, f"{path} still renders glyph {ch!r}"
+
+
+def test_activity_has_time_decay_flow(client):
+    act = client.get("/activity").text
+    assert "ev-fresh" in act                 # fresh T3 events render individually
+    assert "foldAged" in act                 # aging sweep folds them into groups
+    assert "fresh_window_s" in act           # window sourced from the server
+    assert "ev-fold" in act                  # smooth fold transition class
+    assert "gi-hb" in act and "gi-restart" in act   # geometric glyphs, not emoji
 
 
 def test_positions_rows_expose_liq_px():

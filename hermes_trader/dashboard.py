@@ -799,8 +799,16 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
     return {"type": "other", "ts": ts, "name": ev, "fields": fields, "tier": 2}
 
 
+# Time-decay coalescing (operator order 2026-07-12): events younger than this
+# window render as INDIVIDUAL slim rows — the constant-flow feel of the old
+# terminal — and only fold into coalesced groups once they age out. The server
+# stamps `fresh` at classification time; the client re-sweeps on its own clock.
+_FRESH_WINDOW_S = 15 * 60
+
+
 def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
-                      since_ts: int = 0) -> Dict[str, Any]:
+                      since_ts: int = 0,
+                      now_ms: Optional[int] = None) -> Dict[str, Any]:
     """Newest-first classified events, optionally filtered by book / type.
 
     `since_ts` > 0 returns only events strictly newer — the incremental-poll
@@ -808,7 +816,11 @@ def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
     the whole stream. Log ts stamps are wall-clock at append time, so once the
     reversed walk reaches an event at/older than since_ts it stops:
     incremental polls cost O(new events), not O(window).
+
+    `now_ms` exists for deterministic tests of the fresh boundary.
     """
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    fresh_cutoff = now - _FRESH_WINDOW_S * 1000
     events = _read_log_lines()
     if len(events) > _ACTIVITY_SCAN_CAP:
         events = events[-_ACTIVITY_SCAN_CAP:]
@@ -821,12 +833,14 @@ def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
             continue
         if book and c.get("book") != book:
             continue
+        c["fresh"] = (c.get("ts") or 0) >= fresh_cutoff
         out.append(c)
         if len(out) >= limit:
             break
     return {"events": out,
             "books": sorted(_KNOWN_BOOK_NAMES),
-            "types": _ACTIVITY_TYPES}
+            "types": _ACTIVITY_TYPES,
+            "fresh_window_s": _FRESH_WINDOW_S}
 
 
 _SESSION_WINDOW_S = 6 * 3600
