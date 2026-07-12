@@ -90,7 +90,9 @@ def test_coin_catalyst_surge_math(monkeypatch):
     from hermes_trader.agents import news_catalyst as nc
     def fake_search(query, when="1d", limit=25, ttl=0):
         n = 6 if when == "1h" else 24        # 6/h vs 1/h baseline -> surge 6x
-        return [nc.Article(title=f"t{i}", url="u", domain="d", seen=None, source="s")
+        # titles carry the ALL-CAPS ticker so the relevance guard keeps them
+        return [nc.Article(title=f"VIRTUAL story {i}", url="u", domain="d",
+                           seen=None, source="s")
                 for i in range(min(n, limit))]
     monkeypatch.setattr(nc, "google_news_search", fake_search)
     rep = nc.coin_catalyst("VIRTUAL")
@@ -109,3 +111,40 @@ def test_fetch_news_prefers_google(monkeypatch):
                             nc.Article("SOL upgrade ships", "u", "d", None, "s")])
     out = research._fetch_news("SOL")
     assert "SOL upgrade ships" in out
+
+
+def test_title_relevance_rejects_homonym_noise():
+    from hermes_trader.agents.news_catalyst import _title_relevant
+    # the live GRASS false positive (2026-07-12)
+    assert _title_relevant(
+        "GRASS",
+        "After years in labs, 12 beagles reach Canada foster homes and feel "
+        "grass, sunlight, and safety - The Cool Down") is False
+    assert _title_relevant("PUMP", "New pump track opens at city bike park") is False
+    assert _title_relevant("TRUMP", "Trump comments on trade tariffs") is False
+
+
+def test_title_relevance_accepts_crypto_context_and_tickers():
+    from hermes_trader.agents.news_catalyst import _title_relevant
+    assert _title_relevant("GRASS", "$GRASS jumps 20% after exchange listing") is True
+    assert _title_relevant("GRASS", "GRASS token rallies on DePIN news") is True
+    assert _title_relevant("GRASS", "Grass airdrop checker goes live") is True   # crypto term
+    assert _title_relevant("PUMP", "PUMP hits all-time high after Binance listing") is True
+
+
+def test_coin_catalyst_counts_only_relevant(monkeypatch):
+    from hermes_trader.agents import news_catalyst as nc
+
+    def fake_search(query, when="1d", limit=25, ttl=0):
+        mk = lambda t: nc.Article(title=t, url="u", domain="d", seen=None)
+        if when == "1h":
+            return [mk("Beagles feel grass and sunlight"),
+                    mk("$GRASS surges on listing"),
+                    mk("Lawn care tips for summer grass")]
+        return [mk("Beagles feel grass and sunlight")] * 24
+
+    monkeypatch.setattr(nc, "google_news_search", fake_search)
+    rep = nc.coin_catalyst("GRASS", ttl=0)
+    assert rep.n_recent == 1                       # only the cashtag story
+    assert all("Beagles" not in a.title for a in rep.headlines)
+    assert rep.breaking is False                   # 1 < min 3 articles

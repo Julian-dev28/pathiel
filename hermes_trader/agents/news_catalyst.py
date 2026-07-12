@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import ssl
 import threading
 import time
@@ -279,6 +280,34 @@ def _coin_query(coin: str) -> str:
     return f'"{sym}" crypto {_QUERY_NOISE}'
 
 
+# Title-level relevance guard: Google News matches the query terms loosely, so
+# a word-symbol coin (GRASS, PUMP, TRUMP, LIT) also returns its English
+# homonym — observed live 2026-07-12: a beagles-touch-grass story counted
+# toward GRASS coverage, polluting the surge baseline that now gates real
+# money. A title is crypto-relevant if it carries the cashtag, the ALL-CAPS
+# ticker, or an unambiguous crypto-context term.
+_CRYPTO_CONTEXT_RE = re.compile(
+    r"crypto|token|\bcoin\b|blockchain|binance|coinbase|kraken|exchange|"
+    r"listing|airdrop|defi|perpetual|solana|ethereum|bitcoin|on-?chain|web3|"
+    r"staking|market cap|bull|bear|rally|surge[sd]?\b|all-time high|ath\b|"
+    r"price target|trading|\betf\b|whale|hack(?:ed|er)?\b|mainnet|testnet",
+    re.IGNORECASE,
+)
+
+
+def _title_relevant(sym: str, title: str) -> bool:
+    t = title or ""
+    if f"${sym.upper()}" in t.upper():
+        return True                       # cashtag: $GRASS
+    if re.search(rf"(?<![A-Za-z]){re.escape(sym.upper())}(?![A-Za-z])", t):
+        return True                       # ALL-CAPS ticker used as a ticker
+    return bool(_CRYPTO_CONTEXT_RE.search(t))
+
+
+def relevant_articles(sym: str, articles: List[Article]) -> List[Article]:
+    """Drop homonym noise before counting or display."""
+    return [a for a in articles or [] if _title_relevant(sym, a.title)]
+
 
 def google_news_search(query: str, when: str = "1d", limit: int = 25,
                        ttl: float = _CACHE_TTL_S) -> List[Article]:
@@ -306,8 +335,9 @@ def coin_catalyst(coin: str, ttl: float = _CACHE_TTL_S) -> CatalystReport:
     signal computed from headline COUNTS (last 1h vs the trailing-24h hourly
     baseline). Two cached Google News queries; no GDELT on this path."""
     q = _coin_query(coin)
-    recent = google_news_search(q, when="1h", limit=50, ttl=ttl)
-    daily = google_news_search(q, when="1d", limit=100, ttl=ttl)
+    sym = coin.split(":")[-1]
+    recent = relevant_articles(sym, google_news_search(q, when="1h", limit=50, ttl=ttl))
+    daily = relevant_articles(sym, google_news_search(q, when="1d", limit=100, ttl=ttl))
     baseline_per_h = max(len(daily) / 24.0, 0.25)
     surge_x = round(len(recent) / baseline_per_h, 2)
     breaking = len(recent) >= 3 and surge_x >= 3.0

@@ -114,8 +114,11 @@ def _fetch_news(coin: str) -> str:
     # (2026-07-11; Brave demoted to fallback: metered single source).
     try:
         from hermes_trader.agents.news_catalyst import google_news_search
-        from hermes_trader.agents.news_catalyst import _coin_query
-        arts = google_news_search(_coin_query(coin), when="1d", limit=5, ttl=300.0)
+        from hermes_trader.agents.news_catalyst import _coin_query, relevant_articles
+        arts = relevant_articles(
+            coin.split(":")[-1],
+            google_news_search(_coin_query(coin), when="1d", limit=15, ttl=300.0),
+        )[:5]
         if arts:
             return " | ".join(a.title.strip() for a in arts if a.title)[:600]
     except Exception:
