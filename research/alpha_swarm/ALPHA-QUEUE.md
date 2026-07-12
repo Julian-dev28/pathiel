@@ -190,3 +190,17 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
   free, ~half-day; spec sketch: poll EDGAR full-text search API for the xyz
   ticker set, map filings to coins, record + gate exactly like breaking reads).
 - Otherwise -> news_catalyst.shadow_only=true and EDGAR stays unbuilt.
+
+## W-W whale/exposure quality-reads program (started 2026-07-12)
+Goal: EV+/PnL+ validation, not UW feature parity.
+1. whale_flow recorder LIVE (c1df51a): Binance >=100k taker prints on scan
+   candidates, biased sides vs balanced control. VERDICT BAR: >=30 eps/side,
+   EV25>0 both halves, biased beats control. Due ~2026-07-26. If VALIDATED ->
+   standing auto-flip order applies ($20/1x). If control ties biased ->
+   whale flow carries no information here; disable, do not rebuild.
+2. Deribit GEX/flip (crypto market-exposure): free API is CURRENT chains only
+   (no deep history) -> build a data-logger lane first (hourly net GEX + flip
+   level for BTC/ETH into the warehouse), correlate forward after >=3 weeks
+   of accrual. Build when a session has budget; NOT before whale_flow's
+   verdict unless idle.
+3. FINRA short-vol rewire: only if (1) validates (same read-quality class).
