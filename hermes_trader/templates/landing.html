@@ -8,38 +8,68 @@
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
-  .num{font-variant-numeric:tabular-nums}
-  .card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10}
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
-  .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:11px;font-weight:700;border:2px solid currentColor;letter-spacing:.05em}
-  .pill.scanning{background:#064e3b;color:#6ee7b7}
-  .pill.stale{background:#451a03;color:#fbbf24}
-  .pill.offline{background:#450a0a;color:#fca5a5}
-  .badge{display:inline-block;padding:2px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid currentColor}
-  .badge.b-live{color:#6ee7b7;background:#064e3b}
-  .badge.b-shadow{color:#fbbf24;background:#451a03}
-  .badge.b-off{color:#71717a;background:#18181b}
+  /* ── same design system as /activity and /news: sans for words, mono for
+     numbers/tickers/time; saturated green/red = money + direction only. ── */
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370;
+    --up:#22c55e; --dn:#ef4444; --amb:#f59e0b;
+  }
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#181c24 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .brand{font-weight:800;font-size:15px;letter-spacing:.14em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--up);margin-right:9px;vertical-align:2px;box-shadow:0 0 8px rgba(34,197,94,.7)}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:8px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link.nav-active{color:var(--txt);background:var(--card2);border-color:var(--line2)}
+  /* cards: soft elevation + hover lift */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .card:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .sec-label{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  /* KPI chips: big mono number, tiny uppercase label */
+  .kv{font-size:24px;font-weight:750;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .kv.pos{color:var(--up)}.kv.neg{color:var(--dn)}
+  .ksub{font-size:10.5px;color:var(--dim)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:999px;border:1px solid transparent}
+  .pill.scanning{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
+  .pill.stale{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .pill.offline{color:#fca5a5;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
+  .badge{display:inline-block;padding:1px 9px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid transparent}
+  .badge.b-live{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
+  .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .badge.b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
+  /* ticker-style chip for book names */
+  .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
+  .tk.off{opacity:.45}
   .dollar-mask{display:none}
   body.discreet .dollar-value{display:none}
-  body.discreet .dollar-mask{display:inline;color:#71717a}
+  body.discreet .dollar-mask{display:inline;color:var(--dim)}
   .scroll-x{overflow-x:auto}
-  .range-btn{padding:3px 10px;font-size:10px;background:#18181b;border:1px solid #3f3f46;color:#71717a;cursor:pointer}
-  .range-btn:hover{border-color:#047857;color:#a7f3d0}
-  .range-btn.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
+  /* range picker: quiet segmented control */
+  .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:9px;padding:2px}
+  .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:7px;color:var(--dim);cursor:pointer}
+  .range-btn:hover{color:var(--txt)}
+  .range-btn.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
+  .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:8px;color:var(--mut);padding:4px 9px;cursor:pointer;font-size:12px}
+  .icon-btn:hover{color:var(--txt);border-color:var(--line2)}
+  @media (prefers-reduced-motion: reduce){.card{transition:none}}
 </style>
 </head>
 <body class="min-h-screen">
 <div class="max-w-[1100px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
-    <span class="lcd text-sm">HERMES-TRADER</span>
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand"><span class="dot"></span>HERMES-TRADER</span>
     <div class="flex items-center gap-2 text-xs">
-      <button id="discreet-toggle" type="button" class="bg-zinc-800 text-zinc-300 px-2 py-1 border-0 cursor-pointer hover:bg-zinc-700" title="hide all $ amounts (keep percentages)">&#128065;</button>
+      <button id="discreet-toggle" type="button" class="icon-btn" title="hide all $ amounts (keep percentages)">&#128065;</button>
       <span id="status-pill" class="pill offline">offline</span>
     </div>
   </header>
@@ -52,35 +82,35 @@
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="card p-4">
-      <div class="text-[11px] text-zinc-500 uppercase tracking-wider">equity</div>
-      <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
-      <div class="text-[10px] text-zinc-500 num mt-1" id="kpi-equity-breakdown"></div>
+      <div class="sec-label mb-1">equity</div>
+      <div class="kv" id="kpi-equity">$0.00</div>
+      <div class="ksub mono mt-1" id="kpi-equity-breakdown"></div>
     </div>
     <div class="card p-4">
-      <div class="text-[11px] text-zinc-500 uppercase tracking-wider">today</div>
-      <div class="text-2xl font-bold num" id="kpi-pnl">$0.00</div>
-      <div class="text-xs num" id="kpi-pnl-pct">&mdash;</div>
+      <div class="sec-label mb-1">today</div>
+      <div class="kv" id="kpi-pnl">$0.00</div>
+      <div class="ksub mono" id="kpi-pnl-pct">&mdash;</div>
     </div>
     <div class="card p-4">
-      <div class="text-[11px] text-zinc-500 uppercase tracking-wider">open positions</div>
-      <div class="text-2xl font-bold num" id="kpi-open">0</div>
+      <div class="sec-label mb-1">open positions</div>
+      <div class="kv" id="kpi-open">0</div>
     </div>
     <div class="card p-4">
-      <div class="text-[11px] text-zinc-500 uppercase tracking-wider">last tick</div>
-      <div class="text-2xl font-bold num" id="kpi-tick">&mdash;</div>
-      <div class="text-[10px] text-zinc-500" id="kpi-tick-detail">no scan yet</div>
+      <div class="sec-label mb-1">last tick</div>
+      <div class="kv" id="kpi-tick">&mdash;</div>
+      <div class="ksub" id="kpi-tick-detail">no scan yet</div>
     </div>
   </section>
 
-  <section class="card p-5 mb-6 text-sm leading-relaxed text-zinc-300">
-    <div class="text-zinc-500 mb-2 uppercase tracking-wider text-[11px]">how it works</div>
+  <section class="card p-5 mb-6 text-[14px] leading-relaxed" style="color:#cfd4dd">
+    <div class="sec-label mb-2">how it works</div>
     <p>Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, commodities. Every minute the engine scans 60+ markets for statistical triggers (volume spikes, breakouts, momentum bursts), runs a free TA filter, and only spends AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly, and exit through a two-phase dynamic stop-loss (loss protection → profit locking with one-way trailing floor). Live on one wallet. Not financial advice.</p>
   </section>
 
   <section class="card p-5 mb-6">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-zinc-500 uppercase tracking-wider text-[11px]">equity curve</div>
-      <div class="flex gap-1">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">equity curve</div>
+      <div class="seg">
         <button data-range="86400" class="range-btn on">24h</button>
         <button data-range="604800" class="range-btn">7d</button>
         <button data-range="2592000" class="range-btn">30d</button>
@@ -88,7 +118,7 @@
     </div>
     <div class="relative">
       <canvas id="equity-chart" height="110"></canvas>
-      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
+      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs" style="color:var(--dim)">
         no heartbeats yet in this window
       </div>
     </div>
@@ -96,21 +126,21 @@
 
   <section class="card p-5 mb-6">
     <div class="flex items-center justify-between mb-3">
-      <div class="text-zinc-500 uppercase tracking-wider text-[11px]">live books</div>
-      <div class="text-[10px] text-zinc-600" id="books-count"></div>
+      <div class="sec-label">live books</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="books-count"></div>
     </div>
     <div class="scroll-x">
       <table class="w-full text-xs">
         <thead>
-          <tr class="text-left text-zinc-500 border-b border-zinc-800">
-            <th class="py-2 pr-3 font-normal">book</th>
-            <th class="py-2 pr-3 font-normal">size</th>
-            <th class="py-2 pr-3 font-normal">thesis</th>
-            <th class="py-2 font-normal text-right">status</th>
+          <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">thesis</th>
+            <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">status</th>
           </tr>
         </thead>
         <tbody id="books-body">
-          <tr><td colspan="4" class="py-3 text-zinc-500">loading&hellip;</td></tr>
+          <tr><td colspan="4" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
         </tbody>
       </table>
     </div>
@@ -278,7 +308,7 @@ async function refreshSummary() {
       ? dollarHTML(`${parts.join(' + ')} = ${fmtMoney(total)} free`) : '';
     const pnl = document.getElementById('kpi-pnl');
     pnl.innerHTML = dollarHTML(fmtMoney(s.daily_pnl));
-    pnl.className = 'text-2xl font-bold num ' + (s.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400');
+    pnl.className = 'kv ' + (s.daily_pnl >= 0 ? 'pos' : 'neg');   // money gets the color
     document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
     document.getElementById('kpi-open').textContent = s.open_positions;
     document.getElementById('kpi-tick').textContent = fmtAge(s.last_tick_age_s);
@@ -302,11 +332,11 @@ async function refreshBooks() {
       return;
     }
     body.innerHTML = books.map(b => `
-      <tr class="border-b border-zinc-800/60 last:border-0 align-top">
-        <td class="py-2 pr-3 font-bold whitespace-nowrap ${b.status === 'off' ? 'text-zinc-600' : 'text-zinc-100'}">${esc(b.name)}</td>
-        <td class="py-2 pr-3 num whitespace-nowrap text-zinc-400">${esc(b.size)}</td>
-        <td class="py-2 pr-3 text-zinc-400">${esc(b.thesis)}</td>
-        <td class="py-2 text-right">${BADGE[b.status] || esc(b.status)}</td>
+      <tr class="border-b last:border-0 align-top" style="border-color:var(--line)">
+        <td class="py-2.5 pr-3 whitespace-nowrap"><span class="tk${b.status === 'off' ? ' off' : ''}">${esc(b.name)}</span></td>
+        <td class="py-2.5 pr-3 mono whitespace-nowrap" style="color:var(--mut)">${esc(b.size)}</td>
+        <td class="py-2.5 pr-3 text-[12px] leading-relaxed" style="color:var(--mut)">${esc(b.thesis)}</td>
+        <td class="py-2.5 text-right">${BADGE[b.status] || esc(b.status)}</td>
       </tr>`).join('');
     const live = books.filter(b => b.status === 'live').length;
     const shadow = books.filter(b => b.status === 'shadow').length;

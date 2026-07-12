@@ -6,72 +6,98 @@
 <title>hermes-trader · news</title>
 <script src="/static/tailwind.js"></script>
 <style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
-  .num{font-variant-numeric:tabular-nums}
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
-  .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-  .badge{display:inline-block;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid currentColor;white-space:nowrap}
-  .b-long{color:#6ee7b7;background:#064e3b}
-  .b-short{color:#fca5a5;background:#450a0a}
-  .b-shadow{color:#fbbf24;background:#451a03}
-  .b-pass{color:#a1a1aa;background:#27272a}
-  .b-breaking{color:#fbbf24;background:#451a03;animation:badge-blink 1.4s ease-in-out infinite}
-  @keyframes badge-blink{0%,100%{opacity:1}50%{opacity:.45}}
-  .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
-  .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
-  /* ── one flowing stream: coverage reads + research interleaved by time ── */
-  #stream{border-left:2px solid #1f2937;padding-left:14px}
-  .item{border:1px solid #1f2937;background:#0c0d0e;padding:10px 14px;margin-bottom:8px;position:relative}
-  .item::before{content:'';position:absolute;left:-19px;top:16px;width:8px;height:8px;background:#3f3f46;border:1px solid #0a0a0a}
-  .item.k-read::before{background:#5eead4}
-  .item.k-research::before{background:#a5b4fc}
-  .item.breaking{border-color:#b45309;animation:breaking-pulse 2.4s ease-in-out infinite}
-  .item.breaking::before{background:#fbbf24}
-  @keyframes breaking-pulse{
-    0%,100%{box-shadow:0 0 0 1px #78350f}
-    50%{box-shadow:0 0 0 1px #b45309,0 0 18px rgba(251,191,36,.35)}
+  /* ── same design system as /activity: sans for words, mono for numbers/
+     tickers/time; saturated color reserved for direction + BREAKING. ── */
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
+    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
   }
-  .kind-tag{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-  .kind-tag.k-read{color:#5eead4}
-  .kind-tag.k-research{color:#a5b4fc}
-  .titles{margin-top:6px}
-  .titles div{font-size:12px;color:#d4d4d8;padding:2px 0;line-height:1.5}
-  .titles div::before{content:'· ';color:#52525b}
-  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11px}
-  .empty{font-size:12px;color:#71717a;padding:14px;border:1px dashed #27272a;line-height:1.7}
-  /* T3: quiet (non-breaking) reads coalesce — ONE line per coin per hour */
-  .read-coal{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5}
-  .read-coal b{color:#a3a3a3;font-weight:600}
-  .read-coal .cnt{color:#fbbf24;font-weight:700}
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#181c24 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .brand{font-weight:800;font-size:15px;letter-spacing:.14em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--up);margin-right:9px;vertical-align:2px;box-shadow:0 0 8px rgba(34,197,94,.7)}
+  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:8px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link.nav-active{color:var(--txt);background:var(--card2);border-color:var(--line2)}
+  .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
+  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .b-pass{color:var(--mut);background:#1d212b;border-color:var(--line2)}
+  .b-breaking{color:#fcd34d;background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.45);animation:badge-blink 1.4s ease-in-out infinite}
+  @keyframes badge-blink{0%,100%{opacity:1}50%{opacity:.45}}
+  .chip{display:inline-block;padding:2px 9px;font-size:10.5px;border-radius:999px;border:1px solid var(--line2);background:#171a20;color:var(--mut);margin:2px 5px 2px 0;white-space:nowrap}
+  .chip.chip-red{border-color:rgba(239,68,68,.35);color:#fca5a5;background:rgba(239,68,68,.08)}
+  /* ── one flowing stream: timeline rail, cards with semantic accents ── */
+  #stream{position:relative;border-left:2px solid var(--line);padding-left:18px}
+  .item{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+        padding:12px 15px;margin-bottom:14px;position:relative;
+        transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .item:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .item::before{content:'';position:absolute;left:-25px;top:18px;width:9px;height:9px;border-radius:999px;background:var(--dim);border:2px solid #0a0b0d}
+  .item.k-read{border-left-color:var(--teal)}
+  .item.k-read::before{background:var(--teal)}
+  .item.k-research{border-left-color:var(--ind)}
+  .item.k-research::before{background:var(--ind)}
+  .item.breaking{border-left-color:var(--amb);animation:breaking-pulse 2.4s ease-in-out infinite}
+  .item.breaking::before{background:var(--amb)}
+  @keyframes breaking-pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}
+    50%{box-shadow:0 0 22px rgba(245,158,11,.28)}
+  }
+  .kind-tag{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+  .kind-tag.k-read{color:var(--teal)}
+  .kind-tag.k-research{color:var(--ind)}
+  .titles{margin-top:7px}
+  .titles div{font-size:13px;color:#cfd4dd;padding:2px 0;line-height:1.6}
+  .titles div::before{content:'· ';color:var(--dim)}
+  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11.5px}
+  .empty{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:10px;line-height:1.7}
+  /* T3: quiet (non-breaking) reads coalesce — ONE line per coin per hour,
+     visibly recessed like /activity noise */
+  .read-coal{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:6px;border-left:2px solid var(--line);line-height:1.7;opacity:.55;transition:opacity .15s ease}
+  .read-coal:hover{opacity:.9}
+  .read-coal b{color:var(--mut);font-weight:650}
+  .read-coal .cnt{color:#fcd34d;font-weight:750}
+  .read-coal .tk{opacity:.9;font-size:10px;padding:0 8px}
   /* arrival animations — reduced-motion respected */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
   .flash-amber{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-a 1.8s ease-out}
-  @keyframes glow-a{0%{border-color:#fbbf24;box-shadow:0 0 16px rgba(251,191,36,.45);background:#241a03}100%{background:#0c0d0e}}
+  @keyframes glow-a{0%{border-color:var(--amb);box-shadow:0 0 18px rgba(245,158,11,.4);background:#241a06}100%{}}
   .coal-tick{animation:coal-tick .6s ease-out}
-  @keyframes coal-tick{0%{color:#a7f3d0;border-left-color:#047857}100%{color:#71717a;border-left-color:#27272a}}
+  @keyframes coal-tick{0%{opacity:1;color:#ffe9b0}100%{opacity:.55}}
   @media (prefers-reduced-motion: reduce){
     .ev-enter,.flash-amber,.coal-tick,.item.breaking,.b-breaking{animation:none}
+    .item,.read-coal{transition:none}
   }
 </style>
 </head>
 <body class="min-h-screen">
 <div class="max-w-[1000px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
-    <span class="lcd text-sm">HERMES-TRADER · NEWS</span>
-    <span class="text-[10px] text-zinc-500" id="news-meta"></span>
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand"><span class="dot"></span>HERMES-TRADER <small>/ NEWS</small></span>
+    <span class="text-[10px] mono" style="color:var(--dim)" id="news-meta"></span>
   </header>
 
-  <nav class="flex items-center gap-2 mb-5 flex-wrap">
+  <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
   </nav>
 
-  <div class="text-zinc-500 uppercase tracking-wider text-[11px] mb-3">
+  <div class="uppercase tracking-wider text-[10px] font-bold mb-4" style="color:var(--dim);letter-spacing:.16em">
     coverage reads + research with news context · one stream · newest first
   </div>
   <div id="stream"><div class="empty">loading&hellip;</div></div>
@@ -93,6 +119,8 @@ const fmtAgo = ms => {
 const fmtPx = v => { if (v == null) return '?'; return v < 1 ? Number(v).toFixed(5) : v < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2); };
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
+// ticker chip: the eye's anchor for every coin symbol
+const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 
 // ── row renderers ────────────────────────────────────────────────────────────
 function readCard(it) {
@@ -106,10 +134,10 @@ function readCard(it) {
   return `
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-read">coverage</span>
-      <b class="text-sm">${esc(it.coin)}</b>
+      ${tk(it.coin)}
       ${sideBadge(it.side)} ${breaking} ${shadow}
-      <span class="text-[11px] text-zinc-500 num">${stats.join(' · ')}</span>
-      <span class="text-[10px] text-zinc-600 ml-auto num">${fmtAgo(it.ts)}</span>
+      <span class="text-[11px] mono" style="color:var(--dim)">${stats.join(' · ')}</span>
+      <span class="text-[10px] mono ml-auto" style="color:var(--dim)">${fmtAgo(it.ts)}</span>
     </div>
     <div class="titles">${titles || '<div>no headlines captured (relevance filter may have dropped them)</div>'}</div>`;
 }
@@ -121,7 +149,7 @@ function researchCard(c) {
   const risk = c.news_risk && c.news_risk !== 'none'
     ? `<span class="chip chip-red">news risk: ${esc(c.news_risk)}</span>` : '';
   const prov = c.provider ? `<span class="chip">${esc(c.provider)}</span>` : '';
-  const conf = c.confidence != null ? `<span class="text-[11px] text-zinc-500 num">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
+  const conf = c.confidence != null ? `<span class="text-[11px] mono" style="color:var(--dim)">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
   const cites = (c.citations || []).map(x => {
     const url = typeof x === 'string' ? x : (x.url || x.link || '');
     const title = typeof x === 'object' && x.title ? x.title : url;
@@ -130,10 +158,10 @@ function researchCard(c) {
   return `
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-research">research</span>
-      <b class="text-sm">${esc(c.coin)}</b> ${verdict} ${conf} ${prov} ${risk}
-      <span class="text-[10px] text-zinc-600 ml-auto num">${fmtAgo(c.ts)}</span>
+      ${tk(c.coin)} ${verdict} ${conf} ${prov} ${risk}
+      <span class="text-[10px] mono ml-auto" style="color:var(--dim)">${fmtAgo(c.ts)}</span>
     </div>
-    ${c.reasoning ? `<div class="text-xs text-zinc-400 mt-1 leading-relaxed">${esc(c.reasoning)}</div>` : ''}
+    ${c.reasoning ? `<div class="text-[13px] mt-1 leading-relaxed" style="color:#cfd4dd">${esc(c.reasoning)}</div>` : ''}
     ${cites ? `<div class="mt-1">${cites}</div>` : ''}`;
 }
 
@@ -180,7 +208,7 @@ const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeStrin
 function coalLabel(st) {
   const surge = st.surge_x != null ? ` · surge ×${Number(st.surge_x).toFixed(2)}` : '';
   const heads = st.headlines ? ` · ${st.headlines} headline${st.headlines === 1 ? '' : 's'}` : '';
-  return `<b>${esc(st.coin)}</b> ${esc(st.side || '')} · <span class="cnt">×${st.n}</span> quiet read${st.n === 1 ? '' : 's'}${surge}${heads} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+  return `${tk(st.coin)} ${esc(st.side || '')} · <span class="cnt mono">×${st.n}</span> quiet read${st.n === 1 ? '' : 's'}<span class="mono">${surge}${heads} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
 }
 function ingestRow(r, animate) {
   if (!remember(r)) return;
@@ -201,7 +229,7 @@ function ingestRow(r, animate) {
       if (animate) { existing.classList.remove('coal-tick'); void existing.offsetWidth; existing.classList.add('coal-tick'); }
     } else {
       const el = document.createElement('div');
-      el.className = 'read-coal num';
+      el.className = 'read-coal';
       el.dataset.gkey = gkey;
       const st = { n: 1, t0: r.ts, t1: r.ts, coin: r.coin, side: r.side,
                    surge_x: r.surge_x, headlines: (r.titles || []).length };

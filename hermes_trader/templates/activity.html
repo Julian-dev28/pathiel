@@ -6,108 +6,145 @@
 <title>hermes-trader · activity</title>
 <script src="/static/tailwind.js"></script>
 <style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
-  .num{font-variant-numeric:tabular-nums}
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
-  .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-  .badge{display:inline-block;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid currentColor;white-space:nowrap}
-  .b-live{color:#6ee7b7;background:#064e3b}
-  .b-shadow{color:#fbbf24;background:#451a03}
-  .b-long{color:#6ee7b7;background:#064e3b}
-  .b-short{color:#fca5a5;background:#450a0a}
-  .b-pass{color:#a1a1aa;background:#27272a}
-  .b-ok{color:#6ee7b7;background:#064e3b}
-  .b-fail{color:#fca5a5;background:#450a0a}
-  .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
-  .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
-  .chip.chip-amber{border-color:#78350f;color:#fbbf24;background:#1f1300}
-  /* ── session strip: the "what's happening" answer, pinned ── */
-  .strip{position:sticky;top:0;z-index:20;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;
-         background:#0c0d0e;border:2px solid #1f2937;border-left:2px solid #34d399;
-         padding:8px 14px;margin-bottom:14px;font-size:11px;color:#a3a3a3;box-shadow:0 6px 12px rgba(0,0,0,.6)}
-  .strip .s-label{color:#52525b;font-size:10px;letter-spacing:.1em;text-transform:uppercase}
-  .strip b{color:#e5e5e5;font-weight:700}
-  .strip .pos{color:#34d399}.strip .neg{color:#f87171}
-  /* ── the journal: T1 cards, T2 lines, T3 coalesced rows ── */
-  #feed{border-left:2px solid #1f2937;padding-left:14px}
-  .ev{border:1px solid #1f2937;background:#0c0d0e;padding:8px 12px;margin-bottom:8px;position:relative}
-  .ev::before{content:'';position:absolute;left:-19px;top:14px;width:8px;height:8px;background:#3f3f46;border:1px solid #0a0a0a}
-  .ev.k-research::before{background:#a5b4fc}
-  .ev.k-execute::before{background:#86efac}
-  .ev.k-close::before{background:#fbbf24}
-  .ev.k-book::before{background:#5eead4}
-  .ev.k-error::before{background:#f87171}
-  .ev-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
-  .ev-ts{color:#52525b;font-size:10px;white-space:nowrap}
-  .ev-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-  .ev-type.t-research{color:#a5b4fc}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fbbf24}
-  .ev-type.t-book{color:#5eead4}.ev-type.t-error{color:#f87171}
-  .ev-body{font-size:12px;color:#d4d4d8;margin-top:3px;line-height:1.55;word-break:break-word}
-  .ev-sub{font-size:11px;color:#71717a;margin-top:2px}
-  /* T2: compact one-liners */
-  .ev-line{font-size:11px;color:#a3a3a3;padding:3px 12px;margin-bottom:4px;border-left:2px solid #3f3f46;line-height:1.5;word-break:break-word}
-  .ev-line b{color:#d4d4d8;font-weight:600}
-  .ev-line.l-research{border-left-color:#4c4f8f}
-  .ev-line.l-book{border-left-color:#134e4a}
-  .ev-line.l-system{border-left-color:#3f3f46;color:#71717a}
-  .ev-line .conf{color:#71717a}
-  /* T3: coalesced rows + dividers */
-  .ev-coal{font-size:11px;color:#71717a;padding:3px 12px;margin-bottom:4px;border-left:2px solid #27272a;line-height:1.5}
-  .ev-coal b{color:#a3a3a3;font-weight:600}
-  .ev-coal .cnt{color:#fbbf24;font-weight:700}
-  .ev-div{font-size:10px;color:#52525b;text-align:center;padding:3px 0;margin-bottom:4px;letter-spacing:.06em}
-  .ev-div .cnt{color:#71717a;font-weight:700}
-  .empty-tape{font-size:12px;color:#71717a;padding:14px;border:1px dashed #27272a;margin-bottom:10px;line-height:1.7}
+  /* ── design tokens: sans for words, mono for numbers/tickers/time.
+     The ONLY saturated green/red on the page is money + direction. ── */
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
+    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
+  }
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#181c24 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  /* brand + nav */
+  .brand{font-weight:800;font-size:15px;letter-spacing:.14em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--up);margin-right:9px;vertical-align:2px;box-shadow:0 0 8px rgba(34,197,94,.7)}
+  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:8px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link.nav-active{color:var(--txt);background:var(--card2);border-color:var(--line2)}
+  /* ticker chip — the eye's anchor for every coin symbol */
+  .tk{display:inline-block;padding:1px 9px;border-radius:999px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap;vertical-align:baseline}
+  /* badges: direction gets the saturated colors, everything else stays cool */
+  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-ok{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-fail{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-pass{color:var(--mut);background:#1d212b;border-color:var(--line2)}
+  .b-live{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
+  .b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .chip{display:inline-block;padding:2px 9px;font-size:10.5px;border-radius:999px;border:1px solid var(--line2);background:#171a20;color:var(--mut);margin:2px 5px 2px 0;white-space:nowrap}
+  .chip.chip-red{border-color:rgba(239,68,68,.35);color:#fca5a5;background:rgba(239,68,68,.08)}
+  .chip.chip-amber{border-color:rgba(245,158,11,.35);color:#fcd34d;background:rgba(245,158,11,.08)}
+  /* ── session strip: KPI chips, sticky with blur + elevation ── */
+  .strip{position:sticky;top:10px;z-index:20;display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;
+         background:rgba(14,16,20,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+         border:1px solid var(--line);border-radius:14px;padding:10px 8px;margin-bottom:18px;
+         box-shadow:0 12px 30px rgba(0,0,0,.45)}
+  .kpi{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:4px 14px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .v{font-size:18px;font-weight:750;line-height:1.15;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .kpi .l{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  .kpi .v.pos{color:var(--up)}.kpi .v.neg{color:var(--dn)}
+  /* ── the journal: timeline rail + three visual weights ── */
+  #feed{position:relative;border-left:2px solid var(--line);padding-left:18px}
+  /* T1: elevated cards with a 4px semantic accent bar */
+  .ev{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:10px;
+      padding:12px 15px;margin-bottom:14px;position:relative;
+      transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .ev:hover{transform:translateY(-1px);border-color:var(--line2);box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .ev::before{content:'';position:absolute;left:-25px;top:16px;width:9px;height:9px;border-radius:999px;background:var(--dim);border:2px solid #0a0b0d}
+  .ev.acc-green{border-left-color:var(--up)}   .ev.acc-green::before{background:var(--up)}
+  .ev.acc-red{border-left-color:var(--dn)}     .ev.acc-red::before{background:var(--dn)}
+  .ev.acc-indigo{border-left-color:var(--ind)} .ev.acc-indigo::before{background:var(--ind)}
+  .ev.acc-teal{border-left-color:var(--teal)}  .ev.acc-teal::before{background:var(--teal)}
+  .ev-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .ev-ts{color:var(--dim);font-size:10.5px;white-space:nowrap}
+  .ev-type{font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+  .ev-type.t-research{color:var(--ind)}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fcd34d}
+  .ev-type.t-book{color:var(--teal)}.ev-type.t-error{color:#fca5a5}
+  .ev-body{font-size:13px;color:#cfd4dd;margin-top:5px;line-height:1.6;word-break:break-word}
+  .ev-sub{font-size:11.5px;color:var(--dim);margin-top:3px}
+  .pnl{font-size:14px;font-weight:800}
+  .pnl.pos{color:var(--up)}.pnl.neg{color:var(--dn)}
+  /* T2: base one-liners */
+  .ev-line{font-size:12px;color:var(--mut);padding:4px 12px;margin-bottom:7px;border-left:2px solid var(--line2);line-height:1.7;word-break:break-word;position:relative}
+  .ev-line::before{content:'';position:absolute;left:-24px;top:11px;width:6px;height:6px;border-radius:999px;background:var(--faint)}
+  .ev-line b{color:#cfd4dd;font-weight:650}
+  .ev-line.l-research{border-left-color:rgba(129,140,248,.5)}
+  .ev-line.l-research::before{background:var(--ind)}
+  .ev-line.l-book{border-left-color:rgba(45,212,191,.4)}
+  .ev-line.l-book::before{background:var(--teal)}
+  .ev-line .conf{color:var(--dim);font-size:11px}
+  /* T3: coalesced noise — visibly recessed (~55%) */
+  .ev-coal{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:6px;border-left:2px solid var(--line);line-height:1.7;opacity:.55;transition:opacity .15s ease}
+  .ev-coal:hover{opacity:.9}
+  .ev-coal b{color:var(--mut);font-weight:650}
+  .ev-coal .cnt{color:#fcd34d;font-weight:750}
+  .ev-coal .tk{opacity:.9;font-size:10px;padding:0 8px}
+  /* dividers: centered thin rule + small-caps chip */
+  .ev-div{display:flex;align-items:center;gap:12px;margin:10px 0 12px;opacity:.65}
+  .ev-div::before,.ev-div::after{content:'';flex:1;height:1px;background:var(--line)}
+  .ev-div .dv{font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+              background:#12141a;border:1px solid var(--line);border-radius:999px;padding:2px 12px;white-space:nowrap}
+  .empty-tape{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:10px;margin-bottom:12px;line-height:1.7}
   /* ── arrival animations — CSS only, reduced-motion respected ── */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
   .flash-green{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-g 1.8s ease-out}
-  @keyframes glow-g{0%{border-color:#34d399;box-shadow:0 0 16px rgba(52,211,153,.45);background:#052e1c}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  @keyframes glow-g{0%{border-color:var(--up);box-shadow:0 0 18px rgba(34,197,94,.4);background:#0d2416}100%{}}
   .flash-red{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-r 1.8s ease-out}
-  @keyframes glow-r{0%{border-color:#f87171;box-shadow:0 0 16px rgba(248,113,113,.4);background:#2b0a0a}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  @keyframes glow-r{0%{border-color:var(--dn);box-shadow:0 0 18px rgba(239,68,68,.4);background:#2b0e0e}100%{}}
   .flash-indigo{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-i 1.5s ease-out}
-  @keyframes glow-i{0%{border-color:#818cf8;box-shadow:0 0 12px rgba(129,140,248,.35);background:#14142b}100%{border-color:#1f2937;box-shadow:none;background:#0c0d0e}}
+  @keyframes glow-i{0%{border-color:var(--ind);box-shadow:0 0 14px rgba(129,140,248,.35);background:#15162d}100%{}}
   .coal-tick{animation:coal-tick .6s ease-out}
-  @keyframes coal-tick{0%{color:#a7f3d0;border-left-color:#047857}100%{color:#71717a;border-left-color:#27272a}}
+  @keyframes coal-tick{0%{opacity:1;color:#d3f9e4}100%{opacity:.55}}
   @media (prefers-reduced-motion: reduce){
     .ev-enter,.flash-green,.flash-red,.flash-indigo,.coal-tick{animation:none}
+    .ev,.ev-coal{transition:none}
   }
-  /* light filter chips */
-  .fchip{padding:3px 10px;font-size:10px;letter-spacing:.06em;background:transparent;border:1px solid #3f3f46;color:#71717a;cursor:pointer}
-  .fchip:hover{border-color:#047857;color:#a7f3d0}
-  .fchip.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
-  select.fsel{background:#18181b;border:1px solid #3f3f46;color:#d4d4d8;font-size:11px;padding:3px 8px}
+  /* ── filters: one quiet segmented control ── */
+  .seg{display:inline-flex;flex-wrap:wrap;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:10px;padding:3px}
+  .fchip{padding:4px 12px;font-size:11px;font-weight:600;letter-spacing:.04em;background:transparent;border:0;border-radius:7px;color:var(--dim);cursor:pointer;transition:color .12s ease,background .12s ease}
+  .fchip:hover{color:var(--txt)}
+  .fchip.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
+  select.fsel{background:#12141a;border:1px solid var(--line);border-radius:10px;color:var(--mut);font-size:11px;font-weight:600;padding:6px 10px}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-[1000px] mx-auto px-6 py-6">
+<div class="max-w-[980px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
-    <span class="lcd text-sm">HERMES-TRADER · ACTIVITY</span>
-    <span class="text-[10px] text-zinc-500" id="feed-meta"></span>
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand"><span class="dot"></span>HERMES-TRADER <small>/ ACTIVITY</small></span>
+    <span class="text-[10px] mono" style="color:var(--dim)" id="feed-meta"></span>
   </header>
 
-  <nav class="flex items-center gap-2 mb-5 flex-wrap">
+  <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
   </nav>
 
   <div class="strip" id="session-strip">
-    <span class="s-label">last 6h</span><span>loading&hellip;</span>
+    <div class="kpi"><span class="v">…</span><span class="l">last 6h</span></div>
   </div>
 
-  <div class="flex items-center gap-2 flex-wrap mb-5" id="filter-bar">
-    <span id="type-filters" class="flex items-center gap-1.5 flex-wrap"></span>
+  <div class="flex items-center gap-3 flex-wrap mb-6" id="filter-bar">
+    <span id="type-filters" class="seg"></span>
     <select id="book-filter" class="fsel"><option value="">all books</option></select>
   </div>
 
   <div id="feed"><div class="ev-coal">loading&hellip;</div></div>
 
-  <footer class="text-[10px] text-zinc-600 mt-6 text-center">
+  <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
     one wallet · live · not financial advice
   </footer>
 </div>
@@ -149,6 +186,8 @@ function readable(v, depth) {
   return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
 }
 
+// ticker chip: the eye's anchor for every coin symbol
+const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
 const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>'
@@ -157,33 +196,33 @@ const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>
                         : `<span class="badge b-pass">${esc(v || '?')}</span>`;
 
 function head(e, label, cls, bits) {
-  return `<div class="ev-head"><span class="ev-ts num">${fmtTs(e.ts)}</span>` +
+  return `<div class="ev-head"><span class="ev-ts mono">${fmtTs(e.ts)}</span>` +
          `<span class="ev-type t-${cls}">${label}</span>` + bits.join(' ') + '</div>';
 }
 
 // ── TIER 1: full cards, always ───────────────────────────────────────────────
 const CARD = {
   research(e) {
-    const conf = e.confidence != null ? `<span class="text-zinc-500 text-[11px] num">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
+    const conf = e.confidence != null ? `<span class="ev-sub mono" style="margin-top:0">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
     const prov = e.provider ? `<span class="chip">${esc(e.provider)}</span>` : '';
     const search = e.web_search_used ? '<span class="chip chip-amber">web search</span>' : '';
     const risk = e.news_risk && e.news_risk !== 'none' ? `<span class="chip chip-red">news risk: ${esc(e.news_risk)}</span>` : '';
     const triad = (e.entry_px || e.stop_px || e.tp_px)
-      ? `<div class="ev-sub num">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
+      ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
     const cites = (e.citations || []).map(c => {
       const url = typeof c === 'string' ? c : (c.url || c.link || '');
       const title = typeof c === 'object' && c.title ? c.title : url;
       return url ? `<div class="ev-sub">· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
     }).join('');
     return head(e, 'research', 'research',
-        [`<b>${esc(e.coin)}</b>`, verdictBadge(e.verdict), conf, prov, search, risk])
+        [tk(e.coin), verdictBadge(e.verdict), conf, prov, search, risk])
       + (e.reasoning ? `<div class="ev-body">${esc(e.reasoning)}</div>` : '')
       + triad + cites;
   },
   execute(e) {
     const status = e.executed ? '<span class="badge b-ok">FILLED</span>' : '<span class="badge b-fail">BLOCKED</span>';
     const book = e.book ? `<span class="chip">${esc(e.book)}</span>` : '';
-    const via = e.entry_via ? `<span class="text-zinc-500 text-[11px]">via ${esc(e.entry_via)}</span>` : '';
+    const via = e.entry_via ? `<span class="ev-sub" style="margin-top:0">via ${esc(e.entry_via)}</span>` : '';
     let body = '';
     if (e.executed) {
       const parts = [];
@@ -192,36 +231,36 @@ const CARD = {
       if (e.stop_px != null) parts.push(`stop ${fmtNum(e.stop_px)}`);
       if (e.tp_px != null) parts.push(`tp ${fmtNum(e.tp_px)}`);
       if (e.regime) parts.push(`regime ${esc(e.regime)}`);
-      body = `<div class="ev-body num">${parts.join(' · ')}</div>`;
+      body = `<div class="ev-body mono">${parts.join(' · ')}</div>`;
     }
     const gates = (e.gates || []).map(g => `<span class="chip chip-red">${esc(g)}</span>`).join('');
     const detail = (!e.executed && !((e.gates || []).length) && e.detail)
       ? `<span class="chip chip-red">${esc(e.detail)}</span>` : '';
     const gateRow = (gates || detail) ? `<div class="mt-1">${gates}${detail}</div>` : '';
     return head(e, 'execute', 'execute',
-        [`<b>${esc(e.coin)}</b>`, sideBadge(e.side), status, book, via,
-         e.ai_verdict ? `<span class="text-zinc-600 text-[11px]">ai: ${esc(e.ai_verdict)}</span>` : ''])
+        [tk(e.coin), sideBadge(e.side), status, book, via,
+         e.ai_verdict ? `<span class="ev-sub" style="margin-top:0">ai: ${esc(e.ai_verdict)}</span>` : ''])
       + body + gateRow;
   },
   close(e) {
     const pnl = e.pnl_pct != null
-      ? `<span class="num font-bold ${e.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}">${fmtPct(e.pnl_pct)}</span>` : '';
-    const lev = e.leverage ? `<span class="text-zinc-500 text-[11px]">${e.leverage}x</span>` : '';
+      ? `<span class="pnl mono ${e.pnl_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(e.pnl_pct)}</span>` : '';
+    const lev = e.leverage ? `<span class="ev-sub mono" style="margin-top:0">${e.leverage}x</span>` : '';
     const src = e.source === 'ai_close' ? '<span class="chip chip-amber">ai close</span>' : '<span class="chip">dsl</span>';
     const failed = e.executed === false ? '<span class="badge b-fail">FAILED</span>' : '';
     const fills = (e.fill_px != null || e.entry_px != null)
-      ? `<div class="ev-sub num">entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}${e.spot_pct != null ? ` · spot ${fmtPct(e.spot_pct)}` : ''}</div>` : '';
-    return head(e, 'close', 'close', [`<b>${esc(e.coin)}</b>`, sideBadge(e.side), lev, pnl, src, failed])
+      ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}${e.spot_pct != null ? ` · spot ${fmtPct(e.spot_pct)}` : ''}</div>` : '';
+    return head(e, 'close', 'close', [tk(e.coin), sideBadge(e.side), lev, pnl, src, failed])
       + (e.reason ? `<div class="ev-body">${esc(e.reason)}</div>` : '')
       + fills;
   },
   book(e) {   // only book_open reaches tier 1
     return head(e, 'book', 'book',
-        [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', `<b>${esc(e.coin)}</b>`, sideBadge(e.side)]);
+        [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', tk(e.coin), sideBadge(e.side)]);
   },
   error(e) {
     return head(e, 'error', 'error', [`<b>${esc(e.scope || 'loop')}</b>`])
-      + `<div class="ev-body text-red-300">${esc(e.error)}</div>`;
+      + `<div class="ev-body" style="color:#fca5a5">${esc(e.error)}</div>`;
   },
 };
 
@@ -229,24 +268,23 @@ const CARD = {
 function lineNode(e) {
   const div = document.createElement('div');
   let cls = 'ev-line', html = '';
-  const t = `<span class="ev-ts num">${fmtTime(e.ts)}</span>`;
+  const t = `<span class="ev-ts mono">${fmtTime(e.ts)}</span>`;
   if (e.type === 'research') {   // PASS verdicts: coin, conf, one-line reason
     cls += ' l-research';
     const reason = String(e.reasoning || '').slice(0, 160);
-    html = `${t} <b>${esc(e.coin)}</b> PASS <span class="conf num">conf ${Number(e.confidence ?? 0).toFixed(2)}</span>${reason ? ' — ' + esc(reason) : ''}`;
+    html = `${t} ${tk(e.coin)} <span class="badge b-pass">PASS</span> <span class="conf mono">conf ${Number(e.confidence ?? 0).toFixed(2)}</span>${reason ? ' — ' + esc(reason) : ''}`;
   } else if (e.type === 'book') {   // cycles that produced signals
     cls += ' l-book';
     const bits = [`<b>${esc(e.book)}</b>`];
-    if (e.shadow != null) bits.push(e.shadow ? 'shadow' : 'live');
-    if (e.signals != null) bits.push(`${e.signals} signal${e.signals === 1 ? '' : 's'}`);
-    if (e.opened) bits.push(`<b>${e.opened} opened</b>`);
+    if (e.shadow != null) bits.push(e.shadow ? '<span class="badge b-shadow">SHADOW</span>' : '<span class="badge b-live">LIVE</span>');
+    if (e.signals != null) bits.push(`<span class="mono">${e.signals}</span> signal${e.signals === 1 ? '' : 's'}`);
+    if (e.opened) bits.push(`<b class="mono">${e.opened} opened</b>`);
     const cands = (e.candidates || []).slice(0, 3).map(c =>
-      c && c.coin ? `${c.coin} ${c.side || ''}`.trim() : readable(c)).join(', ');
-    if (cands) bits.push(esc(cands));
+      c && c.coin ? `${tk(c.coin)} ${esc(c.side || '')}`.trim() : esc(readable(c))).join(' ');
+    if (cands) bits.push(cands);
     else if (e.signals == null && e.extra) bits.push(esc(readable(e.extra).slice(0, 140)));
     html = `${t} ${bits.join(' · ')}`;
   } else if (e.type === 'system') {
-    cls += ' l-system';
     const f = e.fields || {};
     if (e.name === 'loop_start') {
       html = `${t} ⟳ loop restarted${f.mode ? ' · ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}${f.min_score ? ' · min score ' + esc(f.min_score) : ''}`;
@@ -256,7 +294,6 @@ function lineNode(e) {
       html = `${t} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
     }
   } else {   // other / unknown shapes → one readable line, never raw JSON
-    cls += ' l-system';
     html = `${t} <b>${esc(e.name || e.type)}</b> ${esc(readable(e.fields || {}).slice(0, 200))}`;
   }
   div.className = cls;
@@ -270,15 +307,15 @@ const coalIndex = new Map();   // gkey -> element
 
 function coalLabel(kind, st) {
   if (kind === 'gate')
-    return `<b>${esc(st.coin ?? '?')}</b> blocked <span class="cnt">×${st.n}</span> · ${esc(st.reason || 'gate skip')} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+    return `${tk(st.coin)} blocked <span class="cnt mono">×${st.n}</span> · ${esc(st.reason || 'gate skip')} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
   if (kind === 'quiet')
-    return `<b>${esc(st.book)}</b> · <span class="cnt">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}`;
+    return `<b>${esc(st.book)}</b> · <span class="cnt mono">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
   if (kind === 'scan') {
     const h = st.hour * 3600000;
-    return `${fmtHM(h)}-${fmtHM(h + 3600000)} · <span class="cnt">${st.n}</span> scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades`;
+    return `<span class="dv mono">${fmtHM(h)}–${fmtHM(h + 3600000)} · ${st.n} scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades</span>`;
   }
   if (kind === 'steady')
-    return `── steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)} ──`;
+    return `<span class="dv mono">steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)}</span>`;
   return `${st.n} events`;
 }
 function coalState(el) { return JSON.parse(el.dataset.st); }
@@ -289,7 +326,7 @@ function coalRender(el) {
 }
 function coalNode(kind, gkey, st) {
   const el = document.createElement('div');
-  el.className = (kind === 'steady' || kind === 'scan') ? 'ev-div num' : 'ev-coal num';
+  el.className = (kind === 'steady' || kind === 'scan') ? 'ev-div' : 'ev-coal';
   el.dataset.kind = kind;
   el.dataset.gkey = gkey;
   el.dataset.st = JSON.stringify(st);
@@ -331,8 +368,8 @@ function routeHeartbeat(e) {
   if (changed) {
     steadyRun++;
     const div = document.createElement('div');
-    div.className = 'ev-line l-system num';
-    div.innerHTML = `<span class="ev-ts num">${fmtTime(e.ts)}</span> ♥ equity $${eq.toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · ${open} open`;
+    div.className = 'ev-line';
+    div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ♥ equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
     return { node: div };
   }
   return { gkey: `hbsteady|${steadyRun}`, kind: 'steady',
@@ -357,6 +394,7 @@ function remember(e) {
   return true;
 }
 
+// arrival emphasis + semantic accent: green fills, red errors/losses, indigo verdicts
 function emphasisClass(e) {
   if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
   if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
@@ -365,10 +403,18 @@ function emphasisClass(e) {
   if (e.type === 'book') return 'flash-green';        // book_open
   return 'ev-enter';
 }
+function accentClass(e) {
+  if (e.type === 'execute') return e.executed ? 'acc-green' : 'acc-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'acc-green' : 'acc-red';
+  if (e.type === 'error') return 'acc-red';
+  if (e.type === 'research') return 'acc-indigo';
+  if (e.type === 'book') return 'acc-teal';           // book_open
+  return '';
+}
 
 function cardNode(e) {
   const div = document.createElement('div');
-  div.className = `ev k-${e.type}`;
+  div.className = `ev k-${e.type} ${accentClass(e)}`;
   div.innerHTML = (CARD[e.type] || CARD.error)(e);
   return div;
 }
@@ -447,21 +493,24 @@ function maybeEmptyTape(session) {
   feed.prepend(b);
 }
 
-// ── session strip ────────────────────────────────────────────────────────────
+// ── session strip: KPI chips, money colored by sign ─────────────────────────
+function kpiChip(label, value, cls) {
+  return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}">${value}</span><span class="l">${label}</span></div>`;
+}
 function renderStrip(s) {
   if (!s) return;
   const el = document.getElementById('session-strip');
-  const pnlCls = (s.realized_pnl_pct ?? 0) >= 0 ? 'pos' : 'neg';
+  const pnl = s.realized_pnl_pct ?? 0;
+  const pnlCls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
   el.innerHTML =
-    `<span class="s-label">last ${s.window_h}h</span>` +
-    `<span class="num">scans <b>${s.scans}</b></span>` +
-    `<span class="num">candidates <b>${s.candidates}</b></span>` +
-    `<span class="num">researched <b>${s.researched}</b></span>` +
-    `<span class="num">opened <b>${s.opened}</b></span>` +
-    `<span class="num">closed <b>${s.closed}</b></span>` +
-    `<span class="num">realized <b class="${pnlCls}">${fmtPct(s.realized_pnl_pct)}</b></span>` +
-    `<span class="num">equity <b>${s.equity != null ? '$' + Number(s.equity).toFixed(2) : '—'}</b>` +
-    `${s.open_positions != null ? ' · ' + s.open_positions + ' open' : ''}</span>`;
+    kpiChip('scans', s.scans) +
+    kpiChip('candidates', s.candidates) +
+    kpiChip('researched', s.researched) +
+    kpiChip('opened', s.opened) +
+    kpiChip('closed', s.closed) +
+    kpiChip('realized', fmtPct(pnl), pnlCls) +
+    kpiChip('equity', s.equity != null ? '$' + Number(s.equity).toFixed(2) : '—') +
+    kpiChip('open', s.open_positions != null ? s.open_positions : '—');
 }
 
 // ── load + poll ──────────────────────────────────────────────────────────────
