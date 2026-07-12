@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · news</title>
+<script src="/static/tailwind.js"></script>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
+  .num{font-variant-numeric:tabular-nums}
+  .card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10}
+  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
+  .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
+  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
+  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
+  .badge{display:inline-block;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid currentColor;white-space:nowrap}
+  .b-long{color:#6ee7b7;background:#064e3b}
+  .b-short{color:#fca5a5;background:#450a0a}
+  .b-breaking{color:#fbbf24;background:#451a03;animation:blink 1.6s ease-in-out infinite}
+  .b-shadow{color:#fbbf24;background:#451a03}
+  .b-pass{color:#a1a1aa;background:#27272a}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.5}}
+  .item{border:1px solid #1f2937;background:#0c0d0e;padding:10px 14px;margin-bottom:8px}
+  .item.breaking{border-color:#b45309;box-shadow:0 0 0 1px #78350f}
+  .titles{margin-top:6px}
+  .titles div{font-size:12px;color:#d4d4d8;padding:2px 0;line-height:1.5}
+  .titles div::before{content:'· ';color:#52525b}
+  .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
+  .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
+  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11px}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1100px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+    <span class="lcd text-sm">HERMES-TRADER · NEWS</span>
+    <span class="text-[10px] text-zinc-500" id="news-meta"></span>
+  </header>
+
+  <nav class="flex items-center gap-2 mb-6 flex-wrap">
+    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
+    <a href="/config" data-nav="/config" class="nav-link">CONFIG</a>
+    <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
+  </nav>
+
+  <section class="mb-8">
+    <div class="text-zinc-500 uppercase tracking-wider text-[11px] mb-3">news catalyst reads · newest first</div>
+    <div id="news-items"><div class="text-zinc-500 text-xs">loading&hellip;</div></div>
+  </section>
+
+  <section>
+    <div class="text-zinc-500 uppercase tracking-wider text-[11px] mb-3">research with news context</div>
+    <div id="research-ctx"><div class="text-zinc-500 text-xs">loading&hellip;</div></div>
+  </section>
+
+  <footer class="text-[10px] text-zinc-600 mt-6 text-center">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtAgo = ms => {
+  if (!ms) return '—';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 60) return m + 'm ago';
+  if (m < 1440) return Math.floor(m / 60) + 'h ago';
+  return Math.floor(m / 1440) + 'd ago';
+};
+const fmtPx = v => { if (v == null) return '?'; return v < 1 ? Number(v).toFixed(5) : v < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2); };
+const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
+                     : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
+
+function newsCard(it) {
+  const breaking = it.breaking ? '<span class="badge b-breaking">BREAKING</span>' : '';
+  const shadow = it.shadow ? '<span class="badge b-shadow">SHADOW</span>' : '';
+  const stats = [];
+  if (it.n_recent != null) stats.push(`${it.n_recent} recent headline${it.n_recent === 1 ? '' : 's'}`);
+  if (it.surge_x != null) stats.push(`surge ×${Number(it.surge_x).toFixed(2)}`);
+  if (it.entry_ref_px != null) stats.push(`ref px ${fmtPx(it.entry_ref_px)}`);
+  const titles = (it.titles || []).map(t => `<div>${esc(t)}</div>`).join('');
+  return `<div class="item${it.breaking ? ' breaking' : ''}">
+    <div class="flex items-baseline gap-2 flex-wrap">
+      <b class="text-sm">${esc(it.coin)}</b>
+      ${sideBadge(it.side)} ${breaking} ${shadow}
+      <span class="text-[11px] text-zinc-500 num">${stats.join(' · ')}</span>
+      <span class="text-[10px] text-zinc-600 ml-auto num">${fmtAgo(it.ts)}</span>
+    </div>
+    <div class="titles">${titles || '<div>no headlines captured</div>'}</div>
+  </div>`;
+}
+
+function ctxCard(c) {
+  const verdict = c.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
+                : c.verdict === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
+                : `<span class="badge b-pass">${esc(c.verdict || '?')}</span>`;
+  const risk = c.news_risk && c.news_risk !== 'none'
+    ? `<span class="chip chip-red">news risk: ${esc(c.news_risk)}</span>` : '';
+  const prov = c.provider ? `<span class="chip">${esc(c.provider)}</span>` : '';
+  const conf = c.confidence != null ? `<span class="text-[11px] text-zinc-500 num">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
+  const cites = (c.citations || []).map(x => {
+    const url = typeof x === 'string' ? x : (x.url || x.link || '');
+    const title = typeof x === 'object' && x.title ? x.title : url;
+    return url ? `<div>· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
+  }).join('');
+  return `<div class="item">
+    <div class="flex items-baseline gap-2 flex-wrap">
+      <b class="text-sm">${esc(c.coin)}</b> ${verdict} ${conf} ${prov} ${risk}
+      <span class="text-[10px] text-zinc-600 ml-auto num">${fmtAgo(c.ts)}</span>
+    </div>
+    ${c.reasoning ? `<div class="text-xs text-zinc-400 mt-1 leading-relaxed">${esc(c.reasoning)}</div>` : ''}
+    ${cites ? `<div class="mt-1">${cites}</div>` : ''}
+  </div>`;
+}
+
+async function load() {
+  try {
+    const d = await (await fetch('/api/dashboard/news?limit=50')).json();
+    const items = d.items || [];
+    document.getElementById('news-items').innerHTML = items.length
+      ? items.map(newsCard).join('')
+      : '<div class="text-zinc-500 text-xs">no news catalyst reads yet</div>';
+    const ctx = d.research_context || [];
+    document.getElementById('research-ctx').innerHTML = ctx.length
+      ? ctx.map(ctxCard).join('')
+      : '<div class="text-zinc-500 text-xs">no research events carried news context in the recent window</div>';
+    const breaking = items.filter(i => i.breaking).length;
+    document.getElementById('news-meta').textContent =
+      `${items.length} reads · ${breaking} breaking · ${ctx.length} research w/ news context`;
+  } catch (e) {
+    document.getElementById('news-items').innerHTML = '<div class="text-red-400 text-xs">news load failed — is the server up?</div>';
+  }
+}
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

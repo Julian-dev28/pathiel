@@ -1,10 +1,20 @@
 """Public + operator web UI for hermes-trader.
 
-Two surfaces, one module:
+Pages (markup in hermes_trader/templates/*.html, assets vendored in /static):
 
-  GET /                          — public dashboard (anyone)
-  GET /operator                  — operator console (token-gated)
+  GET /                          — landing one-pager: how it works, equity +
+                                   today's PnL, live-books table
+  GET /activity                  — live activity feed with book/type filters
+  GET /news                      — news-catalyst reads + research news context
+  GET /config                    — live agent-config viewer
+  GET /operator                  — operator console (token-gated APIs)
+
+JSON APIs:
+
   GET /api/dashboard/summary     — hero numbers + status
+  GET /api/dashboard/books       — live-books table rows
+  GET /api/dashboard/activity    — classified session-log events (filterable)
+  GET /api/dashboard/news        — news ledger reads, newest first
   GET /api/dashboard/positions   — open positions + DSL tracker state
   GET /api/dashboard/equity-curve?range=24h|7d|30d
   GET /api/feed/stream           — Server-Sent Events tailing the session log
@@ -521,1144 +531,305 @@ def _require_operator(request: Request) -> None:
         raise HTTPException(status_code=401, detail="invalid operator token")
 
 
-# ── HTML ─────────────────────────────────────────────────────────────────────
+# ── live books ───────────────────────────────────────────────────────────────
+# (name, config key, thesis one-liner). Sizing + live/shadow status come from
+# the live .agent-config.json at request time, so a shadow flip shows on the
+# next poll without a server restart. mover_pass nests under
+# mover_recorders.pass_live (config key None → special-cased below).
+
+_BOOKS: List[tuple] = [
+    ("xs_momentum", "xs_momentum",
+     "Cross-sectional momentum basket — long the strongest, short the weakest "
+     "of the top-50 by 7d return, vol-managed rebalance."),
+    ("extreme_fade", "extreme_fade",
+     "Fade single-day crashes of -12% or worse — long the panic with a wide "
+     "20% stop, 3-day hold."),
+    ("rally_exhaustion", "rally_exhaustion",
+     "Short a +12%/2d rally when BTC is in a downtape — wide stop, $20M "
+     "volume floor."),
+    ("crash_continue_div_short", "crash_continue_div_short",
+     "BTC up while a coin bleeds -8%/2d — short the divergent laggard's "
+     "continuation."),
+    ("engulf_short", "engulf_short",
+     "Bearish daily engulfing candle on a liquid coin — short the next day."),
+    ("neg_funding_fade", "neg_funding_fade",
+     "Deep negative funding plus a green volume influx — short the failed pop."),
+    ("funding_spike_short", "funding_spike_short",
+     "Funding-rate z-score spike above 2 — short until funding normalizes."),
+    ("majors_swing", "majors_swing",
+     "Trend-aligned pullback-resume swings on majors (BTC, ETH, SOL, SP500)."),
+    ("young_listings", "young_listings",
+     "Fresh xyz listings under the liquidity floor — bounded early-momentum lane."),
+    ("unlock_short_runin", "unlock_short",
+     "Short the run-in 48-72h before large token unlocks (>=1% of circulating)."),
+    ("news_catalyst", "news_catalyst",
+     "News-volume surge on a coin's headlines — ride the catalyst for a 1-day hold."),
+    ("mover_pass", None,
+     "Counterfactual recorder — tracks daily movers the AI passed on, so "
+     "vetoes stay measurable."),
+]
+
+_KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
 
 
-_PUBLIC_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>hermes-trader · live</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<!-- NES.css — pixel-perfect Nintendo-flavored UI primitives. Spike: wraps the
-     hamster habitat as a proper Tamagotchi enclosure. Tiny (~30KB), no JS. -->
-<link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
-<script src="/static/tailwind.js"></script>
-<script src="/static/chart.umd.min.js"></script>
-<script src="/static/chartjs-adapter-date-fns.min.js"></script>
-<style>
-  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5;image-rendering:pixelated}
-  /* Discreet mode — show `•••` instead of every dollar value. The mask span
-     sits next to the value span; CSS flips which is visible. */
-  .dollar-mask{display:none}
-  body.discreet .dollar-value{display:none}
-  body.discreet .dollar-mask{display:inline;color:#71717a}
-  /* Pixel-font headings only — body text stays readable mono. */
-  .pixel{font-family:'Press Start 2P',ui-monospace,monospace;letter-spacing:.02em;line-height:1.4}
-  /* Primary navbar links — NES-button-flavored with a clear active state. */
-  .nav-link{display:inline-block;padding:7px 11px;font-size:9px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;transition:transform .08s ease,box-shadow .08s ease}
-  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
-  .nav-link:active{transform:translate(2px,2px);box-shadow:none}
-  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
-  .nav-link.nav-link-ghost{background:transparent;border-color:#27272a;color:#71717a}
-  .nav-link.nav-link-ghost:hover{color:#fde047;border-color:#78350f}
-  /* Chunky pixel-card: 2px border + hard 4px offset shadow, no rounded corners. */
-  .pixel-card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10;border-radius:0}
-  .pixel-card.accent{border-color:#34d399;box-shadow:4px 4px 0 #064e3b}
-  .pixel-btn{border:2px solid currentColor;box-shadow:2px 2px 0 #18181b;border-radius:0;image-rendering:pixelated}
-  .pixel-btn:active{transform:translate(2px,2px);box-shadow:none}
-  /* LCD-style title strip */
-  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;text-shadow:0 0 6px #34d39966}
-  /* Agent pet — bounces gently */
-  .pet{font-size:28px;display:inline-block;animation:pet-bounce 1.4s ease-in-out infinite;filter:drop-shadow(2px 2px 0 #064e3b)}
-  /* When the pet element renders the pixel-sprite SVG (worried state), size
-     it like the emoji glyphs so the bounce animation lines up. */
-  .pet.pet-sprite{width:32px;height:32px;font-size:0;line-height:0;image-rendering:pixelated}
-  .pet.pet-sprite svg{width:100%;height:100%;display:block;image-rendering:pixelated}
-  @keyframes pet-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
-  .pet.shake{animation:pet-shake 0.4s linear infinite}
-  @keyframes pet-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
-  .pet.sleep{animation:pet-sleep 3s ease-in-out infinite;filter:none;opacity:.7}
-  @keyframes pet-sleep{0%,100%{transform:scale(1)}50%{transform:scale(0.95)}}
-  /* Pixel "mood bar" — chunky blocks */
-  .mood-bar{font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:2px;color:#34d399}
-  .feed-row{font-size:12px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .feed-row.scan{color:#9ca3af}
-  .feed-row.research{color:#a5b4fc}
-  .feed-row.execute{color:#86efac}
-  .feed-row.execute-fail{color:#fca5a5}
-  .feed-row.error{color:#f87171}
-  .feed-row.heartbeat{color:#71717a}
-  .feed-row.dsl_exit{color:#fbbf24}
-  /* Status pill — pixel-block style with sharp corners */
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:10px;font-weight:600;font-family:'Press Start 2P',monospace;border:2px solid currentColor;border-radius:0;letter-spacing:.05em}
-  .pill.scanning{background:#064e3b;color:#6ee7b7}
-  .pill.stale{background:#451a03;color:#fbbf24}
-  .pill.offline{background:#450a0a;color:#fca5a5}
-  .num{font-variant-numeric:tabular-nums}
-  .blink{animation:blink 1.6s ease-in-out infinite}
-  @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-  /* Override Tailwind's rounded-lg on existing sections to keep pixel feel */
-  section.bg-zinc-900{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;border-radius:0;background:#0f0f10}
-  /* ── Matrix-rain right sidebar ── */
-  .matrix-pane{
-    background:linear-gradient(180deg,#02110a 0%,#000805 100%);
-    border:2px solid #047857;
-    box-shadow:4px 4px 0 #022c1e, inset 0 0 24px rgba(52,211,153,0.08);
-    border-radius:0;
-    position:relative;overflow:hidden;
-  }
-  .matrix-pane::before{
-    /* scanline overlay — barely visible, sells the CRT vibe */
-    content:'';position:absolute;inset:0;pointer-events:none;
-    background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,0.18) 3px,rgba(0,0,0,0) 4px);
-    z-index:1;
-  }
-  .matrix-feed{position:relative;z-index:2;overflow-y:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .matrix-feed .feed-row{
-    /* Override the global .feed-row nowrap/ellipsis — in the matrix sidebar we
-       want full readability over single-line truncation. Hanging indent so the
-       wrapped continuation lines sit under the message body, not under the
-       timestamp. */
-    white-space:normal;word-break:break-word;overflow:visible;text-overflow:clip;
-    text-indent:-1.25em;padding:2px 2px 2px 1.5em;line-height:1.5;
-    color:#6ee7b7;text-shadow:0 0 4px rgba(52,211,153,0.5);
-    animation:matrix-in .55s cubic-bezier(.2,.7,.3,1);
-  }
-  /* Last row glows a bit hotter — like the "head" of a matrix stream */
-  .matrix-feed .feed-row:last-child{color:#a7f3d0;text-shadow:0 0 8px rgba(167,243,208,0.7)}
-  .matrix-feed .feed-row.error{color:#fca5a5;text-shadow:0 0 4px rgba(248,113,113,0.5)}
-  .matrix-feed .feed-row.execute{color:#86efac;text-shadow:0 0 6px rgba(134,239,172,0.6)}
-  .matrix-feed .feed-row.dsl_exit{color:#fde68a;text-shadow:0 0 6px rgba(253,230,138,0.6)}
-  .matrix-feed::-webkit-scrollbar{width:6px}
-  .matrix-feed::-webkit-scrollbar-track{background:#02110a}
-  .matrix-feed::-webkit-scrollbar-thumb{background:#047857}
-  @keyframes matrix-in{
-    0%{opacity:0;transform:translateY(-6px);filter:blur(1px)}
-    60%{opacity:.85}
-    100%{opacity:1;transform:translateY(0);filter:blur(0)}
-  }
-  /* Sticky on wide screens, scrolls inline on narrow */
-  @media (min-width:1024px){.matrix-pane{position:sticky;top:1.5rem;height:calc(100vh - 3rem)}}
-  /* ── HERMES.HAMSTER habitat — Tamagotchi pet enclosure ── */
-  /* NES.css supplies the chunky pixel border/dark fill; we only override
-     spacing + position so it sits cleanly at the top of the matrix sidebar. */
-  .habitat-nes{margin:8px 8px 6px;padding:12px !important;background:#020a05 !important;border-color:#047857 !important;position:relative;z-index:3}
-  /* Layout: rabbit + spinning wheel on the left, NES speech balloon on the right. */
-  .habitat-pet-section{display:flex;align-items:flex-start;gap:8px}
-  .habitat-balloon{flex:1;margin:0 !important;padding:6px 8px !important;min-width:0}
-  .habitat-balloon::after,.habitat-balloon::before{filter:hue-rotate(0)}
-  #hamster-quote{font-family:'Press Start 2P',monospace;font-size:7px;color:#6ee7b7;text-align:left;line-height:1.6;margin:0;letter-spacing:.04em;transition:opacity .3s ease;word-break:break-word}
-  .habitat-name{font-family:'Press Start 2P',monospace;font-size:8px;color:#34d399;letter-spacing:.15em;text-align:center;margin-bottom:4px;text-shadow:0 0 4px rgba(52,211,153,0.6)}
-  .habitat-name .psi{color:#fbbf24;margin-left:4px;text-shadow:0 0 6px rgba(251,191,36,0.6)}
-  .habitat-pet{display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 0 4px;line-height:1}
-  /* Pixel-art container — sized for either the inline SVG rabbit sprite or
-     a fallback emoji (when a PnL state swaps the contents). image-rendering
-     pixelated keeps the SVG crisp even when scaled. */
-  .hamster-body{font-size:30px;display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;animation:hamster-run .42s ease-in-out infinite;filter:drop-shadow(0 0 6px rgba(255,255,255,0.65));image-rendering:pixelated}
-  .hamster-body svg{width:100%;height:100%;display:block;image-rendering:pixelated}
-  @keyframes hamster-run{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px) rotate(-2deg)}}
-  .hamster-wheel{font-size:14px;display:inline-block;animation:wheel-spin .8s linear infinite;opacity:.75;color:#34d399}
-  @keyframes wheel-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
-  /* (legacy .habitat-quote removed in favor of NES.css balloon — see #hamster-quote above) */
-  /* ── Hermes terminal modal — Cmd+K opens a NES-styled command line ── */
-  .hermes-modal{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-start;justify-content:center;padding-top:8vh;pointer-events:auto}
-  .hermes-modal.hidden{display:none}
-  .hermes-modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.75);backdrop-filter:blur(2px)}
-  .hermes-modal-box{position:relative;z-index:1;width:min(680px,92vw);max-height:80vh;display:flex;flex-direction:column;padding:14px !important;background:#020a05 !important;border-color:#34d399 !important;box-shadow:6px 6px 0 #064e3b !important}
-  .hermes-modal-header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #047857;padding-bottom:6px;margin-bottom:8px}
-  .hermes-modal-title{font-size:10px;letter-spacing:.15em;color:#34d399;text-shadow:0 0 6px rgba(52,211,153,0.6)}
-  .hermes-modal-close{background:transparent;border:0;color:#34d399;font-family:'Press Start 2P',monospace;font-size:14px;cursor:pointer;padding:0 4px;line-height:1}
-  .hermes-modal-close:hover{color:#a7f3d0}
-  .hermes-history{flex:1;overflow-y:auto;font-family:ui-monospace,monospace;font-size:12px;line-height:1.55;color:#6ee7b7;padding:4px 2px;min-height:200px;max-height:50vh}
-  .hermes-line{margin-bottom:4px;white-space:pre-wrap;word-break:break-word}
-  .hermes-line.hermes-meta{color:#52525b;font-size:10px}
-  .hermes-line.hermes-cmd{color:#a7f3d0;text-shadow:0 0 4px rgba(167,243,208,0.6)}
-  .hermes-line.hermes-action{color:#fde047}
-  .hermes-line.hermes-error{color:#fca5a5}
-  .hermes-line.hermes-chat{color:#a5b4fc}
-  .hermes-line.hermes-status{color:#86efac}
-  .hermes-input-row{display:flex;align-items:center;gap:6px;border-top:2px solid #047857;padding-top:8px;margin-top:4px}
-  .hermes-prompt{font-family:ui-monospace,monospace;color:#34d399;font-weight:700;text-shadow:0 0 4px rgba(52,211,153,0.7)}
-  .hermes-input{flex:1;background:#000;border:1px solid #064e3b;color:#a7f3d0;font-family:ui-monospace,monospace;font-size:13px;padding:6px 8px;outline:0}
-  .hermes-input:focus{border-color:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.5)}
-  /* ── Hamster reactions to live trading events ── */
-  /* execute → yellow celebrate (lightning bolt burst) */
-  .hamster-body.celebrate{animation:hamster-celebrate 1.2s ease-out}
-  @keyframes hamster-celebrate{
-    0%{transform:translateY(0) scale(1) rotate(0);filter:drop-shadow(0 0 4px rgba(251,191,36,0.5))}
-    20%{transform:translateY(-10px) scale(1.35) rotate(-15deg);filter:drop-shadow(0 0 14px #fde047) brightness(1.4)}
-    40%{transform:translateY(-6px) scale(1.25) rotate(15deg)}
-    60%{transform:translateY(-3px) scale(1.15) rotate(-8deg)}
-    100%{transform:translateY(0) scale(1) rotate(0)}
-  }
-  /* dsl_exit profitable → victory wiggle */
-  .hamster-body.victory{animation:hamster-victory 1.4s ease-out}
-  @keyframes hamster-victory{
-    0%,100%{transform:rotate(0) scale(1)}
-    15%{transform:rotate(-20deg) scale(1.2);filter:drop-shadow(0 0 10px #34d399)}
-    30%{transform:rotate(20deg) scale(1.2)}
-    45%{transform:rotate(-15deg) scale(1.15)}
-    60%{transform:rotate(15deg) scale(1.1)}
-    75%{transform:rotate(-5deg)}
-  }
-  /* dsl_exit loss → defeat shake */
-  .hamster-body.defeat{animation:hamster-defeat 1.2s ease-out}
-  @keyframes hamster-defeat{
-    0%,100%{transform:translateX(0) rotate(0)}
-    10%,30%,50%,70%,90%{transform:translateX(-4px) rotate(-6deg);filter:drop-shadow(0 0 8px #f87171)}
-    20%,40%,60%,80%{transform:translateX(4px) rotate(6deg)}
-  }
-  /* Habitat background flash on event */
-  .habitat.flash-yellow{animation:habitat-flash-y 1.2s ease-out}
-  @keyframes habitat-flash-y{0%{background:linear-gradient(180deg,#3f2e00 0%,#150e00 100%);box-shadow:inset 0 0 20px rgba(251,191,36,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
-  .habitat.flash-green{animation:habitat-flash-g 1.2s ease-out}
-  @keyframes habitat-flash-g{0%{background:linear-gradient(180deg,#064e3b 0%,#001f12 100%);box-shadow:inset 0 0 20px rgba(52,211,153,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
-  .habitat.flash-red{animation:habitat-flash-r 1.2s ease-out}
-  @keyframes habitat-flash-r{0%{background:linear-gradient(180deg,#450a0a 0%,#1f0000 100%);box-shadow:inset 0 0 20px rgba(248,113,113,0.4)}100%{background:linear-gradient(180deg,#02160c 0%,#000805 100%)}}
-  /* Floating burst icon — ⚡/💰/💀 rises and fades */
-  .habitat-burst{position:absolute;top:32px;left:50%;font-size:20px;opacity:0;pointer-events:none;z-index:5;text-shadow:0 0 8px rgba(255,255,255,0.6)}
-  .habitat-burst.show{animation:burst-rise 1.1s ease-out forwards}
-  @keyframes burst-rise{
-    0%{opacity:0;transform:translateX(-50%) translateY(0) scale(0.5)}
-    20%{opacity:1;transform:translateX(-50%) translateY(-8px) scale(1.5)}
-    100%{opacity:0;transform:translateX(-50%) translateY(-36px) scale(1)}
-  }
-</style>
-</head>
-<body class="min-h-screen">
-<div class="max-w-[1600px] mx-auto px-6 py-6">
+def _book_size_str(cfg: Dict[str, Any]) -> str:
+    """Human sizing line from a book's config block. Deterministic — no guessing."""
+    lev = cfg.get("leverage")
+    if cfg.get("notional_usd"):
+        base = f"${float(cfg['notional_usd']):g}"
+    elif cfg.get("equity_fraction"):
+        base = f"{float(cfg['equity_fraction']):g}x eq"
+    elif cfg.get("k_per_leg"):
+        return f"{int(cfg['k_per_leg'])}/leg basket"
+    else:
+        return "—"
+    try:
+        return f"{base} @ {int(lev)}x" if lev else base
+    except (TypeError, ValueError):
+        return base
 
-  <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
-    <div class="flex items-center gap-3">
-      <span id="pet" class="pet" title="agent mood — reacts to status + PnL">🤖</span>
-      <div class="flex flex-col">
-        <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER</span>
-        <span class="text-[10px] text-zinc-500 mt-1 pixel">AUTONOMOUS · HYPERLIQUID</span>
-      </div>
-    </div>
-    <div class="flex items-center gap-2 text-xs">
-      <select id="ccy-sel" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 focus:outline-none cursor-pointer">
-        <option value="USD">USD $</option>
-        <option value="EUR">EUR €</option>
-        <option value="JPY">JPY ¥</option>
-        <option value="GBP">GBP £</option>
-        <option value="CNY">CNY ¥</option>
-        <option value="KRW">KRW ₩</option>
-        <option value="SGD">SGD S$</option>
-        <option value="PHP">PHP ₱</option>
-        <option value="MYR">MYR RM</option>
-        <option value="THB">THB ฿</option>
-        <option value="IDR">IDR Rp</option>
-        <option value="VND">VND ₫</option>
-        <option value="AUD">AUD A$</option>
-        <option value="CAD">CAD C$</option>
-        <option value="CHF">CHF</option>
-      </select>
-      <select id="lang-sel" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 focus:outline-none cursor-pointer">
-        <option value="en">EN</option>
-        <option value="zh">中文</option>
-        <option value="ja">日本語</option>
-        <option value="ko">한국어</option>
-        <option value="fr">Français</option>
-        <option value="es">Español</option>
-        <option value="id">Bahasa</option>
-        <option value="tl">Tagalog</option>
-        <option value="vi">Tiếng Việt</option>
-        <option value="th">ไทย</option>
-      </select>
-      <!-- Discreet-mode toggle: hides $ amounts (equity, PnL, position size,
-           chart axis/tooltip) while leaving every % visible. State persists
-           in localStorage. Click to flip 👁 ↔ 🙈. -->
-      <button id="discreet-toggle" type="button" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 cursor-pointer hover:bg-zinc-700" title="hide all $ amounts (keep percentages)">👁</button>
-      <!-- Operator-mode toggle: prompts for HERMES_OPERATOR_TOKEN, stashes it
-           in localStorage, reloads with ?token= so the Hermes terminal
-           (Cmd+K) + operator endpoints unlock. 🔒 = read-only, 🔓 = operator. -->
-      <button id="operator-toggle" type="button" class="bg-zinc-800 text-zinc-300 rounded px-2 py-1 text-xs border-0 cursor-pointer hover:bg-zinc-700" title="enter operator mode — unlocks Hermes terminal (Cmd+K)">🔒 op</button>
-      <span id="status-pill" class="pill offline">offline</span>
-      <a href="https://github.com/Julian-dev28/hermes-trader" class="text-zinc-400 hover:text-zinc-200">github</a>
-    </div>
-  </header>
 
-  <!-- ── primary navbar: clear page links, NES-button styled, current page
-       highlighted via the .nav-active class set in JS at the bottom. ── -->
-  <nav class="flex items-center gap-2 mb-6 flex-wrap" id="hermes-nav">
-    <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
-    <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
-    <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
-    <span class="text-zinc-700 mx-1">·</span>
-    <a href="javascript:void(0)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true}))" class="nav-link pixel nav-link-ghost">⌘K TERMINAL</a>
-  </nav>
+def _books_payload() -> List[Dict[str, Any]]:
+    """Rows for the landing-page live-books table: name, status, size, thesis."""
+    try:
+        config = read_agent_config() or {}
+    except Exception:
+        config = {}
+    out: List[Dict[str, Any]] = []
+    for name, cfg_key, thesis in _BOOKS:
+        if cfg_key is None:  # mover_pass lives at mover_recorders.pass_live
+            cfg = (config.get("mover_recorders") or {}).get("pass_live") or {}
+        else:
+            cfg = config.get(cfg_key) or {}
+        if not isinstance(cfg, dict) or not cfg or not cfg.get("enabled", False):
+            status = "off"
+        elif cfg.get("shadow_only"):
+            status = "shadow"
+        else:
+            status = "live"
+        out.append({"name": name, "status": status,
+                    "size": _book_size_str(cfg if isinstance(cfg, dict) else {}),
+                    "thesis": thesis})
+    return out
 
-  <div class="grid grid-cols-1 lg:grid-cols-[1fr_560px] gap-6">
-  <main class="min-w-0 space-y-6">
 
-  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity">equity</div>
-      <div class="text-2xl font-bold num" id="kpi-equity">$0.00</div>
-      <div class="text-[10px] text-zinc-500 num mt-1" id="kpi-equity-breakdown" title="free margin available across all dexes"></div>
-    </div>
-    <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="today">today</div>
-      <div class="text-2xl font-bold num" id="kpi-pnl">$0.00</div>
-      <div class="text-xs num" id="kpi-pnl-pct">—</div>
-    </div>
-    <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="open_positions">open positions</div>
-      <div class="text-2xl font-bold num" id="kpi-open">0</div>
-    </div>
-    <div class="bg-zinc-900 rounded-lg p-4">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="last_tick">last tick</div>
-      <div class="text-2xl font-bold num" id="kpi-tick">—</div>
-      <div class="text-[10px] text-zinc-500 pixel" id="kpi-tick-detail" data-i18n="no_scan_yet">no scan yet</div>
-    </div>
-  </section>
+# ── activity feed ────────────────────────────────────────────────────────────
+# The session log is a mixed bag of event shapes. The classifier below maps
+# every raw line into ONE of a fixed set of typed view models so the /activity
+# page never has to render raw JSON. Unknown shapes degrade to type "other"
+# with a fields dict the client renders as key-value rows.
 
-  <section class="bg-zinc-900 rounded-lg p-4 text-xs leading-relaxed text-zinc-400">
-    <div class="text-zinc-500 mb-2 uppercase tracking-wider text-[10px]">how it works</div>
-    <p>
-      Autonomous trading agent on
-      <a class="text-emerald-400 hover:underline" href="https://hyperliquid.xyz">Hyperliquid</a>
-      perpetuals — crypto, equities, commodities.
-      Every minute the engine scans 60+ markets for statistical triggers (volume
-      spikes, breakouts, momentum bursts), runs a free TA filter, and only spends
-      AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly,
-      and exit through a two-phase dynamic stop-loss (loss protection → profit
-      locking with one-way trailing floor).
-      <span class="text-zinc-500">Live on one wallet. Not financial advice.</span>
-    </p>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="equity_curve">equity curve</div>
-      <div class="flex gap-1 text-xs">
-        <button data-range="86400" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">24h</button>
-        <button data-range="604800" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">7d</button>
-        <button data-range="2592000" class="range-btn px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700">30d</button>
-      </div>
-    </div>
-    <div class="relative">
-      <canvas id="equity-chart" height="110"></canvas>
-      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
-        no heartbeats yet in this window
-      </div>
-    </div>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="open_positions">open positions</div>
-      <div class="flex gap-1 text-[10px]">
-        <button data-sort="default" data-i18n="default" class="pos-sort-btn px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">default</button>
-        <button data-sort="pnl_desc" class="pos-sort-btn px-2 py-0.5 rounded bg-emerald-700">PnL ↓</button>
-        <button data-sort="pnl_asc"  class="pos-sort-btn px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700">PnL ↑</button>
-      </div>
-    </div>
-    <div id="positions" class="text-sm">
-      <div class="text-zinc-500 text-xs" data-i18n="none">none</div>
-    </div>
-  </section>
-
-  <section class="bg-zinc-900 rounded-lg p-4">
-    <div class="flex items-center justify-between mb-2">
-      <div class="text-[10px] text-zinc-500 pixel" data-i18n="recent_closes">recent closes</div>
-      <div class="text-xs text-zinc-600" id="closes-stats"></div>
-    </div>
-    <div id="closes" class="text-sm">
-      <div class="text-zinc-500 text-xs" data-i18n="none_yet">none yet</div>
-    </div>
-  </section>
-
-  </main>
-
-  <aside class="matrix-pane flex flex-col">
-    <div class="nes-container is-dark is-rounded habitat habitat-nes">
-      <section class="habitat-pet-section">
-        <div class="habitat-pet">
-          <span class="hamster-body" title="follow the white cat">
-            <!-- 16x16 pixel cat sprite — hand-rolled NES-style. Heterochromia:
-                 left eye blue, right eye green. shape-rendering=crispEdges
-                 keeps the pixels sharp at any scale. -->
-            <svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">
-              <!-- triangular ears -->
-              <rect x="4" y="1" width="1" height="1" fill="#f5f5f5"/>
-              <rect x="3" y="2" width="3" height="1" fill="#f5f5f5"/>
-              <rect x="2" y="3" width="4" height="1" fill="#f5f5f5"/>
-              <rect x="11" y="1" width="1" height="1" fill="#f5f5f5"/>
-              <rect x="10" y="2" width="3" height="1" fill="#f5f5f5"/>
-              <rect x="10" y="3" width="4" height="1" fill="#f5f5f5"/>
-              <!-- inner pink ear -->
-              <rect x="4" y="3" width="1" height="1" fill="#fbcfe8"/>
-              <rect x="11" y="3" width="1" height="1" fill="#fbcfe8"/>
-              <!-- head + body -->
-              <rect x="2" y="4" width="12" height="9" fill="#f5f5f5"/>
-              <!-- heterochromia eyes: green left, blue right -->
-              <rect x="4" y="7" width="2" height="2" fill="#15803d"/>
-              <rect x="10" y="7" width="2" height="2" fill="#3b82f6"/>
-              <!-- pink nose -->
-              <rect x="7" y="10" width="2" height="1" fill="#f472b6"/>
-              <!-- whiskers -->
-              <rect x="0" y="10" width="2" height="1" fill="#a3a3a3"/>
-              <rect x="14" y="10" width="2" height="1" fill="#a3a3a3"/>
-              <!-- paws -->
-              <rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/>
-              <rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/>
-            </svg>
-          </span>
-          <span class="hamster-wheel">⚙</span>
-        </div>
-        <div class="nes-balloon from-left is-dark habitat-balloon">
-          <p id="hamster-quote">awakening</p>
-        </div>
-      </section>
-    </div>
-    <div class="flex items-center justify-between px-3 py-2 border-b-2 border-emerald-800/60 bg-black/40 relative z-10">
-      <div class="text-[10px] text-emerald-400 pixel" data-i18n="live_activity">live activity</div>
-      <span class="text-[10px] text-emerald-400 blink pixel" data-i18n="following">▶ following</span>
-    </div>
-    <div id="feed" class="matrix-feed flex-1 px-3 py-2 space-y-0.5"></div>
-  </aside>
-  </div>
-
-  <footer class="text-[10px] text-zinc-600 mt-6 text-center pixel" data-i18n="footer">
-    one wallet · live · not financial advice
-  </footer>
-</div>
-
-<!-- ── Hermes terminal modal — Cmd+K (or Ctrl+K) toggle. Operator-token gated
-     via the same ?token= the page was loaded with. Built-in commands resolve
-     locally; free text falls through to the chat model (default xAI Grok 4.3,
-     override via HERMES_CHAT_MODEL env var) over OpenRouter. ── -->
-<div id="hermes-modal" class="hermes-modal hidden">
-  <div class="hermes-modal-bg"></div>
-  <div class="nes-container is-dark is-rounded hermes-modal-box">
-    <div class="hermes-modal-header">
-      <span class="pixel hermes-modal-title">HERMES // TERMINAL</span>
-      <button id="hermes-close" class="pixel hermes-modal-close" title="close (esc)">×</button>
-    </div>
-    <div id="hermes-history" class="hermes-history">
-      <div class="hermes-line hermes-meta">type `help` for commands · esc to close · free text → Grok 4.3</div>
-    </div>
-    <div class="hermes-input-row">
-      <span class="hermes-prompt">▸</span>
-      <input id="hermes-input" type="text" autocomplete="off" spellcheck="false" class="hermes-input" placeholder="status, pause, close BTC, or ask Hermes anything…" />
-    </div>
-  </div>
-</div>
-
-<script>
-// ── locale / currency state ──
-// USD values from the API are multiplied by ccyState.rate at display time. FX
-// rates pulled from open.er-api.com (free, no key) and cached 1h in localStorage.
-let ccyState = { code: 'USD', rate: 1 };
-let langState = 'en';
-const ZERO_DECIMAL_CCY = new Set(['JPY', 'KRW', 'VND', 'IDR']);
-
-function fmtMoney(usd, opts = {}) {
-  const v = (usd ?? 0) * ccyState.rate;
-  const digits = ZERO_DECIMAL_CCY.has(ccyState.code) ? 0 : 2;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: ccyState.code,
-      signDisplay: opts.signed ? 'always' : 'auto',
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    }).format(v);
-  } catch (e) {
-    return (v >= 0 ? '' : '-') + Math.abs(v).toFixed(digits);
-  }
-}
-const fmtPct = n => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
-
-// ── discreet mode ──────────────────────────────────────────────────────────
-// When `body.discreet`, all $ amounts render as `•••` (KPIs, position PnL $,
-// chart y-axis, chart tooltip, feed heartbeat $). Percentages stay visible.
-function isDiscreet() { return document.body.classList.contains('discreet'); }
-function maskDollar(text) { return isDiscreet() ? '•••' : text; }
-// HTML helper for elements whose textContent is set imperatively (KPIs):
-// wraps the value in matched .dollar-value / .dollar-mask spans.
-function dollarHTML(value) {
-  return `<span class="dollar-value">${value}</span><span class="dollar-mask">•••</span>`;
-}
-const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s/60) + 'm ago');
-const fmtTime = ms => { const d = new Date(ms); return d.toTimeString().slice(0,8); };
-
-// ── i18n ──
-const I18N = {
-  en: { equity:'equity', today:'today', open_positions:'open positions', last_tick:'last tick', no_scan_yet:'no scan yet', equity_curve:'equity curve', recent_closes:'recent closes', live_activity:'live activity', none:'none', none_yet:'none yet', following:'▶ following', footer:'one wallet · live · not financial advice', default:'default', triggers:'triggers' },
-  zh: { equity:'净值', today:'今日', open_positions:'持仓', last_tick:'上次更新', no_scan_yet:'尚未扫描', equity_curve:'净值曲线', recent_closes:'最近平仓', live_activity:'实时活动', none:'无', none_yet:'尚无', following:'▶ 关注中', footer:'单一钱包 · 实盘 · 非投资建议', default:'默认', triggers:'触发' },
-  ja: { equity:'純資産', today:'本日', open_positions:'ポジション', last_tick:'最終更新', no_scan_yet:'スキャン未実施', equity_curve:'純資産推移', recent_closes:'最近のクローズ', live_activity:'ライブアクティビティ', none:'なし', none_yet:'まだなし', following:'▶ 追跡中', footer:'単一ウォレット · ライブ · 投資助言ではありません', default:'デフォルト', triggers:'トリガー' },
-  ko: { equity:'자본', today:'오늘', open_positions:'보유 포지션', last_tick:'마지막 틱', no_scan_yet:'스캔 전', equity_curve:'자본 곡선', recent_closes:'최근 청산', live_activity:'실시간 활동', none:'없음', none_yet:'아직 없음', following:'▶ 추적 중', footer:'단일 지갑 · 실시간 · 투자 조언 아님', default:'기본', triggers:'트리거' },
-  fr: { equity:'capital', today:"aujourd'hui", open_positions:'positions ouvertes', last_tick:'dernier tick', no_scan_yet:'pas encore scanné', equity_curve:'courbe du capital', recent_closes:'clôtures récentes', live_activity:'activité en direct', none:'aucune', none_yet:'aucune encore', following:'▶ en cours', footer:'un portefeuille · en direct · pas un conseil financier', default:'défaut', triggers:'déclencheurs' },
-  es: { equity:'capital', today:'hoy', open_positions:'posiciones abiertas', last_tick:'último tick', no_scan_yet:'sin escaneo aún', equity_curve:'curva de capital', recent_closes:'cierres recientes', live_activity:'actividad en vivo', none:'ninguna', none_yet:'ninguna aún', following:'▶ siguiendo', footer:'una cartera · en vivo · no es consejo financiero', default:'por defecto', triggers:'disparadores' },
-  id: { equity:'ekuitas', today:'hari ini', open_positions:'posisi terbuka', last_tick:'tick terakhir', no_scan_yet:'belum pindai', equity_curve:'kurva ekuitas', recent_closes:'penutupan terbaru', live_activity:'aktivitas langsung', none:'tidak ada', none_yet:'belum ada', following:'▶ mengikuti', footer:'satu dompet · langsung · bukan nasihat keuangan', default:'bawaan', triggers:'pemicu' },
-  tl: { equity:'puhunan', today:'ngayon', open_positions:'bukas na posisyon', last_tick:'huling tick', no_scan_yet:'wala pang scan', equity_curve:'kurba ng puhunan', recent_closes:'kamakailang isinara', live_activity:'live na aktibidad', none:'wala', none_yet:'wala pa', following:'▶ sumusunod', footer:'isang wallet · live · hindi payong pinansyal', default:'default', triggers:'trigger' },
-  vi: { equity:'vốn', today:'hôm nay', open_positions:'vị thế mở', last_tick:'tick cuối', no_scan_yet:'chưa quét', equity_curve:'đường vốn', recent_closes:'đóng gần đây', live_activity:'hoạt động trực tiếp', none:'không có', none_yet:'chưa có', following:'▶ đang theo', footer:'một ví · trực tiếp · không phải lời khuyên tài chính', default:'mặc định', triggers:'kích hoạt' },
-  th: { equity:'ทุน', today:'วันนี้', open_positions:'สถานะเปิด', last_tick:'อัปเดตล่าสุด', no_scan_yet:'ยังไม่สแกน', equity_curve:'เส้นทุน', recent_closes:'ปิดล่าสุด', live_activity:'กิจกรรมสด', none:'ไม่มี', none_yet:'ยังไม่มี', following:'▶ ติดตาม', footer:'หนึ่งวอลเล็ต · สด · ไม่ใช่คำแนะนำทางการเงิน', default:'ค่าเริ่มต้น', triggers:'ทริกเกอร์' },
-};
-function applyI18n() {
-  const dict = I18N[langState] || I18N.en;
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const k = el.dataset.i18n;
-    if (dict[k]) el.textContent = dict[k];
-  });
+# Legacy/aliased event names that are really book events.
+_EVENT_BOOK_ALIASES = {
+    "extreme_fade_candidates": "extreme_fade",
+    "xs_rebalance": "xs_momentum",
 }
 
-async function loadRates() {
-  const cached = JSON.parse(localStorage.getItem('hermes-fx') || 'null');
-  if (cached && Date.now() - cached.t < 3600000) return cached.rates;
-  try {
-    const r = await fetch('https://open.er-api.com/v6/latest/USD');
-    const d = await r.json();
-    if (d.result !== 'success') throw new Error('rate fetch failed');
-    const rates = { USD: 1, ...d.rates };
-    localStorage.setItem('hermes-fx', JSON.stringify({ t: Date.now(), rates }));
-    return rates;
-  } catch (e) {
-    return cached?.rates || { USD: 1 };
-  }
-}
+_ACTIVITY_TYPES = ["book", "research", "execute", "close", "scan",
+                   "gate", "error", "heartbeat", "system", "other"]
 
-// ── HERMES.HAMSTER habitat ──
-// Tamagotchi-meets-Nous: hamster contemplates the digital rain. Stats are
-// recomputed from the dashboard summary; cryptic quotes rotate on a timer.
-// Law-of-attraction style money-magnet affirmations. The rabbit speaks
-// them to the operator like a tiny Tamagotchi shaman — half meme, half
-// belief-shifting. A few keep the matrix/rabbit flavor as easter eggs.
-const HAMSTER_QUOTES = [
-  'money flows to me effortlessly',
-  'i am a magnet for wealth',
-  'abundance is my birthright',
-  'every trade aligns with prosperity',
-  'the market loves me back',
-  'i deserve massive gains',
-  'wealth is my natural state',
-  'the universe conspires for my profit',
-  'infinite abundance flows through me',
-  'every loss is a setup for a bigger win',
-  'i trust the process',
-  'green candles are drawn to me',
-  'compound growth is inevitable',
-  'i receive easily and abundantly',
-  'my account grows on autopilot',
-  '100x is just the beginning',
-  'winning is my baseline',
-  'the chain blesses my positions',
-  'i am open to receiving more',
-  'success is already on its way',
-  'i attract the right setups',
-  'gratitude multiplies my returns',
-  'follow the white rabbit',
-  'down the rabbit hole to riches',
-];
-let hamsterQuoteIdx = -1;
-function rotateHamsterQuote() {
-  const el = document.getElementById('hamster-quote');
-  if (!el) return;
-  hamsterQuoteIdx = (hamsterQuoteIdx + 1) % HAMSTER_QUOTES.length;
-  el.style.opacity = '0';
-  setTimeout(() => { el.textContent = HAMSTER_QUOTES[hamsterQuoteIdx]; el.style.opacity = '1'; }, 250);
-}
-// Hamster reacts to live trading events: execute → celebrate (yellow ⚡),
-// dsl_exit profit → victory wiggle (green 💰), dsl_exit loss → defeat shake
-// (red 💀). Animation classes auto-clear so subsequent events restart cleanly.
-function triggerHamsterReaction(eventType, pnlPct) {
-  const body = document.querySelector('.hamster-body');
-  const habitat = document.querySelector('.habitat');
-  if (!body || !habitat) return;
-  body.classList.remove('celebrate', 'victory', 'defeat');
-  habitat.classList.remove('flash-yellow', 'flash-green', 'flash-red');
-  let bodyClass, habitatClass, burstChar;
-  if (eventType === 'execute') {
-    bodyClass = 'celebrate'; habitatClass = 'flash-yellow'; burstChar = '⚡';
-  } else if (eventType === 'dsl_exit') {
-    if ((pnlPct ?? 0) >= 0) { bodyClass = 'victory'; habitatClass = 'flash-green'; burstChar = '💰'; }
-    else { bodyClass = 'defeat'; habitatClass = 'flash-red'; burstChar = '💀'; }
-  } else { return; }
-  // Force reflow so the same class re-fires on rapid repeat events.
-  void body.offsetWidth;
-  body.classList.add(bodyClass);
-  habitat.classList.add(habitatClass);
-  // Floating burst icon above the hamster
-  const burst = document.createElement('span');
-  burst.className = 'habitat-burst show';
-  burst.textContent = burstChar;
-  habitat.appendChild(burst);
-  setTimeout(() => burst.remove(), 1200);
-  setTimeout(() => {
-    body.classList.remove(bodyClass);
-    habitat.classList.remove(habitatClass);
-  }, 1500);
-}
+# Classify at most the newest N events per cache miss. The deque holds up to
+# 250k events; walking all of them for a rare filter would block the event
+# loop for ~0.25s. 20k ≈ a day of activity — plenty for a feed page.
+_ACTIVITY_SCAN_CAP = 20_000
 
-// ── KPIs ──
-// 8-bit pixel sprites: the always-visible white cat (heterochromia — green
-// left eye, blue right eye) + a worried-mood face. Other PnL faces still
-// use modern emoji. shape-rendering=crispEdges keeps the pixels sharp.
-const SPRITE_RABBIT = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="1" width="1" height="1" fill="#f5f5f5"/><rect x="3" y="2" width="3" height="1" fill="#f5f5f5"/><rect x="2" y="3" width="4" height="1" fill="#f5f5f5"/><rect x="11" y="1" width="1" height="1" fill="#f5f5f5"/><rect x="10" y="2" width="3" height="1" fill="#f5f5f5"/><rect x="10" y="3" width="4" height="1" fill="#f5f5f5"/><rect x="4" y="3" width="1" height="1" fill="#fbcfe8"/><rect x="11" y="3" width="1" height="1" fill="#fbcfe8"/><rect x="2" y="4" width="12" height="9" fill="#f5f5f5"/><rect x="4" y="7" width="2" height="2" fill="#15803d"/><rect x="10" y="7" width="2" height="2" fill="#3b82f6"/><rect x="7" y="10" width="2" height="1" fill="#f472b6"/><rect x="0" y="10" width="2" height="1" fill="#a3a3a3"/><rect x="14" y="10" width="2" height="1" fill="#a3a3a3"/><rect x="3" y="13" width="2" height="1" fill="#d4d4d4"/><rect x="11" y="13" width="2" height="1" fill="#d4d4d4"/></svg>`;
-const SPRITE_WORRIED = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="2" width="8" height="1" fill="#fde047"/><rect x="3" y="3" width="10" height="1" fill="#fde047"/><rect x="2" y="4" width="12" height="8" fill="#fde047"/><rect x="3" y="12" width="10" height="1" fill="#fde047"/><rect x="4" y="13" width="8" height="1" fill="#fde047"/><rect x="4" y="6" width="1" height="1" fill="#000"/><rect x="5" y="5" width="2" height="1" fill="#000"/><rect x="9" y="5" width="2" height="1" fill="#000"/><rect x="11" y="6" width="1" height="1" fill="#000"/><rect x="5" y="11" width="6" height="1" fill="#000"/><rect x="4" y="10" width="1" height="1" fill="#000"/><rect x="11" y="10" width="1" height="1" fill="#000"/><rect x="13" y="3" width="1" height="1" fill="#60a5fa"/><rect x="12" y="4" width="1" height="2" fill="#60a5fa"/><rect x="13" y="4" width="1" height="2" fill="#7dd3fc"/><rect x="13" y="6" width="1" height="1" fill="#60a5fa"/></svg>`;
 
-// Agent-pet mood: status sets the base, then PnL nudges it. Big winners → 🤑,
-// big losers → 😱. The pet element gets a CSS modifier class for animation
-// (shake on executing, sleep on offline/stale, default gentle bounce otherwise).
-function updatePet(status, dailyPnlPct) {
-  const pet = document.getElementById('pet');
-  if (!pet) return;
-  let face = '🤖', mood = '', isSprite = false;
-  if (status === 'offline') { face = '💤'; mood = 'sleep'; }
-  else if (status === 'stale') { face = '😴'; mood = 'sleep'; }
-  else if (status === 'executing') { face = '⚡'; mood = 'shake'; }
-  else if (status === 'scanning') { face = '👀'; }
-  // PnL overrides for strong signals
-  if (status !== 'offline' && status !== 'stale') {
-    if (dailyPnlPct >= 5) face = '🤑';
-    else if (dailyPnlPct <= -5) face = '😱';
-    else if (dailyPnlPct >= 1.5) face = '😎';
-    else if (dailyPnlPct <= -1.5) { face = SPRITE_WORRIED; isSprite = true; }
-  }
-  if (isSprite) pet.innerHTML = face;
-  else pet.textContent = face;
-  pet.className = 'pet' + (mood ? ' ' + mood : '') + (isSprite ? ' pet-sprite' : '');
-}
+def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
+    """Map one raw session-log event to a typed activity view model. Pure."""
+    ev = str(e.get("event") or "?")
+    ts = e.get("ts")
 
-async function refreshSummary() {
-  try {
-    const r = await fetch('/api/dashboard/summary');
-    const s = await r.json();
-    document.getElementById('kpi-equity').innerHTML = dollarHTML(fmtMoney(s.equity));
-    // Per-dex breakdown: e.g. "main $76 + xyz $62 + km $15 = $153 free"
-    const brk = document.getElementById('kpi-equity-breakdown');
-    if (brk) {
-      const dexAvail = s.dex_available || {};
-      const parts = [];
-      let total = 0;
-      // Order: main first, then non-zero dexes alphabetically
-      const dexNames = Object.keys(dexAvail).sort((a, b) => {
-        if (a === '') return -1;
-        if (b === '') return 1;
-        return a.localeCompare(b);
-      });
-      for (const d of dexNames) {
-        const v = Number(dexAvail[d] || 0);
-        if (v < 0.5 && d !== '') continue;
-        const label = d === '' ? 'main' : d;
-        parts.push(`${label} ${fmtMoney(v)}`);
-        total += v;
-      }
-      brk.textContent = parts.length > 1
-        ? `${parts.join(' + ')} = $${total.toFixed(2)} free`
-        : (parts.length === 1 ? `$${total.toFixed(2)} free` : '');
-    }
-    const pnlEl = document.getElementById('kpi-pnl');
-    pnlEl.innerHTML = dollarHTML(fmtMoney(s.daily_pnl));
-    pnlEl.className = 'text-2xl font-bold num ' + (s.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400');
-    document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
-    document.getElementById('kpi-open').textContent = s.open_positions;
-    document.getElementById('kpi-tick').textContent = fmtAge(s.last_tick_age_s);
-    document.getElementById('kpi-tick-detail').textContent = s.last_scan_triggers + ' triggers';
-    const pill = document.getElementById('status-pill');
-    pill.textContent = s.status;
-    pill.className = 'pill ' + s.status;
-    updatePet(s.status, s.daily_pnl_pct);
-  } catch (e) {}
-}
-
-// ── Positions ──
-let currentPosSort = 'pnl_desc';
-async function refreshPositions() {
-  try {
-    const r = await fetch('/api/dashboard/positions');
-    const ps = await r.json();
-    const el = document.getElementById('positions');
-    if (!ps.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none</div>'; return; }
-    if (currentPosSort === 'pnl_desc') ps.sort((a, b) => (b.unrealized_pct ?? 0) - (a.unrealized_pct ?? 0));
-    else if (currentPosSort === 'pnl_asc') ps.sort((a, b) => (a.unrealized_pct ?? 0) - (b.unrealized_pct ?? 0));
-    el.innerHTML = ps.map(p => {
-      const pnlColor = p.unrealized_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
-      const sideTag = p.side === 'long'
-        ? '<span class="text-[10px] text-emerald-400 font-semibold">LONG</span>'
-        : '<span class="text-[10px] text-red-400 font-semibold">SHORT</span>';
-      const levTag = p.leverage > 1 ? `<span class="text-[10px] text-zinc-500">${p.leverage}x</span>` : '';
-      const sizeFmt = p.size >= 1 ? p.size.toFixed(2) : p.size.toFixed(4);
-      const pxFmt = (v) => v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2);
-      const floor = p.dsl?.floor_px ? ('floor ' + pxFmt(p.dsl.floor_px)) : '<span class="text-zinc-700">no DSL</span>';
-      const phase = p.dsl?.phase || '';
-      const usd = p.unrealized_pnl_usd;
-      const usdStr = `<span class="dollar-value">${fmtMoney(usd, { signed: true })}</span><span class="dollar-mask">•••</span>`;
-      const spotNote = p.leverage > 1
-        ? `<span class="text-zinc-600 text-[10px] ml-1" title="spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}% × ${p.leverage}x leverage = ROE shown">(spot ${p.spot_pct >= 0 ? '+' : ''}${p.spot_pct.toFixed(2)}%)</span>`
-        : '';
-      return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
-        <div class="col-span-2 flex flex-col justify-center min-w-0">
-          <div class="flex items-baseline gap-2"><span class="font-bold text-sm">${p.coin}</span>${sideTag} ${levTag}</div>
-          ${(() => { if (!p.open_reason) return ''; const tag = (p.open_book && !p.open_reason.startsWith('[')) ? '['+p.open_book+'] ' : ''; const txt = tag + p.open_reason; return `<span class="text-[9px] text-zinc-600 leading-tight truncate" title="${txt}">${txt}</span>`; })()}
-        </div>
-        <div class="col-span-2 text-zinc-400">${sizeFmt} @ ${pxFmt(p.entry_px)}</div>
-        <div class="col-span-2 text-zinc-400">mark ${pxFmt(p.mark_px)}</div>
-        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${usdStr} (${p.unrealized_pct >= 0 ? '+' : ''}${p.unrealized_pct.toFixed(1)}%)${spotNote}</div>
-        <div class="col-span-3 text-zinc-500 text-[11px]">${floor} ${phase}</div>
-      </div>`;
-    }).join('');
-  } catch (e) {}
-}
-
-// ── Closed trades ──
-async function refreshCloses() {
-  try {
-    const r = await fetch('/api/dashboard/closed-trades?limit=20');
-    const cs = await r.json();
-    const el = document.getElementById('closes');
-    if (!cs.length) { el.innerHTML = '<div class="text-zinc-500 text-xs">none yet</div>'; return; }
-    el.innerHTML = cs.map(c => {
-      const ageMin = Math.max(0, Math.round((Date.now() - c.ts) / 60000));
-      const ageStr = ageMin < 60 ? ageMin + 'm ago' : ageMin < 1440 ? Math.floor(ageMin/60) + 'h ago' : Math.floor(ageMin/1440) + 'd ago';
-      const hasPnl = c.pnl_pct !== null && c.pnl_pct !== undefined;
-      const pnlColor = !hasPnl ? 'text-zinc-500' : c.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400';
-      const sideTag = c.side === 'long' ? '<span class="text-emerald-400 text-[10px] font-semibold">LONG</span>'
-                    : c.side === 'short' ? '<span class="text-red-400 text-[10px] font-semibold">SHORT</span>'
-                    : '<span class="text-zinc-500 text-[10px]">—</span>';
-      const levMark = c.leverage_estimated ? '~' : '';
-      const levTag = c.leverage > 1 ? `<span class="text-zinc-500 text-[10px]" title="${c.leverage_estimated ? 'leverage estimated from HL per-coin max — not recorded for this old trade' : ''}">${levMark}${c.leverage}x</span>` : '';
-      const sourceTag = c.source === 'dsl' ? '<span class="text-amber-400 text-[10px]">dsl</span>'
-                                           : '<span class="text-zinc-500 text-[10px]">manual</span>';
-      const failedTag = c.executed ? '' : ' <span class="text-red-400 text-[10px]">FAILED</span>';
-      const pnlExactMark = c.pnl_source === 'fill' ? '' : '~';
-      const tipLines = hasPnl ? [
-        `spot move × ${c.leverage}x = ${(c.pnl_pct_gross ?? 0).toFixed(2)}% gross`,
-        `minus ${(c.fees_pct ?? 0).toFixed(2)}% taker fees`,
-        `= ${c.pnl_pct.toFixed(2)}% net`,
-        c.pnl_source === 'fill' ? `realized at fill ${c.fill_px} (entry ${c.entry_px})` : 'estimated from DSL trigger mark (no fill captured)',
-      ].join(' · ') : 'manual close — PnL not recorded in the session log';
-      const spotNote = hasPnl && c.spot_pct && c.leverage > 1
-        ? `<span class="text-zinc-600 text-[10px] ml-1" title="${tipLines}">(spot ${c.spot_pct >= 0 ? '+' : ''}${c.spot_pct.toFixed(2)}%)</span>` : '';
-      return `<div class="grid grid-cols-12 gap-2 py-1 border-b border-zinc-800 last:border-0 num text-xs items-center">
-        <div class="col-span-2 flex items-baseline gap-2"><span class="font-bold text-sm">${c.coin}</span>${sideTag} ${levTag}</div>
-        <div class="col-span-5 text-zinc-400 truncate" title="${c.reason}">${c.reason}${failedTag}</div>
-        <div class="col-span-3 ${pnlColor} text-sm font-semibold">${hasPnl ? `${pnlExactMark}${c.pnl_pct >= 0 ? '+' : ''}${c.pnl_pct.toFixed(1)}%` : `<span title="${tipLines}">n/a</span>`}${spotNote}</div>
-        <div class="col-span-1 text-zinc-500">${sourceTag}</div>
-        <div class="col-span-1 text-zinc-500 text-right">${ageStr}</div>
-      </div>`;
-    }).join('');
-    const dslOnly = cs.filter(c => c.source === 'dsl');
-    const wins = dslOnly.filter(c => c.pnl_pct > 0).length;
-    const total = dslOnly.length;
-    if (total > 0) {
-      const avgPnl = (dslOnly.reduce((a,c)=>a+c.pnl_pct,0) / total).toFixed(1);
-      document.getElementById('closes-stats').textContent = `${wins}/${total} winners · avg ${avgPnl >= 0 ? '+' : ''}${avgPnl}% (leveraged)`;
-    }
-  } catch (e) {}
-}
-
-// ── Equity curve ──
-let chart;
-let currentRange = 86400;
-const RANGE_UNIT = {86400: 'hour', 604800: 'day', 2592000: 'day'};
-
-function makeGradient(ctx, area) {
-  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-  g.addColorStop(0,   'rgba(16, 185, 129, 0.28)');
-  g.addColorStop(0.6, 'rgba(16, 185, 129, 0.06)');
-  g.addColorStop(1,   'rgba(16, 185, 129, 0)');
-  return g;
-}
-
-async function refreshChart(rangeSec) {
-  currentRange = rangeSec;
-  try {
-    const r = await fetch('/api/dashboard/equity-curve?range_s=' + rangeSec);
-    const series = await r.json();
-    const data = series.map(p => ({x: p.ts, y: p.equity}));
-    const empty = document.getElementById('equity-empty');
-    empty.classList.toggle('hidden', data.length > 0);
-    if (!chart) {
-      const ctx = document.getElementById('equity-chart').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: { datasets: [{
-          data,
-          borderColor: '#34d399',
-          borderWidth: 1.75,
-          borderJoinStyle: 'round',
-          borderCapStyle: 'round',
-          cubicInterpolationMode: 'monotone',
-          tension: 0.35,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          pointHoverBackgroundColor: '#34d399',
-          pointHoverBorderColor: '#0a0a0a',
-          pointHoverBorderWidth: 2,
-          fill: true,
-          backgroundColor: (c) => {
-            const {ctx, chartArea} = c.chart;
-            if (!chartArea) return 'rgba(16,185,129,0.1)';
-            return makeGradient(ctx, chartArea);
-          },
-        }] },
-        options: {
-          responsive: true, animation: false, parsing: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { display: false },
-            decimation: { enabled: true, algorithm: 'lttb', samples: 80, threshold: 100 },
-            tooltip: {
-              backgroundColor: '#18181b', borderColor: '#27272a', borderWidth: 1,
-              titleColor: '#a1a1aa', bodyColor: '#e5e5e5', padding: 8, displayColors: false,
-              callbacks: {
-                title: (items) => new Date(items[0].parsed.x).toLocaleString(),
-                label: (item) => maskDollar(fmtMoney(item.parsed.y)),
-              }
-            }
-          },
-          scales: {
-            x: {
-              type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
-              ticks: { color: '#52525b', maxTicksLimit: 6, font: { size: 10 } },
-              grid: { display: false }, border: { display: false },
-            },
-            y: {
-              ticks: { color: '#52525b', callback: v => isDiscreet() ? '•••' : fmtMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
-              grid: { color: '#18181b', drawTicks: false }, border: { display: false },
-            },
-          }
+    if ev == "research":
+        return {
+            "type": "research", "ts": ts, "coin": e.get("coin"),
+            "verdict": e.get("verdict"), "confidence": e.get("confidence"),
+            "reasoning": e.get("reasoning"),
+            "provider": e.get("ai_brain_provider"),
+            "web_search_used": bool(e.get("web_search_used")),
+            "citations": e.get("web_search_citations") or [],
+            "news_risk": e.get("news_risk"),
+            "entry_px": e.get("entry_px"), "stop_px": e.get("stop_px"),
+            "tp_px": e.get("tp_px"),
         }
-      });
-    } else {
-      chart.data.datasets[0].data = data;
-      chart.options.scales.x.time.unit = RANGE_UNIT[rangeSec] || 'hour';
-      chart.update('none');
-    }
-  } catch (e) { console.error('chart error', e); }
-}
-document.querySelectorAll('.range-btn').forEach(b => {
-  b.addEventListener('click', () => {
-    refreshChart(parseInt(b.dataset.range));
-    document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('bg-emerald-700'));
-    b.classList.add('bg-emerald-700');
-  });
-});
-document.querySelectorAll('.pos-sort-btn').forEach(b => {
-  b.addEventListener('click', () => {
-    currentPosSort = b.dataset.sort;
-    document.querySelectorAll('.pos-sort-btn').forEach(x => { x.classList.remove('bg-emerald-700'); x.classList.add('bg-zinc-800'); });
-    b.classList.remove('bg-zinc-800');
-    b.classList.add('bg-emerald-700');
-    refreshPositions();
-  });
-});
 
-// ── Live feed (SSE) ──
-function fmtPx(v) { if (v == null) return '?'; return v < 1 ? v.toFixed(5) : v < 100 ? v.toFixed(3) : v.toFixed(2); }
+    if ev == "execute":
+        blocked = e.get("blocked_by")
+        if isinstance(blocked, str):
+            blocked = [blocked]
+        detail = e.get("detail")
+        if isinstance(detail, list):
+            detail = " · ".join(str(d) for d in detail)
+        return {
+            "type": "execute", "ts": ts, "coin": e.get("coin"),
+            "side": e.get("side"), "executed": bool(e.get("executed")),
+            "book": e.get("book"), "entry_via": e.get("entry_via"),
+            "ai_verdict": e.get("ai_verdict"),
+            "size_usd": e.get("size_usd"), "entry_px": e.get("entry_px"),
+            "stop_px": e.get("stop_px"), "tp_px": e.get("tp_px"),
+            "gates": [str(b) for b in (blocked or [])],
+            "detail": detail if isinstance(detail, str) else None,
+            "regime": e.get("regime"),
+        }
 
-function renderEvent(e) {
-  const ts = fmtTime(e.ts || Date.now());
-  const ev = e.event || '?';
-  let glyph = '?', text = '', cls = ev, detail = '', tooltip = '';
-  if (ev === 'loop_heartbeat') {
-    glyph = '♥'; cls = 'heartbeat';
-    let cfgStr = '';
-    if (e.config) {
-      const c = e.config;
-      // Compact config snippet: frac×lev N/cap cool=Nm conf=N hip3:on
-      const frac = (c.frac != null ? (c.frac * 100).toFixed(1) + '%' : '?');
-      const lev = (c.lev != null ? c.lev + 'x' : '?');
-      const conc = (c.max_conc != null ? c.max_conc : '?');
-      const cap = (c.notional_cap != null ? c.notional_cap + 'x' : '?');
-      const cool = (c.cool_min != null ? c.cool_min + 'm' : '?');
-      const conf = (c.min_conf != null ? c.min_conf : '?');
-      const kill = (c.kill != null ? '$' + c.kill : '?');
-      const hip3 = c.hip3 ? 'on' : 'off';
-      const crypto = c.crypto === false ? 'off' : 'on';
-      cfgStr = `  ⚙ ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} kill=${kill} crypto:${crypto} hip3:${hip3}`;
-    }
-    text = `perp=${maskDollar('$'+(e.equity||0).toFixed(2))} avail=${maskDollar('$'+(e.available||0).toFixed(2))} daily=${maskDollar(((e.daily_pnl||0)>=0?'+':'')+'$'+(e.daily_pnl||0).toFixed(2))} open=${e.open_positions||0}${cfgStr}`;
-  } else if (ev === 'loop_start') {
-    glyph = '▶'; cls = 'scan';
-    // Show key knobs on startup so it's obvious what the bot is configured to do
-    const c = e.config || {};
-    const frac = c.equity_fraction_per_trade != null ? (c.equity_fraction_per_trade * 100).toFixed(1) + '%' : '?';
-    const lev = c.leverage != null ? c.leverage + 'x' : '?';
-    const conc = c.max_concurrent != null ? c.max_concurrent : '?';
-    const cap = c.max_total_notional_pct != null ? c.max_total_notional_pct + 'x' : '?';
-    const cool = c.cooldown_min != null ? c.cooldown_min + 'm' : '?';
-    const conf = c.min_ai_confidence != null ? c.min_ai_confidence : '?';
-    const hip3 = c.enable_hip3 ? 'on' : 'off';
-    const crypto = c.enable_crypto === false ? 'off' : 'on';
-    const mode = c.mode || '?';
-    text = `loop_start interval=${e.scan_interval||60}s min_score=${e.min_score||20}  ⚙ mode=${mode} ${frac}×${lev} slots=${conc} cap=${cap} cool=${cool} conf=${conf} crypto:${crypto} hip3:${hip3}`;
-  } else if (ev === 'scan') {
-    glyph = '•'; cls = 'scan';
-    // Prefer scored coin list if present (newer events); fall back to plain names.
-    const scored = e.coin_scores || [];
-    const coinsStr = scored.length
-      ? scored.slice(0, 6).map(c => `${c.coin}(${c.score})`).join(', ') + (scored.length > 6 ? ` (+${scored.length-6})` : '')
-      : ((e.coins || []).slice(0, 6).join(', ') + (e.coins?.length > 6 ? ` (+${e.coins.length-6})` : ''));
-    text = `scan       ${e.triggers||0} triggers${coinsStr ? ' — ' + coinsStr : ''}`;
-    if (scored.length) tooltip = scored.map(c => `${c.coin}: score ${c.score}` + (c.triggers?.length ? ` [${c.triggers.join(', ')}]` : '')).join('\\n');
-  } else if (ev === 'ta_skip') {
-    glyph = '✗'; cls = 'scan';
-    const scoreNote = e.score != null ? ` ta=${e.score}` : '';
-    const trigNote = e.trigger_score != null ? ` trig=${e.trigger_score}` : '';
-    text = `ta_skip    ${e.coin} (${e.signal})${scoreNote}${trigNote}`;
-  } else if (ev === 'entry_preflight') {
-    glyph = '✗'; cls = 'scan';
-    const scoreNote = e.score != null ? ` ta=${e.score}` : '';
-    const trigNote = e.trigger_score != null ? ` trig=${e.trigger_score}` : '';
-    text = `preflight  ${e.coin}${scoreNote}${trigNote}`;
-    detail = e.reason ? ` — ${e.reason}` : '';
-  } else if (ev === 'research') {
-    glyph = '?'; cls = 'research';
-    text = `research   ${e.coin} → ${e.verdict} (conf ${e.confidence})`;
-    // Inline preview of reasoning + entry/stop/tp when present.
-    const priceTriad = (e.entry_px || e.stop_px || e.tp_px)
-      ? ` · entry ${fmtPx(e.entry_px)}/sl ${fmtPx(e.stop_px)}/tp ${fmtPx(e.tp_px)}` : '';
-    // Show the FULL reasoning — no truncation. The feed wraps long lines.
-    detail = priceTriad + (e.reasoning ? ` — ${e.reasoning}` : '');
-  } else if (ev === 'execute') {
-    const ok = e.executed;
-    glyph = ok ? '✓' : '✗'; cls = ok ? 'execute' : 'execute-fail';
-    const bookTag = e.book ? `[${e.book}] ` : '';
-    if (ok) {
-      const sz = e.size_usd != null ? ' ' + maskDollar('$'+e.size_usd.toFixed(2)) : '';
-      const ep = e.entry_px != null ? ` @ ${fmtPx(e.entry_px)}` : '';
-      text = `execute    ${bookTag}${e.coin} ${e.side || '?'}${sz}${ep}  ${e.detail || ''}`;
-      if (e.stop_px || e.tp_px) tooltip = `entry ${fmtPx(e.entry_px)}\nstop ${fmtPx(e.stop_px)}\ntp ${fmtPx(e.tp_px)}\nsize $${(e.size_usd||0).toFixed(2)}\norder ${e.detail || ''}`;
-    } else {
-      const blocked = Array.isArray(e.blocked_by) ? e.blocked_by.join(' · ') : (e.blocked_by || e.detail || '');
-      text = `execute    ${bookTag}${e.coin} ${e.side || '?'}  BLOCKED: ${blocked}`;
-      if (Array.isArray(e.blocked_by) && e.blocked_by.length > 1) tooltip = e.blocked_by.join('\\n');
-    }
-  } else if (ev === 'dsl_exit') {
-    glyph = '⏹'; cls = 'dsl_exit';
-    const side = e.side ? `${e.side} ` : '';
-    const lev = e.leverage ? `${e.leverage}x ` : '';
-    const pnlPct = e.realized_pnl_pct != null ? e.realized_pnl_pct : (e.unrealized_pct || 0);
-    text = `dsl_exit   ${e.coin} ${side}${lev} ${e.reason}  (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`;
-    if (e.fill_px) tooltip = `entry ${fmtPx(e.entry_px)}\nfill ${fmtPx(e.fill_px)}\nspot ${(e.realized_spot_pct||0).toFixed(2)}%\nleveraged ${(pnlPct||0).toFixed(2)}%`;
-  } else if (ev === 'ai_close') {
-    // AI CLOSE verdict acted on (position closed because structure flipped).
-    glyph = e.executed ? '⏹' : '✗';
-    cls = e.executed ? 'dsl_exit' : 'execute-fail';
-    const status = e.executed ? 'closed' : 'close FAILED';
-    text = `ai_close   ${e.coin} ${status}`;
-    detail = e.reasoning ? ` — ${e.reasoning}` : '';
-  } else if (ev === 'error') {
-    glyph = '!'; cls = 'error';
-    text = `error      ${e.coin || e.scope || 'loop'}: ${(e.error || '').slice(0, 120)}`;
-  } else if (ev === 'loop_stop') {
-    glyph = '■'; text = `loop_stop`;
-  } else {
-    text = `${ev}      ${JSON.stringify({...e, ts: undefined, event: undefined})}`;
-  }
-  const row = document.createElement('div');
-  row.className = 'feed-row ' + cls;
-  row.textContent = `[${ts}] ${glyph}  ${text}${detail}`;
-  if (tooltip) row.title = tooltip;
-  return row;
-}
+    if ev == "dsl_exit":
+        pnl = e.get("realized_pnl_pct")
+        if pnl is None:
+            pnl = e.get("leveraged_pct")
+        if pnl is None:
+            pnl = e.get("unrealized_pct")
+        return {
+            "type": "close", "ts": ts, "coin": e.get("coin"),
+            "side": e.get("side"), "leverage": e.get("leverage"),
+            "reason": e.get("reason"), "pnl_pct": pnl,
+            "spot_pct": e.get("realized_spot_pct", e.get("unrealized_pct")),
+            "fill_px": e.get("fill_px"), "entry_px": e.get("entry_px"),
+            "executed": bool(e.get("executed")), "source": "dsl",
+        }
 
-const feed = document.getElementById('feed');
-const es = new EventSource('/api/feed/stream');
-es.onmessage = (m) => {
-  try {
-    const e = JSON.parse(m.data);
-    feed.appendChild(renderEvent(e));
-    while (feed.childNodes.length > 200) feed.removeChild(feed.firstChild);
-    feed.scrollTop = feed.scrollHeight;
-    // Hamster reacts to executes (successful only) and DSL exits
-    if (e.event === 'execute' && e.executed) {
-      triggerHamsterReaction('execute');
-    } else if (e.event === 'dsl_exit') {
-      const pnlPct = e.realized_pnl_pct != null ? e.realized_pnl_pct : (e.unrealized_pct || 0);
-      triggerHamsterReaction('dsl_exit', pnlPct);
-    }
-  } catch {}
-};
+    if ev == "ai_close":
+        return {
+            "type": "close", "ts": ts, "coin": e.get("coin"),
+            "side": e.get("side"), "leverage": None,
+            "reason": e.get("reasoning") or "ai close",
+            "pnl_pct": None, "spot_pct": None,
+            "fill_px": None, "entry_px": None,
+            "executed": bool(e.get("executed")), "source": "ai_close",
+        }
 
-// ── locale init + change handlers ──
-async function initLocale() {
-  const rates = await loadRates();
-  const savedCcy = localStorage.getItem('hermes-ccy') || 'USD';
-  const savedLang = localStorage.getItem('hermes-lang') || 'en';
-  ccyState = { code: savedCcy, rate: rates[savedCcy] || 1 };
-  langState = savedLang;
-  const ccySel = document.getElementById('ccy-sel');
-  const langSel = document.getElementById('lang-sel');
-  if (ccySel) ccySel.value = savedCcy;
-  if (langSel) langSel.value = savedLang;
-  applyI18n();
-}
-document.getElementById('ccy-sel')?.addEventListener('change', async (e) => {
-  const code = e.target.value;
-  localStorage.setItem('hermes-ccy', code);
-  const rates = await loadRates();
-  ccyState = { code, rate: rates[code] || 1 };
-  refreshSummary(); refreshPositions(); refreshCloses();
-  if (chart) refreshChart(currentRange);
-});
-document.getElementById('lang-sel')?.addEventListener('change', (e) => {
-  langState = e.target.value;
-  localStorage.setItem('hermes-lang', langState);
-  applyI18n();
-});
+    if ev == "book_open":
+        extra = {k: v for k, v in e.items()
+                 if k not in ("ts", "event", "book", "coin", "side")}
+        return {"type": "book", "subtype": "open", "ts": ts,
+                "book": e.get("book"), "coin": e.get("coin"),
+                "side": e.get("side"), "extra": extra}
 
-// ── Highlight the active page in the primary navbar. The operator token
-// lives ONLY in localStorage now (audit 2026-07-10: carrying ?token= in
-// every nav URL leaked it into history/referrers); pages read localStorage
-// and send X-Operator-Token headers. Legacy ?token= URLs are absorbed:
-// persisted once, then stripped from the address bar.
-(function(){
-  const here = window.location.pathname.replace(/[/]$/, '') || '/';
-  document.querySelectorAll('a[data-nav]').forEach(a => {
-    if (a.dataset.nav === here) a.classList.add('nav-active');
-  });
-  const urlTok = new URLSearchParams(window.location.search).get('token');
-  if (urlTok) {
-    localStorage.setItem('hermes-op-token', urlTok);
-    const u = new URL(window.location.href);
-    u.searchParams.delete('token');
-    history.replaceState(null, '', u.toString());
-  }
-})();
+    book = _EVENT_BOOK_ALIASES.get(ev, ev)
+    if (book in _KNOWN_BOOK_NAMES or isinstance(e.get("skipped"), dict)
+            or "candidates" in e or ("signals" in e and "opened" in e)):
+        core = {"ts", "event", "shadow", "signals", "opened", "skipped", "candidates"}
+        extra = {k: v for k, v in e.items() if k not in core}
+        return {
+            "type": "book", "ts": ts, "book": book,
+            "shadow": e.get("shadow"),
+            "signals": e.get("signals"), "opened": e.get("opened"),
+            "skipped": e.get("skipped") or {},
+            "candidates": e.get("candidates") or [],
+            "extra": extra,
+        }
 
-// ── Operator-mode toggle: lets the user paste their HERMES_OPERATOR_TOKEN
-// without hand-editing the URL. Token persists to localStorage so subsequent
-// page loads stay unlocked without retyping. Click again to clear.
-(function () {
-  const btn = document.getElementById('operator-toggle');
-  if (!btn) return;
-  function syncBtn() {
-    const tok = localStorage.getItem('hermes-op-token') || new URLSearchParams(window.location.search).get('token') || '';
-    btn.textContent = tok ? '🔓 op' : '🔒 op';
-    btn.title = tok
-      ? 'operator mode ON — click to clear token (revert to read-only)'
-      : 'enter operator mode — unlocks Hermes terminal (Cmd+K)';
-  }
-  syncBtn();
-  btn.addEventListener('click', () => {
-    const current = localStorage.getItem('hermes-op-token') || '';
-    if (current) {
-      if (confirm('Clear operator token and revert to read-only?')) {
-        localStorage.removeItem('hermes-op-token');
-        window.location.reload();
-      }
-      return;
-    }
-    const tok = prompt('Paste your HERMES_OPERATOR_TOKEN:\\n(stored only in this browser via localStorage)');
-    if (!tok || !tok.trim()) return;
-    const clean = tok.trim();
-    localStorage.setItem('hermes-op-token', clean);
-    window.location.reload();   // pages read localStorage; APIs get the header
-  });
-})();
+    if ev == "scan":
+        coins = e.get("coin_scores") or e.get("coins") or []
+        return {"type": "scan", "ts": ts,
+                "triggers": e.get("triggers", e.get("perceptions", 0)),
+                "coins": coins}
 
-// ── Hermes terminal: Cmd+K (Ctrl+K) opens a command-center console. Routes
-// the input to /api/dashboard/operator/terminal with the operator token read
-// from the URL — built-in commands resolve locally; anything else falls
-// through to Nous Hermes via the backend.
-(function () {
-  const modal = document.getElementById('hermes-modal');
-  const input = document.getElementById('hermes-input');
-  const history = document.getElementById('hermes-history');
-  const closeBtn = document.getElementById('hermes-close');
-  if (!modal || !input || !history) return;
-  // Token resolution order: ?token= in URL wins, then localStorage, else empty.
-  // Letting localStorage hold it means the operator doesn't have to retype
-  // the token on every page load — but URL still wins so a copy-pasted
-  // share-link can override.
-  const tokenFromUrl = new URLSearchParams(window.location.search).get('token') || '';
-  const tokenFromStore = localStorage.getItem('hermes-op-token') || '';
-  const operatorToken = tokenFromUrl || tokenFromStore;
-  if (tokenFromUrl) localStorage.setItem('hermes-op-token', tokenFromUrl);
+    if ev in ("ta_skip", "entry_preflight"):
+        return {"type": "gate", "ts": ts, "kind": ev, "coin": e.get("coin"),
+                "reason": e.get("reason") or e.get("signal"),
+                "score": e.get("score"), "trigger_score": e.get("trigger_score")}
 
-  function appendLine(text, kind) {
-    const div = document.createElement('div');
-    div.className = 'hermes-line' + (kind ? ' hermes-' + kind : '');
-    div.textContent = text;
-    history.appendChild(div);
-    history.scrollTop = history.scrollHeight;
-  }
-  function openModal() {
-    modal.classList.remove('hidden');
-    setTimeout(() => input.focus(), 30);
-  }
-  function closeModal() { modal.classList.add('hidden'); }
+    if ev == "error":
+        return {"type": "error", "ts": ts,
+                "scope": e.get("coin") or e.get("scope"),
+                "error": str(e.get("error") or "")[:300]}
 
-  async function send(cmd) {
-    appendLine('▸ ' + cmd, 'cmd');
-    if (!operatorToken) {
-      appendLine('no operator token set — click 🔒 op in the top bar to enter one.', 'error');
-      return;
-    }
-    try {
-      const r = await fetch('/api/dashboard/operator/terminal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json',
-                   'X-Operator-Token': operatorToken || '' },
-        body: JSON.stringify({ command: cmd }),
-      });
-      if (!r.ok) {
-        appendLine(`error ${r.status}: ${(await r.text()).slice(0, 200)}`, 'error');
-        return;
-      }
-      const j = await r.json();
-      appendLine(j.response || '(empty response)', j.kind || 'chat');
-    } catch (e) {
-      appendLine('network error: ' + e.message, 'error');
-    }
-  }
+    if ev == "loop_heartbeat":
+        return {"type": "heartbeat", "ts": ts,
+                "equity": e.get("equity"), "daily_pnl": e.get("daily_pnl"),
+                "open_positions": e.get("open_positions")}
 
-  // Cmd+K / Ctrl+K toggles. Esc closes.
-  window.addEventListener('keydown', (ev) => {
-    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k') {
-      ev.preventDefault();
-      modal.classList.contains('hidden') ? openModal() : closeModal();
-    } else if (ev.key === 'Escape' && !modal.classList.contains('hidden')) {
-      closeModal();
-    }
-  });
-  modal.querySelector('.hermes-modal-bg')?.addEventListener('click', closeModal);
-  closeBtn?.addEventListener('click', closeModal);
+    if ev in ("loop_start", "loop_stop"):
+        fields = {k: v for k, v in e.items() if k not in ("ts", "event")}
+        return {"type": "system", "ts": ts, "name": ev, "fields": fields}
 
-  input.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' && input.value.trim()) {
-      const cmd = input.value.trim();
-      input.value = '';
-      send(cmd);
-    }
-  });
-})();
+    # Unknown shape → graceful key-value rendering, never raw JSON.
+    fields = {k: v for k, v in e.items() if k not in ("ts", "event")}
+    return {"type": "other", "ts": ts, "name": ev, "fields": fields}
 
-// ── discreet toggle: flip body.discreet, persist, re-render the views that
-// build dollar text imperatively (KPIs, positions, chart) so they pick up
-// the new state on the same tick rather than waiting for the next poll.
-(function () {
-  const btn = document.getElementById('discreet-toggle');
-  if (!btn) return;
-  // Restore persisted state
-  if (localStorage.getItem('hermes-discreet') === '1') {
-    document.body.classList.add('discreet');
-    btn.textContent = '🙈';
-  }
-  btn.addEventListener('click', () => {
-    const on = document.body.classList.toggle('discreet');
-    localStorage.setItem('hermes-discreet', on ? '1' : '0');
-    btn.textContent = on ? '🙈' : '👁';
-    refreshSummary();
-    refreshPositions();
-    if (chart) chart.update('none');
-  });
-})();
 
-// ── kickoff + polling ──
-initLocale().then(() => {
-  refreshSummary(); refreshPositions(); refreshCloses(); refreshChart(86400);
-  rotateHamsterQuote();
-});
-setInterval(refreshSummary, 5000);
-setInterval(refreshPositions, 15000);
-setInterval(refreshCloses, 20000);
-setInterval(() => refreshChart(currentRange), 60000);
-setInterval(rotateHamsterQuote, 7000);
-</script>
-</body>
-</html>
-"""
+def _activity_payload(limit: int = 150, book: str = "", etype: str = "") -> Dict[str, Any]:
+    """Newest-first classified events, optionally filtered by book / type."""
+    events = _read_log_lines()
+    if len(events) > _ACTIVITY_SCAN_CAP:
+        events = events[-_ACTIVITY_SCAN_CAP:]
+    out: List[Dict[str, Any]] = []
+    for e in reversed(events):
+        c = _classify_event(e)
+        if etype and c.get("type") != etype:
+            continue
+        if book and c.get("book") != book:
+            continue
+        out.append(c)
+        if len(out) >= limit:
+            break
+    return {"events": out,
+            "books": sorted(_KNOWN_BOOK_NAMES),
+            "types": _ACTIVITY_TYPES}
+
+
+# ── news feed ────────────────────────────────────────────────────────────────
+
+
+def _news_payload(limit: int = 50) -> Dict[str, Any]:
+    """News-catalyst shadow-ledger reads (newest first, breaking flagged) plus
+    recent research events that carried news context (citations / news_risk)."""
+    from hermes_trader.agents import shadow_ledger
+
+    rows = shadow_ledger.load("news_catalyst")
+    rows.sort(key=lambda r: int(r.get("ts") or 0))
+    items: List[Dict[str, Any]] = []
+    for r in reversed(rows):
+        meta = r.get("meta") or {}
+        items.append({
+            "ts": r.get("ts"), "coin": r.get("coin"), "side": r.get("side"),
+            "entry_ref_px": r.get("entry_ref_px"),
+            "n_recent": meta.get("n_recent"), "surge_x": meta.get("surge_x"),
+            "breaking": bool(meta.get("breaking")),
+            "titles": meta.get("top3_titles") or [],
+            "shadow": meta.get("shadow"),
+        })
+        if len(items) >= limit:
+            break
+
+    ctx: List[Dict[str, Any]] = []
+    events = _read_log_lines()
+    if len(events) > _ACTIVITY_SCAN_CAP:
+        events = events[-_ACTIVITY_SCAN_CAP:]
+    for e in reversed(events):
+        if e.get("event") != "research":
+            continue
+        cites = e.get("web_search_citations") or []
+        risk = e.get("news_risk")
+        if not cites and (not risk or risk == "none"):
+            continue
+        ctx.append({
+            "ts": e.get("ts"), "coin": e.get("coin"),
+            "verdict": e.get("verdict"), "confidence": e.get("confidence"),
+            "news_risk": risk, "citations": cites,
+            "reasoning": e.get("reasoning"),
+            "provider": e.get("ai_brain_provider"),
+        })
+        if len(ctx) >= 20:
+            break
+
+    return {"items": items, "research_context": ctx}
+
+
+# ── HTML ─────────────────────────────────────────────────────────────────────
+# Page markup lives in hermes_trader/templates/*.html — plain files, no
+# template engine, fully self-contained assets (vendored /static only).
+# Loaded once at import; the pages are static shells that poll the JSON APIs.
+
+_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+
+
+def _load_template(name: str) -> str:
+    return (_TEMPLATE_DIR / name).read_text(encoding="utf-8")
+
+
+_PUBLIC_HTML = _load_template("landing.html")
+_ACTIVITY_HTML = _load_template("activity.html")
+_NEWS_HTML = _load_template("news.html")
 
 
 _CONFIG_HTML = """<!doctype html>
@@ -1667,10 +838,6 @@ _CONFIG_HTML = """<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · config</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/nes.css@2.3.0/css/nes.min.css">
 <script src="/static/tailwind.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
@@ -1715,6 +882,8 @@ _CONFIG_HTML = """<!doctype html>
 
   <nav class="flex items-center gap-2 mb-6 flex-wrap" id="hermes-nav">
     <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link pixel">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link pixel">NEWS</a>
     <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
     <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
   </nav>
@@ -1728,7 +897,7 @@ _CONFIG_HTML = """<!doctype html>
       <div class="cfg-section-head">loading…</div>
     </div>
     <div class="cfg-tip">
-      to change a value: open Cmd+K terminal · `set &lt;key&gt; &lt;value&gt;` · type auto-inferred
+      to change a value: edit .agent-config.json (hot-reloaded every cycle) or POST the operator terminal API: `set &lt;key&gt; &lt;value&gt;`
     </div>
   </section>
 
@@ -1806,18 +975,12 @@ async function loadConfig() {
 loadConfig();
 setInterval(loadConfig, 5000); // hot-reloads alongside the trading loop
 
-// Highlight the active page + carry the operator token across navigation.
+// Highlight the active page. Token stays in localStorage only — never
+// appended to nav URLs (audit 2026-07-10: ?token= leaked into history).
 (function(){
   const here = window.location.pathname.replace(/\\/$/, '') || '/';
-  const tok = new URLSearchParams(window.location.search).get('token')
-           || localStorage.getItem('hermes-op-token') || '';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
-    if (tok) {
-      const u = new URL(a.href, window.location.origin);
-      u.searchParams.set('token', tok);
-      a.href = u.toString();
-    }
   });
 })();
 </script>
@@ -1832,9 +995,6 @@ _OPERATOR_HTML = """<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · operator</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="/static/tailwind.js"></script>
 <style>
   body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
@@ -1862,10 +1022,13 @@ _OPERATOR_HTML = """<!doctype html>
     <div class="flex items-center gap-3">
       <span class="lcd pixel text-sm tracking-tight">HERMES-TRADER · OPERATOR</span>
     </div>
+    <button id="op-token-btn" class="btn" title="paste/clear HERMES_OPERATOR_TOKEN (localStorage only)">set token</button>
   </header>
 
   <nav class="flex items-center gap-2 mb-4 flex-wrap" id="hermes-nav">
     <a href="/" data-nav="/" class="nav-link pixel">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link pixel">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link pixel">NEWS</a>
     <a href="/config" data-nav="/config" class="nav-link pixel">CONFIG</a>
     <a href="/operator" data-nav="/operator" class="nav-link pixel">OPERATOR</a>
   </nav>
@@ -1907,25 +1070,37 @@ function setBanner(msg, ok) {
   el.className = 'op-banner' + (ok ? ' op-ok' : '');
 }
 
-// Highlight the active page in the navbar. Carry the operator token across
-// navigation so clicking DASHBOARD / CONFIG doesn't lose the session.
+// Highlight the active page in the navbar. Token stays in localStorage only —
+// never appended to nav URLs (audit 2026-07-10: ?token= leaked into history).
 (function(){
   const here = window.location.pathname.replace(/\\/$/, '') || '/';
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
-    if (token) {
-      const u = new URL(a.href, window.location.origin);
-      u.searchParams.set('token', token);
-      a.href = u.toString();
-    }
   });
 })();
 
 if (!token) {
-  setBanner('NO TOKEN · go to / and click 🔒 op to enter one', false);
+  setBanner('NO TOKEN · click "set token" to paste HERMES_OPERATOR_TOKEN', false);
 } else {
   setBanner('operator session ACTIVE · token loaded', true);
 }
+
+// Token entry lives here now (the landing page no longer has operator chrome).
+// Stored ONLY in this browser's localStorage; sent as X-Operator-Token.
+document.getElementById('op-token-btn')?.addEventListener('click', () => {
+  const current = localStorage.getItem('hermes-op-token') || '';
+  if (current) {
+    if (confirm('Clear operator token and revert to read-only?')) {
+      localStorage.removeItem('hermes-op-token');
+      location.reload();
+    }
+    return;
+  }
+  const t = prompt('Paste your HERMES_OPERATOR_TOKEN:\\n(stored only in this browser via localStorage)');
+  if (!t || !t.trim()) return;
+  localStorage.setItem('hermes-op-token', t.trim());
+  location.reload();
+});
 
 // Config dump moved to its own /config page (linked in the navbar above) —
 // the operator console focuses on actions (close, set mode) and live state.
@@ -2010,11 +1185,44 @@ def register_routes(app: FastAPI) -> None:
         Cmd+K terminal's `set <key> <value>` command."""
         return HTMLResponse(content=_CONFIG_HTML, headers=_NO_CACHE_HEADERS)
 
+    @app.get("/activity", response_class=HTMLResponse)
+    async def activity_page() -> HTMLResponse:
+        """Live activity feed — research verdicts, executions with gate
+        results, book events, DSL closes. Filterable by book and event type."""
+        return HTMLResponse(content=_ACTIVITY_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/news", response_class=HTMLResponse)
+    async def news_page() -> HTMLResponse:
+        """News-catalyst reads (shadow ledger) + research events with news context."""
+        return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
+
     @app.get("/api/dashboard/config")
     async def dashboard_config() -> JSONResponse:
         """Read-only JSON dump of `.agent-config.json` for the /config page.
         Hot-reloads alongside the trading loop (no caching)."""
         return JSONResponse(read_agent_config())
+
+    @app.get("/api/dashboard/books")
+    async def dashboard_books() -> JSONResponse:
+        """Live-books table rows: name, live/shadow/off status, size, thesis."""
+        return JSONResponse(_ttl_cached("books", 30.0, _books_payload))
+
+    @app.get("/api/dashboard/activity")
+    async def dashboard_activity(
+        limit: int = Query(150, ge=1, le=500),
+        book: str = Query("", max_length=64),
+        etype: str = Query("", alias="type", max_length=32),
+    ) -> JSONResponse:
+        # TTL (8s) >= the page's poll interval (8s) so polls hit the cache.
+        return JSONResponse(_ttl_cached(
+            f"activity:{limit}:{book}:{etype}", 8.0,
+            lambda: _activity_payload(limit, book, etype)))
+
+    @app.get("/api/dashboard/news")
+    async def dashboard_news(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
+        # TTL (30s) >= the page's poll interval (30s).
+        return JSONResponse(_ttl_cached(f"news:{limit}", 30.0,
+                                        lambda: _news_payload(limit)))
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:

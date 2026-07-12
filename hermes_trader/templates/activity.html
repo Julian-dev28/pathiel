@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · activity</title>
+<script src="/static/tailwind.js"></script>
+<style>
+  body{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#0a0a0a;color:#e5e5e5}
+  .num{font-variant-numeric:tabular-nums}
+  .card{border:2px solid #27272a;box-shadow:4px 4px 0 #18181b;background:#0f0f10}
+  .lcd{background:#052e1c;border:2px solid #34d399;box-shadow:inset 0 0 0 1px #022c1e,4px 4px 0 #064e3b;padding:8px 12px;color:#6ee7b7;font-weight:700;letter-spacing:.08em}
+  .nav-link{display:inline-block;padding:7px 12px;font-size:11px;letter-spacing:.12em;color:#a3a3a3;background:#18181b;border:2px solid #3f3f46;box-shadow:2px 2px 0 #0a0a0a;text-decoration:none;font-weight:700}
+  .nav-link:hover{color:#a7f3d0;border-color:#047857;box-shadow:2px 2px 0 #022c1e}
+  .nav-link.nav-active{background:#064e3b;color:#6ee7b7;border-color:#34d399;box-shadow:2px 2px 0 #022c1e}
+  .badge{display:inline-block;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:.08em;border:1px solid currentColor;white-space:nowrap}
+  .b-live{color:#6ee7b7;background:#064e3b}
+  .b-shadow{color:#fbbf24;background:#451a03}
+  .b-long{color:#6ee7b7;background:#064e3b}
+  .b-short{color:#fca5a5;background:#450a0a}
+  .b-pass{color:#a1a1aa;background:#27272a}
+  .b-ok{color:#6ee7b7;background:#064e3b}
+  .b-fail{color:#fca5a5;background:#450a0a}
+  .b-info{color:#a5b4fc;background:#1e1b4b}
+  .chip{display:inline-block;padding:2px 8px;font-size:10px;border:1px solid #3f3f46;background:#18181b;color:#a3a3a3;margin:2px 4px 2px 0;white-space:nowrap}
+  .chip.chip-red{border-color:#7f1d1d;color:#fca5a5;background:#1f0808}
+  .chip.chip-amber{border-color:#78350f;color:#fbbf24;background:#1f1300}
+  .ev{border:1px solid #1f2937;background:#0c0d0e;padding:8px 12px;margin-bottom:8px}
+  .ev-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .ev-ts{color:#52525b;font-size:10px;white-space:nowrap}
+  .ev-type{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .ev-type.t-research{color:#a5b4fc}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fbbf24}
+  .ev-type.t-book{color:#5eead4}.ev-type.t-scan{color:#9ca3af}.ev-type.t-gate{color:#71717a}
+  .ev-type.t-error{color:#f87171}.ev-type.t-heartbeat{color:#52525b}.ev-type.t-system{color:#9ca3af}.ev-type.t-other{color:#d4d4d8}
+  .ev-body{font-size:12px;color:#d4d4d8;margin-top:3px;line-height:1.55;word-break:break-word}
+  .ev-sub{font-size:11px;color:#71717a;margin-top:2px}
+  .kv{display:grid;grid-template-columns:minmax(120px,26%) 1fr;gap:2px 12px;font-size:11px;margin-top:4px}
+  .kv .k{color:#71717a}
+  .kv .v{color:#d4d4d8;word-break:break-word}
+  .fbtn{padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.06em;background:#18181b;border:1px solid #3f3f46;color:#a3a3a3;cursor:pointer}
+  .fbtn:hover{border-color:#047857;color:#a7f3d0}
+  .fbtn.on{background:#064e3b;border-color:#34d399;color:#6ee7b7}
+  select.fsel{background:#18181b;border:1px solid #3f3f46;color:#d4d4d8;font-size:11px;padding:4px 8px}
+  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1100px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+    <span class="lcd text-sm">HERMES-TRADER · ACTIVITY</span>
+    <span class="text-[10px] text-zinc-500" id="feed-meta"></span>
+  </header>
+
+  <nav class="flex items-center gap-2 mb-6 flex-wrap">
+    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
+    <a href="/config" data-nav="/config" class="nav-link">CONFIG</a>
+    <a href="/operator" data-nav="/operator" class="nav-link">OPERATOR</a>
+  </nav>
+
+  <section class="card p-4 mb-4">
+    <div class="flex items-center gap-2 flex-wrap" id="type-filters"></div>
+    <div class="flex items-center gap-3 mt-3 flex-wrap">
+      <label class="text-[11px] text-zinc-500">book</label>
+      <select id="book-filter" class="fsel"><option value="">all books</option></select>
+      <label class="text-[11px] text-zinc-500 ml-4">rows</label>
+      <select id="limit-filter" class="fsel">
+        <option value="80">80</option>
+        <option value="150" selected>150</option>
+        <option value="300">300</option>
+      </select>
+    </div>
+  </section>
+
+  <div id="feed"><div class="text-zinc-500 text-xs">loading&hellip;</div></div>
+
+  <footer class="text-[10px] text-zinc-600 mt-6 text-center">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtTime = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 8); };
+const fmtDay = ms => { const d = new Date(ms || Date.now()); return (d.getMonth() + 1) + '/' + d.getDate(); };
+const fmtTs = ms => fmtDay(ms) + ' ' + fmtTime(ms);
+const fmtNum = v => {
+  if (v == null || typeof v !== 'number' || !isFinite(v)) return String(v);
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+  if (a >= 100) return v.toFixed(2);
+  if (a >= 1) return v.toFixed(3);
+  return v.toFixed(5);
+};
+const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
+
+// Readable scalar for any value — arrays join, objects flatten to "k: v" pairs.
+// This is the guaranteed no-raw-JSON path for unknown shapes.
+function readable(v, depth) {
+  depth = depth || 0;
+  if (v == null) return '—';
+  if (typeof v === 'number') return fmtNum(v);
+  if (typeof v !== 'object') return String(v);
+  if (depth >= 2) return '…';
+  if (Array.isArray(v)) {
+    if (!v.length) return 'none';
+    return v.map(x => readable(x, depth + 1)).join(', ');
+  }
+  return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
+}
+function kvBlock(obj) {
+  const entries = Object.entries(obj || {}).filter(([, v]) => v !== null && v !== undefined);
+  if (!entries.length) return '';
+  return '<div class="kv">' + entries.map(([k, v]) =>
+    `<span class="k">${esc(k)}</span><span class="v">${esc(readable(v))}</span>`).join('') + '</div>';
+}
+
+const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
+                     : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
+const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>'
+                        : v === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
+                        : v === 'CLOSE' ? '<span class="badge b-fail">CLOSE</span>'
+                        : `<span class="badge b-pass">${esc(v || '?')}</span>`;
+const shadowBadge = sh => sh ? '<span class="badge b-shadow">SHADOW</span>' : '<span class="badge b-live">LIVE</span>';
+
+function head(e, label, cls, bits) {
+  return `<div class="ev-head"><span class="ev-ts num">${fmtTs(e.ts)}</span>` +
+         `<span class="ev-type t-${cls}">${label}</span>` + bits.join(' ') + '</div>';
+}
+
+// candidate → chip: coin + side + up to 3 informative fields
+function candChip(c) {
+  if (c == null || typeof c !== 'object') return `<span class="chip">${esc(readable(c))}</span>`;
+  const skip = new Set(['coin', 'side', 'signal_bar_t', 'influx_bar_t']);
+  const bits = [];
+  if (c.coin) bits.push(`<b>${esc(c.coin)}</b>`);
+  if (c.side) bits.push(esc(c.side));
+  let n = 0;
+  for (const [k, v] of Object.entries(c)) {
+    if (skip.has(k) || v == null || n >= 3) continue;
+    if (typeof v === 'boolean') { if (v) { bits.push(esc(k)); n++; } continue; }
+    bits.push(`${esc(k)}=${esc(readable(v))}`); n++;
+  }
+  return `<span class="chip">${bits.join(' ')}</span>`;
+}
+
+const RENDER = {
+  research(e) {
+    const conf = e.confidence != null ? `<span class="text-zinc-500 text-[11px] num">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
+    const prov = e.provider ? `<span class="chip">${esc(e.provider)}</span>` : '';
+    const search = e.web_search_used ? '<span class="chip chip-amber">web search</span>' : '';
+    const risk = e.news_risk && e.news_risk !== 'none' ? `<span class="chip chip-red">news risk: ${esc(e.news_risk)}</span>` : '';
+    const triad = (e.entry_px || e.stop_px || e.tp_px)
+      ? `<div class="ev-sub num">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
+    const cites = (e.citations || []).map(c => {
+      const url = typeof c === 'string' ? c : (c.url || c.link || '');
+      const title = typeof c === 'object' && c.title ? c.title : url;
+      return url ? `<div class="ev-sub">· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
+    }).join('');
+    return head(e, 'research', 'research',
+        [`<b>${esc(e.coin)}</b>`, verdictBadge(e.verdict), conf, prov, search, risk])
+      + (e.reasoning ? `<div class="ev-body">${esc(e.reasoning)}</div>` : '')
+      + triad + cites;
+  },
+  execute(e) {
+    const status = e.executed ? '<span class="badge b-ok">FILLED</span>' : '<span class="badge b-fail">BLOCKED</span>';
+    const book = e.book ? `<span class="chip">${esc(e.book)}</span>` : '';
+    const via = e.entry_via ? `<span class="text-zinc-500 text-[11px]">via ${esc(e.entry_via)}</span>` : '';
+    let body = '';
+    if (e.executed) {
+      const parts = [];
+      if (e.size_usd != null) parts.push(`size $${Number(e.size_usd).toFixed(2)}`);
+      if (e.entry_px != null) parts.push(`entry ${fmtNum(e.entry_px)}`);
+      if (e.stop_px != null) parts.push(`stop ${fmtNum(e.stop_px)}`);
+      if (e.tp_px != null) parts.push(`tp ${fmtNum(e.tp_px)}`);
+      if (e.regime) parts.push(`regime ${esc(e.regime)}`);
+      body = `<div class="ev-body num">${parts.join(' · ')}</div>`;
+    }
+    const gates = (e.gates || []).map(g => `<span class="chip chip-red">${esc(g)}</span>`).join('');
+    const detail = (!e.executed && !((e.gates || []).length) && e.detail)
+      ? `<span class="chip chip-red">${esc(e.detail)}</span>` : '';
+    const gateRow = (gates || detail) ? `<div class="mt-1">${gates}${detail}</div>` : '';
+    return head(e, 'execute', 'execute',
+        [`<b>${esc(e.coin)}</b>`, sideBadge(e.side), status, book, via,
+         e.ai_verdict ? `<span class="text-zinc-600 text-[11px]">ai: ${esc(e.ai_verdict)}</span>` : ''])
+      + body + gateRow;
+  },
+  close(e) {
+    const pnl = e.pnl_pct != null
+      ? `<span class="num font-bold ${e.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}">${fmtPct(e.pnl_pct)}</span>` : '';
+    const lev = e.leverage ? `<span class="text-zinc-500 text-[11px]">${e.leverage}x</span>` : '';
+    const src = e.source === 'ai_close' ? '<span class="chip chip-amber">ai close</span>' : '<span class="chip">dsl</span>';
+    const failed = e.executed === false ? '<span class="badge b-fail">FAILED</span>' : '';
+    const fills = (e.fill_px != null || e.entry_px != null)
+      ? `<div class="ev-sub num">entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}${e.spot_pct != null ? ` · spot ${fmtPct(e.spot_pct)}` : ''}</div>` : '';
+    return head(e, 'close', 'close', [`<b>${esc(e.coin)}</b>`, sideBadge(e.side), lev, pnl, src, failed])
+      + (e.reason ? `<div class="ev-body">${esc(e.reason)}</div>` : '')
+      + fills;
+  },
+  book(e) {
+    if (e.subtype === 'open') {
+      return head(e, 'book', 'book',
+          [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', `<b>${esc(e.coin)}</b>`, sideBadge(e.side)])
+        + kvBlock(e.extra);
+    }
+    const counts = [];
+    if (e.signals != null) counts.push(`signals ${e.signals}`);
+    if (e.opened != null) counts.push(`opened ${e.opened}`);
+    const countStr = counts.length ? `<span class="text-zinc-400 text-[11px] num">${counts.join(' · ')}</span>` : '';
+    const skips = Object.entries(e.skipped || {})
+      .filter(([, v]) => Number(v) > 0)
+      .map(([k, v]) => `<span class="chip chip-amber">skipped ${esc(k)}: ${v}</span>`).join('');
+    const cands = (e.candidates || []).map(candChip).join('');
+    const chipRow = (skips || cands) ? `<div class="mt-1">${cands}${skips}</div>` : '';
+    return head(e, 'book', 'book', [`<b>${esc(e.book)}</b>`, shadowBadge(e.shadow), countStr])
+      + chipRow + kvBlock(e.extra);
+  },
+  scan(e) {
+    const coins = (e.coins || []).slice(0, 8).map(c =>
+      typeof c === 'object' ? `<span class="chip">${esc(c.coin)} ${esc(fmtNum(c.score))}</span>` : `<span class="chip">${esc(c)}</span>`).join('');
+    return head(e, 'scan', 'scan', [`<span class="text-zinc-400 text-[11px] num">${e.triggers ?? 0} triggers</span>`])
+      + (coins ? `<div class="mt-1">${coins}</div>` : '');
+  },
+  gate(e) {
+    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
+      .filter(Boolean).join(' · ');
+    return head(e, e.kind === 'ta_skip' ? 'ta skip' : 'preflight', 'gate',
+        [`<b>${esc(e.coin)}</b>`, scores ? `<span class="text-zinc-600 text-[11px] num">${scores}</span>` : ''])
+      + (e.reason ? `<div class="ev-sub">${esc(e.reason)}</div>` : '');
+  },
+  error(e) {
+    return head(e, 'error', 'error', [`<b>${esc(e.scope || 'loop')}</b>`])
+      + `<div class="ev-body text-red-300">${esc(e.error)}</div>`;
+  },
+  heartbeat(e) {
+    return head(e, 'heartbeat', 'heartbeat',
+      [`<span class="text-zinc-600 text-[11px] num">equity $${Number(e.equity ?? 0).toFixed(2)} · daily $${Number(e.daily_pnl ?? 0).toFixed(2)} · open ${e.open_positions ?? 0}</span>`]);
+  },
+  system(e) {
+    return head(e, e.name || 'system', 'system', []) + kvBlock(e.fields);
+  },
+  other(e) {
+    return head(e, e.name || '?', 'other', []) + kvBlock(e.fields);
+  },
+};
+
+let curType = '', curBook = '', timer = null;
+
+function renderFeed(data) {
+  const feed = document.getElementById('feed');
+  const evs = data.events || [];
+  if (!evs.length) {
+    feed.innerHTML = '<div class="text-zinc-500 text-xs">no events match this filter</div>';
+  } else {
+    feed.innerHTML = evs.map(e => `<div class="ev">${(RENDER[e.type] || RENDER.other)(e)}</div>`).join('');
+  }
+  document.getElementById('feed-meta').textContent =
+    `${evs.length} events · newest first · refreshed ${fmtTime(Date.now())}`;
+}
+
+function buildFilters(data) {
+  const wrap = document.getElementById('type-filters');
+  if (wrap.childElementCount) return;    // build once
+  const mk = (label, val) => {
+    const b = document.createElement('button');
+    b.className = 'fbtn' + (val === curType ? ' on' : '');
+    b.textContent = label;
+    b.dataset.type = val;
+    b.addEventListener('click', () => {
+      curType = val;
+      wrap.querySelectorAll('.fbtn').forEach(x => x.classList.toggle('on', x.dataset.type === val));
+      load();
+    });
+    wrap.appendChild(b);
+  };
+  mk('all', '');
+  for (const t of (data.types || [])) mk(t, t);
+  const sel = document.getElementById('book-filter');
+  for (const b of (data.books || [])) {
+    const o = document.createElement('option');
+    o.value = b; o.textContent = b;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => { curBook = sel.value; load(); });
+  document.getElementById('limit-filter').addEventListener('change', load);
+}
+
+async function load() {
+  try {
+    const limit = document.getElementById('limit-filter').value || 150;
+    const qs = new URLSearchParams({ limit });
+    if (curType) qs.set('type', curType);
+    if (curBook) qs.set('book', curBook);
+    const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+    buildFilters(data);
+    renderFeed(data);
+  } catch (e) {
+    document.getElementById('feed').innerHTML = '<div class="text-red-400 text-xs">feed load failed — is the server up?</div>';
+  }
+}
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+load();
+timer = setInterval(load, 8000);
+</script>
+</body>
+</html>
