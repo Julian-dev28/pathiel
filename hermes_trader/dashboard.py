@@ -553,8 +553,6 @@ _BOOKS: List[tuple] = [
      "continuation."),
     ("engulf_short", "engulf_short",
      "Bearish daily engulfing candle on a liquid coin — short the next day."),
-    ("neg_funding_fade", "neg_funding_fade",
-     "Deep negative funding plus a green volume influx — short the failed pop."),
     ("funding_spike_short", "funding_spike_short",
      "Funding-rate z-score spike above 2 — short until funding normalizes."),
     ("majors_swing", "majors_swing",

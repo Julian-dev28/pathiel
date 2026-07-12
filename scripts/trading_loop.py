@@ -59,7 +59,6 @@ from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
-from hermes_trader.agents.neg_funding_fade_live import maybe_run as _neg_funding_fade_maybe_run
 from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
 from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
 from hermes_trader.agents.young_listings_live import maybe_run as _young_listings_maybe_run
@@ -777,19 +776,9 @@ while True:
         except Exception as _ese:
             logger.warning(f"[engulf-short] cycle failed (non-fatal): {_ese}")
 
-        # Negative-funding volume-influx FADE (short). Swarm-validated 2026-06-29: a coin with deep-negative
-        # 8h funding (crowded shorts) that prints a green 5m vol-influx pop FAILS it and continues down -> short
-        # the failed pop. +EV both OOS halves net of funding cost (influx_funding_fade.md). LIVE small ($20/1x/25%
-        # stop), records to the shadow ledger for forward grading. 5m TTL for fresh candles; funding fetched only
-        # for influx candidates. Revert with neg_funding_fade.shadow_only=true (hot-read).
-        try:
-            _neg_funding_fade_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 300 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _nffe:
-            logger.warning(f"[neg-funding-fade] cycle failed (non-fatal): {_nffe}")
+        # neg_funding_fade RIPPED 2026-07-12 (operator refuted-rule): fixed
+        # grader read it -2.0%/ep net of funding forward; the original +EV
+        # claims were cluster double-counting. Ledger history stays graded.
 
         # Young-listing lane (2026-07-10): xyz coins UNDER the 60-bar history floor
         # — the floor still protects the main engine; this bounded lane (min 2 bars,

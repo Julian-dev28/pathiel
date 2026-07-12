@@ -206,16 +206,15 @@ class TestClaimsRegistryUnit:
     def test_active_claim_books_include_live_claimants(self):
         from hermes_trader.agents.rebalancer_owned import active_claim_books
         import hermes_trader.agents.majors_swing_live as msl
-        import hermes_trader.agents.neg_funding_fade_live as nfl
         import hermes_trader.agents.rally_exhaustion_live as rel
 
         active = active_claim_books()
         assert msl._BOOK_NAME in active
-        assert nfl._BOOK_NAME in active
         assert rel._BOOK_NAME in active
         assert "xs_momentum" in active
-        # ripped-out books (2026-07-09) must NOT hold claims
+        # ripped-out books (2026-07-09 + nff 2026-07-12) must NOT hold claims
         assert "hail_mary_short" not in active
+        assert "neg_funding_fade" not in active
         assert "vol_breakout_long" not in active
 
 

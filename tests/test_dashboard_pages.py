@@ -290,8 +290,7 @@ def test_ai_close_classified_as_close(monkeypatch):
 def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 12
-    assert rows["neg_funding_fade"]["status"] == "shadow"
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 11
     assert rows["young_listings"]["status"] == "shadow"
     assert rows["engulf_short"]["status"] == "live"
     assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
@@ -310,7 +309,7 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 12 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 11 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -464,7 +463,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 12
+    assert len(rows) == 11
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 
