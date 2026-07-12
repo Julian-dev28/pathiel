@@ -463,16 +463,19 @@ def test_landing_has_equity_curve(client):
     assert "equity-curve?range_s=" in r.text     # wired to the live endpoint
 
 
-def test_landing_books_flow_always_visible(client):
-    """Supersedes the dropdown order: all books render in ONE flowing window —
-    no collapse, no chevron, no localStorage state."""
+def test_landing_books_dropdown_wraps_flow(client):
+    """Operator reversal 2026-07-12: live books is a dropdown again — round-7
+    collapse behavior wrapped around the current flowing book-row styling."""
     r = client.get("/").text
+    assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
+    assert "hermes-books-open" in r                  # state remembered in localStorage
+    assert 'class="books-wrap"' in r                 # static HTML ships collapsed
+    assert "books-open .books-wrap" in r             # CSS max-height/opacity transition
+    assert ".books-head .chev" in r                  # chevron toggle affordance
+    assert "live books" in r                         # header + counts always visible
+    # the flowing rows live INSIDE the collapsed container
     assert 'id="books-flow"' in r and "book-row" in r
-    assert "live books" in r                         # count summary header stays
-    assert "books-toggle" not in r                   # collapse behavior removed
-    assert "hermes-books-open" not in r
-    assert "books-wrap" not in r
-    assert "overflow-y:auto" in r                    # scroll within the window if needed
+    assert r.index('id="books-wrap"') < r.index('id="books-flow"')
 
 
 def test_no_emoji_glyphs_anywhere(client):

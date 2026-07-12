@@ -90,9 +90,18 @@
   @keyframes tick-g{0%{background:rgba(34,197,94,.18)}100%{background:transparent}}
   .tick-dn{animation:tick-r .9s ease-out}
   @keyframes tick-r{0%{background:rgba(239,68,68,.18)}100%{background:transparent}}
-  /* live books: ONE flowing window — all books always visible as a
-     continuous strip of mini-cards, inner scroll if the strip outgrows it */
-  .books-flow{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px}
+  /* live books: DROPDOWN — header row always visible with the counts,
+     flowing book-rows collapse beneath it (operator reversal 2026-07-12) */
+  .books-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:16px 20px}
+  .books-head:active{transform:translateY(1px)}
+  /* pixel chevron: three squares forming a chunky "v" */
+  .books-head .chev{margin-left:auto;width:4px;height:4px;background:var(--dim);
+        box-shadow:-5px -4px 0 var(--dim),5px -4px 0 var(--dim);transition:transform .3s ease}
+  .books-head:hover .chev{background:var(--mut);box-shadow:-5px -4px 0 var(--mut),5px -4px 0 var(--mut)}
+  .books-open .books-head .chev{transform:rotate(180deg)}
+  .books-wrap{max-height:0;opacity:0;overflow:hidden;transition:max-height .4s ease,opacity .3s ease}
+  .books-open .books-wrap{max-height:1400px;opacity:1}
+  .books-flow{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:0 20px 18px;margin-right:4px}
   .books-flow::-webkit-scrollbar{width:8px}
   .books-flow::-webkit-scrollbar-track{background:#101216}
   .books-flow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
@@ -134,7 +143,7 @@
   .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
   @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
   @media (prefers-reduced-motion: reduce){
-    .card{transition:none}
+    .card,.books-wrap,.books-head .chev{transition:none}
     .tick-up,.tick-dn,.pill::before{animation:none}
     .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
   }
@@ -268,13 +277,16 @@
     </div>
   </section>
 
-  <section class="card p-5 mb-6" id="books-section">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">live books</div>
-      <div class="text-[10px] mono" style="color:var(--dim)" id="books-count"></div>
-    </div>
-    <div id="books-flow" class="books-flow">
-      <div class="text-xs" style="color:var(--dim)">loading&hellip;</div>
+  <section class="card p-0 mb-6" id="books-section">
+    <button id="books-toggle" class="books-head" type="button" aria-expanded="false">
+      <span class="sec-label">live books</span>
+      <span class="text-[10px] mono" style="color:var(--dim)" id="books-count"></span>
+      <span class="chev"></span>
+    </button>
+    <div class="books-wrap" id="books-wrap">
+      <div id="books-flow" class="books-flow">
+        <div class="text-xs" style="color:var(--dim)">loading&hellip;</div>
+      </div>
     </div>
   </section>
 
@@ -334,6 +346,22 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
     localStorage.setItem('hermes-discreet', on ? '1' : '0');
     sync();
     if (chart) chart.update('none');   // re-mask the y-axis/tooltip
+  });
+})();
+
+// live books dropdown — collapsed by default, state remembered
+(function () {
+  const section = document.getElementById('books-section');
+  const btn = document.getElementById('books-toggle');
+  if (!section || !btn) return;
+  if (localStorage.getItem('hermes-books-open') === '1') {
+    section.classList.add('books-open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  btn.addEventListener('click', () => {
+    const open = section.classList.toggle('books-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    localStorage.setItem('hermes-books-open', open ? '1' : '0');
   });
 })();
 
