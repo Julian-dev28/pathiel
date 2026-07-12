@@ -71,9 +71,11 @@ def test_call_ai_injected_brain_never_gets_web_search_kwarg(monkeypatch):
     assert "verdict" in out
 
 
-def test_web_block_demands_real_headlines():
+def test_web_block_demands_real_fresh_headlines():
     assert "NEVER invent" in research._WEB_SEARCH_BLOCK
-    assert "WebSearch" in research._WEB_SEARCH_BLOCK
+    # stale-catalyst incident (ARB 2026-07-12): freshness must be explicit
+    assert "FRESHNESS" in research._WEB_SEARCH_BLOCK
+    assert "14 days" in research._WEB_SEARCH_BLOCK
 
 
 def test_web_telemetry_does_not_confuse_request_with_actual_use(monkeypatch):

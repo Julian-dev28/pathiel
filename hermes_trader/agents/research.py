@@ -162,6 +162,7 @@ def _build_user_message(
     mode: str,
     dex_equity: Dict[str, float] | None = None,
     recent_candles: List[Candle] | None = None,
+    macro_tape: str = "",
 ) -> str:
     """Build the user message passed to the LLM."""
     trigger_summary = (
@@ -257,7 +258,14 @@ def _build_user_message(
 
     ohlc_block = _ohlc_block(recent_candles)
 
+    # The model's training cutoff predates the session: without an explicit
+    # date it treats year-old articles as "recent" (stale-catalyst incident,
+    # ARB 2026-07-12 — cited 2025 coverage as the live catalyst).
+    now_utc = datetime.now(timezone.utc)
+
     return "\n".join([
+        f"Today (UTC): {now_utc.strftime('%Y-%m-%d %H:%M')} — treat anything "
+        "older than ~14 days as background, NOT a catalyst.",
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
         f"Current mid: ${_fmt_px(perception.get('mid', 0))}",
         f"Perception score: {perception.get('composite_score', 0)}/100",
@@ -275,6 +283,7 @@ def _build_user_message(
         "" if ":" in (coin or "") else "",
         f"Funding rate (latest): {funding_rate}",
         f"Recent news: {news}",
+        f"Macro tape (world/market context, last 24h): {macro_tape}" if macro_tape else "",
         position_block,
         "",
         f"Mode: {mode} — {'your verdict will execute against real funds' if mode == 'LIVE' else 'analysis only, no execution'}",
@@ -394,14 +403,38 @@ def _should_web_search(
 
 
 _WEB_SEARCH_BLOCK = (
-    "You have the WebSearch tool for THIS candidate. Before deciding, run 1-2 "
+    "You have live web search for THIS candidate. Before deciding, run 1-2 "
     "searches for very recent news that could move this token (listing, hack, "
-    "unlock, partnership, regulatory action, funding). Quote what you actually "
-    "find, with the source. If the searches return nothing relevant, say "
-    "'web: no relevant news found' in your reasoning and decide from the data "
-    "above. NEVER invent, paraphrase from memory, or backfill a headline you "
-    "did not retrieve this turn — a fabricated catalyst is worse than none."
+    "unlock, partnership, regulatory action, funding). FRESHNESS IS THE POINT: "
+    "check each result's publish date against today's date given above — an "
+    "article older than ~14 days is background, not a catalyst, and a "
+    "months-old 'launch' or 'report' must not be cited as the reason to enter. "
+    "Prefer dated news articles over evergreen pages (price trackers, YouTube, "
+    "SEO reports). Quote what you actually find, with the source and its date. "
+    "If nothing RECENT and relevant comes back, say 'web: no fresh catalyst' "
+    "and decide from the data above. NEVER invent, paraphrase from memory, or "
+    "backfill a headline you did not retrieve this turn."
 )
+
+
+_MACRO_TAPE_TTL_S = 1800.0
+_macro_cache: Dict[str, Any] = {"ts": 0.0, "tape": ""}
+
+
+def _fetch_macro_tape() -> str:
+    """World/market context headlines, cached 30min (keyless Google News).
+    Degrades to empty — macro flavor must never block coin research."""
+    now = time.time()
+    if now - float(_macro_cache.get("ts", 0)) < _MACRO_TAPE_TTL_S:
+        return str(_macro_cache.get("tape") or "")
+    try:
+        from hermes_trader.agents.news_catalyst import macro_headlines
+        tape = " | ".join(macro_headlines())[:700]
+    except Exception:
+        tape = ""
+    _macro_cache["ts"] = now
+    _macro_cache["tape"] = tape
+    return tape
 
 
 def parse_verdict(
@@ -592,6 +625,7 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         coin, perception, tf1h, tf4h, tf1d,
         funding_raw, news, equity, open_positions, mode,
         dex_equity=dex_equity, recent_candles=c1h,
+        macro_tape=_fetch_macro_tape(),
     )
 
     ai_brain_provider = selected_ai_brain_provider(config)

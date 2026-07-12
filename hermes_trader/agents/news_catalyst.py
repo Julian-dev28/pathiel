@@ -330,6 +330,42 @@ def google_news_search(query: str, when: str = "1d", limit: int = 25,
     return arts[:limit]
 
 
+# Market-moving WORLD context, not per-coin: macro policy, geopolitics,
+# political sentiment, whale-adjacent public figures, congressional trading.
+# One cached pass feeds every research prompt (operator order 2026-07-12).
+_MACRO_QUERIES = (
+    ("macro", 'crypto market bitcoin -"price prediction"'),
+    ("fed", '"Federal Reserve" OR "interest rates" OR inflation markets'),
+    ("politics", 'Trump crypto OR tariffs OR sanctions markets'),
+    ("geopolitics", 'war OR strike OR conflict oil markets'),
+    ("figures", '"Elon Musk" OR "Pelosi trades" OR congress stock trading'),
+)
+
+
+def macro_headlines(per_query: int = 2, ttl: float = 1800.0) -> List[str]:
+    """Top world/market headlines across the macro query set — deduped,
+    newest-first within each bucket, bounded. Google News RSS, keyless."""
+    out: List[str] = []
+    seen: set = set()
+    for tag, q in _MACRO_QUERIES:
+        try:
+            arts = google_news_search(q, when="1d", limit=10, ttl=ttl)
+        except Exception:
+            continue
+        n = 0
+        for a in arts:
+            t = (a.title or "").strip()
+            key = t.lower()[:60]
+            if not t or key in seen:
+                continue
+            seen.add(key)
+            out.append(f"[{tag}] {t}")
+            n += 1
+            if n >= per_query:
+                break
+    return out
+
+
 def coin_catalyst(coin: str, ttl: float = _CACHE_TTL_S) -> CatalystReport:
     """Live catalyst read for one coin: fresh headlines + a coverage-surge
     signal computed from headline COUNTS (last 1h vs the trailing-24h hourly

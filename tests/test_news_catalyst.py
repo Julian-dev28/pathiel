@@ -148,3 +148,34 @@ def test_coin_catalyst_counts_only_relevant(monkeypatch):
     assert rep.n_recent == 1                       # only the cashtag story
     assert all("Beagles" not in a.title for a in rep.headlines)
     assert rep.breaking is False                   # 1 < min 3 articles
+
+
+def test_macro_headlines_dedup_and_tags(monkeypatch):
+    from hermes_trader.agents import news_catalyst as nc
+
+    def fake_search(query, when="1d", limit=10, ttl=0):
+        mk = lambda t: nc.Article(title=t, url="u", domain="d", seen=None)
+        if "Federal Reserve" in query:
+            return [mk("Fed holds rates steady"), mk("Fed holds rates steady"), mk("Inflation cools")]
+        if "Trump" in query:
+            return [mk("Trump signals new tariffs on chips")]
+        return [mk("Bitcoin steadies near $64k")]
+
+    monkeypatch.setattr(nc, "google_news_search", fake_search)
+    tape = nc.macro_headlines(per_query=2, ttl=0)
+    assert any(t.startswith("[fed]") for t in tape)
+    assert any(t.startswith("[politics]") for t in tape)
+    # dedup: the doubled Fed headline appears once
+    assert sum("Fed holds rates steady" in t for t in tape) == 1
+
+
+def test_user_message_carries_date_and_macro(monkeypatch):
+    from hermes_trader.agents import research
+    msg = research._build_user_message(
+        "ARB", {"mid": 0.1, "composite_score": 50, "triggers": []},
+        {}, {}, {}, "0.00%", "no news", 100.0, [], "LIVE",
+        macro_tape="[fed] Fed holds | [politics] tariffs",
+    )
+    assert "Today (UTC): 20" in msg
+    assert "NOT a catalyst" in msg
+    assert "Macro tape" in msg and "tariffs" in msg
