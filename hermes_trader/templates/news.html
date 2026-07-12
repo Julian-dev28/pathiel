@@ -105,8 +105,12 @@
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
   </nav>
 
-  <div class="uppercase tracking-wider text-[10px] font-bold mb-4" style="color:var(--dim);letter-spacing:.16em">
+  <div class="uppercase tracking-wider text-[10px] font-bold mb-1" style="color:var(--dim);letter-spacing:.16em">
     coverage reads + research with news context · one stream · newest first
+  </div>
+  <div class="text-[12px] mb-4" style="color:var(--mut);line-height:1.6">
+    Every 30 min the watcher reads each candidate's headlines. Quiet reads are the
+    control group; BREAKING = coverage surging vs the coin's own baseline.
   </div>
   <div id="stream"><div class="empty">loading&hellip;</div></div>
 
@@ -213,10 +217,13 @@ function mergeRows(data) {
 
 const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
 
+// Flight-log copy for quiet reads: no side/surge fragments here — those only
+// matter on BREAKING cards. Single read = a timestamped check; repeats
+// coalesce per coin per hour.
 function coalLabel(st) {
-  const surge = st.surge_x != null ? ` · surge ×${Number(st.surge_x).toFixed(2)}` : '';
-  const heads = st.headlines ? ` · ${st.headlines} headline${st.headlines === 1 ? '' : 's'}` : '';
-  return `${tk(st.coin)} ${esc(st.side || '')} · <span class="cnt mono">×${st.n}</span> quiet read${st.n === 1 ? '' : 's'}<span class="mono">${surge}${heads} · ${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
+  if (st.n === 1)
+    return `<span class="mono" style="color:var(--dim);font-size:10px">${fmtHM(st.t0)}</span> ${tk(st.coin)} — coverage checked, nothing new`;
+  return `${tk(st.coin)} — coverage checked <span class="cnt mono">×${st.n}</span> this hour, nothing new`;
 }
 function ingestRow(r, animate) {
   if (!remember(r)) return;

@@ -572,7 +572,9 @@ def test_stream_pages_flow_and_respect_reduced_motion(client):
     assert "entry refused" in act                 # gate groups read as flight-log
     assert "quiet stream" in news                 # sparse-ledger empty state copy
     assert "breaking-pulse" in news               # stronger pulse on breaking items
-    assert "quiet read" in news                   # non-breaking reads coalesce per coin/hour
+    assert "coverage checked" in news             # quiet reads in flight-log copy
+    assert "nothing new" in news                  # no side/surge fragments on quiet rows
+    assert "control group" in news                # one-line explainer under the header
 
 
 def test_activity_flight_deck_panes(client):
