@@ -32,6 +32,10 @@
   .nav-link:hover{color:var(--txt);background:var(--card)}
   .nav-link:active{transform:translateY(1px)}
   .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+  /* scanline texture behind the header — very low opacity, pure CSS */
+  header{position:relative}
+  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
+        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
   /* geometric glyphs — no emoji anywhere */
   .gi{display:inline-block;vertical-align:0}
   .gi-hb{width:7px;height:7px;border-radius:2px;background:var(--up);opacity:.75}
@@ -49,10 +53,6 @@
   .chip{display:inline-block;padding:2px 9px;font-size:10.5px;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);margin:2px 5px 2px 0;white-space:nowrap}
   .chip.chip-red{border-color:rgba(239,68,68,.35);color:#fca5a5;background:rgba(239,68,68,.08)}
   .chip.chip-amber{border-color:rgba(245,158,11,.35);color:#fcd34d;background:rgba(245,158,11,.08)}
-  /* scanline texture behind the header — very low opacity, pure CSS */
-  header{position:relative}
-  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
-        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
   /* ── session strip: KPI chips, sticky, blur + soft violet glow ── */
   .strip{position:sticky;top:10px;z-index:20;display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;
          background:rgba(14,16,20,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
@@ -63,55 +63,61 @@
   .kpi .v{font-size:18px;font-weight:750;line-height:1.15;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
   .kpi .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
   .kpi .v.pos{color:var(--up)}.kpi .v.neg{color:var(--dn)}
-  /* ── the journal: timeline rail + three visual weights ── */
-  #feed{position:relative;border-left:2px solid var(--line);padding-left:18px}
-  .ev{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:3px;
-      padding:12px 15px;margin-bottom:14px;position:relative;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
-      transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-  .ev:hover{transform:translate(-1px,-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5)}
-  .ev::before{content:'';position:absolute;left:-25px;top:16px;width:9px;height:9px;border-radius:2px;background:var(--dim);border:2px solid #0a0b0d}
-  .ev.acc-green{border-left-color:var(--up)}   .ev.acc-green::before{background:var(--up)}
-  .ev.acc-red{border-left-color:var(--dn)}     .ev.acc-red::before{background:var(--dn)}
-  .ev.acc-indigo{border-left-color:var(--ind)} .ev.acc-indigo::before{background:var(--ind)}
-  .ev.acc-teal{border-left-color:var(--teal)}  .ev.acc-teal::before{background:var(--teal)}
-  .ev-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  /* ── the flight deck: four independent flowing panes ── */
+  .deck{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width:1024px){.deck{grid-template-columns:1fr 1fr}}
+  .pane{background:var(--card);border:1px solid var(--line);border-radius:3px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
+        display:flex;flex-direction:column;min-height:180px}
+  .pane-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .pane-head .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+  .pane-head .pm{width:7px;height:7px;border-radius:1px}
+  .pane-head .pm.pm-trade{background:var(--up)}
+  .pane-head .pm.pm-research{background:var(--ind)}
+  .pane-head .pm.pm-books{background:var(--teal)}
+  .pane-head .pm.pm-machine{background:var(--faint)}
+  .pane-head .pmeta{margin-left:auto;font-size:10px;color:var(--dim)}
+  .pane-flow{flex:1;overflow-y:auto;max-height:420px;padding:12px 14px}
+  .pane-flow::-webkit-scrollbar{width:8px}
+  .pane-flow::-webkit-scrollbar-track{background:#101216}
+  .pane-flow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+  .pane-empty{font-size:12px;color:var(--dim);padding:10px 2px;line-height:1.7}
+  /* T1: full cards with semantic accent bar */
+  .ev{background:var(--card2);border:1px solid var(--line);border-left-width:4px;border-radius:3px;
+      padding:10px 13px;margin-bottom:10px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+      transition:transform .15s ease,border-color .15s ease}
+  .ev:hover{transform:translate(-1px,-1px);border-color:var(--line2)}
+  .ev.acc-green{border-left-color:var(--up)}
+  .ev.acc-red{border-left-color:var(--dn)}
+  .ev.acc-indigo{border-left-color:var(--ind)}
+  .ev.acc-teal{border-left-color:var(--teal)}
+  .ev-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12.5px;color:#cfd4dd}
+  .ev-head b{color:var(--txt);font-weight:750}
   .ev-ts{color:var(--dim);font-size:10.5px;white-space:nowrap}
-  .ev-type{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-  .ev-type.t-research{color:var(--ind)}.ev-type.t-execute{color:#86efac}.ev-type.t-close{color:#fcd34d}
-  .ev-type.t-book{color:var(--teal)}.ev-type.t-error{color:#fca5a5}
-  .ev-body{font-size:13px;color:#cfd4dd;margin-top:5px;line-height:1.6;word-break:break-word}
-  .ev-sub{font-size:11.5px;color:var(--dim);margin-top:3px}
-  .pnl{font-size:14px;font-weight:800}
+  .ev-body{font-size:12.5px;color:#cfd4dd;margin-top:5px;line-height:1.6;word-break:break-word}
+  .ev-sub{font-size:11px;color:var(--dim);margin-top:3px}
+  .pnl{font-size:13.5px;font-weight:800}
   .pnl.pos{color:var(--up)}.pnl.neg{color:var(--dn)}
-  /* T2: base one-liners */
-  .ev-line{font-size:12px;color:var(--mut);padding:4px 12px;margin-bottom:7px;border-left:2px solid var(--line2);line-height:1.7;word-break:break-word;position:relative}
-  .ev-line::before{content:'';position:absolute;left:-24px;top:11px;width:6px;height:6px;border-radius:1px;background:var(--faint)}
+  /* T2: one-line log entries */
+  .ev-line{font-size:12px;color:var(--mut);padding:3px 2px;margin-bottom:6px;line-height:1.65;word-break:break-word}
   .ev-line b{color:#cfd4dd;font-weight:650}
-  .ev-line.l-research{border-left-color:rgba(129,140,248,.5)}
-  .ev-line.l-research::before{background:var(--ind)}
-  .ev-line.l-book{border-left-color:rgba(45,212,191,.4)}
-  .ev-line.l-book::before{background:var(--teal)}
-  .ev-line .conf{color:var(--dim);font-size:11px}
-  /* T3 fresh (last ~15 min): INDIVIDUAL slim rows — the constant flow.
-     max-height set so the fold into a group animates smoothly. */
-  .ev-fresh{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:5px;border-left:2px solid var(--line);line-height:1.6;opacity:.62;word-break:break-word;max-height:72px;overflow:hidden;
+  /* T3 fresh: individual slim rows — the constant flow */
+  .ev-fresh{font-size:11.5px;color:var(--mut);padding:2px 2px;margin-bottom:5px;line-height:1.6;opacity:.62;word-break:break-word;max-height:64px;overflow:hidden;
             transition:max-height .4s ease,opacity .35s ease,margin .4s ease,padding .4s ease}
   .ev-fresh b{color:var(--mut);font-weight:650}
   .ev-fresh:hover{opacity:.95}
   .ev-fold{max-height:0 !important;opacity:0 !important;margin-bottom:0 !important;padding-top:0 !important;padding-bottom:0 !important}
-  /* T3 aged: coalesced rows — recessed history */
-  .ev-coal{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:6px;border-left:2px solid var(--line);line-height:1.7;opacity:.55;transition:opacity .15s ease}
+  /* T3 aged: coalesced history */
+  .ev-coal{font-size:11px;color:var(--mut);padding:2px 2px;margin-bottom:5px;line-height:1.65;opacity:.55;transition:opacity .15s ease}
   .ev-coal:hover{opacity:.9}
   .ev-coal b{color:var(--mut);font-weight:650}
   .ev-coal .cnt{color:#fcd34d;font-weight:750}
   .ev-coal .tk{opacity:.9;font-size:10px;padding:0 8px}
-  /* dividers: centered thin rule + small-caps chip */
-  .ev-div{display:flex;align-items:center;gap:12px;margin:10px 0 12px;opacity:.65}
+  .ev-div{display:flex;align-items:center;gap:10px;margin:8px 0 10px;opacity:.65}
   .ev-div::before,.ev-div::after{content:'';flex:1;height:1px;background:var(--line)}
   .ev-div .dv{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
-              background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px 12px;white-space:nowrap}
-  .empty-tape{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:3px;margin-bottom:12px;line-height:1.7}
+              background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px 10px;white-space:nowrap}
   /* ── arrival animations — CSS only, reduced-motion respected ── */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
@@ -129,18 +135,12 @@
     .ev-enter,.flash-green,.flash-red,.flash-indigo,.coal-tick,.ev-fresh.ev-enter{animation:none}
     .ev,.ev-coal,.ev-fresh{transition:none}
   }
-  /* ── filters: one quiet segmented control with pressed state ── */
-  .seg{display:inline-flex;flex-wrap:wrap;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:3px;padding:3px}
-  .fchip{padding:4px 12px;font-size:11px;font-weight:600;letter-spacing:.04em;background:transparent;border:0;border-radius:2px;color:var(--dim);cursor:pointer;transition:color .12s ease,background .12s ease}
-  .fchip:hover{color:var(--txt)}
-  .fchip:active{transform:translateY(1px)}
-  .fchip.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
-  select.fsel{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);font-size:11px;font-weight:600;padding:6px 10px}
+  select.fsel{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);font-size:11px;font-weight:600;padding:4px 8px}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-[980px] mx-auto px-6 py-6">
+<div class="max-w-[1240px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
     <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ ACTIVITY</small></span>
@@ -157,12 +157,28 @@
     <div class="kpi"><span class="v">…</span><span class="l">last 6h</span></div>
   </div>
 
-  <div class="flex items-center gap-3 flex-wrap mb-6" id="filter-bar">
-    <span id="type-filters" class="seg"></span>
-    <select id="book-filter" class="fsel"><option value="">all books</option></select>
+  <!-- the flight deck: four independent flowing windows. The panes ARE the
+       type separation — no filter chips. -->
+  <div class="deck">
+    <section class="pane" id="pane-trade">
+      <div class="pane-head"><span class="pm pm-trade"></span><span class="sec-label">trade log</span><span class="pmeta mono" id="meta-trade"></span></div>
+      <div class="pane-flow" id="flow-trade"></div>
+    </section>
+    <section class="pane" id="pane-research">
+      <div class="pane-head"><span class="pm pm-research"></span><span class="sec-label">research log</span><span class="pmeta mono" id="meta-research"></span></div>
+      <div class="pane-flow" id="flow-research"></div>
+    </section>
+    <section class="pane" id="pane-books">
+      <div class="pane-head"><span class="pm pm-books"></span><span class="sec-label">books</span>
+        <select id="book-filter" class="fsel" style="margin-left:auto"><option value="">all books</option></select>
+      </div>
+      <div class="pane-flow" id="flow-books"></div>
+    </section>
+    <section class="pane" id="pane-machine">
+      <div class="pane-head"><span class="pm pm-machine"></span><span class="sec-label">machine</span><span class="pmeta mono" id="meta-machine"></span></div>
+      <div class="pane-flow" id="flow-machine"></div>
+    </section>
   </div>
-
-  <div id="feed"><div class="ev-coal">loading&hellip;</div></div>
 
   <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
     one wallet · live · not financial advice
@@ -173,8 +189,6 @@
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtTime = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 8); };
 const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
-const fmtDay = ms => { const d = new Date(ms || Date.now()); return (d.getMonth() + 1) + '/' + d.getDate(); };
-const fmtTs = ms => fmtDay(ms) + ' ' + fmtTime(ms);
 const fmtDur = ms => {
   const m = Math.max(0, Math.round(ms / 60000));
   if (m < 60) return m + 'm';
@@ -206,28 +220,68 @@ function readable(v, depth) {
   return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
 }
 
-// ticker chip + geometric glyphs (no emoji)
 const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 const GI_HB = '<span class="gi gi-hb"></span>';
 const GI_STOP = '<span class="gi gi-stop"></span>';
 const GI_RESTART = '<span class="gi gi-restart"></span>';
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
-const verdictBadge = v => v === 'LONG' ? '<span class="badge b-long">LONG</span>'
-                        : v === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
-                        : v === 'CLOSE' ? '<span class="badge b-fail">CLOSE</span>'
-                        : `<span class="badge b-pass">${esc(v || '?')}</span>`;
+const T = e => `<span class="ev-ts mono">${fmtTime(e.ts)}</span>`;
 
-function head(e, label, cls, bits) {
-  return `<div class="ev-head"><span class="ev-ts mono">${fmtTs(e.ts)}</span>` +
-         `<span class="ev-type t-${cls}">${label}</span>` + bits.join(' ') + '</div>';
+// ── PANE ROUTING: the panes are the type separation ─────────────────────────
+// trade  = executes, closes, book opens (the money pane)
+// research = verdict cards + PASS one-liners
+// books  = ONE window for ALL book cycle events
+// machine = scans, gates, heartbeats, system, errors (the noise pane)
+function paneFor(e) {
+  if (e.type === 'execute' || e.type === 'close') return 'trade';
+  if (e.type === 'book') return e.subtype === 'open' ? 'trade' : 'books';
+  if (e.type === 'research') return 'research';
+  return 'machine';
 }
+const FLOWS = {};   // pane name -> flow element, resolved at boot
 
-// ── TIER 1: full cards, always — they never fold ─────────────────────────────
+// ── TIER 1 flight-log cards ──────────────────────────────────────────────────
 const CARD = {
+  execute(e) {
+    if (e.executed) {
+      const size = e.size_usd != null ? ` $${Number(e.size_usd).toFixed(0)}` : '';
+      const px = e.entry_px != null ? ` @ ${fmtNum(e.entry_px)}` : '';
+      const via = [e.book, e.entry_via ? 'via ' + e.entry_via : ''].filter(Boolean).join(' · ');
+      const subs = [];
+      if (e.stop_px) subs.push(`stop ${fmtNum(e.stop_px)}`);
+      if (e.tp_px) subs.push(`tp ${fmtNum(e.tp_px)}`);
+      if (e.regime) subs.push(`regime ${esc(e.regime)}`);
+      return `<div class="ev-head">${T(e)} <b>OPENED ${esc((e.side || '').toUpperCase())}</b> ${tk(e.coin)}<span class="mono">${size}${px}</span>${via ? ' — ' + esc(via) : ''}</div>`
+        + (subs.length ? `<div class="ev-sub mono">${subs.join(' · ')}</div>` : '');
+    }
+    const why = (e.gates_human && e.gates_human.length ? e.gates_human.join('; ')
+                : e.detail_human || e.detail || 'gate refused');
+    return `<div class="ev-head">${T(e)} <b>REFUSED ${esc((e.side || e.ai_verdict || '').toUpperCase())}</b> ${tk(e.coin)} — ${esc(why)}</div>`
+      + (e.entry_via ? `<div class="ev-sub">via ${esc(e.entry_via)}${e.ai_verdict ? ' · ai said ' + esc(e.ai_verdict) : ''}</div>` : '');
+  },
+  close(e) {
+    const pnl = e.pnl_pct != null
+      ? `<span class="pnl mono ${e.pnl_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(e.pnl_pct)}</span>` : '';
+    const why = e.reason_human || e.reason || (e.source === 'ai_close' ? 'AI called the close' : '');
+    const failed = e.executed === false ? ' <span class="badge b-fail">FAILED</span>' : '';
+    const subs = [];
+    if (e.entry_px != null && e.fill_px != null) subs.push(`entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}`);
+    if (e.spot_pct != null) subs.push(`spot ${fmtPct(e.spot_pct)}`);
+    if (e.leverage) subs.push(`${e.leverage}x`);
+    if (e.source === 'ai_close') subs.push('closed by AI review');
+    return `<div class="ev-head">${T(e)} <b>CLOSED</b> ${tk(e.coin)} ${sideBadge(e.side)} ${pnl}${why ? ' — ' + esc(why) : ''}${failed}</div>`
+      + (subs.length ? `<div class="ev-sub mono">${subs.join(' · ')}</div>` : '');
+  },
+  book(e) {   // book_open → trade pane
+    const size = e.extra && e.extra.notional_usd ? ` $${Number(e.extra.notional_usd).toFixed(0)}` : '';
+    return `<div class="ev-head">${T(e)} <b>OPENED ${esc((e.side || '').toUpperCase())}</b> ${tk(e.coin)}<span class="mono">${size}</span> — ${esc(e.book)}</div>`;
+  },
   research(e) {
-    const conf = e.confidence != null ? `<span class="ev-sub mono" style="margin-top:0">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
-    const prov = e.provider ? `<span class="chip">${esc(e.provider)}</span>` : '';
+    const conf = e.confidence != null ? `<span class="ev-ts mono">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
+    const v = e.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
+            : e.verdict === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
+            : '<span class="badge b-fail">CLOSE</span>';
     const search = e.web_search_used ? '<span class="chip chip-amber">web search</span>' : '';
     const risk = e.news_risk && e.news_risk !== 'none' ? `<span class="chip chip-red">news risk: ${esc(e.news_risk)}</span>` : '';
     const triad = (e.entry_px || e.stop_px || e.tp_px)
@@ -237,129 +291,116 @@ const CARD = {
       const title = typeof c === 'object' && c.title ? c.title : url;
       return url ? `<div class="ev-sub">· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
     }).join('');
-    return head(e, 'research', 'research',
-        [tk(e.coin), verdictBadge(e.verdict), conf, prov, search, risk])
+    return `<div class="ev-head">${T(e)} ${tk(e.coin)} <b>→</b> ${v} ${conf} ${search} ${risk}</div>`
       + (e.reasoning ? `<div class="ev-body">${esc(e.reasoning)}</div>` : '')
       + triad + cites;
   },
-  execute(e) {
-    const status = e.executed ? '<span class="badge b-ok">FILLED</span>' : '<span class="badge b-fail">BLOCKED</span>';
-    const book = e.book ? `<span class="chip">${esc(e.book)}</span>` : '';
-    const via = e.entry_via ? `<span class="ev-sub" style="margin-top:0">via ${esc(e.entry_via)}</span>` : '';
-    let body = '';
-    if (e.executed) {
-      const parts = [];
-      if (e.size_usd != null) parts.push(`size $${Number(e.size_usd).toFixed(2)}`);
-      if (e.entry_px != null) parts.push(`entry ${fmtNum(e.entry_px)}`);
-      if (e.stop_px != null) parts.push(`stop ${fmtNum(e.stop_px)}`);
-      if (e.tp_px != null) parts.push(`tp ${fmtNum(e.tp_px)}`);
-      if (e.regime) parts.push(`regime ${esc(e.regime)}`);
-      body = `<div class="ev-body mono">${parts.join(' · ')}</div>`;
-    }
-    const gates = (e.gates || []).map(g => `<span class="chip chip-red">${esc(g)}</span>`).join('');
-    const detail = (!e.executed && !((e.gates || []).length) && e.detail)
-      ? `<span class="chip chip-red">${esc(e.detail)}</span>` : '';
-    const gateRow = (gates || detail) ? `<div class="mt-1">${gates}${detail}</div>` : '';
-    return head(e, 'execute', 'execute',
-        [tk(e.coin), sideBadge(e.side), status, book, via,
-         e.ai_verdict ? `<span class="ev-sub" style="margin-top:0">ai: ${esc(e.ai_verdict)}</span>` : ''])
-      + body + gateRow;
-  },
-  close(e) {
-    const pnl = e.pnl_pct != null
-      ? `<span class="pnl mono ${e.pnl_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(e.pnl_pct)}</span>` : '';
-    const lev = e.leverage ? `<span class="ev-sub mono" style="margin-top:0">${e.leverage}x</span>` : '';
-    const src = e.source === 'ai_close' ? '<span class="chip chip-amber">ai close</span>' : '<span class="chip">dsl</span>';
-    const failed = e.executed === false ? '<span class="badge b-fail">FAILED</span>' : '';
-    const fills = (e.fill_px != null || e.entry_px != null)
-      ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}${e.spot_pct != null ? ` · spot ${fmtPct(e.spot_pct)}` : ''}</div>` : '';
-    return head(e, 'close', 'close', [tk(e.coin), sideBadge(e.side), lev, pnl, src, failed])
-      + (e.reason ? `<div class="ev-body">${esc(e.reason)}</div>` : '')
-      + fills;
-  },
-  book(e) {   // only book_open reaches tier 1
-    return head(e, 'book', 'book',
-        [`<b>${esc(e.book)}</b>`, '<span class="badge b-ok">OPENED</span>', tk(e.coin), sideBadge(e.side)]);
-  },
   error(e) {
-    return head(e, 'error', 'error', [`<b>${esc(e.scope || 'loop')}</b>`])
-      + `<div class="ev-body" style="color:#fca5a5">${esc(e.error)}</div>`;
+    return `<div class="ev-head">${T(e)} <b style="color:#fca5a5">${esc(String(e.scope || 'LOOP').toUpperCase())}</b> — <span style="color:#fca5a5">${esc(e.error)}</span></div>`;
   },
 };
 
-// ── TIER 2: compact one-liners (persist, never fold) ─────────────────────────
-function lineNode(e) {
+function accentClass(e) {
+  if (e.type === 'execute') return e.executed ? 'acc-green' : 'acc-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'acc-green' : 'acc-red';
+  if (e.type === 'error') return 'acc-red';
+  if (e.type === 'research') return 'acc-indigo';
+  if (e.type === 'book') return 'acc-teal';
+  return '';
+}
+function emphasisClass(e) {
+  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
+  if (e.type === 'error') return 'flash-red';
+  if (e.type === 'research') return 'flash-indigo';
+  if (e.type === 'book') return 'flash-green';
+  return 'ev-enter';
+}
+function cardNode(e) {
   const div = document.createElement('div');
-  let cls = 'ev-line', html = '';
-  const t = `<span class="ev-ts mono">${fmtTime(e.ts)}</span>`;
-  if (e.type === 'research') {   // PASS verdicts: coin, conf, one-line reason
-    cls += ' l-research';
-    const reason = String(e.reasoning || '').slice(0, 160);
-    html = `${t} ${tk(e.coin)} <span class="badge b-pass">PASS</span> <span class="conf mono">conf ${Number(e.confidence ?? 0).toFixed(2)}</span>${reason ? ' — ' + esc(reason) : ''}`;
-  } else if (e.type === 'book') {   // cycles that produced signals
-    cls += ' l-book';
-    const bits = [`<b>${esc(e.book)}</b>`];
-    if (e.shadow != null) bits.push(e.shadow ? '<span class="badge b-shadow">SHADOW</span>' : '<span class="badge b-live">LIVE</span>');
-    if (e.signals != null) bits.push(`<span class="mono">${e.signals}</span> signal${e.signals === 1 ? '' : 's'}`);
-    if (e.opened) bits.push(`<b class="mono">${e.opened} opened</b>`);
-    const cands = (e.candidates || []).slice(0, 3).map(c =>
-      c && c.coin ? `${tk(c.coin)} ${esc(c.side || '')}`.trim() : esc(readable(c))).join(' ');
-    if (cands) bits.push(cands);
-    else if (e.signals == null && e.extra) bits.push(esc(readable(e.extra).slice(0, 140)));
-    html = `${t} ${bits.join(' · ')}`;
-  } else if (e.type === 'system') {
-    const f = e.fields || {};
-    if (e.name === 'loop_start') {
-      html = `${t} ${GI_RESTART} loop restarted${f.mode ? ' · ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}${f.min_score ? ' · min score ' + esc(f.min_score) : ''}`;
-    } else if (e.name === 'loop_stop') {
-      html = `${t} ${GI_STOP} loop stopped`;
-    } else {
-      html = `${t} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
-    }
-  } else {   // other / unknown shapes → one readable line, never raw JSON
-    html = `${t} <b>${esc(e.name || e.type)}</b> ${esc(readable(e.fields || {}).slice(0, 200))}`;
-  }
-  div.className = cls;
-  div.innerHTML = html;
+  div.className = `ev ${accentClass(e)}`;
+  div.innerHTML = (CARD[e.type] || CARD.error)(e);
   return div;
 }
 
-// ── TIER 3 · FRESH (last ~15 min): individual slim rows — constant flow ─────
-let FRESH_MS = 15 * 60 * 1000;   // refined from the server's fresh_window_s
+// ── TIER 2 flight-log lines ──────────────────────────────────────────────────
+// books pane: every cycle reads like a log sentence
+function bookCycleText(e) {
+  const badge = e.shadow == null ? '' : (e.shadow ? ' <span class="badge b-shadow">SHADOW</span>' : ' <span class="badge b-live">LIVE</span>');
+  if (e.signals == null && e.extra && (e.extra.longs || e.extra.shorts)) {
+    const longs = (e.extra.longs || []).join(', ');
+    const shorts = (e.extra.shorts || []).join(', ');
+    return `<b>${esc(e.book)}</b>${badge} — rebalance: longs ${esc(longs || '—')} · shorts ${esc(shorts || '—')}`;
+  }
+  if ((e.signals || 0) > 0 || (e.opened || 0) > 0) {
+    const cands = (e.candidates || []).slice(0, 3).map(c =>
+      c && c.coin ? `${c.coin} ${c.side || ''}`.trim() : readable(c)).join(', ');
+    const opened = e.opened ? `, ${e.opened} opened` : ', none opened';
+    return `<b>${esc(e.book)}</b>${badge} — ${e.signals} signal${e.signals === 1 ? '' : 's'}${opened}${cands ? ' (' + esc(cands) + ')' : ''}`;
+  }
+  const scanned = e.extra && e.extra.scanned ? `scanned ${e.extra.scanned}, ` : '';
+  return `<b>${esc(e.book)}</b>${badge} — ${scanned}quiet cycle, nothing met the entry bar`;
+}
+
+function lineNode(e) {
+  const div = document.createElement('div');
+  div.className = 'ev-line';
+  if (e.type === 'research') {          // PASS one-liner in the research pane
+    const reason = String(e.reasoning || '').slice(0, 170);
+    div.innerHTML = `${T(e)} ${tk(e.coin)} passed${reason ? ' — ' + esc(reason) : ''} <span class="ev-ts mono">(conf ${Number(e.confidence ?? 0).toFixed(2)})</span>`;
+  } else if (e.type === 'book') {       // cycle with signals → books pane
+    div.dataset.book = e.book || '';
+    div.innerHTML = `${T(e)} ${bookCycleText(e)}`;
+  } else if (e.type === 'system') {
+    const f = e.fields || {};
+    if (e.name === 'loop_start') {
+      div.innerHTML = `${T(e)} ${GI_RESTART} loop restarted${f.mode ? ' — ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}`;
+    } else if (e.name === 'loop_stop') {
+      div.innerHTML = `${T(e)} ${GI_STOP} loop stopped`;
+    } else {
+      div.innerHTML = `${T(e)} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
+    }
+  } else {
+    div.innerHTML = `${T(e)} <b>${esc(e.name || e.type)}</b> ${esc(readable(e.fields || {}).slice(0, 200))}`;
+  }
+  return div;
+}
+
+// ── TIER 3 fresh rows: individual, human, inside their pane ─────────────────
+let FRESH_MS = 15 * 60 * 1000;
 
 function freshText(e) {
-  if (e.type === 'gate') {
-    const scores = [e.score != null ? `ta ${e.score}` : '', e.trigger_score != null ? `trig ${e.trigger_score}` : '']
-      .filter(Boolean).join(' ');
-    return `${tk(e.coin)} <b>${e.kind === 'ta_skip' ? 'ta skip' : 'blocked'}</b>${scores ? ' · <span class="mono">' + scores + '</span>' : ''}${e.reason ? ' — ' + esc(String(e.reason).slice(0, 110)) : ''}`;
-  }
+  if (e.type === 'gate')
+    return `${tk(e.coin)} entry refused — ${esc(e.human || e.reason || 'gate')}`;
   if (e.type === 'scan') {
     const tops = (e.coins || []).slice(0, 4).map(c =>
-      typeof c === 'object' ? `${c.coin}(${fmtNum(c.score)})` : String(c)).join(', ');
-    return `<b>scan</b> · <span class="mono">${e.triggers ?? 0}</span> trigger${(e.triggers ?? 0) === 1 ? '' : 's'}${tops ? ' — ' + esc(tops) : ''}`;
+      typeof c === 'object' ? c.coin : String(c)).join(', ');
+    const n = e.triggers ?? 0;
+    return `scanned the board — ${n ? n + ' trigger' + (n === 1 ? '' : 's') + (tops ? ': ' + esc(tops) : '') : 'no triggers'}`;
   }
-  if (e.type === 'heartbeat') {
-    return `${GI_HB} <b>hb</b> · equity <span class="mono">$${Number(e.equity ?? 0).toFixed(2)}</span> · ${e.open_positions ?? 0} open`;
-  }
-  return `<b>${esc(e.book)}</b> · quiet cycle`;
+  if (e.type === 'heartbeat')
+    return `${GI_HB} equity <span class="mono">$${Number(e.equity ?? 0).toFixed(2)}</span> · ${e.open_positions ?? 0} open`;
+  // fresh quiet book cycle → books pane, same sentence as T2
+  return bookCycleText(e);
 }
 function freshNode(e) {
   const div = document.createElement('div');
   div.className = 'ev-fresh';
   div.dataset.ev = JSON.stringify(e);
-  div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ${freshText(e)}`;
+  if (e.type === 'book') div.dataset.book = e.book || '';
+  div.innerHTML = `${T(e)} ${freshText(e)}`;
+  if (e.type === 'gate' && e.reason && e.human && e.human !== e.reason) div.title = e.reason;
   return div;
 }
 
-// ── TIER 3 · AGED: coalesced rows. Live merges float to top; FOLDS from the
-// fresh window merge in place so the curated history below stays put. ────────
-const coalIndex = new Map();   // gkey -> element
+// ── TIER 3 aged: coalesced groups, human copy ────────────────────────────────
+const coalIndex = new Map();
 
 function coalLabel(kind, st) {
   if (kind === 'gate')
-    return `${tk(st.coin)} blocked <span class="cnt mono">×${st.n}</span> · ${esc(st.reason || 'gate skip')} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
+    return `${tk(st.coin)} entry refused <span class="cnt mono">×${st.n}</span> — ${esc(st.human || st.reason || 'gate')} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
   if (kind === 'quiet')
-    return `<b>${esc(st.book)}</b> · <span class="cnt mono">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
+    return `<b>${esc(st.book)}</b> — <span class="cnt mono">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'}, nothing met the entry bar · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
   if (kind === 'scan') {
     const h = st.hour * 3600000;
     return `<span class="dv">${fmtHM(h)}–${fmtHM(h + 3600000)} · ${st.n} scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades</span>`;
@@ -372,7 +413,7 @@ function coalState(el) { return JSON.parse(el.dataset.st); }
 function coalRender(el) {
   const st = coalState(el);
   el.innerHTML = coalLabel(el.dataset.kind, st);
-  el.title = `${st.n} events between ${fmtTs(st.t0)} and ${fmtTs(st.t1)}`;
+  el.title = `${st.n} events between ${fmtTime(st.t0)} and ${fmtTime(st.t1)}`;
 }
 function coalNode(kind, gkey, st) {
   const el = document.createElement('div');
@@ -380,6 +421,7 @@ function coalNode(kind, gkey, st) {
   el.dataset.kind = kind;
   el.dataset.gkey = gkey;
   el.dataset.st = JSON.stringify(st);
+  if (kind === 'quiet') el.dataset.book = st.book || '';
   coalRender(el);
   coalIndex.set(gkey, el);
   return el;
@@ -394,10 +436,9 @@ function coalMerge(el, patch, animate, floatTop) {
   if (patch.open !== undefined) st.open = patch.open;
   el.dataset.st = JSON.stringify(st);
   coalRender(el);
-  if (floatTop && feed.firstElementChild !== el) feed.prepend(el);
+  if (floatTop && el.parentElement && el.parentElement.firstElementChild !== el) el.parentElement.prepend(el);
   if (animate) { el.classList.remove('coal-tick'); void el.offsetWidth; el.classList.add('coal-tick'); }
 }
-// research/executed counts fold into the matching hour's scan divider
 function bumpHourStats(e, field) {
   const el = coalIndex.get('scan|' + Math.floor((e.ts || 0) / 3600000));
   if (!el) return;
@@ -407,9 +448,7 @@ function bumpHourStats(e, field) {
   coalRender(el);
 }
 
-// heartbeat state machine — AGED path only (initial history + folds, both
-// strictly chronological): line when equity moves >$0.05 or the open count
-// changes; unchanged runs collapse into ONE "steady" divider.
+// heartbeat state machine — aged path only (initial history + folds)
 let lastHB = null;
 let steadyRun = 0;
 function routeHeartbeat(e) {
@@ -420,18 +459,17 @@ function routeHeartbeat(e) {
     steadyRun++;
     const div = document.createElement('div');
     div.className = 'ev-line';
-    div.innerHTML = `<span class="ev-ts mono">${fmtTime(e.ts)}</span> ${GI_HB} equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
+    div.innerHTML = `${T(e)} ${GI_HB} equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
     return { node: div };
   }
   return { gkey: `hbsteady|${steadyRun}`, kind: 'steady',
            st: { n: 1, t0: e.ts, t1: e.ts, equity: eq, open } };
 }
 
-// group routing shared by the aged-ingest path and the fold sweep
 function groupPlan(e) {
   if (e.type === 'gate')
     return { gkey: e.gkey, kind: 'gate',
-             st: { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason } };
+             st: { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason, human: e.human } };
   if (e.type === 'scan')
     return { gkey: e.gkey, kind: 'scan',
              st: { n: 1, t0: e.ts, t1: e.ts, hour: Math.floor((e.ts || 0) / 3600000),
@@ -441,12 +479,10 @@ function groupPlan(e) {
 }
 
 // ── stream state ─────────────────────────────────────────────────────────────
-const feed = document.getElementById('feed');
 const seen = new Set();
 const seenOrder = [];
 let newestTs = 0;
-let curType = '', curBook = '';
-let t12Count = 0;         // tier-1/2 rows rendered (drives empty-tape mode)
+let curBook = '';
 
 const keyOf = e => `${e.ts}|${e.type}|${e.coin || e.book || e.name || ''}|${String(e.reason || e.verdict || e.error || '').slice(0, 24)}`;
 function remember(e) {
@@ -458,62 +494,44 @@ function remember(e) {
   return true;
 }
 
-// arrival emphasis + semantic accent: green fills, red errors/losses, indigo verdicts
-function emphasisClass(e) {
-  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
-  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
-  if (e.type === 'error') return 'flash-red';
-  if (e.type === 'research') return 'flash-indigo';   // only LONG/SHORT/CLOSE reach tier 1
-  if (e.type === 'book') return 'flash-green';        // book_open
-  return 'ev-enter';
+function clearEmpty(flow) {
+  const p = flow.querySelector('.pane-empty');
+  if (p) p.remove();
 }
-function accentClass(e) {
-  if (e.type === 'execute') return e.executed ? 'acc-green' : 'acc-red';
-  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'acc-green' : 'acc-red';
-  if (e.type === 'error') return 'acc-red';
-  if (e.type === 'research') return 'acc-indigo';
-  if (e.type === 'book') return 'acc-teal';           // book_open
-  return '';
+function applyBookFilter(node) {
+  if (node.dataset.book !== undefined) {
+    node.style.display = (!curBook || node.dataset.book === curBook) ? '' : 'none';
+  }
 }
-
-function cardNode(e) {
-  const div = document.createElement('div');
-  div.className = `ev k-${e.type} ${accentClass(e)}`;
-  div.innerHTML = (CARD[e.type] || CARD.error)(e);
-  return div;
+function insertTop(flow, node, animate, cls) {
+  clearEmpty(flow);
+  if (animate) node.classList.add(cls || 'ev-enter');
+  flow.prepend(node);
+  applyBookFilter(node);
+  while (flow.children.length > 150) {
+    const last = flow.lastElementChild;
+    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
+    last.remove();
+  }
 }
 
-function clearEmptyTape() {
-  const b = feed.querySelector('.empty-tape');
-  if (b) b.remove();
-}
-
-// One event, chronological order in → one journal mutation at the top.
-// T3 inside the fresh window renders an INDIVIDUAL slim row (constant flow);
-// aged T3 goes straight to its coalesced group.
+// One event, chronological order in → one mutation at the top of its pane.
 function ingest(e, animate) {
   if (!remember(e)) return;
   if (e.type === 'research') bumpHourStats(e, 'researched');
   if (e.type === 'execute' && e.executed) bumpHourStats(e, 'trades');
+  const flow = FLOWS[paneFor(e)];
 
   if (e.tier === 3) {
     const isFresh = e.fresh && (e.ts || 0) >= Date.now() - FRESH_MS;
     if (isFresh) {
-      const node = freshNode(e);
-      if (animate) node.classList.add('ev-enter');
-      feed.prepend(node);
-      trim();
+      insertTop(flow, freshNode(e), animate);
       return;
     }
     let gkey, kind, st;
     if (e.type === 'heartbeat') {
       const r = routeHeartbeat(e);
-      if (r.node) {                 // changed heartbeat → compact line
-        if (animate) r.node.classList.add('ev-enter');
-        feed.prepend(r.node);
-        trim();
-        return;
-      }
+      if (r.node) { insertTop(flow, r.node, animate); return; }
       gkey = r.gkey; kind = r.kind; st = r.st;
     } else {
       const plan = groupPlan(e);
@@ -524,20 +542,13 @@ function ingest(e, animate) {
       coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: st.triggers,
                             equity: st.equity, open: st.open }, animate, true);
     } else {
-      const node = coalNode(kind, gkey, st);
-      if (animate) node.classList.add('ev-enter');
-      feed.prepend(node);
+      insertTop(flow, coalNode(kind, gkey, st), animate);
     }
-    trim();
     return;
   }
 
-  clearEmptyTape();
-  t12Count++;
   const node = e.tier === 1 ? cardNode(e) : lineNode(e);
-  if (animate) node.classList.add(e.tier === 1 ? emphasisClass(e) : 'ev-enter');
-  feed.prepend(node);
-  trim();
+  insertTop(flow, node, animate, e.tier === 1 ? emphasisClass(e) : 'ev-enter');
 }
 
 // ── time-decay fold: fresh rows that aged out slide into their groups ───────
@@ -548,17 +559,16 @@ function removeFolded(el) {
   el.classList.add('ev-fold');
   setTimeout(() => el.remove(), 450);
 }
-
 function foldOne(el, e) {
   if (e.type === 'heartbeat') {
     const r = routeHeartbeat(e);
-    if (r.node) { el.replaceWith(r.node); return; }   // changed → persistent line, in place
+    if (r.node) { el.replaceWith(r.node); return; }
     const existing = coalIndex.get(r.gkey);
     if (existing) {
       coalMerge(existing, { t0: e.ts, t1: e.ts, equity: r.st.equity, open: r.st.open }, true, false);
       removeFolded(el);
     } else {
-      el.replaceWith(coalNode(r.kind, r.gkey, r.st));   // group takes the row's slot
+      el.replaceWith(coalNode(r.kind, r.gkey, r.st));
     }
     return;
   }
@@ -568,15 +578,15 @@ function foldOne(el, e) {
     coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: plan.st.triggers }, true, false);
     removeFolded(el);
   } else {
-    el.replaceWith(coalNode(plan.kind, plan.gkey, plan.st));
+    const g = coalNode(plan.kind, plan.gkey, plan.st);
+    el.replaceWith(g);
+    applyBookFilter(g);
   }
 }
-
 function foldAged() {
   const cutoff = Date.now() - FRESH_MS;
-  const nodes = feed.querySelectorAll('.ev-fresh:not(.ev-fold)');
-  // oldest first (DOM is newest-first) so the heartbeat machine stays chronological
-  for (let i = nodes.length - 1; i >= 0; i--) {
+  const nodes = document.querySelectorAll('.pane-flow .ev-fresh:not(.ev-fold)');
+  for (let i = nodes.length - 1; i >= 0; i--) {   // oldest first, per chronology
     const el = nodes[i];
     let e;
     try { e = JSON.parse(el.dataset.ev); } catch { el.remove(); continue; }
@@ -585,27 +595,28 @@ function foldAged() {
   }
 }
 
-function trim() {
-  while (feed.children.length > 350) {
-    const last = feed.lastElementChild;
-    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
-    last.remove();
-  }
-}
-
-// ── empty-tape mode ──────────────────────────────────────────────────────────
-function maybeEmptyTape(session) {
-  if (t12Count > 0 || feed.querySelector('.empty-tape')) return;
-  const b = document.createElement('div');
-  b.className = 'empty-tape';
+// ── empty states per pane ────────────────────────────────────────────────────
+function paneEmpties(session) {
   const since = session && session.since_ts ? fmtHM(session.since_ts) : '—';
   const scans = session ? session.scans : 0;
   const blocks = session ? session.blocks : 0;
-  b.textContent = `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`;
-  feed.prepend(b);
+  const copy = {
+    trade: `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`,
+    research: 'no verdicts yet in this window',
+    books: 'no book cycles yet in this window',
+    machine: 'quiet',
+  };
+  for (const [name, flow] of Object.entries(FLOWS)) {
+    if (!flow.children.length) {
+      const d = document.createElement('div');
+      d.className = 'pane-empty';
+      d.textContent = copy[name];
+      flow.appendChild(d);
+    }
+  }
 }
 
-// ── session strip: KPI chips, money colored by sign ─────────────────────────
+// ── session strip ────────────────────────────────────────────────────────────
 function kpiChip(label, value, cls) {
   return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}">${value}</span><span class="l">${label}</span></div>`;
 }
@@ -628,65 +639,48 @@ function renderStrip(s) {
 // ── load + poll ──────────────────────────────────────────────────────────────
 function setMeta() {
   document.getElementById('feed-meta').textContent =
-    `live feed · newest first · updated ${fmtTime(Date.now())}`;
+    `flight deck · newest first · updated ${fmtTime(Date.now())}`;
 }
 
 async function fullLoad() {
-  const qs = new URLSearchParams({ limit: 300 });
-  if (curType) qs.set('type', curType);
-  if (curBook) qs.set('book', curBook);
-  const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+  const data = await (await fetch('/api/dashboard/activity?limit=300')).json();
   if (data.fresh_window_s) FRESH_MS = data.fresh_window_s * 1000;
-  buildFilters(data);
+  buildBookFilter(data);
   renderStrip(data.session);
-  feed.innerHTML = '';
+  for (const flow of Object.values(FLOWS)) flow.innerHTML = '';
   coalIndex.clear(); seen.clear(); seenOrder.length = 0;
-  newestTs = 0; lastHB = null; steadyRun = 0; t12Count = 0;
+  newestTs = 0; lastHB = null; steadyRun = 0;
   const chrono = (data.events || []).slice().reverse();   // oldest → newest
   for (const e of chrono) ingest(e, false);
-  maybeEmptyTape(data.session);
+  paneEmpties(data.session);
   setMeta();
 }
 
 async function pollNew() {
   if (!newestTs) return fullLoad().catch(() => {});
-  const qs = new URLSearchParams({ limit: 100, since: String(newestTs - 1) });
-  if (curType) qs.set('type', curType);
-  if (curBook) qs.set('book', curBook);
   try {
-    const data = await (await fetch('/api/dashboard/activity?' + qs)).json();
+    const data = await (await fetch('/api/dashboard/activity?limit=100&since=' + (newestTs - 1))).json();
     renderStrip(data.session);
     const chrono = (data.events || []).slice().reverse();
     for (const e of chrono) ingest(e, true);
-    foldAged();          // sweep anything that aged past the fresh window
+    foldAged();
     setMeta();
   } catch (e) {}
 }
 
-function buildFilters(data) {
-  const wrap = document.getElementById('type-filters');
-  if (wrap.childElementCount) return;
-  const mk = (label, val) => {
-    const b = document.createElement('button');
-    b.className = 'fchip' + (val === curType ? ' on' : '');
-    b.textContent = label;
-    b.dataset.type = val;
-    b.addEventListener('click', () => {
-      curType = val;
-      wrap.querySelectorAll('.fchip').forEach(x => x.classList.toggle('on', x.dataset.type === val));
-      fullLoad().catch(() => {});
-    });
-    wrap.appendChild(b);
-  };
-  mk('all', '');
-  for (const t of (data.types || [])) mk(t, t);
+// book dropdown — scoped to the BOOKS pane only (client-side visibility)
+function buildBookFilter(data) {
   const sel = document.getElementById('book-filter');
+  if (sel.childElementCount > 1) return;
   for (const b of (data.books || [])) {
     const o = document.createElement('option');
     o.value = b; o.textContent = b;
     sel.appendChild(o);
   }
-  sel.addEventListener('change', () => { curBook = sel.value; fullLoad().catch(() => {}); });
+  sel.addEventListener('change', () => {
+    curBook = sel.value;
+    for (const node of FLOWS.books.children) applyBookFilter(node);
+  });
 }
 
 (function () {
@@ -696,11 +690,16 @@ function buildFilters(data) {
   });
 })();
 
+FLOWS.trade = document.getElementById('flow-trade');
+FLOWS.research = document.getElementById('flow-research');
+FLOWS.books = document.getElementById('flow-books');
+FLOWS.machine = document.getElementById('flow-machine');
+
 fullLoad().catch(() => {
-  feed.innerHTML = '<div class="ev-coal">feed load failed — is the server up?</div>';
+  FLOWS.trade.innerHTML = '<div class="pane-empty">feed load failed — is the server up?</div>';
 });
 setInterval(pollNew, 8000);
-setInterval(foldAged, 20000);   // time-decay sweep between polls
+setInterval(foldAged, 20000);
 </script>
 </body>
 </html>

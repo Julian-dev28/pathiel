@@ -751,6 +751,10 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "gates": [str(b) for b in (blocked or [])],
             "gates_human": [humanize_reason(b) for b in (blocked or [])],
             "detail": detail if isinstance(detail, str) else None,
+            # blocked executes sometimes carry the reason in `detail` instead
+            # of blocked_by (runner gate) — translate that path too
+            "detail_human": (humanize_reason(detail)
+                             if isinstance(detail, str) and not e.get("executed") else None),
             "regime": e.get("regime"),
             "tier": 1,
         }

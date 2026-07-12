@@ -561,11 +561,46 @@ def test_stream_pages_flow_and_respect_reduced_motion(client):
     assert "session-strip" in act                 # pinned last-6h answer
     assert "quiet cycle" in act                   # signal-less book runs coalesce
     assert "steady" in act                        # unchanged-heartbeat divider
-    assert "nothing actionable since" in act      # empty-tape mode copy
-    assert "blocked <span" in act                 # gate groups: "COIN blocked ×N"
+    assert "nothing actionable since" in act      # empty-tape copy (trade pane)
+    assert "entry refused" in act                 # gate groups read as flight-log
     assert "quiet stream" in news                 # sparse-ledger empty state copy
     assert "breaking-pulse" in news               # stronger pulse on breaking items
     assert "quiet read" in news                   # non-breaking reads coalesce per coin/hour
+
+
+def test_activity_flight_deck_panes(client):
+    """Operator order 2026-07-12: /activity is a flight deck of four
+    independent flowing windows; the panes ARE the type separation."""
+    act = client.get("/activity").text
+    for pane in ("pane-trade", "pane-research", "pane-books", "pane-machine",
+                 "flow-trade", "flow-research", "flow-books", "flow-machine"):
+        assert f'id="{pane}"' in act, f"missing {pane}"
+    for label in ("trade log", "research log", "books", "machine"):
+        assert label in act
+    assert "type-filters" not in act             # type chips are gone
+    assert 'id="book-filter"' in act             # book dropdown scoped to BOOKS pane
+    assert "function paneFor" in act             # routing = the separation
+    # flight-log copy consumes the server-side translations
+    assert "gates_human" in act and "reason_human" in act and "detail_human" in act
+    assert "e.human" in act
+    # human sentences, not machine fragments
+    assert "OPENED" in act and "CLOSED" in act and "REFUSED" in act
+    assert "nothing met the entry bar" in act
+    assert "scanned the board" in act
+
+
+def test_execute_detail_reason_also_translated(monkeypatch):
+    evt = {"ts": 1, "event": "execute", "coin": "SOL", "executed": False,
+           "blocked_by": None,
+           "detail": "runner_gate_blocked (needs volume+breakout/burst and structure; score=57, slow=0)"}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
+    e = db._activity_payload()["events"][0]
+    assert e["detail_human"] == "no fresh breakout structure (score 57)"
+    # filled executes never carry a refusal translation
+    ok = {"ts": 2, "event": "execute", "coin": "SOL", "executed": True, "detail": "493436405964"}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [ok])
+    e2 = db._activity_payload()["events"][0]
+    assert e2["detail_human"] is None
 
 
 def test_books_endpoint(client, monkeypatch):
