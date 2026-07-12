@@ -38,7 +38,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -640,6 +640,68 @@ _ACTIVITY_TYPES = ["book", "research", "execute", "close", "scan",
 _ACTIVITY_SCAN_CAP = 20_000
 
 
+# ── flight-log translation: machine reason -> human sentence ────────────────
+# Ordered (regex, template) pairs; the first match wins and interpolates its
+# captured numbers. Vocabulary mined from the real loop log 2026-07-12.
+# Unknown reasons fall back to the raw string — never drop information.
+_REASON_TRANSLATIONS: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"history_floor_preflight \((\d+)d < (\d+)d"),
+     "too young to trade ({0}d listed, needs {1}d)"),
+    (re.compile(r"liquidity_floor_preflight \(\$([\d.]+)M < \$([\d.]+)M"),
+     "too thin (${0}M daily volume, floor ${1}M)"),
+    (re.compile(r"daily_loss_gate \(PnL \$(-?[\d.]+) <= \$(-?\d+)"),
+     "daily loss floor hit (${0} of ${1} today)"),
+    (re.compile(r"runner_gate_blocked \(needs volume\+breakout.*?score=(\d+)"),
+     "no fresh breakout structure (score {0})"),
+    (re.compile(r"runner_gate_blocked \(late trend-only chase"),
+     "late chase refused — no fresh breakout"),
+    (re.compile(r"notional_room_full \(\$(\d+) >= \$(\d+)"),
+     "exposure cap full (${0} of ${1})"),
+    (re.compile(r"sidestep_bearish_blocked \((\w+): 24h move (-?[\d.]+)%"),
+     "would buy a selloff ({1}% day, no uptrend)"),
+    (re.compile(r"hip3_dex_underfunded \((\w+): \$([\d.]+)\)"),
+     "{0} dex unfunded (${1}) — transfer USDC to trade equities"),
+    (re.compile(r"trend_filter \(long fights the daily (\d+)d-MA downtrend"),
+     "long against the daily downtrend ({0}MA)"),
+    (re.compile(r"sidestep_extension_blocked.*?([\d.+-]+)% >= ([\d.]+)%"),
+     "already extended ({0}% day, ceiling {1}%)"),
+    (re.compile(r"short_liquidity"), "volume below the short floor"),
+    (re.compile(r"counter_regime|market_regime"), "against the market regime"),
+    (re.compile(r"cooldown"), "in cooldown after a recent trade"),
+    (re.compile(r"equity_risk.*?\$(\d+).*?\$(\d+)"),
+     "total notional cap (${0} would exceed ${1})"),
+    (re.compile(r"max_concurrent"), "max concurrent positions reached"),
+    (re.compile(r"correlation"), "too many correlated positions"),
+    (re.compile(r"opposite_guard"), "opposite position already held"),
+    (re.compile(r"reentry_cap"), "re-entry cap for this coin today"),
+    (re.compile(r"daily_giveback"), "giveback halt — protecting today's peak"),
+    (re.compile(r"confidence"), "AI confidence below the floor"),
+    # DSL close reasons
+    (re.compile(r"floor_breach"), "profit floor"),
+    (re.compile(r"max_loss"), "stop — max loss"),
+    (re.compile(r"hard_timeout|timeout"), "time exit"),
+    (re.compile(r"stale_flat"), "stale position cut"),
+    (re.compile(r"manual_close"), "closed externally"),
+    (re.compile(r"breakeven"), "breakeven lock"),
+]
+
+
+def humanize_reason(reason: object) -> str:
+    """Flight-log copy: translate a machine gate/close reason into a terse
+    human sentence, interpolating the numbers. Falls back to the raw string."""
+    raw = str(reason or "").strip()
+    if not raw:
+        return ""
+    for pat, tmpl in _REASON_TRANSLATIONS:
+        m = pat.search(raw)
+        if m:
+            try:
+                return tmpl.format(*m.groups())
+            except (IndexError, KeyError):
+                return tmpl
+    return raw
+
+
 def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
     """Map one raw session-log event to a typed activity view model. Pure.
 
@@ -687,6 +749,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "size_usd": e.get("size_usd"), "entry_px": e.get("entry_px"),
             "stop_px": e.get("stop_px"), "tp_px": e.get("tp_px"),
             "gates": [str(b) for b in (blocked or [])],
+            "gates_human": [humanize_reason(b) for b in (blocked or [])],
             "detail": detail if isinstance(detail, str) else None,
             "regime": e.get("regime"),
             "tier": 1,
@@ -701,7 +764,8 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "type": "close", "ts": ts, "coin": e.get("coin"),
             "side": e.get("side"), "leverage": e.get("leverage"),
-            "reason": e.get("reason"), "pnl_pct": pnl,
+            "reason": e.get("reason"), "reason_human": humanize_reason(e.get("reason")),
+            "pnl_pct": pnl,
             "spot_pct": e.get("realized_spot_pct", e.get("unrealized_pct")),
             "fill_px": e.get("fill_px"), "entry_px": e.get("entry_px"),
             "executed": bool(e.get("executed")), "source": "dsl",
@@ -764,7 +828,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
         # coin's repeated skips shatter into per-score groups.
         gkey_reason = re.sub(r"[\d.]+", "", str(reason or ""))
         return {"type": "gate", "ts": ts, "kind": ev, "coin": e.get("coin"),
-                "reason": reason,
+                "reason": reason, "human": humanize_reason(reason),
                 "score": e.get("score"), "trigger_score": e.get("trigger_score"),
                 "tier": 3, "gkey": f"gate|{e.get('coin')}|{gkey_reason}"}
 

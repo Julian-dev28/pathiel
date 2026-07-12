@@ -589,3 +589,39 @@ def test_news_endpoint(client, monkeypatch):
     data = r.json()
     assert data["items"][0]["coin"] == "VIRTUAL"
     assert data["items"][0]["breaking"] is True
+
+
+def test_humanize_reason_translates_real_vocabulary():
+    """Flight-log copy: mined from the live loop log 2026-07-12."""
+    h = db.humanize_reason
+    assert h("history_floor_preflight (2d < 60d history)") == \
+        "too young to trade (2d listed, needs 60d)"
+    assert h("liquidity_floor_preflight ($0.34M < $0.70M)") == \
+        "too thin ($0.34M daily volume, floor $0.70M)"
+    assert h("daily_loss_gate (PnL $-12.61 <= $-12)") == \
+        "daily loss floor hit ($-12.61 of $-12 today)"
+    assert h("runner_gate_blocked (needs volume+breakout/burst and structure; score=28, slow=0)") == \
+        "no fresh breakout structure (score 28)"
+    assert h("hip3_dex_underfunded (xyz: $0.00). Transfer USDC to 'xyz' via the HL frontend.") == \
+        "xyz dex unfunded ($0.00) — transfer USDC to trade equities"
+    assert h("trend_filter (long fights the daily 200d-MA downtrend — counter-trend entries bleed)") == \
+        "long against the daily downtrend (200MA)"
+    assert h("floor_breach (1x consec, floor=0.42)") == "profit floor"
+    assert h("max_loss (2.82% spot / 28.2% ROE >= 2.50% spot cap)") == "stop — max loss"
+    # unknown reasons pass through untouched
+    assert h("some_new_gate (whatever)") == "some_new_gate (whatever)"
+    assert h(None) == ""
+
+
+def test_classified_events_carry_human_fields():
+    gate = db._classify_event({"event": "entry_preflight", "ts": 1, "coin": "CASHCAT",
+                               "reason": "history_floor_preflight (2d < 60d history)"})
+    assert gate["human"] == "too young to trade (2d listed, needs 60d)"
+    ex = db._classify_event({"event": "execute", "ts": 1, "coin": "ARB", "side": "long",
+                             "executed": False,
+                             "blocked_by": ["trend_filter (long fights the daily 200d-MA downtrend — x)"]})
+    assert ex["gates_human"] == ["long against the daily downtrend (200MA)"]
+    cl = db._classify_event({"event": "dsl_exit", "ts": 1, "coin": "GRASS", "side": "long",
+                             "reason": "floor_breach (1x consec, floor=0.42)",
+                             "realized_pnl_pct": 2.5, "executed": True})
+    assert cl["reason_human"] == "profit floor"
