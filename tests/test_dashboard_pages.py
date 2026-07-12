@@ -406,6 +406,10 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert 'data-nav="/operator"' not in r.text
     # token entry moved to the landing footer (localStorage only)
     assert "op-token-btn" in r.text
+    # how-it-works sits at the BOTTOM: below the books dropdown, above the
+    # footer (operator order 2026-07-12)
+    assert r.text.index('id="books-wrap"') < r.text.index(HOW_IT_WORKS)
+    assert r.text.index(HOW_IT_WORKS) < r.text.index("<footer")
 
 
 def test_config_and_operator_pages_are_gone(client):
