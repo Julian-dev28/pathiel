@@ -158,6 +158,50 @@ def record_mover_pass(analysis: Dict[str, Any], config: Dict[str, Any],
     return True
 
 
+def record_trend_block_news_long(analysis: Dict[str, Any], result: Any,
+                                 config: Dict[str, Any]) -> bool:
+    """W-G pocket test (2026-07-12, ARB/Robinhood case): the trend filter is
+    forward-validated on the FULL population (blocked entries avg −1.68%/ep,
+    n=4,644 decision audit) — but catalyst-backed longs were rare in that
+    sample. Every LONG with positive news risk that dies ONLY at the trend
+    filter records a hypothetical entry; the ledger answers whether a real
+    catalyst overrides a daily downtrend. Promotion bar: >=20 episodes,
+    EV25 > 0 both halves — until then the gate keeps blocking."""
+    cfg = (config.get("mover_recorders") or {})
+    if not bool(cfg.get("enabled", True)):
+        return False
+    if not isinstance(result, dict) or result.get("executed"):
+        return False
+    blocked = result.get("blocked_by") or []
+    if isinstance(blocked, str):
+        blocked = [blocked]
+    if not any("trend_filter" in str(b) or "200d-MA" in str(b) for b in blocked):
+        return False
+    if (analysis.get("verdict") or "").upper() != "LONG":
+        return False
+    if (analysis.get("news_risk") or "").lower() != "positive":
+        return False
+    coin = analysis.get("coin") or ""
+    try:
+        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
+    except (TypeError, ValueError):
+        px = 0.0
+    if not coin or px <= 0:
+        return False
+    now_ms = int(time.time() * 1000)
+    if not _dedup_key_hit("tbnl", coin, now_ms):
+        return False
+    shadow_ledger.record("trend_block_news_long", coin=coin, side="long",
+                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
+                         entry_ref_px=px, horizon_days=2.0, stop_pct=15.0,
+                         meta={"confidence": float(analysis.get("confidence") or 0),
+                               "web_search_used": bool(analysis.get("web_search_used")),
+                               "shadow": True})
+    logger.info(f"[mover-recorders] trend-blocked catalyst LONG recorded: {coin} "
+                f"(conf {float(analysis.get('confidence') or 0):.2f}, news positive)")
+    return True
+
+
 def record_b15_crossings(universe, btc_up: Optional[bool],
                          config: Dict[str, Any]) -> int:
     """Call once per scan with the fresh universe. Records hypothetical LONGs

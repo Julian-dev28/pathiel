@@ -67,6 +67,7 @@ from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
     record_b15_crossings as _record_b15_crossings,
+    record_trend_block_news_long as _record_trend_block_news_long,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
@@ -1067,6 +1068,15 @@ while True:
                 if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))
+                    # W-G pocket recorder: catalyst-positive LONG that died
+                    # only at the trend filter -> zero-capital counterfactual.
+                    try:
+                        analysis.setdefault("last_price", next(
+                            (float(m.get("midPx") or m.get("markPx") or 0)
+                             for m in universe if m.get("coin") == coin), 0.0))
+                        _record_trend_block_news_long(analysis, result, read_agent_config())
+                    except Exception:
+                        pass
                     # Surface the regime decision so the log answers "why did a
                     # counter-regime trade fire?" — via is one of aligned /
                     # neutral / confidence / composite / trigger:<name> / blocked.

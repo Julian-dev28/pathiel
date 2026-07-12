@@ -97,3 +97,27 @@ def test_pass_live_disabled_records_only(monkeypatch):
     a = {"coin": "RIP2", "daily_move_pct": 12.0, "daily_volume_usd": 9e6, "last_price": 3.0}
     assert mr.record_mover_pass(a, {}, execute_fn=lambda x: opened.append(x) or {"executed": True})
     assert opened == [] and out[0][1]["meta"]["shadow"] is True
+
+
+def test_trend_block_news_long_records_only_exact_pocket(monkeypatch):
+    out = _captured(monkeypatch)
+    blocked = {"executed": False,
+               "blocked_by": ["trend_filter (long fights the daily 200d-MA downtrend — counter-trend entries bleed)"]}
+    base = {"coin": "ARB", "verdict": "LONG", "news_risk": "positive",
+            "confidence": 0.75, "last_price": 0.10113, "web_search_used": True}
+    assert mr.record_trend_block_news_long(base, blocked, {}) is True
+    book, kw = out[0]
+    assert book == "trend_block_news_long" and kw["side"] == "long"
+    assert kw["entry_ref_px"] == 0.10113 and kw["meta"]["web_search_used"] is True
+    # dedup same coin same day
+    assert mr.record_trend_block_news_long(base, blocked, {}) is False
+    # wrong gate: not recorded
+    other = {"executed": False, "blocked_by": ["short_liquidity floor"]}
+    assert mr.record_trend_block_news_long({**base, "coin": "X"}, other, {}) is False
+    # neutral news: not recorded
+    assert mr.record_trend_block_news_long(
+        {**base, "coin": "Y", "news_risk": "none"}, blocked, {}) is False
+    # executed trades: not recorded
+    assert mr.record_trend_block_news_long(
+        {**base, "coin": "Z"}, {"executed": True}, {}) is False
+    assert len(out) == 1
