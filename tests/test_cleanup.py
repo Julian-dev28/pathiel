@@ -386,8 +386,8 @@ def test_fetch_news_google_primary_no_key_needed(monkeypatch):
     from hermes_trader.agents import research, news_catalyst as nc
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     monkeypatch.setattr(nc, "google_news_search",
-                        lambda *a, **kw: [nc.Article("ETF approved", "u", "d", None, "s")])
-    assert "ETF approved" in research._fetch_news("BTC")
+                        lambda *a, **kw: [nc.Article("Bitcoin ETF approved", "u", "d", None, "s")])
+    assert "Bitcoin ETF approved" in research._fetch_news("BTC")
 
 def test_fetch_news_sends_freshness_window(monkeypatch):
     """The Brave request must carry a freshness range so year-old articles

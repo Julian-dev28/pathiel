@@ -118,6 +118,7 @@ def _fetch_news(coin: str) -> str:
         arts = relevant_articles(
             coin.split(":")[-1],
             google_news_search(_coin_query(coin), when="1d", limit=15, ttl=300.0),
+            equity=(":" in coin),
         )[:5]
         if arts:
             return " | ".join(a.title.strip() for a in arts if a.title)[:600]

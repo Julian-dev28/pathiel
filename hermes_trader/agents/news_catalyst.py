@@ -274,9 +274,13 @@ _QUERY_NOISE = '-casino -gambling -"price prediction" -giveaway'
 
 
 def _coin_query(coin: str) -> str:
-    """Query hygiene: quote the symbol (LIT/VIRTUAL are English words) + crypto
-    context + negations for the SEO-spam classes observed live 2026-07-11."""
+    """Query hygiene: quote the symbol (LIT/VIRTUAL are English words) +
+    asset-class context + negations for observed SEO-spam classes. xyz:
+    symbols are TOKENIZED EQUITIES — querying them with 'crypto' returned
+    generic Bitcoin/macro coverage (xyz:BE incident 2026-07-12)."""
     sym = coin.split(":")[-1]
+    if ":" in coin:
+        return f'"{sym}" stock {_QUERY_NOISE}'
     return f'"{sym}" crypto {_QUERY_NOISE}'
 
 
@@ -295,18 +299,55 @@ _CRYPTO_CONTEXT_RE = re.compile(
 )
 
 
-def _title_relevant(sym: str, title: str) -> bool:
+_EQUITY_CONTEXT_RE = re.compile(
+    r"stock|shares?\b|earnings|nasdaq|nyse|ipo\b|dividend|guidance|"
+    r"quarterly|revenue|market cap|sec filing|8-k|10-q",
+    re.IGNORECASE,
+)
+
+
+# Ticker -> common name: headlines say "Bitcoin", not "BTC". Majors only —
+# for everything else the ticker itself is how news refers to the token.
+_SYM_ALIASES = {
+    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "ripple",
+    "DOGE": "dogecoin", "ADA": "cardano", "AVAX": "avalanche", "DOT": "polkadot",
+    "LINK": "chainlink", "LTC": "litecoin", "BNB": "binance coin",
+    "ARB": "arbitrum", "OP": "optimism", "TIA": "celestia", "NEAR": "near protocol",
+}
+
+
+def _title_relevant(sym: str, title: str, *, equity: bool = False) -> bool:
+    """The article must be ABOUT the coin, not merely about crypto.
+
+    v1 accepted any crypto-context title even when the symbol never appeared —
+    so xyz:BE counted generic Bitcoin/Iran coverage as its own, surged 5.4x,
+    and fired a live BREAKING entry (blocked only by the unfunded dex,
+    2026-07-12). Now the symbol itself must appear: cashtag, ALL-CAPS ticker,
+    or the symbol-as-word PLUS asset-class context to disambiguate homonyms."""
     t = title or ""
     if f"${sym.upper()}" in t.upper():
-        return True                       # cashtag: $GRASS
+        return True                       # cashtag: $GRASS / $BE
     if re.search(rf"(?<![A-Za-z]){re.escape(sym.upper())}(?![A-Za-z])", t):
         return True                       # ALL-CAPS ticker used as a ticker
-    return bool(_CRYPTO_CONTEXT_RE.search(t))
+    ctx = _EQUITY_CONTEXT_RE if equity else _CRYPTO_CONTEXT_RE
+    # Soft rule (case-insensitive word + asset context) only for names long
+    # enough not to collide with English function words: "BE"/"IT"/"OP" as
+    # words appear in half of all headlines ("Might Not Be A Great Idea...").
+    names = [n for n in
+             ([sym] + ([_SYM_ALIASES[sym.upper()]] if sym.upper() in _SYM_ALIASES else []))
+             if len(n) >= 4]
+    for name in names:
+        if re.search(rf"(?<![A-Za-z]){re.escape(name)}(?![A-Za-z])", t, re.IGNORECASE) \
+                and ctx.search(t):
+            return True                   # "Grass token rallies" / "Bitcoin ETF..."
+    return False
 
 
-def relevant_articles(sym: str, articles: List[Article]) -> List[Article]:
-    """Drop homonym noise before counting or display."""
-    return [a for a in articles or [] if _title_relevant(sym, a.title)]
+def relevant_articles(sym: str, articles: List[Article],
+                      *, equity: bool = False) -> List[Article]:
+    """Drop everything that is not about THIS coin before counting/display."""
+    return [a for a in articles or []
+            if _title_relevant(sym, a.title, equity=equity)]
 
 
 def google_news_search(query: str, when: str = "1d", limit: int = 25,
@@ -372,8 +413,11 @@ def coin_catalyst(coin: str, ttl: float = _CACHE_TTL_S) -> CatalystReport:
     baseline). Two cached Google News queries; no GDELT on this path."""
     q = _coin_query(coin)
     sym = coin.split(":")[-1]
-    recent = relevant_articles(sym, google_news_search(q, when="1h", limit=50, ttl=ttl))
-    daily = relevant_articles(sym, google_news_search(q, when="1d", limit=100, ttl=ttl))
+    is_equity = ":" in coin
+    recent = relevant_articles(sym, google_news_search(q, when="1h", limit=50, ttl=ttl),
+                               equity=is_equity)
+    daily = relevant_articles(sym, google_news_search(q, when="1d", limit=100, ttl=ttl),
+                              equity=is_equity)
     baseline_per_h = max(len(daily) / 24.0, 0.25)
     surge_x = round(len(recent) / baseline_per_h, 2)
     breaking = len(recent) >= 3 and surge_x >= 3.0

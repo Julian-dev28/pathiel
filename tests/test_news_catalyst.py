@@ -179,3 +179,41 @@ def test_user_message_carries_date_and_macro(monkeypatch):
     assert "Today (UTC): 20" in msg
     assert "NOT a catalyst" in msg
     assert "Macro tape" in msg and "tariffs" in msg
+
+
+def test_title_relevance_requires_the_symbol_not_just_crypto_context():
+    """xyz:BE incident 2026-07-12: generic crypto/macro headlines counted for
+    BE, surged 5.4x, fired a live BREAKING entry. Symbol presence is now
+    mandatory — crypto context alone must never pass."""
+    from hermes_trader.agents.news_catalyst import _title_relevant
+    for t in ("CryptoQuant Bull Score Index Signals More Bitcoin Weakness - HOKANEWS.COM",
+              "Trump ends Iran peace deal, Strait of Hormuz blockade raises oil prices - Crypto Briefing",
+              "Bitcoin Hits Record Oversold Level Against Gold - HOKANEWS.COM"):
+        assert _title_relevant("BE", t, equity=True) is False
+        assert _title_relevant("GRASS", t) is False
+    # equity symbol with real company context passes
+    assert _title_relevant("BE", "BE stock jumps 12% after earnings beat", equity=True) is True
+    assert _title_relevant("BE", "$BE shares rally on guidance", equity=True) is True
+
+
+def test_alias_lets_bitcoin_headlines_count_for_btc():
+    from hermes_trader.agents.news_catalyst import _title_relevant
+    assert _title_relevant("BTC", "Bitcoin ETF inflows hit weekly record") is True
+    assert _title_relevant("BTC", "Gold steadies as dollar weakens") is False
+
+
+def test_xyz_coins_query_stock_not_crypto():
+    from hermes_trader.agents.news_catalyst import _coin_query
+    assert "stock" in _coin_query("xyz:BE") and "crypto" not in _coin_query("xyz:BE")
+    assert "crypto" in _coin_query("GRASS")
+
+
+def test_short_symbols_need_hard_ticker_match():
+    from hermes_trader.agents.news_catalyst import _title_relevant
+    # "Be" as an English verb + equity context must NOT count for BE
+    assert _title_relevant(
+        "BE", "It Might Not Be A Great Idea To Buy EUWAX For Its Next Dividend",
+        equity=True) is False
+    # hard matches still do
+    assert _title_relevant("BE", "IREN, BE Networks Partner on GPU Infrastructure",
+                           equity=True) is True
