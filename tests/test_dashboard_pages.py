@@ -377,6 +377,33 @@ def test_news_payload_empty_ledger(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     payload = db._news_payload()
     assert payload["items"] == [] and payload["research_context"] == []
+    assert payload["stats"] == {"reads_today": 0, "breaking_today": 0,
+                                "last_read_ts": None}
+
+
+def test_news_payload_stats_fresh_and_title_ages(monkeypatch):
+    """Flight-deck payload: header-strip stats (since local midnight), the
+    watcher fresh flag, and per-headline article-age passthrough."""
+    noon = int(time.mktime((2026, 1, 15, 12, 0, 0, 0, 0, -1)) * 1000)
+    _write_news_ledger([
+        {"ts": noon - 20 * 3600 * 1000, "coin": "C", "side": "long",   # yesterday
+         "meta": {"breaking": False, "top3_titles": []}},
+        {"ts": noon - 2 * 3600 * 1000, "coin": "A", "side": "long",    # today, aged
+         "meta": {"breaking": True, "top3_titles": ["fresh piece", "evergreen piece"],
+                  "top3_ages_h": [3.5, 200.0]}},
+        {"ts": noon - 60_000, "coin": "B", "side": "long",             # today, fresh
+         "meta": {"breaking": False, "top3_titles": []}},
+    ])
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    p = db._news_payload(limit=10, now_ms=noon)
+    items = {i["coin"]: i for i in p["items"]}
+    assert items["B"]["fresh"] is True          # inside the fresh window
+    assert items["A"]["fresh"] is False and items["C"]["fresh"] is False
+    assert items["A"]["title_ages_h"] == [3.5, 200.0]   # article recency, when persisted
+    assert items["B"]["title_ages_h"] is None           # absent in older rows
+    assert p["fresh_window_s"] == db._FRESH_WINDOW_S
+    assert p["stats"] == {"reads_today": 2, "breaking_today": 1,
+                          "last_read_ts": noon - 60_000}
 
 
 # ── pages + endpoints ────────────────────────────────────────────────────────
@@ -596,6 +623,25 @@ def test_activity_flight_deck_panes(client):
     assert "OPENED" in act and "CLOSED" in act and "REFUSED" in act
     assert "nothing met the entry bar" in act
     assert "scanned the board" in act
+
+
+def test_news_flight_deck_panes(client):
+    """Operator order 2026-07-13: /news mirrors the /activity flight deck —
+    CATALYSTS + WATCHER panes, header strip, headline ages always visible."""
+    n = client.get("/news").text
+    for marker in ("pane-catalysts", "pane-watcher", "flow-catalysts", "flow-watcher"):
+        assert f'id="{marker}"' in n, f"missing {marker}"
+    assert "catalysts" in n and "watcher" in n           # pane labels
+    assert 'id="news-strip"' in n and "reads today" in n  # session-style strip
+    assert "last read" in n
+    # headline AGE is first-class: read age from row ts + per-article age
+    # chips when the recorder persisted them, stale flagged red past 7d
+    assert "function ageChip" in n and "age-stale" in n
+    assert "title_ages_h" in n
+    assert "read ${fmtAgo(it.ts)}" in n
+    # watcher time-decay: fresh reads individual, aged coalesce per coin/hour
+    assert "foldAged" in n and "ev-fresh" in n and "fresh_window_s" in n
+    assert "control group" in n                          # explainer kept
 
 
 def test_execute_detail_reason_also_translated(monkeypatch):

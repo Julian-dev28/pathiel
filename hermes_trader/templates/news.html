@@ -6,8 +6,9 @@
 <title>hermes-trader · news</title>
 <script src="/static/tailwind.js"></script>
 <style>
-  /* ── same design system as /activity: sans for words, mono for numbers/
-     tickers/time; saturated color reserved for direction + BREAKING. ── */
+  /* ── same design system as the /activity flight deck: sans for words,
+     mono/pixel identity in wordmark + section labels; indigo→violet brand;
+     amber = warnings/BREAKING; green/red = money + direction only. ── */
   :root{
     --card:#14161b; --card2:#181b21;
     --line:#23262e; --line2:#2c313c;
@@ -31,6 +32,9 @@
   .nav-link:hover{color:var(--txt);background:var(--card)}
   .nav-link:active{transform:translateY(1px)}
   .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+  header{position:relative}
+  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
+        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
   .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
   .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent;white-space:nowrap}
   .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
@@ -41,61 +45,88 @@
   @keyframes badge-blink{0%,100%{opacity:1}50%{opacity:.45}}
   .chip{display:inline-block;padding:2px 9px;font-size:10.5px;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);margin:2px 5px 2px 0;white-space:nowrap}
   .chip.chip-red{border-color:rgba(239,68,68,.35);color:#fca5a5;background:rgba(239,68,68,.08)}
-  /* scanline texture behind the header — very low opacity, pure CSS */
-  header{position:relative}
-  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
-        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
-  /* ── one flowing stream: timeline rail, cards with semantic accents ── */
-  #stream{position:relative;border-left:2px solid var(--line);padding-left:18px}
-  .item{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:3px;
-        padding:12px 15px;margin-bottom:14px;position:relative;
+  /* headline age chips — staleness must be visible instantly */
+  .age{display:inline-block;margin-left:7px;padding:0 6px;font-size:9.5px;font-weight:700;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--dim);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;vertical-align:1px}
+  .age.age-old{border-color:rgba(245,158,11,.35);color:#fcd34d;background:rgba(245,158,11,.08)}
+  .age.age-stale{border-color:rgba(239,68,68,.4);color:#fca5a5;background:rgba(239,68,68,.1)}
+  /* ── header strip: session-style KPI chips ── */
+  .strip{position:sticky;top:10px;z-index:20;display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;
+         background:rgba(14,16,20,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+         border:1px solid var(--line);border-radius:4px;padding:10px 8px;margin-bottom:18px;
+         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
+  .kpi{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:4px 14px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .v{font-size:18px;font-weight:750;line-height:1.15;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .kpi .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .kpi .v.brk{color:#fcd34d}
+  /* ── the deck: CATALYSTS + WATCHER panes ── */
+  .deck{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width:1024px){.deck{grid-template-columns:1fr 1fr}}
+  .pane{background:var(--card);border:1px solid var(--line);border-radius:3px;
         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
-        transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-  .item:hover{transform:translate(-1px,-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5)}
-  .item::before{content:'';position:absolute;left:-25px;top:18px;width:9px;height:9px;border-radius:2px;background:var(--dim);border:2px solid #0a0b0d}
-  .item.k-read{border-left-color:var(--teal)}
-  .item.k-read::before{background:var(--teal)}
+        display:flex;flex-direction:column;min-height:180px}
+  .pane-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .pane-head .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+  .pane-head .pm{width:7px;height:7px;border-radius:1px}
+  .pane-head .pm.pm-catalysts{background:var(--amb)}
+  .pane-head .pm.pm-watcher{background:var(--teal)}
+  .pane-head .pmeta{margin-left:auto;font-size:10px;color:var(--dim)}
+  .pane-flow{flex:1;overflow-y:auto;max-height:480px;padding:12px 14px}
+  .pane-flow::-webkit-scrollbar{width:8px}
+  .pane-flow::-webkit-scrollbar-track{background:#101216}
+  .pane-flow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+  .pane-empty{font-size:12px;color:var(--dim);padding:10px 2px;line-height:1.7}
+  /* catalyst cards */
+  .item{background:var(--card2);border:1px solid var(--line);border-left-width:4px;border-radius:3px;
+        padding:10px 13px;margin-bottom:10px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.02);
+        transition:transform .15s ease,border-color .15s ease}
+  .item:hover{transform:translate(-1px,-1px);border-color:var(--line2)}
+  .item.k-read{border-left-color:var(--amb)}
   .item.k-research{border-left-color:var(--ind)}
-  .item.k-research::before{background:var(--ind)}
-  .item.breaking{border-left-color:var(--amb);animation:breaking-pulse 2.4s ease-in-out infinite}
-  .item.breaking::before{background:var(--amb)}
+  .item.breaking{animation:breaking-pulse 2.4s ease-in-out infinite}
   @keyframes breaking-pulse{
-    0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}
-    50%{box-shadow:0 0 22px rgba(245,158,11,.28)}
+    0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+    50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.02),0 0 22px rgba(245,158,11,.28)}
   }
   .kind-tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-  .kind-tag.k-read{color:var(--teal)}
+  .kind-tag.k-read{color:var(--amb)}
   .kind-tag.k-research{color:var(--ind)}
   .titles{margin-top:7px}
-  .titles div{font-size:13px;color:#cfd4dd;padding:2px 0;line-height:1.6}
+  .titles div{font-size:12.5px;color:#cfd4dd;padding:2px 0;line-height:1.6}
   .titles div::before{content:'· ';color:var(--dim)}
   a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11.5px}
-  .empty{font-size:13px;color:var(--mut);padding:16px;border:1px dashed var(--line2);border-radius:3px;line-height:1.7}
-  /* T3: quiet (non-breaking) reads coalesce — ONE line per coin per hour,
-     visibly recessed like /activity noise */
-  .read-coal{font-size:11px;color:var(--mut);padding:3px 12px;margin-bottom:6px;border-left:2px solid var(--line);line-height:1.7;opacity:.55;transition:opacity .15s ease}
+  /* watcher rows: fresh individual, aged coalesced */
+  .ev-fresh{font-size:11.5px;color:var(--mut);padding:2px 2px;margin-bottom:5px;line-height:1.65;opacity:.62;word-break:break-word;max-height:64px;overflow:hidden;
+            transition:max-height .4s ease,opacity .35s ease,margin .4s ease,padding .4s ease}
+  .ev-fresh:hover{opacity:.95}
+  .ev-fold{max-height:0 !important;opacity:0 !important;margin-bottom:0 !important;padding-top:0 !important;padding-bottom:0 !important}
+  .read-coal{font-size:11px;color:var(--mut);padding:2px 2px;margin-bottom:5px;line-height:1.65;opacity:.55;transition:opacity .15s ease}
   .read-coal:hover{opacity:.9}
-  .read-coal b{color:var(--mut);font-weight:650}
   .read-coal .cnt{color:#fcd34d;font-weight:750}
-  .read-coal .tk{opacity:.9;font-size:10px;padding:0 8px}
+  .read-coal .tk,.ev-fresh .tk{opacity:.9;font-size:10px;padding:0 8px}
+  .ev-ts{color:var(--dim);font-size:10px;white-space:nowrap}
+  .pane-empty,.empty{font-size:12px;color:var(--dim);padding:12px 2px;line-height:1.7}
   /* arrival animations — reduced-motion respected */
   .ev-enter{animation:ev-in .5s cubic-bezier(.2,.7,.3,1)}
   @keyframes ev-in{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:none}}
+  .ev-fresh.ev-enter{animation:fresh-in .5s cubic-bezier(.2,.7,.3,1)}
+  @keyframes fresh-in{0%{opacity:0;transform:translateY(-8px)}100%{opacity:.62;transform:none}}
   .flash-amber{animation:ev-in .5s cubic-bezier(.2,.7,.3,1),glow-a 1.8s ease-out}
   @keyframes glow-a{0%{border-color:var(--amb);box-shadow:0 0 18px rgba(245,158,11,.4);background:#241a06}100%{}}
   .coal-tick{animation:coal-tick .6s ease-out}
   @keyframes coal-tick{0%{opacity:1;color:#ffe9b0}100%{opacity:.55}}
   @media (prefers-reduced-motion: reduce){
-    .ev-enter,.flash-amber,.coal-tick,.item.breaking,.b-breaking{animation:none}
-    .item,.read-coal{transition:none}
+    .ev-enter,.flash-amber,.coal-tick,.item.breaking,.b-breaking,.ev-fresh.ev-enter{animation:none}
+    .item,.read-coal,.ev-fresh{transition:none}
   }
 </style>
 </head>
 <body class="min-h-screen">
-<div class="max-w-[1000px] mx-auto px-6 py-6">
+<div class="max-w-[1240px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand"><span class="dot"></span>HERMES-TRADER <small>/ NEWS</small></span>
+    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ NEWS</small></span>
     <span class="text-[10px] mono" style="color:var(--dim)" id="news-meta"></span>
   </header>
 
@@ -105,22 +136,34 @@
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
   </nav>
 
-  <div class="uppercase tracking-wider text-[10px] font-bold mb-1" style="color:var(--dim);letter-spacing:.16em">
-    coverage reads + research with news context · one stream · newest first
-  </div>
   <div class="text-[12px] mb-4" style="color:var(--mut);line-height:1.6">
     Every 30 min the watcher reads each candidate's headlines. Quiet reads are the
     control group; BREAKING = coverage surging vs the coin's own baseline.
   </div>
-  <div id="stream"><div class="empty">loading&hellip;</div></div>
 
-  <footer class="text-[10px] text-zinc-600 mt-6 text-center">
+  <div class="strip" id="news-strip">
+    <div class="kpi"><span class="v">…</span><span class="l">reads today</span></div>
+  </div>
+
+  <div class="deck">
+    <section class="pane" id="pane-catalysts">
+      <div class="pane-head"><span class="pm pm-catalysts"></span><span class="sec-label">catalysts</span><span class="pmeta mono" id="meta-catalysts"></span></div>
+      <div class="pane-flow" id="flow-catalysts"></div>
+    </section>
+    <section class="pane" id="pane-watcher">
+      <div class="pane-head"><span class="pm pm-watcher"></span><span class="sec-label">watcher</span><span class="pmeta mono" id="meta-watcher"></span></div>
+      <div class="pane-flow" id="flow-watcher"></div>
+    </section>
+  </div>
+
+  <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
     one wallet · live · not financial advice
   </footer>
 </div>
 
 <script>
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
 const fmtAgo = ms => {
   if (!ms) return '—';
   const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
@@ -128,39 +171,50 @@ const fmtAgo = ms => {
   if (m < 1440) return Math.floor(m / 60) + 'h ago';
   return Math.floor(m / 1440) + 'd ago';
 };
+// article age in hours → "3h old" / "2d old"; amber past 2 days, red past the
+// backend's 7-day staleness floor (old ledger rows can predate the guard)
+function ageChip(h) {
+  if (h == null || !isFinite(h)) return '';
+  const label = h < 1 ? Math.max(1, Math.round(h * 60)) + 'm old'
+              : h < 48 ? Math.round(h) + 'h old'
+              : Math.round(h / 24) + 'd old';
+  const cls = h > 168 ? ' age-stale' : h > 48 ? ' age-old' : '';
+  return `<span class="age${cls}">${label}</span>`;
+}
 const fmtPx = v => { if (v == null) return '?'; return v < 1 ? Number(v).toFixed(5) : v < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2); };
+const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
-// ticker chip: the eye's anchor for every coin symbol
-const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 
-// ── row renderers ────────────────────────────────────────────────────────────
+// ── CATALYSTS pane: breaking reads + news-context research, full cards ──────
+function titlesBlock(it) {
+  const ages = it.title_ages_h;
+  const lines = (it.titles || []).map((t, i) =>
+    `<div>${esc(t)}${ages && ages[i] != null ? ageChip(ages[i]) : ''}</div>`).join('');
+  return lines ? `<div class="titles">${lines}</div>` : '';
+}
 function readCard(it) {
-  const breaking = it.breaking ? '<span class="badge b-breaking">BREAKING</span>' : '';
-  const shadow = it.shadow ? '<span class="badge b-shadow">SHADOW</span>' : '';
   const stats = [];
   if (it.n_recent != null) stats.push(`${it.n_recent} recent headline${it.n_recent === 1 ? '' : 's'}`);
   if (it.surge_x != null) stats.push(`surge ×${Number(it.surge_x).toFixed(2)}`);
   if (it.entry_ref_px != null) stats.push(`ref px ${fmtPx(it.entry_ref_px)}`);
-  const titles = (it.titles || []).map(t => `<div>${esc(t)}</div>`).join('');
   return `
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-read">coverage</span>
-      ${tk(it.coin)}
-      ${sideBadge(it.side)} ${breaking} ${shadow}
+      ${tk(it.coin)} ${sideBadge(it.side)}
+      <span class="badge b-breaking">BREAKING</span>
+      ${it.shadow ? '<span class="badge b-shadow">SHADOW</span>' : ''}
       <span class="text-[11px] mono" style="color:var(--dim)">${stats.join(' · ')}</span>
-      <span class="text-[10px] mono ml-auto" style="color:var(--dim)">${fmtAgo(it.ts)}</span>
+      <span class="ev-ts mono" style="margin-left:auto">read ${fmtAgo(it.ts)}</span>
     </div>
-    <div class="titles">${titles || '<div>no headlines captured (relevance filter may have dropped them)</div>'}</div>`;
+    ${titlesBlock(it) || '<div class="titles"><div>no headlines captured (relevance filter may have dropped them)</div></div>'}`;
 }
-
 function researchCard(c) {
   const verdict = c.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
                 : c.verdict === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
                 : `<span class="badge b-pass">${esc(c.verdict || '?')}</span>`;
   const risk = c.news_risk && c.news_risk !== 'none'
     ? `<span class="chip chip-red">news risk: ${esc(c.news_risk)}</span>` : '';
-  const prov = c.provider ? `<span class="chip">${esc(c.provider)}</span>` : '';
   const conf = c.confidence != null ? `<span class="text-[11px] mono" style="color:var(--dim)">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
   const cites = (c.citations || []).map(x => {
     const url = typeof x === 'string' ? x : (x.url || x.link || '');
@@ -170,17 +224,16 @@ function researchCard(c) {
   return `
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-research">research</span>
-      ${tk(c.coin)} ${verdict} ${conf} ${prov} ${risk}
-      <span class="text-[10px] mono ml-auto" style="color:var(--dim)">${fmtAgo(c.ts)}</span>
+      ${tk(c.coin)} ${verdict} ${conf} ${risk}
+      <span class="ev-ts mono" style="margin-left:auto">${fmtAgo(c.ts)}</span>
     </div>
-    ${c.reasoning ? `<div class="text-[13px] mt-1 leading-relaxed" style="color:#cfd4dd">${esc(c.reasoning)}</div>` : ''}
+    ${c.reasoning ? `<div class="text-[12.5px] mt-1 leading-relaxed" style="color:#cfd4dd">${esc(c.reasoning)}</div>` : ''}
     ${cites ? `<div class="mt-1">${cites}</div>` : ''}`;
 }
-
-function makeNode(row) {
+function catalystNode(row) {
   const div = document.createElement('div');
   if (row.kind === 'read') {
-    div.className = 'item k-read' + (row.breaking ? ' breaking' : '');
+    div.className = 'item k-read breaking';
     div.innerHTML = readCard(row);
   } else {
     div.className = 'item k-research';
@@ -189,16 +242,61 @@ function makeNode(row) {
   return div;
 }
 
-// ── merged flowing stream: breaking + research = cards; quiet reads coalesce
-// into ONE line per coin per hour, merged in place on incremental polls. ─────
-const stream = document.getElementById('stream');
+// ── WATCHER pane: quiet coverage checks with time-decay flow ────────────────
+let FRESH_MS = 15 * 60 * 1000;
+const coalIndex = new Map();   // "coin|hour" -> element
+
+function watcherFreshNode(r) {
+  const div = document.createElement('div');
+  div.className = 'ev-fresh';
+  div.dataset.ev = JSON.stringify(r);
+  const nTitles = (r.titles || []).length;
+  const newestAge = (r.title_ages_h && r.title_ages_h.length) ? ageChip(Math.min(...r.title_ages_h)) : '';
+  const what = nTitles
+    ? `coverage checked — ${nTitles} headline${nTitles === 1 ? '' : 's'}, no surge${newestAge}`
+    : 'coverage checked, nothing new';
+  div.innerHTML = `<span class="ev-ts mono">${fmtHM(r.ts)}</span> ${tk(r.coin)} — ${what}`;
+  if (nTitles) div.title = (r.titles || []).join(' · ');
+  return div;
+}
+function coalLabel(st) {
+  if (st.n === 1)
+    return `<span class="ev-ts mono">${fmtHM(st.t0)}</span> ${tk(st.coin)} — coverage checked, nothing new`;
+  return `${tk(st.coin)} — coverage checked <span class="cnt mono">×${st.n}</span> this hour, nothing new`;
+}
+function coalMergeOrCreate(r, flow, animate, floatTop) {
+  const gkey = `${r.coin}|${Math.floor((r.ts || 0) / 3600000)}`;
+  const existing = coalIndex.get(gkey);
+  if (existing) {
+    const st = JSON.parse(existing.dataset.st);
+    st.n += 1;
+    st.t1 = Math.max(st.t1, r.ts || 0);
+    st.t0 = Math.min(st.t0, r.ts || st.t0);
+    existing.dataset.st = JSON.stringify(st);
+    existing.innerHTML = coalLabel(st);
+    if (floatTop && existing.parentElement && existing.parentElement.firstElementChild !== existing)
+      existing.parentElement.prepend(existing);
+    if (animate) { existing.classList.remove('coal-tick'); void existing.offsetWidth; existing.classList.add('coal-tick'); }
+    return null;
+  }
+  const el = document.createElement('div');
+  el.className = 'read-coal';
+  el.dataset.gkey = gkey;
+  const st = { n: 1, t0: r.ts, t1: r.ts, coin: r.coin };
+  el.dataset.st = JSON.stringify(st);
+  el.innerHTML = coalLabel(st);
+  if ((r.titles || []).length) el.title = r.titles.join(' · ');
+  coalIndex.set(gkey, el);
+  return el;
+}
+
+// ── stream state ─────────────────────────────────────────────────────────────
+const FLOWS = {};
 const seen = new Set();
 const seenOrder = [];
-const coalIndex = new Map();   // "coin|hour" -> element
-let total = 0, breakingCount = 0, loaded = false;
+let catalystCount = 0;
 
 const keyOf = r => `${r.kind}|${r.ts}|${r.coin}|${(r.titles || []).length}|${String(r.verdict || '').slice(0, 8)}`;
-
 function remember(r) {
   const k = keyOf(r);
   if (seen.has(k)) return false;
@@ -206,7 +304,85 @@ function remember(r) {
   while (seenOrder.length > 800) seen.delete(seenOrder.shift());
   return true;
 }
+function clearEmpty(flow) {
+  const p = flow.querySelector('.pane-empty');
+  if (p) p.remove();
+}
+function insertTop(flow, node, animate, cls) {
+  clearEmpty(flow);
+  if (animate) node.classList.add(cls || 'ev-enter');
+  flow.prepend(node);
+  while (flow.children.length > 120) {
+    const last = flow.lastElementChild;
+    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
+    last.remove();
+  }
+}
 
+// one row, chronological order in → one mutation at the top of its pane
+function ingestRow(r, animate) {
+  if (!remember(r)) return;
+  if (r.kind === 'research' || (r.kind === 'read' && r.breaking)) {
+    catalystCount++;
+    insertTop(FLOWS.catalysts, catalystNode(r), animate,
+              r.breaking ? 'flash-amber' : 'ev-enter');
+    return;
+  }
+  // quiet read → watcher, time-decay
+  const isFresh = r.fresh && (r.ts || 0) >= Date.now() - FRESH_MS;
+  if (isFresh) {
+    insertTop(FLOWS.watcher, watcherFreshNode(r), animate);
+    return;
+  }
+  const node = coalMergeOrCreate(r, FLOWS.watcher, animate, true);
+  if (node) insertTop(FLOWS.watcher, node, animate);
+}
+
+// time-decay fold: fresh watcher rows age into their coin/hour groups
+const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function foldAged() {
+  const cutoff = Date.now() - FRESH_MS;
+  const nodes = FLOWS.watcher.querySelectorAll('.ev-fresh:not(.ev-fold)');
+  for (let i = nodes.length - 1; i >= 0; i--) {   // oldest first
+    const el = nodes[i];
+    let r;
+    try { r = JSON.parse(el.dataset.ev); } catch { el.remove(); continue; }
+    if ((r.ts || 0) >= cutoff) continue;
+    const g = coalMergeOrCreate(r, FLOWS.watcher, true, false);
+    if (g) { el.replaceWith(g); }
+    else if (REDUCED_MOTION) { el.remove(); }
+    else { el.classList.add('ev-fold'); setTimeout(() => el.remove(), 450); }
+  }
+}
+
+// ── header strip + empties ───────────────────────────────────────────────────
+function kpiChip(label, value, cls) {
+  return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}">${value}</span><span class="l">${label}</span></div>`;
+}
+function renderStrip(stats) {
+  if (!stats) return;
+  document.getElementById('news-strip').innerHTML =
+    kpiChip('reads today', stats.reads_today ?? 0) +
+    kpiChip('breaking', stats.breaking_today ?? 0, (stats.breaking_today ?? 0) > 0 ? 'brk' : '') +
+    kpiChip('last read', stats.last_read_ts ? fmtAgo(stats.last_read_ts) : '—');
+}
+function paneEmpties() {
+  if (!FLOWS.catalysts.children.length) {
+    const d = document.createElement('div');
+    d.className = 'pane-empty';
+    d.textContent = 'no catalysts yet — a coverage surge or a news-flavored verdict lands here';
+    FLOWS.catalysts.appendChild(d);
+  }
+  if (!FLOWS.watcher.children.length) {
+    const d = document.createElement('div');
+    d.className = 'pane-empty';
+    d.textContent = 'quiet stream — no coverage reads yet. sparse days are normal, not broken.';
+    FLOWS.watcher.appendChild(d);
+  }
+}
+
+// ── load + poll ──────────────────────────────────────────────────────────────
+let loaded = false;
 function mergeRows(data) {
   const rows = [];
   for (const it of (data.items || [])) rows.push({ kind: 'read', ...it });
@@ -214,89 +390,26 @@ function mergeRows(data) {
   rows.sort((a, b) => (a.ts || 0) - (b.ts || 0));   // chronological in, newest ends on top
   return rows;
 }
-
-const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
-
-// Flight-log copy for quiet reads: no side/surge fragments here — those only
-// matter on BREAKING cards. Single read = a timestamped check; repeats
-// coalesce per coin per hour.
-function coalLabel(st) {
-  if (st.n === 1)
-    return `<span class="mono" style="color:var(--dim);font-size:10px">${fmtHM(st.t0)}</span> ${tk(st.coin)} — coverage checked, nothing new`;
-  return `${tk(st.coin)} — coverage checked <span class="cnt mono">×${st.n}</span> this hour, nothing new`;
-}
-function ingestRow(r, animate) {
-  if (!remember(r)) return;
-  const isQuietRead = r.kind === 'read' && !r.breaking;
-  if (isQuietRead) {
-    const gkey = `${r.coin}|${Math.floor((r.ts || 0) / 3600000)}`;
-    const existing = coalIndex.get(gkey);
-    if (existing) {
-      const st = JSON.parse(existing.dataset.st);
-      st.n += 1;
-      st.t1 = Math.max(st.t1, r.ts || 0);
-      st.t0 = Math.min(st.t0, r.ts || st.t0);
-      if (r.surge_x != null) st.surge_x = r.surge_x;
-      st.headlines += (r.titles || []).length;
-      existing.dataset.st = JSON.stringify(st);
-      existing.innerHTML = coalLabel(st);
-      if (stream.firstElementChild !== existing) stream.prepend(existing);
-      if (animate) { existing.classList.remove('coal-tick'); void existing.offsetWidth; existing.classList.add('coal-tick'); }
-    } else {
-      const el = document.createElement('div');
-      el.className = 'read-coal';
-      el.dataset.gkey = gkey;
-      const st = { n: 1, t0: r.ts, t1: r.ts, coin: r.coin, side: r.side,
-                   surge_x: r.surge_x, headlines: (r.titles || []).length };
-      el.dataset.st = JSON.stringify(st);
-      el.innerHTML = coalLabel(st);
-      el.title = (r.titles || []).join(' · ') || 'no headlines captured';
-      coalIndex.set(gkey, el);
-      if (animate) el.classList.add('ev-enter');
-      stream.prepend(el);
-    }
-  } else {
-    const node = makeNode(r);
-    if (animate) node.classList.add(r.breaking ? 'flash-amber' : 'ev-enter');
-    stream.prepend(node);
-    if (r.breaking) breakingCount++;
-  }
-  total++;
-  while (stream.children.length > 150) {
-    const last = stream.lastElementChild;
-    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
-    last.remove();
-  }
-}
-
-const EMPTY_HTML = `<div class="empty">
-  quiet stream — no coverage reads or news-flavored research yet.<br>
-  the relevance filter drops homonym headlines (a beagle touching GRASS is not a
-  GRASS catalyst), so sparse days are normal, not broken.</div>`;
-
-function setMeta() {
-  document.getElementById('news-meta').textContent =
-    `${total} in stream · ${breakingCount} breaking`;
-}
-
 async function load() {
   try {
-    const data = await (await fetch('/api/dashboard/news?limit=50')).json();
+    const data = await (await fetch('/api/dashboard/news?limit=80')).json();
+    if (data.fresh_window_s) FRESH_MS = data.fresh_window_s * 1000;
+    renderStrip(data.stats);
     const rows = mergeRows(data);
     if (!loaded) {
-      stream.innerHTML = '';
+      FLOWS.catalysts.innerHTML = '';
+      FLOWS.watcher.innerHTML = '';
       for (const r of rows) ingestRow(r, false);
-      if (!stream.children.length) stream.innerHTML = EMPTY_HTML;
+      paneEmpties();
       loaded = true;
     } else {
-      const hadEmpty = stream.querySelector('.empty');
-      const before = total;
       for (const r of rows) ingestRow(r, true);
-      if (hadEmpty && total > before) hadEmpty.remove();
+      foldAged();
     }
-    setMeta();
+    document.getElementById('meta-catalysts').textContent = catalystCount ? `${catalystCount} in window` : '';
+    document.getElementById('news-meta').textContent = `flight deck · updated ${fmtHM(Date.now())}`;
   } catch (e) {
-    if (!loaded) stream.innerHTML = '<div class="empty">news load failed — is the server up?</div>';
+    if (!loaded) FLOWS.catalysts.innerHTML = '<div class="pane-empty">news load failed — is the server up?</div>';
   }
 }
 
@@ -307,8 +420,11 @@ async function load() {
   });
 })();
 
+FLOWS.catalysts = document.getElementById('flow-catalysts');
+FLOWS.watcher = document.getElementById('flow-watcher');
 load();
 setInterval(load, 30000);
+setInterval(foldAged, 20000);
 </script>
 </body>
 </html>

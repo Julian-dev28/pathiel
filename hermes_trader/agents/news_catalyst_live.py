@@ -186,6 +186,11 @@ def maybe_run(config: Dict[str, Any],
                 "surge_x": rep.surge_x,
                 "breaking": bool(rep.breaking),
                 "top3_titles": [a.title for a in (rep.headlines or [])[:3]],
+                "top3_ages_h": [
+                    (round((time.time() - a.seen.timestamp()) / 3600, 1)
+                     if a.seen else None)
+                    for a in (rep.headlines or [])[:3]
+                ],
                 "shadow": shadow_only,
                 "_rep": rep,   # stripped before recording; live-open handle
             },

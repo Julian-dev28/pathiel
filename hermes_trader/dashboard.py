@@ -961,23 +961,53 @@ def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
 # ── news feed ────────────────────────────────────────────────────────────────
 
 
-def _news_payload(limit: int = 50) -> Dict[str, Any]:
+def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, Any]:
     """News-catalyst shadow-ledger reads (newest first, breaking flagged) plus
-    recent research events that carried news context (citations / news_risk)."""
+    recent research events that carried news context (citations / news_risk).
+
+    Each item carries `fresh` (read within the activity fresh window — drives
+    the WATCHER pane's time-decay flow) and passes through `title_ages_h`
+    (per-headline article age in hours, parallel to `titles`) when the
+    recorder persisted it — the UI surfaces staleness instantly either way
+    via the read timestamp. `stats` feeds the header strip: reads/breaking
+    since local midnight + the newest read's ts. `now_ms` is for tests."""
     from hermes_trader.agents import shadow_ledger
+
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    fresh_cutoff = now - _FRESH_WINDOW_S * 1000
+    lt = time.localtime(now / 1000)
+    midnight_ms = int(time.mktime(
+        (lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0,
+         lt.tm_wday, lt.tm_yday, -1)) * 1000)
 
     rows = shadow_ledger.load("news_catalyst")
     rows.sort(key=lambda r: int(r.get("ts") or 0))
+
+    reads_today = breaking_today = 0
+    last_read_ts: Optional[int] = None
+    for r in rows:
+        ts = int(r.get("ts") or 0)
+        if last_read_ts is None or ts > last_read_ts:
+            last_read_ts = ts
+        if ts >= midnight_ms:
+            reads_today += 1
+            if (r.get("meta") or {}).get("breaking"):
+                breaking_today += 1
+
     items: List[Dict[str, Any]] = []
     for r in reversed(rows):
         meta = r.get("meta") or {}
+        ts = r.get("ts")
+        ages = meta.get("top3_ages_h")
         items.append({
-            "ts": r.get("ts"), "coin": r.get("coin"), "side": r.get("side"),
+            "ts": ts, "coin": r.get("coin"), "side": r.get("side"),
             "entry_ref_px": r.get("entry_ref_px"),
             "n_recent": meta.get("n_recent"), "surge_x": meta.get("surge_x"),
             "breaking": bool(meta.get("breaking")),
             "titles": meta.get("top3_titles") or [],
+            "title_ages_h": ages if isinstance(ages, list) else None,
             "shadow": meta.get("shadow"),
+            "fresh": int(ts or 0) >= fresh_cutoff,
         })
         if len(items) >= limit:
             break
@@ -1003,7 +1033,11 @@ def _news_payload(limit: int = 50) -> Dict[str, Any]:
         if len(ctx) >= 20:
             break
 
-    return {"items": items, "research_context": ctx}
+    return {"items": items, "research_context": ctx,
+            "stats": {"reads_today": reads_today,
+                      "breaking_today": breaking_today,
+                      "last_read_ts": last_read_ts},
+            "fresh_window_s": _FRESH_WINDOW_S}
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────────
