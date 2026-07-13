@@ -328,3 +328,17 @@ def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
         lambda args, prompt, timeout_s: json.dumps({"result": "no json", "is_error": False}),
     )
     assert ai_brain.CodexCliBrain().complete("S", "U", web_search=True) == ""
+
+
+def test_citations_never_glue_url_to_url():
+    from hermes_trader.agents import ai_brain
+
+    class R:
+        citations = ({"url_citation": {"url": "https://x.test/a", "title": "https://x.test/a"}},
+                     {"url_citation": {"url": "https://x.test/b", "title": ""}},
+                     {"url_citation": {"url": "https://x.test/c", "title": "Real Title"}})
+
+    out = ai_brain.completion_citations(R())
+    assert out[0] == "https://x.test/a"          # title==url -> url only
+    assert out[1] == "https://x.test/b"          # no title -> url only
+    assert out[2] == "Real Title — https://x.test/c"

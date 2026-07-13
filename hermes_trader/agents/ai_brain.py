@@ -120,7 +120,13 @@ def completion_citations(completion: object) -> tuple[str, ...]:
             source = nested if isinstance(nested, Mapping) else item
             url = str(source.get("url") or "").strip()
             title = str(source.get("title") or "").strip()
-            value = f"{title} — {url}" if title and url else url or title
+            # A titleless annotation must NOT render as "url — url": UIs
+            # hyperlink the whole string and the glued em dash 404s the link
+            # (ARB/cryptorank incident 2026-07-13).
+            if not title or title == url or title.startswith("http"):
+                value = url or title
+            else:
+                value = f"{title} — {url}" if url else title
         else:
             value = str(item or "").strip()
         if value:
