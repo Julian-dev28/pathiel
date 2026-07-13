@@ -309,7 +309,7 @@
   "news_catalyst": {
     "enabled": true,
     "shadow_only": false,
-    "scan_interval_min": 30,
+    "scan_interval_min": 5,
     "notional_usd": 20.0,
     "leverage": 1,
     "stop_pct": 15.0,
