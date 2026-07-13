@@ -223,3 +223,15 @@ news. Build a small xyz ticker->company map in news_catalyst.py (SKHX->SK
 Hynix, SNDK->SanDisk, BE->Bloom Energy, CRCL->Circle, KIOXIA->Kioxia, ...) used
 by _coin_query + _title_relevant for xyz coins. Without it the news_ta_quadrant
 recorder accrues ~zero xyz rows and SKHX-class conflicts stay unmeasurable.
+
+## P0 BUG: DSL tracker entry_px goes stale on position ADDS (found 2026-07-13)
+Evidence (SKHY, manual short + add): fills avg entry 158.73, close 158.90 =
+-0.1% spot / -$0.29 realized. DSL tracker kept the FIRST fill entry (159.83),
+computed +0.64% spot / +6.44% ROE, showed a green win, and ran its profit
+floor off the wrong basis. Symmetric risk: an add above tracked entry delays
+the stop beyond intended. FIX: on any size increase for a tracked coin
+(heartbeat/rehydrate sees position size > tracked size), refresh entry_px to
+the exchange's avg entryPx and recompute floors; ALSO close events should
+carry realized closedPnl from fills when available so the feed shows exchange
+truth. Tests: add-below-entry short (SKHY replay) + add-above-entry long.
+Owner: next session / Codex (dsl_exit.py + dashboard close model).
