@@ -242,14 +242,17 @@ def test_session_strip(monkeypatch):
         {"ts": now - 4000, "event": "research", "coin": "X"},
         {"ts": now - 3000, "event": "scan", "triggers": 1},
         {"ts": now - 2000, "event": "scan", "triggers": 3},
-        {"ts": now - 1000, "event": "loop_heartbeat", "equity": 39.91, "open_positions": 1},
+        {"ts": now - 1000, "event": "loop_heartbeat", "equity": 39.91,
+         "daily_pnl": -0.40, "open_positions": 1},
     ]
     monkeypatch.setattr(db, "_read_log_lines", lambda: events)
     s = db._session_strip()
     assert s["scans"] == 2 and s["candidates"] == 4      # 99 is outside the window
     assert s["researched"] == 1 and s["opened"] == 1 and s["closed"] == 2
     assert s["blocks"] == 2                              # blocked execute + preflight
-    assert s["realized_pnl_pct"] == pytest.approx(5.0)
+    # realized = EXCHANGE truth (heartbeat daily_pnl vs SOD), never summed DSL
+    # close estimates (SKHY 2026-07-13: strip showed +6.44% on a -$0.40 day)
+    assert s["realized_pnl_pct"] == pytest.approx(-0.40 / (39.91 + 0.40) * 100, abs=0.01)
     assert s["equity"] == 39.91 and s["open_positions"] == 1
 
 

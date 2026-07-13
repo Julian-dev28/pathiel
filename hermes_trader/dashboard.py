@@ -994,15 +994,17 @@ def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
             blocks += 1
         elif ev == "dsl_exit":
             closed += 1
-            pnl = e.get("realized_pnl_pct")
-            if pnl is None:
-                pnl = e.get("leveraged_pct")
-            if pnl is None:
-                pnl = e.get("unrealized_pct")
-            realized += float(pnl or 0)
         elif ev == "loop_heartbeat" and equity is None:
             equity = e.get("equity")
             open_positions = e.get("open_positions")
+            # EXCHANGE TRUTH for the strip: heartbeat daily PnL (equity vs
+            # start-of-day), never summed DSL close estimates — the tracker's
+            # believed PnL can be wrong on manually-added positions (SKHY
+            # 2026-07-13 showed +6.44% on a -$0.29 realized close; P0 in
+            # ALPHA-QUEUE.md).
+            _dp = float(e.get("daily_pnl", 0) or 0)
+            _sod = (float(equity or 0)) - _dp
+            realized = (_dp / _sod * 100) if _sod > 0 else 0.0
     return {"window_h": window_s // 3600, "since_ts": cutoff,
             "scans": scans, "candidates": triggers, "researched": researched,
             "opened": opened, "closed": closed,
