@@ -48,6 +48,7 @@ from hermes_trader.agents import dsl_exit
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
 from hermes_trader.positions_snapshot import read_snapshot as read_position_snapshot
+from hermes_trader.agents.rebalancer_owned import state_file
 
 _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
 
@@ -1012,6 +1013,273 @@ def _session_strip(window_s: int = _SESSION_WINDOW_S) -> Dict[str, Any]:
             "equity": equity, "open_positions": open_positions}
 
 
+# ── analytics: funnel, book league, funding heat, tapes, coin chart ─────────
+# Every panel here is derived from data we ALREADY pay for (the session log,
+# the shadow ledgers, the funding/OI accrual file) — the point of this page
+# is consumption, not new collection. Zero new network calls except the
+# coin-chart candles (one coin at a time, already 90s-cached in hl_client,
+# further capped by this route's own TTL).
+
+_DAY_MS = 86_400_000
+_FUNDING_OI_LOG = state_file(".data_funding_oi.jsonl")
+
+
+def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict[str, Any]:
+    """scans -> candidates -> researched -> executed, plus the top-5 humanized
+    reasons trades didn't happen (blocked executes + pre-research skips).
+    Also harvests a recent-coins list for the coin-chart selector — free,
+    it's the same walk. Pure log walk, no network."""
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    cutoff = now - window_s * 1000
+    events = _read_log_lines()
+    if len(events) > _ACTIVITY_SCAN_CAP:
+        events = events[-_ACTIVITY_SCAN_CAP:]
+
+    scans = candidates = researched = executed = blocked_exec = 0
+    reason_counts: Dict[str, int] = {}
+    coins_seen: Dict[str, int] = {}
+
+    for e in reversed(events):
+        ts = e.get("ts") or 0
+        if ts < cutoff:
+            break
+        ev = e.get("event")
+        if ev == "scan":
+            scans += 1
+            candidates += int(e.get("triggers") or 0)
+        elif ev == "research":
+            researched += 1
+            coin = e.get("coin")
+            if coin and coin not in coins_seen:
+                coins_seen[coin] = ts
+        elif ev == "execute":
+            coin = e.get("coin")
+            if coin and coin not in coins_seen:
+                coins_seen[coin] = ts
+            if e.get("executed"):
+                executed += 1
+                continue
+            blocked_exec += 1
+            blocked = e.get("blocked_by")
+            if isinstance(blocked, str):
+                blocked = [blocked]
+            hits = [humanize_reason(b) for b in (blocked or [])]
+            hits = [h for h in hits if h]
+            if not hits:
+                detail = e.get("detail")
+                if isinstance(detail, list):
+                    detail = " · ".join(str(d) for d in detail)
+                h = humanize_reason(detail)
+                if h:
+                    hits = [h]
+            for h in hits:
+                reason_counts[h] = reason_counts.get(h, 0) + 1
+        elif ev in ("ta_skip", "entry_preflight"):
+            h = humanize_reason(e.get("reason") or e.get("signal"))
+            if h:
+                reason_counts[h] = reason_counts.get(h, 0) + 1
+
+    top_reasons = sorted(reason_counts.items(), key=lambda kv: -kv[1])[:5]
+    coins = sorted(coins_seen, key=lambda c: -coins_seen[c])[:40]
+
+    return {
+        "window_s": window_s, "since_ts": cutoff,
+        "funnel": [
+            {"stage": "scans", "n": scans},
+            {"stage": "candidates", "n": candidates},
+            {"stage": "researched", "n": researched},
+            {"stage": "executed", "n": executed},
+        ],
+        "blocked_executions": blocked_exec,
+        "top_reasons": [{"reason": r, "n": n} for r, n in top_reasons],
+        "coins": coins,
+    }
+
+
+def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Every shadow-ledger book's signal inventory (shadow_ledger.summary —
+    pure local-file read, no network) merged with live/shadow/off status and
+    sizing from the live-books config. A book with ledger history but no
+    config entry is a pure zero-capital recorder. Full EV grading needs
+    forward candle fetches (scripts/shadow_status.py, too slow for a page
+    load) — this table reports honest signal/resolved/pending counts only."""
+    from hermes_trader.agents import shadow_ledger
+
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    known = {r["name"]: r for r in _books_payload()}
+    rows: List[Dict[str, Any]] = []
+    for stat in shadow_ledger.summary(now):
+        info = known.get(stat["book"])
+        rows.append({
+            "book": stat["book"], "n": stat.get("n", 0),
+            "coins": stat.get("coins", 0),
+            "last_age_h": stat.get("last_age_h"),
+            "gradeable": stat.get("gradeable", 0),
+            "resolved": stat.get("resolved", 0),
+            "pending": stat.get("pending", 0),
+            "status": info["status"] if info else "recorder",
+            "size": info["size"] if info else "—",
+            "thesis": info["thesis"] if info else "zero-capital forward measurement",
+        })
+    return rows
+
+
+def _funding_heat_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
+    """Per-coin funding-rate percentile vs its own 30d distribution + 24h OI
+    delta, ranked by how extreme the funding read is (top 10). Reads the
+    data_logger's accrual file directly — the snapshots are already paid
+    for (ZERO added API load, see data_logger.py). Honest 'accruing' state
+    below 20 snapshots rather than fabricated stats."""
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    try:
+        with open(_FUNDING_OI_LOG) as fh:
+            lines = [json.loads(ln) for ln in fh if ln.strip()]
+    except Exception:
+        lines = []
+
+    if len(lines) < 20:
+        return {"status": "accruing", "since": (lines[0].get("ts") if lines else None),
+                "count": len(lines)}
+
+    cutoff = now - 30 * _DAY_MS
+    window = [ln for ln in lines if (ln.get("ts") or 0) >= cutoff] or lines
+    latest = window[-1]
+    latest_ts = latest.get("ts", now)
+    latest_by_coin = {r.get("c"): r for r in (latest.get("rows") or []) if r.get("c")}
+
+    hist: Dict[str, List[Tuple[int, float, float]]] = {}
+    for snap in window:
+        ts = snap.get("ts") or 0
+        for row in snap.get("rows") or []:
+            c = row.get("c")
+            if not c:
+                continue
+            try:
+                f = float(row.get("f") or 0.0)
+                oi = float(row.get("oi") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            hist.setdefault(c, []).append((ts, f, oi))
+
+    day_ago = latest_ts - _DAY_MS
+    out: List[Dict[str, Any]] = []
+    for coin, rows in hist.items():
+        cur = latest_by_coin.get(coin)
+        if not cur or len(rows) < 5:
+            continue
+        try:
+            cur_f = float(cur.get("f") or 0.0)
+            oi_now = float(cur.get("oi") or 0.0)
+            px = float(cur.get("px") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        fs = sorted(f for _, f, _ in rows)
+        pctile = round(sum(1 for x in fs if x <= cur_f) / len(fs) * 100, 1)
+        prior = min(rows, key=lambda r: abs(r[0] - day_ago))
+        oi_chg = round((oi_now / prior[2] - 1) * 100, 2) if prior[2] > 0 else None
+        out.append({"coin": coin, "funding_now": cur_f, "funding_pctile": pctile,
+                    "oi_now": oi_now, "oi_change_24h_pct": oi_chg, "px": px})
+    out.sort(key=lambda r: -abs(r["funding_pctile"] - 50))
+    return {"status": "ok", "count": len(lines), "latest_ts": latest_ts, "rows": out[:10]}
+
+
+def _tapes_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
+    """Last 24h of whale_flow reads (net $ per coin, buy/sell split) and
+    news_catalyst reads (surge sparkline per coin, breaking flagged). Local
+    shadow-ledger files only — no network."""
+    from hermes_trader.agents import shadow_ledger
+
+    now = int(now_ms if now_ms is not None else time.time() * 1000)
+    cutoff = now - _DAY_MS
+
+    whale_by_coin: Dict[str, Dict[str, Any]] = {}
+    whale_rows = [r for r in shadow_ledger.load("whale_flow") if int(r.get("ts") or 0) >= cutoff]
+    for r in whale_rows:
+        meta = r.get("meta") or {}
+        coin = r.get("coin")
+        if not coin:
+            continue
+        agg = whale_by_coin.setdefault(coin, {"buy_usd": 0.0, "sell_usd": 0.0,
+                                              "net_usd": 0.0, "reads": 0})
+        agg["buy_usd"] += float(meta.get("buy_usd") or 0.0)
+        agg["sell_usd"] += float(meta.get("sell_usd") or 0.0)
+        agg["net_usd"] += float(meta.get("net_usd") or 0.0)
+        agg["reads"] += 1
+    whale = sorted(({"coin": c, **v} for c, v in whale_by_coin.items()),
+                   key=lambda r: -abs(r["net_usd"]))[:15]
+
+    news_by_coin: Dict[str, Dict[str, Any]] = {}
+    news_rows = sorted(
+        (r for r in shadow_ledger.load("news_catalyst") if int(r.get("ts") or 0) >= cutoff),
+        key=lambda r: int(r.get("ts") or 0))
+    for r in news_rows:
+        meta = r.get("meta") or {}
+        coin = r.get("coin")
+        if not coin:
+            continue
+        agg = news_by_coin.setdefault(coin, {"points": [], "breaking": False})
+        agg["points"].append(round(float(meta.get("surge_x") or 0.0), 2))
+        if meta.get("breaking"):
+            agg["breaking"] = True
+    news = sorted(
+        ({"coin": c, "surge_series": v["points"][-20:], "breaking": v["breaking"],
+          "reads": len(v["points"])} for c, v in news_by_coin.items()),
+        key=lambda r: (not r["breaking"], -r["reads"]))[:15]
+
+    return {"whale": {"rows": whale, "since": cutoff,
+                      "status": "ok" if whale_rows else "accruing"},
+            "news": {"rows": news, "since": cutoff,
+                     "status": "ok" if news_rows else "accruing"}}
+
+
+def _coin_chart_payload(coin: str, interval: str = "1h") -> Dict[str, Any]:
+    """TradingView-lite candles for one coin with OUR trade markers overlaid
+    (fills, closes, verdicts). One coin at a time, capped at 100 bars —
+    fetch_hl_candles already caches 90s per coin+interval+count; this
+    route's own TTL bounds it further."""
+    from hermes_trader.client.hl_client import fetch_hl_candles
+
+    coin = (coin or "").strip()
+    if not coin:
+        return {"coin": "", "interval": interval, "candles": [], "markers": [], "status": "no_coin"}
+    try:
+        candles = fetch_hl_candles(coin, interval, 100)
+    except Exception:
+        candles = []
+    if not candles:
+        return {"coin": coin, "interval": interval, "candles": [], "markers": [], "status": "no_data"}
+
+    c_out = [{"t": c.t, "o": c.o, "h": c.h, "l": c.l, "c": c.c, "v": c.v} for c in candles]
+    t0 = candles[0].t
+
+    markers: List[Dict[str, Any]] = []
+    events = _read_log_lines()
+    if len(events) > _ACTIVITY_SCAN_CAP:
+        events = events[-_ACTIVITY_SCAN_CAP:]
+    for e in events:
+        if e.get("coin") != coin:
+            continue
+        ts = e.get("ts") or 0
+        if ts < t0:
+            continue
+        ev = e.get("event")
+        if ev == "execute" and e.get("executed"):
+            markers.append({"t": ts, "kind": "entry", "side": e.get("side"),
+                            "px": e.get("entry_px")})
+        elif ev == "dsl_exit":
+            markers.append({"t": ts, "kind": "close",
+                            "px": e.get("fill_px") or e.get("entry_px"),
+                            "pnl_pct": e.get("realized_pnl_pct")})
+        elif ev == "ai_close":
+            markers.append({"t": ts, "kind": "close", "px": None, "pnl_pct": None})
+        elif ev == "research" and e.get("verdict") in ("LONG", "SHORT", "CLOSE"):
+            markers.append({"t": ts, "kind": "verdict", "verdict": e.get("verdict"),
+                            "confidence": e.get("confidence")})
+
+    return {"coin": coin, "interval": interval, "candles": c_out,
+            "markers": markers, "status": "ok"}
+
+
 # ── news feed ────────────────────────────────────────────────────────────────
 
 
@@ -1109,6 +1377,7 @@ def _load_template(name: str) -> str:
 _PUBLIC_HTML = _load_template("landing.html")
 _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
+_ANALYTICS_HTML = _load_template("analytics.html")
 
 
 # ── route registration ──────────────────────────────────────────────────────
@@ -1140,6 +1409,14 @@ def register_routes(app: FastAPI) -> None:
     async def news_page() -> HTMLResponse:
         """News-catalyst reads (shadow ledger) + research events with news context."""
         return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/analytics", response_class=HTMLResponse)
+    async def analytics_page() -> HTMLResponse:
+        """Data product: funnel, book league table, coin chart with our own
+        trade markers, funding/OI heat, whale + news tapes. Everything here
+        is derived from data already collected — read-only, no new network
+        load beyond one coin's candles at a time."""
+        return HTMLResponse(content=_ANALYTICS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/api/dashboard/books")
     async def dashboard_books() -> JSONResponse:
@@ -1190,6 +1467,31 @@ def register_routes(app: FastAPI) -> None:
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
         return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 25.0,
                                         lambda: _closed_trades_payload(limit)))
+
+    @app.get("/api/dashboard/funnel")
+    async def dashboard_funnel(window_s: int = Query(86400, ge=3600, le=2_592_000)) -> JSONResponse:
+        return JSONResponse(_ttl_cached(f"funnel:{window_s}", 30.0,
+                                        lambda: _funnel_payload(window_s)))
+
+    @app.get("/api/dashboard/book_league")
+    async def dashboard_book_league() -> JSONResponse:
+        return JSONResponse(_ttl_cached("book_league", 30.0, _book_league_payload))
+
+    @app.get("/api/dashboard/funding_heat")
+    async def dashboard_funding_heat() -> JSONResponse:
+        return JSONResponse(_ttl_cached("funding_heat", 60.0, _funding_heat_payload))
+
+    @app.get("/api/dashboard/tapes")
+    async def dashboard_tapes() -> JSONResponse:
+        return JSONResponse(_ttl_cached("tapes", 30.0, _tapes_payload))
+
+    @app.get("/api/dashboard/coin_chart")
+    async def dashboard_coin_chart(
+        coin: str = Query(..., min_length=1, max_length=24),
+        interval: str = Query("1h", max_length=4),
+    ) -> JSONResponse:
+        return JSONResponse(_ttl_cached(f"coin_chart:{coin}:{interval}", 60.0,
+                                        lambda: _coin_chart_payload(coin, interval)))
 
     @app.get("/api/feed/stream")
     async def feed_stream() -> StreamingResponse:

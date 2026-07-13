@@ -433,6 +433,7 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert "operator-toggle" not in r.text        # operator chrome removed
     assert "matrix-feed" not in r.text            # old sidebar feed removed
     assert 'data-nav="/activity"' in r.text and 'data-nav="/news"' in r.text
+    assert 'data-nav="/analytics"' in r.text
     # nav is DASHBOARD · ACTIVITY · NEWS — config/operator tabs deleted
     assert 'data-nav="/config"' not in r.text
     assert 'data-nav="/operator"' not in r.text
@@ -453,14 +454,14 @@ def test_config_and_operator_pages_are_gone(client):
     assert client.get("/api/dashboard/operator/trackers").status_code == 404
     assert client.post("/api/dashboard/operator/terminal",
                        json={"command": "status"}).status_code == 404
-    for path in ("/", "/activity", "/news"):
+    for path in ("/", "/activity", "/news", "/analytics"):
         page = client.get(path).text
         assert 'data-nav="/config"' not in page, path
         assert 'data-nav="/operator"' not in page, path
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news"):
+    for path in ("/", "/activity", "/news", "/analytics"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
@@ -519,7 +520,7 @@ def test_no_emoji_glyphs_anywhere(client):
     markup, geometric shapes are CSS. This sweep must stay green."""
     banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙", "🐈", "🐱",
               "🤖", "😴", "💰", "💀", "🤑", "😱", "😎", "🔒", "🔓", "🐹", "🐰"]
-    for path in ("/", "/activity", "/news"):
+    for path in ("/", "/activity", "/news", "/analytics"):
         page = client.get(path).text
         for ch in banned:
             assert ch not in page, f"{path} still renders glyph {ch!r}"
@@ -541,7 +542,7 @@ def test_landing_pixel_cat(client):
 
 
 def test_eight_bit_texture_everywhere(client):
-    for path in ("/", "/activity", "/news"):
+    for path in ("/", "/activity", "/news", "/analytics"):
         page = client.get(path).text
         assert "4px 4px 0" in page, f"{path}: missing hard pixel offset shadow"
         assert "repeating-linear-gradient" in page, f"{path}: missing scanline texture"
@@ -765,3 +766,199 @@ def test_classified_events_carry_human_fields():
                              "reason": "floor_breach (1x consec, floor=0.42)",
                              "realized_pnl_pct": 2.5, "executed": True})
     assert cl["reason_human"] == "profit floor"
+
+
+# ── analytics: funnel, book league, funding heat, tapes, coin chart ─────────
+
+def test_funnel_payload_counts_and_reasons(monkeypatch):
+    now = 100_000_000_000
+    events = [
+        {"ts": now - 2 * 86_400_000, "event": "scan", "triggers": 99},   # outside 24h window (oldest, first)
+        {"ts": now - 500, "event": "scan", "triggers": 3},
+        {"ts": now - 400, "event": "scan", "triggers": 2},
+        {"ts": now - 300, "event": "research", "coin": "ARB"},
+        {"ts": now - 250, "event": "execute", "coin": "ARB", "executed": True},
+        {"ts": now - 200, "event": "execute", "coin": "SOL", "executed": False,
+         "blocked_by": ["daily_loss_gate (PnL $-12.61 <= $-12)"]},
+        {"ts": now - 150, "event": "execute", "coin": "ETH", "executed": False,
+         "blocked_by": ["daily_loss_gate (PnL $-9.00 <= $-12)"]},
+        {"ts": now - 100, "event": "entry_preflight", "coin": "CASHCAT",
+         "reason": "history_floor_preflight (2d < 60d history)"},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    d = db._funnel_payload(window_s=86400, now_ms=now)
+    stages = {s["stage"]: s["n"] for s in d["funnel"]}
+    assert stages == {"scans": 2, "candidates": 5, "researched": 1, "executed": 1}
+    assert d["blocked_executions"] == 2
+    # the two daily_loss_gate blocks collapse into ONE humanized reason, counted twice
+    top = {r["reason"]: r["n"] for r in d["top_reasons"]}
+    assert top["daily loss floor hit ($-12.61 of $-12 today)"] == 1  # exact numbers differ
+    assert sum(top.values()) == 3   # 2 execute blocks + 1 preflight
+    assert set(d["coins"]) == {"ARB", "SOL", "ETH"}
+
+
+def test_funnel_payload_empty_log(monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    d = db._funnel_payload(window_s=86400)
+    assert all(s["n"] == 0 for s in d["funnel"])
+    assert d["top_reasons"] == [] and d["coins"] == []
+
+
+def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
+    from hermes_trader.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    with open(tmp_path / "extreme_fade.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
+                             "entry_ref_px": 100.0, "horizon_days": 3.0}) + "\n")
+    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 2000, "coin": "ETH", "signal_bar_t": 2000,
+                             "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
+    monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
+    rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
+    assert rows["extreme_fade"]["status"] == "live"
+    assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
+    assert rows["extreme_fade"]["resolved"] == 1        # far past its 3d horizon
+    # whale_flow has no _BOOKS config entry -> pure recorder
+    assert rows["whale_flow"]["status"] == "recorder"
+    assert rows["whale_flow"]["size"] == "—"
+    assert "recorder" in rows["whale_flow"]["thesis"] or "measurement" in rows["whale_flow"]["thesis"]
+
+
+def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
+    from hermes_trader.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    assert db._book_league_payload() == []
+
+
+def _write_funding_log(path, rows):
+    with open(path, "w") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+
+
+def test_funding_heat_accruing_below_threshold(monkeypatch, tmp_path):
+    log = tmp_path / "funding.jsonl"
+    _write_funding_log(log, [{"ts": 1000, "n": 1, "rows": [{"c": "BTC", "f": 0.0001, "oi": 100.0, "px": 60000.0}]}])
+    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
+    d = db._funding_heat_payload()
+    assert d["status"] == "accruing" and d["count"] == 1 and d["since"] == 1000
+
+
+def test_funding_heat_ranks_by_extremity(monkeypatch, tmp_path):
+    log = tmp_path / "funding.jsonl"
+    now = 200 * db._HOUR_MS if hasattr(db, "_HOUR_MS") else 200 * 3_600_000
+    hour = 3_600_000
+    rows = []
+    # BTC funding drifts low->low->...->HIGH (current = new high = 100th pctile)
+    for i in range(25):
+        f = 0.0001 if i < 24 else 0.0009
+        rows.append({"ts": i * hour, "n": 1,
+                     "rows": [{"c": "BTC", "f": f, "oi": 1000.0 + i, "px": 60000.0},
+                              {"c": "ETH", "f": 0.0002, "oi": 500.0, "px": 2000.0}]})
+    _write_funding_log(log, rows)
+    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
+    d = db._funding_heat_payload(now_ms=25 * hour)
+    assert d["status"] == "ok"
+    by_coin = {r["coin"]: r for r in d["rows"]}
+    assert by_coin["BTC"]["funding_pctile"] == 100.0
+    assert by_coin["BTC"]["oi_change_24h_pct"] is not None
+    # BTC (extreme) ranks ahead of ETH (flat, ~mid percentile) in the top list
+    assert d["rows"][0]["coin"] == "BTC"
+
+
+def test_funding_heat_missing_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(tmp_path / "nope.jsonl"))
+    d = db._funding_heat_payload()
+    assert d["status"] == "accruing" and d["count"] == 0 and d["since"] is None
+
+
+def test_tapes_payload_whale_and_news(monkeypatch, tmp_path):
+    from hermes_trader.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    now = 10_000_000_000
+    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": now - 1000, "coin": "BTC", "side": "long",
+                             "meta": {"buy_usd": 500000, "sell_usd": 100000, "net_usd": 400000}}) + "\n")
+        fh.write(json.dumps({"ts": now - 30 * 3_600_000, "coin": "OLD", "side": "long",
+                             "meta": {"buy_usd": 1, "sell_usd": 1, "net_usd": 0}}) + "\n")  # >24h, excluded
+    with open(tmp_path / "news_catalyst.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": now - 500, "coin": "ARB", "side": "long",
+                             "meta": {"surge_x": 4.2, "breaking": True}}) + "\n")
+    d = db._tapes_payload(now_ms=now)
+    assert d["whale"]["status"] == "ok"
+    coins = {r["coin"] for r in d["whale"]["rows"]}
+    assert coins == {"BTC"}   # OLD excluded by the 24h window
+    assert d["whale"]["rows"][0]["net_usd"] == 400000
+    assert d["news"]["rows"][0]["coin"] == "ARB" and d["news"]["rows"][0]["breaking"] is True
+
+
+def test_tapes_payload_empty_is_accruing(monkeypatch, tmp_path):
+    from hermes_trader.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    d = db._tapes_payload()
+    assert d["whale"]["status"] == "accruing" and d["whale"]["rows"] == []
+    assert d["news"]["status"] == "accruing" and d["news"]["rows"] == []
+
+
+def test_coin_chart_payload_no_coin():
+    assert db._coin_chart_payload("") == {
+        "coin": "", "interval": "1h", "candles": [], "markers": [], "status": "no_coin"}
+
+
+def test_coin_chart_payload_markers_and_candles(monkeypatch):
+    class FakeCandle:
+        def __init__(self, t, o, h, l, c, v):
+            self.t, self.o, self.h, self.l, self.c, self.v = t, o, h, l, c, v
+
+    candles = [FakeCandle(1000 + i * 3_600_000, 100 + i, 101 + i, 99 + i, 100.5 + i, 10)
+              for i in range(5)]
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda coin, interval, count: candles)
+    events = [
+        {"ts": 1000 + 3_600_000, "event": "execute", "coin": "ARB", "executed": True,
+         "side": "long", "entry_px": 101.0},
+        {"ts": 1000 + 2 * 3_600_000, "event": "dsl_exit", "coin": "ARB",
+         "fill_px": 103.0, "realized_pnl_pct": 2.0},
+        {"ts": 1000 + 3 * 3_600_000, "event": "research", "coin": "ARB", "verdict": "LONG",
+         "confidence": 0.7},
+        {"ts": 500, "event": "execute", "coin": "ARB", "executed": True,   # before candle window
+         "side": "long", "entry_px": 90.0},
+        {"ts": 1000 + 3_600_000, "event": "execute", "coin": "OTHER", "executed": True},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    d = db._coin_chart_payload("ARB", "1h")
+    assert d["status"] == "ok" and len(d["candles"]) == 5
+    kinds = [m["kind"] for m in d["markers"]]
+    assert kinds == ["entry", "close", "verdict"]   # OTHER + pre-window ARB excluded
+
+
+def test_coin_chart_payload_fetch_failure(monkeypatch):
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
+    d = db._coin_chart_payload("NOPE")
+    assert d["status"] == "no_data" and d["candles"] == []
+
+
+def test_analytics_endpoints_route(client, monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    for ep in ("/api/dashboard/funnel", "/api/dashboard/book_league",
+               "/api/dashboard/funding_heat", "/api/dashboard/tapes"):
+        r = client.get(ep)
+        assert r.status_code == 200, ep
+
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
+    r = client.get("/api/dashboard/coin_chart?coin=BTC")
+    assert r.status_code == 200 and r.json()["status"] == "no_data"
+    assert client.get("/api/dashboard/coin_chart").status_code == 422  # coin required
+
+
+def test_analytics_page_markers(client):
+    r = client.get("/analytics").text
+    for marker in ("panel-funnel", "panel-league", "panel-chart", "panel-heat",
+                  "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
+                  "heat-body", "whale-body", "news-body", "hermes-an-"):
+        assert marker in r, f"missing {marker}"
+    assert 'data-nav="/analytics"' in r

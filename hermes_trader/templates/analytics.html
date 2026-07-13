@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · analytics</title>
+<script src="/static/tailwind.js"></script>
+<style>
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370;
+    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
+    --vio:#8b5cf6;
+    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
+  }
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
+  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link:active{transform:translateY(1px)}
+  .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+  header{position:relative}
+  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
+        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:3px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
+        transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .card:hover{transform:translate(-1px,-1px);border-color:var(--line2)}
+  .glow{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
+  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+  .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap;vertical-align:baseline}
+  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent;white-space:nowrap}
+  .b-live{color:#e4defc;background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(168,85,247,.28));border-color:rgba(139,92,246,.5)}
+  .b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+  .b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
+  .b-recorder{color:var(--teal);background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.3)}
+  .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-breaking{color:#fcd34d;background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.4)}
+  .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px}
+  .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:2px;color:var(--dim);cursor:pointer}
+  .range-btn:hover{color:var(--txt)}
+  .range-btn:active{transform:translateY(1px)}
+  .range-btn.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
+  select.fsel{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);font-size:11px;font-weight:600;padding:4px 8px}
+  /* ── collapsible panels: default OPEN (this page is opt-in already) ── */
+  .panel-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:14px 18px}
+  .panel-head:active{transform:translateY(1px)}
+  .panel-head .chev{margin-left:auto;width:4px;height:4px;background:var(--dim);
+        box-shadow:-5px -4px 0 var(--dim),5px -4px 0 var(--dim);transform:rotate(180deg);transition:transform .3s ease}
+  .panel-head:hover .chev{background:var(--mut);box-shadow:-5px -4px 0 var(--mut),5px -4px 0 var(--mut)}
+  .panel.closed .panel-head .chev{transform:rotate(0deg)}
+  .panel-wrap{max-height:3000px;opacity:1;overflow:visible;transition:max-height .4s ease,opacity .3s ease}
+  .panel.closed .panel-wrap{max-height:0;opacity:0;overflow:hidden}
+  .panel-body{padding:0 18px 18px}
+  .pmeta{margin-left:auto;font-size:10px;color:var(--dim)}
+  /* grid */
+  .grid2{display:grid;grid-template-columns:1fr;gap:16px}
+  @media(min-width:1024px){.grid2{grid-template-columns:1fr 1fr}}
+  .span2{grid-column:1/-1}
+  /* funnel */
+  .funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .funnel-label{width:92px;font-size:10.5px;color:var(--dim);font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:right;flex-shrink:0}
+  .funnel-bar-wrap{flex:1;background:#12141a;border:1px solid var(--line);border-radius:3px;height:24px;position:relative;overflow:hidden}
+  .funnel-bar{height:100%;background:linear-gradient(90deg,#6366f1,#8b5cf6 70%,#a855f7);border-radius:2px;transition:width .6s cubic-bezier(.2,.7,.3,1);min-width:2px}
+  .funnel-n{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:11.5px;font-weight:750;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .reason-row{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--mut);padding:6px 0;border-bottom:1px solid var(--line)}
+  .reason-row:last-child{border-bottom:0}
+  .reason-n{color:#fcd34d;font-weight:750;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex-shrink:0}
+  /* league table */
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--txt)}
+  th.sort-on::after{content:' \25BE';color:var(--vio)}
+  th.sort-on.desc::after{content:' \25B4'}
+  .pending{color:var(--amb)}
+  .resolved{color:var(--up)}
+  /* coin chart */
+  .chart-wrap{position:relative}
+  #coin-canvas{width:100%;height:280px;display:block;background:#0e1014;border-radius:3px;border:1px solid var(--line)}
+  .chart-readout{font-size:11px;color:var(--mut);margin-top:8px;min-height:16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .legend{display:flex;gap:16px;font-size:10.5px;color:var(--dim);margin-top:6px;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .leg-dot{width:8px;height:8px;border-radius:1px;display:inline-block}
+  /* funding heat */
+  .heat-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .heat-row:last-child{border-bottom:0}
+  .heat-bar-wrap{flex:1;background:#12141a;border-radius:3px;height:14px;position:relative;overflow:hidden}
+  .heat-bar{height:100%;border-radius:2px}
+  .heat-pctile{width:52px;text-align:right;font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .heat-oi{width:78px;text-align:right;font-size:10.5px;color:var(--mut);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  /* tapes */
+  .tape-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .tape-row:last-child{border-bottom:0}
+  .tape-bar-wrap{flex:1;background:#12141a;border-radius:3px;height:12px;position:relative;overflow:hidden;display:flex}
+  .tape-bar-buy{background:var(--up);height:100%}
+  .tape-bar-sell{background:var(--dn);height:100%}
+  .tape-net{width:76px;text-align:right;font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .empty{font-size:12px;color:var(--dim);padding:10px 0;line-height:1.7}
+  @media (prefers-reduced-motion: reduce){
+    .card,.panel-wrap,.panel-head .chev,.funnel-bar{transition:none}
+  }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1240px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ ANALYTICS</small></span>
+    <span class="text-[10px] mono" style="color:var(--dim)" id="page-meta"></span>
+  </header>
+
+  <nav class="flex items-center gap-1 mb-6 flex-wrap">
+    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
+    <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
+  </nav>
+
+  <!-- FUNNEL -->
+  <section class="card glow p-0 mb-4 panel span2" id="panel-funnel">
+    <button class="panel-head" data-panel="funnel" type="button" aria-expanded="true">
+      <span class="sec-label">funnel</span>
+      <span class="pmeta mono" id="funnel-meta"></span>
+      <span class="seg" onclick="event.stopPropagation()">
+        <button data-window="86400" class="range-btn on">24h</button>
+        <button data-window="604800" class="range-btn">7d</button>
+      </span>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-funnel">
+      <div class="panel-body">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div id="funnel-bars"><div class="empty">loading&hellip;</div></div>
+          <div>
+            <div class="sec-label mb-2">why trades didn't happen</div>
+            <div id="funnel-reasons"><div class="empty">loading&hellip;</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOOK LEAGUE -->
+  <section class="card p-0 mb-4 panel span2" id="panel-league">
+    <button class="panel-head" data-panel="league" type="button" aria-expanded="true">
+      <span class="sec-label">book league</span>
+      <span class="pmeta mono" id="league-meta"></span>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-league">
+      <div class="panel-body">
+        <div class="text-[11px] mb-3" style="color:var(--dim)">signal counts from the shadow ledger — for graded EV run <span class="mono">scripts/shadow_status.py</span></div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">status</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="n">signals</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="resolved">resolved</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="pending">pending</th>
+                <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="last_age_h">last signal</th>
+              </tr>
+            </thead>
+            <tbody id="league-body">
+              <tr><td colspan="7" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COIN CHART -->
+  <section class="card p-0 mb-4 panel span2" id="panel-chart">
+    <button class="panel-head" data-panel="chart" type="button" aria-expanded="true">
+      <span class="sec-label">coin chart</span>
+      <select id="coin-select" class="fsel" style="margin-left:auto" onclick="event.stopPropagation()"></select>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-chart">
+      <div class="panel-body">
+        <div class="chart-wrap">
+          <canvas id="coin-canvas" width="1180" height="280"></canvas>
+          <div id="chart-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs" style="color:var(--dim);top:0">no candle data for this coin</div>
+        </div>
+        <div class="chart-readout mono" id="chart-readout">hover the chart for OHLC</div>
+        <div class="legend">
+          <span><span class="leg-dot" style="background:#22c55e"></span>bullish candle</span>
+          <span><span class="leg-dot" style="background:#ef4444"></span>bearish candle</span>
+          <span><span class="leg-dot" style="background:#22c55e;border-radius:50%"></span>entry (long)</span>
+          <span><span class="leg-dot" style="background:#ef4444;border-radius:50%"></span>entry (short)</span>
+          <span><span class="leg-dot" style="background:#fcd34d;transform:rotate(45deg)"></span>close</span>
+          <span><span class="leg-dot" style="background:#818cf8;border-radius:50%"></span>verdict</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid2 mb-4">
+    <!-- FUNDING/OI HEAT -->
+    <section class="card p-0 panel" id="panel-heat">
+      <button class="panel-head" data-panel="heat" type="button" aria-expanded="true">
+        <span class="sec-label">funding / oi heat</span>
+        <span class="pmeta mono" id="heat-meta"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="panel-wrap" id="wrap-heat">
+        <div class="panel-body">
+          <div id="heat-body"><div class="empty">loading&hellip;</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHALE + NEWS TAPES -->
+    <section class="card p-0 panel" id="panel-tapes">
+      <button class="panel-head" data-panel="tapes" type="button" aria-expanded="true">
+        <span class="sec-label">whale + news tapes</span>
+        <span class="pmeta mono" id="tapes-meta"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="panel-wrap" id="wrap-tapes">
+        <div class="panel-body">
+          <div class="sec-label mb-2" style="font-size:9px">whale flow · last 24h</div>
+          <div id="whale-body" class="mb-4"><div class="empty">loading&hellip;</div></div>
+          <div class="sec-label mb-2" style="font-size:9px">news coverage · last 24h</div>
+          <div id="news-body"><div class="empty">loading&hellip;</div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="text-[10px] mt-6 text-center" style="color:var(--dim)">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
+const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
+const fmtAge = h => h == null ? '—' : (h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : (h / 24).toFixed(1) + 'd');
+const fmtNum = v => {
+  if (v == null || typeof v !== 'number' || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return (v / 1e3).toFixed(2) + 'k';
+  if (a >= 1) return v.toFixed(2);
+  return v.toFixed(5);
+};
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+// ── collapsible panels — default OPEN, state remembered per panel ──────────
+document.querySelectorAll('.panel-head').forEach(btn => {
+  const name = btn.dataset.panel;
+  const panel = document.getElementById('panel-' + name);
+  const key = 'hermes-an-' + name;
+  if (localStorage.getItem(key) === '0') {
+    panel.classList.add('closed');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  btn.addEventListener('click', () => {
+    const open = !panel.classList.toggle('closed');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    localStorage.setItem(key, open ? '1' : '0');
+  });
+});
+
+function setPageMeta() {
+  document.getElementById('page-meta').textContent = 'updated ' + new Date().toTimeString().slice(0, 8);
+}
+
+// ── FUNNEL ───────────────────────────────────────────────────────────────────
+let funnelWindow = 86400;
+async function loadFunnel() {
+  try {
+    const d = await (await fetch('/api/dashboard/funnel?window_s=' + funnelWindow)).json();
+    const max = Math.max(1, ...d.funnel.map(s => s.n));
+    document.getElementById('funnel-bars').innerHTML = d.funnel.map(s => `
+      <div class="funnel-row">
+        <span class="funnel-label mono">${esc(s.stage)}</span>
+        <span class="funnel-bar-wrap"><span class="funnel-bar" style="width:${Math.max(2, s.n / max * 100)}%"></span><span class="funnel-n">${s.n}</span></span>
+      </div>`).join('');
+    const reasons = d.top_reasons || [];
+    document.getElementById('funnel-reasons').innerHTML = reasons.length
+      ? reasons.map(r => `<div class="reason-row"><span>${esc(r.reason)}</span><span class="reason-n">×${r.n}</span></div>`).join('')
+      : '<div class="empty">nothing blocked in this window</div>';
+    document.getElementById('funnel-meta').textContent = `${d.blocked_executions} blocked executions`;
+    return d;
+  } catch (e) { return null; }
+}
+document.querySelectorAll('[data-window]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('[data-window]').forEach(x => x.classList.toggle('on', x === b));
+    funnelWindow = parseInt(b.dataset.window);
+    loadFunnel();
+  });
+});
+
+// ── BOOK LEAGUE ──────────────────────────────────────────────────────────────
+const BADGE = { live: '<span class="badge b-live">LIVE</span>',
+                shadow: '<span class="badge b-shadow">SHADOW</span>',
+                off: '<span class="badge b-off">OFF</span>',
+                recorder: '<span class="badge b-recorder">RECORDER</span>' };
+let leagueRows = [];
+let leagueSort = { key: 'n', desc: true };
+
+function renderLeague() {
+  const rows = leagueRows.slice().sort((a, b) => {
+    const k = leagueSort.key;
+    const av = a[k] == null ? -Infinity : a[k], bv = b[k] == null ? -Infinity : b[k];
+    return leagueSort.desc ? bv - av : av - bv;
+  });
+  const body = document.getElementById('league-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--dim)">no shadow-ledger books yet</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => `
+    <tr class="border-b last:border-0" style="border-color:var(--line)">
+      <td class="py-2 pr-3"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
+      <td class="py-2 pr-3">${BADGE[r.status] || esc(r.status)}</td>
+      <td class="py-2 pr-3 mono" style="color:var(--mut)">${esc(r.size)}</td>
+      <td class="py-2 pr-3 mono text-right">${r.n}</td>
+      <td class="py-2 pr-3 mono text-right resolved">${r.resolved}</td>
+      <td class="py-2 pr-3 mono text-right pending">${r.pending}</td>
+      <td class="py-2 mono text-right" style="color:var(--mut)">${fmtAge(r.last_age_h)}</td>
+    </tr>`).join('');
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.toggle('sort-on', th.dataset.sort === leagueSort.key);
+    th.classList.toggle('desc', leagueSort.desc);
+  });
+}
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    leagueSort = { key, desc: leagueSort.key === key ? !leagueSort.desc : true };
+    renderLeague();
+  });
+});
+async function loadLeague() {
+  try {
+    leagueRows = await (await fetch('/api/dashboard/book_league')).json();
+    document.getElementById('league-meta').textContent = leagueRows.length + ' books';
+    renderLeague();
+  } catch (e) {}
+}
+
+// ── COIN CHART — hand-drawn candles, no plugins ─────────────────────────────
+let chartData = null;
+function drawChart() {
+  const canvas = document.getElementById('coin-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(300, rect.width) * dpr;
+  canvas.height = 280 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.clearRect(0, 0, W, H);
+  document.getElementById('chart-empty').classList.toggle('hidden', !!(chartData && chartData.candles.length));
+  if (!chartData || !chartData.candles.length) return;
+  const cs = chartData.candles;
+  const lo = Math.min(...cs.map(c => c.l)), hi = Math.max(...cs.map(c => c.h));
+  const pad = (hi - lo) * 0.08 || 1;
+  const yMin = lo - pad, yMax = hi + pad;
+  const t0 = cs[0].t, t1 = cs[cs.length - 1].t || t0 + 1;
+  const xOf = t => 40 + (t - t0) / Math.max(1, t1 - t0) * (W - 55);
+  const yOf = p => 12 + (yMax - p) / (yMax - yMin) * (H - 40);
+  const bw = Math.max(2, (W - 95) / cs.length * 0.62);
+
+  ctx.strokeStyle = '#1d212b'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = 12 + (H - 40) * i / 4;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 15, y); ctx.stroke();
+    const p = yMax - (yMax - yMin) * i / 4;
+    ctx.fillStyle = '#5c6370'; ctx.font = '9px ui-monospace,monospace';
+    ctx.fillText(fmtNum(p), W - 50, y - 2);
+  }
+  cs.forEach(c => {
+    const x = xOf(c.t), up = c.c >= c.o;
+    ctx.strokeStyle = ctx.fillStyle = up ? '#22c55e' : '#ef4444';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yOf(c.h)); ctx.lineTo(x, yOf(c.l)); ctx.stroke();
+    const oy = yOf(c.o), cy = yOf(c.c);
+    ctx.fillRect(x - bw / 2, Math.min(oy, cy), bw, Math.max(1.5, Math.abs(cy - oy)));
+  });
+  (chartData.markers || []).forEach(m => {
+    const x = xOf(m.t);
+    if (x < 38 || x > W - 15) return;
+    if (m.kind === 'entry') {
+      ctx.fillStyle = m.side === 'short' ? '#ef4444' : '#22c55e';
+      const y = m.side === 'short' ? 18 : H - 26;
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    } else if (m.kind === 'close') {
+      ctx.fillStyle = (m.pnl_pct ?? 0) >= 0 ? '#fcd34d' : '#fcd34d';
+      ctx.save(); ctx.translate(x, 16); ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-3.5, -3.5, 7, 7); ctx.restore();
+    } else if (m.kind === 'verdict') {
+      ctx.fillStyle = '#818cf8';
+      ctx.beginPath(); ctx.arc(x, H - 12, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  canvas._geom = { xOf, yOf, cs, t0, t1, W };
+}
+function coinChartHover(evt) {
+  if (!chartData || !chartData.candles.length) return;
+  const canvas = document.getElementById('coin-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = evt.clientX - rect.left;
+  const g = canvas._geom;
+  if (!g) return;
+  let nearest = g.cs[0], best = Infinity;
+  for (const c of g.cs) {
+    const d = Math.abs(g.xOf(c.t) - mx);
+    if (d < best) { best = d; nearest = c; }
+  }
+  const dt = new Date(nearest.t).toLocaleString();
+  document.getElementById('chart-readout').textContent =
+    `${dt} · O ${fmtNum(nearest.o)} H ${fmtNum(nearest.h)} L ${fmtNum(nearest.l)} C ${fmtNum(nearest.c)} · vol ${fmtNum(nearest.v)}`;
+}
+document.getElementById('coin-canvas').addEventListener('mousemove', coinChartHover);
+window.addEventListener('resize', () => { if (chartData) drawChart(); });
+
+async function loadCoinChart(coin) {
+  if (!coin) return;
+  try {
+    chartData = await (await fetch('/api/dashboard/coin_chart?coin=' + encodeURIComponent(coin) + '&interval=1h')).json();
+    drawChart();
+  } catch (e) {}
+}
+function populateCoinSelect(coins) {
+  const sel = document.getElementById('coin-select');
+  if (sel.dataset.filled) return;
+  const list = coins && coins.length ? coins : ['BTC', 'ETH', 'SOL'];
+  sel.innerHTML = list.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.dataset.filled = '1';
+  sel.addEventListener('change', () => loadCoinChart(sel.value));
+  loadCoinChart(sel.value);
+}
+
+// ── FUNDING / OI HEAT ────────────────────────────────────────────────────────
+function heatColor(pctile) {
+  if (pctile >= 80) return '#f59e0b';
+  if (pctile <= 20) return '#2dd4bf';
+  return '#6366f1';
+}
+async function loadHeat() {
+  try {
+    const d = await (await fetch('/api/dashboard/funding_heat')).json();
+    const body = document.getElementById('heat-body');
+    const meta = document.getElementById('heat-meta');
+    if (d.status === 'accruing') {
+      const since = d.since ? new Date(d.since).toLocaleDateString() : 'now';
+      body.innerHTML = `<div class="empty">accruing since ${esc(since)} — ${d.count} snapshot${d.count === 1 ? '' : 's'} so far, needs 20 for a read</div>`;
+      meta.textContent = 'accruing';
+      return;
+    }
+    meta.textContent = d.count + ' snapshots';
+    body.innerHTML = (d.rows || []).map(r => `
+      <div class="heat-row">
+        <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+        <span class="heat-bar-wrap"><span class="heat-bar" style="width:${Math.min(100, Math.abs(r.funding_pctile - 50) * 2)}%;background:${heatColor(r.funding_pctile)}"></span></span>
+        <span class="heat-pctile mono" style="color:${heatColor(r.funding_pctile)}">${r.funding_pctile.toFixed(0)}%ile</span>
+        <span class="heat-oi mono">OI ${r.oi_change_24h_pct == null ? '—' : fmtPct(r.oi_change_24h_pct)}</span>
+      </div>`).join('') || '<div class="empty">no coins with enough history yet</div>';
+  } catch (e) {}
+}
+
+// ── WHALE + NEWS TAPES ───────────────────────────────────────────────────────
+function sparkline(points) {
+  if (!points || !points.length) return '';
+  const max = Math.max(1, ...points);
+  const w = 60, h = 16, step = w / Math.max(1, points.length - 1);
+  const pts = points.map((p, i) => `${(i * step).toFixed(1)},${(h - (p / max) * h).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" style="flex-shrink:0"><polyline points="${pts}" fill="none" stroke="#8b5cf6" stroke-width="1.5"/></svg>`;
+}
+async function loadTapes() {
+  try {
+    const d = await (await fetch('/api/dashboard/tapes')).json();
+    const whale = d.whale || {}, news = d.news || {};
+    const wbody = document.getElementById('whale-body');
+    if (whale.status === 'accruing' || !(whale.rows || []).length) {
+      wbody.innerHTML = '<div class="empty">accruing — no whale reads in the last 24h yet</div>';
+    } else {
+      const maxAbs = Math.max(1, ...whale.rows.map(r => Math.abs(r.net_usd)));
+      wbody.innerHTML = whale.rows.map(r => {
+        const buyPct = Math.min(100, Math.abs(r.buy_usd) / maxAbs * 100);
+        const sellPct = Math.min(100, Math.abs(r.sell_usd) / maxAbs * 100);
+        return `<div class="tape-row">
+          <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+          <span class="tape-bar-wrap"><span class="tape-bar-buy" style="width:${buyPct}%"></span><span class="tape-bar-sell" style="width:${sellPct}%"></span></span>
+          <span class="tape-net mono" style="color:${r.net_usd >= 0 ? 'var(--up)' : 'var(--dn)'}">${fmtMoney(r.net_usd)}</span>
+        </div>`;
+      }).join('');
+    }
+    const nbody = document.getElementById('news-body');
+    if (news.status === 'accruing' || !(news.rows || []).length) {
+      nbody.innerHTML = '<div class="empty">accruing — no news reads in the last 24h yet</div>';
+    } else {
+      nbody.innerHTML = news.rows.map(r => `
+        <div class="tape-row">
+          <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+          ${sparkline(r.surge_series)}
+          <span class="mono text-[10.5px]" style="color:var(--dim)">${r.reads} read${r.reads === 1 ? '' : 's'}</span>
+          ${r.breaking ? '<span class="badge b-breaking" style="margin-left:auto">BREAKING</span>' : ''}
+        </div>`).join('');
+    }
+    document.getElementById('tapes-meta').textContent =
+      `${(whale.rows || []).length} whale · ${(news.rows || []).length} news`;
+  } catch (e) {}
+}
+
+// ── boot ─────────────────────────────────────────────────────────────────────
+(async function () {
+  const f = await loadFunnel();
+  populateCoinSelect(f ? f.coins : []);
+  loadLeague();
+  loadHeat();
+  loadTapes();
+  setPageMeta();
+})();
+setInterval(loadFunnel, 30000);
+setInterval(loadLeague, 30000);
+setInterval(() => { const sel = document.getElementById('coin-select'); if (sel.value) loadCoinChart(sel.value); }, 60000);
+setInterval(loadHeat, 60000);
+setInterval(loadTapes, 30000);
+setInterval(setPageMeta, 30000);
+</script>
+</body>
+</html>
