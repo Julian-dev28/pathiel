@@ -744,9 +744,12 @@ while True:
         # LIVE uses tiny notional, 1x default leverage, wide stop,
         # held/claim/dedup preflight, and still routes through maybe_execute.
         try:
+            # W-L latency verdict (2026-07-13): monotone EV decay -2%/6h on
+            # rally signals — hourly scans + ~15min staggered candle TTL
+            # capture +0.8-1.0%/episode at near-zero extra weight.
             _rally_exhaustion_maybe_run(
                 read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
+                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 900_000, 600_000)),
                 _book_execute, close_position_market,
             )
         except Exception as _ree:

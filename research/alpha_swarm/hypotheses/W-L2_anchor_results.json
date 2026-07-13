@@ -1,0 +1,103 @@
+{
+ "retention_note": "HL serves ~5000 5m bars (~17d); anchor set = largest crashes inside retention, NOT the 208d top-10 (those predate retention)",
+ "signals": [
+  {
+   "coin": "DYDX",
+   "sig_close_utc": "2026-07-02T00:00:00+00:00",
+   "cross_to_hour_close_pct": -3.076,
+   "cross_minute_of_hour": 50,
+   "post_close_drift_pct": {
+    "5": -4.223,
+    "10": -3.847,
+    "15": -3.902,
+    "30": -7.937,
+    "45": -7.575,
+    "60": -5.868
+   },
+   "daily_ret_pct": -20.27
+  },
+  {
+   "coin": "XPL",
+   "sig_close_utc": "2026-07-01T00:00:00+00:00",
+   "cross_to_hour_close_pct": -1.49,
+   "cross_minute_of_hour": 20,
+   "post_close_drift_pct": {
+    "5": -0.19,
+    "10": -0.496,
+    "15": -0.092,
+    "30": -0.732,
+    "45": -0.446,
+    "60": -0.113
+   },
+   "daily_ret_pct": -17.44
+  },
+  {
+   "coin": "IP",
+   "sig_close_utc": "2026-06-27T00:00:00+00:00",
+   "cross_to_hour_close_pct": 2.989,
+   "cross_minute_of_hour": 20,
+   "post_close_drift_pct": {
+    "5": -1.546,
+    "10": -1.368,
+    "15": -2.136,
+    "30": -2.321,
+    "45": -2.221,
+    "60": -1.546
+   },
+   "daily_ret_pct": -16.79
+  },
+  {
+   "coin": "JTO",
+   "sig_close_utc": "2026-07-09T00:00:00+00:00",
+   "cross_to_hour_close_pct": -3.272,
+   "cross_minute_of_hour": 45,
+   "post_close_drift_pct": {
+    "5": -0.426,
+    "10": -0.362,
+    "15": 0.579,
+    "30": 1.687,
+    "45": 1.267,
+    "60": 1.577
+   },
+   "daily_ret_pct": -13.97
+  }
+ ],
+ "summary": {
+  "n": 4,
+  "drift_5m": {
+   "mean_pct": -1.596,
+   "median_pct": -0.986,
+   "n": 4
+  },
+  "drift_10m": {
+   "mean_pct": -1.518,
+   "median_pct": -0.932,
+   "n": 4
+  },
+  "drift_15m": {
+   "mean_pct": -1.388,
+   "median_pct": -1.114,
+   "n": 4
+  },
+  "drift_30m": {
+   "mean_pct": -2.326,
+   "median_pct": -1.526,
+   "n": 4
+  },
+  "drift_45m": {
+   "mean_pct": -2.244,
+   "median_pct": -1.334,
+   "n": 4
+  },
+  "drift_60m": {
+   "mean_pct": -1.488,
+   "median_pct": -0.83,
+   "n": 4
+  },
+  "cross_to_hour_close": {
+   "mean_pct": -1.212,
+   "median_pct": -2.283,
+   "n": 4
+  }
+ }
+}

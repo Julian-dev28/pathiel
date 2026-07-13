@@ -1,0 +1,335 @@
+{
+ "cost_model": "25bps RT, funding carry ignored (delay-invariant)",
+ "resolution_note": "1h bars floor the resolution: delay 0h = open of the first hourly bar after signal close; sub-hour is interpolation + the W-L2 5m anchor",
+ "delays_h": [
+  0,
+  1,
+  3,
+  6,
+  12
+ ],
+ "bonferroni": {
+  "comparisons": 20,
+  "alpha": 0.0025
+ },
+ "funding_source": "W-L_cache_funding.json",
+ "books": {
+  "extreme_fade": {
+   "side": "long",
+   "stop_pct": 20.0,
+   "hold_h": 72,
+   "n_signals_raw": 108,
+   "n_paired": 106,
+   "ev25_pct_by_delay": {
+    "0": 3.225,
+    "1": 3.106,
+    "3": 3.507,
+    "6": 2.292,
+    "12": 0.513
+   },
+   "win_at_0h": 0.66,
+   "paired_vs_0h": {
+    "1": {
+     "mean_pct": -0.119,
+     "t": -0.47,
+     "sign_p": 0.3634,
+     "n_worse": 44,
+     "n_better": 54
+    },
+    "3": {
+     "mean_pct": 0.282,
+     "t": 0.64,
+     "sign_p": 0.1109,
+     "n_worse": 42,
+     "n_better": 59
+    },
+    "6": {
+     "mean_pct": -0.932,
+     "t": -1.51,
+     "sign_p": 0.0886,
+     "n_worse": 59,
+     "n_better": 41
+    },
+    "12": {
+     "mean_pct": -2.712,
+     "t": -2.34,
+     "sign_p": 0.0039,
+     "n_worse": 66,
+     "n_better": 36
+    }
+   },
+   "ev25_pct_at_interval": {
+    "5m": 3.22,
+    "30m": 3.195,
+    "1h": 3.165,
+    "3h": 3.259,
+    "6h": 3.079,
+    "12h": 2.241
+   }
+  },
+  "rally_exhaustion": {
+   "side": "short",
+   "stop_pct": 25.0,
+   "hold_h": 120,
+   "n_signals_raw": 65,
+   "n_paired": 62,
+   "ev25_pct_by_delay": {
+    "0": 8.5,
+    "1": 7.592,
+    "3": 7.298,
+    "6": 6.567,
+    "12": 7.591
+   },
+   "win_at_0h": 0.871,
+   "paired_vs_0h": {
+    "1": {
+     "mean_pct": -0.908,
+     "t": -1.88,
+     "sign_p": 0.2529,
+     "n_worse": 36,
+     "n_better": 26
+    },
+    "3": {
+     "mean_pct": -1.203,
+     "t": -1.74,
+     "sign_p": 0.1619,
+     "n_worse": 37,
+     "n_better": 25
+    },
+    "6": {
+     "mean_pct": -1.933,
+     "t": -2.18,
+     "sign_p": 0.1619,
+     "n_worse": 37,
+     "n_better": 25
+    },
+    "12": {
+     "mean_pct": -0.909,
+     "t": -0.9,
+     "sign_p": 0.7035,
+     "n_worse": 33,
+     "n_better": 29
+    }
+   },
+   "ev25_pct_at_interval": {
+    "5m": 8.462,
+    "30m": 8.273,
+    "1h": 8.046,
+    "3h": 7.645,
+    "6h": 7.289,
+    "12h": 7.184
+   }
+  },
+  "engulf_short": {
+   "side": "short",
+   "stop_pct": 20.0,
+   "hold_h": 24,
+   "n_signals_raw": 126,
+   "n_paired": 126,
+   "ev25_pct_by_delay": {
+    "0": -0.507,
+    "1": -0.393,
+    "3": -0.595,
+    "6": -0.867,
+    "12": -1.438
+   },
+   "win_at_0h": 0.508,
+   "paired_vs_0h": {
+    "1": {
+     "mean_pct": 0.114,
+     "t": 0.88,
+     "sign_p": 0.2467,
+     "n_worse": 56,
+     "n_better": 70
+    },
+    "3": {
+     "mean_pct": -0.088,
+     "t": -0.42,
+     "sign_p": 0.9291,
+     "n_worse": 62,
+     "n_better": 64
+    },
+    "6": {
+     "mean_pct": -0.36,
+     "t": -1.08,
+     "sign_p": 0.2467,
+     "n_worse": 70,
+     "n_better": 56
+    },
+    "12": {
+     "mean_pct": -0.931,
+     "t": -1.8,
+     "sign_p": 0.6562,
+     "n_worse": 66,
+     "n_better": 60
+    }
+   },
+   "ev25_pct_at_interval": {
+    "5m": -0.502,
+    "30m": -0.478,
+    "1h": -0.45,
+    "3h": -0.479,
+    "6h": -0.605,
+    "12h": -0.879
+   }
+  },
+  "crash_continue": {
+   "side": "short",
+   "stop_pct": 20.0,
+   "hold_h": 240,
+   "n_signals_raw": 49,
+   "n_paired": 48,
+   "ev25_pct_by_delay": {
+    "0": 5.681,
+    "1": 5.689,
+    "3": 5.83,
+    "6": 5.448,
+    "12": 5.211
+   },
+   "win_at_0h": 0.75,
+   "paired_vs_0h": {
+    "1": {
+     "mean_pct": 0.009,
+     "t": 0.03,
+     "sign_p": 1.0,
+     "n_worse": 23,
+     "n_better": 24
+    },
+    "3": {
+     "mean_pct": 0.149,
+     "t": 0.35,
+     "sign_p": 0.5601,
+     "n_worse": 26,
+     "n_better": 21
+    },
+    "6": {
+     "mean_pct": -0.232,
+     "t": -0.44,
+     "sign_p": 0.6516,
+     "n_worse": 24,
+     "n_better": 20
+    },
+    "12": {
+     "mean_pct": -0.47,
+     "t": -0.8,
+     "sign_p": 0.6655,
+     "n_worse": 22,
+     "n_better": 26
+    }
+   },
+   "ev25_pct_at_interval": {
+    "5m": 5.681,
+    "30m": 5.683,
+    "1h": 5.685,
+    "3h": 5.735,
+    "6h": 5.687,
+    "12h": 5.508
+   }
+  },
+  "funding_spike_short": {
+   "side": "short",
+   "stop_pct": 15.0,
+   "hold_h": 120,
+   "n_signals_raw": 27,
+   "n_paired": 25,
+   "ev25_pct_by_delay": {
+    "0": -0.889,
+    "1": -1.358,
+    "3": -1.675,
+    "6": -2.55,
+    "12": -4.026
+   },
+   "win_at_0h": 0.52,
+   "paired_vs_0h": {
+    "1": {
+     "mean_pct": -0.468,
+     "t": -1.12,
+     "sign_p": 1.0,
+     "n_worse": 12,
+     "n_better": 13
+    },
+    "3": {
+     "mean_pct": -0.785,
+     "t": -1.16,
+     "sign_p": 0.8388,
+     "n_worse": 11,
+     "n_better": 13
+    },
+    "6": {
+     "mean_pct": -1.661,
+     "t": -1.72,
+     "sign_p": 0.8388,
+     "n_worse": 13,
+     "n_better": 11
+    },
+    "12": {
+     "mean_pct": -3.137,
+     "t": -2.3,
+     "sign_p": 0.3075,
+     "n_worse": 15,
+     "n_better": 9
+    }
+   },
+   "ev25_pct_at_interval": {
+    "5m": -0.909,
+    "30m": -1.006,
+    "1h": -1.123,
+    "3h": -1.385,
+    "6h": -1.749,
+    "12h": -2.519
+   }
+  }
+ },
+ "extreme_fade_top10_for_anchor": [
+  {
+   "coin": "IP",
+   "sig_close_ms": 1768521600000,
+   "daily_ret_pct": -27.47
+  },
+  {
+   "coin": "ZEC",
+   "sig_close_ms": 1780617600000,
+   "daily_ret_pct": -26.01
+  },
+  {
+   "coin": "XMR",
+   "sig_close_ms": 1770336000000,
+   "daily_ret_pct": -23.32
+  },
+  {
+   "coin": "WLD",
+   "sig_close_ms": 1780790400000,
+   "daily_ret_pct": -22.01
+  },
+  {
+   "coin": "NEAR",
+   "sig_close_ms": 1780617600000,
+   "daily_ret_pct": -21.93
+  },
+  {
+   "coin": "XPL",
+   "sig_close_ms": 1780704000000,
+   "daily_ret_pct": -20.73
+  },
+  {
+   "coin": "FARTCOIN",
+   "sig_close_ms": 1766102400000,
+   "daily_ret_pct": -20.53
+  },
+  {
+   "coin": "LIT",
+   "sig_close_ms": 1767139200000,
+   "daily_ret_pct": -20.31
+  },
+  {
+   "coin": "DYDX",
+   "sig_close_ms": 1782950400000,
+   "daily_ret_pct": -20.27
+  },
+  {
+   "coin": "VVV",
+   "sig_close_ms": 1780617600000,
+   "daily_ret_pct": -20.25
+  }
+ ]
+}
