@@ -126,7 +126,8 @@ def test_activity_newest_first_and_types(monkeypatch):
     by_ts = {e["ts"]: e for e in evs}
     assert by_ts[100]["type"] == "research"
     assert by_ts[100]["web_search_used"] is True
-    assert by_ts[100]["citations"] == ["https://example.com/sol-article"]
+    assert by_ts[100]["citations"] == [
+        {"url": "https://example.com/sol-article", "title": "example.com/sol-article"}]
     assert by_ts[100]["provider"] == "openrouter"
     assert by_ts[200]["type"] == "execute" and by_ts[200]["executed"] is False
     assert by_ts[200]["gates"] == ["total notional $395 would exceed 1000% of equity ($390)"]
@@ -368,7 +369,8 @@ def test_news_payload_newest_first_breaking_flagged(monkeypatch):
     # research context: only the event with citations / non-none news_risk
     ctx = payload["research_context"]
     assert [c["coin"] for c in ctx] == ["SOL"]
-    assert ctx[0]["citations"] == ["https://example.com/sol-article"]
+    assert ctx[0]["citations"] == [
+        {"url": "https://example.com/sol-article", "title": "example.com/sol-article"}]
     assert ctx[0]["news_risk"] == "elevated"
 
 
@@ -623,6 +625,51 @@ def test_activity_flight_deck_panes(client):
     assert "OPENED" in act and "CLOSED" in act and "REFUSED" in act
     assert "nothing met the entry bar" in act
     assert "scanned the board" in act
+
+
+def test_citation_parser():
+    """Citations arrive as 'title — url', legacy 'url — url', bare 'url', or
+    dicts. The href must be the LAST http(s) URL — never the whole string
+    (the ' — ' glue 404'd as %20%E2%80%94, operator screenshot 2026-07-13)."""
+    p = db._parse_citation
+    # title — url
+    assert p("Fed holds rates — https://reuters.com/markets/fed") == \
+        {"url": "https://reuters.com/markets/fed", "title": "Fed holds rates"}
+    # em-dash INSIDE the title survives; only the trailing ' — url' is stripped
+    assert p("Japan — and Korea — rally — https://a.com/x") == \
+        {"url": "https://a.com/x", "title": "Japan — and Korea — rally"}
+    # legacy url — url → href = LAST url, text = shortened URL
+    got = p("https://a.com/very/long/path — https://a.com/very/long/path")
+    assert got["url"] == "https://a.com/very/long/path"
+    assert got["title"].startswith("a.com") and "https://" not in got["title"]
+    # bare url → shortened display text
+    got = p("https://example.com/article?utm=x")
+    assert got["url"] == "https://example.com/article?utm=x"
+    assert got["title"] == "example.com/article"
+    # dict passthrough (with and without title)
+    assert p({"url": "https://b.com/y", "title": "T"}) == {"url": "https://b.com/y", "title": "T"}
+    assert p({"url": "https://b.com/y"})["title"] == "b.com/y"
+    # garbage → None
+    assert p("no url here") is None and p("") is None and p({}) is None
+
+
+def test_research_citations_are_parsed_objects(monkeypatch):
+    evt = {"ts": 1, "event": "research", "coin": "BTC", "verdict": "LONG",
+           "confidence": 0.7, "web_search_used": True,
+           "web_search_citations": ["ETF flows surge — https://reuters.com/etf",
+                                    "https://a.com/x — https://a.com/x",
+                                    "not a citation"]}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [evt])
+    e = db._activity_payload()["events"][0]
+    assert e["citations"][0] == {"url": "https://reuters.com/etf", "title": "ETF flows surge"}
+    assert e["citations"][1]["url"] == "https://a.com/x"
+    assert len(e["citations"]) == 2                     # the garbage one is dropped
+    # the news research-context path parses too
+    payload_evt = dict(evt, news_risk="elevated")
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [payload_evt])
+    _write_news_ledger([])
+    ctx = db._news_payload()["research_context"][0]
+    assert ctx["citations"][0]["url"] == "https://reuters.com/etf"
 
 
 def test_news_flight_deck_panes(client):

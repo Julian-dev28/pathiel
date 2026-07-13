@@ -287,8 +287,11 @@ const CARD = {
     const triad = (e.entry_px || e.stop_px || e.tp_px)
       ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
     const cites = (e.citations || []).map(c => {
-      const url = typeof c === 'string' ? c : (c.url || c.link || '');
-      const title = typeof c === 'object' && c.title ? c.title : url;
+      // fallback for raw strings: href = LAST url in the string, text = the
+      // part before the trailing " — url" (never hyperlink the whole string)
+      const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
+      const title = (typeof c === 'object' && c.title) ? c.title
+                  : (String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim() || url);
       return url ? `<div class="ev-sub">· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
     }).join('');
     return `<div class="ev-head">${T(e)} ${tk(e.coin)} <b>→</b> ${v} ${conf} ${search} ${risk}</div>`

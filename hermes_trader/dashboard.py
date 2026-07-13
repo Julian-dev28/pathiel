@@ -702,6 +702,58 @@ def humanize_reason(reason: object) -> str:
     return raw
 
 
+# ── citation parsing ─────────────────────────────────────────────────────────
+# Web-search citations arrive as "title — url", legacy "url — url", bare
+# "url", or already-structured dicts. The templates were hyperlinking the
+# WHOLE string, gluing " — https://…" into the href (404s with %20%E2%80%94
+# in the address bar — operator screenshot 2026-07-13). Parse once here so
+# both /activity and /news render {url, title} objects.
+
+_CITE_URL_RE = re.compile(r"https?://\S+")
+
+
+def _short_url(u: str) -> str:
+    """Compact display text for a titleless citation: host + trimmed path."""
+    m = re.match(r"https?://([^/\s?#]+)([^\s?#]*)", u)
+    if not m:
+        return u[:40]
+    host, path = m.group(1), m.group(2) or ""
+    if len(path) > 25:
+        path = path[:24] + "…"
+    return host + path
+
+
+def _parse_citation(c: object) -> Optional[Dict[str, str]]:
+    """One citation → {url, title} or None. href = the LAST http(s) URL in
+    the string; title = the part before the trailing ' — url' separator, or
+    a shortened URL when there is no real title."""
+    if isinstance(c, dict):
+        url = str(c.get("url") or c.get("link") or "").strip()
+        if not url:
+            return None
+        title = str(c.get("title") or "").strip() or _short_url(url)
+        return {"url": url, "title": title}
+    s = str(c or "").strip()
+    urls = _CITE_URL_RE.findall(s)
+    if not urls:
+        return None
+    url = urls[-1]
+    # strip only the TRAILING " — url" — em-dashes inside the title survive
+    text = re.sub(r"\s+—\s+https?://\S+$", "", s).strip()
+    if not text or _CITE_URL_RE.fullmatch(text):
+        text = _short_url(url)
+    return {"url": url, "title": text}
+
+
+def _parse_citations(raw: object) -> List[Dict[str, str]]:
+    out = []
+    for c in (raw or []):
+        p = _parse_citation(c)
+        if p:
+            out.append(p)
+    return out
+
+
 def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
     """Map one raw session-log event to a typed activity view model. Pure.
 
@@ -727,7 +779,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
             "reasoning": e.get("reasoning"),
             "provider": e.get("ai_brain_provider"),
             "web_search_used": bool(e.get("web_search_used")),
-            "citations": e.get("web_search_citations") or [],
+            "citations": _parse_citations(e.get("web_search_citations")),
             "news_risk": e.get("news_risk"),
             "entry_px": e.get("entry_px"), "stop_px": e.get("stop_px"),
             "tp_px": e.get("tp_px"),
@@ -1026,7 +1078,7 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
         ctx.append({
             "ts": e.get("ts"), "coin": e.get("coin"),
             "verdict": e.get("verdict"), "confidence": e.get("confidence"),
-            "news_risk": risk, "citations": cites,
+            "news_risk": risk, "citations": _parse_citations(cites),
             "reasoning": e.get("reasoning"),
             "provider": e.get("ai_brain_provider"),
         })

@@ -217,8 +217,11 @@ function researchCard(c) {
     ? `<span class="chip chip-red">news risk: ${esc(c.news_risk)}</span>` : '';
   const conf = c.confidence != null ? `<span class="text-[11px] mono" style="color:var(--dim)">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
   const cites = (c.citations || []).map(x => {
-    const url = typeof x === 'string' ? x : (x.url || x.link || '');
-    const title = typeof x === 'object' && x.title ? x.title : url;
+    // fallback for raw strings: href = LAST url in the string, text = the
+    // part before the trailing " — url" (never hyperlink the whole string)
+    const url = typeof x === 'string' ? ((x.match(/https?:\/\/\S+/g) || []).pop() || '') : (x.url || x.link || '');
+    const title = (typeof x === 'object' && x.title) ? x.title
+                : (String(x || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim() || url);
     return url ? `<div>· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
   }).join('');
   return `
