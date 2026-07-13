@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
@@ -199,6 +200,100 @@ def record_trend_block_news_long(analysis: Dict[str, Any], result: Any,
                                "shadow": True})
     logger.info(f"[mover-recorders] trend-blocked catalyst LONG recorded: {coin} "
                 f"(conf {float(analysis.get('confidence') or 0):.2f}, news positive)")
+    return True
+
+
+# ── W-V news-vs-TA quadrant (2026-07-13, SKHX case) ─────────────────────────
+# Operator question: is NEWS stronger than PRICE ACTION? History cannot answer
+# it (session log carries no news_context; polar news_risk verdicts n=9, zero
+# conflicts — see research/alpha_swarm/findings/W-V_news_vs_ta.md), so every
+# directional verdict researched WITH a real headline string records a
+# zero-capital row tagged aligned/conflict/neutral. shadow_status grades the
+# quadrants forward. Insight bar: n>=30 per quadrant; pre-registered rule in
+# the findings doc. Hot-kill: mover_recorders.enabled=false.
+
+_NEWS_POS_RE = re.compile(
+    r"rall(?:y|ies)|surge[sd]?\b|soar(?:s|ed)?|jump(?:s|ed)?|record\b|"
+    r"all-time high|\bath\b|partnership|integrat(?:es|ion)|adoption|"
+    r"launch(?:es|ed)?|listing|debut|approv(?:al|es|ed)|upgrade[sd]?|bullish|"
+    r"\bburn(?:s|ing)?\b|buyback|beats?\b|inflow|milestone|expan(?:ds|sion)",
+    re.IGNORECASE,
+)
+_NEWS_NEG_RE = re.compile(
+    r"hack(?:ed|er)?\b|exploit|lawsuit|\bsues?\b|\bsued\b|fraud|"
+    r"investigation|probe\b|crash(?:es|ed)?|plunge[sd]?|dump(?:s|ed)?|"
+    r"drop(?:s|ped)?\b|fall(?:s|ing)?\b|\bfell\b|declin(?:es|ed|ing|e)|"
+    r"bearish|delist|outage|bankrupt(?:cy)?|sell-?off|liquidation[s]?\b|"
+    r"unlock(?:s|ed)?\b|downgrade[sd]?|miss(?:es|ed)\b|outflow|tension[s]?\b",
+    re.IGNORECASE,
+)
+
+
+def classify_news_polarity(news_risk: Optional[str],
+                           news_context: Optional[str]) -> Tuple[str, str]:
+    """(polarity, source). The AI's own event-time read (news_risk) wins when
+    polar; otherwise deterministic keyword polarity over the headline string.
+    Same classifier the W-V historical scripts import — one implementation."""
+    nr = (news_risk or "").lower()
+    if nr in ("positive", "negative"):
+        return nr, "news_risk"
+    text = news_context or ""
+    pos = len(_NEWS_POS_RE.findall(text))
+    neg = len(_NEWS_NEG_RE.findall(text))
+    if pos > neg:
+        return "positive", "keywords"
+    if neg > pos:
+        return "negative", "keywords"
+    return "neutral", "keywords"
+
+
+def record_news_ta_quadrant(analysis: Dict[str, Any],
+                            config: Dict[str, Any]) -> bool:
+    """Call on every research verdict. Directional verdicts (LONG/SHORT) that
+    were researched with a REAL news_context record a hypothetical trade in
+    the verdict direction (1d horizon, 15% stop) tagged with the news-vs-TA
+    quadrant, so 'do conflict verdicts underperform aligned ones?' grades
+    itself forward. One row per coin per UTC day. Nothing here trades."""
+    cfg = (config.get("mover_recorders") or {})
+    if not bool(cfg.get("enabled", True)):
+        return False
+    verdict = (analysis.get("verdict") or "").upper()
+    if verdict not in ("LONG", "SHORT"):
+        return False
+    news = (analysis.get("news_context") or "").strip()
+    if not news or news.lower() == "no news":
+        return False
+    coin = analysis.get("coin") or ""
+    try:
+        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
+    except (TypeError, ValueError):
+        px = 0.0
+    if not coin or px <= 0:
+        return False
+    now_ms = int(time.time() * 1000)
+    if not _dedup_key_hit("ntq", coin, now_ms):
+        return False
+    polarity, source = classify_news_polarity(analysis.get("news_risk"), news)
+    side = "long" if verdict == "LONG" else "short"
+    if polarity == "neutral":
+        quadrant = "neutral"
+    elif (polarity == "positive") == (side == "long"):
+        quadrant = "aligned"
+    else:
+        quadrant = "conflict"
+    shadow_ledger.record("news_ta_quadrant", coin=coin, side=side,
+                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
+                         entry_ref_px=px, horizon_days=1.0, stop_pct=15.0,
+                         meta={"quadrant": quadrant,
+                               "news_polarity": polarity,
+                               "polarity_source": source,
+                               "news_risk": (analysis.get("news_risk") or "none"),
+                               "confidence": float(analysis.get("confidence") or 0),
+                               "web_search_used": bool(analysis.get("web_search_used")),
+                               "shadow": True})
+    logger.info(f"[mover-recorders] news_ta_quadrant recorded: {coin} {side} "
+                f"{quadrant} (news {polarity}/{source}, "
+                f"conf {float(analysis.get('confidence') or 0):.2f})")
     return True
 
 

@@ -215,3 +215,11 @@ Goal: EV+/PnL+ validation, not UW feature parity.
    is the known-good crypto news wire. Research terms/stability first, then a
    listener -> warehouse -> recorder (same bars as news_catalyst). This is
    the real answer to "the second it hits" latency; RSS is minutes behind.
+
+## W-V follow-up: xyz ticker->company news aliases (found 2026-07-13)
+Lane V: the ENTIRE tokenized-equity class is news-dark — _coin_query("xyz:SKHX")
+searches "SKHX" but headlines say "SK Hynix"; only 2/126 xyz reads ever had
+news. Build a small xyz ticker->company map in news_catalyst.py (SKHX->SK
+Hynix, SNDK->SanDisk, BE->Bloom Energy, CRCL->Circle, KIOXIA->Kioxia, ...) used
+by _coin_query + _title_relevant for xyz coins. Without it the news_ta_quadrant
+recorder accrues ~zero xyz rows and SKHX-class conflicts stay unmeasurable.

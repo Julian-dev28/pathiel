@@ -99,6 +99,82 @@ def test_pass_live_disabled_records_only(monkeypatch):
     assert opened == [] and out[0][1]["meta"]["shadow"] is True
 
 
+def test_classify_news_polarity_is_deterministic():
+    # AI's polar read wins over keywords
+    assert mr.classify_news_polarity("positive", "token crashes, hack") == ("positive", "news_risk")
+    assert mr.classify_news_polarity("negative", "record rally") == ("negative", "news_risk")
+    # keyword fallback — the SKHX-class headline reads negative
+    pol, src = mr.classify_news_polarity("none",
+        "SK Hynix Falls In Seoul After Strong Nasdaq Debut: US Memory Stocks "
+        "Decline Overnight Amid Fresh US-Iran Tensions")
+    assert (pol, src) == ("negative", "keywords")
+    # the LIT burn/rally headline reads positive
+    pol, src = mr.classify_news_polarity(None,
+        "Lighter Prepares to Burn 15.5 Million LIT in First Revenue-Funded "
+        "Supply Reduction, Will LIT Rally?")
+    assert (pol, src) == ("positive", "keywords")
+    # balanced / contentless -> neutral
+    assert mr.classify_news_polarity("none", "SOL price on Jul 11 - Robinhood")[0] == "neutral"
+
+
+def test_news_ta_quadrant_tags_all_three_quadrants(monkeypatch):
+    out = _captured(monkeypatch)
+    base = {"verdict": "LONG", "confidence": 0.73, "last_price": 2.0,
+            "web_search_used": True}
+    # positive news + LONG -> aligned
+    assert mr.record_news_ta_quadrant(
+        {**base, "coin": "A1", "news_risk": "positive",
+         "news_context": "integration news"}, {}) is True
+    # positive news + SHORT -> conflict (the SKHX question)
+    assert mr.record_news_ta_quadrant(
+        {**base, "coin": "A2", "verdict": "SHORT", "news_risk": "positive",
+         "news_context": "record listing"}, {}) is True
+    # no polar news_risk, negative keywords + LONG -> conflict via keywords
+    assert mr.record_news_ta_quadrant(
+        {**base, "coin": "A3", "news_risk": "none",
+         "news_context": "Exchange hacked, token plunges"}, {}) is True
+    # real but contentless news -> neutral
+    assert mr.record_news_ta_quadrant(
+        {**base, "coin": "A4", "news_risk": "none",
+         "news_context": "Coin price on Jul 13 - Robinhood"}, {}) is True
+    rows = {kw["coin"]: (book, kw) for book, kw in out}
+    assert all(book == "news_ta_quadrant" for book, _ in rows.values())
+    assert rows["A1"][1]["meta"]["quadrant"] == "aligned"
+    assert rows["A1"][1]["side"] == "long"
+    assert rows["A2"][1]["meta"]["quadrant"] == "conflict"
+    assert rows["A2"][1]["side"] == "short"
+    assert rows["A3"][1]["meta"]["quadrant"] == "conflict"
+    assert rows["A3"][1]["meta"]["polarity_source"] == "keywords"
+    assert rows["A4"][1]["meta"]["quadrant"] == "neutral"
+    for _, kw in rows.values():
+        assert kw["horizon_days"] == 1.0 and kw["stop_pct"] == 15.0
+        assert kw["meta"]["web_search_used"] is True
+        assert kw["entry_ref_px"] == 2.0
+
+
+def test_news_ta_quadrant_skips_and_dedups(monkeypatch):
+    out = _captured(monkeypatch)
+    good = {"coin": "Q", "verdict": "SHORT", "news_risk": "positive",
+            "news_context": "big listing", "confidence": 0.7, "last_price": 5.0}
+    # 'no news' (the SKHX blind spot): nothing to tag
+    assert mr.record_news_ta_quadrant(
+        {**good, "news_context": "no news"}, {}) is False
+    # PASS verdict: no direction, no row
+    assert mr.record_news_ta_quadrant(
+        {**good, "verdict": "PASS"}, {}) is False
+    # missing price reference
+    assert mr.record_news_ta_quadrant(
+        {**good, "last_price": 0}, {}) is False
+    # hot-kill
+    assert mr.record_news_ta_quadrant(
+        good, {"mover_recorders": {"enabled": False}}) is False
+    assert out == []
+    # records once, dedups same coin same UTC day
+    assert mr.record_news_ta_quadrant(good, {}) is True
+    assert mr.record_news_ta_quadrant(good, {}) is False
+    assert len(out) == 1
+
+
 def test_trend_block_news_long_records_only_exact_pocket(monkeypatch):
     out = _captured(monkeypatch)
     blocked = {"executed": False,

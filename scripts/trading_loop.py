@@ -67,6 +67,7 @@ from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
     record_b15_crossings as _record_b15_crossings,
     record_trend_block_news_long as _record_trend_block_news_long,
+    record_news_ta_quadrant as _record_news_ta_quadrant,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
@@ -1041,6 +1042,20 @@ while True:
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})
+
+                # W-V (SKHX case): tag every directional verdict researched
+                # with a real headline string as news-vs-TA aligned/conflict/
+                # neutral — zero-capital ledger row, graded forward by
+                # shadow_status. Runs BEFORE route_verdict so the AI's own
+                # verdict (not a sidestep-mutated one) is what gets tagged.
+                try:
+                    if float(analysis.get("last_price") or 0.0) <= 0:
+                        analysis["last_price"] = next(
+                            (float(m.get("midPx") or m.get("markPx") or 0)
+                             for m in universe if m.get("coin") == coin), 0.0)
+                    _record_news_ta_quadrant(analysis, read_agent_config())
+                except Exception:
+                    pass
 
                 # All verdict→action routing lives in executor.route_verdict
                 # (unit-tested) so no verdict can be silently dropped again.

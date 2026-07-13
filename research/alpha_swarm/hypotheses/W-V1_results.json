@@ -1,0 +1,18 @@
+{
+ "NO_NEWS_DATA:24h": {
+  "n": 3410,
+  "mean_net25": -0.01543,
+  "win": 0.377,
+  "null_mean": -0.00141,
+  "p_null_ge_obs": 1.0,
+  "undersampled": false
+ },
+ "NO_NEWS_DATA:72h": {
+  "n": 3389,
+  "mean_net25": -0.02536,
+  "win": 0.392,
+  "null_mean": 0.00014,
+  "p_null_ge_obs": 1.0,
+  "undersampled": false
+ }
+}
