@@ -204,3 +204,14 @@ Goal: EV+/PnL+ validation, not UW feature parity.
    of accrual. Build when a session has budget; NOT before whale_flow's
    verdict unless idle.
 3. FINRA short-vol rewire: only if (1) validates (same read-quality class).
+
+## W-N4 AI-imported news + WSS (operator ask 2026-07-13)
+1. AI news sweep: periodic web-search brain call ("top market-moving crypto/
+   macro headlines last hour -> JSON with source+date"), citations mandatory
+   (fabrication guard), feeds the macro tape. Cost ~1 call/30min. Build with
+   eval in the same commit; verdict = does it beat the RSS tape on freshness
+   (median headline age) over 1 week of side-by-side logging.
+2. WSS low-latency news: Tree of Alpha (news.treeofalpha.com) free websocket
+   is the known-good crypto news wire. Research terms/stability first, then a
+   listener -> warehouse -> recorder (same bars as news_catalyst). This is
+   the real answer to "the second it hits" latency; RSS is minutes behind.

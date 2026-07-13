@@ -217,3 +217,15 @@ def test_short_symbols_need_hard_ticker_match():
     # hard matches still do
     assert _title_relevant("BE", "IREN, BE Networks Partner on GPU Infrastructure",
                            equity=True) is True
+
+
+def test_stale_articles_dropped_even_when_relevant():
+    from datetime import datetime, timedelta, timezone
+    from hermes_trader.agents.news_catalyst import relevant_articles, Article
+    old = Article("$PUMP 82.5B token unlock", "u", "d",
+                  datetime.now(timezone.utc) - timedelta(days=360))
+    fresh = Article("$PUMP 82.5B token unlock", "u", "d",
+                    datetime.now(timezone.utc) - timedelta(hours=3))
+    undated = Article("$PUMP unlock schedule", "u", "d", None)
+    out = relevant_articles("PUMP", [old, fresh, undated])
+    assert old not in out and fresh in out and undated in out

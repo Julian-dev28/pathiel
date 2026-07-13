@@ -343,11 +343,26 @@ def _title_relevant(sym: str, title: str, *, equity: bool = False) -> bool:
     return False
 
 
+_MAX_ARTICLE_AGE_DAYS = 7.0
+
+
+def _fresh(a: Article, max_age_days: float = _MAX_ARTICLE_AGE_DAYS) -> bool:
+    """Publish-date guard: Google's `when:` window still returns evergreen/
+    re-syndicated items with old pubDates (a Jul-2025 PUMP unlock article
+    rendered on 2026-07-13). Unknown dates pass (parse failures must not
+    blank the feed); known-old dates are dropped from counting AND display."""
+    if a.seen is None:
+        return True
+    age_s = (datetime.now(timezone.utc) - a.seen).total_seconds()
+    return age_s <= max_age_days * 86_400
+
+
 def relevant_articles(sym: str, articles: List[Article],
                       *, equity: bool = False) -> List[Article]:
-    """Drop everything that is not about THIS coin before counting/display."""
+    """Drop everything not about THIS coin, and anything stale, before
+    counting/display."""
     return [a for a in articles or []
-            if _title_relevant(sym, a.title, equity=equity)]
+            if _fresh(a) and _title_relevant(sym, a.title, equity=equity)]
 
 
 def google_news_search(query: str, when: str = "1d", limit: int = 25,
