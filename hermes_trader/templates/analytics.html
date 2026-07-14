@@ -140,7 +140,10 @@
     <div class="panel-wrap" id="wrap-funnel">
       <div class="panel-body">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div id="funnel-bars"><div class="empty">loading&hellip;</div></div>
+          <div>
+            <div id="funnel-bars"><div class="empty">loading&hellip;</div></div>
+            <div class="text-[10.5px] mt-2" style="color:var(--dim)">executed = main-engine fills + every strategy book's opens; xs_momentum's basket legs aren't individually logged — see book league</div>
+          </div>
           <div>
             <div class="sec-label mb-2">why trades didn't happen</div>
             <div id="funnel-reasons"><div class="empty">loading&hellip;</div></div>

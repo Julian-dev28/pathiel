@@ -797,6 +797,25 @@ def test_funnel_payload_counts_and_reasons(monkeypatch):
     assert set(d["coins"]) == {"ARB", "SOL", "ETH"}
 
 
+def test_funnel_payload_counts_book_opens_as_executed(monkeypatch):
+    """A book trade (extreme_fade, xs... ) never emits `execute` — only
+    `book_open`. Operator screenshot 2026-07-14: funnel showed executed=0
+    while xs_momentum held real BTC/ETH positions. book_open must count."""
+    now = 100_000_000_000
+    events = [
+        {"ts": now - 300, "event": "book_open", "book": "extreme_fade",
+         "coin": "BTC", "side": "long"},
+        {"ts": now - 200, "event": "execute", "coin": "ETH", "executed": True},
+        {"ts": now - 100, "event": "execute", "coin": "SOL", "executed": False,
+         "blocked_by": ["some gate"]},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    d = db._funnel_payload(window_s=86400, now_ms=now)
+    stages = {s["stage"]: s["n"] for s in d["funnel"]}
+    assert stages["executed"] == 2                 # book_open + execute(True)
+    assert set(d["coins"]) == {"BTC", "ETH", "SOL"}
+
+
 def test_funnel_payload_empty_log(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     d = db._funnel_payload(window_s=86400)

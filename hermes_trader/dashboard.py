@@ -1028,7 +1028,16 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
     """scans -> candidates -> researched -> executed, plus the top-5 humanized
     reasons trades didn't happen (blocked executes + pre-research skips).
     Also harvests a recent-coins list for the coin-chart selector — free,
-    it's the same walk. Pure log walk, no network."""
+    it's the same walk. Pure log walk, no network.
+
+    'executed' counts real opens from BOTH paths: the main engine's
+    `execute` event (executed=True) AND every strategy book's `book_open`
+    event — the two are disjoint (a book trade never emits `execute`). An
+    execute-only count silently zeroed out every book fill, incl. the ones
+    xs_momentum had open right now (operator screenshot 2026-07-14).
+    xs_momentum's OWN legs still don't appear here: it logs one aggregate
+    `xs_rebalance` (current basket membership, not a per-leg open event) —
+    see the book-league panel for that book's real signal count."""
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     cutoff = now - window_s * 1000
     events = _read_log_lines()
@@ -1049,6 +1058,11 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
             candidates += int(e.get("triggers") or 0)
         elif ev == "research":
             researched += 1
+            coin = e.get("coin")
+            if coin and coin not in coins_seen:
+                coins_seen[coin] = ts
+        elif ev == "book_open":
+            executed += 1
             coin = e.get("coin")
             if coin and coin not in coins_seen:
                 coins_seen[coin] = ts
