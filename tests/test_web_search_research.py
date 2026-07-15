@@ -76,6 +76,11 @@ def test_web_block_demands_real_fresh_headlines():
     # stale-catalyst incident (ARB 2026-07-12): freshness must be explicit
     assert "FRESHNESS" in research._WEB_SEARCH_BLOCK
     assert "14 days" in research._WEB_SEARCH_BLOCK
+    # resolved-event incident (PUMP 2026-07-15): a Jul-9 PREVIEW of a Jul-12
+    # unlock is only 6 days old (passes the 14-day age check) but the event
+    # it describes has already happened — must be caught separately
+    assert "RESOLVED event" in research._WEB_SEARCH_BLOCK
+    assert "outcome unconfirmed" in research._WEB_SEARCH_BLOCK
 
 
 def test_web_telemetry_does_not_confuse_request_with_actual_use(monkeypatch):
