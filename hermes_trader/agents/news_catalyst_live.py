@@ -14,9 +14,16 @@ split is built into the data.
 LIVE FLIP 2026-07-12 (operator order, ahead of the original >=60d gate):
 breaking reads (n>=3 recent articles AND surge >= 3x own baseline) open a
 bounded $20/1x LONG, 15% stop, 1d hold — the exact recorded geometry, so the
-ledger keeps grading the same shape capital trades. Evidence basis is THIN
-(n=1 historical replay); the kill is correspondingly tight:
+ledger keeps grading the same shape capital trades. Evidence basis was THIN
+(n=1 historical replay) at flip time; the pre-committed kill was
 news_catalyst.shadow_only=true, mandatory review at 10 episodes if EV25 < 0.
+
+FLIPPED BACK TO SHADOW 2026-07-16 (mandatory review triggered): shadow_status
+graded REFUTED at 34 resolved signals, -8.65%/sig @12bps, negative in BOTH
+OOS halves (-7.35% / -9.94%) — see `python scripts/shadow_status.py`. Do not
+re-flip live without fresh forward evidence overturning that verdict; the
+live geometry above (leverage/stop/hold) is kept as-is for the shadow arm so
+the ledger keeps grading the exact same trade shape.
 Non-breaking reads keep recording as the matched null in both modes.
 """
 from __future__ import annotations
