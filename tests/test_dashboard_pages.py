@@ -414,6 +414,29 @@ def test_news_payload_stats_fresh_and_title_ages(monkeypatch):
                           "last_read_ts": noon - 60_000}
 
 
+def test_news_payload_title_urls_passthrough(monkeypatch):
+    """Breaking-coverage headlines carry a source URL (title_urls, parallel
+    to titles) when the recorder persisted one (news_catalyst_live.py's
+    top3_urls) — older rows recorded before that field existed fall back to
+    title_urls=None so the UI renders them as plain, unlinked text instead
+    of guessing a link. Regression (2026-07-15): these headlines were NEVER
+    hyperlinked — only the title string was ever recorded, never the URL —
+    operator: 'keep the article links'."""
+    noon = int(time.mktime((2026, 1, 15, 12, 0, 0, 0, 0, -1)) * 1000)
+    _write_news_ledger([
+        {"ts": noon - 60_000, "coin": "A", "side": "long",
+         "meta": {"breaking": True, "top3_titles": ["fresh piece"],
+                  "top3_urls": ["https://example.com/fresh-piece"]}},
+        {"ts": noon - 2 * 3600 * 1000, "coin": "B", "side": "long",   # pre-fix row
+         "meta": {"breaking": False, "top3_titles": ["old piece"]}},
+    ])
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    p = db._news_payload(limit=10, now_ms=noon)
+    items = {i["coin"]: i for i in p["items"]}
+    assert items["A"]["title_urls"] == ["https://example.com/fresh-piece"]
+    assert items["B"]["title_urls"] is None
+
+
 # ── pages + endpoints ────────────────────────────────────────────────────────
 
 HOW_IT_WORKS = (
@@ -585,28 +608,44 @@ def test_citations_are_chips_not_blue_links(client):
         assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
 
 
-def _extract_cite_chip_snippet(html: str) -> str:
-    """Pull the esc/domainOf/citeChip pure-logic functions out of a served
-    page's <script> block so they can be executed in isolation under node —
-    no DOM/fetch dependency, safe to run outside a browser."""
-    def one_liner(name: str) -> str:
-        m = re.search(rf"^const {name} = .*?;$", html, re.M)
-        assert m, f"couldn't find `const {name} =` in page source"
-        return m.group(0)
+def _extract_js_block(html: str, kind: str, name: str) -> str:
+    """Pull one pure-logic const one-liner or multi-line function out of a
+    served page's <script> block by name, so it can be executed in
+    isolation under node — no DOM/fetch dependency, safe outside a browser."""
+    if kind == "const":
+        pat = r"^const " + re.escape(name) + r" = .*?;$"
+        flags = re.M
+    else:
+        pat = r"^function " + re.escape(name) + r"\(.*?\) \{.*?\n\}$"
+        flags = re.M | re.S
+    m = re.search(pat, html, flags)
+    assert m, f"couldn't find `{kind} {name}` in page source"
+    return m.group(0)
 
-    fn = re.search(r"^function citeChip\(c\) \{.*?\n\}$", html, re.M | re.S)
-    assert fn, "couldn't find `function citeChip` in page source"
-    return one_liner("esc") + "\n" + one_liner("domainOf") + "\n" + fn.group(0)
+
+def _run_node(html: str, blocks: list, call: str) -> str:
+    node = shutil.which("node")
+    assert node, "node not on PATH"
+    snippet = "\n".join(_extract_js_block(html, kind, name) for kind, name in blocks)
+    driver = snippet + f"\nconsole.log({call});"
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, f"js snippet crashed under node:\n{r.stderr}"
+    return r.stdout.strip()
 
 
 def _run_cite_chip(html: str, citations: list) -> list:
-    node = shutil.which("node")
-    assert node, "node not on PATH"
-    snippet = _extract_cite_chip_snippet(html)
-    driver = snippet + f"\nconsole.log(JSON.stringify({json.dumps(citations)}.map(citeChip)));"
-    r = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=10)
-    assert r.returncode == 0, f"citeChip snippet crashed under node:\n{r.stderr}"
-    return json.loads(r.stdout)
+    out = _run_node(
+        html, [("const", "esc"), ("const", "domainOf"), ("function", "citeChip")],
+        f"JSON.stringify({json.dumps(citations)}.map(citeChip))",
+    )
+    return json.loads(out)
+
+
+def _run_titles_block(html: str, item: dict) -> str:
+    return _run_node(
+        html, [("const", "esc"), ("function", "ageChip"), ("function", "titlesBlock")],
+        f"titlesBlock({json.dumps(item)})",
+    )
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
@@ -633,6 +672,38 @@ def test_cite_chip_preserves_server_shortened_path(client):
         assert "en-introdu" in out[0], f"{path}: lost the article path, collapsed to bare domain: {out[0]!r}"
         assert "Fed cuts rates by 50bps" in out[1], f"{path}: real headline mangled: {out[1]!r}"
         assert ">example.com<" in out[2], f"{path}: titleless citation should fall back to bare domain: {out[2]!r}"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
+def test_titles_block_links_headlines_when_url_present(client):
+    """Regression (2026-07-15): breaking-coverage headlines (the CATALYSTS
+    pane's readCard/titlesBlock) were NEVER hyperlinked at all — the
+    recorder only ever persisted the title string, never the source URL,
+    so there was nothing to link to. Operator pasted a real example where
+    the headline ran straight into its age with no separator or link
+    ('...Seeking Alpha48m old'), asking to 'keep the article links.' A
+    headline WITH a url now renders as a real <a class="src-link"> to that
+    url, with a space between the title and its age chip; a headline from
+    an older, pre-fix ledger row with no url falls back to plain text
+    rather than a broken link."""
+    html = client.get("/news").text
+    assert "src-link" in html, "titlesBlock never grew a linked variant"
+    linked = _run_titles_block(html, {
+        "titles": ["SK Hynix implied volatility says fasten your seatbelts (SKHY:NASDAQ) - Seeking Alpha"],
+        "title_urls": ["https://seekingalpha.com/news/skhy-implied-vol"],
+        "title_ages_h": [0.8],
+    })
+    assert 'class="src-link"' in linked, linked
+    assert 'href="https://seekingalpha.com/news/skhy-implied-vol"' in linked, linked
+    assert "Seeking Alpha</a>" in linked, f"title text not fully inside the link: {linked!r}"
+    assert "Alpha</a> <span" in linked, f"age chip glued onto the title with no separator: {linked!r}"
+    assert "48m old" in linked
+
+    unlinked = _run_titles_block(html, {
+        "titles": ["evergreen background piece"], "title_urls": None, "title_ages_h": [200.0],
+    })
+    assert "<a " not in unlinked, f"titleless-url row should not render a link: {unlinked!r}"
+    assert "evergreen background piece" in unlinked
 
 
 def test_eight_bit_texture_everywhere(client):

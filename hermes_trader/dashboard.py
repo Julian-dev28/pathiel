@@ -1327,10 +1327,12 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
 
     Each item carries `fresh` (read within the activity fresh window — drives
     the WATCHER pane's time-decay flow) and passes through `title_ages_h`
-    (per-headline article age in hours, parallel to `titles`) when the
-    recorder persisted it — the UI surfaces staleness instantly either way
-    via the read timestamp. `stats` feeds the header strip: reads/breaking
-    since local midnight + the newest read's ts. `now_ms` is for tests."""
+    (per-headline article age in hours, parallel to `titles`) and `title_urls`
+    (per-headline source link, parallel to `titles`) when the recorder
+    persisted them — older rows recorded before `top3_urls` existed have
+    `title_urls=None` and the UI falls back to plain (unlinked) text for
+    those. `stats` feeds the header strip: reads/breaking since local
+    midnight + the newest read's ts. `now_ms` is for tests."""
     from hermes_trader.agents import shadow_ledger
 
     now = int(now_ms if now_ms is not None else time.time() * 1000)
@@ -1359,6 +1361,7 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
         meta = r.get("meta") or {}
         ts = r.get("ts")
         ages = meta.get("top3_ages_h")
+        urls = meta.get("top3_urls")
         items.append({
             "ts": ts, "coin": r.get("coin"), "side": r.get("side"),
             "entry_ref_px": r.get("entry_ref_px"),
@@ -1366,6 +1369,7 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
             "breaking": bool(meta.get("breaking")),
             "titles": meta.get("top3_titles") or [],
             "title_ages_h": ages if isinstance(ages, list) else None,
+            "title_urls": urls if isinstance(urls, list) else None,
             "shadow": meta.get("shadow"),
             "fresh": int(ts or 0) >= fresh_cutoff,
         })

@@ -95,6 +95,13 @@
   .titles{margin-top:7px}
   .titles div{font-size:12.5px;color:#cfd4dd;padding:2px 0;line-height:1.6}
   .titles div::before{content:'· ';color:var(--dim)}
+  /* headline source links: apparent (dotted underline + violet arrow on
+     hover) without turning the reading list into a wall of blue text */
+  a.src-link{color:inherit;text-decoration:none;border-bottom:1px dotted var(--line2);
+    transition:color .15s ease,border-color .15s ease}
+  a.src-link::after{content:' ↗';color:var(--vio);font-size:.85em;opacity:.7}
+  a.src-link:hover{color:#fff;border-bottom-color:var(--vio)}
+  a.src-link:hover::after{opacity:1}
   /* citation source chips — a small pill, not a blue underlined link, but
      still unmistakably clickable (dot marker + hover lift + brand accent) */
   .cite-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
@@ -288,8 +295,15 @@ function citeChip(c) {
 // ── CATALYSTS pane: breaking reads + news-context research, full cards ──────
 function titlesBlock(it) {
   const ages = it.title_ages_h;
-  const lines = (it.titles || []).map((t, i) =>
-    `<div>${esc(t)}${ages && ages[i] != null ? ageChip(ages[i]) : ''}</div>`).join('');
+  const urls = it.title_urls;
+  const lines = (it.titles || []).map((t, i) => {
+    const u = urls && urls[i];
+    const body = u
+      ? `<a class="src-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`
+      : esc(t);
+    const age = ages && ages[i] != null ? ` ${ageChip(ages[i])}` : '';
+    return `<div>${body}${age}</div>`;
+  }).join('');
   return lines ? `<div class="titles">${lines}</div>` : '';
 }
 function readCard(it) {
