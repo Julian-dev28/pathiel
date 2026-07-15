@@ -694,12 +694,21 @@ function foldAged() {
 }
 
 // ── empty states per pane ────────────────────────────────────────────────────
-function paneEmpties(session) {
+function tradeEmptyCopy(session) {
   const since = session && session.since_ts ? fmtHM(session.since_ts) : '—';
   const scans = session ? session.scans : 0;
   const blocks = session ? session.blocks : 0;
+  const open = session && session.open_positions != null ? session.open_positions : 0;
+  // "nothing actionable" is only true with zero open positions — with real
+  // money held, silence in the event feed means "holding quiet", not
+  // "nothing to see" (operator: this line read as wrong with 2 open positions).
+  return open > 0
+    ? `${open} position${open === 1 ? '' : 's'} open, holding quiet — no new opens/closes since ${since} (${scans} scans, ${blocks} blocks)`
+    : `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`;
+}
+function paneEmpties(session) {
   const copy = {
-    trade: `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`,
+    trade: tradeEmptyCopy(session),
     research: 'no verdicts yet in this window',
     books: 'no book cycles yet in this window',
     machine: 'quiet',

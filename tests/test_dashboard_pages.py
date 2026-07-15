@@ -706,6 +706,38 @@ def test_titles_block_links_headlines_when_url_present(client):
     assert "evergreen background piece" in unlinked
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
+def test_trade_empty_copy_does_not_claim_nothing_actionable_with_open_positions(client):
+    """Regression (2026-07-15): operator screenshot showed the trade pane's
+    empty state reading "nothing actionable since 14:36 — engine scanning
+    normally" while two real positions (PUMP, xyz:SKHY) sat open with real
+    uPnL — the copy only ever looked at recent-event counts, never
+    session.open_positions (which the strip KPI already reads correctly,
+    dashboard.py:1000, from live heartbeat data). With open positions the
+    message must say so plainly instead of implying there is nothing to
+    watch; with zero open positions the original wording is unchanged."""
+    html = client.get("/activity").text
+    held = _run_node(
+        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
+        "tradeEmptyCopy({since_ts: Date.now(), scans: 150, blocks: 885, open_positions: 2})",
+    )
+    assert "nothing actionable" not in held, held
+    assert "2 positions open" in held and "holding quiet" in held, held
+    assert "150 scans, 885 blocks" in held, held
+
+    quiet = _run_node(
+        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
+        "tradeEmptyCopy({since_ts: Date.now(), scans: 10, blocks: 4, open_positions: 0})",
+    )
+    assert "nothing actionable since" in quiet, quiet
+
+    singular = _run_node(
+        html, [("const", "fmtHM"), ("function", "tradeEmptyCopy")],
+        "tradeEmptyCopy({since_ts: Date.now(), scans: 1, blocks: 0, open_positions: 1})",
+    )
+    assert "1 position open" in singular and "1 positions" not in singular, singular
+
+
 def test_eight_bit_texture_everywhere(client):
     for path in ("/", "/activity", "/news", "/analytics"):
         page = client.get(path).text
