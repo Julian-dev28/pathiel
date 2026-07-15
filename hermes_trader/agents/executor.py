@@ -1050,8 +1050,16 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             time.sleep(2)
             sl_res = place_hl_trigger_order(is_buy, size_in_coin, sl_px, "sl", coin)
         if sl_res.get("ok"):
+            # sl_label reflects the INTENDED distance (e.g. "15.0% spot
+            # override"); when capped, that reads as the placed distance
+            # unless the actual resulting % is spelled out here too — a
+            # 15%-configured stop at 10x leverage silently becomes 6.0% and
+            # the log said only "capped at 60% of ~liq buffer", leaving the
+            # reader to compute 0.60/leverage themselves (2026-07-15).
+            actual_dist_pct = (abs(entry_px - sl_px) / entry_px * 100.0) if entry_px > 0 else 0.0
             cap_note = (
-                f", capped at {backup_sl_max_frac:.0%} of ~liq buffer"
+                f" → actual {actual_dist_pct:.1f}% "
+                f"({backup_sl_max_frac:.0%} of ~liq buffer at {leverage:g}x)"
                 if sl_capped else ""
             )
             logger.info(f"[executor] Placed backup SL at {sl_px} "

@@ -2272,6 +2272,42 @@ def test_backup_sl_capped_inside_liquidation_buffer():
     assert abs((entry - sl) / entry - 0.06) < 1e-9
 
 
+def test_backup_sl_override_capped_logs_actual_percentage(monkeypatch, caplog):
+    """Regression (2026-07-15): a 15%-configured backup_sl_pct_override at
+    10x leverage silently becomes a 6.0% stop — backup_sl_max_frac_of_liq
+    correctly caps it inside the liquidation buffer (executor.py:1006-1010),
+    this IS correct/safe behavior, not a bug. But the log line said only
+    "15.0% spot override, capped at 60% of ~liq buffer", leaving the real
+    resulting distance to be reconstructed by hand (0.60/leverage). The real
+    xyz:SKHY trade (2026-07-15 18:38, entry 181.37, backup stop 170.49 —
+    exactly this path) hit this. The log must show the actual number, not
+    just the cap fraction that produced it."""
+    ex, _, _ = _exec_baseline(monkeypatch, {"leverage": 10})
+    triggers = []
+    monkeypatch.setattr(
+        ex, "place_hl_trigger_order",
+        lambda is_buy, sz, px, kind, coin: triggers.append(
+            {"kind": kind, "px": px}) or {"ok": True},
+    )
+    with caplog.at_level("INFO", logger="hermes_trader.agents.executor"):
+        r = ex.maybe_execute(_analysis(
+            leverage_override=10,
+            backup_sl_pct_override=15.0,
+            tp_scale_fraction_override=0.0,
+        ))
+    assert r["executed"] is True, r
+    sl_trigger = next(t for t in triggers if t["kind"] == "sl")
+    # entry 100 (get_hl_price baseline), 10x, 60% liq-buffer cap -> 6.0%
+    assert abs(sl_trigger["px"] - 94.0) < 1e-6
+
+    placed = [rec.message for rec in caplog.records if "Placed backup SL" in rec.message]
+    assert placed, "no 'Placed backup SL' log line captured"
+    msg = placed[0]
+    assert "15.0% spot override" in msg     # the intended, configured distance
+    assert "actual 6.0%" in msg, msg         # the real, resulting distance
+    assert "60% of ~liq buffer at 10x" in msg, msg
+
+
 def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):
     from hermes_trader.agents import executor
 
