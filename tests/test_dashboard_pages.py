@@ -981,3 +981,7 @@ def test_analytics_page_markers(client):
                   "heat-body", "whale-body", "news-body", "hermes-an-"):
         assert marker in r, f"missing {marker}"
     assert 'data-nav="/analytics"' in r
+    # whale $ runs into the millions — must render abbreviated ($1.31M), not
+    # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
+    assert "fmtMoneyCompact" in r
+    assert "tape-net" in r and "fmtMoneyCompact(r.net_usd)" in r
