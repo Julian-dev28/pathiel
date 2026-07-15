@@ -1110,30 +1110,54 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
     }
 
 
+# Ripped-out books keep their ledger file for historical attribution (see
+# pnl_by_book.py's BOOK_PRIORITY) but their live module is GONE — they will
+# never accrue another signal and were already graded to a verdict. Left
+# alone, the book-league table showed them as "RECORDER" alongside genuinely
+# still-accruing measurement lanes, which reads as "still being evaluated"
+# when the truth is "already decided, refuted, done" (operator confusion
+# 2026-07-15). Hand-maintained, same convention as _BOOKS: name -> the
+# closing verdict + the commit that ripped it.
+_DEAD_BOOKS: Dict[str, str] = {
+    "premium_fade_short": "REFUTED −7.27%/sig @12bps, both halves negative "
+                          "(f967e6b, 2026-07-09) — module deleted",
+    "neg_funding_fade": "REFUTED −2.0%/ep net of funding, cluster-inflated "
+                        "backtest (6916b85, 2026-07-12) — module deleted",
+}
+
+
 def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
     """Every shadow-ledger book's signal inventory (shadow_ledger.summary —
     pure local-file read, no network) merged with live/shadow/off status and
-    sizing from the live-books config. A book with ledger history but no
-    config entry is a pure zero-capital recorder. Full EV grading needs
-    forward candle fetches (scripts/shadow_status.py, too slow for a page
-    load) — this table reports honest signal/resolved/pending counts only."""
+    sizing from the live-books config. Three states for a book NOT in the
+    live-books table: DEAD (module ripped, verdict already reached — see
+    _DEAD_BOOKS) vs RECORDER (a genuine zero-capital lane still accruing
+    toward a decision). Full EV grading needs forward candle fetches
+    (scripts/shadow_status.py, too slow for a page load) — this table
+    reports honest signal/resolved/pending counts only."""
     from hermes_trader.agents import shadow_ledger
 
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     known = {r["name"]: r for r in _books_payload()}
     rows: List[Dict[str, Any]] = []
     for stat in shadow_ledger.summary(now):
-        info = known.get(stat["book"])
+        name = stat["book"]
+        info = known.get(name)
+        dead_verdict = _DEAD_BOOKS.get(name)
+        if info:
+            status, size, thesis = info["status"], info["size"], info["thesis"]
+        elif dead_verdict:
+            status, size, thesis = "dead", "—", dead_verdict
+        else:
+            status, size, thesis = "recorder", "—", "zero-capital forward measurement"
         rows.append({
-            "book": stat["book"], "n": stat.get("n", 0),
+            "book": name, "n": stat.get("n", 0),
             "coins": stat.get("coins", 0),
             "last_age_h": stat.get("last_age_h"),
             "gradeable": stat.get("gradeable", 0),
             "resolved": stat.get("resolved", 0),
             "pending": stat.get("pending", 0),
-            "status": info["status"] if info else "recorder",
-            "size": info["size"] if info else "—",
-            "thesis": info["thesis"] if info else "zero-capital forward measurement",
+            "status": status, "size": size, "thesis": thesis,
         })
     return rows
 

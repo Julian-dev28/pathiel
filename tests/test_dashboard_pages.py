@@ -843,6 +843,32 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
     assert "recorder" in rows["whale_flow"]["thesis"] or "measurement" in rows["whale_flow"]["thesis"]
 
 
+def test_book_league_ripped_books_are_dead_not_recorder(monkeypatch, tmp_path):
+    """premium_fade_short / neg_funding_fade: module deleted, ledger fully
+    graded and REFUTED — must read DEAD, never the same 'recorder' badge as
+    a genuinely still-accruing lane like whale_flow (operator confusion
+    2026-07-15: the table made a closed, refuted book look 'in progress')."""
+    from hermes_trader.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
+                             "entry_ref_px": 100.0, "horizon_days": 1.0}) + "\n")
+    with open(tmp_path / "neg_funding_fade.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 1000, "coin": "ETH", "signal_bar_t": 1000,
+                             "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
+    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 1000, "coin": "SOL", "signal_bar_t": 1000,
+                             "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
+    assert rows["premium_fade_short"]["status"] == "dead"
+    assert "REFUTED" in rows["premium_fade_short"]["thesis"]
+    assert rows["neg_funding_fade"]["status"] == "dead"
+    assert "REFUTED" in rows["neg_funding_fade"]["thesis"]
+    # a genuinely active zero-capital lane keeps the distinct "recorder" status
+    assert rows["whale_flow"]["status"] == "recorder"
+
+
 def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
     from hermes_trader.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
@@ -985,3 +1011,5 @@ def test_analytics_page_markers(client):
     # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
     assert "fmtMoneyCompact" in r
     assert "tape-net" in r and "fmtMoneyCompact(r.net_usd)" in r
+    # dead/refuted books get their own badge, distinct from an active recorder
+    assert "b-dead" in r and "REFUTED</span>" in r and "row-dead" in r
