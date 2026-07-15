@@ -276,10 +276,12 @@ const domainOf = u => { const m = String(u || '').match(/^https?:\/\/(?:www\.)?(
 function citeChip(c) {
   const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
   if (!url) return '';
-  const rawTitle = (typeof c === 'object' && c.title) ? c.title
+  const rawTitle = typeof c === 'object' ? String(c.title || '')
                   : String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim();
-  const looksLikeUrl = !rawTitle || rawTitle === url || /^(https?:\/\/|www\.)/i.test(rawTitle) || rawTitle.includes('/');
-  const label = looksLikeUrl ? domainOf(url) : rawTitle;
+  // server already shortens titleless citations to a distinguishing
+  // host+path (_parse_citation/_short_url) — keep that link text as-is.
+  // Only collapse to a bare domain when there is truly nothing to show.
+  const label = (rawTitle && rawTitle !== url) ? rawTitle : domainOf(url);
   return `<a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(rawTitle || url)}">${esc(label)}</a>`;
 }
 

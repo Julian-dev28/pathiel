@@ -10,6 +10,9 @@ is the expected behavior).
 
 import json
 import os
+import re
+import shutil
+import subprocess
 import time
 
 import pytest
@@ -580,6 +583,56 @@ def test_citations_are_chips_not_blue_links(client):
         assert "text-decoration:underline" not in r, f"{path}: still underlining citations"
         # chip still carries a real, safe, new-tab link
         assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
+
+
+def _extract_cite_chip_snippet(html: str) -> str:
+    """Pull the esc/domainOf/citeChip pure-logic functions out of a served
+    page's <script> block so they can be executed in isolation under node —
+    no DOM/fetch dependency, safe to run outside a browser."""
+    def one_liner(name: str) -> str:
+        m = re.search(rf"^const {name} = .*?;$", html, re.M)
+        assert m, f"couldn't find `const {name} =` in page source"
+        return m.group(0)
+
+    fn = re.search(r"^function citeChip\(c\) \{.*?\n\}$", html, re.M | re.S)
+    assert fn, "couldn't find `function citeChip` in page source"
+    return one_liner("esc") + "\n" + one_liner("domainOf") + "\n" + fn.group(0)
+
+
+def _run_cite_chip(html: str, citations: list) -> list:
+    node = shutil.which("node")
+    assert node, "node not on PATH"
+    snippet = _extract_cite_chip_snippet(html)
+    driver = snippet + f"\nconsole.log(JSON.stringify({json.dumps(citations)}.map(citeChip)));"
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, f"citeChip snippet crashed under node:\n{r.stderr}"
+    return json.loads(r.stdout)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
+def test_cite_chip_preserves_server_shortened_path(client):
+    """Regression (2026-07-15): the chip redesign collapsed ANY title
+    containing a '/' down to a bare domain — but the server
+    (_parse_citation/_short_url in dashboard.py) already shortens titleless
+    citations to a DISTINGUISHING host+path string, not a raw URL. That bug
+    made every citation from the same domain render as an identical chip,
+    hiding which specific article a link pointed to. Operator: 'KEEP THE
+    LINKS TO THE NEWS ARTICLES'. The label must preserve a server-shortened
+    host+path title verbatim; only a truly titleless citation falls back to
+    a bare domain."""
+    for path in ("/activity", "/news"):
+        html = client.get(path).text
+        out = _run_cite_chip(html, [
+            # real shape produced by dashboard.py's _short_url fallback
+            {"url": "https://www.kucoin.com/announcement/en-introducing-xyz-token",
+             "title": "www.kucoin.com/announcement/en-introdu…"},
+            {"url": "https://reuters.com/article/123", "title": "Fed cuts rates by 50bps"},
+            {"url": "https://example.com/foo/bar", "title": ""},
+        ])
+        assert 'href="https://www.kucoin.com/announcement/en-introducing-xyz-token"' in out[0], path
+        assert "en-introdu" in out[0], f"{path}: lost the article path, collapsed to bare domain: {out[0]!r}"
+        assert "Fed cuts rates by 50bps" in out[1], f"{path}: real headline mangled: {out[1]!r}"
+        assert ">example.com<" in out[2], f"{path}: titleless citation should fall back to bare domain: {out[2]!r}"
 
 
 def test_eight_bit_texture_everywhere(client):

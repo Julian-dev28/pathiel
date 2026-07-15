@@ -321,12 +321,12 @@ function citeChip(c) {
   // part before the trailing " — url" (never hyperlink the whole string)
   const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
   if (!url) return '';
-  const rawTitle = (typeof c === 'object' && c.title) ? c.title
+  const rawTitle = typeof c === 'object' ? String(c.title || '')
                   : String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim();
-  // no real headline (just the url/domain repeated back) -> show the clean
-  // domain as the chip label instead of a long, link-shaped path
-  const looksLikeUrl = !rawTitle || rawTitle === url || /^(https?:\/\/|www\.)/i.test(rawTitle) || rawTitle.includes('/');
-  const label = looksLikeUrl ? domainOf(url) : rawTitle;
+  // server already shortens titleless citations to a distinguishing
+  // host+path (_parse_citation/_short_url) — keep that link text as-is.
+  // Only collapse to a bare domain when there is truly nothing to show.
+  const label = (rawTitle && rawTitle !== url) ? rawTitle : domainOf(url);
   return `<a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(rawTitle || url)}">${esc(label)}</a>`;
 }
 
