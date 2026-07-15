@@ -526,19 +526,45 @@ def test_no_emoji_glyphs_anywhere(client):
             assert ch not in page, f"{path} still renders glyph {ch!r}"
 
 
-def test_landing_pixel_cat(client):
-    """The cat is back — crafted 16x16 SVG pixel art with status-driven
-    states, not an emoji."""
-    r = client.get("/").text
-    assert 'id="pixel-cat"' in r
-    assert "<rect" in r and "crispEdges" in r        # rect-grid pixel art
-    for state in ("cat-sleep", "cat-sad", "cat-alert", "cat-bounce"):
-        assert state in r, f"missing cat state {state}"
-    assert "c-tail-a" in r and "c-tail-b" in r       # two-frame tail flick
-    assert "c-zzz" in r                              # sleep pixels
-    assert "c-ears-p" in r and "c-ears-f" in r       # perked + flattened ears
-    assert "updateCat" in r                          # state driven by summary data
-    assert "prefers-reduced-motion" in r             # static cat under reduced motion
+def test_pixel_cat_on_every_tab(client):
+    """The cat is on every tab (operator order 2026-07-15), not just the
+    dashboard — crafted 16x16 SVG pixel art with status-driven states, not
+    an emoji, on all four pages, each independently polling for its state."""
+    for path in ("/", "/activity", "/news", "/analytics"):
+        r = client.get(path).text
+        assert 'id="pixel-cat"' in r, f"{path}: missing the cat"
+        assert "<rect" in r and "crispEdges" in r, f"{path}: not real pixel art"
+        for state in ("cat-sleep", "cat-sad", "cat-alert", "cat-bounce"):
+            assert state in r, f"{path}: missing cat state {state}"
+        assert "c-tail-a" in r and "c-tail-b" in r, f"{path}: no tail flick"
+        assert "c-zzz" in r, f"{path}: no sleep pixels"
+        assert "c-ears-p" in r and "c-ears-f" in r, f"{path}: no ear states"
+        assert "updateCat" in r, f"{path}: cat not driven by summary data"
+        assert "prefers-reduced-motion" in r, f"{path}: no static-cat fallback"
+        # every non-landing tab fetches its own /api/dashboard/summary poll
+        # to drive the cat rather than sharing state across pages
+        if path != "/":
+            assert "refreshCat" in r and "/api/dashboard/summary" in r, path
+
+
+def test_skeleton_shimmer_replaces_loading_text(client):
+    """Modern loading state (operator: 'best design principles, modernity') —
+    analytics' initial panel placeholders are shimmer bars, not bare
+    'loading…' text, matching how Robinhood/Stripe/Linear-class apps signal
+    an in-flight fetch."""
+    r = client.get("/analytics").text
+    assert "skeleton" in r and "shimmer" in r
+    assert r.count('class="skeleton"') >= 5
+
+
+def test_kpi_tick_flash_on_value_change(client):
+    """Session-strip KPI numbers flash on change (same green/red tick
+    language as the positions table), not a hard silent swap — a small but
+    real 'live app' signal, present on both flowing-stream pages."""
+    for path in ("/activity", "/news"):
+        r = client.get(path).text
+        assert "flashChanged" in r and "data-k=" in r, path
+        assert "tick-up" in r and "tick-dn" in r, path
 
 
 def test_eight_bit_texture_everywhere(client):

@@ -108,8 +108,40 @@
   .tape-bar-sell{background:var(--dn);height:100%}
   .tape-net{width:76px;text-align:right;font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .empty{font-size:12px;color:var(--dim);padding:10px 0;line-height:1.7}
+  /* ── the pixel cat (same mascot as the dashboard, every tab) ── */
+  .cat{width:28px;height:28px;display:inline-block;margin-right:9px}
+  .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+  .cat .c-ears-p,.cat .c-ears-f,.cat .c-eyes-w,.cat .c-eyes-c,.cat .c-zzz{display:none}
+  .cat.cat-alert .c-ears-n,.cat.cat-alert .c-eyes-n{display:none}
+  .cat.cat-alert .c-ears-p,.cat.cat-alert .c-eyes-w{display:block}
+  .cat.cat-sad .c-ears-n{display:none}
+  .cat.cat-sad .c-ears-f{display:block}
+  .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
+  .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
+  .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
+  .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
+  @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes tail-b{0%,49%{opacity:0}50%,100%{opacity:1}}
+  .cat.cat-sleep .c-tail-a{animation:none;opacity:1}
+  .cat.cat-sleep .c-tail-b{animation:none;opacity:0}
+  .cat.cat-sleep svg{animation:cat-breathe 3.2s ease-in-out infinite;transform-origin:50% 100%}
+  @keyframes cat-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.93)}}
+  .cat .c-zzz rect{animation:zzz 2.4s steps(1) infinite}
+  .cat .c-zzz rect:nth-child(2){animation-delay:.8s}
+  .cat .c-zzz rect:nth-child(3){animation-delay:1.6s}
+  @keyframes zzz{0%,60%{opacity:1}61%,100%{opacity:.15}}
+  .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
+  @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
+  /* ── skeleton shimmer: modern loading state, replaces "loading…" text ── */
+  .skeleton{position:relative;overflow:hidden;background:#171a20;border-radius:3px;color:transparent !important;display:inline-block;min-width:64px;min-height:14px}
+  .skeleton::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(139,92,246,.14),transparent);
+    animation:shimmer 1.6s ease-in-out infinite}
+  @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
   @media (prefers-reduced-motion: reduce){
     .card,.panel-wrap,.panel-head .chev,.funnel-bar{transition:none}
+    .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
+    .skeleton::after{animation:none}
   }
 </style>
 </head>
@@ -117,7 +149,45 @@
 <div class="max-w-[1240px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ ANALYTICS</small></span>
+    <span class="brand flex items-center">
+      <span id="pixel-cat" class="cat" title="the cat watches the tape">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g class="c-ears-n">
+            <rect x="3" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="12" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="4" y="3" width="1" height="1" fill="#f0abfc"/><rect x="11" y="3" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-p">
+            <rect x="3" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="12" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="4" y="2" width="1" height="1" fill="#f0abfc"/><rect x="11" y="2" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-f">
+            <rect x="2" y="3" width="4" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="4" height="1" fill="#f4f6fa"/>
+          </g>
+          <rect x="2" y="4" width="12" height="9" fill="#f4f6fa"/>
+          <g class="c-eyes-n">
+            <rect x="4" y="7" width="2" height="2" fill="#22c55e"/><rect x="10" y="7" width="2" height="2" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-w">
+            <rect x="4" y="6" width="2" height="3" fill="#22c55e"/><rect x="10" y="6" width="2" height="3" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-c">
+            <rect x="4" y="8" width="2" height="1" fill="#5c6370"/><rect x="10" y="8" width="2" height="1" fill="#5c6370"/>
+          </g>
+          <rect x="7" y="10" width="2" height="1" fill="#f0abfc"/>
+          <rect x="0" y="10" width="2" height="1" fill="#5c6370"/><rect x="14" y="10" width="2" height="1" fill="#5c6370"/>
+          <rect x="2" y="12" width="12" height="1" fill="#8b5cf6"/>
+          <rect x="3" y="14" width="2" height="1" fill="#c9ced8"/><rect x="11" y="14" width="2" height="1" fill="#c9ced8"/>
+          <g class="c-tail-a"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="11" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-tail-b"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="13" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-zzz">
+            <rect x="12" y="2" width="1" height="1" fill="#8b5cf6"/><rect x="13" y="1" width="1" height="1" fill="#a78bfa"/><rect x="14" y="0" width="1" height="1" fill="#c4b5fd"/>
+          </g>
+        </svg>
+      </span>
+      <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ ANALYTICS</small>
+    </span>
     <span class="text-[10px] mono" style="color:var(--dim)" id="page-meta"></span>
   </header>
 
@@ -143,12 +213,12 @@
       <div class="panel-body">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <div id="funnel-bars"><div class="empty">loading&hellip;</div></div>
+            <div id="funnel-bars"><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div></div>
             <div class="text-[10.5px] mt-2" style="color:var(--dim)">executed = main-engine fills + every strategy book's opens; xs_momentum's basket legs aren't individually logged — see book league</div>
           </div>
           <div>
             <div class="sec-label mb-2">why trades didn't happen</div>
-            <div id="funnel-reasons"><div class="empty">loading&hellip;</div></div>
+            <div id="funnel-reasons"><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div></div>
           </div>
         </div>
       </div>
@@ -179,7 +249,7 @@
               </tr>
             </thead>
             <tbody id="league-body">
-              <tr><td colspan="7" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+              <tr><td colspan="7" class="py-2"><div class="skeleton" style="width:100%;height:18px"></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -223,7 +293,7 @@
       </button>
       <div class="panel-wrap" id="wrap-heat">
         <div class="panel-body">
-          <div id="heat-body"><div class="empty">loading&hellip;</div></div>
+          <div id="heat-body"><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div></div>
         </div>
       </div>
     </section>
@@ -238,9 +308,9 @@
       <div class="panel-wrap" id="wrap-tapes">
         <div class="panel-body">
           <div class="sec-label mb-2" style="font-size:9px">whale flow · last 24h</div>
-          <div id="whale-body" class="mb-4"><div class="empty">loading&hellip;</div></div>
+          <div id="whale-body" class="mb-4"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
           <div class="sec-label mb-2" style="font-size:9px">news coverage · last 24h</div>
-          <div id="news-body"><div class="empty">loading&hellip;</div></div>
+          <div id="news-body"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
         </div>
       </div>
     </section>
@@ -562,6 +632,28 @@ setInterval(() => { const sel = document.getElementById('coin-select'); if (sel.
 setInterval(loadHeat, 60000);
 setInterval(loadTapes, 30000);
 setInterval(setPageMeta, 30000);
+
+// ── the cat reacts to the tape (same mascot + logic as the dashboard) ──────
+let catLastEquity = null;
+function updateCat(s) {
+  const cat = document.getElementById('pixel-cat');
+  if (!cat) return;
+  cat.classList.remove('cat-sleep', 'cat-sad', 'cat-alert');
+  if (s.status !== 'scanning') cat.classList.add('cat-sleep');
+  else if ((s.daily_pnl ?? 0) < 0) cat.classList.add('cat-sad');
+  else if ((s.open_positions ?? 0) > 0) cat.classList.add('cat-alert');
+  if (catLastEquity != null && (s.equity ?? 0) > catLastEquity + 0.004) {
+    cat.classList.remove('cat-bounce');
+    void cat.offsetWidth;
+    cat.classList.add('cat-bounce');
+  }
+  catLastEquity = s.equity ?? catLastEquity;
+}
+async function refreshCat() {
+  try { updateCat(await (await fetch('/api/dashboard/summary')).json()); } catch (e) {}
+}
+refreshCat();
+setInterval(refreshCat, 20000);
 </script>
 </body>
 </html>

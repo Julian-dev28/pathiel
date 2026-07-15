@@ -116,9 +116,45 @@
   @keyframes glow-a{0%{border-color:var(--amb);box-shadow:0 0 18px rgba(245,158,11,.4);background:#241a06}100%{}}
   .coal-tick{animation:coal-tick .6s ease-out}
   @keyframes coal-tick{0%{opacity:1;color:#ffe9b0}100%{opacity:.55}}
+  /* ── the pixel cat (same mascot as the dashboard, every tab) ── */
+  .cat{width:28px;height:28px;display:inline-block;margin-right:9px}
+  .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+  .cat .c-ears-p,.cat .c-ears-f,.cat .c-eyes-w,.cat .c-eyes-c,.cat .c-zzz{display:none}
+  .cat.cat-alert .c-ears-n,.cat.cat-alert .c-eyes-n{display:none}
+  .cat.cat-alert .c-ears-p,.cat.cat-alert .c-eyes-w{display:block}
+  .cat.cat-sad .c-ears-n{display:none}
+  .cat.cat-sad .c-ears-f{display:block}
+  .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
+  .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
+  .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
+  .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
+  @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes tail-b{0%,49%{opacity:0}50%,100%{opacity:1}}
+  .cat.cat-sleep .c-tail-a{animation:none;opacity:1}
+  .cat.cat-sleep .c-tail-b{animation:none;opacity:0}
+  .cat.cat-sleep svg{animation:cat-breathe 3.2s ease-in-out infinite;transform-origin:50% 100%}
+  @keyframes cat-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.93)}}
+  .cat .c-zzz rect{animation:zzz 2.4s steps(1) infinite}
+  .cat .c-zzz rect:nth-child(2){animation-delay:.8s}
+  .cat .c-zzz rect:nth-child(3){animation-delay:1.6s}
+  @keyframes zzz{0%,60%{opacity:1}61%,100%{opacity:.15}}
+  .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
+  @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
+  /* ── skeleton shimmer: modern loading state, replaces "loading…" text ── */
+  .skeleton{position:relative;overflow:hidden;background:#171a20;border-radius:3px;color:transparent !important;display:inline-block;min-width:64px}
+  .skeleton::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(245,158,11,.12),transparent);
+    animation:shimmer 1.6s ease-in-out infinite}
+  @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  .kpi .v.tick-up{animation:kpi-tick-g .9s ease-out}
+  .kpi .v.tick-dn{animation:kpi-tick-r .9s ease-out}
+  @keyframes kpi-tick-g{0%{color:#86efac}100%{}}
+  @keyframes kpi-tick-r{0%{color:#fca5a5}100%{}}
   @media (prefers-reduced-motion: reduce){
     .ev-enter,.flash-amber,.coal-tick,.item.breaking,.b-breaking,.ev-fresh.ev-enter{animation:none}
     .item,.read-coal,.ev-fresh{transition:none}
+    .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
+    .skeleton::after,.kpi .v.tick-up,.kpi .v.tick-dn{animation:none}
   }
 </style>
 </head>
@@ -126,7 +162,45 @@
 <div class="max-w-[1240px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand flex items-center"><span class="dot"></span>HERMES-TRADER&nbsp;<small>/ NEWS</small></span>
+    <span class="brand flex items-center">
+      <span id="pixel-cat" class="cat" title="the cat watches the tape">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g class="c-ears-n">
+            <rect x="3" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="12" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="4" y="3" width="1" height="1" fill="#f0abfc"/><rect x="11" y="3" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-p">
+            <rect x="3" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="12" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="4" y="2" width="1" height="1" fill="#f0abfc"/><rect x="11" y="2" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-f">
+            <rect x="2" y="3" width="4" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="4" height="1" fill="#f4f6fa"/>
+          </g>
+          <rect x="2" y="4" width="12" height="9" fill="#f4f6fa"/>
+          <g class="c-eyes-n">
+            <rect x="4" y="7" width="2" height="2" fill="#22c55e"/><rect x="10" y="7" width="2" height="2" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-w">
+            <rect x="4" y="6" width="2" height="3" fill="#22c55e"/><rect x="10" y="6" width="2" height="3" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-c">
+            <rect x="4" y="8" width="2" height="1" fill="#5c6370"/><rect x="10" y="8" width="2" height="1" fill="#5c6370"/>
+          </g>
+          <rect x="7" y="10" width="2" height="1" fill="#f0abfc"/>
+          <rect x="0" y="10" width="2" height="1" fill="#5c6370"/><rect x="14" y="10" width="2" height="1" fill="#5c6370"/>
+          <rect x="2" y="12" width="12" height="1" fill="#8b5cf6"/>
+          <rect x="3" y="14" width="2" height="1" fill="#c9ced8"/><rect x="11" y="14" width="2" height="1" fill="#c9ced8"/>
+          <g class="c-tail-a"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="11" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-tail-b"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="13" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-zzz">
+            <rect x="12" y="2" width="1" height="1" fill="#8b5cf6"/><rect x="13" y="1" width="1" height="1" fill="#a78bfa"/><rect x="14" y="0" width="1" height="1" fill="#c4b5fd"/>
+          </g>
+        </svg>
+      </span>
+      <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ NEWS</small>
+    </span>
     <span class="text-[10px] mono" style="color:var(--dim)" id="news-meta"></span>
   </header>
 
@@ -360,15 +434,29 @@ function foldAged() {
 }
 
 // ── header strip + empties ───────────────────────────────────────────────────
-function kpiChip(label, value, cls) {
-  return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}">${value}</span><span class="l">${label}</span></div>`;
+function kpiChip(key, label, value, cls) {
+  return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}" data-k="${key}">${value}</span><span class="l">${label}</span></div>`;
+}
+const stripLast = {};
+function flashChanged(el) {
+  el.querySelectorAll('.v[data-k]').forEach(v => {
+    const k = v.dataset.k, cur = Number(v.textContent.replace(/[^0-9.-]/g, ''));
+    if (!isNaN(cur) && stripLast[k] != null && cur !== stripLast[k]) {
+      v.classList.remove('tick-up', 'tick-dn');
+      void v.offsetWidth;
+      v.classList.add(cur > stripLast[k] ? 'tick-up' : 'tick-dn');
+    }
+    if (!isNaN(cur)) stripLast[k] = cur;
+  });
 }
 function renderStrip(stats) {
   if (!stats) return;
-  document.getElementById('news-strip').innerHTML =
-    kpiChip('reads today', stats.reads_today ?? 0) +
-    kpiChip('breaking', stats.breaking_today ?? 0, (stats.breaking_today ?? 0) > 0 ? 'brk' : '') +
-    kpiChip('last read', stats.last_read_ts ? fmtAgo(stats.last_read_ts) : '—');
+  const el = document.getElementById('news-strip');
+  el.innerHTML =
+    kpiChip('reads', 'reads today', stats.reads_today ?? 0) +
+    kpiChip('breaking', 'breaking', stats.breaking_today ?? 0, (stats.breaking_today ?? 0) > 0 ? 'brk' : '') +
+    kpiChip('last', 'last read', stats.last_read_ts ? fmtAgo(stats.last_read_ts) : '—');
+  flashChanged(el);
 }
 function paneEmpties() {
   if (!FLOWS.catalysts.children.length) {
@@ -429,6 +517,28 @@ FLOWS.watcher = document.getElementById('flow-watcher');
 load();
 setInterval(load, 30000);
 setInterval(foldAged, 20000);
+
+// ── the cat reacts to the tape (same mascot + logic as the dashboard) ──────
+let catLastEquity = null;
+function updateCat(s) {
+  const cat = document.getElementById('pixel-cat');
+  if (!cat) return;
+  cat.classList.remove('cat-sleep', 'cat-sad', 'cat-alert');
+  if (s.status !== 'scanning') cat.classList.add('cat-sleep');
+  else if ((s.daily_pnl ?? 0) < 0) cat.classList.add('cat-sad');
+  else if ((s.open_positions ?? 0) > 0) cat.classList.add('cat-alert');
+  if (catLastEquity != null && (s.equity ?? 0) > catLastEquity + 0.004) {
+    cat.classList.remove('cat-bounce');
+    void cat.offsetWidth;
+    cat.classList.add('cat-bounce');
+  }
+  catLastEquity = s.equity ?? catLastEquity;
+}
+async function refreshCat() {
+  try { updateCat(await (await fetch('/api/dashboard/summary')).json()); } catch (e) {}
+}
+refreshCat();
+setInterval(refreshCat, 20000);
 </script>
 </body>
 </html>
