@@ -205,8 +205,8 @@ def maybe_run(config: Dict[str, Any], universe, positions,
             else:
                 skipped["blocked"] += 1
                 claims.release(coin, _BOOK_NAME)
-                logger.warning(f"[unlock-short-live] {coin} not opened: "
-                               f"{(result or {}).get('blocked_by') if isinstance(result, dict) else result}")
+                why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                logger.warning(f"[unlock-short-live] {coin} not opened: {why}")
         except Exception as exc:
             skipped["blocked"] += 1
             claims.release(coin, _BOOK_NAME)

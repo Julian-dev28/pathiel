@@ -172,3 +172,20 @@ def test_ledger_rows_never_carry_live_handle(monkeypatch, _live_iso):
     _, rows = out[0]
     assert all("_rep" not in r["meta"] for r in rows)
     assert rows[0]["meta"]["shadow"] is False
+
+
+def test_block_reason_reads_the_real_key_not_blocked_by(monkeypatch, caplog, _live_iso):
+    """maybe_execute's early gates (e.g. hip3_dex_underfunded) return the
+    explanation under 'reason', not 'blocked_by' — the old log line checked
+    only 'blocked_by' and printed 'not opened: None' for every early-gate
+    block, hiding 60 real hip3_dex_underfunded blocks as unexplained
+    failures (found auditing live logs 2026-07-15)."""
+    _captured(monkeypatch)
+    monkeypatch.setattr(ncl, "coin_catalyst", lambda c: _report(breaking=True, surge=4.0))
+    blocked = {"executed": False,
+              "reason": "hip3_dex_underfunded (xyz: $0.01). Transfer USDC to 'xyz' via the HL frontend."}
+    with caplog.at_level("WARNING"):
+        ncl.maybe_run(_live_cfg(), [{"coin": "xyz:SKHY", "mid": 236.0}], [],
+                      lambda a: blocked)
+    assert any("hip3_dex_underfunded" in r.message for r in caplog.records)
+    assert not any("not opened: None" in r.message for r in caplog.records)

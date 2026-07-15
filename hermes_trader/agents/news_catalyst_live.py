@@ -235,8 +235,8 @@ def maybe_run(config: Dict[str, Any],
                             f"(surge {r['meta']['surge_x']:.1f}x)")
             else:
                 claims.release(coin, _BOOK_NAME)
-                logger.warning(f"[news-catalyst-live] {coin} not opened: "
-                               f"{(result or {}).get('blocked_by') if isinstance(result, dict) else result}")
+                why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                logger.warning(f"[news-catalyst-live] {coin} not opened: {why}")
         except Exception as exc:
             claims.release(coin, _BOOK_NAME)
             logger.warning(f"[news-catalyst-live] open {coin} failed: {exc}")

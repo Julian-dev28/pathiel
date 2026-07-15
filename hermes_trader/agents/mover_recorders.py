@@ -151,8 +151,8 @@ def record_mover_pass(analysis: Dict[str, Any], config: Dict[str, Any],
                     logger.info(f"[mover-pass] LIVE opened long {coin} (+{move:.1f}% PASSed mover)")
                 else:
                     claims.release(coin, "mover_pass")
-                    logger.warning(f"[mover-pass] {coin} not opened: "
-                                   f"{result.get('blocked_by') if isinstance(result, dict) else result}")
+                    why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                    logger.warning(f"[mover-pass] {coin} not opened: {why}")
             except Exception as exc:
                 claims.release(coin, "mover_pass")
                 logger.warning(f"[mover-pass] open {coin} failed: {exc}")
