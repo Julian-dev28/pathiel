@@ -132,7 +132,17 @@
   .coal-tick{animation:coal-tick .6s ease-out}
   @keyframes coal-tick{0%{opacity:1;color:#d3f9e4}100%{opacity:.55}}
   select.fsel{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);font-size:11px;font-weight:600;padding:4px 8px}
-  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all}
+  /* citation source chips — a small pill, not a blue underlined link, but
+     still unmistakably clickable (dot marker + hover lift + brand accent) */
+  .cite-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  a.cite{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:3px;
+    background:#171a20;border:1px solid var(--line2);color:var(--mut);
+    font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    text-decoration:none;white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;
+    transition:color .15s ease,border-color .15s ease,background .15s ease,transform .15s ease}
+  a.cite::before{content:'';width:5px;height:5px;border-radius:1px;background:var(--vio);opacity:.65;flex-shrink:0}
+  a.cite:hover{color:var(--txt);border-color:var(--vio);background:#1d1930;transform:translateY(-1px)}
+  a.cite:hover::before{opacity:1;box-shadow:0 0 6px rgba(139,92,246,.7)}
   /* ── the pixel cat (same mascot as the dashboard, every tab) ── */
   .cat{width:28px;height:28px;display:inline-block;margin-right:9px}
   .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
@@ -304,6 +314,22 @@ const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
 const T = e => `<span class="ev-ts mono">${fmtTime(e.ts)}</span>`;
 
+// ── citation chips: source pills, not blue underlined links ─────────────────
+const domainOf = u => { const m = String(u || '').match(/^https?:\/\/(?:www\.)?([^/\s?#]+)/); return m ? m[1] : u; };
+function citeChip(c) {
+  // fallback for raw strings: href = LAST url in the string, text = the
+  // part before the trailing " — url" (never hyperlink the whole string)
+  const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
+  if (!url) return '';
+  const rawTitle = (typeof c === 'object' && c.title) ? c.title
+                  : String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim();
+  // no real headline (just the url/domain repeated back) -> show the clean
+  // domain as the chip label instead of a long, link-shaped path
+  const looksLikeUrl = !rawTitle || rawTitle === url || /^(https?:\/\/|www\.)/i.test(rawTitle) || rawTitle.includes('/');
+  const label = looksLikeUrl ? domainOf(url) : rawTitle;
+  return `<a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(rawTitle || url)}">${esc(label)}</a>`;
+}
+
 // ── PANE ROUTING: the panes are the type separation ─────────────────────────
 // trade  = executes, closes, book opens (the money pane)
 // research = verdict cards + PASS one-liners
@@ -362,17 +388,10 @@ const CARD = {
     const risk = e.news_risk && e.news_risk !== 'none' ? `<span class="chip chip-red">news risk: ${esc(e.news_risk)}</span>` : '';
     const triad = (e.entry_px || e.stop_px || e.tp_px)
       ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
-    const cites = (e.citations || []).map(c => {
-      // fallback for raw strings: href = LAST url in the string, text = the
-      // part before the trailing " — url" (never hyperlink the whole string)
-      const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
-      const title = (typeof c === 'object' && c.title) ? c.title
-                  : (String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim() || url);
-      return url ? `<div class="ev-sub">· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
-    }).join('');
+    const cites = (e.citations || []).map(citeChip).filter(Boolean).join('');
     return `<div class="ev-head">${T(e)} ${tk(e.coin)} <b>→</b> ${v} ${conf} ${search} ${risk}</div>`
       + (e.reasoning ? `<div class="ev-body">${esc(e.reasoning)}</div>` : '')
-      + triad + cites;
+      + triad + (cites ? `<div class="cite-row">${cites}</div>` : '');
   },
   error(e) {
     return `<div class="ev-head">${T(e)} <b style="color:#fca5a5">${esc(String(e.scope || 'LOOP').toUpperCase())}</b> — <span style="color:#fca5a5">${esc(e.error)}</span></div>`;

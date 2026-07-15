@@ -95,7 +95,17 @@
   .titles{margin-top:7px}
   .titles div{font-size:12.5px;color:#cfd4dd;padding:2px 0;line-height:1.6}
   .titles div::before{content:'· ';color:var(--dim)}
-  a.cite{color:#7dd3fc;text-decoration:underline;word-break:break-all;font-size:11.5px}
+  /* citation source chips — a small pill, not a blue underlined link, but
+     still unmistakably clickable (dot marker + hover lift + brand accent) */
+  .cite-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  a.cite{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:3px;
+    background:#171a20;border:1px solid var(--line2);color:var(--mut);
+    font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    text-decoration:none;white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;
+    transition:color .15s ease,border-color .15s ease,background .15s ease,transform .15s ease}
+  a.cite::before{content:'';width:5px;height:5px;border-radius:1px;background:var(--vio);opacity:.65;flex-shrink:0}
+  a.cite:hover{color:var(--txt);border-color:var(--vio);background:#1d1930;transform:translateY(-1px)}
+  a.cite:hover::before{opacity:1;box-shadow:0 0 6px rgba(139,92,246,.7)}
   /* watcher rows: fresh individual, aged coalesced */
   .ev-fresh{font-size:11.5px;color:var(--mut);padding:2px 2px;margin-bottom:5px;line-height:1.65;opacity:.62;word-break:break-word;max-height:64px;overflow:hidden;
             transition:max-height .4s ease,opacity .35s ease,margin .4s ease,padding .4s ease}
@@ -261,6 +271,18 @@ const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
 const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
                      : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
 
+// ── citation chips: source pills, not blue underlined links ─────────────────
+const domainOf = u => { const m = String(u || '').match(/^https?:\/\/(?:www\.)?([^/\s?#]+)/); return m ? m[1] : u; };
+function citeChip(c) {
+  const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
+  if (!url) return '';
+  const rawTitle = (typeof c === 'object' && c.title) ? c.title
+                  : String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim();
+  const looksLikeUrl = !rawTitle || rawTitle === url || /^(https?:\/\/|www\.)/i.test(rawTitle) || rawTitle.includes('/');
+  const label = looksLikeUrl ? domainOf(url) : rawTitle;
+  return `<a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(rawTitle || url)}">${esc(label)}</a>`;
+}
+
 // ── CATALYSTS pane: breaking reads + news-context research, full cards ──────
 function titlesBlock(it) {
   const ages = it.title_ages_h;
@@ -291,14 +313,7 @@ function researchCard(c) {
   const risk = c.news_risk && c.news_risk !== 'none'
     ? `<span class="chip chip-red">news risk: ${esc(c.news_risk)}</span>` : '';
   const conf = c.confidence != null ? `<span class="text-[11px] mono" style="color:var(--dim)">conf ${Number(c.confidence).toFixed(2)}</span>` : '';
-  const cites = (c.citations || []).map(x => {
-    // fallback for raw strings: href = LAST url in the string, text = the
-    // part before the trailing " — url" (never hyperlink the whole string)
-    const url = typeof x === 'string' ? ((x.match(/https?:\/\/\S+/g) || []).pop() || '') : (x.url || x.link || '');
-    const title = (typeof x === 'object' && x.title) ? x.title
-                : (String(x || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim() || url);
-    return url ? `<div>· <a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(title)}</a></div>` : '';
-  }).join('');
+  const cites = (c.citations || []).map(citeChip).filter(Boolean).join('');
   return `
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-research">research</span>
@@ -306,7 +321,7 @@ function researchCard(c) {
       <span class="ev-ts mono" style="margin-left:auto">${fmtAgo(c.ts)}</span>
     </div>
     ${c.reasoning ? `<div class="text-[12.5px] mt-1 leading-relaxed" style="color:#cfd4dd">${esc(c.reasoning)}</div>` : ''}
-    ${cites ? `<div class="mt-1">${cites}</div>` : ''}`;
+    ${cites ? `<div class="cite-row">${cites}</div>` : ''}`;
 }
 function catalystNode(row) {
   const div = document.createElement('div');

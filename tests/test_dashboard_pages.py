@@ -567,6 +567,21 @@ def test_kpi_tick_flash_on_value_change(client):
         assert "tick-up" in r and "tick-dn" in r, path
 
 
+def test_citations_are_chips_not_blue_links(client):
+    """Citation links read as source chips (dot marker + pill), not generic
+    blue underlined hyperlinks (operator: 'not blue like a link but make the
+    links apparent') — still real <a> tags with a real href, just styled and
+    labeled like a clickable source tag instead of inline blue text."""
+    for path in ("/activity", "/news"):
+        r = client.get(path).text
+        assert "citeChip" in r and "domainOf" in r, f"{path}: missing chip builder"
+        assert "cite-row" in r, f"{path}: citations not wrapped in a chip row"
+        assert "#7dd3fc" not in r, f"{path}: old blue link color still present"
+        assert "text-decoration:underline" not in r, f"{path}: still underlining citations"
+        # chip still carries a real, safe, new-tab link
+        assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
+
+
 def test_eight_bit_texture_everywhere(client):
     for path in ("/", "/activity", "/news", "/analytics"):
         page = client.get(path).text
