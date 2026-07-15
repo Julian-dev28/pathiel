@@ -346,6 +346,24 @@ def _title_relevant(sym: str, title: str, *, equity: bool = False) -> bool:
 _MAX_ARTICLE_AGE_DAYS = 7.0
 
 
+_BREAKING_MAX_AGE_H = 24.0
+
+
+def _within_hours(a: Article, max_age_h: float = _BREAKING_MAX_AGE_H) -> bool:
+    """Strict recency check for BREAKING specifically (operator order
+    2026-07-15): unlike _fresh() below, an article with NO parseable publish
+    date does NOT count here — 'coverage is surging right now' is a strong
+    claim that gates a live $20 entry, so it needs a verified bar, not a
+    lenient one. Google's when:1h search reflects INDEXING, not publish
+    time (observed live: multi-day-old articles surface in the '1h'
+    bucket), so recency is independently verified from each article's own
+    pubDate rather than trusted from the query window."""
+    if a.seen is None:
+        return False
+    age_h = (datetime.now(timezone.utc) - a.seen).total_seconds() / 3600.0
+    return age_h <= max_age_h
+
+
 def _fresh(a: Article, max_age_days: float = _MAX_ARTICLE_AGE_DAYS) -> bool:
     """Publish-date guard: Google's `when:` window still returns evergreen/
     re-syndicated items with old pubDates (a Jul-2025 PUMP unlock article
@@ -425,12 +443,19 @@ def macro_headlines(per_query: int = 2, ttl: float = 1800.0) -> List[str]:
 def coin_catalyst(coin: str, ttl: float = _CACHE_TTL_S) -> CatalystReport:
     """Live catalyst read for one coin: fresh headlines + a coverage-surge
     signal computed from headline COUNTS (last 1h vs the trailing-24h hourly
-    baseline). Two cached Google News queries; no GDELT on this path."""
+    baseline). Two cached Google News queries; no GDELT on this path.
+
+    BREAKING counts only articles independently verified within 24h of their
+    own publish date (_within_hours) — Google's when:1h window is not
+    trusted on its own (see _within_hours docstring). n_recent/headlines
+    report that same verified-fresh set, so the number on the page matches
+    what actually gated the signal."""
     q = _coin_query(coin)
     sym = coin.split(":")[-1]
     is_equity = ":" in coin
-    recent = relevant_articles(sym, google_news_search(q, when="1h", limit=50, ttl=ttl),
-                               equity=is_equity)
+    recent_raw = relevant_articles(sym, google_news_search(q, when="1h", limit=50, ttl=ttl),
+                                   equity=is_equity)
+    recent = [a for a in recent_raw if _within_hours(a)]
     daily = relevant_articles(sym, google_news_search(q, when="1d", limit=100, ttl=ttl),
                               equity=is_equity)
     baseline_per_h = max(len(daily) / 24.0, 0.25)

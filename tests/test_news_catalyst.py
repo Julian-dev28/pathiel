@@ -1,6 +1,6 @@
 """Tests for the free news-catalyst engine (pure parsers; no network)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from hermes_trader.agents.news_catalyst import (
     parse_gdelt_artlist, detect_surge, parse_gdelt_timeline,
@@ -88,20 +88,44 @@ def test_google_news_search_parses_and_caches(monkeypatch):
 
 def test_coin_catalyst_surge_math(monkeypatch):
     from hermes_trader.agents import news_catalyst as nc
+    now = datetime.now(timezone.utc)
     def fake_search(query, when="1d", limit=25, ttl=0):
         n = 6 if when == "1h" else 24        # 6/h vs 1/h baseline -> surge 6x
-        # titles carry the ALL-CAPS ticker so the relevance guard keeps them
+        # titles carry the ALL-CAPS ticker so the relevance guard keeps them;
+        # seen = 10min old so the 24h breaking-freshness gate passes them
         return [nc.Article(title=f"VIRTUAL story {i}", url="u", domain="d",
-                           seen=None, source="s")
+                           seen=now - timedelta(minutes=10), source="s")
                 for i in range(min(n, limit))]
     monkeypatch.setattr(nc, "google_news_search", fake_search)
     rep = nc.coin_catalyst("VIRTUAL")
     assert rep.breaking is True and rep.surge_x == 6.0
     def quiet(query, when="1d", limit=25, ttl=0):
-        return [] if when == "1h" else [nc.Article("t","u","d",None,"s")] * 12
+        return [] if when == "1h" else [nc.Article("t", "u", "d", now - timedelta(hours=2), "s")] * 12
     monkeypatch.setattr(nc, "google_news_search", quiet)
     rep = nc.coin_catalyst("QUIET")
     assert rep.breaking is False and rep.n_recent == 0
+
+
+def test_coin_catalyst_breaking_requires_verified_24h_freshness(monkeypatch):
+    """Google's when:1h window is not trusted alone (operator order
+    2026-07-15): a result with no parseable date, or a date outside 24h,
+    must NOT count toward breaking/n_recent even if it lands in the '1h'
+    search bucket."""
+    from hermes_trader.agents import news_catalyst as nc
+    now = datetime.now(timezone.utc)
+
+    def fake_search(query, when="1d", limit=25, ttl=0):
+        if when != "1h":
+            return []
+        return [
+            nc.Article("VIRTUAL genuinely fresh", "u", "d", now - timedelta(minutes=5)),
+            nc.Article("VIRTUAL stale re-synd", "u", "d", now - timedelta(hours=30)),  # >24h
+            nc.Article("VIRTUAL undated", "u", "d", None),                             # no pubDate
+        ]
+    monkeypatch.setattr(nc, "google_news_search", fake_search)
+    rep = nc.coin_catalyst("VIRTUAL", ttl=0)
+    assert rep.n_recent == 1        # only the genuinely-fresh one counts
+    assert [a.title for a in rep.headlines] == ["VIRTUAL genuinely fresh"]
 
 
 def test_fetch_news_prefers_google(monkeypatch):
@@ -134,9 +158,10 @@ def test_title_relevance_accepts_crypto_context_and_tickers():
 
 def test_coin_catalyst_counts_only_relevant(monkeypatch):
     from hermes_trader.agents import news_catalyst as nc
+    now = datetime.now(timezone.utc)
 
     def fake_search(query, when="1d", limit=25, ttl=0):
-        mk = lambda t: nc.Article(title=t, url="u", domain="d", seen=None)
+        mk = lambda t: nc.Article(title=t, url="u", domain="d", seen=now - timedelta(minutes=10))
         if when == "1h":
             return [mk("Beagles feel grass and sunlight"),
                     mk("$GRASS surges on listing"),
