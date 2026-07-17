@@ -8,10 +8,15 @@
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
-  /* ── design system: sans for words, mono/pixel identity in wordmark +
-     section labels only. One signature gradient family (indigo→violet,
-     Aave/Phantom register) reserved for: wordmark mark, active nav pill,
-     LIVE badges, equity-curve line/fill. Green/red = money + direction. ── */
+  /* ── design system v3: sans for words, mono/pixel identity in wordmark +
+     section labels. One signature gradient family (indigo→violet) reserved
+     for: wordmark mark, active nav pill, LIVE badges, equity line/fill.
+     Green/red = money + direction, nothing else.
+     v3 adds a LIVING AMBIENT LAYER: a hand-written WebGL2 shader (#gl-bg)
+     whose mood/energy uniforms are driven by the same summary payload that
+     drives the cat — the page itself breathes with the bot. Everything
+     degrades: no WebGL2 → the CSS radial gradient below stays; reduced
+     motion → one static shader frame, zero animation loops. ── */
   :root{
     --card:#14161b; --card2:#181b21;
     --line:#23262e; --line2:#2c313c;
@@ -19,7 +24,16 @@
     --up:#22c55e; --dn:#ef4444; --amb:#f59e0b;
     --vio:#8b5cf6;
     --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
+    /* status-reactive accent pair — :has() overrides below shift the whole
+       page's accent when the pill goes stale/offline. OKLCH so the hue
+       swaps stay perceptually matched in lightness. */
+    --accA:oklch(0.585 0.233 277.1);   /* indigo #6366f1 */
+    --accB:oklch(0.627 0.265 303.9);   /* purple #a855f7 */
   }
+  /* the page notices its own status pill: amber accents when the feed is
+     stale, red when offline — pure CSS, no JS branching */
+  body:has(#status-pill.stale){ --accA:oklch(0.769 0.188 70.1); --accB:oklch(0.666 0.179 58.3); }
+  body:has(#status-pill.offline){ --accA:oklch(0.637 0.237 25.3); --accB:oklch(0.505 0.213 27.5); }
   body{
     font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     color:var(--txt);
@@ -27,30 +41,67 @@
     background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
     background-repeat:no-repeat;background-attachment:fixed;
   }
+  /* ambient shader canvas — fixed behind everything; content stacks above.
+     If WebGL2 init fails the canvas is removed and the gradient above shows. */
+  #gl-bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;pointer-events:none}
+  /* scroll progress hairline — CSS scroll-driven animation, zero JS. In
+     browsers without scroll timelines it simply never grows (scaleX(0)). */
+  #scroll-progress{position:fixed;top:0;left:0;height:2px;width:100%;z-index:50;
+    transform-origin:0 50%;transform:scaleX(0);
+    background:linear-gradient(90deg,var(--accA),var(--accB));}
+  @supports (animation-timeline: scroll()){
+    @media (prefers-reduced-motion: no-preference){
+      #scroll-progress{animation:growX linear both;animation-timeline:scroll(root)}
+    }
+  }
+  @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  /* scroll-driven section reveals — below-the-fold cards rise as they enter
+     the viewport. Gated twice: feature support AND motion preference. */
+  @supports (animation-timeline: view()){
+    @media (prefers-reduced-motion: no-preference){
+      .rise{animation:rise linear both;animation-timeline:view();animation-range:entry 0% entry 55%}
+    }
+  }
+  @keyframes rise{from{opacity:.15;transform:translateY(14px)}to{opacity:1;transform:none}}
   .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  /* wordmark: the pixel accent — mono, letter-spaced, gradient pixel mark */
   .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
   .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
   .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
   .nav-link:hover{color:var(--txt);background:var(--card)}
   .nav-link:active{transform:translateY(1px)}
-  .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+  .nav-link.nav-active{color:var(--txt);
+    background:linear-gradient(135deg,color-mix(in oklab,var(--accA) 16%,transparent),color-mix(in oklab,var(--accB) 16%,transparent));
+    border-color:color-mix(in oklab,var(--vio) 45%,transparent)}
   /* cards: 8-bit x premium — near-square corners, hard pixel offset shadow,
      faint inner top border, chunky lift on hover */
   .card{background:var(--card);border:1px solid var(--line);border-radius:3px;
         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
         transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
   .card:hover{transform:translate(-1px,-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5)}
-  /* low-opacity violet glow behind the KPI strip + chart (very Phantom) */
   .glow{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
   .glow:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5),0 0 70px -25px rgba(139,92,246,.4)}
-  /* section labels: pixel identity — mono small-caps, letter-spaced */
   .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
-  /* KPI chips: big mono number, tiny uppercase label */
-  .kv{font-size:24px;font-weight:800;letter-spacing:.02em;line-height:1.2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  /* KPI cards are size containers: the number scales with its own card via
+     cqi units, so the band stays balanced at every viewport without media
+     queries. Numbers are tabular so tweens don't jitter horizontally. */
+  .kpi{container-type:inline-size}
+  .kv{font-size:clamp(19px,9.5cqi,30px);font-weight:800;letter-spacing:.02em;line-height:1.2;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt);
+      font-variant-numeric:tabular-nums}
   .kv.pos{color:var(--up)}.kv.neg{color:var(--dn)}
   .ksub{font-size:10.5px;color:var(--dim)}
-  /* status pill: geometric pulse dot + word — no glyphs */
+  /* conic border beam on KPI hover — @property makes the angle animatable */
+  @property --beam{syntax:'<angle>';inherits:false;initial-value:0deg}
+  .kpi{position:relative}
+  .kpi::after{content:'';position:absolute;inset:-1px;border-radius:3px;pointer-events:none;
+    padding:1px;opacity:0;transition:opacity .25s ease;
+    background:conic-gradient(from var(--beam),transparent 0 70%,var(--accB) 85%,transparent 100%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude}
+  @media (prefers-reduced-motion: no-preference){
+    .kpi:hover::after{opacity:.9;animation:beam 2.4s linear infinite}
+  }
+  @keyframes beam{to{--beam:360deg}}
   .pill{display:inline-flex;align-items:center;gap:7px;padding:3px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:3px;border:1px solid transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .pill::before{content:'';width:6px;height:6px;border-radius:1px;background:currentColor;animation:pulse 2.2s ease-in-out infinite}
   .pill.scanning{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
@@ -58,20 +109,19 @@
   .pill.offline{color:#fca5a5;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .badge{display:inline-block;padding:1px 9px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent}
-  /* LIVE = brand gradient (primary badge); direction keeps green/red */
   .badge.b-live{color:#e4defc;background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(168,85,247,.28));border-color:rgba(139,92,246,.5)}
   .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .badge.b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
+  .badge.b-rec{color:#a5b4fc;background:rgba(99,102,241,.10);border-color:rgba(99,102,241,.3)}
+  .badge.b-dead{color:var(--dim);background:#15171c;border-color:var(--line);text-decoration:line-through}
   .badge.b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .badge.b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
-  /* ticker-style chip for coins + book names */
   .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
   .tk.off{opacity:.45}
   .dollar-mask{display:none}
   body.discreet .dollar-value{display:none}
   body.discreet .dollar-mask{display:inline;color:var(--dim)}
   .scroll-x{overflow-x:auto}
-  /* range picker: quiet segmented control with pressed state */
   .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px}
   .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:2px;color:var(--dim);cursor:pointer}
   .range-btn:hover{color:var(--txt)}
@@ -80,7 +130,6 @@
   .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);padding:4px 10px;cursor:pointer;font-size:10.5px;font-weight:700;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .icon-btn:hover{color:var(--txt);border-color:var(--line2)}
   .icon-btn:active{transform:translateY(1px)}
-  /* open positions: money/direction carry the color, liq gets the danger tint */
   .pnl-cell{font-weight:750}
   .pnl-cell.pos{color:var(--up)}.pnl-cell.neg{color:var(--dn)}
   .liq-danger{color:#fca5a5;font-weight:700;text-shadow:0 0 8px rgba(239,68,68,.35)}
@@ -90,17 +139,56 @@
   @keyframes tick-g{0%{background:rgba(34,197,94,.18)}100%{background:transparent}}
   .tick-dn{animation:tick-r .9s ease-out}
   @keyframes tick-r{0%{background:rgba(239,68,68,.18)}100%{background:transparent}}
-  /* live books: DROPDOWN — header row always visible with the counts,
-     flowing book-rows collapse beneath it (operator reversal 2026-07-12) */
+  /* decision funnel: one violet hue, light→dark opacity steps (sequential =
+     magnitude of the same metric through the pipeline). Counts are direct
+     ink labels beside the bars, never text-on-mark. */
+  .fn-row{display:grid;grid-template-columns:96px 1fr 64px;gap:10px;align-items:center;padding:3px 0}
+  .fn-bar{height:10px;border-radius:2px;background:var(--vio);min-width:3px;
+          transition:width .6s cubic-bezier(.22,1,.36,1)}
+  .fn-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
+  .fn-n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--txt);text-align:right;font-variant-numeric:tabular-nums}
+  .rs{display:inline-flex;align-items:center;gap:6px;margin:3px 6px 0 0;padding:2px 9px;font-size:10.5px;border-radius:3px;background:#171a20;border:1px solid var(--line2);color:var(--mut)}
+  .rs b{color:var(--txt);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  /* closed-trades tape: edge-masked horizontal strip, native scroll */
+  .tape{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;overscroll-behavior-x:contain;
+        mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
+  .tape::-webkit-scrollbar{height:6px}
+  .tape::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+  .tp{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:8px;padding:5px 11px;border-radius:3px;
+      background:var(--card2);border:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  .tp .c{color:#f4f6fa;font-weight:700}
+  .tp .p.pos{color:var(--up)}.tp .p.neg{color:var(--dn)}
+  .tp .a{color:var(--dim);font-size:10px}
+  /* evidence league table */
+  .lg-status{white-space:nowrap}
+  #league td,#league th{font-variant-numeric:tabular-nums}
+  /* pipeline diagram: six pixel nodes joined by dashed connectors (the dash
+     is a repeating-linear-gradient, same texture family as the scanlines) */
+  .pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-bottom:16px}
+  .pn{position:relative;background:var(--card2);border:1px solid var(--line);border-radius:3px;padding:10px 12px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
+  .pn::after{content:'';position:absolute;top:50%;right:-14px;width:14px;height:1px;
+      background:repeating-linear-gradient(90deg,var(--dim) 0 3px,transparent 3px 6px)}
+  .pipe .pn:last-child::after{display:none}
+  .pn .s{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;color:color-mix(in oklab,var(--vio) 80%,#fff 20%);letter-spacing:.18em}
+  .pn .n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:800;letter-spacing:.08em;margin:2px 0}
+  .pn .d{font-size:10.5px;color:var(--dim);line-height:1.45;text-wrap:pretty}
+  .hiw{text-wrap:pretty}
+  /* live books dropdown — header row always visible, flow collapses beneath */
   .books-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:16px 20px}
   .books-head:active{transform:translateY(1px)}
-  /* pixel chevron: three squares forming a chunky "v" */
   .books-head .chev{margin-left:auto;width:4px;height:4px;background:var(--dim);
         box-shadow:-5px -4px 0 var(--dim),5px -4px 0 var(--dim);transition:transform .3s ease}
   .books-head:hover .chev{background:var(--mut);box-shadow:-5px -4px 0 var(--mut),5px -4px 0 var(--mut)}
   .books-open .books-head .chev{transform:rotate(180deg)}
   .books-wrap{max-height:0;opacity:0;overflow:hidden;transition:max-height .4s ease,opacity .3s ease}
   .books-open .books-wrap{max-height:1400px;opacity:1}
+  /* 2026 upgrade: where interpolate-size ships, transition to intrinsic
+     height instead of the max-height guess — no clipped list, no dead air */
+  @supports (interpolate-size: allow-keywords){
+    .books-wrap{interpolate-size:allow-keywords;height:0;max-height:none;transition:height .35s ease,opacity .3s ease}
+    .books-open .books-wrap{height:auto;max-height:none}
+  }
   .books-flow{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:0 20px 18px;margin-right:4px}
   .books-flow::-webkit-scrollbar{width:8px}
   .books-flow::-webkit-scrollbar-track{background:#101216}
@@ -109,11 +197,28 @@
             box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
   .book-row.off{opacity:.5}
   .book-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .book-thesis{font-size:12px;color:var(--mut);line-height:1.55;margin-top:4px}
-  /* scanline texture behind the header — very low opacity, pure CSS */
+  .book-thesis{font-size:12px;color:var(--mut);line-height:1.55;margin-top:4px;text-wrap:pretty}
   header{position:relative}
   header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
         background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
+  /* operator-token popover: native top layer, ::backdrop blur, entry
+     animation via @starting-style + allow-discrete (no JS animation code) */
+  .pop{position:fixed;inset:0;margin:auto;width:min(92vw,390px);height:fit-content;
+       background:var(--card);border:1px solid var(--line2);border-radius:4px;padding:18px;color:var(--txt);
+       box-shadow:4px 4px 0 rgba(0,0,0,.45),0 0 90px -30px rgba(139,92,246,.5)}
+  .pop::backdrop{background:rgba(6,7,9,.55);backdrop-filter:blur(3px)}
+  .pop input{width:100%;background:#101216;border:1px solid var(--line2);border-radius:3px;color:var(--txt);
+       padding:7px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;field-sizing:content}
+  @supports (transition-behavior: allow-discrete){
+    .pop{opacity:0;transform:translateY(10px) scale(.985);
+         transition:opacity .22s ease,transform .22s cubic-bezier(.22,1,.36,1),
+                    overlay .22s ease allow-discrete,display .22s ease allow-discrete}
+    .pop:popover-open{opacity:1;transform:none}
+    @starting-style{.pop:popover-open{opacity:0;transform:translateY(10px) scale(.985)}}
+  }
+  /* range switches run inside a view transition (guarded in JS) — keep the
+     default root cross-fade snappy so live numbers never look laggy */
+  ::view-transition-old(root),::view-transition-new(root){animation-duration:.18s}
   /* ── the pixel cat: 16x16 SVG rect grid, states driven by summary data ──
      scanning = tail flick · alert (position open) = perked ears, wide eyes ·
      sad (red day) = flat ears · sleep (stale/offline) = closed eyes + zzz ·
@@ -127,7 +232,6 @@
   .cat.cat-sad .c-ears-f{display:block}
   .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
   .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
-  /* two-frame tail flick, classic steps() */
   .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
   .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
   @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
@@ -143,13 +247,15 @@
   .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
   @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
   @media (prefers-reduced-motion: reduce){
-    .card,.books-wrap,.books-head .chev{transition:none}
-    .tick-up,.tick-dn,.pill::before{animation:none}
+    .card,.books-wrap,.books-head .chev,.fn-bar{transition:none}
+    .tick-up,.tick-dn,.pill::before,.kpi:hover::after{animation:none}
     .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
   }
 </style>
 </head>
 <body class="min-h-screen">
+<canvas id="gl-bg" aria-hidden="true"></canvas>
+<div id="scroll-progress" aria-hidden="true"></div>
 <div class="max-w-[1100px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
@@ -208,25 +314,35 @@
   </nav>
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <div class="card glow p-4">
+    <div class="card glow kpi p-4">
       <div class="sec-label mb-1">equity</div>
       <div class="kv" id="kpi-equity">$0.00</div>
       <div class="ksub mono mt-1" id="kpi-equity-breakdown"></div>
+      <canvas id="kpi-spark" height="26" class="w-full mt-2" aria-hidden="true"></canvas>
     </div>
-    <div class="card glow p-4">
+    <div class="card glow kpi p-4">
       <div class="sec-label mb-1">today</div>
       <div class="kv" id="kpi-pnl">$0.00</div>
       <div class="ksub mono" id="kpi-pnl-pct">&mdash;</div>
     </div>
-    <div class="card p-4">
+    <div class="card kpi p-4">
       <div class="sec-label mb-1">open positions</div>
       <div class="kv" id="kpi-open">0</div>
     </div>
-    <div class="card p-4">
+    <div class="card kpi p-4">
       <div class="sec-label mb-1">last tick</div>
       <div class="kv" id="kpi-tick">&mdash;</div>
       <div class="ksub" id="kpi-tick-detail">no scan yet</div>
     </div>
+  </section>
+
+  <section id="funnel-strip" class="card p-5 mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">decision funnel — last 24h</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="funnel-meta"></div>
+    </div>
+    <div id="funnel-bars"><div class="text-xs" style="color:var(--dim)">loading&hellip;</div></div>
+    <div id="funnel-reasons"></div>
   </section>
 
   <section class="card p-5 mb-6">
@@ -273,7 +389,15 @@
     </div>
   </section>
 
-  <section class="card p-0 mb-6" id="books-section">
+  <section id="trade-tape" class="card p-5 mb-6 rise">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">recent closes</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="tape-meta"></div>
+    </div>
+    <div id="tape-flow" class="tape"><span class="text-xs" style="color:var(--dim)">loading&hellip;</span></div>
+  </section>
+
+  <section class="card p-0 mb-6 rise" id="books-section">
     <button id="books-toggle" class="books-head" type="button" aria-expanded="false">
       <span class="sec-label">live books</span>
       <span class="text-[10px] mono" style="color:var(--dim)" id="books-count"></span>
@@ -286,15 +410,65 @@
     </div>
   </section>
 
-  <section class="card p-5 mb-6 text-[14px] leading-relaxed" style="color:#cfd4dd">
-    <div class="sec-label mb-2">how it works</div>
-    <p>Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, commodities. Every minute the engine scans 60+ markets for statistical triggers (volume spikes, breakouts, momentum bursts), runs a free TA filter, and only spends AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly, and exit through a two-phase dynamic stop-loss (loss protection → profit locking with one-way trailing floor). Live on one wallet. Not financial advice.</p>
+  <section id="league" class="card p-5 mb-6 rise">
+    <div class="flex items-center justify-between mb-3">
+      <div class="sec-label">evidence league — every book, graded forward</div>
+      <div class="text-[10px] mono" style="color:var(--dim)" id="league-meta"></div>
+    </div>
+    <div class="scroll-x">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">status</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">signals</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">resolved</th>
+            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">pending</th>
+            <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">last signal</th>
+          </tr>
+        </thead>
+        <tbody id="league-body">
+          <tr><td colspan="7" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="text-[10.5px] mt-3" style="color:var(--dim)">
+      every strategy records to a shadow ledger before it touches capital — evidence promotes, refuted books die. no exceptions.
+    </div>
+  </section>
+
+  <section id="pipeline" class="card p-5 mb-6 rise text-[14px] leading-relaxed" style="color:#cfd4dd">
+    <div class="sec-label mb-3">how it works</div>
+    <div class="pipe" aria-label="trade pipeline">
+      <div class="pn"><span class="s">01</span><div class="n">SCAN</div><div class="d">60+ markets/min: volume spikes, breakouts, momentum bursts</div></div>
+      <div class="pn"><span class="s">02</span><div class="n">TA GATE</div><div class="d">free technical filter — AI tokens only on confirmed setups</div></div>
+      <div class="pn"><span class="s">03</span><div class="n">AI RESEARCH</div><div class="d">verdict + confidence, live web search on movers and holds</div></div>
+      <div class="pn"><span class="s">04</span><div class="n">RISK GATES</div><div class="d">11 gates: notional caps, liquidity floors, regime, correlation</div></div>
+      <div class="pn"><span class="s">05</span><div class="n">SIZE</div><div class="d">half-Kelly against live dex equity, hard per-book clips</div></div>
+      <div class="pn"><span class="s">06</span><div class="n">DSL EXIT</div><div class="d">two-phase stop: loss protection, then a one-way trailing floor</div></div>
+    </div>
+    <p class="hiw">Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, commodities. Every minute the engine scans 60+ markets for statistical triggers (volume spikes, breakouts, momentum bursts), runs a free TA filter, and only spends AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly, and exit through a two-phase dynamic stop-loss (loss protection → profit locking with one-way trailing floor). Live on one wallet. Not financial advice.</p>
   </section>
 
   <footer class="text-[10px] mt-6 text-center" style="color:var(--dim)">
     one wallet · live · not financial advice ·
-    <button id="op-token-btn" type="button" class="underline bg-transparent border-0 cursor-pointer text-[10px] p-0" style="color:var(--dim)">set token</button>
+    <button id="op-token-btn" type="button" popovertarget="token-pop" class="underline bg-transparent border-0 cursor-pointer text-[10px] p-0" style="color:var(--dim)">set token</button>
   </footer>
+</div>
+
+<!-- operator token entry — native popover in the top layer; the value lives
+     in localStorage ONLY and is sent as X-Operator-Token by tooling that
+     calls the token-gated /api/agent + /api/hl endpoints. -->
+<div id="token-pop" popover class="pop">
+  <div class="sec-label mb-2">operator token</div>
+  <input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="HERMES_OPERATOR_TOKEN" />
+  <div class="text-[10px] mt-2" style="color:var(--dim)">stored only in this browser (localStorage) — never sent anywhere by this page</div>
+  <div class="flex gap-2 mt-3">
+    <button id="token-save" type="button" class="icon-btn">SAVE</button>
+    <button id="token-clear" type="button" class="icon-btn">CLEAR</button>
+    <button type="button" class="icon-btn ml-auto" popovertarget="token-pop" popovertargetaction="hide">CLOSE</button>
+  </div>
 </div>
 
 <script>
@@ -302,7 +476,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
 const fmtPct = n => (n >= 0 ? '+' : '') + (n ?? 0).toFixed(2) + '%';
 const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s / 60) + 'm ago');
+const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
 const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class="dollar-mask">•••</span>`;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 // active-page highlight
 (function () {
@@ -312,27 +488,139 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
   });
 })();
 
-// operator token entry — localStorage ONLY, sent as X-Operator-Token by
-// tooling that calls the token-gated /api/agent + /api/hl endpoints.
+// ── ambient WebGL2 layer ─────────────────────────────────────────────────────
+// Hand-written fragment shader, no library: domain-warped fbm aurora in the
+// brand indigo→violet ramp. Three uniforms come from the live summary —
+// u_mood (daily pnl, green↔red horizon tint), u_energy (scanning/stale/
+// offline → drift speed + brightness), u_pos (open-position load). Ordered
+// 4x4 Bayer dither kills gradient banding and nods to the 8-bit brand.
+// Budget discipline: low-power GPU hint, DPR capped at 1.5, ~30fps, paused
+// on hidden tabs; prefers-reduced-motion renders exactly ONE static frame.
+(function () {
+  const cv = document.getElementById('gl-bg');
+  const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) { cv.remove(); return; }   // CSS radial gradient beneath remains
+
+  const VS = `#version 300 es
+void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(v*2.-1.,0.,1.);}`;
+  const FS = `#version 300 es
+precision highp float;
+uniform vec2 u_res;uniform float u_t;
+uniform float u_mood;uniform float u_energy;uniform float u_pos;
+out vec4 o;
+float hash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+17.3;a*=.5;}return s;}
+const float B[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+void main(){
+ vec2 uv=gl_FragCoord.xy/u_res;
+ vec2 p=vec2(uv.x*u_res.x/u_res.y,uv.y);
+ float t=u_t*(.015+.05*u_energy);
+ vec2 q=vec2(fbm(p*1.3+vec2(0.,t)),fbm(p*1.3+vec2(5.2,-t*.7)));
+ float v=fbm(p*2.1+2.2*q+vec2(0.,t*.4));
+ float sky=smoothstep(.15,.85,uv.y);
+ float glow=sky*(.10+.22*v)*(.45+.55*u_energy)*(1.+.35*u_pos);
+ vec3 aur=mix(vec3(.388,.400,.945),vec3(.659,.333,.969),v);
+ aur=mix(aur,u_mood>=0.?vec3(.13,.72,.36):vec3(.92,.26,.26),abs(u_mood)*.38);
+ vec3 col=vec3(.039,.043,.051)+aur*glow;
+ col+=aur*exp(-abs(uv.y-.72)*6.)*.06*(.5+.5*u_energy);
+ col*=1.-.28*length(uv-vec2(.5,.55));
+ int bi=int(mod(gl_FragCoord.y,4.))*4+int(mod(gl_FragCoord.x,4.));
+ col+=(B[bi]/16.-.5)/255.*3.;
+ o=vec4(col,1.);}`;
+
+  function shader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+    return s;
+  }
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+  } catch (e) { cv.remove(); return; }
+  gl.useProgram(prog);
+  const U = n => gl.getUniformLocation(prog, n);
+  const uRes = U('u_res'), uT = U('u_t'), uMood = U('u_mood'), uEnergy = U('u_energy'), uPos = U('u_pos');
+
+  // live state, eased toward targets so status flips glide instead of snap
+  const tgt = { mood: 0, energy: 0.45, pos: 0 };
+  const cur = { mood: 0, energy: 0.45, pos: 0 };
+  window.__setGlState = s => {
+    tgt.mood = Math.max(-1, Math.min(1, (s.daily_pnl_pct ?? 0) / 2));
+    tgt.energy = s.status === 'scanning' ? 1 : s.status === 'stale' ? 0.45 : 0.12;
+    tgt.pos = Math.min(1, (s.open_positions ?? 0) / 5);
+    if (reduceMotion.matches) draw(t0 + 1);   // static mode: redraw the single frame on state change
+  };
+
+  function resize() {
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    cv.width = Math.round(innerWidth * dpr);
+    cv.height = Math.round(innerHeight * dpr);
+    gl.viewport(0, 0, cv.width, cv.height);
+    if (reduceMotion.matches) draw(t0 + 1);
+  }
+  const t0 = performance.now();
+  let last = 0, rafId = 0;
+  function draw(now) {
+    const k = reduceMotion.matches ? 1 : 0.04;
+    cur.mood += (tgt.mood - cur.mood) * k;
+    cur.energy += (tgt.energy - cur.energy) * k;
+    cur.pos += (tgt.pos - cur.pos) * k;
+    gl.uniform2f(uRes, cv.width, cv.height);
+    gl.uniform1f(uT, (now - t0) / 1000);
+    gl.uniform1f(uMood, cur.mood);
+    gl.uniform1f(uEnergy, cur.energy);
+    gl.uniform1f(uPos, cur.pos);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  function loop(now) {
+    rafId = requestAnimationFrame(loop);
+    if (now - last < 33) return;      // ~30fps is plenty for ambience
+    last = now;
+    draw(now);
+  }
+  function setMode() {
+    cancelAnimationFrame(rafId);
+    if (reduceMotion.matches) draw(t0 + 1);
+    else rafId = requestAnimationFrame(loop);
+  }
+  addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => {
+    cancelAnimationFrame(rafId);
+    if (!document.hidden && !reduceMotion.matches) rafId = requestAnimationFrame(loop);
+  });
+  reduceMotion.addEventListener('change', setMode);
+  resize(); setMode();
+})();
+
+// operator token entry — popover form, same localStorage key as ever so
+// existing tooling reads it unchanged.
 (function () {
   const btn = document.getElementById('op-token-btn');
-  if (!btn) return;
+  const pop = document.getElementById('token-pop');
+  const input = document.getElementById('token-input');
+  if (!btn || !pop) return;
   const sync = () => {
     btn.textContent = localStorage.getItem('hermes-op-token') ? 'clear token' : 'set token';
   };
   sync();
-  btn.addEventListener('click', () => {
-    const current = localStorage.getItem('hermes-op-token') || '';
-    if (current) {
-      if (confirm('Clear operator token from this browser?')) {
-        localStorage.removeItem('hermes-op-token');
-        sync();
-      }
-      return;
-    }
-    const t = prompt('Paste your HERMES_OPERATOR_TOKEN:\n(stored only in this browser via localStorage)');
-    if (t && t.trim()) localStorage.setItem('hermes-op-token', t.trim());
-    sync();
+  pop.addEventListener('toggle', e => {
+    if (e.newState === 'open') { input.value = localStorage.getItem('hermes-op-token') || ''; input.focus(); }
+  });
+  document.getElementById('token-save').addEventListener('click', () => {
+    const t = input.value.trim();
+    if (t) localStorage.setItem('hermes-op-token', t);
+    sync(); pop.hidePopover();
+  });
+  document.getElementById('token-clear').addEventListener('click', () => {
+    localStorage.removeItem('hermes-op-token');
+    input.value = ''; sync(); pop.hidePopover();
   });
 })();
 
@@ -366,6 +654,25 @@ const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class=
   });
 })();
 
+// ── tweened KPI numbers — tabular-nums so widths don't jitter; reduced
+// motion (or a first paint) writes the value directly ──────────────────────
+function tween(el, to, fmt) {
+  const from = Number(el.dataset.v);
+  el.dataset.v = to;
+  if (reduceMotion.matches || !isFinite(from) || from === to) { el.textContent = fmt(to); return; }
+  const t0 = performance.now(), D = 480;
+  (function step(now) {
+    const k = Math.min(1, (now - t0) / D), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(from + (to - from) * e);
+    if (k < 1 && el.isConnected) requestAnimationFrame(step);
+  })(t0);
+}
+function setMoney(el, v) {
+  if (!el.querySelector('.dollar-value'))
+    el.innerHTML = '<span class="dollar-value"></span><span class="dollar-mask">•••</span>';
+  tween(el.querySelector('.dollar-value'), Number(v ?? 0), fmtMoney);
+}
+
 // ── equity curve — signature indigo→violet line + fill ──
 const isDiscreet = () => document.body.classList.contains('discreet');
 const maskMoney = v => isDiscreet() ? '•••' : fmtMoney(v);
@@ -388,12 +695,37 @@ function fillGradient(ctx, area) {
   return g;
 }
 
+// tiny sparkline in the equity KPI — reuses the series the big chart already
+// fetched (zero extra API calls); shape only, no axes, single brand hue
+function drawSpark(data) {
+  const cv = document.getElementById('kpi-spark');
+  if (!cv || data.length < 2) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth, h = 26;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const ys = data.map(p => p.y);
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+  ctx.clearRect(0, 0, w, h);
+  ctx.beginPath();
+  data.forEach((p, i) => {
+    const x = i / (data.length - 1) * w;
+    const y = h - 3 - (p.y - lo) / span * (h - 6);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.strokeStyle = '#8b5cf6';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
 async function refreshChart(rangeSec) {
   currentRange = rangeSec;
   try {
     const series = await (await fetch('/api/dashboard/equity-curve?range_s=' + rangeSec)).json();
     const data = series.map(p => ({ x: p.ts, y: p.equity }));
     document.getElementById('equity-empty').classList.toggle('hidden', data.length > 0);
+    drawSpark(data);
     if (!chart) {
       const ctx = document.getElementById('equity-chart').getContext('2d');
       chart = new Chart(ctx, {
@@ -453,17 +785,23 @@ async function refreshChart(rangeSec) {
     }
   } catch (e) {}
 }
+// range switches ride a view transition where the browser has one — the
+// cross-fade makes the rescale read as one move instead of a hard swap
 document.querySelectorAll('.range-btn').forEach(b => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.range-btn').forEach(x => x.classList.toggle('on', x === b));
-    refreshChart(parseInt(b.dataset.range));
+    const run = () => {
+      document.querySelectorAll('.range-btn').forEach(x => x.classList.toggle('on', x === b));
+      refreshChart(parseInt(b.dataset.range));
+    };
+    if (document.startViewTransition && !reduceMotion.matches) document.startViewTransition(run);
+    else run();
   });
 });
 
 async function refreshSummary() {
   try {
     const s = await (await fetch('/api/dashboard/summary')).json();
-    document.getElementById('kpi-equity').innerHTML = dollarHTML(fmtMoney(s.equity));
+    setMoney(document.getElementById('kpi-equity'), s.equity);
     const brk = document.getElementById('kpi-equity-breakdown');
     const dexAvail = s.dex_available || {};
     const parts = [];
@@ -477,16 +815,17 @@ async function refreshSummary() {
     brk.innerHTML = parts.length
       ? dollarHTML(`${parts.join(' + ')} = ${fmtMoney(total)} free`) : '';
     const pnl = document.getElementById('kpi-pnl');
-    pnl.innerHTML = dollarHTML(fmtMoney(s.daily_pnl));
     pnl.className = 'kv ' + (s.daily_pnl >= 0 ? 'pos' : 'neg');   // money gets the color
+    setMoney(pnl, s.daily_pnl);
     document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
-    document.getElementById('kpi-open').textContent = s.open_positions;
+    tween(document.getElementById('kpi-open'), s.open_positions ?? 0, v => String(Math.round(v)));
     document.getElementById('kpi-tick').textContent = fmtAge(s.last_tick_age_s);
     document.getElementById('kpi-tick-detail').textContent = (s.last_scan_triggers ?? 0) + ' triggers on last scan';
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
     updateCat(s);
+    if (window.__setGlState) window.__setGlState(s);   // shader breathes with the same payload
   } catch (e) {}
 }
 
@@ -567,7 +906,9 @@ async function refreshPositions() {
 
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
-                off: '<span class="badge b-off">OFF</span>' };
+                off: '<span class="badge b-off">OFF</span>',
+                recorder: '<span class="badge b-rec">RECORDER</span>',
+                dead: '<span class="badge b-dead">DEAD</span>' };
 
 async function refreshBooks() {
   try {
@@ -593,11 +934,100 @@ async function refreshBooks() {
   } catch (e) {}
 }
 
+// ── decision funnel — scans → candidates → researched → executed, with the
+// top humanized block reasons. Widths are sqrt-scaled so late stages stay
+// visible against thousands of scans. ────────────────────────────────────────
+async function refreshFunnel() {
+  try {
+    const f = await (await fetch('/api/dashboard/funnel')).json();
+    const stages = f.funnel || [];
+    const max = Math.max(1, ...stages.map(s => s.n));
+    const OP = [0.35, 0.55, 0.78, 1];   // one violet hue, light→dark = sequential
+    document.getElementById('funnel-bars').innerHTML = stages.map((s, i) => `
+      <div class="fn-row">
+        <span class="fn-lbl">${esc(s.stage)}</span>
+        <div><div class="fn-bar" style="width:${Math.max(2, 100 * Math.sqrt(s.n / max)).toFixed(1)}%;opacity:${OP[i] ?? 1}"></div></div>
+        <span class="fn-n">${fmtK(s.n)}</span>
+      </div>`).join('');
+    document.getElementById('funnel-meta').textContent =
+      f.blocked_executions ? `${f.blocked_executions} entries refused by gates` : '';
+    const rs = f.top_reasons || [];
+    document.getElementById('funnel-reasons').innerHTML = rs.length
+      ? rs.map(r => `<span class="rs">${esc(r.reason)} <b>${r.n}</b></span>`).join('')
+      : '';
+  } catch (e) {}
+}
+
+// ── recent closes tape — realized results, newest first. pnl_pct may be
+// null for manual closes (never fake a 0). ───────────────────────────────────
+const fmtAgeMs = ts => {
+  if (!ts) return '';
+  const h = (Date.now() - ts) / 3.6e6;
+  return h < 1 ? Math.max(1, Math.round(h * 60)) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
+};
+async function refreshTape() {
+  try {
+    const ts = await (await fetch('/api/dashboard/closed-trades?limit=20')).json();
+    const flow = document.getElementById('tape-flow');
+    if (!Array.isArray(ts) || !ts.length) {
+      flow.innerHTML = '<span class="text-xs" style="color:var(--dim)">no closes yet in the session log</span>';
+      return;
+    }
+    flow.innerHTML = ts.map(t => {
+      const pct = t.pnl_pct;
+      const p = pct == null
+        ? '<span class="a">manual</span>'
+        : `<span class="p ${pct >= 0 ? 'pos' : 'neg'}">${fmtPct(pct)}</span>`;
+      const side = t.side === 'short' ? 'S' : 'L';
+      return `<span class="tp" title="${esc(t.reason || '')}">
+        <span class="c">${esc(t.coin)}</span><span class="a">${side}·${t.leverage}x</span>${p}<span class="a">${fmtAgeMs(t.ts)}</span>
+      </span>`;
+    }).join('');
+    const wins = ts.filter(t => (t.pnl_pct ?? 0) > 0).length;
+    const graded = ts.filter(t => t.pnl_pct != null).length;
+    document.getElementById('tape-meta').textContent = graded ? `${wins}/${graded} green` : '';
+  } catch (e) {}
+}
+
+// ── evidence league — every shadow-ledger book with its inventory. status
+// rank: live first, dead last; the table is the public face of the
+// validate-first doctrine. ───────────────────────────────────────────────────
+const fmtLastAge = h => h == null ? '—' : h < 1 ? Math.max(1, Math.round(h * 60)) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
+async function refreshLeague() {
+  try {
+    const rows = await (await fetch('/api/dashboard/book_league')).json();
+    const body = document.getElementById('league-body');
+    if (!Array.isArray(rows) || !rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--dim)">no ledgers yet</td></tr>';
+      return;
+    }
+    const rank = { live: 0, shadow: 1, recorder: 2, off: 3, dead: 4 };
+    rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
+    body.innerHTML = rows.map(r => `
+      <tr class="border-b last:border-0" style="border-color:var(--line)">
+        <td class="py-2 pr-3 whitespace-nowrap"><span class="tk${r.status === 'dead' ? ' off' : ''}" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
+        <td class="py-2 pr-3 lg-status">${BADGE[r.status] || esc(r.status)}</td>
+        <td class="py-2 pr-3 mono" style="color:var(--mut)">${esc(r.size)}</td>
+        <td class="py-2 pr-3 mono text-right">${r.n}</td>
+        <td class="py-2 pr-3 mono text-right" style="color:var(--mut)">${r.resolved}</td>
+        <td class="py-2 pr-3 mono text-right" style="color:var(--mut)">${r.pending}</td>
+        <td class="py-2 mono text-right" style="color:var(--dim)">${fmtLastAge(r.last_age_h)}</td>
+      </tr>`).join('');
+    const live = rows.filter(r => r.status === 'live').length;
+    document.getElementById('league-meta').textContent =
+      `${rows.length} ledgers · ${live} spending capital`;
+  } catch (e) {}
+}
+
 refreshSummary(); refreshPositions(); refreshBooks(); refreshChart(86400);
+refreshFunnel(); refreshTape(); refreshLeague();
 setInterval(refreshSummary, 6000);
 setInterval(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
 setInterval(refreshBooks, 30000);
 setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
+setInterval(refreshFunnel, 60000);      // pure log walk server-side
+setInterval(refreshTape, 45000);        // pure log walk server-side
+setInterval(refreshLeague, 90000);      // local ledger files only
 </script>
 </body>
 </html>

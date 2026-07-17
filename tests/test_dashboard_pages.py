@@ -1210,3 +1210,93 @@ def test_analytics_page_markers(client):
     assert "tape-net" in r and "fmtMoneyCompact(r.net_usd)" in r
     # dead/refuted books get their own badge, distinct from an active recorder
     assert "b-dead" in r and "REFUTED</span>" in r and "row-dead" in r
+
+
+# ── landing v3 (2026-07-17): living ambient layer + informational one-pager ──
+
+def test_landing_v3_webgl_ambient_layer(client):
+    """The background is a hand-written WebGL2 fragment shader driven by the
+    live summary payload (mood/energy/positions uniforms) — not a library,
+    not a video. Must carry every budget-discipline marker: low-power GPU
+    hint, hidden-tab pause, reduced-motion static frame, and a clean removal
+    path (CSS gradient fallback) when webgl2 is unavailable."""
+    r = client.get("/").text
+    assert 'id="gl-bg"' in r
+    assert "webgl2" in r and "#version 300 es" in r
+    assert "u_mood" in r and "u_energy" in r and "u_pos" in r
+    assert "low-power" in r                          # powerPreference set
+    assert "visibilitychange" in r                   # pauses when tab hidden
+    assert "cv.remove()" in r                        # no-WebGL2 fallback path
+    assert "__setGlState" in r                       # summary payload drives uniforms
+    assert "reduceMotion" in r and "prefers-reduced-motion" in r
+
+
+def test_landing_v3_modern_css_stack(client):
+    """July-2026 CSS, each feature gated so older engines degrade cleanly:
+    scroll-driven animations behind @supports, registered @property for the
+    animatable border beam, :has() status theming, OKLCH + color-mix accents,
+    container-query KPI sizing, text-wrap, tabular numerals."""
+    r = client.get("/").text
+    assert "animation-timeline" in r and "@supports" in r
+    assert "@property" in r and "--beam" in r
+    assert "body:has(" in r                          # page reacts to its own pill
+    assert "oklch(" in r and "color-mix(" in r
+    assert "container-type" in r and "cqi" in r
+    assert "text-wrap" in r
+    assert "tabular-nums" in r
+    assert "@starting-style" in r                    # popover entry animation
+    assert "interpolate-size" in r                   # books dropdown height:auto
+
+
+def test_landing_v3_new_sections_wired_and_ordered(client):
+    """The one-pager grew the decision funnel, recent-closes tape, and the
+    evidence league — all fed by existing local-file endpoints (zero added
+    HL API pressure). Section order contract: positions < equity chart <
+    books < league < how-it-works copy < footer."""
+    r = client.get("/").text
+    for marker in ('id="funnel-strip"', 'id="trade-tape"', 'id="league"',
+                   'id="pipeline"'):
+        assert marker in r, f"missing {marker}"
+    assert "/api/dashboard/funnel" in r
+    assert "book_league" in r
+    assert "closed-trades" in r
+    assert "refreshFunnel" in r and "refreshTape" in r and "refreshLeague" in r
+    assert r.index('id="positions-body"') < r.index('id="equity-chart"')
+    assert r.index('id="equity-chart"') < r.index('id="books-wrap"')
+    assert r.index('id="books-wrap"') < r.index('id="league"') < r.index(HOW_IT_WORKS)
+    # manual closes carry pnl_pct=null — the tape must never fake a 0
+    assert "pct == null" in r
+
+
+def test_landing_v3_token_popover_replaces_prompt(client):
+    """Operator token entry is a native popover in the top layer (with
+    ::backdrop) instead of the old blocking prompt()/confirm() dialogs.
+    Same localStorage key, so existing tooling reads it unchanged."""
+    r = client.get("/").text
+    assert "popover" in r and "popovertarget" in r
+    assert "::backdrop" in r
+    assert "prompt(" not in r and "confirm(" not in r
+    assert "hermes-op-token" in r
+    assert "op-token-btn" in r
+
+
+def test_landing_v3_view_transition_range_switch(client):
+    """Equity-range switches run inside document.startViewTransition when
+    available, guarded so browsers without it (and reduced-motion users)
+    switch instantly."""
+    r = client.get("/").text
+    assert "document.startViewTransition" in r
+    assert "reduceMotion.matches" in r
+
+
+def test_landing_v3_kpi_tweens_and_spark(client):
+    """KPI numbers tween between polls (tabular-nums prevents jitter) and the
+    equity KPI carries a sparkline reusing the big chart's already-fetched
+    series — zero extra API calls."""
+    r = client.get("/").text
+    assert "function tween(" in r and "setMoney" in r
+    assert 'id="kpi-spark"' in r and "drawSpark" in r
+    # spark draws from the same series refreshChart just fetched — the call
+    # site lives inside refreshChart, right after the fetch
+    fetch_at = r.index("equity-curve?range_s=")
+    assert "drawSpark(data)" in r[fetch_at:fetch_at + 400]
