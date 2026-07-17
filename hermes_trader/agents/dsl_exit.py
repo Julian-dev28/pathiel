@@ -164,6 +164,28 @@ class DSLTracker:
         self.peak_px = entry_px
         self.consecutive_breaches = 0
         self._last_floor: Optional[float] = None
+        # Last-seen exchange position size (abs szi). 0.0 = unknown (legacy
+        # state / pre-first-reconcile) — adopted silently on the next
+        # rehydrate. Used to detect position ADDS so entry_px can be
+        # refreshed to the exchange's average (P0 bug 2026-07-13: a manual
+        # add left the tracker on the FIRST fill's entry, so every floor,
+        # stop, and PnL read ran off the wrong basis — SKHY showed +6.44%
+        # ROE on a trade that realized -$0.29).
+        self.size = 0.0
+
+    def refresh_entry_basis(self, new_entry_px: float, new_size: float) -> None:
+        """Adopt the exchange's average entryPx after a position ADD.
+
+        Floors/stops need no explicit recompute — every check() derives them
+        from entry_px/peak_px fresh — but peak_px is clamped to the new basis
+        so a long added above its old peak (or short below) doesn't start
+        with a negative profit range."""
+        self.entry_px = float(new_entry_px)
+        self.size = float(new_size)
+        if self.is_long():
+            self.peak_px = max(self.peak_px, self.entry_px)
+        else:
+            self.peak_px = min(self.peak_px, self.entry_px)
 
     def is_long(self) -> bool:
         return self.side == "long"
@@ -407,6 +429,7 @@ def _tracker_to_dict(t: DSLTracker) -> Dict[str, Any]:
         "side": t.side,
         "leverage": t.leverage,
         "entry_px": t.entry_px,
+        "size": t.size,
         "entry_time": t.entry_time,
         "entry_atr_pct": t.entry_atr_pct,
         "peak_px": t.peak_px,
@@ -443,6 +466,7 @@ def _tracker_from_dict(d: Dict[str, Any]) -> DSLTracker:
                    leverage=int(d.get("leverage", 1) or 1),
                    entry_atr_pct=float(d.get("entry_atr_pct", 0.0) or 0.0))
     t.peak_px = float(d.get("peak_px", d["entry_px"]))
+    t.size = float(d.get("size", 0.0) or 0.0)
     t.consecutive_breaches = int(d.get("consecutive_breaches", 0))
     lf = d.get("last_floor")
     t._last_floor = float(lf) if lf is not None else None
@@ -618,6 +642,28 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         lev = int(pos_leverage.get("value", 0) or 0) if isinstance(pos_leverage, dict) else int(pos_leverage or 0)
         if not lev:
             lev = default_leverage
+        if key in _active_positions:
+            t = _active_positions[key]
+            live_sz = abs(szi)
+            if t.size <= 0:
+                # legacy tracker predating size tracking — adopt silently;
+                # entry_px came from this same exchange field at registration
+                t.size = live_sz
+                added += 1   # force a state save
+            elif live_sz > t.size * 1.005:
+                # position ADD (manual or bot) — the tracker's entry basis is
+                # stale; every floor/stop/PnL read is wrong until refreshed
+                old_entry, old_size = t.entry_px, t.size
+                t.refresh_entry_basis(entry, live_sz)
+                added += 1
+                logger.warning(
+                    f"[dsl] {key} position ADD detected ({old_size:g} -> {live_sz:g}): "
+                    f"entry basis refreshed {old_entry} -> {entry} (exchange avg); "
+                    f"floors now run off the true basis")
+            elif live_sz < t.size * 0.995:
+                # partial close / TP scale-out — size shrinks, basis unchanged
+                t.size = live_sz
+                added += 1
         if key not in _active_positions:
             # Inherit the CURRENT config exit policy, never the bare ExitPolicy()
             # default. A synthesize happens after a blackout-induced drop (the
@@ -626,8 +672,10 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
             # the default silently widened live stops ("policy drift"). Pull
             # config when the caller didn't pass an explicit policy.
             synth_policy = policy if policy is not None else _policy_from_config()
-            _active_positions[key] = DSLTracker(coin, side, entry, time.time(), synth_policy,
-                                                leverage=lev)
+            _t = DSLTracker(coin, side, entry, time.time(), synth_policy,
+                            leverage=lev)
+            _t.size = abs(szi)
+            _active_positions[key] = _t
             added += 1
             logger.info(f"[dsl] Synthesized tracker for existing {key} @ {entry} ({lev}x)")
 

@@ -159,7 +159,7 @@ D5 ⬜ 💰✅ `basis_premium_signal` — the `premium` field (perp vs oracle) a
   trade premium extremes expecting convergence.
 D6 ⬜ 💰✅ `funding_price_divergence` — price up + funding down (shorts paying) or price down + funding up =
   positioning/price divergence; does the funding side win?
-D7 ⬜ 💰⏳ `oi_divergence` / `oi_buildup` — BLOCKED until data_logger OI history accrues (~1-2wk). Stub + revisit.
+D7 ⬜ 💰 `oi_divergence` / `oi_buildup` — data accrued (logger running since 2026-06-26); SUPERSEDED by the pre-registered W-F4 quadrant protocol — run frozen `hypotheses/W-F4.py` on 2026-07-30, do NOT peek early.
 
 ═══════════════════════════════════════════════════════════════════════
 ## TIER 4 — parked (needs feeds not wired): macro_event_drift 🌐 · news_catalyst_reaction 🌐 (free_signals_suite exists) · perp_spot_basis · gex_maxpain_crypto · liquidation_heatmap
@@ -180,7 +180,9 @@ proposal (operator sign-off before any live flip). This loop is meant to run for
 - **Lane G follow-ups**: AI long anti-calibration (0.70-0.80 band −2.13%@24h) — candidate config lever AFTER a second window confirms (raise long conf floor / down-weight AI longs vs shorts); killswitch counterfactual weakly negative (n=29, p=0.156) — re-examine at n>=60.
 - **WIRED 2026-07-09**: funding_spike_short shadow book (W-F2A VALIDATED, +6.2%/ep, p=0.0027); thin_short_relax shadow recorder in executor (W-G1, +1.12% counterfactual, p=0.001; promotion bar >=30 entries +EV net 25bps).
 
-## W-N3 clean-epoch verdict — due 2026-07-26
+## W-N3 clean-epoch verdict — due 2026-07-26 — DECIDED EARLY 2026-07-16
+Outcome: REFUTED (-7.33%/sig, 42 resolved, both OOS halves negative) ->
+news_catalyst.shadow_only=true flipped same day per standing order; EDGAR stays unbuilt.
 News-catalyst ledger RESTARTED 2026-07-12 (relevance bug fixed 18d596c: symbol
 presence mandatory, equity queries for xyz:). Every pre-fix read is tainted —
 archived at hypotheses/W-N_tainted_news_ledger_pre_20260712.jsonl, NOT to be
@@ -192,6 +194,10 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
 - Otherwise -> news_catalyst.shadow_only=true and EDGAR stays unbuilt.
 
 ## W-W whale/exposure quality-reads program (started 2026-07-12)
+INTERIM 2026-07-17 (shadow_status --book whale_flow): REFUTED lean at n=82 resolved —
+-0.492%/sig @12bps, OOS halves -1.68 / +0.60 (not both positive). Formal bar stays
+2026-07-26; if the verdict holds, (2) Deribit GEX lane and (3) FINRA rewire do NOT
+proceed per the gates below.
 Goal: EV+/PnL+ validation, not UW feature parity.
 1. whale_flow recorder LIVE (c1df51a): Binance >=100k taker prints on scan
    candidates, biased sides vs balanced control. VERDICT BAR: >=30 eps/side,
@@ -224,7 +230,7 @@ Hynix, SNDK->SanDisk, BE->Bloom Energy, CRCL->Circle, KIOXIA->Kioxia, ...) used
 by _coin_query + _title_relevant for xyz coins. Without it the news_ta_quadrant
 recorder accrues ~zero xyz rows and SKHX-class conflicts stay unmeasurable.
 
-## P0 BUG: DSL tracker entry_px goes stale on position ADDS (found 2026-07-13)
+## P0 BUG: DSL tracker entry_px goes stale on position ADDS (found 2026-07-13) — FIXED 2026-07-17
 Evidence (SKHY, manual short + add): fills avg entry 158.73, close 158.90 =
 -0.1% spot / -$0.29 realized. DSL tracker kept the FIRST fill entry (159.83),
 computed +0.64% spot / +6.44% ROE, showed a green win, and ran its profit
@@ -235,3 +241,9 @@ the exchange's avg entryPx and recompute floors; ALSO close events should
 carry realized closedPnl from fills when available so the feed shows exchange
 truth. Tests: add-below-entry short (SKHY replay) + add-above-entry long.
 Owner: next session / Codex (dsl_exit.py + dashboard close model).
+STATUS 2026-07-17: FIXED — DSLTracker tracks last-seen size; rehydrate_from_exchange
+detects any material size increase, refreshes entry_px to the exchange avg, and clamps
+peak_px to the new basis (partial closes update size only; legacy size-0 state adopts
+silently). SKHY replay + 8 more cases green in tests/test_dsl_add_refresh.py. The
+close-event realized-PnL half was already served by the dashboard's pnl_source="fill"
+path. Commit: see git log.
