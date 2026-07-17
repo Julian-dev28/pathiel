@@ -1300,3 +1300,24 @@ def test_landing_v3_kpi_tweens_and_spark(client):
     # site lives inside refreshChart, right after the fetch
     fetch_at = r.index("equity-curve?range_s=")
     assert "drawSpark(data)" in r[fetch_at:fetch_at + 400]
+
+
+def test_v3_ambient_layer_on_every_tab(client):
+    """The living shader background ships on all four tabs (operator order
+    2026-07-17: 'update all pages'), each with the full budget-discipline
+    marker set. Non-landing tabs have no status pill, so the CAT is the
+    status source — body:has() watches its sleep state to shift the OKLCH
+    accent pair, and refreshCat feeds the same summary payload to the shader
+    uniforms via __setGlState."""
+    for path in ("/", "/activity", "/news", "/analytics"):
+        r = client.get(path).text
+        assert 'id="gl-bg"' in r and "#version 300 es" in r, path
+        assert "u_mood" in r and "u_energy" in r and "u_pos" in r, path
+        assert "low-power" in r and "visibilitychange" in r, path
+        assert "cv.remove()" in r, path                   # no-WebGL2 fallback
+        assert "__setGlState" in r, path
+        assert 'id="scroll-progress"' in r and "animation-timeline" in r, path
+        assert "oklch(" in r and "color-mix(" in r and "body:has(" in r, path
+        if path != "/":
+            assert "body:has(#pixel-cat.cat-sleep)" in r, path
+            assert "window.__setGlState(s)" in r, path    # wired into refreshCat

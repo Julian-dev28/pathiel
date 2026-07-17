@@ -184,9 +184,143 @@
     .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
     .skeleton::after,.kpi .v.tick-up,.kpi .v.tick-dn{animation:none}
   }
+  /* ── v3 ambient layer (2026-07-17): shader canvas + status-reactive
+     accents, matching the landing page. On this tab the CAT is the status
+     source — body:has() watches its sleep state and shifts the OKLCH accent
+     pair amber when the feed goes stale/offline. Scroll progress hairline is
+     a pure-CSS scroll-driven animation; browsers without it never grow the
+     bar. ── */
+  :root{ --accA:oklch(0.585 0.233 277.1); --accB:oklch(0.627 0.265 303.9) }
+  body:has(#pixel-cat.cat-sleep){ --accA:oklch(0.769 0.188 70.1); --accB:oklch(0.666 0.179 58.3) }
+  #gl-bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;pointer-events:none}
+  #scroll-progress{position:fixed;top:0;left:0;height:2px;width:100%;z-index:50;
+    transform-origin:0 50%;transform:scaleX(0);
+    background:linear-gradient(90deg,var(--accA),var(--accB))}
+  @supports (animation-timeline: scroll()){
+    @media (prefers-reduced-motion: no-preference){
+      #scroll-progress{animation:growX linear both;animation-timeline:scroll(root)}
+    }
+  }
+  @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .nav-link.nav-active{
+    background:linear-gradient(135deg,color-mix(in oklab,var(--accA) 16%,transparent),color-mix(in oklab,var(--accB) 16%,transparent));
+    border-color:color-mix(in oklab,var(--vio) 45%,transparent)}
+  ::selection{background:color-mix(in oklab,var(--vio) 32%,transparent)}
+  html{scrollbar-color:#2c313c #0a0b0d;scrollbar-width:thin}
+  .mono,.num{font-variant-numeric:tabular-nums}
 </style>
+
 </head>
 <body class="min-h-screen">
+<canvas id="gl-bg" aria-hidden="true"></canvas>
+<div id="scroll-progress" aria-hidden="true"></div>
+<script>
+// ── v3 ambient layer (2026-07-17), same engine as the landing page: a
+// hand-written WebGL2 fbm aurora in the brand ramp, uniforms fed by the
+// summary payload this page already polls for the cat (refreshCat calls
+// window.__setGlState). Self-contained IIFE — no names leak. Budget: low-power
+// GPU hint, DPR cap 1.5, ~30fps, hidden-tab pause; prefers-reduced-motion
+// renders exactly one static frame; no WebGL2 removes the canvas and the CSS
+// gradient below stays. ──
+(function () {
+  const cv = document.getElementById('gl-bg');
+  const rm = matchMedia('(prefers-reduced-motion: reduce)');
+  const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) { cv.remove(); return; }
+  const VS = `#version 300 es
+void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(v*2.-1.,0.,1.);}`;
+  const FS = `#version 300 es
+precision highp float;
+uniform vec2 u_res;uniform float u_t;
+uniform float u_mood;uniform float u_energy;uniform float u_pos;
+out vec4 o;
+float hash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+17.3;a*=.5;}return s;}
+const float B[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+void main(){
+ vec2 uv=gl_FragCoord.xy/u_res;
+ vec2 p=vec2(uv.x*u_res.x/u_res.y,uv.y);
+ float t=u_t*(.015+.05*u_energy);
+ vec2 q=vec2(fbm(p*1.3+vec2(0.,t)),fbm(p*1.3+vec2(5.2,-t*.7)));
+ float v=fbm(p*2.1+2.2*q+vec2(0.,t*.4));
+ float sky=smoothstep(.15,.85,uv.y);
+ float glow=sky*(.10+.22*v)*(.45+.55*u_energy)*(1.+.35*u_pos);
+ vec3 aur=mix(vec3(.388,.400,.945),vec3(.659,.333,.969),v);
+ aur=mix(aur,u_mood>=0.?vec3(.13,.72,.36):vec3(.92,.26,.26),abs(u_mood)*.38);
+ vec3 col=vec3(.039,.043,.051)+aur*glow;
+ col+=aur*exp(-abs(uv.y-.72)*6.)*.06*(.5+.5*u_energy);
+ col*=1.-.28*length(uv-vec2(.5,.55));
+ int bi=int(mod(gl_FragCoord.y,4.))*4+int(mod(gl_FragCoord.x,4.));
+ col+=(B[bi]/16.-.5)/255.*3.;
+ o=vec4(col,1.);}`;
+  function shader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+    return s;
+  }
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+  } catch (e) { cv.remove(); return; }
+  gl.useProgram(prog);
+  const U = n => gl.getUniformLocation(prog, n);
+  const uRes = U('u_res'), uT = U('u_t'), uMood = U('u_mood'), uEnergy = U('u_energy'), uPos = U('u_pos');
+  const tgt = { mood: 0, energy: 0.45, pos: 0 };
+  const cur = { mood: 0, energy: 0.45, pos: 0 };
+  window.__setGlState = s => {
+    tgt.mood = Math.max(-1, Math.min(1, (s.daily_pnl_pct ?? 0) / 2));
+    tgt.energy = s.status === 'scanning' ? 1 : s.status === 'stale' ? 0.45 : 0.12;
+    tgt.pos = Math.min(1, (s.open_positions ?? 0) / 5);
+    if (rm.matches) draw(t0 + 1);
+  };
+  function resize() {
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    cv.width = Math.round(innerWidth * dpr);
+    cv.height = Math.round(innerHeight * dpr);
+    gl.viewport(0, 0, cv.width, cv.height);
+    if (rm.matches) draw(t0 + 1);
+  }
+  const t0 = performance.now();
+  let last = 0, rafId = 0;
+  function draw(now) {
+    const k = rm.matches ? 1 : 0.04;
+    cur.mood += (tgt.mood - cur.mood) * k;
+    cur.energy += (tgt.energy - cur.energy) * k;
+    cur.pos += (tgt.pos - cur.pos) * k;
+    gl.uniform2f(uRes, cv.width, cv.height);
+    gl.uniform1f(uT, (now - t0) / 1000);
+    gl.uniform1f(uMood, cur.mood);
+    gl.uniform1f(uEnergy, cur.energy);
+    gl.uniform1f(uPos, cur.pos);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  function loop(now) {
+    rafId = requestAnimationFrame(loop);
+    if (now - last < 33) return;
+    last = now;
+    draw(now);
+  }
+  function setMode() {
+    cancelAnimationFrame(rafId);
+    if (rm.matches) draw(t0 + 1);
+    else rafId = requestAnimationFrame(loop);
+  }
+  addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => {
+    cancelAnimationFrame(rafId);
+    if (!document.hidden && !rm.matches) rafId = requestAnimationFrame(loop);
+  });
+  rm.addEventListener('change', setMode);
+  resize(); setMode();
+})();
+</script>
 <div class="max-w-[1240px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
@@ -838,7 +972,11 @@ function updateCat(s) {
   catLastEquity = s.equity ?? catLastEquity;
 }
 async function refreshCat() {
-  try { updateCat(await (await fetch('/api/dashboard/summary')).json()); } catch (e) {}
+  try {
+    const s = await (await fetch('/api/dashboard/summary')).json();
+    updateCat(s);
+    if (window.__setGlState) window.__setGlState(s);   // shader shares the cat's payload
+  } catch (e) {}
 }
 refreshCat();
 setInterval(refreshCat, 20000);
