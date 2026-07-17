@@ -353,6 +353,22 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     }
 
 
+def missing_material_dexes(last_dex_equity: Optional[Dict[str, float]],
+                           queried_dexes: set,
+                           floor_usd: float = 0.50) -> set:
+    """Dexes that held material equity on the last good read but are absent
+    from this read's `queried_dexes`.
+
+    The held-dex guard in the trading loop only protects dexes backing an
+    open position. A dex holding idle USDC but NO position (xyz on
+    2026-07-17: $8.47 flat) can drop out of a read silently — the aggregate
+    then under-reports equity, poisons daily-PnL memory, and drags the
+    daily-loss kill switch toward a false trip. Callers keep a last-known
+    dex_equity dict and treat any non-empty return as a partial read."""
+    return {d for d, v in (last_dex_equity or {}).items()
+            if float(v or 0) >= floor_usd and d not in queried_dexes}
+
+
 def fetch_aggregate_contributions_since(user: str, start_ms: int) -> float:
     """Net USDC flowing INTO main + HIP-3 dex clearinghouses since `start_ms`.
 

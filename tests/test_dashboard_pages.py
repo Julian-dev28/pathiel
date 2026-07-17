@@ -1376,3 +1376,18 @@ def test_v4_landing_wire_sse(client):
     assert "EventSource" in r and "/api/feed/stream" in r
     assert "aria-live" in r
     assert r.index("</nav>") < r.index('id="wire"') < r.index('id="funnel-strip"')
+
+
+def test_summary_equity_is_true_account_equity(monkeypatch):
+    """Operator correction 2026-07-17: the equity KPI must match HL's own
+    Account Equity — perps across every dex PLUS idle spot USDC — not the
+    perps-only subtotal."""
+    hb = {"ts": int(time.time() * 1000) - 5_000, "event": "loop_heartbeat",
+          "equity": 20.40, "spot_usdc": 0.02, "daily_pnl": 1.9,
+          "available": 1.89, "open_positions": 3,
+          "dex_equity": {"": 11.95, "xyz": 8.45},
+          "dex_available": {"": 1.89, "xyz": 8.45}}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [hb])
+    s = db._summary_payload()
+    assert s["equity"] == 20.42          # 20.40 perps + 0.02 spot
+    assert s["spot_usdc"] == 0.02

@@ -160,6 +160,7 @@ def _summary_payload() -> Dict[str, Any]:
     last_event_ts = events[-1]["ts"] if events else 0
 
     equity = float(heartbeat.get("equity", 0) or 0)
+    spot_usdc = float(heartbeat.get("spot_usdc", 0) or 0)
     daily_pnl = float(heartbeat.get("daily_pnl", 0) or 0)
     # Start-of-day equity = equity - daily_pnl (heartbeat-consistent)
     sod = equity - daily_pnl
@@ -183,11 +184,14 @@ def _summary_payload() -> Dict[str, Any]:
     dex_available = heartbeat.get("dex_available") or {}
 
     return {
-        "equity": round(equity, 2),
+        # True account equity as the exchange app shows it: perps across every
+        # dex PLUS idle spot USDC (operator correction 2026-07-17 — the KPI
+        # must match HL's own "Account Equity", not the perps-only subtotal).
+        "equity": round(equity + spot_usdc, 2),
         "available": round(float(heartbeat.get("available", 0) or 0), 2),
         "dex_equity": dex_equity,
         "dex_available": dex_available,
-        "spot_usdc": round(float(heartbeat.get("spot_usdc", 0) or 0), 2),
+        "spot_usdc": round(spot_usdc, 2),
         "daily_pnl": round(daily_pnl, 2),
         "daily_pnl_pct": round(daily_pnl_pct, 2),
         "open_positions": int(heartbeat.get("open_positions", 0) or 0),

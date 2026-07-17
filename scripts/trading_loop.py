@@ -114,7 +114,7 @@ from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.memory import memory
 from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
 from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, resolve_user_address
+from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, missing_material_dexes, resolve_user_address
 from hermes_trader.positions_snapshot import write_snapshot
 from hermes_trader.session_log import append as log_event
 
@@ -438,6 +438,13 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
     return ""
 
 
+# Last-known per-dex equity + consecutive-miss streaks for the idle-capital
+# degraded-read guard in _sync_account_state (module state, resets on restart).
+_LAST_DEX_EQUITY: dict = {}
+_DEX_MISS_STREAK: dict = {}
+_DEX_MISS_ACCEPT = 10   # consecutive misses before a funded dex is accepted as gone
+
+
 def _sync_account_state():
     """Pull live aggregated equity + positions from HL, persist to memory.
 
@@ -502,6 +509,37 @@ def _sync_account_state():
             f"missing from queried {set(queried_dexes)} (equity read ${equity:.2f} is "
             f"incomplete) — skipping memory update, preserving last-known-good")
         return 0.0, [], 0.0, 0.0, set(), {}
+
+    # IDLE-CAPITAL degraded-read guard (2026-07-17): the held-dex guard above
+    # only covers dexes backing an open tracker. A dex holding idle USDC but
+    # NO position (xyz: $8.47 flat) dropped out silently when a degraded
+    # perpDexs response got cached — equity read main-only and faked a
+    # -$6.40 day. Remember each dex's last-known equity; if a materially
+    # funded dex vanishes from a read, treat it as partial. A dex missing
+    # _DEX_MISS_ACCEPT consecutive reads is accepted as genuinely gone
+    # (delisted/emptied) so one dead dex can't block memory updates forever.
+    missing_idle = missing_material_dexes(_LAST_DEX_EQUITY, set(queried_dexes))
+    if missing_idle:
+        blocked = set()
+        for d in missing_idle:
+            _DEX_MISS_STREAK[d] = _DEX_MISS_STREAK.get(d, 0) + 1
+            if _DEX_MISS_STREAK[d] <= _DEX_MISS_ACCEPT:
+                blocked.add(d)
+            else:
+                logger.error(
+                    f"[heartbeat] dex {d!r} missing {_DEX_MISS_STREAK[d]} reads in a row "
+                    f"(last-known ${_LAST_DEX_EQUITY.get(d, 0):.2f}) — accepting it as gone")
+                _LAST_DEX_EQUITY.pop(d, None)
+        if blocked:
+            logger.warning(
+                f"[heartbeat] partial-dex degraded read: funded-but-flat dex(es) {blocked} "
+                f"missing from queried {set(queried_dexes)} (equity read ${equity:.2f} is "
+                f"incomplete) — skipping memory update, preserving last-known-good")
+            return 0.0, [], 0.0, 0.0, set(), {}
+    for d in set(queried_dexes):
+        _DEX_MISS_STREAK.pop(d, None)
+    _LAST_DEX_EQUITY.update(
+        {d: float(v or 0) for d, v in (state.get("dex_equity") or {}).items()})
 
     vanished_tracked = {
         c for c in active_position_coins()

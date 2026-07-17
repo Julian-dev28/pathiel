@@ -130,10 +130,22 @@ def list_hip3_dexes(force_refresh: bool = False) -> List[str]:
     are HIP-3 sub-dexes. Cached for 24h.
     """
     cache = _load_json_cached(_PERP_DEXS_CACHE_PATH, _CACHE_TTL_SECS) if not force_refresh else None
-    if cache is not None:
+    if cache:   # an empty cached list is never trusted — see below
         return cache
     raw = _http_post("/info", {"type": "perpDexs"}) or []
     dexes = [d["name"] for d in raw if isinstance(d, dict) and d.get("name")]
+    if not dexes:
+        # A degraded/empty response must NOT be cached as "no dexes exist":
+        # on 2026-07-17 one empty read got cached for 24h, silently dropping
+        # every HIP-3 dex from equity aggregation (xyz's idle $8.47 vanished
+        # from the total, faking a -$6.40 day on the dashboard). Serve the
+        # last known snapshot instead, however stale — dex registration
+        # changes are rare; a phantom-empty list is not.
+        stale = _load_json_cached(_PERP_DEXS_CACHE_PATH, ttl_secs=10 * 365 * 86_400)
+        if stale:
+            logger.warning("[universe] perpDexs returned empty — serving stale dex list")
+            return stale
+        return dexes
     _save_json_cached(_PERP_DEXS_CACHE_PATH, dexes)
     return dexes
 
