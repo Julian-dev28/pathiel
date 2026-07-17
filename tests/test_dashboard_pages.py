@@ -1321,3 +1321,57 @@ def test_v3_ambient_layer_on_every_tab(client):
         if path != "/":
             assert "body:has(#pixel-cat.cat-sleep)" in r, path
             assert "window.__setGlState(s)" in r, path    # wired into refreshCat
+
+
+# ── v4 app-shell (2026-07-17): compiled CSS, MPA transitions, the wire ──────
+
+def test_v4_compiled_css_replaces_tailwind_runtime(client):
+    """The in-browser Tailwind JIT runtime is gone — every page links the
+    compiled /static/app.css instead (no runtime JS, no flash-of-unstyled).
+    The committed file must be exactly what scripts/build_static_css.py
+    emits, and every utility-shaped class token in the templates must
+    resolve to a rule — the generator hard-fails on unknowns, so a template
+    edit that invents a class breaks HERE, not silently in the browser."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "build_static_css",
+        os.path.join(os.path.dirname(__file__), "..", "scripts", "build_static_css.py"))
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert gen.OUT.read_text() == gen.build(), "app.css stale — rerun scripts/build_static_css.py"
+    for path in ("/", "/activity", "/news", "/analytics"):
+        r = client.get(path).text
+        assert '"/static/app.css"' in r, path
+        assert "tailwind.js" not in r, path
+
+
+def test_v4_mpa_view_transitions_cat_morphs(client):
+    """Cross-document view transitions: all four tabs opt in, and the cat
+    carries the same view-transition-name so it MORPHS between pages when
+    you navigate — the mascot persists across the whole app."""
+    for path in ("/", "/activity", "/news", "/analytics"):
+        r = client.get(path).text
+        assert "@view-transition{navigation:auto}" in r, path
+        assert "view-transition-name:cat" in r, path
+
+
+def test_v4_speculation_rules_and_hotkeys(client):
+    """Hover-eagerness prerendering (speculation rules) makes tab hops
+    instant; g-then-key hotkeys (g d/a/n/y) give app-style navigation,
+    inert while typing."""
+    for path in ("/", "/activity", "/news", "/analytics"):
+        r = client.get(path).text
+        assert 'type="speculationrules"' in r, path
+        assert '"eagerness":"moderate"' in r, path
+        assert "keydown" in r and "e.target.closest('input,textarea,select')" in r, path
+
+
+def test_v4_landing_wire_sse(client):
+    """The wire: live session-log tail on the landing page over the existing
+    /api/feed/stream SSE endpoint — newest engine event as a one-line strip,
+    hidden until the first event arrives so it never renders as chrome."""
+    r = client.get("/").text
+    assert 'id="wire"' in r
+    assert "EventSource" in r and "/api/feed/stream" in r
+    assert "aria-live" in r
+    assert r.index("</nav>") < r.index('id="wire"') < r.index('id="funnel-strip"')

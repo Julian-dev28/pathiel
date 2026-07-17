@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · live</title>
-<script src="/static/tailwind.js"></script>
+<link rel="stylesheet" href="/static/app.css" />
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
@@ -251,11 +251,44 @@
     .tick-up,.tick-dn,.pill::before,.kpi:hover::after{animation:none}
     .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
   }
+  #wire{margin:-6px 0 20px;font-size:10.5px;color:var(--dim);letter-spacing:.04em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #wire b{color:var(--mut);font-weight:600}
+  #wire.tick{animation:wire-in .5s ease-out}
+  @keyframes wire-in{0%{opacity:.25}100%{opacity:1}}
+  /* ── v4 app-shell (2026-07-17): cross-document view transitions — every
+     tab opts in, so navigation cross-fades and the CAT MORPHS between pages
+     (it carries view-transition-name:cat on all four). Speculation-rules
+     prerender (in the body) makes the hop feel instant. text-box trims
+     cap-height dead space so labels and numerals sit optically flush. ── */
+  @view-transition{navigation:auto}
+  #pixel-cat{view-transition-name:cat}
+  ::view-transition-group(cat){animation-duration:.28s}
+  @supports (text-box: trim-both cap alphabetic){
+    .sec-label,.kv{text-box:trim-both cap alphabetic}
+  }
 </style>
 </head>
 <body class="min-h-screen">
 <canvas id="gl-bg" aria-hidden="true"></canvas>
 <div id="scroll-progress" aria-hidden="true"></div>
+<script type="speculationrules">
+{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
+</script>
+<script>
+// g-then-key tab hops (g d / g a / g n / g y) — app-style keyboard nav,
+// inert while typing in a field or holding a modifier
+(function () {
+  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics' };
+  let armed = 0;
+  addEventListener('keydown', e => {
+    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'g') { armed = Date.now(); return; }
+    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
+    armed = 0;
+  });
+})();
+</script>
 <div class="max-w-[1100px] mx-auto px-6 py-6">
 
   <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
@@ -312,6 +345,11 @@
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
     <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
   </nav>
+
+  <!-- the wire: live session-log tail over SSE — the newest engine event,
+       one line, straight from /api/feed/stream (replays recent past on
+       connect, so it is never blank while the loop runs) -->
+  <div id="wire" class="mono" aria-live="polite" hidden></div>
 
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="card glow kpi p-4">
@@ -1028,6 +1066,30 @@ setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
 setInterval(refreshFunnel, 60000);      // pure log walk server-side
 setInterval(refreshTape, 45000);        // pure log walk server-side
 setInterval(refreshLeague, 90000);      // local ledger files only
+
+// ── the wire — SSE tail of the session log. Drops are fine (the strip just
+// goes quiet); prerendered copies of this page open their own short-lived
+// stream, which the server handles like any other client. ──
+(function () {
+  const el = document.getElementById('wire');
+  if (!el || !window.EventSource) return;
+  const fmt = e => {
+    const t = new Date(e.ts || Date.now()).toLocaleTimeString();
+    const bits = [e.event, e.coin, e.verdict && ('verdict ' + e.verdict),
+                  e.triggers != null && (e.triggers + ' triggers')].filter(Boolean);
+    return `<b>${esc(t)}</b> · ${bits.map(x => esc(String(x))).join(' · ')}`;
+  };
+  try {
+    const es = new EventSource('/api/feed/stream');
+    es.onmessage = m => {
+      try {
+        el.innerHTML = fmt(JSON.parse(m.data));
+        el.hidden = false;
+        el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
+      } catch (_) {}
+    };
+  } catch (_) {}
+})();
 </script>
 </body>
 </html>
