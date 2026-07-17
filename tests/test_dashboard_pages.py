@@ -1040,11 +1040,12 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
     assert "recorder" in rows["whale_flow"]["thesis"] or "measurement" in rows["whale_flow"]["thesis"]
 
 
-def test_book_league_ripped_books_are_dead_not_recorder(monkeypatch, tmp_path):
+def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     """premium_fade_short / neg_funding_fade: module deleted, ledger fully
-    graded and REFUTED — must read DEAD, never the same 'recorder' badge as
-    a genuinely still-accruing lane like whale_flow (operator confusion
-    2026-07-15: the table made a closed, refuted book look 'in progress')."""
+    graded and REFUTED, and — operator order 2026-07-17 — removed from the
+    UI entirely. Their ledger files stay on disk as evidence, but the league
+    payload must skip them; a genuinely still-accruing lane like whale_flow
+    keeps its 'recorder' status."""
     from hermes_trader.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
@@ -1058,12 +1059,11 @@ def test_book_league_ripped_books_are_dead_not_recorder(monkeypatch, tmp_path):
                              "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
-    assert rows["premium_fade_short"]["status"] == "dead"
-    assert "REFUTED" in rows["premium_fade_short"]["thesis"]
-    assert rows["neg_funding_fade"]["status"] == "dead"
-    assert "REFUTED" in rows["neg_funding_fade"]["thesis"]
-    # a genuinely active zero-capital lane keeps the distinct "recorder" status
+    assert "premium_fade_short" not in rows
+    assert "neg_funding_fade" not in rows
     assert rows["whale_flow"]["status"] == "recorder"
+    # no row can ever carry the retired 'dead' status again
+    assert all(r["status"] != "dead" for r in rows.values())
 
 
 def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
@@ -1208,8 +1208,9 @@ def test_analytics_page_markers(client):
     # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
     assert "fmtMoneyCompact" in r
     assert "tape-net" in r and "fmtMoneyCompact(r.net_usd)" in r
-    # dead/refuted books get their own badge, distinct from an active recorder
-    assert "b-dead" in r and "REFUTED</span>" in r and "row-dead" in r
+    # the dead-book branch is GONE (operator order 2026-07-17: refuted books
+    # are removed from the UI, not rendered with a special badge)
+    assert "b-dead" not in r and "row-dead" not in r
 
 
 # ── landing v3 (2026-07-17): living ambient layer + informational one-pager ──

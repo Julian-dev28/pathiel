@@ -113,7 +113,6 @@
   .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .badge.b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
   .badge.b-rec{color:#a5b4fc;background:rgba(99,102,241,.10);border-color:rgba(99,102,241,.3)}
-  .badge.b-dead{color:var(--dim);background:#15171c;border-color:var(--line);text-decoration:line-through}
   .badge.b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .badge.b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
@@ -945,8 +944,7 @@ async function refreshPositions() {
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
                 off: '<span class="badge b-off">OFF</span>',
-                recorder: '<span class="badge b-rec">RECORDER</span>',
-                dead: '<span class="badge b-dead">DEAD</span>' };
+                recorder: '<span class="badge b-rec">RECORDER</span>' };
 
 async function refreshBooks() {
   try {
@@ -1028,7 +1026,7 @@ async function refreshTape() {
 }
 
 // ── evidence league — every shadow-ledger book with its inventory. status
-// rank: live first, dead last; the table is the public face of the
+// rank: live first; the table is the public face of the
 // validate-first doctrine. ───────────────────────────────────────────────────
 const fmtLastAge = h => h == null ? '—' : h < 1 ? Math.max(1, Math.round(h * 60)) + 'm' : h < 48 ? Math.round(h) + 'h' : Math.round(h / 24) + 'd';
 async function refreshLeague() {
@@ -1039,11 +1037,11 @@ async function refreshLeague() {
       body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--dim)">no ledgers yet</td></tr>';
       return;
     }
-    const rank = { live: 0, shadow: 1, recorder: 2, off: 3, dead: 4 };
+    const rank = { live: 0, shadow: 1, recorder: 2, off: 3 };
     rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
     body.innerHTML = rows.map(r => `
       <tr class="border-b last:border-0" style="border-color:var(--line)">
-        <td class="py-2 pr-3 whitespace-nowrap"><span class="tk${r.status === 'dead' ? ' off' : ''}" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
+        <td class="py-2 pr-3 whitespace-nowrap"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
         <td class="py-2 pr-3 lg-status">${BADGE[r.status] || esc(r.status)}</td>
         <td class="py-2 pr-3 mono" style="color:var(--mut)">${esc(r.size)}</td>
         <td class="py-2 pr-3 mono text-right">${r.n}</td>

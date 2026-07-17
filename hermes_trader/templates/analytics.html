@@ -44,8 +44,6 @@
   .b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
   .b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
   .b-recorder{color:var(--teal);background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.3)}
-  .b-dead{color:var(--dim);background:#171a20;border-color:var(--line2);text-decoration:line-through;text-decoration-color:var(--dn)}
-  .row-dead{opacity:.5}
   .b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
   .b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
   .b-breaking{color:#fcd34d;background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.4)}
@@ -565,8 +563,7 @@ document.querySelectorAll('[data-window]').forEach(b => {
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
                 off: '<span class="badge b-off">OFF</span>',
-                recorder: '<span class="badge b-recorder">RECORDER</span>',
-                dead: '<span class="badge b-dead">REFUTED</span>' };
+                recorder: '<span class="badge b-recorder">RECORDER</span>' };
 let leagueRows = [];
 let leagueSort = { key: 'n', desc: true };
 
@@ -582,17 +579,14 @@ function renderLeague() {
     return;
   }
   body.innerHTML = rows.map(r => `
-    <tr class="border-b last:border-0 ${r.status === 'dead' ? 'row-dead' : ''}" style="border-color:var(--line)">
+    <tr class="border-b last:border-0" style="border-color:var(--line)">
       <td class="py-2 pr-3"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
       <td class="py-2 pr-3">${BADGE[r.status] || esc(r.status)}</td>
-      <td class="py-2 pr-3 mono text-[10.5px]" style="color:var(--mut);max-width:220px" colspan="${r.status === 'dead' ? 5 : 1}">
-        ${r.status === 'dead' ? esc(r.thesis) : esc(r.size)}
-      </td>
-      ${r.status === 'dead' ? '' : `
+      <td class="py-2 pr-3 mono text-[10.5px]" style="color:var(--mut);max-width:220px">${esc(r.size)}</td>
       <td class="py-2 pr-3 mono text-right">${r.n}</td>
       <td class="py-2 pr-3 mono text-right resolved">${r.resolved}</td>
       <td class="py-2 pr-3 mono text-right pending">${r.pending}</td>
-      <td class="py-2 mono text-right" style="color:var(--mut)">${fmtAge(r.last_age_h)}</td>`}
+      <td class="py-2 mono text-right" style="color:var(--mut)">${fmtAge(r.last_age_h)}</td>
     </tr>`).join('');
   document.querySelectorAll('th.sortable').forEach(th => {
     th.classList.toggle('sort-on', th.dataset.sort === leagueSort.key);
