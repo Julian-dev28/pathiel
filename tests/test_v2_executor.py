@@ -59,6 +59,32 @@ class _StubApi:
         return 0
 
 
+class _MakerStubApi(_StubApi):
+    """Healthy exchange that also supports the maker-first (ALO) surface."""
+    def __init__(self, mid=100.0, order_ok=True, sl_ok=True, maker_ok=True,
+                 cancel_ok=True, status=None):
+        super().__init__(mid=mid, order_ok=order_ok, sl_ok=sl_ok)
+        self.maker_ok, self.cancel_ok = maker_ok, cancel_ok
+        self.status = status or {"status": "open", "filled_sz": 0.0}
+        self.maker_orders, self.status_calls, self.order_cancels = [], [], []
+
+    def place_hl_maker_order(self, is_buy, size, mid_price, coin):
+        self.maker_orders.append({"is_buy": is_buy, "size": size, "coin": coin})
+        if not self.maker_ok:
+            return {"ok": False, "error": "Post only order would have immediately matched"}
+        px = mid_price * (0.999 if is_buy else 1.001)
+        return {"ok": True, "order_id": "moid-1", "resting": True,
+                "limit_px": px, "size": size}
+
+    def order_fill_status(self, oid, coin):
+        self.status_calls.append((oid, coin))
+        return dict(self.status)
+
+    def cancel_orders(self, oid, coin=None):
+        self.order_cancels.append((oid, coin))
+        return {"ok": self.cancel_ok}
+
+
 class _ExplodingApi:
     """Any attribute access = an order-path touch. Shadow mode must never get here."""
     def __getattr__(self, name):
@@ -70,6 +96,7 @@ def _iso(tmp_path, monkeypatch):
     """Fresh claims file + isolated DSL registry + shadow env by default."""
     monkeypatch.delenv("HERMES_V2_LIVE", raising=False)
     monkeypatch.setattr(ex, "_CLAIMS_PATH", str(tmp_path / "v2_claims.json"))
+    monkeypatch.setattr(ex, "_PENDING_MAKERS_PATH", str(tmp_path / "pending.json"))
     ex.reset_claims_singleton()
     monkeypatch.setattr(ex, "_SL_RETRY_SLEEP_S", 0.0)
     monkeypatch.setattr(dsl, "load_state", lambda force=False: None)
@@ -78,6 +105,15 @@ def _iso(tmp_path, monkeypatch):
     yield
     dsl._active_positions.clear()
     ex.reset_claims_singleton()
+
+
+@pytest.fixture()
+def fills(monkeypatch):
+    """Capture the self-grading meta_fill ledger rows instead of writing jsonl."""
+    out = []
+    monkeypatch.setattr(ex.v2_ledger, "record",
+                        lambda book, **kw: out.append((book, kw)) or {})
+    return out
 
 
 def _exec(intent, api, **over):
@@ -120,6 +156,17 @@ class TestShadowCannotPlaceOrders:
             assert not ex.live_enabled()
         monkeypatch.setenv("HERMES_V2_LIVE", "1")
         assert ex.live_enabled()
+
+    def test_pending_maker_sweep_refuses_in_shadow(self):
+        """Even with a fabricated pending file, the sweep must not touch an api."""
+        ex._save_pending({"AAA": {"book": "extreme_fade", "coin": "AAA",
+                                  "side": "long", "oid": "moid-1", "size": 0.6,
+                                  "limit_px": 99.9, "ref_px": 100.0,
+                                  "signal_bar_t": 0, "stop_pct": 20.0,
+                                  "hold_days": 3.0, "leverage": 12,
+                                  "placed_ms": 0, "wait_min": 30.0}})
+        assert ex.check_pending_makers({}, order_api=_ExplodingApi()) == []
+        assert "AAA" in ex._load_pending()               # untouched, not dropped
 
 
 # ── Live path (env armed, stub api) ───────────────────────────────────────────
@@ -196,6 +243,144 @@ class TestLivePath:
         assert "AAA" in api.cancels                            # SL bracket cancelled
         assert dsl._active_positions == {}
         assert ex.claims_registry().claims() == {}
+
+
+# ── Maker-first entries (post-only at touch, IOC cross after the window) ──────
+
+class TestMakerFirst:
+    @pytest.fixture(autouse=True)
+    def _arm(self, monkeypatch):
+        monkeypatch.setenv("HERMES_V2_LIVE", "1")
+
+    def test_entry_rests_alo_and_defers_execution(self, fills):
+        api = _MakerStubApi(mid=100.0)
+        res = _exec(_intent(), api)
+        assert res["executed"] is False and res["reason"] == "maker_pending"
+        assert res["pending_maker"] is True and res["order_id"] == "moid-1"
+        assert len(api.maker_orders) == 1 and api.orders == []   # no IOC cross
+        assert api.triggers == []                                # SL only on fill
+        assert dsl._active_positions == {}                       # DSL only on fill
+        assert ex.claims_registry().owner_of("AAA") == "extreme_fade"  # claim held
+        p = ex._load_pending()["AAA"]
+        assert p["oid"] == "moid-1" and p["limit_px"] == pytest.approx(99.9)
+        assert p["wait_min"] == 30.0                             # default window
+        assert fills == []                                       # nothing filled yet
+
+    def test_resignal_while_pending_is_refused(self):
+        api = _MakerStubApi()
+        _exec(_intent(), api)
+        res = _exec(_intent(), api)
+        assert res["executed"] is False and res["reason"] == "maker_pending"
+        assert len(api.maker_orders) == 1                        # no duplicate order
+        assert ex.claims_registry().owner_of("AAA") == "extreme_fade"
+
+    def test_filled_maker_finalizes_sl_dsl_and_meta(self, fills):
+        api = _MakerStubApi(mid=100.0)
+        _exec(_intent(stop=20.0, lev=12), api)
+        api.status = {"status": "filled", "filled_sz": 0.6}
+        out = ex.check_pending_makers(CFG, order_api=api)
+        assert len(out) == 1 and out[0]["executed"] is True
+        assert out[0]["fill_path"] == "maker"
+        assert out[0]["entry_px"] == pytest.approx(99.9)         # filled AT the limit
+        assert len(api.triggers) == 1                            # backup SL placed
+        assert api.triggers[0]["px"] == pytest.approx(99.9 * 0.95)   # liq-capped 5%
+        t = dsl._active_positions["AAA_long"]
+        assert t.policy.max_loss_pct == 20.0 and t.policy.protect_pct == 9999.0
+        assert ex._load_pending() == {}                          # pending consumed
+        book, kw = fills[-1]
+        assert book == "extreme_fade" and kw["side"] == "meta_fill"
+        assert kw["horizon_days"] == 0.0                         # ungradeable by design
+        m = kw["meta"]
+        assert m["fill_path"] == "maker" and m["fill_px"] == pytest.approx(99.9)
+        assert m["ref_px"] == pytest.approx(100.0)               # signal ref px
+        assert m["slip_bps"] == pytest.approx(-10.0)             # filled BETTER than ref
+
+    def test_window_expiry_cancels_and_crosses_ioc(self, fills):
+        api = _MakerStubApi(mid=100.0)
+        _exec(_intent(), api)
+        placed = ex._load_pending()["AAA"]["placed_ms"]
+        late = placed + int(30.5 * 60_000)
+        out = ex.check_pending_makers(CFG, order_api=api, now_ms=late)
+        assert api.order_cancels == [("moid-1", "AAA")]          # cancelled first
+        assert len(api.orders) == 1                              # crossed via IOC path
+        assert out[0]["executed"] is True and out[0]["fill_path"] == "taker"
+        assert out[0]["entry_px"] == pytest.approx(100.0)        # IOC filled at mid
+        assert "AAA_long" in dsl._active_positions
+        assert ex._load_pending() == {}
+        assert fills[-1][1]["meta"]["fill_path"] == "taker"
+        assert fills[-1][1]["meta"]["slip_bps"] == pytest.approx(0.0)
+
+    def test_within_window_stays_resting(self, fills):
+        api = _MakerStubApi()
+        _exec(_intent(), api)
+        out = ex.check_pending_makers(CFG, order_api=api)        # now < window
+        assert out == [] and api.order_cancels == [] and api.orders == []
+        assert "AAA" in ex._load_pending()
+
+    def test_partial_maker_fill_crosses_remainder_as_mixed(self, fills):
+        api = _MakerStubApi(mid=100.0)
+        _exec(_intent(), api)                                    # size 0.6
+        api.status = {"status": "open", "filled_sz": 0.3}
+        placed = ex._load_pending()["AAA"]["placed_ms"]
+        out = ex.check_pending_makers(CFG, order_api=api,
+                                      now_ms=placed + 31 * 60_000)
+        assert out[0]["fill_path"] == "mixed"
+        # 0.3 @ 99.9 (maker) + 0.3 @ 100.0 (IOC) = 99.95 blended
+        assert out[0]["entry_px"] == pytest.approx(99.95)
+        assert api.orders[0]["size"] == pytest.approx(0.3)       # only the remainder
+        m = fills[-1][1]["meta"]
+        assert m["maker_sz"] == pytest.approx(0.3) and m["taker_sz"] == pytest.approx(0.3)
+
+    def test_dead_unfilled_releases_claim_and_records_none(self, fills):
+        api = _MakerStubApi(order_ok=False)                      # IOC fallback fails too
+        _exec(_intent(), api)
+        api.status = {"status": "canceled", "filled_sz": 0.0}
+        out = ex.check_pending_makers(CFG, order_api=api)
+        assert out[0]["executed"] is False and out[0]["fill_path"] == "none"
+        assert ex.claims_registry().claims() == {}               # claim released
+        assert ex._load_pending() == {} and dsl._active_positions == {}
+        assert fills[-1][1]["meta"]["fill_path"] == "none"
+
+    def test_cancel_failure_never_crosses(self, fills):
+        """The just-filled race: cancel fails -> do NOT cross; next sweep resolves."""
+        api = _MakerStubApi(cancel_ok=False)
+        _exec(_intent(), api)
+        placed = ex._load_pending()["AAA"]["placed_ms"]
+        out = ex.check_pending_makers(CFG, order_api=api,
+                                      now_ms=placed + 31 * 60_000)
+        assert out == [] and api.orders == []                    # no IOC fired
+        assert "AAA" in ex._load_pending()                       # retried next sweep
+
+    def test_maker_reject_falls_back_to_ioc_same_call(self, fills):
+        api = _MakerStubApi(maker_ok=False)                      # ALO would cross
+        res = _exec(_intent(), api)
+        assert res["executed"] is True and res["fill_path"] == "taker"
+        assert len(api.maker_orders) == 1 and len(api.orders) == 1
+        assert fills[-1][1]["meta"]["fill_path"] == "taker"
+
+    def test_maker_first_disabled_by_config(self, fills):
+        api = _MakerStubApi()
+        cfg = {**CFG, "entry": {"maker_first": False}}
+        res = _exec(_intent(), api, cfg=cfg)
+        assert res["executed"] is True and res["fill_path"] == "taker"
+        assert api.maker_orders == []                            # ALO never attempted
+
+    def test_taker_only_api_records_fill_meta_too(self, fills):
+        """Plain IOC api (no ALO support): change still grades itself."""
+        api = _StubApi(mid=100.0)
+        intent = _intent()
+        intent.entry_ref_px = 99.5
+        res = _exec(intent, api)
+        assert res["executed"] is True and res["fill_path"] == "taker"
+        m = fills[-1][1]["meta"]
+        assert m["fill_path"] == "taker"
+        assert m["ref_px"] == pytest.approx(99.5)
+        assert m["slip_bps"] == pytest.approx((100.0 - 99.5) / 99.5 * 1e4, rel=1e-3)
+
+    def test_slippage_sign_convention(self):
+        assert ex.slippage_bps("long", 100.0, 100.1) == pytest.approx(10.0)   # worse
+        assert ex.slippage_bps("short", 100.0, 100.1) == pytest.approx(-10.0)  # better
+        assert ex.slippage_bps("long", 0.0, 100.0) is None
 
 
 # ── Backup-SL cap arithmetic (pure) ───────────────────────────────────────────

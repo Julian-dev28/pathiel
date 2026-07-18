@@ -72,6 +72,10 @@ V2_DEFAULTS: Dict[str, Any] = {
     },
     "backup_sl_max_frac_of_liq": executor.BACKUP_SL_MAX_FRAC_OF_LIQ,
     "recorder": {"enabled": True, "interval_hours": 1.0},
+    # Maker-first entries (VERIFIED_TRADERS.md §3.1): post-only at the touch,
+    # IOC cross after maker_wait_min unfilled (checked on the 60s sub-cycle).
+    "entry": {"maker_first": executor.ENTRY_MAKER_FIRST_DEFAULT,
+              "maker_wait_min": executor.MAKER_WAIT_MIN_DEFAULT},
 }
 
 
@@ -163,8 +167,18 @@ def assert_shadow_invariant(mode: str) -> None:
 # ── 60s exit sub-cycle ────────────────────────────────────────────────────────
 
 def exit_cycle(cfg: Dict[str, Any], mode: str, deps: Deps) -> Dict[str, Any]:
-    """Protection, not trading: DSL floors on every open position."""
+    """Protection, not trading: DSL floors on every open position, plus the
+    maker-first pending sweep (fill / expire-and-cross) in LIVE mode."""
     live = _is_live(mode)
+    if live:
+        try:
+            for f in executor.check_pending_makers(cfg):
+                log_event({"event": "v2_maker_entry", "mode": mode,
+                           **{k: f.get(k) for k in ("book", "coin", "side",
+                                                    "fill_path", "entry_px",
+                                                    "executed", "reason")}})
+        except Exception as exc:
+            logger.warning(f"[v2-loop] pending-maker sweep failed (non-fatal): {exc}")
     if not live:
         # Pick up the (possibly foreign, v1) loop's tracker writes each pass.
         # The entrypoint sets HERMES_STATE_READONLY=1 in shadow so check() can

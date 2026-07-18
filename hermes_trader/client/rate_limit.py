@@ -32,6 +32,7 @@ _ENDPOINT_WEIGHT = {
     "perpDexs": 20,
     "portfolio": 20,
     "userFills": 20,
+    "orderStatus": 2,
 }
 
 
