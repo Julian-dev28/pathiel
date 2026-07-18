@@ -69,6 +69,7 @@ from hermes_trader.agents.mover_recorders import (
     record_news_ta_quadrant as _record_news_ta_quadrant,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
+from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
@@ -869,6 +870,16 @@ while True:
             _unlock_maybe_record(universe, read_agent_config())
         except Exception as _ure:
             logger.debug(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
+
+        # wallet_follow recorder: zero-capital copy-trading reads of the 9
+        # verified profitable HL wallets (VERIFIED_TRADERS.md §4). 30-min
+        # throttle inside the module; 9 x weight-2 clearinghouseState per poll
+        # ~= 0.6 weight/min. Grading bar: shadow_status VALIDATED at >= 30
+        # episodes PLUS scripts/wallet_follow_null.py p < 0.01.
+        try:
+            _wallet_follow_maybe_record(read_agent_config(), universe)
+        except Exception as _wfre:
+            logger.debug(f"[wallet-follow-recorder] pass failed (non-fatal): {_wfre}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:
