@@ -248,7 +248,7 @@
   },
   "young_listings": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "dex_allowlist": [
       "xyz"
     ],
@@ -270,7 +270,7 @@
   },
   "majors_swing": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "coins": [
       "BTC",
       "ETH",
@@ -331,7 +331,7 @@
   "mover_recorders": {
     "pass_live": {
       "enabled": true,
-      "shadow_only": false,
+      "shadow_only": true,
       "notional_usd": 20.0,
       "leverage": 12,
       "stop_pct": 15.0,
@@ -343,5 +343,8 @@
     "scan_interval_min": 30,
     "min_print_usd": 100000.0,
     "window_minutes": 30.0
+  },
+  "main_engine": {
+    "entries_enabled": false
   }
 }

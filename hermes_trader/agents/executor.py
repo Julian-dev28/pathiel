@@ -251,6 +251,22 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"], "reason": "mode_not_live",
         }
 
+    # BOOKS-ONLY gate (2026-07-18 rebuild): main-engine (AI-verdict) ENTRIES
+    # are disabled when main_engine.entries_enabled is false. Forensics on
+    # 2,721 fills: sub-2h AI-engine churn lost -$385.59 net while >=2h holds
+    # made +$134.96 — the engine's entries were the #1 measured loss source
+    # (91% of the last 2 weeks' bleed). Strategy books tag their analyses
+    # with `strategy_book` and pass untouched; AI close-checks never route
+    # through maybe_execute, so exits are unaffected. Hot-read + reversible.
+    if (not analysis.get("strategy_book")
+            and not bool((config.get("main_engine") or {}).get("entries_enabled", True))):
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": "main_engine_entries_disabled",
+            "blocked_by": ["main-engine entries disabled (books-only mode, rebuild 2026-07-18)"],
+        }
+
     # Bind `coin` EARLY. The per-account sizing block (~L516, `_sz_dex = coin.split(...)`)
     # reads `coin` BEFORE the original `coin = analysis["coin"]` assignment ~60 lines below —
     # an ordering bug introduced with per-account sizing (2026-06-22) that UnboundLocalError'd
