@@ -79,6 +79,27 @@ def per_trade_notional_cap_gate(ctx: GateContext, cap_usd: float) -> GateResult:
     return {"pass": False, "reason": f"trade notional ${ctx.trade_notional_usd:.2f} exceeds cap ${cap:.2f}"}
 
 
+def effective_daily_loss_limit(config, equity: float, daily_pnl: float) -> float:
+    """Negative USD daily-loss floor. Prefers max_daily_loss_pct (fraction of
+    start-of-day equity; SOD = equity - daily_pnl) when set > 0, else falls
+    back to max_daily_loss_usd. Rebuild 2026-07-18: the static -$100 was
+    ~550% of an $18 account — unreachable, i.e. no kill switch at all. A
+    percentage floor scales with the account in both directions."""
+    try:
+        pct = float(config.get("max_daily_loss_pct", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        pct = 0.0
+    if pct > 0 and equity > 0:
+        # equity<=0 is a degraded read — never derive a near-zero floor from it
+        sod = equity - daily_pnl
+        if sod > 0:
+            return -abs(sod * pct)
+    try:
+        return float(config.get("max_daily_loss_usd", -100) or -100)
+    except (TypeError, ValueError):
+        return -100.0
+
+
 def daily_loss_kill_switch(ctx: GateContext, max_daily_loss: float) -> GateResult:
     if ctx.daily_pnl > max_daily_loss:
         return {"pass": True}
@@ -480,7 +501,8 @@ def eval_all_gates(
     results["max_concurrent"] = ({"pass": True, "reason": "book_carveout"} if carveout
                                  else max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3)))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
-    results["daily_loss"] = daily_loss_kill_switch(ctx, config.get("max_daily_loss_usd", -100))
+    results["daily_loss"] = daily_loss_kill_switch(
+        ctx, effective_daily_loss_limit(config, ctx.equity, ctx.daily_pnl))
     results["daily_giveback"] = ({"pass": True, "reason": "book_carveout"} if carveout
                                  else daily_giveback_gate(
         ctx,

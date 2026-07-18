@@ -49,6 +49,7 @@ from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
 from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
 from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
+from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.xs_momentum_live import (
@@ -341,10 +342,7 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
     if loss_remaining > 0:
         return f"loss_cooldown ({loss_remaining:.0f}min remaining)"
 
-    try:
-        max_daily_loss = float(config.get("max_daily_loss_usd", -100) or -100)
-    except (TypeError, ValueError):
-        max_daily_loss = -100.0
+    max_daily_loss = _effective_daily_loss_limit(config, equity, daily_pnl)
     if daily_pnl <= max_daily_loss:
         return f"daily_loss_gate (PnL ${daily_pnl:.2f} <= ${max_daily_loss:.0f})"
 
@@ -630,7 +628,7 @@ while True:
         # preserves last-known-good daily_pnl), so a bad read can NEVER trigger a
         # flatten. Idempotent: after flattening, the next tick's positions are
         # empty so it won't re-fire.
-        _max_daily_loss = float(_cfg.get("max_daily_loss_usd", -100) or -100)
+        _max_daily_loss = _effective_daily_loss_limit(_cfg, equity, daily_pnl)
         if equity > 0 and positions and daily_pnl <= _max_daily_loss:
             logger.warning(
                 f"[killswitch] HARD daily-loss floor breached: PnL ${daily_pnl:.2f} "

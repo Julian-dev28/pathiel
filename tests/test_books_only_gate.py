@@ -38,3 +38,31 @@ def test_absent_config_defaults_to_enabled(monkeypatch):
     monkeypatch.setattr(ex, "read_agent_config", lambda: {"mode": "LIVE"})
     r = ex.maybe_execute(_analysis())
     assert r.get("reason") != "main_engine_entries_disabled"
+
+
+# ── kill-switch rescale (rebuild step 4) ─────────────────────────────────────
+
+from hermes_trader.agents.risk_gates import effective_daily_loss_limit
+
+
+def test_pct_limit_scales_with_sod_equity():
+    # $18.06 equity, -$0.5 on the day -> SOD 18.56 -> floor -15% = -$2.78
+    lim = effective_daily_loss_limit({"max_daily_loss_pct": 0.15,
+                                      "max_daily_loss_usd": -100}, 18.06, -0.5)
+    assert lim == pytest.approx(-2.784, abs=0.01)
+
+
+def test_pct_zero_falls_back_to_usd():
+    assert effective_daily_loss_limit({"max_daily_loss_usd": -12}, 18.0, 0.0) == -12
+
+
+def test_degraded_zero_equity_never_yields_zero_floor():
+    # equity read 0 (degraded tick): pct path disabled, usd fallback holds
+    lim = effective_daily_loss_limit({"max_daily_loss_pct": 0.15,
+                                      "max_daily_loss_usd": -100}, 0.0, -5.0)
+    assert lim == -100
+
+
+def test_garbage_config_defaults():
+    assert effective_daily_loss_limit({"max_daily_loss_pct": "x",
+                                       "max_daily_loss_usd": None}, 20.0, 0.0) == -100

@@ -346,5 +346,6 @@
   },
   "main_engine": {
     "entries_enabled": false
-  }
+  },
+  "max_daily_loss_pct": 0.15
 }
