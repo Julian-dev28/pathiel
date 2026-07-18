@@ -1,11 +1,9 @@
 from hermes_trader.agents import extreme_fade_live
-from hermes_trader.agents import majors_swing_live
 from hermes_trader.agents import rally_exhaustion_live
 from hermes_trader.agents import xs_momentum_live
 
 
-LIVE_BOOKS = (extreme_fade_live, rally_exhaustion_live,
-              majors_swing_live, xs_momentum_live)
+LIVE_BOOKS = (extreme_fade_live, rally_exhaustion_live, xs_momentum_live)
 
 
 def test_legacy_none_spy_is_success_but_explicit_false_is_not():

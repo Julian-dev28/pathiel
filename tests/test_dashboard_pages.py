@@ -320,15 +320,14 @@ def test_ai_close_classified_as_close(monkeypatch):
 def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 11
-    assert rows["young_listings"]["status"] == "shadow"
+    # demolition 2026-07-18: majors_swing / young_listings / news_catalyst
+    # books deleted (never validated / refuted) — 8 books remain
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 8
     assert rows["engulf_short"]["status"] == "live"
     assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
-    assert rows["news_catalyst"]["status"] == "off"       # enabled: false
     assert rows["mover_pass"]["status"] == "live"         # nested pass_live config
     assert rows["xs_momentum"]["size"] == "4/leg basket"
     assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
-    assert rows["majors_swing"]["size"] == "0.25x eq @ 25x"
     assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
     assert all(r["thesis"] for r in rows.values())
     # mover_pass trades LIVE now — thesis must say so, not "recorder"
@@ -339,7 +338,7 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 11 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 8 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -911,7 +910,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 11
+    assert len(rows) == 8
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 

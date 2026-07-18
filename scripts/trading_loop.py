@@ -60,9 +60,7 @@ from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
 from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
-from hermes_trader.agents.majors_swing_live import maybe_run as _majors_swing_maybe_run
 from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
-from hermes_trader.agents.young_listings_live import maybe_run as _young_listings_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
@@ -72,7 +70,6 @@ from hermes_trader.agents.mover_recorders import (
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
-from hermes_trader.agents.news_catalyst_live import maybe_run as _news_catalyst_maybe_run
 from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -826,15 +823,6 @@ while True:
         # $3M vol, max 1 position, $15/1x) covers the excluded population. Actions
         # are OFF until W-Y1 validates continuation vs fade; every trigger records
         # to the shadow ledger for forward grading either way.
-        try:
-            _young_listings_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _yle:
-            logger.warning(f"[young-listings] cycle failed (non-fatal): {_yle}")
-
         # Funding-spike crowded-long fade (W-F2A, VALIDATED 2026-07-09: +6.2%/ep
         # net, MC p=0.0027, n=25 dedup). SHADOW until the forward ledger confirms;
         # KILL if forward EV25 < 0 over 15 episodes. 6h cadence, funding history
@@ -853,15 +841,6 @@ while True:
         # xyz:XYZ100) at equity_fraction x leverage sizing. UNVALIDATED entry — starts
         # shadow_only=true and must earn a VALIDATED forward verdict from
         # scripts/shadow_status.py before any live flip. Daily bars, 6h candle TTL.
-        try:
-            _majors_swing_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _mse:
-            logger.warning(f"[majors-swing] cycle failed (non-fatal): {_mse}")
-
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
         # OI-divergence backtests once ~1-2 weeks of history accrue).
@@ -903,12 +882,6 @@ while True:
         # W-N3 news-catalyst recorder: zero-capital ledger reads of the live
         # Google News coverage-surge signal on the cycle's scan candidates
         # (30-min throttle inside the module; non-breaking reads = the null).
-        try:
-            _news_catalyst_maybe_run(read_agent_config(), results,
-                                     positions, _book_execute)
-        except Exception as _nce:
-            logger.debug(f"[news-catalyst-live] pass failed (non-fatal): {_nce}")
-
         # whale_flow recorder: Binance aggTrades whale prints on the cycle's
         # crypto candidates (30-min throttle; balanced reads = control rows).
         try:
