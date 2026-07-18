@@ -601,6 +601,97 @@ def place_hl_order(
         return {"ok": False, "error": str(e)}
 
 
+def _maker_touch_price(coin: str, is_buy: bool, mid_price: float) -> float:
+    """Best price that RESTS: join the touch (buy at best bid, sell at best ask).
+
+    An ALO order priced here adds liquidity by construction; if the book moves
+    through it before it lands, HL rejects the ALO ("would cross") and the
+    caller falls back to the IOC path. Falls back to mid -/+ 0.1% if the L2
+    fetch fails (still inside the spread on any normal book -> still rests)."""
+    try:
+        levels = _get_info().l2_snapshot(coin).get("levels", [])
+        bids, asks = levels[0], levels[1]
+        if is_buy and bids:
+            return float(bids[0]["px"])
+        if not is_buy and asks:
+            return float(asks[0]["px"])
+    except Exception as e:
+        logger.warning(f"[maker_touch_px] l2_snapshot failed for {coin}: {e}")
+    return mid_price * (0.999 if is_buy else 1.001)
+
+
+def place_hl_maker_order(
+    is_buy: bool,
+    size: float,
+    mid_price: float,
+    coin: str = "BTC",
+) -> Dict[str, Any]:
+    """Place a post-only (ALO) limit order at the touch — the maker-first entry.
+
+    Returns {ok, order_id, resting, limit_px, size} when the order rests. If HL
+    rejects it (would cross / anything else) returns {ok: False, error} and the
+    caller decides whether to cross via place_hl_order instead. Price rounding
+    is AWAY from the spread (buy floors, sell ceils) so rounding can never turn
+    a post-only order into a would-cross rejection."""
+    if not PRIVATE_KEY_HEX:
+        return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
+    if mid_price <= 0:
+        return {"ok": False, "error": f"invalid price for {coin}"}
+    try:
+        _, sz_dec, _ = get_coin_index(coin)
+        price = _maker_touch_price(coin, is_buy, mid_price)
+        # Inverted is_buy: round DOWN for buys / UP for sells (anti-cross).
+        price_str = _round_price_for_hl(price, sz_dec, is_perp=True, is_buy=not is_buy)
+        size = max(size, _min_order_size(mid_price, sz_dec))
+        size_str = f"{size:.{sz_dec}f}"
+
+        logger.info(f"[place_hl_maker_order] {coin} {'BUY' if is_buy else 'SELL'} "
+                    f"ALO size={size_str} px={price_str} (mid={mid_price})")
+        exchange = _make_exchange()
+        result = exchange.order(
+            coin, is_buy, float(size_str), float(price_str),
+            OrderType(limit={"tif": "Alo"}),
+            reduce_only=False,
+        )
+        parsed = _parse_order_result(result, accept_resting=True)
+        if parsed.get("ok"):
+            parsed["resting"] = "avg_px" not in parsed
+            parsed["limit_px"] = float(price_str)
+            parsed["size"] = float(size_str)
+        else:
+            logger.info(f"[place_hl_maker_order] {coin} ALO rejected: {parsed.get('error')}")
+        return parsed
+    except Exception as e:
+        logger.error(f"Failed to place maker order for {coin}: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def order_fill_status(oid: int, coin: str = "") -> Dict[str, Any]:
+    """Fill state of one order by oid (weight-2 /info orderStatus).
+
+    Returns {status, filled_sz, orig_sz, limit_px}. status is HL's order state
+    ("open" | "filled" | "canceled" | "rejected" | ...) or "unknown" when the
+    lookup fails — callers must treat "unknown" as retryable, never as dead."""
+    user = resolve_user_address()
+    if not user:
+        return {"status": "unknown", "filled_sz": 0.0}
+    try:
+        res = _http_post("/info", {"type": "orderStatus", "user": user, "oid": int(oid)})
+        if not isinstance(res, dict) or res.get("status") != "order":
+            return {"status": "unknown", "filled_sz": 0.0}
+        wrap = res.get("order") or {}
+        inner = wrap.get("order") or {}
+        orig = float(inner.get("origSz") or 0.0)
+        remaining = float(inner.get("sz") or 0.0)      # HL: sz = remaining size
+        return {"status": str(wrap.get("status") or "unknown"),
+                "filled_sz": max(0.0, orig - remaining),
+                "orig_sz": orig,
+                "limit_px": float(inner.get("limitPx") or 0.0)}
+    except Exception as e:
+        logger.warning(f"[order_fill_status] oid={oid} {coin} failed: {e}")
+        return {"status": "unknown", "filled_sz": 0.0}
+
+
 def place_hl_trigger_order(
     is_long_position: bool,
     size: float,

@@ -283,6 +283,10 @@
     "min_print_usd": 100000.0,
     "window_minutes": 30.0
   },
+  "wallet_follow": {
+    "enabled": true,
+    "poll_minutes": 30
+  },
   "main_engine": {
     "entries_enabled": false
   },
