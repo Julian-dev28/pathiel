@@ -66,3 +66,37 @@ def test_degraded_zero_equity_never_yields_zero_floor():
 def test_garbage_config_defaults():
     assert effective_daily_loss_limit({"max_daily_loss_pct": "x",
                                        "max_daily_loss_usd": None}, 20.0, 0.0) == -100
+
+
+# ── deposit-race peak guard (2026-07-18 incident) ────────────────────────────
+
+def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
+    """The tick where a deposit lands can compute daily_pnl before the
+    contributions fetch reflects it — 2026-07-18: +$132 deposit read as
+    +$131 daily PnL for one tick, peakDailyPnl froze at 128.28 on a -$4 day
+    and the give-back gate blocked ALL entries (books included) until UTC
+    roll. A single-tick jump > max($10, 30% of equity) must freeze the peak
+    high-water for that tick; the corrected next tick proceeds normally."""
+    from hermes_trader.agents.memory import AgentMemory
+    m = AgentMemory.__new__(AgentMemory)
+    m._start_of_day_equity = 18.0
+    m._day_start_ts = 2**63 - 1          # force the "same day" branch
+    m._daily_pnl = -0.5
+    m._peak_daily_pnl = 0.0
+    m._equity = 17.5
+    m._last_eq_reading = 0.0   # 0 disables the fast-swing guard's compare
+    m._last_eq_reading_ts = 0.0
+    import datetime as _dt
+    # same-day branch requires day_start >= today's midnight: pin it
+    import hermes_trader.agents.memory as mem_mod
+    m._day_start_ts = int(_dt.datetime.now(_dt.timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+    # tick 1: deposit landed ($150 equity) but contributions still report 0
+    m.track_daily_pnl(150.0, net_contributions=0.0)
+    assert m._peak_daily_pnl == 0.0, "transfer-race tick must not move the peak"
+
+    # tick 2: contributions caught up — honest daily pnl, peak tracks again
+    m.track_daily_pnl(150.0, net_contributions=132.0)
+    assert m._peak_daily_pnl == pytest.approx(0.0, abs=0.01)
+    assert m._daily_pnl == pytest.approx(0.0, abs=0.01)

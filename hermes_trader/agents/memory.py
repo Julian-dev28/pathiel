@@ -259,7 +259,22 @@ class AgentMemory:
             except Exception:
                 pass
         else:
+            prev_daily = self._daily_pnl
             self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
+            # Deposit-race guard (2026-07-18): the tick where a deposit lands
+            # can compute daily_pnl BEFORE the contributions fetch reflects the
+            # transfer (observed: +$132 deposit -> peakDailyPnl 128.28 on a
+            # -$4 day, arming the give-back gate and blocking ALL entries,
+            # books included, until UTC roll). A single-tick jump greater than
+            # max($10, 30% of equity) is a transfer signature, not trading
+            # PnL — skip the peak high-water update this tick; a real move
+            # re-asserts on the next one.
+            if (self._daily_pnl - prev_daily) > max(10.0, 0.30 * current_equity):
+                logger.warning(
+                    f"[memory] single-tick daily-PnL jump +${self._daily_pnl - prev_daily:.2f} "
+                    f"looks like a transfer race — peak high-water frozen this tick")
+                self._equity = current_equity
+                return
         # Track the day's peak PnL so a give-back breaker can lock in green days.
         self._peak_daily_pnl = max(self._peak_daily_pnl, self._daily_pnl)
         self._equity = current_equity
