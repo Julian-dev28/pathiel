@@ -124,8 +124,8 @@
     "max_per_coin": 2,
     "window_hours": 24.0
   },
-  "strategy_book_notional_usd": 50,
-  "strategy_book_equity_frac": 0,
+  "strategy_book_notional_usd": 120,
+  "strategy_book_equity_frac": 0.1,
   "short_notional_usd": 100,
   "ai_long_notional_usd": 25,
   "thin_short_relax": {
