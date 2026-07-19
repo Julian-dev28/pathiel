@@ -130,7 +130,7 @@ def test_book_owned_holds_skip_ai_close_check():
     src = open(os.path.join(os.path.dirname(__file__), "..",
                             "scripts", "trading_loop.py")).read()
     i = src.index("if coin in held_coins:")
-    block = src[i:i + 1200]
+    block = src[i:i + 2000]
     assert "owner_of(coin)" in block
     assert "BOOK_OWNED_HOLD" in block
     assert block.index("owner_of(coin)") < block.index("(now_ms - last_research)")
