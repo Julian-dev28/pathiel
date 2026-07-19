@@ -193,6 +193,26 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
   ticker set, map filings to coins, record + gate exactly like breaking reads).
 - Otherwise -> news_catalyst.shadow_only=true and EDGAR stays unbuilt.
 
+## W-P public-record latency (EDGAR -> xyz perps) — 2026-07-19
+- **W-P1 EDGAR acceptance-timestamp latency: MARGINAL** (findings/W-P1_edgar_latency.md,
+  pre-registered). Reaction ROBUST: xyz perps move ~2.3x same-coin random-time null
+  around 8-K acceptance (+1h/+4h/+24h all p=0.0005, both OOS halves, session-matched
+  null too; n=308 events, 95% after-hours, median entry gap 0.82h). Signed capture
+  REFUTED: long-all and first-reaction-momentum both net-negative @25bps and OOS
+  sign-flip — direction is not in the timestamp. 6-K bucket dead (routine paperwork).
+  Facts bank: 52/87 live xyz tickers EDGAR-covered (coverage table in
+  W-P1_cache_cik_map.json); data.sec.gov acceptanceDateTime is TRUE UTC (histogram-
+  verified); xyz DOES trade 24/7 — universe.py:42 off-hours claim is wrong, fix docs.
+  Recorder: NO-GO (history refetchable, mechanical rules refuted).
+- W-P2 scheduled-catalyst cell (policy binaries -> BTC/ETH drift) is a separate
+  agent's study, in flight 2026-07-19 — see findings/W-P2_scheduled_catalyst.md.
+- **W-P3 (specced, NOT built): content-signed EDGAR direction.** At acceptance, pull
+  8-K text (URL deterministic from accessionNumber), LLM calls LONG/SHORT/PASS inside
+  the entry bar, score through the W-P1 harness (same entry/exit/null). Items
+  1.01/2.02/8.01 only. Zero capital until validated. Complements (does not reopen)
+  W-N3's "EDGAR stays unbuilt" — that verdict was about coverage-surge triggers;
+  W-P1 proves the filing-time reaction is real but content-blind entry fails.
+
 ## W-W whale/exposure quality-reads program (started 2026-07-12)
 INTERIM 2026-07-17 (shadow_status --book whale_flow): REFUTED lean at n=82 resolved —
 -0.492%/sig @12bps, OOS halves -1.68 / +0.60 (not both positive). Formal bar stays
