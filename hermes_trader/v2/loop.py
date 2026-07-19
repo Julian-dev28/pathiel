@@ -198,7 +198,78 @@ def exit_cycle(cfg: Dict[str, Any], mode: str, deps: Deps) -> Dict[str, Any]:
         log_event({"event": "v2_dsl_exit", "mode": mode, **entry})
         logger.info(f"[v2-loop] DSL exit {v.coin} {v.position_side}: {v.reason}"
                     + ("" if live else " (shadow: not closed)"))
+    if not live:
+        out["parity"] = _parity_diff(mids)
     return out
+
+
+def _parity_diff(mids: Dict[str, float]) -> Dict[str, Any]:
+    """Phase-2 parity: for every v1 tracker, rebuild the SAME position under
+    v2's own policy resolution (risk.book_exit_policy from the v2 config) and
+    compare effective floor prices at the current mark. The floor MATH is
+    shared code (v2 dsl_exit re-exports v1's), so what this catches is the
+    real Phase-2 risk: config/policy-resolution drift — the exact bug class
+    that hit the xs legs on 2026-07-19 (main-engine policy on basket legs).
+    Logs one summary line per cycle; WARNs per divergent tracker. Books with
+    no v2 successor (or unknown to v2 config) are reported as 'unmapped', not
+    divergent."""
+    from hermes_trader.agents.dsl_exit import _active_positions, DSLTracker
+    from hermes_trader.v2 import executor as _vexec
+    cfg = load_config()
+    BOOK_SPECS = {"extreme_fade", "funding_spike_short", "xs_momentum"}
+    matched = divergent = unmapped = 0
+    for key, t in list(_active_positions.items()):
+        mark = mids.get(t.coin)
+        try:
+            mark = float(mark) if mark is not None else None
+        except (TypeError, ValueError):
+            mark = None
+        if not mark or mark <= 0:
+            continue
+        book = _book_of(t.coin, cfg)
+        if book not in BOOK_SPECS:
+            unmapped += 1
+            continue
+        bcfg = cfg.get(book, {}) or {}
+        pol = _vexec.book_exit_policy(
+            stop_pct=float(bcfg.get("stop_pct", 20.0)),
+            hold_days=float(bcfg.get("hold_days", 5.0)),
+            leverage=t.leverage)
+        def _stop_floor(p) -> float:
+            # effective hard-stop floor price from the policy alone — the
+            # config-drift signal (verdict.floor_price is unset on healthy
+            # phase-1 ticks, so it cannot carry the comparison)
+            eml = min(p.max_loss_pct, p.max_loss_roe_pct / max(1, t.leverage))
+            return (t.entry_px * (1 - eml / 100) if t.side == "long"
+                    else t.entry_px * (1 + eml / 100))
+        v1_f, v2_f = _stop_floor(t.policy), _stop_floor(pol)
+        rel = abs(v1_f - v2_f) / mark
+        timeout_drift_min = abs(t.policy.hard_timeout_minutes - pol.hard_timeout_minutes)
+        v1_exit = t.check(mark).exit
+        twin = DSLTracker(t.coin, t.side, t.entry_px, t.entry_time, pol,
+                          leverage=t.leverage)
+        twin.peak_px = t.peak_px
+        v2_exit = twin.check(mark).exit
+        if v1_exit != v2_exit or rel > 0.001 or timeout_drift_min > 60:
+            divergent += 1
+            logger.warning(
+                f"[v2-parity] DIVERGENCE {key}: stop-floor {v1_f:.6g} vs {v2_f:.6g} "
+                f"({rel*10000:.0f}bps), timeout drift {timeout_drift_min:.0f}min, "
+                f"exit {v1_exit} vs {v2_exit}")
+        else:
+            matched += 1
+    logger.info(f"[v2-parity] trackers matched={matched} divergent={divergent} "
+                f"unmapped={unmapped}")
+    return {"matched": matched, "divergent": divergent, "unmapped": unmapped}
+
+
+def _book_of(coin: str, cfg: Dict[str, Any]) -> str:
+    """Owning book for a coin via the claims registry (authoritative)."""
+    try:
+        from hermes_trader.agents.rebalancer_owned import get_claims_registry
+        return get_claims_registry().owner_of(coin) or ""
+    except Exception:
+        return ""
 
 
 # ── 30-min signal cycle ───────────────────────────────────────────────────────

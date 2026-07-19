@@ -187,3 +187,39 @@ class TestModeWiring:
         loop.run_forever(mode="SHADOW", cfg=_cfg(), deps=deps, max_cycles=1,
                          sleep_fn=lambda s: slept.append(s))
         assert slept == []                            # --once semantics: no trailing sleep
+
+
+def test_parity_diff_flags_policy_drift(monkeypatch):
+    """Phase-2 differ: a v1 tracker whose policy diverges from v2's own
+    resolution for the same book/position must be flagged; an identical
+    resolution must count as matched. This is the check whose ABSENCE let
+    48h of shadow read as 'zero divergences' (2026-07-20)."""
+    import hermes_trader.v2.loop as L
+    import hermes_trader.agents.dsl_exit as dsl
+    from hermes_trader.v2 import executor as vexec
+
+    cfg = L.load_config()
+    ef = cfg["extreme_fade"]
+    good_pol = vexec.book_exit_policy(stop_pct=float(ef.get("stop_pct", 20.0)),
+                                      hold_days=float(ef.get("hold_days", 3.0)),
+                                      leverage=1)
+    t_good = dsl.DSLTracker("GOODCOIN", "long", 100.0, 0.0, good_pol, leverage=1)
+    bad_pol = dsl.ExitPolicy(max_loss_pct=2.5, protect_pct=1.25)   # main-engine-style drift
+    t_bad = dsl.DSLTracker("BADCOIN", "long", 100.0, 0.0, bad_pol, leverage=1)
+
+    monkeypatch.setattr(dsl, "_active_positions",
+                        {"GOODCOIN_long": t_good, "BADCOIN_long": t_bad})
+    monkeypatch.setattr(L, "_book_of", lambda coin, cfg: "extreme_fade")
+    out = L._parity_diff({"GOODCOIN": 99.0, "BADCOIN": 99.0})
+    assert out["matched"] == 1
+    assert out["divergent"] == 1
+
+
+def test_parity_diff_unmapped_books_not_divergent(monkeypatch):
+    import hermes_trader.v2.loop as L
+    import hermes_trader.agents.dsl_exit as dsl
+    t = dsl.DSLTracker("HYPE", "short", 59.0, 0.0, dsl.ExitPolicy(), leverage=10)
+    monkeypatch.setattr(dsl, "_active_positions", {"HYPE_short": t})
+    monkeypatch.setattr(L, "_book_of", lambda coin, cfg: "crash_continue_div_short")
+    out = L._parity_diff({"HYPE": 58.0})
+    assert out == {"matched": 0, "divergent": 0, "unmapped": 1}
