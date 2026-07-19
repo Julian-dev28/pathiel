@@ -1,0 +1,187 @@
+ebay-20260617
+0001065088False00010650882026-06-172026-06-17
+
+UNITED STATES SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of
+
+the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 17, 2026
+
+eBay Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware001-3771377-0430924
+
+(State or other jurisdiction(Commission File Number)(I.R.S. Employer
+
+of incorporation)Identification No.)
+
+2025 Hamilton Avenue
+
+San Jose, California 95125
+
+(Address of principal executive offices)
+
+(408) 376-9659
+
+(Registrant's telephone number, including area code)
+
+Not Applicable.
+
+(Former name or former address, if changed since last report.)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading symbol(s)Name of exchange on which registered
+
+Common stockEBAYThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07. Submission of Matters to a Vote of Security Holders.
+
+At the 2026 Annual Meeting of Stockholders of eBay Inc. (the “Company”) held on June 17, 2026 (the “2026 Annual Meeting”), the Company’s stockholders voted on the following four proposals:
+
+1.The election of 11 director nominees named in the Company’s Definitive Proxy Statement on Schedule 14A filed with the Securities and Exchange Commission on April 30, 2026 (the “Proxy Statement”), each to serve as a member of the Company’s Board of Directors (the “Board”) until the Company’s 2027 Annual Meeting of Stockholders (Proposal 1);
+
+2.The ratification of the appointment of PricewaterhouseCoopers LLP as the Company’s independent auditors for the Company’s fiscal year ending December 31, 2026 (Proposal 2);
+
+3.The approval, on an advisory basis, of the compensation of the Company’s named executive officers (Proposal 3); and
+
+4.The stockholder proposal regarding the Company’s special stockholder meeting threshold (Proposal 4).
+
+The following is a summary of the matters voted on at the meeting.
+
+1.Proposal 1 – Election of Directors. Each of the 11 director nominees named in the Proxy Statement was elected to serve until the Company’s 2027 Annual Meeting of Stockholders. The voting results were as follows:
+
+Director Name
+
+Votes For
+
+Votes Against
+
+Abstentions
+
+Broker
+
+Non-Votes
+
+Adriane M. Brown
+
+343,443,21524,215,823409,32634,215,587
+
+Aparna Chennapragada
+
+366,875,756769,999422,60934,215,587
+
+E. Carol Hayles
+
+356,573,41211,057,318437,63434,215,587
+
+Jamie Iannone
+
+366,644,1031,088,928335,33334,215,587
+
+Shripriya Mahesh
+
+366,834,238806,962427,16434,215,587
+
+William D. Nash
+
+362,217,0475,422,632428,68534,215,587
+
+Paul S. Pressler
+
+356,893,04510,724,977450,34234,215,587
+
+Zane C. Rowe
+
+366,495,335922,658650,37134,215,587
+
+Brian H. Sharples
+
+366,593,5411,042,260432,56334,215,587
+
+Mohak Shroff
+
+366,300,8021,336,332431,23034,215,587
+
+Perry M. Traquina
+
+362,256,8725,363,124448,36834,215,587
+
+2.Proposal 2 – Ratification of Appointment of Independent Auditors. The Company’s stockholders ratified the appointment of PricewaterhouseCoopers LLP as the Company’s independent auditors for the Company’s fiscal year ending December 31, 2026. The voting results were as follows:
+
+Votes For
+
+Votes Against
+
+Abstentions
+
+Broker Non-Votes
+
+351,593,87749,885,553804,521
+
+N/A
+
+3.Proposal 3 – Advisory Vote to Approve Named Executive Officer Compensation. The Company’s stockholders approved, on an advisory basis, the compensation of the Company’s named executive officers. The voting results were as follows:
+
+Votes For
+
+Votes Against
+
+Abstentions
+
+Broker Non-Votes
+
+323,495,79643,613,799958,76934,215,587
+
+4.Proposal 4 – Stockholder Proposal Regarding the Company’s Special Stockholder Meeting Threshold. The Company’s stockholders did not approve the stockholder proposal regarding the ownership requirement for stockholders to call a special meeting. The voting results were as follows:
+
+Votes For
+
+Votes Against
+
+Abstentions
+
+Broker Non-Votes
+
+156,901,312210,071,6411,095,41134,215,587
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+eBay Inc.
+
+(Registrant)
+
+Date: June 18, 2026
+/s/ Samantha Wellington
+
+Name: Samantha Wellington
+
+Title: Senior Vice President, Chief Legal Officer and Secretary

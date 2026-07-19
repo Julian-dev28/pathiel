@@ -1,0 +1,110 @@
+usar-20260603
+0001970622FALSE00019706222026-06-032026-06-03
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 3, 2026
+
+USA Rare Earth, Inc.
+
+(Exact Name of Registrant as Specified in its Charter)
+
+Delaware001-4171198-1720278
+
+(State or Other Jurisdiction of Incorporation)(Commission File Number)(I.R.S. Employer Identification No.)
+
+100 W. Airport Road, Stillwater, OK 74075
+
+(Address of Principal Executive Offices) (Zip Code)
+
+(813) 867-6155
+
+(Registrant’s telephone number, including area code)
+
+Not applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, par value $0.0001USAR
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☑
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07 Submission of Matters to a Vote of Security Holders
+
+On June 3, 2026, USA Rare Earth, Inc. (the “Company”) held its 2026 Annual Meeting of Stockholders (the “Annual Meeting”), to (i) elect six (6) members of its Board of Directors (the “Board”), and (ii) ratify the appointment of BDO USA, P.C. as the Company’s independent registered public accounting firm for the year ending December 31, 2026.
+
+As of April 8, 2026, the Record Date for the Annual Meeting, 217,985,608 shares of the Company’s Common Stock and 1,224,351 shares of the Company’s Series A Preferred Stock, representing 2,379,796 shares of Common Stock on an as-converted basis, were outstanding on the Record Date and are entitled to be voted at the Annual Meeting. Holders of our Common Stock and Series A Preferred Stock (on an as converted basis) will vote as a single class on each matter presented at the Annual Meeting. At the Annual Meeting, an aggregate of 133,837,645 (60.73%) of all votes of shares of Common Stock and Series A Preferred Stock, held as of the Record Date and entitled to vote at the Annual Meeting, were present virtually or by proxy, which represented a quorum.
+
+The final results for the proposals voted on at the Annual Meeting are set forth below:
+
+Proposal 1 – Election of Directors
+
+The stockholders elected six (6) Directors of the Board to serve for a one-year term until the Company’s 2027 Annual Meeting of Stockholders or a respective successor is elected and qualified or until the director’s earlier death, resignation, or removal. The following table shows the results of the stockholders’ vote:
+
+Nominee for DirectorVotes ForVotes AgainstAbstain/WithheldBroker Non-Votes
+
+Michael Blitzer72,349,305 — 12,666,307 48,822,033
+
+Dr. Thomas Caulfield84,594,718 — 420,894 48,822,033
+
+Barbara Humpton84,539,571 — 476,041 48,822,033
+
+Otto Schwethelm77,107,170 — 7,908,442 48,822,033
+
+Michael Senft79,884,823 — 5,130,789 48,822,033
+
+Carolyn Trabuco73,238,170 — 11,777,442 48,822,033
+
+Proposal 2 – Ratification of the appointment of BDO USA, P.C. as the Company’s independent registered public accounting firm for the year ending December 31, 2026.
+
+This proposal was approved. The following table shows the results of the stockholders’ vote:
+
+Votes ForVotes AgainstAbstentions
+
+132,873,290 458,042 506,313
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date:
+June 4, 2026
+By:
+/s/ VALERIE FORD JACOB
+
+Valerie Ford Jacob
+
+Chief Legal Officer

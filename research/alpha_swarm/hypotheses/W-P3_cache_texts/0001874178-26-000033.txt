@@ -1,0 +1,152 @@
+rivn-20260430
+0001874178FALSERivian Automotive, Inc. / DE00018741782026-04-302026-04-30
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+___________________________________
+
+FORM 8-K
+
+___________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+April 30, 2026
+
+Date of Report (date of earliest event reported)
+
+___________________________________
+
+Rivian Automotive, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+___________________________________
+
+Delaware
+
+(State or other jurisdiction of incorporation)
+
+001-41042
+
+(Commission File Number)
+
+47-3544981
+
+(IRS Employer Identification Number)
+
+14600 Myford Road
+
+Irvine, California 92606
+
+(Address of principal executive offices) (Zip code)
+
+(888) 748-4261
+
+(Registrant's telephone number, including area code)
+
+N/A
+
+(Former name or former address, if changed since last report)
+
+___________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol
+
+Name of each exchange on which registered
+
+Class A common stock, $0.001 par value per share
+
+RIVN
+
+The Nasdaq Stock Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 - Results of Operations and Financial Condition.
+
+On April 30, 2026, Rivian Automotive, Inc. (the “Company”) announced its financial results for the first quarter ended March 31, 2026. The full text of the press release and Earnings Presentation (the “Presentation”) issued in connection with the announcement are furnished as Exhibits 99.1 and 99.2, respectively, to this Current Report on Form 8-K. In the Presentation, the Company also announced that it will be holding an audio webcast on April 30, 2026 at 2:00pm PT / 5:00pm ET to discuss its financial results for the first quarter ended March 31, 2026.
+
+The Company is making reference to non-GAAP financial information in the press release, the Presentation and the audio webcast. A reconciliation of these non-GAAP financial measures to their nearest GAAP equivalents is provided in the press release and the Presentation.
+
+The information furnished pursuant to Item 2.02 of this Current Report on Form 8-K, including Exhibits 99.1 and 99.2 attached hereto, shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference into any other filing under the Securities Act of 1933, as amended (the “Securities Act”), or the Exchange Act, regardless of any general incorporation language in such filing, except as expressly set forth by specific reference in such filing.
+
+Item 3.02 - Unregistered Sales of Equity Securities.
+
+In March 2026, the Company achieved the Testing Milestones as defined in the Investment Agreement dated November 12, 2024 (as amended from time to time, the “Investment Agreement”) that the Company entered into with Volkswagen-US Holding, Inc. (formerly known as Volkswagen International America, Inc.) (“VW”) and Volkswagen Aktiengesellschaft (“VW AG” and together with VW and their respective affiliates, “Volkswagen Group”), which was a condition precedent for a corresponding investment by Volkswagen Group of $1.0 billion in exchange for $1.0 billion of the Company's Class A common stock, with a purchase price per share calculated based on Rivian’s 30-trading day volume-weighted average price (“VWAP”) ending on the trading day immediately prior to the day of the share issuance. Pursuant to the terms of the Investment Agreement, on April 30, 2026, upon receipt of $1.0 billion from Volkswagen Group, Rivian issued 62,889,522 shares of its Class A common stock to Volkswagen Group at a purchase price per share of $15.90. The foregoing shares of Class A common stock were issued pursuant to an exemption from registration for transactions by an issuer not involving a public offering under Section 4(a)(2) of the Securities Act.
+
+Neither this Current Report on Form 8-K nor any exhibit attached hereto is an offer to sell or the solicitation of an offer to buy securities of the Company.
+
+Item 9.01 - Financial Statements and Exhibits.
+
+(d) Exhibits:
+
+Exhibit No.
+
+Description
+
+99.1
+
+Press Release, dated April 30, 2026
+
+99.2
+
+Earnings Presentation, dated April 30, 2026
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+RIVIAN AUTOMOTIVE, INC.
+
+Date: April 30, 2026
+
+By:
+
+/s/ Claire McDonough
+
+Name:
+
+Claire McDonough
+
+Title:
+
+Chief Financial Officer

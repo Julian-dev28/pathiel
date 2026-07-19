@@ -1,0 +1,195 @@
+8-K
+
+false 0001571996 0001571996 2026-06-16 2026-06-16
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 16, 2026
+
+Dell Technologies Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-37867
+
+80-0890963
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+One Dell Way
+
+Round Rock, Texas
+
+78682
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (800) 289-3355
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Class C Common Stock, par value $0.01 per share
+
+DELL
+
+New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01
+
+Entry into a Material Definitive Agreement.
+
+On June 16, 2026, two wholly-owned subsidiaries of Dell Technologies Inc. (the “Company”), Dell International L.L.C. and EMC Corporation (together, the “Issuers”), completed a public offering (the “Offering”) of (i) $1,000,000,000 aggregate principal amount of 4.750% Senior Notes due 2031 (the “2031 Notes”), (ii) $750,000,000 aggregate principal amount of 5.000% Senior Notes due 2034 (the “2034 Notes”) and (iii) $1,250,000,000 aggregate principal amount of 5.250% Senior Notes due 2037 (the “2037 Notes” and, together with the 2031 Notes and the 2034 Notes, the “Notes”). The Notes were sold pursuant to a shelf registration statement on Form S-3ASR (File No. 333-296691).
+
+The Notes were issued pursuant to a Base Indenture, dated as of January 24, 2023 (the “Base Indenture”), among the Issuers, the Guarantors (as defined below) and The Bank of New York Mellon Trust Company, N.A., as trustee (in such capacity, the “Trustee”), as supplemented, (i) with respect to the 2031 Notes, by the 2031 Notes Supplemental Indenture No. 1 (the “2031 Notes Supplemental Indenture”), dated as of June 16, 2026, among the Issuers, the Guarantors and the Trustee, (ii) with respect to the 2034 Notes, by the 2034 Notes Supplemental Indenture No. 1 (the “2034 Notes Supplemental Indenture”), dated as of June 16, 2026, among the Issuers, the Guarantors and the Trustee and (iii) with respect to the 2037 Notes, by the 2037 Notes Supplemental Indenture No. 1 (the “2037 Notes Supplemental Indenture” and, together with the Base Indenture, the 2031 Notes Supplemental Indenture and the 2034 Notes Supplemental Indenture, the “Indenture”), dated as of June 16, 2026, among the Issuers, the Guarantors and the Trustee.
+
+The Notes are senior unsecured obligations of the Issuers and rank equal in right of payment with all of the Issuers’ existing and future senior indebtedness and senior in right of payment to all of the Issuers’ future subordinated indebtedness. The Notes are unsecured and are guaranteed on a joint and several basis by the Company and its wholly-owned subsidiaries, Denali Intermediate Inc. (“Denali Intermediate”) and Dell Inc. (together with Denali Intermediate and the Company, the “Guarantors”). Such note guarantees rank equal in right of payment with all existing and future senior indebtedness of the Guarantors and senior in right of payment to all future subordinated indebtedness of the Guarantors. The Notes and the note guarantees are structurally subordinated to all of the existing and future indebtedness and other liabilities of subsidiaries of the Issuers, who will not guarantee the Notes.
+
+Interest on each series of the Notes began accruing on June 16, 2026, the issue date of the Notes. Interest on the 2031 Notes accrues at a rate of 4.750% per year, payable semi-annually in arrears on January 15 and July 15 of each year, commencing on January 15, 2027. Interest on the 2034 Notes accrues at a rate of 5.000% per year, payable semi-annually in arrears on February 15 and August 15 of each year, commencing on August 15, 2026. Interest on the 2037 Notes accrues at a rate of 5.250% per year, payable semi-annually in arrears on February 15 and August 15 of each year, commencing on August 15, 2026. The 2031 Notes mature on July 15, 2031, the 2034 Notes mature on February 15, 2034 and the 2037 Notes mature on February 15, 2037.
+
+Prior to (i) June 15, 2031 (the date one month prior to the maturity of the 2031 Notes), in the case of the 2031 Notes, (ii) December 15, 2033 (the date two months prior to the maturity of the 2034 Notes), in the case of the 2034 Notes and (iii) November 15, 2036 (the date three months prior to the maturity of the 2037 Notes), in the case of the 2037 Notes, the Issuers may, on any one or more occasions, redeem some or all of the Notes of such series at a “make-whole” premium, plus accrued and unpaid interest to, but excluding, the redemption date.
+
+On or after (i) June 15, 2031, in the case of the 2031 Notes, (ii) December 15, 2033, in the case of the 2034 Notes and (iii) November 15, 2036, in the case of the 2037 Notes, the Issuers may, on any one or more occasions, redeem some or all of the Notes of such series at a price equal to 100% of the aggregate principal amount of the Notes of such series to be redeemed, plus accrued and unpaid interest to, but excluding, the redemption date.
+
+If a change of control triggering event occurs, the holders of the Notes may require the Issuers to purchase for cash all or a portion of their Notes at a purchase price equal to 101% of the principal amount of the Notes, plus accrued and unpaid interest to, but excluding, the repurchase date.
+
+The Indenture contains covenants that impose limitations on, among other things, creating liens on certain assets to secure debt; consolidating, merging or selling or otherwise disposing of all or substantially all assets; and entering into sale and leaseback transactions. The Indenture also contains customary events of default and covenants for an issuer of investment grade debt securities.
+
+The foregoing summaries of the Base Indenture, the 2031 Notes Supplemental Indenture, the 2034 Notes Supplemental Indenture and the 2037 Notes Supplemental Indenture do not purport to be complete and are qualified in their entirety by reference to the full texts of such documents. Copies of the 2031 Notes Supplemental Indenture, the 2034 Notes Supplemental Indenture and the 2037 Notes Supplemental Indenture relating to the Notes are filed as Exhibit 4.1, Exhibit 4.2 and Exhibit 4.3, respectively, to this Current Report on Form 8-K (including the forms of Notes included therein and filed as Exhibit 4.4, Exhibit 4.5 and Exhibit 4.6 hereto) and are incorporated herein by reference. The Base Indenture was previously filed as Exhibit 4.1 to the Company’s Current Report on Form 8-K filed on January 24, 2023 and is incorporated herein by reference. In addition, the legal opinion of Simpson Thacher & Bartlett LLP relating to the Notes is filed as Exhibit 5.1 to this Current Report on Form 8-K and is incorporated herein by reference.
+
+Item 2.03
+
+Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement of a Registrant.
+
+The information set forth in Item 1.01 is incorporated into this Item 2.03 by reference.
+
+Item 9.01
+
+Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+The following documents are herewith filed as exhibits to this report:
+
+Exhibit
+
+No.
+
+Exhibit Description
+
+ 4.1
+
+2031 Notes Supplemental Indenture No. 1, dated as of June 16, 2026, among Dell International L.L.C., EMC Corporation, the guarantors party thereto and The Bank of New York Mellon Trust Company, N.A., as Trustee.
+
+ 4.2
+
+2034 Notes Supplemental Indenture No. 1, dated as of June 16, 2026, among Dell International L.L.C., EMC Corporation, the guarantors party thereto and The Bank of New York Mellon Trust Company, N.A., as Trustee.
+
+ 4.3
+
+2037 Notes Supplemental Indenture No. 1, dated as of June 16, 2026, among Dell International L.L.C., EMC Corporation, the guarantors party thereto and The Bank of New York Mellon Trust Company, N.A., as Trustee.
+
+ 4.4
+
+Form of Global Note for 4.750% Senior Notes due 2031 (included in Exhibit 4.1).
+
+ 4.5
+
+Form of Global Note for 5.000% Senior Notes due 2034 (included in Exhibit 4.2).
+
+ 4.6
+
+Form of Global Note for 5.250% Senior Notes due 2037 (included in Exhibit 4.3).
+
+ 5.1
+
+Opinion of Simpson Thacher & Bartlett LLP.
+
+23.1
+
+Consent of Simpson Thacher & Bartlett LLP (included in Exhibit 5.1).
+
+104
+
+Cover Page Interactive Data File — the cover page XBRL tags are embedded within the Inline XBRL document.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: June 16, 2026
+
+Dell Technologies Inc.
+
+By:
+
+/s/ Christopher Garcia
+
+Christopher Garcia
+
+Senior Vice President and Assistant Secretary
+
+(Duly Authorized Officer)

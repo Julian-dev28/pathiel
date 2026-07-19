@@ -1,0 +1,312 @@
+false
+0001970622
+
+0001970622
+
+2026-04-20
+2026-04-20
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported):
+April 20, 2026
+
+USA Rare Earth, Inc.
+
+(Exact name of registrant as specified in its
+charter)
+
+Delaware
+
+001-41711
+
+98-1720278
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission File Number)
+
+(IRS. Employer
+
+Identification No.)
+
+100 W Airport Road,
+
+Stillwater, Oklahoma 74075
+
+(Address of principal executive offices, including
+zip code)
+
+Registrant’s telephone number, including
+area code: (813) 867-6155
+
+N.A.
+
+(Former name or former address, if changed since
+last report)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☒
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common stock, par value $0.0001 per share
+
+USAR
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth
+company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange
+Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☒
+
+If an emerging growth company, indicate by check
+mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting
+standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01. Entry into a Material Definitive
+Agreement.
+
+On April 20, 2026, USA Rare
+Earth, Inc. (“USAR”) announced its entry into a definitive Agreement and Plan of Merger (the “Merger Agreement”),
+dated as of April 19, 2026, by and among (i) USAR, (ii) Middlebury Merger Sub Ltd., a business company limited by shares incorporated
+under the laws of the British Virgin Islands and an indirect, wholly owned Subsidiary of USAR (“Merger Sub”), (iii)
+SVRE Holdings Ltd., a business company limited by shares incorporated under the laws of the British Virgin Islands (“SVRE”),
+and (iv) Serra Verde Rare Earths Ltd., a company incorporated and existing under the laws of the British Virgin Islands, solely in its
+capacity as the representative of SVRE’s shareholders.
+
+The Merger Agreement, the
+Form of Voting Agreement, and the Form of Registration Rights Agreement relating to the transactions contemplated by the Merger Agreement
+(the “Transactions”) are included as Exhibits 2.1, 10.1 and 10.2 hereto, respectively, and are incorporated herein
+by reference. The material terms of the Merger Agreement, the Voting Agreement, and the Registration Rights Agreement were previously
+described in USAR’s Current Report on Form 8-K filed on April 20, 2026, which descriptions are incorporated by reference herein.
+
+The descriptions of the Merger
+Agreement, the Form of Voting Agreement and the Form of Registration Rights Agreement incorporated by reference herein do not purport
+to be complete and are qualified in their entirety by reference to the full text of the agreements filed herewith. Copies of these agreements
+have been included to provide USAR stockholders with information regarding their terms and are not intended to provide any factual information
+about USAR, SVRE, Merger Sub or their respective affiliates. The representations, warranties and covenants contained in the Merger Agreement
+have been made solely for the purposes of the Merger Agreement and as of specific dates; were made solely for the benefit of the parties
+to the Merger Agreement; are not intended as statements of fact to be relied upon by USAR stockholders, but rather as a way of allocating
+the risk between the parties in the event the statements therein prove to be inaccurate; have been modified or qualified by certain confidential
+disclosures that were made between the parties in connection with the negotiation of the Merger Agreement, which disclosures are not reflected
+in the Merger Agreement itself; may no longer be true as of a given date; and may apply standards of materiality in a way that is different
+from what may be viewed as material by USAR stockholders. USAR stockholders are not third-party beneficiaries under the Merger Agreement
+and should not rely on the representations, warranties and covenants or any descriptions thereof as characterizations of the actual state
+of facts or condition of the parties or their respective affiliates. Moreover, information concerning the subject matter of the representations
+and warranties may change after the date of the Merger Agreement, which subsequent information may or may not be fully reflected in USAR’s
+public disclosures. USAR acknowledges that, notwithstanding the inclusion of the foregoing cautionary statements, it is responsible for
+considering whether additional specific disclosures of material information regarding material contractual provisions are required to
+make the statements in this Form 8-K not misleading. The Merger Agreement should not be read alone but should instead be read in conjunction
+with the other information regarding the Merger Agreement, the Transactions, the parties, their respective affiliates and their respective
+businesses, that will be contained in, or incorporated by reference into, the proxy statement that USAR will file, as well as in the Forms
+10-K, Forms 10-Q, Forms 8-K and other filings that USAR will make with the U.S. Securities and Exchange Commission (the “SEC”).
+
+Item 3.02. Unregistered Sales of Equity Securities
+
+To the extent applicable,
+the disclosures included under Item 1.01 of this Current Report on Form 8-K regarding the potential future issuance of USAR’s common
+stock in connection with the Merger Agreement and the Transactions are incorporated by reference herein.
+
+This Current Report on Form
+8-K does not constitute an offer to sell any securities or a solicitation of an offer to buy any securities, nor shall there be any sale
+of any securities in any state or jurisdiction in which such an offer, solicitation or sale would be unlawful prior to registration or
+qualification under the securities laws of any such state or jurisdiction.
+
+1
+
+Cautionary Note Regarding Forward-Looking
+Statements
+
+This Current Report on Form
+8-K and the documents included as exhibits hereto contain “forward-looking statements” within the meaning of the Private Securities
+Litigation Reform Act of 1995. These statements include those relating to the Transactions, the expected timing and completion of the
+Transactions, the expected benefits of the Transactions including anticipated financial results and synergies, projections regarding SVRE’s
+production of total rare earth oxide and generation of EBITDA, the integration of SVRE’s operations, projections and run-rate information
+regarding the combined company’s EBITDA, the combined company’s ability to achieve positive cash flow, our anticipated operating
+and financial performance, our business plans, strategy, goals and prospects, our plans for and prospects of our other acquisitions, investments
+and other business development activities, including the announced SVRE, Carester and TMRC transactions, our plans for capital raising
+activities, including from the U.S. government, and our ability to successfully capitalize on growth opportunities and prospects. Such
+statements can be identified by the fact that they do not relate strictly to historical or current facts. Words such as “will,”
+“may,” “could,” “should,” “likely,” “ongoing,” “anticipate,” “estimate,”
+“expect,” “project,” “predict”, “intend,” “plan,” “believe,” “aim,”
+“build,” “continue”, “potential”, “vision,” and similar expressions may identify forward-looking
+statements, but the absence of these words does not mean that a statement is not forward-looking.
+
+Forward-looking statements
+are subject to risks and uncertainties and potentially inaccurate assumptions that could cause actual results to differ materially from
+our expectations, including without limitation: risks that proposed transactions with SVRE, Carester and TMRC may not be consummated on
+their anticipated timelines or at all; we may not realize the anticipated benefits of our proposed and prior acquisitions, including expected
+synergies, financial performance, estimated EBITDA and, in the case of SVRE, integration of operations, on the anticipated timeline or
+at all; the ability of our Stillwater magnet manufacturing facility to commence commercial operations on the timing and with the production
+capacity anticipated or at all; our limited operating history; our ability to commercially extract minerals from the Round Top deposit
+on our anticipated timeline or at all; risks that we may experience delays, unforeseen expenses, increased capital costs, and other complications
+while developing our projects; our ability to raise necessary capital on acceptable terms or at all; potential dilution to existing stockholders
+and adverse effect on our stock price if we issue additional common stock or equity-linked securities; the volatility of our stock price;
+our ability to enter into definitive agreements for the proposed U.S. Government financing, which is subject to conditions precedent and
+final government approvals, on the anticipated terms or at all and, if executed, to satisfy the milestones and other conditions of such
+financing, which could impose conditions to access such financing over a period of time; the availability of rare earth oxide, metal feedstock
+and other materials, utilities (including power and water) and equipment in quantities and prices that allow us to develop and commercially
+operate our Stillwater facility and other facilities; our ability to meet individual customer specifications and produce a consistently
+high quality product; fluctuations in demand for and prices of neo magnets and our other products, including without limitation as a result
+of dumping, predatory pricing and other tactics by the USAR’s competitors or state actors or the overall competitive environment;
+our ability to achieve positive cash flow or profitability or the ability to access cash flow within our corporate structure due to restrictions
+contained in our financing agreements; our ability to convert current commercial discussions and/or memorandums of understanding with
+customers for the sale of our neo magnets and other products into definitive orders; geopolitical developments or disruptions, such as
+changes in the political environment, export/import or environmental policy of the People’s Republic of China, the United States
+or other countries in which we operate or sell products or otherwise; war, terrorism, natural disasters or public health emergencies;
+our ability to retain or recruit key personnel; environmental, health and safety regulations; and our ability to comply with requirements
+for federal, state and local government incentives and financing.
+
+Additional risks and detailed
+information regarding factors that may cause actual results to differ materially has been and will be included in USAR’s filings
+with the SEC, including USAR’s most recently filed Annual Report on Form 10-K and any subsequent Quarterly Reports on Form 10-Q
+and subsequent filings. Any forward-looking statements speak only as of the date of this press release (or such other date as is specified
+in such statements), and USAR undertakes no obligation to update any forward-looking statements as a result of new information or future
+events or developments.
+
+2
+
+Additional Information and Where to Find
+It
+
+In connection with the proposed
+Transactions, USAR intends to file with the SEC a preliminary proxy statement on Schedule 14A and, following SEC review, a definitive
+proxy statement (together with any amendments or supplements thereto, the “Proxy Statement”), to be distributed to
+USAR’s stockholders in connection with USAR’s solicitation of proxies for the vote by USAR’s stockholders with respect
+to the issuance of USAR common stock as merger consideration and other matters described in the Proxy Statement. SVRE’s shareholders
+will approve the merger by written consent delivered concurrently with the signing of the merger agreement and will not receive a proxy
+statement or prospectus. USAR also plans to file with or furnish to the SEC other relevant documents regarding the proposed Transactions.
+After SEC review of the preliminary proxy statement is completed, the definitive Proxy Statement will be mailed to stockholders of USAR.
+BEFORE MAKING ANY VOTING OR INVESTMENT DECISION, INVESTORS AND SECURITY HOLDERS ARE URGED TO READ THE PROXY STATEMENT AND ALL OTHER RELEVANT
+DOCUMENTS THAT ARE OR WILL BE FILED WITH OR FURNISHED TO THE SEC, AS WELL AS ANY AMENDMENTS OR SUPPLEMENTS TO THESE DOCUMENTS, CAREFULLY
+AND IN THEIR ENTIRETY WHEN THEY BECOME AVAILABLE BECAUSE THEY CONTAIN OR WILL CONTAIN IMPORTANT INFORMATION ABOUT THE PROPOSED TRANSACTIONS
+AND RELATED MATTERS.
+
+Investors and security holders will be able to
+obtain free copies of the Proxy Statement and other documents containing important information about USAR and the proposed Transactions,
+once such documents are filed with or furnished to the SEC through the website maintained by the SEC at www.sec.gov. Copies of the documents
+filed with or furnished to the SEC by USAR will be available free of charge on USAR’s website at investors.usare.com or by contacting
+USAR’s Investor Relations department by email at IR@usare.com. The information included on, or accessible through, USAR’s
+website is not incorporated by reference into this communication.
+
+Participants in the Solicitation
+
+USAR and certain of its directors
+and executive officers and other members of its management and employees may be deemed to be participants in the solicitation of proxies
+in respect of the proposed Transactions.
+
+Information about the directors
+and executive officers of USAR, including a description of their direct or indirect interests, by security holdings or otherwise, is contained
+in USAR’s Form 10-K for the year ended December 31, 2025, which was filed with the SEC on March 30, 2026 (the “Form 10-K”).
+Any changes in the holdings of USAR’s securities by USAR’s directors or executive officers from the amounts described in the
+Form 10-K will be reflected in Statements of Changes in Beneficial Ownership on Form 4 (“Form 4”) or Annual Statements
+of Changes in Beneficial Ownership of Securities on Form 5 (“Form 5”) subsequently filed with the SEC and available
+at the SEC’s website at www.sec.gov. Additional information regarding the interests of such participants will be contained in the
+Proxy Statement when available.
+
+No Offer or Solicitation
+
+This communication is for
+informational purposes only and is not intended to and shall not constitute an offer to buy or sell or the solicitation of an offer to
+buy or sell any securities, or a solicitation of any vote or approval on the proposed Transactions or otherwise, nor shall there be any
+sale of securities in any jurisdiction in which such offer, solicitation or sale would be unlawful prior to registration or qualification
+under the securities laws of any such jurisdiction. No offer of securities shall be made, except by means of a prospectus meeting the
+requirements of Section 10 of the Securities Act of 1933, as amended, or pursuant to an applicable exemption therefrom.
+
+3
+
+Item 9.01. Financial Statements and
+Exhibits.
+
+(d) Exhibits:
+
+The following exhibits are attached with this current
+report on Form 8-K:
+
+Exhibit No.
+
+Description
+
+2.1*
+
+Agreement and Plan of Merger, dated April 19, 2026, by and among USAR, SVRE, Merger Sub and the Serra Verde Rare Earths Ltd., as the Seller Representative
+
+10.1
+
+Form of Voting and Support Agreement, by and among SVRE and certain USAR stockholders
+
+10.2
+
+Form of Registration Rights Agreement, by and among USAR, Serra Verde Rare Earths Ltd., as the Seller Representative, and certain SVRE shareholders
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+*The annexes schedules, and certain exhibits to this Exhibit
+have been omitted pursuant to Item 601(b)(2) of Regulation S-K. The Registrant hereby agrees to furnish supplementally a copy of any
+omitted annex, schedule or exhibit to the SEC upon request.
+
+4
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date: April 20, 2026
+By:
+s/ Valerie Ford Jacob
+
+Name:
+Valerie Ford Jacob
+
+Title:
+Chief Legal Officer
+
+5

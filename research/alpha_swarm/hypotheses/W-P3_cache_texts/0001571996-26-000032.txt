@@ -1,0 +1,102 @@
+dell-20260611
+0001571996false00015719962026-06-112026-06-11
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 11, 2026
+
+______________________
+
+Dell Technologies Inc.
+
+(Exact name of registrant as specified in its charter)
+
+______________________
+
+Delaware 001-37867 80-0890963
+
+(State or other jurisdiction
+
+of incorporation) (Commission
+
+File Number) (IRS Employer
+
+Identification No.)
+
+One Dell Way
+
+Round Rock,
+
+Texas
+78682
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant’s telephone number, including area code: (800) 289-3355
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class C Common Stock, par value $0.01 per shareDELLNew York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 3.02 Unregistered Sales of Equity Securities.
+
+On June 1, 2026, June 2, 2026, June 3, 2026, June 4, 2026, June 5, 2026, June 8, 2026, June 9, 2026, June 10, 2026, June 11, 2026 and June 12, 2026, Dell Technologies Inc. (the “Company”) issued an aggregate of 3,438,364 shares of the Company’s Class C common stock (the “Class C Common Stock”) upon conversion of the same number of shares of the Company’s Class B common stock (the “Class B Common Stock”) held by SL SPV-2, L.P., Silver Lake Partners IV, L.P., Silver Lake Technology Investors IV, L.P., Silver Lake Partners V DE (AIV), L.P. and Silver Lake Technology Investors V, L.P.
+
+As of June 15, 2026, after giving effect to the conversions described above, the Company had 325,046,693 shares of Class C Common Stock outstanding and 44,351,394 shares of Class B Common Stock outstanding.
+
+Under the Company’s certificate of incorporation, any holder of Class B Common Stock has the right, at any time and from time to time, to convert all or any of the shares of Class B Common Stock held by such holder into shares of Class C Common Stock on a one-to-one basis. In addition, the shares of Class B Common Stock are automatically convertible into shares of Class C Common Stock on a one-to-one basis upon certain transfers in the circumstances described in the certificate of incorporation. Each share of Class C Common Stock bears the same dividend and liquidation rights as one share of Class B Common Stock.
+
+The issuance of the shares of Class C Common Stock pursuant to the foregoing transactions was made without registration in reliance on the exemption from registration under the Securities Act of 1933 afforded by Section 3(a)(9) thereof. No commission or other remuneration was paid or given directly or indirectly for soliciting the exchange of such securities. It is expected that the issuance of any additional shares of Class C Common Stock upon any future optional or automatic conversion of shares of Class B Common Stock also will be made without registration in reliance on the exemption from registration under the Securities Act of 1933 afforded by Section 3(a)(9) thereof.
+
+2
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: June 17, 2026
+Dell Technologies Inc.
+
+By:/s/ Christopher A. Garcia
+
+Christopher A. Garcia
+
+Senior Vice President and Assistant Secretary
+
+(Duly Authorized Officer)
+
+3

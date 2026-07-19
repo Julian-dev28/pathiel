@@ -1,0 +1,113 @@
+hood-20260206
+0001783879FALSE00017838792026-02-062026-02-06
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): February 6, 2026
+
+Robinhood Markets, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware 001-40691 46-4364776
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+85 Willow Road
+
+Menlo Park, CA 94025
+
+(Address of principal executive offices) (Zip Code)
+
+(844) 428-5411
+
+(Registrant’s telephone number, including area code)
+
+not applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.0001 par value per shareHOODThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 – Results of Operations and Financial Condition.
+
+Financial Results for the Fourth Quarter and Full Year of 2025
+
+On February 10, 2026, Robinhood Markets, Inc. (the "Company" or “Robinhood”) issued a press release regarding its financial results for the quarter and full year ended December 31, 2025. A copy of the press release is furnished as Exhibit 99.1 to this report. As previously announced, Robinhood will host an earnings video call on February 10, 2026 at 2:00 p.m. PT/5:00 p.m. ET.
+
+The information furnished with Item 2.02, including Exhibit 99.1, shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference into any other filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such filing.
+
+Item 5.02 – Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Principal Financial Officer / Principal Accounting Officer Transition
+
+On February 6, 2026, the Company's Board of Directors (the “Board”) appointed Shiv Verma to be its Chief Financial Officer (“CFO”), effective as of the close of business on February 6, 2026 (in which capacity he will serve as the Company’s principal financial officer and principal accounting officer). Mr. Verma, age 40, has been the Company's Senior Vice President of Finance and Strategy, and Treasurer since 2018 and has responsibilities for the Company’s Finance, Treasury, Corporate Strategy, and Corporate Development teams. As previously disclosed on November 5, 2025, Robinhood’s then-current CFO Jason Warnick has transitioned to an advisory role and will remain employed with the Company until September 1, 2026.
+
+There are no arrangements or understandings between Mr. Verma and any other persons pursuant to which he was chosen to be CFO, and he has no family relationships with any of Robinhood’s directors or executive officers. Mr. Verma’s current compensation includes an annual base salary of $500,000, a target annual bonus of 60% of his annual base salary and an annual equity target of $2,350,000, vesting quarterly over four years.
+
+Item 9.01 Financial Statements and Exhibits.
+
+Exhibits
+
+Exhibit Number Description
+
+99.1
+Press release dated February 10, 2026
+
+104Cover Page Interactive Data File (the cover page XBRL tags are embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Robinhood Markets, Inc.
+
+Date:
+February 10, 2026
+By:/s/Shiv Verma
+
+Name: Shiv Verma
+
+Title: Chief Financial Officer

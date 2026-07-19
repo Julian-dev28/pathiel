@@ -1,0 +1,260 @@
+false
+0001018724
+AMAZON COM INC
+
+0001018724
+
+2026-03-16
+2026-03-16
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+Table of Contents
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of
+the
+
+Securities Exchange Act of 1934
+
+March 16, 2026
+
+Date of Report
+
+(Date of earliest event reported)
+
+AMAZON.COM, INC.
+
+(Exact name of registrant as specified in its
+charter)
+
+Delaware
+
+000-22513
+
+91-1646860
+
+(State
+or other jurisdiction of
+
+incorporation)
+
+(Commission
+File Number)
+
+(IRS
+Employer Identification No.)
+
+410 Terry Avenue North, Seattle, Washington
+98109-5210
+
+(Address of principal
+executive offices, including Zip Code)
+
+(206)
+266-1000
+
+(Registrant’s
+telephone number, including area code)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+¨
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of
+the Act:
+
+Title of Each Class
+
+Trading Symbol(s)
+
+Name of Each Exchange on Which Registered
+
+Common Stock, par value $.01 per share
+
+AMZN
+
+Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company
+
+¨
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.
+¨
+
+Table of Contents
+
+TABLE OF CONTENTS
+
+ITEM 8.01. OTHER EVENTS.
+3
+
+ITEM 9.01. FINANCIAL STATEMENTS
+AND EXHIBITS.
+4
+
+SIGNATURES
+5
+
+EXHIBIT 1.1
+
+EXHIBIT 4.1
+
+EXHIBIT 4.2
+
+EXHIBIT 4.3
+
+EXHIBIT 4.4
+
+EXHIBIT 4.5
+
+EXHIBIT 4.6
+
+EXHIBIT 4.7
+
+EXHIBIT 4.8
+
+EXHIBIT 4.9
+
+EXHIBIT 5.1
+
+EXHIBIT 23.1
+
+2
+
+Table of Contents
+
+ITEM 8.01. OTHER EVENTS.
+
+On March 16, 2026, Amazon.com,
+Inc. (the “Company”) closed the sale of €1,750,000,000 aggregate principal amount of its floating rate notes due 2028
+(the “Floating Rate Notes”), €1,250,000,000 aggregate principal amount of its 2.800% notes due 2028 (the “2028
+Notes”), €2,000,000,000 aggregate principal amount of its 3.100% notes due 2030 (the “2030 Notes”), €2,250,000,000
+aggregate principal amount of its 3.350% notes due 2032 (the “2032 Notes”), €2,500,000,000 aggregate principal amount
+of its 3.700% notes due 2035 (the “2035 Notes”), €2,250,000,000 aggregate principal amount of its 4.050% notes due 2039
+(the “2039 Notes”), €1,250,000,000 aggregate principal amount of its 4.450% notes due 2045 (the “2045 Notes”),
+and €1,250,000,000 aggregate principal amount of its 4.850% notes due 2064 (the “2064 Notes” and, together with the Floating
+Rate Notes, 2028 Notes, 2030 Notes, 2032 Notes, 2035 Notes, 2039 Notes, and 2045 Notes, the “Notes”) pursuant to an Underwriting
+Agreement dated March 11, 2026 (the “Underwriting Agreement”) among the Company and the several underwriters named therein.
+The sale of the Notes was registered under the Company’s registration statement on Form S-3 filed on February 6, 2026 (File No.
+333-293246).
+
+The aggregate public offering
+price of the Notes was €14.473 billion and the estimated net proceeds from the offering were approximately €14.447 billion,
+after deducting underwriting discounts from the public offering price and before deducting offering expenses payable by us. The Notes
+were issued pursuant to an Indenture dated as of November 29, 2012 between the Company and Wells Fargo Bank, National Association, as
+trustee (the “Prior Trustee”), as amended and supplemented by Supplemental Indenture No. 1, dated as of April 13, 2022, among
+the Company, the Prior Trustee, and Computershare Trust Company, National Association, as successor trustee, together with the officers’
+certificate dated as of March 16, 2026 issued pursuant thereto establishing the terms of each series of the Notes (the “Officers’
+Certificate”).
+
+The foregoing descriptions of the Underwriting Agreement and the Officers’
+Certificate are qualified in their entirety by the terms of such documents, which are filed as Exhibit 1.1 and Exhibit 4.1, respectively,
+and incorporated herein by reference. The foregoing description of the Notes is qualified in its entirety by reference to the full text
+of the form of Floating Rate Note, form of 2028 Note, form of 2030 Note, form of 2032 Note, form of 2035 Note, form of 2039 Note, form
+of 2045 Note, and form of 2064 Note, which are filed hereto as Exhibit 4.2, Exhibit 4.3, Exhibit 4.4, Exhibit 4.5, Exhibit 4.6, Exhibit
+4.7, Exhibit 4.8, and Exhibit 4.9, respectively, and incorporated herein by reference.
+
+3
+
+Table of Contents
+
+ITEM 9.01. FINANCIAL STATEMENTS AND EXHIBITS.
+
+(d) Exhibits.
+
+Exhibit
+
+Number
+Description
+
+1.1
+Underwriting Agreement, dated as of March 11, 2026, among Amazon.com, Inc. and the several underwriters named therein.
+
+4.1
+Officers’ Certificate of Amazon.com, Inc., dated as of March 16, 2026.
+
+4.2
+Form of Floating Rate Note due 2028 (included in Exhibit 4.1).
+
+4.3
+Form of 2.800% Note due 2028 (included in Exhibit 4.1).
+
+4.4
+Form of 3.100% Note due 2030 (included in Exhibit 4.1).
+
+4.5
+Form of 3.350% Note due 2032 (included in Exhibit 4.1).
+
+4.6
+Form of 3.700% Note due 2035 (included in Exhibit 4.1).
+
+4.7
+Form of 4.050% Note due 2039 (included in Exhibit 4.1).
+
+4.8
+Form of 4.450% Note due 2045 (included in Exhibit 4.1).
+
+4.9
+Form of 4.850% Note due 2064 (included in Exhibit 4.1).
+
+5.1
+Opinion of Gibson, Dunn & Crutcher LLP.
+
+23.1
+Consent of Gibson, Dunn & Crutcher LLP (included in Exhibit 5.1).
+
+104
+The cover page from this Current Report on Form 8-K, formatted in Inline XBRL (included as Exhibit 101).
+
+4
+
+Table of Contents
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities
+Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+AMAZON.COM, INC. (REGISTRANT)
+
+By:
+/s/
+Antonio Masone
+
+Antonio Masone
+
+Vice President and Treasurer
+
+Dated: March 16, 2026
+
+5

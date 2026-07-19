@@ -1,0 +1,171 @@
+amd-20260626
+0000002488false00000024882026-06-262026-06-26
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+June 26, 2026
+
+Date of Report (Date of earliest event reported)
+
+ADVANCED MICRO DEVICES, INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-07882
+
+94-1692300
+
+(State or Other Jurisdiction of
+
+Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification Number)
+
+2485 Augustine Drive
+
+Santa Clara, California 95054
+
+(Address of principal executive offices) (Zip Code)
+
+(408) 749-4000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, $0.01 par value
+
+AMD
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02. Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+On June 26, 2026, the Board of Directors (the “Board”) of Advanced Micro Devices, Inc. (the “Company”) and the Compensation and Leadership Resources Committee of the Board (the “Committee”), as applicable, approved the following changes to the compensation of certain members of the Company’s executive team:
+
+Base Salary Increases
+
+Effective July 1, 2026, the annual base salaries for the below-listed members of the Company’s executive team will increase as follows:
+
+Name and TitleAnnual Base Salary as of June 30, 2026Annual Base Salary Effective July 1, 2026
+
+Lisa T. Su, Chair, President and Chief Executive Officer$1,323,000$1,375,000
+
+Jean Hu, Executive Vice President, Chief Financial Officer and Treasurer$800,000$850,000
+
+Mark Papermaster, Executive Vice President and Chief Technology Officer$870,000$900,000
+
+Darren Grasby, Executive Vice President, Chief Sales Officer and President EMEA$810,902$843,866
+
+Forrest Norrod, Executive Vice President and General Manager, Data Center Solutions$780,000$800,000
+
+_______________
+
+(1) Amounts shown for Mr. Grasby were converted to U.S. dollars from £615,000 and £640,000, respectively, using an exchange rate of $1.31854 U.S. dollars per 1.00 British pound, which was the exchange rate reported by Bloomberg Financial as of June 26, 2026.
+
+Long-Term Incentive Awards
+
+On August 15, 2026 (the “Grant Date”), the below-listed members of the Company’s executive team will receive equity awards under the Company’s 2023 Equity Incentive Plan (the “Stock Plan”), having the following target award values (“Target Value”):
+
+Name and TitleTarget Value
+
+Lisa T. Su, Chair, President and Chief Executive Officer$36,000,000
+
+Jean Hu, Executive Vice President, Chief Financial Officer and Treasurer$9,000,000
+
+Mark Papermaster, Executive Vice President and Chief Technology Officer$10,000,000
+
+Darren Grasby, Executive Vice President, Chief Sales Officer and President EMEA$7,500,000
+
+Forrest Norrod, Executive Vice President and General Manager, Data Center Solutions$8,000,000
+
+For Dr. Su, her Target Value will be converted on the Grant Date into a mix of 75% performance-based restricted stock units (“PRSUs”) and 25% time-based restricted stock units (“RSUs”).
+
+For Ms. Hu and Messrs. Papermaster, Grasby and Norrod, their respective Target Values will be converted on the Grant Date into a mix of 60% PRSUs and 40% RSUs.
+
+The target number of PRSUs and the number of RSUs for each recipient will be determined by dividing the applicable portion of the recipient’s Target Value by the average closing price of the Company’s stock over the 30 consecutive trading days ending on the Grant Date.
+
+PRSUs. The number of PRSUs that may be earned by a recipient will range from 0% to 250% of the recipient’s target number of PRSUs. Each PRSU represents the contractual right to receive, upon such PRSU becoming earned and vested, one share of Company common stock. Subject to the foregoing award limits, the actual number of PRSUs earned will be calculated as follows:
+
+(a) The recipient will earn between 0% and 200% of the recipient’s target number of PRSUs depending on the Company's total shareholder return ("TSR") relative to the TSR of each of the component companies of the S&P 500 Index, subject to adjustments, as of the Grant Date (each a "Peer Company"), in each case over the performance period that begins on August 15, 2026 and ends on August 15, 2029 (or, if earlier, the date immediately preceding the effective date of a change of control (as defined in the Stock Plan)) (as applicable, the “Performance Period”).
+
+Notwithstanding the foregoing, if the Company's TSR over the Performance Period is negative, then the total number of PRSUs (if any) earned by the recipient pursuant to this clause (a) may not exceed 100% of the recipient’s target number of PRSUs.
+
+The TSR will be measured based on the average closing sales price of the Company's and each Peer Company's stock for the 60-trading-day period ending on (and including) each of (x) August 15, 2026, and (y) the last day or the Performance Period, accounting for reinvestment of dividends.
+
+(b) The recipient will earn an additional number of PRSUs equal to 0%, 25% or 50% of the number of PRSUs (if any) earned by such named executive officer under clause (a), above, depending on the Company’s non-GAAP earnings per share (“EPS”) for fiscal 2028 as compared to the Company’s target fiscal 2026 non-GAAP EPS.
+
+If a change of control occurs before the Company reports its fiscal 2028 earnings, but after the Company reports its fiscal 2027 earnings, the recipient will earn 0%, 25%, or 50% of the number of PRSUs (if any) earned by the recipient under clause (a), above, based on the percentage by which the Company’s fiscal 2027 non-GAAP EPS exceeds its fiscal 2026 non-GAAP EPS. If a change of control occurs before the Company reports its fiscal 2027 earnings, no additional PRSUs will be earned by the recipient under this clause (b).
+
+Vesting of any earned PRSUs is generally subject to the recipient’s continued employment with the Company through August 15, 2029. Earned and vested PRSUs will generally be settled on August 22, 2029 or, if later, the date that is three business days following the Committee’s certification of performance. In the event of a change in control, the number of earned PRSUs will be determined by the Committee based on actual performance as of the date of the change in control and such number of earned PRSUs will convert automatically into RSUs that will generally vest and be settled upon the earlier of the one-year anniversary of the change in control or August 15, 2029.
+
+RSUs. The RSUs will vest 1/4 on August 15, 2027 and then quarterly thereafter until August 15, 2030. Each RSU represents the contractual right to receive, upon such RSU becoming vested, one share of Company common stock.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: July 1, 2026
+ADVANCED MICRO DEVICES, INC.
+
+By:
+
+/s/ Ava Hahn
+
+Name:
+
+Ava Hahn
+
+Title:
+
+Senior Vice President, General Counsel and Corporate Secretary

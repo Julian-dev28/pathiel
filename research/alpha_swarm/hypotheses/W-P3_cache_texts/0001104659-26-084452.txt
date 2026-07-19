@@ -1,0 +1,100 @@
+6-K
+1
+tm2620683d1_6k.htm
+FORM 6-K
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 6-K
+
+Report of Foreign Private Issuer
+
+Pursuant to Rule 13a-16 or 15d-16 of
+
+the Securities Exchange Act of 1934
+
+July 17, 2026
+
+NEBIUS GROUP N.V.
+
+Schiphol Boulevard 165
+
+1118 BG, Schiphol, the Netherlands.
+
+Tel: +31 202 066 970
+
+(Address, Including ZIP Code, and Telephone
+Number,
+
+Including Area Code, of Registrant’s Principal
+Executive Offices)
+
+Indicate by check mark whether the registrant files or will file annual
+reports under cover of Form 20-F or Form 40-F.
+
+Form 20-F x Form 40-F
+¨
+
+ASSET BACKED FACILITY
+
+On July 10, 2026, Nebius Compute II,
+LLC, a Delaware limited liability company (the “US Borrower”), and Nebius Compute II Oy, a Finnish limited liability company
+(the “Finnish Borrower”; together with the US Borrower, the “Borrowers”), each an indirect wholly owned subsidiary
+of Nebius Group N.V. (the “Company”), entered into a Senior Facility Agreement (the “Facility Agreement”) with
+(i) MUFG Bank, Ltd., London Branch, as mandated lead arranger, underwriter, sole bookrunner and structuring agent, and as agent on behalf
+of the financial institutions party thereto (the “Lenders”), and the Security Agent (as defined below) (in such capacity,
+the “Agent”), (ii) the Lenders and (iii) Kroll Trustee Services Limited, as security trustee for the Lenders (in such capacity,
+the “Security Agent”). The Facility Agreement provides for a senior secured term loan facility in an aggregate principal amount
+of approximately $775 million. The Facility Agreement was entered into primarily to finance the buildout of the Company’s AI cloud.
+
+Amounts borrowed under the Facility
+Agreement are subject to an interest rate per annum equal to Term SOFR (with a floor of 0.00%) plus an applicable margin of 2.50% per
+annum for a one-month interest period. The Borrowers may voluntarily prepay outstanding loans under the Facility Agreement upon ten business
+days’ prior notice to the Agent without premium or penalty, other than customary “breakage” costs. The maturity date
+of the Facility Agreement is October 31, 2030.
+
+The Borrowers are required to comply
+with certain financial covenants under the Facility Agreement, including a debt service coverage ratio of 1.15:1.00 and a minimum liquidity
+requirement. The Facility Agreement contains other affirmative and negative covenants and customary events of default.
+
+All obligations under the Facility
+Agreement are secured, subject to certain exceptions, by substantially all of each Borrower’s assets, and the shares of the Borrowers
+held indirectly by the Company.
+
+Subject to certain exceptions, the Company has
+provided (i) a non-recourse guaranty for specified “bad acts” of the Borrowers and (ii) a performance guarantee of certain
+obligations of Nebius B.V., Dutch private limited liability company and wholly owned subsidiary of the Company (in its capacity as manager),
+under a management agreement, and Nebius DC Oy, a Finnish limited liability company and indirect wholly owned subsidiary of the Company,
+under a data center colocation agreement.
+
+A press release announcing the signing of the
+Facility Agreement is attached as Exhibit 99.1.
+
+INDEX TO EXHIBITS
+
+Exhibit No.
+
+Description
+
+99.1
+
+Press release of Nebius Group N.V., dated July 17, 2026, announcing signing of the Facility Agreement.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities
+Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+NEBIUS GROUP N.V.
+
+Date: July 17, 2026
+By:
+/s/ NATHALIE VAN WIGGEN
+
+Nathalie van Wiggen
+
+Company Secretary

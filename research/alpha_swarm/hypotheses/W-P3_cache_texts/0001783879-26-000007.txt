@@ -1,0 +1,116 @@
+hood-20260130
+0001783879FALSE00017838792026-01-302026-01-30
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): January 30, 2026
+
+Robinhood Markets, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware 001-40691 46-4364776
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+85 Willow Road
+
+Menlo Park, CA 94025
+
+(Address of principal executive offices) (Zip Code)
+
+(844) 428-5411
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.0001 par value per shareHOODThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+The information contained in Item 7.01 of this report is incorporated herein by reference.
+
+Item 7.01 Regulation FD Disclosure.
+
+Robinhood’s Broker-Dealer Subsidiaries Release Reports Pursuant to SEC Rule 606(a) for the Fourth Quarter of 2025
+
+Robinhood Markets, Inc. (“Robinhood” or the “Company”) is furnishing as Exhibits 99.1 and 99.2 hereto the Held NMS Stocks and Options Order Routing Public Reports (“606-Reports”) for the fourth quarter of 2025 for each of its broker-dealer subsidiaries, Robinhood Financial LLC (“RHF”) and Robinhood Securities, LLC (“RHS”).
+
+As subsidiary reports, these 606-Reports do not present the Company’s consolidated results. These 606-Reports were prepared to comply with U.S. Securities and Exchange Commission (“SEC”) Rule 606(a) of Regulation National Market System (Reg. NMS) under the Securities Exchange Act of 1934, as amended (the “Exchange Act”), which requires broker-dealers to make available specified quarterly reports regarding the routing of certain non-directed orders. As required by such rule and related regulatory guidance, the 606-Reports present some (but not necessarily all) of the payment for order flow (“PFOF”) received from venues to which orders were routed. (As disclosed on the 606-Reports, RHS shares the PFOF it receives with RHF pursuant to a revenue and cost allocation agreement.)
+
+The 606-Reports are unaudited, made available without commentary, and should be read together with Robinhood’s most recent quarterly and annual consolidated results on Forms 10-Q and 10-K (as well as Robinhood’s other SEC filings), which are or will be available on the Financials tab of Robinhood’s Investor Relations website at investors.robinhood.com.
+
+Robinhood uses the “Overview” tab of its Investor Relations website (accessible at investors.robinhood.com/overview) and its Newsroom (accessible at newsroom.aboutrobinhood.com), as means of disclosing information to the public in a broad, non-exclusionary manner for purposes of the SEC Regulation Fair Disclosure (Reg. FD). Investors should routinely monitor those web pages, in addition to Robinhood’s press releases, SEC filings, and public conference calls and webcasts, as information posted on them could be deemed to be material information.
+
+The information furnished with Item 2.02 and Item 7.01, including Exhibits 99.1 and 99.2, shall not be deemed “filed” for purposes of Section 18 of the Exchange Act, or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference into any other filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits
+
+Exhibit Number Description
+
+99.1
+Robinhood Financial LLC – Held NMS Stocks and Options Order Routing Public Report
+
+99.2
+Robinhood Securities, LLC – Held NMS Stocks and Options Order Routing Public Report
+
+104Cover Page Interactive Data File (the cover page XBRL tags are embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Robinhood Markets, Inc.
+
+Date:January 30, 2026By:/s/ Jason Warnick
+
+Name: Jason Warnick
+
+Title: Chief Financial Officer

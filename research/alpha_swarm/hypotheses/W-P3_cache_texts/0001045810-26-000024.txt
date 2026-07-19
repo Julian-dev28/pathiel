@@ -1,0 +1,139 @@
+nvda-20260302
+0001045810false00010458102026-03-022026-03-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, DC 20549
+
+______________
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d) OF
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): March 2, 2026
+
+NVIDIA CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware0-2398594-3177549
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2788 San Tomas Expressway, Santa Clara, CA 95051
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant’s telephone number, including area code: (408) 486-2000
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, $0.001 par value per shareNVDAThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging Growth Company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02. Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Adoption of Fiscal Year 2027 Variable Compensation Plan
+
+On March 2, 2026, the Compensation Committee of the Board of Directors, or the Board, of NVIDIA Corporation, or the Company, adopted the Variable Compensation Plan for Fiscal Year 2027, or the 2027 Plan, which provides eligible executive officers the opportunity to earn a variable cash payment based on the level of achievement by the Company of certain corporate performance goals, or the Performance Goals, during fiscal year 2027. The Company operates on a fiscal year ending on the last Sunday in January and designates its fiscal year by the year in which that fiscal year ends. Fiscal year 2027 refers to the Company’s fiscal year ending January 31, 2027.
+
+The Compensation Committee has set the Performance Goals for fiscal year 2027 based upon the achievement of specified fiscal year 2027 revenue and has established threshold compensation plan, base compensation plan, and stretch compensation plan levels.
+
+Unless otherwise determined by the Compensation Committee, a participant must remain an employee through the payment date under the 2027 Plan to be eligible to earn an award.
+
+The following table sets forth the respective target award opportunities for base compensation plan achievement for the Company’s named executive officers under the 2027 Plan:
+
+Named Executive Officer
+
+Target Award Opportunity for Base Compensation Plan
+
+Achievement
+
+Target Award Opportunity for
+
+Base Compensation Plan
+
+Achievement as a % of
+
+Fiscal Year 2027 Base Salary
+
+Jen-Hsun Huang
+
+President and Chief Executive Officer
+$4,000,000
+200%
+
+Colette M. Kress
+
+Executive Vice President and Chief Financial Officer
+$1,500,000150%
+
+Ajay K. Puri
+
+Executive Vice President, Worldwide Field Operations
+$1,500,000150%
+
+Debora Shoquist
+
+Executive Vice President, Operations
+$1,500,000150%
+
+Timothy S. Teter
+
+Executive Vice President, General Counsel and Secretary
+$1,500,000150%
+
+The foregoing description is subject to, and qualified in its entirety by, the 2027 Plan, which is filed with this report as Exhibit 10.1 and is incorporated herein by reference.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d) Exhibits
+
+Exhibit NumberDescription
+
+10.1
+Variable Compensation Plan - Fiscal Year 2027
+
+104The cover page of this Current Report on Form 8-K, formatted in inline XBRL (included as Exhibit 101)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+NVIDIA Corporation
+
+Date: March 6, 2026By: /s/ Rebecca Peters
+
+Rebecca Peters
+
+Vice President, Deputy General Counsel and Assistant Secretary

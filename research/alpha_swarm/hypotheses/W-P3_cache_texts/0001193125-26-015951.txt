@@ -1,0 +1,251 @@
+8-K
+
+NETFLIX INC false 0001065280 0001065280 2026-01-19 2026-01-19
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported):
+
+January 19, 2026
+
+NETFLIX, INC.
+
+(Exact Name of Registrant as Specified in Charter)
+
+Delaware
+
+001-35727
+
+77-0467272
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+121 Albright Way
+
+Los Gatos, California, 95032
+
+(Address of principal executive offices) (Zip Code)
+
+(408) 540-3700
+
+(Registrant’s telephone number, include area code)
+
+Not applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common stock, par value $0.001 per share
+
+NFLX
+
+NASDAQ Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01
+
+Entry into a Material Definitive Agreement.
+
+Amended and Restated Agreement and Plan of Merger
+
+On January 19, 2026, Netflix, Inc., a Delaware corporation (“Netflix”), Nightingale Sub, Inc., a Delaware corporation and wholly owned subsidiary of Netflix (“Merger Sub”), Warner Bros. Discovery, Inc., a Delaware corporation (“WBD”), and New Topco 25, Inc., a newly formed Delaware corporation and wholly owned subsidiary of WBD (“Newco”), entered into an Amended and Restated Agreement and Plan of Merger (the “Amended and Restated Merger Agreement”), which amends and restates in its entirety the Agreement and Plan of Merger, dated as of December 4, 2025, by and among Netflix, Merger Sub, WBD and Newco (the “Original Merger Agreement”). Pursuant to the Amended and Restated Merger Agreement, Netflix and WBD have agreed to revise the structure of their previously announced transaction to provide that the $27.75 per share merger consideration to be paid to WBD stockholders in the Merger (as defined below) will be paid entirely in cash, instead of a combination of cash and shares of Netflix common stock, subject to the terms and conditions of the Amended and Restated Merger Agreement.
+
+Consistent with, and unchanged from, the Original Merger Agreement, the Amended and Restated Merger Agreement provides that, among other things and subject to the terms therein, (i) a newly formed Delaware corporation and wholly owned subsidiary of Newco will merge with and into WBD (the “Holdco Merger”) in accordance with Section 251(g) of the General Corporation Law of the State of Delaware and pursuant to an agreement and plan of merger, with WBD surviving as a wholly owned subsidiary of Newco and with the stockholders of WBD immediately prior to the effective time of the Holdco Merger becoming the stockholders of Newco at and immediately following the effective time of the Holdco Merger, and (ii) following an internal reorganization and the separation and distribution of WBD’s Global Linear Networks segment (subject to certain deviations set forth on a schedule to the Separation and Distribution Agreement (as defined below)) and certain other assets and liabilities as further described below (the “SpinCo Business”), as a result of which Newco will hold WBD’s Streaming and Studios segments (subject to certain deviations set forth on a schedule to the Separation and Distribution Agreement) and certain other assets and liabilities as further described below (the “Retained Business”) at the effective time of the Merger (the “Effective Time”), Merger Sub will merge with and into Newco, with Newco surviving as a wholly owned subsidiary of Netflix (the “Merger”).
+
+Consistent with, and unchanged from, the Original Merger Agreement, at the effective time of the Holdco Merger, and by virtue of the Holdco Merger, each share of WBD’s Series A common stock, par value $0.01 per share (“WBD Common Stock”), will be converted into one share of Newco common stock of the same class (“Newco Common Stock”), and Newco will be renamed “Warner Bros. Discovery, Inc.” For the avoidance of doubt, all references to WBD and WBD Common Stock with respect to a matter occurring after the completion of the Holdco Merger will be deemed to be references to Newco and Newco Common Stock, respectively.
+
+The Boards of Directors of Netflix and WBD have unanimously approved the Amended and Restated Merger Agreement, including the Merger and the other transactions contemplated thereby.
+
+Separation and Distribution
+
+Consistent with, and unchanged from, the Original Merger Agreement, prior to the consummation of the Merger, WBD and a newly formed subsidiary of WBD (“SpinCo”) will enter into a Separation and Distribution Agreement substantially in the form attached to the Amended and Restated Merger Agreement (the “Separation and Distribution Agreement”), pursuant to which WBD will, among other things, engage in an internal reorganization whereby it will transfer to SpinCo the SpinCo Business, including certain assets associated with such business, and SpinCo will assume from WBD or otherwise be allocated certain liabilities associated with such business (the “Separation”). WBD will retain the Retained Business, including all other assets and liabilities not transferred to SpinCo. Following the Separation and prior to the Merger, WBD will distribute all of the issued and outstanding shares of common stock of SpinCo to the holders of outstanding shares of WBD Common Stock as of the record date for the Distribution, on a pro rata basis (the “Distribution”), in accordance with the terms and subject to the conditions of the Separation and Distribution Agreement.
+
+Consistent with, and unchanged from, the Original Merger Agreement, in connection with the Holdco Merger, NewCo will assume sponsorship of WBD stock plans and all WBD equity awards thereunder will be converted to NewCo equity awards, which will be further adjusted or converted in connection with the Separation and the Distribution (as described under Form of Employee Matters Agreement below). All references below to WBD equity awards herein will be deemed to be references to NewCo equity awards.
+
+Consistent with, and unchanged from, the Original Merger Agreement, in connection with the transactions contemplated by the Separation and Distribution Agreement, WBD and SpinCo will enter into certain additional agreements, including an Employee Matters Agreement, an Intellectual Property Matters Agreement, a Tax Matters Agreement and a Transition Services Agreement (each as defined in the Amended and Restated Merger Agreement and substantially in the form attached to the form of the Separation and Distribution Agreement), which will govern certain rights, responsibilities and obligations of WBD and SpinCo, respectively, with respect to the subject matter applicable therein in connection with the Separation and the Distribution. Netflix and/or WBD will also enter into certain commercial arrangements with SpinCo prior to the consummation of the Merger.
+
+At the effective time of the Distribution and in accordance with the Separation and Distribution Agreement, WBD will use commercially reasonable efforts to cause the net debt of SpinCo to equal a specified amount (the “Specified Amount”). The Separation and Distribution Agreement sets the Specified Amount, during the period that the Distribution is expected to be completed, to be $17.0 billion as of June 30, 2026, with decreases over time to $16.1 billion as of December 31, 2026. The Specified Amount of net debt of SpinCo included in the Amended and Restated Merger Agreement was reduced by $260 million from the Specified Amount included in the Original Merger Agreement. WBD may (but is not required to) reduce the Specified Amount in its sole discretion at any time prior to the effective time of the Distribution by electing to allocate to WBD a portion of the indebtedness that otherwise would have been assigned to SpinCo in the Separation (any such reduction, a “Specified Amount Reduction”). If WBD gives notice to SpinCo and Netflix of a Specified Amount Reduction, the price per share of WBD Common Stock payable by Netflix at the Effective Time will be reduced by an amount equal to (i) the amount of the Specified Amount Reduction divided by (ii) the number of outstanding shares of WBD Common Stock as of immediately prior to the Effective Time on a fully diluted, as converted and as exercised basis (such amount of reduction, the “Net Debt Adjustment Amount”). The debt allocation mechanism provides WBD with flexibility to optimize the capital structure of SpinCo. Any Specified Amount Reduction is in WBD’s sole discretion and would result in a corresponding increase in the equity value of SpinCo, which value will be distributed to WBD stockholders pursuant to the Distribution. As a result, the debt allocation mechanism would not reduce the total value received by WBD stockholders in the Merger and the Separation and the Distribution.
+
+Effect on Capital Stock
+
+Following the consummation of the Separation and the Distribution, at the Effective Time, subject to the terms and conditions of the Amended and Restated Merger Agreement, each share of WBD Common Stock issued and outstanding immediately prior to the Effective Time (other than shares of WBD Common Stock to be canceled in accordance with the Amended and Restated Merger Agreement, certain shares of WBD Common Stock subject to WBD equity awards assumed by WBD in connection with the Separation and the Distribution that will be treated in accordance with the Amended and Restated Merger Agreement or shares as to which appraisal rights have been properly exercised) shall be converted into the right to receive an amount in cash equal to $27.75, without interest (the “Merger Consideration”), subject to any Net Debt Adjustment.
+
+Treatment of Equity Awards
+
+At the Effective Time, each outstanding option to purchase shares of WBD Common Stock granted under any WBD stock plan (a “WBD Option”) that is (x) by its terms vested as of the Effective Time or (y) held by a former employee or service provider of WBD (each, a “Vested WBD Option”) will be canceled and converted into the right to receive an amount in cash, without interest, equal to the product obtained by multiplying (i) the excess, if any, of the Merger Consideration over the per-share exercise price for such Vested WBD Option by (ii) the total number of shares of WBD Common Stock subject to such Vested WBD Option immediately prior to the Effective Time.
+
+At the Effective Time, each WBD Option that is outstanding and unexercised immediately prior to the Effective Time and that is not a Vested WBD Option (an “Unvested WBD Option”) with an exercise price per share of WBD Common Stock that is less than the Merger Consideration will be assumed by Netflix and automatically converted into the contingent right to receive an amount in cash, without interest, equal to the product obtained by multiplying (i) the excess of the Merger Consideration over the per-share exercise price for such Unvested WBD Option, by (ii) the total number of shares of WBD Common Stock subject to such Unvested WBD Option immediately prior to the
+
+Effective Time (the “Unvested WBD Option Consideration”), with such Unvested WBD Option Consideration remaining subject to the same terms and conditions (including any applicable terms relating to accelerated vesting upon qualifying terminations of employment and timing and form of payment) that applied to the corresponding Unvested WBD Option immediately prior to the Effective Time (except for terms rendered inoperative by reason of the transactions contemplated by the Amended and Restated Merger Agreement or for other administrative or ministerial changes as in the reasonable and the good faith determination of Netflix are appropriate to conform the administration of the Unvested WBD Option Consideration amounts and are not adverse to the holders) with respect to receipt of the Unvested WBD Option Consideration.
+
+At the Effective Time, each WBD Option with an exercise price per share of WBD Common Stock that is equal to or greater than the Merger Consideration will be canceled without any cash payment or other consideration being made in respect thereof.
+
+At the Effective Time, each award of restricted stock units corresponding to shares of WBD Common Stock granted pursuant to any WBD stock plan, including performance restricted stock units (a “WBD RSU”) that is vested in accordance with its terms as of the Effective Time or that is held by a non-employee member of the Board of Directors of WBD (each, a “Vested WBD RSU”), will be canceled and converted into the right to receive the Merger Consideration with respect to each share of WBD Common Stock underlying such Vested WBD RSU, with the number of shares of WBD Common Stock subject to such Vested WBD RSU granted with performance-based vesting conditions, determined based on the attainment of the applicable performance measures at the actual level of performance by the Board of Directors of WBD or a committee thereof in the ordinary course of business and consistent with past practice.
+
+At the Effective Time, each WBD RSU that is outstanding immediately prior to the Effective Time and that is not a Vested WBD RSU (each, an “Unvested WBD RSU”) will be assumed by Netflix and automatically converted into the contingent right to receive an amount in cash, without interest, equal to the product of (i) the Merger Consideration, multiplied by (ii) the total number of shares of WBD Common Stock subject to such Unvested WBD RSU immediately prior to the Effective Time (the “Unvested WBD RSU Consideration”), with such Unvested WBD RSU Consideration remaining subject to the same terms and conditions (including any applicable terms relating to accelerated vesting upon qualifying terminations of employment and timing and form of payment) that applied to the corresponding Unvested WBD RSU immediately prior to the Effective Time (except for terms rendered inoperative by reason of the transactions contemplated by the Amended and Restated Merger Agreement or for other administrative or ministerial changes as in the reasonable and the good faith determination of Netflix are appropriate to conform the administration of the Unvested WBD RSU Consideration amounts and are not adverse to the holders) with respect to receipt of the Unvested WBD RSU Consideration.
+
+At the Effective Time, the total number of shares of WBD Common Stock subject to each Unvested WBD RSU that remains subject to performance-based vesting conditions as of the Effective Time will be determined by assuming, in respect of such WBD RSU, achievement at the greater of (x) target performance and (y) actual performance extrapolated through the end of the applicable performance period based on actual performance through the closing date of the Merger, determined by the Board of Directors of WBD or a committee thereof in good faith and consistent with past practice.
+
+At the Effective Time, each deferred stock unit of WBD (a “WBD DSU”) that is outstanding immediately prior to the Effective Time will be assumed by Netflix and automatically converted into a right to receive an amount in cash, without interest, equal to the product obtained by multiplying (A) the Merger Consideration by (B) the number of shares of WBD Common Stock subject to such WBD DSU immediately prior to the Effective Time (the “WBD DSU Consideration”), with such WBD DSU Consideration remaining subject to the same terms and conditions that applied to the corresponding WBD DSU immediately prior to the Effective Time (including with respect to timing of payment).
+
+At the Effective Time, each notional investment unit with respect to shares of WBD Common Stock (a “WBD Notional Unit”) subject to WBD’s Non-Employee Directors Deferral Plan and WBD’s Supplemental Retirement Plan (each, a “WBD DC Plan”) that is outstanding immediately prior to the Effective Time will be assumed by Netflix and automatically converted into a notional unit with respect to a number of shares of Netflix common stock (a “Netflix Notional Unit”) equal to the product obtained by multiplying (A) the Equity Award Exchange Ratio (as defined below) by (B) the number of shares of WBD Common Stock subject to such WBD Notional Unit immediately prior to the Effective Time, with each such Netflix Notional Unit remaining subject to the same terms and conditions that applied
+
+to the corresponding WBD Notional Unit immediately prior to the Effective Time (including with respect to timing and form of payment), as set forth in the applicable WBD DC Plan, provided that WBD Notional Units held by SpinCo Award Holders will settle in cash. The “Equity Award Exchange Ratio” is determined by dividing (i) the Merger Consideration by (ii) the per share volume-weighted average trading price of Netflix common stock for the fifteen consecutive trading days ending on (and including) the trading day that is three trading days prior to the closing date of the Merger.
+
+Representation and Warranties; Certain Covenants
+
+The Amended and Restated Merger Agreement contains customary representations and warranties of Netflix relating to its business and WBD relating to the Retained Business and public filings, in each case generally subject to materiality qualifiers, each of which are generally deemed to have been made as of the date of the Original Merger Agreement, subject to certain exceptions. Additionally, consistent with, and unchanged from, the Original Merger Agreement, the Amended and Restated Merger Agreement provides for customary pre-closing covenants of WBD, including covenants relating to conducting the Retained Business in the ordinary course consistent with past practice and to refrain from taking certain actions without Netflix’s consent, covenants not to solicit proposals relating to alternative transactions or, subject to certain exceptions, enter into discussions concerning or provide information in connection with such alternative transactions and, subject to certain exceptions, covenants to recommend that WBD’s stockholders approve the Merger and adopt the Amended and Restated Merger Agreement (such recommendation, the “WBD Recommendation”).
+
+Consistent with, and unchanged from, the Original Merger Agreement, prior to the adoption of the Amended and Restated Merger Agreement by WBD’s stockholders, the Board of Directors of WBD may, in response to an unsolicited third-party acquisition proposal received after the date of the Original Merger Agreement, withdraw, qualify, modify or propose publicly to do the foregoing with respect to the WBD Recommendation, or approve, recommend or otherwise declare advisable a Company Superior Proposal (as defined in the Amended and Restated Merger Agreement), or cause WBD to terminate the Amended and Restated Merger Agreement, subject to complying with notice requirements and other specified processes in the Amended and Restated Merger Agreement, including giving Netflix the opportunity to propose revisions to the terms of the transactions contemplated by the Amended and Restated Merger Agreement during a match right period, and paying Netflix the Company Termination Fee (as defined below) prior to or substantially concurrently with such termination.
+
+Consistent with, and unchanged from, the Original Merger Agreement, the parties have agreed to use their respective reasonable best efforts to take all actions necessary, proper or advisable under applicable laws to consummate the Merger as promptly as practicable after the date of the Original Merger Agreement, including to obtain the required regulatory approvals for the Merger, and Netflix has agreed, if required to resolve or eliminate any impediments or objections that may be asserted with respect to the Merger, to certain commitments relating thereto.
+
+Closing Conditions
+
+Consummation of the Merger is subject to the satisfaction or waiver of certain customary conditions, including, among others, (i) the consummation of the Separation and Distribution in all material respects in accordance with the principal terms of the Separation and Distribution Agreement, (ii) the adoption of the Amended and Restated Merger Agreement by the affirmative vote of the holders of a majority of the voting power of the outstanding shares of WBD Common Stock entitled to vote (the “WBD Stockholder Approval”) at a meeting of WBD’s stockholders duly called and held for such purpose (the “WBD Stockholder Meeting”), (iii) the expiration or termination of the applicable waiting period (or any extension thereof) under the Hart-Scott-Rodino Antitrust Improvements Act of 1976, as amended, and the expiration of certain other mandatory waiting periods or receipt of certain other clearances or affirmative approvals of certain other governmental bodies, agencies or authorities and (iv) the absence of any law or order, issued by a court or governmental entity of competent jurisdiction, restraining, enjoining, prohibiting or preventing the consummation of the Merger. Each party’s obligation to consummate the Merger is also subject to certain other conditions, including, among others, the accuracy of the other party’s representations and warranties, the other party’s compliance with its pre-closing covenants and agreements contained in the Amended and Restated Merger Agreement (in each case, subject to certain qualifications). Netflix’s obligation to consummate the Merger is also subject to the absence of certain changes that have had, or would reasonably be expected to have, a material adverse effect with respect to the Retained Business of WBD.
+
+Financing
+
+In connection with the Amended and Restated Merger Agreement, Netflix entered into a bridge facility incremental commitments agreement, dated as of January 19, 2026 (the “Incremental Commitments Agreement”). The Incremental Commitments Agreement increased the existing commitments under its previously disclosed bridge commitment letter, dated as of December 4, 2025 (the “Debt Commitment Letter”), from $34,000,000,000 to $42,200,000,000 of senior unsecured bridge term loan commitments for the purpose of financing the Merger Consideration required under the Amended and Restated Merger Agreement, and to pay certain other fees, costs and expenses incurred in connection with the transactions contemplated by the Amended and Restated Merger Agreement, the Incremental Commitments Agreement and the Debt Commitment Letter and, at the option of Netflix, to refinance certain indebtedness. The receipt of financing by Netflix is not a condition to Netflix’s obligation to consummate the Merger. The foregoing description of the Incremental Commitments Agreement does not purport to be complete and is qualified in its entirety by reference to the full text of the Incremental Commitments Agreement, a copy of which is attached hereto as Exhibit 10.1 and is incorporated herein by reference.
+
+Termination Rights and Fees
+
+Consistent with, and unchanged from, the Original Merger Agreement, the Amended and Restated Merger Agreement also provides for certain mutual termination rights. Subject to certain limitations, the Amended and Restated Merger Agreement may be terminated by either Netflix or WBD (i) by mutual written consent, (ii) if the WBD Stockholder Meeting concludes without obtaining the WBD Stockholder Approval, (iii) if any governmental entity of competent jurisdiction issues, enacts, enforces or enters any order permanently enjoining or prohibiting the consummation of the Merger, and such order becomes final and non-appealable or (iv) subject to certain limitations, if the Effective Time has not occurred on or before 11:59 p.m., Eastern time, on March 4, 2027 (the “End Date”), subject to two automatic three (3)-month extensions if on both such dates all of the closing conditions, except those related to regulatory approvals and governmental orders, have been satisfied or waived. In addition, (x) the Amended and Restated Merger Agreement may be terminated by Netflix (A) due to certain breaches by WBD of its representations, warranties and covenants contained in the Amended and Restated Merger Agreement, subject to certain cure rights, or (B) if prior to the WBD Stockholder Meeting, the Board of Directors of WBD effects a change in the WBD Recommendation, and (y) the Amended and Restated Merger Agreement may be terminated by WBD (A) due to certain breaches by Netflix of its representations, warranties and covenants contained in the Amended and Restated Merger Agreement, subject to certain cure rights or (B) if prior to the WBD Stockholder Meeting, WBD determines to enter into a definitive agreement providing for a Company Superior Proposal.
+
+Consistent with, and unchanged from, the Original Merger Agreement, if, prior to receipt of WBD Stockholder Approval, (i) the Amended and Restated Merger Agreement is terminated by WBD in order to enter into a definitive agreement providing for a Company Superior Proposal, (ii) the Amended and Restated Merger Agreement is terminated by Netflix because the Board of Directors of WBD has effected a change in the WBD Recommendation, (iii) the Amended and Restated Merger Agreement is terminated by Netflix or WBD as a result of the WBD Stockholder Approval having not been obtained and, immediately prior to the WBD Stockholder Meeting, Netflix would have been entitled to terminate the Amended and Restated Merger Agreement because the Board of Directors of WBD has effected a change in the WBD Recommendation or (iv) (x) after the date of the Original Merger Agreement, an acquisition proposal is publicly proposed or publicly disclosed prior to the WBD Stockholder Meeting (a “WBD Qualifying Transaction”), (y) the Amended and Restated Merger Agreement is terminated (1) by Netflix or WBD as a result of the WBD Stockholder Approval having not been obtained or (2) by Netflix as a result of a willful breach by WBD of its covenants in the Amended and Restated Merger Agreement and (z) concurrently with or within twelve (12) months after such termination, WBD (x) consummates a WBD Qualifying Transaction or (y) enters into a definitive agreement providing for a WBD Qualifying Transaction, then WBD will be obligated to pay Netflix a fee equal to $2,800,000,000 (the “Company Termination Fee”).
+
+Consistent with, and unchanged from, the Original Merger Agreement, Netflix will pay WBD a termination fee of $5,800,000,000 if the Amended and Restated Merger Agreement is not consummated under certain circumstances relating to the failure to obtain approvals, or there is a final, non-appealable order preventing the transaction, in each case, relating to antitrust laws or foreign regulatory laws.
+
+Consistent with, and unchanged from, the Original Merger Agreement, the Amended and Restated Merger Agreement also provides that either party may seek to compel the other party to specifically perform its obligations under the Amended and Restated Merger Agreement.
+
+Description of Merger Not Complete
+
+The foregoing summary of the Amended and Restated Merger Agreement does not purport to be complete and is qualified in its entirety by the full text of the Amended and Restated Merger Agreement, which is attached hereto as Exhibit 2.1 and is incorporated by reference herein.
+
+The Amended and Restated Merger Agreement has been included to provide investors with information regarding its terms. It is not intended to provide any other factual information about Netflix, WBD or their respective subsidiaries or affiliates. The representations, warranties and covenants contained in the Amended and Restated Merger Agreement were made only for purposes of the Amended and Restated Merger Agreement and as of specific dates, were solely for the benefit of the parties to the Amended and Restated Merger Agreement, may be subject to limitations agreed upon by the contracting parties, including being qualified by confidential disclosures made for the purposes of allocating contractual risk between the parties to the Amended and Restated Merger Agreement instead of establishing these matters as facts, and may be subject to standards of materiality applicable to the contracting parties that differ from those applicable to investors. Investors are not third-party beneficiaries under the Amended and Restated Merger Agreement and should not rely on the representations, warranties and covenants or any descriptions thereof as characterizations of the actual state of facts or condition of the parties thereto or any of their respective subsidiaries or affiliates. Moreover, information concerning the subject matter of representations and warranties may change after the date of the Original Merger Agreement or Amended and Restated Merger Agreement, as applicable, which subsequent information may or may not be fully reflected in Netflix’s or WBD’s respective public disclosures.
+
+Item 7.01
+
+Regulation FD Disclosure
+
+On January 20, 2026, Netflix and WBD issued a joint press release announcing the execution of the Amended and Restated Merger Agreement. A copy of the press release is attached as Exhibit 99.1 hereto and incorporated by reference herein.
+
+The information contained in this Item 7.01, including Exhibit 99.1, shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be incorporated by reference into any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such filing.
+
+Item 9.01
+
+Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+Exhibit
+
+No.
+
+Description
+
+ 2.1
+
+Amended and Restated Agreement and Plan of Merger, dated as of January 19, 2026, by and among Netflix, Inc., Nightingale Sub, Inc., Warner Bros. Discovery, Inc. and New Topco 25, Inc.*
+
+10.1
+
+Bridge Facility Incremental Commitments Agreement, dated as of January 19, 2026, by and among Netflix, Inc., Wells Fargo Bank, National Association, Wells Fargo Securities, LLC, BNP Paribas, BNP Paribas Securities Corp., HSBC Bank plc and HSBC Securities (USA) Inc.
+
+99.1
+
+Press Release, dated January 20, 2026, jointly issued by Netflix, Inc. and Warner Bros. Discovery, Inc.
+
+104.1
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+*
+
+Annexes, schedules and/or exhibits have been omitted pursuant to Item 601(a)(5) of Regulation S-K promulgated by the SEC. Netflix agrees to furnish supplementally a copy of any omitted annexes, schedules or exhibits to the SEC upon request.
+
+Important Information and Where to Find It
+
+In connection with the proposed transaction between Netflix and WBD, WBD filed a preliminary proxy statement on Schedule 14A (the “Proxy Statement”) with the U.S. Securities and Exchange Commission (the “SEC”) on January 20, 2026. The preliminary Proxy Statement is not final and may be amended, and the definitive Proxy Statement (if and when available) will be mailed to stockholders of WBD. WBD also intends to file a registration statement for the newly formed subsidiary of WBD (“Discovery Global”) that will be spun off from WBD prior to the closing of the proposed transaction. Each of Netflix and WBD may also file with or furnish to the SEC other relevant documents regarding the proposed transaction. This communication is not a substitute for the Proxy Statement or any other document that Netflix or WBD may file with the SEC or mail to WBD’s stockholders in connection with the proposed transaction. INVESTORS AND SECURITY HOLDERS OF NETFLIX AND WBD ARE URGED TO READ THE PROXY STATEMENT, AS WELL AS ANY OTHER RELEVANT DOCUMENTS FILED WITH THE SEC IN CONNECTION WITH THE PROPOSED TRANSACTION OR INCORPORATED BY REFERENCE INTO THE PROXY STATEMENT (INCLUDING ANY AMENDMENTS OR SUPPLEMENTS THERETO), BECAUSE THEY WILL CONTAIN IMPORTANT INFORMATION REGARDING NETFLIX, WBD, THE PROPOSED TRANSACTION AND RELATED MATTERS. The documents filed by Netflix with the SEC also may be obtained free of charge at Netflix’s website at https://ir.netflix.net/home/default.aspx. The documents filed by WBD with the SEC also may be obtained free of charge at WBD’s website at https://ir.wbd.com.
+
+Participants in the Solicitation
+
+Netflix, WBD and certain of their respective directors and executive officers may be deemed to be participants in the solicitation of proxies from the stockholders of WBD in connection with the proposed transaction under the rules of the SEC. Information about the interests of the directors and executive officers of WBD and other persons who may be deemed to be participants in the solicitation of stockholders of WBD in connection with the proposed transaction and a description of their direct and indirect interests, by security holdings or otherwise, will be included in the Proxy Statement, which will be filed by WBD with the SEC. Information about WBD’s directors and executive officers is set forth in WBD’s proxy statement for its 2025 Annual Meeting of Stockholders on Schedule 14A filed with the SEC on April 23, 2025, WBD’s Annual Report on Form 10-K for the year ended December 31, 2024, and any subsequent filings with the SEC. Information about Netflix’s directors and executive officers is set forth in Netflix’s proxy statement for its 2025 Annual Meeting of Stockholders on Schedule 14A filed with the SEC on April 17, 2025, and any subsequent filings with the SEC. Additional information regarding the direct and indirect interests of those persons and other persons who may be deemed participants in the proposed transaction may be obtained by reading the Proxy Statement regarding the proposed transaction when it becomes available. Free copies of these documents may be obtained as described above.
+
+Cautionary Statement Regarding Forward-Looking Statements
+
+This document contains “forward-looking statements” within the meaning of the federal securities laws, including Section 27A of the U.S. Securities Act of 1933, as amended, and Section 21E of the Securities Exchange Act of 1934, as amended. These forward-looking statements are based on Netflix’s and WBD’s current expectations, estimates and projections about the expected date of closing of the proposed transaction and the potential benefits thereof, their respective businesses and industries, management’s beliefs and certain assumptions made by Netflix and WBD, all of which are subject to change. In this context, forward-looking statements often address expected future business and financial performance and financial condition, and often contain words such as “expect,” “anticipate,” “intend,” “plan,” “believe,” “could,” “seek,” “see,” “will,” “may,” “would,” “might,” “potentially,” “estimate,” “continue,” “expect,” “target,” similar expressions or the negatives of these words or other comparable terminology that convey uncertainty of future events or outcomes. All forward-looking statements by their nature address matters that involve risks and uncertainties, many of which are beyond our control and are not guarantees of future results, such as statements about the consummation of the proposed transaction and the anticipated benefits thereof. These and other forward-looking statements, including the failure to consummate the proposed transaction or to make or take any filing or other action required to consummate the transaction on a timely matter or at all, are not guarantees of future results and are subject to risks, uncertainties and assumptions that could cause actual results to differ materially from those expressed in any forward-looking statements. Accordingly, there are or will be important factors that could cause actual results to differ materially from those indicated in such statements and, therefore, you should not place undue reliance on any such statements and caution must be exercised in relying on forward-looking statements. Important risk factors that may cause such a difference include, but are not limited to: (i) the completion
+
+of the proposed transaction on anticipated terms and timing, including obtaining stockholder and regulatory approvals, completing the separation of WBD’s Discovery Global business and Warner Bros. business, anticipated tax treatment, unforeseen liabilities, future capital expenditures, revenues, expenses, earnings, synergies, economic performance, indebtedness, financial condition, losses, future prospects, business and management strategies, expansion and growth of WBD’s and Netflix’s businesses and other conditions to the completion of the proposed transaction; (ii) failure to realize the anticipated benefits of the proposed transaction, including as a result of delay in completing the transaction or integrating the businesses of Netflix and WBD; (iii) Netflix’s and WBD’s ability to implement their business strategies; (iv) consumer viewing trends; (v) potential litigation relating to the proposed transaction that could be instituted against Netflix, WBD or their respective directors; (vi) the risk that disruptions from the proposed transaction will harm Netflix’s or WBD’s business, including current plans and operations; (vii) the ability of Netflix or WBD to retain and hire key personnel; (viii) potential adverse reactions or changes to business relationships resulting from the announcement, pendency or completion of the proposed transaction; (ix) uncertainty as to the long-term value of Netflix’s common stock; (x) legislative, regulatory and economic developments affecting Netflix’s and WBD’s businesses; (xi) general economic and market developments and conditions; (xii) the evolving legal, regulatory and tax regimes under which Netflix and WBD operate; (xiii) potential business uncertainty, including changes to existing business relationships, during the pendency of the proposed transaction that could affect Netflix’s or WBD’s financial performance; (xiv) restrictions during the pendency of the proposed transaction that may impact Netflix’s or WBD’s ability to pursue certain business opportunities or strategic transactions; and (xv) failure to receive the approval of the stockholders of WBD. Discussions of additional risks and uncertainties are contained in Netflix’s and WBD’s filings with the SEC, including their Annual Reports on Form 10-K and Quarterly Reports on Form 10-Q, and the Proxy Statement filed by WBD in connection with the proposed transaction and the registration statement to be filed by Discovery Global in connection with the separation. While the list of factors presented here is, and the list of factors presented in the Proxy Statement and registration statement will be, considered representative, no such list should be considered to be a complete statement of all potential risks and uncertainties. Unlisted factors may present significant additional obstacles to the realization of forward-looking statements. Consequences of material differences in results as compared with those anticipated in the forward-looking statements could include, among other things, business disruption, operational problems, financial loss, legal liability to third parties and similar risks, any of which could have a material adverse effect on Netflix’s or WBD’s consolidated financial condition, results of operations or liquidity. Neither Netflix nor WBD assumes any obligation to publicly provide revisions or updates to any forward-looking statements, whether as a result of new information, future developments or otherwise, should circumstances change, except as otherwise required by securities and other applicable laws.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: January 20, 2026
+
+NETFLIX, INC.
+
+By:
+
+/s/ David Hyman
+
+David Hyman
+
+Chief Legal Officer and Secretary

@@ -1,0 +1,352 @@
+6-K
+1
+tsm-revenue20260410.htm
+6-K
+
+Document
+
+1934 Act Registration No. 1-14700
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, DC 20549
+
+_____________________________
+
+FORM 6-K
+
+_____________________________
+
+REPORT OF FOREIGN PRIVATE ISSUER
+
+PURSUANT TO RULE 13a-16 OR 15d-16 UNDER
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+For the month of April 2026
+
+(Commission File Number: 001-14700)
+
+_____________________________
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+(Translation of Registrant’s Name Into English)
+
+_____________________________
+
+No. 8, Li-Hsin Road 6
+
+Hsinchu Science Park
+
+Hsinchu 300-096, Taiwan
+
+Republic of China
+
+(Address of Principal Executive Offices)
+
+_____________________________
+
+Indicate by check mark whether the registrant files or will file annual reports under cover of Form 20-F or Form 40-F.
+
+Form 20-F x Form 40-F o
+
+Indicate by check mark if the registrant is submitting the Form 6-K in papers as permitted by Regulation S-T Rule 101(b)(1):o
+
+Indicate by check mark if the registrant is submitting the Form 6-K in papers as permitted by Regulation S-T Rule 101(b)(7):o
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+Date: April 10, 2026By /s/ Wendell Huang
+
+Wendell Huang
+
+Senior Vice President and Chief Financial Officer
+
+TSMC March 2026 Revenue Report
+
+HSINCHU, Taiwan, R.O.C. – Apr. 10, 2026 - TSMC (TWSE: 2330, NYSE: TSM) today announced its net revenue for March 2026: On a consolidated basis, revenue for March 2026 was approximately NT$415.19 billion, an increase of 30.7 percent from February 2026 and an increase of 45.2 percent from March 2025. Revenue for January through March 2026 totaled NT$1,134.10 billion, an increase of 35.1 percent compared to the same period in 2025.
+
+TSMC March Revenue Report (Consolidated):
+
+(Unit:NT$ million)
+
+PeriodMarch 2026February 2026
+M-o-M
+
+Increase
+
+(Decrease)
+
+%
+March 2025
+Y-o-Y
+
+Increase
+
+(Decrease)
+
+%
+January to March 2026January to March 2025
+Y-o-Y
+
+Increase
+
+(Decrease)
+
+%
+
+Net Revenue
+
+415,191317,65730.7285,95745.21,134,103839,25435.1
+
+TSMC Spokesperson:TSMC Media Contacts
+
+Wendell Huang
+Senior Vice President and CFO
+Nina Kao
+
+Head of Public Relations
+
+Tel: 886-3-563-6688 ext.7125036
+
+Mobile: 886-988-239-163
+
+E-Mail: press@tsmc.com
+
+Ulric Kelly
+
+Public Relations
+
+Tel: 886-3-563-6688 ext.7126541
+
+Mobile: 886-978-111-503
+
+E-Mail: press@tsmc.com
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+This is to report the changes or status of 1) revenue, 2) funds lent to other parties, 3) endorsements and guarantees, and 4) financial derivative transactions for March 2026 (“Current Month”).
+
+Note: “Outstanding” herein means the outstanding balance at the end of Current Month; and “Cumulative” herein represents the accumulated amounts from the beginning of this year till the end of Current Month.
+
+1. Revenue (in NT$ thousands)
+
+PeriodItems20262025
+
+Mar.
+
+Net Revenue
+415,191,699 285,956,830
+
+Jan.~Mar.
+
+Net Revenue
+1,134,103,440 839,253,664
+
+2. Funds lent to other parties (in NT$ thousands)
+
+Lending CompanyLimit of lendingAmount approved by the Board of DirectorsOutstanding amount
+
+TSMC China*
+126,692,810 11,144,160 11,144,160
+
+TSMC Development**
+34,543,156 3,847,680 2,885,760
+
+* The borrower is TSMC Nanjing, a wholly-owned subsidiary of TSMC.
+
+** The borrower is TSMC Washington, a wholly-owned subsidiary of TSMC.
+
+3. Endorsements and guarantees (in NT$ thousands)
+
+GuarantorLimit of guaranteeAmount approved by the Board of DirectorsOutstanding amount
+
+TSMC*2,167,838,398 2,668,151 2,668,151
+
+TSMC**208,416,000 208,416,000
+
+TSMC***480,669,360 350,410,400
+
+* The guarantee was provided to TSMC North America, a wholly-owned subsidiary of TSMC.
+
+** The guarantee was provided to TSMC Global, a wholly-owned subsidiary of TSMC.
+
+*** The guarantee was provided to TSMC Arizona, a wholly-owned subsidiary of TSMC.
+
+4. Financial derivative transactions (in NT$ thousands)
+
+(1)Derivatives not applying hedge accounting.
+
+‧TSMC
+
+Forward
+
+Margin Payment
+-
+
+Premium Income (Expense)
+-
+
+Existing Contracts
+
+Outstanding Notional Amount
+205,042,004
+
+Mark to Market of Outstanding Contracts
+(3,041,798)
+
+Cumulative Unrealized Profit/Loss
+(26,601)
+
+Expired Contracts
+
+Cumulative Notional Amount
+416,293,533
+
+Cumulative Realized Profit/Loss
+(5,107,741)
+
+Equity price linked product (Y/N)
+
+N
+
+‧TSMC China
+
+Forward
+
+Margin Payment
+-
+
+Premium Income (Expense)
+-
+
+Existing Contracts
+
+Outstanding Notional Amount
+2,574,675
+
+Mark to Market of Outstanding Contracts
+(2,946)
+
+Cumulative Unrealized Profit/Loss
+(17,455)
+
+Expired Contracts
+
+Cumulative Notional Amount
+3,578,667
+
+Cumulative Realized Profit/Loss
+17,095
+
+Equity price linked product (Y/N)
+
+N
+
+‧TSMC Nanjing
+
+Forward
+
+Margin Payment
+-
+
+Premium Income (Expense)
+-
+
+Existing Contracts
+
+Outstanding Notional Amount
+6,855,138
+
+Mark to Market of Outstanding Contracts
+(8,409)
+
+Cumulative Unrealized Profit/Loss
+(32,859)
+
+Expired Contracts
+
+Cumulative Notional Amount
+7,738,941
+
+Cumulative Realized Profit/Loss
+15,900
+
+Equity price linked product (Y/N)
+
+N
+
+‧Japan Advanced Semiconductor Mfg., Inc.
+
+Forward
+
+Margin Payment
+-
+
+Premium Income (Expense)
+-
+
+Existing Contracts
+
+Outstanding Notional Amount
+-
+
+Mark to Market of Outstanding Contracts
+-
+
+Cumulative Unrealized Profit/Loss
+(4,241)
+
+Expired Contracts
+
+Cumulative Notional Amount
+2,767,287
+
+Cumulative Realized Profit/Loss
+20,888
+
+Equity price linked product (Y/N)
+
+N
+
+(2)Derivatives applying hedge accounting.
+
+‧TSMC Global
+
+Future
+
+Margin Payment
+(10,100)
+
+Premium Income (Expense)
+-
+
+Existing Contracts
+
+Outstanding Notional Amount
+1,086,970
+
+Mark to Market of Outstanding Contracts
+11,578
+
+Cumulative Unrealized Profit/Loss
+12,228
+
+Expired Contracts
+
+Cumulative Notional Amount
+4,033,651
+
+Cumulative Realized Profit/Loss
+(178)
+
+Equity price linked product (Y/N)
+
+N

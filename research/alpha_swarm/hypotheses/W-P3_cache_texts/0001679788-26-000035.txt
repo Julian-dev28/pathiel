@@ -1,0 +1,98 @@
+coin-20260407
+0001679788FALSE00016797882026-04-072026-04-07
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): April 7, 2026
+
+Coinbase Global, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Texas001-4028946-4707224
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+One Madison Avenue
+
+Suite 2400
+
+New York, NY
+
+10010
+
+(Address of principal executive offices)1
+
+(Zip Code)1
+
+Not Applicable
+
+(Registrant’s telephone number, including area code)1
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A common stock, $0.00001 par valueCOINThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+1We are a remote-first company. Accordingly, we do not maintain a headquarters. We are including this address solely for the purpose of satisfying the Securities and Exchange Commission’s request. Shareholder communications may also be sent to the email address: secretary@coinbase.com.
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+On April 7, 2026, Paul Clement informed Coinbase Global, Inc. (“Coinbase”) that he will not stand for re-election to Coinbase’s Board of Directors (the “Board”) when his current term expires at Coinbase’s 2026 Annual Meeting of Shareholders (the “2026 Annual Meeting”). The Board appreciates and thanks Mr. Clement for his service to Coinbase and his invaluable contributions to the Board.
+
+The Board anticipates that it will reduce the size of the Board from ten directors to nine directors, effective upon the expiration of Mr. Clement’s term at the conclusion of the 2026 Annual Meeting.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+COINBASE GLOBAL, INC.
+
+Dated: April 10, 2026
+By:
+/s/ Alesia J. Haas
+
+Alesia J. Haas
+
+Chief Financial Officer

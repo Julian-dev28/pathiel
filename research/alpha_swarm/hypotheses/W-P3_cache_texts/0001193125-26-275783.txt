@@ -1,0 +1,199 @@
+8-K
+
+NVIDIA CORP false 0001045810 0001045810 2026-06-15 2026-06-15
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, DC 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): June 15, 2026
+
+NVIDIA CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+0-23985
+
+94-3177549
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2788 San Tomas Expressway, Santa Clara, CA 95051
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant’s telephone number, including area code: (408) 486-2000
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common Stock, $0.001 par value per share
+
+NVDA
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging Growth Company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01.
+
+Other Events.
+
+On June 18, 2026, NVIDIA Corporation (the “Company”) completed an offering of $3,500,000,000 aggregate principal amount of its 4.250% Notes due 2028 (the “2028 Notes”), $3,500,000,000 aggregate principal amount of its 4.350% Notes due 2029 (the “2029 Notes”), $4,000,000,000 aggregate principal amount of its 4.500% Notes due 2031 (the “2031 Notes”), $3,500,000,000 aggregate principal amount of its 4.750% Notes due 2033 (the “2033 Notes”), $4,000,000,000 aggregate principal amount of its 4.950% Notes due 2036 (the “2036 Notes”), $3,000,000,000 aggregate principal amount of its 5.550% Notes due 2046 (the “2046 Notes”) and $3,500,000,000 aggregate principal amount of its 5.625% Notes due 2056 (the “2056 Notes” and, together with the 2028 Notes, the 2029 Notes, the 2031 Notes, the 2033 Notes, the 2036 Notes, and the 2046 Notes, the “Notes”). The offering of the Notes was made pursuant to the Company’s Registration Statement on Form S-3 (File No. 333-287619), which Registration Statement relates to the offer and sale on a delayed basis from time to time of an indeterminate amount of the Company’s securities, including debt securities. Further information concerning the Notes and related matters is set forth in the Company’s Prospectus Supplement dated June 15, 2026, which was filed with the Securities and Exchange Commission on June 17, 2026.
+
+In connection with the issuance of the Notes, the Company entered into an Underwriting Agreement dated as of June 15, 2026 (the “Underwriting Agreement”) with Goldman Sachs & Co. LLC, J.P. Morgan Securities LLC and Morgan Stanley & Co. LLC, as representatives of the several underwriters listed in Schedule I to the Underwriting Agreement. The foregoing description of the Underwriting Agreement is qualified in its entirety by the terms of such agreement, a copy of which is attached hereto as Exhibit 1.1 and is incorporated by reference herein.
+
+The Notes were issued pursuant to an Indenture with Computershare Trust Company, N.A., as successor to Wells Fargo Bank, National Association, as trustee, dated as of September 16, 2016 (the “Base Indenture”), as supplemented by an Officers’ Certificate, dated as of June 18, 2026 (the “Officers’ Certificate” and, together with the Base Indenture, the “Indenture”). The Officers’ Certificate is attached hereto as Exhibit 4.2 and is incorporated by reference herein. The Base Indenture was previously incorporated by reference into the Registration Statement pursuant to Exhibit 4.1 to the Company’s Current Report on Form 8-K filed on September 16, 2016. The forms of the 2028 Notes, the 2029 Notes, the 2031 Notes, the 2033 Notes, the 2036 Notes, the 2046 Notes, and the 2056 Notes are attached hereto as Exhibits 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, and 4.9, respectively, and are incorporated by reference herein.
+
+The above description of the Underwriting Agreement, the Indenture and the Notes does not purport to be complete and is qualified in its entirety by reference to the Underwriting Agreement, the Indenture, and the forms of Notes.
+
+Item 9.01.
+
+Financial Statements and Exhibits.
+
+(d)  Exhibits
+
+Exhibit
+
+Number
+
+Description
+
+1.1
+
+Underwriting Agreement, dated as of June 15, 2026, by and among the Company and Goldman Sachs & Co. LLC, J.P. Morgan Securities LLC and Morgan Stanley & Co. LLC, as representatives of the several underwriters.
+
+4.1
+
+Indenture, dated as of September 16, 2016, by and between the Company and Computershare Trust Company, N.A., as successor to Wells Fargo Bank, National Association, as Trustee (filed as Exhibit 4.1 to NVIDIA Corporation’s Current Report on Form 8-K filed on September 16, 2016 (File No. 000-23985), and incorporated by reference herein).
+
+4.2
+
+Officers’ Certificate, dated as of June 18, 2026.
+
+4.3
+
+Form of 2028 Note (included in Exhibit 4.2).
+
+4.4
+
+Form of 2029 Note (included in Exhibit 4.2).
+
+4.5
+
+Form of 2031 Note (included in Exhibit 4.2).
+
+4.6
+
+Form of 2033 Note (included in Exhibit 4.2).
+
+4.7
+
+Form of 2036 Note (included in Exhibit 4.2).
+
+2
+
+Exhibit
+
+Number
+
+Description
+
+4.8
+
+Form of 2046 Note (included in Exhibit 4.2).
+
+4.9
+
+Form of 2056 Note (included in Exhibit 4.2).
+
+5.1
+
+Opinion of Skadden, Arps, Slate, Meagher & Flom LLP.
+
+23.1
+
+Consent of Skadden, Arps, Slate, Meagher & Flom LLP (included in Exhibit 5.1).
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+3
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: June 18, 2026
+
+NVIDIA Corporation
+
+By:
+
+/s/ Colette M. Kress
+
+Colette M. Kress
+
+Executive Vice President and
+
+Chief Financial Officer
+
+4

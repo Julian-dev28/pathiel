@@ -1,0 +1,355 @@
+8-K
+
+ADVANCED MICRO DEVICES INC false 0000002488 0000002488 2026-05-13 2026-05-13
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+May 13, 2026
+
+Date of Report (Date of earliest event reported)
+
+ADVANCED MICRO DEVICES, INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-07882
+
+94-1692300
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2485 Augustine Drive
+
+Santa Clara, California 95054
+
+(Address of principal executive offices) (Zip Code)
+
+(408) 749-4000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common Stock, $0.01 par value
+
+AMD
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01 Entry into a Material Definitive Agreement.
+
+On May 14, 2026 (the “Closing Date”), Advanced Micro Devices, Inc. (the “Company”) entered into a Credit Agreement with the lenders named therein, JPMorgan Chase Bank, N.A., as administrative agent, and the other parties from time to time party thereto (the “Credit Agreement”).
+
+The Credit Agreement provides for a five-year, $5.0 billion unsecured revolving credit facility (the “Revolving Facility”) and replaces the Company’s existing Credit Agreement dated as of April 29, 2022, among the Company, the lenders party thereto and Wells Fargo Bank, National Association, as administrative agent (the “Existing Credit Agreement”). The proceeds of any borrowings under the Revolving Facility may be used for general corporate purposes.
+
+Up to $250 million of the Revolving Facility may be utilized for the issuance of letters of credit. The issuance of letters of credit reduces the aggregate amount otherwise available under the Revolving Facility for the making of revolving loans. Subject to the terms of the Credit Agreement, the Company may borrow, repay and reborrow revolving loans at any time prior to the earlier of (a) the fifth anniversary of the Closing Date, and (b) the date of termination in whole of the revolving lenders’ commitments under the Credit Agreement in accordance with the terms thereof. As of the Closing Date, there are no borrowings outstanding under the Revolving Facility.
+
+Borrowings under the Revolving Facility will bear interest at a fluctuating rate per annum equal to, at the Company’s option, Base Rate (as defined in the Credit Agreement) or Term SOFR (as defined in the Credit Agreement), in each case, plus an applicable margin that is calculated based on the Company’s credit ratings from time to time and ranges from 0.50% to 0.80% in the case of loans accruing interest based on Term SOFR and at 0.00% in the case of loans accruing interest based on Base Rate (it being understood that Term SOFR as defined can be no lower than 0.00% and Base Rate as defined can be no lower than 1.00%). In addition, the Company has agreed to pay to the lenders under the Credit Agreement certain customary fees, including a commitment fee on the average daily unused portion of the revolving commitments under the Revolving Facility, which ranges from 0.03% to 0.05% based on the Company’s credit ratings from time to time.
+
+Voluntary prepayments of the loans and voluntary reductions of the unutilized portion of the revolving commitments under the Credit Agreement are permissible without penalty (other than customary SOFR loan breakage costs), subject to certain conditions pertaining to minimum notice and minimum reduction amounts as described in the Credit Agreement.
+
+The Credit Agreement contains representations and warranties and affirmative and negative covenants customary for unsecured financings of this type. There are no financial covenants under the Credit Agreement.
+
+The Credit Agreement also contains various events of default (subject to grace periods, as applicable) including among others: nonpayment of principal, interest or fees; breach of covenant; payment default on, or acceleration under, certain other material indebtedness; inaccuracy of the representations or warranties in any material respect; bankruptcy or insolvency; certain unsatisfied judgments; certain ERISA violations; the occurrence of a change of control; and the invalidity or unenforceability of the Credit Agreement or certain other documents executed in connection therewith.
+
+The foregoing description of the Credit Agreement does not purport to be complete and is qualified in its entirety by reference to the full text of the Credit Agreement attached hereto as Exhibit 10.1 and incorporated herein by reference.
+
+Item 1.02 Termination of a Material Definitive Agreement.
+
+In connection with the entry into the Credit Agreement, the Company terminated all remaining commitments of the lenders under the Existing Credit Agreement.
+
+Item 2.03 Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement of a Registrant.
+
+On May 14, 2026, the Company increased to $5.5 billion from $3.0 billion the maximum aggregate amount outstanding at any time of unsecured commercial paper notes (the “Notes”) which the Company may issue on a private placement basis under the commercial paper program it established on November 3, 2022 (the “Program”). Outside of reflecting such increase, no other changes were made to agreements entered into on November 3, 2022 to establish the Program other than updating the private placement memoranda for the Program.
+
+Under the Program, the Company may issue Notes from time to time, and the proceeds of the Notes will be used for general corporate purposes.
+
+The maturities of the Notes will vary, but may not exceed 397 days from the date of issue. The face or principal amount of Notes outstanding under the Program at any time may not exceed $5.5 billion. The Notes will be sold at a discount from par or, alternatively, will be sold at par and bear interest at rates that will vary based on market conditions at the time of the issuance of the Notes. The Notes have not been and will not be registered under the Securities Act of 1933, as amended (the “Securities Act”), or any state securities laws, and may not be offered and sold except in compliance with an applicable exemption from the registration requirements of the Securities Act and any applicable state securities laws. The information contained in this Current Report on Form 8-K shall not constitute an offer to sell or the solicitation of an offer to purchase any securities, nor shall there be any sale of the Notes in any jurisdiction in which such offer, solicitation or sale would be unlawful.
+
+The information set forth under Item 1.01 “Entry into a Material Definitive Agreement” is incorporated into this Item 2.03 by reference.
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+On May 13, 2026, the Company held its 2026 Annual Meeting of Stockholders (the “Annual Meeting”). As further described in Item 5.07 of this Current Report on Form 8-K, at the Annual Meeting, the Company’s stockholders approved the amendment and restatement of the Company’s 2023 Equity Incentive Plan (the “Amended and Restated Plan”).
+
+The Amended and Restated Plan was approved by the Board of Directors (the “Board”) of the Company on March 9, 2026 and became effective upon stockholder approval at the Annual Meeting. The Amended and Restated Plan (i) increased the number of shares authorized for issuance to employees, consultants and directors under the Amended and Restated Plan by 65,000,000 shares of common stock, par value $0.01 per share (the “Common Stock”), of the Company, such that the total number of shares authorized for issuance under the Amended and Restated 2023 Plan is 153,000,000 shares of Common Stock, and (ii) updated the plan for certain administrative changes.
+
+A description of the material terms of the Amended and Restated Plan is set forth in the section titled “Item 4 - Approval of the Amendment and Restatement of the Advanced Micro Devices, Inc. 2023 Equity Incentive Plan” included in the Company’s definitive proxy statement on Schedule 14A filed with the Securities and Exchange Commission on March 27, 2026 (the “Proxy Statement”). The foregoing description of the Amended and Restated Plan does not purport to be complete and is qualified in its entirety by reference to the full text of the Amended and Restated Plan attached hereto as Exhibit 10.2 and incorporated herein by reference.
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+The Company held its Annual Meeting on May 13, 2026. At the Annual Meeting, the Company’s stockholders voted on the following five proposals, each of which is described in detail in the Proxy Statement:
+
+Proposal No. 1: Election of Directors. All Directors were elected.
+
+The Company’s stockholders elected the eight director nominees listed below to serve on the Board:
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+Nora M. Denzel
+
+947,789,490
+
+53,782,687
+
+1,723,831
+
+266,537,638
+
+Michael P. Gregoire
+
+981,430,100
+
+19,802,675
+
+2,063,233
+
+266,537,638
+
+Joseph A. Householder
+
+980,818,411
+
+20,650,951
+
+1,826,646
+
+266,537,638
+
+John W. Marren
+
+997,404,298
+
+4,082,948
+
+1,808,762
+
+266,537,638
+
+KC McClure
+
+999,283,773
+
+2,283,216
+
+1,729,019
+
+266,537,638
+
+Lisa T. Su
+
+930,377,752
+
+66,844,325
+
+6,073,931
+
+266,537,638
+
+Abhi Y. Talwalkar
+
+918,133,754
+
+83,367,669
+
+1,794,585
+
+266,537,638
+
+Elizabeth W. Vanderslice
+
+998,000,474
+
+3,591,977
+
+1,703,557
+
+266,537,638
+
+Proposal No. 2: Ratification of the Appointment of the Independent Registered Public Accounting Firm. This appointment was ratified.
+
+The Company’s stockholders ratified the appointment of Ernst & Young LLP as the Company’s independent registered public accounting firm for the fiscal year ending December 26, 2026.
+
+For
+
+Against
+
+Abstain
+
+       
+
+1,182,240,325
+
+85,267,454
+
+2,325,867
+
+Proposal No. 3: Approval on a Non-Binding, Advisory Basis of the Compensation of the Company’s Named Executive Officers (“Say-on-Pay”). This proposal was approved.
+
+The Company’s stockholders approved, on a non-binding basis, the compensation of the Company’s named executive officers as disclosed in the Proxy Statement.
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+924,311,642
+
+73,373,753
+
+5,610,613
+
+266,537,638
+
+Proposal No. 4: Approval of the Amendment and Restatement of the Advanced Micro Devices, Inc. 2023 Equity Incentive Plan to: (i) Increase the Number of Authorized Shares That Can be Issued by 65 Million Shares and (ii) Update the Plan for Certain Administrative Changes. This proposal was approved.
+
+The Company’s stockholders approved the amendment and restatement of the plan to (i) increase the number of authorized shares of Common Stock by 65 million shares and (ii) update the plan for certain administrative changes.
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+971,044,532
+
+28,539,051
+
+3,712,425
+
+266,537,638
+
+Proposal No. 5: Stockholder Proposal Requesting the Lowering of the Ownership Threshold and Removal of the Holding Requirement to Call a Special Meeting. This proposal was not approved.
+
+The Company’s stockholders did not approve the stockholder proposal requesting the ownership threshold be lowered and the removal of the holding requirement to call a special meeting.
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+375,193,701
+
+624,384,602
+
+3,717,705
+
+266,537,638
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+EXHIBIT INDEX
+
+Exhibit No.
+
+Description
+
+10.1*
+
+Credit Agreement, dated as of May 14, 2026, by and among the Company, as borrower, the lenders named therein and JPMorgan Chase Bank, N.A., as administrative agent.
+
+10.2
+
+Advanced Micro Devices, Inc. 2023 Equity Incentive Plan, filed as Exhibit A to the Company’s Proxy Statement on Schedule 14A filed on March 27, 2026, is hereby incorporated by reference.
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+* Exhibits and/or schedules have been omitted pursuant to Item 601(a)(5) of Regulation S-K. The Company hereby undertakes to furnish supplementally copies of any of the omitted exhibits and schedules upon request by the Securities and Exchange Commission.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: May 15, 2026
+
+ADVANCED MICRO DEVICES, INC.
+
+By:
+
+/s/ Jean Hu
+
+Name:
+
+Jean Hu
+
+Title:
+
+Executive Vice President, Chief Financial Officer & Treasurer

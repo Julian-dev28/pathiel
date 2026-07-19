@@ -1,0 +1,133 @@
+8-K
+1
+form8-kxguidance.htm
+8-K
+
+Document
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+Current Report
+
+Pursuant To Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 26, 2026
+
+GameStop Corp.
+
+(Exact name of Registrant as specified in its charter)
+
+Delaware
+
+1-32637
+
+20-2733559
+
+(State or Other Jurisdiction
+of Incorporation)
+
+(Commission
+File Number)
+
+(IRS Employer
+Identification No.)
+
+625 Westport Parkway, Grapevine, TX 76051
+
+(817) 424-2000
+
+(Address, Including Zip Code, and Telephone Number, Including Area Code, of Registrant’s Principal Executive Offices)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☒ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading SymbolName of each exchange on which registered
+
+Class A Common StockGMENYSE
+
+Warrants to Purchase Common Stock, par value $0.001 per shareGME WSNYSE
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 7.01 Regulation FD Disclosure.
+
+GameStop Corp. (“GameStop” or the “Company”) today announced that, for the fiscal year ending January 30, 2027 ("fiscal year 2026"), the Company currently expects to generate Adjusted EBITDA in excess of $600 million, compared to Adjusted EBITDA of $345.4 million in fiscal year 2025.
+
+This outlook is based on the Company's current expectations and assumptions regarding consumer demand, supply chain conditions, cost initiative execution, store operations, and other operating factors, in each case as further described under "Cautionary Statement Regarding Forward-Looking Statements - Safe Harbor" below.
+
+The information contained in this Current Report on Form 8-K is furnished pursuant to Item 7.01 “Regulation FD Disclosure,” and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, or otherwise subject to the liabilities of that section.
+
+NON-GAAP MEASURES AND OTHER METRICS
+
+As a supplement to the Company’s financial results presented in accordance with U.S. generally accepted accounting principles ("GAAP"), GameStop may use certain non-GAAP measures, including adjusted EBITDA. Adjusted EBITDA is a supplemental financial measure of the Company’s performance that is not required by, or presented in accordance with, GAAP. We believe that the presentation of this non-GAAP financial measure provides useful information to investors in assessing our core operating performance, financial condition and results of operations. We define adjusted EBITDA as net income before income taxes, plus interest income, net and depreciation and amortization, excluding stock-based compensation, certain transformation costs (including severance and other costs), business divestitures, asset impairments, gain (loss) on digital assets and related receivables, unrealized gain (loss) on derivative assets, and other non-cash charges. Net income is the GAAP financial measure most directly comparable to adjusted EBITDA. Our non-GAAP financial measures should not be considered as an alternative to the most directly comparable GAAP financial measure. Furthermore, non-GAAP financial measures have limitations as an analytical tool because they exclude some but not all items that affect the most directly comparable GAAP financial measures. Some of these limitations include:
+
+•certain items excluded from adjusted EBITDA are significant components in understanding and assessing a company’s financial performance, such as a company’s cost of capital and tax structure, results of operations or cash flows;
+
+•adjusted EBITDA does not reflect our cash expenditures or future requirements for capital expenditures or contractual commitments;
+
+•adjusted EBITDA does not reflect changes in, or cash requirements for, our working capital needs;
+
+•although depreciation and amortization are non-cash charges, the assets being depreciated and amortized will often have to be replaced in the future, and adjusted EBITDA does not reflect any cash requirements for such replacements; and
+
+•our computations of adjusted EBITDA may not be comparable to other similarly titled measures of other companies.
+
+We compensate for the limitations of adjusted EBITDA as analytical tools by reviewing the comparable GAAP financial measure, understanding the differences between the GAAP and non-GAAP financial measures and incorporating these data points into our decision-making process. Adjusted EBITDA is provided in addition to, and not as an alternative to, the Company’s financial results prepared in accordance with GAAP, and should not be considered in isolation or as a substitute for analysis of our results as reported under GAAP. Because adjusted EBITDA may be defined and determined differently by other companies in our industry, our definitions of this non-GAAP financial measure may not be comparable to similarly titled measures of other companies, thereby diminishing their utility.
+
+With regards to forward-looking guidance for adjusted EBITDA, we are not able to reconcile the forward-looking non-GAAP measure of adjusted EBITDA to the closest corresponding GAAP measure, net income, without unreasonable efforts because we are unable to predict the ultimate outcome of certain significant items.
+
+CAUTIONARY STATEMENT REGARDING FORWARD-LOOKING STATEMENTS - SAFE HARBOR
+
+This Current Report on Form 8-K contains forward-looking statements within the meaning of the Private Securities Litigation Reform Act of 1995. In some cases, forward-looking statements can be identified by the use of terms such as "anticipates," "believes," "continues," "could," "estimates," "expects," "intends," "may," "plans," "potential," "predicts," "pro forma," "seeks," "should," "will" or similar expressions. Forward-looking statements are subject to significant risks and uncertainties and actual
+
+developments, business decisions, outcomes and results may differ materially from those reflected or described in the forward-looking statements. The following factors, among others, could cause actual developments, business decisions, outcomes and results to differ materially from those reflected or described in the forward-looking statements: the performance of our business and our ability to generate earnings in line with our guidance; economic, social, and political conditions in the markets in which we operate; the competitive nature of the Company’s industry; the cyclicality of the video game industry; the Company’s dependence on the timely delivery of new and innovative products from its vendors; the impact of technological advances in the video game industry and related changes in consumer behavior on the Company’s sales; interruptions to the Company’s supply chain or the supply chain of our suppliers; the Company’s dependence on sales during the holiday selling season and on the popularity and sale of trading cards; the Company’s ability to obtain favorable terms from its current and future suppliers and service providers; the Company’s ability to anticipate, identify and react to trends in pop culture with regard to its sales of collectibles; the Company’s ability to maintain strong retail and ecommerce experiences for its customers; the Company’s ability to keep pace with changing industry technology and consumer preferences; how the Company incorporates artificial intelligence into workflows and processes, including customer-facing and operational activities, and challenges with properly managing its use; the Company’s ability to manage its profitability and cost reduction initiatives; the Company’s ability to complete its proposed acquisition of eBay Inc.; changes in senior management or the Company’s ability to attract and retain qualified personnel; the Company is highly dependent on the services of the Company’s Chairman of the Board and Chief Executive Officer, Ryan Cohen; if the grant of a 100% performance-based nonqualified stock option award (the “CEO Performance Award”) to Mr. Cohen is not approved by the Company’s stockholders or if the Company is unable to adequately incentivize Mr. Cohen to maintain his focus and priorities on the Company, the Company's ability to execute on its strategy and achieve its growth goals may be adversely impacted; the CEO Performance Award, if and to the extent the stock options associated become vested and are exercised, would result in dilution to the Company’s stockholders and could impact the Company’s stock price; potential damage to the Company’s reputation or customers' perception of the Company; the Company's ability, or the ability of the third parties with whom we work, to maintain the security of our information technology systems or data (including customer, associate or Company information); the Company's compliance with stringent and evolving laws and other obligations related to data privacy and security; occurrence of weather events, natural disasters, public health crises and other unexpected events; risks associated with inventory shrinkage; potential failure or inadequacy of the Company's computerized systems; the ability of the Company’s third party delivery services to deliver products to the Company’s retail locations, fulfillment centers and consumers and changes in the terms the Company has with such service providers; the ability and willingness of the Company’s vendors to provide marketing and merchandising support at historical or anticipated levels; restrictions on the Company’s ability to purchase and sell pre-owned products; the Company’s ability to renew or enter into new leases on favorable terms; unfavorable changes in the Company’s global tax rate; legislative actions; the Company’s ability to comply with federal, state, local and international laws and regulations and statutes; changes to tariff and import/export regulations; potential litigation and other legal proceedings; the value of the Company's investment holdings; concentration of the Company's investment portfolio into one or fewer holdings; the recognition of losses in a particular investment even if the Company has not sold the investment; the execution and timing of share repurchases, if any, under the share repurchase authorization; volatility in the Company’s stock price, including volatility due to potential short squeezes; continued high degrees of media coverage by third parties; the availability and future sales of substantial amounts of the Company’s Class A common stock; the issuance of common stock upon the exercise of the warrants declared as part of the October 7, 2025 distribution to the holders of record of the Company's Class A common stock and holders of the Convertible Notes, in the form of warrants to purchase shares of common stock (the “Warrants”), may depress our stock price; future issuance of additional warrants may adversely affect the market price of the Warrants and the market price of the Company’s common stock; the Warrants do not automatically exercise, and any Warrant that is not exercised prior to their expiration date will lose all financial value; fluctuations in the Company’s results of operations from quarter to quarter; the Company’s ability to generate sufficient cash flow to fund its operations; the $1.5 billion 0.00% Convertible Senior Notes due 2030 (the “Convertible 2030 Notes") and $2,250.0 million 0.00% Convertible Senior Notes due 2032 (the "Convertible 2032 Notes" and, collectively with the Convertible 2030 Notes, the "Convertible Notes") are the Company’s obligations only, and substantially all of our operations are conducted through, and a portion of our consolidated assets are held by, our subsidiaries; servicing the Convertible Notes requires a significant amount of cash, and the Company may not have sufficient cash flow from our business to make such payments, and we may incur additional indebtedness in the future; the Company’s ability to incur additional debt; risks associated with the Company’s investment in marketable, nonmarketable and interest-bearing securities, including the impact of such investments on Company’s financial results; the Company's investment policy permits investments in certain cryptocurrency assets, including Bitcoin and U.S. dollar-denominated stable coins, and to the extent the Company holds Bitcoin or U.S. dollar denominated stable coins, the Company will be exposed to certain risks associated with Bitcoin or stable coins, respectively; the Company’s derivative strategy can expose it to counterparty risk; and the Company’s ability to maintain effective internal control over financial reporting. Additional factors that could cause results to differ materially from those reflected or described in the forward-looking statements can be found in GameStop's most recent Annual Report on Form 10-K and other filings made from time to time with the Securities and Exchange Commission and available at www.sec.gov or on the Company’s investor relations website (https://investor.gamestop.com). Forward-looking statements contained in this Current Report on Form 8-K speak only as of the date of this Current Report on Form 8-K. The Company undertakes no obligation to
+
+publicly update any forward-looking statement, whether as a result of new information, future developments or otherwise, except as may be required by any applicable securities laws.
+
+Preliminary Financial Information
+
+We report our financial results in accordance with U.S. generally accepted accounting principles. All projected financial information in this Form 8-K is preliminary. These estimates are not a comprehensive statement of our financial position and results of operations. There is no assurance that the Company will achieve its forecasted results within the relevant period or otherwise. Actual results may differ materially from these estimates as a result of actual quarter-end results, the completion of normal quarter-end accounting procedures and adjustments, including the execution of our internal control over financial reporting, the completion of the preparation and management’s review of our financial statements for the relevant period and the subsequent occurrence or identification of events prior to the filing of our financial results for the relevant period with the Securities and Exchange Commission.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+99.1 Press Release of GameStop Corp., dated June 26, 2026.
+
+104 Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+GAMESTOP CORP.
+
+(Registrant)
+
+Date: June 26, 2026
+By:/s/ Daniel Moore
+
+Daniel Moore
+Principal Financial and Accounting Officer

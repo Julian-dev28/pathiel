@@ -1,0 +1,154 @@
+lly-20260504
+0000059478false00000594782026-05-042026-05-040000059478us-gaap:CommonClassAMember2026-05-042026-05-040000059478lly:A1.625NotesDueJune22026Member2026-05-042026-05-040000059478lly:A2.125NotesDueJune32030Member2026-05-042026-05-040000059478lly:A625Notesdue2031Member2026-05-042026-05-040000059478lly:A500NotesDue2033Member2026-05-042026-05-040000059478lly:A6.77NotesDueJanuary12036Member2026-05-042026-05-040000059478lly:A1625NotesDue2043Member2026-05-042026-05-040000059478lly:A1.700Notesdue2049Member2026-05-042026-05-040000059478lly:A1125NotesDue2051Member2026-05-042026-05-040000059478lly:A1375NotesDue2061Member2026-05-042026-05-04
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of Earliest Event Reported): May 4, 2026
+
+ELI LILLY AND COMPANY
+
+(Exact Name of Registrant as Specified in its Charter)
+
+Indiana 001-06351 35-0470950
+
+(State or Other Jurisdiction
+
+of Incorporation) (Commission
+
+File Number) (I.R.S. Employer
+
+Identification No.)
+
+Lilly Corporate Center
+
+Indianapolis,Indiana46285
+
+(Address of Principal Executive Offices)(Zip Code)
+
+Registrant’s Telephone Number, Including Area Code: (317) 276-2000
+
+Not Applicable
+
+(Former Name or Former Address, if Changed Since Last Report.)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2.):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock (no par value)LLYNew York Stock Exchange
+
+1.625% Notes due 2026LLY26New York Stock Exchange
+
+2.125% Notes due 2030LLY30New York Stock Exchange
+
+0.625% Notes due 2031LLY31New York Stock Exchange
+
+0.500% Notes due 2033LLY33New York Stock Exchange
+
+6.77% Notes due 2036LLY36New York Stock Exchange
+
+1.625% Notes due 2043LLY43New York Stock Exchange
+
+1.700% Notes due 2049LLY49ANew York Stock Exchange
+
+1.125% Notes due 2051LLY51New York Stock Exchange
+
+1.375% Notes due 2061LLY61New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (17 CFR §230.405) or Rule 12b-2 of the Securities Exchange Act of 1934 (17 CFR §240.12b-2).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07. Submission of Matters to a Vote of Security Holders.
+
+The Eli Lilly and Company (the “Company”) annual meeting of shareholders (the “2026 Annual Meeting”) was held on May 4, 2026. The total number of shares of the Company's common stock voted in person or by proxy at the 2026 Annual Meeting was 847,254,010, representing approximately 90% of the 944,818,881 shares that were outstanding and entitled to vote as of February 25, 2026, the record date of the 2026 Annual Meeting. Voting results for each matter submitted to a vote at the 2026 Annual Meeting are provided below.
+
+a) The four nominees for director were elected to serve three-year terms ending at the Company's annual meeting of shareholders in 2029, as follows:
+
+NomineeForAgainstAbstainBroker Nonvote
+
+Carolyn Bertozzi761,930,3611,898,735939,58582,485,329
+
+William Kaelin, Jr.726,270,36137,418,9601,079,36082,485,329
+
+Jon Moeller749,926,63413,860,022982,02582,485,329
+
+David Ricks734,760,02829,119,356889,29782,485,329
+
+b) By the following vote, the shareholders approved, on an advisory basis, the compensation paid to the Company's named executive officers:
+
+ForAgainstAbstainBroker Nonvote
+
+731,998,71730,467,2782,302,68682,485,329
+
+c) The appointment of Ernst & Young LLP as the Company's independent auditor for 2026 was ratified by the following shareholder vote:
+
+ForAgainstAbstain
+
+802,721,38143,473,9931,058,636
+
+d) The proposal to amend the Company's Articles of Incorporation (the “Articles”) to eliminate the classified board structure did not receive the required vote of 80% of outstanding shares. The shareholders voted as follows:
+
+ForAgainstAbstainBroker Nonvote
+
+665,371,04997,677,1731,720,45982,485,329
+
+e) The proposal to amend the Articles to eliminate supermajority voting provisions did not receive the required vote of 80% of outstanding shares. The shareholders voted as follows:
+
+ForAgainstAbstainBroker Nonvote
+
+664,460,26298,597,0881,711,33182,485,329
+
+f) By the following vote, a shareholder proposal requesting the adoption of a policy and amendment to the bylaws to require an independent board chair was not approved:
+
+ForAgainstAbstainBroker Nonvote
+
+257,292,684505,068,4162,407,58182,485,329
+
+g) By the following vote, a shareholder proposal to prepare an annual lobbying report was not approved:
+
+ForAgainstAbstainBroker Nonvote
+
+113,417,917645,415,5425,935,22282,485,329
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+ELI LILLY AND COMPANY
+
+(Registrant)
+
+By:/s/ Anat Hakim
+
+Name:Anat Hakim
+
+Title:Executive Vice President, General Counsel and
+
+Secretary
+
+Date: May 7, 2026

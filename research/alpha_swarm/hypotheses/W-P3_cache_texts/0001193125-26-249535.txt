@@ -1,0 +1,127 @@
+8-K
+
+false 0001633978 0001633978 2026-05-29 2026-05-29
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+Form 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of report (Date of earliest event reported): May 29, 2026
+
+Lumentum Holdings Inc.
+
+(Exact name of Registrant as specified in its charter)
+
+Delaware
+
+001-36861
+
+47-3108385
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification Number)
+
+1001 Ridder Park Drive, San Jose, California 95131
+
+(Address of Principal Executive Offices, including Zip Code)
+
+(408) 546-5483
+
+(Registrant’s Telephone Number, Including Area Code)
+
+Not Applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common Stock, par value of $0.001 per share
+
+LITE
+
+Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 3.02.
+
+Unregistered Sales of Equity Securities.
+
+On May 29, 2026, Lumentum Holdings Inc. (the “Company”) entered into separate privately-negotiated exchange agreements (the “Exchange Agreements”) with certain holders of its outstanding 0.50% Convertible Senior Notes due 2028 (the “Notes”), pursuant to which the Company will deliver an aggregate of approximately 5.0 million shares of the Company’s common stock, par value $0.001 per share (the “Common Stock”) in exchange for approximately $650.4 million principal amount of the Notes (the “Exchange Transactions”) and related conversion value in excess of the principal amount thereof. The Exchange Transactions will result in incremental dilution of approximately 0.8 million shares of Common Stock related to the principal amount of the Notes.
+
+The Exchange Transactions are expected to close on or about June 4, 2026. Following the closing of the Exchange Transactions (after taking into account early conversion requests that have been received, but not settled, prior to June 1, 2026), approximately $172.2 million in aggregate principal amount of Notes will remain outstanding with terms unchanged.
+
+The Company will not receive any cash proceeds from the Exchange Transactions. In exchange for delivering the shares of Common Stock pursuant to the Exchange Transactions, the Company will receive and cancel the exchanged Notes.
+
+The Exchange Transactions are being conducted as a private placement and the shares of Common Stock to be issued in the Exchange Transactions will be issued pursuant to the exemption from the registration requirements of the Securities Act afforded by Section 4(a)(2) of the Securities Act and were offered only to persons believed to be either (i) an institutional “accredited investor” within the meaning of Rule 501(a)(1), (2), (3) or (7) of Regulation D promulgated under the Securities Act or (ii) a “qualified institutional buyer” within the meaning of Rule 144A promulgated under the Securities Act. The Company is relying on this exemption from registration based on the representations made by the holders of the Notes participating in the Exchange Transactions.
+
+Signature
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+LUMENTUM HOLDINGS INC.
+
+By:
+
+/s/ Wajid Ali
+
+Name:
+
+Wajid Ali
+
+Title:
+
+Executive Vice President and Chief Financial Officer
+
+June 1, 2026

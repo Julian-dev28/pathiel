@@ -1,0 +1,102 @@
+usar-20260409
+0001970622FALSE00019706222026-04-092026-04-09
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): April 9, 2026
+
+USA Rare Earth, Inc.
+
+(Exact Name of Registrant as Specified in its Charter)
+
+Delaware001-4171198-1720278
+
+(State or Other Jurisdiction of Incorporation)(Commission File Number)(I.R.S. Employer Identification No.)
+
+100 W. Airport Road, Stillwater, OK 74075
+
+(Address of Principal Executive Offices) (Zip Code)
+
+(813) 867-6155
+
+(Registrant’s telephone number, including area code)
+
+Not applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, par value $0.0001USAR
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☑
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 7.01 Regulation FD Disclosure
+
+On April 9, 2026, USA Rare Earth, Inc. (the “Company”) issued a press release announcing that it has entered into a term sheet with respect to a minority investment in Carester SAS, a leader in rare earth processing and separation (“Carester”), a right to purchase some of Carester’s oxide output, access to Carester’s engineering capabilities and IP for separation, processing and recycling, and a supply arrangement for heavy rare earth feedstock from the Company’s Round Top deposit. Closing of the contemplated transaction is subject to customary conditions, including confirmatory due diligence and negotiation and execution of definitive documentation. A copy of the press release is furnished herewith as Exhibit 99.1 and is incorporated by reference herein. A copy of the Company’s investor presentation related to the Carester transaction is furnished herewith as Exhibit 99.2 and is incorporated by reference herein.
+
+The information provided under this Item 7.01 of this Current Report on Form 8-K, including Exhibit 99.1 and Exhibit 99.2, is “furnished” and shall not be deemed “filed” with the SEC or incorporated by reference in any filing under the Securities Exchange Act of 1934, as amended (the “Exchange Act”).
+
+Item 9.01 Financial Statements and Exhibits
+
+(d) Exhibits
+
+The following exhibits are attached with this current report on Form 8-K.
+
+Exhibit NumberDescription
+
+99.1*
+
+Press Release, dated April 9, 2026.
+
+99.2*
+
+Investor Presentation, dated April 2026
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+* Filed herewith.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date:
+April 9, 2026
+By:
+/s/ VALERIE FORD JACOB
+
+Valerie Ford Jacob
+
+Chief Legal Officer

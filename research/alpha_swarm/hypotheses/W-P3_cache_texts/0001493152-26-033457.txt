@@ -1,0 +1,214 @@
+false
+0002068385
+
+0002068385
+
+2026-07-16
+2026-07-16
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED
+STATES
+
+SECURITIES
+AND EXCHANGE COMMISSION
+
+Washington,
+D.C. 20549
+
+FORM
+8-K
+
+CURRENT
+REPORT
+
+Pursuant
+to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date
+of Report (date of earliest event reported): July 16, 2026
+
+SHARONAI
+HOLDINGS INC.
+
+(Exact
+name of registrant as specified in its charter)
+
+Delaware
+
+001-43129
+
+41-2349750
+
+(State
+or other jurisdiction
+
+of
+incorporation)
+
+(Commission
+
+File
+Number)
+
+(IRS
+Employer
+
+Identification
+No.)
+
+745
+Fifth Avenue, Suite 500,
+
+New
+York, NY 10151
+
+(Address
+of principal executive offices, including zip code)
+
+(347)
+212-5075
+
+(Registrant’s
+telephone number, including area code)
+
+(Former
+name or former address, if changed since last report)
+
+Check
+the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligations of the registrant under
+any of the following provisions (see General Instructions A.2. below):
+
+☐
+Written
+communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+Soliciting
+material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+Pre-commencement
+communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+Pre-commencement
+communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities
+registered pursuant to Section 12(b) of the Act:
+
+Title
+of each class
+
+Trading
+Symbol(s)
+
+Name
+of each exchange on which registered
+
+Class
+A Ordinary Common Stock, $0.0001 par value
+
+SHAZ
+
+The
+Nasdaq Stock Market LLC
+
+Indicate
+by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405
+of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). 
+
+Emerging
+growth company ☒
+
+If
+an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying
+with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item
+7.01 Regulation FD Disclosure.
+
+On
+July 16, 2026, the Company issued a press release. A copy of the press release is furnished as Exhibit 99.1 to this Current
+Report on Form 8-K and is incorporated herein by reference.
+
+The
+information in this Item 7.01, including Exhibit 99.1, is being furnished and shall not be deemed “filed” for purposes of
+Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities
+of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the
+Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+Item
+9.01 Financial Statements and Exhibits
+
+(d)
+Exhibits
+
+Exhibit
+
+Number
+
+Description
+
+99.1
+
+Press
+Release dated July 16, 2026
+
+104
+
+Cover
+Page Interactive Data File (embedded within the Inline XBRL document).
+
+CAUTIONARY
+NOTE REGARDING FORWARD-LOOKING STATEMENTS
+
+The
+Company cautions that statements in this report and its exhibits that are not a description of historical fact are forward-looking statements
+within the meaning of the Private Securities Litigation Reform Act of 1995. Forward-looking statements may be identified by the use of
+words referencing future events or circumstances such as “expect,” “intend,” “plan,” “anticipate,”
+“believe,” and “will,” among others. Because such statements are subject to risks and uncertainties, actual results
+may differ materially from those expressed or implied by such forward-looking statements. These forward-looking statements are based
+upon the Company’s current expectations and involve assumptions that may never materialize or may prove to be incorrect. Actual
+results and the timing of events could differ materially from those anticipated in such forward-looking statements as a result of various
+risks and uncertainties. More detailed information about the risks and uncertainties affecting the Company is contained under the heading
+“Risk Factors” included in the Company’s reports and filings made with the SEC. One should not place undue reliance
+on these forward-looking statements, which speak only as of the date on which they were made. Because such statements are subject to
+risks and uncertainties, actual results may differ materially from those expressed or implied by such forward-looking statements. The
+Company undertakes no obligation to update such statements to reflect events that occur or circumstances that exist after the date on
+which they were made, except as may be required by law.
+
+-2-
+
+SIGNATURE
+
+Pursuant
+to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by
+the undersigned hereunto duly authorized.
+
+SHARONAI
+HOLDINGS INC.
+
+By:
+/s/
+James Manning
+
+Name:
+James
+Manning
+
+Title:
+CEO
+
+Date:
+July 16, 2026
+
+-3-

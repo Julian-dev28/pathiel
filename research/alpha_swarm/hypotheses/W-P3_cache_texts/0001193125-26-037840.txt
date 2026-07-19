@@ -1,0 +1,187 @@
+8-K
+
+ORACLE CORP false 0001341439 0001341439 2026-02-02 2026-02-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): February 2, 2026
+
+Oracle Corporation
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-35992
+
+54-2185193
+
+(State or other jurisdiction of
+
+incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2300 Oracle Way, Austin, Texas 78741
+
+(Address of principal executive offices) (Zip Code)
+
+(737) 867-1000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former name or former address, if changed since last report.)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, par value $0.01 per share
+
+ORCL
+
+New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Section 1—Registrant’s Business and Operations
+
+Item 1.01 Entry into a Material Definitive Agreement
+
+Equity Distribution Agreement
+
+On February 2, 2026, Oracle Corporation, a Delaware corporation (“Oracle”) entered into an equity distribution agreement (the “Equity Distribution Agreement”) with BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC and J.P. Morgan Securities LLC, as sales agents, to sell shares of common stock, par value $0.01 per share, of Oracle (the “Common Stock”) having aggregate sales proceeds of up to $20.0 billion (the “Shares”), from time to time, through an “at-the-market” offering program (the “ATM Offering”). On February 3, 2026, HSBC Securities (USA) Inc., BNP Paribas Securities Corp., PNC Capital Markets LLC, SMBC Nikko Securities America, Inc., Santander US Capital Markets LLC, TD Securities (USA) LLC, BNY Mellon Capital Markets, LLC, Credit Agricole Securities (USA) Inc., ING Financial Markets LLC and Wells Fargo Securities, LLC executed a joinder agreement to the Equity Distribution Agreement, pursuant to which each became a sales agent thereunder (each, together with BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC and J.P. Morgan Securities LLC, a “Sales Agent” and collectively, the “Sales Agents”).
+
+Upon delivery of a placement notice and subject to the terms and conditions of the Equity Distribution Agreement, the Sales Agents will use reasonable efforts consistent with their normal trading and sales practices, applicable state and federal laws, rules and regulations, and the rules of the New York Stock Exchange to sell the Shares from time to time based upon Oracle’s instructions for the sales, including any price, time or size limits specified by Oracle. Under the Equity Distribution Agreement, the Sales Agents may sell the Shares by any method permitted by law, including ordinary brokers’ transactions, to or through a market maker, on or through the New York Stock Exchange or any other market venue where the securities may be traded, in the over-the-counter market, in privately negotiated transactions, in block trades, in transactions that are deemed to be “at the market offerings” as defined in Rule 415 under the Securities Act of 1933, as amended, or through a combination of any such methods of sale. We may also in the future elect to sell, through the Sales Agents or through others (whether acting as agent or principal), shares of Common Stock for forward settlement. The Sales Agents’ obligations to sell the Shares under the Equity Distribution Agreement are subject to satisfaction of certain conditions, including customary closing conditions.
+
+The Equity Distribution Agreement provides that the Sales Agents will be entitled to compensation for their services in the form of a commission of up to 0.50% of the aggregate gross proceeds from each sale of the Shares, and Oracle has agreed to reimburse the Sales Agents for certain specified expenses. Oracle has also agreed to provide the Sales Agents with customary indemnification and contribution rights. Oracle is not obligated to sell any Shares under the Equity Distribution Agreement and may at any time suspend solicitation and offers under the Equity Distribution Agreement. The Equity Distribution Agreement may be terminated for any reason by Oracle at any time by giving written notice to the Sales Agents or by any Sales Agent at any time, with respect to such Sales Agent only, by giving written notice to Oracle.
+
+The sales and issuances of the Shares under the Equity Distribution Agreement will be made pursuant to Oracle’s shelf registration statement on Form S-3 (File No. 333-277990) (the “Registration Statement”), filed with the Securities and Exchange Commission (the “SEC”) on March 15, 2024, as amended by that post-effective Amendment filed with the SEC on February 2, 2026. On February 2, 2026 and February 3, 2026, Oracle filed prospectus supplements with the SEC in connection with the offer and sale of the Shares pursuant to the Equity Distribution Agreement.
+
+The foregoing description of the Equity Distribution Agreement is not complete and is qualified in its entirety by reference to the full text of such agreement, a copy of which is filed herewith as Exhibit 1.1 to this Current Report on Form 8-K and is incorporated herein by reference.
+
+In connection with the ATM Offering, the legal opinion as to the legality of the Shares sold is being filed as Exhibit 5.1 to this Current Report on Form 8-K and is incorporated herein and into the Registration Statement by reference.
+
+This Current Report on Form 8-K shall not constitute an offer to sell or the solicitation of an offer to buy any securities under the Equity Distribution Agreement, nor shall there be any sale of such securities in any state or jurisdiction in which such offer, solicitation or sale would be unlawful prior to registration or qualification under the securities laws of any such state or jurisdiction.
+
+Section 8—Other Events
+
+Item 8.01 Other Events
+
+Issuance of $25 Billion Aggregate Principal Amount of Notes
+
+On February 4, 2026, Oracle consummated the issuance and sale of $500,000,000 aggregate principal amount of its Floating Rate Notes due 2029, $3,000,000,000 aggregate principal amount of its 4.550% Notes due 2029, $3,500,000,000 aggregate principal amount of its 4.950% Notes due 2031, $3,000,000,000 aggregate principal amount of its 5.350% Notes due 2033, $5,000,000,000 aggregate principal amount of its 5.700% Notes due 2036, $2,250,000,000 aggregate principal amount of its 6.550% Notes due 2046, $5,000,000,000 aggregate principal amount of its 6.700% Notes due 2056 and $2,750,000,000 aggregate principal amount of its 6.850% Notes due 2066 (collectively, the “Notes”), pursuant to an underwriting agreement dated February 2, 2026 among Oracle and BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC, HSBC Securities (USA) Inc. and J.P. Morgan Securities LLC, as representatives of the several underwriters named therein (the “Notes Offering”). The Notes will be issued pursuant to an Indenture dated as of January 13, 2006 (the “Indenture”) among Oracle (formerly known as Ozark Holding Inc.), Oracle Systems Corporation (formerly known as Oracle Corporation) and Citibank, N.A., as amended by the First Supplemental Indenture dated as of May 9, 2007 (the “First Supplemental Indenture”) among Oracle, Citibank, N.A. and The Bank of New York Mellon Trust Company, N.A. (formerly known as The Bank of New York Trust Company, N.A.), as trustee, and an officers’ certificate issued pursuant thereto.
+
+The Notes are being offered pursuant to the Registration Statement and a related preliminary prospectus supplement dated February 2, 2026 and prospectus supplement dated February 2, 2026.
+
+The net proceeds of the Notes Offering will be used for general corporate purposes, which may include capital expenditures, repayment of indebtedness, future investments or acquisitions and payment of cash dividends on or repurchases of Common Stock.
+
+The material terms and conditions of the Notes are set forth in the Officers’ Certificate filed herewith as Exhibit 4.1 and incorporated by reference herein, in the Indenture filed as Exhibit 10.34 to the Current Report on Form 8-K filed by Oracle Systems Corporation on January 20, 2006, and in the First Supplemental Indenture filed as Exhibit 4.3 to the Registration Statement on Form S-3 filed by Oracle Corporation on May 10, 2007.
+
+In connection with the Notes Offering, the legal opinion as to the legality of the Notes sold is being filed as Exhibit 5.2 to this Current Report on Form 8-K and is incorporated herein and into the Registration Statement by reference.
+
+Section 9—Financial Statements and Exhibits
+
+Item 9.01 Financial Statements and Exhibits
+
+(d) Exhibits
+
+Exhibit
+
+No.
+
+Description
+
+ 1.1
+
+Equity Distribution Agreement, dated as of February 2, 2026, by and among Oracle Corporation, BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC and J.P. Morgan Securities LLC and the other Managers from time to time party thereto, as sales agents.
+
+ 4.1
+
+Forms of Floating Rate Notes due 2029, 4.550% Notes due 2029, 4.950% Notes due 2031, 5.350% Notes due 2033, 5.700% Notes due 2036, 6.550% Notes due 2046, 6.700% Notes due 2056 and 6.850% Notes due 2066, together with an Officers’ Certificate issued February 4, 2026 setting forth the terms of the Notes.
+
+ 5.1
+
+Opinion of Freshfields US LLP as to the validity of the Shares.
+
+ 5.2
+
+Opinion of Freshfields US LLP as to the validity of the Notes.
+
+23.1
+
+Consent of Freshfields US LLP (contained in Exhibit 5.1).
+
+23.2
+
+Consent of Freshfields US LLP (contained in Exhibit 5.2).
+
+EX-104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ORACLE CORPORATION
+
+Dated: February 4, 2026
+
+    
+
+By:
+
+/s/ Kimberly Woolley
+
+Name: Kimberly Woolley
+
+Title: Vice President, Assistant General Counsel and
+
+Assistant Secretary

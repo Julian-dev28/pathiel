@@ -1,0 +1,220 @@
+false
+0001874178
+Rivian Automotive, Inc. / DE
+
+0001874178
+
+2026-07-06
+2026-07-06
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+July 6, 2026
+
+Date of Report (date of earliest event reported)
+
+Rivian Automotive, Inc.
+
+(Exact name of registrant as specified in its
+charter)
+
+Delaware
+
+001-41042
+
+47-3544981
+
+(State or other jurisdiction of incorporation)
+
+(Commission File Number)
+
+(IRS Employer Identification Number)
+
+14600 Myford Road
+
+Irvine, California 92606
+
+(Address of principal executive offices) (Zip
+code)
+
+(888) 748-4261
+
+(Registrant’s telephone number, including
+area code)
+
+N/A
+
+(Former name or former address, if changed since
+last report)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+¨
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+Symbol
+
+Name of each exchange on which registered
+
+Class
+A common stock, $0.001 par value per share
+
+RIVN
+
+The
+Nasdaq Stock Market
+
+Indicate by check mark whether the registrant is an emerging growth
+company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange
+Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ¨
+
+If an emerging growth company, indicate by check mark if the registrant
+has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant
+to Section 13(a) of the Exchange Act. ¨
+
+Item 2.02 – Results of Operations and Financial Condition.
+
+Set forth below are certain preliminary and unaudited
+estimates of selected financial information of Rivian Automotive, Inc. (the “Company”) as of and for the three months
+ended June 30, 2026. The unaudited selected financial information as of and for the three months ended June 30, 2026 reflects
+the Company’s preliminary estimates with respect to such results based on currently available information and is subject to completion
+of the Company’s financial closing procedures. The Company’s financial closing procedures for the three months ended June 30,
+2026 are not yet complete and, as a result, actual results may vary from the estimated preliminary results presented here.
+
+These estimates should not be viewed as a substitute
+for the Company’s full interim or annual financial statements prepared in accordance with U.S. generally accepted accounting principles
+(“U.S. GAAP”). Further, these preliminary estimated results are not necessarily indicative of the results to be expected for
+any future period as a result of various factors, including, but not limited to, those discussed in the sections titled “Risk Factors”
+and “Cautionary Note Regarding Forward-Looking Statements” in the Company’s Annual Report on Form 10-K for the
+year ended December 31, 2025 (the “2025 10-K”) and Quarterly Report on Form 10-Q for the three months ended March 31,
+2026 (the “Q1 2026 10-Q”). This information should be read in conjunction with the section titled “Management’s
+Discussion and Analysis of Financial Condition and Results of Operations” for prior periods in the Company’s 2025 10-K and
+Q1 2026 10-Q.
+
+The preliminary estimates presented below have
+been prepared by, and are the responsibility of, management. KPMG LLP, the Company’s independent registered public accounting firm,
+has not audited, reviewed, compiled, or performed any procedures with respect to the preliminary financial information. Accordingly, KPMG
+LLP does not express an opinion or any other form of assurance with respect thereto.
+
+The following table provides the Company’s
+preliminary estimates of total consolidated revenues for the three months ended June 30, 2026:
+
+(in billions)
+Three
+Months Ended June 30, 2025
+Three
+Months Ended June 30, 2026
+
+Actual
+Estimated
+- High
+Estimated
+- Low
+
+Total revenues
+$1.30
+$1.65
+$1.55
+
+The Company expects total consolidated revenues
+to increase for the three months ended June 30, 2026 as compared to the three months ended June 30, 2025, primarily due to an
+increase in vehicle deliveries, partially offset by lower average selling prices resulting from a higher mix of commercial vans, as well
+as increases in vehicle electrical architecture and software development services and revenues related to regulatory credits.
+
+The following table provides the Company’s
+preliminary estimated balance of cash, cash equivalents, and short-term investments as of June 30, 2026:
+
+(in billions)
+March 31, 2026
+June 30, 2026
+
+Actual
+Estimated
+
+Cash, cash equivalents, and short-term investments
+$4.8
+$5.3
+
+The information furnished pursuant to Item 2.02 of this Form 8-K
+shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange
+Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference into any other
+filing under the Securities Act or the Exchange Act, regardless of any general incorporation language in such filing, except as expressly
+set forth by specific reference in such filing.
+
+Forward-Looking Statements
+
+This Current Report on Form 8-K contains forward-looking statements within the meaning of the Private Securities Litigation Reform Act
+of 1995. We intend such forward-looking statements to be covered by the safe harbor provisions for forward-looking statements contained
+in Section 27A of the Securities Act of 1933, as amended, and Section 21E of the Securities Exchange Act of 1934, as amended. All statements
+contained in this Current Report on Form 8-K that do not relate to matters of historical fact should be considered forward-looking statements,
+including without limitation statements regarding the Company's expected financial performance for the three months ended June 30, 2026.
+You can identify forward-looking statements by terms such as “may,” “will,” “should,” “expects,”
+“plans,” “anticipates,” “could,” “intends,” “targets,” “projects,”
+“contemplates,” “believes,” “estimates,” “forecasts,” “predicts,” “potential”
+or “continue” or the negative of these terms or other similar expressions, although not all forward-looking statements use
+these words or expressions. We have based these forward-looking statements largely on our current expectations and projections about future
+events and financial trends that we believe may affect our business, financial condition, and results of operations. Forward-looking statements
+involve known and unknown risks, uncertainties and other important factors that may cause our actual results, performance, or achievements
+to be materially different from any future results, performance, or achievements expressed or implied by the forward-looking statements,
+including, but not limited to, the important factors discussed in Part II, Item 1A, “Risk Factors” in the Company’s
+Quarterly Report on Form 10-Q for the quarter ended March 31, 2026, and its other filings with the Securities and Exchange Commission.
+The forward-looking statements in this Current Report on Form 8-K are based upon information available to us as of the date of this Current
+Report on Form 8-K, and while we believe such information forms a reasonable basis for such statements, such information may be limited
+or incomplete, and our statements should not be read to indicate that we have conducted an exhaustive inquiry into, or review of, all
+potentially available relevant information. These statements are inherently uncertain, and investors are cautioned not to unduly rely
+upon these statements. While we may elect to update such forward-looking statements at some point in the future, we disclaim any obligation
+to do so, even if subsequent events cause our views to change.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+RIVIAN AUTOMOTIVE, INC.
+
+Date: July 6, 2026
+By:
+/s/ Claire McDonough
+
+Name:
+Claire McDonough
+
+Title:
+Chief Financial Officer

@@ -1,0 +1,95 @@
+meta-20260112
+0001326801false00013268012026-01-122026-01-12
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 or 15(d) OF
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): January 12, 2026
+
+Meta Platforms, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware001-3555120-1665019
+
+(State or Other Jurisdiction
+
+of Incorporation)(Commission
+
+File Number)(IRS Employer
+
+Identification No.)
+
+1 Meta Way, Menlo Park, California 94025
+
+(Address of principal executive offices and Zip Code)
+
+(650) 543-4800
+
+(Registrant's telephone number, including area code)
+
+N/A
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.000006 par valueMETAThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+(c) The Board of Directors (the "Board") of Meta Platforms, Inc. (the "Company") appointed Dina Powell McCormick, age 52, to serve as President and Vice Chairman of the Company, effective January 12, 2026 (the "Start Date").
+
+Previously, Ms. Powell McCormick served as Vice Chair, President and Head of Global Client Services at BDT & MSD Partners, an advisory and investment platform, from May 2023 until January 2026, and before that spent 16 years at Goldman Sachs, a global financial institution, as a partner in senior leadership roles, including serving on the firm's Management Committee and leading its Global Sovereign Investment Banking business. She also previously held senior roles in the U.S. government, including Deputy National Security Advisor to President Donald J. Trump from 2017 to 2018 and Senior White House Advisor and Assistant Secretary of State for Secretary of State Condoleezza Rice from 2005 to 2007 under President George W. Bush. In addition, Ms. Powell McCormick previously served as a member of the Board from April 2025 until December 2025 and as an external advisor to the Company from December 2025 until January 2026.
+
+Ms. Powell McCormick will receive an annual base salary of $1,000,000 and a one-time, non-recurring cash sign-on bonus of $2,000,000. Ms. Powell McCormick will also participate in the Company's bonus plan, under which she will have a bonus target of 200% of her base salary. In addition, subject to approval by the Board or its designee, Ms. Powell McCormick will receive a grant of restricted stock units ("RSUs") under the Company's 2025 Equity Incentive Plan (the "2025 EIP") with an initial equity value of $60,000,000. The RSUs will vest quarterly over four years, beginning on May 15, 2026, subject to her continued service to the Company through each applicable vesting date.
+
+Ms. Powell McCormick previously received a grant of RSUs pursuant to the 2025 EIP (the "Existing Equity Award"). If Ms. Powell McCormick's employment is terminated by the Company without cause or by Ms. Powell McCormick for good reason prior to the second anniversary of the Start Date, subject to a release of claims against the Company, Ms. Powell McCormick will receive a lump sum cash payment equal to the value of the unvested portion of the Existing Equity Award that would have vested prior to the second anniversary of the Start Date.
+
+In addition, the Company intends to enter into its standard form of indemnification agreement with Ms. Powell McCormick. A form of the indemnification agreement was previously filed by the Company as Exhibit 10.1 to the Company's Current Report on Form 8-K (File No. 001-35551), as originally filed with the Securities and Exchange Commission on April 15, 2019.
+
+There are no arrangements or understandings between Ms. Powell McCormick and any other persons pursuant to which she was appointed as President and Vice Chairman of the Company, and no family relationships among any of the Company's directors or executive officers and Ms. Powell McCormick. Ms. Powell McCormick has no direct or indirect material interest in any transaction required to be disclosed pursuant to Item 404(a) of Regulation S-K.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+META PLATFORMS, INC.
+
+Date: January 16, 2026By:
+/s/ Katherine R. Kelly
+
+Name:
+Katherine R. Kelly
+
+Title:
+Vice President and Corporate Secretary

@@ -1,0 +1,91 @@
+crcl-20260511
+0001876042false00018760422026-05-112026-05-11
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 11, 2026
+
+CIRCLE INTERNET GROUP, INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware001-4267199-2840274
+
+(State or other jurisdiction of incorporation or organization)(Commission File Number)(I.R.S. Employer Identification Number)
+
+One World Trade Center New York, NY 10007
+
+(332) 334-0660
+
+(Address, including zip code, and telephone number, including area code, of registrant’s principal executive offices)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c)) Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading SymbolName of each exchange on which registered
+
+Class A common stock, par value $0.0001 per shareCRCLNew York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+_______________________________________________________________________________________________________________
+
+Item 2.02. Results of Operations and Financial Conditions
+
+On May 11, 2026, Circle Internet Group, Inc. (the “Company”) issued a press release announcing its financial results for the first quarter ended March 31, 2026. A copy of the press release is attached hereto as Exhibit 99.1.
+
+The information in Item 2.02 of this current report on Form 8-K and Exhibit 99.1 attached hereto shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such filing.
+
+Item 8.01. Other Events
+
+On May 8, 2026, the Company entered into token purchase agreements (each, a “Token Purchase Agreement”) with certain institutional investors (collectively, the “Investors”), led by a16z crypto, pursuant to which the Company agreed to issue and sell to the Investors an aggregate of 740 million ARC tokens (the “ARC Tokens”), in a presale of the native coordination asset of the Company’s Arc blockchain network. The offer and sale of the ARC Tokens pursuant to the Token Purchase Agreements was conducted as a private placement exempt from registration under the Securities Act of 1933, as amended, pursuant to Section 4(a)(2) thereof and Rule 506(b) of Regulation D promulgated thereunder.
+
+Pursuant to the terms of each Token Purchase Agreement, each Investor has agreed to a lock-up restriction prohibiting the direct or indirect sale, transfer, assignment or other disposition of any ARC Tokens acquired in the private placement for a period of not less than one (1) year from the date of the Arc network’s transition to a Proof-of-Stake or a delegated Proof-of-Stake consensus mechanism, and may be subject to additional restrictions on transfer until the date that is four (4) years following such transition date.
+
+The ARC Tokens were offered and sold at a purchase price of $0.30 per ARC Token, implying a fully diluted network valuation of $3 billion and resulting in estimated aggregate gross proceeds to the Company of approximately $222.0 million. The Token Purchase Agreements and related agreements provide for repayment rights in specified circumstances, including if the ARC Tokens are not delivered or if the Arc network has not completed the transition to a Proof-of-Stake or a delegated Proof-of-Stake consensus mechanism on or before May 8, 2028, or if certain purchaser-specific legal, regulatory, or compliance-related conditions are not satisfied.
+
+Item 9.01. Financial Statements and Exhibits
+
+(d) Exhibits
+
+Exhibit No.Description
+
+99.1
+Press Release of Circle Internet Group, Inc., dated May 11, 2026
+
+104Cover Page Interactive Data File (embedded with the Inline XBRL document)
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+CIRCLE INTERNET GROUP, INC.
+
+Date: May 11, 2026 By: /s/ Jeremy Fox-Geen
+
+Name: Jeremy Fox-Geen
+
+Title: Chief Financial Officer

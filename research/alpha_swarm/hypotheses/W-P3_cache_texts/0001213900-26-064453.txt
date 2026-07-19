@@ -1,0 +1,505 @@
+false
+0001970622
+
+0001970622
+
+2026-06-03
+2026-06-03
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported):
+June 3, 2026
+
+USA Rare Earth, Inc.
+
+(Exact name of registrant as specified in its
+charter)
+
+Delaware
+
+001-41711
+
+98-1720278
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission File Number)
+
+(IRS. Employer
+
+Identification No.)
+
+100 W Airport Road,
+
+Stillwater, Oklahoma 74075
+
+(Address of principal executive offices, including
+zip code)
+
+Registrant’s telephone number, including
+area code: (813) 867-6155
+
+N.A.
+
+(Former name or former address, if changed since
+last report)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common stock, par value $0.0001 per share
+
+USAR
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth
+company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange
+Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☒
+
+If an emerging growth company, indicate by check
+mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting
+standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01. Entry into a Material Definitive
+Agreement.
+
+Direct Funding Agreement & Loan Guarantee
+Agreement
+
+On January 26, 2026, USA Rare
+Earth, Inc. (“USAR”) previously announced its entry into a non-binding letter of intent by and between USAR and the
+United States Department of Commerce (the “DOC”) with respect to funding in an aggregate amount equal to $1.6 billion,
+including $277.0 million in direct funding awards and $1.3 billion in senior secured debt with a 15-year term and an expected rate of
+Treasury + 150 bps, under the CHIPS Incentives Program—Facilities for Semiconductor Materials and Manufacturing Equipment under
+the CHIPS Act of 2022. In furtherance thereof, on June 3, 2026, USAR entered into (x) a Direct Funding Agreement (the “Direct
+Funding Agreement”), by and among USAR, as the recipient, certain subsidiaries of USAR, as guarantors, and the DOC and (y) a
+Loan Guarantee Agreement (the “Loan Guarantee Agreement” and, together with the Direct Funding Agreement, the “Funding
+Agreements”), by and among USAR, as the borrower, certain subsidiaries of USAR, as guarantors, and the DOC.
+
+Under the Direct Funding Agreement,
+the DOC has agreed to provide direct funding awards (the “Direct Funding”) with a maximum award amount of $277.0 million
+in the aggregate, comprised of (a) $132.0 million for the construction of a rare earth mining and processing facility in Sierra Blanca,
+Texas (the “Round Top Mine Project”), (b) $50.0 million for the expansion and modernization of the existing magnet
+making facility located in Stillwater, Oklahoma (the “Stillwater Magnet Project”), (c) $20.0 million for the expansion
+and modernization of the existing strip casting and metal making facility located in Stillwater, Oklahoma (the “Stillwater Metal
+Project”), (d) $60.0 million for the construction of a new magnet making facility (the “Magnet Project 2”)
+and (e) $15.0 million for the construction of a new strip casting and metal making facility (the “Metal Project 2”).
+With respect to each Project, Direct Funding under the Direct Funding Agreement is available from the date of the Direct Funding Agreement
+until the Milestone Completion Longstop Date (as defined in the Direct Funding Agreement) for the last disbursement milestone for such
+Project. The obligations of USAR under the Direct Funding Agreement are guaranteed by each of the subsidiary guarantors party thereto.
+
+Under the Loan Guarantee Agreement,
+the DOC has agreed to guarantee the repayment by USAR and its affiliates of advances in an aggregate principal amount of $1.3 billion
+(“FFB Advances” and, together with the Direct Funding, the “Awards”) made by the Federal Financing
+Bank (“FFB”), an instrumentality of the United States, to USAR. The FFB Advances are comprised of (a) $550.0 million
+for the Round Top Mine Project, (b) $250.0 million for the Stillwater Magnet Project, (c) $100.0 million for the Stillwater
+Metal Project, (d) $325.0 million for the Magnet Project 2 and (e) $75.0 million for the Metal Project 2. With respect to each
+Project, FFB Advances under the Loan Guarantee Agreement are available from the date of the Loan Guarantee Agreement until the Project
+Completion Longstop Date (as defined in the Loan Guarantee Agreement) for such Project. If USAR or its affiliates default on any payment
+with respect to FFB Advances due to FFB, then the DOC becomes obligated to make payments to FFB, and USAR and its affiliates become immediately
+obligated to reimburse the DOC for such payments. The obligations of USAR under the Loan Guarantee Agreement are guaranteed by each of
+the subsidiary guarantors party thereto and secured by first-priority liens on substantially all of the assets of USAR and the subsidiary
+guarantors.
+
+Interest accrues on the FFB
+Advances under the Loan Guarantee Agreement at rates specified in the applicable notes to be entered into with respect to each FFB Advance
+(each, an “FFB Note”). Each FFB Advance matures fifteen (15) years after the first FFB Advance made under the applicable
+FFB Note. Under the Loan Guarantee Agreement, USAR is required to pay to the DOC (i) a one-time commitment fee equal to 2.0% of the
+FFB commitment amount, (ii) a ticking fee equal to 2.0% per annum on the unutilized FFB commitment, and (iii) an annual maintenance
+fee equal to the lesser of 0.1% of the outstanding guaranteed loan balance and $200,000.
+
+The Round Top Mine Project,
+Stillwater Magnet Project, Stillwater Metal Project, Magnet Project 2 and Metal Project 2 are collectively referred to herein as the “Projects.”
+
+1
+
+Conditions to the Awards
+
+Under the Funding Agreements,
+USAR may request disbursements of the Awards based on the achievement of various milestones to reimburse USAR and its applicable subsidiaries
+for certain eligible uses of funds with respect to the Projects. Milestones for the Awards are Project-specific, such as the achievement
+of feasibility studies, site design, facility completion, equipment installation, technology transfer, production capacity qualification
+at various thresholds, securing customer purchase agreements, and attainment of target production volumes. Disbursements of the Awards
+for each milestone are subject to various conditions precedent, including: (i) completion of the applicable disbursement milestone; (ii)
+evidence that USAR has made equity contributions to its subsidiaries in cash to fund Project costs; (iii) compliance with representations,
+warranties and covenants; and (iv) the absence of defaults under the applicable Funding Agreement and related documents. Under the Loan
+Guarantee Agreement, additional conditions precedent to each FFB Advance include: (i) evidence that certain financial ratio thresholds
+have been satisfied; (ii) evidence that the proceeds will be applied to eligible uses of funds; (iii) payment of all fees and expenses
+due to the DOC; (iv) certification that budget amounts have not been exceeded; and (v) delivery of required permits and approvals.
+
+Representations, Warranties and Covenants
+
+The Funding Agreements contain
+representations, warranties and covenants applicable to USAR and the subsidiary guarantors party thereto, including, but not limited to:
+(i) reporting, maintenance, and the operation of the Projects; (ii) compliance with applicable laws, taxes, environmental requirements,
+Davis-Bacon Act requirements and various regulations; (iii) restrictions on the eligible uses of the Awards; (iv) restrictions
+on joint research and transactions with foreign countries and entities of concern; (v) the issuance of indebtedness other than permitted
+indebtedness; (vi) restrictions on dividends, share repurchases and equity redemptions; (vii) restrictions on liens other than
+permitted liens; (viii) maintenance of first priority security interests in the collateral for the benefit of the secured parties;
+(ix) requirements for equity contributions to satisfy funding plans and project completion requirements; (x) insurance requirements
+and loss proceeds application; (xi) restrictions on mergers, dispositions, and change of control transactions without consent of
+the DOC; (xii) restrictions on affiliate transactions; (xiii) limitations on capital expenditures other than permitted capital
+expenditures; (xiv) intellectual property maintenance and protection; (xv) maintenance of required approvals, permits, and licenses;
+and (xvi) liquidity requirements and financial covenants, including fixed charge coverage ratios and book value to debt ratios.
+
+Equity Raise Requirements
+
+Under the Funding Agreements,
+USAR is required to raise equity (which could include, at USAR’s option, up to $300.0 million of convertible loan notes) in the
+following amounts by the corresponding dates (with equity raised on or after January 1, 2026 credited against the required amounts):
+
+●On or prior to December 31, 2026, USAR is required to raise an aggregate
+amount of equity equal to $1.45 billion. As previously announced, on January 28, 2026, USAR closed a private placement of 69,767,442 shares
+of common stock at $21.50 per share, for aggregate gross proceeds of approximately $1.5 billion, which satisfied the equity raise requirement
+for 2026.
+
+●On or prior to March 31, 2027, USAR is required to raise an additional
+aggregate amount of equity equal to $375.0 million plus the total cash acquisition costs for the announced proposed acquisition
+of Serra Verde Group (“SVRE”).
+
+●On or prior to December 31, 2027, USAR is required to raise an additional
+aggregate amount of equity equal to $875.0 million.
+
+USAR’s obligation to
+raise the equity described above is reduced by an amount equal to (x) 100% of any dividends received from SVRE up to an aggregate
+amount equal to the total cash acquisition costs for the acquisition of SVRE and (y) thereafter, 50% of any dividends received from
+SVRE.
+
+Under the Funding Agreements,
+USAR is required to establish a revolving credit facility in an aggregate principal amount not to exceed $250.0 million by June 30, 2027.
+In addition to the equity raise requirements described above, USAR is required to raise an aggregate amount of equity that is sufficient
+to satisfy the cash collateral required under such working capital facility.
+
+2
+
+Events of Default; Acceleration; Termination
+
+The Funding Agreements contain
+events of default, including (i) clawback events, including failure to achieve project completion by applicable deadlines, engagement
+in certain joint research or transaction activities involving any foreign country or entity of concern in violation of the guardrail provisions,
+the impermissible use or disposition of a Project and, under the Direct Funding Agreement, property disposition and cumulative disbursement
+ratio clawback events; (ii) payment defaults; (iii) cross defaults for indebtedness in excess of certain thresholds; (iv) certain
+significant events of default such as the violation of specified covenants, abandonment of a Project, change of control without consent,
+and the bankruptcy or insolvency of USAR or the subsidiary guarantors; and (v) other events of default, including breaches of certain
+representations, warranties and covenants, major project document breaches, failure of security documents to provide first priority liens,
+and violations of sanctions, export control laws, anti-money laundering laws or anti-corruption laws.
+
+Rights and remedies in connection
+with events of default include: (i) termination of the Funding Agreements or any awards thereunder; (ii) imposition of additional
+conditions pending corrective actions; (iii) suspension or termination of the FFB commitment or the maximum award amount, or withholding
+of disbursements; (iv) acceleration of all outstanding amounts due under the financing documents (automatic upon bankruptcy, insolvency
+or dissolution); (v) foreclosure upon the collateral; (vi) recovery of awards or disbursements for clawback events; (vii) set-off
+rights; (viii) specific performance; and (ix) initiation of debarment proceedings.
+
+The Direct Funding Agreement
+shall remain in effect until the later of (a) the second anniversary of the completion date of the last Project to be completed and
+(b) the tenth anniversary of the execution of the Direct Funding Agreement. The Loan Guarantee Agreement shall remain in effect until
+the indefeasible payment in full of all secured obligations and expiration or termination of the FFB commitment. Certain provisions, including
+those relating to expansion transactions with any foreign country of concern, dispute resolution, and indemnification, shall survive termination.
+
+Securities Issuance Agreement
+
+Concurrently with the execution
+and delivery of, and as inducement to enter into, the Direct Funding Agreement, USAR has entered into a Securities Issuance Agreement
+(the “Securities Issuance Agreement”) with the DOC pursuant to which USAR will issue to the DOC 16,132,790 shares of
+USAR Common Stock (the “SIA Shares”) and a warrant (the “Warrant”) to purchase 17,600,584 shares
+of USAR Common Stock (the “Warrant Shares”) at an exercise price of $17.17 per share. Among other things, the Securities
+Issuance Agreement provides for (i) a transfer restriction on the SIA Shares and the Warrant, including the Warrant Shares, received as
+consideration pursuant to the Securities Issuance Agreement for 12 months following the issuance of such securities, (ii) customary resale
+shelf registration rights on Form S-3 (or Form S-1 if USAR is not then eligible for Form S-3) and piggyback registration rights in favor
+of the DOC, and (iii) a covenant that the DOC will not vote any SIA Shares or Warrant Shares, except with respect to certain matters required
+by law and any merger, consolidation or similar business combination involving USAR.
+
+Warrant
+
+Concurrently with the execution
+and delivery of, and as provided for under, the Securities Issuance Agreement, USAR has issued a Warrant (the “Warrant”)
+for the Warrant and the underlying Warrant Shares. Among other things, the Warrant provides for (i) customary anti-dilution protections
+for stock splits, subdivisions, reclassifications, or combinations, extraordinary dividends and share purchases with respect to the USAR
+Common Stock, (ii) redemption rights pursuant to which the warrantholder may, in connection with any Business Combination (as defined
+in the Warrant), require the acquiror to repurchase all or a portion of the Warrant at the Redemption Price (as defined in the Warrant)
+and (iii) exchange rights pursuant to which the warrantholder may require, as a condition precedent to any Business Combination, that
+the successor party assume all covenants, agreements and conditions of USAR under the Warrant.
+
+The foregoing summaries of
+the Funding Agreements, the Securities Issuance Agreement and Warrant do not purport to be a complete description of all the parties’
+rights and obligations under such agreements, as applicable, and are qualified in their entirety by reference to the full text of such
+agreements.
+
+Item 2.03. Creation of a Direct Financial Obligation
+or an Obligation under an Off-Balance Sheet Arrangement of a Registrant.
+
+The information under Item
+1.01 of this Current Report on Form 8-K related to the Funding Agreements is incorporated by reference herein.
+
+3
+
+Item 3.02. Unregistered Sales of Equity Securities
+
+The information under Item
+1.01 of this Current Report on Form 8-K related to the issuance of USAR Common Stock pursuant to the Securities Issuance Agreement and
+the Warrant is incorporated herein by reference.
+
+This Current Report on Form
+8-K does not constitute an offer to sell any securities or a solicitation of an offer to buy any securities, nor shall there be any sale
+of any securities in any state or jurisdiction in which such an offer, solicitation or sale would be unlawful prior to registration or
+qualification under the securities laws of any such state or jurisdiction.
+
+Item 7.01. Regulation FD Disclosure
+
+On June 3, 2026, USAR issued
+a press release announcing its entry into the Funding Agreements, a copy of which is being furnished as Exhibit 99.1 hereto and incorporated
+by reference herein.
+
+The information provided
+under this Item 7.01 of this Current Report on Form 8-K, including Exhibit 99.1, is “furnished” and shall not be deemed “filed”
+with the Securities and Exchange Commission or incorporated by reference in any filing under the Securities Exchange Act of 1934, as amended,
+or the Securities Act.
+
+Cautionary Note Regarding Forward-Looking Statements
+
+This Current Report on Form
+8-K and the documents included as exhibits hereto contain “forward-looking statements” within the meaning of the Private Securities
+Litigation Reform Act of 1995. These statements include those relating to the Awards, the expected timing and completion of the Awards,
+the expected benefits of the Awards including anticipated financial results, our anticipated operating and financial performance, our
+business plans, strategy, goals and prospects, our plans for and prospects of our acquisitions, investments and other business development
+activities, including the announced proposed acquisition of SVRE and transactions with Carester SAS (“Carester”) and Texas
+Mineral Resources Corp. (“TMRC”), our plans for capital raising activities, and our ability to successfully capitalize on
+growth opportunities and prospects. Such statements can be identified by the fact that they do not relate strictly to historical or current
+facts. Words such as “will,” “may,” “could,” “should,” “likely,” “ongoing,”
+“anticipate,” “estimate,” “expect,” “project,” “predict,” “intend,”
+“plan,” “believe,” “aim,” “build,” “continue,” “potential,” “vision,”
+and similar expressions may identify forward-looking statements, but the absence of these words does not mean that a statement is not
+forward-looking.
+
+Forward-looking statements
+are subject to risks and uncertainties and potentially inaccurate assumptions that could cause actual results to differ materially from
+our expectations, including without limitation: our ability to achieve the conditions to funding under the Funding Agreements, including
+the requirement to raise additional equity capital; the risk that the Funding Agreements may be challenged in the future; risks that the
+proposed transactions with SVRE, Carester and TMRC may not be consummated on their anticipated timelines or at all; we may not realize
+the anticipated benefits of our proposed and prior acquisitions, including expected synergies, financial performance, estimated EBITDA
+and, in the case of SVRE, integration of operations, on the anticipated timeline or at all; the ability of our Stillwater magnet manufacturing
+facility to commence commercial operations on the timing and with the production capacity anticipated or at all; our limited operating
+history; our ability to commercially extract minerals from the Round Top deposit on our anticipated timeline or at all; risks that we
+may experience delays, unforeseen expenses, increased capital costs, and other complications while operating our business; our ability
+to raise necessary capital on acceptable terms or at all; potential dilution to existing stockholders and the possible adverse effect
+on our stock price if we issue additional common stock or equity-linked securities; the volatility of our stock price; the availability
+of rare earth oxide, metal feedstock and other materials, utilities (including power and water) and equipment in quantities and prices
+that allow us to develop and commercially operate our Stillwater facility and other facilities; our ability to meet individual customer
+specifications and manufacture a consistently high quality product; fluctuations in demand for and prices of our products, including without
+limitation as a result of dumping, predatory pricing and other tactics by USAR’s competitors or state actors or the overall competitive
+environment; our ability to achieve positive cash flow or profitability or the ability to access cash flow within our corporate structure
+due to restrictions contained in our financing agreements; our ability to convert current commercial discussions and/or memorandums of
+understanding with customers for the sale of our products into definitive orders; geopolitical developments or disruptions, such as changes
+in the political environment, export/import or environmental policy of the People’s Republic of China, the United States or other
+countries in which we operate or sell products or otherwise; war, terrorism, natural disasters or public health emergencies; our ability
+to retain or recruit key personnel; environmental, health and safety regulations; and our ability to comply with requirements for federal,
+state and local government incentives and financing.
+
+4
+
+Additional risks and detailed
+information regarding factors that may cause actual results to differ materially has been and will be included in USAR’s filings
+with the SEC, including USAR’s most recently filed Annual Report on Form 10-K and any subsequent Quarterly Reports on Form 10-Q
+and subsequent filings. Any forward-looking statements speak only as of the date of this Current Report on Form 8-K (or such other date
+as is specified in such statements), and USAR undertakes no obligation to update any forward-looking statements as a result of new information
+or future events or developments, except to the extent required by law.
+
+Item 8.01. Other Events
+
+USAR is providing the additional
+risk factors set forth below to supplement the risks described in “Risk Factors” in USAR’s Annual Report on Form 10-K
+for the fiscal year ended December 31, 2025.
+
+Risk Factors
+
+The execution of the Funding Agreements, the Securities Issuance
+Agreement and the Warrant with the Department of Commerce, the receipt of funding thereunder and the consummation of the related transactions
+are subject to a number of risks and uncertainties, and the DOC’s ownership of a significant equity interest in USAR may subject
+USAR and its stockholders to additional risks, any of which could have a material adverse effect on USAR’s business, financial condition
+and results of operations or adversely impact the interests of our other stockholders.
+
+●The timing and amount of funding under the Funding Agreements
+is subject to the satisfaction of project milestones and other conditions to disbursement that we may not meet on the anticipated timeline
+or at all. Disbursements of the Awards are conditioned on the achievement of specified Project milestones (including design, construction,
+production qualification and capacity thresholds for the Round Top Mine Project, the Stillwater Magnet Project, the Stillwater Metal
+Project, the Magnet Project 2 and the Metal Project 2), the making of cash equity contributions to our subsidiaries to fund Project costs,
+the satisfaction of financial ratio and liquidity thresholds, the receipt of required permits and approvals and other customary conditions.
+In addition, the Funding Agreements impose specified equity raising and credit facility requirements that USAR will need to satisfy on
+the timeline contemplated by the Funding Agreements. There can be no assurance that we will achieve these milestones or satisfy the other
+conditions on the anticipated timeline or at all, and any failure to do so could delay or reduce the funding we receive, result in a
+clawback of amounts previously disbursed or give rise to an event of default under the Funding Agreements.
+
+●The authorization of, and continued support for, the transactions
+remain subject to changes in laws, regulations, administrations and appropriations. Although the DOC has confirmed its authority
+to enter into the Funding Agreements, the Securities Issuance Agreement and the Warrant under the CHIPS Incentives Program—Facilities
+for Semiconductor Materials and Manufacturing Equipment under the CHIPS Act of 2022, there can be no assurance that the transactions
+will not be modified, challenged or impaired in the future. Potential sources of uncertainty include changes in federal or international
+laws, regulations, administrative actions and interpretations thereof; a determination by any branch of the federal government that any
+aspect of the agreements was unauthorized, void or voidable; future changes in administration or legislative priorities; the continued
+availability of Congressional appropriations; geopolitical developments; and the defenses and remedies available to a government counterparty.
+No other federal agency or branch is contractually bound to support, or refrain from challenging, the transactions, which may also be
+subject to litigation or administrative challenge by third parties.
+
+5
+
+●The Funding Agreements contain extensive affirmative and
+negative covenants, domestic content and national security guardrail provisions and ongoing reporting obligations that restrict our operational
+and financial flexibility. These include restrictions on the incurrence of indebtedness, the granting of liens, asset dispositions,
+dividends, share repurchases and equity redemptions; restrictions on mergers, dispositions and change of control transactions without
+DOC consent; restrictions on joint research and transactions with foreign countries and entities of concern; limitations on capital expenditures
+and affiliate transactions; compliance with the Davis-Bacon Act and other applicable laws; financial and liquidity covenants; and comprehensive
+reporting obligations covering financial, operational, cybersecurity and supply chain matters. These requirements may be subject to broad
+or changing interpretation, and any violation could result in the suspension, clawback or termination of funding. Compliance with these
+covenants and conditions could restrict our ability to take actions that management believes are important to our long-term strategy,
+including capital allocation, strategic transactions, geographic expansion and financing activities.
+
+●The FFB Advances are secured by first-priority liens on
+substantially all of our assets, and defaults under the Funding Agreements could trigger cross-defaults across our financing arrangements.
+The FFB Advances and USAR’s related obligations are guaranteed by the subsidiary guarantors and secured by first-priority liens
+on substantially all of the assets of USAR and the subsidiary guarantors. The Funding Agreements contain express cross-default provisions
+in respect of indebtedness above specified thresholds. Upon an event of default, the DOC may, among other remedies, accelerate the FFB
+Advances, terminate any of the Funding Agreements, withhold or claw back disbursements, foreclose on the collateral, exercise set-off
+rights and initiate debarment proceedings. An event of default under the Funding Agreements, or under any of USAR’s or its subsidiaries’
+other material indebtedness, could also, depending on the terms of the relevant contracts, trigger cross-default, change of control or
+similar provisions under our and our subsidiaries’ other material contracts.
+
+●The transactions are dilutive to existing stockholders,
+the DOC will retain the equity issued to it regardless of the level of funding we receive and we will require substantial additional
+capital. USAR has issued to the DOC 16,132,790 SIA Shares and the Warrant to purchase 17,600,584 Warrant Shares at an exercise price
+of $17.17 per share, each of which is dilutive to existing stockholders. The DOC will retain 100% of these securities whether or not
+we receive any or all of the funding contemplated by the Funding Agreements and even if any such funding is received and subsequently
+clawed back, which would materially increase the effective dilution to other stockholders. Additional equity capital will also be required
+to satisfy the equity contribution and other capital requirements under the Funding Agreements, and there can be no assurance that this
+capital will be available on acceptable terms, on the required timeline, or at all.
+
+●The DOC’s equity interest in USAR and its broader
+role as a counterparty and regulator may limit our ability to pursue strategic transactions and may affect our relationships with customers,
+suppliers, partners and other counterparties. The existence of a significant federal government equity interest, together with the
+DOC’s contractual rights and remedies (including transfer restrictions, registration rights and anti-dilution protections) and
+its broader authority over the laws, regulations and policies affecting our industry, may limit our ability to pursue potential future
+strategic transactions that could be beneficial to stockholders, including by limiting the willingness of third parties to engage in
+such transactions with us. The announcement or completion of the transactions and the presence of the federal government as a significant
+stockholder could also prompt adverse reactions from, or increased scrutiny by, customers, suppliers, strategic partners, foreign governments,
+employees, competitors or regulators (including under foreign subsidy, competition, investment screening, antitrust or similar regimes).
+Given the scarcity of recent U.S. precedents for transactions of this type, it is difficult to foresee all of the potential consequences,
+and there may also be litigation relating to the transactions and increased public and political scrutiny.
+
+6
+
+●The financial, tax and accounting treatment of the transactions
+remains uncertain. Given the novelty and complexity of the transactions and the highly integrated nature of the Funding Agreements,
+the Securities Issuance Agreement and the Warrant, USAR’s analysis of the financial, tax and accounting implications of its commitments
+and obligations has not been completed and may take considerable time and require significant attention from management. The analysis
+may require adjustment over time as a result of changes in tax law or regulations, changes in accounting practices, amendments to or
+termination of any of the agreements or other unforeseen developments, any of which could result in the recognition of additional costs,
+charges, losses or liabilities, restatements or other modifications of USAR’s financial statements or adjustments to previously
+provided estimates or guidance.
+
+Item 9.01. Financial Statements and
+Exhibits.
+
+(d) Exhibits:
+
+The following exhibits are attached with this current
+report on Form 8-K:
+
+Exhibit No.
+
+Description
+
+10.1
+
+Direct Funding Agreement, dated June 3, 2026, by and among USA Rare Earth, Inc., the subsidiary guarantors party thereto and the United States Department of Commerce
+
+10.2
+
+Loan Guarantee Agreement, dated June 3, 2026, by and among USA Rare Earth, Inc., the subsidiary guarantors party thereto and the United States Department of Commerce
+
+10.3
+
+Securities Issuance Agreement, dated June 3, by and between USA Rare Earth, Inc. and the United States Department of Commerce
+
+10.4
+
+Warrant, dated June 3, issued by USA Rare Earth, Inc. to the United States Department of Commerce
+
+99.1
+
+Press Release, dated June 3, announcing entry into the Direct Funding Agreement, the Loan Guarantee Agreement, Securities Issuance Agreement and Warrant
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+*The annexes, schedules, and certain exhibits to this Exhibit
+have been omitted pursuant to Item 601(b)(2) of Regulation S-K. The Registrant hereby agrees to furnish supplementally a copy of any
+omitted annex, schedule or exhibit to the SEC upon request.
+
+7
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date:
+June 3, 2026
+By:
+/s/ Valerie Ford Jacob
+
+Name:
+Valerie Ford Jacob
+
+Title:
+Chief Legal Officer
+
+8

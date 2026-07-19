@@ -1,0 +1,157 @@
+8-K
+
+Sandisk Corp false 0002023554 0002023554 2026-03-25 2026-03-25
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): March 25, 2026
+
+Sandisk Corporation
+
+(Exact Name of Registrant as Specified in its Charter)
+
+Delaware
+
+001-42420
+
+99-1508671
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+951 Sandisk Drive
+
+Milpitas
+
+California
+
+95035
+
+(Address of Principal Executive Offices)
+
+(Zip Code)
+
+(408) 801-1000
+
+(Registrant’s Telephone Number, Including Area Code)
+
+Not applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common Stock, $0.01 Par Value Per Share
+
+SNDK
+
+The Nasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01
+
+Entry into a Material Definitive Agreement.
+
+On March 25, 2026, Sandisk Technologies, Inc. (the “Company”), a wholly-owned subsidiary of Sandisk Corporation, entered into a Private Placement Subscription Agreement (the “Equity Investment Agreement”) with Nanya Technology Corporation (“Nanya”), pursuant to which the Company agreed to make a strategic equity investment in Nanya through a private placement of Nanya common stock (the “Transaction”).
+
+Under the Equity Investment Agreement, the Company agreed to purchase approximately 139 million shares of Nanya common stock for an aggregate purchase price of approximately $1.0 billion, representing approximately 3.9% of Nanya’s outstanding common stock on a fully diluted basis following the Transaction. The purchase price reflects a 15% discount to Nanya’s 30-day average trading price, consistent with the Taiwan Securities and Exchange Act (“SEA”) and applicable regulations. The private placement is being conducted pursuant to Article 43-6 of the SEA and applicable regulations and is subject to post-closing filings with the Taiwan Stock Exchange and other Taiwanese regulatory authorities. The shares issued to the Company in the private placement will be subject to a statutory lock-up period of three years following delivery, during which the Company will be restricted from transferring or selling the shares, subject to limited exceptions under applicable Taiwanese law.
+
+The foregoing description of the Equity Investment Agreement does not purport to be complete and is qualified in its entirety by reference to the full text of the Equity Investment Agreement, which is filed as Exhibit 10.1 to this Current Report on Form 8-K and incorporated herein by reference.
+
+Item 8.01
+
+Other Events.
+
+Concurrently with the Equity Investment Agreement, the Company and Nanya also entered into a multi-year strategic supply arrangement pursuant to which Nanya will supply the Company with DRAM products. The supply arrangement is intended to support the Company’s long-term DRAM sourcing strategy.
+
+Item 9.01
+
+Financial Statements and Exhibits.
+
+(d)
+
+ Exhibits
+
+ 10.1
+
+Private Placement Subscription Agreement, dated as of March 25, 2026, by and between Sandisk Technologies, Inc. and Nanya Technology Corporation.
+
+ 104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+Sandisk Corporation
+
+(Registrant)
+
+By:
+
+/s/ Bernard Shek
+
+Bernard Shek
+
+Chief Legal Officer
+
+and Secretary
+
+Date: March 25, 2026

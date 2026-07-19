@@ -1,0 +1,103 @@
+coin-20260505
+0001679788FALSE00016797882026-05-052026-05-05
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 5, 2026
+
+Coinbase Global, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Texas001-4028946-4707224
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+One Madison Avenue
+
+Suite 2400
+
+New York, NY
+
+10010
+
+(Address of principal executive offices)1
+
+(Zip Code)1
+
+Not Applicable
+
+(Registrant’s telephone number, including area code)1
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A common stock, $0.00001 par valueCOINThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+1We are a remote-first company. Accordingly, we do not maintain a headquarters. We are including this address solely for the purpose of satisfying the Securities and Exchange Commission’s request. Shareholder communications may also be sent to the email address: secretary@coinbase.com.
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.05. Costs Associated with Exit or Disposal Activities.
+
+On May 5, 2026, Coinbase Global, Inc. (the “Company”) announced a restructuring plan (the “Plan”) to (i) manage its operating expenses in response to current market conditions and (ii) optimize the Company’s operations for the AI era. The Plan involves a reduction of the Company’s workforce by approximately 700 employees, representing approximately 14% of the Company’s global workforce as of May 1, 2026. The Company expects execution of the Plan to be substantially complete in the second quarter of 2026.
+
+In connection with these actions, the Company estimates that it will incur approximately $50 million to $60 million in total restructuring expenses, substantially all of which are future cash-based expenditures and related to employee severance and other termination benefits. The Company expects to recognize substantially all of these charges in the second quarter of 2026.
+
+The estimates of the charges and expenditures that the Company expects to incur in connection with the Plan, and the timing thereof, are subject to a number of assumptions, including local law and consultation requirements in various jurisdictions, and actual amounts may differ materially from estimates. The Company may also incur charges and expenditures not currently contemplated due to unanticipated events that may occur in connection with the Plan.
+
+Forward-Looking Statements
+
+This Current Report on Form 8-K contains forward-looking statements, including, but not limited to, statements related to the number of positions affected by the Plan and the estimated restructuring charges associated with, and the time frame for completion of and recognition of charges associated with, the Plan. These forward-looking statements are based on management’s beliefs and assumptions and on information available to management as of the date they are made. However, investors should not place undue reliance on any such forward-looking statements because they speak only as of the date they are made. The Company does not undertake any obligation to update or revise any forward-looking statements, whether as a result of new information, future events or otherwise, except as required by law. In addition, forward-looking statements are subject to certain risks and uncertainties that could cause actual results, events and developments to differ materially from the Company’s historical experience and its present expectations or projections. These risks and uncertainties include, but are not necessarily limited to, those described in the Company’s filings with the Securities and Exchange Commission.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+COINBASE GLOBAL, INC.
+
+Dated: May 5, 2026By:
+/s/ Alesia J. Haas
+
+Alesia J. Haas
+
+Chief Financial Officer

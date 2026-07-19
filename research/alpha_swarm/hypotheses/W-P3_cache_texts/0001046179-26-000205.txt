@@ -1,0 +1,158 @@
+6-K
+1
+tsm-monthend6kx20260424.htm
+6-K
+
+Document
+
+1934 Act Registration No. 1-14700
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+_____________________________
+
+FORM 6-K
+
+_____________________________
+
+REPORT OF FOREIGN PRIVATE ISSUER
+
+PURSUANT TO RULE 13a-16 OR 15d-16 UNDER
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+For the month of April 2026
+
+(Commission File Number: 001-14700)
+
+_____________________________
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+(Translation of Registrant’s Name Into English)
+
+_____________________________
+
+No. 8, Li-Hsin Road 6
+
+Hsinchu Science Park
+
+Hsinchu 300-096, Taiwan
+Republic of China
+
+(Address of Principal Executive Offices)
+
+_____________________________
+
+Indicate by check mark whether the registrant files or will file annual reports under cover of Form 20-F or Form 40-F.
+
+Form 20-F x Form 40-F o
+
+Indicate by check mark if the registrant is submitting the Form 6-K in papers as permitted by Regulation S-T Rule 101(b)(1):o
+
+Indicate by check mark if the registrant is submitting the Form 6-K in papers as permitted by Regulation S-T Rule 101(b)(7):o
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+Date: April 24, 2026By/s/ Wendell Huang
+
+Wendell Huang
+
+Senior Vice President and Chief Financial Officer
+
+Taiwan Semiconductor Manufacturing Company Limited
+
+("TSMC"; NYSE: TSM)
+
+This is to report 1) the changes in the shareholdings of TSMC board of directors, executive officers and shareholders who own more than 10% of total outstanding common shares of TSMC; 2) the changes in the pledge of TSMC common shares by TSMC board of directors, executive officers and shareholders who own more than 10% of total outstanding common shares of TSMC; 3) the acquisition and disposition of assets by TSMC and its subsidiaries; 4) the capital appropriations approved by TSMC board of directors; 5) the unsecured bonds issued by TSMC and its subsidiaries and 6) the cancellation of TSMC common shares for the month of March 2026.
+
+1.The changes in the shareholdings of TSMC board of directors, executive officers and shareholders who own more than 10% of total outstanding common shares of TSMC:
+
+TitleNameNumber of shares held as ofChanges
+
+2/28/20263/31/2026
+
+Chairman & Chief Executive OfficerC.C. Wei7,917,2708,152,610235,340
+
+Executive Vice President and Co-Chief Operating OfficerY.P. Chyn9,297,6339,362,04264,409
+
+Executive Vice President and Co-Chief Operating OfficerY.J. Mii1,189,6481,254,05764,409
+
+Senior Vice President and Deputy Co-Chief Operating Officer / Chief Information Security OfficerCliff Hou658,796723,20564,409
+
+Senior Vice President and Deputy Co-Chief Operating OfficerKevin Zhang265,254329,66364,409
+
+Senior Vice PresidentLora Ho6,619,1336,683,54264,409
+
+Senior Vice President, General Counsel and Corporate Governance OfficerSylvia Fang1,269,4241,310,29840,874
+
+Senior Vice President and Chief Financial OfficerWendell Huang1,770,6691,811,54340,874
+
+Senior Vice PresidentY.L. Wang1,457,0471,497,92140,874
+
+Senior Vice PresidentT.S. Chang276,764317,63840,874
+
+Senior Vice PresidentMichael Wu788,297829,17140,874
+
+Senior Vice PresidentGeoffrey Yeap175,694213,37537,681
+
+Vice PresidentMin Cao501,475542,34940,874
+
+Vice PresidentY.H. Liaw867,044893,05426,010
+
+Vice PresidentSimon Jang419,869445,87926,010
+
+Vice PresidentC.S. Yoo2,843,4362,869,44626,010
+
+Vice PresidentJun He94,109120,11926,010
+
+TitleNameNumber of shares held as ofChanges
+
+2/28/20263/31/2026
+
+Vice President and Chief Information OfficerChris Horng-Dar Lin117,174143,18426,010
+
+Vice PresidentJonathan Lee486,022512,03226,010
+
+Vice PresidentArthur Chuang4,662,2954,688,30526,010
+
+Vice PresidentL.C. Lu260,706291,71631,010
+
+Vice PresidentK.C. Hsu162,914190,92428,010
+
+Vice PresidentRay Chuang330,875345,73814,863
+
+Vice PresidentB.Z. Tien5,0519,0514,000
+
+Vice PresidentS.S. Lin20,26930,26910,000
+
+Vice PresidentLipen Yuan3,6004,6501,050
+
+Note: Shareholdings include shares held by the related parties.
+
+2.The changes in the pledge of TSMC common shares by TSMC board of directors, executive officers and shareholders who own more than 10% of total outstanding common shares of TSMC: None.
+
+3.The acquisition and disposition of assets by TSMC and its subsidiaries:
+
+Fixed-income investment: NT$23.2 billion of acquisition.
+
+4.The capital appropriations approved by TSMC board of directors: None.
+
+5.The unsecured bonds issued by TSMC and its subsidiaries:
+
+IssuanceTrancheIssuance PeriodTotal Amount
+(in billions)Coupon Rate Repayment and Interest Payment
+
+115-1AMarch 2026 ~ March 2031NT$12.61.72%Bullet repayment; interest payable annually
+
+BMarch 2026 ~ March 2036NT$4.61.78%
+
+6.The cancellation of TSMC common shares: None.

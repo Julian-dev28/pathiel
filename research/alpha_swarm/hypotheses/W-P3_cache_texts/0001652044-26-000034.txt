@@ -1,0 +1,164 @@
+goog-20260407
+FALSE000165204400016520442026-04-072026-04-070001652044us-gaap:CommonClassAMember2026-04-072026-04-070001652044goog:CapitalClassCMember2026-04-072026-04-070001652044goog:A2.375SeniorNotesDue2028Member2026-04-072026-04-070001652044goog:A2.500SeniorNotesDue2029Member2026-04-072026-04-070001652044goog:A4.125SeniorNotesDue2029Member2026-04-072026-04-070001652044goog:A2.875SeniorNotesDue2031Member2026-04-072026-04-070001652044goog:A4.625SeniorNotesDue2032Member2026-04-072026-04-070001652044goog:A3.000SeniorNotesDue2033Member2026-04-072026-04-070001652044goog:A3.125SeniorNotesDue2034Member2026-04-072026-04-070001652044goog:A3.375SeniorNotesDue2037Member2026-04-072026-04-070001652044goog:A3.500SeniorNotesDue2038Member2026-04-072026-04-070001652044goog:A5.500SeniorNotesDue2041Member2026-04-072026-04-070001652044goog:A4.000SeniorNotesDue2044Member2026-04-072026-04-070001652044goog:A3.875SeniorNotesDue2045Member2026-04-072026-04-070001652044goog:A4.000SeniorNotesDue2054Member2026-04-072026-04-070001652044goog:A5.875SeniorNotesDue2058Member2026-04-072026-04-070001652044goog:A4.375SeniorNotesDue2064Member2026-04-072026-04-070001652044goog:A6.125SeniorNotesDue2126Member2026-04-072026-04-07
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+_________________________________________________
+
+FORM 8-K
+
+_____________________________________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of
+
+The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported)
+
+April 7, 2026
+
+____________________________________________________________
+
+ALPHABET INC.
+
+(Exact name of registrant as specified in its charter)
+
+_______________________________________________________________
+
+Delaware001-3758061-1767919
+
+(State or other jurisdiction of incorporation)(Commission File Number)(IRS Employer Identification No.)
+
+1600 Amphitheatre Parkway
+
+Mountain View, CA 94043
+
+(Address of principal executive offices, including zip code)
+
+(650) 253-0000
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+______________________________________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.001 par valueGOOGLNasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+Class C Capital Stock, $0.001 par valueGOOGNasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+2.375% Senior Notes due 2028—Nasdaq Stock Market LLC
+
+2.500% Senior Notes due 2029
+—Nasdaq Stock Market LLC
+
+4.125% Senior Notes due 2029—Nasdaq Stock Market LLC
+
+2.875% Senior Notes due 2031
+—Nasdaq Stock Market LLC
+
+4.625% Senior Notes due 2032—Nasdaq Stock Market LLC
+
+3.000% Senior Notes due 2033
+—Nasdaq Stock Market LLC
+
+3.125% Senior Notes due 2034
+—Nasdaq Stock Market LLC
+
+3.375% Senior Notes due 2037
+—Nasdaq Stock Market LLC
+
+3.500% Senior Notes due 2038
+—Nasdaq Stock Market LLC
+
+5.500% Senior Notes due 2041—Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2044
+—Nasdaq Stock Market LLC
+
+3.875% Senior Notes due 2045
+—Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2054
+—Nasdaq Stock Market LLC
+
+5.875% Senior Notes due 2058—Nasdaq Stock Market LLC
+
+4.375% Senior Notes due 2064
+—Nasdaq Stock Market LLC
+
+6.125% Senior Notes due 2126—Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+On April 7, 2026, the Leadership Development, Inclusion and Compensation Committee (“LDICC”) of the Board of Directors of Alphabet Inc. (“Alphabet”) approved equity awards for the following executive officers: Anat Ashkenazi, Senior Vice President, Chief Financial Officer, Alphabet and Google LLC (“Google”); Ruth Porat, President and Chief Investment Officer, Alphabet and Google; Philipp Schindler, Senior Vice President, Chief Business Officer, Google; and Kent Walker, President, Global Affairs, Chief Legal Officer and Secretary, Alphabet and Google.
+
+Alphabet uses a combination of both Alphabet performance stock units (“PSUs”) which vest, if at all, based on long-term company performance, and restricted stock units (“GSUs”), which provide incentive for continued service. This approach benefits Alphabet and is designed to maximize long-term shareholder value. The equity awards, which were granted on April 8, 2026, are as follows:
+
+•Ms. Ashkenazi was granted PSUs with a target value of $10,000,000, and GSUs in the amount of $20,000,000.
+
+•Ms. Porat was granted PSUs with a target value of $9,000,000, and GSUs in the amount of $20,000,000.
+
+•Mr. Schindler was granted PSUs with a target value of $16,000,000, and GSUs in the amount of $26,000,000.
+
+•Mr. Walker was granted PSUs with a target value of $9,000,000, and GSUs in the amount of $20,000,000.
+
+The GSU awards also include a transitional amount, on top of the annual target value, to maintain target total compensation following the discontinuation of the SVP Bonus program in 2025. 2026 is the second and final year of the SVP bonus transition. The transitional amounts were granted on April 8, 2026 as an addition to the 2026 GSU awards. Each individual’s transitional amount follows: $6,000,000 for Ms. Ashkenazi, $5,000,000 for Ms. Porat and Mr. Walker, and $5,666,667 for Mr. Schindler.
+
+The target number of PSUs was calculated by dividing the target value of the total PSU grant by the average closing price of Alphabet’s Class C capital stock during the month of March 2026 (the “Average Closing Price”). The PSUs will depend on Alphabet’s total shareholder return (relative to S&P 100 companies) (“relative TSR”), and this performance-based equity may not vest at all. The vest will be based on the relative TSR performance over a 2026-2028 performance period, subject to continued employment. Depending upon Alphabet’s relative TSR performance, the number of PSUs that vest in a tranche will range from 0%-200% of target. Upon vesting, each PSU will entitle the grantee to receive one share of Alphabet’s Class C capital stock.
+
+The number of GSUs was calculated by dividing the GSU award amount by the Average Closing Price. The total GSU award is composed of the (i) target GSU award, which vests monthly over three years from 2026 through 2028, and (ii) a supplemental (transitional) award, which vests monthly during 2026 - other than:
+
+•a 4-month catch-up vest in April 2026 for both awards, and
+
+•a vesting date shift for all employees (from the 25th to the 1st) in March 2027 resulting in a cumulative 2-month vest.
+
+All vesting is contingent on the recipient's continued employment on the applicable vesting date(s). Upon vesting, each GSU will entitle the grantee to receive one share of Alphabet’s Class C capital stock.
+
+Upon death, all unvested GSUs will accelerate immediately and all performance-based equity will immediately vest at target (or based on actual performance if the performance period ended prior to death). Upon termination of employment by Alphabet for cause, all unvested equity will be forfeited. Upon termination of employment by Alphabet without cause, the grantee will be eligible to vest in a pro-rata number of all performance-based equity (based on actual performance at the end of the performance period). All Alphabet GSUs and PSUs are subject to the terms and conditions of Alphabet’s Amended and Restated 2021 Stock Plan and the applicable award agreement.
+
+The foregoing description is only a summary of the terms of the respective awards and is qualified in its entirety by reference to the full text of the applicable award agreements, which will be filed as exhibits to Alphabet’s quarterly report on Form 10-Q.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ALPHABET INC.
+
+Date: April 10, 2026/s/ KATHRYN W. HALL
+
+Kathryn W. Hall
+
+Assistant Secretary

@@ -1,0 +1,3933 @@
+{
+ "llm": {
+  "0001193125-25-332296": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest 1,229 BTC buy, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.100441,
+   "duration_ms": 2893
+  },
+  "0001193125-26-000264": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine monthly preferred dividend declaration and small variable-rate adjustment; immaterial to common stock direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.096028,
+   "duration_ms": 3662
+  },
+  "0000050863-25-000204": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Completion of previously disclosed NVIDIA investment; already announced September 2025, largely priced in, routine closing confirmation.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.086215,
+   "duration_ms": 3926
+  },
+  "0001628280-26-000016": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Shell 8-K referencing press release; exhibit content absent, so no material information to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.02903,
+   "duration_ms": 2802
+  },
+  "0001140361-26-000199": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine, previously announced Principal Accounting Officer transition; no material impact expected.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027201,
+   "duration_ms": 2211
+  },
+  "0001193125-26-001550": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine weekly ATM/BTC update; large unrealized loss tracks already-public bitcoin prices, little new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07887999999999999,
+   "duration_ms": 6288
+  },
+  "0001193125-26-009002": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine retirements of elderly long-tenured directors, no dispute; immaterial governance news for a mega-cap.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.024869000000000002,
+   "duration_ms": 2213
+  },
+  "0001193125-26-009811": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine weekly ATM and bitcoin purchase update; common share dilution offset by BTC acquisition, largely expected",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051628999999999994,
+   "duration_ms": 4417
+  },
+  "0001628280-26-002429": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Executive appointment with credible background; notable but not materially price-moving for a mega-cap in 24 hours.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.043256,
+   "duration_ms": 2575
+  },
+  "0001065280-26-000033": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Earnings 8-K contains only boilerplate; no actual results or guidance figures provided to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.066227,
+   "duration_ms": 3195
+  },
+  "0001193125-26-016002": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.65,
+   "reason": "Routine weekly ATM/BTC purchase update; large but customary common stock dilution funding bitcoin buys.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.055670000000000004,
+   "duration_ms": 6109
+  },
+  "0001193125-26-015951": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "All-cash WBD deal removes Netflix share dilution and merger-arb short pressure on acquirer stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.09049,
+   "duration_ms": 11327
+  },
+  "0001104659-26-005366": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting vote results and standard charter exculpation amendment; no material stock-moving information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.048344,
+   "duration_ms": 2368
+  },
+  "0000002488-26-000002": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine independent director appointment; no departures or material business impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033306,
+   "duration_ms": 3313
+  },
+  "0000050863-26-000009": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Boilerplate 8-K earnings announcement; press release numbers not included, no directional signal in text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.034423999999999996,
+   "duration_ms": 2903
+  },
+  "0000050863-26-000031": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Administrative re-registration of existing securities; no new issuance, no sale, purely procedural filing.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035009,
+   "duration_ms": 2322
+  },
+  "0001045810-26-000003": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine board member resignation for new opportunity, no disagreement; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.023004999999999998,
+   "duration_ms": 2068
+  },
+  "0001193125-26-021726": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest scale, offset by common stock dilution.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.046250999999999994,
+   "duration_ms": 2860
+  },
+  "0001628280-26-003832": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Boilerplate earnings 8-K with no financial figures in provided text; direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033187,
+   "duration_ms": 2428
+  },
+  "0001193125-26-027198": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; press release results not included, no financial figures to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.028981999999999997,
+   "duration_ms": 2871
+  },
+  "0001628280-26-004121": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K shell only; press release financials not included, so no basis to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029963,
+   "duration_ms": 2572
+  },
+  "0001628280-26-003837": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no financial figures or exhibit content provided to assess results.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029997000000000003,
+   "duration_ms": 4522
+  },
+  "0001970622-26-000009": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Closing of already-announced $1.5B PIPE; material news pre-disclosed January 26, dilution known, largely confirmatory.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.068504,
+   "duration_ms": 5842
+  },
+  "0000320193-26-000005": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Earnings 8-K cover only; no financial figures included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027788999999999994,
+   "duration_ms": 2356
+  },
+  "0001783879-26-000007": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine quarterly Rule 606(a) order routing disclosure; no consolidated results or material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.043576000000000004,
+   "duration_ms": 2550
+  },
+  "0001193125-26-032731": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC purchase update; small buy, common stock dilution, minor dividend rate tweak; immaterial.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.0625,
+   "duration_ms": 3383
+  },
+  "0001193125-26-033573": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine tax-treatment update on preferred dividends; no earnings, guidance, or material common-stock catalyst.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.041035,
+   "duration_ms": 2699
+  },
+  "0001321655-26-000004": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Earnings 8-K shell only; no financial figures or guidance included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033104,
+   "duration_ms": 2926
+  },
+  "0000002488-26-000014": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Boilerplate 8-K cover only; no actual results or guidance figures included in text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038504,
+   "duration_ms": 2903
+  },
+  "0001652044-26-000012": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Boilerplate earnings 8-K with no actual results or figures included; direction indeterminable from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029936,
+   "duration_ms": 2572
+  },
+  "0001193125-26-037840": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.7,
+   "reason": "$20B dilutive ATM equity program plus $25B new debt signals heavy cash needs and shareholder dilution",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.070302,
+   "duration_ms": 4045
+  },
+  "0001104659-26-010299": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine monthly return on share capital movements required by Hong Kong Listing Rules; immaterial.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031710999999999996,
+   "duration_ms": 8599
+  },
+  "0001018724-26-000002": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K cover only; press release financials not included, no results data to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032649,
+   "duration_ms": 2716
+  },
+  "0001193125-26-039344": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Closing of previously announced $5B mandatory convertible offering; dilution already priced in, routine documentation.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.08109899999999999,
+   "duration_ms": 7542
+  },
+  "0001193125-26-041944": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine weekly ATM/BTC update; modest 1,142 BTC purchase funded by small common stock sales, no surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04791299999999999,
+   "duration_ms": 3983
+  },
+  "0001046179-26-000015": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "January revenue up 36.8% YoY and 19.8% MoM signals strong demand momentum.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07947699999999999,
+   "duration_ms": 4597
+  },
+  "0001050446-26-000012": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Earnings press release content absent; STRC dividend framework update is routine mechanics, no material directional signal.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.064025,
+   "duration_ms": 12450
+  },
+  "0001783879-26-000013": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "No earnings figures included; CFO transition previously disclosed; content is routine without press release details.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042733,
+   "duration_ms": 3266
+  },
+  "0001874178-26-000007": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Earnings announcement shell only; no financial figures or guidance included in filing text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.034595,
+   "duration_ms": 2741
+  },
+  "0001679788-26-000011": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K only announces earnings letter; no financial figures included, direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033932000000000004,
+   "duration_ms": 2711
+  },
+  "0001193125-26-051423": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine closing of previously announced senior notes offering; immaterial to equity direction for mega-cap Alphabet.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051852,
+   "duration_ms": 2787
+  },
+  "0001193125-26-053105": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest amounts, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050224,
+   "duration_ms": 4335
+  },
+  "0000002488-26-000029": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.72,
+   "reason": "Routine executive compensation 8-K; CEO retention award notable but not materially price-moving within 24 hours.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.068262,
+   "duration_ms": 4231
+  },
+  "0001193125-26-062489": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC update; small 592 BTC buy, minor common dilution, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050671,
+   "duration_ms": 5030
+  },
+  "0001140361-26-006577": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all management proposals passed as expected, no material surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.040725000000000004,
+   "duration_ms": 2373
+  },
+  "0000002488-26-000045": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.9,
+   "reason": "Meta binding 1GW GPU commitment, up to 6GW, with milestone warrants signals massive demand; dilution is performance-contingent.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.063961,
+   "duration_ms": 4697
+  },
+  "0001046179-26-000021": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine monthly 6-K reporting shareholdings, pledges, and asset activity; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.041373,
+   "duration_ms": 2295
+  },
+  "0001876042-26-000032": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Shell 8-K referencing earnings press release; no financial figures included, direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029724,
+   "duration_ms": 3152
+  },
+  "0001045810-26-000019": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no actual results, guidance, or figures included to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033614,
+   "duration_ms": 3186
+  },
+  "0001046179-26-000024": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine 6-K furnishing annual audited financial statements; no new performance data or material disclosures in text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033869,
+   "duration_ms": 2377
+  },
+  "0001213900-26-020589": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine Reg FD furnishing of investor presentation with no substantive content disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025142,
+   "duration_ms": 2625
+  },
+  "0001769628-26-000094": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Boilerplate 8-K announcing earnings release; no financial figures included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.029977999999999998,
+   "duration_ms": 2687
+  },
+  "0001046179-26-000027": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.97,
+   "reason": "Routine miniscule dividend-per-share adjustment from share reclamation; no material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036121999999999994,
+   "duration_ms": 2580
+  },
+  "0001193125-26-082247": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.7,
+   "reason": "Netflix exits costly WBD deal, avoids massive debt financing, and collects $2.8B termination fee.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06154,
+   "duration_ms": 3569
+  },
+  "0001104659-26-021050": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.65,
+   "reason": "$35B OpenAI equity commitment plus AWS cloud deal signals major AI partnership and AWS revenue upside.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.066297,
+   "duration_ms": 6658
+  },
+  "0000050863-26-000044": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine board chair transition with orderly succession; not materially positive or negative.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030465999999999997,
+   "duration_ms": 2010
+  },
+  "0001104659-26-022827": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine monthly HKEX share capital return; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031082,
+   "duration_ms": 3940
+  },
+  "0001193125-26-084264": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest buys and dividend tweaks, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.075343,
+   "duration_ms": 9012
+  },
+  "0001104659-26-024354": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine 6-K announcing board meeting date only; no material financial or strategic information disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.026878000000000003,
+   "duration_ms": 2119
+  },
+  "0001652044-26-000026": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine triennial CEO compensation disclosure; expected cycle, unchanged target values, no material business news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.059864999999999995,
+   "duration_ms": 2172
+  },
+  "0001213900-26-023868": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.55,
+   "reason": "USAR is acquirer; small all-stock deal (~3.8M shares), closing months away; impact on acquirer ambiguous.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.081166,
+   "duration_ms": 8641
+  },
+  "0001045810-26-000024": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual executive compensation plan adoption; no material business or financial news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037966,
+   "duration_ms": 3843
+  },
+  "0001193125-26-100148": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "No actual results in text; only routine dividend declaration and press release reference, no earnings figures.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030507000000000003,
+   "duration_ms": 2577
+  },
+  "0001193125-26-097598": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine weekly ATM sales and bitcoin purchase update; procedural sales agreement amendment; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.065624,
+   "duration_ms": 4909
+  },
+  "0001046179-26-000031": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine monthly revenue report; solid 22.2% YoY growth but expected seasonal MoM decline, no surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.086189,
+   "duration_ms": 4880
+  },
+  "0001104659-26-027729": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine closing of previously announced registered debt offering; large but expected, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.069819,
+   "duration_ms": 2330
+  },
+  "0001193125-26-107263": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine weekly ATM and bitcoin purchase update; expected cadence, no unusual dilution or strategy change.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050434,
+   "duration_ms": 4652
+  },
+  "0001104659-26-028556": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine closing of pre-announced euro notes offering; ordinary debt issuance, immaterial to equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.059222000000000004,
+   "duration_ms": 2831
+  },
+  "0001213900-26-026632": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.4,
+   "reason": "High-profile GlobalFoundries chairman joins board, equity-only pay signals confidence; modestly positive for small-cap",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.066479,
+   "duration_ms": 8515
+  },
+  "0001046179-26-000076": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine administrative notice about shareholder proposal submission period; no material financial or business information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03462200000000001,
+   "duration_ms": 2110
+  },
+  "0001876042-26-000078": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine independent director appointment; positive but immaterial for 24-hour price direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037064,
+   "duration_ms": 2369
+  },
+  "0000723125-26-000004": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Earnings announcement shell only; no financial figures or guidance included, direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030532000000000004,
+   "duration_ms": 3644
+  },
+  "0001104659-26-031794": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.85,
+   "reason": "Uber invests $300M plus up to $950M milestones and Level 4 robotaxi partnership; strong strategic validation despite dilution",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07140500000000001,
+   "duration_ms": 4741
+  },
+  "0001104659-26-032947": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine equity award grant announcement under 2024 Plan; administrative, immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027206,
+   "duration_ms": 2226
+  },
+  "0001104659-26-032060": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Earnings 6-K cover only; press release content absent, no financial figures to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029759,
+   "duration_ms": 4736
+  },
+  "0001193125-26-118584": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC update; small 1,031 BTC purchase via modest common stock sales, no surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.046948000000000004,
+   "duration_ms": 3798
+  },
+  "0001783879-26-000045": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "New $1.5B buyback with $1.1B incremental capacity plus upsized credit facility signals confidence.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.070633,
+   "duration_ms": 4698
+  },
+  "0001193125-26-118810": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.55,
+   "reason": "New $21B common stock ATM plus $23.1B preferred ATMs signal massive potential dilution overhang.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.08075,
+   "duration_ms": 6972
+  },
+  "0001193125-26-122705": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "Strategic $1B Nanya stake at 15% discount plus multi-year DRAM supply deal signals growth positioning.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04949,
+   "duration_ms": 5497
+  },
+  "0001104659-26-034174": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine debt tender offer for senior notes; balance sheet management, not materially directional for equity.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025595000000000003,
+   "duration_ms": 2479
+  },
+  "0001046179-26-000126": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine monthly disclosure of shareholdings and board-approved capex; no earnings or guidance surprise.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.058977,
+   "duration_ms": 5912
+  },
+  "0001970622-26-000019": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Earnings 8-K shell only; press release contents absent, no financial figures to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031194000000000003,
+   "duration_ms": 2837
+  },
+  "0001193125-26-130446": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine weekly update: no ATM sales, no bitcoin purchases; minor lawsuit dismissal with immaterial $550k fee.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.047897,
+   "duration_ms": 2919
+  },
+  "0001193125-26-135765": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine monthly preferred dividend declaration maintaining existing 11.50% rate; no material new information for common stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051375000000000004,
+   "duration_ms": 2497
+  },
+  "0001104659-26-038249": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine debt tender offer pricing and expiration announcement; no material impact on equity value.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030617999999999996,
+   "duration_ms": 2418
+  },
+  "0001769628-26-000129": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.55,
+   "reason": "Routine project-level debt financing for contracted capex; implies demand but adds leverage; net ambiguous.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07992799999999999,
+   "duration_ms": 6536
+  },
+  "0001874178-26-000012": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Production/delivery announcement but actual numbers absent from filing text; direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029824,
+   "duration_ms": 2707
+  },
+  "0001652044-26-000031": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine controller resignation with no disagreement disclosed; immaterial for a company of Alphabet's scale.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.023316,
+   "duration_ms": 2198
+  },
+  "0001628280-26-022956": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K references press release but exhibit content absent; no financial data to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03103,
+   "duration_ms": 4906
+  },
+  "0000050863-26-000069": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine CLO departure with standard severance; not a strategic or financial role change material to price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025399,
+   "duration_ms": 2420
+  },
+  "0001193125-26-142939": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine CFO appointment; credible external hire mildly positive but unlikely to move mega-cap materially in 24 hours.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06323,
+   "duration_ms": 4552
+  },
+  "0001193125-26-142925": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.6,
+   "reason": "$14.46B unrealized Q1 loss, bitcoin below cost basis, valuation allowances; ongoing dilution outweighs routine ATM update",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.083718,
+   "duration_ms": 6602
+  },
+  "0000050863-26-000072": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Large JV buyback is strategic but ambiguous; cash plus bridge debt outlay offsets full ownership benefits.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038824,
+   "duration_ms": 5270
+  },
+  "0001104659-26-041034": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual shareholder letter furnished under Reg FD; no new material financial information disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027895999999999997,
+   "duration_ms": 2029
+  },
+  "0001104659-26-040881": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine monthly securities movement return required by HK Listing Rules; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03139,
+   "duration_ms": 2774
+  },
+  "0001970622-26-000026": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "Strategic Carester investment, offtake and IP access positive, though only non-binding term sheet",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03857,
+   "duration_ms": 4537
+  },
+  "0001769628-26-000154": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.85,
+   "reason": "New ~$21 billion committed capacity order from Meta is a major positive revenue backlog expansion.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.035797999999999996,
+   "duration_ms": 2833
+  },
+  "0001046179-26-000136": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "March revenue up 45.2% YoY and 30.7% MoM; Q1 up 35.1%, indicating strong demand acceleration.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.08325600000000001,
+   "duration_ms": 4298
+  },
+  "0001652044-26-000034": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual executive equity compensation disclosure; no material business or leadership change.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051167000000000004,
+   "duration_ms": 2606
+  },
+  "0001679788-26-000035": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine director departure with no disagreement disclosed; board size reduction is immaterial governance housekeeping.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025209,
+   "duration_ms": 2471
+  },
+  "0001193125-26-152015": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC update; preferred-funded purchases, no common dilution; largely anticipated disclosure.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050443,
+   "duration_ms": 3310
+  },
+  "0001104659-26-042880": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Acquirer in small merger; Globalstar deal immaterial relative to Amazon's size; acquirer impact routine.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035882000000000004,
+   "duration_ms": 3855
+  },
+  "0001628280-26-025108": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine director departures via non-renomination; no dispute disclosed; immaterial to mega-cap stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.02357,
+   "duration_ms": 2543
+  },
+  "0001769628-26-000164": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Closing of previously announced debt offerings; terms already known, largely priced in, routine completion filing.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.074861,
+   "duration_ms": 5410
+  },
+  "0001046179-26-000199": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Cover page only; Q1 earnings exhibits truncated, no financial results visible to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037069000000000005,
+   "duration_ms": 3756
+  },
+  "0000909832-26-000041": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.5,
+   "reason": "13% quarterly dividend increase signals confidence; modestly positive but largely anticipated annual hike",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037897999999999994,
+   "duration_ms": 5567
+  },
+  "0001769628-26-000167": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.45,
+   "reason": "$1B private placement adds cash but dilutes ~9M shares; offsetting signals, no clear directional edge",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051491,
+   "duration_ms": 7046
+  },
+  "0001046179-26-000203": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine shareholder meeting agenda revision; procedural governance items, no material financial news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037271,
+   "duration_ms": 2363
+  },
+  "0001065280-26-000137": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Earnings exhibit not provided; no results visible. Hastings' planned board exit is amicable, not clearly material either way.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042183,
+   "duration_ms": 3733
+  },
+  "0001193125-26-162756": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC purchase update; expected recurring disclosure, no material surprise either way.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04881799999999999,
+   "duration_ms": 3846
+  },
+  "0001213900-26-045339": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.4,
+   "reason": "Acquirer paying $300M cash plus 126.8M new shares; heavy dilution typically pressures acquirer stock near-term.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.116921,
+   "duration_ms": 16606
+  },
+  "0001213900-26-045706": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.55,
+   "reason": "Follow-up 8-K filing merger exhibits; terms already disclosed in earlier same-day 8-K, likely priced in.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.09430899999999999,
+   "duration_ms": 11885
+  },
+  "0001140361-26-015711": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.55,
+   "reason": "Iconic long-tenured CEO departing; orderly succession but likely modest negative uncertainty reaction despite internal successor.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.053913,
+   "duration_ms": 7987
+  },
+  "0001769628-26-000183": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Completion of previously announced, already-priced notes tap; routine debt closing with no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.061147999999999994,
+   "duration_ms": 2736
+  },
+  "0001628280-26-026551": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Cover 8-K only; earnings exhibit content absent, no figures or guidance to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029669,
+   "duration_ms": 2682
+  },
+  "0001065280-26-000139": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.7,
+   "reason": "New $25B buyback authorization, large versus $6.8B remaining, signals confidence and shareholder return commitment.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.026891,
+   "duration_ms": 2369
+  },
+  "0001213900-26-047158": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine board transition tied to already-disclosed merger; no disagreement, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.034223,
+   "duration_ms": 2417
+  },
+  "0000050863-26-000077": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Boilerplate 8-K cover only; press release financials not included, no basis for direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033764,
+   "duration_ms": 2944
+  },
+  "0001046179-26-000205": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine monthly disclosure of insider shareholdings, bond issuance, and asset activity; no material new information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.062028,
+   "duration_ms": 2776
+  },
+  "0000050863-26-000083": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Chief Accounting Officer resignation for career opportunity; CFO assumes role; routine transition, no red flags disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025894,
+   "duration_ms": 2319
+  },
+  "0001104659-26-048546": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine next day disclosure return filing on share movements; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031111,
+   "duration_ms": 2369
+  },
+  "0001193125-26-178994": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest common-stock dilution funding BTC buys, no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.045043,
+   "duration_ms": 2244
+  },
+  "0001104659-26-049424": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "HKEX approval advances proposed spin-off, a value-unlocking milestone, though largely a procedural step in known plan.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03542,
+   "duration_ms": 3965
+  },
+  "0001045810-26-000026": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine CAO retirement with orderly transition and experienced successor; not material to stock direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.037744,
+   "duration_ms": 2727
+  },
+  "0001783879-26-000061": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K only references earnings press release; no financial figures included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030366999999999995,
+   "duration_ms": 2467
+  },
+  "0001104659-26-050679": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine announcement of board meeting date; no material financial or business information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027792,
+   "duration_ms": 2043
+  },
+  "0001652044-26-000043": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no actual results or figures included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029443,
+   "duration_ms": 2680
+  },
+  "0001193125-26-191457": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Earnings 8-K cover only; press release results not included, no financial data to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029517,
+   "duration_ms": 2637
+  },
+  "0001628280-26-028364": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no financial figures included, press release exhibit not provided, direction indeterminable.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033974,
+   "duration_ms": 3306
+  },
+  "0001018724-26-000012": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "8-K cover only; no earnings figures included, so direction cannot be judged from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031765,
+   "duration_ms": 2881
+  },
+  "0000059478-26-000043": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Boilerplate 8-K cover only; press release exhibit content absent, no results disclosed to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030478,
+   "duration_ms": 2954
+  },
+  "0001193125-26-197845": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine registered senior notes issuance closing; debt offering already announced, immaterial to 24-hour equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.053918,
+   "duration_ms": 2595
+  },
+  "0001628280-26-028879": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "New $6 billion buyback funded by operating cash flow is materially positive; earnings details absent.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042965,
+   "duration_ms": 5284
+  },
+  "0001874178-26-000033": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.45,
+   "reason": "Achieved VW testing milestones, received $1.0B investment; earnings figures absent, dilution offset by cash infusion.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.059639,
+   "duration_ms": 6153
+  },
+  "0000320193-26-000011": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "8-K references earnings press release but contains no financial figures; direction cannot be judged from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027944,
+   "duration_ms": 2661
+  },
+  "0001193125-26-199155": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine monthly preferred dividend declaration, rate maintained at 11.50%; immaterial to common stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051653000000000004,
+   "duration_ms": 2027
+  },
+  "0001193125-26-202611": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC update; no bitcoin purchased, modest $82M share sales, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04953599999999999,
+   "duration_ms": 3666
+  },
+  "0001193125-26-202468": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.6,
+   "reason": "Acquirer stock typically falls on large unsolicited cash-and-stock bid; dilution and premium risk for GameStop.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.075802,
+   "duration_ms": 5902
+  },
+  "0001321655-26-000026": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Shell 8-K announcing earnings release; no financial figures or guidance included to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032016,
+   "duration_ms": 2546
+  },
+  "0001193125-26-204128": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine completion of pre-announced senior notes offering; no new material information for equity.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.058093,
+   "duration_ms": 3183
+  },
+  "0001874178-26-000039": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Milestone-triggered $300M investment under pre-announced agreement; positive execution offset by expected dilution, largely routine.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.046830000000000004,
+   "duration_ms": 6134
+  },
+  "0001628280-26-030530": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "8-K shell only; no financial figures or guidance included, direction indeterminable from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032577999999999996,
+   "duration_ms": 2647
+  },
+  "0001679788-26-000049": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.35,
+   "reason": "Layoff signals cost discipline but cites weak market conditions; mixed signal, typically ambiguous 24-hour reaction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.051017,
+   "duration_ms": 6437
+  },
+  "0000002488-26-000072": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Boilerplate 8-K earnings announcement; no actual financial figures or guidance included in filing text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035321,
+   "duration_ms": 3177
+  },
+  "0001050446-26-000024": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Earnings 8-K shell without exhibit content; no actual results disclosed, only boilerplate. Routine and ambiguous.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06332399999999999,
+   "duration_ms": 3568
+  },
+  "0001552781-26-000302": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "Confirmed acquisition proposal typically lifts target stock, though bidder credibility and prior-day press release temper conviction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.041849000000000004,
+   "duration_ms": 6501
+  },
+  "0001104659-26-056231": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine monthly HKEX share capital return; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031039999999999998,
+   "duration_ms": 2444
+  },
+  "0001819994-26-000027": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K shell only; press release contents not included, no financial figures to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029261,
+   "duration_ms": 3110
+  },
+  "0001769628-26-000220": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Earnings 8-K shell only; press release financial details not included, so direction is indeterminable.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030458000000000002,
+   "duration_ms": 2907
+  },
+  "0001679788-26-000053": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine 8-K furnishing earnings presentation; no financial figures or directional content in text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033534,
+   "duration_ms": 2961
+  },
+  "0000059478-26-000048": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting voting results; no material business, financial, or strategic information disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038561,
+   "duration_ms": 2896
+  },
+  "0001883685-26-000019": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Shell 8-K announcing earnings release; no actual results included, direction indeterminable from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.02953,
+   "duration_ms": 3046
+  },
+  "0001753926-26-000799": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine resale prospectus supplement for previously announced acquisition shares; small share count, no new material information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.031148000000000002,
+   "duration_ms": 2181
+  },
+  "0001046179-26-000213": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine monthly revenue report; solid 17.5% YoY growth but decelerating vs YTD, slight MoM decline.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.083908,
+   "duration_ms": 4698
+  },
+  "0001045810-26-000028": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine director appointment with standard compensation; no material impact on business or outlook.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029767,
+   "duration_ms": 2085
+  },
+  "0001783879-26-000065": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.45,
+   "reason": "Abrupt same-day CTO separation without cause, no successor named; sudden executive exits are modestly negative signals.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031313,
+   "duration_ms": 4222
+  },
+  "0001876042-26-000148": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "$222M ARC token presale led by a16z at $3B valuation validates Arc network; earnings details absent",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050615,
+   "duration_ms": 5015
+  },
+  "0001193125-26-215754": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine weekly ATM and bitcoin purchase update; small $43M buy, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.047270000000000006,
+   "duration_ms": 5445
+  },
+  "0001193125-26-216986": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine closing of previously announced debt offering; immaterial to equity for mega-cap issuer.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.048993999999999996,
+   "duration_ms": 2270
+  },
+  "0001773751-26-000074": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Cover 8-K only; press release financials not included, so results direction is unknowable from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030365,
+   "duration_ms": 2543
+  },
+  "0001193125-26-219708": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine director appointment with standard compensation; no financial or strategic material impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03888699999999999,
+   "duration_ms": 2181
+  },
+  "0001046179-26-000274": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine board resolutions ratifying already-reported Q1 results, dividend, and planned capex; no new material surprise.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.075116,
+   "duration_ms": 5866
+  },
+  "0001213900-26-055511": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine supplemental disclosures for previously announced merger; risk factors and financials, no new material news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.061707000000000005,
+   "duration_ms": 3316
+  },
+  "0001552781-26-000322": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.45,
+   "reason": "Board response framing implies rejection of GameStop bid, questioning financing; deal premium likely unwinds.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.059426999999999994,
+   "duration_ms": 9362
+  },
+  "0001104659-26-060224": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Cover page only announces earnings release; no financial figures provided to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030438000000000003,
+   "duration_ms": 2805
+  },
+  "0001970622-26-000034": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine earnings 8-K shell; press release contents not provided, no financial data to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027764999999999998,
+   "duration_ms": 2187
+  },
+  "0001193125-26-224155": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine director appointment with standard compensation; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029608999999999996,
+   "duration_ms": 2247
+  },
+  "0001193125-26-224694": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine mini-tender advisory covering under 0.07% of shares; immaterial to stock direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030130999999999998,
+   "duration_ms": 2597
+  },
+  "0001046179-26-000278": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine 6-K attaching already-reported Q1 statements; no new figures in filing text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036856,
+   "duration_ms": 3509
+  },
+  "0001046179-26-000280": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Small non-core stake sale; immaterial to TSMC's market cap; strategic relations unchanged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.047609,
+   "duration_ms": 2912
+  },
+  "0000050863-26-000118": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting voting results; all outcomes as expected, no material stock-moving information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.042997999999999995,
+   "duration_ms": 2462
+  },
+  "0001193125-26-226746": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine credit facility refinancing, commercial paper increase, and annual meeting items; no material price-moving news.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.058988,
+   "duration_ms": 2873
+  },
+  "0001193125-26-225361": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.55,
+   "reason": "Funding note buyback via ATM dilution and possible bitcoin sales breaks core hold-bitcoin narrative; mildly negative.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.077891,
+   "duration_ms": 11536
+  },
+  "0001104659-26-062556": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting voting results; all proposals passed with no surprises or material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035325,
+   "duration_ms": 2309
+  },
+  "0001628280-26-035605": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine post-IPO administrative filing; charter amendments and offering completion already disclosed in prospectus.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.040105,
+   "duration_ms": 3115
+  },
+  "0001193125-26-227918": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC purchase disclosure; expected cadence, mostly preferred issuance, immaterial common dilution.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.05054,
+   "duration_ms": 3463
+  },
+  "0001876042-26-000159": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting voting results; all proposals passed as expected, no material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.047745,
+   "duration_ms": 2163
+  },
+  "0001769628-26-000236": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine capex debt financing; fifth DDTL facility, expected pattern, mixed leverage vs. demand signal.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07566399999999998,
+   "duration_ms": 7038
+  },
+  "0001193125-26-229749": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.55,
+   "reason": "Convertible notes offering implies dilution and hedge-related selling pressure, typically negative near-term.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03893099999999999,
+   "duration_ms": 4979
+  },
+  "0001045810-26-000051": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no financial figures included, so no directional signal from text itself.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.032208,
+   "duration_ms": 2772
+  },
+  "0001193125-26-232707": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine completion of pre-announced debt offering funding known acquisition; not materially directional for equity.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.062738,
+   "duration_ms": 2603
+  },
+  "0001585521-26-000069": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Shell 8-K announcing earnings press release; no financial figures or guidance included in text.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.027568000000000002,
+   "duration_ms": 2289
+  },
+  "0001819994-26-000045": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.65,
+   "reason": "$3 billion at-the-market equity offering signals significant dilution, typically pressuring shares near term.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.066836,
+   "duration_ms": 3538
+  },
+  "0001819994-26-000048": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all proposals passed as expected, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.034175000000000004,
+   "duration_ms": 2052
+  },
+  "0001193125-26-234488": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine debt offering closing; yen notes issuance immaterial to Alphabet equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04148,
+   "duration_ms": 2919
+  },
+  "0001104659-26-065716": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine Hong Kong next day disclosure return on share movements; administrative, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031463,
+   "duration_ms": 2147
+  },
+  "0001104659-26-065717": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all directors elected, proposals rejected as expected; immaterial to price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.047596000000000006,
+   "duration_ms": 2428
+  },
+  "0001046179-26-000292": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine monthly 6-K disclosure of shareholdings, pledges, and minor asset transactions; no material news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.041152,
+   "duration_ms": 2219
+  },
+  "0001193125-26-234847": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Closing of convertible notes issuance; dilution impact priced at earlier announcement, this 8-K is routine documentation.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.075504,
+   "duration_ms": 7454
+  },
+  "0001193125-26-237907": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly update: no ATM sales, no bitcoin purchases, standard holdings disclosure; nothing materially new.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038069,
+   "duration_ms": 2478
+  },
+  "0001046179-26-000294": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine miniscule dividend per-share adjustment due to share count change; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036557,
+   "duration_ms": 2258
+  },
+  "0001835632-26-000014": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K references earnings press release but contains no financial figures; direction cannot be judged from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036977,
+   "duration_ms": 2818
+  },
+  "0000909832-26-000046": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; no earnings figures included, so direction cannot be judged from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027261000000000004,
+   "duration_ms": 3643
+  },
+  "0001104659-26-067190": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine administrative 6-K covering dividend distribution logistics; no new material financial information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029317999999999997,
+   "duration_ms": 4242
+  },
+  "0001104659-26-068267": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine internal reassignment of principal accounting officer role; no departures, compensation changes, or disagreements disclosed.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.027408000000000002,
+   "duration_ms": 2508
+  },
+  "0001628280-26-039193": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all outcomes as expected, no material surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06221299999999999,
+   "duration_ms": 2181
+  },
+  "0001104659-26-068512": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine 6-K reporting equity award grants under 2024 Plan; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.028156,
+   "duration_ms": 2060
+  },
+  "0001193125-26-249535": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine convertible note exchange; minimal incremental dilution (~0.8M shares), no cash impact, capital structure cleanup.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.045287999999999995,
+   "duration_ms": 7079
+  },
+  "0001773751-26-000091": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine credit amendment and closing of previously announced acquisition; largely priced in, no new material terms.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04686399999999999,
+   "duration_ms": 3821
+  },
+  "0001193125-26-249768": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.6,
+   "reason": "Strategy sold BTC to fund preferred dividends, breaking never-sell narrative; no purchases, continued ATM dilution.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.084586,
+   "duration_ms": 7233
+  },
+  "0001213900-26-063832": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "Major expansion: 800,000 sq ft magnet facility, $800M planned investment, county incentives signal growth commitment.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.126636,
+   "duration_ms": 6852
+  },
+  "0001326380-26-000020": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "New $2.0 billion share repurchase authorization is materially positive; earnings details absent but buyback signals confidence.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.09787,
+   "duration_ms": 4129
+  },
+  "0001213900-26-064453": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.65,
+   "reason": "Definitive $1.6B DOC funding agreements signed, converting prior non-binding LOI; secures project financing.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.132601,
+   "duration_ms": 6708
+  },
+  "0001783879-26-000068": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting voting results; all proposals passed as expected, no material information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.039479999999999994,
+   "duration_ms": 2093
+  },
+  "0001104659-26-070103": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine monthly return on share capital movements per HK listing rules; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03139,
+   "duration_ms": 2343
+  },
+  "0001730168-26-000051": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Earnings press release content not included; only routine dividend declaration and exhibit references, no actionable numbers.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030883,
+   "duration_ms": 2660
+  },
+  "0001046179-26-000302": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine annual shareholders' meeting resolutions acknowledging known 2025 results; no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.043394,
+   "duration_ms": 2364
+  },
+  "0001193125-26-257724": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.7,
+   "reason": "Massive dilution: $40B ATM program plus ~$18B underwritten stock offering plus mandatory convertible preferred issuance.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.071376,
+   "duration_ms": 4959
+  },
+  "0001213900-26-065498": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine supplemental pro forma financials for previously disclosed merger; no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.058371,
+   "duration_ms": 3800
+  },
+  "0001970622-26-000045": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting vote results; directors elected and auditor ratified as expected, no material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038066,
+   "duration_ms": 2444
+  },
+  "0001193125-26-258667": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine director departure with no disagreement; immaterial to Microsoft's stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.024357000000000004,
+   "duration_ms": 2347
+  },
+  "0001819994-26-000056": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine CAO appointment; CFO retained; no departure of key executives; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042229,
+   "duration_ms": 2494
+  },
+  "0001652044-26-000059": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine internal promotion of controller to Principal Accounting Officer; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.027695,
+   "duration_ms": 2317
+  },
+  "0001065280-26-000189": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results and expected chairman appointment; no material financial or strategic news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.048321,
+   "duration_ms": 6872
+  },
+  "0001193125-26-261038": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine administrative change to preferred dividend payment frequency; immaterial to common stock.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.02483,
+   "duration_ms": 2237
+  },
+  "0001193125-26-260709": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM and bitcoin purchase update; modest 1,550 BTC buy, no material surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.054916,
+   "duration_ms": 4135
+  },
+  "0001104659-26-071542": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.7,
+   "reason": "Announced inclusion on CMC (Chinese Military Companies) list; materially negative regulatory and sentiment risk.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.040479,
+   "duration_ms": 5490
+  },
+  "0001104659-26-071581": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "Voluntary pre-market disclosure of strong month-over-month growth in Predictions volume signals positive momentum.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033969,
+   "duration_ms": 4839
+  },
+  "0001321655-26-000033": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting vote results; all outcomes as expected, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.052500000000000005,
+   "duration_ms": 2824
+  },
+  "0001104659-26-071845": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine independent director appointment with standard compensation; no material impact on stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033989000000000005,
+   "duration_ms": 3416
+  },
+  "0001046179-26-000367": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine monthly revenue report; 30% YoY growth strong but in line with year-to-date trend, no surprise.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.092055,
+   "duration_ms": 7114
+  },
+  "0001193125-26-265108": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all proposals passed as expected, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038894,
+   "duration_ms": 2333
+  },
+  "0001104659-26-072140": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine credit facility for general corporate purposes; standard financing, no financial covenants, immaterial for mega-cap stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050658,
+   "duration_ms": 2477
+  },
+  "0001193125-26-265848": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Earnings 8-K without press release numbers; routine dividend declaration; no material content to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032152,
+   "duration_ms": 3647
+  },
+  "0001193125-26-265877": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine revolving credit facility refinancing replacing existing agreement; no material impact on stock direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.05042100000000001,
+   "duration_ms": 2746
+  },
+  "0001769628-26-000270": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting voting results; all proposals passed as expected, no material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.043058000000000006,
+   "duration_ms": 2021
+  },
+  "0001769628-26-000278": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine $3.5B senior notes offering for refinancing; non-dilutive debt raise, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.049755,
+   "duration_ms": 3343
+  },
+  "0001193125-26-266777": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine debt tender offer announcement; liability management is immaterial to equity direction.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.02193,
+   "duration_ms": 2121
+  },
+  "0001193125-26-267514": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.35,
+   "reason": "Swapping Sandisk stake for WDC shares retires stock, an accretive buyback, though transaction size appears modest",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.044624,
+   "duration_ms": 7918
+  },
+  "0001193125-26-267578": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all outcomes as expected, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.066363,
+   "duration_ms": 2059
+  },
+  "0001193125-26-267688": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.55,
+   "reason": "CFO resignation offset by immediate, highly credentialed successor; orderly transition signals neutral net impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.077939,
+   "duration_ms": 7962
+  },
+  "0001193125-26-269594": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine investment-grade debt offering for general corporate purposes; not materially positive or negative for equity.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.044031,
+   "duration_ms": 2271
+  },
+  "0001104659-26-073562": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine registered debt offering closing; standard financing activity, immaterial to equity direction for mega-cap issuer.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.052248,
+   "duration_ms": 4170
+  },
+  "0001213900-26-068491": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine proxy amendment disclosing updated pro forma financials for already-announced merger; no new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.060620999999999994,
+   "duration_ms": 4061
+  },
+  "0001876042-26-000192": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine board refreshment; director resignation with no disagreement, successor named immediately, immaterial to stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.028325000000000003,
+   "duration_ms": 2710
+  },
+  "0001193125-26-270311": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.65,
+   "reason": "Routine weekly ATM/BTC purchase update; modest $100M buy, no new material developments.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.059767,
+   "duration_ms": 5013
+  },
+  "0001193125-26-270366": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine administrative change to preferred dividend frequency; no change to rates or obligations; immaterial to common stock.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.058603,
+   "duration_ms": 2150
+  },
+  "0001628280-26-043169": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting results; all proposals passed as expected, no material information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.02988,
+   "duration_ms": 2239
+  },
+  "0001773751-26-000096": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting vote results; all proposals passed as expected, no material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.039434000000000004,
+   "duration_ms": 2136
+  },
+  "0001783879-26-000071": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "Cost discipline layoff plus disclosed record June trading volumes; small charges; reads as margin-positive from strength.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.046440999999999996,
+   "duration_ms": 6566
+  },
+  "0001104659-26-074352": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Closing of acquisition is routine confirmation; no terms or financial details disclosed, likely already priced in.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03939,
+   "duration_ms": 10882
+  },
+  "0001193125-26-272720": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine investment-grade senior notes offering under shelf registration; standard terms, immaterial to equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.065336,
+   "duration_ms": 2063
+  },
+  "0001571996-26-000032": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine Class B to C share conversion by Silver Lake; no economic dilution or new material information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035413,
+   "duration_ms": 2460
+  },
+  "0001193125-26-274928": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine furnishing of Hong Kong annual and ESG reports; no new material financial information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033394,
+   "duration_ms": 2364
+  },
+  "0001193125-26-275077": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine debt tender offer pricing and results; liability management is immaterial to equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.025373000000000003,
+   "duration_ms": 2691
+  },
+  "0001193125-26-275783": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine closing of already-announced debt offering; terms disclosed days earlier, immaterial to 24-hour price direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.062858,
+   "duration_ms": 4756
+  },
+  "0001065088-26-000135": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual meeting voting results; all outcomes as expected, no material stock impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.044817,
+   "duration_ms": 3703
+  },
+  "0001104659-26-075717": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine convertible note conversion rate adjustment; administrative, not materially price-moving.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030576000000000002,
+   "duration_ms": 3765
+  },
+  "0001679788-26-000075": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all directors elected and auditor ratified as expected; immaterial.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.039726,
+   "duration_ms": 2316
+  },
+  "0001213900-26-070213": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine general counsel separation with standard severance terms; not material to operations or financials.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.041527,
+   "duration_ms": 2093
+  },
+  "0001769628-26-000291": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Completion of previously announced debt offering; largely priced in, though high coupons note funding costs.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06806000000000001,
+   "duration_ms": 5642
+  },
+  "0001193125-26-276717": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine weekly ATM/BTC update; small purchase, expected disclosure, no material surprise.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.063557,
+   "duration_ms": 5556
+  },
+  "0001783879-26-000074": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.55,
+   "reason": "$2.0B convertible notes pricing implies dilution and arbitrage hedging pressure, typically negative near-term.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.038185,
+   "duration_ms": 7269
+  },
+  "0000051143-26-000061": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine one-year extension of existing credit facilities, terms unchanged; immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.048459,
+   "duration_ms": 2082
+  },
+  "0001193125-26-279498": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine realization-activity estimate; press release figures not included, so materiality and direction are unknowable.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031516,
+   "duration_ms": 3326
+  },
+  "0001326380-26-000029": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Governance housekeeping; withdrawn CEO award proposal is ambiguous, no clear near-term earnings or valuation impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030194,
+   "duration_ms": 3617
+  },
+  "0001628280-26-044941": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "8-K shell only announces earnings release; no financial figures or guidance included to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029190999999999998,
+   "duration_ms": 2728
+  },
+  "0001104659-26-077071": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Stock-funded acquisition with ~1.7% dilution; strategic value undisclosed, ambiguous near-term impact for mega-cap.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.049453000000000004,
+   "duration_ms": 5921
+  },
+  "0000723125-26-000013": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K wrapper only; no earnings figures or guidance included, so direction cannot be judged.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030384,
+   "duration_ms": 2802
+  },
+  "0001046179-26-000377": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine monthly disclosure of insider shareholdings, capex approvals, and bond issuances; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.050883,
+   "duration_ms": 3044
+  },
+  "0001070235-26-000074": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all proposals passed as expected, no material surprises.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042332,
+   "duration_ms": 2181
+  },
+  "0001070235-26-000071": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Shell 8-K announcing earnings release; no financial figures or guidance included to assess direction.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.02684,
+   "duration_ms": 3075
+  },
+  "0001628280-26-045564": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine annual meeting results and unchanged $0.06 quarterly dividend; no material new information.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.042120000000000005,
+   "duration_ms": 2067
+  },
+  "0001104659-26-078252": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine administrative filing of Hong Kong next day disclosure returns; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.039088000000000005,
+   "duration_ms": 2490
+  },
+  "0001783879-26-000077": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Closing of previously announced convertible offering; favorable 0% coupon and 65% premium already priced in.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.06456699999999999,
+   "duration_ms": 6380
+  },
+  "0001783879-26-000083": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine principal accounting officer appointment; CFO retained; no departure or negative signal.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.03933,
+   "duration_ms": 2540
+  },
+  "0001104659-26-078269": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine Reg FD notice designating a social media channel; no material business information disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.026246,
+   "duration_ms": 4098
+  },
+  "0001874178-26-000045": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all proposals passed as expected, no material stock-moving information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035003,
+   "duration_ms": 2148
+  },
+  "0001193125-26-285672": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine executive compensation arrangements for existing officers; no departures, guidance, or material business news.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.05628799999999999,
+   "duration_ms": 5156
+  },
+  "0001326380-26-000035": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.7,
+   "reason": "Guidance of $600M+ adjusted EBITDA nearly doubles prior year's $345.4M, materially positive surprise.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.061507,
+   "duration_ms": 3508
+  },
+  "0001193125-26-286871": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.5,
+   "reason": "BTC monetization program breaks no-sell thesis; framework signals preferred-dividend stress despite buyback authorizations.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.096555,
+   "duration_ms": 14112
+  },
+  "0001753926-26-001085": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.65,
+   "reason": "Rocket Lab is the acquirer; large cash-and-stock Iridium deal implies dilution and integration risk, typically pressuring acquirer shares.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.071851,
+   "duration_ms": 4956
+  },
+  "0001045810-26-000056": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine annual meeting vote results; all outcomes as expected, no material price-moving information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.055511,
+   "duration_ms": 2245
+  },
+  "0001104659-26-079418": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine shareholder disclosure; FMR's small dip below 5% voting threshold is immaterial to fundamentals.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.057874,
+   "duration_ms": 2721
+  },
+  "0001571996-26-000036": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine annual meeting results and pre-approved Texas redomestication; governance change, not materially price-moving.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.063242,
+   "duration_ms": 3129
+  },
+  "0001046179-26-000381": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine subsidiary treasurer change; administrative personnel matter, immaterial to stock price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032774,
+   "duration_ms": 2152
+  },
+  "0000002488-26-000115": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine annual executive compensation adjustments and equity grants; no material business or leadership change.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.06182,
+   "duration_ms": 2480
+  },
+  "0001773751-26-000146": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine receivables financing facility and credit agreement amendment; standard liquidity management, not materially directional.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04749699999999999,
+   "duration_ms": 2427
+  },
+  "0001628280-26-046717": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Shell 8-K only; press release contents absent, no financial data to assess direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.028982,
+   "duration_ms": 3564
+  },
+  "0001874178-26-000048": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Announces quarterly production/delivery release but no actual figures included; direction cannot be judged from text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030426,
+   "duration_ms": 2977
+  },
+  "0001045810-26-000060": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Planned sales EVP retirement with orderly succession by experienced Microsoft hire; routine, immaterial for NVDA's price.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.040748,
+   "duration_ms": 3724
+  },
+  "0001104659-26-080528": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine next day disclosure returns on share movements; administrative filing, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036481,
+   "duration_ms": 2276
+  },
+  "0001193125-26-295586": {
+   "status": "ok",
+   "direction": "SHORT",
+   "conviction": 0.6,
+   "reason": "Continued forced BTC sales to fund preferred dividends, $8.32B quarterly loss, holdings underwater versus cost basis.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.083076,
+   "duration_ms": 7497
+  },
+  "0001193125-26-295589": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.75,
+   "reason": "New multi-year Apple custom ASIC supply agreements through 2031 signal significant revenue visibility and partnership expansion.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.030237999999999998,
+   "duration_ms": 3637
+  },
+  "0001193125-26-296224": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.8,
+   "reason": "Routine governance bylaw amendment on shareholder proposals; no financial or operational impact expected.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.039205000000000004,
+   "duration_ms": 3038
+  },
+  "0001876042-26-000205": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Small $20.25M second closing of previously disclosed token presale; incremental, not materially price-moving.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.04190200000000001,
+   "duration_ms": 4137
+  },
+  "0001104659-26-081265": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.95,
+   "reason": "Routine monthly HKEX return on share capital movements; no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.031177000000000003,
+   "duration_ms": 2708
+  },
+  "0001326380-26-000038": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine annual meeting results; share authorization increase was pre-disclosed, dilution potential modest and expected.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.056443,
+   "duration_ms": 2930
+  },
+  "0001104659-26-080813": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "Preliminary Q2 revenue up ~19-27% YoY on higher deliveries; cash rose $0.5B quarter-over-quarter.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.073778,
+   "duration_ms": 8184
+  },
+  "0000909832-26-000060": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine quarterly dividend declaration; no change or surprise indicated in filing text.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.023896999999999998,
+   "duration_ms": 2296
+  },
+  "0001104659-26-081988": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.55,
+   "reason": "Dilutive offering already priced July 7; this 8-K is confirmatory, greenshoe fully exercised signals demand",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.07711,
+   "duration_ms": 12918
+  },
+  "0001628280-26-047734": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.55,
+   "reason": "Firm, specific pre-market rebuttal of short-seller report with supply-chain detail likely supports a relief bounce.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.042136,
+   "duration_ms": 6058
+  },
+  "0001193125-26-299667": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.75,
+   "reason": "Routine CLO departure with orderly transition, internal successor, and advisory agreement; not materially price-moving.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.032114000000000004,
+   "duration_ms": 2824
+  },
+  "0001104659-26-082180": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.9,
+   "reason": "Routine managers' transaction notifications and treasury share updates; no material business or financial information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.070824,
+   "duration_ms": 2922
+  },
+  "0001104659-26-082293": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine closing of registered debt offering; already announced at pricing, immaterial to equity direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.061753,
+   "duration_ms": 2439
+  },
+  "0001193125-26-299843": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Routine legal opinion filing for shelf prospectus supplement; no deal terms, size, or use disclosed.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.026675,
+   "duration_ms": 2704
+  },
+  "0001104659-26-082647": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine Hong Kong next day disclosure returns on share movements; administrative filing, no material new information.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.036706,
+   "duration_ms": 2407
+  },
+  "0001104659-26-082674": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Routine shareholder disclosure; FMR stake dipped below 5% threshold, minor change, no material impact.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.057888,
+   "duration_ms": 3018
+  },
+  "0001193125-26-301483": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.6,
+   "reason": "Routine weekly update; $467M ATM dilution with no BTC purchases is mildly negative but largely expected",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.062381000000000006,
+   "duration_ms": 5897
+  },
+  "0001046179-26-000447": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.65,
+   "reason": "June revenue up 67.9% YoY and 6.2% MoM, sharply accelerating versus 35.6% H1 growth.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.083783,
+   "duration_ms": 4705
+  },
+  "0000051143-26-000070": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Cover 8-K only; exhibit with actual results not included, no directional financial data provided.",
+   "model": [
+    "claude-fable-5"
+   ],
+   "cost_usd": 0.03465,
+   "duration_ms": 2659
+  },
+  "0001046179-26-000451": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Cover page only; earnings exhibits referenced but no financial results included to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.035435999999999995,
+   "duration_ms": 3562
+  },
+  "0001628280-26-048235": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.7,
+   "reason": "Q2 results with explicitly raised 2026 sales and gross margin outlook; materially positive guidance increase.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.044415,
+   "duration_ms": 3718
+  },
+  "0001493152-26-033457": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "8-K merely furnishes a press release; exhibit content absent, so no material information to assess.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.039519000000000006,
+   "duration_ms": 3339
+  },
+  "0001065280-26-000211": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.85,
+   "reason": "Boilerplate 8-K cover only; no actual results or guidance figures included to judge direction.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.033225,
+   "duration_ms": 2746
+  },
+  "0001104659-26-084452": {
+   "status": "ok",
+   "direction": "LONG",
+   "conviction": 0.6,
+   "reason": "$775M non-dilutive secured financing at attractive SOFR+2.50% funds AI cloud buildout; validates asset-backed strategy.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.057526999999999995,
+   "duration_ms": 4873
+  },
+  "0001213900-26-078760": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "Procedural merger amendment and updated proxy pro formas; no new economics, routine deal-process disclosure.",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.067498,
+   "duration_ms": 8265
+  },
+  "0001773751-26-000149": {
+   "status": "ok",
+   "direction": "SKIP",
+   "conviction": 0.7,
+   "reason": "CAO resignation with orderly transition, no dispute, advisory agreement; routine and immaterial",
+   "model": [
+    "claude-fable-5",
+    "claude-haiku-4-5-20251001"
+   ],
+   "cost_usd": 0.029856,
+   "duration_ms": 6106
+  }
+ },
+ "scores": {
+  "n_events": 308,
+  "n_llm_ok": 308,
+  "n_unscored": 0,
+  "unscored": [],
+  "skip_by_form": {
+   "8-K": {
+    "n": 257,
+    "skip_rate": 0.8326848249027238
+   },
+   "6-K": {
+    "n": 51,
+    "skip_rate": 0.8627450980392157
+   }
+  },
+  "conviction_mean_by_dir": {
+   "LONG": 0.6125,
+   "SHORT": 0.575,
+   "SKIP": 0.80984496124031
+  },
+  "cells": {
+   "ALL": {
+    "label": "all scored",
+    "n_llm_scored": 308,
+    "n_signed": 50,
+    "n_skip": 258,
+    "skip_rate": 0.8376623376623377,
+    "n_long": 32,
+    "n_short": 18,
+    "1h": {
+     "n": 50,
+     "ev_net": -0.005752874516347295,
+     "win_rate": 0.28,
+     "null_mean": -0.0030772585333876624,
+     "p_perm": 0.19740129935032483
+    },
+    "4h": {
+     "n": 50,
+     "ev_net": -0.009840099256647443,
+     "win_rate": 0.3,
+     "null_mean": -0.002416839687895171,
+     "p_perm": 0.06946526736631684
+    },
+    "24h": {
+     "n": 50,
+     "ev_net": -0.0062980236516352525,
+     "win_rate": 0.4,
+     "null_mean": -0.003572699087516086,
+     "p_perm": 0.3698150924537731
+    }
+   },
+   "PRE_CUTOFF": {
+    "label": "acc < 2026-02-01 (CONTAMINATED upper bound)",
+    "n_llm_scored": 25,
+    "n_signed": 1,
+    "n_skip": 24,
+    "skip_rate": 0.96,
+    "n_long": 1,
+    "n_short": 0,
+    "1h": {
+     "n": 1
+    },
+    "4h": {
+     "n": 1
+    },
+    "24h": {
+     "n": 1
+    }
+   },
+   "POST_CUTOFF": {
+    "label": "acc >= 2026-02-01 (VERDICT cell)",
+    "n_llm_scored": 283,
+    "n_signed": 49,
+    "n_skip": 234,
+    "skip_rate": 0.8268551236749117,
+    "n_long": 31,
+    "n_short": 18,
+    "1h": {
+     "n": 49,
+     "ev_net": -0.005838496491283211,
+     "win_rate": 0.2857142857142857,
+     "null_mean": -0.0031429360809898973,
+     "p_perm": 0.20839580209895053
+    },
+    "4h": {
+     "n": 49,
+     "ev_net": -0.009901957631633247,
+     "win_rate": 0.30612244897959184,
+     "null_mean": -0.002511823059556983,
+     "p_perm": 0.07896051974012994
+    },
+    "24h": {
+     "n": 49,
+     "ev_net": -0.0045269713144729965,
+     "win_rate": 0.40816326530612246,
+     "null_mean": -0.0030025918600389504,
+     "p_perm": 0.4237881059470265
+    }
+   },
+   "POST_H1": {
+    "label": "post-cutoff first half",
+    "n_llm_scored": 141,
+    "n_signed": 26,
+    "n_skip": 115,
+    "skip_rate": 0.8156028368794326,
+    "n_long": 18,
+    "n_short": 8,
+    "1h": {
+     "n": 26,
+     "ev_net": -0.0050783789060163355,
+     "win_rate": 0.23076923076923078,
+     "null_mean": -0.001955061768772921,
+     "p_perm": 0.2193903048475762
+    },
+    "4h": {
+     "n": 26,
+     "ev_net": -0.006984553688474745,
+     "win_rate": 0.38461538461538464,
+     "null_mean": -0.002484794357107338,
+     "p_perm": 0.26286856571714146
+    },
+    "24h": {
+     "n": 26,
+     "ev_net": 0.006470856712343808,
+     "win_rate": 0.5,
+     "null_mean": 0.0012658246363835817,
+     "p_perm": 0.3553223388305847
+    }
+   },
+   "POST_H2": {
+    "label": "post-cutoff second half",
+    "n_llm_scored": 142,
+    "n_signed": 23,
+    "n_skip": 119,
+    "skip_rate": 0.8380281690140845,
+    "n_long": 13,
+    "n_short": 10,
+    "1h": {
+     "n": 23,
+     "ev_net": -0.006697759848541417,
+     "win_rate": 0.34782608695652173,
+     "null_mean": -0.0032821421167484265,
+     "p_perm": 0.26486756621689156
+    },
+    "4h": {
+     "n": 23,
+     "ev_net": -0.013199892523899377,
+     "win_rate": 0.21739130434782608,
+     "null_mean": -0.0025574567251612787,
+     "p_perm": 0.12693653173413294
+    },
+    "24h": {
+     "n": 23,
+     "ev_net": -0.016959298649135472,
+     "win_rate": 0.30434782608695654,
+     "null_mean": -0.004454782543867489,
+     "p_perm": 0.14442778610694654
+    }
+   },
+   "POST_8K": {
+    "label": "post-cutoff 8-K only (diagnostic)",
+    "n_llm_scored": 232,
+    "n_signed": 42,
+    "n_skip": 190,
+    "skip_rate": 0.8189655172413793,
+    "n_long": 25,
+    "n_short": 17,
+    "1h": {
+     "n": 42,
+     "ev_net": -0.006709501696130945,
+     "win_rate": 0.30952380952380953,
+     "null_mean": -0.0031700930537295557,
+     "p_perm": 0.17391304347826086
+    },
+    "4h": {
+     "n": 42,
+     "ev_net": -0.01210540387373356,
+     "win_rate": 0.30952380952380953,
+     "null_mean": -0.0026609327245234802,
+     "p_perm": 0.06096951524237881
+    },
+    "24h": {
+     "n": 42,
+     "ev_net": -0.004981587931289047,
+     "win_rate": 0.40476190476190477,
+     "null_mean": -0.002681627141844672,
+     "p_perm": 0.4032983508245877
+    }
+   },
+   "POST_ITEMS": {
+    "label": "post-cutoff items 1.01/2.02/8.01 (diagnostic)",
+    "n_llm_scored": 155,
+    "n_signed": 33,
+    "n_skip": 122,
+    "skip_rate": 0.7870967741935484,
+    "n_long": 18,
+    "n_short": 15,
+    "1h": {
+     "n": 33,
+     "ev_net": -0.006080720352053032,
+     "win_rate": 0.3939393939393939,
+     "null_mean": -0.00258525734240786,
+     "p_perm": 0.23938030984507747
+    },
+    "4h": {
+     "n": 33,
+     "ev_net": -0.013092559062960219,
+     "win_rate": 0.36363636363636365,
+     "null_mean": -0.0024727352410955335,
+     "p_perm": 0.0769615192403798
+    },
+    "24h": {
+     "n": 33,
+     "ev_net": -0.006462190367106572,
+     "win_rate": 0.3939393939393939,
+     "null_mean": -0.002378007982474204,
+     "p_perm": 0.3868065967016492
+    }
+   },
+   "POST_CONV60": {
+    "label": "post-cutoff conviction >= 0.6 (diagnostic)",
+    "n_llm_scored": 28,
+    "n_signed": 28,
+    "n_skip": 0,
+    "skip_rate": 0.0,
+    "n_long": 19,
+    "n_short": 9,
+    "1h": {
+     "n": 28,
+     "ev_net": -0.006097175400774854,
+     "win_rate": 0.2857142857142857,
+     "null_mean": -0.003968682070858099,
+     "p_perm": 0.33383308345827084
+    },
+    "4h": {
+     "n": 28,
+     "ev_net": -0.007408588853345363,
+     "win_rate": 0.35714285714285715,
+     "null_mean": -0.003579139857515713,
+     "p_perm": 0.2993503248375812
+    },
+    "24h": {
+     "n": 28,
+     "ev_net": 0.005511052713490641,
+     "win_rate": 0.4642857142857143,
+     "null_mean": -0.004246252730543208,
+     "p_perm": 0.16941529235382308
+    }
+   }
+  }
+ }
+}

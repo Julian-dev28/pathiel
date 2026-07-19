@@ -1,0 +1,193 @@
+8-K
+
+false00010504460001050446us-gaap:CommonStockMember2026-05-262026-05-260001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2026-05-262026-05-260001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2026-05-262026-05-260001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2026-05-262026-05-2600010504462026-05-262026-05-260001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2026-05-262026-05-26
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): May 26, 2026
+
+STRATEGY INC
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-42509
+
+51-0323571
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+
+22182
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (703) 848-8600
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of Each Class
+
+Trading
+
+Symbol
+
+Name of Each Exchange
+
+on which Registered
+
+10.00% Series A Perpetual Strife Preferred Stock, $0.001 par value per share
+
+STRF
+
+The Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+The Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, $0.001 par value per share
+
+STRK
+
+The Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, $0.001 par value per share
+
+STRD
+
+The Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per share
+
+MSTR
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Events.
+
+ATM and BTC Update
+
+On May 26, 2026, Strategy Inc ("Strategy") announced that, during the period between May 18, 2026 and May 25, 2026, Strategy did not sell any shares under its at-the-market offering program and did not purchase any bitcoin.
+
+As of May 25, 2026, Strategy holds approximately 843,738 bitcoin that were acquired at an aggregate purchase price of $63.87 billion and an average purchase price of approximately $75,700 per bitcoin, inclusive of fees and expenses.
+
+USD Reserve Update
+
+On December 1, 2025, Strategy announced that it established a US dollar reserve (the "USD Reserve"), a management-designated portion of Strategy’s liquidity intended to support the payment of dividends on Strategy’s preferred stock and interest on its outstanding indebtedness.
+
+ 
+
+As of May 25, 2026, the balance of the USD Reserve is $871 million.
+
+Item 7.01 Regulation FD Disclosure.
+
+Capital Structure Update
+
+On May 26, 2026, Strategy issued a press release announcing certain capital structure updates. A copy of the press release is attached and furnished as Exhibit 99.1 to this Current Report on Form 8-K and incorporated by reference into this Item 7.01.
+
+Strategy Dashboard
+
+ 
+
+Strategy also maintains a dashboard on its website (www.strategy.com) as a disclosure channel for providing broad, non-exclusionary distribution of information regarding Strategy to the public, including information regarding market prices of its outstanding securities, bitcoin purchases, sales, and holdings, certain key performance indicator metrics and other supplemental information, and as one means of disclosing non-public information in compliance with its disclosure obligations under Regulation FD. Investors and others are encouraged to regularly review the information that Strategy makes public via the website dashboard.
+
+ 
+
+Furnished Information
+
+The information disclosed pursuant to Item 7.01 in this Current Report on Form 8-K shall not be deemed “filed” for purposes of Section 18 of the Exchange Act, or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+Item 9.01 Financial Statements and Exhibits.
+
+Exhibit
+
+No.
+
+Description
+
+99.1
+
+Press release of Strategy, dated May 26, 2026.
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: May 26, 2026
+
+Strategy Inc
+
+(Registrant)
+
+By:
+
+/s/ Thomas C. Chow
+
+Name:
+
+Thomas C. Chow
+
+Title:
+
+Executive Vice President & General Counsel

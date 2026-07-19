@@ -1,0 +1,192 @@
+false
+0001970622
+
+0001970622
+
+2026-03-09
+2026-03-09
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported):
+March 9, 2026
+
+USA Rare Earth, Inc.
+
+(Exact Name of Registrant as Specified in its
+Charter)
+
+Delaware
+
+001-41711
+
+98-1720278
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+100 W. Airport Road, Stillwater, OK 74075
+
+(Address of Principal Executive Offices) (Zip
+Code)
+
+(813) 867-6155
+
+(Registrant’s telephone number, including
+area code)
+
+Not applicable
+
+(Former Name or Former Address, if Changed Since
+Last Report)
+
+Check the appropriate box below if the Form 8-K
+filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, par value $0.0001
+
+USAR
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant
+is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the
+Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☒
+
+If an emerging growth company, indicate by check
+mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting
+standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02. Departure of Directors
+or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensation Arrangements of Certain Officers.
+
+Resignation of Director; Appointment
+of Director
+
+On March
+9, 2026, Tready Smith resigned from the Board of Directors (the “Board”) of USA Rare Earth, Inc. (the “Company”),
+and the Board subsequently appointed Thomas Caulfield as a director of the Company, filling the vacancy resulting from Ms. Smith’s
+resignation, such that the Board continues to have a total of eight directors serving on the Board. Additionally, the Board appointed
+Dr. Caulfield to serve as a member of the Compensation Committee and the Nominating and Corporate Governance Committee of the Board, effective
+upon his appointment to the Board. Ms. Smith’s resignation did not result from any disagreement with the Company.
+
+Dr. Caulfield is the Executive Chairman of GlobalFoundries
+(Nasdaq: GFS) and previously served, from 2018 to 2025 as the President and Chief Executive Officer of GlobalFoundries. Dr. Caulfield
+also serves as a board member of Sandisk Corp. The Board has determined that Dr. Caulfield qualifies
+as an independent director for service on the Board and the committees to which he was assigned under Nasdaq Listing Rules. Dr. Caulfield
+will participate in the Company’s standard director compensation program as described in the Company's Registration Statement on
+Form S-1, which was filed with the Securities and Exchange Commission on February 3, 2026, except that Dr. Caufield’s compensation
+will be awarded solely in equity and not in cash, unless otherwise elected by Dr. Caufield.
+
+Item 7.01 Regulation FD Disclosure.
+
+On March
+12, 2026, the Company issued a press release announcing both the appointment of Dr. Caufield and resignation of Ms. Smith. A copy of the
+press release is furnished herewith as Exhibit 99.1 and is incorporated by reference herein.
+
+The information
+provided under this Item 7.01 of this Current Report on Form 8-K, including Exhibit 99.1, is “furnished” and shall not be
+deemed “filed” with the SEC or incorporated by reference in any filing under the Securities Exchange Act of 1934, as amended
+(the “Exchange Act”).
+
+Item 8.01. Other Events.
+
+On March
+9, 2026, the Board determined that the date for its 2026 Annual Meeting of Shareholders will be June 3, 2026. The time and other
+meeting details for the 2026 Annual Meeting of Shareholders will be set forth in the Company’s proxy statement for the 2026 Annual
+Meeting, which will be filed with the SEC prior to the 2026 Annual Meeting.
+
+Because
+this will be the Company’s first annual meeting of shareholders, shareholders who wish to present a proposal to be considered
+for inclusion in the Company’s proxy materials pursuant to Rule 14a-8 under the Exchange Act for the 2026 Annual Meeting of
+Shareholders must submit such proposal to the Company’s Secretary by April 1, 2026, which the Company has determined to be a
+reasonable time before the Company expects to begin printing and sending the proxy materials. Any such proposal must meet the
+requirements set forth in the rules and regulations of the Securities and Exchange Commission.
+
+1
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d) Exhibits:
+
+The following exhibits are attached with this current
+report on Form 8-K:
+
+Exhibit No.
+
+Description
+
+99.1
+
+Press Release, dated March 12, 2026.
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+2
+
+SIGNATURES
+
+Pursuant to the requirements
+of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto
+duly authorized.
+
+USA Rare Earth, Inc.
+
+Date: March 12, 2026
+By:
+/s/ Valerie Ford Jacob
+
+Chief Legal Officer
+
+3

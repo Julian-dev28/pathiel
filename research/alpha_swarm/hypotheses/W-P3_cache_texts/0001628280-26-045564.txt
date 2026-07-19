@@ -1,0 +1,165 @@
+mrvl-20260625
+0001835632false00018356322026-06-252026-06-25
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+_________________________
+
+FORM 8-K
+
+_________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report: June 25, 2026
+
+(Date of earliest event reported)
+
+_________________________
+
+MARVELL TECHNOLOGY, INC.
+
+(Exact name of registrant as specified in its charter)
+
+_________________________
+
+Delaware
+
+001-40357
+
+85-3971597
+
+(State or other jurisdiction of
+
+incorporation)
+
+(Commission File Number)
+
+(IRS Employer Identification No.)
+
+1000 N. West Street, Suite 1200
+
+Wilmington, Delaware 19801
+
+(Address of principal executive offices, including Zip Code)
+
+(302) 295-4840
+
+(Registrant’s telephone number, including area code)
+
+_________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+Trading
+
+Symbol
+
+Name of each exchange
+
+on which registered
+
+Common Stock MRVL The Nasdaq Stock Market, LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+At the Annual Meeting of Stockholders of Marvell Technology, Inc. (the "Company") held on June 25, 2026, stockholders voted on the matters set forth below. Each issued share of common stock was entitled to one vote on each of the proposals voted on at the meeting. Each issued share of preferred stock was entitled to vote on an as converted to common stock basis on each of the proposals voted on at the meeting, except the election of directors.
+
+1. The nominees for election to the Board were elected, each for a one-year term until the 2027 Annual Meeting of Stockholders, based upon the following votes:
+
+FOR
+
+AGAINST
+
+ABSTAIN
+
+BNV
+
+TOTAL
+
+Sara Andrews587,110,703 404,366 477,816 122,479,860 710,472,745
+
+Brad W. Buss560,588,961 26,919,345 484,579 122,479,860 710,472,745
+
+Rebecca W. House582,699,531 4,844,294 449,060 122,479,860 710,472,745
+
+Marachel L. Knight576,907,693 10,595,684 489,508 122,479,860 710,472,745
+
+Matthew J. Murphy562,327,403 23,233,506 2,431,976 122,479,860 710,472,745
+
+Rajiv Ramaswami586,389,047 1,116,299 487,539 122,479,860 710,472,745
+
+Richard P. Wallace569,806,590 17,692,160 494,135 122,479,860 710,472,745
+
+2. The proposal to approve, on an advisory non-binding basis, the compensation of the Company’s named executive officers was approved based upon the following votes:
+
+FORAGAINSTABSTAINBROKER NON-VOTETOTAL
+
+327,552,779258,555,8971,884,209122,479,860710,472,745
+
+3. The proposal to approve the ratification of the selection of Deloitte & Touche LLP as the Company’s independent registered public accounting firm for its fiscal year ending January 30, 2027, was approved based upon the following votes:
+
+FORAGAINSTABSTAINTOTAL
+
+706,475,2362,920,2811,077,228710,472,745
+
+4. The stockholder proposal to implement an Independent Board Chairman was not approved based upon the following votes:
+
+FORAGAINSTABSTAINBROKER NON-VOTETOTAL
+
+215,860,927369,216,2172,915,741122,479,860710,472,745
+
+Item 8.01 Other Events.
+
+On June 25, 2026, the Company announced that its Board of Directors had declared the payment of its quarterly dividend of $0.06 per share to be paid on July 30, 2026 to stockholders of common stock, including preferred stock on an as converted to common stock basis, of record as of July 10, 2026. A copy of the press release is furnished herewith as Exhibit 99.1 and is incorporated by reference herein. The payment of future quarterly cash dividends is subject to, among other things, the best interests of the Company and its stockholders, its results of operations, cash balances and future cash requirements, financial condition, statutory requirements of Delaware law, and other factors that the Board of Directors may deem relevant.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+99.1 Press Release dated June 25, 2026, titled “Marvell Technology, Inc. Declares Quarterly Dividend Payment”
+
+104 Cover Page Interactive Data File (the cover page XBRL tags are embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+MARVELL TECHNOLOGY, INC.
+
+Date: June 25, 2026By:/s/ Mark Casper
+
+Mark Casper
+
+EVP, Chief Legal Officer and Secretary

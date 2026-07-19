@@ -1,0 +1,202 @@
+intc-20260513
+0000050863false00000508632025-05-062025-05-08
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 13, 2026
+
+INTEL CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware000-0621794-1672743
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2200 Mission College Boulevard, Santa Clara, California
+95054-1549
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant's telephone number, including area code: (408) 765-8080
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common stock, $0.001 par valueINTCNasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+At the annual meeting of stockholders (the "Annual Meeting") of Intel Corporation (the "Company") held on May 13, 2026, a total of 3,972,192,463 shares of the Company's common stock were present or represented by proxy, representing 79.11% of the 5,021,010,228 shares outstanding as of the close of business on March 16, 2026, the record date for the determination of stockholders entitled to vote at the Annual Meeting.
+
+The following are the voting results on the eight proposals considered and voted upon at the Annual Meeting, all of which were described in the Company's Proxy Statement filed with the U.S. Securities and Exchange Commission on March 23, 2026.
+
+Proposal 1. Election of 11 Directors: All Directors Elected
+
+Nominee
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+Craig H. Barratt3,174,343,81547,929,0207,879,030742,040,598
+
+James J. Goetz3,099,546,795125,047,7935,557,277742,040,598
+
+Andrea J. Goldsmith
+3,155,914,73966,812,4747,424,652742,040,598
+
+Alyssa H. Henry
+3,151,637,18070,988,4077,526,278742,040,598
+
+Eric Meurice3,198,026,34726,566,1145,559,404742,040,598
+
+Barbara G. Novick3,029,236,683181,880,71019,034,472742,040,598
+
+Steve Sanghi
+2,942,782,855281,740,0225,628,988742,040,598
+
+Gregory D. Smith3,195,784,36128,679,2145,688,290742,040,598
+
+Stacy J. Smith3,025,294,778199,926,5384,930,549742,040,598
+
+Lip-Bu Tan3,202,606,17722,599,0384,946,650742,040,598
+
+Dion J. Weisler
+3,069,817,284154,749,9545,584,627742,040,598
+
+Proposal 2. Ratification of Selection of Independent Registered Public Accounting Firm: Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+3,722,971,442238,233,67010,987,351—
+
+Proposal 3. Advisory Vote on Executive Compensation (Say-On-Pay): Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+2,795,303,255422,008,63212,839,978742,040,598
+
+Proposal 4. Approval of Amendment and Restatement of the 2006 Equity Incentive Plan: Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+2,714,655,443506,524,9398,971,483742,040,598
+
+Proposal 5. Approval of Amendment and Restatement of the 2006 Employee Stock Purchase Plan (ESPP): Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+3,207,970,01815,489,4186,692,429742,040,598
+
+Proposal 6. Stockholder Proposal Requesting a Report on Risk of China Exposure: Not Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+94,365,3213,106,060,11829,726,426742,040,598
+
+Proposal 7. Stockholder Proposal Requesting a Report on Intel's Human Rights Due Diligence Process: Not Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+318,934,9612,883,597,20927,619,695742,040,598
+
+Proposal 8. Stockholder Proposal Requesting an Enduring Policy Separating the Chair and CEO Roles: Not Approved
+
+For
+
+Against
+
+Abstain
+
+Broker Non-Votes
+
+379,682,7742,836,389,82414,079,267742,040,598
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+INTEL CORPORATION
+
+(Registrant)
+
+Date:May 15, 2026By:/s/ David Zinsner
+
+David Zinsner
+
+Executive Vice President and Chief Financial Officer

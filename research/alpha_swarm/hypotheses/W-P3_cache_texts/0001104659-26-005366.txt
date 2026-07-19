@@ -1,0 +1,258 @@
+false
+--09-03
+0000723125
+
+0000723125
+
+2026-01-15
+2026-01-15
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED
+STATES
+
+SECURITIES
+AND EXCHANGE COMMISSION
+
+Washington,
+D.C. 20549
+
+FORM
+8-K
+
+CURRENT
+REPORT
+
+Pursuant
+to Section 13 or 15(d) of The Securities Exchange Act of 1934
+
+January 15, 2026
+
+Date of Report (date of earliest event reported)
+
+Micron
+Technology, Inc.
+
+(Exact
+name of registrant as specified in its charter)
+
+Delaware
+
+1-10658
+
+75-1618004
+
+(State or
+other jurisdiction of incorporation)
+
+(Commission
+File Number)
+
+(IRS
+Employer Identification No.)
+
+8000
+South Federal Way
+
+Boise,
+Idaho 83716-9632
+
+(Address
+of principal executive offices and Zip Code)
+
+(208)
+368-4000
+
+(Registrant’s
+telephone number, including area code)
+
+Check the appropriate
+box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following
+provisions:
+
+¨Written
+communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨Soliciting
+material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨Pre-commencement
+communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨Pre-commencement communications pursuant to Rule 13e-4(c) under the
+Exchange Act (17 CFR 240.13e-4(c))
+
+Securities
+registered pursuant to Section 12(b) of the Act:
+
+Title
+of each class
+
+Trading  symbol
+
+Name
+of each exchange on which registered
+
+Common
+Stock, par value $0.10 per share
+
+MU
+
+Nasdaq
+Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth
+company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange
+Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth
+company ¨
+
+If an emerging
+growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any
+new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 5.03. Amendments to Articles of Incorporation
+or Bylaws; Change in Fiscal Year.
+
+Micron Technology, Inc.
+(the “Company”) held its Fiscal 2025 Annual Meeting of Stockholders (the “Annual Meeting”) on January 15,
+2026. At the Annual Meeting, as further described in Item 5.07 below, Company stockholders approved an amendment to the Company’s
+Restated Certificate of Incorporation (the “Company Charter”) to provide for the elimination of certain officers’ personal
+liability for monetary damages stemming from breaches of the duty of care as permitted by Section 102(b)(7) of the General Corporation
+Law of the State of Delaware (the “Exculpation Amendment”).
+
+A Certificate of Amendment
+to the Company Charter (the “Certificate of Amendment”) effecting the Exculpation Amendment was filed with the Secretary of
+State of the State of Delaware and became effective on January 21, 2026. A copy of the Certificate of Amendment is filed as Exhibit 3.1
+to this Current Report on Form 8-K and incorporated by reference in this Item 5.03.
+
+Item 5.07. Submission of Matters to a Vote
+of Security Holders.
+
+At the Annual Meeting held
+on January 15, 2026, the following proposals were submitted to a vote of Company stockholders:
+
+Proposal 1
+
+Each of the following nominees
+for Director were elected to serve on the Board of Directors of the Company. Each person elected as a Director will serve until the next
+annual meeting of stockholders or until such person’s successor is elected and qualified.
+
+FOR
+AGAINST
+ABSTAIN
+BROKER
+NON-VOTE
+
+Lynn A. Dugle
+794,907,057
+17,407,119
+772,638
+103,556,209
+
+Steven J. Gomo
+809,867,865
+2,434,052
+784,897
+103,556,209
+
+Linnie M. Haynesworth
+808,992,978
+3,314,129
+779,707
+103,556,209
+
+T. Mark Liu
+810,273,883
+2,034,566
+778,365
+103,556,209
+
+Sanjay Mehrotra
+782,416,311
+29,933,649
+736,854
+103,556,209
+
+A. Christine Simons
+811,411,550
+896,002
+779,262
+103,556,209
+
+Robert H. Swan
+811,084,381
+1,222,445
+779,988
+103,556,209
+
+MaryAnn Wright
+781,196,519
+31,109,070
+781,225
+103,556,209
+
+Proposal 2
+
+The proposal by the Company to approve, on
+a non-binding basis, the compensation of its named executive officers was approved with 770,405,752 votes for, 39,292,984 votes against,
+3,388,078 abstentions, and 103,556,209 broker non-votes.
+
+Proposal 3
+
+The proposal by the Company to approve an
+amendment to the Company's Restated Certificate of Incorporation adding a provision regarding exculpation of officers in accordance with
+Delaware law was approved with 728,211,756 votes for, 83,873,941 votes against, 1,001,117 abstentions, and 103,556,209 broker non-votes.
+
+Proposal 4
+
+The ratification of the appointment of PricewaterhouseCoopers
+LLP as the Company’s Independent Registered Public Accounting Firm for the fiscal year ending September 3, 2026 was approved
+with 857,646,756 votes for, 58,058,793 votes against, 937,474 abstentions, and no broker non-votes.
+
+Proposal 5
+
+The proposal by a stockholder of the Company
+requesting an amendment to shareholder special meeting rights was not approved with 348,670,930 votes for, 461,839,590 votes against,
+2,576,294 abstentions, and 103,556,209 broker non-votes.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+Exhibit No.
+
+Description
+
+3.1
+
+Amendment to Restated Certificate of Incorporation of Micron Technology, Inc., dated January 21, 2026.
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+MICRON TECHNOLOGY, INC.
+
+Date: January 21, 2026
+By:
+/s/ Michael Ray
+
+Name:
+Michael Ray
+
+Title:
+Senior Vice President, Chief Legal Officer and Corporate Secretary

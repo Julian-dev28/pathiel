@@ -1,0 +1,122 @@
+mrvl-20260527
+0001835632false00018356322026-05-272026-05-27
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+_________________________
+
+FORM 8-K
+
+_________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report: May 27, 2026
+
+(Date of earliest event reported)
+
+_________________________
+
+MARVELL TECHNOLOGY, INC.
+
+(Exact name of registrant as specified in its charter)
+
+_________________________
+
+Delaware
+001-40357
+85-3971597
+
+(State or other jurisdiction of
+
+incorporation)
+
+(Commission File Number)
+
+(IRS Employer Identification No.)
+
+1000 N. West Street, Suite 1200
+
+Wilmington, Delaware 19801
+
+(Address of principal executive offices, including Zip Code)
+
+(302) 295-4840
+
+(Registrant’s telephone number, including area code)
+
+_________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+Trading
+
+Symbol
+
+Name of each exchange
+
+on which registered
+
+Common Stock MRVL The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 2.02 Results of Operations and Financial Condition.
+
+The information in Item 2.02 of this Current Report, including the accompanying Exhibit 99.1, is being furnished and shall not be deemed “filed” for the purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of Section 18. The information in Item 2.02 of this Current Report shall not be incorporated by reference into any registration statement or other document filed pursuant to the Securities Act of 1933, as amended, or the Exchange Act, regardless of any general incorporation language contained in such filing.
+
+On May 27, 2026, Marvell Technology, Inc. (“Marvell”) issued a press release reporting its financial results for the first quarter of fiscal year 2027 ended May 2, 2026. A copy of the press release is furnished herewith as Exhibit 99.1.
+
+Marvell will conduct a conference call on Wednesday, May 27, 2026 at 1:45 p.m. Pacific Time to discuss results for the first quarter of fiscal year 2027. The call will be webcast and can be accessed at the Marvell Investor Relations website at http://investor.marvell.com/. Interested parties may also join the live conference call via telephone by using the ‘Call me TM’ link provided in the press release on May 4, 2026, and on the Quarterly Earnings section of the Marvell Investor Relations website, to receive an instant automated call back. To join the call via telephone with operator assistance, please dial 1-877-407-8291 or 1-201-689-8345. A replay of the call can be accessed by dialing 1-877-660-6853 or 1-201-612-7415, passcode 13760544 until Tuesday, June 2, 2026.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+99.1 Press Release dated May 27, 2026, titled “Marvell Technology, Inc. Reports First Quarter of Fiscal Year 2027 Financial Results”
+
+104 Cover Page Interactive Data File (the cover page XBRL tags are embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+MARVELL TECHNOLOGY, INC.
+
+Date: May 27, 2026By:
+/S/ WILLEM MEINTJES
+
+Willem Meintjes
+
+Chief Financial Officer

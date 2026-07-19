@@ -1,0 +1,136 @@
+hood-20260602
+0001783879FALSE00017838792026-06-022026-06-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 2, 2026
+
+Robinhood Markets, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware 001-40691 46-4364776
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+85 Willow Road
+
+Menlo Park, CA 94025
+
+(Address of principal executive offices) (Zip Code)
+
+(844) 428-5411
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.0001 par value per shareHOODThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+Annual Meeting of Stockholders
+
+On June 2, 2026, Robinhood Markets, Inc. (the “Company” or “our”) held its 2026 Annual Meeting of Stockholders (the “Annual Meeting”).
+
+At the Annual Meeting, our stockholders voted on three proposals, each of which is described in more detail in our definitive proxy statement filed with the Securities and Exchange Commission on April 22, 2026. Holders of Class A common stock were entitled to cast one vote for each share held as of the close of business on April 8, 2026 (the “Record Date”), and holders of Class B common stock were entitled to cast ten votes for each share held as of the close of business on the Record Date. Holders of Class A common stock and Class B common stock voted together as a single class on all matters at the Annual Meeting.
+
+Set forth below are the matters voted on at the Annual Meeting and the final voting results on each matter.
+
+Proposal One: Election of Directors
+
+Our stockholders re-elected Vladimir Tenev, Baiju Bhatt, John Hegeman, Paula Loop, Meyer Malka, Christopher Payne, Jonathan Rubinstein, Susan Segal, Dara Treseder, and Robert Zoellick to the Company’s Board of Directors to serve until the 2027 annual meeting of stockholders. Voting results were as follows:
+
+NomineeVotes ForVotes AgainstAbstentionsBroker Non-Votes
+
+Vladimir Tenev1,516,032,20516,283,5492,160,452142,176,341
+
+Baiju Bhatt1,529,875,4253,988,937611,844142,176,341
+
+John Hegeman1,529,736,3004,002,045737,861142,176,341
+
+Paula Loop1,528,306,5975,412,651756,957142,176,341
+
+Meyer Malka1,528,741,3084,972,387762,511142,176,341
+
+Christopher Payne1,528,763,6934,922,966789,547142,176,341
+
+Jonathan Rubinstein1,391,197,660142,524,705753,841142,176,341
+
+Susan Segal1,519,556,62914,145,426774,150142,176,341
+
+Dara Treseder1,457,188,31076,500,640787,255142,176,341
+
+Robert Zoellick1,457,398,88476,317,163760,159142,176,341
+
+Proposal Two: Advisory Vote to Approve the Compensation of Our Named Executive Officers
+
+Our stockholders approved, on an advisory basis, the 2025 compensation of the Company’s named executive officers. Voting results were as follows:
+
+Votes ForVotes AgainstAbstentionsBroker Non-Votes
+
+1,512,304,89521,260,133911,177142,176,341
+
+Proposal Three: Ratification of Appointment of Independent Registered Public Accounting Firm
+
+Our stockholders ratified the appointment of Ernst & Young LLP (“EY”) as the Company’s independent registered public accounting firm for the fiscal year ending December 31, 2026. Voting results were as follows:
+
+Votes ForVotes AgainstAbstentionsBroker Non-Votes
+
+1,673,927,0301,836,483889,034—
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Robinhood Markets, Inc.
+
+Date:June 2, 2026By:/s/ Shiv Verma
+
+Name: Shiv Verma
+
+Title: Chief Financial Officer

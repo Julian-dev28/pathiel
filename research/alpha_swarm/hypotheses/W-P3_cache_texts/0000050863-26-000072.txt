@@ -1,0 +1,91 @@
+intc-20260408
+0000050863false00000508632026-04-082026-04-09
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): April 8, 2026
+
+INTEL CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware000-0621794-1672743
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2200 Mission College Boulevard, Santa Clara, California
+95054-1549
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant's telephone number, including area code: (408) 765-8080
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common stock, $0.001 par valueINTCNasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 8.01 Other Events
+
+On April 8, 2026, Intel Corporation (“Intel”) repurchased from Apollo-managed funds and affiliates their 49% equity interest in the parties’ joint venture related to Intel’s Fab 34 in Ireland. The $14.2 billion repurchase price was financed by Intel with cash on hand and a bridge loan of $6.5 billion, which Intel intends to refinance, subject to market conditions. Intel owns 100% of the joint venture following the repurchase.
+
+The joint venture was created and operated pursuant to agreements entered into by the parties in June 2024. At that time, Apollo-managed funds and affiliates acquired their 49% ownership interest in the joint venture and the parties entered into ancillary agreements with respect to Intel’s construction, commissioning, operation, management, maintenance, utilization and purchase of wafers produced in Fab 34. The repurchase of the joint venture interest by Intel was completed pursuant to an April 1, 2026 agreement between the parties, and Intel expects to terminate the various ancillary agreements that had governed the arrangement and wind up the joint venture.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+The following exhibits are provided as part of this report:
+
+Exhibit NumberDescription
+
+104Cover Page Interactive Data File, formatted in Inline XBRL and included as Exhibit 101.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+INTEL CORPORATION
+
+(Registrant)
+
+Date:April 8, 2026By:/s/ David Zinsner
+
+David Zinsner
+
+Executive Vice President and Chief Financial Officer

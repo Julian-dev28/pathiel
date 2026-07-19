@@ -1,0 +1,122 @@
+hims-20260626
+0001773751false00017737512026-05-292026-05-29
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+_____________________________________________________________________________________________________________________
+
+FORM 8-K
+
+_____________________________________________________________________________________________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 26, 2026
+
+_____________________________________________________________________________________________________________________
+
+HIMS & HERS HEALTH, INC.
+
+(Exact name of registrant as specified in its charter)
+
+_____________________________________________________________________________________________________________________
+
+Delaware 001-38986 98-1482650
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission File Number)
+
+(IRS Employer Identification No.)
+
+2269 Chestnut Street, #523
+
+San Francisco, CA 94123
+
+(Address of principal executive offices)
+
+(415) 851-0195
+
+(Registrant’s telephone number, including area code)
+
+______________________________________________________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading symbolName of each exchange on which registered
+
+Class A Common Stock, $0.0001 par value HIMS New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (17 CFR §230.405) or Rule 12b-2 of the Securities Exchange Act of 1934 (17 CFR §240.12b-2).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01 Entry Into a Material Definitive Agreement
+
+Receivables Purchase Agreement
+
+On July 1, 2026, XeCare LLC and Apostrophe Pharmacy LLC (collectively, the “Sellers”), subsidiaries of Hims & Hers Health, Inc. (the “Company”), entered into a Master Receivables Purchase Agreement (the “RPA”) with JPMorgan Chase Bank, N.A., as purchaser (in such capacity, the “Purchaser”). Pursuant to the RPA, the Sellers may from time to time offer to sell to the Purchaser certain eligible receivables for cash in an amount equal to the balance of such receivables minus the applicable Purchase Discount (as defined in the RPA). The Purchaser may, in its sole discretion, decline to purchase such receivables from the Sellers.
+
+The RPA includes a $400,000,000 facility limit for eligible receivables and is subject to customary covenants, representations and warranties, events of default and termination provisions for facilities of this type. The RPA has an initial term of 364 days and may be extended an indefinite number of times by the written agreement of the parties, in each case for a period of up to one year.
+
+In addition, pursuant to a Performance Undertaking, dated July 1, 2026 (the "Performance Undertaking"), by the Company in favor of the Purchaser, the Company agreed to guarantee the performance of the Sellers of their obligations under the RPA. The Company is not guaranteeing the collectability of the receivables or the creditworthiness of the Sellers.
+
+Amendment to Credit Agreement
+
+On June 26, 2026, the Company, as borrower, entered into Amendment No. 4 (the “Amendment”) to the Revolving Credit and Guaranty Agreement, dated as of February 18, 2025 (as amended, the “Credit Agreement”), by and among the Company, the subsidiary borrowers and the guarantors from time to time party thereto, the lenders and issuing banks party thereto and JPMorgan Chase Bank, N.A., as administrative agent and collateral agent.
+
+The Amendment, among other things, (a) amends certain provisions of the Credit Agreement to permit the Company and its subsidiaries to enter into the RPA, the Performance Undertaking and the transactions contemplated thereby; (b) adds a new basket under the Credit Agreement's permitted indebtedness covenant to allow indebtedness incurred in connection with the RPA in an aggregate outstanding principal amount not to exceed $400,000,000; (c) makes related updates to the permitted lien and collateral provisions; and (d) provides that, other than as described above, the loans and obligations of the parties remain unchanged and there were no material changes to the interest provisions, fees, covenants or events of default.
+
+The foregoing descriptions of the RPA and the Amendment do not purport to be complete and are qualified in their entirety by reference to the full text of the RPA and the Amendment, copies of which are filed as Exhibits 10.1 and 10.2, respectively, to this Current Report on Form 8-K and incorporated herein by reference.
+
+Item 2.03 Creation of a Direct Financial Obligation or an Obligation under an Off-Balance Sheet Arrangement of a Registrant
+
+The information described above under Item 1.01 is incorporated into this Item 2.03 by reference.
+
+Item 9.01 Financial Statements and Exhibits
+
+(d) Exhibits
+
+Exhibit No.Description
+
+10.1
+Master Receivables Purchase Agreement, dated as of July 1, 2026, among XeCare LLC and Apostrophe Pharmacy LLC, as sellers, and JPMorgan Chase Bank, N.A., as purchaser.
+
+10.2
+Amendment No. 4 to the Revolving Credit and Guaranty Agreement, dated as of June 26, 2026, by and among Hims & Hers Health, Inc., as the borrower, and each existing lender party thereto.
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+HIMS & HERS HEALTH, INC.
+
+Date: July 1, 2026By:/s/ Andrew Dudum
+
+Andrew Dudum
+
+Chief Executive Officer

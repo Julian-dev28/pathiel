@@ -1,0 +1,137 @@
+amd-20260505
+0000002488false00000024882026-05-052026-05-05
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+May 5, 2026
+
+Date of Report (Date of earliest event reported)
+
+ADVANCED MICRO DEVICES, INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-07882
+
+94-1692300
+
+(State or Other Jurisdiction of
+
+Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2485 Augustine Drive
+
+Santa Clara, California 95054
+
+(Address of principal executive offices) (Zip Code)
+
+(408) 749-4000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, $0.01 par value
+
+AMD
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+On May 5, 2026, Advanced Micro Devices, Inc. ("AMD") announced its financial results for its first quarter of 2026 ended March 28, 2026 in a press release that is attached hereto as Exhibit 99.1. Attached hereto as Exhibit 99.2 is a presentation regarding AMD's first quarter of 2026.
+
+The attached Exhibits 99.1 and 99.2, in addition to financial results presented on a U.S. Generally Accepted Accounting Principles (“GAAP”) basis, contains certain non-GAAP financial information and forward-looking financial guidance. Certain of these non-GAAP financial measures will be used in AMD’s earnings conference call. A reconciliation of these non-GAAP financial measures to their nearest GAAP equivalents is provided in the data tables at the end of the attached Exhibits 99.1 and 99.2. These non-GAAP financial measures should be viewed in addition to and not as a substitute for or superior to AMD’s reported results prepared in accordance with GAAP.
+
+The information in this report furnished pursuant to Items 2.02 and 7.01, including Exhibits 99.1 and 99.2 attached hereto, shall not be deemed “filed” for the purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section. It may only be incorporated by reference in another filing under the Exchange Act or the Securities Act of 1933, as amended, if such subsequent filing specifically references the information furnished pursuant to Items 2.02 and 7.01 of this report.
+
+Item 7.01 Regulation FD Disclosure.
+
+The information set forth under Item 2.02 “Results of Operations and Financial Condition” is incorporated into this Item 7.01 by reference.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+EXHIBIT INDEX
+
+Exhibit No.
+
+Description
+
+99.1
+Press Release dated May 5, 2026
+
+99.2
+First Quarter 2026 Financial Results Presentation
+
+104Inline XBRL for the cover page of this Current Report on Form 8-K
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: May 5, 2026
+ADVANCED MICRO DEVICES, INC.
+
+By:
+
+/s/ Jean Hu
+
+Name:
+
+Jean Hu
+
+Title:
+
+Executive Vice President, Chief Financial Officer & Treasurer

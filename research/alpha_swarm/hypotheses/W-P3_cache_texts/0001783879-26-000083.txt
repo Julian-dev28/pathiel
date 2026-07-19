@@ -1,0 +1,96 @@
+hood-20260625
+0001783879FALSE00017838792026-06-252026-06-25
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the
+
+Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 25, 2026
+
+Robinhood Markets, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware 001-40691 46-4364776
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+85 Willow Road
+
+Menlo Park, CA 94025
+
+(Address of principal executive offices) (Zip Code)
+
+(844) 428-5411
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.0001 par value per shareHOODThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 - Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Appointment of Principal Accounting Officer
+
+On June 25, 2026, the Board of Directors of Robinhood Markets, Inc. (the “Company” or “Robinhood”) appointed Dara Bazzano to be the Company’s principal accounting officer, effective as of June 25, 2026.
+
+In connection with Ms. Bazzano’s appointment, effective as of June 25, 2026, Shiv Verma, the Company’s Chief Financial Officer (“CFO”), in which capacity he served as the Company’s principal accounting officer and principal financial officer, ceased to serve as the Company’s principal accounting officer. Mr. Verma continues to serve as the Company’s CFO and principal financial officer.
+
+Ms. Bazzano, age 58, has been the Company’s Chief Accounting Officer since April 2026 and has responsibilities for the Company’s accounting, tax, financial operations, financial reporting, and internal control functions. Ms. Bazzano previously served as the California Market leader for Cross Country Consulting from June 2025 through April 2026. Prior to that, Senior Vice President and Chief Accounting Officer of T-Mobile US, Inc., a wireless communication, and broadband services provider, from 2020 to 2025. In addition, Ms. Bazzano served as SVP Global Finance, Chief Accounting Officer at CBRE Group, Inc., a global commercial real estate services and investment firm, from 2018 to 2020. Prior to joining CBRE, Ms. Bazzano served as Global Controller and Chief Accounting Officer at The Gap, Inc., a leading global retailer offering clothing, accessories, and personal care products, from 2013 to 2018. Prior to that Ms. Bazzano served as an Assurance Partner at PricewaterhouseCoopers and KPMG LLP.
+
+There are no arrangements or understandings between Ms. Bazzano and any other persons pursuant to which she was chosen to be principal accounting officer, and she has no family relationships with any of Robinhood’s directors or executive officers. Ms. Bazzano’s current compensation includes an annual base salary of $425,000, a target annual bonus of 40% of her annual base salary, an annual equity target of $1,540,000, and she was granted an award of restricted stock units with a grant date target value equal to approximately $3,300,000 vesting quarterly over two years. In addition, Ms. Bazzano received a sign-on bonus of $400,000 payable in two equal installments, one within 30 days of the commencement of her service as Chief Accounting Officer and one within 30 days following the one-year anniversary of the commencement of such service. In connection with her appointment as the Company’s principal accounting officer, Ms. Bazzano’s compensation remains unchanged.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Robinhood Markets, Inc.
+
+Date:June 26, 2026By:/s/ Shiv Verma
+
+Name: Shiv Verma
+
+Title: Chief Financial Officer

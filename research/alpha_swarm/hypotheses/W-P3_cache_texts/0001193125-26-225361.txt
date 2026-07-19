@@ -1,0 +1,163 @@
+8-K
+
+false00010504460001050446us-gaap:CommonStockMember2026-02-232026-02-230001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2026-02-232026-02-2300010504462026-02-232026-02-230001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2026-02-232026-02-2300010504462026-05-042026-05-040001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2026-02-232026-02-230001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2026-02-232026-02-23
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): May 14, 2026
+
+STRATEGY INC
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-42509
+
+51-0323571
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+
+22182
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (703) 848-8600
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of Each Class
+
+Trading
+
+Symbol
+
+Name of Each Exchange
+
+on which Registered
+
+10.00% Series A Perpetual Strife Preferred Stock, $0.001 par value per share
+
+STRF
+
+The Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+The Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, $0.001 par value per share
+
+STRK
+
+The Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, $0.001 par value per share
+
+STRD
+
+The Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per share
+
+MSTR
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Events.
+
+Repurchases of Convertible Notes
+
+On May 14, 2026, Strategy Inc (“Strategy”) entered into privately negotiated transactions with certain holders of its outstanding 0% Convertible Senior Notes due 2029 (the “2029 Notes”), pursuant to which Strategy agreed to repurchase approximately $1.50 billion aggregate principal amount of the 2029 Notes for an estimated aggregate cash repurchase price of approximately $1.38 billion (the “Repurchases” and such repurchased 2029 Notes, the “Repurchased Notes”).
+
+The final aggregate cash repurchase price for the Repurchased Notes is subject to adjustment, and will be based in part on the daily volume-weighted average price per share of Strategy’s class A common stock, par value $0.001 per share (the “Class A Common Stock”), during an agreed upon measurement period (the “Measurement Period”). The actual amount of cash paid in the Repurchases could vary from the estimated aggregate repurchase price depending on changes in the trading price of the Class A Common Stock during the Measurement Period.
+
+Strategy expects to fund the Repurchases with available cash reserves, proceeds from sales of securities under its at-the-market offering program, and/or proceeds from the sale of bitcoin.
+
+The Repurchases are expected to settle on or about May 19, 2026, subject to customary closing conditions.
+
+Following the closing of the Repurchases, Strategy intends to cancel the Repurchased Notes. After such cancellation, approximately $1.50 billion aggregate principal amount of the 2029 Notes will remain outstanding.
+
+This Current Report on Form 8-K does not constitute an offer to sell, or a solicitation of an offer to buy, any security and will not constitute an offer, solicitation, or sale in any jurisdiction in which such offering would be unlawful.
+
+Forward-Looking Statements
+
+This Current Report on Form 8-K contains forward-looking statements within the meaning of the federal securities laws. These statements include, but are not limited to, expectations regarding the estimated repurchase price for the 2029 Notes, expectations regarding the sources of funding for the Repurchases, the expected settlement date of the Repurchases, the cancellation of repurchased 2029 Notes, and the remaining aggregate principal amounts of 2029 Notes outstanding following the Repurchases. Forward-looking statements include all statements that are not historical facts. In some cases, forward-looking statements can be identified by terms such as “anticipates,” “believes,” “could,” “estimates,” “expects,” “intends,” “may,” “plans,” “potential,” “will,” or similar expressions and the negatives of those words. Forward-looking statements involve substantial risks and uncertainties that may cause actual results to differ materially from those that Strategy expects. These risks and uncertainties include market risks, trends, and conditions. These and other risks are more fully described in Strategy’s filings with the Securities and Exchange Commission, including in the section titled “Risk Factors” in Strategy’s Quarterly Report on Form 10-Q filed with the Securities and Exchange Commission on May 6, 2026. In light of these risks, you should not place undue reliance on such forward-looking statements. Forward-looking statements represent Strategy’s beliefs and assumptions only as of the date of this Current Report on Form 8-K. Strategy disclaims any obligation to update forward-looking statements.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: May 15, 2026
+
+Strategy Inc
+
+(Registrant)
+
+By:
+
+/s/ Thomas C. Chow
+
+Name:
+
+Thomas C. Chow
+
+Title:
+
+Executive Vice President & General Counsel

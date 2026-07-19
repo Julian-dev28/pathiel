@@ -1,0 +1,139 @@
+false
+0001883685
+
+0001883685
+
+2026-05-29
+2026-05-29
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION
+13 OR 15(D) OF THE
+
+SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported):
+May 29, 2026
+
+DRAFTKINGS INC.
+
+(Exact name of registrant as specified in its charter)
+
+Nevada
+001-41379
+87-2764212
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+222 Berkeley Street, 5th Floor
+
+Boston, MA 02116
+
+(Address of principal executive offices, including
+zip code)
+
+(617)
+986-6744
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check
+the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under
+any of the following provisions:
+
+¨Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered
+pursuant to Section 12(b) of the Act:
+
+Title of
+each class
+
+Trading Symbol(s)
+
+Name of each
+exchange on which registered
+
+Class A common stock, par value $0.0001 per share
+
+DKNG
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (17 CFR
+§230.405) or Rule 12b-2 of the Securities Exchange Act of 1934 (17 CFR §240.12b-2).
+
+Emerging growth company ¨
+
+If an emerging growth company, indicate by check
+mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting
+standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 5.02. Departure of Directors or Principal Officers; Election
+of Directors; Appointment of Principal Officers.
+
+On May 29, 2026, DraftKings Inc. (the “Company”) announced
+that, following a review of the functions and responsibilities of the Company’s executive officers and senior leadership team, Alan
+Ellingson, the Company’s Chief Financial Officer and principal financial officer, will assume the role of the Company’s principal
+accounting officer (“PAO”), effective as of May 29, 2026. Mr. Ellingson will not receive any adjustment to his compensation
+or any additional compensation in connection with performing the functions of the Company’s PAO. Erik Bradbury, the Company’s
+previous PAO, will remain in his position as the Company’s Chief Accounting Officer.
+
+Mr. Ellingson’s biographical information is disclosed in the
+Company’s Proxy Statement for its 2026 Annual Meeting of Stockholders. There are no arrangements or understandings between Mr. Ellingson
+and any other persons pursuant to which he was selected as an officer, he has no family relationships with any of the Company’s
+directors or executive officers, and he has no direct or indirect material interest in any transaction required to be disclosed pursuant
+to Item 404(a) of Regulation S-K.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+DRAFTKINGS INC.
+
+Dated: May 29, 2026
+
+By:
+/s/ R. Stanton Dodge
+
+Name: R. Stanton Dodge
+
+Title:   Chief Legal Officer and Secretary

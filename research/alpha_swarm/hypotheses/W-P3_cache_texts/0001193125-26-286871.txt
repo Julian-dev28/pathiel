@@ -1,0 +1,426 @@
+8-K
+
+0001050446false0001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2026-06-292026-06-290001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2026-06-292026-06-290001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2026-06-292026-06-2900010504462026-06-292026-06-290001050446us-gaap:CommonStockMember2026-06-292026-06-290001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2026-06-292026-06-29
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): June 29, 2026
+
+STRATEGY INC
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-42509
+
+51-0323571
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+
+22182
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (703) 848-8600
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of Each Class
+
+Trading
+
+Symbol
+
+Name of Each Exchange
+
+on which Registered
+
+10.00% Series A Perpetual Strife Preferred Stock, $0.001 par value per share
+
+STRF
+
+The Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+The Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, $0.001 par value per share
+
+STRK
+
+The Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, $0.001 par value per share
+
+STRD
+
+The Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per share
+
+MSTR
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Events.
+
+Digital Credit Capital Framework Announcement
+
+On June 29, 2026, Strategy Inc (“Strategy” or the “Company”) announced that it has adopted a “Digital Credit Capital Framework”, designed to strengthen the Company’s various series of preferred securities (collectively, “Digital Credit Securities”), enhance liquidity, preserve long-term Bitcoin exposure, and support long-term value creation for the Company’s stockholders. The framework consists of five principal components:
+
+•
+a Board-approved USD Reserve policy;
+
+•
+a revised STRC dividend policy;
+
+•
+a Digital Credit Securities repurchase program;
+
+•
+a class A common stock repurchase program; and
+
+•
+a BTC monetization program.
+
+The material terms of these components are summarized below.
+
+USD Reserve Policy
+
+The framework includes a Board-approved policy governing the Company’s previously established U.S. dollar reserve (the “USD Reserve”). Under the policy, the USD Reserve may be used only to support the payment of preferred stock dividends and interest expense on outstanding indebtedness. Any other use requires Board authorization. Additionally, under the policy, management must maintain a minimum USD Reserve equal to at least 12 months of the Company’s current expected annual preferred stock dividend payments and interest obligations. Any reduction below that level requires Board authorization.
+
+As of June 28, 2026, the balance of the USD Reserve is $2.55 billion. This amount includes expected cash proceeds from shares sold under Strategy’s at-the-market offering program (“ATM”) that had not yet settled as of such date.
+
+Under the Board-approved USD Reserve policy, the Company may use the USD Reserve to pay preferred stock dividends and interest expenses as they become due and may subsequently replenish the USD Reserve through sales of BTC under the BTC Monetization Program described below or other capital markets activity.
+
+STRC Dividend Policy
+
+The Company announced a revised dividend policy for its Variable Rate Series A Perpetual Stretch Preferred Stock (“STRC”). Going forward, the Company intends to evaluate the STRC dividend rate monthly based on a range of factors, including STRC trading levels, market yields, credit spreads, the price and volatility of bitcoin, USD Reserve coverage, capital market conditions, and the Company’s overall capital structure. Dividend rate adjustments are one of several tools available to the Company, which may also respond to market conditions through USD Reserve management, BTC monetization, repurchases of Digital Credit Securities or class A common stock, and other capital allocation actions. The Company will not necessarily increase the STRC dividend rate solely because STRC trades below its stated amount.STRC dividends remain subject to declaration by the Board or an authorized committee and are not guaranteed.
+
+Digital Credit Securities Repurchase Program
+
+The Company announced that it has established a repurchase program for up to $1.0 billion aggregate purchase price of its outstanding Digital Credit Securities, including STRC, 10.00% Series A Perpetual Strife Preferred Stock (STRF), 10.00% Series A Perpetual Stride Preferred Stock (STRD), and 8.00% Series A Perpetual Strike Preferred Stock (STRK).
+
+The Company currently expects STRC to be the initial priority under the program if management determines that repurchases are accretive and would strengthen the Company’s capital structure.
+
+Repurchases may be made from time to time through open-market purchases, block trades, privately negotiated transactions, tender offers, exchange offers, or other legally permissible means, depending on market conditions, trading
+
+prices, liquidity, applicable legal requirements, and other factors. The repurchase authorization does not obligate the Company to acquire any particular amount of securities, has no fixed expiration date, and may be modified, suspended, or terminated at any time. Repurchases of Digital Credit Securities will not be funded from the USD Reserve; to the extent the Company funds such repurchases through BTC sales, such sales would be made under the BTC Monetization Program described below.
+
+Class A Common Stock Repurchase Program
+
+The Company also announced that it has established a repurchase program for up to $1.0 billion aggregate purchase price of its class A common stock. Repurchases may be made from time to time through open-market purchases, block trades, privately negotiated transactions, accelerated share repurchase transactions, or other legally permissible means, depending on market conditions, trading prices, liquidity, applicable legal requirements, and other factors. The authorization does not obligate the Company to acquire any particular amount of common stock, has no fixed expiration date, and may be modified, suspended, or terminated at any time.
+
+Repurchases of class A common stock will not be funded from the USD Reserve; to the extent the Company funds such repurchases through BTC sales, such sales would be made under the BTC Monetization Program described below.
+
+BTC Monetization Program
+
+The Company’s Board of Directors has authorized a BTC monetization program (the “BTC Monetization Program”) under which the Company may sell bitcoin from time to time for three primary purposes:
+
+•
+to generate up to $1.25 billion of additional proceeds to fund the USD Reserve;
+
+•
+to additionally fund preferred stock dividends and interest expense as they become payable, or to replenish the USD Reserve after such payments, when management determines that it is more advantageous than issuing class A common stock or other capital markets transactions; and
+
+•
+to additionally fund repurchases of Digital Credit Securities or class A common stock, including related taxes, fees, and transaction expenses, under the repurchase programs described above.
+
+Any bitcoin monetization outside these purposes or in excess of these authorizations would require further Board authorization. The BTC Monetization Program has no fixed expiration date, may be modified, suspended, or terminated at any time, and does not obligate the Company to sell any bitcoin, fund any dividend payment or interest expense through BTC monetization, or repurchase any securities.
+
+ATM Update
+
+On June 29, 2026, Strategy announced an update with respect to sales made under its ATM of the following securities:
+
+During Period June 22, 2026 to June 28, 2026
+
+As of June 28, 2026
+
+Security
+
+Shares Sold(1)
+
+Notional Value (in millions) (2)
+
+Net Proceeds (in millions) (3)
+
+Available for Issuance and Sale (in millions)(4)
+
+STRF Stock
+
+-
+
+$
+
+-
+
+$
+
+-
+
+$
+
+1,619.3
+
+10.00% Series A Perpetual Strife Preferred Stock
+
+STRC Stock
+
+-
+
+$
+
+-
+
+$
+
+-
+
+$
+
+17,510.8
+
+Variable Rate Series A Perpetual Stretch Preferred Stock
+
+STRK Stock
+
+-
+
+$
+
+-
+
+$
+
+-
+
+$
+
+2,100.0
+
+8.00% Series A Perpetual Strike Preferred Stock
+
+STRD Stock
+
+-
+
+$
+
+-
+
+$
+
+-
+
+$
+
+4,014.8
+
+10.00% Series A Perpetual Stride Preferred Stock
+
+MSTR Stock
+
+12,669,017
+
+$
+
+-
+
+$
+
+1,152.4
+
+$
+
+24,257.5
+
+Class A Common Stock
+
+Total
+
+$
+
+1,152.4
+
+(1) Includes shares sold but not yet settled as of June 26, 2026.
+
+(2) The total face value of the shares of preferred stock sold, which is used to calculate dividends thereon.
+
+(3) Net proceeds are presented net of sales commission.
+
+(4) As previously disclosed, on March 23, 2026, Strategy announced a new $21.0 billion offering of MSTR Stock (the “MSTR Increase”). The MSTR Stock amount available for issuance reflects the aggregate remaining capacity of both the current offering and the MSTR Increase. Sales under the MSTR Increase may begin once capacity under the existing offering is substantially depleted.
+
+BTC Update
+
+On June 29, 2026, Strategy announced updates with respect to its bitcoin holdings:
+
+During Period June 22, 2026 to June 28, 2026
+
+As of June 28, 2026
+
+BTC Acquired (1)
+
+Aggregate Purchase Price (in millions) (2)
+
+Average Purchase Price (2)
+
+Aggregate BTC Holdings
+
+Aggregate Purchase Price (in billions) (2)
+
+Average Purchase Price (2)
+
+-
+
+$-
+
+$-
+
+847,363
+
+$64.10
+
+$75,651
+
+(1) No bitcoin purchases were made this week.
+
+(2) Aggregate and average purchase prices are inclusive of fees and expenses.
+
+Dividend Rate on Variable Rate Series A Perpetual Stretch Preferred Stock
+
+On June 29, 2026, Strategy announced that it will increase the regular dividend rate per annum on the Company’s Variable Rate Series A Perpetual Stretch Preferred Stock (“STRC”) effective for semi-monthly periods with record dates on or after July 1, 2026, to 12.00%. The Company announced this rate via its website, www.strategy.com/strc. Such adjustment shall have no effect on any previously declared but unpaid dividends on STRC.
+
+Conditional Cash Dividend Declaration
+
+On June 28, 2026, the Company’s board of directors declared semi-monthly cash dividends on STRC, payable on July 31, 2026 to stockholders of record as of 5:00 p.m., New York City time on July 15, 2026, and payable on August 15, 2026 to stockholders of record as of 5:00 p.m., New York City time on July 31, 2026, as summarized in the table below. The declaration of these dividends, and the Company’s obligation to pay these dividends, are contingent upon the Amended and Restated Certificate of Designations of STRC (previously filed with the Secretary of State of the State of Delaware) becoming effective at or before 12:01 a.m., New York City time on June 30, 2026.
+
+Preferred Stock
+
+Ticker
+
+Period
+
+Cash Dividend Per Share
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+Semi-monthly period ending
+
+July 31, 2026
+
+$0.50(1)
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+Semi-monthly period ending
+
+August 15, 2026
+
+$0.50(1)
+
+(1)
+The cash dividend declared on STRC for semi-monthly periods represents a per annum dividend rate of 12.00%.
+
+Expected Tax Treatment
+
+As of June 29, 2026, the Company expects that the dividends payable on July 31, 2026, and August 15, 2026, will be characterized as non-taxable returns of capital to the extent of a shareholder’s tax basis in their STRC for U.S. federal income tax purposes. Special tax considerations may apply to certain taxpayers based on their specific circumstances. Shareholders should consult their own tax advisors regarding the U.S. federal, state, local, and any non-U.S. tax consequences to them in connection with the receipt of distributions.
+
+Item 7.01 Regulation FD Disclosure.
+
+Strategy Dashboard
+
+Strategy also maintains a dashboard on its website (www.strategy.com) as a disclosure channel for providing broad, non-exclusionary distribution of information regarding Strategy to the public, including information regarding market prices of its outstanding securities, bitcoin purchases and holdings, certain key performance indicator metrics and other supplemental information, and as one means of disclosing non-public information in compliance with its disclosure obligations under Regulation FD. Investors and others are encouraged to regularly review the information that Strategy makes public via the website dashboard.
+
+Furnished Information
+
+The information disclosed pursuant to Item 7.01 in this Current Report on Form 8-K shall not be deemed “filed” for purposes of Section 18 of the Exchange Act, or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+Forward-Looking Statements
+
+Statements in this Current Report on Form 8-K about future expectations, plans, and prospects, as well as any other statements regarding matters that are not historical facts, may constitute “forward-looking statements” within the meaning of The Private Securities Litigation Reform Act of 1995. These statements include, but are not limited to, statements regarding the tax-deferred return of capital treatment of dividends on the Company’s preferred stock, including the Company’s Variable Rate Series A Perpetual Stretch Preferred Stock, the payment of the dividend described in this Current Report on Form 8-K, the Company’s “Digital Credit Capital Framework”, including its STRC dividend rate
+
+policy, USD Reserve policy, securities repurchase programs, and bitcoin monetization program. The words “anticipate,” “believe,” “continue,” “could,” “estimate,” “expect,” “intend,” “may,” “plan,” “potential,” “predict,” “project,” “should,” “target,” “will,” “would,” and similar expressions are intended to identify forward-looking statements, although not all forward-looking statements contain these identifying words. Actual results may differ materially from those indicated by such forward-looking statements as a result of various important factors, including the uncertainties related to the Company’s future results of operations, its expectation regarding the tax-deferred return of capital treatment of dividends on the Company's preferred stock, fluctuations in tax benefits or provisions, assumptions underlying the Company’s projections, and the other factors discussed under the caption “Risk Factors” in the Company’s Quarterly Report on Form 10-Q filed with the Securities and Exchange Commission (the “SEC”) on May 6, 2026 and the risks described in other filings that the Company may make with the SEC. Any forward-looking statements contained in this Current Report on Form 8-K speak only as of the date hereof, and the Company specifically disclaims any obligation to update any forward-looking statement, whether as a result of new information, future events, or otherwise.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: June 29, 2026
+
+Strategy Inc
+
+(Registrant)
+
+By:
+
+/s/ Thomas C. Chow
+
+Name:
+
+Thomas C. Chow
+
+Title:
+
+Executive Vice President & General Counsel

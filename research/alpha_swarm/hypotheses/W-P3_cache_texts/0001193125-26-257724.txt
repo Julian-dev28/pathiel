@@ -1,0 +1,339 @@
+8-K
+
+false 0001652044 0001652044 2026-06-04 2026-06-04 0001652044 us-gaap:CommonClassAMember 2026-06-04 2026-06-04 0001652044 goog:CapitalClassCMember 2026-06-04 2026-06-04 0001652044 goog:A2.375SeniorNotesDue2028Member 2026-06-04 2026-06-04 0001652044 goog:A2.500SeniorNotesDue2029Member 2026-06-04 2026-06-04 0001652044 goog:A4.125SeniorNotesDue2029Member 2026-06-04 2026-06-04 0001652044 us-gaap:SeniorNotesMember 2026-06-04 2026-06-04 0001652044 goog:A2.875SeniorNotesDue2031Member 2026-06-04 2026-06-04 0001652044 goog:A4.625SeniorNotesDue2032Member 2026-06-04 2026-06-04 0001652044 goog:A3.000SeniorNotesDue2033Member 2026-06-04 2026-06-04 0001652044 goog:A3.125SeniorNotesDue2034Member 2026-06-04 2026-06-04 0001652044 goog:SeniorNotesDue2034Member 2026-06-04 2026-06-04 0001652044 goog:A3.375SeniorNotesDue2037Member 2026-06-04 2026-06-04 0001652044 goog:A3.500SeniorNotesDue2038Member 2026-06-04 2026-06-04 0001652044 goog:A5.500SeniorNotesDue2041Member 2026-06-04 2026-06-04 0001652044 goog:A4.000SeniorNotesDue2044Member 2026-06-04 2026-06-04 0001652044 goog:A3.875SeniorNotesDue2045Member 2026-06-04 2026-06-04 0001652044 goog:A4.500PercentSeniorNotesDue2045Member 2026-06-04 2026-06-04 0001652044 goog:A4.000SeniorNotesDue2054Member 2026-06-04 2026-06-04 0001652044 goog:A5.875SeniorNotesDue2058Member 2026-06-04 2026-06-04 0001652044 goog:SeniorNotesDue2045Member 2026-06-04 2026-06-04 0001652044 goog:A4.375SeniorNotesDue2064Member 2026-06-04 2026-06-04 0001652044 goog:A6.125SeniorNotesDue2126Member 2026-06-04 2026-06-04
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported)
+
+June 4, 2026
+
+ALPHABET INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-37580
+
+61-1767919
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+1600 Amphitheatre Parkway
+
+Mountain View, CA 94043
+
+(Address of principal executive offices, including zip code)
+
+(650) 253-0000
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Class A Common Stock, $0.001 par value
+
+GOOGL
+
+Nasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+Class C Capital Stock, $0.001 par value
+
+GOOG
+
+Nasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+2.375% Senior Notes due 2028
+
+—
+
+Nasdaq Stock Market LLC
+
+2.500% Senior Notes due 2029
+
+—
+
+Nasdaq Stock Market LLC
+
+4.125% Senior Notes due 2029
+
+—
+
+Nasdaq Stock Market LLC
+
+3.200% Senior Notes due 2030
+
+—
+
+Nasdaq Stock Market LLC
+
+2.875% Senior Notes due 2031
+
+—
+
+Nasdaq Stock Market LLC
+
+3.450% Senior Notes due 2032
+
+—
+
+Nasdaq Stock Market LLC
+
+4.625% Senior Notes due 2032
+
+—
+
+Nasdaq Stock Market LLC
+
+3.000% Senior Notes due 2033
+
+—
+
+Nasdaq Stock Market LLC
+
+3.125% Senior Notes due 2034
+
+—
+
+Nasdaq Stock Market LLC
+
+3.625% Senior Notes due 2034
+
+—
+
+Nasdaq Stock Market LLC
+
+3.375% Senior Notes due 2037
+
+—
+
+Nasdaq Stock Market LLC
+
+3.500% Senior Notes due 2038
+
+—
+
+Nasdaq Stock Market LLC
+
+4.100% Senior Notes due 2039
+
+—
+
+Nasdaq Stock Market LLC
+
+5.500% Senior Notes due 2041
+
+—
+
+Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2044
+
+—
+
+Nasdaq Stock Market LLC
+
+3.875% Senior Notes due 2045
+
+—
+
+Nasdaq Stock Market LLC
+
+4.500% Senior Notes due 2045
+
+—
+
+Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2054
+
+—
+
+Nasdaq Stock Market LLC
+
+5.875% Senior Notes due 2058
+
+—
+
+Nasdaq Stock Market LLC
+
+4.800% Senior Notes due 2045
+
+—
+
+Nasdaq Stock Market LLC
+
+4.375% Senior Notes due 2064
+
+—
+
+Nasdaq Stock Market LLC
+
+6.125% Senior Notes due 2126
+
+—
+
+Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01. Entry into a Material Definitive Agreement.
+
+Equity Distribution Agreement
+
+On June 1, 2026, Alphabet Inc. (“Alphabet” or the “Company”) entered into an equity distribution agreement (the “Equity Distribution Agreement”) with Goldman Sachs & Co. LLC, J.P. Morgan Securities LLC, and Morgan Stanley & Co. LLC (each, a “Manager” and collectively, the “Managers”), under which the Company may offer and sell, from time to time in its sole discretion, up to $40 billion of shares of Class A Common Stock and Class C Capital Stock (together, the “Shares”), through an “at-the-market” offering program (the “ATM Offering”).
+
+Upon delivery of a placement notice and subject to the terms and conditions of the Equity Distribution Agreement, the Managers will use reasonable efforts consistent with their normal trading and sales practices, applicable state and federal laws, rules and regulations, and the rules of the Nasdaq Global Select Market to sell the Shares from time to time based upon the Company’s instructions for the sales, including any price, time or size limits specified by the Company. Under the Equity Distribution Agreement, the Managers may sell the Shares by any method permitted by law, including in ordinary brokers’ transactions, to or through a market maker, directly on or through the Nasdaq Global Select Market or any other market venue where the securities may be traded, in the over-the-counter market, in privately negotiated transactions, or through a combination of any such methods of sale. The Company is not obligated to sell any Shares under the Equity Distribution Agreement and may at any time suspend solicitation and offers under the Equity Distribution Agreement. The Managers’ obligations to sell the Shares under the Equity Distribution Agreement are subject to satisfaction of certain conditions, including customary closing conditions.
+
+The Equity Distribution Agreement provides that the Managers will be entitled to compensation for their services in the form of a commission of up to 0.5% of the gross offering proceeds of Shares sold under the Equity Distribution Agreement, and the Company has agreed to reimburse the Managers for certain specified expenses. The Company has also agreed to provide the Managers with customary indemnification and contribution rights. The Equity Distribution Agreement may be terminated for any reason by the Company at any time by giving written notice to the Managers or by any Manager at any time, with respect to such Manager only, by giving written notice to the Company.
+
+The sales and issuances of the Shares under the Equity Distribution Agreement will be made pursuant to a shelf registration statement on Form S-3 initially filed with the Securities and Exchange Commission (the “SEC”) on June 1, 2026 (Registration No. 333-296395) (the “Shelf Registration Statement”), a base prospectus, dated June 1, 2026, included as part of the Shelf Registration Statement and a prospectus supplement, dated June 1, 2026.
+
+The foregoing description of the Equity Distribution Agreement does not purport to be complete and is qualified in its entirety by reference to the full text of the Equity Distribution Agreement, a copy of which is filed herewith as Exhibit 1.1 to this Current Report on Form 8-K and is incorporated herein by reference.
+
+A validity opinion issued by the Company’s counsel with respect to the Shares sold in the ATM Offering is filed as Exhibit 5.1 hereto.
+
+This Current Report on Form 8-K shall not constitute an offer to sell or the solicitation of an offer to buy any securities, nor shall there be any sale of such securities in any state or jurisdiction in which such offer, solicitation or sale would be unlawful prior to registration or qualification under the securities laws of any such state or jurisdiction.
+
+Item 7.01. Regulation FD Disclosure.
+
+Copies of the Company’s press releases related to the announcement of the launch and pricing of the Stock Offering as described under Item 1.01 are furnished as Exhibits 99.1 and 99.2 to this Current Report on Form 8-K. The offering (the “Depositary Share Offering”) of two series of depositary shares representing two series of mandatory convertible preferred stock that is also described in these press releases is expected to close June 5 and will be described in a Current Report on Form 8-K filed on that date.
+
+Item 8.01. Other Events.
+
+Class A Common Stock and Class C Capital Stock Offering
+
+On June 2, 2026, the Company entered into an underwriting agreement (the “Underwriting Agreement”) with Goldman Sachs & Co. LLC, J.P. Morgan Securities LLC and Morgan Stanley & Co. LLC as the representatives (the “Representatives”) of the underwriters (the “Underwriters”), pursuant to which the Company agreed to issue and sell 25,459,689 shares of Class A Common Stock, $0.001 par value (“Class A Common Stock”) at a price of 355.1982 per share, and 25,459,689 shares of Class C Capital Stock, $0.001 par value (“Class C Capital Stock”) at a price of 351.8018 per share (such offering, the “Stock Offering”).
+
+Pursuant to the Underwriting Agreement, the Company granted the Underwriters 30-day options to purchase up to an additional 3,818,953 shares of Class A Common Stock and an additional 3,818,953 shares of Class C Capital Stock, solely to cover over-allotments, if any. On June 3, 2026, the Underwriters exercised each option in full. The underwriters of the Depositary Shares Offering simultaneously exercised in full their options to acquire 50,000,000 additional depositary shares.
+
+The foregoing description of the Underwriting Agreement does not purport to be complete and is qualified in its entirety by reference to the full text of the Underwriting Agreement, a copy of which is filed herewith as Exhibit 1.2 to this Current Report on Form 8-K and is incorporated herein by reference.
+
+A validity opinion issued by the Company’s counsel with respect to the Class A Common Stock and Class C Capital Stock sold in the Stock Offering is filed as Exhibit 5.2 hereto.
+
+The Stock Offering was made pursuant to the Shelf Registration Statement, a base prospectus, dated June 1, 2026, included as part of the Shelf Registration Statement and a prospectus supplement, dated June 2, 2026.
+
+On June 1, 2026, the Company entered into a securities purchase agreement (the “Purchase Agreement”) with an affiliate of Berkshire Hathaway Inc. (“Berkshire Hathaway”) for the sale of 14,212,035 shares of Class A Common Stock at a price per share of approximately $351.81 and 14,359,656 shares of Class C Capital Stock at a price per share of approximately $348.20 (collectively, the “Private Placement Shares”), for gross proceeds of $10 billion. The Private Placement Shares are being issued to Berkshire Hathaway in a private placement relying upon the exemption provided by Section 4(a)(2) of the Securities Act of 1933 as a transaction not involving a public offering. In connection with the private placement, the Company also entered into a registration rights letter agreement with Berkshire Hathaway, pursuant to which the Company has agreed to file a registration statement with the SEC to register the resale of the Private Placement Shares.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d)Exhibits
+
+Exhibit
+
+No.
+
+Description
+
+1.1
+
+Equity Distribution Agreement, dated June 1, 2026 between Alphabet and Goldman Sachs & Co. LLC, J.P. Morgan Securities LLC and Morgan Stanley & Co. LLC
+
+1.2
+
+Form of Underwriting Agreement (Stock) (incorporated by reference to Exhibit 1.2 to Alphabet Inc’s Form S-3; File No: 333-296395)
+
+5.1
+
+Opinion of Cleary Gottlieb Steen & Hamilton LLP with respect to the ATM Offering
+
+5.2
+
+Opinion of Cleary Gottlieb Steen & Hamilton LLP with respect to the Stock Offering
+
+23.1
+
+Consent of Cleary Gottlieb Steen & Hamilton LLP (included in Exhibit 5.1)
+
+23.2
+
+Consent of Cleary Gottlieb Steen & Hamilton LLP (included in Exhibit 5.2)
+
+99.1
+
+Press Release issued by Alphabet Inc. dated June 1, 2026
+
+99.2
+
+Press Release issued by Alphabet Inc. dated June 2, 2026
+
+104
+
+Cover Page Interactive Data File (formatted as inline XBRL)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ALPHABET INC.
+
+Date: June 4, 2026
+
+/s/ Anat Ashkenazi
+
+Anat Ashkenazi
+
+Senior Vice President, Chief Financial Officer

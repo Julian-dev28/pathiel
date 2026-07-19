@@ -1,0 +1,110 @@
+gme-20260602
+0001326380false00013263802026-06-022026-06-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+Current Report
+
+Pursuant To Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 2, 2026
+
+GameStop Corp.
+
+(Exact name of Registrant as specified in its charter)
+
+Delaware
+
+1-32637
+
+20-2733559
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+625 Westport Parkway, Grapevine, TX 76051
+
+(817) 424-2000
+
+(Address, Including Zip Code, and Telephone Number, Including Area Code, of Registrant’s Principal Executive Offices)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading SymbolName of each exchange on which registered
+
+Class A Common StockGMENYSE
+
+Warrants to Purchase Common Stock, par value $0.001 per shareGME WSNYSE
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+The following information is furnished pursuant to Item 2.02, “Results of Operations and Financial Condition,” and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, or otherwise subject to the liabilities of that section.
+
+On June 2, 2026, GameStop Corp. (the “Company”) issued a press release announcing its financial results for its first quarter ended May 2, 2026. A copy of the press release is attached hereto as Exhibit 99.1.
+
+The foregoing information contained in this Current Report, including Exhibit 99.1, shall not be incorporated by reference into any filing of the Company, whether made before or after the date hereof, regardless of any general incorporation language in such filing, except as otherwise expressly set forth therein.
+
+Item 7.01 Regulation FD Disclosure.
+
+The following information contained in this Current Report, including Exhibit 99.1, is furnished pursuant to Item 7.01 “Regulation FD Disclosure,” and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, or otherwise subject to the liabilities of that section.
+
+On June 2, 2026, the Company issued a press release announcing that the Company's Board of Directors has approved a new discretionary $2.0 billion share repurchase authorization to replace the previous share repurchase authorization. Under the new share repurchase authorization, the Company may repurchase shares of its Class A common stock from time to time in compliance with SEC regulations and other legal requirements, and subject to market conditions and other factors. The repurchase authorization does not require the Company to acquire any specific number of shares and may be terminated at any time. A copy of the press release is attached hereto as Exhibit 99.1.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+Exhibit No. Description
+
+99.1 Press Release issued by GameStop Corp., dated June 2, 2026.
+
+104 Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+GAMESTOP CORP.
+
+(Registrant)
+
+Date:June 2, 2026By:/s/ Daniel Moore
+
+Name: Daniel Moore
+
+Title: Principal Financial and Accounting Officer

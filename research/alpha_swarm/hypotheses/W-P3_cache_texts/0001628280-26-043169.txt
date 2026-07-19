@@ -1,0 +1,116 @@
+zm-20260611
+0001585521FALSE00015855212026-05-212026-05-21
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+_________________________
+
+FORM 8-K
+
+_________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): June 11, 2026
+
+_________________________
+
+Zoom Communications, Inc.
+
+(Exact name of Registrant as Specified in Its Charter)
+
+_________________________
+
+Delaware001-3886561-1648780
+
+(State or Other Jurisdiction
+
+of Incorporation)(Commission File Number)(IRS Employer
+
+Identification No.)
+
+55 Almaden Boulevard, 6th Floor
+
+San Jose, California 95113
+
+(Address of principal executive offices and Zip Code)
+
+(888) 799-9666
+
+(Registrant’s Telephone Number, Including Area Code)
+
+Zoom Video Communications, Inc.
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+_________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.001 par value per shareZMThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+On June 11, 2026, Zoom Communications, Inc. (the “Company”) held its 2026 Annual Meeting of Stockholders (the "Annual Meeting"). At the Annual Meeting, the Company’s stockholders (1) elected each of the Company’s nominees for Class I director, (2) ratified the appointment of KPMG LLP as the Company’s independent registered public accounting firm for the fiscal year ending January 31, 2027, and (3) approved, on an advisory basis, the compensation of the Company's named executive officers. The final results with respect to each proposal are set forth below.
+
+Proposal One – Election of Directors
+
+The stockholders elected each of the three persons named below as Class I directors to serve until the 2029 annual meeting of stockholders or until their successors are duly elected and qualified. The results of such vote were:
+
+FORWITHHELDBROKER NON-VOTE
+
+Eric S. Yuan365,506,59026,355,48243,129,654
+
+Lieut. Gen. H.R. McMaster302,911,12888,950,94443,129,654
+
+Proposal Two – Ratification of Selection of Independent Public Registered Accounting Firm
+
+The stockholders ratified the appointment of KPMG LLP as the Company's independent registered public accounting firm for the fiscal year ending January 31, 2027. The results of such vote were:
+
+FORAGAINSTABSTAIN
+
+433,269,6021,467,750254,374
+
+Proposal Three – Advisory Vote on Executive Compensation
+
+The stockholders advised that they were in favor of the compensation of the Company's named executive officers. The results of such vote were:
+
+FORAGAINSTABSTAINBROKER NON-VOTE
+
+362,342,00929,299,390220,67343,129,654
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Zoom Communications, Inc.
+
+Dated: June 15, 2026By:/s/ Cheree McAlpine
+
+Cheree McAlpine
+
+Chief Legal Officer and Secretary

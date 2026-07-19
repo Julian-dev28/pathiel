@@ -206,12 +206,19 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
   Recorder: NO-GO (history refetchable, mechanical rules refuted).
 - W-P2 scheduled-catalyst cell (policy binaries -> BTC/ETH drift) is a separate
   agent's study, in flight 2026-07-19 — see findings/W-P2_scheduled_catalyst.md.
-- **W-P3 (specced, NOT built): content-signed EDGAR direction.** At acceptance, pull
-  8-K text (URL deterministic from accessionNumber), LLM calls LONG/SHORT/PASS inside
-  the entry bar, score through the W-P1 harness (same entry/exit/null). Items
-  1.01/2.02/8.01 only. Zero capital until validated. Complements (does not reopen)
-  W-N3's "EDGAR stays unbuilt" — that verdict was about coverage-surge triggers;
-  W-P1 proves the filing-time reaction is real but content-blind entry fails.
+- **W-P3 LLM-signed EDGAR direction: REFUTED** (findings/W-P3_llm_signed_edgar.md,
+  pre-registered, run 2026-07-19). Claude CLI (fable-5, no tools/web) read all 308
+  W-P1 filing texts at acceptance: 84% SKIP, 49 signed in the honest post-cutoff
+  cell (L31/S18). EV25 negative at EVERY horizon (-0.58/-0.99/-0.45% at
+  +1h/4h/24h), raw uncosted EV also negative, no better than 2000x sign-shuffled
+  null (best p=0.08 — in the wrong direction). LLM sign matches the first-bar
+  reaction sign 60%: by first-bar entry the content direction is already priced
+  and gives back. Items-1.01/2.02/8.01 diagnostic cell also negative.
+  Contamination split moot (24/25 pre-cutoff events skipped, n=1). LANE-P CLOSED:
+  reaction real (W-P1), direction not capturable at >=1h latency even with the
+  text; a minutes-scale intra-bar entry would be a NEW execution cell, not a
+  re-run. Recorder NO-GO, zero capital, do not rebuild. Caches:
+  hypotheses/W-P3_cache_* + W-P3_cache_texts/ (all 308 primary docs, reusable).
 
 ## W-W whale/exposure quality-reads program (started 2026-07-12)
 INTERIM 2026-07-17 (shadow_status --book whale_flow): REFUTED lean at n=82 resolved —

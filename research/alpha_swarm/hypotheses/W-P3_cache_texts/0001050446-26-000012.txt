@@ -1,0 +1,149 @@
+mstr-20260205
+FALSE000105044600010504462026-02-052026-02-050001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2026-02-052026-02-050001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2026-02-052026-02-050001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2026-02-052026-02-050001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2026-02-052026-02-050001050446us-gaap:CommonStockMember2026-02-052026-02-05
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+________________________________________________________
+
+FORM 8-K
+
+________________________________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): February 5, 2026
+
+________________________________________________________
+
+STRATEGY INC
+
+(Exact name of Registrant as Specified in Its Charter)
+
+________________________________________________________
+
+Delaware001-4250951-0323571
+
+(State or Other Jurisdiction
+
+of Incorporation)
+(Commission File Number)
+(IRS Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+22182
+
+(Address of Principal Executive Offices)(Zip Code)
+
+Registrant’s Telephone Number, Including Area Code: 703 848-8600
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+________________________________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+oWritten communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+oSoliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+oPre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+oPre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+Trading
+
+Symbol(s)
+Name of each exchange on which registered
+
+10.00% Series A Perpetual Strife Preferred Stock, par value $0.001 per shareSTRFThe Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per shareSTRCThe Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, par value $0.001 per shareSTRKThe Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, par value $0.001 per shareSTRDThe Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per shareMSTRThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§ 230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§ 240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02. Results of Operations and Financial Condition.
+
+On February 5, 2026, Strategy Inc (the “Company”) issued a press release announcing the Company’s financial results for the quarter ended December 31, 2025. A copy of this press release is attached as Exhibit 99.1 to this Current Report on Form 8-K.
+
+Item 8.01. Other Events.
+
+Updates to STRC Stock Dividend Adjustment Framework
+
+The Company today announced an update to its Dividend Adjustment Framework applicable to its Variable Rate Perpetual Stretch Preferred Stock ("STRC Stock"). The Company is updating its rules-based monthly dividend recommendation framework for STRC Stock to evaluate dividend rates each month using the volume-weighted average price ("VWAP") of STRC Stock for the month.
+
+The Company’s current intention, subject to change in its sole discretion, is to evaluate dividend rates each month using the VWAP of STRC Stock for the month, as follows:
+
+•Below $95.00: Recommend a dividend rate increase of 50 basis points or more for the next period.
+
+•$95.00 - $98.99: Recommend a dividend rate increase of 25 basis points or more for the next period.
+
+•$99.00 - $100.99: No change in the dividend rate is anticipated. However, management may use its discretion to recommend a minor increase or decrease of 25 basis points depending on prevailing market and capital conditions.
+
+•$101.00 and above: Recommend a dividend rate decrease of 25 basis points, or a larger decrease if one-month term SOFR interest rates declined during that month (in each case, subject to the cap on rate reductions described in the prospectus and certificate of designations for the STRC Stock), and/or a follow-on offering of STRC Stock.
+
+All recommended dividend rate changes under this framework are subject to approval by the Company’s board of directors, and dividends will only be declared and paid when, as, and if the board of directors determines such changes are in the best interest of the Company and its stockholders. Recommendations may be adjusted to reflect prevailing market conditions at the time of recommendation. This structured approach is intended to maintain the trading price of STRC Stock near its $100 per share stated amount. There can be no assurance that the recommended dividend adjustments will achieve such intention. The Company may change or suspend this framework at any time in its sole discretion consistent with the terms of the STRC Stock.
+
+Item 7.01. Regulation FD Disclosure.
+
+Strategy Dashboard
+
+The Company also maintains a dashboard on its website (www.Strategy.com) as a disclosure channel for providing broad, non-exclusionary distribution of information regarding the Company to the public, including information regarding market prices of its outstanding securities, bitcoin purchases and holdings, certain KPI metrics and other supplemental information, and as one means of disclosing non-public information in compliance with its disclosure obligations under Regulation FD. Investors and others are encouraged to regularly review the information that the Company makes public via the website dashboard.
+
+Furnished Information
+
+The information disclosed pursuant to Items 2.02 (including Exhibit 99.1) and 7.01 in this Current Report on Form 8-K shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+Forward-Looking Statements
+
+This Current Report on Form 8-K (including Exhibit 99.1 attached hereto) may include statements that may constitute “forward-looking statements,” including estimates of future business prospects or financial results, including statements regarding the recommendations that will be made to adjust dividends for our STRC Stock, statements relating to our expectation regarding the tax-deferred return of capital treatment of distributions on our preferred stock, and statements containing the words “believe,” “estimate,” “project,” “expect,” “will,” or similar expressions. Forward-looking statements inherently involve risks and uncertainties that could cause actual results of the Company to differ materially from the forward-looking statements. Factors that could contribute to such differences include: fluctuations in the market price of bitcoin and any associated unrealized gains or losses on digital assets that the Company may record in its financial statements as a result of a change in the market price of bitcoin from the value at which the Company’s bitcoins are carried on its balance sheet; the availability of debt and equity financing on favorable terms; gains or losses on any sales of bitcoins; changes in the accounting treatment relating to the Company’s bitcoin holdings; changes in securities laws or other laws or regulations, or the adoption of new laws or regulations, relating to bitcoin that adversely affect the price of bitcoin or the Company’s ability to transact in or own bitcoin; changes in the Company’s tax earnings & profits that may impact return of capital tax treatment on future dividends on the Company’s preferred stock; the impact of the availability of spot exchange traded products and other investment vehicles for bitcoin and other digital assets; a decrease in liquidity in the markets in which bitcoin is traded; security breaches, cyberattacks, unauthorized access, loss of private keys, fraud or other circumstances or events that result in the loss of the Company’s bitcoins; impacts to the price and rate of adoption of bitcoin associated with financial difficulties and bankruptcies of various participants in the digital asset industry; the level and terms of the Company’s substantial indebtedness and its ability to service such debt; the extent and timing of market acceptance of the Company’s new product offerings; continued acceptance of the Company’s other products in the marketplace; the Company’s ability to recognize revenue or deferred revenue through delivery of products or satisfactory performance of services; the timing of significant orders; delays in or the inability of the Company to develop or ship new products; customers continuing to shift from a product license model to a cloud subscription model, which may delay the Company’s ability to recognize revenue; fluctuations in tax benefits or provisions; changes in the market price of bitcoin as of period-end and their effect on our deferred tax assets, related valuation allowance, and tax expense; other potentially adverse tax consequences; competitive factors; general economic conditions, including levels of inflation and interest rates; currency fluctuations; and other factors discussed under the caption “Risk Factor Updates” in the Company’s Current Report on Form 8-K filed with the SEC on October 6, 2025 and under the caption “Risk Factors” in the Company’s Quarterly Report on Form 10-Q filed with the SEC on November 3, 2025 and the risks described in other filings that the Company may make with the Securities and Exchange Commission. Any forward-looking statements contained in this Current Report on Form 8-K (including Exhibit 99.1 attached hereto) speak only as of the date hereof, and the Company specifically disclaims any obligation to update any forward-looking statement, whether as a result of new information, future events, or otherwise.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d) Exhibits
+
+Exhibit
+
+No.
+Description
+
+99.1
+Press release, dated February 5, 2026, regarding the Company’s financial results for the quarter ended December 31, 2025.
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Strategy Inc
+
+(Registrant)
+
+Date:February 5, 2026By:/s/ Andrew Kang
+
+Andrew Kang
+
+Executive Vice President & Chief Financial Officer

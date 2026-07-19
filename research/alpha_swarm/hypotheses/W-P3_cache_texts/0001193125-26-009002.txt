@@ -1,0 +1,119 @@
+8-K
+
+ORACLE CORP false 0001341439 0001341439 2026-01-05 2026-01-05
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): January 5, 2026
+
+Oracle Corporation
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-35992
+
+54-2185193
+
+(State or other jurisdiction of
+
+incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2300 Oracle Way, Austin, Texas 78741
+
+(Address of principal executive offices) (Zip Code)
+
+(737) 867-1000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former name or former address, if changed since last report.)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, par value $0.01 per share
+
+ORCL
+
+New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Section 5—Corporate Governance and Management
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers
+
+On January 5, 2026, George H. Conrades, age 86, notified the Board of Directors (the “Board”) of Oracle Corporation (“Oracle”) that after 18 years of service to Oracle, he is retiring as a director effective immediately. On January 7, 2026, Naomi O. Seligman, age 87, notified the Board that after 20 years of service to Oracle, she is retiring as a director effective immediately.
+
+Neither retirement was the result of any dispute or disagreement with Oracle on any matter relating to Oracle’s operations, policies or practices.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ORACLE CORPORATION
+
+Dated: January 9, 2026
+
+    
+
+By:
+
+/s/ Kimberly Woolley
+
+Name: Kimberly Woolley
+
+Title: Vice President, Assistant General Counsel and
+
+Assistant Secretary

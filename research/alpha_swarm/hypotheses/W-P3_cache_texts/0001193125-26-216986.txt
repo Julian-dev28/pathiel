@@ -1,0 +1,307 @@
+8-K
+
+NASDAQ NASDAQ false 0001652044 0001652044 2026-05-11 2026-05-11 0001652044 us-gaap:CommonStockMember 2026-05-11 2026-05-11 0001652044 goog:CapitalClassCMember 2026-05-11 2026-05-11 0001652044 goog:A2.375SeniorNotesDue2028Member 2026-05-11 2026-05-11 0001652044 goog:A2.500SeniorNotesDue2029Member 2026-05-11 2026-05-11 0001652044 goog:A4.125SeniorNotesDue2029Member 2026-05-11 2026-05-11 0001652044 goog:A2.875SeniorNotesDue2031Member 2026-05-11 2026-05-11 0001652044 goog:A4.625SeniorNotesDue2032Member 2026-05-11 2026-05-11 0001652044 goog:A3.000SeniorNotesDue2033Member 2026-05-11 2026-05-11 0001652044 goog:A3.125SeniorNotesDue2034Member 2026-05-11 2026-05-11 0001652044 goog:A3.375SeniorNotesDue2037Member 2026-05-11 2026-05-11 0001652044 goog:A3.500SeniorNotesDue2038Member 2026-05-11 2026-05-11 0001652044 goog:A5.500SeniorNotesDue2041Member 2026-05-11 2026-05-11 0001652044 goog:A4.000SeniorNotesDue2044Member 2026-05-11 2026-05-11 0001652044 goog:A3.875SeniorNotesDue2045Member 2026-05-11 2026-05-11 0001652044 goog:A4.000SeniorNotesDue2054Member 2026-05-11 2026-05-11 0001652044 goog:A5.875SeniorNotesDue2058Member 2026-05-11 2026-05-11 0001652044 goog:A4.375SeniorNotesDue2064Member 2026-05-11 2026-05-11 0001652044 goog:A6.125SeniorNotesDue2126Member 2026-05-11 2026-05-11
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported)
+
+May 11, 2026
+
+ALPHABET INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-37580
+
+61-1767919
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+1600 Amphitheatre Parkway
+
+Mountain View, CA 94043
+
+(Address of principal executive offices, including zip code)
+
+(650) 253-0000
+
+(Registrant’s telephone number, including area code)
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Class A Common Stock, $0.001 par value
+
+GOOGL
+
+Nasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+Class C Capital Stock, $0.001 par value
+
+GOOG
+
+Nasdaq Stock Market LLC
+
+(Nasdaq Global Select Market)
+
+2.375% Senior Notes due 2028
+
+—
+
+Nasdaq Stock Market LLC
+
+2.500% Senior Notes due 2029
+
+—
+
+Nasdaq Stock Market LLC
+
+4.125% Senior Notes due 2029
+
+—
+
+Nasdaq Stock Market LLC
+
+2.875% Senior Notes due 2031
+
+—
+
+Nasdaq Stock Market LLC
+
+4.625% Senior Notes due 2032
+
+—
+
+Nasdaq Stock Market LLC
+
+3.000% Senior Notes due 2033
+
+—
+
+Nasdaq Stock Market LLC
+
+3.125% Senior Notes due 2034
+
+—
+
+Nasdaq Stock Market LLC
+
+3.375% Senior Notes due 2037
+
+—
+
+Nasdaq Stock Market LLC
+
+3.500% Senior Notes due 2038
+
+—
+
+Nasdaq Stock Market LLC
+
+5.500% Senior Notes due 2041
+
+—
+
+Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2044
+
+—
+
+Nasdaq Stock Market LLC
+
+3.875% Senior Notes due 2045
+
+—
+
+Nasdaq Stock Market LLC
+
+4.000% Senior Notes due 2054
+
+—
+
+Nasdaq Stock Market LLC
+
+5.875% Senior Notes due 2058
+
+—
+
+Nasdaq Stock Market LLC
+
+4.375% Senior Notes due 2064
+
+—
+
+Nasdaq Stock Market LLC
+
+6.125% Senior Notes due 2126
+
+—
+
+Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01. Other Events.
+
+Alphabet Inc. Euro and Canadian Dollar Senior Notes Offering
+
+On May 11, 2026, Alphabet Inc. (“Alphabet”) closed its concurrent underwritten public offerings of €9 billion aggregate principal amount of euro-denominated senior notes (the “Euro Notes”) and C$9.5 billion aggregate principal amount of Canadian dollar-denominated senior notes (the “Canadian Notes” and, collectively with the Euro Notes, the “Notes”) pursuant to Alphabet’s registration statement on Form S-3 (File No. 333-286752). The Notes were issued pursuant to an Indenture (the “Indenture”), dated as of February 12, 2016, between Alphabet and The Bank of New York Mellon Trust Company, N.A., as trustee.
+
+The Euro Notes consist of €1,500,000,000 aggregate principal amount of 3.200% notes due 2030, €1,750,000,000 aggregate principal amount of 3.450% notes due 2032, €1,500,000,000 aggregate principal amount of 3.625% notes due 2034, €1,750,000,000 aggregate principal amount of 4.100% notes due 2039, €1,250,000,000 aggregate principal amount of 4.500% notes due 2045 and €1,250,000,000 aggregate principal amount of 4.800% notes due 2063.
+
+The Canadian Notes consist of C$1,500,000,000 aggregate principal amount of 3.650% notes due 2031, C$2,000,000,000 aggregate principal amount of 4.000% notes due 2033, C$2,250,000,000 aggregate principal amount of 4.350% notes due 2036 and C$2,750,000,000 aggregate principal amount of 5.000% notes due 2056.
+
+The foregoing description of the Indenture is qualified in its entirety by the terms of such agreement, which is filed hereto as Exhibit 4.1 and incorporated herein by reference. The foregoing descriptions of the Notes is qualified in its entirety by reference to the full text of the respective forms of the Notes filed as Exhibits 4.2-4.11 hereto and each is incorporated herein by reference.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d)
+
+Exhibits
+
+Exhibit
+
+No.
+
+Description
+
+4.1
+
+Indenture, dated February 12, 2016, between Alphabet Inc. and The Bank of New York Mellon Trust Company, N.A., as trustee (incorporated by reference to Exhibit 4.3 of Alphabet Inc.’s Registration Statement on Form S-3 filed on February 12, 2016 (File No. 333-209510)
+
+4.2
+
+Form of Global Note representing the Registrant’s 3.200% notes due 2030
+
+4.3
+
+Form of Global Note representing the Registrant’s 3.450% notes due 2032
+
+4.4
+
+Form of Global Note representing the Registrant’s 3.625% notes due 2034
+
+4.5
+
+Form of Global Note representing the Registrant’s 4.100% notes due 2039
+
+4.6
+
+Form of Global Note representing the Registrant’s 4.500% notes due 2045
+
+4.7
+
+Form of Global Note representing the Registrant’s 4.800% notes due 2063
+
+4.8
+
+Form of Global Note representing the Registrant’s 3.650% notes due 2031
+
+4.9
+
+Form of Global Note representing the Registrant’s 4.000% notes due 2033
+
+4.10
+
+Form of Global Note representing the Registrant’s 4.350% notes due 2036
+
+4.11
+
+Form of Global Note representing the Registrant’s 5.000% notes due 2056
+
+5.1
+
+Opinion of Cleary Gottlieb Steen & Hamilton LLP with respect to the Euro Notes
+
+5.2
+
+Opinion of Cleary Gottlieb Steen & Hamilton LLP with respect to the Canadian Notes
+
+23.1
+
+Consent of Cleary Gottlieb Steen & Hamilton LLP (included in Exhibit 5.1)
+
+23.2
+
+Consent of Cleary Gottlieb Steen & Hamilton LLP (included in Exhibit 5.2)
+
+104
+
+Cover Page Interactive Data File (formatted as inline XBRL)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ALPHABET INC.
+
+Date: May 11, 2026
+
+/s/ Anat Ashkenazi
+
+Anat Ashkenazi
+
+Senior Vice President, Chief Financial Officer

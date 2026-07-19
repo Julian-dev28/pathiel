@@ -1,0 +1,121 @@
+8-K
+
+0000789019 false 0000789019 2026-06-02 2026-06-02 0000789019 us-gaap:CommonStockMember 2026-06-02 2026-06-02 0000789019 msft:NotesThreePointOneTwoFivePercentDueDecemberSixTwentyTwentyEightMember 2026-06-02 2026-06-02 0000789019 msft:NotesTwoPointSixTwoFivePercentDueMayTwoTwentyThirtyThreeMember 2026-06-02 2026-06-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(D)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported) June 2, 2026
+
+Microsoft Corporation
+
+Washington
+
+001-37845
+
+91-1144442
+
+(State or Other Jurisdiction
+
+of Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+One Microsoft Way, Redmond, Washington
+
+98052-6399
+
+(425) 882-8080
+
+www.microsoft.com/investor
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol
+
+Name of exchange on
+
+which registered
+
+Common stock, $0.00000625 par value per share
+
+MSFT
+
+NASDAQ
+
+3.125% Notes due 2028
+
+MSFT
+
+NASDAQ
+
+2.625% Notes due 2033
+
+MSFT
+
+NASDAQ
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02.
+
+Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+(b) On June 2, 2026, Reid Hoffman, a member of the Board of Directors of Microsoft Corporation (the “Company”) since 2017, informed the Company of his decision not to stand for re-election at the Company’s 2026 annual shareholder meeting (the “Annual Meeting”). Mr. Hoffman will continue to serve as a director until the Annual Meeting. His decision not to stand for re-election is not as a result of any disagreement with management on any matter relating to the Company’s operations, policies, or practices. The Company thanks Mr. Hoffman for his contributions during his tenure as a director.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+MICROSOFT CORPORATION
+
+(Registrant)
+
+Date: June 5, 2026
+
+/s/ Brian B. DeFoe
+
+Brian B. DeFoe
+
+Corporate Secretary

@@ -1,0 +1,90 @@
+nvda-20260628
+0001045810false00010458102026-06-282026-06-28
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, DC 20549
+
+______________
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d) OF
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): June 28, 2026
+
+NVIDIA CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware0-2398594-3177549
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2788 San Tomas Expressway, Santa Clara, CA 95051
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant’s telephone number, including area code: (408) 486-2000
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, $0.001 par value per shareNVDAThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging Growth Company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02. Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+(b)
+
+On June 28, 2026, Ajay K. Puri, Executive Vice President, Worldwide Field Operations of NVIDIA Corporation, or the Company, notified the Company of his intention to retire from his role effective upon the employment commencement date of his successor. Mr. Puri, a 21-year executive at NVIDIA, is expected to remain with the Company in a senior advisory role to ensure a seamless transition to his successor.
+
+(c)
+
+On July 1, 2026, the Company appointed Nicholas Parker, age 55, as Executive Vice President, Worldwide Field Operations of the Company, effective upon the commencement of his employment with the Company, which is anticipated to be on August 24, 2026.
+
+Mr. Parker will join the Company after 26 years at Microsoft Corporation and brings a combination of industry knowledge and business acumen as the Company works to extend its global leadership in AI infrastructure and expand the ecosystem. He most recently served as Executive Vice President and Chief Business Officer of Microsoft’s Worldwide Sales & Solutions organization from 2025 to 2026, where he was responsible for operating the commercial business for enterprise, small and medium business and consumer customers. He also served as President, Industry & Partner Sales from 2022 to 2025, and Vice President, Global Partner Solutions from 2020 to 2022.
+
+Mr. Parker’s annual base salary will be $1,000,000 and he will receive a sign-on bonus of $5,000,000. He will be eligible to receive target annualized cash variable compensation of $1,500,000 pursuant to the Company’s Fiscal 2027 Variable Compensation Plan, pro-rated for his time worked during fiscal year 2027. Mr. Parker will also receive two new hire equity grants consisting of (a) restricted stock units, or RSUs, with a target value of $35,000,000, vesting approximately over a four-year period according to the Company’s standard new hire vesting schedule, and (b) multi-year performance-based RSUs, or MY PSUs, with a target value of $5,000,000, which will be eligible to vest based on the Company’s total shareholder return relative to the Standard & Poor’s 500 Composite Index over a three-year period. The terms of the RSUs and MY PSUs will be governed by the Company's Amended and Restated 2007 Equity Incentive Plan and applicable RSU and MY PSU agreements. Mr. Parker will be eligible to participate in the Company's benefit programs available to similarly situated employees.
+
+Mr. Parker will enter into the Company’s indemnity agreement, which would require the Company to indemnify Mr. Parker, under the circumstances and to the extent provided for therein, against certain expenses and other amounts incurred by Mr. Parker as a result of being made a party to certain actions, suits, proceedings and the like by reason of his position as an officer of the Company.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+NVIDIA Corporation
+
+Date: July 2, 2026By: /s/ Colette M. Kress
+
+Colette M. Kress
+
+Executive Vice President and Chief Financial Officer

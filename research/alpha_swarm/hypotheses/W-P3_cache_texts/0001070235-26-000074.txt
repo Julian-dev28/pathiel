@@ -1,0 +1,152 @@
+bbry-20260625
+0001070235false00010702352026-06-252026-06-25
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d) of The Securities Exchange Act of 1934
+
+June 25, 2026
+
+Date of Report (date of earliest event reported)
+
+BlackBerry Limited
+
+(Exact name of registrant as specified in its charter)
+
+Canada
+001-38232
+98-0164408
+
+(State or other jurisdiction of incorporation or organization)
+
+(Commission File Number)
+
+(I.R.S. Employer Identification No.)
+
+2200 University Ave East
+
+Waterloo
+
+Ontario
+Canada
+N2K 0A7
+
+(Address of Principal Executive Offices)
+
+(Zip Code)
+
+(519) 888-7465
+
+Registrant's telephone number, including area code
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common SharesBBNew York Stock Exchange
+
+Common SharesBBToronto Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.
+
+☐
+
+Item 5.07. Submission of Matters to a Vote of Security Holders.
+
+On June 25, 2026, the Company held its Annual and Special Meeting of Shareholders (the “Meeting”). There were 341,513,442 shares of common stock represented at the Meeting. At the Meeting, the Company’s shareholders voted as follows on the matters set forth below:
+
+1.Election of Directors. All eight of the directors named in the management proxy circular were elected to serve as directors of the Company, to hold office in each case until the next annual meeting of shareholders or until his or her successor is duly elected or appointed, based upon the following votes:
+
+DirectorForWithheldBroker Non-Votes
+
+Lisa Bahash229,992,00338,743,71172,777,617
+
+Philip Brace260,433,3748,302,34072,777,617
+
+Lisa Disbrow257,152,98911,582,72572,777,617
+
+John J. Giamatteo257,184,35311,551,36072,777,618
+
+Richard Lynch226,757,58441,978,13072,777,617
+
+Barry Mainz266,033,8012,701,91372,777,617
+
+Lori O’Neill265,897,6942,838,02272,777,615
+
+Wayne Wouters255,639,62313,096,09172,777,617
+
+2.Re-appointment of Independent Auditors. The re-appointment of PricewaterhouseCoopers LLP as the independent auditors of the Company as described in the management proxy circular was approved, based upon the following votes:
+
+ForWithheldBroker Non-Votes
+
+336,679,1764,834,1532
+
+3.Approval of Unallocated Entitlements under the DSU Plan. The resolution on unallocated entitlements under the Company’s Deferred Share Unit Plan for directors as described in the management proxy circular was approved, based upon the following votes:
+
+ForAgainstAbstainBroker Non-Votes
+
+261,647,5555,710,9321,377,22472,777,620
+
+4.Amendment to the Employee Share Purchase Plan. The resolution on amendments to the Company’s Employee Share Purchase Plan as described in the management proxy circular was approved, based on the following votes:
+
+ForAgainstAbstainBroker Non-Votes
+
+263,349,4974,091,8701,294,34477,777,260
+
+5.Advisory Vote on Executive Compensation. The advisory resolution on executive compensation as described in the management proxy circular was approved, based on the following votes:
+
+ForAgainstAbstainBroker Non-Votes
+
+213,472,06551,847,1313,416,51272,777,623
+
+6.Advisory Vote on Frequency of Say on Pay Votes. The Company’s shareholders approved, on an advisory basis, a frequency of one year for future non-binding votes on the compensation of the Company’s named executive officers, based on the following votes:
+
+1 Year2 Years3 YearsSpoiledBroker Non-Votes
+
+263,614,1722,480,2892,287,29519,45573,112,120
+
+Based on these results, and consistent with the Company’s recommendation, the Company will continue to hold an advisory vote on executive compensation every year.
+
+7.Shareholder Proposal. The resolution on a shareholder proposal seeking to amend By-Law No. A3 of the Company was rejected, based upon the following votes:
+
+ForAgainstAbstainBroker Non-Votes
+
+15,223,448251,797,8591,714,40172,777,623
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+BlackBerry Limited
+
+Date:
+June 25, 2026
+
+By:
+/s/ Phil Kurtz
+
+Name: Phil Kurtz
+
+Title:Chief Legal Officer and Corporate Secretary

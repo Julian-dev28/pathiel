@@ -1,0 +1,184 @@
+8-K
+
+0001050446false00010504462025-11-172025-11-170001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2025-11-172025-11-170001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2025-11-172025-11-170001050446us-gaap:CommonStockMember2025-11-172025-11-170001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2025-11-172025-11-170001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2025-11-172025-11-17
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): December 31, 2025
+
+STRATEGY INC
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-42509
+
+51-0323571
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+
+22182
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (703) 848-8600
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of Each Class
+
+Trading
+
+Symbol
+
+Name of Each Exchange
+
+on which Registered
+
+10.00% Series A Perpetual Strife Preferred Stock, $0.001 par value per share
+
+STRF
+
+The Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+The Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, $0.001 par value per share
+
+STRK
+
+The Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, $0.001 par value per share
+
+STRD
+
+The Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per share
+
+MSTR
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Events.
+
+Adjustment to Dividend Rate on Variable Rate Series A Perpetual Stretch Preferred Stock
+
+On December 31, 2025, Strategy Inc (the “Company”) increased the regular dividend rate per annum on the Company’s Variable Rate Series A Perpetual Stretch Preferred Stock effective for monthly periods commencing on or after January 1, 2026 from 10.75% to 11.00%. The Company announced this new rate via its website, www.strategy.com/strc.
+
+Cash Dividend Declaration
+
+On January 2, 2026, the Company announced that its board of directors had declared the following cash dividend, payable on January 31, 2026 (or, if such day is not a business day, the next business day) to stockholders of record as of 5:00 p.m., New York City time on January 15, 2026:
+
+Preferred Stock
+
+Ticker
+
+Period
+
+Cash Dividend Per Share
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+Month ending
+
+January 31, 2026
+
+$0.916666667 (1)
+
+(1)
+The cash dividend declared on STRC for the month ending January 31, 2026 represents a per annum dividend rate of 11.00%.
+
+Item 7.01 Regulation FD Disclosure.
+
+Strategy Dashboard
+
+The Company also maintains a dashboard on its website (www.strategy.com) as a disclosure channel for providing broad, non-exclusionary distribution of information regarding the Company to the public, including information regarding market prices of its outstanding securities, bitcoin purchases and holdings, certain KPI metrics and other supplemental information, and as one means of disclosing non-public information in compliance with its disclosure obligations under Regulation FD. Investors and others are encouraged to regularly review the information that the Company makes public via the website dashboard.
+
+Furnished Information
+
+The information disclosed pursuant to Item 7.01 in this Current Report on Form 8-K shall not be deemed “filed” for purposes of Section 18 of the Exchange Act, or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the Exchange Act, except as expressly set forth by specific reference in such a filing.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: January 2, 2026
+
+Strategy Inc
+
+(Registrant)
+
+By:
+
+/s/ Thomas C. Chow
+
+Name:
+
+Thomas C. Chow
+
+Title:
+
+Executive Vice President & General Counsel

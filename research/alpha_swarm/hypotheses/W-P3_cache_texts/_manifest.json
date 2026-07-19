@@ -1,0 +1,2158 @@
+{
+ "0000050863-25-000204": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086325000204/intc-20251226.htm",
+  "doc": "intc-20251226.htm",
+  "raw_len": 22735,
+  "text_len": 3306
+ },
+ "0001193125-25-332296": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312525332296/mstr-20251117.htm",
+  "doc": "mstr-20251117.htm",
+  "raw_len": 155919,
+  "text_len": 6208
+ },
+ "0001193125-26-000264": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526000264/mstr-20251117.htm",
+  "doc": "mstr-20251117.htm",
+  "raw_len": 84914,
+  "text_len": 5625
+ },
+ "0001628280-26-000016": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026000016/tsla-20260102.htm",
+  "doc": "tsla-20260102.htm",
+  "raw_len": 26389,
+  "text_len": 3072
+ },
+ "0001140361-26-000199": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000114036126000199/ef20060722_8k.htm",
+  "doc": "ef20060722_8k.htm",
+  "raw_len": 39520,
+  "text_len": 4174
+ },
+ "0001193125-26-001550": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526001550/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 239568,
+  "text_len": 8580
+ },
+ "0001193125-26-009002": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526009002/d34442d8k.htm",
+  "doc": "d34442d8k.htm",
+  "raw_len": 21309,
+  "text_len": 3182
+ },
+ "0001193125-26-009811": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526009811/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 156028,
+  "text_len": 6309
+ },
+ "0001628280-26-002429": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026002429/meta-20260112.htm",
+  "doc": "meta-20260112.htm",
+  "raw_len": 28251,
+  "text_len": 5738
+ },
+ "0001193125-26-015951": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000119312526015951/d37713d8k.htm",
+  "doc": "d37713d8k.htm",
+  "raw_len": 73837,
+  "text_len": 41167
+ },
+ "0001193125-26-016002": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526016002/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 156054,
+  "text_len": 6211
+ },
+ "0001065280-26-000033": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000033/nflx-20260120.htm",
+  "doc": "nflx-20260120.htm",
+  "raw_len": 34946,
+  "text_len": 13212
+ },
+ "0000002488-26-000002": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000002/amd-20260116.htm",
+  "doc": "amd-20260116.htm",
+  "raw_len": 29846,
+  "text_len": 4305
+ },
+ "0001104659-26-005366": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000110465926005366/tm263707d1_8k.htm",
+  "doc": "tm263707d1_8k.htm",
+  "raw_len": 49124,
+  "text_len": 5819
+ },
+ "0000050863-26-000009": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000009/intc-20260122.htm",
+  "doc": "intc-20260122.htm",
+  "raw_len": 27248,
+  "text_len": 4221
+ },
+ "0000050863-26-000031": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000031/intc-20260123.htm",
+  "doc": "intc-20260123.htm",
+  "raw_len": 28256,
+  "text_len": 4714
+ },
+ "0001045810-26-000003": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000003/nvda-20260120.htm",
+  "doc": "nvda-20260120.htm",
+  "raw_len": 19333,
+  "text_len": 2984
+ },
+ "0001193125-26-021726": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526021726/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 156536,
+  "text_len": 6260
+ },
+ "0001628280-26-003832": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026003832/meta-20260128.htm",
+  "doc": "meta-20260128.htm",
+  "raw_len": 29178,
+  "text_len": 3976
+ },
+ "0001193125-26-027198": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526027198/msft-20260128.htm",
+  "doc": "msft-20260128.htm",
+  "raw_len": 62244,
+  "text_len": 3610
+ },
+ "0001628280-26-003837": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026003837/tsla-20260128.htm",
+  "doc": "tsla-20260128.htm",
+  "raw_len": 26949,
+  "text_len": 3310
+ },
+ "0001970622-26-000009": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000197062226000009/usar-20260128.htm",
+  "doc": "usar-20260128.htm",
+  "raw_len": 46599,
+  "text_len": 15611
+ },
+ "0001628280-26-004121": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2023554/000162828026004121/sndk-20260129.htm",
+  "doc": "sndk-20260129.htm",
+  "raw_len": 31258,
+  "text_len": 3623
+ },
+ "0000320193-26-000005": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000005/aapl-20260129.htm",
+  "doc": "aapl-20260129.htm",
+  "raw_len": 38421,
+  "text_len": 3973
+ },
+ "0001783879-26-000007": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000007/hood-20260130.htm",
+  "doc": "hood-20260130.htm",
+  "raw_len": 44315,
+  "text_len": 5516
+ },
+ "0001193125-26-032731": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526032731/mstr-20260131.htm",
+  "doc": "mstr-20260131.htm",
+  "raw_len": 171371,
+  "text_len": 9786
+ },
+ "0001193125-26-033573": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526033573/mstr-20260202.htm",
+  "doc": "mstr-20260202.htm",
+  "raw_len": 83863,
+  "text_len": 6069
+ },
+ "0001321655-26-000004": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1321655/000132165526000004/pltr-20260202.htm",
+  "doc": "pltr-20260202.htm",
+  "raw_len": 32007,
+  "text_len": 4827
+ },
+ "0000002488-26-000014": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000014/amd-20260203.htm",
+  "doc": "amd-20260203.htm",
+  "raw_len": 30877,
+  "text_len": 4544
+ },
+ "0001104659-26-010299": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926010299/tm265080d1_6k.htm",
+  "doc": "tm265080d1_6k.htm",
+  "raw_len": 10353,
+  "text_len": 1649
+ },
+ "0001652044-26-000012": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000012/goog-20260204.htm",
+  "doc": "goog-20260204.htm",
+  "raw_len": 44063,
+  "text_len": 5429
+ },
+ "0001193125-26-037840": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526037840/d23732d8k.htm",
+  "doc": "d23732d8k.htm",
+  "raw_len": 35928,
+  "text_len": 11422
+ },
+ "0001193125-26-039344": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526039344/d63638d8k.htm",
+  "doc": "d63638d8k.htm",
+  "raw_len": 41588,
+  "text_len": 11882
+ },
+ "0001050446-26-000012": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000105044626000012/mstr-20260205.htm",
+  "doc": "mstr-20260205.htm",
+  "raw_len": 47310,
+  "text_len": 11486
+ },
+ "0001018724-26-000002": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000002/amzn-20260205.htm",
+  "doc": "amzn-20260205.htm",
+  "raw_len": 33976,
+  "text_len": 3730
+ },
+ "0001193125-26-041944": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526041944/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 156928,
+  "text_len": 6173
+ },
+ "0001046179-26-000015": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000015/tsm-revenue20260210.htm",
+  "doc": "tsm-revenue20260210.htm",
+  "raw_len": 86522,
+  "text_len": 5757
+ },
+ "0001783879-26-000013": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000013/hood-20260206.htm",
+  "doc": "hood-20260206.htm",
+  "raw_len": 41629,
+  "text_len": 4970
+ },
+ "0001874178-26-000007": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000007/rivn-20260212.htm",
+  "doc": "rivn-20260212.htm",
+  "raw_len": 35810,
+  "text_len": 4427
+ },
+ "0001679788-26-000011": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000167978826000011/coin-20260212.htm",
+  "doc": "coin-20260212.htm",
+  "raw_len": 31827,
+  "text_len": 4411
+ },
+ "0001193125-26-051423": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526051423/d946885d8k.htm",
+  "doc": "d946885d8k.htm",
+  "raw_len": 54147,
+  "text_len": 7784
+ },
+ "0001193125-26-053105": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526053105/mstr-20260105.htm",
+  "doc": "mstr-20260105.htm",
+  "raw_len": 156950,
+  "text_len": 6195
+ },
+ "0000002488-26-000029": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000029/amd-20260210.htm",
+  "doc": "amd-20260210.htm",
+  "raw_len": 46709,
+  "text_len": 9764
+ },
+ "0001193125-26-062489": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526062489/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 155339,
+  "text_len": 6181
+ },
+ "0000002488-26-000045": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000045/amd-20260223.htm",
+  "doc": "amd-20260223.htm",
+  "raw_len": 35252,
+  "text_len": 7077
+ },
+ "0001140361-26-006577": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000114036126006577/ef20060722_8k.htm",
+  "doc": "ef20060722_8k.htm",
+  "raw_len": 73012,
+  "text_len": 5628
+ },
+ "0001046179-26-000021": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000021/tsm-monthend6kx20260225.htm",
+  "doc": "tsm-monthend6kx20260225.htm",
+  "raw_len": 20102,
+  "text_len": 2992
+ },
+ "0001876042-26-000032": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000032/crcl-20260225.htm",
+  "doc": "crcl-20260225.htm",
+  "raw_len": 23368,
+  "text_len": 3465
+ },
+ "0001045810-26-000019": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000019/nvda-20260225.htm",
+  "doc": "nvda-20260225.htm",
+  "raw_len": 25378,
+  "text_len": 4031
+ },
+ "0001046179-26-000024": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000024/tsm-fsx20260226x6k.htm",
+  "doc": "tsm-fsx20260226x6k.htm",
+  "raw_len": 19635,
+  "text_len": 1961
+ },
+ "0001213900-26-020589": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026020589/ea0278487-8k_usarare.htm",
+  "doc": "ea0278487-8k_usarare.htm",
+  "raw_len": 24572,
+  "text_len": 3300
+ },
+ "0001769628-26-000094": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000094/crwv-20260226.htm",
+  "doc": "crwv-20260226.htm",
+  "raw_len": 28313,
+  "text_len": 3876
+ },
+ "0001104659-26-021050": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926021050/tm267374d1_8k.htm",
+  "doc": "tm267374d1_8k.htm",
+  "raw_len": 39300,
+  "text_len": 6095
+ },
+ "0001193125-26-082247": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000119312526082247/d120618d8k.htm",
+  "doc": "d120618d8k.htm",
+  "raw_len": 27406,
+  "text_len": 7158
+ },
+ "0001046179-26-000027": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000027/tsm-dividendadjustmentx202.htm",
+  "doc": "tsm-dividendadjustmentx202.htm",
+  "raw_len": 16289,
+  "text_len": 2246
+ },
+ "0001193125-26-084264": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526084264/mstr-20260228.htm",
+  "doc": "mstr-20260228.htm",
+  "raw_len": 177246,
+  "text_len": 10085
+ },
+ "0000050863-26-000044": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000044/intc-20260227.htm",
+  "doc": "intc-20260227.htm",
+  "raw_len": 27424,
+  "text_len": 3914
+ },
+ "0001104659-26-022827": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926022827/tm267849d1_6k.htm",
+  "doc": "tm267849d1_6k.htm",
+  "raw_len": 9618,
+  "text_len": 1643
+ },
+ "0001213900-26-023868": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026023868/ea0280112-8k425_usarare.htm",
+  "doc": "ea0280112-8k425_usarare.htm",
+  "raw_len": 61300,
+  "text_len": 26038
+ },
+ "0001104659-26-024354": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926024354/tm268212d1_6k.htm",
+  "doc": "tm268212d1_6k.htm",
+  "raw_len": 9754,
+  "text_len": 1071
+ },
+ "0001045810-26-000024": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000024/nvda-20260302.htm",
+  "doc": "nvda-20260302.htm",
+  "raw_len": 31103,
+  "text_len": 4923
+ },
+ "0001652044-26-000026": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000026/goog-20260304.htm",
+  "doc": "goog-20260304.htm",
+  "raw_len": 48131,
+  "text_len": 10627
+ },
+ "0001193125-26-097598": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526097598/d122015d8k.htm",
+  "doc": "d122015d8k.htm",
+  "raw_len": 56478,
+  "text_len": 7776
+ },
+ "0001046179-26-000031": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000031/tsm-revenue20260310.htm",
+  "doc": "tsm-revenue20260310.htm",
+  "raw_len": 89834,
+  "text_len": 6022
+ },
+ "0001193125-26-100148": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526100148/orcl-20260310.htm",
+  "doc": "orcl-20260310.htm",
+  "raw_len": 56610,
+  "text_len": 3846
+ },
+ "0001213900-26-026632": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026026632/ea0280942-8k_usa.htm",
+  "doc": "ea0280942-8k_usa.htm",
+  "raw_len": 29390,
+  "text_len": 5878
+ },
+ "0001104659-26-027729": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926027729/tm266670d8_8k.htm",
+  "doc": "tm266670d8_8k.htm",
+  "raw_len": 69430,
+  "text_len": 7605
+ },
+ "0001193125-26-107263": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526107263/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 156932,
+  "text_len": 6179
+ },
+ "0001104659-26-028556": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926028556/tm266670d9_8k.htm",
+  "doc": "tm266670d9_8k.htm",
+  "raw_len": 48280,
+  "text_len": 6588
+ },
+ "0001046179-26-000076": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000076/a20260317.htm",
+  "doc": "a20260317.htm",
+  "raw_len": 16718,
+  "text_len": 2127
+ },
+ "0001876042-26-000078": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000078/crcl-20260316.htm",
+  "doc": "crcl-20260316.htm",
+  "raw_len": 26176,
+  "text_len": 4907
+ },
+ "0000723125-26-000004": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000004/mu-20260318.htm",
+  "doc": "mu-20260318.htm",
+  "raw_len": 28756,
+  "text_len": 3480
+ },
+ "0001104659-26-031794": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000110465926031794/tm269292d1_8k.htm",
+  "doc": "tm269292d1_8k.htm",
+  "raw_len": 47398,
+  "text_len": 16767
+ },
+ "0001104659-26-032060": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926032060/tm269353d1_6k.htm",
+  "doc": "tm269353d1_6k.htm",
+  "raw_len": 8928,
+  "text_len": 1055
+ },
+ "0001104659-26-032947": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926032947/tm269576d1_6k.htm",
+  "doc": "tm269576d1_6k.htm",
+  "raw_len": 8467,
+  "text_len": 1095
+ },
+ "0001193125-26-118584": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526118584/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 156906,
+  "text_len": 6153
+ },
+ "0001193125-26-118810": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526118810/d93392d8k.htm",
+  "doc": "d93392d8k.htm",
+  "raw_len": 58869,
+  "text_len": 16938
+ },
+ "0001783879-26-000045": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000045/hood-20260320.htm",
+  "doc": "hood-20260320.htm",
+  "raw_len": 52941,
+  "text_len": 12025
+ },
+ "0001193125-26-122705": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2023554/000119312526122705/d136592d8k.htm",
+  "doc": "d136592d8k.htm",
+  "raw_len": 28776,
+  "text_len": 4823
+ },
+ "0001046179-26-000126": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000126/tsm-monthend6kx20260325.htm",
+  "doc": "tsm-monthend6kx20260325.htm",
+  "raw_len": 28384,
+  "text_len": 3445
+ },
+ "0001104659-26-034174": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000110465926034174/tm269755d1_8k.htm",
+  "doc": "tm269755d1_8k.htm",
+  "raw_len": 30085,
+  "text_len": 3069
+ },
+ "0001970622-26-000019": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000197062226000019/usar-20260330.htm",
+  "doc": "usar-20260330.htm",
+  "raw_len": 27346,
+  "text_len": 3458
+ },
+ "0001193125-26-130446": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526130446/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 80576,
+  "text_len": 6865
+ },
+ "0001769628-26-000129": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000129/crwv-20260330.htm",
+  "doc": "crwv-20260330.htm",
+  "raw_len": 39571,
+  "text_len": 8939
+ },
+ "0001193125-26-135765": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526135765/mstr-20250902.htm",
+  "doc": "mstr-20250902.htm",
+  "raw_len": 86702,
+  "text_len": 7744
+ },
+ "0001104659-26-038249": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000110465926038249/tm2610810d1_8k.htm",
+  "doc": "tm2610810d1_8k.htm",
+  "raw_len": 31019,
+  "text_len": 3655
+ },
+ "0001874178-26-000012": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000012/rivn-20260402.htm",
+  "doc": "rivn-20260402.htm",
+  "raw_len": 32938,
+  "text_len": 3718
+ },
+ "0001628280-26-022956": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026022956/tsla-20260402.htm",
+  "doc": "tsla-20260402.htm",
+  "raw_len": 26573,
+  "text_len": 3064
+ },
+ "0001652044-26-000031": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000031/goog-20260330.htm",
+  "doc": "goog-20260330.htm",
+  "raw_len": 47572,
+  "text_len": 5419
+ },
+ "0000050863-26-000069": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000069/intc-20260330.htm",
+  "doc": "intc-20260330.htm",
+  "raw_len": 24601,
+  "text_len": 3290
+ },
+ "0001193125-26-142925": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526142925/mstr-20260406.htm",
+  "doc": "mstr-20260406.htm",
+  "raw_len": 240736,
+  "text_len": 11534
+ },
+ "0001193125-26-142939": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526142939/d132760d8k.htm",
+  "doc": "d132760d8k.htm",
+  "raw_len": 33687,
+  "text_len": 7552
+ },
+ "0000050863-26-000072": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000072/intc-20260408.htm",
+  "doc": "intc-20260408.htm",
+  "raw_len": 25400,
+  "text_len": 3802
+ },
+ "0001104659-26-040881": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926040881/tm2611379d1_6k.htm",
+  "doc": "tm2611379d1_6k.htm",
+  "raw_len": 10118,
+  "text_len": 1641
+ },
+ "0001104659-26-041034": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926041034/tm263815d2_8k.htm",
+  "doc": "tm263815d2_8k.htm",
+  "raw_len": 51699,
+  "text_len": 4417
+ },
+ "0001970622-26-000026": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000197062226000026/usar-20260409.htm",
+  "doc": "usar-20260409.htm",
+  "raw_len": 29563,
+  "text_len": 3976
+ },
+ "0001769628-26-000154": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000154/crwv-20260331.htm",
+  "doc": "crwv-20260331.htm",
+  "raw_len": 31276,
+  "text_len": 5244
+ },
+ "0001046179-26-000136": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000136/tsm-revenue20260410.htm",
+  "doc": "tsm-revenue20260410.htm",
+  "raw_len": 89770,
+  "text_len": 5995
+ },
+ "0001679788-26-000035": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000167978826000035/coin-20260407.htm",
+  "doc": "coin-20260407.htm",
+  "raw_len": 27281,
+  "text_len": 3462
+ },
+ "0001652044-26-000034": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000034/goog-20260407.htm",
+  "doc": "goog-20260407.htm",
+  "raw_len": 54841,
+  "text_len": 9241
+ },
+ "0001193125-26-152015": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526152015/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 157768,
+  "text_len": 6794
+ },
+ "0001104659-26-042880": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926042880/tm2611746d1_8k.htm",
+  "doc": "tm2611746d1_8k.htm",
+  "raw_len": 51239,
+  "text_len": 4557
+ },
+ "0001769628-26-000164": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000164/crwv-20260409.htm",
+  "doc": "crwv-20260409.htm",
+  "raw_len": 60824,
+  "text_len": 24754
+ },
+ "0001628280-26-025108": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026025108/meta-20260408.htm",
+  "doc": "meta-20260408.htm",
+  "raw_len": 24484,
+  "text_len": 2899
+ },
+ "0001769628-26-000167": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000167/crwv-20260415.htm",
+  "doc": "crwv-20260415.htm",
+  "raw_len": 29614,
+  "text_len": 4666
+ },
+ "0000909832-26-000041": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/909832/000090983226000041/cost-20260415.htm",
+  "doc": "cost-20260415.htm",
+  "raw_len": 22604,
+  "text_len": 2874
+ },
+ "0001046179-26-000199": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000199/tsm-20260416x6k.htm",
+  "doc": "tsm-20260416x6k.htm",
+  "raw_len": 19343,
+  "text_len": 1646
+ },
+ "0001065280-26-000137": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000137/nflx-20260410.htm",
+  "doc": "nflx-20260410.htm",
+  "raw_len": 25115,
+  "text_len": 4738
+ },
+ "0001046179-26-000203": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000203/tsm-boardx20260417x6k.htm",
+  "doc": "tsm-boardx20260417x6k.htm",
+  "raw_len": 19886,
+  "text_len": 2230
+ },
+ "0001213900-26-045339": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026045339/ea0286910-8k_usarare.htm",
+  "doc": "ea0286910-8k_usarare.htm",
+  "raw_len": 75508,
+  "text_len": 34758
+ },
+ "0001193125-26-162756": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526162756/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 157624,
+  "text_len": 6659
+ },
+ "0001213900-26-045706": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026045706/ea0286940-8k_usarare.htm",
+  "doc": "ea0286940-8k_usarare.htm",
+  "raw_len": 44763,
+  "text_len": 17248
+ },
+ "0001140361-26-015711": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000114036126015711/ef20071035_8k.htm",
+  "doc": "ef20071035_8k.htm",
+  "raw_len": 38605,
+  "text_len": 4943
+ },
+ "0001769628-26-000183": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000183/crwv-20260416.htm",
+  "doc": "crwv-20260416.htm",
+  "raw_len": 37208,
+  "text_len": 8638
+ },
+ "0001628280-26-026551": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026026551/tsla-20260422.htm",
+  "doc": "tsla-20260422.htm",
+  "raw_len": 27615,
+  "text_len": 3248
+ },
+ "0001065280-26-000139": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000139/nflx-20260422.htm",
+  "doc": "nflx-20260422.htm",
+  "raw_len": 21279,
+  "text_len": 3749
+ },
+ "0000050863-26-000077": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000077/intc-20260423.htm",
+  "doc": "intc-20260423.htm",
+  "raw_len": 27476,
+  "text_len": 4208
+ },
+ "0001213900-26-047158": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026047158/ea0287456-8k_usarare.htm",
+  "doc": "ea0287456-8k_usarare.htm",
+  "raw_len": 25834,
+  "text_len": 4416
+ },
+ "0001046179-26-000205": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000205/tsm-monthend6kx20260424.htm",
+  "doc": "tsm-monthend6kx20260424.htm",
+  "raw_len": 72374,
+  "text_len": 4889
+ },
+ "0000050863-26-000083": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000083/intc-20260424.htm",
+  "doc": "intc-20260424.htm",
+  "raw_len": 24595,
+  "text_len": 3302
+ },
+ "0001104659-26-048546": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926048546/tm2612347d1_6k.htm",
+  "doc": "tm2612347d1_6k.htm",
+  "raw_len": 10957,
+  "text_len": 1641
+ },
+ "0001193125-26-178994": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526178994/mstr-20260223.htm",
+  "doc": "mstr-20260223.htm",
+  "raw_len": 157096,
+  "text_len": 6564
+ },
+ "0001104659-26-049424": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926049424/tm2612812d1_6k.htm",
+  "doc": "tm2612812d1_6k.htm",
+  "raw_len": 8535,
+  "text_len": 1118
+ },
+ "0001045810-26-000026": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000026/nvda-20260424.htm",
+  "doc": "nvda-20260424.htm",
+  "raw_len": 22202,
+  "text_len": 5030
+ },
+ "0001783879-26-000061": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000061/hood-20260428.htm",
+  "doc": "hood-20260428.htm",
+  "raw_len": 39336,
+  "text_len": 3540
+ },
+ "0001104659-26-050679": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926050679/tm2613059d1_6k.htm",
+  "doc": "tm2613059d1_6k.htm",
+  "raw_len": 8394,
+  "text_len": 1075
+ },
+ "0001652044-26-000043": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000043/goog-20260429.htm",
+  "doc": "goog-20260429.htm",
+  "raw_len": 51568,
+  "text_len": 6007
+ },
+ "0001193125-26-191457": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526191457/msft-20260429.htm",
+  "doc": "msft-20260429.htm",
+  "raw_len": 62233,
+  "text_len": 3599
+ },
+ "0001628280-26-028364": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026028364/meta-20260429.htm",
+  "doc": "meta-20260429.htm",
+  "raw_len": 28957,
+  "text_len": 3951
+ },
+ "0001018724-26-000012": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000012/amzn-20260429.htm",
+  "doc": "amzn-20260429.htm",
+  "raw_len": 46305,
+  "text_len": 4568
+ },
+ "0000059478-26-000043": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/59478/000005947826000043/lly-20260430.htm",
+  "doc": "lly-20260430.htm",
+  "raw_len": 48393,
+  "text_len": 4487
+ },
+ "0001193125-26-197845": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000119312526197845/d143782d8k.htm",
+  "doc": "d143782d8k.htm",
+  "raw_len": 33743,
+  "text_len": 6504
+ },
+ "0001874178-26-000033": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000033/rivn-20260430.htm",
+  "doc": "rivn-20260430.htm",
+  "raw_len": 39561,
+  "text_len": 5850
+ },
+ "0001628280-26-028879": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2023554/000162828026028879/sndk-20260430.htm",
+  "doc": "sndk-20260430.htm",
+  "raw_len": 33734,
+  "text_len": 4615
+ },
+ "0000320193-26-000011": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000011/aapl-20260430.htm",
+  "doc": "aapl-20260430.htm",
+  "raw_len": 37639,
+  "text_len": 3963
+ },
+ "0001193125-26-199155": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526199155/mstr-20250902.htm",
+  "doc": "mstr-20250902.htm",
+  "raw_len": 86882,
+  "text_len": 7771
+ },
+ "0001193125-26-202468": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326380/000119312526202468/d138475d8k.htm",
+  "doc": "d138475d8k.htm",
+  "raw_len": 43806,
+  "text_len": 14218
+ },
+ "0001193125-26-202611": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526202611/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 158068,
+  "text_len": 6509
+ },
+ "0001321655-26-000026": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1321655/000132165526000026/pltr-20260504.htm",
+  "doc": "pltr-20260504.htm",
+  "raw_len": 28919,
+  "text_len": 4520
+ },
+ "0001193125-26-204128": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000119312526204128/d134616d8k.htm",
+  "doc": "d134616d8k.htm",
+  "raw_len": 32294,
+  "text_len": 6723
+ },
+ "0001874178-26-000039": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000039/rivn-20260504.htm",
+  "doc": "rivn-20260504.htm",
+  "raw_len": 32182,
+  "text_len": 4133
+ },
+ "0001679788-26-000049": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000167978826000049/coin-20260505.htm",
+  "doc": "coin-20260505.htm",
+  "raw_len": 29671,
+  "text_len": 5364
+ },
+ "0001628280-26-030530": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1633978/000162828026030530/lite-20260505.htm",
+  "doc": "lite-20260505.htm",
+  "raw_len": 30980,
+  "text_len": 3802
+ },
+ "0001050446-26-000024": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000105044626000024/mstr-20260505.htm",
+  "doc": "mstr-20260505.htm",
+  "raw_len": 42741,
+  "text_len": 9316
+ },
+ "0000002488-26-000072": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000072/amd-20260505.htm",
+  "doc": "amd-20260505.htm",
+  "raw_len": 29477,
+  "text_len": 4424
+ },
+ "0001552781-26-000302": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065088/000155278126000302/e26238_ebay-8k.htm",
+  "doc": "e26238_ebay-8k.htm",
+  "raw_len": 29726,
+  "text_len": 3517
+ },
+ "0001104659-26-056231": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926056231/tm2613725d1_6k.htm",
+  "doc": "tm2613725d1_6k.htm",
+  "raw_len": 10229,
+  "text_len": 1637
+ },
+ "0001819994-26-000027": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000181999426000027/rklb-20260507.htm",
+  "doc": "rklb-20260507.htm",
+  "raw_len": 28075,
+  "text_len": 3422
+ },
+ "0001769628-26-000220": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000220/crwv-20260507.htm",
+  "doc": "crwv-20260507.htm",
+  "raw_len": 28289,
+  "text_len": 3852
+ },
+ "0001679788-26-000053": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000167978826000053/coin-20260507.htm",
+  "doc": "coin-20260507.htm",
+  "raw_len": 31358,
+  "text_len": 4360
+ },
+ "0000059478-26-000048": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/59478/000005947826000048/lly-20260504.htm",
+  "doc": "lly-20260504.htm",
+  "raw_len": 66545,
+  "text_len": 5842
+ },
+ "0001046179-26-000213": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000213/tsm-revenue20260508.htm",
+  "doc": "tsm-revenue20260508.htm",
+  "raw_len": 89769,
+  "text_len": 5975
+ },
+ "0001883685-26-000019": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1883685/000188368526000019/dkng-20260508.htm",
+  "doc": "dkng-20260508.htm",
+  "raw_len": 26191,
+  "text_len": 3413
+ },
+ "0001753926-26-000799": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000175392626000799/g085715_8k.htm",
+  "doc": "g085715_8k.htm",
+  "raw_len": 28700,
+  "text_len": 4003
+ },
+ "0001045810-26-000028": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000028/nvda-20260507.htm",
+  "doc": "nvda-20260507.htm",
+  "raw_len": 20256,
+  "text_len": 3908
+ },
+ "0001783879-26-000065": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000065/hood-20260507.htm",
+  "doc": "hood-20260507.htm",
+  "raw_len": 35882,
+  "text_len": 3004
+ },
+ "0001876042-26-000148": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000148/crcl-20260511.htm",
+  "doc": "crcl-20260511.htm",
+  "raw_len": 25995,
+  "text_len": 5345
+ },
+ "0001193125-26-215754": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526215754/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 157970,
+  "text_len": 6552
+ },
+ "0001773751-26-000074": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000074/hims-20260511.htm",
+  "doc": "hims-20260511.htm",
+  "raw_len": 32504,
+  "text_len": 3450
+ },
+ "0001193125-26-216986": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526216986/d109021d8k.htm",
+  "doc": "d109021d8k.htm",
+  "raw_len": 61330,
+  "text_len": 8118
+ },
+ "0001552781-26-000322": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065088/000155278126000322/e26249_ebay-8k.htm",
+  "doc": "e26249_ebay-8k.htm",
+  "raw_len": 31820,
+  "text_len": 4182
+ },
+ "0001046179-26-000274": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000274/tsm-boardx20260512.htm",
+  "doc": "tsm-boardx20260512.htm",
+  "raw_len": 36647,
+  "text_len": 5462
+ },
+ "0001193125-26-219708": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526219708/d76569d8k.htm",
+  "doc": "d76569d8k.htm",
+  "raw_len": 29640,
+  "text_len": 5505
+ },
+ "0001213900-26-055511": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026055511/ea0290293-8k_usa.htm",
+  "doc": "ea0290293-8k_usa.htm",
+  "raw_len": 49041,
+  "text_len": 10089
+ },
+ "0001104659-26-060224": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926060224/tm2614494d1_6k.htm",
+  "doc": "tm2614494d1_6k.htm",
+  "raw_len": 8863,
+  "text_len": 1129
+ },
+ "0001970622-26-000034": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000197062226000034/usar-20260513.htm",
+  "doc": "usar-20260513.htm",
+  "raw_len": 27957,
+  "text_len": 3423
+ },
+ "0001193125-26-224155": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526224155/d125909d8k.htm",
+  "doc": "d125909d8k.htm",
+  "raw_len": 29031,
+  "text_len": 3985
+ },
+ "0001193125-26-224694": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2023554/000119312526224694/d157363d8k.htm",
+  "doc": "d157363d8k.htm",
+  "raw_len": 26607,
+  "text_len": 3935
+ },
+ "0001046179-26-000278": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000278/tsm-fsx20260515x6k.htm",
+  "doc": "tsm-fsx20260515x6k.htm",
+  "raw_len": 17095,
+  "text_len": 1747
+ },
+ "0001193125-26-225361": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526225361/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 81993,
+  "text_len": 6917
+ },
+ "0001046179-26-000280": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000280/tsmctosell81ofvanguardinte.htm",
+  "doc": "tsmctosell81ofvanguardinte.htm",
+  "raw_len": 21658,
+  "text_len": 3507
+ },
+ "0000050863-26-000118": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000118/intc-20260513.htm",
+  "doc": "intc-20260513.htm",
+  "raw_len": 65074,
+  "text_len": 5242
+ },
+ "0001193125-26-226746": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000119312526226746/d118163d8k.htm",
+  "doc": "d118163d8k.htm",
+  "raw_len": 57294,
+  "text_len": 13898
+ },
+ "0001104659-26-062556": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1883685/000110465926062556/tm2614566d1_8k.htm",
+  "doc": "tm2614566d1_8k.htm",
+  "raw_len": 38493,
+  "text_len": 4167
+ },
+ "0001628280-26-035605": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2021728/000162828026035605/closing8-k.htm",
+  "doc": "closing8-k.htm",
+  "raw_len": 28189,
+  "text_len": 4625
+ },
+ "0001193125-26-227918": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526227918/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 157991,
+  "text_len": 6573
+ },
+ "0001769628-26-000236": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000236/crwv-20260515.htm",
+  "doc": "crwv-20260515.htm",
+  "raw_len": 39512,
+  "text_len": 8868
+ },
+ "0001876042-26-000159": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000159/crcl-20260514.htm",
+  "doc": "crcl-20260514.htm",
+  "raw_len": 40766,
+  "text_len": 6472
+ },
+ "0001193125-26-229749": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000119312526229749/d227898d8k.htm",
+  "doc": "d227898d8k.htm",
+  "raw_len": 24162,
+  "text_len": 3591
+ },
+ "0001045810-26-000051": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000051/nvda-20260520.htm",
+  "doc": "nvda-20260520.htm",
+  "raw_len": 26803,
+  "text_len": 3997
+ },
+ "0001193125-26-232707": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/59478/000119312526232707/d148580d8k.htm",
+  "doc": "d148580d8k.htm",
+  "raw_len": 53287,
+  "text_len": 10715
+ },
+ "0001819994-26-000045": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000181999426000045/rklb-20260520.htm",
+  "doc": "rklb-20260520.htm",
+  "raw_len": 42723,
+  "text_len": 19349
+ },
+ "0001585521-26-000069": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1585521/000158552126000069/zm-20260521.htm",
+  "doc": "zm-20260521.htm",
+  "raw_len": 24549,
+  "text_len": 3679
+ },
+ "0001819994-26-000048": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000181999426000048/rklb-20260520.htm",
+  "doc": "rklb-20260520.htm",
+  "raw_len": 40409,
+  "text_len": 4485
+ },
+ "0001193125-26-234488": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526234488/d144566d8k.htm",
+  "doc": "d144566d8k.htm",
+  "raw_len": 58198,
+  "text_len": 7261
+ },
+ "0001193125-26-234847": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000119312526234847/d264371d8k.htm",
+  "doc": "d264371d8k.htm",
+  "raw_len": 43678,
+  "text_len": 15773
+ },
+ "0001104659-26-065716": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926065716/tm2615065d1_6k.htm",
+  "doc": "tm2615065d1_6k.htm",
+  "raw_len": 9895,
+  "text_len": 1631
+ },
+ "0001104659-26-065717": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926065717/tm2614288d1_8k.htm",
+  "doc": "tm2614288d1_8k.htm",
+  "raw_len": 73417,
+  "text_len": 6533
+ },
+ "0001046179-26-000292": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000292/tsm-monthend6kx20260526.htm",
+  "doc": "tsm-monthend6kx20260526.htm",
+  "raw_len": 19942,
+  "text_len": 2938
+ },
+ "0001193125-26-237907": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526237907/mstr-20260526.htm",
+  "doc": "mstr-20260526.htm",
+  "raw_len": 87654,
+  "text_len": 5913
+ },
+ "0001046179-26-000294": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000294/tsm-dividendadjustmentx202.htm",
+  "doc": "tsm-dividendadjustmentx202.htm",
+  "raw_len": 16314,
+  "text_len": 2244
+ },
+ "0001835632-26-000014": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1835632/000183563226000014/mrvl-20260527.htm",
+  "doc": "mrvl-20260527.htm",
+  "raw_len": 29234,
+  "text_len": 4431
+ },
+ "0001104659-26-067190": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926067190/tm2615873d1_6k.htm",
+  "doc": "tm2615873d1_6k.htm",
+  "raw_len": 8290,
+  "text_len": 1079
+ },
+ "0000909832-26-000046": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/909832/000090983226000046/cost-20260528.htm",
+  "doc": "cost-20260528.htm",
+  "raw_len": 23222,
+  "text_len": 3005
+ },
+ "0001104659-26-068267": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1883685/000110465926068267/tm2615900d1_8k.htm",
+  "doc": "tm2615900d1_8k.htm",
+  "raw_len": 22948,
+  "text_len": 3711
+ },
+ "0001628280-26-039193": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026039193/meta-20260527.htm",
+  "doc": "meta-20260527.htm",
+  "raw_len": 79404,
+  "text_len": 9221
+ },
+ "0001193125-26-249535": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1633978/000119312526249535/d112771d8k.htm",
+  "doc": "d112771d8k.htm",
+  "raw_len": 24299,
+  "text_len": 4599
+ },
+ "0001104659-26-068512": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926068512/tm2616499d1_6k.htm",
+  "doc": "tm2616499d1_6k.htm",
+  "raw_len": 8485,
+  "text_len": 1091
+ },
+ "0001193125-26-249768": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526249768/mstr-20260530.htm",
+  "doc": "mstr-20260530.htm",
+  "raw_len": 173587,
+  "text_len": 9121
+ },
+ "0001773751-26-000091": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000091/hims-20260529.htm",
+  "doc": "hims-20260529.htm",
+  "raw_len": 32319,
+  "text_len": 5525
+ },
+ "0001213900-26-063832": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026063832/ea0293127-8k_usarare.htm",
+  "doc": "ea0293127-8k_usarare.htm",
+  "raw_len": 48294,
+  "text_len": 17751
+ },
+ "0001326380-26-000020": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326380/000132638026000020/gme-20260602.htm",
+  "doc": "gme-20260602.htm",
+  "raw_len": 30324,
+  "text_len": 4564
+ },
+ "0001213900-26-064453": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026064453/ea0293402-8k_usarare.htm",
+  "doc": "ea0293402-8k_usarare.htm",
+  "raw_len": 75099,
+  "text_len": 32991
+ },
+ "0001783879-26-000068": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000068/hood-20260602.htm",
+  "doc": "hood-20260602.htm",
+  "raw_len": 57146,
+  "text_len": 5025
+ },
+ "0001104659-26-070103": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926070103/tm2616784d1_6k.htm",
+  "doc": "tm2616784d1_6k.htm",
+  "raw_len": 10326,
+  "text_len": 1638
+ },
+ "0001730168-26-000051": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1730168/000173016826000051/avgo-20260603.htm",
+  "doc": "avgo-20260603.htm",
+  "raw_len": 33132,
+  "text_len": 3372
+ },
+ "0001046179-26-000302": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000302/tsm-agmx20260604x6k.htm",
+  "doc": "tsm-agmx20260604x6k.htm",
+  "raw_len": 21859,
+  "text_len": 3104
+ },
+ "0001193125-26-257724": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526257724/d83560d8k.htm",
+  "doc": "d83560d8k.htm",
+  "raw_len": 72058,
+  "text_len": 13455
+ },
+ "0001970622-26-000045": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000197062226000045/usar-20260603.htm",
+  "doc": "usar-20260603.htm",
+  "raw_len": 42605,
+  "text_len": 4668
+ },
+ "0001213900-26-065498": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026065498/ea0292697-8k_usarare.htm",
+  "doc": "ea0292697-8k_usarare.htm",
+  "raw_len": 39901,
+  "text_len": 14044
+ },
+ "0001193125-26-258667": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312526258667/d26760d8k.htm",
+  "doc": "d26760d8k.htm",
+  "raw_len": 26785,
+  "text_len": 3290
+ },
+ "0001819994-26-000056": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000181999426000056/rklb-20260603.htm",
+  "doc": "rklb-20260603.htm",
+  "raw_len": 30068,
+  "text_len": 5545
+ },
+ "0001652044-26-000059": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000059/goog-20260602.htm",
+  "doc": "goog-20260602.htm",
+  "raw_len": 60985,
+  "text_len": 7224
+ },
+ "0001065280-26-000189": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000189/nflx-20260604.htm",
+  "doc": "nflx-20260604.htm",
+  "raw_len": 61217,
+  "text_len": 5978
+ },
+ "0001193125-26-260709": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526260709/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 161437,
+  "text_len": 7114
+ },
+ "0001193125-26-261038": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526261038/d130937d8k.htm",
+  "doc": "d130937d8k.htm",
+  "raw_len": 31436,
+  "text_len": 4049
+ },
+ "0001104659-26-071542": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926071542/tm2617210d1_6k.htm",
+  "doc": "tm2617210d1_6k.htm",
+  "raw_len": 8877,
+  "text_len": 1046
+ },
+ "0001104659-26-071581": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1883685/000110465926071581/tm2617134d1_8k.htm",
+  "doc": "tm2617134d1_8k.htm",
+  "raw_len": 22761,
+  "text_len": 3492
+ },
+ "0001321655-26-000033": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1321655/000132165526000033/pltr-20260603.htm",
+  "doc": "pltr-20260603.htm",
+  "raw_len": 50995,
+  "text_len": 6823
+ },
+ "0001104659-26-071845": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000110465926071845/tm2617112d1_8k.htm",
+  "doc": "tm2617112d1_8k.htm",
+  "raw_len": 31825,
+  "text_len": 4391
+ },
+ "0001046179-26-000367": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000367/tsm-revenue20260610.htm",
+  "doc": "tsm-revenue20260610.htm",
+  "raw_len": 88046,
+  "text_len": 5842
+ },
+ "0001193125-26-265108": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526265108/d152189d8k.htm",
+  "doc": "d152189d8k.htm",
+  "raw_len": 55541,
+  "text_len": 5809
+ },
+ "0001104659-26-072140": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926072140/tm2613616d4_8k.htm",
+  "doc": "tm2613616d4_8k.htm",
+  "raw_len": 54467,
+  "text_len": 7363
+ },
+ "0001193125-26-265848": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526265848/orcl-20260610.htm",
+  "doc": "orcl-20260610.htm",
+  "raw_len": 56596,
+  "text_len": 3832
+ },
+ "0001193125-26-265877": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000119312526265877/d98058d8k.htm",
+  "doc": "d98058d8k.htm",
+  "raw_len": 32117,
+  "text_len": 6567
+ },
+ "0001769628-26-000270": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000270/crwv-20260608.htm",
+  "doc": "crwv-20260608.htm",
+  "raw_len": 41380,
+  "text_len": 5959
+ },
+ "0001769628-26-000278": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000278/crwv-20260611.htm",
+  "doc": "crwv-20260611.htm",
+  "raw_len": 33555,
+  "text_len": 6516
+ },
+ "0001193125-26-266777": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1730168/000119312526266777/d152717d8k.htm",
+  "doc": "d152717d8k.htm",
+  "raw_len": 22514,
+  "text_len": 2810
+ },
+ "0001193125-26-267514": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/106040/000119312526267514/d83915d8k.htm",
+  "doc": "d83915d8k.htm",
+  "raw_len": 25118,
+  "text_len": 3417
+ },
+ "0001193125-26-267578": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1652044/000119312526267578/d57679d8k.htm",
+  "doc": "d57679d8k.htm",
+  "raw_len": 119785,
+  "text_len": 12285
+ },
+ "0001193125-26-267688": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1835632/000119312526267688/d151562d8k.htm",
+  "doc": "d151562d8k.htm",
+  "raw_len": 35196,
+  "text_len": 9131
+ },
+ "0001193125-26-269594": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000119312526269594/d131151d8k.htm",
+  "doc": "d131151d8k.htm",
+  "raw_len": 29025,
+  "text_len": 5536
+ },
+ "0001104659-26-073562": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926073562/tm2613616d5_8k.htm",
+  "doc": "tm2613616d5_8k.htm",
+  "raw_len": 60941,
+  "text_len": 7034
+ },
+ "0001876042-26-000192": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000192/crcl-20260612.htm",
+  "doc": "crcl-20260612.htm",
+  "raw_len": 23322,
+  "text_len": 3698
+ },
+ "0001213900-26-068491": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026068491/ea0294574-8k_usarare.htm",
+  "doc": "ea0294574-8k_usarare.htm",
+  "raw_len": 41804,
+  "text_len": 14263
+ },
+ "0001193125-26-270311": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526270311/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 153206,
+  "text_len": 7116
+ },
+ "0001193125-26-270366": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526270366/d144149d8k.htm",
+  "doc": "d144149d8k.htm",
+  "raw_len": 47158,
+  "text_len": 10452
+ },
+ "0001628280-26-043169": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1585521/000162828026043169/zm-20260611.htm",
+  "doc": "zm-20260611.htm",
+  "raw_len": 31988,
+  "text_len": 4227
+ },
+ "0001773751-26-000096": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000096/hims-20260611.htm",
+  "doc": "hims-20260611.htm",
+  "raw_len": 40430,
+  "text_len": 5376
+ },
+ "0001783879-26-000071": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000071/hood-20260616.htm",
+  "doc": "hood-20260616.htm",
+  "raw_len": 39966,
+  "text_len": 5730
+ },
+ "0001104659-26-074352": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1513845/000110465926074352/tm2618059d1_6k.htm",
+  "doc": "tm2618059d1_6k.htm",
+  "raw_len": 9936,
+  "text_len": 1733
+ },
+ "0001193125-26-272720": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000119312526272720/d20600d8k.htm",
+  "doc": "d20600d8k.htm",
+  "raw_len": 37779,
+  "text_len": 10139
+ },
+ "0001571996-26-000032": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000157199626000032/dell-20260611.htm",
+  "doc": "dell-20260611.htm",
+  "raw_len": 27436,
+  "text_len": 4632
+ },
+ "0001193125-26-274928": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000119312526274928/d133513d6k.htm",
+  "doc": "d133513d6k.htm",
+  "raw_len": 10051,
+  "text_len": 1839
+ },
+ "0001193125-26-275077": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1730168/000119312526275077/d149683d8k.htm",
+  "doc": "d149683d8k.htm",
+  "raw_len": 23040,
+  "text_len": 3119
+ },
+ "0001193125-26-275783": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000119312526275783/d48176d8k.htm",
+  "doc": "d48176d8k.htm",
+  "raw_len": 34169,
+  "text_len": 6837
+ },
+ "0001065088-26-000135": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065088/000106508826000135/ebay-20260617.htm",
+  "doc": "ebay-20260617.htm",
+  "raw_len": 59141,
+  "text_len": 5432
+ },
+ "0001104659-26-075717": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926075717/tm2618287d1_6k.htm",
+  "doc": "tm2618287d1_6k.htm",
+  "raw_len": 9404,
+  "text_len": 1277
+ },
+ "0001769628-26-000291": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000291/crwv-20260618.htm",
+  "doc": "crwv-20260618.htm",
+  "raw_len": 37535,
+  "text_len": 8451
+ },
+ "0001679788-26-000075": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000167978826000075/coin-20260616.htm",
+  "doc": "coin-20260616.htm",
+  "raw_len": 42632,
+  "text_len": 5258
+ },
+ "0001213900-26-070213": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026070213/ea0295221-8k_usarare.htm",
+  "doc": "ea0295221-8k_usarare.htm",
+  "raw_len": 26173,
+  "text_len": 5434
+ },
+ "0001193125-26-276717": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526276717/mstr-20260504.htm",
+  "doc": "mstr-20260504.htm",
+  "raw_len": 153584,
+  "text_len": 7203
+ },
+ "0001783879-26-000074": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000074/hood-20260622.htm",
+  "doc": "hood-20260622.htm",
+  "raw_len": 41405,
+  "text_len": 3827
+ },
+ "0000051143-26-000061": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000061/ibm-20260622.htm",
+  "doc": "ibm-20260622.htm",
+  "raw_len": 74940,
+  "text_len": 9433
+ },
+ "0001326380-26-000029": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326380/000132638026000029/gme-20260623.htm",
+  "doc": "gme-20260623.htm",
+  "raw_len": 27325,
+  "text_len": 3035
+ },
+ "0001193125-26-279498": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1393818/000119312526279498/d122067d8k.htm",
+  "doc": "d122067d8k.htm",
+  "raw_len": 25067,
+  "text_len": 3601
+ },
+ "0001628280-26-044941": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2021728/000162828026044941/cbrs-20260623.htm",
+  "doc": "cbrs-20260623.htm",
+  "raw_len": 25806,
+  "text_len": 3428
+ },
+ "0001104659-26-077071": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/804328/000110465926077071/tm2618522d1_8k.htm",
+  "doc": "tm2618522d1_8k.htm",
+  "raw_len": 27154,
+  "text_len": 5240
+ },
+ "0000723125-26-000013": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000013/mu-20260624.htm",
+  "doc": "mu-20260624.htm",
+  "raw_len": 28554,
+  "text_len": 3470
+ },
+ "0001046179-26-000377": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000377/tsm-monthend6kx20260625.htm",
+  "doc": "tsm-monthend6kx20260625.htm",
+  "raw_len": 32874,
+  "text_len": 3780
+ },
+ "0001070235-26-000071": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1070235/000107023526000071/bbry-20260625.htm",
+  "doc": "bbry-20260625.htm",
+  "raw_len": 29058,
+  "text_len": 3233
+ },
+ "0001070235-26-000074": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1070235/000107023526000074/bbry-20260625.htm",
+  "doc": "bbry-20260625.htm",
+  "raw_len": 54416,
+  "text_len": 5330
+ },
+ "0001628280-26-045564": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1835632/000162828026045564/mrvl-20260625.htm",
+  "doc": "mrvl-20260625.htm",
+  "raw_len": 52486,
+  "text_len": 5492
+ },
+ "0001783879-26-000077": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000077/hood-20260622.htm",
+  "doc": "hood-20260622.htm",
+  "raw_len": 59929,
+  "text_len": 15230
+ },
+ "0001104659-26-078252": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926078252/tm2618550d1_6k.htm",
+  "doc": "tm2618550d1_6k.htm",
+  "raw_len": 11292,
+  "text_len": 2174
+ },
+ "0001783879-26-000083": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1783879/000178387926000083/hood-20260625.htm",
+  "doc": "hood-20260625.htm",
+  "raw_len": 39231,
+  "text_len": 5163
+ },
+ "0001104659-26-078269": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1883685/000110465926078269/tm2618998d1_8k.htm",
+  "doc": "tm2618998d1_8k.htm",
+  "raw_len": 22706,
+  "text_len": 3601
+ },
+ "0001874178-26-000045": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000045/rivn-20260622.htm",
+  "doc": "rivn-20260622.htm",
+  "raw_len": 39012,
+  "text_len": 4662
+ },
+ "0001193125-26-285672": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2078856/000119312526285672/purr-20260622.htm",
+  "doc": "purr-20260622.htm",
+  "raw_len": 68133,
+  "text_len": 9787
+ },
+ "0001326380-26-000035": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326380/000132638026000035/form8-kxguidance.htm",
+  "doc": "form8-kxguidance.htm",
+  "raw_len": 41994,
+  "text_len": 15934
+ },
+ "0001193125-26-286871": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526286871/mstr-20260629.htm",
+  "doc": "mstr-20260629.htm",
+  "raw_len": 194201,
+  "text_len": 17120
+ },
+ "0001753926-26-001085": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1819994/000175392626001085/g085783_8k.htm",
+  "doc": "g085783_8k.htm",
+  "raw_len": 82689,
+  "text_len": 31071
+ },
+ "0001045810-26-000056": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000056/nvda-20260624.htm",
+  "doc": "nvda-20260624.htm",
+  "raw_len": 61847,
+  "text_len": 6950
+ },
+ "0001104659-26-079418": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/924613/000110465926079418/tm2619445d1_6k.htm",
+  "doc": "tm2619445d1_6k.htm",
+  "raw_len": 60466,
+  "text_len": 4575
+ },
+ "0001571996-26-000036": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000157199626000036/dell-20260625.htm",
+  "doc": "dell-20260625.htm",
+  "raw_len": 75951,
+  "text_len": 13573
+ },
+ "0000002488-26-000115": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000115/amd-20260626.htm",
+  "doc": "amd-20260626.htm",
+  "raw_len": 44715,
+  "text_len": 8449
+ },
+ "0001773751-26-000146": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000146/hims-20260626.htm",
+  "doc": "hims-20260626.htm",
+  "raw_len": 35799,
+  "text_len": 6551
+ },
+ "0001046179-26-000381": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000381/a20260702changeofaztreasur.htm",
+  "doc": "a20260702changeofaztreasur.htm",
+  "raw_len": 15709,
+  "text_len": 1851
+ },
+ "0001874178-26-000048": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000048/rivn-20260702.htm",
+  "doc": "rivn-20260702.htm",
+  "raw_len": 32712,
+  "text_len": 3713
+ },
+ "0001628280-26-046717": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026046717/tsla-20260702.htm",
+  "doc": "tsla-20260702.htm",
+  "raw_len": 26572,
+  "text_len": 3060
+ },
+ "0001045810-26-000060": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000060/nvda-20260628.htm",
+  "doc": "nvda-20260628.htm",
+  "raw_len": 22172,
+  "text_len": 5379
+ },
+ "0001876042-26-000205": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1876042/000187604226000205/crcl-20260629.htm",
+  "doc": "crcl-20260629.htm",
+  "raw_len": 24070,
+  "text_len": 4750
+ },
+ "0001104659-26-080528": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926080528/tm2619283d1_6k.htm",
+  "doc": "tm2619283d1_6k.htm",
+  "raw_len": 12832,
+  "text_len": 2134
+ },
+ "0001193125-26-295586": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526295586/mstr-20260706.htm",
+  "doc": "mstr-20260706.htm",
+  "raw_len": 116881,
+  "text_len": 11269
+ },
+ "0001193125-26-295589": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1730168/000119312526295589/d84378d8k.htm",
+  "doc": "d84378d8k.htm",
+  "raw_len": 22199,
+  "text_len": 3941
+ },
+ "0001193125-26-296224": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1571996/000119312526296224/d32716d8k.htm",
+  "doc": "d32716d8k.htm",
+  "raw_len": 29218,
+  "text_len": 5081
+ },
+ "0001104659-26-080813": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000110465926080813/tm2619783d1_8k.htm",
+  "doc": "tm2619783d1_8k.htm",
+  "raw_len": 37781,
+  "text_len": 8701
+ },
+ "0001104659-26-081265": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926081265/tm2619926d1_6k.htm",
+  "doc": "tm2619926d1_6k.htm",
+  "raw_len": 9400,
+  "text_len": 1638
+ },
+ "0001326380-26-000038": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1326380/000132638026000038/gme-20260707.htm",
+  "doc": "gme-20260707.htm",
+  "raw_len": 51155,
+  "text_len": 6568
+ },
+ "0000909832-26-000060": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/909832/000090983226000060/cost-20260707.htm",
+  "doc": "cost-20260707.htm",
+  "raw_len": 22525,
+  "text_len": 2795
+ },
+ "0001104659-26-081988": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1874178/000110465926081988/tm2617163d3_8k.htm",
+  "doc": "tm2617163d3_8k.htm",
+  "raw_len": 28784,
+  "text_len": 5452
+ },
+ "0001628280-26-047734": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1664703/000162828026047734/be-20260709.htm",
+  "doc": "be-20260709.htm",
+  "raw_len": 31912,
+  "text_len": 3823
+ },
+ "0001104659-26-082180": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/924613/000110465926082180/tm2620138d1_6k.htm",
+  "doc": "tm2620138d1_6k.htm",
+  "raw_len": 71287,
+  "text_len": 13971
+ },
+ "0001193125-26-299667": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1679788/000119312526299667/d74758d8k.htm",
+  "doc": "d74758d8k.htm",
+  "raw_len": 27251,
+  "text_len": 4386
+ },
+ "0001104659-26-082293": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1018724/000110465926082293/tm2619352d4_8k.htm",
+  "doc": "tm2619352d4_8k.htm",
+  "raw_len": 63945,
+  "text_len": 7962
+ },
+ "0001193125-26-299843": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1835632/000119312526299843/d82462d8k.htm",
+  "doc": "d82462d8k.htm",
+  "raw_len": 25059,
+  "text_len": 3188
+ },
+ "0001104659-26-082647": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1577552/000110465926082647/tm2619929d1_6k.htm",
+  "doc": "tm2619929d1_6k.htm",
+  "raw_len": 11731,
+  "text_len": 2134
+ },
+ "0001104659-26-082674": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/924613/000110465926082674/tm2620226d1_6k.htm",
+  "doc": "tm2620226d1_6k.htm",
+  "raw_len": 54616,
+  "text_len": 4641
+ },
+ "0001046179-26-000447": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000447/tsm-revenue20260713.htm",
+  "doc": "tsm-revenue20260713.htm",
+  "raw_len": 88011,
+  "text_len": 5858
+ },
+ "0001193125-26-301483": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1050446/000119312526301483/mstr-20260713.htm",
+  "doc": "mstr-20260713.htm",
+  "raw_len": 154370,
+  "text_len": 7165
+ },
+ "0000051143-26-000070": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000070/ibm-20260714.htm",
+  "doc": "ibm-20260714.htm",
+  "raw_len": 77164,
+  "text_len": 7978
+ },
+ "0001628280-26-048235": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/937966/000162828026048235/form6-kquarterlyfilings.htm",
+  "doc": "form6-kquarterlyfilings.htm",
+  "raw_len": 11412,
+  "text_len": 2292
+ },
+ "0001046179-26-000451": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000451/tsm-20260716x6k.htm",
+  "doc": "tsm-20260716x6k.htm",
+  "raw_len": 17633,
+  "text_len": 1644
+ },
+ "0001493152-26-033457": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/2068385/000149315226033457/form8-k.htm",
+  "doc": "form8-k.htm",
+  "raw_len": 41910,
+  "text_len": 5041
+ },
+ "0001065280-26-000211": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1065280/000106528026000211/nflx-20260716.htm",
+  "doc": "nflx-20260716.htm",
+  "raw_len": 24630,
+  "text_len": 4137
+ },
+ "0001213900-26-078760": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1970622/000121390026078760/ea0296752-8k_usarare.htm",
+  "doc": "ea0296752-8k_usarare.htm",
+  "raw_len": 43622,
+  "text_len": 16173
+ },
+ "0001104659-26-084452": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1513845/000110465926084452/tm2620683d1_6k.htm",
+  "doc": "tm2620683d1_6k.htm",
+  "raw_len": 13170,
+  "text_len": 3692
+ },
+ "0001773751-26-000149": {
+  "ok": true,
+  "url": "https://www.sec.gov/Archives/edgar/data/1773751/000177375126000149/hims-20260713.htm",
+  "doc": "hims-20260713.htm",
+  "raw_len": 24504,
+  "text_len": 3729
+ }
+}

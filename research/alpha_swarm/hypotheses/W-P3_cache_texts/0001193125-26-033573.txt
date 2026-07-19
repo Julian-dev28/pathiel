@@ -1,0 +1,175 @@
+8-K
+
+false000105044600010504462026-02-022026-02-020001050446us-gaap:CommonStockMember2026-02-022026-02-020001050446mstr:VariableRateSeriesAPerpetualStretchPreferredStock0001ParValuePerShareMember2026-02-022026-02-020001050446mstr:M800SeriesAPerpetualStrikePreferredStock0001ParValuePerShareMember2026-02-022026-02-020001050446mstr:M1000SeriesAPerpetualStridePreferredStock0001ParValuePerShareMember2026-02-022026-02-020001050446mstr:M1000SeriesAPerpetualStrifePreferredStock0001ParValuePerShareMember2026-02-022026-02-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): February 2, 2026
+
+STRATEGY INC
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-42509
+
+51-0323571
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification No.)
+
+1850 Towers Crescent Plaza
+
+Tysons Corner, Virginia
+
+22182
+
+(Address of principal executive offices)
+
+(Zip Code)
+
+Registrant’s telephone number, including area code: (703) 848-8600
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of Each Class
+
+Trading
+
+Symbol
+
+Name of Each Exchange
+
+on which Registered
+
+10.00% Series A Perpetual Strife Preferred Stock, $0.001 par value per share
+
+STRF
+
+The Nasdaq Global Select Market
+
+Variable Rate Series A Perpetual Stretch Preferred Stock, $0.001 par value per share
+
+STRC
+
+The Nasdaq Global Select Market
+
+8.00% Series A Perpetual Strike Preferred Stock, $0.001 par value per share
+
+STRK
+
+The Nasdaq Global Select Market
+
+10.00% Series A Perpetual Stride Preferred Stock, $0.001 par value per share
+
+STRD
+
+The Nasdaq Global Select Market
+
+Class A common stock, $0.001 par value per share
+
+MSTR
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Events.
+
+ROC Dividend Update
+
+On February 2, 2026, Strategy Inc (“Strategy”) issued a press release on the U.S. tax treatment of 2025 preferred stock distributions and its expectations for future accumulated earnings and profits.
+
+A copy of the press release issued in connection with the announcement is attached as Exhibit 99.1 to this Current Report on Form 8-K and incorporated herein by reference.
+
+Forward-Looking Statements
+
+Statements in this Current Report on Form 8-K (including Exhibit 99.1 attached hereto) about future expectations, plans, and prospects, as well as any other statements regarding matters that are not historical facts, may constitute “forward-looking statements” within the meaning of The Private Securities Litigation Reform Act of 1995. These statements include, but are not limited to, statements regarding the tax-deferred return of capital treatment of dividends on our preferred stock and statements regarding our expectations to generate current earnings and profits. The words “anticipate,” “believe,” “continue,” “could,” “estimate,” “expect,” “intend,” “may,” “plan,” “potential,” “predict,” “project,” “should,” “target,” “will,” “would,” and similar expressions are intended to identify forward-looking statements, although not all forward-looking statements contain these identifying words. Actual results may differ materially from those indicated by such forward-looking statements as a result of various important factors, including the uncertainties related to Strategy’s future results of operations, its expectation regarding the tax-deferred return of capital treatment of dividends on Strategy's preferred stock, fluctuations in tax benefits or provisions, assumptions underlying Strategy’s projections, and the other factors discussed under the caption “Risk Factor Updates” in Strategy’s Current Report on Form 8-K filed with the SEC on October 6, 2025 and under the caption “Risk Factors” in Strategy’s Quarterly Report on Form 10-Q filed with the SEC on November 3, 2025 and the risks described in other filings that Strategy may make with the SEC. Any forward-looking statements contained in this Current Report on Form 8-K (including Exhibit 99.1 attached hereto) speak only as of the date hereof, and Strategy specifically disclaims any obligation to update any forward-looking statement, whether as a result of new information, future events, or otherwise.
+
+Item 9.01.
+
+Financial Statements and Exhibits.
+
+(d) Exhibits
+
+Exhibit
+
+No.
+
+Description
+
+99.1
+
+Press release, dated February 2, 2026.
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: February 2, 2026
+
+Strategy Inc
+
+(Registrant)
+
+By:
+
+/s/ Thomas C. Chow
+
+Name:
+
+Thomas C. Chow
+
+Title:
+
+Executive Vice President & General Counsel

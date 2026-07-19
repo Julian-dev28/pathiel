@@ -1,0 +1,167 @@
+ibm-20260714
+0000051143falseCHX00000511432026-07-142026-07-140000051143exch:XCHIus-gaap:CommonStockMember2026-07-142026-07-140000051143exch:XNYSus-gaap:CommonStockMember2026-07-142026-07-140000051143exch:XNYSibm:Notes0.300PercentDue2026Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.250PercentDue2027Member2026-07-142026-07-140000051143exch:XNYSibm:A3375NotesDue2027Member2026-07-142026-07-140000051143exch:XNYSibm:Notes0.300PercentDue2028Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.750PercentDue2028Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.500PercentDue2029Member2026-07-142026-07-140000051143exch:XNYSibm:Notes0.875PercentDue2030Member2026-07-142026-07-140000051143exch:XNYSibm:A2.900NotesDue2030Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.750PercentDue2031Member2026-07-142026-07-140000051143exch:XNYSibm:A3.000NotesDue2031Member2026-07-142026-07-140000051143exch:XNYSibm:A3625NotesDue2031Member2026-07-142026-07-140000051143exch:XNYSibm:Notes0.650PercentDue2032Member2026-07-142026-07-140000051143exch:XNYSibm:A3.150NotesDue2033Member2026-07-142026-07-140000051143exch:XNYSibm:A3.450NotesDue2034Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.250PercentDue2034Member2026-07-142026-07-140000051143exch:XNYSibm:A3750NotesDue2035Member2026-07-142026-07-140000051143exch:XNYSibm:A3.450NotesDue2037Member2026-07-142026-07-140000051143exch:XNYSibm:A3.850NotesDue2038Member2026-07-142026-07-140000051143exch:XNYSibm:A4875NotesDue2038Member2026-07-142026-07-140000051143exch:XNYSibm:Notes1.200PercentDue2040Member2026-07-142026-07-140000051143exch:XNYSibm:A4000NotesDue2043Member2026-07-142026-07-140000051143exch:XNYSibm:A3.800NotesDue2045Member2026-07-142026-07-140000051143exch:XNYSibm:FloatingRateNotesDue2028Member2026-07-142026-07-140000051143exch:XNYSibm:Debentures6.22PercentDue2027Member2026-07-142026-07-140000051143exch:XNYSibm:Debentures6.50PercentDue2028Member2026-07-142026-07-140000051143exch:XNYSibm:Debentures5.875PercentDue2032Member2026-07-142026-07-140000051143exch:XNYSibm:Debentures7.00PercentDue2045Member2026-07-142026-07-140000051143exch:XNYSibm:Debentures7.125PercentDue2096Member2026-07-142026-07-14
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT PURSUANT TO SECTION 13 OR 15 (d)
+
+OF THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report: July 14, 2026
+
+(Date of earliest event reported)
+
+INTERNATIONAL BUSINESS MACHINES CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+New York 1-236013-0871985
+
+(State of Incorporation)(Commission File Number)(IRS employer Identification No.)
+
+One New Orchard Road
+
+Armonk, New York
+10504
+
+(Address of principal executive offices)(Zip Code)
+
+914-499-1900
+
+(Registrant’s telephone number)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading symbol(s)Name of each exchange on which registered
+
+Capital stock, par value $.20 per shareIBMNew York Stock Exchange
+
+NYSE Texas
+
+0.300% Notes due 2026IBM 26BNew York Stock Exchange
+
+1.250% Notes due 2027IBM 27BNew York Stock Exchange
+
+3.375% Notes due 2027IBM 27FNew York Stock Exchange
+
+0.300% Notes due 2028IBM 28BNew York Stock Exchange
+
+1.750% Notes due 2028IBM 28ANew York Stock Exchange
+
+1.500% Notes due 2029IBM 29New York Stock Exchange
+
+0.875% Notes due 2030IBM 30ANew York Stock Exchange
+
+2.900% Notes due 2030IBM 30CNew York Stock Exchange
+
+1.750% Notes due 2031IBM 31New York Stock Exchange
+
+3.000% Notes due 2031IBM 31ANew York Stock Exchange
+
+3.625% Notes due 2031IBM 31BNew York Stock Exchange
+
+0.650% Notes due 2032IBM 32ANew York Stock Exchange
+
+3.150% Notes due 2033IBM 33ANew York Stock Exchange
+
+3.450% Notes due 2034IBM 34ANew York Stock Exchange
+
+1.250% Notes due 2034IBM 34New York Stock Exchange
+
+3.750% Notes due 2035IBM 35New York Stock Exchange
+
+3.450% Notes due 2037IBM 37New York Stock Exchange
+
+3.850% Notes due 2038IBM 38BNew York Stock Exchange
+
+4.875% Notes due 2038IBM 38New York Stock Exchange
+
+1.200% Notes due 2040IBM 40New York Stock Exchange
+
+4.000% Notes due 2043IBM 43New York Stock Exchange
+
+3.800% Notes due 2045IBM 45ANew York Stock Exchange
+
+Floating Rate Notes due 2028IBM 28ENew York Stock Exchange
+
+6.22% Debentures due 2027IBM 27New York Stock Exchange
+
+6.50% Debentures due 2028IBM 28New York Stock Exchange
+
+5.875% Debentures due 2032IBM 32DNew York Stock Exchange
+
+7.00% Debentures due 2045IBM 45New York Stock Exchange
+
+7.125% Debentures due 2096IBM 96New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02. Results of Operations and Financial Condition.
+
+On July 14, 2026, International Business Machines Corporation (the “company”) issued a letter to IBM investors providing certain information regarding its expected financial results for the fiscal quarter ended June 30, 2026. The text of the letter is furnished herewith as Exhibit 99.1.
+
+In an effort to provide investors with additional information regarding the company’s results as determined by generally accepted accounting principles (GAAP), the company has disclosed in the attached letter certain non-GAAP information which management believes provides useful information to investors. Reconciliations of these non-GAAP financial measures to the most directly comparable financial measures calculated and presented in accordance with GAAP are included in the letter, which is Exhibit 99.1 to this Form 8-K. The rationale for management’s use of non-GAAP measures is included in Exhibit 99.2 to this Form 8-K.
+
+Item 7.01. Regulation FD Disclosure.
+
+The information contained in Item 2.02 of this Current Report on Form 8-K is hereby incorporated by reference into this Item 7.01.
+
+The information in Item 2.02 and Item 7.01, including the corresponding Exhibits 99.1 and 99.2, are being furnished with the Commission and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934.
+
+Item 9.01. Financial Statements and Exhibits.
+
+(d)Exhibits
+
+The following exhibits are being furnished as part of this report:
+
+Exhibit No.Description of Exhibit
+
+99.1
+Letter to IBM Investors, dated July 14, 2026
+
+99.2
+Non-GAAP Metrics
+
+The following exhibit is being filed as part of this report:
+
+Exhibit No.Description of Exhibit
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL Document)
+
+IBM’s web site (www.ibm.com) contains a significant amount of information about IBM, including financial and other information for investors (www.ibm.com/investor/). IBM encourages investors to visit its various web sites from time to time, as information is updated and new information is posted.
+
+2
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned, hereunto duly authorized.
+
+Date: July 14, 2026
+
+By:/s/ Nicolás A. Fehring
+
+Nicolás A. Fehring
+
+Vice President and Controller
+
+3

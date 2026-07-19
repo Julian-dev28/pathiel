@@ -1,0 +1,299 @@
+false
+0001018724
+AMAZON COM INC
+
+0001018724
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:CommonStockParValue.01PerShareMember
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:FloatingRateNotesDue2028Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec2.800NotesDue2028Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec3.100NotesDue2030Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec3.350NotesDue2032Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec3.700NotesDue2035Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec4.050NotesDue2039Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec4.450NotesDue2045Member
+
+2026-04-09
+2026-04-09
+
+0001018724
+
+AMZN:Sec4.850NotesDue2064Member
+
+2026-04-09
+2026-04-09
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+Table of Contents
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON,
+D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant
+to Section 13 or 15(d) of the
+
+Securities
+Exchange Act of 1934
+
+April 9, 2026
+
+Date of Report
+
+(Date of earliest
+event reported)
+
+AMAZON.COM, INC.
+
+(Exact name of
+registrant as specified in its charter)
+
+Delaware
+
+000-22513
+
+91-1646860
+
+(State
+or other jurisdiction of
+
+incorporation)
+
+(Commission
+File Number)
+
+(IRS
+Employer Identification No.)
+
+410 Terry Avenue North, Seattle, Washington
+98109-5210
+
+(Address of principal
+executive offices, including Zip Code)
+
+(206)
+266-1000
+
+(Registrant’s
+telephone number, including area code)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+¨
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of
+the Act:
+
+Title of Each Class
+
+Trading Symbol(s)
+
+Name of Each Exchange on Which Registered
+
+Common Stock, par value $.01 per share
+
+AMZN
+
+The Nasdaq Stock Market LLC
+
+Floating Rate Notes due 2028
+
+—True
+
+The Nasdaq Stock Market LLC
+
+2.800% Notes due 2028
+
+True—
+
+The Nasdaq Stock Market LLC
+
+3.100% Notes due 2030
+
+True—
+
+The Nasdaq Stock Market LLC
+
+3.350% Notes due 2032
+
+True—
+
+The Nasdaq Stock Market LLC
+
+3.700% Notes due 2035
+
+True—
+
+The Nasdaq Stock Market LLC
+
+4.050% Notes due 2039
+
+True—
+
+The Nasdaq Stock Market LLC
+
+4.450% Notes due 2045
+
+True—
+
+The Nasdaq Stock Market LLC
+
+4.850% Notes due 2064
+
+True—
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company
+
+¨
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.
+¨
+
+Table of Contents
+
+TABLE OF CONTENTS
+
+ITEM 7.01. REGULATION
+FD DISCLOSURE.
+3
+
+ITEM 9.01. FINANCIAL
+STATEMENTS AND EXHIBITS.
+3
+
+SIGNATURES
+4
+
+EXHIBIT 99.1
+
+EXHIBIT 99.2
+
+2
+
+Table of Contents
+
+ITEM 7.01. REGULATION
+FD DISCLOSURE.
+
+The Company’s
+Letter to Shareholders, which accompanies its Annual Report for the Year Ended December 31, 2025, is attached as Exhibit 99.1, and a
+reconciliation of a non-GAAP financial measure included in the Letter to Shareholders to the most directly comparable financial
+measure calculated and presented in accordance with GAAP is included as Exhibit 99.2.
+
+ITEM 9.01. FINANCIAL STATEMENTS AND EXHIBITS.
+
+(d) Exhibits.
+
+Exhibit
+
+Number
+
+Description
+
+99.1
+2025 Letter to Shareholders.
+
+99.2
+Reconciliation of Non-GAAP Financial Measure.
+
+104
+The cover page from this Current Report on Form 8-K, formatted in Inline XBRL (included as Exhibit 101).
+
+3
+
+Table of Contents
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the
+undersigned hereunto duly authorized.
+
+AMAZON.COM, INC. (REGISTRANT)
+
+By:
+/s/ Susan K. Jong
+
+Susan
+K. Jong
+
+Vice President and Secretary
+
+Dated: April 9, 2026
+
+4

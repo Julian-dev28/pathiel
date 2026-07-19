@@ -1,0 +1,104 @@
+zm-20260521
+0001585521FALSE00015855212026-05-212026-05-21
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+_________________________
+
+FORM 8-K
+
+_________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 21, 2026
+
+_________________________
+
+Zoom Communications, Inc.
+
+(Exact name of Registrant as Specified in Its Charter)
+
+_________________________
+
+Delaware001-3886561-1648780
+
+(State or Other Jurisdiction
+
+of Incorporation)(Commission File Number)(IRS Employer
+
+Identification No.)
+
+55 Almaden Boulevard, 6th Floor
+
+San Jose, California 95113
+
+(Address of principal executive offices and Zip Code)
+
+(888) 799-9666
+
+(Registrant’s Telephone Number, Including Area Code)
+
+Zoom Video Communications, Inc.
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+_________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Class A Common Stock, $0.001 par value per shareZMThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+On May 21, 2026, Zoom Communications, Inc. (the “Company”) issued a press release announcing its financial results for the three months ended April 30, 2026. A copy of the press release is furnished as Exhibit 99.1 to this report and is incorporated by reference.
+
+The information contained in this report, including Exhibit 99.1 attached hereto, is furnished and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, or subject to the liabilities of that section. The information shall not be deemed incorporated by reference into any other filing with the Securities and Exchange Commission made by the Company regardless of any general incorporation language in such filing, except as shall be expressly set forth by specific reference in such filing.
+
+Item 9.01 Financial Statements And Exhibits.
+
+(d) Exhibits
+
+Exhibit No.Description
+
+99.1
+Press release dated May 21, 2026 of Zoom Communications, Inc.
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Zoom Communications, Inc.
+
+Dated: May 21, 2026
+By:/s/ Michelle Chang
+
+Michelle Chang
+
+Chief Financial Officer

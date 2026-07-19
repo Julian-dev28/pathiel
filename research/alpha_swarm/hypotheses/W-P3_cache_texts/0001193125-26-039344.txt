@@ -1,0 +1,209 @@
+8-K
+
+ORACLE CORP Depositary Shares, each representing a 1/2,000th interest in a share of 6.50% Series D Mandatory Convertible Preferred Stock, par value $0.01 per false 0001341439 --05-31 0001341439 2026-02-02 2026-02-02 0001341439 us-gaap:CommonStockMember 2026-02-02 2026-02-02 0001341439 us-gaap:SeriesDPreferredStockMember 2026-02-02 2026-02-02
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): February 2, 2026
+
+Oracle Corporation
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-35992
+
+54-2185193
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification No.)
+
+2300 Oracle Way, Austin, Texas 78741
+
+(Address of principal executive offices) (Zip Code)
+
+(737) 867-1000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former name or former address, if changed since last report.)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Common Stock, par value $0.01 per share
+
+ORCL
+
+New York Stock Exchange
+
+Depositary Shares, each representing a 1/2,000th interest in a share of 6.50% Series D Mandatory Convertible Preferred Stock, par value $0.01 per share
+
+ORCL-PRD
+
+New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Section 1—Registrant’s Business and Operations
+
+Item 1.01
+
+Entry into a Material Definitive Agreement
+
+On February 2, 2026, Oracle Corporation, a Delaware corporation (“Oracle”) entered into an underwriting agreement (the “Underwriting Agreement”) with BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC, HSBC Securities (USA) Inc. and J.P. Morgan Securities LLC, as representatives of the several underwriters named therein, pursuant to which Oracle agreed to issue and sell 100,000,000 depositary shares (the “Depositary Shares”), each representing a 1/2,000th interest in a share of Oracle’s 6.50% Series D Mandatory Convertible Preferred Stock, liquidation preference $100,000.00 per share, par value $0.01 per share (the “Mandatory Convertible Preferred Stock” and such offering, the “Depositary Shares Offering”).
+
+The Depositary Shares Offering closed on February 5, 2026. The Depositary Shares Offering was made pursuant to Oracle’s shelf registration statement on Form S-3 (File No. 333-277990) (as amended, the “Registration Statement”), filed with the Securities and Exchange Commission (the “SEC”) on March 15, 2024, a base prospectus amended and restated as of February 2, 2026 pursuant to post-effective amendment no. 1 filed with the SEC on February 2, 2026 included as part of the Registration Statement, and a prospectus supplement dated February 2, 2026 filed with the SEC on February 4, 2026.
+
+In connection with the Depositary Shares Offering, Oracle filed a certificate of designations (the “Certificate of Designations”) with the Secretary of State of the State of Delaware, including a form of certificate for the Mandatory Convertible Preferred Stock (the “Form of Certificate”), to establish the preferences, limitations, and relative special rights of the Mandatory Convertible Preferred Stock. The Certificate of Designations became effective upon filing.
+
+In connection with the Depositary Shares Offering, Oracle entered into a deposit agreement (the “Deposit Agreement”) dated February 5, 2026 by and among Oracle, Equiniti Trust Company, LLC, as bank depositary (the “Depositary”), and the holders from time to time of depositary receipts for Depositary Shares (the “Depositary Receipts”), a form of which is included therein (the “Form of Depositary Receipt”). The Deposit Agreement provides for the deposit of shares of the Mandatory Convertible Preferred Stock from time to time with the Depositary and for the issuance thereunder of Depositary Receipts evidencing Depositary Shares in respect of the deposited Mandatory Convertible Preferred Stock.
+
+The foregoing descriptions of the terms of the Underwriting Agreement, Certificate of Designations, Form of Certificate, Deposit Agreement and Form of Depositary Receipt are qualified in their entirety by reference to the Underwriting Agreement, Certificate of Designations, Form of Certificate, Deposit Agreement and Form of Depositary Receipt, a copy of each of which is filed as Exhibit 1.1, 3.1, 4.1, 4.2 and 4.3, respectively, hereto and is incorporated herein by reference.
+
+In connection with the Depositary Shares Offering, the legal opinion as to the legality of the Depositary Shares sold in the Depositary Shares Offering and the Preferred Stock underlying such Depositary Shares is being filed as Exhibit 5.1 to this Current Report on Form 8-K and is incorporated herein and into the Registration Statement by reference.
+
+Section 3—Securities and Trading Markets
+
+Item 3.03
+
+Material Modification to Rights of Security Holders
+
+On February 5, 2026, Oracle filed the Certificate of Designations with the Secretary of State of the State of Delaware to establish the preferences, limitations and relative special rights of the Mandatory Convertible Preferred Stock. The Certificate of Designations became effective upon filing.
+
+Subject to certain exceptions, so long as any share of Mandatory Convertible Preferred Stock remains outstanding, no dividend or distribution will be declared or paid on shares of Oracle’s common stock, par value $0.01 per share (the “Common Stock”), or any other shares of junior stock, and no Common Stock or other junior stock or parity stock will be, directly or indirectly, purchased, redeemed or otherwise acquired for consideration by the Company or any of its subsidiaries unless all accumulated and unpaid dividends for all preceding dividend periods have been declared and paid upon, or a sufficient sum or number of shares of Common Stock have been set apart for the payment of such dividends upon, all outstanding shares of Mandatory Convertible Preferred Stock.
+
+Holders of the Depositary Shares will be entitled to a proportional fractional interest in the rights and preferences of the Mandatory Convertible Preferred Stock, including conversion, dividend, liquidation and voting rights, subject to the provisions of the Deposit Agreement. The Mandatory Convertible Preferred Stock will accumulate dividends (which may be paid in cash or, subject to certain limitations, in shares of Common Stock or in any combination of cash and Common Stock) at an annual
+
+rate of 6.50% on the liquidation preference thereof, which is $100,000 per share, payable when, as and if declared by the Board of Directors of Oracle, or an authorized committee thereof, on January 15, April 15, July 15 and October 15 of each year, commencing on, and including, April 15, 2026 and ending on, and including, January 15, 2029. Unless earlier converted, each outstanding share of Mandatory Convertible Preferred Stock will automatically convert on the second business day immediately following the last trading day of the Final Averaging Period (as defined below) into between 499.8126 and 624.7657 shares of Common Stock (and, correspondingly, each Depositary Share will automatically convert into between 0.2499 and 0.3124 shares of Common Stock), subject to customary anti-dilution adjustments. The number of shares of Common Stock issuable upon such automatic conversion will be determined based on the average volume-weighted average price of a share of Common Stock over the 20 consecutive trading-day period beginning on, and including, the 21st scheduled trading day prior to January 15, 2029 (the “Final Averaging Period”). Other than during a fundamental change conversion period (as defined in the Certificate of Designations), at any time prior to the mandatory conversion settlement date, a holder of 2,000 Depositary Shares may cause the Depositary to convert one share of Mandatory Convertible Preferred Stock, on such holder’s behalf, into a number of shares of Common Stock equal to the minimum conversion rate of 499.8126, subject to certain anti-dilution and other adjustments.
+
+In addition, in the event of Oracle’s voluntary or involuntary liquidation, winding-up or dissolution, each holder of Mandatory Convertible Preferred Stock will be entitled to receive a liquidation preference in the amount of $100,000 per share of the Mandatory Convertible Preferred Stock, plus an amount equal to accumulated and unpaid dividends on the shares to, but excluding, the date fixed for liquidation, winding-up or dissolution to be paid out of Oracle’s assets available for distribution to its stockholders, after satisfaction of liabilities owed to Oracle’s creditors and holders of any senior stock and before any payment or distribution is made to holders of junior stock, including the Common Stock.
+
+Section 5—Corporate Governance and Management
+
+Item 5.03
+
+Amendments to Articles of Incorporation or Bylaws; Change in Fiscal Year
+
+The information set forth under Item 3.03 of this Current Report on Form 8-K is hereby incorporated by reference in this Item 5.03.
+
+Section 9—Financial Statements and Exhibits
+
+Item 9.01
+
+Financial Statements and Exhibits
+
+(d) Exhibits
+
+Exhibit
+
+No.
+
+Description
+
+1.1
+
+Underwriting Agreement, dated as of February 2, 2026, by and among Oracle Corporation, BofA Securities, Inc., Citigroup Global Markets Inc., Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC, HSBC Securities (USA) Inc. and J.P. Morgan Securities LLC, as representatives of the several underwriters named therein.
+
+3.1
+
+Certificate of Designations, filed with the Secretary of State of the State of Delaware and effective February 5, 2026.
+
+4.1
+
+Form of Certificate for the 6.50% Series D Mandatory Convertible Preferred Stock (included as Exhibit A to Exhibit 3.1).
+
+4.2
+
+Deposit Agreement, dated as of February 5, 2026, by and among Oracle Corporation, Equiniti Trust Company, LLC, acting as depositary, and the holders from time to time of the depositary receipts described therein.
+
+4.3
+
+Form of Depositary Receipt for the Depositary Shares (included as Exhibit A to Exhibit 4.2).
+
+5.1
+
+Opinion of Freshfields US LLP.
+
+23.1
+
+Consent of Freshfields US LLP (contained in Exhibit 5.1).
+
+EX-104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ORACLE CORPORATION
+
+Dated: February 5, 2026
+
+By:
+
+/s/ Kimberly Woolley
+
+Name:
+
+Kimberly Woolley
+
+Title:
+
+Vice President, Assistant General Counsel and Assistant Secretary

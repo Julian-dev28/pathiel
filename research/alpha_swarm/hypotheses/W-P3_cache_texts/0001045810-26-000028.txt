@@ -1,0 +1,84 @@
+nvda-20260507
+0001045810false00010458102026-05-072026-05-07
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, DC 20549
+
+______________
+
+FORM 8-K
+
+CURRENT REPORT
+
+PURSUANT TO SECTION 13 OR 15(d) OF
+
+THE SECURITIES EXCHANGE ACT OF 1934
+
+Date of Report (Date of earliest event reported): May 7, 2026
+
+NVIDIA CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware0-2398594-3177549
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2788 San Tomas Expressway, Santa Clara, CA 95051
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant’s telephone number, including area code: (408) 486-2000
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, $0.001 par value per shareNVDAThe Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging Growth Company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02. Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+(d)
+
+On May 7, 2026, the Board of Directors, or the Board, of NVIDIA Corporation appointed Suzanne Nora Johnson as a member of the Board and as a member of the Audit Committee of the Board and the number of directors constituting the full Board was increased from ten to eleven, in each case effective July 13, 2026. Ms. Nora Johnson will join the Board effective July 13, 2026, due to a prior professional commitment.
+
+In connection with her appointment to the Board, Ms. Nora Johnson will be granted pursuant to our Amended and Restated 2007 Equity Incentive Plan: (a) an initial equity grant of restricted stock units with a target value of $255,000, vesting approximately semi-annually over three years, and (b) a pro-rated annual equity grant of restricted stock units with an annualized target value of $255,000, approximately 50% of which will vest on May 19, 2027, and the balance of which will vest on November 18, 2026. Additionally, she will be granted a pro-rated annual cash retainer with an annualized value of $85,000, payable quarterly starting on July 13, 2026.
+
+In addition, we will enter into an indemnity agreement with Ms. Nora Johnson in connection with her service as a member of the Board. The form of indemnity agreement is filed as Exhibit 10.1 to our Current Report on Form 8-K filed with the SEC on March 7, 2006.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+NVIDIA Corporation
+
+Date: May 8, 2026By: /s/ Rebecca Peters
+
+Rebecca Peters
+
+Vice President, Deputy General Counsel and Assistant Secretary

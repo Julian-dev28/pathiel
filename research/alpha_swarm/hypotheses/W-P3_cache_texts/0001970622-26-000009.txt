@@ -1,0 +1,132 @@
+usar-20260128
+0001970622FALSE00019706222026-01-282026-01-28
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 OR 15(d)
+
+of The Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): January 28, 2026
+
+USA Rare Earth, Inc.
+
+(Exact Name of Registrant as Specified in its Charter)
+
+Delaware001-4171198-1720278
+
+(State or Other Jurisdiction of Incorporation)(Commission File Number)(I.R.S. Employer Identification No.)
+
+100 W. Airport Road, Stillwater, OK 74075
+
+(Address of Principal Executive Offices) (Zip Code)
+
+(813) 867-6155
+
+(Registrant’s telephone number, including area code)
+
+Not applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common Stock, par value $0.0001USAR
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☑
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 1.01 - Entry into a Material Definitive Agreement
+
+Private Placement
+
+As previously announced in our Current Report on Form 8-K, dated January 26, 2026, on January 26, 2026, USA Rare Earth, Inc., a Delaware corporation (the “Company”), entered into a securities purchase agreement (the “Purchase Agreement”) with the several purchasers named therein (the “Purchasers”), for the private placement (the “Private Placement”) of 69,767,442 shares of the Company’s common stock, par value $0.0001 per share (the “Shares”), for aggregate gross proceeds of approximately $1.5 billion, at a price per share of $21.50. On January 28, 2026 (the “Closing Date”), the Company closed the Private Placement and issued the Shares (the “Closing”). The Company intends to use the net proceeds from the Private Placement to accelerate the build-out of its mine-to-magnet value chain, including the development and expansion of mining, processing, metal-making and magnet manufacturing capabilities, as well as for working capital and general corporate purposes.
+
+The Private Placement is exempt from the registration requirements of the Securities Act pursuant to the exemption for transactions by an issuer not involving any public offering under Section 4(a)(2) of the Securities Act and in reliance on similar exemptions under applicable state laws. Each Purchaser represented that it is an accredited investor within the meaning of Rule 501(a) of Regulation D and is acquiring the Shares as principal for its own account and not with a view to or for distributing or reselling the Shares. The Shares were offered without any general solicitation by the Company or its representatives. The Shares sold and issued in the Private Placement have not been registered under the Securities Act or any state securities laws and may not be offered or sold in the United States absent registration with the SEC or an applicable exemption from the registration requirements of the Securities Act.
+
+At Closing, pursuant to the A&R Purchase Agreement, the Company and the Purchasers entered into a registration rights agreement (the “Registration Rights Agreement”), pursuant to which the Company agreed to file a registration statement with the Securities and Exchange Commission (the “SEC”) on or prior to the 30th calendar day following the Closing Date for purposes of registering the resale of the Shares (the “Registration Statement”), to use commercially reasonable efforts to have such Registration Statement declared effective within the time period set forth in the Registration Rights Agreement, and to keep the Registration Statement effective until the date that all registrable securities covered by the Registration Statement (i) have been sold, thereunder or pursuant to Rule 144, or (ii) may be sold without volume or manner-of-sale restrictions pursuant to Rule 144 and without the requirement for the Company to be in compliance with the current public information requirement under Rule 144.
+
+The foregoing descriptions of the Purchase Agreement and the Registration Rights Agreement do not purport to be complete and are qualified in their entirety by reference to the Form of Purchase Agreement and Form of Registration Rights Agreement filed as Exhibit 10.1 and Exhibit 10.2, respectively, to this Current Report on Form 8-K and incorporated herein by reference.
+
+Item 3.02 Unregistered Sales of Equity Securities
+
+The information under Item 1.01 of this Current Report on Form 8-K related to the Securities is incorporated herein by reference.
+
+This Current Report on Form 8-K does not constitute an offer to sell any securities or a solicitation of an offer to buy any securities, nor shall there be any sale of any securities in any state or jurisdiction in which such an offer, solicitation or sale would be unlawful prior to registration or qualification under the securities laws of any such state or jurisdiction.
+
+Item 7.01 Regulation FD Disclosure
+
+On January 29, 2026, the Company issued a press release announcing the Closing of the Private Placement, a copy of which is furnished herewith as Exhibit 99.1.
+
+The information provided under this Item 7.01 of this Current Report on Form 8-K, including Exhibit 99.1, is “furnished” and shall not be deemed “filed” with the Securities and Exchange Commission or incorporated by reference in any filing under the Securities Exchange Act of 1934, as amended, or the Securities Act.
+
+Cautionary Note Regarding Forward-Looking Statements
+
+This Current Report on Form 8-K contains "forward-looking statements" within the meaning of Section 27A of the Securities Act of 1933, Section 21E of the Securities Exchange Act of 1934 and the Private Securities Litigation Reform Act of 1995. These statements, which involve risks and uncertainties include statements relating to the expected U.S. Government investment and its expected benefits, including the anticipated terms of the expected U.S. Government investment and anticipated timing of closing and funding; the PIPE and its expected benefits; the preliminary financial results discussed above; the Company's investment plans, including the development of the Round Top deposit, development and expansion of processing and separation facilities, development and expansion of metal-making and strip-casting facilities, and development and expansion of the magnet manufacturing facility, including the timing, cost, production capacities, and estimated outputs of each facility; the benefits of the transaction between USAR and LCM, including without limitation expectations for future development, operations, business strategies, financial performance, sales and customers; and the projected operating results and performance. Such statements can be identified by the fact that they do not relate strictly to historical or current facts. Words such as "anticipate", "believe", "can", "continue", "could", "estimate", "expect", "forecast", "intend", "may", "might", "plan", "possible", "potential", "predict", "project", "seek", "should", "strive", "target", "will", "would" and similar expressions may identify forward-looking statements, but the absence of these words does not mean that a statement is not forward-looking. Forward-looking statements are subject to risks and uncertainties that could cause actual results to differ materially from our expectations. These risks and uncertainties include, but are not limited to: (1) the risk that the investment from the U.S. Government is not completed on the expected terms, or at all; (2) the risk that USAR will not be able to execute its business plan to successfully use the proceeds of the expected U.S. Government transaction and the PIPE; (3) risks related to the timing and achievement of the expected business milestones of expected U.S. Government investment, including with respect to the development of the Round Top deposit, development and expansion of processing and separation facilities, development and expansion of metal-making and strip-casting facilities, and development and expansion of the magnet manufacturing facility; (4) the risk that the expected U.S. Government investment, which will be funded in phases over time subject to the Company achieving milestones, ultimately results in less proceeds to the Company than anticipated; (5) significant dilution associated with the expected U.S. Government investment and PIPE transaction; (6) the risk that the Company will not be able to execute its business plan to successfully use the proceeds of the expected U.S. Government investment and the PIPE; (7) the availability of appropriations from the legislative branch of the U.S. Government and the ability of the executive branch of the U.S. Government to obtain funding and support contemplated by the expected U.S. Government investment; (8) the determination by the legislative, judicial or executive branches of the U.S. Government that any aspect of the expected U.S. Government investment was unauthorized, void or voidable; (9) the Company's ability to obtain additional or replacement financing, as needed; (10) the Company's ability to effectively assess, determine and monitor the financial, tax and accounting treatment of expected U.S. Government investment, together with the Company's and the U.S. Government's obligations thereunder; (11) the Company's ability to effectively comply with the broader legal and regulatory requirements and heightened scrutiny associated with government partnerships and contracts; (12) the significant long-term and inherently risky investments the Company is making in mining and manufacturing facilities may not realize a favorable return; (13) the diversion of management time from ongoing business operations and opportunities as a result of the expected U.S. Government investment; (14) the risk that acquired businesses will not be integrated successfully or that the integration will be more costly or difficult than expected; (15) the risk that the synergies from any of the transactions that USAR has completed or is pursuing may not be fully realized or may take longer to realize than expected; (16) the risk that any announcement relating to a transaction could have an adverse effect on the market price of USAR's common stock; (17) the risk of litigation related to the expected U.S. Government investment, the PIPE and/or the development of the Company's projects; (18) the diversion of management time from ongoing business operations and opportunities as a result of a transaction; (19) the risk of adverse reactions or changes to business or employee relationships; (20) the ability to build or maintain relationships with customers and suppliers; (21) the Company's ability to successfully develop its magnet production facility and the timing of expected production milestones; (22) competition in the magnet manufacturing industry; (23) the ability to grow and manage growth profitably; (24) the Company's ability to build or maintain relationships with customers and suppliers; (25) the ability to attract and retain management and key employees; (26) the overall supply and demand for rare earth minerals; (27) the timing of commissioning, commercialization and expansion of the Company's manufacturing facilities, and the timing and amount of future production from each component of the Company's value chain; (28) the costs of production, capital expenditures and requirements for additional capital, including the need to raise additional
+
+capital to implement the Company's strategic plan and access the potential U.S. Government investment; (29) substantial doubt regarding the Company's ability to continue as a going concern for the twelve months following the issuance of its third quarter 2025 Condensed Consolidated Financial Statements; (30) the timing of future cash flow provided by operating activities, if any; (31) the risk that the Round Top Deposit might not be able to be commercially mined and the Company's ongoing exploration programs may not result in the development of profitable commercial mining operations; (32) the uncertainty in any mineral estimates, uncertainty in any geological, metallurgical, and geotechnical studies and opinions; (33) the Company's ability to successfully commence swarf processing; and (34) transportation risks. Detailed information regarding factors that may cause actual results to differ materially has been and will be included in the Company's filings with the SEC, including the Company's Form 10-K that the Company filed with the SEC on March 31, 2025, the Company's latest Quarterly Reports on Form 10-Q filed with the SEC, and the Current Report on Form 8-K that the Company filed with the SEC on January 26, 2026. These statements are only predictions and involve known and unknown risks, uncertainties, and other factors. Any forward-looking statements speak only as of their date, and the Company undertakes no obligation to update any forward-looking statements to reflect events or circumstances occurring after their date or to reflect the occurrence of unanticipated events.
+
+Item 9.01 Financial Statements and Exhibits
+
+(d) Exhibits
+
+The following exhibits are attached with this current report on Form 8-K.
+
+Exhibit NumberDescription
+
+10.1†
+
+Form of Securities Purchase Agreement, dated as of January 26, 2026, by and among the Company and the Purchasers party thereto (incorporated herein by reference to Exhibit 10.1 filed with the Current Report on Form 8-K (Reg. No. 001-41711) filed by the registrant on January 26, 2026).
+
+10.2
+
+Form of Registration Rights Agreement, dated as of January 26, 2026, by and among the Company and the holders party thereto (incorporated herein by reference to Exhibit 10.2 filed with the Current Report on Form 8-K (Reg. No. 001-41711) filed by the registrant on January 26, 2026).
+
+99.1*
+
+Press Release, dated January 29, 2026.
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+† The annexes schedules, and certain exhibits to this Exhibit have been omitted pursuant to Item 601(b)(2) of Regulation S-K. The Registrant hereby agrees to furnish supplementally a copy of any omitted annex, schedule or exhibit to the SEC upon request.
+
+* Filed herewith.
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date:
+January 29, 2026
+By:
+/s/ DAVID KRONENFELD
+
+David Kronenfeld
+
+Chief Legal Officer

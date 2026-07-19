@@ -1,0 +1,120 @@
+rklb-20260520
+FALSE000181999400018199942026-05-202026-05-20
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 20, 2026
+
+ROCKET LAB CORPORATION
+
+(Exact name of Registrant as Specified in Its Charter)
+
+Delaware001-3956039-2182599
+
+(State or Other Jurisdiction
+
+of Incorporation)(Commission File Number)(IRS Employer
+
+Identification No.)
+
+3881 McGowen Street
+
+Long Beach, California
+90808
+
+(Address of Principal Executive Offices)(Zip Code)
+
+Registrant’s Telephone Number, Including Area Code: 714 465-5737
+
+Not Applicable
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading
+
+Symbol(s)Name of each exchange on which registered
+
+Common Stock, par value $0.0001 per shareRKLBThe Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§ 230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§ 240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 8.01 Other Items.
+
+On May 20, 2026, Rocket Lab Corporation (the “Company”) entered into an equity distribution agreement (the “Equity Distribution Agreement”) with BofA Securities, Inc., BTIG, LLC, Cantor Fitzgerald & Co., Citizens JMP Securities, LLC, Craig-Hallum Capital Group LLC, Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC, KeyBanc Capital Markets Inc., Morgan Stanley & Co. LLC, Needham & Company, LLC, Nomura Securities International, Inc. (acting through BTIG, LLC as agent), Robert W. Baird & Co. Incorporated, Roth Capital Partners, LLC, Stifel, Nicolaus & Company, Incorporated, TD Securities (USA) LLC and Wells Fargo Securities, LLC, as sales agents (in such capacity, each, a “Sales Agent” and, collectively, the “Sales Agents”), the Forward Sellers (as defined below) and the Forward Purchasers (as defined below). Under the Equity Distribution Agreement, the Company may offer and sell, from time to time, shares of the Company’s common stock, par value $0.0001 per share (“Common Stock”) (the “Shares”), through or to the Sales Agents, acting as the Company’s agents or principal, having an aggregate offering price of up to $3,000,000,000 or by the Forward Sellers, acting as sales agents for the relevant Forward Purchasers.
+
+The Equity Distribution Agreement provides that, in addition to the issuance and sale of shares of Common Stock through the Sales Agents acting as sales agents or directly to the Sales Agents acting as principals, the Company also may enter into forward sale agreements under separate forward sale confirmations between the Company and Bank of America, N.A., Citizens JMP Securities, LLC, Deutsche Bank AG, London Branch, Goldman Sachs & Co. LLC, KeyBanc Capital Markets Inc., Morgan Stanley & Co. LLC, Nomura Global Financial Products, Inc., Robert W. Baird & Co. Incorporated, Stifel, Nicolaus & Company, Incorporated, The Toronto-Dominion Bank and Wells Fargo Bank, National Association or one or more of their respective affiliates. These entities, when acting in such capacity, are referred to herein as “Forward Purchasers.” In connection with each forward sale agreement, the relevant Forward Purchaser (or its affiliate or agent) will, at the Company’s request, attempt to borrow from third-party stock lenders and, through the relevant Sales Agent, sell a number of shares of Common Stock equal to the number of shares that underlie the forward sale agreement to hedge such forward sale agreement. Each of the Sales Agents, when acting as the agent for a Forward Purchaser, is referred to herein as a “Forward Seller,” except in the case of BTIG, LLC, for which references to the Forward Seller refer instead to Nomura Securities International, Inc. (acting through BTIG, LLC). Transactions contemplated by the forward sale agreements are referred to herein as “Forward Transactions.”
+
+In a Forward Transaction under one form of forward sale agreement, referred to as an “Initially Priced Forward Transaction,” the Company may enter into one or more Initially Priced Forward Transactions with a Forward Purchaser, pursuant to which the Company will receive the forward sale price under the forward sale agreement at the settlement of the Initially Priced Forward Transaction, subject to the price adjustment and other provisions of the applicable forward sale agreement. The initial forward sale price per share under each Initially Priced Forward Transaction will be equal to the product of (1) an amount equal to one minus the applicable forward hedge selling commission rate and (2) the adjusted volume weighted average hedge price per share at which the borrowed shares of Common Stock were sold pursuant to the Equity Distribution Agreement by the relevant Forward Seller to hedge the relevant Forward Purchaser’s exposure under such Initially Priced Forward Transaction. The Company will not initially receive any proceeds from the sale of borrowed shares by the relevant Forward Seller. The Company expects to receive proceeds from the sale of shares of Common Stock upon future physical settlement of the relevant Initially Priced Forward Transaction with the relevant Forward Purchaser on dates specified by the Company on or prior to the maturity date of such Initially Priced Forward Transaction. In an Initially Priced Forward Transaction, the Company expects to receive aggregate cash proceeds equal to the product of the initial forward sale price under such Forward Transaction and the number of shares of Common Stock underlying such Forward Transaction, subject to the price adjustment and other provisions of the applicable forward sale agreement. If the Company elects to cash settle or net share settle an Initially Priced Forward Transaction, the Company may not (in the case of cash settlement) or will not (in the case of net share settlement) receive any proceeds, and the Company may owe cash (in the case of cash settlement) or shares of Common Stock (in the case of net share settlement) to the relevant Forward Purchaser.
+
+In a separate Forward Transaction under another form of forward sale agreement, referred to herein as a “Collared Forward Transaction,” the Company may enter into one or more collared forward transactions (“Collared Forward Sale Agreements”) with Goldman Sachs & Co. LLC or Morgan Stanley & Co. LLC, each acting in its capacity as a Forward Purchaser (the “Collared Forward Purchaser”), pursuant to which the Company will agree to sell to the relevant Collared Forward Purchaser up to the number of shares of Common Stock specified in the Collared Forward Sale Agreement (subject to adjustment as set forth therein) and the relevant Collared Forward Purchaser will borrow from third-party stock lenders and sell the maximum number of shares of Common Stock deliverable pursuant to the Collared Forward Transaction (the “Hedging Shares”) through the related Sales Agent, acting as a Forward Seller (the “Collared Forward Seller”) over a period of time to be agreed between the Company and the relevant Collared Forward Purchaser (an “Initial Hedging Period”), all subject to the terms of the Equity Distribution Agreement and the Collared Forward Sale Agreement. The Company has been advised by each Collared Forward Purchaser that it expects that, on the same days during the Initial Hedging Period when the Collared Forward Seller is selling a number of Hedging Shares underlying the Collared Forward Transaction, the relevant Collared Forward Purchaser or its affiliates or agents will be contemporaneously purchasing a substantial portion of such number of shares in the open market for its own account, as each Collared Forward Purchaser expects its initial hedge position in respect of the Collared Forward Transaction to be less than the maximum number of shares underlying the Collared Forward Transaction. The floor price and the cap price of the Collared Forward Transaction will be determined upon completion of the Initial Hedging Period for the Collared Forward Transaction by multiplying the weighted average prices at which the relevant Collared Forward Seller will have sold the Hedging Shares during the Initial Hedging Period for the Collared Forward Transaction (the “Hedge Reference Price”) by the floor percentage and the cap percentage specified in the Collared Forward Sale Agreement, respectively. The forward sale price that the Company will receive with respect to any component under any Collared Forward Transaction (the “Collared Forward Sale Price”) for each share of Common Stock deliverable thereunder will be equal to an amount determined based on the volume weighted average price, as measured under the Collared Forward Sale Agreement of the Common Stock (the “Settlement Reference Price”) on the applicable valuation date for such component and will not be less than the floor price for such component and will not be more than the cap price for such component, subject to adjustment under the terms of the Collared Forward Sale Agreement.
+
+The Company will not initially receive any proceeds from the sale of borrowed shares of Common Stock by a Collared Forward Seller. On each prepayment date for any component of a Collared Forward Transaction, which will be a date designated by the Company sometime prior to the valuation date for such component (each, a “Component Prepayment Date”), the relevant Collared Forward Purchaser will, upon the Company’s request, prepay to the Company an amount in cash equal to the present value of (A) the product of (x) the number of shares underlying such component and (y) the floor price for such component minus (B) the product of the (x) number of shares underlying such component of the relevant Collared Forward Transaction, (y) Forward Hedge Selling Commission Rate (as defined in the applicable Collared Forward Sale Agreement) and (z) Hedge Reference Price, and the Company will issue and pledge the maximum number of shares underlying such component. If a Component Prepayment Date with respect to such component previously occurred, the relevant Collared Forward Purchaser will pay to the Company an amount of cash equal to the product of (x) the number of shares underlying such component and (y) the excess of the Collared Forward Sale Price for such component over the floor price for such component and if a Component Prepayment Date with respect to such component has not occurred, the relevant Collared Forward Purchaser will pay to the Company an amount of cash equal to (A) the product of the (x) number of shares underlying such component and (y) the Collared Forward Sale Price for such component minus (B) the product of the (x) number of shares underlying such component of the relevant Collared Forward Transaction, (y) Forward Hedge Selling Commission Rate and (z) Hedge Reference Price. On each Component Prepayment Date, the Company will be required to issue and pledge to the relevant Collared Forward Purchaser the maximum number of shares underlying such component. In addition, to the extent the Collared Forward Sale Price with respect to any component of a Collared Forward Transaction exceeds the floor price for such component, the Company expects to receive such excess at maturity of such component. However, the Company will, subject to certain conditions specified in the Collared Forward Sale Agreement, have the right to elect to receive such excess in the form of Common Stock, instead of cash, with the number of shares to be calculated based on the Settlement Reference Price on the applicable valuation date for such component, in which case the Company expects its obligation to deliver shares of Common Stock to the relevant Collared Forward Purchaser at such maturity will be reduced by such amount. In connection with each Collared Forward Transaction, the relevant Collared Forward Seller may receive, reflected in a reduced Collared Forward Sale Price payable by the relevant Collared Forward Purchaser under the related forward sale agreement, a commission of up to 2.00% of the volume weighted average of the sales prices of all borrowed shares of Common Stock sold during the applicable forward hedge selling period by it as a Forward Seller, and any such commission will be deducted from the amount paid to the Company on each Component Prepayment Date or settlement date, as applicable.
+
+In the event that the relevant Forward Purchaser or its affiliate or agent is unable to borrow and deliver any shares of Common Stock for sale by the relevant Forward Seller under the Equity Distribution Agreement or it would incur a stock loan cost that is equal to or greater than a specified amount, the number of shares underlying the relevant Forward Transaction will be reduced accordingly (and possibly to zero shares) immediately upon completion of the applicable hedging period.
+
+The relevant Forward Seller is not required to sell any specific number or dollar amount of shares of Common Stock, but, subject to the terms and conditions of the applicable Forward Transaction, the relevant Forward Seller will use its commercially reasonable efforts, consistent with its normal trading and sales practices, to borrow from third-party stock lenders and sell up to the designated number of shares of Common Stock during the Initial Hedging Period. In respect of any sales during the Initial Hedging Period by the relevant Forward Seller on behalf of the relevant Forward Purchaser, the Company may specify that no shares of Common Stock may be sold, if the sales cannot be effected at or above the price designated by the Company, and the Company may specify other trading parameters for such sales (including volume limitations). Accordingly, any sales by the relevant Forward Seller may be suspended at any time, and there can be no assurance that the relevant Forward Seller will be able to sell any shares pursuant to the Equity Distribution Agreement. Only one Sales Agent or Forward Seller will be permitted to conduct sales of shares of Common Stock at any given time pursuant to the Equity Distribution Agreement, and no sales of shares of Common Stock by any Sales Agents acting on the Company’s behalf, or by the relevant Forward Seller on behalf of the relevant Forward Purchaser in connection with any Initially Priced Forward Transaction, will occur simultaneously with any sales of the Hedging Shares by a Collared Forward Seller on behalf of a Collared Forward Purchaser or contemporaneous purchases of shares by such Collared Forward Purchaser in connection with the establishment of its initial delta hedge with respect to any Collared Forward Transaction.
+
+The Company will pay each of the Sales Agents a commission not to exceed 2.00% of the sales price per share of shares sold through it as agent under the Equity Distribution Agreement. The net proceeds that the Company will receive from such sales will be the gross proceeds from such sales less the commissions and any other costs that the Company may incur in issuing the shares. In connection with each Initially Priced Forward Transaction, the relevant Forward Seller will receive a commission of up to 2.00% of the volume weighted average of the sales prices of all borrowed shares of Common Stock sold during the applicable hedge period by it as a Forward Seller, reflected in a reduced initial forward sale price payable by the relevant Forward Purchaser under its forward sale agreement. In respect of a Collared Forward Transaction, if such a commission is payable, it will be deducted from the proceeds the Company receives on any Component Prepayment Date or settlement date, as applicable.
+
+The offer and sale of the Shares will be made pursuant to a shelf registration statement on Form S-3, which Rocket Lab USA, Inc., the Company’s predecessor, filed with the Securities and Exchange Commission (the “SEC”) on March 11, 2025, which automatically became effective upon filing, as amended by Post-Effective Amendment No. 1 to such registration statement, filed by the Company with the SEC on May 27, 2025, and a related prospectus supplement, which the Company filed with the SEC on May 20, 2026.
+
+The Equity Distribution Agreement may be terminated for any reason, at any time, by either the Company, an Agent, as to itself, or a Forward Purchaser, as to itself, upon the giving of two (2) days prior written notice to the other parties thereto. The Equity Distribution Agreement contains customary representations and warranties and conditions to the placements of the Shares pursuant thereto.
+
+The foregoing summary of the Equity Distribution Agreement and the Forward Transactions does not purport to be complete and is qualified in its entirety by reference to the full text of the Equity Distribution Agreement, including the forms of confirmations relating to an Initially Priced Forward Transaction and a Collared Forward Transaction attached thereto, a copy of which is filed as Exhibit 1.1 hereto, respectively, and is incorporated by reference herein.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits
+
+Exhibit
+
+No.Description
+
+1.1
+Equity Distribution Agreement, dated as of May 20, 2026, by and among Rocket Lab Corporation, BofA Securities, Inc., BTIG, LLC, Cantor Fitzgerald & Co., Citizens JMP Securities, LLC, Craig-Hallum Capital Group LLC, Deutsche Bank Securities Inc., Goldman Sachs & Co. LLC, KeyBanc Capital Markets Inc., Morgan Stanley & Co. LLC, Needham & Company, LLC, Nomura Securities International, Inc., Robert W. Baird & Co. Incorporated, Roth Capital Partners, LLC, and Stifel, Nicolaus & Company, Incorporated, TD Securities (USA) LLC and Wells Fargo Securities, LLC, Bank of America, N.A., Deutsche Bank AG, London Branch, Nomura Global Financial Products, Inc., The Toronto-Dominion Bank and Wells Fargo Bank, National Association.
+
+5.1
+Opinion of Goodwin Procter LLP.
+
+23.1
+Consent of Goodwin Procter LLP (included in Exhibit 5.1).
+
+104Cover Page Interactive Data File (embedded within the Inline XBRL document).
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+ROCKET LAB CORPORATION
+
+Date:May 20, 2026By: /s/ Adam Spice
+
+Adam Spice
+
+Chief Financial Officer

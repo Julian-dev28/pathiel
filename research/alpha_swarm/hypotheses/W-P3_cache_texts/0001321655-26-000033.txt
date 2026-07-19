@@ -1,0 +1,174 @@
+pltr-20260603
+0001321655FALSE00013216552026-06-032026-06-03
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (date of earliest event reported)
+
+June 3, 2026
+
+Palantir Technologies Inc.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-39540
+
+68-0551851
+
+(State or other jurisdiction of
+
+incorporation)
+
+(Commission
+
+File Number)
+
+(I.R.S. Employer
+
+Identification Number)
+
+19505 Biscayne Blvd., Suite 2350
+
+Aventura, Florida 33180
+
+(Address of principal executive offices and zip code)
+
+(720) 358-3679
+
+(Registrant’s telephone number, including area code)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+symbol(s)
+
+Name of each exchange
+
+on which registered
+
+Class A Common Stock, par value $0.001 per share
+
+PLTR
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.07 - Submission of Matters to a Vote of Security Holders
+
+On June 3, 2026, Palantir Technologies Inc. (the “Company”) held its 2026 annual meeting of stockholders (the “Annual Meeting”). Holders of the Company’s Class A common stock, par value $0.001 per share, were entitled to one vote on each proposal for each share held as of the close of business on April 6, 2026 (the “Record Date”); holders of the Company’s Class B common stock, par value $0.001 per share, were entitled to ten votes on each proposal for each share held as of the close of business on the Record Date; and the holders of Class F common stock, par value $0.001 per share, were entitled to approximately 1,259.505 votes on Proposal 1 for each share held as of the close of business on the Record Date, approximately 539.600 votes on Proposal 2 for each share held as of the close of business on the Record Date, and approximately 160.412 votes on each of Proposal 3, Proposal 4, Proposal 5, and Proposal 6 for each share held as of the close of business on the Record Date. The matters voted on at the Annual Meeting are set forth below:
+
+Proposal 1 – Election of Directors.
+
+Each of the following nominees was elected to serve as a director and to hold office until the Company’s next annual meeting of stockholders and until his or her respective successor has been duly elected and qualified, or until such director’s earlier death, resignation or removal. After giving effect to the voting power of the common stock, the number of votes cast for and withheld, and the number of broker non-votes, with respect to each of the nominees are set forth below:
+
+NomineeForWithheldBroker Non-Votes
+
+Alexander Karp3,221,448,690237,998,436381,084,411
+
+Stephen Cohen3,216,120,642243,326,484381,084,411
+
+Peter Thiel3,007,188,835452,258,291381,084,411
+
+Alexander Moore2,956,909,699502,537,427381,084,411
+
+Alexandra Schiff2,979,284,938480,162,188381,084,411
+
+Lauren Friedman Stat3,431,802,16527,644,961381,084,411
+
+Eric Woersching3,434,608,27924,838,847381,084,411
+
+Proposal 2 – Ratification of Appointment of Independent Registered Public Accounting Firm.
+
+The appointment of Ernst & Young as the Company’s independent registered public accounting firm for the fiscal year ending December 31, 2026 was ratified. After giving effect to the voting power of the common stock, the number of votes cast for and against, and the number of abstentions and broker non-votes with respect to, Proposal 2 are set forth below:
+
+ForAgainstAbstainedBroker Non-Votes
+
+3,098,257,50915,840,7522,928,5480
+
+Proposal 3 – Advisory Vote to Approve Named Executive Officer Compensation.
+
+The stockholders approved, on an advisory basis, the compensation of the Company’s named executive officers. After giving effect to the voting power of the common stock, the number of votes cast for and against, and the number of abstentions and broker non-votes with respect to, Proposal 3 are set forth below:
+
+ForAgainstAbstainedBroker Non-Votes
+
+1,987,926,773357,136,7759,794,454381,084,411
+
+Proposal 4 – Stockholder Proposal Entitled “Independent Report on Due Diligence Process.”
+
+The stockholders did not approve the stockholder proposal entitled “Independent Report on Due Diligence Process.” After giving effect to the voting power of the common stock, the number of votes cast for and against, and the number of abstentions and broker non-votes with respect to, Proposal 4 are set forth below:
+
+ForAgainstAbstainedBroker Non-Votes
+
+192,995,8672,137,396,02724,466,108381,084,411
+
+Proposal 5 – Stockholder Proposal Entitled “Human Rights Impact Assessment.”
+
+The stockholders did not approve the stockholder proposal entitled “Human Rights Impact Assessment.” After giving effect to the voting power of the common stock, the number of votes cast for and against, and the number of abstentions and broker non-votes with respect to, Proposal 5 are set forth below:
+
+ForAgainstAbstainedBroker Non-Votes
+
+290,935,8082,042,181,19221,741,002381,084,411
+
+Proposal 6 – Stockholder Proposal Entitled “Political Spending Disclosure.”
+
+The stockholders did not approve the stockholder proposal entitled “Political Spending Disclosure.” After giving effect to the voting power of the common stock, the number of votes cast for and against, and the number of abstentions and broker non-votes with respect to, Proposal 6 are set forth below:
+
+ForAgainstAbstainedBroker Non-Votes
+
+608,889,0451,717,284,07028,684,887381,084,411
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: June 9, 2026
+
+Palantir Technologies Inc.
+
+By:
+
+/s/ Alexander C. Karp
+
+Alexander C. Karp
+
+Chief Executive Officer

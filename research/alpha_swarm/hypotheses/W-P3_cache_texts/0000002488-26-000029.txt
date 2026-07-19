@@ -1,0 +1,170 @@
+amd-20260210
+0000002488false00000024882026-02-102026-02-10
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+February 10, 2026
+
+Date of Report (Date of earliest event reported)
+
+ADVANCED MICRO DEVICES, INC.
+
+(Exact name of registrant as specified in its charter)
+
+Delaware
+
+001-07882
+
+94-1692300
+
+(State or Other Jurisdiction of
+
+Incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification Number)
+
+2485 Augustine Drive
+
+Santa Clara, California 95054
+
+(Address of principal executive offices) (Zip Code)
+
+(408) 749-4000
+
+(Registrant’s telephone number, including area code)
+
+N/A
+
+(Former Name or Former Address, if Changed Since Last Report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, $0.01 par value
+
+AMD
+
+The Nasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter). Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Executive Incentive Plan (EIP) Bonuses for Fiscal 2025
+
+On February 10, 2026, the Compensation and Leadership Resources Committee (the “Committee”) of the Board of Directors (the “Board”) of Advanced Micro Devices, Inc. (the “Company”) approved the following annual cash performance bonuses under the EIP to the following covered executive officers:
+
+Covered Executive OfficerFiscal 2025 Annual Cash Performance Bonuses
+
+Jean Hu, Executive Vice President, Chief Financial Officer and Treasurer$1,179,750
+
+Mark Papermaster, Executive Vice President and Chief Technology Officer$1,293,187
+
+Forrest Norrod, Executive Vice President and General Manager, Data Center Solutions$1,157,062
+
+Ava Hahn, Senior Vice President, General Counsel and Corporate Secretary$738,100
+
+On February 11, 2026, the Board approved the following annual cash performance bonus under the EIP for the Company’s Chair, President and Chief Executive Officer:
+
+Lisa T. Su, Chair, President and Chief Executive Officer$3,125,430
+
+These bonus awards are expected to be paid in March 2026.
+
+CEO Value Creation Equity Award
+
+On February 11, 2026, the Committee recommended, and the Board approved the grant of a special long-term equity incentive award to Dr. Su, with a target value of $75 million for Dr. Su (the “CEO Value Creation Equity Award”). The CEO Value Creation Equity Award will be granted on March 15, 2026 (the "Grant Date"), under the terms of the Advanced Micro Devices, Inc. 2023 Equity Incentive Plan, as amended and restated (the “Plan”).
+
+The CEO Value Creation Award is made in recognition of Dr. Su’s unique value and the criticality of her contributions to the Company’s strategic plans, to motivate and reward creation of exceptional shareholder value, and to further incentivize her long-term retention and dedication.
+
+The Award will be converted into a target number of performance-based restricted stock units (“PRSUs”) determined by dividing the Award’s target value by the average closing price of the Company’s stock over the 30 trading-day period ending on the Grant Date (the “Conversion Price”). The number of PRSUs that may be earned ranges from 0% to 200% of the target number of PRSUs based on achievement of stock price hurdles during the performance period that begins on the Grant Date and ends on March 15, 2031 (or, if earlier, the date of a change of control or Dr. Su’s death or disability) (each as defined in the Plan)) (the “Performance Period”). Each earned PRSU represents the unfunded contractual right to receive one share of Company common stock upon vesting.
+
+The Board and Compensation Committee designed the Award to strongly align Dr. Su’s pay opportunities with our long-term strategic plan and shareholders’ interests. The Award is 100% performance-based, tied to four stock price hurdles that are each substantially above the average closing price of the Company’s stock over the 60 trading-day period ending on the Grant Date (the "Baseline Price"). Each of the four tranches vests if, and only if, the Company’s 90-trading day average closing stock price meets or exceeds each hurdle during the Performance Period, subject to Dr. Su’s continued employment or service.
+
+Percentage of target # of PRSUs earned
+Stock price hurdle (5-Year CAGR % or $)(1)
+
+Threshold0%Less than 10%
+
+Tranche 150%10%
+
+Tranche 2100%15%
+
+Tranche 3150%17.5%
+
+Tranche 4200%$600
+
+____________
+
+(1) The stock price hurdles shown as percentages will be calculated based on the price per share that would result if the price increased from the Baseline Price to the price necessary to achieve a five-year compound annual growth rate (“CAGR”) equal to such stated percentage. Final stock price hurdle for Tranche 1, Tranche 2 and Tranche 3 will be calculated on the Grant Date and rounded to the nearest $5.00.
+
+In determining the stock price hurdles, the Committee considered the Company’s all-time stock price high as of the Grant Date of $267.08, as well as the most recent five-year stock price CAGRs of both the S&P 500 and its current Information Technology constituents, and set the target hurdle price well above the 50th percentile of the most recent five-year CAGR observed for both groups.
+
+Notwithstanding the date of hurdle achievement, any PRSUs that are earned on or before the third anniversary of the grant date will not vest until the third anniversary of the Grant Date, at which point 50% of such earned PRSUs will vest on the third anniversary of the Grant Date, with the remaining 50% vesting on the fifth anniversary of the Grant Date. Any PRSUs that are earned after the third anniversary of the Grant Date but before or on the fifth anniversary of the Grant Date will vest 100% on the fifth anniversary of the Grant Date.
+
+For any earned PRSUs to vest, Dr. Su must remain in service as the Company’s CEO or Executive Chair of the Board through the applicable vesting date. The extended vesting structure of the Award means that she will realize the full actual Award value only if she remains with the Company for the entire Performance Period (except in the case of death or disability or the limited termination scenarios outlined below). This design promotes long-term alignment with shareholders and with the Company’s leadership continuity and retention objectives.
+
+If Dr. Su is terminated for cause, all unvested and unearned PRSUs are forfeited. If she incurs a “covered termination” (as defined in her employment agreement), then (a) the unvested earned PRSUs that were scheduled to vest on or before the one-year anniversary of her termination date will immediately vest and (b) the unvested or unearned PRSUs will remain outstanding for 12 months (or, if earlier, until March 15, 2031 or the date of a change in control (as defined in the Plan)) and vest if such PRSUs would have vested had she remained employed in a covered position for such period.
+
+Following a deliberative process, the Board and the Committee determined that the Award best served the Company’s motivation and retention objectives aligning with our long-term strategic plan and the interests of our shareholders. Dr. Su is the principal architect of our strategic plan. The Board believes that Dr. Su’s continued focus and strategic vision are critical to the successful execution of this shift. Accordingly, the Award directly ties her pay opportunities to our success, but only if (x) she remains in a full-time leadership role with the Company throughout the Performance Period and (y) successfully executes our strategies in a manner that drives market outperformance and sustained shareholder value creation. The Award is not part of Dr. Su’s regular annual compensation. The Board intends that the Award be a one-time special equity award and that, absent extraordinary or unforeseen circumstances, she will not receive any other special equity award (i.e., an equity award outside of her regular annual compensation) for the duration of the Performance Period.
+
+The foregoing description of the CEO Value Creation Award does not purport to be complete and is qualified in its entirety by reference to the full text of the CEO Value Creation Award agreement.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: February 17, 2026
+ADVANCED MICRO DEVICES, INC.
+
+By:
+
+/s/ Ava Hahn
+
+Name:
+
+Ava Hahn
+
+Title:
+
+Senior Vice President, General Counsel and Corporate Secretary

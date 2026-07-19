@@ -1,0 +1,144 @@
+crwv-20260507
+FALSE000176962800017696282026-05-072026-05-07
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+___________________________________
+
+FORM 8-K
+
+___________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (date of earliest event reported): May 7, 2026
+
+___________________________________
+
+CoreWeave, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+___________________________________
+
+Delaware
+
+001-42563
+
+82-3060021
+
+(State or other jurisdiction of
+
+incorporation or organization)
+
+(Commission File Number)
+
+(I.R.S. Employer Identification Number)
+
+290 W Mt. Pleasant Ave., Suite 4100
+
+Livingston, NJ
+
+07039
+
+(Address of registrant's principal executive offices)
+
+(Zip Code)
+
+Registrant's telephone number, including area code: (973) 270-9737
+
+___________________________________
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+___________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐
+
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐
+
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐
+
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐
+
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol
+
+Name of each exchange on which registered
+
+Class A Common Stock, $0.000005 par value per share
+
+CRWV
+
+The Nasdaq Stock Market LLC
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition
+
+On May 7, 2026, CoreWeave, Inc. (the “Company”) issued a press release announcing its financial results for the fiscal quarter ended March 31, 2026. A copy of the press release is attached hereto as Exhibit 99.1 and is incorporated herein by reference.
+
+The information contained in this Item 2.02 of this Current Report on Form 8-K, including the accompanying Exhibit 99.1 hereto, shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall it be deemed incorporated by reference in any filing made by the Company under the Securities Act of 1933, as amended, or the Exchange Act, regardless of any general incorporation language in such filings, unless expressly incorporated by specific reference in such filings.
+
+Item 9.01. Financial Statements and Exhibits
+
+(d) Exhibits.
+
+Exhibit No.
+
+Description
+
+99.1
+
+Press release issued by CoreWeave, Inc. dated May 7, 2026
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+SIGNATURE
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, as amended, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+Date: May 7, 2026
+
+COREWEAVE, INC.
+
+By:
+
+/s/ Nitin Agrawal
+
+Name:
+
+Nitin Agrawal
+
+Title:
+
+Chief Financial Officer

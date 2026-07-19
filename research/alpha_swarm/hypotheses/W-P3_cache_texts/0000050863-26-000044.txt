@@ -1,0 +1,98 @@
+intc-20260227
+0000050863false00000508632026-02-272026-03-03
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): February 27, 2026
+
+INTEL CORPORATION
+
+(Exact name of registrant as specified in its charter)
+
+Delaware000-0621794-1672743
+
+(State or other jurisdiction(Commission(IRS Employer
+
+of incorporation)File Number)Identification No.)
+
+2200 Mission College Boulevard, Santa Clara, California
+95054-1549
+
+(Address of principal executive offices) (Zip Code)
+
+Registrant's telephone number, including area code: (408) 765-8080
+
+Not Applicable
+
+(Former name or former address, if changed since last report)
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instruction A.2. below):
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each classTrading Symbol(s)Name of each exchange on which registered
+
+Common stock, $0.001 par valueINTCNasdaq Global Select Market
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 8.01 Other Events
+
+On February 27, 2026, Frank Yeary, Chair of the board of directors (the "Board") of Intel Corporation (the “Company”), informed the Board that he intends to retire from the Board effective upon the conclusion of the Company's 2026 Annual Meeting of Stockholders and, as such, did not wish to stand for reelection at such meeting. The Board has determined that upon the conclusion of 2026 Annual Meeting of Stockholders, the Board size shall be reduced from twelve to eleven directors.
+
+Item 7.01 Regulation FD Disclosure.
+
+Intel’s press release, dated March 3, 2026 announcing the retirement of Frank Yeary from the Board and the naming of Dr. Craig H. Barratt as the new Chair of the Board, both effective as of the conclusion of the 2026 Annual Meeting of Stockholders, is attached as Exhibit 99.1 and incorporated by reference.
+
+The information in this Item 7.01 and the press release attached as Exhibit 99.1 are furnished and shall not be treated as filed for purposes of the Securities Exchange Act of 1934, as amended.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+The following exhibits are provided as part of this report:
+
+Exhibit NumberDescription
+
+99.1
+Press release issued by Intel entitled "Intel Board Chair Frank D. Yeary to Retire Following Annual Meeting; Dr. Craig H. Barratt Elected as Chair" dated March 3, 2026.
+
+104Cover Page Interactive Data File, formatted in Inline XBRL and included as Exhibit 101.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+INTEL CORPORATION
+
+(Registrant)
+
+Date:March 3, 2026By:/s/ April Miller Boise
+
+April Miller Boise
+
+Executive Vice President and Chief Legal Officer

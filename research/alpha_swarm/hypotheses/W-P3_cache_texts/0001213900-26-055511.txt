@@ -1,0 +1,286 @@
+false
+0001970622
+
+0001970622
+
+2026-05-13
+2026-05-13
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED
+STATES
+
+SECURITIES
+AND EXCHANGE COMMISSION
+
+Washington,
+D.C. 20549
+
+FORM
+8-K
+
+CURRENT
+REPORT
+
+Pursuant
+to Section 13 OR 15(d)
+
+of
+The Securities Exchange Act of 1934
+
+Date
+of Report (Date of earliest event reported): May 13, 2026
+
+USA
+Rare Earth, Inc.
+
+(Exact
+Name of Registrant as Specified in its Charter)
+
+Delaware
+
+001-41711
+
+98-1720278
+
+(State
+or Other Jurisdiction
+
+of
+Incorporation)
+
+(Commission File Number)
+
+(I.R.S.
+Employer
+
+Identification
+No.)
+
+100
+W. Airport Road, Stillwater, OK 74075
+
+(Address
+of Principal Executive Offices) (Zip Code)
+
+(813)
+867-6155
+
+(Registrant’s
+telephone number, including area code)
+
+Not
+applicable
+
+(Former
+Name or Former Address, if Changed Since Last Report)
+
+Check
+the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under
+any of the following provisions:
+
+☐Written
+communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting
+material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement
+communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐Pre-commencement
+communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities
+registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading Symbol(s)
+
+Name of each exchange on which registered
+
+Common Stock, par value $0.0001
+
+USAR
+
+The Nasdaq Stock Market LLC
+
+Indicate
+by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405
+of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging
+growth company ☒
+
+If
+an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying
+with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+EXPLANATORY
+NOTE
+
+As
+previously announced, USA Rare Earth, Inc. (“USAR,” “we,” “our,” and “us”) entered into
+a definitive Agreement and Plan of Merger (the “Merger Agreement”), dated as of April 19, 2026, by and among (i) USAR, (ii)
+Middlebury Merger Sub Ltd., a business company limited by shares incorporated under the laws of the British Virgin Islands and an indirect,
+wholly owned Subsidiary of USAR, (iii) SVRE Holdings Ltd., a business company limited by shares incorporated under the laws of the British
+Virgin Islands (“SVRE”), and (iv) Serra Verde Rare Earths Ltd., a company incorporated and existing under the laws of the
+British Virgin Islands, solely in its capacity as the representative of SVRE’s shareholders. The Merger Agreement provides for
+the merger of SVRE with and into Merger Sub, with Merger Sub surviving such merger as an indirect, wholly owned subsidiary of USAR.
+
+Item
+8.01 Other Events.
+
+In
+connection with the transactions contemplated by the Merger Agreement (the “Merger”) and to update certain risk factors previously
+disclosed in USAR’s Form 10-K for the year ended December 31, 2025 that was filed with the Securities and Exchange Commission (the
+“SEC”) on March 30, 2026, USAR is filing this Current Report on Form 8-K for the purpose of supplementing disclosures contained
+in USAR’s filings with the SEC.
+
+The
+updated disclosures are set forth in Exhibit 99.1, 99.2 and 99.3 hereto and comprise the following information:
+
+●Risks
+relating to the Merger
+
+●Risks
+relating to SVRE
+
+●Risks
+relating to USAR
+
+●Information
+About SVRE
+
+●Management’s
+Discussion and Analysis of Financial Condition and Results of Operations of SVRE
+
+●Audited
+financial statements of SVRE for the years ended December 31, 2025 and 2024 (the “Audited
+Financial Statements”)
+
+●Unaudited
+pro forma condensed combined financial statements of USAR for the year ended December 31,
+2025, giving effect to the Merger.
+
+A
+copy of the consent of PricewaterhouseCoopers Auditores Independentes Ltda. with respect to their report dated May 12, 2026 with respect
+to the Audited Financial Statements is included as Exhibit 23.1 hereto.
+
+Cautionary
+Note Regarding Forward-Looking Statements
+
+This
+report, including the exhibits filed hereto, contains “forward-looking statements” within the meaning of the Private Securities
+Litigation Reform Act of 1995. These statements include those relating to the proposed U.S. government collaboration and the expected
+timing of executing definitive documents relating thereto, the proposed acquisition of Serra Verde Group (“SVG”), our business
+plans, strategy, goals and prospects, our plans for and prospects of our other acquisitions, investments and other business development
+activities, including the announced Carester SAS (“Carester”) and Texas Mineral Resources Corp. (“TMRC”) transactions
+and other statements regarding USAR’s expectations for future development, operations, strategies, transactions and financial performance.
+Such statements can be identified by the fact that they do not relate strictly to historical or current facts. Words such as “aim,”
+“anticipate,” “believe,” “can,” “continue,” “could,” “estimate,”
+“expect,” “growth,” “intend,” “may,” “might,” “plan,” “potential,”
+“project,” “propose,” “should,” “target,” “vision,” “will,” “would”
+and similar expressions may identify forward-looking statements, but the absence of these words does not mean that a statement is not
+forward-looking.
+
+1
+
+Forward-looking
+statements are subject to risks and uncertainties and potentially inaccurate assumptions that could cause actual results to differ materially
+from our expectations, including without limitation: risks that the proposed transactions with SVG, Carester and TMRC may not be consummated
+on their anticipated timelines or at all; we may not realize the anticipated benefits of our proposed and prior acquisitions, including
+expected synergies, financial performance, estimated EBITDA and, in the case of Serra Verde, integration of operations, on the anticipated
+timeline or at all; the ability of our Stillwater magnet manufacturing facility to commence commercial operations on the timing and with
+the production capacity anticipated or at all; our limited operating history; our ability to commercially extract minerals from the Round
+Top deposit on our anticipated timeline or at all; risks that we may experience delays, unforeseen expenses, increased capital costs,
+and other complications while developing our projects; our ability to raise necessary capital on acceptable terms or at all; potential
+dilution to existing stockholders and the adverse effect on our stock price if we issue additional common stock or equity-linked securities;
+the volatility of our stock price; our ability to enter into definitive agreements for the proposed U.S. government financing, which
+is subject to conditions precedent and final government approvals, on the anticipated terms or at all and, if executed, to satisfy the
+milestones and other conditions of such financing, which could impose conditions to access such financing over a period of time; the
+availability of rare earth oxide, metal feedstock and other materials, utilities (including power and water) and equipment in quantities
+and prices that allow us to develop and commercially operate our Stillwater facility and other facilities; our ability to meet individual
+customer specifications and produce a consistently high quality product; fluctuations in demand for and prices of neo magnets and our
+other products, including without limitation as a result of dumping, predatory pricing and other tactics by USAR’s competitors
+or state actors or the overall competitive environment; our ability to achieve positive cash flow or profitability or the ability to
+access cash flow within our corporate structure due to restrictions contained in our financing agreements; our ability to convert current
+commercial discussions and/or memorandums of understanding with customers for the sale of our neo magnets and other products into definitive
+orders; geopolitical developments or disruptions, such as changes in the political environment, export/import or environmental policy
+of the People’s Republic of China, the United States or other countries in which we operate or sell products or otherwise; war,
+terrorism, natural disasters or public health emergencies; our ability to retain or recruit key personnel; environmental, health and
+safety regulations; and our ability to comply with requirements for federal, state and local government incentives and financing.
+
+Additional
+risks and detailed information regarding factors that may cause actual results to differ materially has been and will be included in
+the Company’s filings with the SEC. Any forward-looking statements speak only as of the date of this report (or such other date
+as is specified in such statements), and USAR undertakes no obligation to update any forward-looking statements as a result of new information
+or future events or developments, except to the extent required by law.
+
+Item
+9.01 Financial Statements and Exhibits.
+
+(d)
+Exhibits.
+
+The
+following exhibits are attached with this current report on Form 8-K:
+
+Exhibit
+No.
+
+Description
+
+23.1
+
+Consent of PricewaterhouseCoopers Auditores Independentes Ltda.
+
+99.1
+
+Risk factors
+
+99.2
+
+Supplemental disclosures
+
+99.3
+
+Audited
+financial statements of SVRE Holdings Ltd. for the years ended December 31, 2025 and 2024
+
+99.4
+
+Unaudited pro forma condensed combined financial statements of USAR for the year ended December 31, 2025
+
+104
+
+Cover Page Interactive Data
+File (embedded within the Inline XBRL document)
+
+2
+
+SIGNATURE
+
+Pursuant
+to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by
+the undersigned thereunto duly authorized.
+
+USA Rare Earth, Inc.
+
+Date: May 13, 2026
+By:
+/s/ Valerie Ford Jacob
+
+Valerie Ford Jacob
+
+Chief Legal Officer
+
+3

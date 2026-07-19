@@ -1,0 +1,340 @@
+false
+0001874178
+Rivian Automotive, Inc. / DE
+
+0001874178
+
+2026-03-18
+2026-03-18
+
+iso4217:USD
+
+xbrli:shares
+
+iso4217:USD
+
+xbrli:shares
+
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+FORM 8-K
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d)
+
+of the Securities Exchange Act of 1934
+
+March
+18, 2026
+
+Date of Report (date of earliest event reported)
+
+Rivian Automotive, Inc.
+
+(Exact name of registrant as specified in its
+charter)
+
+Delaware
+
+001-41042
+
+47-3544981
+
+(State or other jurisdiction
+
+of incorporation)
+
+(Commission
+
+File Number)
+
+(IRS Employer
+
+Identification Number)
+
+14600 Myford Road
+
+Irvine, California 92606
+
+(Address of principal executive offices) (Zip
+code)
+
+(888) 748-4261
+
+(Registrant’s telephone number, including
+area code)
+
+N/A
+
+(Former name or former address, if changed since
+last report)
+
+Check the appropriate box below if the Form 8-K filing is intended
+to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+¨
+Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+¨
+Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+¨
+Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+¨
+Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+Title of each class
+
+Trading
+
+Symbol
+
+Name of each exchange
+
+on which registered
+
+Class A common stock, $0.001 par value per share
+
+RIVN
+
+The Nasdaq Stock Market
+
+Indicate by check mark whether the registrant is an emerging growth
+company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange
+Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ¨
+
+If an emerging growth company, indicate by check mark if the registrant
+has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant
+to Section 13(a) of the Exchange Act. ¨
+
+Item 1.01 - Entry into a Material Definitive Agreement.
+
+Subscription Agreement
+
+On March 18, 2026 (the “Effective Date”), Rivian Automotive,
+Inc., a Delaware corporation (the “Company”), entered into a subscription agreement (the “Subscription Agreement”)
+by and among the Company, SMB Holding Corporation (“SMB”) and Uber Technologies, Inc. (“Uber”), providing for
+SMB’s investment in the Company through the sale and issuance of shares of the Company’s Class A common stock, par value $0.001
+per share (the “Common Stock”), or at SMB’s election, in lieu of shares of Common Stock, pre-funded warrants (“Pre-Funded
+Warrants”) to purchase the same amount of shares of Common Stock (the “Warrant Shares”), subject to the terms and conditions
+set forth in the Subscription Agreement.
+
+Pursuant to the Subscription Agreement, within five business days of
+the satisfaction or waiver of customary closing conditions, including the receipt or waiver of required regulatory approvals, and upon
+payment of $300 million by SMB, the Company will issue a number of shares of Common Stock to SMB equal to $300 million divided by the
+price per share of Common Stock based on the arithmetic average of the daily volume-weighted average sale price for the thirty consecutive
+trading days ending on March 17, 2026.
+
+Further, upon
+and subject to the occurrence of certain other Milestones (as defined in the Subscription Agreement, certain of which require the fulfillment
+of proven autonomy quality), the Company will (depending on the Milestone achieved and contingent upon payment of the applicable purchase
+price therefor) issue (i) up to a number of shares of Common Stock equal to, in the aggregate over four remaining Milestones, assuming
+the achievement of all Milestones, (x) $950 million divided by (y) the price per share of Common Stock based on the arithmetic average
+of the daily volume-weighted average sale price for the thirty consecutive trading days prior to, but not including, the applicable Milestone
+Achievement Date (as defined in the Subscription Agreement) for such Milestone or (ii) at SMB’s election, in lieu of shares of Common
+Stock, Pre-Funded Warrants to purchase the same amount of Warrant Shares.
+
+The Company
+or SMB may terminate the Subscription Agreement upon certain events, including, but not limited to in the event of a Governmental Order
+(as defined in the Subscription Agreement) that permanently enjoins the consummation of the transactions contemplated by the Subscription
+Agreement, a breach that has not been cured within the applicable cure period as set forth in the Subscription Agreement, or the
+termination or expiration of the Master Framework Agreement (as defined below).
+
+Pursuant to the Subscription Agreement, at any time following any Milestone
+Closing Date (as defined in the Subscription Agreement), SMB may deliver to the Company a written request (a “Demand Request”)
+that the Company prepare and file with the Securities and Exchange Commission a registration statement on Form S-3, or, if the Company
+is not then eligible, on Form S-1, to effect a registration of any Common Stock held by or issued to SMB (the “Registrable Securities”),
+covering the resale of the Registrable Securities. The obligations of the Company in respect of a Demand Request are subject to certain
+exceptions, including that if such Demand Request relates to an underwritten offering, then it must be in respect of shares of Common
+Stock with an aggregate offering value equal to at least $100 million.
+
+The Pre-Funded Warrants will have an exercise price of $0.001 per Warrant
+Share, subject to customary adjustments, and will be exercisable at any time after original issuance and will not expire until exercised
+in full. The Pre-Funded Warrants will also be exercisable on a net exercise “cashless” basis. The Pre-Funded Warrants may
+not be exercised if the aggregate number of shares of Common Stock beneficially owned by the holder thereof immediately following such
+exercise would exceed a specified beneficial ownership limitation, not to exceed 19.99%.
+
+The foregoing descriptions of the Subscription Agreement and Pre-Funded
+Warrants do not purport to be complete and are qualified in their entirety by reference to the Subscription Agreement and form of Pre-Funded
+Warrant, copies of which are filed herewith as Exhibits 10.1 and 4.1, respectively, and incorporated herein by reference.
+
+Master Framework Agreement
+
+On the Effective Date, in connection with the execution and delivery
+of the Subscription Agreement, Rivian, LLC, a Delaware limited liability company and wholly-owned subsidiary of the Company ("Subsidiary"),
+entered into a Master Framework Agreement (the "Master Framework Agreement") by and among the Subsidiary, the Company and Uber,
+governing the collaboration between Subsidiary and Uber to develop, deploy, and operate autonomous vehicles on the Uber platform.
+
+Pursuant to the Master Framework Agreement, Subsidiary and Uber will
+work together to deploy Company Vehicles (as defined in the Master Framework Agreement), including the Company’s "R2"
+model vehicle (or other mutually agreed-upon vehicle models) equipped with the Company’s Level 4 autonomous driving system, on Uber's
+ridehailing and delivery platform.
+
+The Master Framework Agreement provides for certain exclusivity arrangements
+in favor of Uber. From the Effective Date until expiration of a specified exclusivity period, Subsidiary and its Affiliates (as defined
+in the Master Framework Agreement) may not sell Company Vehicles enabled with the Company’s Level 4 autonomous driving system to
+any Uber Direct Competitor (as defined in the Master Framework Agreement). If the parties determine to launch a deployment in a particular
+market, Uber shall have a specified period in that market before Subsidiary or its Affiliates may sell Company Vehicles to or launch with
+an Uber Direct Competitor, subject to certain conditions.
+
+The
+Master Framework Agreement also establishes volume guarantees and vehicle purchase commitments. Uber has committed to purchase a minimum
+number of Company Vehicles during specified guarantee periods, with the purchase volume and pricing to be determined in accordance with
+the procedures set forth in the Master Framework Agreement and related ancillary agreements. The pricing for vehicles and related services
+is subject to most favored nation provisions for up to a specified number of vehicles. The parties
+will mutually agree on pricing for the next phase of the relationship no later than one year after the achievement of a specified Milestone,
+which includes requirements relating to the fulfillment of proven autonomy quality. Uber will also pay certain
+licensing fees in connection with its use of the Company’s Level 4 autonomous driving system software.
+
+The Master
+Framework Agreement has an initial term of ten years from the Effective Date, subject to consecutive one-year renewal periods upon
+mutual written agreement. Either party may terminate the Master Framework Agreement upon certain events, including but not limited to
+a material breach (subject to a 90-day cure period), specified insolvency events, or a party’s change of control to a direct competitor
+of the other party.
+
+The foregoing description of the Master Framework Agreement does not
+purport to be complete and is qualified in its entirety by reference to the Master Framework Agreement, a copy of which is filed herewith
+as Exhibit 10.2 and incorporated herein by reference.
+
+Vehicle Production Agreement
+
+On the Effective Date, in connection with the execution and delivery
+of the Master Framework Agreement, Subsidiary and Uber entered into a Vehicle Production Agreement (the "Vehicle Production Agreement")
+governing the design, development, and manufacture of Company Vehicles to be deployed on the Uber platform and Uber’s ordering mechanism
+and pricing for such Company Vehicles.
+
+Pursuant to
+the Vehicle Production Agreement, Subsidiary will develop and manufacture autonomous robotaxi vehicles ("Company Robotaxis")
+based on the Company’s R2 vehicle platform, equipped with the Company’s Level 4 autonomous driving system hardware and software.
+The Vehicle Production Agreement sets forth the technical specifications, safety requirements, regulatory compliance standards,
+and warranty obligations for the Company Robotaxis.
+
+The Vehicle Production Agreement establishes a forecasting and ordering
+process pursuant to which Uber will provide purchase forecasts identifying the markets where it intends to deploy Company Robotaxis, the
+number and timing of vehicles to be received, and applicable pricing.
+
+The Vehicle Production Agreement's effectiveness commences on the Effective
+Date and, unless sooner terminated, will continue until expiration or termination of the Master Framework Agreement. Either party may
+terminate the Vehicle Production Agreement for cause upon material breach (subject to a 90-day cure period) or upon certain insolvency
+events.
+
+The foregoing description of the Vehicle Production Agreement does
+not purport to be complete and is qualified in its entirety by reference to the Vehicle Production Agreement, a copy of which is filed
+herewith as Exhibit 10.3 and incorporated herein by reference.
+
+Item 3.02 - Unregistered Sales of Equity Securities.
+
+The disclosure regarding the securities to be sold and issued under
+the Subscription Agreement set forth in Item 1.01 above is incorporated by reference into this Item 3.02. The Company will issue the securities
+to SMB in reliance on the exemption from registration provided for under Section 4(a)(2) of the Securities Act of 1933, as amended (the
+“Securities Act”).
+
+Neither this Current Report on Form 8-K nor any exhibit attached hereto
+is an offer to sell or the solicitation of an offer to buy securities of the Company.
+
+Item 7.01 – Regulation FD.
+
+On March 19, 2026, the Company issued a press release announcing the
+transactions with Uber and SMB described in Item 1.01 above. A copy of the press release is attached as Exhibit 99.1 to this Current Report
+on Form 8-K and is incorporated herein by reference.
+
+In addition, the Company no longer expects to be adjusted EBITDA positive
+in 2027 due to an expected increase in R&D spend associated with the acceleration of its autonomy roadmap.
+
+The information furnished pursuant to Item 7.01 of this Current Report
+on Form 8-K, including Exhibit 99.1 attached hereto, shall not be deemed “filed” for purposes of Section 18 of the Securities
+Exchange Act of 1934, as amended (the “Exchange Act”), or otherwise subject to the liabilities of that section, nor shall
+it be deemed incorporated by reference into any other filing under the Securities Act or the Exchange Act, regardless
+of any general incorporation language in such filing, except as expressly set forth by specific reference in such filing.
+
+Forward-Looking Statements
+
+This Current Report on Form 8-K contains forward-looking statements
+within the meaning of the Private Securities Litigation Reform Act of 1995, including, without limitation, statements regarding SMB’s
+investment in the Company, the achievement of specified Milestones, potential payments to be made under the Subscription Agreement, the
+timing of share issuances to SMB; the Company’s and Subsidiary’s collaboration with Uber on the development, production and
+commercialization of Company Vehicles and Company Robotaxis; and the timing for the achievement by the Company of being adjusted EBITDA
+positive, which statements are based on current expectations, forecasts, and assumptions and involve risks and uncertainties that could
+cause actual results to differ materially from expectations discussed in such statements. These forward-looking statements can be identified
+by terms such as “may,” “will,” “expects,” or the negative of these terms or other similar expressions,
+although not all forward-looking statements use these words or expressions. The Company has based these forward-looking statements largely
+on its current expectations and projections about future events and financial trends that it believes may affect its business, financial
+condition, and results of operations. These forward-looking statements are only predictions and may differ materially from actual results
+due to a variety of factors. Forward-looking statements involve known and unknown risks, uncertainties and other important factors that
+may cause our actual results, performance, or achievements to be materially different from any future results, performance, or achievements
+expressed or implied by the forward-looking statements, including, but not limited to, general market, political, economic and business
+conditions and the important factors discussed in Part I, Item 1A, “Risk Factors” in the Company’s Annual Report on
+Form 10-K for the year ended December 31, 2025, and its other filings with the Securities and Exchange Commission. The forward-looking
+statements included in this Current Report on Form 8-K speak only as of the date of this Current Report on Form 8-K, and the Company does
+not undertake to update the statements included in this Current Report on Form 8-K for subsequent developments, except as may be required
+by law.
+
+Item 9.01 - Financial Statements and Exhibits.
+
+(d) Exhibits:
+
+Exhibit
+
+No.
+
+Description
+
+4.1
+
+Form of Pre-Funded Warrant
+
+10.1^†
+
+Subscription Agreement, dated as of March 18, 2026, by and among Rivian Automotive, Inc., SMB Holding Corporation and Uber Technologies, Inc.
+
+10.2^†
+
+Master Framework Agreement, dated as of March 18, 2026, by and among Rivian Automotive, Inc., Rivian, LLC and Uber Technologies, Inc.
+
+10.3^†
+
+Vehicle Production Agreement, dated as of March 18, 2026, by and between Rivian, LLC and Uber Technologies, Inc.
+
+99.1
+
+Press Release, dated March 19, 2026
+
+104
+
+Cover Page Interactive Data File (embedded within the Inline XBRL document)
+
+†
+Portions of this exhibit (indicated by asterisks) have
+been redacted in compliance with Regulation S-K Item 601(b)(10)(iv).
+
+^
+Certain schedules and exhibits have been omitted pursuant
+to Item 601(a)(5) of Regulation S-K. The registrant undertakes to provide copies of any of the omitted exhibits upon request by the Securities
+and Exchange Commission.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934,
+as amended, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+RIVIAN AUTOMOTIVE, INC.
+
+Date: March 19, 2026
+By:
+/s/ Claire McDonough
+
+Name:
+Claire McDonough
+
+Title:
+Chief Financial Officer
