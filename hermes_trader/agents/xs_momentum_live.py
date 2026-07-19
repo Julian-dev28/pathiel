@@ -221,7 +221,7 @@ def _book_from_positions(positions) -> (List[str], List[str]):
 
 
 def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
-              short_floor_usd: Optional[float] = None) -> Dict[str, Any]:
+              short_floor_usd: Optional[float] = None, hold_days: float = 5.0) -> Dict[str, Any]:
     """Synthetic analysis for the executor. strategy_book bypasses the thought-engine entry gates
     (runner/trend) — this is a separate validated edge — while every SAFETY gate still applies.
     vol_scalar (Moreira-Muir W6) is stored in the analysis so the executor can note the scaling
@@ -241,6 +241,26 @@ def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
         "composite_score": 0.0, "strategy_book": "xs_momentum",
         "xs_vol_scalar": vol_scalar,   # downstream hooks may read this for sizing
+        # The 5-day rebalance OWNS exits (validated structure): without this
+        # override the executor registered legs under the MAIN-ENGINE DSL
+        # policy — 30h hard-timeout, 8h stale-flat, 2.5% stop — which would
+        # shred the hold exactly like the rally_exhaustion tight-stop lesson
+        # (caught live 2026-07-19, six legs 1.7h after basket deploy). Wide
+        # 20% disaster stop only; rebalance replaces legs on its own clock.
+        "backup_sl_pct_override": 20.0,
+        "dsl_exit_override": {
+            "max_loss_pct": 20.0,
+            "max_loss_roe_pct": 240.0,
+            "protect_pct": 1000.0,
+            "retrace_threshold": 1.0,
+            "hard_timeout_minutes": float(hold_days) * 1440.0,
+            "breakeven_trigger_pct": 0.0,
+            "breakeven_lock_pct": 0.0,
+            "stale_flat_timeout_minutes": 0.0,
+            "consecutive_breaches_required": 1,
+            "atr_stop": {"enabled": False},
+            "noise_band": {"enabled": False},
+        },
     }
     if side == "short" and short_floor_usd and short_floor_usd > 0:
         out["min_short_volume_usd_override"] = float(short_floor_usd)
@@ -372,7 +392,8 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
             if not claims.claim(coin, _BOOK_NAME):
                 logger.warning(f"[xs-momentum] open long {coin} skipped — claimed by {claims.owner_of(coin)}")
                 continue
-            a = _analysis(coin, "long", book.scores.get(coin, 0.0), vol_scalar)
+            a = _analysis(coin, "long", book.scores.get(coin, 0.0), vol_scalar,
+                          hold_days=float(xs.get("hold_days", 5)))
             result = execute_fn(a)
             if _execute_opened(result):
                 owned.add(coin, "long")
@@ -392,6 +413,7 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
                 logger.warning(f"[xs-momentum] open short {coin} skipped — claimed by {claims.owner_of(coin)}")
                 continue
             a = _analysis(coin, "short", book.scores.get(coin, 0.0), vol_scalar,
+                          hold_days=float(xs.get("hold_days", 5)),
                           short_floor_usd=float(xs.get("executor_short_volume_floor_usd",
                                                        xs.get("min_volume_usd", 5_000_000.0))))
             result = execute_fn(a)

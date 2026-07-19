@@ -100,3 +100,37 @@ def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
     m.track_daily_pnl(150.0, net_contributions=132.0)
     assert m._peak_daily_pnl == pytest.approx(0.0, abs=0.01)
     assert m._daily_pnl == pytest.approx(0.0, abs=0.01)
+
+
+# ── xs basket exit ownership (2026-07-19 incident) ───────────────────────────
+
+def test_xs_analysis_carries_book_exit_policy():
+    """Caught live 2026-07-19, 1.7h after the first full basket deploy: xs
+    legs registered under the MAIN-ENGINE DSL policy (30h timeout, 8h
+    stale-flat, 2.5% stop) which would shred the validated 5-day
+    rebalance-owned hold. The analysis must carry the wide book override."""
+    from hermes_trader.agents.xs_momentum_live import _analysis
+    a = _analysis("BTC", "long", 0.12, hold_days=5.0)
+    dsl = a["dsl_exit_override"]
+    assert dsl["hard_timeout_minutes"] == 5.0 * 1440.0     # the full hold
+    assert dsl["stale_flat_timeout_minutes"] == 0.0        # no flat-cutter
+    assert dsl["protect_pct"] == 1000.0                    # phase-2 never arms
+    assert dsl["max_loss_pct"] == 20.0                     # disaster stop only
+    assert a["backup_sl_pct_override"] == 20.0
+    # shorts carry it too
+    s = _analysis("XPL", "short", -0.2, hold_days=5.0)
+    assert s["dsl_exit_override"]["hard_timeout_minutes"] == 7200.0
+
+
+def test_book_owned_holds_skip_ai_close_check():
+    """Book-claimed coins are exempt from the AI close-check (their books own
+    exits); the loop consults the claims registry before researching a held
+    coin. Text-level assertion — trading_loop must never be imported."""
+    import os
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "scripts", "trading_loop.py")).read()
+    i = src.index("if coin in held_coins:")
+    block = src[i:i + 1200]
+    assert "owner_of(coin)" in block
+    assert "BOOK_OWNED_HOLD" in block
+    assert block.index("owner_of(coin)") < block.index("held_research_ms)")

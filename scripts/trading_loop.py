@@ -947,6 +947,23 @@ while True:
                 pass
 
             if coin in held_coins:
+                # BOOK-OWNED positions are exempt from AI close-checks
+                # (2026-07-19): each book's validated structure owns its exits
+                # (rebalance clock / hold_days timeout / wide stop). An AI
+                # CLOSE on an xs basket leg would break the 5-day hold the
+                # edge was validated on — same failure class as the DSL
+                # policy leak fixed the same day. Main-engine legacy holds
+                # (no claim) keep the AI close path per the standing order.
+                try:
+                    _claim_owner = get_claims_registry().owner_of(coin)
+                except Exception:
+                    _claim_owner = None
+                if _claim_owner:
+                    log_event({"event": "ta_skip", "coin": coin,
+                               "signal": "BOOK_OWNED_HOLD",
+                               "score": round(float(score), 1),
+                               "trigger_score": round(float(score), 1)})
+                    continue
                 # Held position: research only every held_research_interval_min
                 # so the AI can still issue a CLOSE without paying for a "hold"
                 # PASS on every scan. (A re-entry is gate-blocked anyway.)
