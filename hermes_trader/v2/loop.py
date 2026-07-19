@@ -60,7 +60,7 @@ V2_DEFAULTS: Dict[str, Any] = {
         "enabled": True, "lookback_days": 7, "k_per_leg": 4, "hold_days": 5.0,
         "equity_frac_per_leg": 0.10, "min_volume_usd": 5_000_000.0,
         "universe_top_n": 50, "residual": True, "ranking": "raw",
-        "beta_window": 30, "zext_window": 14, "stop_pct": 25.0, "leverage": 12,
+        "beta_window": 30, "zext_window": 14, "stop_pct": 20.0, "leverage": 12,
     },
     "risk": {
         "max_daily_loss_pct": risk.MAX_DAILY_LOSS_PCT,
