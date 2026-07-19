@@ -296,3 +296,10 @@ peak_px to the new basis (partial closes update size only; legacy size-0 state a
 silently). SKHY replay + 8 more cases green in tests/test_dsl_add_refresh.py. The
 close-event realized-PnL half was already served by the dashboard's pnl_source="fill"
 path. Commit: see git log.
+
+## W-P2 PARKED LIVE OPTION (operator-approved 2026-07-19)
+CLARITY Senate vote (H2-2026, Polymarket ~0.43 / $1.9M): when a floor vote is
+SCHEDULED, build the single-shot zero-capital shadow playbook per
+findings/W-P2_scheduled_catalyst.md spec — brain writes branches T-24h
+(conditioned on PM odds), deterministic watcher records the counterfactual at
+resolution. One event, no capital. Watch: congress.gov S.### actions + PM odds.
