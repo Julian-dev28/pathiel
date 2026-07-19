@@ -126,6 +126,68 @@ def test_permutation_pvalue_is_seeded_and_sane():
     assert market_folklore.permutation_pvalue(returns, 3, -99.0, trials=200, seed=7) == 1.0
 
 
+def test_founder_mapping_is_declared_and_stable():
+    companies = [market_folklore.Company(*row) for row in market_folklore.COMPANIES]
+    assert len(companies) == 12
+    by_symbol = {company.symbol: company for company in companies}
+    for company in companies:
+        assert company.founder, company.symbol
+        assert 1900 < company.founder_birth_year < 2010, company.symbol
+
+    jobs = by_symbol["AAPL"]
+    assert (jobs.founder, jobs.founder_birth_year) == ("Steve Jobs", 1955)
+    assert jobs.founder_zodiac == "Goat" and jobs.founder_trine == 3
+    assert jobs.founder_birth_root == 2  # 1+9+5+5 = 20 -> 2
+
+    bosack = by_symbol["CSCO"]  # eldest-cofounder clause; 1952 per Wikipedia, not 1951
+    assert (bosack.founder, bosack.founder_birth_year) == ("Leonard Bosack", 1952)
+    assert bosack.founder_zodiac == "Dragon" and bosack.founder_trine == 0
+    assert bosack.founder_birth_root == 8
+
+    tesla = by_symbol["TSLA"]  # founding CEO, not Musk (joined 2004)
+    assert (tesla.founder, tesla.founder_birth_year) == ("Martin Eberhard", 1960)
+
+    noyce = by_symbol["INTC"]
+    assert noyce.founder_zodiac == "Rabbit" and noyce.founder_birth_root == 1
+
+
+def test_company_portfolio_birth_modes_select_matching_years():
+    def company(symbol: str) -> market_folklore.Company:
+        return market_folklore.Company(symbol, symbol.title(), 2000, "Founder", 1960)
+
+    companies = [company("A"), company("B")]
+    # 2020 is a Rat year (trine 0), 2022 a Tiger year (trine 2).
+    series = {"A": {2020: 0.10, 2022: 0.20}, "B": {2020: 0.30, 2022: 0.40}}
+    years, selected, benchmark = market_folklore.company_portfolios(
+        series, companies, {"A": 0, "B": 2}, "birth_trine"
+    )
+    assert years == [2020, 2022]
+    assert selected == [0.10, 0.40]
+    assert all(abs(actual - expected) < 1e-12 for actual, expected in zip(benchmark, [0.20, 0.30]))
+
+    # Digit roots: 2024 -> 8, 2025 -> 9.
+    series = {"A": {2024: 0.05, 2025: 0.15}, "B": {2024: 0.25, 2025: 0.35}}
+    years, selected, _ = market_folklore.company_portfolios(
+        series, companies, {"A": 8, "B": 9}, "birth_root"
+    )
+    assert years == [2024, 2025]
+    assert selected == [0.05, 0.35]
+
+
+def test_company_rule_metrics_supports_birth_modes():
+    companies = [market_folklore.Company(*row) for row in market_folklore.COMPANIES]
+    years = range(2015, 2025)
+    series = {
+        company.symbol: {year: 0.01 * ((index * 7 + year) % 21 - 10) for year in years}
+        for index, company in enumerate(companies)
+    }
+    metrics = market_folklore.company_rule_metrics(series, companies, "birth_trine", trials=50)
+    assert metrics["name"] == "Founder birth-year zodiac trine"
+    assert 0 < metrics["permutation_p"] <= 1
+    metrics = market_folklore.company_rule_metrics(series, companies, "birth_root", trials=50)
+    assert metrics["name"] == "Founder birth-year root resonance"
+
+
 # --- Bar parsing ------------------------------------------------------------
 
 

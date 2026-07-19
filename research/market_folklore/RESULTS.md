@@ -82,27 +82,31 @@ Open `analogs.html` for the overlaid paths and `analogs.csv` for the raw ranking
 
 ## Company Name / Founding-Year Rules
 
-The trine rule buys the listed companies only in calendar years whose Chinese-zodiac trine matches the company's founding-year trine. The name rule buys a company if its Pythagorean name root matches the calendar-year root. Both rebalance annually, use split-adjusted returns, and compare with static label shuffles across the same firms (the `--trials` count). A year with no matching company sits in cash. The benchmark is an equal-weight portfolio of whichever universe names have data that year, so early years hold only a couple of firms.
+The trine rule buys the listed companies only in calendar years whose Chinese-zodiac trine matches the company's founding-year trine. The name rule buys a company if its Pythagorean name root matches the calendar-year root. The two founder rules re-key the same machinery to the founder's **birth** year: the birth-trine rule holds a company when the calendar year's trine matches the founder's birth-year trine, and the birth-root rule holds it when the calendar-year digit root matches the birth-year digit root. All four rebalance annually, use split-adjusted returns, and compare with static label shuffles across the same firms (the `--trials` count). A year with no matching company sits in cash. The benchmark is an equal-weight portfolio of whichever universe names have data that year, so early years hold only a couple of firms.
+
+Founder selection rule, pre-declared before scoring: take the founder most identified as the company's founding leader (typically the founding CEO); where no single founder fits, take the eldest cofounder. Applications worth noting: TSLA maps to Martin Eberhard (founding CEO, b. 1960), not Elon Musk (b. 1971, joined 2004); CSCO is genuinely ambiguous between the married cofounders, so the eldest-cofounder clause picks Leonard Bosack (b. 1952, verified — not 1951 as sometimes quoted) over Sandy Lerner (b. 1955); ADBE keeps John Warnock (co-founding CEO, b. 1940) although Charles Geschke (b. 1939) was elder; NFLX keeps Reed Hastings (b. 1960) although Marc Randolph (b. 1958) held the first CEO title; AAPL and MSFT keep Jobs and Gates (both b. 1955) although Wozniak (b. 1950) and Allen (b. 1953) were elder. Birth years verified 2026-07-19 against Wikipedia biographies: [Jobs](https://en.wikipedia.org/wiki/Steve_Jobs), [Gates](https://en.wikipedia.org/wiki/Bill_Gates), [Bezos](https://en.wikipedia.org/wiki/Jeff_Bezos), [Huang](https://en.wikipedia.org/wiki/Jensen_Huang), [Page](https://en.wikipedia.org/wiki/Larry_Page), [Zuckerberg](https://en.wikipedia.org/wiki/Mark_Zuckerberg), [Eberhard](https://en.wikipedia.org/wiki/Martin_Eberhard), [Hastings](https://en.wikipedia.org/wiki/Reed_Hastings), [Ellison](https://en.wikipedia.org/wiki/Larry_Ellison), [Warnock](https://en.wikipedia.org/wiki/John_Warnock), [Bosack](https://en.wikipedia.org/wiki/Leonard_Bosack), [Noyce](https://en.wikipedia.org/wiki/Robert_Noyce). Zodiac uses the calendar year throughout, consistent with the founding-year rule; by the lunar calendar Bezos (born 1964-01-12, before that year's lunar new year) would be a Rabbit rather than a Dragon.
 
 | Rule | Years | Annualized | Equal-weight | Max DD | Shuffle p | 1st half | 2nd half |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Founder-year zodiac trine | 1980–2025 | 30.34% | 31.56% | -45.12% | 0.105 | 41.10% | 20.41% |
+| Founding-year zodiac trine | 1980–2025 | 30.34% | 31.56% | -45.12% | 0.105 | 41.10% | 20.41% |
 | Name/year root resonance | 1980–2025 | 8.92% | 31.56% | -49.84% | 0.937 | 10.88% | 6.99% |
+| Founder birth-year zodiac trine | 1980–2025 | 25.08% | 31.56% | -28.40% | 0.155 | 16.89% | 33.84% |
+| Founder birth-year root resonance | 1980–2025 | 14.49% | 31.56% | -72.93% | 0.589 | 8.34% | 20.99% |
 
-| Ticker | Founding name | Year | Zodiac | Name root |
-| --- | --- | --- | --- | --- |
-| AAPL | Apple | 1976 | Dragon | 5 |
-| MSFT | Microsoft | 1975 | Rabbit | 1 |
-| AMZN | Amazon | 1994 | Dog | 7 |
-| NVDA | NVIDIA | 1993 | Rooster | 5 |
-| GOOGL | Google | 1998 | Tiger | 7 |
-| META | Facebook | 2004 | Monkey | 4 |
-| TSLA | Tesla | 2003 | Goat | 3 |
-| NFLX | Netflix | 1997 | Ox | 9 |
-| ORCL | Oracle | 1977 | Snake | 9 |
-| ADBE | Adobe | 1982 | Dog | 9 |
-| CSCO | Cisco | 1984 | Rat | 4 |
-| INTC | Intel | 1968 | Monkey | 6 |
+| Ticker | Founding name | Year | Zodiac | Name root | Founder | Born | Birth zodiac | Birth root |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AAPL | Apple | 1976 | Dragon | 5 | Steve Jobs | 1955 | Goat | 2 |
+| MSFT | Microsoft | 1975 | Rabbit | 1 | Bill Gates | 1955 | Goat | 2 |
+| AMZN | Amazon | 1994 | Dog | 7 | Jeff Bezos | 1964 | Dragon | 2 |
+| NVDA | NVIDIA | 1993 | Rooster | 5 | Jensen Huang | 1963 | Rabbit | 1 |
+| GOOGL | Google | 1998 | Tiger | 7 | Larry Page | 1973 | Ox | 2 |
+| META | Facebook | 2004 | Monkey | 4 | Mark Zuckerberg | 1984 | Rat | 4 |
+| TSLA | Tesla | 2003 | Goat | 3 | Martin Eberhard | 1960 | Rat | 7 |
+| NFLX | Netflix | 1997 | Ox | 9 | Reed Hastings | 1960 | Rat | 7 |
+| ORCL | Oracle | 1977 | Snake | 9 | Larry Ellison | 1944 | Monkey | 9 |
+| ADBE | Adobe | 1982 | Dog | 9 | John Warnock | 1940 | Dragon | 5 |
+| CSCO | Cisco | 1984 | Rat | 4 | Leonard Bosack | 1952 | Dragon | 8 |
+| INTC | Intel | 1968 | Monkey | 6 | Robert Noyce | 1927 | Rabbit | 1 |
 
 This company test is strongly survivor-biased and uses a tiny manually declared universe of current large firms. It cannot support capital allocation even if a result looks good; the shuffle p-value only says whether the labels beat relabelings within this already-biased sample.
 

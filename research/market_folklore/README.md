@@ -82,6 +82,14 @@ the report.
   30.3% annualized vs 31.6% for the equal-weight baseline (shuffle p = 0.105);
   name/year resonance returned 8.9% vs 31.6% (p = 0.937). Neither beats simply
   holding the declared winners.
+- **Founder birth-year addendum (same machinery, same 1980–2025 panel):** the
+  founder mapping was pre-declared (most-identified founding leader, else
+  eldest cofounder; TSLA = Eberhard 1960 not Musk 1971, CSCO = Bosack — 1952
+  per Wikipedia, correcting the 1951 sometimes quoted) with birth years
+  verified by web search before scoring; citations in `RESULTS.md`. Birth-year
+  zodiac trine returned 25.1% vs 31.6% equal-weight (shuffle p = 0.155);
+  birth-year root resonance returned 14.5% vs 31.6% (p = 0.589, max DD
+  −72.9%). Both lose to buy-and-hold and neither clears its shuffle control.
 
 One-line conclusion: none of the folklore rules produced a supported edge; the
 one "significant" exploratory bucket is a known calendar seasonal in disguise.

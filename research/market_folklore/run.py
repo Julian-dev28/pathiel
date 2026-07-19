@@ -67,19 +67,27 @@ TRINE = {
     "Goat": 3,
     "Pig": 3,
 }
+# Founder selection rule, PRE-DECLARED before any scoring ran:
+# 1. Take the founder most identified as the company's founding leader
+#    (typically the founding CEO or the name history attaches to the founding).
+# 2. If no single founder fits step 1, take the eldest cofounder by birth year.
+# The mapping below was frozen under that rule, with birth years verified via
+# web search, before the birth-year rules were evaluated. Discarded alternates
+# are noted in the report (Wozniak 1950, Allen 1953, Musk 1971, Randolph 1958,
+# Geschke 1939, Lerner 1955, Moore 1929).
 COMPANIES = (
-    ("AAPL", "Apple", 1976),
-    ("MSFT", "Microsoft", 1975),
-    ("AMZN", "Amazon", 1994),
-    ("NVDA", "NVIDIA", 1993),
-    ("GOOGL", "Google", 1998),
-    ("META", "Facebook", 2004),
-    ("TSLA", "Tesla", 2003),
-    ("NFLX", "Netflix", 1997),
-    ("ORCL", "Oracle", 1977),
-    ("ADBE", "Adobe", 1982),
-    ("CSCO", "Cisco", 1984),
-    ("INTC", "Intel", 1968),
+    ("AAPL", "Apple", 1976, "Steve Jobs", 1955),
+    ("MSFT", "Microsoft", 1975, "Bill Gates", 1955),
+    ("AMZN", "Amazon", 1994, "Jeff Bezos", 1964),
+    ("NVDA", "NVIDIA", 1993, "Jensen Huang", 1963),
+    ("GOOGL", "Google", 1998, "Larry Page", 1973),
+    ("META", "Facebook", 2004, "Mark Zuckerberg", 1984),
+    ("TSLA", "Tesla", 2003, "Martin Eberhard", 1960),
+    ("NFLX", "Netflix", 1997, "Reed Hastings", 1960),
+    ("ORCL", "Oracle", 1977, "Larry Ellison", 1944),
+    ("ADBE", "Adobe", 1982, "John Warnock", 1940),
+    ("CSCO", "Cisco", 1984, "Leonard Bosack", 1952),
+    ("INTC", "Intel", 1968, "Robert Noyce", 1927),
 )
 ERAS = (
     ("Roaring Twenties boom", dt.date(1928, 1, 1), dt.date(1929, 9, 30)),
@@ -106,6 +114,8 @@ class Company:
     symbol: str
     name: str
     founding_year: int
+    founder: str
+    founder_birth_year: int
 
     @property
     def founding_zodiac(self) -> str:
@@ -118,6 +128,18 @@ class Company:
     @property
     def name_root(self) -> int:
         return pythagorean_root(self.name)
+
+    @property
+    def founder_zodiac(self) -> str:
+        return chinese_zodiac(self.founder_birth_year)
+
+    @property
+    def founder_trine(self) -> int:
+        return TRINE[self.founder_zodiac]
+
+    @property
+    def founder_birth_root(self) -> int:
+        return digital_root(self.founder_birth_year)
 
 
 def parse_args() -> argparse.Namespace:
@@ -481,20 +503,29 @@ def company_portfolios(series: dict[str, dict[int, float]], companies: list[Comp
         if not eligible:
             continue
         benchmark_returns.append(mean(series[company.symbol][year] for company in eligible))
-        if mode == "trine":
+        if mode in ("trine", "birth_trine"):
             candidates = [company for company in eligible if labels[company.symbol] == TRINE[chinese_zodiac(year)]]
-        else:
+        else:  # "name" and "birth_root" both key on the calendar-year digit root
             candidates = [company for company in eligible if labels[company.symbol] == digital_root(year)]
         selected_returns.append(mean(series[company.symbol][year] for company in candidates) if candidates else 0.0)
         kept_years.append(year)
     return kept_years, selected_returns, benchmark_returns
 
 
+COMPANY_MODES = {
+    "trine": ("Founding-year zodiac trine", lambda company: company.trine, 20260719),
+    "name": ("Name/year root resonance", lambda company: company.name_root, 20260720),
+    "birth_trine": ("Founder birth-year zodiac trine", lambda company: company.founder_trine, 20260723),
+    "birth_root": ("Founder birth-year root resonance", lambda company: company.founder_birth_root, 20260724),
+}
+
+
 def company_rule_metrics(series: dict[str, dict[int, float]], companies: list[Company], mode: str, trials: int) -> dict:
-    labels = {company.symbol: company.trine if mode == "trine" else company.name_root for company in companies}
+    rule_name, label_for, seed = COMPANY_MODES[mode]
+    labels = {company.symbol: label_for(company) for company in companies}
     years, observed, benchmark = company_portfolios(series, companies, labels, mode)
     observed_annualized = annualized_return(observed, 1)
-    rng = random.Random(20260719 if mode == "trine" else 20260720)
+    rng = random.Random(seed)
     label_values = list(labels.values())
     null_annualized: list[float] = []
     for _ in range(trials):
@@ -504,7 +535,7 @@ def company_rule_metrics(series: dict[str, dict[int, float]], companies: list[Co
         _, permuted, _ = company_portfolios(series, companies, shuffled_labels, mode)
         null_annualized.append(annualized_return(permuted, 1))
     return {
-        "name": "Founder-year zodiac trine" if mode == "trine" else "Name/year root resonance",
+        "name": rule_name,
         "years": years,
         "annualized": observed_annualized,
         "benchmark_annualized": annualized_return(benchmark, 1),
@@ -648,7 +679,17 @@ def write_report(
         for row in company_metrics
     ]
     universe_rows = [
-        [company.symbol, company.name, str(company.founding_year), company.founding_zodiac, str(company.name_root)]
+        [
+            company.symbol,
+            company.name,
+            str(company.founding_year),
+            company.founding_zodiac,
+            str(company.name_root),
+            company.founder,
+            str(company.founder_birth_year),
+            company.founder_zodiac,
+            str(company.founder_birth_root),
+        ]
         for company in companies
     ]
     report = f"""# Market Folklore Stress Test — Results
@@ -690,11 +731,13 @@ Open `analogs.html` for the overlaid paths and `analogs.csv` for the raw ranking
 
 ## Company Name / Founding-Year Rules
 
-The trine rule buys the listed companies only in calendar years whose Chinese-zodiac trine matches the company's founding-year trine. The name rule buys a company if its Pythagorean name root matches the calendar-year root. Both rebalance annually, use split-adjusted returns, and compare with static label shuffles across the same firms (the `--trials` count). A year with no matching company sits in cash. The benchmark is an equal-weight portfolio of whichever universe names have data that year, so early years hold only a couple of firms.
+The trine rule buys the listed companies only in calendar years whose Chinese-zodiac trine matches the company's founding-year trine. The name rule buys a company if its Pythagorean name root matches the calendar-year root. The two founder rules re-key the same machinery to the founder's **birth** year: the birth-trine rule holds a company when the calendar year's trine matches the founder's birth-year trine, and the birth-root rule holds it when the calendar-year digit root matches the birth-year digit root. All four rebalance annually, use split-adjusted returns, and compare with static label shuffles across the same firms (the `--trials` count). A year with no matching company sits in cash. The benchmark is an equal-weight portfolio of whichever universe names have data that year, so early years hold only a couple of firms.
+
+Founder selection rule, pre-declared before scoring: take the founder most identified as the company's founding leader (typically the founding CEO); where no single founder fits, take the eldest cofounder. Applications worth noting: TSLA maps to Martin Eberhard (founding CEO, b. 1960), not Elon Musk (b. 1971, joined 2004); CSCO is genuinely ambiguous between the married cofounders, so the eldest-cofounder clause picks Leonard Bosack (b. 1952, verified — not 1951 as sometimes quoted) over Sandy Lerner (b. 1955); ADBE keeps John Warnock (co-founding CEO, b. 1940) although Charles Geschke (b. 1939) was elder; NFLX keeps Reed Hastings (b. 1960) although Marc Randolph (b. 1958) held the first CEO title; AAPL and MSFT keep Jobs and Gates (both b. 1955) although Wozniak (b. 1950) and Allen (b. 1953) were elder. Birth years verified 2026-07-19 against Wikipedia biographies: [Jobs](https://en.wikipedia.org/wiki/Steve_Jobs), [Gates](https://en.wikipedia.org/wiki/Bill_Gates), [Bezos](https://en.wikipedia.org/wiki/Jeff_Bezos), [Huang](https://en.wikipedia.org/wiki/Jensen_Huang), [Page](https://en.wikipedia.org/wiki/Larry_Page), [Zuckerberg](https://en.wikipedia.org/wiki/Mark_Zuckerberg), [Eberhard](https://en.wikipedia.org/wiki/Martin_Eberhard), [Hastings](https://en.wikipedia.org/wiki/Reed_Hastings), [Ellison](https://en.wikipedia.org/wiki/Larry_Ellison), [Warnock](https://en.wikipedia.org/wiki/John_Warnock), [Bosack](https://en.wikipedia.org/wiki/Leonard_Bosack), [Noyce](https://en.wikipedia.org/wiki/Robert_Noyce). Zodiac uses the calendar year throughout, consistent with the founding-year rule; by the lunar calendar Bezos (born 1964-01-12, before that year's lunar new year) would be a Rabbit rather than a Dragon.
 
 {markdown_table(["Rule", "Years", "Annualized", "Equal-weight", "Max DD", "Shuffle p", "1st half", "2nd half"], company_rows)}
 
-{markdown_table(["Ticker", "Founding name", "Year", "Zodiac", "Name root"], universe_rows)}
+{markdown_table(["Ticker", "Founding name", "Year", "Zodiac", "Name root", "Founder", "Born", "Birth zodiac", "Birth root"], universe_rows)}
 
 This company test is strongly survivor-biased and uses a tiny manually declared universe of current large firms. It cannot support capital allocation even if a result looks good; the shuffle p-value only says whether the labels beat relabelings within this already-biased sample.
 
@@ -744,8 +787,8 @@ def main() -> None:
     companies = [Company(*row) for row in COMPANIES]
     company_series = {company.symbol: yearly_returns(fetch_yahoo(company.symbol, args.refresh)) for company in companies}
     company_metrics = [
-        company_rule_metrics(company_series, companies, "trine", args.trials),
-        company_rule_metrics(company_series, companies, "name", args.trials),
+        company_rule_metrics(company_series, companies, mode, args.trials)
+        for mode in ("trine", "name", "birth_trine", "birth_root")
     ]
     write_analogs_csv(args.output_dir, analogs, era_rows)
     write_analogs_html(args.output_dir, spx, era_rows, analog_summary)
