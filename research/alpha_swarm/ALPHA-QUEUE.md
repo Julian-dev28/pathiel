@@ -204,8 +204,30 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
   W-P1_cache_cik_map.json); data.sec.gov acceptanceDateTime is TRUE UTC (histogram-
   verified); xyz DOES trade 24/7 — universe.py:42 off-hours claim is wrong, fix docs.
   Recorder: NO-GO (history refetchable, mechanical rules refuted).
-- W-P2 scheduled-catalyst cell (policy binaries -> BTC/ETH drift) is a separate
-  agent's study, in flight 2026-07-19 — see findings/W-P2_scheduled_catalyst.md.
+- **W-P2 scheduled-catalyst playbook: REFUTED, playbook build NO-GO**
+  (findings/W-P2_scheduled_catalyst.md, pre-registered, run 2026-07-19).
+  Systematic enumeration — ALL 2,325 floor votes 2024-01->2026-07 (clerk XML +
+  GovTrack/LIS) through a pre-committed keyword filter with bill-title acronym
+  enrichment -> 89 hits -> 23 events (16 congressional, 5 SEC orders, 2
+  executive; marquee list fell out naturally, filter ADDED the DeFi-broker
+  CRA pair + failed Crypto-Week rule vote; zero crypto floor votes in 2026).
+  Outcome-signed BTC+ETH basket net 25bps NEGATIVE at every horizon
+  (+1h -0.28% / +4h -0.16% / +24h -0.59% / +72h -1.11%; already -0.34%
+  at ZERO cost @24h) and — deeper — NO abnormal unsigned movement vs 2000x
+  random-time null (p_unsig 0.21-0.69): scheduled US crypto policy resolves
+  into majors price continuously, not at the gavel. Odds-conditioned primary
+  cell (surprise vs Polymarket T-24h) INCONCLUSIVE by locked n<8 rule:
+  vote-level markets existed for only 4/23 events (n=2 contested: +1.16%
+  @24h, p=0.23, weaker under press timestamps). Anti-signal on the 4
+  bullish-BLOCKED events (shorts -4.1%/ep @24h, market rallied through
+  every policy failure) is macro-regime coincidence (2025-05-08 ETH squeeze
+  ate the cloture-fail short), n=4, exploratory only — do NOT invert-trade
+  it. Parked forward-recorder spec in findings (CLARITY Senate vote H2-2026,
+  PM ~0.43 = the first genuinely contested liquid instance, single-shot
+  shadow recording only if operator wants). Caches: hypotheses/W-P2_cache_*
+  (full House/Senate roll metadata 2024-26 + 770 bill titles reusable).
+  Fact bank: HL prunes 1h candles at ~5000 bars — 2024 backtests on majors
+  need an external 1h source (Binance spot used here, gap-free).
 - **W-P3 LLM-signed EDGAR direction: REFUTED** (findings/W-P3_llm_signed_edgar.md,
   pre-registered, run 2026-07-19). Claude CLI (fable-5, no tools/web) read all 308
   W-P1 filing texts at acceptance: 84% SKIP, 49 signed in the honest post-cutoff
