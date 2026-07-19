@@ -133,4 +133,4 @@ def test_book_owned_holds_skip_ai_close_check():
     block = src[i:i + 1200]
     assert "owner_of(coin)" in block
     assert "BOOK_OWNED_HOLD" in block
-    assert block.index("owner_of(coin)") < block.index("held_research_ms)")
+    assert block.index("owner_of(coin)") < block.index("(now_ms - last_research)")
