@@ -101,6 +101,18 @@ PROMOTE_NOTIONAL_USD = 20.0
 PROMOTE_LEVERAGE = 10
 PROMOTE_STOP_PCT = 6.0       # == 60/10, exactly at the clamp boundary
 
+# Inverse theses already ACTED ON — wired live, or considered and declined for
+# a reason the numbers cannot see. Without this the cycle re-proposes the same
+# candidates every single day and the report becomes noise nobody reads.
+_THESIS_ALREADY_ACTED: Dict[str, str] = {
+    "mover_pass": "wired live 2026-07-20 as mover_pass_short",
+    "news_catalyst": ("wired live 2026-07-20 as news_surge_short (breaking-equity arm); "
+                      "the full-population 'short any scan candidate' cell was DECLINED — "
+                      "same attention-fade factor as 3 live books (concentration, not "
+                      "diversification) and ~22 eps/day x $200 is infeasible on this account"),
+    "young_listings": "inverse is tape beta (excess +0.82pp, mc_p 0.323)",
+}
+
 
 def _cfg_path() -> Path:
     return _REPO / ".agent-config.json"
@@ -197,9 +209,32 @@ def grade_inverse(book: str, now_ms: int) -> Optional[Dict[str, Any]]:
             and h["first"] > 0 and h["second"] > 0
             and p_val is not None and p_val < PROMOTE_MAX_P):
         return None
-    return {"thesis": f"INVERSE of {book}", "n": g["n"], "ev_real": ev,
-            "ev_strict": strict, "halves": h, "mc_p": p_val,
-            "excess": (null or {}).get("excess_pct")}
+    # LEAVE-ONE-OUT robustness. The statistical bars above are all blind to
+    # OUTLIER DEPENDENCE: on 2026-07-20 the mover_b15_up inverse cleared every
+    # one of them at +11.37%/sig and mc_p 0.0005, yet dropping a single CASHCAT
+    # episode cut it to +4.02% and flipped an OOS half NEGATIVE. A thesis that
+    # dies without its best episode is one lucky trade wearing a p-value.
+    detail = sorted(g.get("detail") or [], key=lambda d: -abs(float(d.get("ret_pct") or 0)))
+    loo = None
+    if len(detail) >= MIN_N + 1:
+        keep = [r for r in kept
+                if not (r.get("coin") == detail[0].get("coin")
+                        and r.get("side") == detail[0].get("side"))]
+        if len(keep) >= MIN_N:
+            g2 = SL.grade_records(keep, fetch_fwd, now_ms=now_ms,
+                                  fetch_funding=fetch_funding, dedup=False)
+            if int(g2.get("n", 0)) >= MIN_N:
+                h2 = g2.get("oos_12bps") or {}
+                ev2 = (g2.get(REAL_FEE_TIER) or {}).get("mean_pct")
+                loo = {"dropped": detail[0].get("coin"), "n": g2["n"], "ev_real": ev2,
+                       "halves": h2,
+                       "survives": bool(ev2 and ev2 > 0
+                                        and h2.get("first") is not None
+                                        and h2.get("second") is not None
+                                        and h2["first"] > 0 and h2["second"] > 0)}
+    return {"thesis": f"INVERSE of {book}", "source_book": book, "n": g["n"],
+            "ev_real": ev, "ev_strict": strict, "halves": h, "mc_p": p_val,
+            "excess": (null or {}).get("excess_pct"), "loo": loo}
 
 
 def decide(grade: Dict[str, Any], live: Optional[bool]) -> Dict[str, str]:
@@ -287,6 +322,7 @@ def main() -> int:
             except Exception:
                 t = None
             if t:
+                t["already"] = _THESIS_ALREADY_ACTED.get(r["book"])
                 theses.append(t)
 
     acted: List[str] = []
@@ -323,12 +359,24 @@ def main() -> int:
         print("No action: no book crossed a promotion or demotion bar this run.")
 
     if theses:
-        print("\nNEW THESES from refuted books (inverse cleared every promotion bar):")
+        fresh = [t for t in theses if not t.get("already")
+                 and (t.get("loo") is None or t["loo"]["survives"])]
+        print("\nTHESES from refuted books (inverse cleared every promotion bar):")
         for t in theses:
+            loo = t.get("loo")
+            if t.get("already"):
+                tag = f"ALREADY ACTED — {t['already']}"
+            elif loo and not loo["survives"]:
+                tag = (f"FRAGILE — drop {loo['dropped']} and it falls to "
+                       f"{loo['ev_real']:+.2f}% (halves {loo['halves'].get('first')}/"
+                       f"{loo['halves'].get('second')}): one lucky trade, not an edge")
+            else:
+                tag = "NEW — candidate for a bounded recorder"
             print(f"  {t['thesis']}: n={t['n']} EV{REAL_FEE_TIER}={t['ev_real']:+.2f}% "
                   f"halves={t['halves'].get('first'):+.2f}/{t['halves'].get('second'):+.2f} "
-                  f"excess={t.get('excess')}pp mc_p={t['mc_p']}")
-        print("  -> candidates for a bounded recorder; a counterfactual is not a forward verdict.")
+                  f"excess={t.get('excess')}pp mc_p={t['mc_p']}\n      -> {tag}")
+        print(f"  {len(fresh)} genuinely new. A counterfactual is not a forward verdict.")
+        theses = fresh
         try:
             with open(_REPO / "research" / "alpha_swarm" / "AUTO-THESES.md", "a") as fh:
                 fh.write(f"\n## {time.strftime('%Y-%m-%d %H:%M')} autonomous cycle\n")

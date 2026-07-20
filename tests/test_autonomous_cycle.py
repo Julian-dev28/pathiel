@@ -183,3 +183,54 @@ def test_main_engine_demotes_again_if_it_turns():
     g = {"book": "main_engine", "n": 20, "ev_real": -1.5, "ev_strict": -1.7,
          "halves": {"first": -1.0, "second": -2.0}, "mc_p": 0.9}
     assert AC.decide(g, live=True)["action"] == "demote"
+
+
+# ------------------------------------------- evolution stage: robustness + dedup
+def test_already_acted_theses_are_registered_with_reasons():
+    """Without this the cycle re-proposes the same candidates every day and
+    the report degrades into noise nobody reads."""
+    for book in ("mover_pass", "news_catalyst", "young_listings"):
+        assert book in AC._THESIS_ALREADY_ACTED
+        assert len(AC._THESIS_ALREADY_ACTED[book]) > 20   # a reason, not a flag
+
+
+def test_declined_thesis_records_WHY_not_just_that_it_was_declined():
+    """news_catalyst's full-population inverse passes every statistical bar
+    and was still declined — on concentration and capacity, which no p-value
+    can see. That reasoning has to survive in the code."""
+    why = AC._THESIS_ALREADY_ACTED["news_catalyst"]
+    assert "DECLINED" in why and ("concentration" in why or "infeasible" in why)
+
+
+def _thesis(**ov):
+    t = {"thesis": "INVERSE of x", "n": 10, "ev_real": 11.4, "ev_strict": 11.2,
+         "halves": {"first": 20.7, "second": 2.0}, "mc_p": 0.001,
+         "loo": {"dropped": "CASHCAT", "n": 8, "ev_real": 4.02,
+                 "halves": {"first": 9.6, "second": -1.55}, "survives": False}}
+    t.update(ov)
+    return t
+
+
+def test_outlier_dependent_thesis_is_flagged_fragile_not_new():
+    """The real 2026-07-20 case: mover_b15_up's inverse cleared EV, both
+    halves, 25bps and mc_p=0.0005 — and still died when one CASHCAT episode
+    was removed. Every statistical bar we have is blind to that."""
+    t = _thesis()
+    assert t["loo"]["survives"] is False
+    fresh = [x for x in [t] if not x.get("already") and (x.get("loo") is None or x["loo"]["survives"])]
+    assert fresh == [], "a thesis that dies without its best trade is not new"
+
+
+def test_robust_thesis_survives_leave_one_out_and_counts_as_new():
+    t = _thesis(loo={"dropped": "ARB", "n": 16, "ev_real": 6.1,
+                     "halves": {"first": 5.2, "second": 6.9}, "survives": True})
+    fresh = [x for x in [t] if not x.get("already") and (x.get("loo") is None or x["loo"]["survives"])]
+    assert fresh == [t]
+
+
+def test_already_acted_thesis_is_excluded_even_when_robust():
+    t = _thesis(already="wired live as mover_pass_short",
+                loo={"dropped": "ARB", "n": 16, "ev_real": 6.1,
+                     "halves": {"first": 5.2, "second": 6.9}, "survives": True})
+    fresh = [x for x in [t] if not x.get("already") and (x.get("loo") is None or x["loo"]["survives"])]
+    assert fresh == []
