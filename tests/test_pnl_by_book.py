@@ -120,7 +120,7 @@ def test_build_episodes_flat_to_flat(pbb):
     assert still_open.side == "short" and still_open.open_done is False
 
 
-def test_live_xs_rebalance_without_shadow_key_is_attributed(tmp_path, monkeypatch):
+def test_live_xs_rebalance_without_shadow_key_is_attributed(pbb, tmp_path, monkeypatch):
     """W-X2 audit (2026-07-20): live xs_rebalance events carry no `shadow`
     key; the old default-True routed every live xs fill to main-engine —
     45 days of the book's PnL was invisible."""
