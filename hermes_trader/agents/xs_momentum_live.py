@@ -136,10 +136,19 @@ def _eligible(universe: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[str]:
     xs = cfg.get("xs_momentum") or {}
     floor = float(xs.get("min_volume_usd", cfg.get("min_market_volume_usd", 5_000_000)) or 0)
     topn = int(xs.get("universe_top_n", 50))
+    # W-X4 meme-exclusion overlay (b02276b, DOMINANT 4/4): declared names are
+    # dropped BEFORE ranking. Mechanism: with 4 short slots, memes crowded
+    # out better shorts — replacements out-earned them both halves (+0.289%/
+    # rebal); meme longs bled besides. Pre-committed revert: cumulative
+    # counterfactual delta vs the unfiltered book < 0 after 6 rebalances
+    # (check date in ALPHA-QUEUE) -> remove exclude_coins same day.
+    excluded = {str(c) for c in (xs.get("exclude_coins") or [])}
     elig = []
     for m in universe or []:
         coin = m.get("coin") or ""
         if not coin or coin.startswith("@") or ":" in coin or m.get("type") == "spot":
+            continue
+        if coin in excluded:
             continue
         vol = float(m.get("dayNtlVlm") or 0)
         if vol >= floor:

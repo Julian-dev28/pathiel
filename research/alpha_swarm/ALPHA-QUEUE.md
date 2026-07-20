@@ -320,3 +320,9 @@ SCHEDULED, build the single-shot zero-capital shadow playbook per
 findings/W-P2_scheduled_catalyst.md spec — brain writes branches T-24h
 (conditioned on PM odds), deterministic watcher records the counterfactual at
 resolution. One event, no capital. Watch: congress.gov S.### actions + PM odds.
+
+## W-X4 meme-exclusion revert check — due at xs rebalance 6 post-wiring (~2026-09-18 at H10)
+Pre-committed (b02276b): re-run the W-X4 harness on forward data — if the
+cumulative counterfactual delta (filtered vs unfiltered book) < 0 after 6
+forward rebalances, REMOVE xs_momentum.exclude_coins the same day. The
+dominance gate passed 4/4 but paired-t was 1.36 — the forward A/B decides.

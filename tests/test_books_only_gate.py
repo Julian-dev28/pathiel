@@ -134,3 +134,18 @@ def test_book_owned_holds_skip_ai_close_check():
     assert "owner_of(coin)" in block
     assert "BOOK_OWNED_HOLD" in block
     assert block.index("owner_of(coin)") < block.index("(now_ms - last_research)")
+
+
+def test_xs_exclude_coins_filters_before_ranking():
+    """W-X4 (b02276b): declared meme names drop from the eligible set BEFORE
+    volume ranking; absent config key changes nothing."""
+    from hermes_trader.agents.xs_momentum_live import _eligible
+    uni = [{"coin": c, "type": "perp", "dayNtlVlm": 1e9} for c in
+           ("BTC", "ETH", "FARTCOIN", "kBONK", "SOL")]
+    cfg = {"xs_momentum": {"min_volume_usd": 0, "universe_top_n": 50,
+                           "exclude_coins": ["FARTCOIN", "kBONK"]}}
+    out = _eligible(uni, cfg)
+    assert "FARTCOIN" not in out and "kBONK" not in out
+    assert {"BTC", "ETH", "SOL"} <= set(out)
+    cfg2 = {"xs_momentum": {"min_volume_usd": 0, "universe_top_n": 50}}
+    assert "FARTCOIN" in _eligible(uni, cfg2)

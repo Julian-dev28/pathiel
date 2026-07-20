@@ -38,7 +38,7 @@
   "held_research_interval_min": 10,
   "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
-  "max_crypto_long_correlated": 8,
+  "max_crypto_long_correlated": 100,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 20000000,
@@ -150,7 +150,29 @@
     "executor_short_volume_floor_usd": 5000000,
     "vol_managed": {
       "enabled": false
-    }
+    },
+    "exclude_coins": [
+      "BABY",
+      "CASHCAT",
+      "DOGE",
+      "FARTCOIN",
+      "HMSTR",
+      "MEW",
+      "MOODENG",
+      "PENGU",
+      "POPCAT",
+      "PUMP",
+      "PURR",
+      "SPX",
+      "TRUMP",
+      "TURBO",
+      "VINE",
+      "WIF",
+      "kBONK",
+      "kFLOKI",
+      "kPEPE",
+      "kSHIB"
+    ]
   },
   "xs_xyz_equities": {
     "enabled": true,
