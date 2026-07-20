@@ -79,6 +79,12 @@ _SWITCHES: Dict[str, tuple] = {
     "mover_pass": ("nested", "mover_recorders", "pass_live"),
     "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
     "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
+    # The main engine is a thesis like any other. Its live arm is an ENTRIES
+    # flag rather than shadow_only, so it gets its own switch shape. It was
+    # demoted 2026-07-20 on -$172.33/157 trades with every slice negative; it
+    # can earn its way back the same way anything else does — by grading
+    # VALIDATED on its own forward ledger. No exemption for being the flagship.
+    "main_engine": ("entries", "main_engine"),
 }
 
 # Books whose live arm is a counterfactual/recorder with no capital path, or
@@ -112,7 +118,7 @@ def _block(cfg: Dict[str, Any], book: str) -> Optional[Dict[str, Any]]:
     sw = _SWITCHES.get(book)
     if not sw:
         return None
-    if sw[0] == "top":
+    if sw[0] in ("top", "entries"):
         return cfg.get(sw[1])
     return (cfg.get(sw[1]) or {}).get(sw[2])
 
@@ -121,6 +127,8 @@ def _is_live(cfg: Dict[str, Any], book: str) -> Optional[bool]:
     b = _block(cfg, book)
     if not isinstance(b, dict):
         return None
+    if (_SWITCHES.get(book) or ("",))[0] == "entries":
+        return bool(b.get("entries_enabled", False))
     if not b.get("enabled", False):
         return False
     return not bool(b.get("shadow_only", False))
@@ -152,6 +160,46 @@ def grade_book(book: str, now_ms: int) -> Dict[str, Any]:
         out["mc_p"] = (null or {}).get("mc_p")
         out["excess"] = (null or {}).get("excess_pct")
     return out
+
+
+def grade_inverse(book: str, now_ms: int) -> Optional[Dict[str, Any]]:
+    """EVOLUTION stage: a refuted thesis is not a dead end, it is a signed
+    claim that was wrong — so test the other side. This is the automated form
+    of the 2026-07-20 reverse-refuted audit, which found that blanket
+    inversion fails but ~1 in 4 refuted cells hides a real inverse edge
+    (news_catalyst -> the breaking-surge short; mover_pass -> mover_pass_short).
+
+    Returns a THESIS dict only when the inverse clears the same promotion
+    bars the direct side would have to clear. It never wires capital by
+    itself: it banks a candidate for the next build cycle, because a
+    counterfactual on a dead ledger is a hypothesis, not a forward verdict."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "sis", str(_REPO / "scripts" / "shadow_inverse_status.py"))
+    sis = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sis)
+    recs = SL.load(book)
+    if not recs:
+        return None
+    kept, _ = SL.dedup_episodes(sis.inverse_records(recs))
+    fetch_fwd, fetch_funding, cache = sis._make_fetchers(kept, now_ms)
+    g = SL.grade_records(kept, fetch_fwd, now_ms=now_ms,
+                         fetch_funding=fetch_funding, dedup=False)
+    if int(g.get("n", 0)) < MIN_N:
+        return None
+    null = sis.matched_null(g.get("detail") or [], cache, NULL_DRAWS, random.Random(7))
+    ev = (g.get(REAL_FEE_TIER) or {}).get("mean_pct")
+    strict = (g.get(STRICT_FEE_TIER) or {}).get("mean_pct")
+    h = g.get("oos_12bps") or {}
+    p_val = (null or {}).get("mc_p")
+    if not (ev and ev > 0 and strict and strict > 0
+            and h.get("first") is not None and h.get("second") is not None
+            and h["first"] > 0 and h["second"] > 0
+            and p_val is not None and p_val < PROMOTE_MAX_P):
+        return None
+    return {"thesis": f"INVERSE of {book}", "n": g["n"], "ev_real": ev,
+            "ev_strict": strict, "halves": h, "mc_p": p_val,
+            "excess": (null or {}).get("excess_pct")}
 
 
 def decide(grade: Dict[str, Any], live: Optional[bool]) -> Dict[str, str]:
@@ -192,6 +240,13 @@ def apply_action(cfg: Dict[str, Any], book: str, action: str) -> bool:
     b = _block(cfg, book)
     if not isinstance(b, dict):
         return False
+    if (_SWITCHES.get(book) or ("",))[0] == "entries":
+        # entries-flag books carry no sizing knobs; flip the flag only.
+        want = action == "promote"
+        if bool(b.get("entries_enabled", False)) == want:
+            return False
+        b["entries_enabled"] = want
+        return True
     if action == "demote":
         if b.get("shadow_only") is True:
             return False
@@ -223,6 +278,17 @@ def main() -> int:
         d = decide(g, live)
         rows.append({**g, "live": live, **d})
 
+    # EVOLUTION: every refutation this run gets its inverse tested.
+    theses: List[Dict[str, Any]] = []
+    for r in rows:
+        if r["verdict"] == "REFUTED":
+            try:
+                t = grade_inverse(r["book"], now_ms)
+            except Exception:
+                t = None
+            if t:
+                theses.append(t)
+
     acted: List[str] = []
     if not args.dry_run:
         for r in rows:
@@ -232,7 +298,8 @@ def main() -> int:
             _write_cfg(cfg)
 
     if args.json:
-        print(json.dumps({"rows": rows, "acted": acted}, indent=2, default=str))
+        print(json.dumps({"rows": rows, "acted": acted, "theses": theses},
+                         indent=2, default=str))
         return 0
 
     stamp = time.strftime("%Y-%m-%d %H:%M")
@@ -255,10 +322,30 @@ def main() -> int:
     else:
         print("No action: no book crossed a promotion or demotion bar this run.")
 
-    if acted and not args.dry_run and not args.no_commit:
+    if theses:
+        print("\nNEW THESES from refuted books (inverse cleared every promotion bar):")
+        for t in theses:
+            print(f"  {t['thesis']}: n={t['n']} EV{REAL_FEE_TIER}={t['ev_real']:+.2f}% "
+                  f"halves={t['halves'].get('first'):+.2f}/{t['halves'].get('second'):+.2f} "
+                  f"excess={t.get('excess')}pp mc_p={t['mc_p']}")
+        print("  -> candidates for a bounded recorder; a counterfactual is not a forward verdict.")
         try:
-            subprocess.run(["git", "add", ".agent-config.json"], cwd=_REPO, check=True)
-            msg = "auto(cycle): " + "; ".join(acted)[:1500]
+            with open(_REPO / "research" / "alpha_swarm" / "AUTO-THESES.md", "a") as fh:
+                fh.write(f"\n## {time.strftime('%Y-%m-%d %H:%M')} autonomous cycle\n")
+                for t in theses:
+                    fh.write(f"- **{t['thesis']}** — n={t['n']}, EV(real)={t['ev_real']:+.2f}%, "
+                             f"EV(25bps)={t['ev_strict']:+.2f}%, halves "
+                             f"{t['halves'].get('first'):+.2f}/{t['halves'].get('second'):+.2f}, "
+                             f"excess {t.get('excess')}pp, mc_p={t['mc_p']}\n")
+        except Exception as exc:
+            print(f"  (thesis file write failed: {exc})")
+
+    if (acted or theses) and not args.dry_run and not args.no_commit:
+        try:
+            subprocess.run(["git", "add", ".agent-config.json",
+                            "research/alpha_swarm/AUTO-THESES.md"], cwd=_REPO, check=False)
+            msg = ("auto(cycle): " + ("; ".join(acted)[:1200] if acted else "")
+                   + (f" | {len(theses)} new inverse thesis(es)" if theses else ""))
             subprocess.run(["git", "commit", "-q", "-m", msg], cwd=_REPO, check=True)
             subprocess.run(["git", "push", "-q", "origin", "able"], cwd=_REPO, check=True)
             print("\ncommitted + pushed")

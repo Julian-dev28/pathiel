@@ -75,6 +75,7 @@ from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_r
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
+from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -1137,6 +1138,17 @@ while True:
                             (float(m.get("midPx") or m.get("markPx") or 0)
                              for m in universe if m.get("coin") == coin), 0.0)
                     _record_news_ta_quadrant(analysis, read_agent_config())
+                except Exception:
+                    pass
+
+                # main-engine thesis ledger: the engine was the ONE surface
+                # trading without a forward ledger, which is why -$172 over
+                # 157 trades went unmeasured for 30 days. Recorded on the
+                # AI's own verdict BEFORE route_verdict can mutate it, and
+                # whether or not it executes — a verdict blocked by the
+                # notional cap is still evidence about the thesis.
+                try:
+                    _record_main_engine_verdict(analysis, read_agent_config())
                 except Exception:
                     pass
 
