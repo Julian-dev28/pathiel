@@ -56,6 +56,7 @@ from hermes_trader.agents.xs_momentum_live import (
     maybe_rebalance as _xs_maybe_rebalance,
     prune_state_to_live as _xs_prune_state_to_live,
 )
+from hermes_trader.agents.xs_xyz_live import maybe_rebalance as _xs_xyz_maybe_rebalance
 from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
 from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
 from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
@@ -760,6 +761,21 @@ while True:
             )
         except Exception as _xse:
             logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
+
+        # xs_xyz_equities — the xs recipe on the xyz tokenized-equity universe
+        # (W-X2 cell A ROBUST: +0.65%/rebal net25, p=0.0055, both OOS halves;
+        # operator pre-authorized LIVE wiring). Self-gates on its own 5d
+        # hold-days timer; residual momentum vs xyz:XYZ100; wide-only exits
+        # owned by the rebalance. Pre-committed kills live as constants in
+        # hermes_trader/agents/xs_xyz.py and grade via shadow_status.
+        try:
+            _xs_xyz_maybe_rebalance(
+                read_agent_config(), universe, positions,
+                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 6 * 3600 * 1000)),
+                _book_execute, close_position_market,
+            )
+        except Exception as _xxe:
+            logger.warning(f"[xs-xyz] rebalance failed (non-fatal): {_xxe}")
 
         # Extreme-fade edge (validated LONG-only @ -12% = +4.71%/trade, SETTLE-2 2026-06-24).
         # strategy_book execution: a counter-trend fade can't clear the runner/trend ENTRY gates by

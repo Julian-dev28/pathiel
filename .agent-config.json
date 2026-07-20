@@ -152,6 +152,17 @@
       "enabled": false
     }
   },
+  "xs_xyz_equities": {
+    "enabled": true,
+    "shadow_only": false,
+    "lookback_days": 7,
+    "k_per_leg": 5,
+    "hold_days": 5,
+    "min_volume_usd": 250000,
+    "benchmark": "xyz:XYZ100",
+    "max_book_positions": 10,
+    "history_bars": 60
+  },
   "extreme_fade": {
     "enabled": true,
     "crash_pct": -0.12,
