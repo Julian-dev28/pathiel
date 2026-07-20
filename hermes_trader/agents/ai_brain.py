@@ -380,6 +380,11 @@ class ClaudeCliBrain:
             "--safe-mode",
             "--no-session-persistence",
         ]
+        # Operator-pinned model (2026-07-20: route verdicts through Sonnet 5).
+        # Unset = the CLI's own default; env outranks config like the other knobs.
+        model = str(os.environ.get("CLAUDE_CLI_MODEL") or provider_cfg.get("model") or "").strip()
+        if model:
+            args += ["--model", model]
         stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg))
         if not stdout:
             return ""

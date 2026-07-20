@@ -8,6 +8,7 @@
     },
     "claude_cli": {
       "command": "/Users/julian_dev/.local/bin/claude",
+      "model": "claude-sonnet-5",
       "max_turns": 1,
       "web_search_max_turns": 8
     },

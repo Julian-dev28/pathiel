@@ -313,6 +313,42 @@ def test_claude_cli_web_max_turns_config_override(monkeypatch):
     assert args[args.index("--max-turns") + 1] == "4"
 
 
+def test_claude_cli_model_pin_from_config(monkeypatch):
+    """A configured model reaches the CLI as --model; unset config sends no
+    --model at all (the CLI's own default), and CLAUDE_CLI_MODEL outranks config
+    like every other claude_cli knob. Operator pin 2026-07-20: claude-sonnet-5."""
+    from hermes_trader.agents import ai_brain
+
+    monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_MAX_TURNS", raising=False)
+    monkeypatch.delenv("CLAUDE_CLI_MODEL", raising=False)
+
+    seen: dict[str, list] = {}
+
+    def fake_run(args, prompt, timeout_s):
+        seen["args"] = args
+        return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
+
+    monkeypatch.setattr(ai_brain, "_run_cli", fake_run)
+
+    cfg = {"timeout_s": 5, "claude_cli": {"command": "claude", "model": "claude-sonnet-5"}}
+    monkeypatch.setattr(ai_brain, "_read_ai_brain_config", lambda: cfg)
+    ai_brain.ClaudeCliBrain().complete("S", "U")
+    args = seen["args"]
+    assert args[args.index("--model") + 1] == "claude-sonnet-5"
+
+    cfg = {"timeout_s": 5, "claude_cli": {"command": "claude"}}
+    ai_brain.ClaudeCliBrain().complete("S", "U")
+    assert "--model" not in seen["args"]
+
+    monkeypatch.setenv("CLAUDE_CLI_MODEL", "claude-opus-4-8")
+    cfg = {"timeout_s": 5, "claude_cli": {"command": "claude", "model": "claude-sonnet-5"}}
+    ai_brain.ClaudeCliBrain().complete("S", "U")
+    args = seen["args"]
+    assert args[args.index("--model") + 1] == "claude-opus-4-8"
+
+
 def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
     """The research seam passes web_search unconditionally to the configured
     provider — non-claude providers must swallow it, not raise."""
