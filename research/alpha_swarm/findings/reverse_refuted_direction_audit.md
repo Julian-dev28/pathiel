@@ -244,3 +244,45 @@ python3 scripts/shadow_inverse_status.py --book news_catalyst --meta breaking=fa
 - `research/alpha_swarm/findings/W-F3.md`
 - `research/alpha_swarm/findings/W-Y1_young_listings.md`
 - `research/alpha_swarm/findings/W-P3_llm_signed_edgar.md`
+
+## Six-book re-grade at the REAL 5% stop + recorder sweep (2026-07-20, final)
+
+Re-graded the older fixed-notional books at the 5% width they actually
+execute (vs the 15-25% they advertise). The clamp has been HELPING, not
+hurting — every book with data improves at the tighter stop, because these
+are short books whose losers run:
+
+| book | cfg stop | n | EV25 @cfg | EV25 @REAL 5% | delta | verdict |
+|---|---:|---:|---:|---:|---:|---|
+| mover_pass | 15% | 17 | -6.49% | **-3.52%** | +2.97 | **REFUTED** at its real stop (halves -4.01/-2.85). Already shadow_only — no capital at risk. |
+| engulf_short | 20% | 3 | -5.39% | -2.39% | +2.99 | negative lean, n<8, LIVE — watch |
+| unlock_short_runin | 15% | 4 | +4.83% | +4.83% | 0.00 | positive, n<8 (stop never reached) |
+| crash_continue_div_short | 20% | 0 | — | — | — | 4 rows, 0 resolved |
+| rally_exhaustion | 25% | — | — | — | — | **never fired a single row** |
+| funding_spike_short | 15% | — | — | — | — | **never fired a single row** |
+
+Correction to the earlier risk note: rally_exhaustion and funding_spike_short
+are DORMANT, not risky — they carry $0 real exposure because they have never
+opened. The "$240 notional with no EV estimate" framing overstated it.
+
+### Recorder sweep — what merits capital
+
+| cell | n | EV25 | halves | excess | mc_p | verdict |
+|---|---:|---:|---|---:|---:|---|
+| **attention-fade: SHORT any scan candidate** | **178** | **+2.21%** | **+0.55/+4.12** | **+1.75pp** | **0.0005** | passes every bar |
+| news breaking-equity short (LIVE) | 8 | +10.46% | +5.50/+15.69 | +9.76pp | 0.0005 | live, now at min-n |
+| whale_flow INVERSE | 58 | +0.66% | -0.02/+1.60 | +1.01pp | 0.031 | MARGINAL — fails both-halves, barely clears fees |
+| whale_flow as-recorded | 58 | -1.22% | -0.06/-2.12 | -0.91pp | 0.934 | REFUTED (confirms 07-17 interim) |
+| mover_b15_up inverse | 10 | +11.37% | +20.73/+2.01 | +10.35pp | 0.0005 | CASHCAT-dependent — ex-outlier one half flips negative |
+| young_listings inverse | 18 | +2.25% | +2.42/+2.09 | +0.82pp | 0.323 | tape beta |
+| majors_swing inverse | 1 | — | — | — | — | dedups to n=1 |
+
+**Recommendation: do NOT wire a fourth book.** The attention-fade cell passes
+every statistical bar we have, but it is not a new edge — it is the SAME
+factor already expressed by three live books (news_surge_short,
+mover_pass_short, young_mover_short), all of which fade attention on
+overlapping populations. A fourth expression adds concentration, not
+diversification, and its capacity is infeasible anyway: 178 episodes / 8 days
+= ~22/day, which at $200 notional is $4,400/day against a $136 account. The
+three live books already record this population forward; let the evidence
+mature rather than stacking correlated risk.
