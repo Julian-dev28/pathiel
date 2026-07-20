@@ -149,3 +149,17 @@ def test_xs_exclude_coins_filters_before_ranking():
     assert {"BTC", "ETH", "SOL"} <= set(out)
     cfg2 = {"xs_momentum": {"min_volume_usd": 0, "universe_top_n": 50}}
     assert "FARTCOIN" in _eligible(uni, cfg2)
+
+
+def test_xs_book_integrity_alert_fires_below_40(monkeypatch, caplog):
+    """W-X5: below ~$40 equity the 3x-cap legs fall under HL's min order and
+    vanish silently — the rebalance must WARN loudly (never block)."""
+    import logging
+    import hermes_trader.agents.xs_momentum_live as xsl
+    from hermes_trader.agents import memory as mem_mod
+    monkeypatch.setattr(mem_mod.memory, "_equity", 35.0, raising=False)
+    monkeypatch.setattr(xsl, "_last_ts", lambda: 2**62, raising=False)  # not rebalance time
+    with caplog.at_level(logging.WARNING):
+        xsl.maybe_rebalance({"xs_momentum": {"enabled": True}}, [], [],
+                            lambda *a: [], lambda a: None, lambda *a: None)
+    assert any("BOOK-INTEGRITY" in r.message for r in caplog.records)

@@ -323,6 +323,19 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
     remains None and the history accumulates via internal state only.
     """
     xs = config.get("xs_momentum") or {}
+    # BOOK-INTEGRITY floor (W-X5 2392c4e): below ~$40 funding equity the
+    # 3x-leverage-capped legs (ACE/AZTEC/SUSHI class) fall under HL's
+    # $10.50 min order and silently vanish from the basket — the book
+    # degrades without any error. Loud warning, not a block.
+    try:
+        from hermes_trader.agents.memory import memory as _mem
+        _eq = float(getattr(_mem, "equity", 0) or getattr(_mem, "_equity", 0) or 0)
+        if 0 < _eq < 40.0:
+            logger.warning(
+                f"[xs-momentum] BOOK-INTEGRITY: funding equity ${_eq:.2f} < $40 — "
+                f"3x-cap legs fall under the $10.50 min order and drop silently")
+    except Exception:
+        pass
     if not bool(xs.get("enabled", False)):
         return None
     hold_days = float(xs.get("hold_days", 10))

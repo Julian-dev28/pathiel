@@ -326,6 +326,10 @@ Pre-committed (b02276b): re-run the W-X4 harness on forward data — if the
 cumulative counterfactual delta (filtered vs unfiltered book) < 0 after 6
 forward rebalances, REMOVE xs_momentum.exclude_coins the same day. The
 dominance gate passed 4/4 but paired-t was 1.36 — the forward A/B decides.
+ANCHOR CORRECTION (W-X5 2392c4e): offset-0 backtests are phase-flattered
+~+1.4pp; grade forward xs performance against the PHASE-MEAN expectation
++2.2%/rebal (~$6.5/wk at 0.10-frac), NOT the +3.68% offset-0 number.
+A forward read near +2.2% is ON TARGET, not underperformance.
 
 ## W-X5 xs implementation frontier — SETTLED 2026-07-20 (4 cells, no live changes)
 Findings: W-X5_{depth_hold,tranches,hysteresis,xyz_hardening}.md. Verdicts:
