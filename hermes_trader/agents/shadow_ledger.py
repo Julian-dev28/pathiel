@@ -323,7 +323,8 @@ def grade_records(records: List[Dict[str, Any]],
                        "ret_pct": round(100 * ret, 2),
                        "price_pct": round(100 * price_ret, 2),
                        "funding_pct": round(100 * fund_ret, 3),
-                       "bars_held": bars_held, "interval": interval})
+                       "bars_held": bars_held, "interval": interval,
+                       "stop_pct": stop_pct, "n_bars": n_bars})
 
     n = len(rets)
     out: Dict[str, Any] = {"n": n, "pending": pending, "ungradeable": ungradeable,

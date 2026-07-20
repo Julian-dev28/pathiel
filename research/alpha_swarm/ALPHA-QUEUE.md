@@ -349,6 +349,21 @@ A forward read near +2.2% is ON TARGET, not underperformance.
   CASHCAT episodes is not evidence.
 - whale_flow: formal bar 2026-07-26 (cron armed) — not peeked. All other books below min-n.
 
+## Reverse-refuted-direction audit — SETTLED 2026-07-20 (operator epiphany, Codex start + Claude finish)
+findings/reverse_refuted_direction_audit.md + scripts/shadow_inverse_status.py (read-only,
+production grader + matched same-coin random-time null; --meta/--null/--seed). Blanket
+reversal REFUTED: premium_fade inverse mc_p 0.142 (edge all in one half), young_listings
+inverse is tape beta (excess +0.82%, mc_p 0.323), neg_funding inverse = known W-F3 MARGINAL.
+ONE survivor: **breaking-coverage-surge SHORT on xyz equities** (inverse of the refuted
+news_catalyst long): +13.82%/sig n=7, excess +11.69%, mc_p 0.0005; ex-CASHCAT +7.52%/sig,
+excess +6.65%, mc_p 0.004. EVIDENCE FROZEN — the recorder died in the 07-18 demolition.
+CONTROL TWIST: non-breaking inverse ALSO positive-excess (+2.41%/sig n=171, excess +1.55%,
+mc_p 0.0005, thin first half) — synthesis: ATTENTION-FADE (scanner candidates mark next-day
+tops; coheres with mover_pass/b15_up refutes + AI-long anti-calibration), news = strongest
+trigger (+5-10pp increment). All within an 8-day clean-epoch window — hypothesis, not edge.
+Decision pending with operator: rebuild a minimal zero-capital surge-short recorder or let
+the finding expire. Auto-flip order does NOT apply to counterfactual inverse grades.
+
 ## W-X5 xs implementation frontier — SETTLED 2026-07-20 (4 cells, no live changes)
 Findings: W-X5_{depth_hold,tranches,hysteresis,xyz_hardening}.md. Verdicts:
 - depth_hold REFUTED-as-upgrade: k4/H10 meme-excluded is the frontier (0/5 dominate;
