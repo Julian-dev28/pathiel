@@ -14,3 +14,5 @@ forward n before it sees capital.
 - **INVERSE of mover_b15_up** — n=10, EV(real)=+11.43%, EV(25bps)=+11.24%, halves +20.73/+2.01, excess 10.2537pp, mc_p=0.001
 - **INVERSE of mover_pass** — n=17, EV(real)=+6.80%, EV(25bps)=+6.61%, halves +6.70/+6.79, excess 6.8936pp, mc_p=0.0005
 - **INVERSE of news_catalyst** — n=181, EV(real)=+2.25%, EV(25bps)=+2.06%, halves +0.40/+3.96, excess 1.3672pp, mc_p=0.003
+
+## 2026-07-20 20:16 autonomous cycle
