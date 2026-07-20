@@ -72,7 +72,8 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # Only books that currently use ClaimsRegistry may persist claims in live mode.
 # This prevents claims left behind by deleted strategy modules from blocking
 # active EV+ books after a refactor or cleanup.
-_ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "rally_exhaustion",
+_ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "xs_xyz_equities",
+                                 "rally_exhaustion",
                                  "crash_continue_div_short", "engulf_short",
                                  "funding_spike_short",
                                  "unlock_short_runin",

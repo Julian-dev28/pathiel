@@ -81,6 +81,8 @@ ALL_EVENTS = [RESEARCH_NEWS, RESEARCH_PLAIN, EXEC_BLOCKED, EXEC_OK,
 
 FIXTURE_CONFIG = {
     "xs_momentum": {"enabled": True, "k_per_leg": 4},
+    "xs_xyz_equities": {"enabled": True, "shadow_only": False, "k_per_leg": 5,
+                        "hold_days": 5, "min_volume_usd": 250000},
     "extreme_fade": {"enabled": True, "equity_fraction": 0.4, "leverage": 1},
     "rally_exhaustion": {"enabled": True, "notional_usd": 20.0, "leverage": 1},
     "crash_continue_div_short": {"enabled": True, "shadow_only": False,
@@ -321,12 +323,15 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
     # demolition 2026-07-18: majors_swing / young_listings / news_catalyst
-    # books deleted (never validated / refuted) — 8 books remain
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 8
+    # books deleted (never validated / refuted); +xs_xyz_equities (W-X2
+    # ROBUST, wired 2026-07-20) — 9 books
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 9
     assert rows["engulf_short"]["status"] == "live"
     assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
     assert rows["mover_pass"]["status"] == "live"         # nested pass_live config
     assert rows["xs_momentum"]["size"] == "4/leg basket"
+    assert rows["xs_xyz_equities"]["status"] == "live"
+    assert rows["xs_xyz_equities"]["size"] == "5/leg basket"
     assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
     assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
     assert all(r["thesis"] for r in rows.values())
@@ -338,7 +343,7 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 8 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 9 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -910,7 +915,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 8
+    assert len(rows) == 9
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 

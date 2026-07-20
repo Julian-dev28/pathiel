@@ -89,7 +89,7 @@ BOOK_PRIORITY = (
     "vol_breakout_long", "vol_breakout_wide", "majors_swing",
     "funding_spike_short", "young_listings", "unlock_short_runin",
     "news_catalyst", "mover_pass",
-    "extreme_fade", "xs_momentum",
+    "extreme_fade", "xs_momentum", "xs_xyz_equities",
     "external_alpha",
 )
 
@@ -192,9 +192,14 @@ def build_episodes(fills: List[Dict[str, Any]]) -> List[Episode]:
 
 
 # ----------------------------------------------------------------------------- book footprints
+# Modules whose stripped name is not the book name (xs_xyz_live -> xs_xyz_equities).
+_MODULE_BOOK_ALIASES = {"xs_xyz": "xs_xyz_equities"}
+
+
 def _log_module_to_book(mod: str) -> str:
     """hermes_trader.agents.<mod> logger name -> book name (strip the _live suffix)."""
-    return mod[:-5] if mod.endswith("_live") else mod
+    base = mod[:-5] if mod.endswith("_live") else mod
+    return _MODULE_BOOK_ALIASES.get(base, base)
 
 
 def extract_exact_footprints(start_ms: int,
@@ -262,14 +267,15 @@ def extract_footprints(start_ms: int) -> Dict[str, List[Tuple[str, Optional[str]
         elif ev == "extreme_fade_candidates" and not e.get("shadow", True):
             for s in e.get("signals", []):
                 foot["extreme_fade"].append((s.get("coin"), s.get("side"), ts))
-        elif ev == "xs_rebalance" and not e.get("shadow", False):
-            # live xs_rebalance events carry NO shadow key — defaulting the
+        elif ev in ("xs_rebalance", "xs_xyz_rebalance") and not e.get("shadow", False):
+            # live xs*_rebalance events carry NO shadow key — defaulting the
             # missing key to True routed every live xs fill into main-engine
             # attribution (W-X2 audit 2026-07-20); the book looked invisible
+            _xs_book = "xs_momentum" if ev == "xs_rebalance" else "xs_xyz_equities"
             for c in e.get("open_long", []):
-                foot["xs_momentum"].append((c, "long", ts))
+                foot[_xs_book].append((c, "long", ts))
             for c in e.get("open_short", []):
-                foot["xs_momentum"].append((c, "short", ts))
+                foot[_xs_book].append((c, "short", ts))
         elif ev == "external_alpha_exec" and e.get("executed"):
             foot["external_alpha"].append((e.get("coin"), None, ts))
     return foot
