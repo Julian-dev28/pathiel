@@ -326,3 +326,20 @@ Pre-committed (b02276b): re-run the W-X4 harness on forward data — if the
 cumulative counterfactual delta (filtered vs unfiltered book) < 0 after 6
 forward rebalances, REMOVE xs_momentum.exclude_coins the same day. The
 dominance gate passed 4/4 but paired-t was 1.36 — the forward A/B decides.
+
+## W-X5 xs implementation frontier — SETTLED 2026-07-20 (4 cells, no live changes)
+Findings: W-X5_{depth_hold,tranches,hysteresis,xyz_hardening}.md. Verdicts:
+- depth_hold REFUTED-as-upgrade: k4/H10 meme-excluded is the frontier (0/5 dominate;
+  phase-mean per-day EV monotone-declining in k and H). Growth ladder pre-committed:
+  k4/H10 at $65/$150/$300 — capital goes into leg size, never depth/tranches.
+- tranches REFUTED (−30.6% rel EV drag). SIDE-FINDING THAT RECALIBRATES EVERYTHING:
+  offset-0 is the best of all 10 rebalance phases — phase-mean is +2.24%/rebal, not
+  +3.68%. GRADE ALL FORWARD xs EXPECTATIONS AGAINST ~+2.2%/rebal (~$6.5/wk), incl.
+  the W-X4 revert check above, or healthy books will read as underperforming.
+- hysteresis MARGINAL (gate-pass, phase-fragile): b=2 dominant 4/4 at offset 0, but
+  phase-mean paired delta −0.125%/rebal (4/10 offsets). DO NOT WIRE; rank_buffer=2
+  spec + revert recorded in findings if fee pressure ever demands a turnover cut.
+- xyz_hardening: LIVE CONFIG STANDS (0/11 neighbors dominate resid7/k5/H5/XYZ100;
+  most phase-stable positive cell). Re-sweep at ~12 forward rebalances (H10 column).
+Book-integrity guard from the capital table: funding-dex equity < ~$35 silently drops
+3x-cap legs (ACE-class) below the $10.50 min order — treat <$40 as an integrity alert.
