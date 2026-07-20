@@ -286,3 +286,72 @@ diversification, and its capacity is infeasible anyway: 178 episodes / 8 days
 = ~22/day, which at $200 notional is $4,400/day against a $136 account. The
 three live books already record this population forward; let the evidence
 mature rather than stacking correlated risk.
+
+## Regime test (operator theory, 2026-07-20) — half confirmed, and it points elsewhere
+
+Operator: "longs are up, shorts are down — market has a regime and we didn't
+consider it." Tested both halves.
+
+**The attention-fade shorts are NOT regime-dependent.** Split the n=126
+young-mover sample by same-day tape direction (median return of mature xyz
+names that day):
+
+| tape that day | n | SHORT return | win |
+|---|---:|---:|---:|
+| DOWN | 76 | +2.58% | 62% |
+| UP | 50 | **+2.92%** | **68%** |
+
+The edge is marginally BETTER in an up tape and the sample is balanced
+(76/50), so it was not harvested from the collapse. The matched same-day
+baseline used when the cell was wired already controlled for tape; this
+confirms it directly. Live losers (MINIMAX -53.9%, ZHIPU -3.0%) are variance
+on n=2 against a 68%-win edge, not regime failure. NO regime gate warranted.
+
+**The momentum book IS regime-exposed — and that is where the damage is.**
+The xyz tape fell -9.43% over 14d (19% of names up) then flipped UP over 2d
+(+0.86%, 71% up). On that reversal:
+
+| prior-7d quintile | prior | 2d bounce |
+|---|---:|---:|
+| weakest (xs **shorts** these) | -23.96% | **+1.43%** |
+| strongest (xs **longs** these) | +3.63% | -0.34% |
+
+Loser-minus-winner spread **-1.77pp against the L/S book** — the textbook
+Daniel-Moskowitz momentum crash, naming the exact live losers (SNDK +5.45%,
+NBIS +6.97%, KIOXIA +6.86% bounces against our shorts).
+
+**The real finding is sizing, not signal.** xs_xyz deploys 10 legs at once off
+the GLOBAL strategy_book_equity_frac, which put **12.0x gross on the xyz dex**
+($119/leg x 10 on $99.52 equity). Market-neutral gross is only safe while the
+hedge holds, and a momentum crash is precisely when it does not:
+
+| crash | cost at 12x | % of xyz equity |
+|---:|---:|---:|
+| 1.77pp (the one that just happened) | $10.57 | 10.6% |
+| 5pp | $29.86 | 30% |
+| 10pp | $59.71 | 60% |
+| 20pp (inside historical range) | $119.42 | **120% — ruin** |
+
+FIX: per-book `xs_xyz_equities.equity_frac = 0.04` (new override, falls back to
+the global path when unset) → $48/leg, $478 gross, **4.8x**. A 20pp crash now
+costs 48% of the dex instead of 120%. Deliberately per-book so the crypto
+xs_momentum book — the only consistently profitable book we have (+$43.35 net,
+83% win, 4.3x payoff over 30d) — is untouched.
+
+## The distribution nobody had looked at (30d, 342 closed trades)
+
+win rate **36%**, payoff ratio **1.00x** (avg win $1.92 / avg loss $1.91),
+expectancy **-$0.547/trade**. Break-even at 1:1 needs 50%; we are 14pp short.
+Median win $0.60 vs median loss $0.70 on 11.4 trades/day — most trades are
+noise. Per-book, one book earns and the rest pay for it:
+
+| book | net 30d | win% | payoff |
+|---|---:|---:|---:|
+| xs_momentum | **+$43.35** | 83% | 4.3x |
+| main-engine | **-$172.33** | 30% | 1.16x |
+| vol_breakout_long/wide (ripped) | -$75.45 | ~40% | 0.3x |
+| engulf_short | -$12.88 | 0% | — |
+| extreme_fade | -$9.01 | 0% | — |
+
+main-engine is 157 of the 342 trades and -$172 of the -$187. Fixing the
+strategy mix, not the fee, is the lever.

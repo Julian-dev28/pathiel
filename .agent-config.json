@@ -184,7 +184,8 @@
     "min_volume_usd": 250000,
     "benchmark": "xyz:XYZ100",
     "max_book_positions": 10,
-    "history_bars": 60
+    "history_bars": 60,
+    "equity_frac": 0.04
   },
   "extreme_fade": {
     "enabled": true,

@@ -243,11 +243,19 @@ def test_loop_wiring_text_only():
 def test_agent_config_block_values():
     cfg = json.load(open(os.path.join(_REPO, ".agent-config.json")))
     b = cfg["xs_xyz_equities"]
-    assert b == {"enabled": True, "shadow_only": False, "lookback_days": 7,
-                 "k_per_leg": 5, "hold_days": 5, "min_volume_usd": 250000,
-                 "benchmark": "xyz:XYZ100", "max_book_positions": 10,
-                 "history_bars": 60}
-    assert "notional_usd" not in b and "equity_fraction" not in b  # global frac sizes it
+    # SPEC keys are frozen — do not "tune" these without a new validated cell.
+    spec = {"enabled": True, "shadow_only": False, "lookback_days": 7,
+            "k_per_leg": 5, "hold_days": 5, "min_volume_usd": 250000,
+            "benchmark": "xyz:XYZ100", "max_book_positions": 10,
+            "history_bars": 60}
+    assert {k: b[k] for k in spec} == spec
+    # SIZING is deliberately NOT the global fraction any more (2026-07-20): 10
+    # simultaneous legs off the global 0.1 put 12x gross on the xyz dex, where a
+    # 20pp momentum crash — momentum's documented failure mode, measured live
+    # that day at -1.77pp on the L/S spread — would exceed the dex equity.
+    assert b["equity_frac"] > 0
+    assert "notional_usd" not in b and "equity_fraction" not in b
+    assert set(b) - set(spec) == {"equity_frac"}
 
 
 # ── live wiring: offline end-to-end rebalance ────────────────────────────────
@@ -375,3 +383,35 @@ def test_disabled_and_not_time_are_noops(isolated_state):
     assert xxl.maybe_rebalance({"xs_xyz_equities": {"enabled": False}}, _UNIVERSE,
                                [], _fake_fetch(), lambda a: None, lambda c: None) is None
     assert not isolated_state["events"] and not isolated_state["ledger"]
+
+
+# ---------------------------------------------- per-book sizing bound
+def test_analysis_carries_per_book_equity_frac_when_set():
+    """10 simultaneous legs off the GLOBAL fraction put 12x gross on the xyz
+    dex (measured 2026-07-20). A momentum crash is momentum's documented
+    failure mode and the market-neutral hedge does NOT hold through one, so
+    this book bounds its own gross without shrinking the crypto xs book."""
+    from hermes_trader.agents import xs_xyz_live as xl
+    a = xl._analysis("xyz:AAPL", "long", 0.05, equity_frac=0.04)
+    assert a["strategy_book_equity_frac_override"] == 0.04
+
+
+def test_analysis_falls_back_to_global_path_when_unset():
+    from hermes_trader.agents import xs_xyz_live as xl
+    for frac in (0, 0.0, None):
+        a = xl._analysis("xyz:AAPL", "long", 0.05, equity_frac=frac or 0)
+        assert "strategy_book_equity_frac_override" not in a
+
+
+def test_configured_frac_keeps_xyz_gross_survivable():
+    """A 20pp momentum crash — inside the historical range — must not be able
+    to exceed the xyz dex equity. At the old 12x it cost 120% of it."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    frac = float(cfg["xs_xyz_equities"]["equity_frac"])
+    lev = float(cfg["leverage"])
+    legs = 2 * int(cfg["xs_xyz_equities"]["k_per_leg"])
+    gross_mult = frac * lev * legs          # gross notional / dex equity
+    assert gross_mult <= 6.0, f"xs_xyz gross {gross_mult:.1f}x is too hot"
+    assert (gross_mult / 2) * 0.20 < 1.0, "a 20pp crash would exceed dex equity"

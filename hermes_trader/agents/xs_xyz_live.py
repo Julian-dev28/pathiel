@@ -103,11 +103,24 @@ def _save_rebalance_n(n: int) -> None:
 
 
 def _analysis(coin: str, side: str, rank_score: float, hold_days: float = 5.0,
-              short_floor_usd: float = 250_000.0) -> Dict[str, Any]:
+              short_floor_usd: float = 250_000.0,
+              equity_frac: float = 0.0) -> Dict[str, Any]:
     """Synthetic analysis for the executor — the xs_momentum_live post-f0f8f72
     pattern. strategy_book bypasses the thought-engine ENTRY gates (this is a
-    separately validated edge) while every SAFETY gate still applies; sizing
-    comes from the global strategy_book_equity_frac path.
+    separately validated edge) while every SAFETY gate still applies.
+
+    SIZING (equity_frac, 2026-07-20): this book deploys 10 legs at once, so
+    the GLOBAL strategy_book_equity_frac put 12.0x gross on the xyz dex
+    ($119/leg x 10 on $99.52 equity). Market-neutral gross is only safe while
+    the hedge holds — and it does not hold through a momentum crash, which is
+    momentum's documented failure mode: measured live 2026-07-20, the weakest
+    prior-7d quintile (what this book SHORTS) bounced +1.43% while the
+    strongest (what it LONGS) fell -0.34%, a -1.77pp hit to the spread. At
+    12x that 1.77pp cost 10.6% of the dex; a 20pp crash — inside the
+    historical range for momentum — would cost 120%, i.e. ruin. A per-book
+    fraction bounds this without shrinking the crypto xs book, which is the
+    only consistently profitable book we have (+$43 / 83% win over 30d).
+    Falls back to the global path when unset.
 
     min_short_volume_usd_override is carried on EVERY analysis (the gate only
     consumes it for shorts): the global $20M floor would block every xyz short
@@ -132,6 +145,8 @@ def _analysis(coin: str, side: str, rank_score: float, hold_days: float = 5.0,
         # forfeits edge. The rebalance banks profits on its clock.
         "tp_scale_fraction_override": 0.0,
         "min_short_volume_usd_override": float(short_floor_usd),
+        **({"strategy_book_equity_frac_override": float(equity_frac)}
+           if equity_frac and equity_frac > 0 else {}),
         "dsl_exit_override": {
             "max_loss_pct": 20.0,
             "max_loss_roe_pct": 240.0,
@@ -293,6 +308,10 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
     # LIVE: close drops first (free capital), then open adds — both legs.
     claims = get_claims_registry()
     short_floor = float(cfg.get("min_volume_usd", 250_000))
+    # Per-book sizing bound (see _analysis docstring): 10 simultaneous legs off
+    # the GLOBAL fraction put 12x gross on the xyz dex, where a 20pp momentum
+    # crash is a wipeout. 0 = fall back to the global path.
+    book_frac = float(cfg.get("equity_frac", 0) or 0)
     for coin in plan["close_long"] + plan["close_short"]:
         try:
             close_fn(coin)
@@ -308,7 +327,8 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
                                    f"claimed by {claims.owner_of(coin)}")
                     continue
                 a = _analysis(coin, side, book.scores.get(coin, 0.0),
-                              hold_days=hold_days, short_floor_usd=short_floor)
+                              hold_days=hold_days, short_floor_usd=short_floor,
+                              equity_frac=book_frac)
                 result = execute_fn(a)
                 if _execute_opened(result):
                     owned.add(coin, side)
