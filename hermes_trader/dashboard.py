@@ -554,6 +554,9 @@ _BOOKS: List[tuple] = [
     ("xs_momentum", "xs_momentum",
      "Cross-sectional momentum basket — long the strongest, short the weakest "
      "of the top-50 by 7d return, vol-managed rebalance."),
+    ("xs_xyz_equities", "xs_xyz_equities",
+     "The xs recipe on xyz tokenized equities — 7d residual momentum vs "
+     "xyz:XYZ100, 5/leg, 5d hold (W-X2 ROBUST: +0.65%/rebal net, p=0.0055)."),
     ("extreme_fade", "extreme_fade",
      "Fade single-day crashes of -12% or worse — long the panic with a wide "
      "20% stop, 3-day hold."),
@@ -628,6 +631,7 @@ def _books_payload() -> List[Dict[str, Any]]:
 _EVENT_BOOK_ALIASES = {
     "extreme_fade_candidates": "extreme_fade",
     "xs_rebalance": "xs_momentum",
+    "xs_xyz_rebalance": "xs_xyz_equities",
 }
 
 _ACTIVITY_TYPES = ["book", "research", "execute", "close", "scan",
