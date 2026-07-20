@@ -241,6 +241,23 @@ graded as evidence. Decision on 2026-07-26 (or sooner at n>=15 breaking reads):
   text; a minutes-scale intra-bar entry would be a NEW execution cell, not a
   re-run. Recorder NO-GO, zero capital, do not rebuild. Caches:
   hypotheses/W-P3_cache_* + W-P3_cache_texts/ (all 308 primary docs, reusable).
+- **W-P4 PEAD (post-earnings drift, day horizons): REFUTED**
+  (findings/W-P4_xyz_pead.md, pre-registered, run 2026-07-20, zero data spend —
+  all W-P1/W-P3 caches). 66 earnings events (61 8-K items-2.02 + 5 6-K via a
+  locked text-regex classifier; TSM monthly-revenue 6-Ks deliberately excluded),
+  daily bars from the 1h cache, horizons +3/5/10/21d, 25bps, 2000x same-coin
+  random-time null. Rule A (first-day reaction sign, classic PEAD proxy): EV25
+  positive at all horizons but best +5d +0.87% p=0.15 — fails even MARGINAL;
+  halves sign-flip at +10d/+21d. Rule B (W-P3 cached LLM signs): structurally
+  starved — the LLM SKIPped 91% of earnings shells (numbers live in unseen
+  EX-99), n=6 signed (all LONG), one SNDK outlier; B-ALL308 diag at +21d
+  +1.35% p=0.45 with OOS flip — the signs do NOT redeem at day scale. REAL
+  FACT BANKED: earnings-filing unsigned |r| beats null through +5d (6.05% vs
+  4.44% p=0.0045 @3d; 7.78% vs 5.77% p=0.0040 @5d), dead by +10d, and the
+  non-earnings complement shows nothing — earnings filings are a ~5-day VOL
+  event with no recoverable direction. Lane P now closed at every horizon
+  tested (1h -> 21d). Recorder/live NO-GO. Do not rebuild PEAD without a real
+  surprise measure (consensus-vs-actual), absent from all free caches.
 
 ## W-W whale/exposure quality-reads program (started 2026-07-12)
 INTERIM 2026-07-17 (shadow_status --book whale_flow): REFUTED lean at n=82 resolved —
