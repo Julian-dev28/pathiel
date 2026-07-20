@@ -74,7 +74,12 @@ def main() -> int:
     ap.add_argument("--inventory", action="store_true", help="counts only, skip candle fetch + grade")
     ap.add_argument("--min-n", type=int, default=8, help="min resolved signals before a verdict")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--meta", action="append", default=[], metavar="KEY=VALUE",
+                    help="grade only records whose meta matches, e.g. --meta armed=true "
+                         "(repeatable; a skew-armed book's live policy is the armed=true "
+                         "subset, NOT the unconditional ledger)")
     args = ap.parse_args()
+    meta_filters = SL.parse_meta_filters(args.meta)
 
     now_ms = int(time.time() * 1000)
     inv = {r["book"]: r for r in SL.summary(now_ms)}
@@ -89,7 +94,7 @@ def main() -> int:
         row = inv.get(book, {"book": book, "n": 0})
         entry: dict = {"book": book, "inventory": row}
         if not args.inventory:
-            recs = SL.load(book)
+            recs = SL.filter_by_meta(SL.load(book), meta_filters)
             grade = SL.grade_records(recs, _make_fetch_fwd(), now_ms=now_ms,
                                      fetch_funding=_make_fetch_funding()) if recs else {"n": 0}
             grade.pop("detail", None) if not args.json else None
@@ -101,7 +106,8 @@ def main() -> int:
         print(json.dumps(report, indent=2, default=str))
         return 0
 
-    print(f"# shadow survey — {len(books)} book(s) @ {time.strftime('%Y-%m-%d %H:%M')}")
+    flt = f" [meta filter: {meta_filters}]" if meta_filters else ""
+    print(f"# shadow survey — {len(books)} book(s) @ {time.strftime('%Y-%m-%d %H:%M')}{flt}")
     print(f"{'book':<28} {'sig':>4} {'grd':>4} {'res':>4} {'pend':>4} {'last_age_h':>10}   verdict")
     print("-" * 96)
     for e in report:

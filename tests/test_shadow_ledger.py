@@ -280,3 +280,35 @@ def test_grade_skips_pending_and_ungradeable():
     assert g["n"] == 0
     assert g["pending"] == 1
     assert g["ungradeable"] == 1
+
+
+# --------------------------------------------------------------------- meta filters
+# A skew-armed book's ledger records EVERY signal, armed or not. The live policy
+# is the armed=true subset — grading the unconditional ledger and flipping the
+# live book off it would judge a policy the book never ran (extreme_fade,
+# 2026-07-20: 6/7 episodes fired DISARMED).
+def test_parse_meta_filters_types():
+    f = SL.parse_meta_filters(["armed=true", "skew=-0.5", "tag=deep"])
+    assert f == {"armed": True, "skew": -0.5, "tag": "deep"}
+
+
+def test_parse_meta_filters_rejects_bare_key():
+    with pytest.raises(ValueError):
+        SL.parse_meta_filters(["armed"])
+
+
+def test_filter_by_meta_selects_matching_arm():
+    recs = [_rec(meta={"armed": True}), _rec(meta={"armed": False}), _rec(meta={})]
+    kept = SL.filter_by_meta(recs, {"armed": True})
+    assert len(kept) == 1 and kept[0]["meta"]["armed"] is True
+
+
+def test_filter_by_meta_drops_rows_missing_key():
+    # pre-flag records are evidence about neither arm
+    kept = SL.filter_by_meta([_rec(meta={}), _rec()], {"armed": False})
+    assert kept == []
+
+
+def test_filter_by_meta_empty_filters_is_identity():
+    recs = [_rec(), _rec(meta={"armed": True})]
+    assert SL.filter_by_meta(recs, {}) == recs

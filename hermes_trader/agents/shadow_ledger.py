@@ -135,6 +135,37 @@ def load(book: str) -> List[Dict[str, Any]]:
     return out
 
 
+def parse_meta_filters(pairs: List[str]) -> Dict[str, Any]:
+    """Parse CLI 'key=value' pairs into typed meta filters. Values go through
+    json.loads so `armed=true` matches the boolean the recorder wrote, not the
+    string 'true'; unparseable values stay strings."""
+    out: Dict[str, Any] = {}
+    for p in pairs:
+        k, sep, v = p.partition("=")
+        if not sep or not k:
+            raise ValueError(f"bad meta filter {p!r} (want key=value)")
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            out[k] = v
+    return out
+
+
+def filter_by_meta(records: List[Dict[str, Any]],
+                   filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Keep records whose meta matches every filter; rows missing a filtered
+    key are dropped (a signal recorded before the flag existed is not evidence
+    about either arm)."""
+    if not filters:
+        return list(records)
+    kept: List[Dict[str, Any]] = []
+    for r in records:
+        meta = r.get("meta") or {}
+        if all(k in meta and meta.get(k) == v for k, v in filters.items()):
+            kept.append(r)
+    return kept
+
+
 def summary(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
     """Per-book inventory: counts, distinct coins, last-signal age, gradeable/resolved."""
     now = int(now_ms if now_ms is not None else time.time() * 1000)

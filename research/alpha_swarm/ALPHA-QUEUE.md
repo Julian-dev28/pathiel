@@ -331,6 +331,24 @@ ANCHOR CORRECTION (W-X5 2392c4e): offset-0 backtests are phase-flattered
 +2.2%/rebal (~$6.5/wk at 0.10-frac), NOT the +3.68% offset-0 number.
 A forward read near +2.2% is ON TARGET, not underperformance.
 
+## Ledger sweep 2026-07-20 (grader min-n 8; mover settle bars stay pre-registered n=30)
+- **mover_pass INTERIM REFUTED-lean at n=17**: −6.36%/sig @12bps, halves −6.85/−5.93, win 17.6%.
+  W-M4's "PASS veto forfeits +4.48%" is inverted forward — the AI PASS veto is SAVING ~6.4%/sig
+  on researched movers in this tape. Zero capital, keep recording, settle at n=30. Do NOT loosen
+  the runner-gate/PASS veto off the W-M4 backtest claim while this read stands.
+- **mover_b15_up INTERIM REFUTED-lean at n=10**: −6.45%/sig, halves −10.93/−1.98 — the W-M1
+  Bonferroni-failed cell is behaving like grid luck forward. Settle at n=30.
+- **extreme_fade unconditional read n=6: −10.19%/ep @12bps, 1/6 win — NOT the live policy.**
+  6/7 unique episodes fired DISARMED (W-B2 skew-arm blocked live entry; the arm dodged ~−7.9%/ep
+  on the disarmed 5). The one armed episode (CASHCAT open 07-16, skew −0.001, 9d-old listing)
+  was taken live and lost $4.42 (−61% ROE, closed externally 07-17). RULE: never flip the live
+  book off the unconditional ledger — grade the live policy with
+  `shadow_status.py --book extreme_fade --meta armed=true` (flag added + tested this sweep).
+  PRE-REGISTERED at n≥8 per subset: do <60d-history listings (CASHCAT-class) underperform the
+  rest of the fade ledger? If yes, add a min_history gate to the book. Not tuned today — n=2
+  CASHCAT episodes is not evidence.
+- whale_flow: formal bar 2026-07-26 (cron armed) — not peeked. All other books below min-n.
+
 ## W-X5 xs implementation frontier — SETTLED 2026-07-20 (4 cells, no live changes)
 Findings: W-X5_{depth_hold,tranches,hysteresis,xyz_hardening}.md. Verdicts:
 - depth_hold REFUTED-as-upgrade: k4/H10 meme-excluded is the frontier (0/5 dominate;
