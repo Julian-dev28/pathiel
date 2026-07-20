@@ -48,6 +48,28 @@ from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_fil
 
 logger = logging.getLogger(__name__)
 
+
+def _macro_regime(coin: str) -> Optional[str]:
+    """Cheap, cached macro-regime tag (up/down/neutral) for a coin's asset
+    class — BTC for crypto, the xyz equity index for tokenized equities.
+
+    Zero-capital metadata ONLY: it never gates a trade. It exists so the
+    forward grader can split a book by regime and settle, on live evidence,
+    whether a regime tilt helps — the 2026-07-20 finding that young-listing
+    shorts pay +6.03%/85% when the equity index is UP over the prior 7d but
+    only +0.18%/48% when it is down (n=55/71, not time-clustered) was a
+    RETROSPECTIVE slice; this makes it a forward-gradeable hypothesis via
+    `shadow_status.py --book <book> --meta macro_regime=up`. Never raises."""
+    try:
+        from hermes_trader.agents.market_regime import (
+            CRYPTO_PROXY, EQUITY_PROXY, classify_asset, detect_regime,
+        )
+        proxy = EQUITY_PROXY if classify_asset(coin) == "equity" else CRYPTO_PROXY
+        return str(detect_regime(proxy))
+    except Exception:
+        return None
+
+
 _DAY_MS = 86_400_000
 _SEEN_FILE = state_file(".mover_recorders_seen.json")
 
@@ -247,7 +269,8 @@ def record_mover_pass_short(analysis: Dict[str, Any], config: Dict[str, Any],
                          signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
                          entry_ref_px=px, horizon_days=1.0, stop_pct=15.0,
                          meta={"confidence": float(analysis.get("confidence") or 0),
-                               "move_pct": round(move, 2), "shadow": not live})
+                               "move_pct": round(move, 2),
+                               "macro_regime": _macro_regime(coin), "shadow": not live})
     logger.info(f"[mover-recorders] PASS-veto SHORT inverse recorded: {coin} "
                 f"(+{move:.1f}%, conf {float(analysis.get('confidence') or 0):.2f})")
     if live:
@@ -353,7 +376,7 @@ def record_young_mover_short(coin: str, preblock_reason: str, mid_px: float,
                          entry_ref_px=px, horizon_days=1.0,
                          stop_pct=float(live_cfg.get("stop_pct", 6.0)),
                          meta={"listing_days": days, "equity": ":" in coin,
-                               "shadow": not live})
+                               "macro_regime": _macro_regime(coin), "shadow": not live})
     logger.info(f"[mover-recorders] young_mover_short recorded: {coin} "
                 f"({days}d listing, short @ {px})")
     if live:

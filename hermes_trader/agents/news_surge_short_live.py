@@ -45,6 +45,7 @@ from typing import Any, Callable, Dict, List, Optional
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.news_catalyst import coin_catalyst
+from hermes_trader.agents.mover_recorders import _macro_regime
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.session_log import append as log_event
 
@@ -218,6 +219,7 @@ def maybe_run(config: Dict[str, Any],
                 "surge_x": rep.surge_x,
                 "breaking": bool(rep.breaking),
                 "equity": _is_xyz_equity(coin),
+                "macro_regime": _macro_regime(coin),
                 "top3_titles": [a.title for a in (rep.headlines or [])[:3]],
                 "top3_urls": [a.url for a in (rep.headlines or [])[:3]],
                 "top3_ages_h": [

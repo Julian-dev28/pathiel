@@ -369,3 +369,37 @@ def test_young_mover_short_dedups_per_coin_per_day(monkeypatch):
     r = "history_floor_preflight (29d < 60d history)"
     assert mr.record_young_mover_short("xyz:ZHIPU", r, 12.5, {}) is True
     assert mr.record_young_mover_short("xyz:ZHIPU", r, 12.5, {}) is False
+
+
+# --------------------------------------------------- regime tag (forward-gradeable)
+def test_young_mover_short_carries_a_macro_regime_tag(monkeypatch):
+    """The 2026-07-20 finding — young-listing shorts pay +6.03%/85% when the
+    equity index is UP over 7d vs +0.18%/48% when down — was a RETROSPECTIVE
+    slice. Tagging every row with the macro regime makes it a forward-gradeable
+    hypothesis (shadow_status --meta macro_regime=up), so the loop settles it
+    on live evidence instead of a one-window backtest."""
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "_macro_regime", lambda coin: "up")
+    mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5, {})
+    assert out[0][1]["meta"]["macro_regime"] == "up"
+
+
+def test_macro_regime_never_raises_and_degrades_to_none(monkeypatch):
+    """Metadata must never break a recorder. A regime-detect failure yields
+    None, not an exception that would drop the ledger row."""
+    def boom(*a, **k):
+        raise RuntimeError("regime backend down")
+    monkeypatch.setattr(
+        "hermes_trader.agents.market_regime.detect_regime", boom, raising=False)
+    assert mr._macro_regime("xyz:ZHIPU") is None
+    assert mr._macro_regime("BTC") is None
+
+
+def test_mover_pass_short_carries_regime_tag(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "_macro_regime", lambda coin: "down")
+    a = {"coin": "VIRTUAL", "daily_move_pct": 16.0, "daily_volume_usd": 8e6,
+         "confidence": 0.55, "last_price": 0.61}
+    mr.record_mover_pass_short(a, {})
+    assert out[0][1]["meta"]["macro_regime"] == "down"
