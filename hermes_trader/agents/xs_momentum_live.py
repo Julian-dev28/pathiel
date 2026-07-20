@@ -248,6 +248,11 @@ def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
         # (caught live 2026-07-19, six legs 1.7h after basket deploy). Wide
         # 20% disaster stop only; rebalance replaces legs on its own clock.
         "backup_sl_pct_override": 20.0,
+        # No mid-hold profit banking: the global tp_scale_fraction (0.5 @
+        # 1 ATR) halved three legs mid-hold on 2026-07-19 — W-X2 measured
+        # hold EV as monotonically INCREASING with hold length, so every
+        # early clip forfeits edge. The rebalance banks profits on its clock.
+        "tp_scale_fraction_override": 0.0,
         "dsl_exit_override": {
             "max_loss_pct": 20.0,
             "max_loss_roe_pct": 240.0,

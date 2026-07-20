@@ -118,3 +118,20 @@ def test_build_episodes_flat_to_flat(pbb):
     assert closed.side == "long" and closed.open_done is True
     assert closed.closed_pnl == pytest.approx(5.0) and closed.fee == pytest.approx(0.2)
     assert still_open.side == "short" and still_open.open_done is False
+
+
+def test_live_xs_rebalance_without_shadow_key_is_attributed(tmp_path, monkeypatch):
+    """W-X2 audit (2026-07-20): live xs_rebalance events carry no `shadow`
+    key; the old default-True routed every live xs fill to main-engine —
+    45 days of the book's PnL was invisible."""
+    import json as _json
+    import time as _t
+    ts = int(_t.time() * 1000)
+    log = tmp_path / "session.jsonl"
+    log.write_text(_json.dumps({"ts": ts, "event": "xs_rebalance",
+                                "open_long": ["BTC"],
+                                "open_short": ["XPL"]}) + "\n")
+    monkeypatch.setattr(pbb, "SESSION_LOG", str(log))
+    foot = pbb.extract_footprints(0)
+    assert ("BTC", "long", ts) in foot["xs_momentum"]
+    assert ("XPL", "short", ts) in foot["xs_momentum"]

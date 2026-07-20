@@ -262,7 +262,10 @@ def extract_footprints(start_ms: int) -> Dict[str, List[Tuple[str, Optional[str]
         elif ev == "extreme_fade_candidates" and not e.get("shadow", True):
             for s in e.get("signals", []):
                 foot["extreme_fade"].append((s.get("coin"), s.get("side"), ts))
-        elif ev == "xs_rebalance" and not e.get("shadow", True):
+        elif ev == "xs_rebalance" and not e.get("shadow", False):
+            # live xs_rebalance events carry NO shadow key — defaulting the
+            # missing key to True routed every live xs fill into main-engine
+            # attribution (W-X2 audit 2026-07-20); the book looked invisible
             for c in e.get("open_long", []):
                 foot["xs_momentum"].append((c, "long", ts))
             for c in e.get("open_short", []):

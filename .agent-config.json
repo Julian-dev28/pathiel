@@ -38,7 +38,7 @@
   "held_research_interval_min": 10,
   "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
-  "max_crypto_long_correlated": 3,
+  "max_crypto_long_correlated": 8,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 20000000,
@@ -136,7 +136,7 @@
   "xs_momentum": {
     "enabled": true,
     "lookback_days": 7,
-    "hold_days": 5,
+    "hold_days": 10,
     "k_per_leg": 4,
     "universe_top_n": 50,
     "min_volume_usd": 5000000,
@@ -149,7 +149,7 @@
     "vol_long": 90,
     "executor_short_volume_floor_usd": 5000000,
     "vol_managed": {
-      "enabled": true
+      "enabled": false
     }
   },
   "extreme_fade": {
@@ -288,7 +288,7 @@
     "poll_minutes": 30
   },
   "main_engine": {
-    "entries_enabled": false
+    "entries_enabled": true
   },
   "max_daily_loss_pct": 0.15
 }
