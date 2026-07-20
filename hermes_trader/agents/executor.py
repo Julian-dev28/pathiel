@@ -705,13 +705,29 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     try:
         min_notional = min_entry_notional_usd(coin, mid_price)
         if min_notional > 0 and trade_notional < min_notional:
-            return {
-                "executed": False, "mode": mode,
-                "analysis_id": analysis["id"],
-                "reason": (f"below_min_order_notional ({coin}: sized "
-                           f"${trade_notional:.2f}, HL minimum after precision "
-                           f"${min_notional:.2f})"),
-            }
+            # 63 entries were dropped this way in 30 days (xyz:CXMT/SKHY at
+            # $6.76 vs a ~$10.50 floor) — trades that never happened, i.e. real
+            # forfeited EV, not saved risk. When the intended size is merely
+            # SHORT of the floor, round UP to the floor instead of dropping it;
+            # the added risk is bounded by min_notional itself (~$11 notional).
+            # Below the bump ceiling the sizing intent is genuinely too small to
+            # express, so it still skips rather than silently multiplying size.
+            bump_max = float(config.get("min_order_bump_max_mult", 2.0) or 0.0)
+            if bump_max > 0 and trade_notional * bump_max >= min_notional:
+                logger.info(
+                    f"[executor] {coin}: sized ${trade_notional:.2f} < HL floor "
+                    f"${min_notional:.2f} — rounding UP to the floor "
+                    f"(within {bump_max:g}x bump ceiling)"
+                )
+                trade_notional = min_notional
+            else:
+                return {
+                    "executed": False, "mode": mode,
+                    "analysis_id": analysis["id"],
+                    "reason": (f"below_min_order_notional ({coin}: sized "
+                               f"${trade_notional:.2f}, HL minimum after precision "
+                               f"${min_notional:.2f})"),
+                }
         size_in_coin = entry_size_for_notional(coin, trade_notional, mid_price)
     except Exception as e:
         return {

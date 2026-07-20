@@ -352,5 +352,6 @@
   "main_engine": {
     "entries_enabled": true
   },
-  "max_daily_loss_pct": 0.15
+  "max_daily_loss_pct": 0.15,
+  "min_order_bump_max_mult": 2.0
 }
