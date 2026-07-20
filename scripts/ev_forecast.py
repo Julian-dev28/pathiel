@@ -55,11 +55,21 @@ _PRIORS = {
 
 
 def _dex_equity() -> Dict[str, float]:
-    from hermes_trader.client.exchange import get_dex_equities
-    try:
-        return {k: float(v) for k, v in (get_dex_equities() or {}).items()}
-    except Exception:
-        return {}
+    """Real per-dex equity — sizing is a function of the FUNDING account."""
+    from hermes_trader.client.hl_client import _http_post, resolve_user_address
+    user = (resolve_user_address()
+            or os.environ.get("HYPERLIQUID_MASTER_ADDRESS")
+            or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", ""))
+    out: Dict[str, float] = {}
+    for label, dex in (("main", ""), ("xyz", "xyz")):
+        try:
+            r = _http_post("/info", {"type": "clearinghouseState", "user": user, "dex": dex})
+            val = float(((r or {}).get("marginSummary") or {}).get("accountValue") or 0)
+        except Exception:
+            val = 0.0
+        if val:
+            out[label] = val
+    return out
 
 
 def _live_books(cfg: Dict[str, Any], eq: Dict[str, float]) -> List[Dict[str, Any]]:
