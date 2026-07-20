@@ -117,6 +117,49 @@ coin_catalyst() read and rewires it SHORT-only, bounded per the evidence:
   only the pre-registered breaking-equity-short cell trades. Extending to
   "short every scan candidate" would need its own forward ledger first.
 
+### Stop-geometry correction (found post-deploy, same session)
+
+The books shipped configured at a 15% stop — the width the audit graded — but
+that stop **could never fire**. `executor.py:1023` clamps the on-exchange
+backup stop to `entry * (backup_sl_max_frac_of_liq / leverage)` = 6% at 10x,
+and liquidation sits at 10%. So the advertised 15% stop was decoration; the
+real exit was a 6% clamp, and the DSL's `max_loss_pct: 15` was dead weight
+sitting beyond both. This is the rally_exhaustion lesson in a new costume:
+**the live stop width was not the graded stop width.**
+
+Re-graded both books at their TRUE clamped width before leaving them live —
+the edge survives, which is why they stayed on rather than being pulled:
+
+| book | graded @15% | actual live @6% (10x) |
+|---|---|---|
+| news_surge_short | +12.09%/sig, halves +8.50/+15.69, win 1.00 | **+10.59%**, halves +5.50/+15.69, win 0.875 |
+| mover_pass_short | +6.74%/sig, halves +6.70/+6.79, win 0.824 | **+6.09%**, halves +5.21/+6.88, win 0.765 |
+
+Config now states the width that actually executes (`stop_pct: 6.0` at 10x,
+exactly at the clamp boundary so nothing is silently substituted), which also
+restores the DSL stop as a real second line of defense if backup-SL placement
+ever fails (`sl_missing`). Pinned by
+`tests/test_live_book_wiring_integrity.py::test_reverse_refuted_books_configure_a_reachable_stop`.
+
+**SYSTEMIC — every other fixed-notional book has the same gap** (audited, NOT
+changed: each was graded at its own width and altering six live books at once
+is an operator decision, not a follow-on fix):
+
+| book | cfg stop | lev | liq at | ACTUAL stop |
+|---|---:|---:|---:|---:|
+| rally_exhaustion | 25% | 12x | 8.3% | **5.0%** |
+| crash_continue_div_short | 20% | 12x | 8.3% | **5.0%** |
+| engulf_short | 20% | 12x | 8.3% | **5.0%** |
+| funding_spike_short | 15% | 12x | 8.3% | **5.0%** |
+| unlock_short | 15% | 12x | 8.3% | **5.0%** |
+| mover_pass (pass_live) | 15% | 12x | 8.3% | **5.0%** |
+
+Every one of these was validated at 15-25% and trades at 5%. The
+sweep-stop-width discipline says that gap can invert an edge — each should be
+re-graded at 5% the way the two new books were, and any that dies there needs
+its leverage cut (a 20% stop needs ≤3x) or its verdict revisited. Not done
+here; flagged for the operator.
+
 **Second book, same order:** `hermes_trader/agents/mover_recorders.py` gained
 `record_mover_pass_short` — the cleanest inverse in the whole audit (n=17, no
 outlier dependency, both halves +6.70/+6.79, mixed crypto+equities). Same

@@ -66,6 +66,7 @@ from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
     record_mover_pass_short as _record_mover_pass_short,
+    record_young_mover_short as _record_young_mover_short,
     record_b15_crossings as _record_b15_crossings,
     record_trend_block_news_long as _record_trend_block_news_long,
     record_news_ta_quadrant as _record_news_ta_quadrant,
@@ -1039,6 +1040,17 @@ while True:
                                "score": round(float(score), 1),
                                "trigger_score": round(float(score), 1),
                                "reason": entry_preblock})
+                    # young_mover_short: the history floor is RIGHT to block the
+                    # long (blocked population does -2.71%/next-day vs -0.13%
+                    # matched mature-xyz same-day baseline) — take the other side.
+                    try:
+                        _ym_mid = next((float(m.get("midPx") or m.get("markPx") or 0)
+                                        for m in universe if m.get("coin") == coin), 0.0)
+                        _record_young_mover_short(coin, entry_preblock, _ym_mid,
+                                                  read_agent_config(),
+                                                  execute_fn=_book_execute)
+                    except Exception:
+                        pass
                     continue
                 # Not held but executed within cooldown_min → re-entry would be
                 # gate-blocked, so skip the paid AI call.

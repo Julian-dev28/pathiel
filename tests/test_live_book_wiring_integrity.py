@@ -66,6 +66,51 @@ def test_news_surge_short_registered_everywhere_it_needs_to_be():
     assert nssl._BOOK_NAME in pbb.BOOK_PRIORITY
 
 
+# --------------------------------------------------------------- stop reachability
+# executor.py:1023 clamps the on-exchange backup stop to
+#   entry * (backup_sl_max_frac_of_liq / leverage)
+# so a book whose configured stop_pct exceeds 60/leverage percent NEVER
+# executes the stop it advertises — the clamp silently substitutes a tighter
+# one, and the book's DSL max_loss_pct becomes dead weight (it sits beyond
+# both the real stop AND liquidation at 100/leverage percent). That is the
+# rally_exhaustion lesson in a different costume: the live stop width is not
+# the graded stop width, and a tight live stop can invert a validated edge.
+#
+# The reverse-refuted books were re-graded at their TRUE clamped width before
+# going live (+10.59%/sig news_surge_short, +6.09%/sig mover_pass_short, both
+# OOS halves positive) — this test pins that their config keeps telling the
+# truth. The six older fixed-notional books all predate this check and are
+# knowingly capped; see findings/reverse_refuted_direction_audit.md.
+_BACKUP_SL_MAX_FRAC_OF_LIQ = 0.60
+
+
+def _effective_stop_pct(stop_pct: float, leverage: float) -> float:
+    return min(stop_pct, 100.0 * _BACKUP_SL_MAX_FRAC_OF_LIQ / leverage)
+
+
+@pytest.mark.parametrize("path", [
+    ("news_surge_short",),
+    ("mover_recorders", "pass_short_live"),
+    ("mover_recorders", "young_short_live"),
+])
+def test_reverse_refuted_books_configure_a_reachable_stop(path):
+    """The stop these books advertise must be the stop that actually fires."""
+    import json
+    from pathlib import Path
+
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    for key in path:
+        cfg = cfg[key]
+    stop, lev = float(cfg["stop_pct"]), float(cfg["leverage"])
+    assert _effective_stop_pct(stop, lev) == pytest.approx(stop), (
+        f"{'.'.join(path)}: configured stop {stop}% is clamped to "
+        f"{_effective_stop_pct(stop, lev):.1f}% at {lev:g}x — the book would "
+        f"trade a geometry it was never graded at"
+    )
+    # and the stop must sit strictly inside liquidation, or it is decoration
+    assert stop < 100.0 / lev
+
+
 # --------------------------------------------------------------- real-registry collisions
 def test_news_surge_short_and_engulf_short_cannot_both_claim_the_same_coin(tmp_path):
     """Two unrelated live books racing the same claims file: whichever

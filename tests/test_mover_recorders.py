@@ -286,3 +286,86 @@ def test_trend_block_news_long_records_only_exact_pocket(monkeypatch):
     assert mr.record_trend_block_news_long(
         {**base, "coin": "Z"}, {"executed": True}, {}) is False
     assert len(out) == 1
+
+
+# --------------------------------------------------------------------- young_mover_short
+def test_young_mover_short_records_inverse_of_the_history_floor(monkeypatch):
+    out = _captured(monkeypatch)
+    ok = mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5, {})
+    assert ok is True
+    book, kw = out[0]
+    assert book == "young_mover_short" and kw["side"] == "short"
+    assert kw["entry_ref_px"] == 12.5
+    assert kw["meta"]["listing_days"] == 29 and kw["meta"]["equity"] is True
+
+
+def test_young_mover_short_ignores_other_preflight_reasons(monkeypatch):
+    out = _captured(monkeypatch)
+    for reason in ("liquidity_floor_preflight ($0.10M < $0.70M)",
+                   "runner_gate_blocked (needs volume+breakout)",
+                   "cooldown (12min remaining)", ""):
+        assert mr.record_young_mover_short("xyz:X", reason, 10.0, {}) is False
+    assert out == []
+
+
+def test_young_mover_short_needs_a_real_price(monkeypatch):
+    _captured(monkeypatch)
+    assert mr.record_young_mover_short(
+        "xyz:X", "history_floor_preflight (5d < 60d history)", 0.0, {}) is False
+
+
+def test_young_mover_short_crypto_records_but_never_trades(monkeypatch):
+    """Evidence boundary: the n=126 sample is xyz equities. Young CRYPTO
+    listings pointed the same way on n=9, which is not evidence — CASHCAT-class
+    coins record at zero capital until they earn their own forward n."""
+    out = _captured(monkeypatch)
+
+    class _Claims:
+        def claimed_by_others(self, book): return set()
+        def claim(self, coin, book): return True
+        def release(self, coin, book): pass
+        def save(self): pass
+
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    opened = []
+    cfg = {"mover_recorders": {"young_short_live": {
+        "enabled": True, "shadow_only": False, "notional_usd": 20.0,
+        "leverage": 10, "stop_pct": 6.0, "hold_days": 1.0}}}
+    assert mr.record_young_mover_short(
+        "CASHCAT", "history_floor_preflight (10d < 60d history)", 0.06, cfg,
+        execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert out[0][0] == "young_mover_short"   # recorded
+    assert opened == []                        # never traded
+
+
+def test_young_mover_short_equity_opens_bounded_short(monkeypatch):
+    _captured(monkeypatch)
+
+    class _Claims:
+        def claimed_by_others(self, book): return set()
+        def claim(self, coin, book): return True
+        def release(self, coin, book): pass
+        def save(self): pass
+
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    opened = []
+    cfg = {"mover_recorders": {"young_short_live": {
+        "enabled": True, "shadow_only": False, "notional_usd": 20.0,
+        "leverage": 10, "stop_pct": 6.0, "hold_days": 1.0}}}
+    assert mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5, cfg,
+        execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert len(opened) == 1
+    o = opened[0]
+    assert o["strategy_book"] == "young_mover_short" and o["side"] == "short"
+    assert o["leverage_override"] == 10
+    assert o["dsl_exit_override"]["max_loss_pct"] == 6.0
+    assert o["dsl_exit_override"]["hard_timeout_minutes"] == 1440.0
+
+
+def test_young_mover_short_dedups_per_coin_per_day(monkeypatch):
+    _captured(monkeypatch)
+    r = "history_floor_preflight (29d < 60d history)"
+    assert mr.record_young_mover_short("xyz:ZHIPU", r, 12.5, {}) is True
+    assert mr.record_young_mover_short("xyz:ZHIPU", r, 12.5, {}) is False

@@ -89,6 +89,7 @@ BOOK_PRIORITY = (
     "vol_breakout_long", "vol_breakout_wide", "majors_swing",
     "funding_spike_short", "young_listings", "unlock_short_runin",
     "news_catalyst", "news_surge_short", "mover_pass", "mover_pass_short",
+    "young_mover_short",
     "extreme_fade", "xs_momentum", "xs_xyz_equities",
     "external_alpha",
 )

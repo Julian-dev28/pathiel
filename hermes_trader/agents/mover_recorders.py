@@ -273,6 +273,112 @@ def record_mover_pass_short(analysis: Dict[str, Any], config: Dict[str, Any],
     return True
 
 
+def _young_short_live_analysis(coin: str, days: int, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded book order for young_mover_short (operator flip 2026-07-20)."""
+    stop_pct = float(cfg.get("stop_pct", 6.0))
+    leverage = max(1, int(cfg.get("leverage", 10)))
+    return {
+        "id": str(uuid.uuid4()), "coin": coin,
+        "verdict": "SHORT", "side": "short",
+        "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+        "reasoning": (f"[young_mover_short] {days}d-old listing flagged by the scan and "
+                      f"blocked from LONG by the history floor — fading it instead"),
+        "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
+        "composite_score": 0.0, "strategy_book": "young_mover_short",
+        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "leverage_override": leverage,
+        "backup_sl_pct_override": stop_pct,
+        "tp_scale_fraction_override": 0.0,
+        "min_short_volume_usd_override": float(cfg.get("min_volume_usd", 250_000.0)),
+        "dsl_exit_override": {
+            "max_loss_pct": stop_pct,
+            "max_loss_roe_pct": stop_pct * leverage,
+            "protect_pct": 9999.0,
+            "retrace_threshold": 0.5,
+            "hard_timeout_minutes": float(cfg.get("hold_days", 1.0)) * 1440.0,
+            "breakeven_trigger_pct": 0.0,
+            "breakeven_lock_pct": 0.0,
+            "stale_flat_timeout_minutes": 0.0,
+            "consecutive_breaches_required": 1,
+            "atr_stop": {"enabled": False},
+            "noise_band": {"enabled": False},
+        },
+    }
+
+
+_HISTORY_FLOOR_RE = re.compile(r"history_floor_preflight \((\d+)d")
+
+
+def record_young_mover_short(coin: str, preblock_reason: str, mid_px: float,
+                             config: Dict[str, Any],
+                             execute_fn: Optional[Callable] = None) -> bool:
+    """Call when the pre-research preflight blocks a scan candidate on the
+    history-age floor. That floor is CORRECT about direction — the blocked
+    population's next-day LONG return is -2.71% (n=126 coin-days, 28 xyz
+    coins, coin-cluster bootstrap 95% CI -3.52%..-1.87%) against a matched
+    same-day MATURE-xyz baseline of -0.13% (flat tape, 50% win) — so it keeps
+    blocking longs. This records the INVERSE: 25 of 28 coins would have paid
+    a short, +2.71%/episode gross (~+2.46% net 25bps).
+
+    Live trading is xyz-equities-only: that is where the n=126 sample lives.
+    Young CRYPTO listings pointed the same way (-5.75%) but on n=9, which is
+    not evidence — those record at zero capital until they earn their own n.
+
+    Measured retrospectively from the loop's own block log, so this is a
+    PRIOR, not a forward verdict: the ledger it writes is what settles it.
+    Mandatory review at 8 resolved forward episodes."""
+    cfg = (config.get("mover_recorders") or {})
+    if not bool(cfg.get("enabled", True)):
+        return False
+    m = _HISTORY_FLOOR_RE.search(str(preblock_reason or ""))
+    if not m:
+        return False
+    try:
+        px = float(mid_px or 0.0)
+    except (TypeError, ValueError):
+        return False
+    if not coin or px <= 0:
+        return False
+    days = int(m.group(1))
+    now_ms = int(time.time() * 1000)
+    if not _dedup_key_hit("young_short", coin, now_ms):
+        return False
+    live_cfg = cfg.get("young_short_live") or {}
+    live = (bool(live_cfg.get("enabled", False))
+            and not bool(live_cfg.get("shadow_only", True))
+            and execute_fn is not None
+            and ":" in coin)          # evidence boundary: xyz equities only
+    shadow_ledger.record("young_mover_short", coin=coin, side="short",
+                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
+                         entry_ref_px=px, horizon_days=1.0,
+                         stop_pct=float(live_cfg.get("stop_pct", 6.0)),
+                         meta={"listing_days": days, "equity": ":" in coin,
+                               "shadow": not live})
+    logger.info(f"[mover-recorders] young_mover_short recorded: {coin} "
+                f"({days}d listing, short @ {px})")
+    if live:
+        claims = get_claims_registry()
+        if (coin not in claims.claimed_by_others("young_mover_short")
+                and claims.claim(coin, "young_mover_short")):
+            try:
+                result = execute_fn(_young_short_live_analysis(coin, days, live_cfg))
+                opened = isinstance(result, dict) and (
+                    bool(result.get("executed"))
+                    or bool((result.get("result") or {}).get("executed") if isinstance(result.get("result"), dict) else False)
+                )
+                if opened:
+                    claims.save()
+                    logger.info(f"[young-mover-short] LIVE opened short {coin} ({days}d listing)")
+                else:
+                    claims.release(coin, "young_mover_short")
+                    why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                    logger.warning(f"[young-mover-short] {coin} not opened: {why}")
+            except Exception as exc:
+                claims.release(coin, "young_mover_short")
+                logger.warning(f"[young-mover-short] open {coin} failed: {exc}")
+    return True
+
+
 def record_trend_block_news_long(analysis: Dict[str, Any], result: Any,
                                  config: Dict[str, Any]) -> bool:
     """W-G pocket test (2026-07-12, ARB/Robinhood case): the trend filter is

@@ -306,7 +306,7 @@
     "shadow_only": false,
     "scan_interval_min": 30.0,
     "hold_days": 1.0,
-    "stop_pct": 15.0,
+    "stop_pct": 6.0,
     "notional_usd": 20.0,
     "leverage": 10,
     "min_volume_usd": 250000.0,
@@ -326,8 +326,17 @@
       "shadow_only": false,
       "notional_usd": 20.0,
       "leverage": 10,
-      "stop_pct": 15.0,
+      "stop_pct": 6.0,
       "hold_days": 1.0
+    },
+    "young_short_live": {
+      "enabled": true,
+      "shadow_only": false,
+      "notional_usd": 20.0,
+      "leverage": 10,
+      "stop_pct": 6.0,
+      "hold_days": 1.0,
+      "min_volume_usd": 250000.0
     }
   },
   "whale_flow": {

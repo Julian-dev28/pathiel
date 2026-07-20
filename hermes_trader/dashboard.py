@@ -579,6 +579,9 @@ _BOOKS: List[tuple] = [
     ("mover_pass_short", None,
      "Inverse of mover_pass — short the mover the AI just PASSed instead of "
      "buying it (own forward ledger interim-refuted the long side)."),
+    ("young_mover_short", None,
+     "Short the young listing the history floor just blocked from a long — "
+     "that cohort does -2.71%/next-day vs a flat mature-xyz tape."),
     ("news_surge_short", "news_surge_short",
      "Inverse of the refuted news_catalyst LONG — short a breaking Google "
      "News coverage surge on xyz equities, 15% stop, 1-day hold."),
@@ -614,7 +617,8 @@ def _books_payload() -> List[Dict[str, Any]]:
     for name, cfg_key, thesis in _BOOKS:
         if cfg_key is None:
             # mover_pass / mover_pass_short nest under mover_recorders.<x>_live
-            nested_key = "pass_short_live" if name == "mover_pass_short" else "pass_live"
+            nested_key = {"mover_pass_short": "pass_short_live",
+                          "young_mover_short": "young_short_live"}.get(name, "pass_live")
             cfg = (config.get("mover_recorders") or {}).get(nested_key) or {}
         else:
             cfg = config.get(cfg_key) or {}
