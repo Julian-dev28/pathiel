@@ -356,13 +356,29 @@ reversal REFUTED: premium_fade inverse mc_p 0.142 (edge all in one half), young_
 inverse is tape beta (excess +0.82%, mc_p 0.323), neg_funding inverse = known W-F3 MARGINAL.
 ONE survivor: **breaking-coverage-surge SHORT on xyz equities** (inverse of the refuted
 news_catalyst long): +13.82%/sig n=7, excess +11.69%, mc_p 0.0005; ex-CASHCAT +7.52%/sig,
-excess +6.65%, mc_p 0.004. EVIDENCE FROZEN — the recorder died in the 07-18 demolition.
-CONTROL TWIST: non-breaking inverse ALSO positive-excess (+2.41%/sig n=171, excess +1.55%,
-mc_p 0.0005, thin first half) — synthesis: ATTENTION-FADE (scanner candidates mark next-day
-tops; coheres with mover_pass/b15_up refutes + AI-long anti-calibration), news = strongest
-trigger (+5-10pp increment). All within an 8-day clean-epoch window — hypothesis, not edge.
-Decision pending with operator: rebuild a minimal zero-capital surge-short recorder or let
-the finding expire. Auto-flip order does NOT apply to counterfactual inverse grades.
+excess +6.65%, mc_p 0.004. EVIDENCE was FROZEN (recorder died in the 07-18 demolition) — REBUILT + LIVE 2026-07-20
+(operator order): `news_surge_short_live.py`, $20/10x, 15% stop, 1d hold, xyz-equities-only
+trade gate (crypto breaking reads still record, zero capital — n=1 outlier, not evidence).
+New ledger book `news_surge_short` (never conflated with the old LONG `news_catalyst`
+ledger). Wired: claim rights, BOOK_PRIORITY, dashboard row, loop call-site. 12 tests green.
+Mandatory review at n=8 forward episodes via `shadow_status.py --book news_surge_short`.
+CONTROL TWIST (not wired): non-breaking inverse ALSO positive-excess (+2.41%/sig n=171,
+excess +1.55%, mc_p 0.0005, thin first half) — synthesis: ATTENTION-FADE (scanner candidates
+mark next-day tops; coheres with mover_pass/b15_up refutes + AI-long anti-calibration), news
+= strongest trigger (+5-10pp increment). All within an 8-day clean-epoch window — hypothesis,
+not deployed. Auto-flip order does NOT apply to counterfactual inverse grades; this flip was
+an explicit operator order, bounded per the evidence (equities only, small size).
+SECOND SWEEP same session: mover_pass inverse is the CLEANEST result of the whole audit
+(+6.75%/sig n=17, excess +6.89%, mc_p 0.0005, both halves +6.70/+6.79, no outlier) — LIVE-WIRED
+as `mover_pass_short` ($20/10x, 15% stop, 1d hold, own dedup key, review @n=8). mover_b15_up
+inverse looked equally strong (+11.37%/sig) but is CASHCAT-dependent — ex-outlier drops to
++4.02%/sig and the second OOS half flips negative; NOT wired. extreme_fade's disarmed subset
+(uncommitted capital, arm blocks the long) has no inverse edge either (-4.30%/sig, both halves
+negative, mc_p 0.80) — clean null, the arm is doing its job. majors_swing dedups to n=1, no
+verdict possible. Both live wires got a wiring-integrity pass per operator standing instruction:
+tests/test_live_book_wiring_integrity.py (book-name + state-file uniqueness scan across all
+agents/*.py) + real-ClaimsRegistry integration tests proving mover_pass/mover_pass_short and
+news_surge_short/engulf_short cannot double-claim a coin.
 
 ## W-X5 xs implementation frontier — SETTLED 2026-07-20 (4 cells, no live changes)
 Findings: W-X5_{depth_hold,tranches,hysteresis,xyz_hardening}.md. Verdicts:

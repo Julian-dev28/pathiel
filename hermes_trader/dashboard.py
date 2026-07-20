@@ -547,8 +547,9 @@ def _require_operator(request: Request) -> None:
 # ── live books ───────────────────────────────────────────────────────────────
 # (name, config key, thesis one-liner). Sizing + live/shadow status come from
 # the live .agent-config.json at request time, so a shadow flip shows on the
-# next poll without a server restart. mover_pass nests under
-# mover_recorders.pass_live (config key None → special-cased below).
+# next poll without a server restart. mover_pass / mover_pass_short nest under
+# mover_recorders.pass_live / pass_short_live (config key None → special-cased
+# below, resolved by book NAME, not a blanket pass_live assumption).
 
 _BOOKS: List[tuple] = [
     ("xs_momentum", "xs_momentum",
@@ -575,6 +576,12 @@ _BOOKS: List[tuple] = [
     ("mover_pass", None,
      "Buy the mover the AI just PASSed — its vetoes measured -4.5%/day "
      "forfeited."),
+    ("mover_pass_short", None,
+     "Inverse of mover_pass — short the mover the AI just PASSed instead of "
+     "buying it (own forward ledger interim-refuted the long side)."),
+    ("news_surge_short", "news_surge_short",
+     "Inverse of the refuted news_catalyst LONG — short a breaking Google "
+     "News coverage surge on xyz equities, 15% stop, 1-day hold."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
@@ -605,8 +612,10 @@ def _books_payload() -> List[Dict[str, Any]]:
         config = {}
     out: List[Dict[str, Any]] = []
     for name, cfg_key, thesis in _BOOKS:
-        if cfg_key is None:  # mover_pass lives at mover_recorders.pass_live
-            cfg = (config.get("mover_recorders") or {}).get("pass_live") or {}
+        if cfg_key is None:
+            # mover_pass / mover_pass_short nest under mover_recorders.<x>_live
+            nested_key = "pass_short_live" if name == "mover_pass_short" else "pass_live"
+            cfg = (config.get("mover_recorders") or {}).get(nested_key) or {}
         else:
             cfg = config.get(cfg_key) or {}
         if not isinstance(cfg, dict) or not cfg or not cfg.get("enabled", False):

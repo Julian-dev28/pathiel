@@ -99,6 +99,95 @@ def test_pass_live_disabled_records_only(monkeypatch):
     assert opened == [] and out[0][1]["meta"]["shadow"] is True
 
 
+def test_pass_short_records_the_inverse_side(monkeypatch):
+    out = _captured(monkeypatch)
+    a = {"coin": "VIRTUAL", "daily_move_pct": 16.0, "daily_volume_usd": 8e6,
+         "confidence": 0.55, "last_price": 0.61}
+    assert mr.record_mover_pass_short(a, {}) is True
+    book, kw = out[0]
+    assert book == "mover_pass_short" and kw["side"] == "short" and kw["entry_ref_px"] == 0.61
+    assert kw["meta"]["move_pct"] == 16.0
+    assert mr.record_mover_pass_short(a, {}) is False   # same coin same day: deduped
+
+
+def test_pass_and_pass_short_dedup_independently(monkeypatch):
+    """The two books share the exact same trigger event but must never block
+    each other's ledger row — each has its own dedup key."""
+    out = _captured(monkeypatch)
+    a = {"coin": "VIRTUAL", "daily_move_pct": 16.0, "daily_volume_usd": 8e6,
+         "confidence": 0.55, "last_price": 0.61}
+    assert mr.record_mover_pass(a, {}) is True
+    assert mr.record_mover_pass_short(a, {}) is True   # NOT blocked by the long's dedup
+    books = {b for b, _ in out}
+    assert books == {"mover_pass", "mover_pass_short"}
+
+
+def test_pass_short_live_opens_bounded_short(monkeypatch):
+    out = _captured(monkeypatch)
+
+    class _Claims:
+        def claimed_by_others(self, book):
+            return set()
+
+        def claim(self, coin, book):
+            return True
+
+        def release(self, coin, book):
+            pass
+
+        def save(self):
+            pass
+
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    opened = []
+    cfg = {"mover_recorders": {"pass_short_live": {"enabled": True, "shadow_only": False,
+                                                   "notional_usd": 20.0, "leverage": 10,
+                                                   "stop_pct": 15.0, "hold_days": 1.0}}}
+    a = {"coin": "RIP", "daily_move_pct": 12.0, "daily_volume_usd": 9e6,
+         "confidence": 0.5, "last_price": 3.0}
+    assert mr.record_mover_pass_short(a, cfg, execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert len(opened) == 1
+    o = opened[0]
+    assert o["strategy_book"] == "mover_pass_short" and o["side"] == "short"
+    assert o["verdict"] == "SHORT"
+    assert o["strategy_book_notional"] == 20.0 and o["leverage_override"] == 10
+    assert o["dsl_exit_override"]["max_loss_pct"] == 15.0
+    assert out[0][1]["meta"]["shadow"] is False
+
+
+def test_pass_short_xyz_equity_uses_the_250k_floor_crypto_uses_5m():
+    cfg = {"min_volume_usd": 5_000_000.0}
+    equity = mr._pass_short_live_analysis("xyz:IBM", 12.0, cfg)
+    crypto = mr._pass_short_live_analysis("ARB", 12.0, cfg)
+    assert equity["min_short_volume_usd_override"] == 250_000.0
+    assert crypto["min_short_volume_usd_override"] == 5_000_000.0
+
+
+def test_pass_short_live_disabled_records_only(monkeypatch):
+    out = _captured(monkeypatch)
+    opened = []
+    a = {"coin": "RIP2", "daily_move_pct": 12.0, "daily_volume_usd": 9e6, "last_price": 3.0}
+    assert mr.record_mover_pass_short(a, {}, execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert opened == [] and out[0][1]["meta"]["shadow"] is True
+
+
+# --------------------------------------------------------------------- real-registry collision
+def test_mover_pass_and_mover_pass_short_cannot_both_claim_the_same_coin(tmp_path):
+    """Real ClaimsRegistry (not a mock): whichever book claims the coin first
+    this cycle holds it; the other must see it in claimed_by_others and back
+    off. This is the exact race the two books share every PASS event."""
+    from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+
+    claims_path = str(tmp_path / ".rebalancer_claims.json")
+    registry = ClaimsRegistry(claims_path).load()
+
+    assert registry.claim("VIRTUAL", "mover_pass") is True
+    assert "VIRTUAL" in registry.claimed_by_others("mover_pass_short")
+    assert registry.claim("VIRTUAL", "mover_pass_short") is False
+    registry.release("VIRTUAL", "mover_pass")
+    assert registry.claim("VIRTUAL", "mover_pass_short") is True
+
+
 def test_classify_news_polarity_is_deterministic():
     # AI's polar read wins over keywords
     assert mr.classify_news_polarity("positive", "token crashes, hack") == ("positive", "news_risk")

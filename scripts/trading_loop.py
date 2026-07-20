@@ -65,6 +65,7 @@ from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass as _record_mover_pass,
+    record_mover_pass_short as _record_mover_pass_short,
     record_b15_crossings as _record_b15_crossings,
     record_trend_block_news_long as _record_trend_block_news_long,
     record_news_ta_quadrant as _record_news_ta_quadrant,
@@ -72,6 +73,7 @@ from hermes_trader.agents.mover_recorders import (
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
+from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -909,6 +911,19 @@ while True:
         # W-N3 news-catalyst recorder: zero-capital ledger reads of the live
         # Google News coverage-surge signal on the cycle's scan candidates
         # (30-min throttle inside the module; non-breaking reads = the null).
+        # news_surge_short LIVE book (operator flip 2026-07-20, reverse-refuted
+        # audit): SHORT a breaking coverage surge on xyz equities, $20/10x, 15%
+        # stop, 1d hold — the exact geometry graded in
+        # findings/reverse_refuted_direction_audit.md (+13.82%/sig n=7, excess
+        # +11.69% over the matched null, mc_p 0.0005). Crypto surges still
+        # record (zero capital) pending their own n>=8 read. Mandatory review
+        # at 8 resolved forward episodes.
+        try:
+            _news_surge_short_maybe_run(read_agent_config(), results,
+                                        positions, _book_execute)
+        except Exception as _nsse:
+            logger.warning(f"[news-surge-short-live] pass failed (non-fatal): {_nsse}")
+
         # whale_flow recorder: Binance aggTrades whale prints on the cycle's
         # crypto candidates (30-min throttle; balanced reads = control rows).
         try:
@@ -1131,6 +1146,16 @@ while True:
                         analysis["last_price"] = _mid
                         _record_mover_pass(analysis, read_agent_config(),
                                            execute_fn=_book_execute)
+                    except Exception:
+                        pass
+                    # mover_pass_short LIVE (operator flip 2026-07-20, reverse-refuted
+                    # audit): exact inverse of mover_pass, same PASS event, own dedup
+                    # key — see findings/reverse_refuted_direction_audit.md
+                    # (+6.745%/sig, excess +6.89%, mc_p 0.0005, both halves +). Claims
+                    # registry gives mutual exclusion with mover_pass on the same coin.
+                    try:
+                        _record_mover_pass_short(analysis, read_agent_config(),
+                                                 execute_fn=_book_execute)
                     except Exception:
                         pass
                 if action == "execute":

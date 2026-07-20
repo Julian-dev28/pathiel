@@ -17,7 +17,22 @@ Two hypotheses earned FORWARD ledgers — not capital — from the W-M studies:
    cell's own re-run agreeing.
 
 Both record to the unified shadow ledger; scripts/shadow_status.py grades
-them with the funding-aware, dedup-correct pipeline. Nothing here trades.
+them with the funding-aware, dedup-correct pipeline.
+
+3. mover_pass_short (LIVE, operator flip 2026-07-20): the reverse-refuted-
+   direction audit found mover_pass's own forward ledger interim REFUTED-lean
+   (-6.36%/sig @12bps, n=17, both halves negative — the PASS veto is SAVING
+   money in this tape, not forfeiting it). Its exact inverse — SHORT the
+   mover the AI just PASSed — grades +6.745%/sig, excess +6.89% over the
+   matched same-coin random-time null, mc_p 0.0005, both OOS halves
+   +6.70/+6.79 (n=17, no outlier dependency, mixed crypto + xyz equities;
+   see research/alpha_swarm/findings/reverse_refuted_direction_audit.md).
+   Shares the exact same trigger + dedup window as mover_pass (same PASS
+   event, same call site) but its OWN dedup key ("pass_short") so the two
+   books rate-limit independently. Claims-registry mutual exclusion still
+   applies: whichever book claims a coin first this cycle holds it, the
+   other backs off (tests/test_live_book_wiring_integrity.py). Mandatory
+   review at 8 resolved forward episodes.
 """
 from __future__ import annotations
 
@@ -156,6 +171,105 @@ def record_mover_pass(analysis: Dict[str, Any], config: Dict[str, Any],
             except Exception as exc:
                 claims.release(coin, "mover_pass")
                 logger.warning(f"[mover-pass] open {coin} failed: {exc}")
+    return True
+
+
+def _pass_short_live_analysis(coin: str, move: float, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded book order for the LIVE mover_pass_short arm (operator flip
+    2026-07-20, reverse-refuted-direction audit): SHORT the mover the AI just
+    PASSed, $20/10x, 15% stop, 1d hold, no trail — the exact geometry the
+    audit graded. Short-liquidity floor is asset-class-aware: xyz equities
+    use the $250k convention (xs_xyz_live), crypto uses the trigger's own
+    $5M eligibility floor (already cleared by definition)."""
+    stop_pct = float(cfg.get("stop_pct", 15.0))
+    leverage = max(1, int(cfg.get("leverage", 10)))
+    short_floor = 250_000.0 if ":" in coin else float(cfg.get("min_volume_usd", 5_000_000.0))
+    return {
+        "id": str(uuid.uuid4()), "coin": coin,
+        "verdict": "SHORT", "side": "short",
+        "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+        "reasoning": (f"[mover_pass_short] AI PASSed a +{move:.1f}% mover, "
+                      f"inverse-of-refuted mover_pass — fading it"),
+        "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
+        "composite_score": 0.0, "strategy_book": "mover_pass_short",
+        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "leverage_override": leverage,
+        "backup_sl_pct_override": stop_pct,
+        "tp_scale_fraction_override": 0.0,
+        "min_short_volume_usd_override": short_floor,
+        "dsl_exit_override": {
+            "max_loss_pct": stop_pct,
+            "max_loss_roe_pct": stop_pct * leverage,
+            "protect_pct": 9999.0,
+            "retrace_threshold": 0.5,
+            "hard_timeout_minutes": float(cfg.get("hold_days", 1.0)) * 1440.0,
+            "breakeven_trigger_pct": 0.0,
+            "breakeven_lock_pct": 0.0,
+            "stale_flat_timeout_minutes": 0.0,
+            "consecutive_breaches_required": 1,
+            "atr_stop": {"enabled": False},
+            "noise_band": {"enabled": False},
+        },
+    }
+
+
+def record_mover_pass_short(analysis: Dict[str, Any], config: Dict[str, Any],
+                            execute_fn: Optional[Callable] = None) -> bool:
+    """Call on every AI PASS verdict (same call site as record_mover_pass).
+    Records the inverse SHORT counterfactual; opens the bounded live short
+    when mover_recorders.pass_short_live.shadow_only=false. Uses its own
+    dedup key so it never blocks — or gets blocked by — record_mover_pass's
+    ledger row for the same coin/day."""
+    cfg = (config.get("mover_recorders") or {})
+    if not bool(cfg.get("enabled", True)):
+        return False
+    try:
+        move = float(analysis.get("daily_move_pct") or 0.0)
+        vol = float(analysis.get("daily_volume_usd") or 0.0)
+        px = float(analysis.get("last_price") or analysis.get("entry_ref_px") or 0.0)
+        coin = analysis.get("coin") or ""
+    except (TypeError, ValueError):
+        return False
+    if not coin or move < float(cfg.get("pass_min_move_pct", 8.0)):
+        return False
+    if vol and vol < float(cfg.get("min_volume_usd", 5_000_000.0)):
+        return False
+    now_ms = int(time.time() * 1000)
+    if not _dedup_key_hit("pass_short", coin, now_ms):
+        return False
+    if px <= 0:
+        return False
+    live_cfg = cfg.get("pass_short_live") or {}
+    live = (bool(live_cfg.get("enabled", False))
+            and not bool(live_cfg.get("shadow_only", True))
+            and execute_fn is not None)
+    shadow_ledger.record("mover_pass_short", coin=coin, side="short",
+                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
+                         entry_ref_px=px, horizon_days=1.0, stop_pct=15.0,
+                         meta={"confidence": float(analysis.get("confidence") or 0),
+                               "move_pct": round(move, 2), "shadow": not live})
+    logger.info(f"[mover-recorders] PASS-veto SHORT inverse recorded: {coin} "
+                f"(+{move:.1f}%, conf {float(analysis.get('confidence') or 0):.2f})")
+    if live:
+        claims = get_claims_registry()
+        if (coin not in claims.claimed_by_others("mover_pass_short")
+                and claims.claim(coin, "mover_pass_short")):
+            try:
+                result = execute_fn(_pass_short_live_analysis(coin, move, live_cfg))
+                opened = isinstance(result, dict) and (
+                    bool(result.get("executed"))
+                    or bool((result.get("result") or {}).get("executed") if isinstance(result.get("result"), dict) else False)
+                )
+                if opened:
+                    claims.save()
+                    logger.info(f"[mover-pass-short] LIVE opened short {coin} (+{move:.1f}% PASSed mover)")
+                else:
+                    claims.release(coin, "mover_pass_short")
+                    why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                    logger.warning(f"[mover-pass-short] {coin} not opened: {why}")
+            except Exception as exc:
+                claims.release(coin, "mover_pass_short")
+                logger.warning(f"[mover-pass-short] open {coin} failed: {exc}")
     return True
 
 

@@ -20,7 +20,7 @@
   },
   "enable_crypto": true,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.5,
+  "equity_fraction_per_trade": 0.1,
   "leverage": 12,
   "max_trade_notional_usd": 5000,
   "asset_notional_multiplier": {
@@ -28,13 +28,13 @@
     "hip3": 1.0
   },
   "tp_scale_fraction": 0.5,
-  "max_concurrent": 10,
+  "max_concurrent": 100,
   "max_total_notional_pct": 10.0,
   "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
-  "min_available_margin_pct": 0.1,
+  "min_available_margin_pct": 0.01,
   "cooldown_min": 30,
   "held_research_interval_min": 10,
   "min_ai_confidence": 0.62,
@@ -301,12 +301,31 @@
     "window_hi_h": 72.0,
     "max_new_per_cycle": 1
   },
+  "news_surge_short": {
+    "enabled": true,
+    "shadow_only": false,
+    "scan_interval_min": 30.0,
+    "hold_days": 1.0,
+    "stop_pct": 15.0,
+    "notional_usd": 20.0,
+    "leverage": 10,
+    "min_volume_usd": 250000.0,
+    "max_new_per_cycle": 1
+  },
   "mover_recorders": {
     "pass_live": {
       "enabled": true,
       "shadow_only": true,
       "notional_usd": 20.0,
       "leverage": 12,
+      "stop_pct": 15.0,
+      "hold_days": 1.0
+    },
+    "pass_short_live": {
+      "enabled": true,
+      "shadow_only": false,
+      "notional_usd": 20.0,
+      "leverage": 10,
       "stop_pct": 15.0,
       "hold_days": 1.0
     }

@@ -30,6 +30,8 @@ priors hold. Loop pid check: `scripts/restart.sh status`.
 | funding_spike_short | $20/1x | 24h funding z≥2 crowded-long fade | fwd EV25<0 @15 eps |
 | **unlock_short_runin** | $20/1x | short 48-72h pre-unlock, exit AT event | **review @10 eps** |
 | thin_short_relax | $20 executor carve | conf≥0.72 shorts under vol floor | enabled=false |
+| **news_surge_short** | $20/10x, 15% stop | breaking news-coverage-surge short, xyz-equities-only | **review @8 eps** |
+| **mover_pass_short** | $20/10x, 15% stop | short the mover the AI just PASSed (inverse of mover_pass) | **review @8 eps** |
 
 Main-engine caps: ai_long_notional_usd 25 (AI longs are ANTI-calibrated:
 −2.13% @0.70-0.80 conf — do not raise without the second calibration window).

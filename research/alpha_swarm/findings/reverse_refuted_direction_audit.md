@@ -1,8 +1,9 @@
 # Reverse refuted-direction audit
 
-**Status:** SETTLED 2026-07-20 (graded with matched same-coin random-time nulls,
-2000 draws, price-only @12bps both sides). **Started:** 2026-07-20 (Codex),
-completed same day (Claude).
+**Status:** SETTLED + LIVE 2026-07-20 (graded with matched same-coin
+random-time nulls, 2000 draws, price-only @12bps both sides; one surviving
+cell wired live same day per operator order). **Started:** 2026-07-20
+(Codex), completed + shipped same day (Claude).
 
 ## Verdict up front
 
@@ -21,6 +22,10 @@ episode short of the formal bar — see the decision at the bottom.
 | young_listings (163 longs) → short | 163 | 18 | +2.25%/sig | +2.42 / +2.08 | **+0.82%** | 0.323 | TAPE BETA — random-time shorts on the same coins earned ~+1.4%; young listings just drifted down |
 | news_catalyst breaking → short | 114 | 7 | **+13.82%/sig** | +8.79 / +17.60 | **+11.69%** | **0.0005** | SURVIVES. Leave-CASHCAT-out (6 xyz equities only): +7.52%/sig, excess +6.65%, mc_p 0.004 |
 | news_catalyst non-breaking → short (control) | 4900 | 171 | +2.41%/sig | +0.30 / +4.49 | +1.55% | 0.0005 | control is ALSO positive-excess — see synthesis; first half thin (+0.30) |
+| mover_pass → short | 23 | 17 | **+6.75%/sig** | +6.70 / +6.79 | **+6.89%** | **0.0005** | SURVIVES, no outlier dependency (17 episodes, max 24.2%, spread crypto+xyz). **LIVE.** |
+| mover_b15_up → short | 23 | 10 | +11.37%/sig | +20.73 / +2.01 | +10.35% | 0.0005 | CASHCAT-dependent: ex-outlier (n=8) drops to +4.02%/sig, second half flips NEGATIVE (-1.55%). NOT wired — keep recording. |
+| extreme_fade (disarmed subset) → short | 225 | 5 | -4.30%/sig | -7.20 / -2.37 | -6.97% | 0.798 | REFUTED. Disarmed regime has no edge in EITHER direction — the skew-arm is doing its job. |
+| majors_swing → short | 21 | 1 | — | — | — | — | No verdict possible — dedups to 1 independent episode (signals cluster same-coin/overlapping-horizon). |
 
 ## Synthesis: the real finding is attention-fade, news is its strongest trigger
 
@@ -63,19 +68,68 @@ Caveats that keep this a CANDIDATE, not an edge:
 - Selection: this cell was found BY conditioning on the direct book failing —
   the same data cannot also validate the flip. Only fresh forward episodes can.
 
-## Decision for the operator (evidence does not decide this alone)
+## Second sweep, same session: mover_pass / mover_b15_up / extreme_fade(disarmed) / majors_swing
 
-The breaking-surge-short evidence is frozen at n=7: the news_catalyst_live
-module (Google News coverage reads) was demolished 2026-07-18 by operator-
-approved manifest, and news_ta_quadrant records a different signal (AI polarity
-quadrants, not coverage surges). Options:
-1. **Rebuild a minimal zero-capital recorder** (restore the coverage-surge read
-   from git `8ca189f^`, record SHORT-side rows only, no order path, no config
-   resurrection beyond the recorder block). Settles the cell at n≥8-15 within
-   weeks. Shadow recorders are normally self-approve, but this reverses a piece
-   of an operator demolition, so it waits for a yes.
-2. **Let it expire.** The attention-fade synthesis stays as a documented
-   hypothesis; re-test only if a future news lane exists anyway.
+Extended the audit to every remaining refuted-or-never-validated recorder
+with enough n to grade. mover_pass's inverse is the CLEANEST result of the
+entire audit — robust, diversified, no outlier — and is wired live alongside
+news_surge_short (see below). mover_b15_up's inverse looked equally strong
+headline (+11.37%/sig) but is CASHCAT-dependent: dropping that one episode
+cuts the mean by more than half and flips the second OOS half negative — the
+same failure mode premium_fade_short showed earlier ("edge all in one half"),
+just hidden by an outlier instead of thin n. NOT wired; keep recording,
+revisit with the outlier excluded or at higher n. extreme_fade's DISARMED
+subset (the population where zero capital currently trades, since the W-B2
+arm blocks the long) has no edge in either direction — its inverse (short)
+is -4.30%/sig, both halves negative, mc_p 0.80. This is a clean, reassuring
+null: the arm isn't just blocking a good long, the disarmed regime really is
+untradeable. majors_swing's 21 raw signals dedup to 1 independent episode —
+its signals cluster on the same coin within overlapping horizons, so no
+verdict is possible; not evidence either way.
+
+## LIVE 2026-07-20 (operator order: "rebuild then rewire live, $20 / 10x")
+
+`hermes_trader/agents/news_surge_short_live.py` restores the demolished
+coin_catalyst() read and rewires it SHORT-only, bounded per the evidence:
+
+- **Records every scan candidate** (crypto AND xyz equities, breaking and
+  non-breaking) to a NEW ledger book `news_surge_short` — never conflated
+  with the old LONG `news_catalyst` ledger, which stays historical evidence.
+- **Trades only breaking reads on xyz: equities.** The n=7 sample was 6/7
+  equities and one crypto outlier (CASHCAT +51.7%) — crypto breaking reads
+  keep recording at zero capital until they earn their own forward n≥8. This
+  is the bounded implementation of the operator's order: real capital only
+  where the evidence actually points.
+- **Geometry is the exact graded shape**: 15% stop, 1-day hard DSL timeout,
+  no trail — the same shape `reverse_refuted_direction_audit` graded, so the
+  ledger keeps grading the trade it is taking. $20 notional, 10x leverage
+  (operator-specified, not the family's usual 12x).
+- Wired: loop call-site (`scripts/trading_loop.py`, after `unlock_short_runin`,
+  before `whale_flow`), `_ACTIVE_CLAIM_BOOKS` + `BOOK_PRIORITY` + dashboard
+  row. 12 new gate tests (`tests/test_news_surge_short_live.py`) pin the
+  equity-only trade gate, crypto-records-but-never-trades behavior, and the
+  exact DSL geometry.
+- **Mandatory review at 8 resolved forward episodes** (the grader's own
+  min_n): `python scripts/shadow_status.py --book news_surge_short` — REFUTED
+  or EV25<0 flips `shadow_only=true` same day, no debate, symmetric with
+  every other thin-evidence live flip in this file.
+- The attention-fade synthesis (control also positive-excess) is NOT wired —
+  only the pre-registered breaking-equity-short cell trades. Extending to
+  "short every scan candidate" would need its own forward ledger first.
+
+**Second book, same order:** `hermes_trader/agents/mover_recorders.py` gained
+`record_mover_pass_short` — the cleanest inverse in the whole audit (n=17, no
+outlier dependency, both halves +6.70/+6.79, mixed crypto+equities). Same
+$20/10x/15%-stop/1d-hold geometry, own ledger book `mover_pass_short`, own
+dedup key so it never blocks (or gets blocked by) the existing `mover_pass`
+long recorder's row on the same PASS event. Wired: loop call-site (right
+after `record_mover_pass`, same `action == "none"` branch), claims + priority
++ dashboard, `mover_recorders.pass_short_live` config block. Review bar: n=8.
+Collision coverage: `tests/test_live_book_wiring_integrity.py` (book-name /
+state-file uniqueness scan, now covers inline `shadow_ledger.record(...)`
+literals too — mover_recorders.py has no `_BOOK_NAME` constant, the original
+scan pattern would have missed it) + a real-`ClaimsRegistry` test proving
+`mover_pass` and `mover_pass_short` cannot both hold the same coin.
 
 ## Question
 
