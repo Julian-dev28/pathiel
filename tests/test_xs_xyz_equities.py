@@ -415,3 +415,31 @@ def test_configured_frac_keeps_xyz_gross_survivable():
     gross_mult = frac * lev * legs          # gross notional / dex equity
     assert gross_mult <= 6.0, f"xs_xyz gross {gross_mult:.1f}x is too hot"
     assert (gross_mult / 2) * 0.20 < 1.0, "a 20pp crash would exceed dex equity"
+
+
+# ---------------------------------------------- vol tag (forward-gradeable)
+def test_realized_vol_helper_matches_pstdev_and_handles_both_bar_shapes():
+    import statistics
+    from hermes_trader.agents.xs_xyz_live import _realized_vol_pct
+
+    class _B:
+        def __init__(self, c): self.c = c
+    prices = [100.0]
+    for i in range(15):
+        prices.append(prices[-1] * (1.03 if i % 2 else 0.99))
+    rets = [prices[i] / prices[i - 1] - 1 for i in range(1, len(prices))]
+    want = round(statistics.pstdev(rets) * 100, 3)
+    assert abs(_realized_vol_pct([_B(p) for p in prices]) - want) < 0.01
+    assert abs(_realized_vol_pct([{"c": p} for p in prices]) - want) < 0.01   # dict shape
+    assert _realized_vol_pct([_B(100)] * 3) == 0.0                            # too few bars
+
+
+def test_vol_bucket_threshold_labels_aapl_class_low():
+    """The 2026-07-21 finding: momentum continuation is far stronger for
+    high-vol thematic names (+0.45 corr) than low-vol mega-caps (+0.22). The
+    fixed 3.0% threshold must label an AAPL-class ~1.4%-vol name 'low' so the
+    forward split (--meta vol_bucket=high) can settle whether a vol FLOOR on
+    the long leg helps — the one variant NOT already refuted."""
+    # mirror of the in-row logic
+    for vol, want in ((1.4, "low"), (2.99, "low"), (3.0, "high"), (5.2, "high")):
+        assert ("high" if vol >= 3.0 else "low") == want

@@ -228,6 +228,31 @@ def _target_book(universe, cfg: Dict[str, Any], fetch_candles: Callable,
     return rank_xyz(cbc, bench, lb, k, _BETA_WINDOW), cbc, None
 
 
+def _realized_vol_pct(bars, window: int = 14) -> float:
+    """14d realized vol (pct) of daily closes — the leg's own volatility.
+
+    Tagged into each ledger row (metadata only, never gates) so the forward
+    grader can settle the 2026-07-21 finding that momentum continuation is far
+    stronger for high-vol thematic xyz names (corr +0.45) than low-vol
+    mega-caps like AAPL (+0.22, 1.4% vol, the book's one red long): split with
+    `shadow_status.py --book xs_xyz_equities --meta vol_bucket=high`. Distinct
+    from the REFUTED vol-scaling/idio-vol overlays — this only asks whether a
+    vol FLOOR on entry (drop AAPL-class names) helps, on live evidence. 0.0 if
+    too few bars."""
+    try:
+        cl = [float(b.get("c") if isinstance(b, dict) else getattr(b, "c", 0))
+              for b in bars[-(window + 1):]]
+        if len(cl) < window + 1:
+            return 0.0
+        rets = [cl[i] / cl[i - 1] - 1 for i in range(1, len(cl)) if cl[i - 1] > 0]
+        if len(rets) < 2:
+            return 0.0
+        import statistics
+        return round(statistics.pstdev(rets) * 100, 3)
+    except Exception:
+        return 0.0
+
+
 def maybe_rebalance(config: Dict[str, Any], universe, positions,
                     fetch_candles: Callable, execute_fn: Callable,
                     close_fn: Callable) -> Optional[Dict]:
@@ -273,6 +298,7 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
     # 12-rebalance cumulative and single-rebalance −8% kills are graded there.
     def _leg_row(coin: str, side: str) -> Dict[str, Any]:
         bars = cbc.get(coin) or []
+        _vol = _realized_vol_pct(bars)
         return {
             "coin": coin, "side": side,
             "signal_bar_t": bar_t(bars[-1]) if bars else 0,
@@ -282,7 +308,13 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
             "stop_pct": 20.0,
             "ts": now_ms,
             "meta": {"shadow": shadow, "rebalance_n": n,
-                     "score": round(float(book.scores.get(coin, 0.0)), 6)},
+                     "score": round(float(book.scores.get(coin, 0.0)), 6),
+                     "vol_14d_pct": _vol,
+                     # Fixed 3.0% threshold (the 2026-07-21 universe median),
+                     # NOT a per-rebalance median — so the same coin gets a
+                     # stable label across rebalances and the forward split is
+                     # comparable. AAPL-class (~1.4%) reads "low".
+                     "vol_bucket": "high" if _vol >= 3.0 else "low"},
         }
     shadow_ledger.record_many(_BOOK_NAME, [_leg_row(c, "long") for c in book.longs]
                               + [_leg_row(c, "short") for c in book.shorts])
