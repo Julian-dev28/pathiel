@@ -93,6 +93,7 @@ _NEVER_PROMOTE = frozenset({
     "news_catalyst", "young_listings", "majors_swing", "mover_b15_up",
     "whale_flow", "news_ta_quadrant", "wallet_follow", "v2_xs_momentum",
     "unlock_short", "premium_fade_short", "neg_funding_fade",
+    "news_surge_multi",  # recorder; promotion = head-to-head vs news_surge_short, not the absolute bar
 })
 
 # Promotion sizing — bounded, and the stop must be REACHABLE: the executor

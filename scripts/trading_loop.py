@@ -75,6 +75,7 @@ from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_r
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
+from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
 from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
@@ -925,6 +926,13 @@ while True:
                                         positions, _book_execute)
         except Exception as _nsse:
             logger.warning(f"[news-surge-short-live] pass failed (non-fatal): {_nsse}")
+
+        # news_surge_multi: zero-capital multi-firehose surge recorder
+        # (worldmonitor thesis). Grades vs the single-source book; no capital.
+        try:
+            _news_surge_multi_maybe_run(read_agent_config(), results, positions)
+        except Exception as _nsme:
+            logger.debug(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
 
         # whale_flow recorder: Binance aggTrades whale prints on the cycle's
         # crypto candidates (30-min throttle; balanced reads = control rows).

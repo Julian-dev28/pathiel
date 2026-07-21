@@ -355,5 +355,9 @@
     "recorder_enabled": true
   },
   "max_daily_loss_pct": 0.15,
-  "min_order_bump_max_mult": 2.0
+  "min_order_bump_max_mult": 2.0,
+  "news_surge_multi": {
+    "enabled": true,
+    "scan_interval_min": 30.0
+  }
 }
