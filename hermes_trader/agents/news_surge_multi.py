@@ -26,14 +26,17 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from statistics import median
 from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents import shadow_ledger
+from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.news_catalyst import (
     _title_relevant, _within_hours, rss_headlines,
 )
-from hermes_trader.agents.rebalancer_owned import state_file
+from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,7 @@ _HOUR_MS = 3_600_000
 _DAY_MS = 86_400_000
 _TS_FILE = state_file(".news_surge_multi_ts.json")
 _BASELINE_FILE = state_file(".news_surge_multi_baseline.json")
+_SEEN_FILE = state_file(".news_surge_multi_seen.json")
 _MAX_COINS_PER_PASS = 12
 
 # The working DIRECT finance/tech firehoses from worldmonitor's curated list
@@ -105,13 +109,106 @@ def _save_baseline(b: Dict[str, List[float]]) -> None:
 
 
 def _surge(count: int, prior: List[float]) -> float:
-    """count / median(prior), guarded. No prior history -> surge 1.0 (neutral),
-    so a coin's FIRST read never counts as breaking (matches news_catalyst,
-    which needs a baseline before it can surge)."""
+    """count / median(prior), guarded. No usable baseline -> surge 1.0
+    (neutral), so a coin can NEVER be 'breaking' on its first read or before a
+    baseline exists — this is the guard that stopped news_catalyst from firing a
+    live entry off a single unbaselined spike (xyz:BE, 2026-07-12). A coin needs
+    accrued history before a surge is meaningful; the raw count is still recorded
+    so the baseline builds."""
     base = median(prior) if prior else 0.0
     if base <= 0:
-        return 1.0 if count <= 0 else float(count)  # first non-zero read is not yet a "surge"
+        return 1.0
     return round(count / base, 2)
+
+
+def _load_seen() -> Dict[str, int]:
+    try:
+        raw = json.load(open(_SEEN_FILE))
+        return {str(k): int(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_seen(seen: Dict[str, int]) -> None:
+    try:
+        with open(_SEEN_FILE, "w") as fh:
+            json.dump(seen, fh, sort_keys=True)
+    except Exception:
+        pass
+
+
+def _held_coins(positions) -> set:
+    held = set()
+    for p in positions or []:
+        pos = p.get("position", p) if isinstance(p, dict) else {}
+        coin = pos.get("coin")
+        try:
+            szi = float(pos.get("szi", 0) or 0)
+        except (TypeError, ValueError):
+            szi = 0.0
+        if coin and szi != 0:
+            held.add(coin)
+    try:
+        held.update(active_position_coins().keys())
+    except Exception:
+        pass
+    return held
+
+
+def _execute_opened(result: Any) -> bool:
+    if isinstance(result, dict):
+        nested = result.get("result")
+        if isinstance(nested, dict):
+            return bool(nested.get("executed"))
+        if "executed" in result:
+            return bool(result.get("executed"))
+        if "ok" in result:
+            return bool(result.get("ok"))
+    return result is None
+
+
+def _execute_block_detail(result: Any) -> Any:
+    if not isinstance(result, dict):
+        return result
+    return (result.get("reason") or result.get("error")
+            or result.get("blocked_by") or result.get("gate_results") or result)
+
+
+def _live_analysis(coin: str, surge_x: float, n_recent: int, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded live order (operator flip 2026-07-21): $20/10x, 6% stop, 1d — the
+    exact validated geometry of news_surge_short. Rides the VALIDATED
+    attention-fade DIRECTION (short a coverage spike); the multi-source firehose
+    TRIGGER is itself unvalidated, so this carries the standard n=8 kill."""
+    stop_pct = float(cfg.get("stop_pct", 6.0))
+    leverage = max(1, int(cfg.get("leverage", 10)))
+    hold_days = float(cfg.get("hold_days", 1.0))
+    return {
+        "id": str(uuid.uuid4()), "coin": coin,
+        "verdict": "SHORT", "side": "short",
+        "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+        "reasoning": (f"[{_BOOK_NAME}] multi-firehose coverage surge {surge_x:.1f}x "
+                      f"(n={n_recent}) — fading attention spike"),
+        "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
+        "composite_score": 0.0, "strategy_book": _BOOK_NAME,
+        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "leverage_override": leverage,
+        "backup_sl_pct_override": stop_pct,
+        "tp_scale_fraction_override": 0.0,
+        "min_short_volume_usd_override": float(cfg.get("min_volume_usd", 250_000.0)),
+        "dsl_exit_override": {
+            "max_loss_pct": stop_pct,
+            "max_loss_roe_pct": stop_pct * leverage,
+            "protect_pct": 9999.0,
+            "retrace_threshold": 0.5,
+            "hard_timeout_minutes": hold_days * 1440.0,
+            "breakeven_trigger_pct": 0.0,
+            "breakeven_lock_pct": 0.0,
+            "stale_flat_timeout_minutes": 0.0,
+            "consecutive_breaches_required": 1,
+            "atr_stop": {"enabled": False},
+            "noise_band": {"enabled": False},
+        },
+    }
 
 
 def count_relevant(coin: str, headlines) -> int:
@@ -154,6 +251,7 @@ def maybe_run(config: Dict[str, Any],
         logger.debug(f"[news-surge-multi] firehose fetch failed ({exc})")
         return 0
 
+    shadow_only = bool(cfg.get("shadow_only", True))
     baseline = _load_baseline()
     rows: List[Dict[str, Any]] = []
     seen: set = set()
@@ -182,7 +280,7 @@ def maybe_run(config: Dict[str, Any],
             "entry_ref_px": mid, "horizon_days": _HORIZON_DAYS, "stop_pct": _STOP_PCT,
             "meta": {"n_recent": count, "surge_x": sx, "breaking": bool(breaking),
                      "equity": ":" in coin, "n_feeds": len(FIREHOSES),
-                     "shadow": True},
+                     "shadow": shadow_only},
         })
     _save_baseline(baseline)
     n = shadow_ledger.record_many(_BOOK_NAME, rows)
@@ -190,4 +288,54 @@ def maybe_run(config: Dict[str, Any],
         nb = sum(1 for r in rows if r["meta"]["breaking"])
         logger.info(f"[news-surge-multi] recorded {n} read(s), {nb} breaking "
                     f"(pooled {len(pool)} headlines from {len(FIREHOSES)} firehoses)")
+
+    # LIVE arm (operator flip 2026-07-21): breaking multi-source surge opens a
+    # bounded $20/10x short. Every perception here is already a SCAN MOVER, so
+    # a breaking read is an attention spike on a mover — as close to the
+    # validated news_surge_short pattern as this signal gets. The TRIGGER is
+    # unvalidated (zero forward grades, thin firehose coverage) so it carries
+    # the n=8 kill: the autonomous cycle demotes it if EV<=0 at that bar.
+    if bool(cfg.get("shadow_only", True)) or execute_fn is None:
+        return n
+    breaking_rows = [r for r in rows if r["meta"]["breaking"]]
+    if not breaking_rows:
+        return n
+    opened_seen = _load_seen()
+    held = _held_coins(positions)
+    claims = get_claims_registry()
+    claims.prune_to(held, _BOOK_NAME)
+    blocked_by_claim = claims.claimed_by_others(_BOOK_NAME)
+    max_new = int(cfg.get("max_new_per_cycle", 1))
+    opened = 0
+    for r in sorted(breaking_rows, key=lambda x: -x["meta"]["surge_x"]):
+        if opened >= max_new:
+            break
+        coin = r["coin"]
+        day_key = f"{coin}:{now_ms // _DAY_MS}"
+        if day_key in opened_seen or coin in held or coin in blocked_by_claim:
+            continue
+        if not claims.claim(coin, _BOOK_NAME):
+            continue
+        try:
+            result = execute_fn(_live_analysis(coin, r["meta"]["surge_x"],
+                                               r["meta"]["n_recent"], cfg))
+            if _execute_opened(result):
+                opened += 1
+                opened_seen[day_key] = now_ms
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short", "sig_t": r.get("signal_bar_t")})
+                logger.info(f"[news-surge-multi] LIVE opened short {coin} "
+                            f"(surge {r['meta']['surge_x']:.1f}x, n={r['meta']['n_recent']})")
+            else:
+                claims.release(coin, _BOOK_NAME)
+                logger.warning(f"[news-surge-multi] {coin} not opened: "
+                               f"{_execute_block_detail(result)}")
+        except Exception as exc:
+            claims.release(coin, _BOOK_NAME)
+            logger.warning(f"[news-surge-multi] open {coin} failed: {exc}")
+    if opened:
+        cutoff = (now_ms - 60 * _DAY_MS) // _DAY_MS
+        _save_seen({k: v for k, v in opened_seen.items()
+                    if int(k.rsplit(":", 1)[1]) >= cutoff})
+        claims.save()
     return n

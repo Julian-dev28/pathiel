@@ -85,6 +85,7 @@ _SWITCHES: Dict[str, tuple] = {
     # can earn its way back the same way anything else does — by grading
     # VALIDATED on its own forward ledger. No exemption for being the flagship.
     "main_engine": ("entries", "main_engine"),
+    "news_surge_multi": ("top", "news_surge_multi"),
 }
 
 # Books whose live arm is a counterfactual/recorder with no capital path, or

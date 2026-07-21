@@ -585,6 +585,9 @@ _BOOKS: List[tuple] = [
     ("news_surge_short", "news_surge_short",
      "Inverse of the refuted news_catalyst LONG — short a breaking Google "
      "News coverage surge on xyz equities, 15% stop, 1-day hold."),
+    ("news_surge_multi", "news_surge_multi",
+     "Short a breaking coverage surge measured across 15 pooled finance/tech "
+     "firehoses (worldmonitor thesis); unvalidated trigger, n=8 kill."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)

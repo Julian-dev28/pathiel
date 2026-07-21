@@ -33,11 +33,12 @@ def _captured(monkeypatch):
 
 
 # ------------------------------------------------------------------ surge math
-def test_surge_no_prior_is_neutral_not_breaking():
-    """A coin's FIRST read has no baseline — it must not count as a surge,
-    exactly like news_catalyst (which needs a baseline before it can surge)."""
+def test_surge_no_prior_is_always_neutral():
+    """No baseline -> surge 1.0 regardless of count, so a coin can NEVER be
+    breaking before it has history. This is the guard that stopped a live entry
+    off a single unbaselined spike (news_catalyst xyz:BE, 2026-07-12)."""
     assert nsm._surge(0, []) == 1.0
-    assert nsm._surge(5, []) == 5.0        # non-zero first read is a raw count, graded not-breaking below
+    assert nsm._surge(5, []) == 1.0        # even a big first read is neutral until baselined
 
 
 def test_surge_is_count_over_median_baseline():
@@ -85,13 +86,14 @@ def test_pools_once_and_records_short_side(monkeypatch):
     assert all(r["meta"]["shadow"] is True for r in rows)   # zero capital
 
 
-def test_never_trades_even_with_execute_fn(monkeypatch):
+def test_default_config_is_shadow_and_does_not_trade(monkeypatch):
+    """Empty config -> shadow_only defaults True -> records only, no capital."""
     _captured(monkeypatch)
     monkeypatch.setattr(nsm, "rss_headlines", lambda **k: [_art("$BTC news")])
     opened = []
     nsm.maybe_run({}, [{"coin": "BTC", "mid": 60000.0}],
                   [], lambda a: opened.append(a) or {"executed": True})
-    assert opened == []                                     # record-only, always
+    assert opened == []
 
 
 def test_baseline_grows_and_drives_the_surge(monkeypatch):
@@ -130,3 +132,76 @@ def test_failed_fetch_marks_pass_and_does_not_storm(monkeypatch):
     monkeypatch.setattr(nsm, "rss_headlines", boom)
     assert nsm.maybe_run({}, [{"coin": "BTC", "mid": 60000.0}]) == 0
     assert nsm._last_pass_ms() > 0                          # marked, won't retry-storm
+
+
+# ------------------------------------------------------------------ LIVE arm
+def _live_cfg(**ov):
+    c = {"enabled": True, "shadow_only": False, "notional_usd": 20.0,
+         "leverage": 10, "stop_pct": 6.0, "hold_days": 1.0, "max_new_per_cycle": 1}
+    c.update(ov)
+    return {"news_surge_multi": c}
+
+
+@pytest.fixture()
+def _live_iso(tmp_path, monkeypatch):
+    monkeypatch.setattr(nsm, "_SEEN_FILE", str(tmp_path / "seen.json"))
+    monkeypatch.setattr(nsm, "active_position_coins", lambda: {})
+
+    class _Claims:
+        def prune_to(self, held, book): pass
+        def claimed_by_others(self, book): return set()
+        def claim(self, coin, book): return True
+        def release(self, coin, book): pass
+        def save(self): pass
+    monkeypatch.setattr(nsm, "get_claims_registry", lambda: _Claims())
+
+
+def _breaking_pool():
+    # 4 recent BTC-relevant headlines -> count>=3
+    return [_art("$BTC surges as Bitcoin ETF inflows hit record"),
+            _art("Bitcoin BTC climbs past resistance"),
+            _art("BTC rally accelerates, Bitcoin dominance rises"),
+            _art("Analysts eye $BTC breakout")]
+
+
+def test_live_arm_opens_short_only_on_a_BASELINED_breaking_surge(monkeypatch, _live_iso):
+    _captured(monkeypatch)
+    monkeypatch.setattr(nsm, "rss_headlines", lambda **k: _breaking_pool())
+    # seed a low baseline so count=4 reads as a big surge (>=3x)
+    monkeypatch.setattr(nsm, "_load_baseline", lambda: {"BTC": [1.0, 1.0, 1.0]})
+    monkeypatch.setattr(nsm, "_save_baseline", lambda b: None)
+    opened = []
+    n = nsm.maybe_run(_live_cfg(), [{"coin": "BTC", "mid": 60000.0}],
+                      [], lambda a: opened.append(a) or {"executed": True})
+    assert n == 1 and len(opened) == 1
+    a = opened[0]
+    assert a["strategy_book"] == "news_surge_multi" and a["side"] == "short"
+    assert a["leverage_override"] == 10 and a["strategy_book_notional"] == 20.0
+    assert a["dsl_exit_override"]["max_loss_pct"] == 6.0
+
+
+def test_live_arm_does_not_open_without_a_baseline(monkeypatch, _live_iso):
+    """No baseline -> surge 1.0 -> not breaking -> no trade, even live. The
+    unbaselined-spike guard protects the live arm too."""
+    _captured(monkeypatch)
+    monkeypatch.setattr(nsm, "rss_headlines", lambda **k: _breaking_pool())
+    monkeypatch.setattr(nsm, "_load_baseline", lambda: {})   # fresh coin
+    monkeypatch.setattr(nsm, "_save_baseline", lambda b: None)
+    opened = []
+    nsm.maybe_run(_live_cfg(), [{"coin": "BTC", "mid": 60000.0}],
+                  [], lambda a: opened.append(a) or {"executed": True})
+    assert opened == []
+
+
+def test_live_arm_daily_dedup(monkeypatch, _live_iso, tmp_path):
+    _captured(monkeypatch)
+    monkeypatch.setattr(nsm, "rss_headlines", lambda **k: _breaking_pool())
+    monkeypatch.setattr(nsm, "_load_baseline", lambda: {"BTC": [1.0, 1.0, 1.0]})
+    monkeypatch.setattr(nsm, "_save_baseline", lambda b: None)
+    opened = []
+    ex = lambda a: opened.append(a) or {"executed": True}
+    nsm.maybe_run(_live_cfg(), [{"coin": "BTC", "mid": 60000.0}], [], ex)
+    assert len(opened) == 1
+    monkeypatch.setattr(nsm, "_TS_FILE", str(tmp_path / "ts2.json"))  # bypass throttle
+    nsm.maybe_run(_live_cfg(), [{"coin": "BTC", "mid": 60000.0}], [], ex)
+    assert len(opened) == 1   # same UTC day -> no second live open

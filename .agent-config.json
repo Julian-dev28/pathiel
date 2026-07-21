@@ -358,6 +358,13 @@
   "min_order_bump_max_mult": 2.0,
   "news_surge_multi": {
     "enabled": true,
-    "scan_interval_min": 30.0
+    "shadow_only": false,
+    "scan_interval_min": 30.0,
+    "notional_usd": 20.0,
+    "leverage": 10,
+    "stop_pct": 6.0,
+    "hold_days": 1.0,
+    "min_volume_usd": 250000.0,
+    "max_new_per_cycle": 1
   }
 }
