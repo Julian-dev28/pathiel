@@ -34,7 +34,7 @@
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
-  "min_available_margin_pct": 0.01,
+  "min_available_margin_pct": 0.2,
   "cooldown_min": 30,
   "held_research_interval_min": 10,
   "min_ai_confidence": 0.62,

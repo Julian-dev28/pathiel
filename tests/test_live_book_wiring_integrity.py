@@ -149,3 +149,23 @@ def test_main_engine_entries_stay_disabled():
     from pathlib import Path
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
     assert cfg["main_engine"]["entries_enabled"] is False
+
+
+# --------------------------------------------------------------- margin floor
+def test_margin_floor_preserves_a_real_liquidation_buffer():
+    """2026-07-22 root-cause of the equity bleed: min_available_margin_pct was
+    0.01, so the bot deployed the xyz dex to 97% utilization ($2.78 free of
+    $90). With no buffer, every adverse tick FORCE-LIQUIDATED positions at ~5%
+    — BEFORE the 6% backup stop — turning +EV mean-reversion shorts (graded
+    +4.64%/73% win in up-regime) into forced losses and cascading as each
+    liquidation drained the shared margin.
+
+    The floor must sit comfortably above the 6% stop so stops fire before
+    liquidation and the shorts get the TIME to revert (where the edge lives)."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    floor = float(cfg["min_available_margin_pct"])
+    assert floor >= 0.15, f"margin floor {floor} too low — invites forced liquidation"
+    # buffer must exceed the reachable stop (60/leverage = 6% at 10x)
+    assert floor > 0.06
