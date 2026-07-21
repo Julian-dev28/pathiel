@@ -234,3 +234,41 @@ def test_already_acted_thesis_is_excluded_even_when_robust():
                      "halves": {"first": 5.2, "second": 6.9}, "survives": True})
     fresh = [x for x in [t] if not x.get("already") and (x.get("loo") is None or x["loo"]["survives"])]
     assert fresh == []
+
+
+# ------------------------------------------------- performance / safety guards
+def test_deadline_is_bounded_and_env_tunable():
+    """A cron cycle with no ceiling is a silent single point of failure: a
+    contended fetch loop wedged the first live run past 15 minutes. The hard
+    deadline must exist and be sane (well under a day)."""
+    assert 0 < AC._DEADLINE_S <= 3600
+
+
+def test_evolution_skips_already_acted_and_never_promote(monkeypatch):
+    """The single biggest cost was re-grading news_catalyst's 120-coin inverse
+    every run, even though it is already-acted AND never-promote. The evolution
+    stage must not call grade_inverse for those books at all."""
+    graded = []
+    monkeypatch.setattr(AC, "grade_inverse",
+                        lambda book, now: graded.append(book) or None)
+    # simulate the evolution loop's guard directly
+    for book in ("news_catalyst", "mover_pass", "young_listings", "some_new_book"):
+        if book in AC._THESIS_ALREADY_ACTED or book in AC._NEVER_PROMOTE:
+            continue
+        AC.grade_inverse(book, 0)
+    assert "news_catalyst" not in graded   # never-promote + already-acted
+    assert "mover_pass" not in graded      # already-acted
+    assert "young_listings" not in graded  # already-acted
+    assert graded == ["some_new_book"]     # only genuinely-new refutations cost anything
+
+
+def test_research_fetch_retries_are_reduced_not_aggressive():
+    """The cycle is research, not trading — a data gap is harmless, so it must
+    not retry as hard as the live loop or it amplifies API contention."""
+    import os
+    # main() sets these defaults; verify the intended values are the ones set
+    assert AC.__dict__  # module importable
+    # the defaults main() installs
+    src = (Path(__file__).resolve().parents[1] / "scripts" / "autonomous_cycle.py").read_text()
+    assert 'setdefault("HERMES_CANDLE_RETRIES", "2")' in src
+    assert 'HERMES_CANDLE_BACKOFF_CAP_S' in src

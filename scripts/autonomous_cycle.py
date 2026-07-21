@@ -297,7 +297,33 @@ def apply_action(cfg: Dict[str, Any], book: str, action: str) -> bool:
     return False
 
 
+_DEADLINE_S = int(os.environ.get("HERMES_CYCLE_DEADLINE_S", "1500"))  # 25 min
+
+
+def _install_deadline() -> None:
+    """Abort the run rather than let a contended fetch loop wedge the daily
+    job. A cron cycle with no ceiling is a silent single point of failure."""
+    import signal
+
+    def _die(signum, frame):
+        raise SystemExit(f"[autonomous-cycle] ABORTED — exceeded {_DEADLINE_S}s "
+                         f"deadline (likely HL rate-budget contention with the "
+                         f"live loop); no config changed. Re-runs tomorrow.")
+    try:
+        signal.signal(signal.SIGALRM, _die)
+        signal.alarm(_DEADLINE_S)
+    except Exception:
+        pass  # non-POSIX / no-signal env: run without the guard
+
+
 def main() -> int:
+    _install_deadline()
+    # This is research, not trading: a candle data gap is harmless here, so do
+    # not retry as hard as the live loop (which retries 6x to never miss a
+    # setup). Fewer retries = far less contention amplification when the cycle
+    # and the loop hit HL at once.
+    os.environ.setdefault("HERMES_CANDLE_RETRIES", "2")
+    os.environ.setdefault("HERMES_CANDLE_BACKOFF_CAP_S", "2")
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true")
@@ -316,14 +342,21 @@ def main() -> int:
     # EVOLUTION: every refutation this run gets its inverse tested.
     theses: List[Dict[str, Any]] = []
     for r in rows:
-        if r["verdict"] == "REFUTED":
-            try:
-                t = grade_inverse(r["book"], now_ms)
-            except Exception:
-                t = None
-            if t:
-                t["already"] = _THESIS_ALREADY_ACTED.get(r["book"])
-                theses.append(t)
+        if r["verdict"] != "REFUTED":
+            continue
+        # Skip the expensive inverse grade for books whose inverse is already
+        # decided (wired live, or considered and declined) or that can never be
+        # promoted. Re-grading news_catalyst's 120-coin inverse every day just
+        # to reprint a known verdict is what stretched the first cron run past
+        # 15 minutes under API contention.
+        if r["book"] in _THESIS_ALREADY_ACTED or r["book"] in _NEVER_PROMOTE:
+            continue
+        try:
+            t = grade_inverse(r["book"], now_ms)
+        except Exception:
+            t = None
+        if t:
+            theses.append(t)
 
     acted: List[str] = []
     if not args.dry_run:
