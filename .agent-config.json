@@ -28,7 +28,7 @@
     "hip3": 1.0
   },
   "tp_scale_fraction": 0.5,
-  "max_concurrent": 100,
+  "max_concurrent": 20,
   "max_total_notional_pct": 10.0,
   "max_daily_loss_usd": -100,
   "daily_giveback_halt_pct": 0.45,
