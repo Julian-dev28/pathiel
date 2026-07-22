@@ -328,7 +328,7 @@
   "mover_recorders": {
     "pass_short_live": {
       "enabled": true,
-      "shadow_only": false,
+      "shadow_only": true,
       "notional_usd": 20.0,
       "leverage": 10,
       "stop_pct": 6.0,
