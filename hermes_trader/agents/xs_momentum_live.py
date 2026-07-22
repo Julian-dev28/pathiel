@@ -230,7 +230,8 @@ def _book_from_positions(positions) -> (List[str], List[str]):
 
 
 def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
-              short_floor_usd: Optional[float] = None, hold_days: float = 5.0) -> Dict[str, Any]:
+              short_floor_usd: Optional[float] = None, hold_days: float = 5.0,
+              equity_frac: float = 0.0) -> Dict[str, Any]:
     """Synthetic analysis for the executor. strategy_book bypasses the thought-engine entry gates
     (runner/trend) — this is a separate validated edge — while every SAFETY gate still applies.
     vol_scalar (Moreira-Muir W6) is stored in the analysis so the executor can note the scaling
@@ -278,6 +279,14 @@ def _analysis(coin: str, side: str, rank_score: float, vol_scalar: float = 1.0,
     }
     if side == "short" and short_floor_usd and short_floor_usd > 0:
         out["min_short_volume_usd_override"] = float(short_floor_usd)
+    # Per-book equity fraction (2026-07-22): decouples the PROVEN earner's size
+    # from the global strategy_book_equity_frac it shared with the unproven
+    # shorts, so the winner can be sized up independently. Capped by available
+    # main-dex margin — the real lever is capital LOCATION (xs_momentum is
+    # starved on the small main dex while capital sits on the xyz dex funding
+    # the losers). Falls back to the global path when unset.
+    if equity_frac and equity_frac > 0:
+        out["strategy_book_equity_frac_override"] = float(equity_frac)
     return out
 
 
@@ -420,7 +429,8 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
                 logger.warning(f"[xs-momentum] open long {coin} skipped — claimed by {claims.owner_of(coin)}")
                 continue
             a = _analysis(coin, "long", book.scores.get(coin, 0.0), vol_scalar,
-                          hold_days=float(xs.get("hold_days", 5)))
+                          hold_days=float(xs.get("hold_days", 5)),
+                          equity_frac=float(xs.get("equity_frac", 0) or 0))
             result = execute_fn(a)
             if _execute_opened(result):
                 owned.add(coin, "long")
@@ -441,6 +451,7 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
                 continue
             a = _analysis(coin, "short", book.scores.get(coin, 0.0), vol_scalar,
                           hold_days=float(xs.get("hold_days", 5)),
+                          equity_frac=float(xs.get("equity_frac", 0) or 0),
                           short_floor_usd=float(xs.get("executor_short_volume_floor_usd",
                                                        xs.get("min_volume_usd", 5_000_000.0))))
             result = execute_fn(a)

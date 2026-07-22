@@ -173,7 +173,8 @@
       "kFLOKI",
       "kPEPE",
       "kSHIB"
-    ]
+    ],
+    "equity_frac": 0.1
   },
   "xs_xyz_equities": {
     "enabled": true,

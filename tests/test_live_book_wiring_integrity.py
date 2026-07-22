@@ -244,3 +244,21 @@ def test_xs_xyz_analysis_actually_emits_the_low_leverage():
     assert a["leverage_override"] == 3
     assert a["backup_sl_pct_override"] == 20.0   # validated wide stop intact
     assert a["dsl_exit_override"]["max_loss_pct"] == 20.0
+
+
+# --------------------------------------------------------------- size the winner
+def test_xs_momentum_has_its_own_equity_frac_decoupled_from_shorts():
+    """2026-07-22: the proven earner shared strategy_book_equity_frac with the
+    unproven shorts, so it couldn't be sized up without sizing them up too.
+    It now carries its own per-book fraction; the shorts keep the global."""
+    from hermes_trader.agents import xs_momentum_live as xl
+    a = xl._analysis("BTC", "long", 0.5, equity_frac=0.15)
+    assert a["strategy_book_equity_frac_override"] == 0.15
+    a0 = xl._analysis("BTC", "long", 0.5)   # unset -> global path
+    assert "strategy_book_equity_frac_override" not in a0
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    # decoupled: xs_momentum has its OWN knob, raisable independently of the
+    # shorts once capital moves to the main dex (the $30 dex caps it at ~0.1 now)
+    assert cfg["xs_momentum"]["equity_frac"] >= cfg["strategy_book_equity_frac"]
