@@ -145,3 +145,38 @@ def test_parse_forecast_tolerates_prose_and_clamps():
     p3, _ = _parse_forecast('{"yes_prob": 0.995, "reasoning": ""}')
     assert p3 == 0.99                                         # in-range extreme -> clamped
     assert _parse_forecast("no json here") is None
+
+
+# ── live resolver (resolution grading) ───────────────────────────────────────
+def test_resolve_yes_won_reads_settled_prices():
+    assert scout.resolve_yes_won({"closed": True, "outcomePrices": json.dumps(["1", "0"])}) is True
+    assert scout.resolve_yes_won({"closed": True, "outcomePrices": json.dumps(["0", "1"])}) is False
+    assert scout.resolve_yes_won({"closed": False, "outcomePrices": json.dumps(["0.6", "0.4"])}) is None
+    assert scout.resolve_yes_won({"closed": True, "outcomePrices": json.dumps(["0.5", "0.5"])}) is None  # void/ambiguous
+    assert scout.resolve_yes_won(None) is None
+
+
+def test_gamma_resolver_caches_per_market():
+    calls = {"n": 0}
+
+    class _C:
+        def market_by_id(self, mid):
+            calls["n"] += 1
+            return {"closed": True, "outcomePrices": json.dumps(["1", "0"])} if mid == "win" else \
+                   {"closed": False, "outcomePrices": json.dumps(["0.3", "0.7"])}
+
+    r = scout.make_gamma_resolver(_C())
+    assert r("win") is True and r("win") is True     # second call cached
+    assert r("open") is None
+    assert calls["n"] == 2                            # "win" fetched once, "open" once
+
+
+def test_scan_dedups_already_recorded_markets(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    m = _mkt(id="DUP", description="DUP", outcomePrices=json.dumps(["0.40", "0.60"]))
+    fc = StubForecaster(lambda q, d: (0.75, "yes"))
+    first = scan(_FakeClient([m]), fc, CFG, record_fn=ledger.record)
+    assert len(first) == 1                               # recorded once
+    second = scan(_FakeClient([m]), fc, CFG, record_fn=ledger.record)
+    assert second == []                                  # same market skipped next run
+    assert len(ledger.load()) == 1                       # no duplicate in the ledger

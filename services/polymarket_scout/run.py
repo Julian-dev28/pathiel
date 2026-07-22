@@ -31,9 +31,16 @@ def candidates(client: PolymarketClient, cfg: Dict[str, Any]) -> List[Dict[str, 
 
 
 def scan(client: PolymarketClient, forecaster, cfg: Dict[str, Any],
-         limit: int = 10, record_fn=ledger.record) -> List[Dict[str, Any]]:
+         limit: int = 10, record_fn=ledger.record,
+         skip_ids: set = None) -> List[Dict[str, Any]]:
+    # one paper trade per market — re-forecasting the same market daily adds
+    # correlated duplicates, not independent evidence. A market resolves+leaves
+    # open_markets before it could recur, so "ever recorded" is the right skip.
+    if skip_ids is None:
+        skip_ids = {str(r.get("market_id")) for r in ledger.load()}
     recorded: List[Dict[str, Any]] = []
-    for m in candidates(client, cfg)[:limit]:
+    fresh = [m for m in candidates(client, cfg) if str(m.get("id")) not in skip_ids]
+    for m in fresh[:limit]:
         mkt_yes = market_yes_prob(m)
         if mkt_yes is None:
             continue

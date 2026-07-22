@@ -73,6 +73,38 @@ class PolymarketClient:
         best = min(asks, key=lambda a: float(a["price"]))
         return float(best["price"]), float(best["size"])
 
+    def market_by_id(self, market_id: str) -> Optional[Dict[str, Any]]:
+        m = self._get(f"{GAMMA}/markets/{market_id}")
+        return m if isinstance(m, dict) else None
+
+
+def resolve_yes_won(m: Optional[Dict[str, Any]]) -> Optional[bool]:
+    """True if YES won, False if NO won, None if not resolved yet. A resolved
+    binary market is CLOSED with its YES price pinned to ~1 or ~0."""
+    if not m or not m.get("closed"):
+        return None
+    p = market_yes_prob(m)
+    if p is None:
+        return None
+    if p >= 0.99:
+        return True
+    if p <= 0.01:
+        return False
+    return None                         # closed but ambiguous/void — don't grade
+
+
+def make_gamma_resolver(client: "PolymarketClient") -> Callable[[str], Optional[bool]]:
+    """Live resolver for ledger.grade: market_id -> (YES won?), cached per run so
+    a market shared by multiple signals is fetched once."""
+    cache: Dict[str, Optional[bool]] = {}
+
+    def resolve(market_id: str) -> Optional[bool]:
+        if market_id not in cache:
+            cache[market_id] = resolve_yes_won(client.market_by_id(market_id))
+        return cache[market_id]
+
+    return resolve
+
 
 # ── pure filtering + edge math ───────────────────────────────────────────────
 _CRYPTO_UPDOWN = ("up or down", "higher or lower", "up/down")
