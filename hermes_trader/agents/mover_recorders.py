@@ -425,3 +425,118 @@ def record_news_ta_quadrant(analysis: Dict[str, Any],
                 f"{quadrant} (news {polarity}/{source}, "
                 f"conf {float(analysis.get('confidence') or 0):.2f})")
     return True
+
+
+def _ntq_aligned_analysis(coin: str, side: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Bounded book order for the LIVE news_ta_aligned arm. confidence=0.99 (like the
+    other book legs) so the executor's runner/confidence gates pass; the REAL AI
+    confidence is preserved in the ledger meta for grading. leverage default 3: a 15%
+    stop needs 1/lev - maint > 0.15, i.e. lev <= ~4x, so the DSL stop fires before
+    liquidation even on a high-maint alt."""
+    stop_pct = float(cfg.get("stop_pct", 15.0))
+    leverage = max(1, int(cfg.get("leverage", 3)))
+    verdict = "LONG" if side == "long" else "SHORT"
+    short_floor = 250_000.0 if ":" in coin else float(cfg.get("min_volume_usd", 5_000_000.0))
+    return {
+        "id": str(uuid.uuid4()), "coin": coin,
+        "verdict": verdict, "side": side,
+        "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
+        "reasoning": (f"[news_ta_aligned] AI {verdict} confirmed by aligned news polarity — "
+                      f"validated quadrant (aligned +1.80%/sig, win 0.86)"),
+        "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
+        "composite_score": 0.0, "strategy_book": "news_ta_aligned",
+        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "leverage_override": leverage,
+        "backup_sl_pct_override": stop_pct,
+        "tp_scale_fraction_override": 0.0,
+        "min_short_volume_usd_override": short_floor,
+        "dsl_exit_override": {
+            "max_loss_pct": stop_pct,
+            "max_loss_roe_pct": stop_pct * leverage,
+            "protect_pct": 9999.0,
+            "retrace_threshold": 0.5,
+            "hard_timeout_minutes": float(cfg.get("hold_days", 1.0)) * 1440.0,
+            "breakeven_trigger_pct": 0.0,
+            "breakeven_lock_pct": 0.0,
+            "stale_flat_timeout_minutes": 0.0,
+            "consecutive_breaches_required": 1,
+            "atr_stop": {"enabled": False},
+            "noise_band": {"enabled": False},
+        },
+    }
+
+
+def maybe_trade_news_ta_aligned(analysis: Dict[str, Any], config: Dict[str, Any],
+                                execute_fn: Optional[Callable] = None) -> bool:
+    """LIVE leg for the VALIDATED aligned quadrant. news_ta_quadrant graded the
+    news-vs-TA split forward: ALIGNED (AI direction agrees with news polarity) =
+    +1.80%/sig, win 0.86 (n=7); the pooled book VALIDATED at n=10, both OOS halves +,
+    survives 25bps. CONFLICT is noise (+0.80%, win 0.33, one outlier). This trades ONLY
+    the aligned subset — the AI's OWN directional verdict when news agrees — which is the
+    +EV slice the blanket main-engine-off drops on the floor. Conflict/neutral NEVER trade.
+
+    Runs on the same raw verdict the recorder tags (before route_verdict mutates it), so
+    live policy == graded policy. Records to its OWN ledger (news_ta_aligned) for a clean
+    live-policy forward grade, separate from the research quadrant ledger. Kill:
+    news_ta_aligned.enabled=false or shadow_only=true."""
+    cfg = config.get("news_ta_aligned") or {}
+    if not bool(cfg.get("enabled", False)):
+        return False
+    verdict = (analysis.get("verdict") or "").upper()
+    if verdict not in ("LONG", "SHORT"):
+        return False
+    news = (analysis.get("news_context") or "").strip()
+    if not news or news.lower() == "no news":
+        return False
+    coin = analysis.get("coin") or ""
+    try:
+        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
+    except (TypeError, ValueError):
+        px = 0.0
+    if not coin or px <= 0:
+        return False
+    polarity, source = classify_news_polarity(analysis.get("news_risk"), news)
+    side = "long" if verdict == "LONG" else "short"
+    aligned = (polarity != "neutral") and ((polarity == "positive") == (side == "long"))
+    if not aligned:
+        return False
+    conf = float(analysis.get("confidence") or 0.0)
+    if conf < float(cfg.get("min_confidence", 0.0)):
+        return False
+    now_ms = int(time.time() * 1000)
+    if not _dedup_key_hit("ntq_trade", coin, now_ms):   # own key — independent of the recorder
+        return False
+    stop_pct = float(cfg.get("stop_pct", 15.0))
+    live = (not bool(cfg.get("shadow_only", False))) and execute_fn is not None
+    shadow_ledger.record("news_ta_aligned", coin=coin, side=side,
+                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
+                         entry_ref_px=px, horizon_days=float(cfg.get("hold_days", 1.0)),
+                         stop_pct=stop_pct,
+                         meta={"quadrant": "aligned", "news_polarity": polarity,
+                               "polarity_source": source, "confidence": conf,
+                               "macro_regime": _macro_regime(coin),
+                               "web_search_used": bool(analysis.get("web_search_used")),
+                               "shadow": not live})
+    logger.info(f"[news-ta-aligned] recorded: {coin} {side} aligned "
+                f"(news {polarity}/{source}, conf {conf:.2f}, {'LIVE' if live else 'shadow'})")
+    if live:
+        claims = get_claims_registry()
+        if (coin not in claims.claimed_by_others("news_ta_aligned")
+                and claims.claim(coin, "news_ta_aligned")):
+            try:
+                result = execute_fn(_ntq_aligned_analysis(coin, side, cfg))
+                opened = isinstance(result, dict) and (
+                    bool(result.get("executed"))
+                    or bool((result.get("result") or {}).get("executed")
+                            if isinstance(result.get("result"), dict) else False))
+                if opened:
+                    claims.save()
+                    logger.info(f"[news-ta-aligned] LIVE opened {side} {coin}")
+                else:
+                    claims.release(coin, "news_ta_aligned")
+                    why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                    logger.warning(f"[news-ta-aligned] {coin} not opened: {why}")
+            except Exception as exc:
+                claims.release(coin, "news_ta_aligned")
+                logger.warning(f"[news-ta-aligned] open {coin} failed: {exc}")
+    return True

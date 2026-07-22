@@ -68,6 +68,7 @@ from hermes_trader.agents.mover_recorders import (
     record_young_mover_short as _record_young_mover_short,
     record_trend_block_news_long as _record_trend_block_news_long,
     record_news_ta_quadrant as _record_news_ta_quadrant,
+    maybe_trade_news_ta_aligned as _maybe_trade_news_ta_aligned,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
@@ -1123,6 +1124,17 @@ while True:
                             (float(m.get("midPx") or m.get("markPx") or 0)
                              for m in universe if m.get("coin") == coin), 0.0)
                     _record_news_ta_quadrant(analysis, read_agent_config())
+                except Exception:
+                    pass
+
+                # news_ta_aligned (LIVE): trade the VALIDATED aligned quadrant —
+                # the AI's own directional verdict when news polarity AGREES with
+                # it (aligned +1.80%/sig, win 0.86; pooled book VALIDATED n=10).
+                # The +EV slice the blanket main-engine-off drops. Conflict/neutral
+                # never trade. Runs on the raw verdict so live policy == graded policy.
+                try:
+                    _maybe_trade_news_ta_aligned(analysis, read_agent_config(),
+                                                 execute_fn=_book_execute)
                 except Exception:
                     pass
 

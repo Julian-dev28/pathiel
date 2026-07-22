@@ -316,6 +316,15 @@
     "min_volume_usd": 250000.0,
     "max_new_per_cycle": 1
   },
+  "news_ta_aligned": {
+    "enabled": true,
+    "shadow_only": false,
+    "notional_usd": 20.0,
+    "leverage": 3,
+    "stop_pct": 15.0,
+    "hold_days": 1.0,
+    "min_confidence": 0.0
+  },
   "mover_recorders": {
     "pass_short_live": {
       "enabled": true,

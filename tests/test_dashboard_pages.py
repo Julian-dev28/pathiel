@@ -326,8 +326,9 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     # books deleted (never validated / refuted); +xs_xyz_equities (W-X2
     # ROBUST); +news_surge_short +mover_pass_short (mover_pass LONG
     # (reverse-refuted audit 2026-07-20) +news_surge_multi (worldmonitor
-    # thesis, operator flip 2026-07-21) — 12 books
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 12
+    # thesis, operator flip 2026-07-21) +news_ta_aligned (VALIDATED aligned
+    # quadrant, 2026-07-22) — 13 books
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 13
     assert rows["engulf_short"]["status"] == "live"
     assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
     assert rows["xs_momentum"]["size"] == "4/leg basket"
@@ -335,13 +336,14 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     assert rows["xs_xyz_equities"]["size"] == "5/leg basket"
     assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
     assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
+    assert "news_ta_aligned" in rows and rows["news_ta_aligned"]["thesis"]
     assert all(r["thesis"] for r in rows.values())
 
 
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 12 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 13 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -913,7 +915,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 12
+    assert len(rows) == 13
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 
