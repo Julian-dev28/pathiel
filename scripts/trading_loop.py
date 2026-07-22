@@ -64,10 +64,8 @@ from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_ma
 from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
-    record_mover_pass as _record_mover_pass,
     record_mover_pass_short as _record_mover_pass_short,
     record_young_mover_short as _record_young_mover_short,
-    record_b15_crossings as _record_b15_crossings,
     record_trend_block_news_long as _record_trend_block_news_long,
     record_news_ta_quadrant as _record_news_ta_quadrant,
 )
@@ -77,7 +75,6 @@ from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_ma
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
 from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
-from hermes_trader.agents.whale_flow_live import maybe_run as _whale_flow_maybe_run
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     _runner_entry_block_reason,
@@ -871,19 +868,6 @@ while True:
         except Exception as _dle:
             logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
 
-        # W-M1 near-miss forward test (b15_up): zero-capital ledger records of
-        # +15% crossings in BTC-20d-up regime — settles the p=0.022 cell.
-        try:
-            _btc_bars = _fetch_candles_sync("BTC", "1d", 25, 6 * 3600 * 1000)
-            _btc_up = None
-            if _btc_bars and len(_btc_bars) >= 21:
-                _c0 = float(getattr(_btc_bars[-21], "c", 0) or 0)
-                _c1 = float(getattr(_btc_bars[-1], "c", 0) or 0)
-                _btc_up = (_c1 > _c0) if _c0 > 0 else None
-            _record_b15_crossings(universe, _btc_up, read_agent_config())
-        except Exception as _bre:
-            logger.debug(f"[mover-recorders] b15 pass failed (non-fatal): {_bre}")
-
         # W-U unlock recorder: zero-capital shadow SHORTs when an HL coin
         # enters the 24h window before a >=1%-of-circ scheduled unlock
         # (DefiLlama calendar, refreshed twice a day inside the module).
@@ -933,13 +917,6 @@ while True:
             _news_surge_multi_maybe_run(read_agent_config(), results, positions)
         except Exception as _nsme:
             logger.debug(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
-
-        # whale_flow recorder: Binance aggTrades whale prints on the cycle's
-        # crypto candidates (30-min throttle; balanced reads = control rows).
-        try:
-            _whale_flow_maybe_run(read_agent_config(), results)
-        except Exception as _wfe:
-            logger.debug(f"[whale-flow] pass failed (non-fatal): {_wfe}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
@@ -1172,20 +1149,13 @@ while True:
                 if action == "none":
                     # W-M4: AI PASS on a researched mover forfeited +4.5% mean fwd-24h.
                     # Zero-capital ledger record; promotion needs >=30 graded episodes.
-                    try:
-                        _mid = next((float(m.get("midPx") or m.get("markPx") or 0)
-                                     for m in universe if m.get("coin") == coin), 0.0)
-                        analysis["last_price"] = _mid
-                        _record_mover_pass(analysis, read_agent_config(),
-                                           execute_fn=_book_execute)
-                    except Exception:
-                        pass
                     # mover_pass_short LIVE (operator flip 2026-07-20, reverse-refuted
-                    # audit): exact inverse of mover_pass, same PASS event, own dedup
-                    # key — see findings/reverse_refuted_direction_audit.md
-                    # (+6.745%/sig, excess +6.89%, mc_p 0.0005, both halves +). Claims
-                    # registry gives mutual exclusion with mover_pass on the same coin.
+                    # audit): SHORT the mover the AI just PASSed — validated inverse
+                    # (+6.745%/sig, mc_p 0.0005, both halves +).
                     try:
+                        analysis["last_price"] = next(
+                            (float(m.get("midPx") or m.get("markPx") or 0)
+                             for m in universe if m.get("coin") == coin), 0.0)
                         _record_mover_pass_short(analysis, read_agent_config(),
                                                  execute_fn=_book_execute)
                     except Exception:

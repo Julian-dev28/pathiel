@@ -76,7 +76,6 @@ _SWITCHES: Dict[str, tuple] = {
     "news_surge_short": ("top", "news_surge_short"),
     "xs_xyz_equities": ("top", "xs_xyz_equities"),
     "extreme_fade": ("top", "extreme_fade"),
-    "mover_pass": ("nested", "mover_recorders", "pass_live"),
     "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
     "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
     # The main engine is a thesis like any other. Its live arm is an ENTRIES

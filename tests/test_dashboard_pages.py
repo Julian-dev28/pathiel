@@ -324,28 +324,24 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     rows = {r["name"]: r for r in db._books_payload()}
     # demolition 2026-07-18: majors_swing / young_listings / news_catalyst
     # books deleted (never validated / refuted); +xs_xyz_equities (W-X2
-    # ROBUST, wired 2026-07-20); +news_surge_short +mover_pass_short
+    # ROBUST); +news_surge_short +mover_pass_short (mover_pass LONG
     # (reverse-refuted audit 2026-07-20) +news_surge_multi (worldmonitor
     # thesis, operator flip 2026-07-21) — 12 books
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 13
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 12
     assert rows["engulf_short"]["status"] == "live"
     assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
-    assert rows["mover_pass"]["status"] == "live"         # nested pass_live config
     assert rows["xs_momentum"]["size"] == "4/leg basket"
     assert rows["xs_xyz_equities"]["status"] == "live"
     assert rows["xs_xyz_equities"]["size"] == "5/leg basket"
     assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
     assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
     assert all(r["thesis"] for r in rows.values())
-    # mover_pass trades LIVE now — thesis must say so, not "recorder"
-    assert "PASSed" in rows["mover_pass"]["thesis"]
-    assert "recorder" not in rows["mover_pass"]["thesis"].lower()
 
 
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 13 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 12 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -917,7 +913,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 13
+    assert len(rows) == 12
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 
@@ -1040,10 +1036,8 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
     assert rows["extreme_fade"]["status"] == "live"
     assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
     assert rows["extreme_fade"]["resolved"] == 1        # far past its 3d horizon
-    # whale_flow has no _BOOKS config entry -> pure recorder
-    assert rows["whale_flow"]["status"] == "recorder"
-    assert rows["whale_flow"]["size"] == "—"
-    assert "recorder" in rows["whale_flow"]["thesis"] or "measurement" in rows["whale_flow"]["thesis"]
+    # whale_flow REFUTED + removed 2026-07-22 -> in _REMOVED_BOOKS, never renders
+    assert "whale_flow" not in rows
 
 
 def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
@@ -1060,6 +1054,9 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     with open(tmp_path / "neg_funding_fade.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "ETH", "signal_bar_t": 1000,
                              "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
+    with open(tmp_path / "news_ta_quadrant.jsonl", "w") as fh:
+        fh.write(json.dumps({"ts": 1000, "coin": "SOL", "signal_bar_t": 1000,
+                             "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
     with open(tmp_path / "whale_flow.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "SOL", "signal_bar_t": 1000,
                              "entry_ref_px": 10.0, "horizon_days": 1.0}) + "\n")
@@ -1067,7 +1064,8 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
     assert "premium_fade_short" not in rows
     assert "neg_funding_fade" not in rows
-    assert rows["whale_flow"]["status"] == "recorder"
+    assert "whale_flow" not in rows                       # REFUTED + removed 2026-07-22
+    assert rows["news_ta_quadrant"]["status"] == "recorder"
     # no row can ever carry the retired 'dead' status again
     assert all(r["status"] != "dead" for r in rows.values())
 
@@ -1134,10 +1132,8 @@ def test_tapes_payload_whale_and_news(monkeypatch, tmp_path):
         fh.write(json.dumps({"ts": now - 500, "coin": "ARB", "side": "long",
                              "meta": {"surge_x": 4.2, "breaking": True}}) + "\n")
     d = db._tapes_payload(now_ms=now)
-    assert d["whale"]["status"] == "ok"
-    coins = {r["coin"] for r in d["whale"]["rows"]}
-    assert coins == {"BTC"}   # OLD excluded by the 24h window
-    assert d["whale"]["rows"][0]["net_usd"] == 400000
+    # whale_flow REFUTED + removed 2026-07-22 -> whale tape is always empty now
+    assert d["whale"]["status"] == "removed" and d["whale"]["rows"] == []
     assert d["news"]["rows"][0]["coin"] == "ARB" and d["news"]["rows"][0]["breaking"] is True
 
 
@@ -1145,7 +1141,7 @@ def test_tapes_payload_empty_is_accruing(monkeypatch, tmp_path):
     from hermes_trader.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     d = db._tapes_payload()
-    assert d["whale"]["status"] == "accruing" and d["whale"]["rows"] == []
+    assert d["whale"]["status"] == "removed" and d["whale"]["rows"] == []
     assert d["news"]["status"] == "accruing" and d["news"]["rows"] == []
 
 

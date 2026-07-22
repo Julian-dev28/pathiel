@@ -573,9 +573,6 @@ _BOOKS: List[tuple] = [
      "Funding-rate z-score spike above 2 — short until funding normalizes."),
     ("unlock_short_runin", "unlock_short",
      "Short the run-in 48-72h before large token unlocks (>=1% of circulating)."),
-    ("mover_pass", None,
-     "Buy the mover the AI just PASSed — its vetoes measured -4.5%/day "
-     "forfeited."),
     ("mover_pass_short", None,
      "Inverse of mover_pass — short the mover the AI just PASSed instead of "
      "buying it (own forward ledger interim-refuted the long side)."),
@@ -1133,7 +1130,9 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
 # ANYWHERE in the UI. Their ledger .jsonl files stay on disk as the refutation
 # evidence, and pnl_by_book.py keeps their names for historical attribution
 # only — but the league skips them entirely instead of showing a DEAD row.
-_REMOVED_BOOKS = frozenset({"premium_fade_short", "neg_funding_fade"})
+_REMOVED_BOOKS = frozenset({"premium_fade_short", "neg_funding_fade",
+                            "whale_flow", "mover_pass", "mover_b15_up",
+                            "majors_swing"})
 
 
 def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -1231,29 +1230,15 @@ def _funding_heat_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
 
 
 def _tapes_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """Last 24h of whale_flow reads (net $ per coin, buy/sell split) and
-    news_catalyst reads (surge sparkline per coin, breaking flagged). Local
-    shadow-ledger files only — no network."""
+    """Last 24h of news_catalyst reads (surge sparkline per coin, breaking
+    flagged). Local shadow-ledger only. (whale tape removed 2026-07-22 —
+    whale_flow REFUTED.)"""
     from hermes_trader.agents import shadow_ledger
 
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     cutoff = now - _DAY_MS
 
-    whale_by_coin: Dict[str, Dict[str, Any]] = {}
-    whale_rows = [r for r in shadow_ledger.load("whale_flow") if int(r.get("ts") or 0) >= cutoff]
-    for r in whale_rows:
-        meta = r.get("meta") or {}
-        coin = r.get("coin")
-        if not coin:
-            continue
-        agg = whale_by_coin.setdefault(coin, {"buy_usd": 0.0, "sell_usd": 0.0,
-                                              "net_usd": 0.0, "reads": 0})
-        agg["buy_usd"] += float(meta.get("buy_usd") or 0.0)
-        agg["sell_usd"] += float(meta.get("sell_usd") or 0.0)
-        agg["net_usd"] += float(meta.get("net_usd") or 0.0)
-        agg["reads"] += 1
-    whale = sorted(({"coin": c, **v} for c, v in whale_by_coin.items()),
-                   key=lambda r: -abs(r["net_usd"]))[:15]
+    whale = []  # whale_flow recorder REFUTED + removed 2026-07-22
 
     news_by_coin: Dict[str, Dict[str, Any]] = {}
     news_rows = sorted(
@@ -1273,8 +1258,7 @@ def _tapes_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
           "reads": len(v["points"])} for c, v in news_by_coin.items()),
         key=lambda r: (not r["breaking"], -r["reads"]))[:15]
 
-    return {"whale": {"rows": whale, "since": cutoff,
-                      "status": "ok" if whale_rows else "accruing"},
+    return {"whale": {"rows": whale, "since": cutoff, "status": "removed"},
             "news": {"rows": news, "since": cutoff,
                      "status": "ok" if news_rows else "accruing"}}
 

@@ -294,7 +294,7 @@
   },
   "unlock_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "notional_usd": 20.0,
     "leverage": 12,
     "stop_pct": 15.0,
@@ -316,14 +316,6 @@
     "max_new_per_cycle": 1
   },
   "mover_recorders": {
-    "pass_live": {
-      "enabled": true,
-      "shadow_only": true,
-      "notional_usd": 20.0,
-      "leverage": 12,
-      "stop_pct": 15.0,
-      "hold_days": 1.0
-    },
     "pass_short_live": {
       "enabled": true,
       "shadow_only": false,
@@ -341,12 +333,6 @@
       "hold_days": 1.0,
       "min_volume_usd": 250000.0
     }
-  },
-  "whale_flow": {
-    "enabled": true,
-    "scan_interval_min": 30,
-    "min_print_usd": 100000.0,
-    "window_minutes": 30.0
   },
   "wallet_follow": {
     "enabled": true,

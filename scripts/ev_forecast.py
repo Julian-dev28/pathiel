@@ -88,7 +88,6 @@ def _live_books(cfg: Dict[str, Any], eq: Dict[str, float]) -> List[Dict[str, Any
         fixed(key, cfg.get(key) or {},
               ledger="unlock_short_runin" if key == "unlock_short" else None)
     mr = cfg.get("mover_recorders") or {}
-    fixed("mover_pass", mr.get("pass_live") or {})
     fixed("mover_pass_short", mr.get("pass_short_live") or {})
 
     # Basket books: leg notional = funding-dex equity * frac * lev, capped.
