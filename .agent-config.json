@@ -13,7 +13,7 @@
       "web_search_max_turns": 8
     },
     "web_search": {
-      "enabled": true,
+      "enabled": false,
       "min_move_pct": 8.0,
       "held": true
     }
