@@ -188,7 +188,7 @@
     "benchmark": "xyz:XYZ100",
     "max_book_positions": 10,
     "history_bars": 60,
-    "equity_frac": 0.04,
+    "equity_frac": 0.07,
     "leverage": 3
   },
   "extreme_fade": {
