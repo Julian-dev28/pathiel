@@ -380,16 +380,16 @@ def test_citations_never_glue_url_to_url():
     assert out[2] == "Real Title — https://x.test/c"
 
 
-def test_cli_env_pins_every_model_knob_to_the_brain_model():
+def test_cli_env_claude_pins_every_model_knob_to_the_brain_model():
     """Operator order 2026-07-22: ONLY the configured model does brain work. The
-    ambient env pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5 — _cli_env must
-    override it so no fable/haiku ever runs a verdict or subagent."""
+    ambient env pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5 — for claude_cli
+    _cli_env must override it so no fable/haiku ever runs a verdict or subagent."""
     from hermes_trader.agents import ai_brain
 
     base = {"PATH": "/usr/bin", "CLAUDE_CODE_SUBAGENT_MODEL": "claude-fable-5"}
 
     # non-search: subagent AND small/fast both pinned to the brain model
-    e = ai_brain._cli_env(base, "claude-opus-4-8", web_search=False)
+    e = ai_brain._cli_env(base, "claude_cli", "claude-opus-4-8", web_search=False)
     assert e["CLAUDE_CODE_SUBAGENT_MODEL"] == "claude-opus-4-8"   # fable overridden
     assert e["ANTHROPIC_SMALL_FAST_MODEL"] == "claude-opus-4-8"
     assert e["PATH"] == "/usr/bin"                                # base env preserved
@@ -397,12 +397,32 @@ def test_cli_env_pins_every_model_knob_to_the_brain_model():
 
     # web-search: subagent pinned; small/fast is Haiku (opus 400s on WebSearch),
     # deterministic and NEVER fable; the verdict still runs on the brain model
-    w = ai_brain._cli_env(base, "claude-opus-4-8", web_search=True)
+    w = ai_brain._cli_env(base, "claude_cli", "claude-opus-4-8", web_search=True)
     assert w["CLAUDE_CODE_SUBAGENT_MODEL"] == "claude-opus-4-8"   # fable overridden
-    assert w["ANTHROPIC_SMALL_FAST_MODEL"] == ai_brain._WEB_SEARCH_EXEC_MODEL
+    assert w["ANTHROPIC_SMALL_FAST_MODEL"] == ai_brain._WEB_SEARCH_EXEC_MODEL["claude_cli"]
     assert "fable" not in str(w).lower()
     assert "haiku" in w["ANTHROPIC_SMALL_FAST_MODEL"]
 
     # empty model: leave the env untouched (CLI uses its own default)
-    n = ai_brain._cli_env(base, "", web_search=False)
+    n = ai_brain._cli_env(base, "claude_cli", "", web_search=False)
     assert n == dict(base)
+
+
+def test_cli_env_codex_strips_claude_aux_pins_and_openrouter_has_no_exec_model():
+    """The Haiku search-executor is claude_cli ONLY. codex_cli must NOT inherit
+    any Claude aux model (strip the fable pin); openrouter has no CLI so no exec
+    model is declared for it."""
+    from hermes_trader.agents import ai_brain
+
+    base = {"PATH": "/usr/bin", "CLAUDE_CODE_SUBAGENT_MODEL": "claude-fable-5",
+            "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5-20251001"}
+    c = ai_brain._cli_env(base, "codex_cli", "", web_search=False)
+    assert "CLAUDE_CODE_SUBAGENT_MODEL" not in c    # fable stripped, never rides along
+    assert "ANTHROPIC_SMALL_FAST_MODEL" not in c    # no Claude small model either
+    assert c["PATH"] == "/usr/bin"
+    assert "fable" not in str(c).lower()
+
+    # per-provider policy: only claude_cli declares a web-search executor model
+    assert ai_brain._WEB_SEARCH_EXEC_MODEL["claude_cli"] == "claude-haiku-4-5-20251001"
+    assert ai_brain._WEB_SEARCH_EXEC_MODEL["codex_cli"] is None
+    assert ai_brain._WEB_SEARCH_EXEC_MODEL["openrouter"] is None

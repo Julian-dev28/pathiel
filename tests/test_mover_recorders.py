@@ -250,6 +250,7 @@ def test_young_mover_short_equity_opens_bounded_short(monkeypatch):
         def save(self): pass
 
     monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: 0.02)   # W-Y4 gate PASS (eq7>0)
     opened = []
     cfg = {"mover_recorders": {"young_short_live": {
         "enabled": True, "shadow_only": False, "notional_usd": 20.0,
@@ -488,3 +489,87 @@ def test_news_ta_aligned_leverage_stop_fires_before_liquidation():
     maint = 0.02
     assert (1.0 / lev - maint) > (stop / 100.0)      # stop fires before liquidation
     assert lev <= 4
+
+
+# --------------------------------------------------- W-Y4 regime gate (young_mover_short)
+class _Bar:
+    def __init__(self, c): self.c = c
+
+
+def _young_gate_cfg(**over):
+    lc = {"enabled": True, "shadow_only": False, "regime_gate_eq7": True,
+          "notional_usd": 20.0, "leverage": 10, "stop_pct": 6.0, "hold_days": 1.0}
+    lc.update(over)
+    return {"mover_recorders": {"young_short_live": lc}}
+
+
+def test_equity_index_7d_drops_forming_bar_and_computes_7d_return(monkeypatch):
+    import hermes_trader.client.hl_client as hl
+    mr._EQ7_CACHE.clear()
+    # 12 bars; index 11 (999) is the FORMING bar and must be dropped.
+    # completed closes = 11 values; [-1]=110, [-8]=100 -> 110/100 - 1 = 0.10
+    bars = [_Bar(x) for x in (100, 100, 100, 100, 101, 102, 103, 104, 105, 106, 110, 999)]
+    monkeypatch.setattr(hl, "fetch_hl_candles", lambda coin, interval, n: bars)
+    assert abs(mr._equity_index_7d() - 0.10) < 1e-9
+
+
+def test_equity_index_7d_fail_closed(monkeypatch):
+    import hermes_trader.client.hl_client as hl
+    mr._EQ7_CACHE.clear()
+    def boom(*a, **k): raise RuntimeError("api down")
+    monkeypatch.setattr(hl, "fetch_hl_candles", boom)
+    assert mr._equity_index_7d() is None                 # exception -> None (fail-closed)
+    mr._EQ7_CACHE.clear()
+    monkeypatch.setattr(hl, "fetch_hl_candles", lambda *a, **k: [_Bar(100)] * 5)
+    assert mr._equity_index_7d() is None                 # <8 completed closes -> None
+
+
+def test_young_mover_short_regime_gate_pass_trades(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: 0.02)     # eq7 UP
+    opened = []
+    assert mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5,
+        _young_gate_cfg(), execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert len(opened) == 1                              # gate pass -> live entry
+    assert out[0][1]["meta"]["regime_gate"] == "pass"
+    assert out[0][1]["meta"]["eq_idx_7d"] == 0.02
+    assert out[0][1]["meta"]["shadow"] is False
+
+
+def test_young_mover_short_regime_gate_fail_records_but_no_trade(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: -0.01)    # eq7 DOWN
+    opened = []
+    assert mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5,
+        _young_gate_cfg(), execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert opened == []                                  # gate fail -> no live entry
+    assert out[0][1]["meta"]["regime_gate"] == "fail"    # counterfactual still recorded
+    assert out[0][1]["meta"]["shadow"] is True
+
+
+def test_young_mover_short_regime_gate_fail_closed_on_fetch_failure(monkeypatch):
+    _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: None)     # fetch failed
+    opened = []
+    mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5,
+        _young_gate_cfg(), execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert opened == []                                  # unknown regime -> fail-closed
+
+
+def test_young_mover_short_gate_disabled_trades_and_still_tags_regime(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: -0.05)    # DOWN, but gate OFF
+    opened = []
+    mr.record_young_mover_short(
+        "xyz:ZHIPU", "history_floor_preflight (29d < 60d history)", 12.5,
+        _young_gate_cfg(regime_gate_eq7=False),
+        execute_fn=lambda a: opened.append(a) or {"executed": True})
+    assert len(opened) == 1                              # gate off -> trades despite down
+    assert out[0][1]["meta"]["regime_gate"] == "fail"    # meta still records what the gate saw

@@ -386,7 +386,7 @@ class ClaudeCliBrain:
         if model:
             args += ["--model", model]
         stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg),
-                          env=_cli_env(os.environ, model, web_search))
+                          env=_cli_env(os.environ, "claude_cli", model, web_search))
         if not stdout:
             return ""
         try:
@@ -434,7 +434,10 @@ class CodexCliBrain:
             "--ignore-rules",
             "-",
         ]
-        stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg))
+        # codex_cli: strip any inherited Claude aux-model pin so no fable/haiku
+        # can ride along; codex runs its own single model and never web-searches.
+        stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg),
+                          env=_cli_env(os.environ, "codex_cli", "", web_search=False))
         return _validated_cli_result(self.provider, stdout)
 
 
@@ -476,28 +479,44 @@ def _command_parts(raw: object, default: list[str]) -> list[str]:
     return default[:]
 
 
-# The operator wants ONLY the configured brain model doing brain work. Claude
-# Code otherwise picks its own auxiliary models — the live loop's ambient env
-# pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5, and the native WebSearch tool
-# runs on a small/fast model (Haiku). We override both:
-#   - subagent model -> the brain model, ALWAYS (never fable).
-#   - small/fast model -> the brain model too, EXCEPT on web-search calls: the
-#     WebSearch tool 400s on opus's xhigh effort ("output_config.effort 'xhigh'
-#     not supported"), so a small model MUST execute the search. We pin it to
-#     Haiku (deterministic, never fable). The VERDICT is the brain model on
-#     every path — only the search-tool mechanics ever run on Haiku.
-_WEB_SEARCH_EXEC_MODEL = "claude-haiku-4-5-20251001"
+# Per-provider auxiliary-model policy. Operator rule (2026-07-22): ONLY the
+# selected brain model does brain work. Where a provider MUST run a second model
+# for a mechanic it cannot do itself, it is declared here — never a cross-family
+# model, and only for that provider:
+#   claude_cli — opus 400s on the native WebSearch tool ("output_config.effort
+#                'xhigh' not supported"), so a small Claude model EXECUTES the
+#                search while the VERDICT stays on the brain model. Haiku, and
+#                ONLY on claude_cli web-search calls.
+#   codex_cli  — web search is disabled (read-only sandbox), so there is no exec
+#                model; the inherited CLAUDE_CODE_*/ANTHROPIC_* aux pins are
+#                stripped so no Claude model can ride along. Codex runs its own
+#                single model.
+#   openrouter — one model does everything incl. native openrouter:web_search;
+#                no CLI, no auxiliary model to pin (see OpenRouterBrain).
+_WEB_SEARCH_EXEC_MODEL: dict[str, str | None] = {
+    "claude_cli": "claude-haiku-4-5-20251001",
+    "codex_cli": None,
+    "openrouter": None,
+}
 
 
-def _cli_env(base_env: Mapping[str, str], model: str, web_search: bool) -> dict[str, str]:
-    """Subprocess env that pins every model knob to `model` so no auxiliary
-    model (fable/haiku) does brain work — except the WebSearch tool executor,
-    which opus cannot be (it 400s), so it is pinned to Haiku on search calls."""
+def _cli_env(base_env: Mapping[str, str], provider: str, model: str,
+             web_search: bool) -> dict[str, str]:
+    """Subprocess env for a CLI brain that pins every model knob so no auxiliary
+    model (fable/haiku) does brain work — scoped to `provider`. Only claude_cli
+    pins a web-search executor (Haiku); codex_cli strips inherited Claude aux
+    pins. openrouter has no CLI and never calls this."""
     env = dict(base_env)
-    if not model:
-        return env
-    env["CLAUDE_CODE_SUBAGENT_MODEL"] = model
-    env["ANTHROPIC_SMALL_FAST_MODEL"] = _WEB_SEARCH_EXEC_MODEL if web_search else model
+    if provider == "claude_cli":
+        if model:
+            env["CLAUDE_CODE_SUBAGENT_MODEL"] = model            # never fable
+            exec_model = _WEB_SEARCH_EXEC_MODEL["claude_cli"]
+            env["ANTHROPIC_SMALL_FAST_MODEL"] = exec_model if web_search else model
+    elif provider == "codex_cli":
+        # Codex ignores CLAUDE_CODE_*/ANTHROPIC_* but strip the inherited fable
+        # pin so no Claude aux model can ever ride along; codex runs one model.
+        env.pop("CLAUDE_CODE_SUBAGENT_MODEL", None)
+        env.pop("ANTHROPIC_SMALL_FAST_MODEL", None)
     return env
 
 

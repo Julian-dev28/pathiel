@@ -336,7 +336,8 @@
     },
     "young_short_live": {
       "enabled": true,
-      "shadow_only": true,
+      "shadow_only": false,
+      "regime_gate_eq7": true,
       "notional_usd": 20.0,
       "leverage": 10,
       "stop_pct": 6.0,

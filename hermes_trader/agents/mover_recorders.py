@@ -84,6 +84,39 @@ def _dedup_key_hit(kind: str, coin: str, now_ms: int) -> bool:
     return True
 
 
+_EQ7_CACHE: Dict[str, Optional[float]] = {}
+
+
+def _equity_index_7d() -> Optional[float]:
+    """W-Y4 regime-gate signal: 7d return of the xyz equity index (xyz:SP500)
+    from COMPLETED daily closes, strictly PIT (drops the forming bar). Cached per
+    UTC day — the completed-close 7d return only moves at the daily boundary.
+    Fail-closed: any fetch/parse failure returns None, which the caller treats as
+    gate FAIL (W-Y4: pooled ungated EV ~0, down-regime EV -3.3%, so an unknown
+    regime forgoes ~nothing and dodges the tail).
+
+    The live 1h EMA `_macro_regime` tag does NOT carry the edge (W-Y4 validated it
+    useless: up-subset +0.52%, win 46%) — this computes the 7d daily slope fresh.
+    Do not substitute the tag. Only successful reads are cached, so a transient
+    fetch blip fails one signal closed but does not poison the whole day."""
+    key = str(int(time.time() * 1000) // _DAY_MS)
+    if key in _EQ7_CACHE:
+        return _EQ7_CACHE[key]
+    val: Optional[float] = None
+    try:
+        from hermes_trader.client.hl_client import fetch_hl_candles
+        bars = fetch_hl_candles("xyz:SP500", "1d", 12) or []
+        closes = [float(b.get("c") if isinstance(b, dict) else getattr(b, "c"))
+                  for b in bars[:-1]]                    # completed bars only
+        if len(closes) >= 8 and closes[-8]:
+            val = closes[-1] / closes[-8] - 1.0
+    except Exception:
+        val = None
+    if val is not None:
+        _EQ7_CACHE[key] = val                            # cache successes only
+    return val
+
+
 def _pass_short_live_analysis(coin: str, move: float, cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Bounded book order for the LIVE mover_pass_short arm (operator flip
     2026-07-20, reverse-refuted-direction audit): SHORT the mover the AI just
@@ -254,16 +287,27 @@ def record_young_mover_short(coin: str, preblock_reason: str, mid_px: float,
     if not _dedup_key_hit("young_short", coin, now_ms):
         return False
     live_cfg = cfg.get("young_short_live") or {}
+    # W-Y4 regime gate (VALIDATED, mc_p 0.0005): the young short pays +5.56%/ep only
+    # when the equity index is UP over the prior 7d (eq7>0); on down/unknown days it
+    # bleeds -3.3%/ep. Record on EVERY day (both sides grade forward via
+    # `--meta regime_gate=pass|fail`); gate ONLY the live leg, fail-closed.
+    eq7 = _equity_index_7d()
+    gate_on = bool(live_cfg.get("regime_gate_eq7", True))
+    gate_pass = (eq7 is not None and eq7 > 0)
     live = (bool(live_cfg.get("enabled", False))
             and not bool(live_cfg.get("shadow_only", True))
             and execute_fn is not None
-            and ":" in coin)          # evidence boundary: xyz equities only
+            and ":" in coin                        # evidence boundary: xyz equities only
+            and (gate_pass or not gate_on))        # regime gate (fail-closed)
     shadow_ledger.record("young_mover_short", coin=coin, side="short",
                          signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
                          entry_ref_px=px, horizon_days=1.0,
                          stop_pct=float(live_cfg.get("stop_pct", 6.0)),
                          meta={"listing_days": days, "equity": ":" in coin,
-                               "macro_regime": _macro_regime(coin), "shadow": not live})
+                               "macro_regime": _macro_regime(coin),
+                               "eq_idx_7d": round(eq7, 5) if eq7 is not None else None,
+                               "regime_gate": "pass" if gate_pass else "fail",
+                               "shadow": not live})
     logger.info(f"[mover-recorders] young_mover_short recorded: {coin} "
                 f"({days}d listing, short @ {px})")
     if live:
