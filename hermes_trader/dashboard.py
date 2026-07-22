@@ -1132,7 +1132,7 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
 # only — but the league skips them entirely instead of showing a DEAD row.
 _REMOVED_BOOKS = frozenset({"premium_fade_short", "neg_funding_fade",
                             "whale_flow", "mover_pass", "mover_b15_up",
-                            "majors_swing"})
+                            "majors_swing", "news_catalyst", "young_listings"})
 
 
 def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
