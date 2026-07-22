@@ -40,6 +40,8 @@
   "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
   "max_crypto_long_correlated": 100,
+  "max_xyz_short_names": 3,
+  "max_xyz_short_notional_pct": 0.25,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 20000000,

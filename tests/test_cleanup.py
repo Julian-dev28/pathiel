@@ -3567,3 +3567,60 @@ def test_stale_flat_requires_book_contention(monkeypatch):
     dx._active_positions["C_long"] = mk("C")
     v = dx._active_positions["A_long"].check(100.1)
     assert v.exit and "stale_flat" in v.reason        # contended book: fires
+
+
+# ── xyz-short sector concentration cap (W-MATH2/W-MATH3 refactor piece #1) ──
+def test_xyz_short_concentration_name_cap():
+    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    held = [{"coin": f"xyz:N{i}", "side": "short", "positionValue": 20} for i in range(3)]
+    # 4th DISTINCT xyz-short name at cap 3 -> block
+    ctx = _ctx(coin="xyz:DELL", trade_side="short", current_positions=held, trade_notional_usd=20, equity=1000)
+    assert xyz_short_concentration_gate(ctx, 3, 0.25)["pass"] is False
+    # under cap (2 held) -> pass
+    ctx2 = _ctx(coin="xyz:DELL", trade_side="short", current_positions=held[:2], trade_notional_usd=20, equity=1000)
+    assert xyz_short_concentration_gate(ctx2, 3, 0.25)["pass"] is True
+    # adding to an ALREADY-held name is not a new name -> name cap doesn't block
+    ctx3 = _ctx(coin="xyz:N0", trade_side="short", current_positions=held, trade_notional_usd=20, equity=1000)
+    assert xyz_short_concentration_gate(ctx3, 3, 0.25)["pass"] is True
+
+
+def test_xyz_short_concentration_notional_cap():
+    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    held = [{"coin": "xyz:A", "side": "short", "positionValue": 30},
+            {"coin": "xyz:B", "side": "short", "positionValue": 30}]  # $60 held
+    # equity 200, 25% cap = $50; +$20 -> $80 > $50 -> block on notional
+    ctx = _ctx(coin="xyz:C", trade_side="short", current_positions=held, trade_notional_usd=20, equity=200)
+    r = xyz_short_concentration_gate(ctx, 3, 0.25)
+    assert r["pass"] is False and "notional" in r["reason"]
+    # bigger equity -> under the notional cap
+    ctx2 = _ctx(coin="xyz:C", trade_side="short", current_positions=held, trade_notional_usd=20, equity=1000)
+    assert xyz_short_concentration_gate(ctx2, 3, 0.25)["pass"] is True
+
+
+def test_xyz_short_concentration_ignores_longs_crypto_and_missing_value():
+    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    held = [{"coin": f"xyz:N{i}", "side": "short", "positionValue": 20} for i in range(5)]
+    # a LONG xyz -> not gated (only shorts)
+    assert xyz_short_concentration_gate(_ctx(coin="xyz:X", trade_side="long", current_positions=held), 3, 0.25)["pass"] is True
+    # a crypto short (no ':') -> not gated
+    assert xyz_short_concentration_gate(_ctx(coin="BTC", trade_side="short", current_positions=held), 3, 0.25)["pass"] is True
+    # positions with NO value field -> notional check skipped, name cap still enforced
+    held_noval = [{"coin": f"xyz:M{i}", "side": "short"} for i in range(3)]
+    ctx = _ctx(coin="xyz:NEW", trade_side="short", current_positions=held_noval, trade_notional_usd=20, equity=200)
+    r = xyz_short_concentration_gate(ctx, 3, 0.25)
+    assert r["pass"] is False and "name cap" in r["reason"]
+
+
+def test_xyz_concentration_is_wired_and_not_carveout_exempt():
+    from hermes_trader.agents.risk_gates import eval_all_gates
+    cfg = {"min_ai_confidence": 0.0, "max_concurrent": 100, "max_trade_notional_usd": 1000,
+           "max_daily_loss_usd": -1000, "min_market_volume_usd": 0, "min_hip3_volume_usd": 0,
+           "min_short_volume_usd": 0, "max_total_notional_pct": 100.0, "cooldown_min": 0,
+           "max_xyz_short_names": 2, "max_xyz_short_notional_pct": 0.25, "book_capital_carveout": True}
+    held = [{"coin": "xyz:A", "side": "short", "positionValue": 20},
+            {"coin": "xyz:B", "side": "short", "positionValue": 20}]  # 2 names, cap 2
+    ctx = _ctx(coin="xyz:C", trade_side="short", current_positions=held,
+               trade_notional_usd=20, equity=1000, confidence=0.99, market_volume_24h_usd=1e9)
+    out = eval_all_gates(ctx, cfg, is_book=True)   # even as a BOOK with carveout ON
+    assert out["blocked"] is True
+    assert any("xyz-short name cap" in r for r in out["block_reasons"])

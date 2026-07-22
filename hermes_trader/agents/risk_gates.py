@@ -295,6 +295,44 @@ def correlation_cap(ctx: GateContext, max_crypto_correlated: int) -> GateResult:
     return {"pass": False, "reason": f"crypto long correlation cap reached ({existing_crypto_long}/{max_crypto_correlated})"}
 
 
+def xyz_short_concentration_gate(ctx: GateContext, max_names: int,
+                                 max_notional_pct: float) -> GateResult:
+    """Sector-concentration cap on tokenized-equity ("xyz:") SHORTS. W-MATH2/W-MATH3:
+    the 4 xyz-short books are ~1.28 effective bets held four ways (mean pairwise
+    corr 0.83) — 7 xyz shorts stopped TOGETHER for -$8.59 on 07-21, exactly as the
+    correlation predicts. Cap the number of concurrent DISTINCT xyz-equity short
+    names AND their combined notional as a fraction of equity, so one sector move
+    can't take the whole short book. Applies to strategy books too (NOT carveout-
+    exempt). Only gates NEW xyz-equity shorts; longs/crypto/other pass untouched.
+
+    The name cap is the hard control; the notional cap is best-effort (skipped if
+    positions carry no value field) so a missing field never wrongly blocks."""
+    if ctx.trade_side != "short" or ":" not in str(ctx.coin):
+        return {"pass": True}
+    names = set()
+    held_notional = 0.0
+    for p in ctx.current_positions:
+        c = str(p.get("coin") or "")
+        if ":" in c and p.get("side") == "short":
+            names.add(c)
+            for k in ("positionValue", "notional", "notional_usd"):
+                try:
+                    held_notional += abs(float(p.get(k)))
+                    break
+                except (TypeError, ValueError):
+                    continue
+    if ctx.coin not in names and len(names) >= int(max_names):
+        return {"pass": False,
+                "reason": f"xyz-short name cap reached ({len(names)}/{max_names} sectorized)"}
+    if held_notional > 0 and max_notional_pct > 0:
+        proj = held_notional + float(ctx.trade_notional_usd or 0)
+        cap = ctx.equity * float(max_notional_pct)
+        if proj > cap:
+            return {"pass": False,
+                    "reason": f"xyz-short notional ${proj:.0f} > {max_notional_pct*100:.0f}% equity (${cap:.0f})"}
+    return {"pass": True}
+
+
 def equity_risk_cap(ctx: GateContext, max_total_notional_pct: float) -> GateResult:
     max_notional = ctx.equity * max_total_notional_pct
     projected_notional = ctx.total_open_notional + ctx.trade_notional_usd
@@ -524,6 +562,11 @@ def eval_all_gates(
     results["cooldown"] = cooldown_gate(ctx, last_trade_time, config.get("cooldown_min", 60))
     results["opposite_guard"] = opposite_direction_guard(ctx)
     results["correlation"] = correlation_cap(ctx, int(config.get("max_crypto_long_correlated", 2)))
+    # Sector concentration on xyz-equity shorts — applies to books too (the whole
+    # point is the correlated book cluster), so NOT carveout-exempt.
+    results["xyz_concentration"] = xyz_short_concentration_gate(
+        ctx, int(config.get("max_xyz_short_names", 3)),
+        float(config.get("max_xyz_short_notional_pct", 0.25)))
     results["equity_risk"] = ({"pass": True, "reason": "book_carveout"} if carveout
                               else equity_risk_cap(ctx, config.get("max_total_notional_pct", 1.0)))  # Default 100% to allow trading with small accounts
     results["market_regime"] = market_regime_gate(
