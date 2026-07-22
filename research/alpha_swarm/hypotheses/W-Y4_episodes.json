@@ -1,0 +1,1052 @@
+[
+ {
+  "coin": "xyz:CBRS",
+  "day": "2026-06-28",
+  "block_ts_ms": 1782612739000,
+  "age_days": 59,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SPCX",
+  "day": "2026-06-28",
+  "block_ts_ms": 1782682151000,
+  "age_days": 43,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BB",
+  "day": "2026-06-28",
+  "block_ts_ms": 1782688228000,
+  "age_days": 34,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782691303000,
+  "age_days": 4,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BB",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782692128000,
+  "age_days": 34,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782692835000,
+  "age_days": 5,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DRAM",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782693112000,
+  "age_days": 57,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782709537000,
+  "age_days": 8,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782715662000,
+  "age_days": 12,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:RKLB",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782732645000,
+  "age_days": 57,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:STRC",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782734534000,
+  "age_days": 8,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:PURRDAT",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782744034000,
+  "age_days": 47,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ARM",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782744525000,
+  "age_days": 40,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782744884000,
+  "age_days": 33,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782745865000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782754763000,
+  "age_days": 8,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782759386000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SPCX",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782760033000,
+  "age_days": 44,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782763905000,
+  "age_days": 29,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:LITE",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782764309000,
+  "age_days": 57,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MRVL",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782764463000,
+  "age_days": 57,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NOK",
+  "day": "2026-06-29",
+  "block_ts_ms": 1782764576000,
+  "age_days": 15,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:RKLB",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782777656000,
+  "age_days": 57,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:STRC",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782777662000,
+  "age_days": 8,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782777662000,
+  "age_days": 4,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782777781000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782778802000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782816638000,
+  "age_days": 6,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BB",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782820913000,
+  "age_days": 36,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782828173000,
+  "age_days": 9,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MRVL",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782832132000,
+  "age_days": 58,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SPCX",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782832132000,
+  "age_days": 45,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:PURRDAT",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782837572000,
+  "age_days": 48,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782837736000,
+  "age_days": 34,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-06-30",
+  "block_ts_ms": 1782858830000,
+  "age_days": 9,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782864085000,
+  "age_days": 5,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782864085000,
+  "age_days": 34,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782864088000,
+  "age_days": 9,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782864336000,
+  "age_days": 7,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MRVL",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782866042000,
+  "age_days": 58,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DRAM",
+  "day": "2026-07-01",
+  "block_ts_ms": 1782871463000,
+  "age_days": 59,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-09",
+  "block_ts_ms": 1783562537000,
+  "age_days": 18,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-09",
+  "block_ts_ms": 1783562538000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SHAZ",
+  "day": "2026-07-09",
+  "block_ts_ms": 1783562543000,
+  "age_days": 4,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-09",
+  "block_ts_ms": 1783562548000,
+  "age_days": 31,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-07-09",
+  "block_ts_ms": 1783587385000,
+  "age_days": 31,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-10",
+  "block_ts_ms": 1783642271000,
+  "age_days": 19,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-10",
+  "block_ts_ms": 1783643217000,
+  "age_days": 23,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-11",
+  "block_ts_ms": 1783814389000,
+  "age_days": 1,
+  "is_xyz": false
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-12",
+  "block_ts_ms": 1783814558000,
+  "age_days": 1,
+  "is_xyz": false
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783901043000,
+  "age_days": 2,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783903245000,
+  "age_days": 19,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783905205000,
+  "age_days": 5,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783910569000,
+  "age_days": 26,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783912312000,
+  "age_days": 35,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783919137000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ARM",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783949593000,
+  "age_days": 54,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783950877000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NOK",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783951639000,
+  "age_days": 29,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SHAZ",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783957419000,
+  "age_days": 8,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-07-13",
+  "block_ts_ms": 1783958456000,
+  "age_days": 47,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SHAZ",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783987270000,
+  "age_days": 9,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783987667000,
+  "age_days": 27,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783988273000,
+  "age_days": 3,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783990743000,
+  "age_days": 19,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783992530000,
+  "age_days": 5,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-14",
+  "block_ts_ms": 1783992916000,
+  "age_days": 23,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784020317000,
+  "age_days": 36,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:IBM",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784028092000,
+  "age_days": 44,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NOW",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784028092000,
+  "age_days": 41,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ARM",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784036056000,
+  "age_days": 55,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784037565000,
+  "age_days": 19,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BB",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784039796000,
+  "age_days": 50,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784040070000,
+  "age_days": 44,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-14",
+  "block_ts_ms": 1784040071000,
+  "age_days": 36,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784073859000,
+  "age_days": 6,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784073859000,
+  "age_days": 4,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784078991000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784080031000,
+  "age_days": 24,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784080472000,
+  "age_days": 28,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SHAZ",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784081715000,
+  "age_days": 10,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:CXMT",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784094345000,
+  "age_days": 1,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784095332000,
+  "age_days": 20,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ASML",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784099086000,
+  "age_days": 48,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:AMAT",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784123198000,
+  "age_days": 17,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784123329000,
+  "age_days": 24,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784123458000,
+  "age_days": 37,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784125698000,
+  "age_days": 45,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BB",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784127868000,
+  "age_days": 51,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NOK",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784128904000,
+  "age_days": 31,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784129226000,
+  "age_days": 49,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ARM",
+  "day": "2026-07-15",
+  "block_ts_ms": 1784133803000,
+  "age_days": 56,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:CXMT",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784160040000,
+  "age_days": 1,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784161567000,
+  "age_days": 7,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784162529000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784163298000,
+  "age_days": 21,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784166430000,
+  "age_days": 28,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784172189000,
+  "age_days": 6,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-16",
+  "block_ts_ms": 1784174472000,
+  "age_days": 25,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784258987000,
+  "age_days": 26,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784258998000,
+  "age_days": 23,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784260984000,
+  "age_days": 30,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SOFTBANK",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784262527000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "GRAM",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784266366000,
+  "age_days": 16,
+  "is_xyz": false
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784269959000,
+  "age_days": 7,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:AMAT",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784276538000,
+  "age_days": 19,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784292506000,
+  "age_days": 22,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SHAZ",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784295596000,
+  "age_days": 12,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:CXMT",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784296434000,
+  "age_days": 3,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784296723000,
+  "age_days": 9,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784296730000,
+  "age_days": 39,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:WDC",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784297457000,
+  "age_days": 39,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784300192000,
+  "age_days": 26,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784302860000,
+  "age_days": 51,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ARM",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784306802000,
+  "age_days": 58,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-17",
+  "block_ts_ms": 1784310686000,
+  "age_days": 47,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-18",
+  "block_ts_ms": 1784334113000,
+  "age_days": 8,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-18",
+  "block_ts_ms": 1784343919000,
+  "age_days": 40,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-18",
+  "block_ts_ms": 1784348465000,
+  "age_days": 24,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-19",
+  "block_ts_ms": 1784420590000,
+  "age_days": 8,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:CXMT",
+  "day": "2026-07-19",
+  "block_ts_ms": 1784460975000,
+  "age_days": 5,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-19",
+  "block_ts_ms": 1784487270000,
+  "age_days": 28,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784505772000,
+  "age_days": 9,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784505914000,
+  "age_days": 12,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784505915000,
+  "age_days": 42,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:CXMT",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784532604000,
+  "age_days": 6,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784532605000,
+  "age_days": 29,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784532612000,
+  "age_days": 33,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784555942000,
+  "age_days": 29,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:QNT",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784556195000,
+  "age_days": 54,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784556206000,
+  "age_days": 25,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784574899000,
+  "age_days": 50,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-20",
+  "block_ts_ms": 1784589194000,
+  "age_days": 26,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784592030000,
+  "age_days": 10,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784600063000,
+  "age_days": 34,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784607095000,
+  "age_days": 26,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784608059000,
+  "age_days": 30,
+  "is_xyz": true
+ },
+ {
+  "coin": "GRAM",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784644928000,
+  "age_days": 20,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:SKHY",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784646264000,
+  "age_days": 13,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784650201000,
+  "age_days": 43,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:BE",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784650603000,
+  "age_days": 30,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-21",
+  "block_ts_ms": 1784664827000,
+  "age_days": 51,
+  "is_xyz": true
+ },
+ {
+  "coin": "CASHCAT",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784679974000,
+  "age_days": 12,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:KIOXIA",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784685437000,
+  "age_days": 28,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:ZHIPU",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784685447000,
+  "age_days": 31,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:NBIS",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784685475000,
+  "age_days": 44,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:DELL",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784685483000,
+  "age_days": 52,
+  "is_xyz": true
+ },
+ {
+  "coin": "GRAM",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784687396000,
+  "age_days": 21,
+  "is_xyz": false
+ },
+ {
+  "coin": "xyz:BOT",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784689123000,
+  "age_days": 27,
+  "is_xyz": true
+ },
+ {
+  "coin": "xyz:MINIMAX",
+  "day": "2026-07-22",
+  "block_ts_ms": 1784690099000,
+  "age_days": 35,
+  "is_xyz": true
+ }
+]
