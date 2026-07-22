@@ -385,7 +385,8 @@ class ClaudeCliBrain:
         model = str(os.environ.get("CLAUDE_CLI_MODEL") or provider_cfg.get("model") or "").strip()
         if model:
             args += ["--model", model]
-        stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg))
+        stdout = _run_cli(args, prompt, _cli_timeout_s(brain_cfg),
+                          env=_cli_env(os.environ, model, web_search))
         if not stdout:
             return ""
         try:
@@ -475,7 +476,33 @@ def _command_parts(raw: object, default: list[str]) -> list[str]:
     return default[:]
 
 
-def _run_cli(args: list[str], prompt: str, timeout_s: float) -> str:
+# The operator wants ONLY the configured brain model doing brain work. Claude
+# Code otherwise picks its own auxiliary models — the live loop's ambient env
+# pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5, and the native WebSearch tool
+# runs on a small/fast model (Haiku). We override both:
+#   - subagent model -> the brain model, ALWAYS (never fable).
+#   - small/fast model -> the brain model too, EXCEPT on web-search calls: the
+#     WebSearch tool 400s on opus's xhigh effort ("output_config.effort 'xhigh'
+#     not supported"), so a small model MUST execute the search. We pin it to
+#     Haiku (deterministic, never fable). The VERDICT is the brain model on
+#     every path — only the search-tool mechanics ever run on Haiku.
+_WEB_SEARCH_EXEC_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _cli_env(base_env: Mapping[str, str], model: str, web_search: bool) -> dict[str, str]:
+    """Subprocess env that pins every model knob to `model` so no auxiliary
+    model (fable/haiku) does brain work — except the WebSearch tool executor,
+    which opus cannot be (it 400s), so it is pinned to Haiku on search calls."""
+    env = dict(base_env)
+    if not model:
+        return env
+    env["CLAUDE_CODE_SUBAGENT_MODEL"] = model
+    env["ANTHROPIC_SMALL_FAST_MODEL"] = _WEB_SEARCH_EXEC_MODEL if web_search else model
+    return env
+
+
+def _run_cli(args: list[str], prompt: str, timeout_s: float,
+             env: Mapping[str, str] | None = None) -> str:
     try:
         proc = subprocess.Popen(
             args,
@@ -484,6 +511,7 @@ def _run_cli(args: list[str], prompt: str, timeout_s: float) -> str:
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
+            env=dict(env) if env is not None else None,
         )
     except FileNotFoundError:
         logger.error(f"[ai-brain] CLI binary not found: {args[0]}")

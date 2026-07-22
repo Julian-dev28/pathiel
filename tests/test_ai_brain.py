@@ -201,7 +201,7 @@ def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
         lambda: {"timeout_s": 5, "claude_cli": {"command": "claude", "max_turns": 1}},
     )
 
-    def fake_run(args, prompt, timeout_s):
+    def fake_run(args, prompt, timeout_s, env=None):
         seen["args"] = args
         seen["prompt"] = prompt
         seen["timeout_s"] = timeout_s
@@ -231,7 +231,7 @@ def test_claude_cli_error_envelope_maps_to_ai_down(monkeypatch):
     monkeypatch.setattr(
         ai_brain,
         "_run_cli",
-        lambda args, prompt, timeout_s: json.dumps({"result": "failed", "is_error": True}),
+        lambda args, prompt, timeout_s, env=None: json.dumps({"result": "failed", "is_error": True}),
     )
 
     assert ai_brain.ClaudeCliBrain().complete("SYSTEM", "USER") == ""
@@ -243,7 +243,7 @@ def test_codex_cli_uses_read_only_sandbox_and_rejects_jsonless_output(monkeypatc
     seen: dict[str, object] = {}
     monkeypatch.setattr(ai_brain, "_read_ai_brain_config", lambda: {"timeout_s": 5})
 
-    def fake_run(args, prompt, timeout_s):
+    def fake_run(args, prompt, timeout_s, env=None):
         seen["args"] = args
         return "I would go long, but I forgot the JSON."
 
@@ -272,7 +272,7 @@ def test_claude_cli_web_search_flag_switches_tools_and_turns(monkeypatch):
 
     seen: dict[str, list] = {}
 
-    def fake_run(args, prompt, timeout_s):
+    def fake_run(args, prompt, timeout_s, env=None):
         seen["args"] = args
         return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
 
@@ -303,7 +303,7 @@ def test_claude_cli_web_max_turns_config_override(monkeypatch):
     )
     seen: dict[str, list] = {}
 
-    def fake_run(args, prompt, timeout_s):
+    def fake_run(args, prompt, timeout_s, env=None):
         seen["args"] = args
         return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
 
@@ -326,7 +326,7 @@ def test_claude_cli_model_pin_from_config(monkeypatch):
 
     seen: dict[str, list] = {}
 
-    def fake_run(args, prompt, timeout_s):
+    def fake_run(args, prompt, timeout_s, env=None):
         seen["args"] = args
         return json.dumps({"result": _verdict_text("PASS"), "is_error": False})
 
@@ -361,7 +361,7 @@ def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
     monkeypatch.setattr(
         ai_brain,
         "_run_cli",
-        lambda args, prompt, timeout_s: json.dumps({"result": "no json", "is_error": False}),
+        lambda args, prompt, timeout_s, env=None: json.dumps({"result": "no json", "is_error": False}),
     )
     assert ai_brain.CodexCliBrain().complete("S", "U", web_search=True) == ""
 
@@ -378,3 +378,31 @@ def test_citations_never_glue_url_to_url():
     assert out[0] == "https://x.test/a"          # title==url -> url only
     assert out[1] == "https://x.test/b"          # no title -> url only
     assert out[2] == "Real Title — https://x.test/c"
+
+
+def test_cli_env_pins_every_model_knob_to_the_brain_model():
+    """Operator order 2026-07-22: ONLY the configured model does brain work. The
+    ambient env pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5 — _cli_env must
+    override it so no fable/haiku ever runs a verdict or subagent."""
+    from hermes_trader.agents import ai_brain
+
+    base = {"PATH": "/usr/bin", "CLAUDE_CODE_SUBAGENT_MODEL": "claude-fable-5"}
+
+    # non-search: subagent AND small/fast both pinned to the brain model
+    e = ai_brain._cli_env(base, "claude-opus-4-8", web_search=False)
+    assert e["CLAUDE_CODE_SUBAGENT_MODEL"] == "claude-opus-4-8"   # fable overridden
+    assert e["ANTHROPIC_SMALL_FAST_MODEL"] == "claude-opus-4-8"
+    assert e["PATH"] == "/usr/bin"                                # base env preserved
+    assert "fable" not in str(e).lower()
+
+    # web-search: subagent pinned; small/fast is Haiku (opus 400s on WebSearch),
+    # deterministic and NEVER fable; the verdict still runs on the brain model
+    w = ai_brain._cli_env(base, "claude-opus-4-8", web_search=True)
+    assert w["CLAUDE_CODE_SUBAGENT_MODEL"] == "claude-opus-4-8"   # fable overridden
+    assert w["ANTHROPIC_SMALL_FAST_MODEL"] == ai_brain._WEB_SEARCH_EXEC_MODEL
+    assert "fable" not in str(w).lower()
+    assert "haiku" in w["ANTHROPIC_SMALL_FAST_MODEL"]
+
+    # empty model: leave the env untouched (CLI uses its own default)
+    n = ai_brain._cli_env(base, "", web_search=False)
+    assert n == dict(base)
