@@ -182,15 +182,26 @@ def record_mover_pass_short(analysis: Dict[str, Any], config: Dict[str, Any],
     if px <= 0:
         return False
     live_cfg = cfg.get("pass_short_live") or {}
+    # W-Y4 regime gate transferred from young_short (overnight -$6.26 confirmed
+    # mover_pass_short bleeds shorting an up-sector on eq7<0 days). Record ALWAYS,
+    # gate the LIVE leg only, fail-closed. Both sides grade forward via
+    # --meta regime_gate=pass|fail so the transfer VALIDATES for this book itself.
+    eq7 = _equity_index_7d()
+    gate_on = bool(live_cfg.get("regime_gate_eq7", True))
+    gate_pass = (eq7 is not None and eq7 > 0)
     live = (bool(live_cfg.get("enabled", False))
             and not bool(live_cfg.get("shadow_only", True))
-            and execute_fn is not None)
+            and execute_fn is not None
+            and (gate_pass or not gate_on))          # regime gate (fail-closed)
     shadow_ledger.record("mover_pass_short", coin=coin, side="short",
                          signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
                          entry_ref_px=px, horizon_days=1.0, stop_pct=15.0,
                          meta={"confidence": float(analysis.get("confidence") or 0),
                                "move_pct": round(move, 2),
-                               "macro_regime": _macro_regime(coin), "shadow": not live})
+                               "macro_regime": _macro_regime(coin),
+                               "eq_idx_7d": round(eq7, 5) if eq7 is not None else None,
+                               "regime_gate": "pass" if gate_pass else "fail",
+                               "shadow": not live})
     logger.info(f"[mover-recorders] PASS-veto SHORT inverse recorded: {coin} "
                 f"(+{move:.1f}%, conf {float(analysis.get('confidence') or 0):.2f})")
     if live:

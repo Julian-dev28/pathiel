@@ -40,6 +40,7 @@ def test_pass_short_live_opens_bounded_short(monkeypatch):
             pass
 
     monkeypatch.setattr(mr, "get_claims_registry", lambda: _Claims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: 0.02)   # W-Y4 gate PASS (eq7>0)
     opened = []
     cfg = {"mover_recorders": {"pass_short_live": {"enabled": True, "shadow_only": False,
                                                    "notional_usd": 20.0, "leverage": 10,
@@ -573,3 +574,62 @@ def test_young_mover_short_gate_disabled_trades_and_still_tags_regime(monkeypatc
         execute_fn=lambda a: opened.append(a) or {"executed": True})
     assert len(opened) == 1                              # gate off -> trades despite down
     assert out[0][1]["meta"]["regime_gate"] == "fail"    # meta still records what the gate saw
+
+
+# --------------------------------------------------- W-Y4 regime gate on mover_pass_short (option C)
+def _pass_gate_cfg(**over):
+    lc = {"enabled": True, "shadow_only": False, "regime_gate_eq7": True,
+          "notional_usd": 20.0, "leverage": 10, "stop_pct": 6.0, "hold_days": 1.0}
+    lc.update(over)
+    return {"mover_recorders": {"pass_short_live": lc}}
+
+
+def _pass_a(coin="AIRALLY"):
+    return {"coin": coin, "daily_move_pct": 12.0, "daily_volume_usd": 9e6,
+            "confidence": 0.5, "last_price": 3.0}
+
+
+def test_mover_pass_short_regime_gate_pass_trades(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: 0.02)      # eq7 UP
+    opened = []
+    assert mr.record_mover_pass_short(_pass_a(), _pass_gate_cfg(),
+        execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert len(opened) == 1                                        # gate pass -> live
+    assert out[0][1]["meta"]["regime_gate"] == "pass"
+    assert out[0][1]["meta"]["eq_idx_7d"] == 0.02
+    assert out[0][1]["meta"]["shadow"] is False
+
+
+def test_mover_pass_short_regime_gate_fail_records_no_trade(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: -0.007)    # eq7 DOWN (today's real regime)
+    opened = []
+    assert mr.record_mover_pass_short(_pass_a(), _pass_gate_cfg(),
+        execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert opened == []                                           # the overnight bleed the gate now blocks
+    assert out[0][1]["meta"]["regime_gate"] == "fail"
+    assert out[0][1]["meta"]["shadow"] is True
+
+
+def test_mover_pass_short_regime_gate_fail_closed_on_none(monkeypatch):
+    _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: None)      # fetch failed
+    opened = []
+    mr.record_mover_pass_short(_pass_a(), _pass_gate_cfg(),
+        execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert opened == []                                           # unknown regime -> fail-closed
+
+
+def test_mover_pass_short_gate_disabled_trades_and_tags(monkeypatch):
+    out = _captured(monkeypatch)
+    monkeypatch.setattr(mr, "get_claims_registry", lambda: _OKClaims())
+    monkeypatch.setattr(mr, "_equity_index_7d", lambda: -0.05)     # DOWN, but gate OFF
+    opened = []
+    mr.record_mover_pass_short(_pass_a(), _pass_gate_cfg(regime_gate_eq7=False),
+        execute_fn=lambda x: opened.append(x) or {"executed": True})
+    assert len(opened) == 1                                        # gate off -> trades
+    assert out[0][1]["meta"]["regime_gate"] == "fail"             # meta still records what the gate saw
