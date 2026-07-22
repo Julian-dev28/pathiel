@@ -291,6 +291,14 @@ def maybe_run(config: Dict[str, Any], universe, positions,
                  "armed": armed, "enforced": enforce, "shadow": False},
     } for s in signals])
 
+    # SHADOW: record + grade the fade signals but open nothing live. Set when the forward
+    # read goes EV- (fade-longs catching knives in a down regime) — the ledger keeps grading
+    # so the book auto-re-promotes when the edge returns. Reversible: flip shadow_only back off.
+    if bool(ef.get("shadow_only", False)):
+        if signals:
+            logger.info(f"[extreme-fade] SHADOW_ONLY — {len(signals)} signal(s) recorded, no live entries")
+        return {"signals": len(signals), "opened": 0, "skew": skew, "armed": armed, "shadow_only": True}
+
     if not signals:
         return {"signals": 0, "opened": 0, "skew": skew, "armed": armed}
 

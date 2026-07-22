@@ -191,11 +191,12 @@
   },
   "extreme_fade": {
     "enabled": true,
+    "shadow_only": true,
     "crash_pct": -0.12,
-    "max_new_per_cycle": 2,
+    "max_new_per_cycle": 0,
     "scan_interval_min": 30,
     "stop_pct": 20.0,
-    "leverage": 12,
+    "leverage": 4,
     "hold_days": 3.0,
     "equity_fraction": 0.4,
     "deep_tier": {

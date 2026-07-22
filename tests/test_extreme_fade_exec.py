@@ -65,6 +65,17 @@ def test_live_opens_fresh_crash_with_strategy_book_tag():
     assert a["strategy_book"] == "extreme_fade"
 
 
+def test_shadow_only_records_signal_but_opens_nothing():
+    # EV- kill-switch: shadow_only must still compute + record the fade signal (so the
+    # ledger keeps grading toward re-promotion) while opening ZERO live entries.
+    calls = []
+    out = efl.maybe_run(_cfg(shadow_only=True), _universe(["FRESH", "CALM"]), [],
+                        _fetch(fresh={"FRESH"}), lambda a: calls.append(a))
+    assert calls == []                                  # no live entry opened
+    assert out and out.get("shadow_only") is True and out["opened"] == 0
+    assert out["signals"] >= 1                          # signal still computed + recorded to ledger
+
+
 def test_skips_stale_crash_no_chase(caplog):
     """A crash whose bar closed 20h ago is past the entry window → must NOT open (don't chase the
     already-bounced move; this is the mid-day-restart case that surfaced the bug)."""
