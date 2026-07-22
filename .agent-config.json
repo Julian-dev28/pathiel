@@ -320,7 +320,7 @@
   },
   "news_ta_aligned": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "notional_usd": 20.0,
     "leverage": 3,
     "stop_pct": 15.0,
@@ -330,7 +330,7 @@
   "mover_recorders": {
     "pass_short_live": {
       "enabled": true,
-      "shadow_only": false,
+      "shadow_only": true,
       "regime_gate_eq7": true,
       "notional_usd": 20.0,
       "leverage": 10,
@@ -339,7 +339,7 @@
     },
     "young_short_live": {
       "enabled": true,
-      "shadow_only": false,
+      "shadow_only": true,
       "regime_gate_eq7": true,
       "notional_usd": 20.0,
       "leverage": 10,
@@ -360,7 +360,7 @@
   "min_order_bump_max_mult": 2.0,
   "news_surge_multi": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "scan_interval_min": 30.0,
     "notional_usd": 20.0,
     "leverage": 10,
