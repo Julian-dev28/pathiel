@@ -34,7 +34,7 @@
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
-  "min_available_margin_pct": 0.2,
+  "min_available_margin_pct": 0.1,
   "cooldown_min": 30,
   "held_research_interval_min": 10,
   "min_ai_confidence": 0.62,
@@ -185,7 +185,8 @@
     "benchmark": "xyz:XYZ100",
     "max_book_positions": 10,
     "history_bars": 60,
-    "equity_frac": 0.04
+    "equity_frac": 0.04,
+    "leverage": 3
   },
   "extreme_fade": {
     "enabled": true,
@@ -366,5 +367,6 @@
     "hold_days": 1.0,
     "min_volume_usd": 250000.0,
     "max_new_per_cycle": 1
-  }
+  },
+  "hip3_max_leverage": 6
 }

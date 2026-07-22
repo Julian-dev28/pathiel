@@ -254,8 +254,11 @@ def test_agent_config_block_values():
     # 20pp momentum crash — momentum's documented failure mode, measured live
     # that day at -1.77pp on the L/S spread — would exceed the dex equity.
     assert b["equity_frac"] > 0
+    # 3x so the validated 20% disaster stop fires before liquidation on
+    # the ~5%-maintenance xyz dex (2026-07-22); must stay <=4x.
+    assert 0 < b["leverage"] <= 4
     assert "notional_usd" not in b and "equity_fraction" not in b
-    assert set(b) - set(spec) == {"equity_frac"}
+    assert set(b) - set(spec) == {"equity_frac", "leverage"}
 
 
 # ── live wiring: offline end-to-end rebalance ────────────────────────────────

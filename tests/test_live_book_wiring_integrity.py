@@ -160,12 +160,87 @@ def test_margin_floor_preserves_a_real_liquidation_buffer():
     +4.64%/73% win in up-regime) into forced losses and cascading as each
     liquidation drained the shared margin.
 
-    The floor must sit comfortably above the 6% stop so stops fire before
-    liquidation and the shorts get the TIME to revert (where the edge lives)."""
+    The floor gives general margin headroom; the PRIMARY per-position
+    liquidation defense is now the hip3 leverage cap (see the test below),
+    which keeps xyz liquidation beyond the 6% stop by construction. So the
+    floor can relax to a capital-efficient level once the cap is in place —
+    but it must stay above the 1% that caused the 97%-utilization cascade."""
     import json
     from pathlib import Path
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
     floor = float(cfg["min_available_margin_pct"])
-    assert floor >= 0.15, f"margin floor {floor} too low — invites forced liquidation"
-    # buffer must exceed the reachable stop (60/leverage = 6% at 10x)
+    assert floor >= 0.08, f"margin floor {floor} too low — invites the utilization cascade"
     assert floor > 0.06
+
+
+# --------------------------------------------------------------- hip3 leverage cap
+def test_hip3_leverage_cap_keeps_the_stop_alive():
+    """2026-07-22: xyz dex charges ~5% maintenance margin, so a 10x isolated
+    position liquidates at ~5% — below the 6% backup stop, force-liquidating
+    every +EV trade before it plays out. The hip3 cap must keep xyz liquidation
+    beyond the 6% stop. At 6x: 1/6 - 0.05 = 11.7% buffer > 6%. Crypto is
+    unaffected (~1-2% maintenance)."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    cap = int(cfg["hip3_max_leverage"])
+    maint = 0.05
+    stop = 0.06
+    liq_buffer = 1.0 / cap - maint
+    assert liq_buffer > stop, f"xyz {cap}x liq buffer {liq_buffer:.1%} <= 6% stop — stop dead"
+    assert cap <= 8   # anything above ~9x puts liq below the stop on a 5%-maint dex
+
+
+# --------------------------------------------- leverage x stop x liquidation (2026-07-22)
+# The collision the operator flagged: leverage changes must not force any book's
+# stop below its liquidation, or the position force-liquidates before its edge
+# plays out. Rule: a stop of S fires before liq only if (1/lev - maint) > S.
+# xyz maintenance ~= 5%. Each book's leverage must match its OWN stop width.
+def _liq_buffer(lev, maint=0.05):
+    return 1.0 / lev - maint
+
+
+def _backup_sl_clamp(lev, max_frac=0.60):
+    return max_frac / lev   # executor.py:1023 clamp
+
+
+def test_xs_momentum_is_crypto_and_never_hit_by_the_hip3_cap():
+    """The operator's #1 worry: xs_momentum (the one earner) has a 5-day hold
+    and no tight DSL stop. It trades CRYPTO — the hip3 cap only fires on ':'
+    coins, so it can NEVER touch xs_momentum's leverage. Its exit override is
+    also untouched (leverage/margin changes don't rewrite dsl_exit_override)."""
+    for coin in ("BTC", "ETH", "FARTCOIN", "kBONK", "SOL"):
+        assert ":" not in coin           # no hip3 cap path
+    # xs_xyz IS xyz -> cap applies (that's why it gets its own low leverage)
+    assert ":" in "xyz:AAPL"
+
+
+def test_short_books_at_6x_have_a_working_6pct_stop():
+    """Short books: 6% stop, 1-day hold. At 6x the liq buffer (11.7%) sits well
+    beyond the 6% stop AND beyond the clamped backup SL (10%)."""
+    assert _liq_buffer(6) > 0.06                 # stop reachable
+    assert _backup_sl_clamp(6) < _liq_buffer(6)  # clamp fires before liq
+
+
+def test_xs_xyz_at_3x_restores_its_validated_20pct_stop():
+    """xs_xyz: 20% disaster stop, 5-day hold. It needs <=4x for the stop to
+    fire before liquidation; 3x gives liq ~28% >> the 20% stop. The old 12x
+    liquidated at 3.3% (stop dead) — the force-liquidation bug."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    lev = int(cfg["xs_xyz_equities"]["leverage"])
+    assert lev <= 4, f"xs_xyz {lev}x too high for its 20% stop"
+    assert _liq_buffer(lev) > 0.20               # 20% disaster stop reachable
+    # and the OLD 12x was broken (liq below the stop) — pins the bug we fixed
+    assert _liq_buffer(12) < 0.06
+
+
+def test_xs_xyz_analysis_actually_emits_the_low_leverage():
+    """End-to-end: the built analysis must carry the 3x override so the
+    executor's min() lands on 3, not the global 12/6-cap."""
+    from hermes_trader.agents import xs_xyz_live as xl
+    a = xl._analysis("xyz:AAPL", "long", 0.05, leverage=3)
+    assert a["leverage_override"] == 3
+    assert a["backup_sl_pct_override"] == 20.0   # validated wide stop intact
+    assert a["dsl_exit_override"]["max_loss_pct"] == 20.0

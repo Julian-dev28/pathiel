@@ -104,7 +104,7 @@ def _save_rebalance_n(n: int) -> None:
 
 def _analysis(coin: str, side: str, rank_score: float, hold_days: float = 5.0,
               short_floor_usd: float = 250_000.0,
-              equity_frac: float = 0.0) -> Dict[str, Any]:
+              equity_frac: float = 0.0, leverage: int = 3) -> Dict[str, Any]:
     """Synthetic analysis for the executor — the xs_momentum_live post-f0f8f72
     pattern. strategy_book bypasses the thought-engine ENTRY gates (this is a
     separately validated edge) while every SAFETY gate still applies.
@@ -140,6 +140,15 @@ def _analysis(coin: str, side: str, rank_score: float, hold_days: float = 5.0,
         # 2026-07-19). Wide 20% disaster stop only; the rebalance replaces legs
         # on its own clock.
         "backup_sl_pct_override": 20.0,
+        # LEVERAGE 3x (2026-07-22): the 20% disaster stop only fires before
+        # liquidation at <=4x on the ~5%-maintenance xyz dex. At the old 12x it
+        # clamped to 5% and LIQUIDATED at 3.3% — binding on ~80% of 5d holds
+        # (measured: a 20% excursion binds 9%, a 10% one binds 41%, 3.3% far
+        # more), turning the validated hold-to-rebalance book into a force-
+        # liquidation machine (CBRS -$3.58, RKLB -$4.08). 3x restores the
+        # validated 20% stop (liq ~28% >> 20%). Distinct from the short books'
+        # 6x — this book's WIDE stop + 5d hold needs the lower leverage.
+        "leverage_override": max(1, int(leverage)),
         # No mid-hold profit banking: W-X2 measured hold EV as monotonically
         # INCREASING with hold length (H10 > H5 > H3), so every early clip
         # forfeits edge. The rebalance banks profits on its clock.
@@ -344,6 +353,9 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
     # the GLOBAL fraction put 12x gross on the xyz dex, where a 20pp momentum
     # crash is a wipeout. 0 = fall back to the global path.
     book_frac = float(cfg.get("equity_frac", 0) or 0)
+    # 3x so the validated 20% disaster stop fires before liquidation on the
+    # ~5%-maintenance xyz dex (see _analysis). Configurable; must stay <=4x.
+    book_lev = int(cfg.get("leverage", 3) or 3)
     for coin in plan["close_long"] + plan["close_short"]:
         try:
             close_fn(coin)
@@ -360,7 +372,7 @@ def maybe_rebalance(config: Dict[str, Any], universe, positions,
                     continue
                 a = _analysis(coin, side, book.scores.get(coin, 0.0),
                               hold_days=hold_days, short_floor_usd=short_floor,
-                              equity_frac=book_frac)
+                              equity_frac=book_frac, leverage=book_lev)
                 result = execute_fn(a)
                 if _execute_opened(result):
                     owned.add(coin, side)

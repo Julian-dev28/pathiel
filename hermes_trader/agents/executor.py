@@ -607,6 +607,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     except (TypeError, ValueError):
         requested_leverage = int(config.get("leverage", HL_LEVERAGE))
     leverage = min(requested_leverage, get_max_leverage(coin))
+    # HIP-3 (xyz) leverage cap (2026-07-22): the tokenized-equity dex charges
+    # ~5% maintenance margin, so a 10x isolated position liquidates at ~5%
+    # adverse — BELOW the 6% backup stop, meaning the stop can NEVER fire and
+    # every adverse move force-liquidates the position before its +EV edge can
+    # play out (root-caused live: equity bleeding via forced liquidations, not
+    # bad signals). Capping xyz leverage moves liquidation beyond the stop
+    # (6x -> ~12% liq buffer) so stops fire cleanly. Crypto (~1-2% maint) is
+    # unaffected. hip3_max_leverage=0 disables the cap.
+    _hip3_cap = int(config.get("hip3_max_leverage", 0) or 0)
+    if _hip3_cap > 0 and ":" in str(coin):
+        leverage = min(leverage, _hip3_cap)
     dsl_config = _merge_nested_config(
         config.get("dsl_exit", {}) or {},
         analysis.get("dsl_exit_override"),
