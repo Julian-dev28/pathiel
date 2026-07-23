@@ -215,6 +215,7 @@
   },
   "rally_exhaustion": {
     "enabled": true,
+    "shadow_only": true,
     "scan_interval_hours": 1,
     "entry_window_hours": 8,
     "lookback_days": 2,
@@ -233,7 +234,7 @@
   },
   "crash_continue_div_short": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "scan_interval_hours": 6,
     "entry_window_hours": 8,
     "lookback_days": 2,
@@ -252,7 +253,7 @@
   },
   "engulf_short": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "protect_pct": 3.0,
     "retrace_threshold": 0.1,
     "scan_interval_hours": 6,
@@ -312,7 +313,7 @@
   },
   "unlock_short": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "notional_usd": 20.0,
     "leverage": 12,
     "stop_pct": 15.0,
