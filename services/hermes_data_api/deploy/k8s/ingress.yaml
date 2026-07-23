@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hermes-data-api
+  namespace: hermes
+  labels:
+    app.kubernetes.io/name: hermes-data-api
+    app.kubernetes.io/part-of: hermes-data-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # cert-manager issues/renews the TLS cert referenced below.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hermes-data.example.com
+      secretName: hermes-data-api-tls
+  rules:
+    - host: hermes-data.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hermes-data-api
+                port:
+                  number: 80
