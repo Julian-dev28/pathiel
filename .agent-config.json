@@ -300,7 +300,7 @@
   },
   "numerology_eth": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "hour": 14,
     "horizon_days": 1.0,
     "leverage": 40,
