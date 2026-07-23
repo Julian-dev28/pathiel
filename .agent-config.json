@@ -299,11 +299,11 @@
   },
   "numerology_eth": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "hour": 14,
     "horizon_days": 1.0,
     "leverage": 40,
-    "equity_frac": 0.5
+    "equity_frac": 0.1
   },
   "unlock_recorder": {
     "enabled": true,
@@ -324,12 +324,17 @@
   },
   "news_surge_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
+    "equity_live": false,
+    "crypto_live": true,
+    "crypto_notional_usd": 20.0,
+    "crypto_leverage": 1,
+    "crypto_stop_pct": 15.0,
     "scan_interval_min": 30.0,
     "hold_days": 1.0,
     "stop_pct": 6.0,
     "notional_usd": 20.0,
-    "leverage": 10,
+    "leverage": 6,
     "min_volume_usd": 250000.0,
     "max_new_per_cycle": 1
   },

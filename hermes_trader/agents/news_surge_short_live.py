@@ -117,8 +117,19 @@ def _held_coins(positions) -> set:
 
 
 def _analysis(coin: str, rep, cfg: Dict[str, Any]) -> Dict[str, Any]:
-    stop_pct = float(cfg.get("stop_pct", 15.0))
-    leverage = max(1, int(cfg.get("leverage", 10)))
+    # Asset-aware sizing. Equity arm = the original reverse-refuted geometry.
+    # Crypto arm (W-SOC1, 2026-07-23): crypto coverage-surge SHORT graded net25
+    # +4.30%/24h, BOTH halves positive (+4.52/+5.08), same-coin random-time null
+    # p=0.0005, n=219 — clears the module's own "n>=8 forward" crypto-promotion bar.
+    # Sized $20/1x (deliberately conservative: the n=219 is one 6-day pump-dump tape).
+    if _is_xyz_equity(coin):
+        stop_pct = float(cfg.get("stop_pct", 15.0))
+        leverage = max(1, int(cfg.get("leverage", 10)))
+        notional = float(cfg.get("notional_usd", 20.0))
+    else:
+        stop_pct = float(cfg.get("crypto_stop_pct", 15.0))
+        leverage = max(1, int(cfg.get("crypto_leverage", 1)))
+        notional = float(cfg.get("crypto_notional_usd", 20.0))
     hold_days = float(cfg.get("hold_days", 1.0))
     top = rep.headlines[0].title if rep.headlines else ""
     return {
@@ -129,7 +140,7 @@ def _analysis(coin: str, rep, cfg: Dict[str, Any]) -> Dict[str, Any]:
                       f"(n={rep.n_recent}), inverse-of-refuted news_catalyst: {top[:120]}"),
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
         "composite_score": 0.0, "strategy_book": _BOOK_NAME,
-        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "strategy_book_notional": notional,
         "leverage_override": leverage,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
@@ -242,9 +253,18 @@ def maybe_run(config: Dict[str, Any],
 
     if bool(cfg.get("shadow_only", False)) or execute_fn is None:
         return n
-    # Trade scope: breaking xyz equities only (evidence boundary — see module
-    # docstring). Crypto breaking reads still recorded above, zero capital.
-    breaking_rows = [r for r in rows if r["meta"]["breaking"] and r["meta"]["equity"]]
+    # Trade scope, per asset class (each independently gated):
+    #  - equity arm: OFF by default (equity_live) — shadowed 2026-07-23, the xyz-equity
+    #    short overlay bled into the semis rally.
+    #  - crypto arm: ON (crypto_live) — W-SOC1 validated crypto surge-short (n=219, both
+    #    halves +, null p=0.0005). $20/1x, kill: crypto EV25<0 over 15 fwd episodes.
+    equity_live = bool(cfg.get("equity_live", False))
+    crypto_live = bool(cfg.get("crypto_live", False))
+    breaking_rows = [
+        r for r in rows if r["meta"]["breaking"] and (
+            (r["meta"]["equity"] and equity_live)
+            or (not r["meta"]["equity"] and crypto_live))
+    ]
     if not breaking_rows:
         return n
     opened_seen = _load_seen()
