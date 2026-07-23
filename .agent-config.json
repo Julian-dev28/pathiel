@@ -373,6 +373,17 @@
     "enabled": true,
     "poll_minutes": 30
   },
+  "uw_flow_xs": {
+    "enabled": true,
+    "shadow_only": false,
+    "k_per_leg": 2,
+    "notional_usd": 20.0,
+    "leverage": 3,
+    "stop_pct": 20.0,
+    "hold_days": 5.0,
+    "min_volume_usd": 250000.0,
+    "max_scan": 20
+  },
   "main_engine": {
     "entries_enabled": true,
     "recorder_enabled": true

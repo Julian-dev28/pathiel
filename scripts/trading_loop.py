@@ -74,6 +74,7 @@ from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_r
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
 from hermes_trader.agents.numerology_recorder import maybe_record as _numerology_maybe_record
+from hermes_trader.agents.uw_flow_xs_live import maybe_run as _uw_flow_xs_maybe_run
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
@@ -909,6 +910,15 @@ while True:
             _numerology_maybe_record(universe, read_agent_config(), positions, _book_execute)
         except Exception as _nre:
             logger.debug(f"[numerology-recorder] pass failed (non-fatal): {_nre}")
+
+        # uw_flow_xs LIVE book (W-UW1/2, 2026-07-23): cross-sectional options-flow edge on
+        # xyz equities — LONG top-k bullish UW net-flow / SHORT bottom-k bearish. Validated
+        # +2.0%/leg net25, both OOS halves, matched-null p=0.0005. Bounded $20/leg, 3x, k=2,
+        # 5d hold, 20% stop; once/UTC-day. KILL: cumulative fwd EV25<0 over 12 rebalances.
+        try:
+            _uw_flow_xs_maybe_run(read_agent_config(), universe, positions, _book_execute)
+        except Exception as _uwe:
+            logger.debug(f"[uw-flow-xs] pass failed (non-fatal): {_uwe}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:
