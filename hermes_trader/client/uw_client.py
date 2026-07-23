@@ -122,6 +122,25 @@ def greek_exposure(ticker: str, date: Optional[str] = None) -> Optional[Any]:
     return _get(f"/api/stock/{ticker}/greek-exposure", {"date": date})
 
 
+def greek_daily(ticker: str) -> Dict[str, Dict[str, float]]:
+    """Full daily dealer-greek history (~250d) in one call -> {date: {net_gamma, net_delta,
+    net_charm, net_vanna}}. net = call + put (put legs are already signed negative). {} on fail."""
+    raw = _get(f"/api/stock/{ticker}/greek-exposure", cache_key=f"gex_{ticker}")
+    rows = raw.get("data") if isinstance(raw, dict) else raw
+    out: Dict[str, Dict[str, float]] = {}
+    for r in (rows or []):
+        d = r.get("date")
+        if not d:
+            continue
+        out[d] = {
+            "net_gamma": _f(r.get("call_gamma")) + _f(r.get("put_gamma")),
+            "net_delta": _f(r.get("call_delta")) + _f(r.get("put_delta")),
+            "net_charm": _f(r.get("call_charm")) + _f(r.get("put_charm")),
+            "net_vanna": _f(r.get("call_vanna")) + _f(r.get("put_vanna")),
+        }
+    return out
+
+
 def darkpool(ticker: str, limit: int = 50) -> List[Dict[str, Any]]:
     raw = _get(f"/api/darkpool/{ticker}", {"limit": limit})
     if isinstance(raw, dict):
