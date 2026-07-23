@@ -79,7 +79,8 @@ _ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "xs_xyz_equities",
                                  "unlock_short_runin",
                                  "mover_pass_short",
                                  "news_surge_short", "young_mover_short",
-                                 "news_surge_multi", "news_ta_aligned"})
+                                 "news_surge_multi", "news_ta_aligned",
+                                 "numerology_eth"})
 
 
 def active_claim_books() -> Set[str]:

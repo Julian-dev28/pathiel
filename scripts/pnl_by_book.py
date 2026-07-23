@@ -91,6 +91,7 @@ BOOK_PRIORITY = (
     "news_catalyst", "news_surge_short", "news_surge_multi", "mover_pass", "mover_pass_short",
     "young_mover_short",
     "extreme_fade", "xs_momentum", "xs_xyz_equities",
+    "numerology_eth",
     "external_alpha",
 )
 

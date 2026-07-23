@@ -899,12 +899,14 @@ while True:
         except Exception as _stre:
             logger.debug(f"[social-trending-recorder] pass failed (non-fatal): {_stre}")
 
-        # numerology_eth recorder (W-FUN lane): paper-trades the day_root_odd "money
-        # formula" (odd day-root -> LONG ETH) at zero capital so the KNOWN noise proves
-        # itself forward. Null already showed it: random flips median -86%, formula = the
-        # luck tail; inverse -> $6. Records one ETH signal per UTC day. Never trades.
+        # numerology_eth book (W-FUN lane): paper-trades the day_root_odd "money formula"
+        # (odd day-root -> LONG ETH) at zero capital so the KNOWN noise proves itself
+        # forward. DEFAULT shadow_only=true -> records only. Wired with positions+execute
+        # so that flipping numerology_eth.shadow_only=false ARMS it: it then claims ETH and
+        # routes a LIVE 40x/50%-equity trade through the executor. Null already showed it's
+        # a -86% coin flip (random flips median -86%, formula = luck tail, inverse -> $6).
         try:
-            _numerology_maybe_record(universe, read_agent_config())
+            _numerology_maybe_record(universe, read_agent_config(), positions, _book_execute)
         except Exception as _nre:
             logger.debug(f"[numerology-recorder] pass failed (non-fatal): {_nre}")
 
