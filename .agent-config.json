@@ -200,10 +200,10 @@
     "stop_pct": 20.0,
     "leverage": 4,
     "hold_days": 3.0,
-    "equity_fraction": 0.01,
+    "equity_fraction": 0.05,
     "deep_tier": {
       "crash_pct": -0.2,
-      "equity_fraction": 0.015
+      "equity_fraction": 0.065
     },
     "tp_scale_fraction": 0.0,
     "skew_arm": {
