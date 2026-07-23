@@ -155,26 +155,6 @@
       "enabled": false
     },
     "exclude_coins": [
-      "BABY",
-      "CASHCAT",
-      "DOGE",
-      "FARTCOIN",
-      "HMSTR",
-      "MEW",
-      "MOODENG",
-      "PENGU",
-      "POPCAT",
-      "PUMP",
-      "PURR",
-      "SPX",
-      "TRUMP",
-      "TURBO",
-      "VINE",
-      "WIF",
-      "kBONK",
-      "kFLOKI",
-      "kPEPE",
-      "kSHIB"
     ],
     "equity_frac": 0.1
   },
@@ -353,7 +333,7 @@
     "poll_minutes": 30
   },
   "main_engine": {
-    "entries_enabled": false,
+    "entries_enabled": true,
     "recorder_enabled": true
   },
   "max_daily_loss_pct": 0.15,
