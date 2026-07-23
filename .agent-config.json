@@ -155,6 +155,26 @@
       "enabled": false
     },
     "exclude_coins": [
+      "BABY",
+      "CASHCAT",
+      "DOGE",
+      "FARTCOIN",
+      "HMSTR",
+      "MEW",
+      "MOODENG",
+      "PENGU",
+      "POPCAT",
+      "PUMP",
+      "PURR",
+      "SPX",
+      "TRUMP",
+      "TURBO",
+      "VINE",
+      "WIF",
+      "kBONK",
+      "kFLOKI",
+      "kPEPE",
+      "kSHIB"
     ],
     "equity_frac": 0.1
   },
@@ -270,6 +290,13 @@
     "enabled": true,
     "interval_hours": 1.0
   },
+  "social_trending": {
+    "enabled": true,
+    "poll_hours": 1.0,
+    "horizon_days": 1.0,
+    "dedup_hours": 24.0,
+    "min_score": 999
+  },
   "unlock_recorder": {
     "enabled": true,
     "min_pct_circ": 1.0,
@@ -333,7 +360,7 @@
     "poll_minutes": 30
   },
   "main_engine": {
-    "entries_enabled": true,
+    "entries_enabled": false,
     "recorder_enabled": true
   },
   "max_daily_loss_pct": 0.15,

@@ -72,6 +72,7 @@ from hermes_trader.agents.mover_recorders import (
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
+from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
@@ -886,6 +887,16 @@ while True:
             _wallet_follow_maybe_record(read_agent_config(), universe)
         except Exception as _wfre:
             logger.debug(f"[wallet-follow-recorder] pass failed (non-fatal): {_wfre}")
+
+        # social_trending recorder (W-SOC lane, 2026-07-23): zero-capital forward
+        # attention log. Every free social-HISTORY source is dead (fxtwitter no
+        # search; CoinGecko/{id}/history reddit=0.0; LunarCrush 401), so we accrue
+        # our own from CoinGecko /search/trending (free, no key), 1h-throttled inside
+        # the module, deduped 24h/coin. NOT tradeable — a W-SOC2 backtest grades it.
+        try:
+            _social_trending_maybe_record(universe, read_agent_config())
+        except Exception as _stre:
+            logger.debug(f"[social-trending-recorder] pass failed (non-fatal): {_stre}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:
