@@ -373,7 +373,7 @@
     "poll_minutes": 30
   },
   "main_engine": {
-    "entries_enabled": false,
+    "entries_enabled": true,
     "recorder_enabled": true
   },
   "max_daily_loss_pct": 0.15,
