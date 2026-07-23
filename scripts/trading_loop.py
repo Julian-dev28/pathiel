@@ -73,6 +73,7 @@ from hermes_trader.agents.mover_recorders import (
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
 from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
+from hermes_trader.agents.numerology_recorder import maybe_record as _numerology_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
@@ -897,6 +898,15 @@ while True:
             _social_trending_maybe_record(universe, read_agent_config())
         except Exception as _stre:
             logger.debug(f"[social-trending-recorder] pass failed (non-fatal): {_stre}")
+
+        # numerology_eth recorder (W-FUN lane): paper-trades the day_root_odd "money
+        # formula" (odd day-root -> LONG ETH) at zero capital so the KNOWN noise proves
+        # itself forward. Null already showed it: random flips median -86%, formula = the
+        # luck tail; inverse -> $6. Records one ETH signal per UTC day. Never trades.
+        try:
+            _numerology_maybe_record(universe, read_agent_config())
+        except Exception as _nre:
+            logger.debug(f"[numerology-recorder] pass failed (non-fatal): {_nre}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:

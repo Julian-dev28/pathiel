@@ -297,6 +297,14 @@
     "dedup_hours": 24.0,
     "min_score": 999
   },
+  "numerology_eth": {
+    "enabled": true,
+    "shadow_only": true,
+    "hour": 14,
+    "horizon_days": 1.0,
+    "leverage": 40,
+    "equity_frac": 0.5
+  },
   "unlock_recorder": {
     "enabled": true,
     "min_pct_circ": 1.0,
