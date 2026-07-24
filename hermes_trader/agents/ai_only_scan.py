@@ -216,12 +216,28 @@ def run_once(universe: List[Dict[str, Any]], config: Dict[str, Any],
         from hermes_trader.agents.ai_brain import get_brain
         brain = get_brain()
     by_coin = {r["coin"]: r for r in rows}
-    try:
-        text = brain.complete(_SYS, build_prompt(rows), web_search=bool(cfg.get("web_search")))
-    except Exception as exc:
-        logger.warning(f"[ai-only] brain call failed: {exc}")
-        return {"scanned": len(rows), "picks": 0, "recorded": 0, "placed": 0, "error": str(exc)}
-    picks = parse_verdicts(str(text or ""), valid=set(by_coin))
+    prompt = build_prompt(rows)
+    want_search = bool(cfg.get("web_search"))
+
+    def _call(web: bool) -> str:
+        try:
+            return str(brain.complete(_SYS, prompt, web_search=web) or "")
+        except Exception as exc:
+            logger.warning(f"[ai-only] brain call failed (web_search={web}): {exc}")
+            return ""
+
+    text = _call(want_search)
+    picks = parse_verdicts(text, valid=set(by_coin))
+    if not picks and want_search:
+        # Measured 2026-07-25: web-search research fails intermittently (a
+        # failure-PASS / empty envelope). A 40-market batch is the worst case.
+        # One no-search retry recovers the scan from a prior-only read instead of
+        # burning the whole cycle to zero picks.
+        text = _call(False)
+        picks = parse_verdicts(text, valid=set(by_coin))
+    if not picks and not text:
+        return {"scanned": len(rows), "picks": 0, "recorded": 0, "placed": 0,
+                "error": "brain returned nothing (both attempts)"}
     if not cfg.get("allow_shorts", True):
         picks = [p for p in picks if p["verdict"] == "LONG"]
     recorded = placed = 0

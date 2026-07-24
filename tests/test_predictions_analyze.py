@@ -112,26 +112,49 @@ def test_endpoint_requires_the_operator_token(client, monkeypatch):
     assert r.status_code == 401
 
 
+def _poll(client, job_id, tries=50):
+    """Drive the async job to completion (the work runs on a daemon thread)."""
+    import time as _t
+    for _ in range(tries):
+        r = client.get(f"/api/dashboard/predictions/analyze/result?job_id={job_id}",
+                       headers={"X-Operator-Token": "s3cret"})
+        assert r.status_code == 200
+        j = r.json()
+        if j["status"] != "running":
+            return j
+        _t.sleep(0.02)
+    raise AssertionError("job never finished")
+
+
 @pytest.mark.parametrize("brain,exp_side", [
     (ClaudeCliBrain(0.80), "YES"),
     (OpenRouterBrain(0.02), "NO"),
 ])
 def test_endpoint_analyzes_with_either_provider(client, monkeypatch, brain, exp_side):
     monkeypatch.setattr(board, "load", lambda *a, **k: _board())
-    # patch the forecaster the endpoint constructs so no real model is called
+    # patch the forecaster the background job constructs so no real model is called
     import services.polymarket_scout.forecaster as fmod
     monkeypatch.setattr(fmod, "BrainForecaster", lambda *a, **k: BrainForecaster(brain=brain))
     r = client.post("/api/dashboard/predictions/analyze?market_id=42",
                     headers={"X-Operator-Token": "s3cret"})
     assert r.status_code == 200
-    body = r.json()
-    assert body["side"] == exp_side and body["llm_yes"] is not None
+    job = r.json()
+    assert job["status"] == "running" and job["job_id"]
+    result = _poll(client, job["job_id"])
+    assert result["status"] == "done"
+    assert result["verdict"]["side"] == exp_side and result["verdict"]["llm_yes"] is not None
 
 
 def test_endpoint_404s_for_a_market_not_on_the_board(client, monkeypatch):
     monkeypatch.setattr(board, "load", lambda *a, **k: _board())
     r = client.post("/api/dashboard/predictions/analyze?market_id=nope",
                     headers={"X-Operator-Token": "s3cret"})
+    assert r.status_code == 404
+
+
+def test_result_poll_404s_for_an_unknown_job(client):
+    r = client.get("/api/dashboard/predictions/analyze/result?job_id=nope",
+                   headers={"X-Operator-Token": "s3cret"})
     assert r.status_code == 404
 
 
@@ -143,7 +166,8 @@ def test_endpoint_does_not_record_by_default(client, monkeypatch, tmp_path):
                         lambda *a, **k: BrainForecaster(brain=ClaudeCliBrain(0.85)))
     r = client.post("/api/dashboard/predictions/analyze?market_id=42",
                     headers={"X-Operator-Token": "s3cret"})
-    assert r.status_code == 200 and r.json()["recorded"] is False
+    result = _poll(client, r.json()["job_id"])
+    assert result["status"] == "done" and result["verdict"]["recorded"] is False
     assert ledger.load() == []                 # analyze-only wrote nothing
 
 

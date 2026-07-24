@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 
 AI_BRAIN_PROVIDERS = {"openrouter", "claude_cli", "codex_cli"}
 DEFAULT_AI_BRAIN_PROVIDER = "openrouter"
-MAX_CLI_TIMEOUT_S = 120.0
+# 120s was too tight for web-search research: the CLI got SIGKILLed mid-search
+# and the loop logged failure-PASSes ("AI research is DOWN") — measured
+# 2026-07-25 on WLD/SPCX/HIMS. Web search legitimately needs 2-4 min. 240s lets
+# a search complete while still bounding a genuinely stuck CLI.
+MAX_CLI_TIMEOUT_S = 240.0
 _OPENROUTER_WEB_ENGINES = {
     "auto", "native", "exa", "firecrawl", "parallel", "perplexity",
 }

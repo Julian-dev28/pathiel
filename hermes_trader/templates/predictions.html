@@ -76,6 +76,13 @@
        background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16))}
   .tab .n{color:var(--dim);font-weight:600;margin-left:7px}
   .tab[aria-selected="true"] .n{color:var(--vio)}
+  .sort-wrap{display:inline-flex;align-items:center;gap:7px;margin-left:auto;padding:5px 4px}
+  .sort-wrap .sort-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;
+    font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  #sort-mode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;
+    color:var(--txt);background:var(--card);border:1px solid var(--line2);border-radius:3px;
+    padding:6px 9px;cursor:pointer;outline:none}
+  #sort-mode:hover{border-color:rgba(139,92,246,.5)}
   /* ── market grid ── */
   .grid{display:grid;grid-template-columns:1fr;gap:12px}
   @media (min-width:760px){.grid{grid-template-columns:1fr 1fr}}
@@ -416,6 +423,16 @@ void main(){
     <button class="tab" role="tab" data-tab="sports" aria-selected="false">Sports <span class="n" id="n-sports"></span></button>
     <button class="tab" role="tab" data-tab="longshots" aria-selected="false">Crazy odds <span class="n" id="n-longshots"></span></button>
     <button class="tab" role="tab" data-tab="edges" aria-selected="false">Our edge <span class="n" id="n-edges"></span></button>
+    <label class="sort-wrap" title="reorder the cards">
+      <span class="sort-lbl">sort</span>
+      <select id="sort-mode">
+        <option value="default">Default (rank)</option>
+        <option value="ending">Ending soonest</option>
+        <option value="edge">Biggest AI edge</option>
+        <option value="volume">Most volume 24h</option>
+        <option value="move">Biggest 24h move</option>
+      </select>
+    </label>
   </div>
 
   <div class="note" id="tab-note" hidden></div>
@@ -446,6 +463,20 @@ const fmtIn = h => {
 
 let BOARD = null;
 let TAB = 'trending';
+let SORT = 'default';
+
+// sort a tab's rows without mutating the source array. 'default' keeps the
+// server rank (breaking-first / volume / live-first, per tab). 'ending' is the
+// operator's ask: soonest resolution first, nulls last.
+function sortRows(rows) {
+  const r = rows.slice();
+  const num = (v, d) => (v == null || isNaN(v) ? d : v);
+  if (SORT === 'ending') r.sort((a, b) => num(a.hours_to_end, Infinity) - num(b.hours_to_end, Infinity));
+  else if (SORT === 'edge') r.sort((a, b) => Math.abs(num(b.live_edge, 0)) - Math.abs(num(a.live_edge, 0)));
+  else if (SORT === 'volume') r.sort((a, b) => num(b.volume_24h, 0) - num(a.volume_24h, 0));
+  else if (SORT === 'move') r.sort((a, b) => Math.abs(num(b.change_24h, 0)) - Math.abs(num(a.change_24h, 0)));
+  return r;
+}
 
 function meter(row) {
   const mkt = row.yes == null ? 0 : row.yes;
@@ -577,7 +608,7 @@ function renderGrid() {
     return;
   }
   grid.style.display = '';
-  grid.innerHTML = rows.map(card).join('');
+  grid.innerHTML = sortRows(rows).map(card).join('');
 }
 
 function renderTabs(b) {
@@ -593,6 +624,11 @@ document.querySelectorAll('.tab').forEach(t => {
     TAB = t.dataset.tab;
     renderGrid();
   });
+});
+
+document.getElementById('sort-mode').addEventListener('change', e => {
+  SORT = e.target.value;
+  renderGrid();
 });
 
 // reasoning paragraphs are clamped to 3 lines; click expands in place
@@ -622,34 +658,50 @@ async function analyzeMarket(btn) {
     return;
   }
   btn.classList.add('busy'); btn.disabled = true;
-  btn.querySelector('.lbl').textContent = 'Asking the brain…';
-  out.className = 'analyze-out'; out.textContent = '';
+  const t0 = Date.now();
+  const tick = () => { btn.querySelector('.lbl').textContent =
+    `Searching the web + reasoning… ${Math.round((Date.now() - t0) / 1000)}s`; };
+  tick();
+  out.className = 'analyze-out show'; out.style.color = 'var(--dim)';
+  out.textContent = 'The model is reading current news on this market. Web search takes 1-3 min — this keeps running even if you look away.';
+  const timer = setInterval(tick, 1000);
+  const done = (cls, html) => {
+    clearInterval(timer); out.className = 'analyze-out show' + (cls ? ' ' + cls : '');
+    out.style.color = ''; out.innerHTML = html;
+    btn.classList.remove('busy'); btn.disabled = false; btn.querySelector('.lbl').textContent = 'Analyze';
+  };
+  const renderVerdict = v => {
+    if (v == null || v.llm_yes == null) {
+      done('', `<span style="color:var(--dim)">no verdict — ${esc((v && v.skip_reason) || 'declined')}</span>`);
+      return;
+    }
+    const sideTxt = v.side ? `<span class="badge ${v.side === 'YES' ? 'b-yes' : 'b-no'}">BUY ${v.side}</span>`
+      : '<span class="chip">no-bet</span>';
+    const eplus = v.edge >= 0 ? '+' : '';
+    done('', `${sideTxt} <span class="ai-p">AI ${pct(v.llm_yes)}%</span> `
+      + `<span class="ai-edge ${v.edge >= 0 ? 'up' : 'dn'}">${eplus}${Math.round(v.edge * 100)}pp vs market</span>`
+      + (v.recorded ? ' <span class="chip up">recorded</span>' : '')
+      + (v.reasoning ? `<div class="ai-why open" style="margin-top:6px">${esc(v.reasoning)}</div>` : ''));
+  };
   try {
     const r = await fetch(`/api/dashboard/predictions/analyze?market_id=${encodeURIComponent(mid)}`,
       { method: 'POST', headers: { 'X-Operator-Token': tok } });
-    if (!r.ok) {
-      const d = await r.json().catch(() => ({}));
-      throw new Error(d.detail || `HTTP ${r.status}`);
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${r.status}`); }
+    const { job_id } = await r.json();
+    // poll the job until done/error, up to 5 min
+    const deadline = Date.now() + 300000;
+    while (Date.now() < deadline) {
+      await new Promise(res => setTimeout(res, 3000));
+      const pr = await fetch(`/api/dashboard/predictions/analyze/result?job_id=${encodeURIComponent(job_id)}`,
+        { headers: { 'X-Operator-Token': tok } });
+      if (!pr.ok) { const d = await pr.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${pr.status}`); }
+      const j = await pr.json();
+      if (j.status === 'done') { renderVerdict(j.verdict); return; }
+      if (j.status === 'error') { done('err', `Analyze failed: ${esc(j.error || 'model error')}`); return; }
     }
-    const v = await r.json();
-    out.className = 'analyze-out show';
-    if (v.llm_yes == null) {
-      out.innerHTML = `<span style="color:var(--dim)">no verdict — ${esc(v.skip_reason || 'declined')}</span>`;
-    } else {
-      const sideTxt = v.side ? `<span class="badge ${v.side === 'YES' ? 'b-yes' : 'b-no'}">BUY ${v.side}</span>`
-        : '<span class="chip">no-bet</span>';
-      const eplus = v.edge >= 0 ? '+' : '';
-      out.innerHTML = `${sideTxt} <span class="ai-p">AI ${pct(v.llm_yes)}%</span> `
-        + `<span class="ai-edge ${v.edge >= 0 ? 'up' : 'dn'}">${eplus}${Math.round(v.edge * 100)}pp vs market</span>`
-        + (v.recorded ? ' <span class="chip up">recorded</span>' : '')
-        + (v.reasoning ? `<div class="ai-why open" style="margin-top:6px">${esc(v.reasoning)}</div>` : '');
-    }
+    done('err', 'Analyze timed out (>5 min). Try again — the model may be busy.');
   } catch (err) {
-    out.className = 'analyze-out show err';
-    out.textContent = `Analyze failed: ${err.message}`;
-  } finally {
-    btn.classList.remove('busy'); btn.disabled = false;
-    btn.querySelector('.lbl').textContent = 'Analyze';
+    done('err', `Analyze failed: ${esc(err.message)}`);
   }
 }
 

@@ -1405,6 +1405,65 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
 # ── prediction markets ───────────────────────────────────────────────────────
 
 
+# ── on-demand analyze jobs (background, so a 1-4min web-search call never
+# blocks the request) ─────────────────────────────────────────────────────────
+_ANALYZE_JOBS: "collections.OrderedDict[str, Dict[str, Any]]" = collections.OrderedDict()
+_ANALYZE_LOCK = threading.Lock()
+_ANALYZE_JOBS_MAX = 64
+_ANALYZE_JOB_TTL_S = 900
+
+
+def _analyze_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with _ANALYZE_LOCK:
+        job = _ANALYZE_JOBS.get(job_id)
+        return dict(job) if job else None
+
+
+def _prune_analyze_jobs(now: float) -> None:
+    while len(_ANALYZE_JOBS) > _ANALYZE_JOBS_MAX:
+        _ANALYZE_JOBS.popitem(last=False)
+    dead = [k for k, v in _ANALYZE_JOBS.items()
+            if now - float(v.get("started", now)) > _ANALYZE_JOB_TTL_S]
+    for k in dead:
+        _ANALYZE_JOBS.pop(k, None)
+
+
+def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
+                       web_search: bool) -> str:
+    import uuid
+    job_id = uuid.uuid4().hex[:16]
+    now = time.time()
+    with _ANALYZE_LOCK:
+        _prune_analyze_jobs(now)
+        _ANALYZE_JOBS[job_id] = {"status": "running", "started": now,
+                                 "market_id": market_id, "verdict": None}
+
+    def _work() -> None:
+        try:
+            from services.polymarket_scout import ask
+            from services.polymarket_scout.forecaster import BrainForecaster
+            from services.polymarket_scout.scout import PolymarketClient
+            verdict = ask.analyze_market_id(
+                market_id, BrainForecaster(web_search=web_search), payload,
+                record=record, client=PolymarketClient() if record else None)
+            with _ANALYZE_LOCK:
+                j = _ANALYZE_JOBS.get(job_id)
+                if j is not None:
+                    j["status"] = "done" if verdict else "error"
+                    j["verdict"] = verdict
+                    if not verdict:
+                        j["error"] = "market not found on board"
+        except Exception as exc:
+            with _ANALYZE_LOCK:
+                j = _ANALYZE_JOBS.get(job_id)
+                if j is not None:
+                    j["status"] = "error"
+                    j["error"] = str(exc)[:200]
+
+    threading.Thread(target=_work, daemon=True).start()
+    return job_id
+
+
 def _predictions_payload() -> Dict[str, Any]:
     """Polymarket board: trending + breaking markets, our AI brain's forecast on
     the ones it has judged, and the shadow ledger's scoreboard.
@@ -1530,25 +1589,40 @@ def register_routes(app: FastAPI) -> None:
     async def dashboard_predictions_analyze(
         market_id: str = Query(..., min_length=1, max_length=64),
         record: bool = Query(False),
+        web_search: bool = Query(True),
     ) -> JSONResponse:
-        """On-demand AI verdict for ONE prediction market (the card 'Analyze'
-        button). Operator-gated because it spends a model call. Routes through
-        the same brain the scout uses; `record=true` writes a paper trade only
-        if the divergence clears the lane threshold (a click never lowers the
-        bar). Returns 404 if the id is not on the current board."""
+        """Kick off an on-demand AI verdict for ONE market and return a job id.
+
+        web_search defaults TRUE — it is the edge: without it the model guesses a
+        base rate ('no pitching data, so mid-30s%') instead of reading the news.
+        But a web-search claude_cli call runs 1-4 min, far past any HTTP timeout,
+        so this does NOT block: it starts the work on a background thread and
+        returns {job_id}. The client polls GET .../analyze/result?job_id until
+        status flips to done/error. `record=true` writes a paper trade only if
+        the divergence clears the lane threshold. 404 if the id is off-board."""
         try:
-            from services.polymarket_scout import ask, board
-            from services.polymarket_scout.forecaster import BrainForecaster
-            from services.polymarket_scout.scout import PolymarketClient
+            from services.polymarket_scout import board
         except Exception as exc:
             raise HTTPException(status_code=503, detail=f"scout unavailable: {exc}")
         payload = board.load()
-        verdict = ask.analyze_market_id(
-            market_id, BrainForecaster(), payload, record=record,
-            client=PolymarketClient() if record else None)
-        if verdict is None:
+        if not any(str(r.get("market_id")) == market_id
+                   for feed in ("trending", "breaking", "sports", "longshots", "edges")
+                   for r in (payload.get(feed) or [])):
             raise HTTPException(status_code=404, detail="market not on the current board")
-        return JSONResponse(verdict)
+        job_id = _start_analyze_job(market_id, payload, record, web_search)
+        return JSONResponse({"job_id": job_id, "status": "running"})
+
+    @app.get("/api/dashboard/predictions/analyze/result",
+             dependencies=[Depends(_require_operator)])
+    async def dashboard_predictions_analyze_result(
+        job_id: str = Query(..., min_length=1, max_length=64),
+    ) -> JSONResponse:
+        """Poll one analyze job. status in {running, done, error}; when done the
+        `verdict` field carries the result."""
+        job = _analyze_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="unknown or expired job")
+        return JSONResponse(job)
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:
