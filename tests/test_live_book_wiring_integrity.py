@@ -348,3 +348,78 @@ def test_leverage_bump_to_6x_is_reverted_in_config():
     assert int(cfg["uw_flow_xs"]["leverage"]) == 3
     assert int(cfg["news_ta_aligned"]["leverage"]) == 3
     assert int(cfg["news_surge_short"]["crypto_leverage"]) == 1
+
+
+# ------------------------- maintenance-aware liq bound (2026-07-24, operator)
+# "I DON'T MIND A CRAZY DRAWDOWN AS LONG AS THE SWING IS WORTH IT, NEVER GET
+# LIQUIDATED." The naive bound (0.60/lev) treats the liq distance as 1/lev,
+# which ignores maintenance margin. On a low-maxLeverage coin maint dominates
+# and the naive rule authorizes a stop OUTSIDE liquidation.
+def test_naive_bound_permits_a_stop_outside_liquidation_on_low_maxlev_coins():
+    """Pins the hole: BOME-class (maxLev 3 -> maint 16.7%) liquidates at 16.7%
+    at 3x, but the naive rule authorizes a 20% stop there."""
+    maint = 1.0 / (2 * 3)
+    liq_at_3x = 1.0 / 3 - maint
+    import pytest
+    assert liq_at_3x < 0.20                              # dies at 16.7%
+    assert _backup_sl_clamp(3) == pytest.approx(0.20)    # yet 20% is allowed
+
+
+def test_maint_aware_cap_never_authorizes_liquidation():
+    """The operator constraint, over every coin class / stop / leverage."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    for coin_max in (3, 5, 10, 20, 40):
+        maint = 1.0 / (2 * coin_max)
+        for stop in (6.0, 15.0, 20.0, 25.0, 30.0, 40.0):
+            for lev in range(1, 13):
+                eff = cap(lev, stop, 0.60, coin_max)
+                assert eff >= 1
+                liq = 1.0 / eff - maint
+                assert stop / 100.0 < liq or eff == 1, (
+                    f"maxLev {coin_max}, {stop}% stop, {lev}x -> {eff}x "
+                    f"liquidates at {liq:.1%} before the stop")
+
+
+def test_both_bounds_are_load_bearing():
+    """Width bound and liq bound each bind alone; neither implies the other."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    # xyz (maint 2.5%): the WIDTH clamp binds first — liq alone would allow 3x
+    # for a 25% stop (0.85 * 30.8% = 26.2%), but 0.60/3 = 20% < 25%.
+    assert cap(6, 25.0, 0.60, 20, 0.85) == 2
+    # BOME-class (maint 16.7%): the LIQ bound binds first — width alone would
+    # allow 3x for a 20% stop (0.60/3 = 20%), but liq at 3x is only 16.7%.
+    assert cap(6, 20.0, 0.60, 3, 0.85) == 2
+    assert cap(6, 20.0, 0.60, 3, 0.0) == 3      # liq bound off -> width only
+
+
+def test_default_safety_holds_every_live_book_at_its_current_leverage():
+    """0.85 fixes the low-maxLeverage hole WITHOUT shrinking any live book:
+    a 20% stop needs 0.65 to keep 3x on xyz, so 0.85 leaves it alone. Dropping
+    to 0.60 would push it to 2x — a third less size — for gap protection."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    assert cap(3, 20.0, 0.60, 20) == 3          # xs_xyz_equities, uw_flow_xs
+    assert cap(3, 15.0, 0.60, 20) == 3          # news_ta_aligned
+    assert cap(1, 15.0, 0.60, 20) == 1          # news_surge_short crypto
+    assert cap(6, 6.0, 0.60, 20) == 6           # news_surge_short equity
+    assert cap(4, 20.0, 0.60, 20) == 3          # extreme_fade: 4x WAS shrinking
+    assert cap(3, 20.0, 0.60, 20, 0.60) == 2    # the stricter alternative
+
+
+def test_maint_aware_cap_is_stricter_than_the_naive_one():
+    """A 20% stop fits at 3x under the naive bound but only 2x once maintenance
+    margin is counted. Stricter is the point — liquidation is the thing we will
+    not trade against."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    assert cap(6, 20.0, 0.60, 0) == 3          # no coin meta -> width bound
+    assert cap(6, 20.0, 0.60, 20, 0.60) == 2   # strict safety -> 2x
+    # the cap only ever walks DOWN from what the book asked for
+    assert cap(6, 6.0, 0.60, 20) == 6          # tight stop -> request untouched
+    assert cap(12, 6.0, 0.60, 20) == 10        # ...and 6% fits up to 10x
+    assert cap(2, 20.0, 0.60, 20) == 2         # already fits -> untouched
+
+
+def test_cap_degrades_to_1x_rather_than_authorizing_a_dead_stop():
+    """A stop so wide that no leverage fits must fall to 1x, never to a
+    leverage where the stop cannot fire."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    assert cap(6, 90.0, 0.60, 20) == 1

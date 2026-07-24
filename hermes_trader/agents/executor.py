@@ -204,8 +204,10 @@ def _backup_sl_price(
 
 
 def stop_honoring_leverage(leverage: int, stop_pct: float,
-                           max_frac_of_liq: float = 0.60) -> int:
-    """The highest leverage at which `stop_pct` survives the backup-SL clamp.
+                           max_frac_of_liq: float = 0.60,
+                           coin_max_leverage: int = 0,
+                           liq_safety_frac: float = 0.85) -> int:
+    """The highest leverage at which `stop_pct` fires strictly before liquidation.
 
     `_backup_sl_price` (and the pct-override branch in `maybe_execute`) bound the
     server-side stop to `max_frac_of_liq / leverage` of entry so it always sits
@@ -215,19 +217,47 @@ def stop_honoring_leverage(leverage: int, stop_pct: float,
     equities / 78 daily bars, the 10% variant forced out 33% of legs against
     3.3% at the intended stop and lost money under every sampling scheme.
 
-    The stop is the validated parameter, so cap the leverage to fit it:
-        lev <= max_frac_of_liq / stop      (20% -> 3x, 15% -> 4x, 6% -> 10x)
+    The stop is the validated parameter, so cap the leverage to fit it instead.
 
-    Returns `leverage` unchanged when no stop is requested, when the clamp is
-    disabled, or when the stop already fits. Never returns below 1.
+    `1/lev` OVERSTATES the liquidation distance, because maintenance margin eats
+    into it: the real isolated liq move is `1/lev - maint`, `maint = 1/(2*coin
+    max leverage)`. On a high-maxLeverage coin maint is negligible (xyz equities
+    2.5%) and the two agree, but on a low-maxLeverage coin it dominates — a
+    BOME-class 3x-max coin has maint 16.7%, so at 3x it liquidates at 16.7%
+    while the naive rule happily authorizes a 20% stop. That is a stop OUTSIDE
+    liquidation: the position dies before its exit can fire. Pass
+    `coin_max_leverage` to close that hole; omit it to fall back to the naive
+    (optimistic) bound.
+
+    `liq_safety_frac` (default 0.85) is the headroom on that liq bound. 0.85
+    holds every current book at the leverage it already runs (a 20% stop needs
+    0.65 to keep 3x on xyz) while still capping the low-maxLeverage coins where
+    the stop would otherwise sit outside liquidation. Lower it toward 0.60 to
+    buy gap protection at the cost of notional: 0.60 pushes a 20% stop down to
+    2x, a third less size. 0 disables the liq bound entirely.
+
+    Operator constraint 2026-07-24: drawdown is acceptable, liquidation is not.
     """
     stop = float(stop_pct or 0.0) / 100.0
     frac = float(max_frac_of_liq or 0.0)
+    lev = int(leverage)
     if stop <= 0 or frac <= 0:
-        return int(leverage)
-    # +1e-9 so an exact fit (0.60 / 0.20) floors to 3 rather than 2
-    cap = int(frac / stop + 1e-9)
-    return max(1, min(int(leverage), cap))
+        return lev
+    maint = (1.0 / (2.0 * int(coin_max_leverage))) if coin_max_leverage else 0.0
+    safety = float(liq_safety_frac or 0.0)
+    # TWO bounds, both necessary. The clamp bound keeps the stop at its
+    # requested WIDTH (stop <= frac/lev). The liq bound keeps it REACHABLE at
+    # all (stop <= safety * (1/lev - maint)). Neither implies the other: on xyz
+    # the clamp binds first, on a low-maxLeverage coin the liq bound does.
+    # Walk down from the request; both constraints are monotonic in leverage.
+    # +1e-9 absorbs binary-float dust on exact fits (0.60/0.20).
+    while lev > 1:
+        fits_width = stop <= frac / lev + 1e-9
+        fits_liq = (safety <= 0) or (stop <= safety * (1.0 / lev - maint) + 1e-9)
+        if fits_width and fits_liq:
+            return lev
+        lev -= 1
+    return 1
 
 
 def _merge_nested_config(base: Dict[str, Any], override: Any) -> Dict[str, Any]:
@@ -662,7 +692,9 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             _want_stop = 0.0
         _capped = stop_honoring_leverage(
             leverage, _want_stop,
-            float(config.get("backup_sl_max_frac_of_liq", 0.60) or 0.0))
+            float(config.get("backup_sl_max_frac_of_liq", 0.60) or 0.0),
+            coin_max_leverage=get_max_leverage(coin),
+            liq_safety_frac=float(config.get("liq_safety_frac", 0.85) or 0.0))
         if _capped < leverage:
             logger.warning(
                 f"[executor] {coin}: leverage {leverage}x would shrink the "
