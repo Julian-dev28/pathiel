@@ -267,3 +267,71 @@ def test_deep_crash_tier_triggers_below_threshold(monkeypatch):
                             "deep_tier": {"crash_pct": -0.20, "equity_fraction": 0.6}})
     assert a["strategy_book_equity_frac_override"] == 0.6
     assert "[deep-tier]" in a["reasoning"]
+
+
+# ------------------------------------ concurrent-position cap (2026-07-24)
+# max_new_per_cycle only bounds opens per 30-min cycle. With a 3-day hold, a
+# sustained crash regime stacks legs across cycles until margin runs out. At
+# equity_fraction 0.05 that took 20 legs; at 0.15 it takes 6, and the sizing
+# backtest that justified 0.15 assumed exactly a 6-leg cap.
+def test_book_cap_blocks_new_opens_when_book_is_full():
+    calls = []
+    fetch = _fetch(fresh={"A", "B"})
+    # open A, so `faded` records it as this book's position
+    efl.maybe_run(_cfg(max_book_positions=1), _universe(["A"]), [],
+                  fetch, lambda a: calls.append(a))
+    assert len(calls) == 1
+    # A is now live; the book is at its cap, so B must not open
+    positions = [{"position": {"coin": "A", "szi": "1.0"}}]
+    out = efl.maybe_run(_cfg(max_book_positions=1), _universe(["B"]), positions,
+                        fetch, lambda a: calls.append(a))
+    assert len(calls) == 1
+    assert out["opened"] == 0
+    assert out.get("book_full") is True
+
+
+def test_book_cap_counts_only_this_books_positions():
+    """Positions the account holds from OTHER books must not consume the cap —
+    `faded` keys are the coins extreme_fade itself opened."""
+    calls = []
+    other = [{"position": {"coin": "SOMEONE_ELSE", "szi": "1.0"}},
+             {"position": {"coin": "ALSO_NOT_MINE", "szi": "-2.0"}}]
+    efl.maybe_run(_cfg(max_book_positions=1), _universe(["MINE"]), other,
+                  _fetch(fresh={"MINE"}), lambda a: calls.append(a))
+    assert len(calls) == 1          # cap untouched by the other book's legs
+
+
+def test_book_cap_bounds_a_multi_coin_crash_within_one_cycle():
+    calls = []
+    efl.maybe_run(_cfg(max_new_per_cycle=10, max_book_positions=3),
+                  _universe(["X1", "X2", "X3", "X4", "X5"]), [],
+                  _fetch(fresh={"X1", "X2", "X3", "X4", "X5"}),
+                  lambda a: calls.append(a))
+    assert len(calls) == 3          # cap binds inside the loop, not just before it
+
+
+def test_book_cap_zero_disables_the_cap():
+    calls = []
+    efl.maybe_run(_cfg(max_new_per_cycle=10, max_book_positions=0),
+                  _universe(["Z1", "Z2", "Z3"]), [],
+                  _fetch(fresh={"Z1", "Z2", "Z3"}), lambda a: calls.append(a))
+    assert len(calls) == 3
+
+
+def test_sizing_matches_the_backtested_cap():
+    """The shipped equity_fraction and the cap must stay consistent: the sizing
+    sim funded int(1/f) legs, so the cap may never exceed what margin allows."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    ef = cfg["extreme_fade"]
+    f = float(ef["equity_fraction"])
+    cap = int(ef["max_book_positions"])
+    assert cap * f <= 1.0 + 1e-9, (
+        f"{cap} legs x {f} margin = {cap*f:.2f} of equity — over-committed")
+    # WORST case is every leg on the deep tier, which sizes larger. That must
+    # still be fundable, or a -20% cascade fills the book with orders the
+    # account cannot margin.
+    deep = float(ef["deep_tier"]["equity_fraction"])
+    assert cap * deep <= 1.0 + 1e-9, (
+        f"all-deep cascade: {cap} legs x {deep} = {cap*deep:.2f} of equity")

@@ -308,6 +308,22 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     faded = _load_faded()
     max_new = int(ef.get("max_new_per_cycle", 2))
     opened = 0
+    # Concurrent-position cap (2026-07-24). max_new_per_cycle only bounds opens
+    # per 30-min cycle; with a 3-day hold a sustained crash regime can stack far
+    # more legs than the account can margin. That was survivable at
+    # equity_fraction 0.05 (20 legs = 100% margin) but not at 0.15, where only 6
+    # legs fit — and the sizing backtest that justified 0.15 assumed exactly
+    # this cap (int(1/f) legs). Without it the live book takes a risk the
+    # measurement never covered. `faded` keys are the coins THIS book opened, so
+    # intersecting with live holdings counts its own positions, not the account's.
+    max_book = int(ef.get("max_book_positions", 0) or 0)
+    book_open = len(set(faded) & held)
+    if max_book > 0 and book_open >= max_book:
+        logger.info(f"[extreme-fade] max_book_positions reached "
+                    f"({book_open}/{max_book}) — {len(signals)} signal(s) "
+                    f"recorded, no entries")
+        return {"signals": len(signals), "opened": 0, "skew": skew,
+                "armed": armed, "book_full": True}
     if enforce and not armed:
         logger.info(f"[extreme-fade] DISARMED (market 20d skew {skew:+.3f} >= 0, enforce=on) — "
                     f"{len(signals)} signal(s) recorded, no entries")
@@ -315,6 +331,10 @@ def maybe_run(config: Dict[str, Any], universe, positions,
     for s in signals:
         if opened >= max_new:
             logger.info(f"[extreme-fade] max_new_per_cycle reached ({max_new}) — remaining signals skipped")
+            break
+        if max_book > 0 and book_open + opened >= max_book:
+            logger.info(f"[extreme-fade] max_book_positions reached "
+                        f"({book_open + opened}/{max_book}) — remaining signals skipped")
             break
         if s.coin in held:
             logger.info(f"[extreme-fade] skip {s.coin}: already held")
