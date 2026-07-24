@@ -373,8 +373,23 @@ void main(){
       </span>
       <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ PREDICTIONS</small>
     </span>
-    <span class="text-[10px] mono" style="color:var(--dim)" id="board-meta"></span>
+    <span class="flex items-center gap-2">
+      <button id="op-token-btn" class="analyze" type="button" style="margin-top:0"
+              title="the Analyze button spends a model call, so it is operator-gated">set token</button>
+      <span class="text-[10px] mono" style="color:var(--dim)" id="board-meta"></span>
+    </span>
   </header>
+  <div id="token-row" style="display:none;margin:-8px 0 14px;gap:6px;align-items:center"
+       class="flex flex-wrap">
+    <input id="token-input" type="password" placeholder="operator token"
+           autocomplete="off" spellcheck="false"
+           style="flex:1;min-width:180px;max-width:320px;padding:7px 10px;font-size:12px;
+                  font-family:ui-monospace,Menlo,monospace;color:var(--txt);background:var(--card2);
+                  border:1px solid var(--line2);border-radius:3px;outline:none" />
+    <button id="token-save" class="analyze" type="button" style="margin-top:0;color:var(--up);border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.08)">save</button>
+    <button id="token-clear" class="analyze" type="button" style="margin-top:0;color:var(--dn);border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08)">clear</button>
+    <span class="text-[10px] mono" style="color:var(--dim)">stored in this browser only · same token as the dashboard footer</span>
+  </div>
 
   <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
@@ -591,8 +606,10 @@ document.getElementById('grid').addEventListener('click', e => {
 // operator token: reused from localStorage (same key the other tabs use), sent
 // as the X-Operator-Token header the analyze endpoint requires. The brain call
 // costs money, so the endpoint is operator-gated.
+// same localStorage key the landing/activity token widget uses, so a token set
+// on any tab works here too.
 function operatorToken() {
-  try { return localStorage.getItem('hermes_operator_token') || ''; } catch (e) { return ''; }
+  try { return localStorage.getItem('hermes-op-token') || ''; } catch (e) { return ''; }
 }
 
 async function analyzeMarket(btn) {
@@ -656,6 +673,33 @@ async function load() {
   document.querySelectorAll('a[data-nav]').forEach(a => {
     if (a.dataset.nav === here) a.classList.add('nav-active');
   });
+})();
+
+// operator-token widget: toggles the input row, saves/clears the same
+// localStorage key the other tabs use. Label reflects whether a token is set.
+(function () {
+  const btn = document.getElementById('op-token-btn');
+  const row = document.getElementById('token-row');
+  const input = document.getElementById('token-input');
+  const sync = () => { btn.textContent = operatorToken() ? 'clear token' : 'set token'; };
+  sync();
+  btn.addEventListener('click', () => {
+    if (operatorToken()) {              // already set -> button clears it
+      localStorage.removeItem('hermes-op-token'); row.style.display = 'none'; sync(); return;
+    }
+    const open = row.style.display === 'none';
+    row.style.display = open ? 'flex' : 'none';
+    if (open) { input.value = operatorToken(); input.focus(); }
+  });
+  document.getElementById('token-save').addEventListener('click', () => {
+    const t = input.value.trim();
+    if (t) localStorage.setItem('hermes-op-token', t);
+    row.style.display = 'none'; sync();
+  });
+  document.getElementById('token-clear').addEventListener('click', () => {
+    localStorage.removeItem('hermes-op-token'); input.value = ''; row.style.display = 'none'; sync();
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('token-save').click(); });
 })();
 
 load();

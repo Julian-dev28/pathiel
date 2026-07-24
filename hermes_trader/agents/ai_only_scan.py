@@ -71,9 +71,14 @@ _SYS = (
     "nothing else, in this exact format:\n"
     "  SYM L|S 0.CONF three word reason\n"
     "SYM is the symbol verbatim (may contain ':'). L=long, S=short. CONF is your "
-    "probability the trade is right, 0.50-0.99. No preamble, no table, no JSON, no "
-    "trailing commentary — only the pick lines. End with a final line: END"
+    "probability the trade is right, 0.50-0.99. No preamble, no table, no "
+    "trailing commentary — only the pick lines. Then, as the VERY LAST line, emit "
+    'exactly this JSON object and nothing after it: {"verdict":"DONE"}'
 )
+# The claude_cli brain drops any reply without a parseable {"verdict":...} object
+# (ai_brain._contains_parseable_verdict_json). The required final sentinel line
+# makes the batch reply pass that validator; parse_verdicts reads the pick lines
+# above it and ignores the sentinel.
 
 
 def _cfg(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -117,7 +122,7 @@ def build_prompt(rows: List[Dict[str, Any]]) -> str:
     lines = "\n".join(compact_line(r) for r in rows)
     return (f"SCHEMA: {_SCHEMA}\n"
             f"BOARD ({len(rows)} markets):\n{lines}\n\n"
-            "Your picks (pick lines only, then END):")
+            'Your picks (pick lines, then the {"verdict":"DONE"} sentinel line):')
 
 
 def parse_verdicts(text: str, valid: Optional[set] = None) -> List[Dict[str, Any]]:
@@ -165,8 +170,11 @@ def to_analysis(v: Dict[str, Any], row: Dict[str, Any], cfg: Dict[str, Any]) -> 
         "reasoning": v.get("reason", ""),
         "composite_score": 0.0,               # no TA — this is the whole point
         "strategy_book": BOOK,
-        "equity_fraction_per_trade": float(cfg.get("equity_fraction_per_trade") or 0.05),
-        "leverage": int(cfg.get("leverage") or 5),
+        # The executor sizes strategy books from these OVERRIDE keys, not from a
+        # bare `leverage`/`equity_fraction` — set the ones it actually reads so
+        # ai_only honors its own risk params instead of the global 12x / book frac.
+        "strategy_book_equity_frac_override": float(cfg.get("equity_fraction_per_trade") or 0.05),
+        "leverage_override": int(cfg.get("leverage") or 5),
         "source": "ai_only", "ai_brain_provider": "ai_only",
     }
 

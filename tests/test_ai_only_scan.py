@@ -93,6 +93,17 @@ def test_to_analysis_is_shaped_for_the_executor_and_tagged_as_a_book():
     assert a["stopPx"] == pytest.approx(92.0)   # long stop below
     assert a["tpPx"] == pytest.approx(116.0)
     assert a["id"] and a["confidence"] == 0.8
+    # the executor reads the OVERRIDE keys, not bare leverage/equity_fraction
+    assert a["leverage_override"] == 5
+    assert a["strategy_book_equity_frac_override"] == pytest.approx(0.05)
+
+
+def test_to_analysis_override_keys_track_config():
+    v = {"coin": "BTC", "verdict": "LONG", "side": "long", "confidence": 0.8}
+    a = ao.to_analysis(v, _row(mid=100.0),
+                       {**ao.DEFAULTS, "leverage": 6, "equity_fraction_per_trade": 0.1})
+    assert a["leverage_override"] == 6
+    assert a["strategy_book_equity_frac_override"] == pytest.approx(0.1)
 
 
 def test_to_analysis_flips_stop_and_tp_for_a_short():
