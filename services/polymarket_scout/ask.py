@@ -143,6 +143,80 @@ def ask(client: PolymarketClient, forecaster, needles: Sequence[str] = (),
     return verdicts
 
 
+def analyze_row(row: Dict[str, Any], forecaster, record: bool = False,
+                record_fn=ledger.record,
+                client: Optional[PolymarketClient] = None) -> Dict[str, Any]:
+    """Forecast ONE already-fetched board row (the dashboard 'Analyze' button).
+
+    No universe scan: the row carries everything (`yes`, tokens, tags, score), so
+    the only cost is the single brain call. Returns the verdict dict. Recording
+    still honours the lane's edge threshold — a click does not lower the bar.
+    """
+    mkt_yes = row.get("yes")
+    lane, cfg = lane_of(row), cfg_for(row)
+    thr = float(cfg.get("edge_threshold", 0.15))
+    v: Dict[str, Any] = {
+        "market_id": row.get("market_id"), "question": row.get("question"),
+        "lane": lane, "mkt_yes": mkt_yes, "threshold": thr,
+        "payout_x": trending.payout_x(row), "live": bool(row.get("live")),
+        "llm_yes": None, "edge": None, "side": None, "reasoning": "",
+        "recorded": False, "skip_reason": "",
+    }
+    if mkt_yes is None:
+        v["skip_reason"] = "market has no price"
+        return v
+    ctx = (f"{row.get('event_title','')} | tags: {', '.join(row.get('tags') or [])} | "
+           f"{'LIVE, current score ' + row['score'] if row.get('score') else ''} | "
+           f"resolves {row.get('end_date','')}")
+    fc = forecaster.forecast(row.get("question") or "", ctx)
+    if fc is None:
+        v["skip_reason"] = "brain declined / unparseable"
+        return v
+    llm_yes, why = fc
+    edge = signed_edge(llm_yes, mkt_yes)
+    side = decide_side(edge, thr)
+    v.update({"llm_yes": llm_yes, "edge": edge, "side": side, "reasoning": why})
+    if side is None:
+        v["skip_reason"] = f"|edge| {abs(edge):.2f} < {lane} threshold {thr:.2f}"
+        return v
+    if str(row.get("market_id")) in {str(r.get("market_id")) for r in ledger.load()}:
+        v["skip_reason"] = "already in the ledger"
+    elif not record:
+        v["skip_reason"] = "analyze-only (not recorded)"
+    else:
+        token = row.get("yes_token") if side == "YES" else row.get("no_token")
+        fill = None
+        if token and client is not None:
+            ap = client.best_ask(token)
+            fill = ap[0] if ap else None
+        if fill is None:
+            fill = row.get("ask") if side == "YES" else (1.0 - (row.get("bid") or 0.0))
+        if fill:
+            record_fn(market_id=row.get("market_id"), question=row.get("question") or "",
+                      side=side, token_id=token or "", llm_yes=llm_yes, mkt_yes=mkt_yes,
+                      fill_px=fill, edge=edge, end_date=row.get("end_date") or "",
+                      category=(row.get("tags") or [""])[0], reasoning=why, lane=lane,
+                      meta={"breaking": bool(row.get("breaking")),
+                            "live": bool(row.get("live")), "sport": row.get("sport") or "",
+                            "event_title": row.get("event_title"), "asked": True,
+                            "url": row.get("url")})
+            v["recorded"] = True
+            v["fill_px"] = fill
+    return v
+
+
+def analyze_market_id(market_id: str, forecaster, board_payload: Dict[str, Any],
+                      record: bool = False, record_fn=ledger.record,
+                      client: Optional[PolymarketClient] = None) -> Optional[Dict[str, Any]]:
+    """Find `market_id` across the board feeds and analyze it. None if not found."""
+    for feed in ("trending", "breaking", "sports", "longshots", "edges"):
+        for row in board_payload.get(feed) or []:
+            if str(row.get("market_id")) == str(market_id):
+                return analyze_row(row, forecaster, record=record,
+                                   record_fn=record_fn, client=client)
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("needles", nargs="*", help="substring of the question or event title")

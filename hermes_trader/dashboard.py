@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from hermes_trader import session_log
@@ -1524,6 +1524,31 @@ def register_routes(app: FastAPI) -> None:
         # TTL (20s) >= the page's poll interval (30s); the underlying cache only
         # changes when the scout cron runs, so this is generous already.
         return JSONResponse(_ttl_cached("predictions", 20.0, _predictions_payload))
+
+    @app.post("/api/dashboard/predictions/analyze",
+              dependencies=[Depends(_require_operator)])
+    async def dashboard_predictions_analyze(
+        market_id: str = Query(..., min_length=1, max_length=64),
+        record: bool = Query(False),
+    ) -> JSONResponse:
+        """On-demand AI verdict for ONE prediction market (the card 'Analyze'
+        button). Operator-gated because it spends a model call. Routes through
+        the same brain the scout uses; `record=true` writes a paper trade only
+        if the divergence clears the lane threshold (a click never lowers the
+        bar). Returns 404 if the id is not on the current board."""
+        try:
+            from services.polymarket_scout import ask, board
+            from services.polymarket_scout.forecaster import BrainForecaster
+            from services.polymarket_scout.scout import PolymarketClient
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"scout unavailable: {exc}")
+        payload = board.load()
+        verdict = ask.analyze_market_id(
+            market_id, BrainForecaster(), payload, record=record,
+            client=PolymarketClient() if record else None)
+        if verdict is None:
+            raise HTTPException(status_code=404, detail="market not on the current board")
+        return JSONResponse(verdict)
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:

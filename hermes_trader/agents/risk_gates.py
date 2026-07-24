@@ -216,6 +216,15 @@ def reentry_cap_reason(coin: str, recent_entry_count: int, cap: int) -> str:
     return ""
 
 
+def books_bypass_ai(config: Dict[str, Any]) -> bool:
+    """Whether strategy books place WITHOUT an AI veto (the current behavior).
+
+    True (default) = a book routes straight to the risk gates and self-places.
+    False = the book entry must be AI-confirmed first (see book_ai_confirmed).
+    Pure config read so both the loop and the tests agree on the switch."""
+    return bool((config or {}).get("books_bypass_ai", True))
+
+
 def book_block_event(analysis: Dict[str, Any], result: Any) -> Optional[Dict[str, Any]]:
     """Build the activity-feed `execute` BLOCK event for a strategy-book entry the
     executor refused to open. Returns None when there is nothing to surface (the entry

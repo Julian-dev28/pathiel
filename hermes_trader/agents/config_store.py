@@ -83,6 +83,32 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "stale_flat_timeout_minutes": 480,
     },
     "ta_sidestep_force_execute": True,
+    # AI-only scan (operator experiment 2026-07-25): hand the WHOLE board to the
+    # LLM with NO TA/volume signal filter and let it decide. Risk gates in
+    # maybe_execute still apply — only the SIGNAL gates are sidestepped. One
+    # batched brain call per scan (token-efficient dense table). Shadow-first:
+    # place=false records to the `ai_only` shadow ledger and executes nothing;
+    # place=true arms it at the small bounded size below. interval_min sets the
+    # cadence (default 30). See hermes_trader/agents/ai_only_scan.py.
+    "ai_only_mode": {
+        "enabled": False,
+        "place": False,
+        "interval_min": 30,
+        "min_volume_usd": 0,
+        "max_markets": 40,
+        "min_confidence": 0.7,
+        "web_search": False,
+        "equity_fraction_per_trade": 0.05,
+        "leverage": 5,
+        "stop_pct": 0.08,
+        "tp_pct": 0.16,
+        "allow_shorts": True,
+    },
+    # Existing strategy books place WITHOUT an AI veto (they route straight
+    # through maybe_execute's risk gates). This flag documents and controls that:
+    # true = current behavior (books self-place); set false to require the books
+    # to be AI-confirmed before placing. Honored by the book-execute path.
+    "books_bypass_ai": True,
     "override_max_daily_extension_pct": 30.0,
     "block_counter_trend_bypass": True,
     "trend_surface_enabled": True,

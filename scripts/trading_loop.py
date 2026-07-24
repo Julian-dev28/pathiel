@@ -49,6 +49,7 @@ from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
 from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
 from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
 from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
+from hermes_trader.agents.risk_gates import books_bypass_ai as _books_bypass_ai
 from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
@@ -75,6 +76,7 @@ from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_
 from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
 from hermes_trader.agents.numerology_recorder import maybe_record as _numerology_maybe_record
 from hermes_trader.agents.uw_flow_xs_live import maybe_run as _uw_flow_xs_maybe_run
+from hermes_trader.agents.ai_only_scan import maybe_run as _ai_only_maybe_run
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
@@ -107,7 +109,27 @@ def _book_execute(analysis):
     """execute_fn for the strategy books: run the real executor, but surface a BLOCK
     to the activity feed. Logic lives in risk_gates.book_block_event (pure + tested);
     here we just emit it. The executor never touches the feed and the main loop only
-    emits `execute` events for its own entries, so book denials were log-only before."""
+    emits `execute` events for its own entries, so book denials were log-only before.
+
+    books_bypass_ai (default true) = books self-place, as always: straight to the
+    risk gates, no AI veto. Set it false to stop the books from placing on their
+    own — a book entry is then blocked here (surfaced to the feed) so only the
+    main AI engine opens positions. The ai_only book is exempt: it IS the AI's
+    verdict, so it places whenever ai_only_mode.place is on regardless."""
+    _cfg = read_agent_config()
+    if (not _books_bypass_ai(_cfg)
+            and analysis.get("strategy_book") not in (None, "ai_only")):
+        result = {"executed": False, "coin": analysis.get("coin"),
+                  "side": analysis.get("side"), "strategy_book": analysis.get("strategy_book"),
+                  "reason": "books_bypass_ai_disabled (books may not self-place)",
+                  "blocked_by": ["books_bypass_ai_disabled"]}
+        try:
+            evt = _book_block_event(analysis, result)
+            if evt:
+                log_event(evt)
+        except Exception:
+            pass
+        return result
     result = maybe_execute(analysis)
     try:
         evt = _book_block_event(analysis, result)
@@ -919,6 +941,16 @@ while True:
             _uw_flow_xs_maybe_run(read_agent_config(), universe, positions, _book_execute)
         except Exception as _uwe:
             logger.debug(f"[uw-flow-xs] pass failed (non-fatal): {_uwe}")
+
+        # AI-only scan (operator experiment 2026-07-25): hand the WHOLE board to
+        # the LLM with NO TA/volume signal gate and let it decide, on its own
+        # interval (default 30min). Risk gates in maybe_execute still apply.
+        # DEFAULT enabled=false -> total no-op; place=false -> shadow-records
+        # only. See ai_only_mode in the config. One batched brain call per scan.
+        try:
+            _ai_only_maybe_run(read_agent_config(), universe, positions, _book_execute)
+        except Exception as _aoe:
+            logger.debug(f"[ai-only] pass failed (non-fatal): {_aoe}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:

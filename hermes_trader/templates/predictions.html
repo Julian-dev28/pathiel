@@ -121,6 +121,21 @@
   .ai-why{font-size:11.5px;color:#cfd4dd;line-height:1.6;margin-top:6px;
           display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
   .ai-why.open{-webkit-line-clamp:unset;display:block}
+  /* on-demand analyze button — the operator asks the brain about one market */
+  .analyze{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:4px 11px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--teal);cursor:pointer;
+    background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.35);border-radius:3px;
+    transition:color .15s ease,border-color .15s ease,background .15s ease}
+  .analyze:hover{color:#fff;border-color:var(--teal);background:rgba(45,212,191,.16)}
+  .analyze:disabled{opacity:.55;cursor:progress}
+  .analyze .spin{width:9px;height:9px;border:1.5px solid currentColor;border-top-color:transparent;
+    border-radius:50%;display:none;animation:spin .7s linear infinite}
+  .analyze.busy .spin{display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .analyze-out{margin-top:8px;font-size:11px;line-height:1.6;color:var(--mut);display:none}
+  .analyze-out.show{display:block}
+  .analyze-out.err{color:#fca5a5}
   .mkt-foot{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto;padding-top:2px}
   .empty{font-size:12px;color:var(--dim);padding:18px 2px;line-height:1.8}
   .empty code{background:#171a20;border:1px solid var(--line2);border-radius:3px;padding:2px 7px;color:var(--mut)}
@@ -477,6 +492,10 @@ function card(row) {
     </div>
     ${meter(row)}
     ${aiBlock(row)}
+    <button class="analyze" data-mid="${esc(row.market_id)}" title="ask the AI brain about this market">
+      <span class="spin"></span><span class="lbl">Analyze</span>
+    </button>
+    <div class="analyze-out" data-out="${esc(row.market_id)}"></div>
     <div class="mkt-foot">
       <span class="chip">${fmtUsd(row.volume_24h)} 24h</span>
       <span class="chip ${chgCls}">${chg >= 0 ? '+' : ''}${Math.round(chg * 100)}pp 24h</span>
@@ -564,8 +583,58 @@ document.querySelectorAll('.tab').forEach(t => {
 // reasoning paragraphs are clamped to 3 lines; click expands in place
 document.getElementById('grid').addEventListener('click', e => {
   const why = e.target.closest('.ai-why');
-  if (why) why.classList.toggle('open');
+  if (why) { why.classList.toggle('open'); return; }
+  const btn = e.target.closest('.analyze');
+  if (btn) analyzeMarket(btn);
 });
+
+// operator token: reused from localStorage (same key the other tabs use), sent
+// as the X-Operator-Token header the analyze endpoint requires. The brain call
+// costs money, so the endpoint is operator-gated.
+function operatorToken() {
+  try { return localStorage.getItem('hermes_operator_token') || ''; } catch (e) { return ''; }
+}
+
+async function analyzeMarket(btn) {
+  const mid = btn.dataset.mid;
+  const out = document.querySelector(`[data-out="${CSS.escape(mid)}"]`);
+  const tok = operatorToken();
+  if (!tok) {
+    out.className = 'analyze-out show err';
+    out.textContent = 'Operator token required — set it on the dashboard footer, then retry.';
+    return;
+  }
+  btn.classList.add('busy'); btn.disabled = true;
+  btn.querySelector('.lbl').textContent = 'Asking the brain…';
+  out.className = 'analyze-out'; out.textContent = '';
+  try {
+    const r = await fetch(`/api/dashboard/predictions/analyze?market_id=${encodeURIComponent(mid)}`,
+      { method: 'POST', headers: { 'X-Operator-Token': tok } });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.detail || `HTTP ${r.status}`);
+    }
+    const v = await r.json();
+    out.className = 'analyze-out show';
+    if (v.llm_yes == null) {
+      out.innerHTML = `<span style="color:var(--dim)">no verdict — ${esc(v.skip_reason || 'declined')}</span>`;
+    } else {
+      const sideTxt = v.side ? `<span class="badge ${v.side === 'YES' ? 'b-yes' : 'b-no'}">BUY ${v.side}</span>`
+        : '<span class="chip">no-bet</span>';
+      const eplus = v.edge >= 0 ? '+' : '';
+      out.innerHTML = `${sideTxt} <span class="ai-p">AI ${pct(v.llm_yes)}%</span> `
+        + `<span class="ai-edge ${v.edge >= 0 ? 'up' : 'dn'}">${eplus}${Math.round(v.edge * 100)}pp vs market</span>`
+        + (v.recorded ? ' <span class="chip up">recorded</span>' : '')
+        + (v.reasoning ? `<div class="ai-why open" style="margin-top:6px">${esc(v.reasoning)}</div>` : '');
+    }
+  } catch (err) {
+    out.className = 'analyze-out show err';
+    out.textContent = `Analyze failed: ${err.message}`;
+  } finally {
+    btn.classList.remove('busy'); btn.disabled = false;
+    btn.querySelector('.lbl').textContent = 'Analyze';
+  }
+}
 
 async function load() {
   try {
