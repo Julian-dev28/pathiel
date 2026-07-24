@@ -101,8 +101,22 @@ class BrainForecaster:
         user = (f"QUESTION: {question}\n\n"
                 f"CONTEXT (market's own resolution text): {description or '(none)'}\n\n"
                 "Reply with ONLY the JSON object.")
+        got = self._try(user, self.web_search)
+        if got is None and self.web_search:
+            # Measured failure (2026-07-24): the search path can burn all 8 turns
+            # and exit non-zero with web_search_requests=0 — the model looped
+            # instead of answering. One no-search retry turns that dead market
+            # into a prior-only forecast, which is worth more than a hole in the
+            # board. Tagged so a prior-only read is never mistaken for a
+            # researched one.
+            got = self._try(user, False)
+            if got is not None:
+                return got[0], f"[no-search retry] {got[1]}"
+        return got
+
+    def _try(self, user: str, web_search: bool) -> Optional[Tuple[float, str]]:
         try:
-            body = self.brain.complete(_SYS, user, web_search=self.web_search)
+            body = self.brain.complete(_SYS, user, web_search=web_search)
         except Exception:
             return None
         return _parse_forecast(str(body or ""))

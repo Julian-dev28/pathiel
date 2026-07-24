@@ -24,6 +24,12 @@ from services.polymarket_scout.run import SPORTS_LANE_CFG, TRENDING_CFG
 from services.polymarket_scout.scout import PolymarketClient, decide_side, signed_edge
 
 
+def _emit(line: str) -> None:
+    """Line-flushed stdout. Each forecast is a multi-minute web-search call, so a
+    block-buffered pipe shows an empty log for the whole run and looks hung."""
+    print(line, flush=True)
+
+
 def lane_of(row: Dict[str, Any]) -> str:
     """Sports rows grade in the sports lane even when they were reached by name —
     the lane is a property of the market, not of how we found it."""
@@ -65,7 +71,7 @@ def ask(client: PolymarketClient, forecaster, needles: Sequence[str] = (),
         ids: Sequence[str] = (), record: bool = True, record_fn=ledger.record,
         rows: Optional[List[Dict[str, Any]]] = None,
         now_ms: Optional[int] = None,
-        printer: Callable[[str], None] = print) -> List[Dict[str, Any]]:
+        printer: Callable[[str], None] = _emit) -> List[Dict[str, Any]]:
     """Forecast each named market. Returns one verdict dict per market, whether
     or not it cleared the bar."""
     if rows is None:

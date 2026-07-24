@@ -300,17 +300,55 @@ def rank_breaking(rows: List[Dict[str, Any]], limit: int = 20,
     return sorted(hits, key=breaking_score, reverse=True)[:limit]
 
 
+def diversify(rows: List[Dict[str, Any]], limit: int = 10, max_per_event: int = 1,
+              max_per_tag: int = 2) -> List[Dict[str, Any]]:
+    """Thin a ranked list down to roughly-independent bets, keeping rank order.
+
+    Measured on the first 15 live reads: four were Iran/Israel (two of them the
+    SAME event, priced days apart) and two were the same Trump-Netanyahu meeting.
+    Fifteen rows, about nine independent outcomes. That matters twice over — the
+    go-live gate's n assumes independence, and a book that is five ways long "the
+    Middle East does not de-escalate" is one bet wearing five hats.
+
+    An event is Polymarket's own grouping of one underlying question, so
+    `max_per_event=1` is the strongest cheap decorrelation available. The tag cap
+    then stops a single theme from eating the batch.
+    """
+    seen_event: Dict[str, int] = {}
+    seen_tag: Dict[str, int] = {}
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        ev = str(r.get("event_id") or r.get("event_title") or r["market_id"])
+        if seen_event.get(ev, 0) >= max_per_event:
+            continue
+        tags = [t for t in (r.get("tags") or []) if t]
+        primary = tags[0] if tags else ""
+        if primary and seen_tag.get(primary, 0) >= max_per_tag:
+            continue
+        seen_event[ev] = seen_event.get(ev, 0) + 1
+        if primary:
+            seen_tag[primary] = seen_tag.get(primary, 0) + 1
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def forecast_queue(rows: List[Dict[str, Any]], skip_ids: Optional[set] = None,
-                   limit: int = 10, cfg: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+                   limit: int = 10, cfg: Optional[Dict[str, Any]] = None,
+                   max_per_event: int = 1, max_per_tag: int = 2) -> List[Dict[str, Any]]:
     """Which trending rows to spend LLM tokens on, best first.
 
     BREAKING first (the news just moved it, so a synthesis edge is most likely to
     exist and be un-priced), then plain trending by 24h volume. Already-forecast
     markets are skipped — re-forecasting the same market daily produces correlated
-    duplicates, not independent evidence.
+    duplicates, not independent evidence — and the result is diversified so a
+    batch buys independent outcomes rather than one theme five times.
     """
     skip = skip_ids or set()
-    brk = [r for r in rank_breaking(rows, limit=limit * 2, cfg=cfg) if r["market_id"] not in skip]
-    rest = [r for r in rank_trending(rows, limit=limit * 4)
-            if r["market_id"] not in skip and r not in brk]
-    return (brk + rest)[:limit]
+    brk = [r for r in rank_breaking(rows, limit=limit * 3, cfg=cfg) if r["market_id"] not in skip]
+    brk_ids = {r["market_id"] for r in brk}
+    rest = [r for r in rank_trending(rows, limit=limit * 8)
+            if r["market_id"] not in skip and r["market_id"] not in brk_ids]
+    return diversify(brk + rest, limit=limit, max_per_event=max_per_event,
+                     max_per_tag=max_per_tag)

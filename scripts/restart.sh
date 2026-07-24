@@ -5,12 +5,14 @@
 #   scripts/restart.sh                # stop both, start both
 #   scripts/restart.sh loop           # restart trading loop only
 #   scripts/restart.sh server         # restart FastAPI server only
+#   scripts/restart.sh sched          # restart the job scheduler only
 #   scripts/restart.sh stop           # stop both, don't start
 #   scripts/restart.sh status         # show what's running
 #
 # Two processes are managed:
 #   1. Trading loop  — scripts/trading_loop.py        (continuous scan→trade)
 #   2. API server    — python -m hermes_trader.server (FastAPI dashboard on HERMES_PORT, default 8000)
+#   3. Scheduler     — scripts/scheduler.py            (cron replacement; cron+launchd are TCC-blocked)
 #
 # The MCP server (scripts/hermes-mcp-server.py) is intentionally NOT managed
 # here — it's a transient stdio process respawned by Hermes Agent on each
@@ -40,8 +42,10 @@ mkdir -p "$LOG_DIR"
 
 LOOP_LOG="$LOG_DIR/trading_loop.log"
 SERVER_LOG="$LOG_DIR/server.log"
+SCHED_LOG="$LOG_DIR/scheduler.log"
 LOOP_PATTERN="scripts/trading_loop.py"
 SERVER_PATTERN="hermes_trader.server"
+SCHED_PATTERN="scripts/scheduler.py"
 
 # Our own PID — must not be killed by pgrep matches.
 SELF_PID=$$
@@ -176,11 +180,39 @@ start_server() {
   fi
 }
 
+start_sched() {
+  local pids
+  pids="$(pids_for "$SCHED_PATTERN")"
+  if [[ -n "$pids" ]]; then
+    warn "scheduler already running (pids: $pids) — skipping"
+    return 0
+  fi
+  # Scheduled jobs MUST be launched from here, not from cron or launchd. macOS
+  # TCC gates ~/Documents on the responsible process; neither cron nor launchd
+  # holds that grant, so both die with "Operation not permitted" before Python
+  # boots (measured 2026-07-25: the autonomous evidence loop never ran once in
+  # five days). This shell runs in the operator's session, which does hold it,
+  # and the child inherits it.
+  info "starting scheduler (log: $SCHED_LOG)"
+  nohup "$PY" "$ROOT/scripts/scheduler.py" >> "$SCHED_LOG" 2>&1 &
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$pid" 2>/dev/null; then
+    ok "scheduler: pid $pid"
+  else
+    err "scheduler died immediately — see $SCHED_LOG"
+    tail -n 20 "$SCHED_LOG" >&2 || true
+    return 1
+  fi
+}
+
 show_status() {
   printf "\n%sStatus%s\n" "$C_DIM" "$C_OFF"
-  local loop_pids server_pids
+  local loop_pids server_pids sched_pids
   loop_pids="$(pids_for "$LOOP_PATTERN")"
   server_pids="$(pids_for "$SERVER_PATTERN")"
+  sched_pids="$(pids_for "$SCHED_PATTERN")"
   if [[ -n "$loop_pids" ]]; then
     ok "trading loop: pids $loop_pids"
   else
@@ -191,6 +223,11 @@ show_status() {
   else
     warn "server:       stopped"
   fi
+  if [[ -n "$sched_pids" ]]; then
+    ok "scheduler:    pids $sched_pids"
+  else
+    warn "scheduler:    stopped"
+  fi
   printf "\n"
 }
 
@@ -199,8 +236,10 @@ case "$action" in
   restart|"")
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
+    stop_proc "scheduler" "$SCHED_PATTERN"
     start_server
     start_loop
+    start_sched
     show_status
     ;;
   loop)
@@ -213,9 +252,15 @@ case "$action" in
     start_server
     show_status
     ;;
+  sched|scheduler)
+    stop_proc "scheduler" "$SCHED_PATTERN"
+    start_sched
+    show_status
+    ;;
   stop)
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
+    stop_proc "scheduler" "$SCHED_PATTERN"
     show_status
     ;;
   status)
@@ -223,7 +268,7 @@ case "$action" in
     ;;
   *)
     err "unknown action: $action"
-    err "usage: $0 [restart|loop|server|stop|status]"
+    err "usage: $0 [restart|loop|server|sched|stop|status]"
     exit 2
     ;;
 esac

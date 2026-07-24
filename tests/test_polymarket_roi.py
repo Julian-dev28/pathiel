@@ -13,8 +13,8 @@ NOW_S = time.time()
 
 
 def _row(**over):
-    r = {"side": "YES", "llm_yes": 0.80, "mkt_yes": 0.40, "fill_px": 0.42,
-         "edge": 0.40, "lane": "trending", "resolved": False,
+    r = {"market_id": "1", "side": "YES", "llm_yes": 0.80, "mkt_yes": 0.40,
+         "fill_px": 0.42, "edge": 0.40, "lane": "trending", "resolved": False,
          "ts": int(NOW_S * 1000),
          "end_date": time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                    time.gmtime(NOW_S + 10 * 86400))}
@@ -135,3 +135,68 @@ def test_report_says_out_loud_that_nothing_is_realised_yet():
 def test_report_stops_saying_that_once_something_resolves():
     out = roi._fmt(roi.report([_row(resolved=True)], NOW_S))
     assert "REALISED ROI: none" not in out
+
+
+# ── concentration ────────────────────────────────────────────────────────────
+def test_concentration_counts_distinct_events_not_rows():
+    """Two rows on one ceasefire event are one bet. The gate's n assumes
+    independent draws, so this is the number that says how much of n is real."""
+    rows = [_row(meta={"event_title": "Israel x Iran ceasefire"}, category="iran"),
+            _row(meta={"event_title": "Israel x Iran ceasefire"}, category="iran"),
+            _row(meta={"event_title": "Fed Decision"}, category="economy")]
+    c = roi.concentration(rows)
+    assert c["n"] == 3 and c["effective_n"] == 2
+    assert c["independence"] == pytest.approx(2 / 3, abs=1e-3)
+    assert c["top_theme"] == "iran" and c["top_theme_share"] == pytest.approx(2 / 3, abs=1e-3)
+
+
+def test_untagged_is_reported_separately_not_as_the_top_theme():
+    """'untagged' is a recording gap, not a theme — naming it as the top theme
+    would hide the real concentration underneath it."""
+    rows = [_row(category=""), _row(category=""), _row(category="iran")]
+    c = roi.concentration(rows)
+    assert c["top_theme"] == "iran"
+    assert c["untagged_share"] == pytest.approx(2 / 3, abs=1e-3)
+
+
+def test_concentration_of_nothing_is_empty():
+    assert roi.concentration([]) == {"n": 0}
+
+
+# ── mark to market ───────────────────────────────────────────────────────────
+def test_mtm_values_a_yes_position_at_the_current_price():
+    m = roi.mark_to_market([_row(side="YES", fill_px=0.26)], {"1": 0.90})
+    assert m["mean_mtm_pct"] == pytest.approx((0.90 - 0.26) / 0.26, abs=1e-3)
+    assert m["winners"] == 1
+
+
+def test_mtm_values_a_no_position_off_the_complement():
+    m = roi.mark_to_market([_row(side="NO", fill_px=0.15)], {"1": 0.88})
+    # the NO leg is worth 1-0.88 = 0.12 against a 0.15 fill
+    assert m["mean_mtm_pct"] == pytest.approx((0.12 - 0.15) / 0.15, abs=1e-3)
+    assert m["winners"] == 0
+
+
+def test_mtm_reports_a_median_so_one_winner_cannot_carry_the_mean():
+    rows = [_row(market_id=str(i), side="YES", fill_px=0.50) for i in range(5)]
+    prices = {"0": 0.99, "1": 0.48, "2": 0.47, "3": 0.49, "4": 0.48}
+    m = roi.mark_to_market(rows, prices)
+    assert m["mean_mtm_pct"] > 0          # the one winner drags the mean up
+    assert m["median_mtm_pct"] < 0        # the book is actually down
+    assert m["winners"] == 1
+
+
+def test_mtm_skips_positions_the_board_no_longer_quotes():
+    m = roi.mark_to_market([_row(market_id="1"), _row(market_id="gone")], {"1": 0.5})
+    assert m["n"] == 1                    # the delisted one is skipped, not guessed
+
+
+def test_mtm_with_no_quotes_is_empty():
+    assert roi.mark_to_market([_row()], {}) == {"n": 0}
+
+
+def test_report_labels_mtm_as_unrealised_and_never_as_return():
+    out = roi._fmt(roi.report([_row(side="YES", fill_px=0.26)], NOW_S, prices={"1": 0.9}))
+    assert "MARK-TO-MARKET (unrealised" in out
+    assert "only resolution pays" in out
+    assert "REALISED ROI: none" in out

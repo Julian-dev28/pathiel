@@ -37,12 +37,36 @@ TRENDING_CFG = {**trending.DEFAULT_CFG, "edge_threshold": 0.15}
 SPORTS_LANE_CFG = {**trending.SPORTS_CFG, "edge_threshold": 0.20}
 
 
-def candidates(client: PolymarketClient, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+def event_id_of(m: Dict[str, Any]) -> str:
+    """Polymarket's event id for a raw Gamma market. Two markets sharing an event
+    share an underlying question ('nominee for X?' has one row per candidate), so
+    this is the decorrelation key."""
+    evs = m.get("events")
+    if isinstance(evs, list) and evs and isinstance(evs[0], dict):
+        return str(evs[0].get("id") or "")
+    return ""
+
+
+def candidates(client: PolymarketClient, cfg: Dict[str, Any],
+               max_per_event: int = 1) -> List[Dict[str, Any]]:
     now = int(time.time() * 1000)
     mk = [m for m in client.open_markets() if is_judgment_market(m, now, cfg)]
     # most liquid first — that's where a paper fill is realistic
     mk.sort(key=lambda m: float(m.get("liquidity") or 0), reverse=True)
-    return mk
+    if max_per_event <= 0:
+        return mk
+    # One read per event. The first two live judgment reads were both MI-13
+    # nominee markets — the same primary, priced from opposite sides. That is one
+    # bet recorded twice, and the go-live gate counts it as two.
+    per: Dict[str, int] = {}
+    out: List[Dict[str, Any]] = []
+    for m in mk:
+        ev = event_id_of(m) or str(m.get("id"))
+        if per.get(ev, 0) >= max_per_event:
+            continue
+        per[ev] = per.get(ev, 0) + 1
+        out.append(m)
+    return out
 
 
 def scan(client: PolymarketClient, forecaster, cfg: Dict[str, Any],
@@ -73,10 +97,17 @@ def scan(client: PolymarketClient, forecaster, cfg: Dict[str, Any],
         if ask is None:
             continue                        # can't paper-fill what has no ask
         fill_px, _sz = ask                  # fill at the TOUCH, never the mid
+        # `category` is empty on nearly every Gamma market; fall back to the
+        # event's slug so the judgment lane's rows carry a theme the
+        # concentration report can actually group on.
+        evs = m.get("events") if isinstance(m.get("events"), list) else []
+        theme = (m.get("category") or
+                 (str(evs[0].get("slug") or "").split("-")[0] if evs and isinstance(evs[0], dict) else ""))
         rec = record_fn(market_id=str(m.get("id")), question=m.get("question") or "",
                         side=side, token_id=token, llm_yes=llm_yes, mkt_yes=mkt_yes,
                         fill_px=fill_px, edge=edge, end_date=m.get("endDate") or "",
-                        category=m.get("category") or "", reasoning=why)
+                        category=theme, reasoning=why,
+                        meta={"event_title": (evs[0].get("title") if evs and isinstance(evs[0], dict) else "") or ""})
         recorded.append(rec)
         print(f"[scout] {side:3s} {m.get('question')[:54]:<54} "
               f"llm={llm_yes:.2f} mkt={mkt_yes:.2f} edge={edge:+.2f} fill={fill_px:.2f}")

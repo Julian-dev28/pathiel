@@ -43,10 +43,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--board-only", action="store_true",
                     help="skip the LLM lanes; just refresh the dashboard cache")
+    # Raised 2026-07-25: the gate needs n>=150 per lane and the queues are now
+    # event- and tag-deduped, so each extra read buys a genuinely new outcome
+    # rather than another row on the same ceasefire. ~24 reads/day gets the
+    # trending lane to a first verdict in weeks, not months.
     ap.add_argument("--judgment-limit", type=int,
-                    default=int(os.environ.get("POLY_SCOUT_LIMIT", "10")))
+                    default=int(os.environ.get("POLY_SCOUT_LIMIT", "14")))
     ap.add_argument("--trending-limit", type=int,
-                    default=int(os.environ.get("POLY_SCOUT_TRENDING_LIMIT", "6")))
+                    default=int(os.environ.get("POLY_SCOUT_TRENDING_LIMIT", "10")))
     args = ap.parse_args()
 
     client = PolymarketClient()

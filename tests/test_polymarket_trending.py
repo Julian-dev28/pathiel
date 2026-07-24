@@ -155,9 +155,14 @@ def test_collect_dedupes_annotates_and_ranks():
 
 
 def test_forecast_queue_puts_breaking_first_and_honours_skips():
+    # separate events, separate tags — otherwise the decorrelation pass collapses
+    # them to one, which is its own test below
     hot = _market(id="7", volume24hr=500_000.0, oneDayPriceChange=0.4)
     calm = _market(id="8", volume24hr=900_000.0, oneDayPriceChange=0.0)
-    rows = trending.collect(FakeClient([_event(markets=[calm, hot])]), now_ms=NOW)
+    rows = trending.collect(FakeClient([
+        _event(id="e1", markets=[hot]),
+        _event(id="e2", slug="fed", tags=[{"slug": "economy"}], markets=[calm]),
+    ]), now_ms=NOW)
     q = trending.forecast_queue(rows, limit=5)
     assert [r["market_id"] for r in q] == ["7", "8"]         # breaking outranks volume
     assert [r["market_id"] for r in trending.forecast_queue(rows, skip_ids={"7"})] == ["8"]
@@ -329,3 +334,49 @@ def test_sports_lane_demands_the_widest_edge_of_all():
 
 def test_every_lane_name_is_registered_for_grading():
     assert set(ledger.LANES) == {"judgment", "trending", "sports"}
+
+
+# ── decorrelation ────────────────────────────────────────────────────────────
+def _tagged(mid, event_id, tag, vol=100_000.0):
+    return {"market_id": mid, "event_id": event_id, "event_title": f"E{event_id}",
+            "tags": [tag], "volume_24h": vol, "yes": 0.4, "change_24h": 0.0,
+            "breaking": False}
+
+
+def test_diversify_keeps_one_market_per_event():
+    """Measured on the first 15 live reads: two rows were the SAME Israel-Iran
+    ceasefire event priced days apart. That is one bet the gate counts as two."""
+    rows = [_tagged("1", "e1", "iran"), _tagged("2", "e1", "iran"),
+            _tagged("3", "e2", "economy")]
+    assert [r["market_id"] for r in trending.diversify(rows, limit=10)] == ["1", "3"]
+
+
+def test_diversify_caps_a_single_theme():
+    rows = [_tagged(str(i), f"e{i}", "iran") for i in range(5)]
+    rows.append(_tagged("x", "ex", "economy"))
+    got = trending.diversify(rows, limit=10, max_per_tag=2)
+    assert [r["market_id"] for r in got] == ["0", "1", "x"]
+
+
+def test_diversify_preserves_rank_order():
+    rows = [_tagged("hi", "e1", "a"), _tagged("mid", "e2", "b"), _tagged("lo", "e3", "c")]
+    assert [r["market_id"] for r in trending.diversify(rows, limit=3)] == ["hi", "mid", "lo"]
+
+
+def test_diversify_respects_the_limit():
+    rows = [_tagged(str(i), f"e{i}", f"t{i}") for i in range(20)]
+    assert len(trending.diversify(rows, limit=4)) == 4
+
+
+def test_diversify_tolerates_untagged_rows():
+    rows = [_tagged("1", "e1", ""), _tagged("2", "e2", "")]
+    assert len(trending.diversify(rows, limit=5, max_per_tag=1)) == 2
+
+
+def test_forecast_queue_is_diversified():
+    hot = _market(id="a", volume24hr=900_000.0, oneDayPriceChange=0.4)
+    hot2 = _market(id="b", volume24hr=800_000.0, oneDayPriceChange=0.4)
+    ev = _event(markets=[hot, hot2])            # same event, two breaking rows
+    rows = trending.collect(FakeClient([ev]), now_ms=NOW)
+    assert len(rows) == 2
+    assert len(trending.forecast_queue(rows, limit=5)) == 1   # one per event

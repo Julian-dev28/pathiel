@@ -180,3 +180,27 @@ def test_scan_dedups_already_recorded_markets(monkeypatch, tmp_path):
     second = scan(_FakeClient([m]), fc, CFG, record_fn=ledger.record)
     assert second == []                                  # same market skipped next run
     assert len(ledger.load()) == 1                       # no duplicate in the ledger
+
+
+# ── judgment-lane decorrelation (2026-07-25) ─────────────────────────────────
+def test_event_id_of_reads_the_embedded_event_stub():
+    from services.polymarket_scout.run import event_id_of
+    assert event_id_of({"events": [{"id": 77}]}) == "77"
+    assert event_id_of({"events": []}) == ""
+    assert event_id_of({}) == ""
+
+
+def test_candidates_keeps_one_market_per_event():
+    """The first two live judgment reads were both MI-13 nominee markets — the
+    same primary priced from opposite sides, recorded as two independent bets."""
+    from services.polymarket_scout.run import candidates
+
+    class C:
+        def open_markets(self, limit=100, pages=30):
+            return [_mkt(id="1", events=[{"id": "mi13"}], liquidity="9000"),
+                    _mkt(id="2", events=[{"id": "mi13"}], liquidity="8000"),
+                    _mkt(id="3", events=[{"id": "other"}], liquidity="7000")]
+
+    got = candidates(C(), CFG)
+    assert [m["id"] for m in got] == ["1", "3"]
+    assert [m["id"] for m in candidates(C(), CFG, max_per_event=0)] == ["1", "2", "3"]
