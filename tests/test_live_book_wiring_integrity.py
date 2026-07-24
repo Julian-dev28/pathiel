@@ -262,3 +262,89 @@ def test_xs_momentum_has_its_own_equity_frac_decoupled_from_shorts():
     # decoupled: xs_momentum has its OWN knob, raisable independently of the
     # shorts once capital moves to the main dex (the $30 dex caps it at ~0.1 now)
     assert cfg["xs_momentum"]["equity_frac"] >= cfg["strategy_book_equity_frac"]
+
+
+# ------------------------------------------- stop-honoring leverage cap (2026-07-24)
+# The gap the liq-buffer tests above missed. `_liq_buffer` only asks "does the
+# position survive to the stop". It never asks "is the stop still the width the
+# book validated". The backup-SL clamp (max_frac_of_liq / leverage) silently
+# SHRINKS the stop when leverage is too high, so a book can pass every
+# liquidation test while trading an exit it never validated.
+def _stop_after_clamp(lev, stop_pct, max_frac=0.60):
+    """The stop width actually sent to the exchange. Mirrors the executor's
+    relative tolerance so an exact fit (0.60/3 == 0.19999999999999998 in binary
+    float) counts as delivering the full stop rather than a shrunk one."""
+    want = stop_pct / 100.0
+    cap = max_frac / lev
+    return want if want <= cap * (1.0 + 1e-9) else cap
+
+
+def test_backup_sl_clamp_silently_shrinks_a_20pct_stop_above_3x():
+    """Pins the defect: 20% asked, 10% delivered at 6x. This is the whole bug."""
+    import pytest
+    assert _stop_after_clamp(3, 20.0) == pytest.approx(0.20)   # intended
+    assert _stop_after_clamp(4, 20.0) == pytest.approx(0.15)   # silently retuned
+    assert _stop_after_clamp(6, 20.0) == pytest.approx(0.10)   # different strategy
+
+
+def test_stop_honoring_leverage_caps_to_fit_the_stop():
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    assert cap(6, 20.0) == 3          # 0.60/0.20
+    assert cap(4, 20.0) == 3
+    assert cap(3, 20.0) == 3          # exact fit must NOT floor to 2
+    assert cap(6, 15.0) == 4          # 0.60/0.15
+    assert cap(12, 6.0) == 10         # 0.60/0.06
+    assert cap(2, 20.0) == 2          # already fits -> untouched
+    assert cap(6, 0.0) == 6           # no stop requested -> no cap
+    assert cap(6, 20.0, 0.0) == 6     # clamp disabled -> no cap
+    assert cap(1, 20.0) >= 1          # never below 1
+
+
+def test_capped_leverage_always_delivers_the_requested_stop():
+    """The invariant the cap exists to hold, over every book/stop combination."""
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    for stop in (6.0, 15.0, 20.0, 25.0):
+        for lev in range(1, 13):
+            eff = cap(lev, stop)
+            delivered = _stop_after_clamp(eff, stop)
+            assert delivered >= stop / 100.0 - 1e-9, (
+                f"{lev}x/{stop}% capped to {eff}x still delivers "
+                f"{delivered:.1%}, not {stop/100:.1%}")
+
+
+def test_every_live_book_gets_its_validated_stop_after_the_cap():
+    """Config may ask for more leverage than a stop allows (extreme_fade sits at
+    4x with a 20% stop). That is now harmless — the executor caps it — but the
+    delivered stop must equal the validated one for every live book."""
+    import json
+    from pathlib import Path
+    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    books = [
+        ("xs_xyz_equities", cfg["xs_xyz_equities"]["leverage"], 20.0),
+        ("extreme_fade", cfg["extreme_fade"]["leverage"], cfg["extreme_fade"]["stop_pct"]),
+        ("uw_flow_xs", cfg["uw_flow_xs"]["leverage"], cfg["uw_flow_xs"]["stop_pct"]),
+        ("news_ta_aligned", cfg["news_ta_aligned"]["leverage"], cfg["news_ta_aligned"]["stop_pct"]),
+        ("news_surge_short", cfg["news_surge_short"]["crypto_leverage"],
+         cfg["news_surge_short"]["crypto_stop_pct"]),
+    ]
+    for name, lev, stop in books:
+        eff = cap(int(lev), float(stop))
+        delivered = _stop_after_clamp(eff, float(stop))
+        assert delivered >= float(stop) / 100.0 - 1e-9, (
+            f"{name}: {lev}x -> {eff}x still delivers {delivered:.1%} "
+            f"instead of its validated {stop}% stop")
+
+
+def test_leverage_bump_to_6x_is_reverted_in_config():
+    """The 2026-07-24 uncommitted bump put five books at 6x. Even with the cap
+    making it non-fatal, the committed config must state the leverage the book
+    actually runs at, or `pnl_by_book` attribution reads a size that never
+    existed."""
+    import json
+    from pathlib import Path
+    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+    assert int(cfg["xs_xyz_equities"]["leverage"]) == 3
+    assert int(cfg["uw_flow_xs"]["leverage"]) == 3
+    assert int(cfg["news_ta_aligned"]["leverage"]) == 3
+    assert int(cfg["news_surge_short"]["crypto_leverage"]) == 1

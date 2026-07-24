@@ -203,6 +203,33 @@ def _backup_sl_price(
     return entry_px + dist, capped
 
 
+def stop_honoring_leverage(leverage: int, stop_pct: float,
+                           max_frac_of_liq: float = 0.60) -> int:
+    """The highest leverage at which `stop_pct` survives the backup-SL clamp.
+
+    `_backup_sl_price` (and the pct-override branch in `maybe_execute`) bound the
+    server-side stop to `max_frac_of_liq / leverage` of entry so it always sits
+    inside liquidation. That is the right guard, but it resolves the conflict by
+    SHRINKING THE STOP: a book asking for its validated 20% stop at 6x silently
+    gets 0.60/6 = 10%, a materially different strategy. Measured on 51 xyz
+    equities / 78 daily bars, the 10% variant forced out 33% of legs against
+    3.3% at the intended stop and lost money under every sampling scheme.
+
+    The stop is the validated parameter, so cap the leverage to fit it:
+        lev <= max_frac_of_liq / stop      (20% -> 3x, 15% -> 4x, 6% -> 10x)
+
+    Returns `leverage` unchanged when no stop is requested, when the clamp is
+    disabled, or when the stop already fits. Never returns below 1.
+    """
+    stop = float(stop_pct or 0.0) / 100.0
+    frac = float(max_frac_of_liq or 0.0)
+    if stop <= 0 or frac <= 0:
+        return int(leverage)
+    # +1e-9 so an exact fit (0.60 / 0.20) floors to 3 rather than 2
+    cap = int(frac / stop + 1e-9)
+    return max(1, min(int(leverage), cap))
+
+
 def _merge_nested_config(base: Dict[str, Any], override: Any) -> Dict[str, Any]:
     """Deep-merge a per-analysis override into an executor config block."""
     merged = dict(base or {})
@@ -618,6 +645,33 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     _hip3_cap = int(config.get("hip3_max_leverage", 0) or 0)
     if _hip3_cap > 0 and ":" in str(coin):
         leverage = min(leverage, _hip3_cap)
+    # Stop-honoring leverage cap (2026-07-24). The backup bracket below clamps
+    # the stop distance to `backup_sl_max_frac_of_liq / leverage` so the stop
+    # always sits inside liquidation — correct, but it resolves the conflict by
+    # SILENTLY SHRINKING THE STOP. A book asking for its validated 20% stop at
+    # 6x quietly gets a 10% one (0.60/6), which is a different strategy: measured
+    # on 51 xyz equities / 78 bars, the 10% variant forced 33% of legs out vs
+    # 3.3% at the intended stop, and lost money in every sampling scheme.
+    # The stop is the validated parameter, so cap leverage to fit the stop
+    # instead of letting leverage retune the exit. lev <= max_frac / stop
+    # (20% stop -> 3x, 15% -> 4x, 6% -> 10x). Set 0 to disable.
+    if config.get("stop_honoring_leverage_cap", True):
+        try:
+            _want_stop = float(analysis.get("backup_sl_pct_override", 0) or 0.0)
+        except (TypeError, ValueError):
+            _want_stop = 0.0
+        _capped = stop_honoring_leverage(
+            leverage, _want_stop,
+            float(config.get("backup_sl_max_frac_of_liq", 0.60) or 0.0))
+        if _capped < leverage:
+            logger.warning(
+                f"[executor] {coin}: leverage {leverage}x would shrink the "
+                f"{_want_stop:.1f}% stop to "
+                f"{100*float(config.get('backup_sl_max_frac_of_liq', 0.60))/leverage:.1f}%"
+                f" — capping leverage to {_capped}x to honor the stop "
+                f"(book={analysis.get('strategy_book') or 'main'})"
+            )
+            leverage = _capped
     dsl_config = _merge_nested_config(
         config.get("dsl_exit", {}) or {},
         analysis.get("dsl_exit_override"),
@@ -1048,7 +1102,21 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             sl_capped = False
             if leverage > 0 and backup_sl_max_frac > 0:
                 max_dist = entry_px * (backup_sl_max_frac / leverage)
-                if max_dist > 0 and dist > max_dist:
+                # Relative tolerance: an exact fit (20% stop at 3x) computes as
+                # 0.19999999999999998 in binary float, which would otherwise
+                # trip the clamp — and its warning — on every such order.
+                if max_dist > 0 and dist > max_dist * (1.0 + 1e-9):
+                    # The stop-honoring leverage cap above should have made this
+                    # unreachable. If it still fires, the book is silently
+                    # trading a TIGHTER stop than the one it validated — say so
+                    # loudly rather than logging it as a routine cap.
+                    logger.warning(
+                        f"[executor] {coin}: backup stop shrunk "
+                        f"{backup_sl_pct_override:.1f}% -> "
+                        f"{100*backup_sl_max_frac/leverage:.1f}% by the "
+                        f"{leverage}x liq clamp — this is NOT the validated "
+                        f"stop (book={analysis.get('strategy_book') or 'main'})"
+                    )
                     dist = max_dist
                     sl_capped = True
             sl_px = max(0.0, entry_px - dist) if is_buy else entry_px + dist
