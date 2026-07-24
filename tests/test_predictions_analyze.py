@@ -176,3 +176,13 @@ def test_predictions_page_ships_the_analyze_button(client):
     assert 'class="analyze"' in r and "analyzeMarket" in r
     assert "/api/dashboard/predictions/analyze" in r
     assert "X-Operator-Token" in r             # the click sends the operator token
+    assert "analyze/result" in r               # the poll endpoint (async job)
+
+
+def test_predictions_auto_refresh_pauses_during_an_analyze(client):
+    """Regression: the 30s board poll re-renders grid.innerHTML, which would wipe
+    an in-progress web-search Analyze mid-flight. load() must bail while any
+    analyze is running."""
+    r = client.get("/predictions").text
+    assert "activeAnalyses" in r
+    assert "if (activeAnalyses > 0) return;" in r   # load() guard

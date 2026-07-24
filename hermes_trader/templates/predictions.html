@@ -464,6 +464,10 @@ const fmtIn = h => {
 let BOARD = null;
 let TAB = 'trending';
 let SORT = 'default';
+// grid re-renders replace innerHTML, which would wipe an in-progress Analyze
+// (its output div + the poll loop's DOM refs). Pause the auto-refresh while any
+// analyze runs; the board only changes hourly, so nothing is lost.
+let activeAnalyses = 0;
 
 // sort a tab's rows without mutating the source array. 'default' keeps the
 // server rank (breaking-first / volume / live-first, per tab). 'ending' is the
@@ -658,6 +662,7 @@ async function analyzeMarket(btn) {
     return;
   }
   btn.classList.add('busy'); btn.disabled = true;
+  activeAnalyses++;                         // pause the auto-refresh so it can't wipe this
   const t0 = Date.now();
   const tick = () => { btn.querySelector('.lbl').textContent =
     `Searching the web + reasoning… ${Math.round((Date.now() - t0) / 1000)}s`; };
@@ -665,7 +670,10 @@ async function analyzeMarket(btn) {
   out.className = 'analyze-out show'; out.style.color = 'var(--dim)';
   out.textContent = 'The model is reading current news on this market. Web search takes 1-3 min — this keeps running even if you look away.';
   const timer = setInterval(tick, 1000);
+  let finished = false;
   const done = (cls, html) => {
+    if (finished) return;
+    finished = true; activeAnalyses = Math.max(0, activeAnalyses - 1);
     clearInterval(timer); out.className = 'analyze-out show' + (cls ? ' ' + cls : '');
     out.style.color = ''; out.innerHTML = html;
     btn.classList.remove('busy'); btn.disabled = false; btn.querySelector('.lbl').textContent = 'Analyze';
@@ -706,6 +714,7 @@ async function analyzeMarket(btn) {
 }
 
 async function load() {
+  if (activeAnalyses > 0) return;           // don't wipe an in-progress Analyze
   try {
     BOARD = await (await fetch('/api/dashboard/predictions')).json();
     renderStrip(BOARD);
