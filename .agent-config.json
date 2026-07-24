@@ -140,7 +140,7 @@
     "enabled": true,
     "lookback_days": 7,
     "hold_days": 10,
-    "k_per_leg": 4,
+    "k_per_leg": 2,
     "universe_top_n": 50,
     "min_volume_usd": 5000000,
     "residual": true,
@@ -176,7 +176,7 @@
       "kPEPE",
       "kSHIB"
     ],
-    "equity_frac": 0.1
+    "equity_frac": 0.125
   },
   "xs_xyz_equities": {
     "enabled": true,
@@ -200,11 +200,11 @@
     "stop_pct": 20.0,
     "leverage": 4,
     "hold_days": 3.0,
-    "equity_fraction": 0.15,
-    "max_book_positions": 5,
+    "equity_fraction": 0.125,
+    "max_book_positions": 4,
     "deep_tier": {
       "crash_pct": -0.2,
-      "equity_fraction": 0.2
+      "equity_fraction": 0.125
     },
     "tp_scale_fraction": 0.0,
     "skew_arm": {

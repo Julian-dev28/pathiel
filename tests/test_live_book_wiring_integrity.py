@@ -423,3 +423,59 @@ def test_cap_degrades_to_1x_rather_than_authorizing_a_dead_stop():
     leverage where the stop cannot fire."""
     from hermes_trader.agents.executor import stop_honoring_leverage as cap
     assert cap(6, 90.0, 0.60, 20) == 1
+
+
+# ------------------------------ shared crypto-dex margin budget (2026-07-24)
+# extreme_fade and xs_momentum draw margin from the SAME crypto dex. Sized
+# independently they asked for 155% of it, so whichever book scanned first won
+# and the split was an accident of timing. Each book's worst-case margin is
+# (concurrent leg cap) x (largest per-leg fraction it can use); the two must fit
+# inside the dex.
+def _book_margin(cfg, book):
+    b = cfg[book]
+    if book == "xs_momentum":
+        legs = 2 * int(b["k_per_leg"])          # k longs + k shorts
+        frac = float(b["equity_frac"])
+    else:
+        legs = int(b["max_book_positions"])
+        frac = max(float(b["equity_fraction"]),
+                   float(b.get("deep_tier", {}).get("equity_fraction", 0)))
+    return legs * frac
+
+
+def _cfg_json():
+    import json
+    from pathlib import Path
+    return json.loads(
+        (Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
+
+
+def test_crypto_books_fit_inside_one_dex():
+    cfg = _cfg_json()
+    mom = _book_margin(cfg, "xs_momentum")
+    fade = _book_margin(cfg, "extreme_fade")
+    assert mom + fade <= 1.0 + 1e-9, (
+        f"xs_momentum {mom:.2f} + extreme_fade {fade:.2f} = {mom+fade:.2f} "
+        f"of the crypto dex — over-committed, allocation becomes a race")
+
+
+def test_split_is_the_walk_forward_winner_not_the_fitted_one():
+    """A 2304-cell (f,n)x(f,n) search fitted on half the tape LOST to a plain
+    50/50 out of sample (0.1342 vs 0.1563 log-growth). Ship the unfitted split:
+    equal margin, 4 legs each. Pinning it so a future 'optimization' has to
+    beat the walk-forward, not the in-sample max."""
+    cfg = _cfg_json()
+    mom = _book_margin(cfg, "xs_momentum")
+    fade = _book_margin(cfg, "extreme_fade")
+    assert abs(mom - fade) < 1e-9, f"split is not 50/50: {mom:.3f} vs {fade:.3f}"
+    assert 2 * int(cfg["xs_momentum"]["k_per_leg"]) == 4
+    assert int(cfg["extreme_fade"]["max_book_positions"]) == 4
+
+
+def test_deep_tier_cannot_break_the_budget():
+    """A -20% cascade fills extreme_fade with deep-tier legs. That worst case
+    is what the budget must hold, not the typical case."""
+    cfg = _cfg_json()
+    e = cfg["extreme_fade"]
+    worst = int(e["max_book_positions"]) * float(e["deep_tier"]["equity_fraction"])
+    assert worst + _book_margin(cfg, "xs_momentum") <= 1.0 + 1e-9
