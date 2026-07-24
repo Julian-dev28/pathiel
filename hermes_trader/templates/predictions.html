@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · predictions</title>
+<link rel="stylesheet" href="/static/app.css" />
+<style>
+  /* ── same design system as /activity and /news: sans for words, mono/pixel
+     identity in wordmark + section labels; indigo→violet brand; amber =
+     BREAKING; green/red = money + direction only. The card grid borrows
+     Polymarket's own information order (thumbnail · question · big % · book
+     stats) so the page reads the same way the source site does. ── */
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
+    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
+    --vio:#8b5cf6;
+    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
+  }
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
+  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link:active{transform:translateY(1px)}
+  header{position:relative}
+  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
+        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
+  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent;white-space:nowrap}
+  .b-yes{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-no{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-breaking{color:#fcd34d;background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.45);animation:badge-blink 1.4s ease-in-out infinite}
+  .b-stale{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35)}
+  .b-live{color:#fca5a5;background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.5);animation:badge-blink 1.4s ease-in-out infinite}
+  /* payout multiple: the one number a longshot card is actually read for */
+  /* text-transform:none — the label slot it sits in is uppercased, and "22.73X"
+     reads as a typo where "22.73x" reads as a multiple */
+  .payout{display:inline-flex;align-items:center;padding:1px 9px;border-radius:3px;text-transform:none;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:800;
+    color:#c4b5fd;background:rgba(139,92,246,.16);border:1px solid rgba(139,92,246,.5)}
+  .payout.hot{color:#fcd34d;background:rgba(245,158,11,.16);border-color:rgba(245,158,11,.5)}
+  @keyframes badge-blink{0%,100%{opacity:1}50%{opacity:.45}}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;font-size:10.5px;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .chip.up{color:#86efac;border-color:rgba(34,197,94,.32);background:rgba(34,197,94,.08)}
+  .chip.dn{color:#fca5a5;border-color:rgba(239,68,68,.32);background:rgba(239,68,68,.08)}
+  .chip.tag{color:var(--dim);text-transform:lowercase}
+  /* ── header strip: session-style KPI chips ── */
+  .strip{position:sticky;top:10px;z-index:20;display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;
+         background:rgba(14,16,20,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+         border:1px solid var(--line);border-radius:4px;padding:10px 8px;margin-bottom:16px;
+         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
+  .kpi{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:4px 14px;border-right:1px solid var(--line)}
+  .kpi:last-child{border-right:0}
+  .kpi .v{font-size:18px;font-weight:750;line-height:1.15;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt)}
+  .kpi .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .kpi .v.brk{color:#fcd34d}
+  .kpi .v.good{color:#86efac}
+  .kpi .v.bad{color:#fca5a5}
+  /* ── tab bar ── */
+  .tabs{display:flex;gap:2px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{padding:7px 15px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--mut);background:var(--card);
+       border:1px solid var(--line);border-radius:3px;cursor:pointer;transition:color .15s ease,border-color .15s ease}
+  .tab:hover{color:var(--txt);border-color:var(--line2)}
+  .tab[aria-selected="true"]{color:var(--txt);border-color:rgba(139,92,246,.5);
+       background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16))}
+  .tab .n{color:var(--dim);font-weight:600;margin-left:7px}
+  .tab[aria-selected="true"] .n{color:var(--vio)}
+  /* ── market grid ── */
+  .grid{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:760px){.grid{grid-template-columns:1fr 1fr}}
+  @media (min-width:1180px){.grid{grid-template-columns:1fr 1fr 1fr}}
+  /* min-width:0 is load-bearing: a grid item defaults to min-width:auto, so the
+     nowrap event title below would set the card's min-content width and blow the
+     whole 3-up grid past the container instead of ellipsing. */
+  .mkt{background:var(--card);border:1px solid var(--line);border-left-width:4px;border-left-color:var(--line2);
+       border-radius:3px;padding:12px 13px;display:flex;flex-direction:column;gap:9px;
+       min-width:0;overflow:hidden;
+       box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
+       transition:transform .15s ease,border-color .15s ease}
+  .mkt:hover{transform:translate(-1px,-1px);border-color:var(--line2)}
+  .mkt.is-breaking{border-left-color:var(--amb)}
+  .mkt.has-edge{border-left-color:var(--vio)}
+  .mkt.is-live{border-left-color:var(--dn)}
+  .mkt-top{display:flex;gap:10px;align-items:flex-start}
+  .mkt-ico{width:38px;height:38px;border-radius:3px;object-fit:cover;background:#1d212b;border:1px solid var(--line2);flex-shrink:0}
+  .mkt-q{flex:1;min-width:0}
+  .mkt-ev{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9.5px;font-weight:700;
+          letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+  a.mkt-title{font-size:13px;font-weight:600;line-height:1.45;color:var(--txt);text-decoration:none;
+          display:block;overflow-wrap:anywhere;transition:color .15s ease}
+  a.mkt-title:hover{color:#fff}
+  a.mkt-title::after{content:' ↗';color:var(--vio);font-size:.8em;opacity:.6}
+  .mkt-pct{text-align:right;flex-shrink:0;min-width:52px}
+  .mkt-pct .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:21px;font-weight:800;line-height:1;color:var(--txt)}
+  .mkt-pct .v small{font-size:12px;color:var(--mut);font-weight:700}
+  .mkt-pct .l{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:8.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  /* the meter: market price as the filled bar, our AI probability as the tick */
+  .meter{position:relative;height:6px;border-radius:3px;background:#1d212b;border:1px solid var(--line);overflow:visible}
+  .meter i{display:block;height:100%;border-radius:2px;background:var(--grad)}
+  .meter b{position:absolute;top:-4px;width:2px;height:12px;background:var(--teal);border-radius:1px;
+           box-shadow:0 0 7px rgba(45,212,191,.8)}
+  .meter-legend{display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);
+           font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .ai{background:var(--card2);border:1px solid var(--line);border-radius:3px;padding:8px 10px}
+  .ai-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .ai-p{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--teal);font-weight:700}
+  .ai-edge{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700}
+  .ai-edge.up{color:#86efac} .ai-edge.dn{color:#fca5a5}
+  .ai-why{font-size:11.5px;color:#cfd4dd;line-height:1.6;margin-top:6px;
+          display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+  .ai-why.open{-webkit-line-clamp:unset;display:block}
+  .mkt-foot{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto;padding-top:2px}
+  .empty{font-size:12px;color:var(--dim);padding:18px 2px;line-height:1.8}
+  .empty code{background:#171a20;border:1px solid var(--line2);border-radius:3px;padding:2px 7px;color:var(--mut)}
+  .note{font-size:12px;color:var(--mut);line-height:1.65;margin-bottom:14px}
+  .note b{color:var(--txt);font-weight:650}
+  /* arrival animation — reduced-motion respected */
+  .mkt{animation:card-in .45s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes card-in{0%{opacity:0;transform:translateY(-8px)}100%{opacity:1;transform:none}}
+  .skeleton{position:relative;overflow:hidden;background:#171a20;border-radius:3px;color:transparent !important;display:inline-block;min-width:64px}
+  .skeleton::after{content:'';position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(139,92,246,.14),transparent);
+    animation:shimmer 1.6s ease-in-out infinite}
+  @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  /* ── the pixel cat (same mascot as every other tab) ── */
+  .cat{width:28px;height:28px;display:inline-block;margin-right:9px}
+  .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
+  .cat .c-ears-p,.cat .c-ears-f,.cat .c-eyes-w,.cat .c-eyes-c,.cat .c-zzz{display:none}
+  .cat.cat-alert .c-ears-n,.cat.cat-alert .c-eyes-n{display:none}
+  .cat.cat-alert .c-ears-p,.cat.cat-alert .c-eyes-w{display:block}
+  .cat.cat-sad .c-ears-n{display:none}
+  .cat.cat-sad .c-ears-f{display:block}
+  .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
+  .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
+  .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
+  .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
+  @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
+  @keyframes tail-b{0%,49%{opacity:0}50%,100%{opacity:1}}
+  .cat.cat-sleep .c-tail-a{animation:none;opacity:1}
+  .cat.cat-sleep .c-tail-b{animation:none;opacity:0}
+  .cat.cat-sleep svg{animation:cat-breathe 3.2s ease-in-out infinite;transform-origin:50% 100%}
+  @keyframes cat-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.93)}}
+  .cat .c-zzz rect{animation:zzz 2.4s steps(1) infinite}
+  .cat .c-zzz rect:nth-child(2){animation-delay:.8s}
+  .cat .c-zzz rect:nth-child(3){animation-delay:1.6s}
+  @keyframes zzz{0%,60%{opacity:1}61%,100%{opacity:.15}}
+  .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
+  @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    .mkt,.b-breaking,.skeleton::after{animation:none}
+    .mkt{transition:none}
+    .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
+  }
+  /* ── v3 ambient layer: shader canvas + status-reactive accents, matching
+     every other tab. The CAT is the status source; body:has() shifts the OKLCH
+     accent pair amber when the loop is asleep. ── */
+  :root{ --accA:oklch(0.585 0.233 277.1); --accB:oklch(0.627 0.265 303.9) }
+  body:has(#pixel-cat.cat-sleep){ --accA:oklch(0.769 0.188 70.1); --accB:oklch(0.666 0.179 58.3) }
+  #gl-bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;pointer-events:none}
+  #scroll-progress{position:fixed;top:0;left:0;height:2px;width:100%;z-index:50;
+    transform-origin:0 50%;transform:scaleX(0);
+    background:linear-gradient(90deg,var(--accA),var(--accB))}
+  @supports (animation-timeline: scroll()){
+    @media (prefers-reduced-motion: no-preference){
+      #scroll-progress{animation:growX linear both;animation-timeline:scroll(root)}
+    }
+  }
+  @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+  .nav-link.nav-active{
+    background:linear-gradient(135deg,color-mix(in oklab,var(--accA) 16%,transparent),color-mix(in oklab,var(--accB) 16%,transparent));
+    border-color:color-mix(in oklab,var(--vio) 45%,transparent)}
+  ::selection{background:color-mix(in oklab,var(--vio) 32%,transparent)}
+  html{scrollbar-color:#2c313c #0a0b0d;scrollbar-width:thin}
+  .mono,.num{font-variant-numeric:tabular-nums}
+  @view-transition{navigation:auto}
+  #pixel-cat{view-transition-name:cat}
+  ::view-transition-group(cat){animation-duration:.28s}
+  @supports (text-box: trim-both cap alphabetic){
+    .sec-label,.kv{text-box:trim-both cap alphabetic}
+  }
+</style>
+</head>
+<body class="min-h-screen">
+<canvas id="gl-bg" aria-hidden="true"></canvas>
+<div id="scroll-progress" aria-hidden="true"></div>
+<script type="speculationrules">
+{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
+</script>
+<script>
+// g-then-key tab hops (g d / g a / g n / g p / g y) — inert while typing
+(function () {
+  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics' };
+  let armed = 0;
+  addEventListener('keydown', e => {
+    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'g') { armed = Date.now(); return; }
+    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
+    armed = 0;
+  });
+})();
+</script>
+<script>
+// ── v3 ambient layer, same engine as the other tabs: a hand-written WebGL2 fbm
+// aurora in the brand ramp, uniforms fed by the summary payload this page polls
+// for the cat. Self-contained IIFE. Budget: low-power GPU hint, DPR cap 1.5,
+// ~30fps, hidden-tab pause; prefers-reduced-motion renders one static frame; no
+// WebGL2 removes the canvas and the CSS gradient stays. ──
+(function () {
+  const cv = document.getElementById('gl-bg');
+  const rm = matchMedia('(prefers-reduced-motion: reduce)');
+  const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) { cv.remove(); return; }
+  const VS = `#version 300 es
+void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(v*2.-1.,0.,1.);}`;
+  const FS = `#version 300 es
+precision highp float;
+uniform vec2 u_res;uniform float u_t;
+uniform float u_mood;uniform float u_energy;uniform float u_pos;
+out vec4 o;
+float hash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+17.3;a*=.5;}return s;}
+const float B[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
+void main(){
+ vec2 uv=gl_FragCoord.xy/u_res;
+ vec2 p=vec2(uv.x*u_res.x/u_res.y,uv.y);
+ float t=u_t*(.015+.05*u_energy);
+ vec2 q=vec2(fbm(p*1.3+vec2(0.,t)),fbm(p*1.3+vec2(5.2,-t*.7)));
+ float v=fbm(p*2.1+2.2*q+vec2(0.,t*.4));
+ float sky=smoothstep(.15,.85,uv.y);
+ float glow=sky*(.10+.22*v)*(.45+.55*u_energy)*(1.+.35*u_pos);
+ vec3 aur=mix(vec3(.388,.400,.945),vec3(.659,.333,.969),v);
+ aur=mix(aur,u_mood>=0.?vec3(.13,.72,.36):vec3(.92,.26,.26),abs(u_mood)*.38);
+ vec3 col=vec3(.039,.043,.051)+aur*glow;
+ col+=aur*exp(-abs(uv.y-.72)*6.)*.06*(.5+.5*u_energy);
+ col*=1.-.28*length(uv-vec2(.5,.55));
+ int bi=int(mod(gl_FragCoord.y,4.))*4+int(mod(gl_FragCoord.x,4.));
+ col+=(B[bi]/16.-.5)/255.*3.;
+ o=vec4(col,1.);}`;
+  function shader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
+    return s;
+  }
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
+  } catch (e) { cv.remove(); return; }
+  gl.useProgram(prog);
+  const U = n => gl.getUniformLocation(prog, n);
+  const uRes = U('u_res'), uT = U('u_t'), uMood = U('u_mood'), uEnergy = U('u_energy'), uPos = U('u_pos');
+  const tgt = { mood: 0, energy: 0.45, pos: 0 };
+  const cur = { mood: 0, energy: 0.45, pos: 0 };
+  window.__setGlState = s => {
+    tgt.mood = Math.max(-1, Math.min(1, (s.daily_pnl_pct ?? 0) / 2));
+    tgt.energy = s.status === 'scanning' ? 1 : s.status === 'stale' ? 0.45 : 0.12;
+    tgt.pos = Math.min(1, (s.open_positions ?? 0) / 5);
+    if (rm.matches) draw(t0 + 1);
+  };
+  function resize() {
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    cv.width = Math.round(innerWidth * dpr);
+    cv.height = Math.round(innerHeight * dpr);
+    gl.viewport(0, 0, cv.width, cv.height);
+    if (rm.matches) draw(t0 + 1);
+  }
+  const t0 = performance.now();
+  let last = 0, rafId = 0;
+  function draw(now) {
+    const k = rm.matches ? 1 : 0.04;
+    cur.mood += (tgt.mood - cur.mood) * k;
+    cur.energy += (tgt.energy - cur.energy) * k;
+    cur.pos += (tgt.pos - cur.pos) * k;
+    gl.uniform2f(uRes, cv.width, cv.height);
+    gl.uniform1f(uT, (now - t0) / 1000);
+    gl.uniform1f(uMood, cur.mood);
+    gl.uniform1f(uEnergy, cur.energy);
+    gl.uniform1f(uPos, cur.pos);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  function loop(now) {
+    rafId = requestAnimationFrame(loop);
+    if (now - last < 33) return;
+    last = now;
+    draw(now);
+  }
+  function setMode() {
+    cancelAnimationFrame(rafId);
+    if (rm.matches) draw(t0 + 1);
+    else rafId = requestAnimationFrame(loop);
+  }
+  addEventListener('resize', resize);
+  document.addEventListener('visibilitychange', () => {
+    cancelAnimationFrame(rafId);
+    if (!document.hidden && !rm.matches) rafId = requestAnimationFrame(loop);
+  });
+  rm.addEventListener('change', setMode);
+  resize(); setMode();
+})();
+</script>
+<div class="max-w-[1240px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand flex items-center">
+      <span id="pixel-cat" class="cat" title="the cat watches the tape">
+        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g class="c-ears-n">
+            <rect x="3" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="12" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="3" height="1" fill="#f4f6fa"/>
+            <rect x="4" y="3" width="1" height="1" fill="#f0abfc"/><rect x="11" y="3" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-p">
+            <rect x="3" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="12" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="2" width="3" height="2" fill="#f4f6fa"/>
+            <rect x="4" y="2" width="1" height="1" fill="#f0abfc"/><rect x="11" y="2" width="1" height="1" fill="#f0abfc"/>
+          </g>
+          <g class="c-ears-f">
+            <rect x="2" y="3" width="4" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="4" height="1" fill="#f4f6fa"/>
+          </g>
+          <rect x="2" y="4" width="12" height="9" fill="#f4f6fa"/>
+          <g class="c-eyes-n">
+            <rect x="4" y="7" width="2" height="2" fill="#22c55e"/><rect x="10" y="7" width="2" height="2" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-w">
+            <rect x="4" y="6" width="2" height="3" fill="#22c55e"/><rect x="10" y="6" width="2" height="3" fill="#60a5fa"/>
+          </g>
+          <g class="c-eyes-c">
+            <rect x="4" y="8" width="2" height="1" fill="#5c6370"/><rect x="10" y="8" width="2" height="1" fill="#5c6370"/>
+          </g>
+          <rect x="7" y="10" width="2" height="1" fill="#f0abfc"/>
+          <rect x="0" y="10" width="2" height="1" fill="#5c6370"/><rect x="14" y="10" width="2" height="1" fill="#5c6370"/>
+          <rect x="2" y="12" width="12" height="1" fill="#8b5cf6"/>
+          <rect x="3" y="14" width="2" height="1" fill="#c9ced8"/><rect x="11" y="14" width="2" height="1" fill="#c9ced8"/>
+          <g class="c-tail-a"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="11" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-tail-b"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="13" width="1" height="1" fill="#f4f6fa"/></g>
+          <g class="c-zzz">
+            <rect x="12" y="2" width="1" height="1" fill="#8b5cf6"/><rect x="13" y="1" width="1" height="1" fill="#a78bfa"/><rect x="14" y="0" width="1" height="1" fill="#c4b5fd"/>
+          </g>
+        </svg>
+      </span>
+      <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ PREDICTIONS</small>
+    </span>
+    <span class="text-[10px] mono" style="color:var(--dim)" id="board-meta"></span>
+  </header>
+
+  <nav class="flex items-center gap-1 mb-5 flex-wrap">
+    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
+    <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
+    <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
+  </nav>
+
+  <div class="note">
+    Live <b>Polymarket</b> board. TRENDING and BREAKING exclude sports and price ladders
+    (latency games, not judgment ones); SPORTS is its own board. The teal tick on each
+    meter is <b>our AI brain's</b> probability; the bar is the market's. Every forecast is a
+    <b>zero-capital paper trade</b> filled at the touch and graded on the market's real resolution.
+  </div>
+
+  <div class="strip" id="board-strip">
+    <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="trending" aria-selected="true">Trending <span class="n" id="n-trending"></span></button>
+    <button class="tab" role="tab" data-tab="breaking" aria-selected="false">Breaking <span class="n" id="n-breaking"></span></button>
+    <button class="tab" role="tab" data-tab="sports" aria-selected="false">Sports <span class="n" id="n-sports"></span></button>
+    <button class="tab" role="tab" data-tab="longshots" aria-selected="false">Crazy odds <span class="n" id="n-longshots"></span></button>
+    <button class="tab" role="tab" data-tab="edges" aria-selected="false">Our edge <span class="n" id="n-edges"></span></button>
+  </div>
+
+  <div class="note" id="tab-note" hidden></div>
+
+  <div class="grid" id="grid"></div>
+
+  <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
+    shadow only · zero capital · not financial advice
+  </footer>
+</div>
+
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
+const pct = p => (p == null ? '—' : Math.round(p * 100));
+const fmtUsd = v => {
+  const n = Number(v || 0);
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
+  return '$' + Math.round(n);
+};
+const fmtIn = h => {
+  if (h == null) return '—';
+  if (h < 24) return Math.max(1, Math.round(h)) + 'h';
+  if (h < 24 * 30) return Math.round(h / 24) + 'd';
+  return Math.round(h / (24 * 30)) + 'mo';
+};
+
+let BOARD = null;
+let TAB = 'trending';
+
+function meter(row) {
+  const mkt = row.yes == null ? 0 : row.yes;
+  const ai = row.forecast && row.forecast.llm_yes != null ? row.forecast.llm_yes : null;
+  const tick = ai == null ? '' :
+    `<b style="left:calc(${(ai * 100).toFixed(1)}% - 1px)" title="our AI: ${pct(ai)}%"></b>`;
+  return `<div class="meter"><i style="width:${(mkt * 100).toFixed(1)}%"></i>${tick}</div>
+    <div class="meter-legend"><span>market ${pct(mkt)}%</span>` +
+    (ai == null ? '<span>no AI read yet</span>' : `<span style="color:var(--teal)">AI ${pct(ai)}%</span>`) +
+    '</div>';
+}
+
+function aiBlock(row) {
+  const f = row.forecast;
+  if (!f) return '';
+  const edge = row.live_edge;
+  const side = f.side === 'YES' ? 'BUY YES' : 'BUY NO';
+  const cls = f.side === 'YES' ? 'b-yes' : 'b-no';
+  const ecls = (edge ?? 0) >= 0 ? 'up' : 'dn';
+  const epp = edge == null ? '—' : (edge >= 0 ? '+' : '') + Math.round(edge * 100) + 'pp';
+  return `<div class="ai">
+      <div class="ai-head">
+        <span class="badge ${cls}">${side}</span>
+        <span class="ai-p">AI ${pct(f.llm_yes)}%</span>
+        <span class="ai-edge ${ecls}">${epp} vs market</span>
+      </div>
+      ${f.reasoning ? `<div class="ai-why" title="click to expand">${esc(f.reasoning)}</div>` : ''}
+    </div>`;
+}
+
+function card(row) {
+  const chg = Number(row.change_24h || 0);
+  const chgCls = chg >= 0 ? 'up' : 'dn';
+  const cls = ['mkt', row.live ? 'is-live' : '', row.breaking ? 'is-breaking' : '',
+               row.forecast ? 'has-edge' : ''].join(' ');
+  const tags = [
+    row.live ? '<span class="badge b-live">LIVE</span>' : '',
+    row.breaking ? '<span class="badge b-breaking">BREAKING</span>' : '',
+  ].filter(Boolean).join(' ');
+  // payout multiple only where it is the point of the card (>=3x board)
+  const payout = row.payout_x
+    ? `<span class="payout ${row.payout_x >= 10 ? 'hot' : ''}">${row.payout_x}x</span>`
+    : '';
+  const ico = row.icon
+    ? `<img class="mkt-ico" src="${esc(row.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer"
+         onerror="this.style.visibility='hidden'">`
+    : '<span class="mkt-ico"></span>';
+  return `<article class="${cls}">
+    <div class="mkt-top">
+      ${ico}
+      <div class="mkt-q">
+        <div class="mkt-ev">${tags ? tags + ' ' : ''}${esc(row.event_title || '')}</div>
+        <a class="mkt-title" href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">${esc(row.question)}</a>
+      </div>
+      <div class="mkt-pct">
+        <div class="v">${pct(row.yes)}<small>%</small></div>
+        <div class="l">${payout ? payout : 'chance'}</div>
+      </div>
+    </div>
+    ${meter(row)}
+    ${aiBlock(row)}
+    <div class="mkt-foot">
+      <span class="chip">${fmtUsd(row.volume_24h)} 24h</span>
+      <span class="chip ${chgCls}">${chg >= 0 ? '+' : ''}${Math.round(chg * 100)}pp 24h</span>
+      <span class="chip">ends in ${fmtIn(row.hours_to_end)}</span>
+      ${row.score ? `<span class="chip">${esc(row.score)}</span>` : ''}
+      ${row.sport ? `<span class="chip tag">${esc(row.sport)}</span>` : ''}
+      ${(row.tags || []).slice(0, 2).map(t => `<span class="chip tag">${esc(t)}</span>`).join('')}
+    </div>
+  </article>`;
+}
+
+function kpi(label, value, cls) {
+  return `<div class="kpi"><span class="v ${cls || ''}">${value}</span><span class="l">${label}</span></div>`;
+}
+
+function renderStrip(b) {
+  const s = b.scoreboard || {};
+  const brier = (s.brier_llm != null && s.brier_mkt != null)
+    ? `${s.brier_llm} <span style="color:var(--dim);font-size:12px">/ ${s.brier_mkt}</span>` : '—';
+  const brierCls = s.brier_llm != null && s.brier_mkt != null
+    ? (s.llm_beats_market ? 'good' : 'bad') : '';
+  const age = b.age_s == null ? 'never' :
+    b.age_s < 3600 ? Math.round(b.age_s / 60) + 'm ago' : Math.round(b.age_s / 3600) + 'h ago';
+  document.getElementById('board-strip').innerHTML =
+    kpi('universe', b.universe ?? 0) +
+    kpi('breaking', (b.counts || {}).breaking ?? 0, 'brk') +
+    kpi('our reads', (s.n ?? 0) + '<span style="color:var(--dim);font-size:12px">+' + (s.pending ?? 0) + 'p</span>') +
+    kpi('brier llm/mkt', brier, brierCls) +
+    kpi('paper pnl/$', s.mean_pnl_per_$ == null ? '—' :
+        (s.mean_pnl_per_$ >= 0 ? '+' : '') + s.mean_pnl_per_$,
+        s.mean_pnl_per_$ == null ? '' : (s.mean_pnl_per_$ >= 0 ? 'good' : 'bad')) +
+    kpi('refreshed', age + (b.stale ? ' <span class="badge b-stale">STALE</span>' : ''));
+}
+
+// per-tab context line. The longshot note is not decoration: buying this bucket
+// is the losing side of the only cell in the backtest that cleared t=2, so the
+// number ships next to the cards.
+const TAB_NOTES = {
+  sports: 'Live and upcoming game lines from <b>polymarket.com/sports</b> — LIVE first, then 24h volume. '
+        + 'These settle on a scoreboard, not on judgment: our AI has <b>no measured edge</b> here and the '
+        + 'daily forecast cron does not spend tokens on them by default.',
+  longshots: '<b>≥3x payout</b> — every tradeable market priced at or under 33c, across both boards, '
+        + 'ranked by our AI\'s disagreement first. Multiple is on the <b>ask</b>, not the mid. '
+        + 'Reality check from the backtest (n=89): <b>buying</b> this bucket is the losing side '
+        + '(≈−1%/$ after fees); <b>fading</b> it is the +EV mirror. A 3x payout is not a 3x edge.',
+};
+
+function renderGrid() {
+  const grid = document.getElementById('grid');
+  const note = document.getElementById('tab-note');
+  if (TAB_NOTES[TAB]) { note.innerHTML = TAB_NOTES[TAB]; note.hidden = false; }
+  else note.hidden = true;
+  const rows = (BOARD && BOARD[TAB]) || [];
+  if (!rows.length) {
+    grid.style.display = 'block';
+    grid.innerHTML = BOARD && BOARD.status === 'empty'
+      ? `<div class="empty">No board cache yet. Build it:<br><br>
+           <code>python -m services.polymarket_scout.daily --board-only</code><br><br>
+           Then the LLM lanes (paper trades, zero capital):<br><br>
+           <code>python -m services.polymarket_scout.run --lane trending</code></div>`
+      : `<div class="empty">Nothing in this tab right now.${TAB === 'edges'
+           ? ' Our AI has not judged any market currently on the board — run the trending lane to add reads.'
+           : ''}</div>`;
+    return;
+  }
+  grid.style.display = '';
+  grid.innerHTML = rows.map(card).join('');
+}
+
+function renderTabs(b) {
+  const c = b.counts || {};
+  for (const k of ['trending', 'breaking', 'sports', 'longshots', 'edges']) {
+    document.getElementById('n-' + k).textContent = c[k] ?? 0;
+  }
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', String(x === t)));
+    TAB = t.dataset.tab;
+    renderGrid();
+  });
+});
+
+// reasoning paragraphs are clamped to 3 lines; click expands in place
+document.getElementById('grid').addEventListener('click', e => {
+  const why = e.target.closest('.ai-why');
+  if (why) why.classList.toggle('open');
+});
+
+async function load() {
+  try {
+    BOARD = await (await fetch('/api/dashboard/predictions')).json();
+    renderStrip(BOARD);
+    renderTabs(BOARD);
+    renderGrid();
+    const prov = BOARD.provider ? ` · brain ${BOARD.provider}` : '';
+    document.getElementById('board-meta').textContent =
+      `polymarket board${prov} · updated ${fmtHM(Date.now())}`;
+  } catch (e) {
+    document.getElementById('grid').innerHTML =
+      '<div class="empty">board load failed — is the server up?</div>';
+  }
+}
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+load();
+setInterval(load, 30000);
+
+// ── the cat reacts to the tape (same mascot + logic as the dashboard) ──────
+let catLastEquity = null;
+function updateCat(s) {
+  const cat = document.getElementById('pixel-cat');
+  if (!cat) return;
+  cat.classList.remove('cat-sleep', 'cat-sad', 'cat-alert');
+  if (s.status !== 'scanning') cat.classList.add('cat-sleep');
+  else if ((s.daily_pnl ?? 0) < 0) cat.classList.add('cat-sad');
+  else if ((s.open_positions ?? 0) > 0) cat.classList.add('cat-alert');
+  if (catLastEquity != null && (s.equity ?? 0) > catLastEquity + 0.004) {
+    cat.classList.remove('cat-bounce');
+    void cat.offsetWidth;
+    cat.classList.add('cat-bounce');
+  }
+  catLastEquity = s.equity ?? catLastEquity;
+}
+async function refreshCat() {
+  try {
+    const s = await (await fetch('/api/dashboard/summary')).json();
+    updateCat(s);
+    if (window.__setGlState) window.__setGlState(s);   // shader shares the cat's payload
+  } catch (e) {}
+}
+refreshCat();
+setInterval(refreshCat, 20000);
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ Pages (markup in hermes_trader/templates/*.html, assets vendored in /static):
   GET /activity                  — the trading-desk journal: tiered flowing
                                    stream + 6h session strip
   GET /news                      — news-catalyst reads + research news context
+  GET /predictions               — Polymarket trending/breaking + our AI forecast
 
 JSON APIs:
 
@@ -15,6 +16,7 @@ JSON APIs:
   GET /api/dashboard/activity    — classified session-log events (tiered,
                                    filterable, incremental via ?since=)
   GET /api/dashboard/news        — news ledger reads, newest first
+  GET /api/dashboard/predictions — Polymarket board cache (trending/breaking/edges)
   GET /api/dashboard/positions   — open positions + DSL tracker state
   GET /api/dashboard/equity-curve?range=24h|7d|30d
   GET /api/feed/stream           — Server-Sent Events tailing the session log
@@ -1400,6 +1402,28 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
             "fresh_window_s": _FRESH_WINDOW_S}
 
 
+# ── prediction markets ───────────────────────────────────────────────────────
+
+
+def _predictions_payload() -> Dict[str, Any]:
+    """Polymarket board: trending + breaking markets, our AI brain's forecast on
+    the ones it has judged, and the shadow ledger's scoreboard.
+
+    Pure cache read (`.state/polymarket_scout/board.json`, written by
+    `python -m services.polymarket_scout.daily`). NO network and NO LLM call
+    happens inside the request — a slow Gamma API or a hung CLI must never be
+    able to hang a dashboard poll. A missing/old cache renders with
+    `status: empty|stale` instead of failing.
+    """
+    try:
+        from services.polymarket_scout import board
+    except Exception:                       # service not installed in this tree
+        return {"status": "empty", "stale": True, "trending": [], "breaking": [],
+                "edges": [], "counts": {"trending": 0, "breaking": 0, "edges": 0},
+                "universe": 0, "scoreboard": {"n": 0, "pending": 0}}
+    return board.load()
+
+
 # ── HTML ─────────────────────────────────────────────────────────────────────
 # Page markup lives in hermes_trader/templates/*.html — plain files, no
 # template engine, fully self-contained assets (vendored /static only).
@@ -1416,6 +1440,7 @@ _PUBLIC_HTML = _load_template("landing.html")
 _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 _ANALYTICS_HTML = _load_template("analytics.html")
+_PREDICTIONS_HTML = _load_template("predictions.html")
 
 
 # ── route registration ──────────────────────────────────────────────────────
@@ -1447,6 +1472,12 @@ def register_routes(app: FastAPI) -> None:
     async def news_page() -> HTMLResponse:
         """News-catalyst reads (shadow ledger) + research events with news context."""
         return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/predictions", response_class=HTMLResponse)
+    async def predictions_page() -> HTMLResponse:
+        """Polymarket board — trending + breaking prediction markets with our AI
+        brain's probability next to the market's, and the shadow scoreboard."""
+        return HTMLResponse(content=_PREDICTIONS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/analytics", response_class=HTMLResponse)
     async def analytics_page() -> HTMLResponse:
@@ -1487,6 +1518,12 @@ def register_routes(app: FastAPI) -> None:
         # TTL (30s) >= the page's poll interval (30s).
         return JSONResponse(_ttl_cached(f"news:{limit}", 30.0,
                                         lambda: _news_payload(limit)))
+
+    @app.get("/api/dashboard/predictions")
+    async def dashboard_predictions() -> JSONResponse:
+        # TTL (20s) >= the page's poll interval (30s); the underlying cache only
+        # changes when the scout cron runs, so this is generous already.
+        return JSONResponse(_ttl_cached("predictions", 20.0, _predictions_payload))
 
     @app.get("/api/dashboard/summary")
     async def dashboard_summary() -> JSONResponse:

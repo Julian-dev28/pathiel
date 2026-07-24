@@ -484,14 +484,14 @@ def test_config_and_operator_pages_are_gone(client):
     assert client.get("/api/dashboard/operator/trackers").status_code == 404
     assert client.post("/api/dashboard/operator/terminal",
                        json={"command": "status"}).status_code == 404
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         page = client.get(path).text
         assert 'data-nav="/config"' not in page, path
         assert 'data-nav="/operator"' not in page, path
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
@@ -550,7 +550,7 @@ def test_no_emoji_glyphs_anywhere(client):
     markup, geometric shapes are CSS. This sweep must stay green."""
     banned = ["👁", "🙈", "♥", "⚡", "⟳", "■", "⚠", "▶", "⚙", "🐈", "🐱",
               "🤖", "😴", "💰", "💀", "🤑", "😱", "😎", "🔒", "🔓", "🐹", "🐰"]
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         page = client.get(path).text
         for ch in banned:
             assert ch not in page, f"{path} still renders glyph {ch!r}"
@@ -560,7 +560,7 @@ def test_pixel_cat_on_every_tab(client):
     """The cat is on every tab (operator order 2026-07-15), not just the
     dashboard — crafted 16x16 SVG pixel art with status-driven states, not
     an emoji, on all four pages, each independently polling for its state."""
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path).text
         assert 'id="pixel-cat"' in r, f"{path}: missing the cat"
         assert "<rect" in r and "crispEdges" in r, f"{path}: not real pixel art"
@@ -743,7 +743,7 @@ def test_trade_empty_copy_does_not_claim_nothing_actionable_with_open_positions(
 
 
 def test_eight_bit_texture_everywhere(client):
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         page = client.get(path).text
         assert "4px 4px 0" in page, f"{path}: missing hard pixel offset shadow"
         assert "repeating-linear-gradient" in page, f"{path}: missing scanline texture"
@@ -1217,6 +1217,127 @@ def test_analytics_page_markers(client):
     assert "b-dead" not in r and "row-dead" not in r
 
 
+# ── predictions tab (2026-07-24): Polymarket board ───────────────────────────
+
+def _board_payload(**over):
+    row = {"market_id": "1", "question": "Will the ceasefire hold?",
+           "event_title": "Israel x Iran", "url": "https://polymarket.com/event/x",
+           "icon": "https://img/x.png", "tags": ["geopolitics"], "yes": 0.42,
+           "volume_24h": 140_526.0, "change_24h": -0.22, "hours_to_end": 72.0,
+           "breaking": True, "forecast": None, "live_edge": None}
+    judged = {**row, "market_id": "2", "forecast": {
+        "llm_yes": 0.85, "side": "YES", "edge": 0.43, "reasoning": "sourced"},
+        "live_edge": 0.43}
+    game = {**row, "market_id": "3", "question": "Set 2 Winner: Sherif vs Badosa",
+            "live": True, "score": "7-6(7-4), 2-4", "sport": "tennis",
+            "breaking": False, "yes": 0.11, "hours_to_end": 3.0}
+    shot = {**game, "market_id": "4", "payout_x": 9.09, "yes": 0.11}
+    p = {"generated_at": 1_000_000, "status": "ok", "stale": False, "age_s": 120,
+         "universe": 151, "provider": "claude_cli",
+         "counts": {"trending": 2, "breaking": 1, "edges": 1, "sports": 1,
+                    "longshots": 1},
+         "trending": [row, judged], "breaking": [row], "edges": [judged],
+         "sports": [game], "longshots": [shot],
+         "scoreboard": {"n": 0, "pending": 3, "mean_pnl_per_$": None,
+                        "brier_llm": None, "brier_mkt": None,
+                        "llm_beats_market": False,
+                        "gate": {"passed": False}}}
+    p.update(over)
+    return p
+
+
+def test_predictions_page_renders_the_board_shell(client):
+    r = client.get("/predictions").text
+    for marker in ('id="grid"', 'id="board-strip"', 'data-tab="trending"',
+                   'data-tab="breaking"', 'data-tab="sports"',
+                   'data-tab="longshots"', 'data-tab="edges"',
+                   "/api/dashboard/predictions"):
+        assert marker in r, f"missing {marker}"
+    assert 'data-nav="/predictions"' in r
+    # the AI probability must be visible as its own mark on the meter, not
+    # folded into the market bar — the whole point of the page is the gap
+    assert "meter" in r and "AI ${pct(f.llm_yes)}%" in r
+
+
+def test_predictions_endpoint_serves_the_cache_without_touching_the_network(client, monkeypatch):
+    from services.polymarket_scout import board as sb
+
+    calls = {"build": 0}
+
+    def _no_network(*a, **k):
+        calls["build"] += 1
+        raise AssertionError("the request path must never fetch")
+
+    monkeypatch.setattr(sb, "build", _no_network)
+    monkeypatch.setattr(sb, "load", lambda *a, **k: _board_payload())
+    db._TTL_CACHE.clear()
+    body = client.get("/api/dashboard/predictions").json()
+    assert body["counts"]["breaking"] == 1
+    assert body["edges"][0]["forecast"]["llm_yes"] == 0.85
+    assert calls["build"] == 0
+
+
+def test_predictions_endpoint_survives_a_missing_service(client, monkeypatch):
+    """A tree without services/polymarket_scout must still render the tab —
+    the page degrades to an empty board, it does not 500."""
+    import builtins
+    real_import = builtins.__import__
+
+    def boom(name, *a, **k):
+        if name.startswith("services.polymarket_scout"):
+            raise ImportError("not installed")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", boom)
+    db._TTL_CACHE.clear()
+    body = client.get("/api/dashboard/predictions").json()
+    assert body["status"] == "empty" and body["trending"] == []
+
+
+def test_predictions_sports_and_longshot_tabs_render_their_own_marks(client, monkeypatch):
+    """SPORTS needs the LIVE badge + score; CRAZY ODDS needs the payout multiple.
+    Both are rendered client-side, so assert the card template carries them."""
+    r = client.get("/predictions").text
+    assert "b-live" in r and "LIVE" in r
+    assert "row.score" in r and "row.sport" in r
+    assert "payout_x" in r and "${row.payout_x}x" in r
+
+
+def test_predictions_longshot_tab_ships_the_losing_side_warning(client):
+    """Operator asked for a >=3x board. The backtest says BUYING that bucket is
+    the losing side, so the number ships with the cards — a payout multiple
+    rendered without it would read as a recommendation."""
+    r = client.get("/predictions").text
+    note = r.split("TAB_NOTES", 1)[1].split("};", 1)[0]
+    assert "longshots:" in note
+    assert "losing side" in note and "n=89" in note
+
+
+def test_predictions_sports_note_states_the_no_edge_position(client):
+    r = client.get("/predictions").text
+    note = r.split("TAB_NOTES", 1)[1].split("};", 1)[0]
+    assert "no measured edge" in note
+
+
+def test_predictions_cards_cannot_blow_out_the_grid(client):
+    """Regression (2026-07-24): the card's event title is `white-space:nowrap`,
+    and a grid item defaults to `min-width:auto` — so the longest title set the
+    track's min-content width and pushed the 3-up grid past the container
+    (measured 0 overflow only after `min-width:0`). Both halves of the fix must
+    stay: the clamp on the card, and a wrapping rule on the question link."""
+    r = client.get("/predictions").text
+    mkt_rule = r.split(".mkt{", 1)[1].split("}", 1)[0]
+    assert "min-width:0" in mkt_rule and "overflow:hidden" in mkt_rule
+    assert "overflow-wrap:anywhere" in r
+
+
+def test_predictions_page_states_the_zero_capital_contract(client):
+    """Operator-facing honesty: the page must say this is shadow/paper, or a
+    reader will mistake a divergence card for a position."""
+    r = client.get("/predictions").text
+    assert "zero-capital" in r and "shadow only" in r
+
+
 # ── landing v3 (2026-07-17): living ambient layer + informational one-pager ──
 
 def test_landing_v3_webgl_ambient_layer(client):
@@ -1314,7 +1435,7 @@ def test_v3_ambient_layer_on_every_tab(client):
     status source — body:has() watches its sleep state to shift the OKLCH
     accent pair, and refreshCat feeds the same summary payload to the shader
     uniforms via __setGlState."""
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path).text
         assert 'id="gl-bg"' in r and "#version 300 es" in r, path
         assert "u_mood" in r and "u_energy" in r and "u_pos" in r, path
@@ -1344,7 +1465,7 @@ def test_v4_compiled_css_replaces_tailwind_runtime(client):
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     assert gen.OUT.read_text() == gen.build(), "app.css stale — rerun scripts/build_static_css.py"
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path).text
         assert '"/static/app.css"' in r, path
         assert "tailwind.js" not in r, path
@@ -1354,7 +1475,7 @@ def test_v4_mpa_view_transitions_cat_morphs(client):
     """Cross-document view transitions: all four tabs opt in, and the cat
     carries the same view-transition-name so it MORPHS between pages when
     you navigate — the mascot persists across the whole app."""
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path).text
         assert "@view-transition{navigation:auto}" in r, path
         assert "view-transition-name:cat" in r, path
@@ -1364,7 +1485,7 @@ def test_v4_speculation_rules_and_hotkeys(client):
     """Hover-eagerness prerendering (speculation rules) makes tab hops
     instant; g-then-key hotkeys (g d/a/n/y) give app-style navigation,
     inert while typing."""
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
         r = client.get(path).text
         assert 'type="speculationrules"' in r, path
         assert '"eagerness":"moderate"' in r, path

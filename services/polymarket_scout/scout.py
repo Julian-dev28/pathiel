@@ -19,10 +19,13 @@ import json
 import os
 import subprocess
 import time
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
+# Gamma's hard page cap. Ask for more and it returns 100 anyway, so every pager
+# here steps the offset by this, never by the requested limit.
+PAGE_MAX = 100
 _DAY_MS = 86_400_000
 # Measured taker-fee drag per side (W-Z1: fees rolled out 2026; world-events tier
 # lower). Conservative: 1% per fill, applied to the paper PnL both ways.
@@ -53,13 +56,44 @@ class PolymarketClient:
     def __init__(self, http_get: Callable[[str], Any] = _curl_get):
         self._get = http_get
 
-    def open_markets(self, limit: int = 500, pages: int = 6) -> List[Dict[str, Any]]:
+    def open_markets(self, limit: int = 100, pages: int = 30) -> List[Dict[str, Any]]:
+        # Gamma silently caps a page at PAGE_MAX rows (measured: limit=250 -> 100).
+        # The offset MUST step by the effective page size, not by the requested
+        # limit, or the pager strides over the rows it never received.
+        step = min(int(limit), PAGE_MAX)
         out: List[Dict[str, Any]] = []
-        for off in range(0, pages * limit, limit):
-            batch = self._get(f"{GAMMA}/markets?closed=false&limit={limit}&offset={off}")
+        for off in range(0, pages * step, step):
+            batch = self._get(f"{GAMMA}/markets?closed=false&limit={step}&offset={off}")
             if not isinstance(batch, list):
                 continue
             out.extend(m for m in batch if isinstance(m, dict))
+            if len(batch) < step:
+                break                       # short page = end of the result set
+        return out
+
+    def open_events(self, limit: int = 100, pages: int = 3,
+                    exclude_tag_ids: Sequence[str] = (),
+                    tag_ids: Sequence[str] = ()) -> List[Dict[str, Any]]:
+        """Open EVENTS ordered by 24h volume — polymarket.com's own front-page
+        ordering. Events (not markets) because only the event payload carries
+        `tags`, and tags are how we drop (or select) the sports/esports lane
+        server-side (`exclude_tag_id` / `tag_id`, both repeatable).
+
+        `tag_ids=("1",)` is polymarket.com/sports; the same call carries the
+        `live`, `score`, `teams` and `startTime` fields the /sports/live board
+        renders."""
+        excl = ("".join(f"&exclude_tag_id={t}" for t in exclude_tag_ids)
+                + "".join(f"&tag_id={t}" for t in tag_ids))
+        step = min(int(limit), PAGE_MAX)
+        out: List[Dict[str, Any]] = []
+        for off in range(0, pages * step, step):
+            batch = self._get(f"{GAMMA}/events?closed=false&limit={step}&offset={off}"
+                              f"&order=volume24hr&ascending=false{excl}")
+            if not isinstance(batch, list):
+                continue
+            out.extend(e for e in batch if isinstance(e, dict))
+            if len(batch) < step:
+                break
         return out
 
     def best_ask(self, token_id: str) -> Optional[Tuple[float, float]]:
@@ -76,6 +110,36 @@ class PolymarketClient:
     def market_by_id(self, market_id: str) -> Optional[Dict[str, Any]]:
         m = self._get(f"{GAMMA}/markets/{market_id}")
         return m if isinstance(m, dict) else None
+
+    def resolved_markets(self, limit: int = 100, pages: int = 10,
+                         min_volume: float = 0.0) -> List[Dict[str, Any]]:
+        """Closed markets, most-traded first — the backtest sample. Ordered by
+        `volumeNum` (the numeric column; plain `order=volume` sorts the string
+        field and returns junk), liquid first because a market with no volume has
+        no price series to learn from."""
+        step = min(int(limit), PAGE_MAX)
+        vmin = f"&volume_num_min={min_volume:.0f}" if min_volume > 0 else ""
+        out: List[Dict[str, Any]] = []
+        for off in range(0, pages * step, step):
+            batch = self._get(f"{GAMMA}/markets?closed=true&limit={step}&offset={off}"
+                              f"&order=volumeNum&ascending=false{vmin}")
+            if not isinstance(batch, list):
+                continue
+            out.extend(m for m in batch if isinstance(m, dict))
+            if len(batch) < step:
+                break
+        return out
+
+    def price_history(self, token_id: str, interval: str = "max",
+                      fidelity: int = 60) -> List[Dict[str, float]]:
+        """CLOB price series for one outcome token: [{t: epoch_s, p: 0..1}, ...].
+        `fidelity` is the bar width in minutes (60 = hourly)."""
+        raw = self._get(f"{CLOB}/prices-history?market={token_id}"
+                        f"&interval={interval}&fidelity={fidelity}")
+        if isinstance(raw, dict):
+            h = raw.get("history")
+            return h if isinstance(h, list) else []
+        return raw if isinstance(raw, list) else []
 
 
 def resolve_yes_won(m: Optional[Dict[str, Any]]) -> Optional[bool]:

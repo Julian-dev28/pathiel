@@ -14,7 +14,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from services.polymarket_scout.scout import brier, paper_pnl
 
-SCHEMA = 1
+# v2 adds `lane` + `meta`. v1 rows predate the trending lane and are read as
+# lane="judgment" — the two lanes grade separately, so a missing lane must not
+# silently land in the trending bucket.
+SCHEMA = 2
+LANES = ("judgment", "trending", "sports")
 
 
 def _state_dir() -> str:
@@ -35,6 +39,7 @@ def _path() -> str:
 def record(*, market_id: str, question: str, side: str, token_id: str,
            llm_yes: float, mkt_yes: float, fill_px: float, edge: float,
            end_date: str, category: str = "", reasoning: str = "",
+           lane: str = "judgment", meta: Optional[Dict[str, Any]] = None,
            ts: Optional[int] = None) -> Dict[str, Any]:
     """Append one paper trade. side in {YES,NO}; fill_px is what we PAID at the
     touch on that side. Best-effort — never raises into the scan loop."""
@@ -44,7 +49,8 @@ def record(*, market_id: str, question: str, side: str, token_id: str,
         "token_id": str(token_id), "llm_yes": round(float(llm_yes), 4),
         "mkt_yes": round(float(mkt_yes), 4), "fill_px": round(float(fill_px), 4),
         "edge": round(float(edge), 4), "end_date": end_date, "category": category,
-        "reasoning": reasoning[:500], "resolved": False, "outcome_yes": None,
+        "reasoning": reasoning[:500], "lane": str(lane), "meta": meta or {},
+        "resolved": False, "outcome_yes": None,
     }
     try:
         with open(_path(), "a") as fh:
@@ -72,13 +78,22 @@ def load() -> List[Dict[str, Any]]:
     return out
 
 
+def row_lane(row: Dict[str, Any]) -> str:
+    """Lane of a ledger row. v1 rows have no `lane` and are judgment-lane."""
+    return str(row.get("lane") or "judgment")
+
+
 def grade(resolver: Callable[[str], Optional[bool]],
-          rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+          rows: Optional[List[Dict[str, Any]]] = None,
+          lane: Optional[str] = None) -> Dict[str, Any]:
     """Grade every row whose market has resolved. `resolver(market_id)` returns
     True if YES won, False if NO won, None if not yet resolved. Returns aggregate
     paper EV + the Brier comparison that decides whether the LLM actually beats
-    the market's own price."""
+    the market's own price. `lane` restricts to one lane; the lanes are separate
+    hypotheses and must never be pooled into one verdict."""
     rows = rows if rows is not None else load()
+    if lane:
+        rows = [r for r in rows if row_lane(r) == lane]
     pnls: List[float] = []
     b_llm: List[float] = []
     b_mkt: List[float] = []
