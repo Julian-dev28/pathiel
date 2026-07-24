@@ -16,3 +16,6 @@ forward n before it sees capital.
 - **INVERSE of news_catalyst** — n=181, EV(real)=+2.25%, EV(25bps)=+2.06%, halves +0.40/+3.96, excess 1.3672pp, mc_p=0.003
 
 ## 2026-07-20 20:16 autonomous cycle
+
+## 2026-07-25 04:25 autonomous cycle
+- **INVERSE of young_mover_short** — n=14, EV(real)=+7.36%, EV(25bps)=+7.17%, halves +9.12/+5.48, excess 8.3288pp, mc_p=0.0005

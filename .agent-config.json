@@ -8,13 +8,13 @@
     },
     "claude_cli": {
       "command": "/Users/julian_dev/.local/bin/claude",
-      "model": "claude-opus-4-8",
+      "model": "claude-sonnet-5",
       "max_turns": 1,
       "web_search_max_turns": 8
     },
     "web_search": {
-      "enabled": false,
-      "min_move_pct": 8.0,
+      "enabled": true,
+      "min_move_pct": 3.0,
       "held": true
     }
   },
@@ -326,7 +326,7 @@
   },
   "news_surge_short": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "equity_live": false,
     "crypto_live": true,
     "crypto_notional_usd": 20.0,
