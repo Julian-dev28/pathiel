@@ -1589,6 +1589,20 @@ def register_routes(app: FastAPI) -> None:
             return JSONResponse({"status": "empty", "reads": []})
         return JSONResponse(_ttl_cached("updown", 10.0, updown.load))
 
+    @app.get("/api/dashboard/updown/live")
+    async def dashboard_updown_live(
+        asset: str = Query("btc", min_length=1, max_length=8),
+    ) -> JSONResponse:
+        """Live YES/NO from the CLOB book + countdown, no brain — cheap enough to
+        poll every few seconds so the panel's market % tracks the book in real
+        time. TTL 3s bounds the CLOB call rate."""
+        try:
+            from services.polymarket_scout import updown
+        except Exception:
+            return JSONResponse({"mkt_up": None})
+        return JSONResponse(_ttl_cached(f"updown-live:{asset}", 3.0,
+                                        lambda: updown.live_price(asset)))
+
     @app.post("/api/dashboard/updown/analyze",
               dependencies=[Depends(_require_operator)])
     async def dashboard_updown_analyze(

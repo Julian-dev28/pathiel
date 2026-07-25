@@ -158,6 +158,25 @@ def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Opti
     return ctx
 
 
+def live_price(asset: str = "btc", now: Optional[float] = None,
+               http_get: Callable[[str], Any] = _curl_get) -> Dict[str, Any]:
+    """JUST the live YES/NO from the CLOB book + the countdown — no brain, no
+    cache. Cheap enough to poll every few seconds so the panel's market % tracks
+    the book in real time, the way the app does."""
+    import calendar
+    now = time.time() if now is None else now
+    m = current_market(asset, now, http_get=http_get)
+    up = live_up_prob(m, http_get) if m else None
+    end = (m or {}).get("endDate") or ""
+    try:
+        end_s = calendar.timegm(time.strptime(end[:19], "%Y-%m-%dT%H:%M:%S"))
+        secs = max(0, int(end_s - now))
+    except Exception:
+        secs = None
+    return {"asset": asset.upper(), "slug": current_slug(asset, now),
+            "mkt_up": up, "seconds_left": secs, "end_date": end}
+
+
 def build_prompt(ctx: Dict[str, Any], mkt_yes: Optional[float]) -> str:
     return (
         f"ASSET: {ctx['asset']}  price={ctx['price']}\n"
@@ -330,11 +349,13 @@ LIVE_DEFAULTS: Dict[str, Any] = {
     "place": False,
     "coin": "BTC",
     "min_lean": 0.06,          # only trade when |up_prob - 0.5| >= this (a real lean)
-    "equity_frac": 0.02,       # margin/trade = 2% of equity
+    # Hyperliquid rejects orders below ~$10.92 notional, so an equity-fraction
+    # size ($0.65 on a small account) never places. A fixed notional clears the
+    # floor; keep it small. 0 = fall back to equity_frac × equity × leverage.
+    "notional_usd": 15.0,
     "leverage": 3,
     "stop_pct": 0.01,          # BTC 1% stop on a 5-min scalp
     "tp_pct": 0.015,
-    "min_confidence": 0.0,     # the lean IS the gate; confidence not double-counted
 }
 
 
@@ -382,7 +403,10 @@ def to_hl_analysis(read: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
         "composite_score": 0.0,
         "strategy_book": BOOK,
         "leverage_override": int(cfg.get("leverage") or 3),
-        "strategy_book_equity_frac_override": float(cfg.get("equity_frac") or 0.02),
+        # fixed notional to clear the HL minimum; the executor reads
+        # strategy_book_notional as an absolute $ size when > 0.
+        "strategy_book_notional": float(cfg.get("notional_usd") or 0),
+        "strategy_book_equity_frac_override": float(cfg.get("equity_frac") or 0),
         "source": "updown_live", "ai_brain_provider": "updown_live",
         "updown_window_end": int(end_s),
         "updown_slug": read.get("slug"),

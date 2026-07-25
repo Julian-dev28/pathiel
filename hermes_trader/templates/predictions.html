@@ -77,6 +77,10 @@
   .tab .n{color:var(--dim);font-weight:600;margin-left:7px}
   .tab[aria-selected="true"] .n{color:var(--vio)}
   .sort-wrap{display:inline-flex;align-items:center;gap:7px;margin-left:auto;padding:5px 4px}
+  /* live Polymarket YES/NO in the app's own cent format */
+  .pm-cents{display:inline-flex;gap:6px;font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:15px}
+  .pm-cents .pm-up{color:#86efac;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.4);border-radius:4px;padding:3px 10px}
+  .pm-cents .pm-dn{color:#fca5a5;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:3px 10px}
   .sort-wrap .sort-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;
     font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
   #sort-mode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;
@@ -447,7 +451,7 @@ void main(){
         <span style="width:7px;height:7px;border-radius:1px;background:var(--teal)"></span>
         <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:800;
               letter-spacing:.22em;text-transform:uppercase;color:var(--dim)">5-min up/down · AI read</span>
-        <span class="badge b-shadow" style="color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3)">SHADOW</span>
+        <span class="badge" style="color:var(--teal);background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.35)">AI SIGNAL</span>
         <span id="btc-live" title="live BTC last trade (Binance, sub-second)"
               style="font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:750;color:var(--txt);
                      padding:2px 9px;border-radius:3px;border:1px solid var(--line2);background:#171a20;transition:color .2s">BTC —</span>
@@ -790,43 +794,65 @@ async function load() {
 })();
 
 // ── 5-min up/down AI ticker ──────────────────────────────────────────────
-function updownCard(r) {
-  const c = r.context || {};
+// the AI read (up_prob/reasoning) comes from the 5-min cache; the market % and
+// countdown are LIVE (polled off the CLOB), so the two never mismatch the way
+// an analysis-time snapshot did. `live` overrides mkt_up/seconds_left when present.
+let UPDOWN_READ = null;
+function updownCard(r, live) {
   const ai = r.up_prob == null ? '—' : Math.round(r.up_prob * 100) + '%';
-  const mk = r.mkt_up == null ? '—' : Math.round(r.mkt_up * 100) + '%';
+  const mktUp = (live && live.mkt_up != null) ? live.mkt_up : r.mkt_up;
+  const secs = (live && live.seconds_left != null) ? live.seconds_left : r.seconds_left;
   const dir = r.verdict === 'UP' ? 'up' : r.verdict === 'DOWN' ? 'dn' : '';
   const arrow = r.verdict === 'UP' ? '▲' : r.verdict === 'DOWN' ? '▼' : '·';
-  const edge = r.edge == null ? '' :
-    `<span class="ai-edge ${r.edge >= 0 ? 'up' : 'dn'}">${r.edge >= 0 ? '+' : ''}${Math.round(r.edge * 100)}pp vs mkt</span>`;
-  const left = r.seconds_left == null ? '' :
-    (r.stale ? '<span class="chip dn">window closed</span>'
-             : `<span class="chip">${r.seconds_left}s left</span>`);
+  const edgeV = (r.up_prob != null && mktUp != null) ? (r.up_prob - mktUp) : null;
+  const edge = edgeV == null ? '' :
+    `<span class="ai-edge ${edgeV >= 0 ? 'up' : 'dn'}">${edgeV >= 0 ? '+' : ''}${Math.round(edgeV * 100)}pp vs Polymarket</span>`;
+  const left = secs == null ? '' :
+    (secs <= 0 ? '<span class="chip dn">window closed</span>'
+               : `<span class="chip">${secs}s left</span>`);
+  // LIVE Polymarket YES/NO in cents, exactly as the app shows it
+  const up = mktUp == null ? '—' : Math.round(mktUp * 100) + '¢';
+  const dn = mktUp == null ? '—' : Math.round((1 - mktUp) * 100) + '¢';
+  const cents = `<span class="pm-cents"><span class="pm-up">UP ${up}</span><span class="pm-dn">DOWN ${dn}</span></span>`;
   return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
       <span class="tk">${esc(r.asset)}</span>
-      <span style="font-family:ui-monospace,Menlo,monospace;font-size:22px;font-weight:800;color:var(--txt)"
-            class="${dir === 'up' ? '' : ''}"><span class="ai-edge ${dir}">${arrow}</span> AI ${ai}</span>
-      <span style="font-size:12px;color:var(--mut)" class="mono">market ${mk}</span>
+      ${cents}
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:750;color:var(--teal)">
+        <span class="ai-edge ${dir}">${arrow}</span> AI ${ai} ${r.verdict || ''}</span>
       ${edge} ${left}
-      ${c.price ? `<span class="chip">${esc(r.asset)} $${Number(c.price).toLocaleString()}</span>` : ''}
-      ${c.chg_5m_pct != null ? `<span class="chip ${c.chg_5m_pct >= 0 ? 'up' : 'dn'}">5m ${c.chg_5m_pct >= 0 ? '+' : ''}${c.chg_5m_pct}%</span>` : ''}
     </div>
     ${r.reasoning ? `<div class="ai-why open" style="margin-top:9px">${esc(r.reasoning)}</div>` : ''}`;
+}
+
+function paintUpdown(live) {
+  const r = UPDOWN_READ;
+  const panel = document.getElementById('updown-panel');
+  if (!r) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+  document.getElementById('updown-body').innerHTML = updownCard(r, live);
 }
 
 async function loadUpdown() {
   try {
     const d = await (await fetch('/api/dashboard/updown')).json();
-    const reads = (d && d.reads) || [];
-    const panel = document.getElementById('updown-panel');
-    if (!reads.length) { panel.style.display = 'none'; return; }
-    panel.style.display = '';
-    document.getElementById('updown-body').innerHTML = reads.map(updownCard).join('<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">');
-    document.getElementById('updown-meta').textContent =
-      `updated ${fmtHM((d.generated_at || 0) * 1000)} · every 5 min · not financial advice`;
+    UPDOWN_READ = ((d && d.reads) || [])[0] || null;
+    paintUpdown(null);
+    if (UPDOWN_READ) document.getElementById('updown-meta').textContent =
+      `AI read ${fmtHM((d.generated_at || 0) * 1000)} · market price LIVE · not financial advice`;
+  } catch (e) {}
+}
+
+// LIVE market % + countdown, every 3s off the CLOB (matches the app's book)
+async function pollUpdownLive() {
+  if (!UPDOWN_READ) return;
+  try {
+    const live = await (await fetch('/api/dashboard/updown/live?asset=btc')).json();
+    paintUpdown(live);
   } catch (e) {}
 }
 loadUpdown();
 setInterval(loadUpdown, 30000);
+setInterval(pollUpdownLive, 3000);
 
 // ── live sub-second BTC ticker (direct Binance WS — same feed the latency bots
 // watch; puts your eyes on the tape seconds ahead of a 1m panel) ────────────
