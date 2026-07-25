@@ -714,9 +714,11 @@ async function analyzeMarket(btn) {
 }
 
 async function load() {
-  if (activeAnalyses > 0) return;           // don't wipe an in-progress Analyze
+  if (activeAnalyses > 0) return;           // don't start a refresh mid-analyze
   try {
-    BOARD = await (await fetch('/api/dashboard/predictions')).json();
+    const data = await (await fetch('/api/dashboard/predictions')).json();
+    if (activeAnalyses > 0) return;         // an analyze began while we fetched — do NOT wipe the grid
+    BOARD = data;
     renderStrip(BOARD);
     renderTabs(BOARD);
     renderGrid();
@@ -764,7 +766,7 @@ async function load() {
 })();
 
 load();
-setInterval(load, 30000);
+setInterval(load, 120000);   // 2 min — the board only changes hourly; gentle refresh, less analyze interruption
 
 // ── the cat reacts to the tape (same mascot + logic as the dashboard) ──────
 let catLastEquity = null;
