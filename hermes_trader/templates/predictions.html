@@ -448,7 +448,11 @@ void main(){
         <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:800;
               letter-spacing:.22em;text-transform:uppercase;color:var(--dim)">5-min up/down · AI read</span>
         <span class="badge b-shadow" style="color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3)">SHADOW</span>
-        <span id="updown-meta" style="margin-left:auto;font-size:10px;color:var(--dim)" class="mono"></span>
+        <button id="updown-analyze" class="analyze" type="button" style="margin-top:0;margin-left:auto"
+                title="force a fresh AI read on the current window now">
+          <span class="spin"></span><span class="lbl">Analyze now</span>
+        </button>
+        <span id="updown-meta" style="font-size:10px;color:var(--dim)" class="mono"></span>
       </div>
       <div id="updown-body" style="padding:12px 14px"></div>
     </div>
@@ -820,6 +824,25 @@ async function loadUpdown() {
 }
 loadUpdown();
 setInterval(loadUpdown, 30000);
+
+// on-demand fresh read — same operator-gated brain call as the card Analyze
+document.getElementById('updown-analyze').addEventListener('click', async () => {
+  const btn = document.getElementById('updown-analyze');
+  const tok = operatorToken();
+  const meta = document.getElementById('updown-meta');
+  if (!tok) { meta.textContent = 'set the operator token first (top right)'; return; }
+  btn.classList.add('busy'); btn.disabled = true; btn.querySelector('.lbl').textContent = 'Reading the tape…';
+  try {
+    const r = await fetch('/api/dashboard/updown/analyze?asset=btc',
+      { method: 'POST', headers: { 'X-Operator-Token': tok } });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || `HTTP ${r.status}`); }
+    await loadUpdown();                    // server refreshed its cache; repaint from it
+  } catch (e) {
+    meta.textContent = 'analyze failed: ' + e.message;
+  } finally {
+    btn.classList.remove('busy'); btn.disabled = false; btn.querySelector('.lbl').textContent = 'Analyze now';
+  }
+});
 
 load();
 setInterval(load, 120000);   // 2 min — the board only changes hourly; gentle refresh, less analyze interruption

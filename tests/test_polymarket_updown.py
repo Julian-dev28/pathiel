@@ -189,3 +189,32 @@ def test_load_without_cache_is_empty(tmp_path, monkeypatch):
 
 def test_updown_lane_is_registered():
     assert "updown_5m" in ledger.LANES
+
+
+# ── on-demand analyze endpoint (like the card Analyze button) ────────────────
+def test_updown_analyze_endpoint_forces_a_fresh_read(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "s3cret")
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hermes_trader import dashboard as db
+
+    # patch refresh so no network/model is touched; prove the endpoint calls it
+    called = {}
+
+    def fake_refresh(assets, record=True):
+        called["assets"] = assets
+        called["record"] = record
+        return {"generated_at": 1, "reads": [{"asset": "BTC", "up_prob": 0.6,
+                                              "verdict": "UP", "mkt_up": 0.5,
+                                              "edge": 0.1, "reasoning": "x"}]}
+    monkeypatch.setattr(updown, "refresh", fake_refresh)
+
+    app = FastAPI(); db.register_routes(app); client = TestClient(app)
+    # gated
+    assert client.post("/api/dashboard/updown/analyze").status_code == 401
+    r = client.post("/api/dashboard/updown/analyze?asset=btc",
+                    headers={"X-Operator-Token": "s3cret"})
+    assert r.status_code == 200
+    assert r.json()["up_prob"] == 0.6
+    assert called["assets"] == ["btc"] and called["record"] is True   # shadow records

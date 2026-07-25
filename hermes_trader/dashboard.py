@@ -1589,6 +1589,28 @@ def register_routes(app: FastAPI) -> None:
             return JSONResponse({"status": "empty", "reads": []})
         return JSONResponse(_ttl_cached("updown", 10.0, updown.load))
 
+    @app.post("/api/dashboard/updown/analyze",
+              dependencies=[Depends(_require_operator)])
+    async def dashboard_updown_analyze(
+        asset: str = Query("btc", min_length=1, max_length=8),
+    ) -> JSONResponse:
+        """Force a FRESH AI read on the current window now, like the card Analyze
+        button. Operator-gated (spends a model call). Fast — no web search at a
+        5-min horizon — so it runs synchronously off the event loop. SHADOW: it
+        records to the updown_5m ledger, never trades. Refreshes the cache the
+        ticker reads so the panel updates too."""
+        try:
+            from services.polymarket_scout import updown
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"scout unavailable: {exc}")
+        import anyio
+        payload = await anyio.to_thread.run_sync(
+            lambda: updown.refresh([asset.lower()], record=True))
+        _TTL_CACHE.pop("updown", None)          # let the ticker pick up the fresh read
+        reads = payload.get("reads") or []
+        return JSONResponse(reads[0] if reads else {"up_prob": None,
+                            "reasoning": "no read"})
+
     @app.get("/api/dashboard/predictions")
     async def dashboard_predictions() -> JSONResponse:
         # TTL (20s) >= the page's poll interval (30s); the underlying cache only
