@@ -333,7 +333,7 @@ def test_sports_lane_demands_the_widest_edge_of_all():
 
 
 def test_every_lane_name_is_registered_for_grading():
-    assert set(ledger.LANES) == {"judgment", "trending", "sports"}
+    assert set(ledger.LANES) == {"judgment", "trending", "sports", "updown_5m"}
 
 
 # ── decorrelation ────────────────────────────────────────────────────────────

@@ -64,7 +64,15 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "log": "logs/autonomous_cycle.log",
         "why": "grade every book, auto-demote refuted, auto-promote validated",
     },
+    "updown-5m": {
+        "args": [PY, "-m", "services.polymarket_scout.updown", "--assets", "btc"],
+        "interval_min": 5,
+        "log": "logs/updown.log",
+        "why": "AI read on the CURRENT 5-min up/down window (shadow, latency market)",
+    },
 }
+# updown-5m spends a model call every 5 min. TIMEOUT_S below (3600) is generous
+# for it; the read is short (no web search) so it finishes in seconds.
 # A job that hangs must not wedge the scheduler. Generous, because poly-daily
 # makes several multi-minute web-search LLM calls.
 TIMEOUT_S = 3600.0
@@ -73,7 +81,12 @@ TIMEOUT_S = 3600.0
 # ── schedule math (pure) ─────────────────────────────────────────────────────
 def last_occurrence(job: Dict[str, Any], now: float) -> float:
     """Epoch of the most recent time this job was scheduled to run, at or before
-    `now`. Hourly jobs look back at most one hour; daily jobs at most one day."""
+    `now`. `interval_min` jobs recur on a fixed grid; hourly jobs look back at
+    most one hour; daily jobs at most one day."""
+    interval = job.get("interval_min")
+    if interval:
+        step = int(interval) * 60
+        return (int(now) // step) * step
     lt = time.localtime(now)
     minute = int(job.get("minute", 0))
     hour = job.get("hour")
@@ -96,7 +109,12 @@ def is_due(job: Dict[str, Any], last_run: Optional[float], now: float) -> bool:
 
 
 def next_occurrence(job: Dict[str, Any], now: float) -> float:
-    step = 3600.0 if job.get("hour") is None else 86400.0
+    if job.get("interval_min"):
+        step = int(job["interval_min"]) * 60
+    elif job.get("hour") is None:
+        step = 3600.0
+    else:
+        step = 86400.0
     return last_occurrence(job, now) + step
 
 

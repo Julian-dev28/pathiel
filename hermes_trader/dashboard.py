@@ -1578,6 +1578,17 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(_ttl_cached(f"news:{limit}", 30.0,
                                         lambda: _news_payload(limit)))
 
+    @app.get("/api/dashboard/updown")
+    async def dashboard_updown() -> JSONResponse:
+        """Latest AI reads on the current 5-min up/down window(s). Pure cache read
+        (`.state/polymarket_scout/updown.json`, written by the 5-min job) — no
+        network, no brain call in the request. SHADOW ONLY (latency market)."""
+        try:
+            from services.polymarket_scout import updown
+        except Exception:
+            return JSONResponse({"status": "empty", "reads": []})
+        return JSONResponse(_ttl_cached("updown", 10.0, updown.load))
+
     @app.get("/api/dashboard/predictions")
     async def dashboard_predictions() -> JSONResponse:
         # TTL (20s) >= the page's poll interval (30s); the underlying cache only

@@ -18,7 +18,7 @@ from services.polymarket_scout.scout import brier, paper_pnl
 # lane="judgment" — the two lanes grade separately, so a missing lane must not
 # silently land in the trending bucket.
 SCHEMA = 2
-LANES = ("judgment", "trending", "sports")
+LANES = ("judgment", "trending", "sports", "updown_5m")
 
 
 def _state_dir() -> str:

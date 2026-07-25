@@ -437,6 +437,23 @@ void main(){
 
   <div class="note" id="tab-note" hidden></div>
 
+  <!-- 5-minute up/down AI ticker: the current rolling BTC window, refreshed
+       every 5 min by the scheduler. Shadow only (latency market). Hidden until
+       the first read lands. -->
+  <section id="updown-panel" style="display:none;margin-bottom:16px">
+    <div class="pane" style="background:var(--card);border:1px solid var(--line);border-radius:3px;
+         box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45)">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)">
+        <span style="width:7px;height:7px;border-radius:1px;background:var(--teal)"></span>
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:800;
+              letter-spacing:.22em;text-transform:uppercase;color:var(--dim)">5-min up/down · AI read</span>
+        <span class="badge b-shadow" style="color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3)">SHADOW</span>
+        <span id="updown-meta" style="margin-left:auto;font-size:10px;color:var(--dim)" class="mono"></span>
+      </div>
+      <div id="updown-body" style="padding:12px 14px"></div>
+    </div>
+  </section>
+
   <div class="grid" id="grid"></div>
 
   <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
@@ -764,6 +781,45 @@ async function load() {
   });
   input.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('token-save').click(); });
 })();
+
+// ── 5-min up/down AI ticker ──────────────────────────────────────────────
+function updownCard(r) {
+  const c = r.context || {};
+  const ai = r.up_prob == null ? '—' : Math.round(r.up_prob * 100) + '%';
+  const mk = r.mkt_up == null ? '—' : Math.round(r.mkt_up * 100) + '%';
+  const dir = r.verdict === 'UP' ? 'up' : r.verdict === 'DOWN' ? 'dn' : '';
+  const arrow = r.verdict === 'UP' ? '▲' : r.verdict === 'DOWN' ? '▼' : '·';
+  const edge = r.edge == null ? '' :
+    `<span class="ai-edge ${r.edge >= 0 ? 'up' : 'dn'}">${r.edge >= 0 ? '+' : ''}${Math.round(r.edge * 100)}pp vs mkt</span>`;
+  const left = r.seconds_left == null ? '' :
+    (r.stale ? '<span class="chip dn">window closed</span>'
+             : `<span class="chip">${r.seconds_left}s left</span>`);
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
+      <span class="tk">${esc(r.asset)}</span>
+      <span style="font-family:ui-monospace,Menlo,monospace;font-size:22px;font-weight:800;color:var(--txt)"
+            class="${dir === 'up' ? '' : ''}"><span class="ai-edge ${dir}">${arrow}</span> AI ${ai}</span>
+      <span style="font-size:12px;color:var(--mut)" class="mono">market ${mk}</span>
+      ${edge} ${left}
+      ${c.price ? `<span class="chip">${esc(r.asset)} $${Number(c.price).toLocaleString()}</span>` : ''}
+      ${c.chg_5m_pct != null ? `<span class="chip ${c.chg_5m_pct >= 0 ? 'up' : 'dn'}">5m ${c.chg_5m_pct >= 0 ? '+' : ''}${c.chg_5m_pct}%</span>` : ''}
+    </div>
+    ${r.reasoning ? `<div class="ai-why open" style="margin-top:9px">${esc(r.reasoning)}</div>` : ''}`;
+}
+
+async function loadUpdown() {
+  try {
+    const d = await (await fetch('/api/dashboard/updown')).json();
+    const reads = (d && d.reads) || [];
+    const panel = document.getElementById('updown-panel');
+    if (!reads.length) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    document.getElementById('updown-body').innerHTML = reads.map(updownCard).join('<hr style="border:0;border-top:1px solid var(--line);margin:12px 0">');
+    document.getElementById('updown-meta').textContent =
+      `updated ${fmtHM((d.generated_at || 0) * 1000)} · every 5 min · not financial advice`;
+  } catch (e) {}
+}
+loadUpdown();
+setInterval(loadUpdown, 30000);
 
 load();
 setInterval(load, 120000);   // 2 min — the board only changes hourly; gentle refresh, less analyze interruption
