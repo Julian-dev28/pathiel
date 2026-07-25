@@ -19,3 +19,6 @@ forward n before it sees capital.
 
 ## 2026-07-25 04:25 autonomous cycle
 - **INVERSE of young_mover_short** — n=14, EV(real)=+7.36%, EV(25bps)=+7.17%, halves +9.12/+5.48, excess 8.3288pp, mc_p=0.0005
+
+## 2026-07-25 09:36 autonomous cycle
+- **INVERSE of young_mover_short** — n=17, EV(real)=+4.95%, EV(25bps)=+4.76%, halves +9.40/+0.89, excess 6.0342pp, mc_p=0.0025
