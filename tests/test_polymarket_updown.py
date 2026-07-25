@@ -172,19 +172,19 @@ def test_refresh_writes_cache_and_load_reads_it(tmp_path, monkeypatch):
     updown.refresh(["btc"], brain=ClaudeCliBrain(0.55), now=1784995866,
                    record=False, http_get=lambda u: _mkt(),
                    kline_runner=lambda u: _klines([100.0] * 16))
-    b = updown.load(now=1784995866)              # read as of the same window
+    b = updown.load(now=1784995866, refresh_price=False)   # cache-only, no network
     assert b["status"] == "ok" and len(b["reads"]) == 1
     r = b["reads"][0]
     assert r["asset"] == "BTC" and r["up_prob"] == 0.55
     # window closes at 16:15:00 == 1784996100; at now=...866 (16:11) it is NOT stale
     assert r["stale"] is False and r["seconds_left"] > 0
     # after the window closes it flips stale
-    assert updown.load(now=1784996200)["reads"][0]["stale"] is True
+    assert updown.load(now=1784996200, refresh_price=False)["reads"][0]["stale"] is True
 
 
 def test_load_without_cache_is_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
-    assert updown.load()["status"] == "empty"
+    assert updown.load(refresh_price=False)["status"] == "empty"
 
 
 def test_updown_lane_is_registered():
@@ -218,3 +218,120 @@ def test_updown_analyze_endpoint_forces_a_fresh_read(tmp_path, monkeypatch):
     assert r.status_code == 200
     assert r.json()["up_prob"] == 0.6
     assert called["assets"] == ["btc"] and called["record"] is True   # shadow records
+
+
+# ── LIVE Hyperliquid execution (operator-armed) ──────────────────────────────
+def _read(up_prob, verdict, price=64000.0, end="2026-07-25T16:15:00Z", slug="btc-updown-5m-1"):
+    return {"up_prob": up_prob, "verdict": verdict, "mkt_up": 0.5, "edge": 0.0,
+            "context": {"price": price}, "end_date": end, "slug": slug,
+            "reasoning": "x"}
+
+
+def test_lean_is_signed_distance_from_coinflip():
+    assert updown.lean(_read(0.7, "UP")) == pytest.approx(0.2)
+    assert updown.lean(_read(0.4, "DOWN")) == pytest.approx(-0.1)
+    assert updown.lean({"up_prob": None}) == 0.0
+
+
+def test_live_should_trade_needs_a_real_lean():
+    cfg = {**updown.LIVE_DEFAULTS, "min_lean": 0.06}
+    assert updown.live_should_trade(_read(0.57, "UP"), cfg) is True     # 0.07 >= 0.06
+    assert updown.live_should_trade(_read(0.54, "UP"), cfg) is False    # 0.04 < 0.06
+    assert updown.live_should_trade(_read(0.42, "DOWN"), cfg) is True   # |−0.08|
+
+
+def test_to_hl_analysis_long_up_short_down():
+    cfg = {**updown.LIVE_DEFAULTS, "coin": "BTC", "leverage": 3, "equity_frac": 0.02,
+           "stop_pct": 0.01, "tp_pct": 0.015}
+    up = updown.to_hl_analysis(_read(0.65, "UP", price=100.0), cfg)
+    assert up["coin"] == "BTC" and up["verdict"] == "LONG" and up["side"] == "long"
+    assert up["strategy_book"] == "updown_5m"
+    assert up["leverage_override"] == 3
+    assert up["strategy_book_equity_frac_override"] == pytest.approx(0.02)
+    assert up["stopPx"] == pytest.approx(99.0) and up["tpPx"] == pytest.approx(101.5)
+    dn = updown.to_hl_analysis(_read(0.35, "DOWN", price=100.0), cfg)
+    assert dn["verdict"] == "SHORT" and dn["stopPx"] == pytest.approx(101.0)
+    assert dn["tpPx"] == pytest.approx(98.5)
+
+
+def test_live_maybe_run_noop_when_disabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    assert updown.live_maybe_run({"updown_live": {"enabled": False}}) is None
+
+
+def _patch_analyze(monkeypatch, read):
+    monkeypatch.setattr(updown, "analyze", lambda *a, **k: read)
+
+
+def test_live_maybe_run_opens_a_perp_on_a_clear_lean(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.62, "UP", price=64000.0))
+    placed = []
+    cfg = {"updown_live": {"enabled": True, "place": True, "min_lean": 0.06, "coin": "BTC"}}
+    out = updown.live_maybe_run(cfg, positions=[], now=1784995866,
+                                execute_fn=lambda a: placed.append(a) or {"executed": True})
+    assert out["opened"] is True and len(placed) == 1
+    assert placed[0]["verdict"] == "LONG" and placed[0]["strategy_book"] == "updown_5m"
+    # window_end persisted so the next call can flatten
+    assert updown._read_live_state().get("window_end")
+
+
+def test_live_maybe_run_skips_a_weak_lean(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.53, "UP"))       # lean 0.03 < 0.06
+    placed = []
+    out = updown.live_maybe_run({"updown_live": {"enabled": True, "place": True}},
+                                positions=[], now=1784995866,
+                                execute_fn=lambda a: placed.append(a) or {"executed": True})
+    assert out["opened"] is False and placed == []
+
+
+def test_live_maybe_run_place_false_records_but_does_not_open(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.7, "UP"))
+    placed = []
+    out = updown.live_maybe_run({"updown_live": {"enabled": True, "place": False}},
+                                positions=[], now=1784995866,
+                                execute_fn=lambda a: placed.append(a) or {"executed": True})
+    assert out["opened"] is False and placed == []       # place=false: no order
+
+
+def test_live_maybe_run_acts_once_per_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.7, "UP"))
+    placed = []
+    cfg = {"updown_live": {"enabled": True, "place": True}}
+    ex = lambda a: placed.append(a) or {"executed": True}
+    updown.live_maybe_run(cfg, positions=[], now=1784995866, execute_fn=ex)
+    # same window, seconds later -> no second open
+    out2 = updown.live_maybe_run(cfg, positions=[], now=1784995900, execute_fn=ex)
+    assert len(placed) == 1 and out2["opened"] is False
+
+
+def test_live_maybe_run_flattens_at_window_close(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.7, "UP", end="2026-07-25T16:15:00Z"))
+    ex = lambda a: {"executed": True}
+    # open in the 16:10 window (position end = 16:15 = 1784996100)
+    updown.live_maybe_run({"updown_live": {"enabled": True, "place": True}},
+                          positions=[], now=1784995866, execute_fn=ex)
+    closed = []
+    # now past 16:15 with a BTC position open -> flatten
+    out = updown.live_maybe_run(
+        {"updown_live": {"enabled": True, "place": True}},
+        positions=[{"coin": "BTC", "position": {"szi": "0.01"}}],
+        now=1784996200, execute_fn=ex, close_fn=lambda c: closed.append(c))
+    assert out["flattened"] is True and closed == ["BTC"]
+
+
+def test_live_maybe_run_does_not_stack_windows(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    _patch_analyze(monkeypatch, _read(0.7, "UP"))
+    placed = []
+    # a BTC position is already open, new window -> should NOT open a second
+    out = updown.live_maybe_run(
+        {"updown_live": {"enabled": True, "place": True}},
+        positions=[{"coin": "BTC", "position": {"szi": "0.01"}}],
+        now=1784996400, execute_fn=lambda a: placed.append(a) or {"executed": True})
+    assert placed == [] and out.get("skipped") == "position already open"
+

@@ -448,6 +448,9 @@ void main(){
         <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:800;
               letter-spacing:.22em;text-transform:uppercase;color:var(--dim)">5-min up/down · AI read</span>
         <span class="badge b-shadow" style="color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3)">SHADOW</span>
+        <span id="btc-live" title="live BTC last trade (Binance, sub-second)"
+              style="font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:750;color:var(--txt);
+                     padding:2px 9px;border-radius:3px;border:1px solid var(--line2);background:#171a20;transition:color .2s">BTC —</span>
         <button id="updown-analyze" class="analyze" type="button" style="margin-top:0;margin-left:auto"
                 title="force a fresh AI read on the current window now">
           <span class="spin"></span><span class="lbl">Analyze now</span>
@@ -824,6 +827,35 @@ async function loadUpdown() {
 }
 loadUpdown();
 setInterval(loadUpdown, 30000);
+
+// ── live sub-second BTC ticker (direct Binance WS — same feed the latency bots
+// watch; puts your eyes on the tape seconds ahead of a 1m panel) ────────────
+(function btcTicker() {
+  const el = document.getElementById('btc-live');
+  let last = null, ws = null, retry = 0;
+  function connect() {
+    try { ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade'); }
+    catch (e) { return schedule(); }
+    ws.onmessage = ev => {
+      let p;
+      try { p = parseFloat(JSON.parse(ev.data).p); } catch (e) { return; }
+      if (!p) return;
+      retry = 0;
+      el.textContent = 'BTC $' + p.toLocaleString(undefined, { maximumFractionDigits: 1 });
+      if (last != null) el.style.color = p > last ? 'var(--up)' : p < last ? 'var(--dn)' : 'var(--txt)';
+      last = p;
+    };
+    ws.onclose = schedule;
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+  }
+  function schedule() { retry = Math.min(retry + 1, 6); setTimeout(connect, 1000 * retry); }
+  connect();
+  // pause when tab hidden to save the socket
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && ws) { try { ws.close(); } catch (e) {} }
+    else if (!document.hidden && (!ws || ws.readyState > 1)) connect();
+  });
+})();
 
 // on-demand fresh read — same operator-gated brain call as the card Analyze
 document.getElementById('updown-analyze').addEventListener('click', async () => {

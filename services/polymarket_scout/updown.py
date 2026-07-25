@@ -20,12 +20,43 @@ Context fed to the model is live price action, not web search: Binance 1m klines
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 from services.polymarket_scout import ledger
-from services.polymarket_scout.scout import GAMMA, _curl_get, market_yes_prob
+from services.polymarket_scout.scout import CLOB, GAMMA, _curl_get, _parse_tokens, market_yes_prob
+
+
+def clob_midpoint(token_id: str, http_get: Callable[[str], Any] = _curl_get) -> Optional[float]:
+    """Live order-book midpoint for one token, or None. This is the price the
+    Polymarket app shows — Gamma's cached `outcomePrices` lags it badly (measured
+    2026-07-26: Gamma UP 0.575 while the live CLOB mid was 0.885 on the same
+    5-min window). For a 5-min market that lag is the whole game."""
+    if not token_id:
+        return None
+    d = http_get(f"{CLOB}/midpoint?token_id={token_id}")
+    try:
+        return float(d.get("mid")) if isinstance(d, dict) and d.get("mid") is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def live_up_prob(market: Optional[Dict[str, Any]],
+                 http_get: Callable[[str], Any] = _curl_get) -> Optional[float]:
+    """UP probability from the LIVE CLOB midpoint, falling back to Gamma's
+    outcomePrices only if the book call fails. Always prefer the book."""
+    if not market:
+        return None
+    toks = _parse_tokens(market)
+    if len(toks) == 2:
+        mid = clob_midpoint(toks[0], http_get)
+        if mid is not None:
+            return mid
+    return market_yes_prob(market)
 
 WINDOW_S = 300
 BOOK = "updown_5m"
@@ -65,8 +96,9 @@ def current_market(asset: str = "btc", now: Optional[float] = None,
 
 
 # ── live price context (Binance 1m klines, keyless) ──────────────────────────
-def _klines(pair: str, limit: int = 16, runner: Optional[Callable] = None) -> List[List[float]]:
-    url = f"{BINANCE}?symbol={pair}&interval=1m&limit={limit}"
+def _klines(pair: str, interval: str = "1m", limit: int = 16,
+            runner: Optional[Callable] = None) -> List[List[float]]:
+    url = f"{BINANCE}?symbol={pair}&interval={interval}&limit={limit}"
     try:
         if runner is not None:
             raw = runner(url)
@@ -80,27 +112,50 @@ def _klines(pair: str, limit: int = 16, runner: Optional[Callable] = None) -> Li
 
 
 def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Optional[Dict[str, Any]]:
-    """Momentum snapshot from the last ~15 one-minute candles. None if unavailable."""
+    """Momentum snapshot at TWO resolutions for a 5-min call: 1-SECOND bars for
+    the freshest tape (last ~60s, where the latency bots live) and 1-minute bars
+    for the 5m/15m picture. The 1s layer is what closes the gap on traders who
+    see BTC move before a slow feed does — it will not beat a co-located bot, but
+    it puts the read on data seconds old instead of a minute old.
+
+    `runner` (tests) is called with the URL; it must branch on `interval=1s` vs
+    `interval=1m` in the query string to serve each layer."""
     pair = _PAIRS.get(asset.lower())
     if not pair:
         return None
-    kl = _klines(pair, 16, runner=runner)
-    if len(kl) < 6:
+    m1 = _klines(pair, "1m", 16, runner=runner)
+    s1 = _klines(pair, "1s", 60, runner=runner)
+    if len(m1) < 6:
         return None
-    closes = [float(k[4]) for k in kl]           # kline[4] = close
-    highs = [float(k[2]) for k in kl]
-    lows = [float(k[3]) for k in kl]
-    now_px = closes[-1]
-    def chg(n: int) -> float:
-        return (now_px - closes[-1 - n]) / closes[-1 - n] * 100.0 if len(closes) > n and closes[-1 - n] else 0.0
-    hi15, lo15 = max(highs[-15:]), min(lows[-15:])
-    pos = (now_px - lo15) / (hi15 - lo15) if hi15 > lo15 else 0.5
-    return {
-        "asset": asset.upper(), "price": now_px,
-        "chg_5m_pct": round(chg(5), 3), "chg_15m_pct": round(chg(15), 3),
-        "range_pos_15m": round(pos, 3),          # 0=at 15m low, 1=at 15m high
-        "last6_closes": [round(c, 2) for c in closes[-6:]],
+    closes = [float(k[4]) for k in m1]
+    highs = [float(k[2]) for k in m1]
+    lows = [float(k[3]) for k in m1]
+
+    def chg(series: List[float], n: int) -> float:
+        return (series[-1] - series[-1 - n]) / series[-1 - n] * 100.0 \
+            if len(series) > n and series[-1 - n] else 0.0
+
+    ctx: Dict[str, Any] = {
+        "asset": asset.upper(),
+        "chg_5m_pct": round(chg(closes, 5), 3),
+        "chg_15m_pct": round(chg(closes, 15), 3),
     }
+    hi15, lo15 = max(highs[-15:]), min(lows[-15:])
+    ctx["range_pos_15m"] = round((closes[-1] - lo15) / (hi15 - lo15), 3) if hi15 > lo15 else 0.5
+    ctx["last6_closes"] = [round(c, 2) for c in closes[-6:]]
+    # 1-second layer (freshest); price comes from here when available
+    if len(s1) >= 10:
+        sc = [float(k[4]) for k in s1]
+        ctx["price"] = sc[-1]
+        ctx["chg_10s_pct"] = round(chg(sc, 10), 4)
+        ctx["chg_30s_pct"] = round(chg(sc, 30), 4)
+        ctx["chg_60s_pct"] = round(chg(sc, 60), 4) if len(sc) > 60 else round(chg(sc, len(sc) - 1), 4)
+        ctx["last8_1s"] = [round(c, 2) for c in sc[-8:]]
+        ctx["resolution"] = "1s+1m"
+    else:
+        ctx["price"] = closes[-1]
+        ctx["resolution"] = "1m"
+    return ctx
 
 
 def build_prompt(ctx: Dict[str, Any], mkt_yes: Optional[float]) -> str:
@@ -132,8 +187,14 @@ def _parse(body: str) -> Optional[Dict[str, Any]]:
 def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
             http_get: Callable[[str], Any] = _curl_get,
             kline_runner: Optional[Callable] = None,
-            record: bool = True, record_fn: Callable = ledger.record) -> Dict[str, Any]:
+            record: bool = True, record_fn: Callable = ledger.record,
+            web_search: bool = False) -> Dict[str, Any]:
     """One read on the current window: live momentum -> AI P(up) -> record.
+
+    `web_search=True` gives the model live web lookup so a breaking catalyst (a
+    Fed headline, an exchange-halt, a liquidation cascade) that could move BTC
+    inside the window is in scope — the operator's ask. It costs 1-4 min though,
+    a big chunk of a 5-min window, so it is opt-in.
 
     Returns a display dict (market + context + verdict), always — a failed brain
     call or missing data yields a row with `up_prob=None` rather than raising."""
@@ -145,7 +206,7 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
         "market_id": str(mkt.get("id")) if mkt else None,
         "question": (mkt or {}).get("question"),
         "end_date": (mkt or {}).get("endDate"),
-        "mkt_up": market_yes_prob(mkt) if mkt else None,
+        "mkt_up": live_up_prob(mkt, http_get) if mkt else None,   # LIVE CLOB, not stale Gamma
         "context": ctx, "up_prob": None, "verdict": None, "reasoning": "",
         "edge": None, "ts": int(now * 1000),
     }
@@ -155,8 +216,9 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
     if brain is None:
         from hermes_trader.agents.ai_brain import get_brain
         brain = get_brain()
+    out["web_search"] = bool(web_search)
     try:
-        body = brain.complete(_SYS, build_prompt(ctx, out["mkt_up"]), web_search=False)
+        body = brain.complete(_SYS, build_prompt(ctx, out["mkt_up"]), web_search=web_search)
     except Exception as exc:
         out["reasoning"] = f"brain error: {exc}"
         return out
@@ -184,9 +246,18 @@ def _cache_path() -> str:
     return os.path.join(ledger._state_dir(), "updown.json")
 
 
-def load(now: Optional[float] = None) -> Dict[str, Any]:
-    """Latest reads the refresher wrote. Always renderable; `status: empty` when
-    the 5-min job has not run yet. `stale` once a read's window has closed."""
+def load(now: Optional[float] = None, refresh_price: bool = True,
+         http_get: Callable[[str], Any] = _curl_get) -> Dict[str, Any]:
+    """Latest reads the refresher wrote, with the LIVE market price refreshed.
+
+    The AI read (`up_prob`) is from the last analysis, but the MARKET price and
+    the countdown must be current — otherwise the panel shows a window at its
+    50/50 birth while the real book has moved to 8c/92c near close (the mismatch
+    the operator caught). So per read we re-fetch the CURRENT window's price
+    (one cheap Gamma call) and recompute the edge. `current_window` flags whether
+    the AI read is for the window that is live right now; if it rolled, the read
+    is stale and the panel should say so."""
+    import calendar
     import os
     now = time.time() if now is None else now
     empty = {"status": "empty", "generated_at": None, "reads": []}
@@ -198,9 +269,21 @@ def load(now: Optional[float] = None) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return empty
     for r in payload.get("reads") or []:
+        asset = str(r.get("asset") or "btc").lower()
+        cur_slug = current_slug(asset, now)
+        r["current_window"] = (r.get("slug") == cur_slug)
+        if refresh_price:
+            live = current_market(asset, now, http_get=http_get)
+            if live is not None:
+                lp = live_up_prob(live, http_get)          # LIVE CLOB midpoint
+                if lp is not None:
+                    r["mkt_up"] = lp
+                    if r.get("up_prob") is not None:
+                        r["edge"] = round(float(r["up_prob"]) - lp, 4)
+                r["live_slug"] = cur_slug
+                r["end_date"] = live.get("endDate") or r.get("end_date")
         end = r.get("end_date") or ""
         try:
-            import calendar
             end_s = calendar.timegm(time.strptime(end[:19], "%Y-%m-%dT%H:%M:%S"))
             r["stale"] = now > end_s
             r["seconds_left"] = max(0, int(end_s - now))
@@ -216,13 +299,14 @@ def load(now: Optional[float] = None) -> Dict[str, Any]:
 def refresh(assets: Optional[List[str]] = None, brain: Any = None,
             record: bool = True, now: Optional[float] = None,
             http_get: Callable[[str], Any] = _curl_get,
-            kline_runner: Optional[Callable] = None) -> Dict[str, Any]:
+            kline_runner: Optional[Callable] = None,
+            web_search: bool = False) -> Dict[str, Any]:
     """Read every configured asset's current window, write the cache. Used by the
     5-min scheduler job and callable by hand."""
     import os
     assets = assets or ["btc"]
     now = time.time() if now is None else now
-    reads = [analyze(a, brain=brain, now=now, record=record,
+    reads = [analyze(a, brain=brain, now=now, record=record, web_search=web_search,
                      http_get=http_get, kline_runner=kline_runner) for a in assets]
     payload = {"generated_at": int(now), "reads": reads}
     try:
@@ -234,6 +318,167 @@ def refresh(assets: Optional[List[str]] = None, brain: Any = None,
     except Exception:
         pass
     return payload
+
+
+# ── LIVE Hyperliquid execution (operator-armed 2026-07-26) ───────────────────
+# Polymarket order placement is geoblocked/keyless, so "not shadow" means trading
+# the AI's up/down CALL on a Hyperliquid BTC perp instead: long UP, short DOWN,
+# flattened at the window close. On record this is a latency-disadvantaged coin
+# flip and 5-min churn is fee-dominated (-EV). Tiny, bounded, killable.
+LIVE_DEFAULTS: Dict[str, Any] = {
+    "enabled": False,
+    "place": False,
+    "coin": "BTC",
+    "min_lean": 0.06,          # only trade when |up_prob - 0.5| >= this (a real lean)
+    "equity_frac": 0.02,       # margin/trade = 2% of equity
+    "leverage": 3,
+    "stop_pct": 0.01,          # BTC 1% stop on a 5-min scalp
+    "tp_pct": 0.015,
+    "min_confidence": 0.0,     # the lean IS the gate; confidence not double-counted
+}
+
+
+def live_cfg(config: Dict[str, Any]) -> Dict[str, Any]:
+    raw = (config or {}).get("updown_live") or {}
+    return {**LIVE_DEFAULTS, **raw} if isinstance(raw, dict) else dict(LIVE_DEFAULTS)
+
+
+def lean(read: Dict[str, Any]) -> float:
+    """Signed distance from a coin flip: + = leans UP, - = leans DOWN."""
+    p = read.get("up_prob")
+    return 0.0 if p is None else round(float(p) - 0.5, 4)
+
+
+def live_should_trade(read: Dict[str, Any], cfg: Dict[str, Any]) -> bool:
+    return read.get("up_prob") is not None and abs(lean(read)) >= float(cfg.get("min_lean", 0.06))
+
+
+def to_hl_analysis(read: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the Hyperliquid perp analysis dict from an up/down read. LONG on UP,
+    SHORT on DOWN; tiny bounded size via the executor's override keys; a short
+    stop/tp for the 5-min horizon. `strategy_book='updown_5m'` clears the
+    books-only gate; every risk gate still runs. `window_end` rides in meta so
+    the loop can flatten at the window close."""
+    import uuid
+    up = read.get("verdict") == "UP"
+    px = float((read.get("context") or {}).get("price") or 0)
+    stop_pct = float(cfg.get("stop_pct") or 0.01)
+    tp_pct = float(cfg.get("tp_pct") or 0.015)
+    stop = px * (1 - stop_pct) if up else px * (1 + stop_pct)
+    tp = px * (1 + tp_pct) if up else px * (1 - tp_pct)
+    import calendar
+    try:
+        end_s = calendar.timegm(time.strptime((read.get("end_date") or "")[:19], "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        end_s = int(time.time()) + WINDOW_S
+    return {
+        "id": str(uuid.uuid4()),
+        "coin": str(cfg.get("coin") or "BTC"),
+        "verdict": "LONG" if up else "SHORT",
+        "side": "long" if up else "short",
+        "confidence": abs(lean(read)) * 2,          # 0..1 from the lean
+        "entryPx": px, "stopPx": round(stop, 6), "tpPx": round(tp, 6),
+        "reasoning": read.get("reasoning", ""),
+        "composite_score": 0.0,
+        "strategy_book": BOOK,
+        "leverage_override": int(cfg.get("leverage") or 3),
+        "strategy_book_equity_frac_override": float(cfg.get("equity_frac") or 0.02),
+        "source": "updown_live", "ai_brain_provider": "updown_live",
+        "updown_window_end": int(end_s),
+        "updown_slug": read.get("slug"),
+    }
+
+
+import os as _os
+
+
+def _live_state_path() -> str:
+    return _os.path.join(ledger._state_dir(), ".updown_live.json")
+
+
+def _read_live_state() -> Dict[str, Any]:
+    try:
+        with open(_live_state_path()) as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _write_live_state(st: Dict[str, Any]) -> None:
+    try:
+        _os.makedirs(_os.path.dirname(_live_state_path()), exist_ok=True)
+        with open(_live_state_path(), "w") as fh:
+            json.dump(st, fh)
+    except Exception:
+        pass
+
+
+def _position_open(positions: Any, coin: str) -> bool:
+    """True if `coin` appears with non-zero size in the loop's positions list."""
+    for p in (positions or []):
+        try:
+            pc = p.get("coin") or (p.get("position") or {}).get("coin")
+            sz = float((p.get("position") or {}).get("szi") or p.get("szi") or 0)
+        except Exception:
+            pc, sz = None, 0.0
+        if pc == coin and abs(sz) > 0:
+            return True
+    return False
+
+
+def live_maybe_run(config: Dict[str, Any], universe: Any = None, positions: Any = None,
+                   execute_fn: Optional[Callable] = None, close_fn: Optional[Callable] = None,
+                   brain: Any = None, now: Optional[float] = None,
+                   asset: str = "btc") -> Optional[Dict[str, Any]]:
+    """LIVE Hyperliquid execution of the up/down call. No-op unless
+    updown_live.enabled. FLATTENS a prior window's position at its close, then —
+    once per window — takes a fresh read and (if place and the lean clears
+    min_lean) opens a small BTC perp via execute_fn. Never raises into the loop.
+
+    Order matters: flatten FIRST (close the expiring window), then maybe open the
+    new one, so the book is never long two windows at once."""
+    cfg = live_cfg(config)
+    if not cfg.get("enabled"):
+        return None
+    now = time.time() if now is None else now
+    coin = str(cfg.get("coin") or "BTC")
+    st = _read_live_state()
+    out: Dict[str, Any] = {"flattened": False, "opened": False}
+
+    # 1) flatten the previous window at/after its close
+    win_end = float(st.get("window_end") or 0)
+    if win_end and now >= win_end and _position_open(positions, coin) and close_fn is not None:
+        try:
+            close_fn(coin)
+            out["flattened"] = True
+        except Exception as exc:
+            logger.warning(f"[updown-live] flatten failed: {exc}")
+        st.pop("window_end", None)
+        _write_live_state(st)
+
+    # 2) once per window: fresh read + maybe open
+    cur = window_start(now)
+    if st.get("last_window") == cur:
+        return out                                   # already acted this window
+    st["last_window"] = cur
+    _write_live_state(st)
+    read = analyze(asset, brain=brain, now=now, record=True, web_search=False)
+    out["read"] = {k: read.get(k) for k in ("up_prob", "verdict", "mkt_up", "edge")}
+    if not (cfg.get("place") and live_should_trade(read, cfg) and execute_fn is not None):
+        return out
+    if _position_open(positions, coin):              # don't stack windows
+        out["skipped"] = "position already open"
+        return out
+    analysis = to_hl_analysis(read, cfg)
+    res = execute_fn(analysis)
+    out["opened"] = bool(isinstance(res, dict) and res.get("executed"))
+    out["result"] = res
+    if out["opened"]:
+        st["window_end"] = analysis.get("updown_window_end")
+        _write_live_state(st)
+    logger.info(f"[updown-live] window={cur} verdict={read.get('verdict')} "
+                f"lean={lean(read):+.3f} opened={out['opened']} flattened={out['flattened']}")
+    return out
 
 
 def main() -> int:
