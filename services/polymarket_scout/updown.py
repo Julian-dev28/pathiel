@@ -111,50 +111,76 @@ def _klines(pair: str, interval: str = "1m", limit: int = 16,
         return []
 
 
-def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Optional[Dict[str, Any]]:
-    """Momentum snapshot at TWO resolutions for a 5-min call: 1-SECOND bars for
-    the freshest tape (last ~60s, where the latency bots live) and 1-minute bars
-    for the 5m/15m picture. The 1s layer is what closes the gap on traders who
-    see BTC move before a slow feed does — it will not beat a co-located bot, but
-    it puts the read on data seconds old instead of a minute old.
+def _chg(series: List[float], n: int) -> float:
+    return (series[-1] - series[-1 - n]) / series[-1 - n] * 100.0 \
+        if len(series) > n and series[-1 - n] else 0.0
 
-    `runner` (tests) is called with the URL; it must branch on `interval=1s` vs
-    `interval=1m` in the query string to serve each layer."""
+
+def _trend3(series: List[float]) -> str:
+    """Direction over the last 3 bars: up if each step is >=, down if each <=,
+    else mixed. This is the operator's 'consider the last-3-bar trend' — a
+    cleaner signal than a single close, per-timeframe."""
+    if len(series) < 4:
+        return "flat"
+    a, b, c, d = series[-4], series[-3], series[-2], series[-1]
+    if d > c > b or (d > a and d >= c):
+        return "up"
+    if d < c < b or (d < a and d <= c):
+        return "down"
+    return "mixed"
+
+
+def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Optional[Dict[str, Any]]:
+    """Multi-timeframe momentum for a 5-min call: 1-SECOND, 1-MINUTE and 5-MINUTE
+    bars, each with its recent momentum AND its last-3-bar trend. A single
+    resolution is a thin read; stacking them lets the model separate a fresh 1s
+    bounce from a flat 5m/15m backdrop (the operator's own reasoning pattern).
+
+    Layers:
+      1s  (last 60s)  -> 10s/30s/60s move + last-3-bar (3s) trend + recent closes
+      1m  (last 16m)  -> 1m/5m/15m move + last-3-bar (3m) trend + range position
+      5m  (last 12)   -> 5m/15m/30m move + last-3-bar (15m) trend  <- the 15m trend
+
+    `runner` (tests) gets the full URL; it must branch on interval=1s/1m/5m."""
     pair = _PAIRS.get(asset.lower())
     if not pair:
         return None
     m1 = _klines(pair, "1m", 16, runner=runner)
-    s1 = _klines(pair, "1s", 60, runner=runner)
     if len(m1) < 6:
         return None
-    closes = [float(k[4]) for k in m1]
-    highs = [float(k[2]) for k in m1]
-    lows = [float(k[3]) for k in m1]
+    s1 = _klines(pair, "1s", 60, runner=runner)
+    m5 = _klines(pair, "5m", 12, runner=runner)
 
-    def chg(series: List[float], n: int) -> float:
-        return (series[-1] - series[-1 - n]) / series[-1 - n] * 100.0 \
-            if len(series) > n and series[-1 - n] else 0.0
-
+    c1 = [float(k[4]) for k in m1]
+    hi15, lo15 = max(float(k[2]) for k in m1[-15:]), min(float(k[3]) for k in m1[-15:])
     ctx: Dict[str, Any] = {
         "asset": asset.upper(),
-        "chg_5m_pct": round(chg(closes, 5), 3),
-        "chg_15m_pct": round(chg(closes, 15), 3),
+        # kept flat for back-compat with existing callers/UI
+        "chg_5m_pct": round(_chg(c1, 5), 3),
+        "chg_15m_pct": round(_chg(c1, 15), 3),
+        "range_pos_15m": round((c1[-1] - lo15) / (hi15 - lo15), 3) if hi15 > lo15 else 0.5,
+        "last6_closes": [round(c, 2) for c in c1[-6:]],
+        "m1": {"chg_1m": round(_chg(c1, 1), 3), "chg_5m": round(_chg(c1, 5), 3),
+               "chg_15m": round(_chg(c1, 15), 3), "trend3": _trend3(c1),
+               "last3": [round(c, 2) for c in c1[-3:]]},
     }
-    hi15, lo15 = max(highs[-15:]), min(lows[-15:])
-    ctx["range_pos_15m"] = round((closes[-1] - lo15) / (hi15 - lo15), 3) if hi15 > lo15 else 0.5
-    ctx["last6_closes"] = [round(c, 2) for c in closes[-6:]]
-    # 1-second layer (freshest); price comes from here when available
     if len(s1) >= 10:
         sc = [float(k[4]) for k in s1]
         ctx["price"] = sc[-1]
-        ctx["chg_10s_pct"] = round(chg(sc, 10), 4)
-        ctx["chg_30s_pct"] = round(chg(sc, 30), 4)
-        ctx["chg_60s_pct"] = round(chg(sc, 60), 4) if len(sc) > 60 else round(chg(sc, len(sc) - 1), 4)
-        ctx["last8_1s"] = [round(c, 2) for c in sc[-8:]]
-        ctx["resolution"] = "1s+1m"
+        ctx["chg_10s_pct"] = round(_chg(sc, 10), 4)
+        ctx["chg_30s_pct"] = round(_chg(sc, 30), 4)
+        ctx["s1"] = {"chg_10s": round(_chg(sc, 10), 4), "chg_30s": round(_chg(sc, 30), 4),
+                     "chg_60s": round(_chg(sc, min(60, len(sc) - 1)), 4),
+                     "trend3": _trend3(sc), "last5": [round(c, 2) for c in sc[-5:]]}
     else:
-        ctx["price"] = closes[-1]
-        ctx["resolution"] = "1m"
+        ctx["price"] = c1[-1]
+    if len(m5) >= 4:
+        c5 = [float(k[4]) for k in m5]
+        ctx["m5"] = {"chg_5m": round(_chg(c5, 1), 3), "chg_15m": round(_chg(c5, 3), 3),
+                     "chg_30m": round(_chg(c5, 6), 3), "trend3_15m": _trend3(c5),
+                     "last3": [round(c, 2) for c in c5[-3:]]}
+    ctx["resolution"] = "+".join(k for k, v in (("1s", "s1" in ctx), ("1m", True),
+                                                ("5m", "m5" in ctx)) if v)
     return ctx
 
 
@@ -178,14 +204,24 @@ def live_price(asset: str = "btc", now: Optional[float] = None,
 
 
 def build_prompt(ctx: Dict[str, Any], mkt_yes: Optional[float]) -> str:
-    return (
-        f"ASSET: {ctx['asset']}  price={ctx['price']}\n"
-        f"5m move: {ctx['chg_5m_pct']:+.3f}%   15m move: {ctx['chg_15m_pct']:+.3f}%\n"
-        f"position in 15m range: {ctx['range_pos_15m']:.2f} (0=low,1=high)\n"
-        f"last 6 one-minute closes: {ctx['last6_closes']}\n"
-        f"market currently prices UP at {mkt_yes if mkt_yes is not None else 'n/a'}.\n"
-        "P(UP over the next 5 minutes)? JSON only."
-    )
+    s1, m1, m5 = ctx.get("s1"), ctx.get("m1") or {}, ctx.get("m5")
+    L = [f"ASSET: {ctx['asset']}  price={ctx['price']}",
+         "Read the tape across timeframes; weight the fast layers for the next 5 "
+         "minutes but keep the slow layers as context (a 1s bounce inside a flat "
+         "5m/15m backdrop is a thin edge)."]
+    if s1:
+        L.append(f"1s  (last minute): 10s {s1['chg_10s']:+.4f}%  30s {s1['chg_30s']:+.4f}%  "
+                 f"60s {s1['chg_60s']:+.4f}%  trend(3 bars)={s1['trend3']}  closes={s1['last5']}")
+    L.append(f"1m  (last 16m): 1m {m1.get('chg_1m',0):+.3f}%  5m {m1.get('chg_5m',0):+.3f}%  "
+             f"15m {m1.get('chg_15m',0):+.3f}%  trend(3 bars)={m1.get('trend3')}  "
+             f"closes={m1.get('last3')}  range_pos_15m={ctx.get('range_pos_15m')}")
+    if m5:
+        L.append(f"5m  (last hour): 5m {m5['chg_5m']:+.3f}%  15m {m5['chg_15m']:+.3f}%  "
+                 f"30m {m5['chg_30m']:+.3f}%  trend(last 3 5m bars = 15m)={m5['trend3_15m']}  "
+                 f"closes={m5['last3']}")
+    L.append(f"market currently prices UP at {mkt_yes if mkt_yes is not None else 'n/a'}.")
+    L.append("P(UP over the next 5 minutes)? JSON only.")
+    return "\n".join(L)
 
 
 def _parse(body: str) -> Optional[Dict[str, Any]]:

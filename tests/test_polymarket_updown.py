@@ -60,6 +60,30 @@ def test_price_context_computes_momentum_and_range():
     assert ctx["last6_closes"][-1] == 105.0
 
 
+def test_price_context_stacks_1s_1m_5m_layers():
+    ctx = updown.price_context("btc", runner=lambda u: _klines([100.0 + i for i in range(16)]))
+    assert ctx["resolution"] == "1s+1m+5m"
+    assert "s1" in ctx and "m1" in ctx and "m5" in ctx
+    assert "chg_10s" in ctx["s1"] and ctx["s1"]["trend3"] in ("up", "down", "mixed", "flat")
+    assert "chg_1m" in ctx["m1"] and ctx["m1"]["trend3"] in ("up", "down", "mixed", "flat")
+    # the 15m trend is the last-3 5m-bar direction
+    assert "chg_15m" in ctx["m5"] and ctx["m5"]["trend3_15m"] in ("up", "down", "mixed", "flat")
+
+
+def test_trend3_reads_last_three_bar_direction():
+    assert updown._trend3([1, 2, 3, 4, 5]) == "up"
+    assert updown._trend3([5, 4, 3, 2, 1]) == "down"
+    assert updown._trend3([1, 5, 1, 5, 1]) in ("mixed", "down")
+    assert updown._trend3([1, 2]) == "flat"          # too few bars
+
+
+def test_build_prompt_presents_every_timeframe():
+    ctx = updown.price_context("btc", runner=lambda u: _klines([100.0 + i for i in range(16)]))
+    p = updown.build_prompt(ctx, 0.55)
+    assert "1s  (last minute)" in p and "1m  (last 16m)" in p and "5m  (last hour)" in p
+    assert "trend(3 bars)=" in p and "trend(last 3 5m bars = 15m)=" in p
+
+
 def test_price_context_unknown_asset_is_none():
     assert updown.price_context("pepe", runner=lambda u: _klines([1] * 16)) is None
 
