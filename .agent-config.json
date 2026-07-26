@@ -180,7 +180,7 @@
   },
   "xs_xyz_equities": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "lookback_days": 7,
     "k_per_leg": 5,
     "hold_days": 5,
@@ -193,7 +193,7 @@
   },
   "extreme_fade": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "crash_pct": -0.12,
     "max_new_per_cycle": 1,
     "scan_interval_min": 30,
@@ -416,5 +416,9 @@
     "stop_pct": 0.06,
     "tp_pct": 1.0,
     "allow_shorts": true
+  },
+  "updown_live": {
+    "enabled": false,
+    "place": false
   }
 }
