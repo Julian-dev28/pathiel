@@ -510,6 +510,19 @@ function sortRows(rows) {
   return r;
 }
 
+// verdicts from a card's Analyze click, keyed by market_id, so they PERSIST
+// across the 2-min board auto-refresh (the grid re-renders but reads this).
+const ANALYZED = {};
+function withAnalyzed(row) {
+  const a = ANALYZED[row.market_id];
+  if (!a) return row;
+  // the click refreshed the live YES price + produced the verdict; both win
+  return { ...row,
+    yes: a.mkt_yes != null ? a.mkt_yes : row.yes,
+    forecast: { llm_yes: a.llm_yes, side: a.side, reasoning: a.reasoning },
+    live_edge: a.edge, _analyzed_ts: a.ts, _analyzed_recorded: a.recorded };
+}
+
 function meter(row) {
   const mkt = row.yes == null ? 0 : row.yes;
   const ai = row.forecast && row.forecast.llm_yes != null ? row.forecast.llm_yes : null;
@@ -540,6 +553,7 @@ function aiBlock(row) {
 }
 
 function card(row) {
+  row = withAnalyzed(row);                 // persist a clicked verdict onto the card
   const chg = Number(row.change_24h || 0);
   const chgCls = chg >= 0 ? 'up' : 'dn';
   const cls = ['mkt', row.live ? 'is-live' : '', row.breaking ? 'is-breaking' : '',
@@ -711,13 +725,13 @@ async function analyzeMarket(btn) {
       done('', `<span style="color:var(--dim)">no verdict — ${esc((v && v.skip_reason) || 'declined')}</span>`);
       return;
     }
-    const sideTxt = v.side ? `<span class="badge ${v.side === 'YES' ? 'b-yes' : 'b-no'}">BUY ${v.side}</span>`
-      : '<span class="chip">no-bet</span>';
-    const eplus = v.edge >= 0 ? '+' : '';
-    done('', `${sideTxt} <span class="ai-p">AI ${pct(v.llm_yes)}%</span> `
-      + `<span class="ai-edge ${v.edge >= 0 ? 'up' : 'dn'}">${eplus}${Math.round(v.edge * 100)}pp vs market</span>`
-      + (v.recorded ? ' <span class="chip up">recorded</span>' : '')
-      + (v.reasoning ? `<div class="ai-why open" style="margin-top:6px">${esc(v.reasoning)}</div>` : ''));
+    // PERSIST: store the verdict (with the fresh live YES price the server used)
+    // so it survives the board auto-refresh and the card's meter/bar updates.
+    ANALYZED[mid] = { llm_yes: v.llm_yes, side: v.side, edge: v.edge,
+                      mkt_yes: v.mkt_yes, reasoning: v.reasoning,
+                      recorded: v.recorded, ts: Date.now() };
+    done('', `<span class="chip up">analyzed ${fmtHM(Date.now())}</span> — verdict shown on the card above`);
+    renderGrid();                          // repaint so the meter tick + market/AI line update now
   };
   try {
     const r = await fetch(`/api/dashboard/predictions/analyze?market_id=${encodeURIComponent(mid)}`,

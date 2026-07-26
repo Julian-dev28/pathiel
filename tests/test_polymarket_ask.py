@@ -85,6 +85,19 @@ def test_sports_lane_detection_survives_a_missing_sport_field():
 
 
 # ── the bar does not move ────────────────────────────────────────────────────
+def test_analyze_row_refreshes_the_live_clob_price_before_forecasting(monkeypatch):
+    """The click must forecast against the CURRENT book price, not the cached
+    board row (Gamma lags). analyze_row refetches the CLOB midpoint for the YES
+    token first."""
+    import services.polymarket_scout.updown as up
+    monkeypatch.setattr(up, "clob_midpoint", lambda tok, http_get=None: 0.80)
+    # board row says 0.30 (stale); live book says 0.80
+    v = ask.analyze_row(_row(yes=0.30, yes_token="y"),
+                        StubForecaster(lambda q, d: (0.85, "yes")))
+    assert v["mkt_yes"] == 0.80                 # used the live price, not 0.30
+    assert v["edge"] == pytest.approx(0.05)     # 0.85 - 0.80, not 0.85 - 0.30
+
+
 def test_sub_threshold_read_is_reported_but_never_recorded():
     """The whole point: you asked, so you get the number — but a 5pp gap does
     not become a paper trade just because a human typed the market's name."""

@@ -152,7 +152,18 @@ def analyze_row(row: Dict[str, Any], forecaster, record: bool = False,
     the only cost is the single brain call. Returns the verdict dict. Recording
     still honours the lane's edge threshold — a click does not lower the bar.
     """
+    # REFRESH the YES price off the live CLOB book BEFORE forecasting, so the
+    # verdict and edge are against the current price, not the cached board row
+    # (Gamma lags; the click should see what the app sees).
     mkt_yes = row.get("yes")
+    if row.get("yes_token"):
+        try:
+            from services.polymarket_scout.updown import clob_midpoint
+            live = clob_midpoint(row["yes_token"])
+            if live is not None:
+                mkt_yes = live
+        except Exception:
+            pass
     lane, cfg = lane_of(row), cfg_for(row)
     thr = float(cfg.get("edge_threshold", 0.15))
     v: Dict[str, Any] = {
