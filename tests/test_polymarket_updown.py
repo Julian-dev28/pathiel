@@ -359,3 +359,39 @@ def test_live_maybe_run_does_not_stack_windows(tmp_path, monkeypatch):
         now=1784996400, execute_fn=lambda a: placed.append(a) or {"executed": True})
     assert placed == [] and out.get("skipped") == "position already open"
 
+
+
+# ── resolution-aware read (strong verdicts) ──────────────────────────────────
+def test_randomwalk_up_prob_is_decisive_when_clearly_up_or_down():
+    assert updown.randomwalk_up_prob(20.0, 2.0, 10) > 0.95     # clearly above open, little time
+    assert updown.randomwalk_up_prob(-20.0, 2.0, 10) < 0.05    # clearly below
+    assert updown.randomwalk_up_prob(0.0, 2.0, 90) == 0.5      # at the open
+    assert 0.45 < updown.randomwalk_up_prob(1.0, 2.0, 250) < 0.55   # tiny lead, lots of time
+
+
+def test_randomwalk_handles_zero_vol_and_no_time():
+    assert updown.randomwalk_up_prob(5.0, 0.0, 90) == 1.0      # up, no vol -> stays up
+    assert updown.randomwalk_up_prob(-5.0, 2.0, 0) == 0.0      # down at the buzzer
+    assert updown.randomwalk_up_prob(0.0, 0.0, 0) == 0.5
+
+
+def test_price_context_computes_position_vs_window_open():
+    # 5m bar OPENS at 100 (window open) but price is now 110 -> above open
+    def runner(url):
+        if "interval=5m" in url:
+            return [[0, 100.0, 111.0, 99.0, 100.0, 0]] * 3 + [[0, 100.0, 111.0, 99.0, 110.0, 0]]
+        return _klines([108.0, 109.0, 110.0] * 6)      # 1s/1m: price ~110
+    ctx = updown.price_context("btc", runner=runner, seconds_left=60)
+    assert ctx["window_open"] == 100.0            # the 5m bar's open
+    assert ctx["vs_open_pct"] > 0                 # price (110) above open (100)
+    assert ctx["seconds_left"] == 60
+    assert ctx["drift_prob_up"] > 0.5             # above open -> leans UP
+
+
+def test_build_prompt_leads_with_resolution_and_pushes_a_decisive_call():
+    ctx = updown.price_context("btc", runner=lambda u: _klines([100.0 + i for i in range(16)]),
+                               seconds_left=60)
+    p = updown.build_prompt(ctx, 0.55)
+    assert "RESOLUTION:" in p and "window-open" in p
+    assert "random-walk P(UP)=" in p
+    assert "COMMIT:" in p and "NOT a coin flip" in p

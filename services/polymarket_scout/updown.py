@@ -116,6 +116,33 @@ def _chg(series: List[float], n: int) -> float:
         if len(series) > n and series[-1 - n] else 0.0
 
 
+def _norm_cdf(z: float) -> float:
+    import math
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def _stdev(xs: List[float]) -> float:
+    n = len(xs)
+    if n < 2:
+        return 0.0
+    m = sum(xs) / n
+    return (sum((x - m) ** 2 for x in xs) / (n - 1)) ** 0.5
+
+
+def randomwalk_up_prob(move_abs: float, sigma_per_s: float, seconds_left: float) -> Optional[float]:
+    """P(BTC finishes ABOVE the window-open price) under a driftless random walk,
+    given it is currently `move_abs` above open with `seconds_left` and 1-second
+    price stdev `sigma_per_s`. This is the actual resolution math of an up/down
+    market: BTC_end = BTC_now + N(0, sigma^2 * T), so P(up) = Phi(move / (sigma*sqrt(T))).
+    A grounded prior the model adjusts, instead of guessing 'coin flip'."""
+    if seconds_left is None or seconds_left <= 0:
+        return 1.0 if move_abs > 0 else (0.0 if move_abs < 0 else 0.5)
+    remaining_std = sigma_per_s * (seconds_left ** 0.5)
+    if remaining_std <= 0:
+        return 1.0 if move_abs > 0 else (0.0 if move_abs < 0 else 0.5)
+    return round(_norm_cdf(move_abs / remaining_std), 3)
+
+
 def _trend3(series: List[float]) -> str:
     """Direction over the last 3 bars: up if each step is >=, down if each <=,
     else mixed. This is the operator's 'consider the last-3-bar trend' — a
@@ -130,7 +157,8 @@ def _trend3(series: List[float]) -> str:
     return "mixed"
 
 
-def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Optional[Dict[str, Any]]:
+def price_context(asset: str = "btc", runner: Optional[Callable] = None,
+                  seconds_left: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """Multi-timeframe momentum for a 5-min call: 1-SECOND, 1-MINUTE and 5-MINUTE
     bars, each with its recent momentum AND its last-3-bar trend. A single
     resolution is a thin read; stacking them lets the model separate a fresh 1s
@@ -164,7 +192,9 @@ def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Opti
                "chg_15m": round(_chg(c1, 15), 3), "trend3": _trend3(c1),
                "last3": [round(c, 2) for c in c1[-3:]]},
     }
-    if len(s1) >= 10:
+    s1_ok = len(s1) >= 10
+    sc: List[float] = []
+    if s1_ok:
         sc = [float(k[4]) for k in s1]
         ctx["price"] = sc[-1]
         ctx["chg_10s_pct"] = round(_chg(sc, 10), 4)
@@ -179,6 +209,26 @@ def price_context(asset: str = "btc", runner: Optional[Callable] = None) -> Opti
         ctx["m5"] = {"chg_5m": round(_chg(c5, 1), 3), "chg_15m": round(_chg(c5, 3), 3),
                      "chg_30m": round(_chg(c5, 6), 3), "trend3_15m": _trend3(c5),
                      "last3": [round(c, 2) for c in c5[-3:]]}
+    # ── RESOLUTION MATH: this market resolves UP if BTC closes above the WINDOW-
+    # OPEN price. The current 5m bar opened at the window start (5m bars align to
+    # the 5-min windows), so its open IS the reference. Feed the model where BTC
+    # sits vs open, the vol, and the random-walk P(UP) — that turns a vague
+    # 'coin flip' into a committed number when the position + clock justify it.
+    price = ctx["price"]
+    if len(m5) >= 1:
+        btc_open = float(m5[-1][1])                       # open of the current 5m bar
+        move_abs = price - btc_open
+        ctx["window_open"] = round(btc_open, 2)
+        ctx["vs_open_pct"] = round(move_abs / btc_open * 100, 4) if btc_open else 0.0
+        if seconds_left is not None:
+            ctx["seconds_left"] = int(seconds_left)
+        # 1s absolute-return stdev for the diffusion estimate
+        if s1_ok:
+            diffs = [sc[i] - sc[i - 1] for i in range(1, len(sc))]
+            sigma_s = _stdev(diffs)
+            ctx["sigma_1s"] = round(sigma_s, 3)
+            ctx["drift_prob_up"] = randomwalk_up_prob(move_abs, sigma_s, seconds_left) \
+                if seconds_left is not None else None
     ctx["resolution"] = "+".join(k for k, v in (("1s", "s1" in ctx), ("1m", True),
                                                 ("5m", "m5" in ctx)) if v)
     return ctx
@@ -205,10 +255,26 @@ def live_price(asset: str = "btc", now: Optional[float] = None,
 
 def build_prompt(ctx: Dict[str, Any], mkt_yes: Optional[float]) -> str:
     s1, m1, m5 = ctx.get("s1"), ctx.get("m1") or {}, ctx.get("m5")
-    L = [f"ASSET: {ctx['asset']}  price={ctx['price']}",
-         "Read the tape across timeframes; weight the fast layers for the next 5 "
-         "minutes but keep the slow layers as context (a 1s bounce inside a flat "
-         "5m/15m backdrop is a thin edge)."]
+    L = [f"ASSET: {ctx['asset']}  price={ctx['price']}"]
+    # The decisive fact: this market resolves UP iff price closes ABOVE the
+    # window-open. Lead with position-vs-open, clock, and the random-walk prior.
+    if ctx.get("window_open") is not None:
+        vo = ctx["vs_open_pct"]
+        side = "ABOVE" if vo > 0 else ("BELOW" if vo < 0 else "AT")
+        rw = ctx.get("drift_prob_up")
+        L.append(f"RESOLUTION: closes UP iff price > window-open {ctx['window_open']}. "
+                 f"Now {side} open by {vo:+.4f}%"
+                 + (f", {ctx['seconds_left']}s left in the window" if ctx.get("seconds_left") is not None else "")
+                 + (f". Vol(1s)~{ctx.get('sigma_1s')} => random-walk P(UP)={rw:.2f} "
+                    f"(your anchor; adjust for momentum/microstructure, do not just echo it)."
+                    if rw is not None else "."))
+        L.append("COMMIT: give a decisive probability. When price is clearly on one "
+                 "side of the open with little time left, that side is strong (0.75-0.97), "
+                 "NOT a coin flip. Only sit near 0.50 when genuinely balanced (near the "
+                 "open with time left, or offsetting signals).")
+    L.append("Read the tape across timeframes; weight the fast layers for the next 5 "
+             "minutes but keep the slow layers as context (a 1s bounce inside a flat "
+             "5m/15m backdrop is a thin edge).")
     if s1:
         L.append(f"1s  (last minute): 10s {s1['chg_10s']:+.4f}%  30s {s1['chg_30s']:+.4f}%  "
                  f"60s {s1['chg_60s']:+.4f}%  trend(3 bars)={s1['trend3']}  closes={s1['last5']}")
@@ -255,7 +321,8 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
     call or missing data yields a row with `up_prob=None` rather than raising."""
     now = time.time() if now is None else now
     mkt = current_market(asset, now, http_get=http_get)
-    ctx = price_context(asset, runner=kline_runner)
+    secs_left = max(0.0, (window_start(now) + WINDOW_S) - now)   # time left in THIS window
+    ctx = price_context(asset, runner=kline_runner, seconds_left=secs_left)
     out: Dict[str, Any] = {
         "asset": asset.upper(), "slug": current_slug(asset, now),
         "market_id": str(mkt.get("id")) if mkt else None,
@@ -285,10 +352,14 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
     if out["mkt_up"] is not None:
         out["edge"] = round(v["up_prob"] - out["mkt_up"], 4)
     if record and out["market_id"]:
+        _mkt = out["mkt_up"] if out["mkt_up"] is not None else 0.5
+        # fill is the price of the SIDE we took: UP costs mkt_up, DOWN costs
+        # 1-mkt_up. (Bug fixed 2026-07-27: DOWN was recorded at mkt_up.)
+        _fill = _mkt if v["verdict"] == "UP" else round(1.0 - _mkt, 4)
         record_fn(market_id=out["market_id"], question=out["question"] or "",
                   side="YES" if v["verdict"] == "UP" else "NO",
-                  token_id="", llm_yes=v["up_prob"], mkt_yes=out["mkt_up"] or 0.5,
-                  fill_px=out["mkt_up"] or 0.5, edge=out["edge"] or 0.0,
+                  token_id="", llm_yes=v["up_prob"], mkt_yes=_mkt,
+                  fill_px=_fill, edge=out["edge"] or 0.0,
                   end_date=out["end_date"] or "", category=asset.lower(),
                   reasoning=v["reasoning"], lane="updown_5m",
                   meta={"context": ctx, "shadow": True})
