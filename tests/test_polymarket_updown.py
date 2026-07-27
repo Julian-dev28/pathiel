@@ -395,3 +395,27 @@ def test_build_prompt_leads_with_resolution_and_pushes_a_decisive_call():
     assert "RESOLUTION:" in p and "window-open" in p
     assert "random-walk P(UP)=" in p
     assert "COMMIT:" in p and "NOT a coin flip" in p
+
+
+# ── decisive "bonafide" verdicts ─────────────────────────────────────────────
+def test_call_label_is_decisive_across_the_range():
+    assert updown.call_label(0.90) == "STRONG UP"
+    assert updown.call_label(0.62) == "LEAN UP"
+    assert updown.call_label(0.50) == "TOSS-UP"
+    assert updown.call_label(0.38) == "LEAN DOWN"
+    assert updown.call_label(0.12) == "STRONG DOWN"
+    assert updown.call_label(None) == "—"
+
+
+def test_sys_prompt_demands_commitment_and_bans_hedging():
+    assert "DECISIVE" in updown._SYS
+    assert "BANNED" in updown._SYS and "coin flip" in updown._SYS
+    assert "do NOT drift back toward 0.50" in updown._SYS.replace("Do", "do")
+
+
+def test_analyze_attaches_the_call_label(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    out = updown.analyze("btc", brain=ClaudeCliBrain(0.85), now=1784995866,
+                         http_get=lambda u: _mkt(),
+                         kline_runner=lambda u: _klines([100.0] * 16))
+    assert out["call"] == "STRONG UP" and out["up_prob"] == 0.85

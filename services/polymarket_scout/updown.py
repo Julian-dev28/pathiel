@@ -66,15 +66,37 @@ _PAIRS = {"btc": "BTCUSDT", "eth": "ETHUSDT", "sol": "SOLUSDT", "xrp": "XRPUSDT"
           "doge": "DOGEUSDT"}
 
 _SYS = (
-    "You are a short-horizon crypto momentum trader. You are given LIVE price "
-    "action for one asset and must estimate the probability it closes UP over the "
-    "next ~5 minutes (last traded price at the window close above the price now). "
-    "There is no news edge at this horizon — reason ONLY from the momentum, range "
-    "position and recent candles given. Be honest: 5-minute direction is close to "
-    "a coin flip, so stay near 0.50 unless the tape genuinely leans. Reply with "
-    'ONLY this JSON on the last line: {"verdict":"UP"|"DOWN","up_prob":<0..1>,'
-    '"reasoning":"<1-2 sentences>"}'
+    "You are a short-horizon crypto trader pricing a 5-minute UP/DOWN market that "
+    "resolves UP iff the price closes ABOVE the window-open. You are given the "
+    "position vs open, the time left, the volatility, a computed random-walk "
+    "P(UP), and multi-timeframe momentum.\n"
+    "GIVE A DECISIVE ANSWER. The random-walk P(UP) is a real, computed number — "
+    "START THERE and adjust only for clear momentum. Do NOT drift back toward 0.50. "
+    "When price is clearly on one side of the open with little time left, COMMIT to "
+    "a strong number (0.75-0.97 or 0.03-0.25).\n"
+    "BANNED unless your final probability is truly 0.47-0.53: the words 'coin flip', "
+    "'thin', 'essentially even', 'marginal', 'toss-up', and any 'X but Y so it's "
+    "unclear' hedging. Your reasoning must be ONE sentence that states the CALL and "
+    "its single strongest driver — a verdict, not a survey of every timeframe.\n"
+    'Reply with ONLY this JSON on the last line: {"verdict":"UP"|"DOWN",'
+    '"up_prob":<0..1>,"reasoning":"<one decisive sentence>"}'
 )
+
+
+def call_label(up_prob: Optional[float]) -> str:
+    """A bonafide verdict label from the probability — no 'ehh'."""
+    if up_prob is None:
+        return "—"
+    p = float(up_prob)
+    if p >= 0.70:
+        return "STRONG UP"
+    if p >= 0.57:
+        return "LEAN UP"
+    if p <= 0.30:
+        return "STRONG DOWN"
+    if p <= 0.43:
+        return "LEAN DOWN"
+    return "TOSS-UP"
 
 
 def window_start(now: Optional[float] = None) -> int:
@@ -348,7 +370,9 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
     if v is None:
         out["reasoning"] = "unparseable verdict"
         return out
-    out.update({"up_prob": v["up_prob"], "verdict": v["verdict"], "reasoning": v["reasoning"]})
+    out.update({"up_prob": v["up_prob"], "verdict": v["verdict"], "reasoning": v["reasoning"],
+                "call": call_label(v["up_prob"]),
+                "drift_prob_up": (ctx or {}).get("drift_prob_up")})
     if out["mkt_up"] is not None:
         out["edge"] = round(v["up_prob"] - out["mkt_up"], 4)
     if record and out["market_id"]:

@@ -81,6 +81,13 @@
   .pm-cents{display:inline-flex;gap:6px;font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:15px}
   .pm-cents .pm-up{color:#86efac;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.4);border-radius:4px;padding:3px 10px}
   .pm-cents .pm-dn{color:#fca5a5;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:3px 10px}
+  /* the bonafide call chip */
+  .call{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,Menlo,monospace;
+    font-size:14px;font-weight:800;letter-spacing:.03em;padding:4px 12px;border-radius:4px;border:1px solid}
+  .call.up{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4)}
+  .call.dn{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.4)}
+  .call.strong{box-shadow:0 0 16px -4px currentColor}
+  .call.strong.up{background:rgba(34,197,94,.22)} .call.strong.dn{background:rgba(239,68,68,.22)}
   /* ── collapsible paper-trade log ── */
   .tradelog{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:4px;
     box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.35)}
@@ -866,7 +873,6 @@ function updownCard(r, live) {
   const mktUp = (live && live.mkt_up != null) ? live.mkt_up : r.mkt_up;
   const secs = (live && live.seconds_left != null) ? live.seconds_left : r.seconds_left;
   const dir = r.verdict === 'UP' ? 'up' : r.verdict === 'DOWN' ? 'dn' : '';
-  const arrow = r.verdict === 'UP' ? '▲' : r.verdict === 'DOWN' ? '▼' : '·';
   const edgeV = (r.up_prob != null && mktUp != null) ? (r.up_prob - mktUp) : null;
   const edge = edgeV == null ? '' :
     `<span class="ai-edge ${edgeV >= 0 ? 'up' : 'dn'}">${edgeV >= 0 ? '+' : ''}${Math.round(edgeV * 100)}pp vs Polymarket</span>`;
@@ -877,14 +883,25 @@ function updownCard(r, live) {
   const up = mktUp == null ? '—' : Math.round(mktUp * 100) + '¢';
   const dn = mktUp == null ? '—' : Math.round((1 - mktUp) * 100) + '¢';
   const cents = `<span class="pm-cents"><span class="pm-up">UP ${up}</span><span class="pm-dn">DOWN ${dn}</span></span>`;
+  // the bonafide call — a committed verdict label, not "ehh"
+  const callTxt = r.call || (r.verdict === 'UP' ? 'UP' : r.verdict === 'DOWN' ? 'DOWN' : '—');
+  const strong = /STRONG/.test(callTxt);
+  const isup = dir === 'up';
+  const callChip = `<span class="call ${isup ? 'up' : 'dn'} ${strong ? 'strong' : ''}">`
+    + `${isup ? '▲' : '▼'} ${callTxt} · AI ${pct(r.up_prob)}%</span>`;
+  const anchor = r.drift_prob_up != null
+    ? `<span class="chip" title="random-walk P(UP) from position vs open + time + vol — the model-free anchor">rw ${Math.round(r.drift_prob_up * 100)}%</span>` : '';
+  // the AI read is from the last scan; if the window has since rolled it is for a
+  // PRIOR window and shouldn't be read against the current price — say so.
+  const stale = r.current_window === false
+    ? '<span class="chip dn" title="the window rolled since this read — click Analyze now for the current window">prior window · re-analyze</span>' : '';
   return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px">
       <span class="tk">${esc(r.asset)}</span>
       ${cents}
-      <span style="font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:750;color:var(--teal)">
-        <span class="ai-edge ${dir}">${arrow}</span> AI ${ai} ${r.verdict || ''}</span>
-      ${edge} ${left}
+      ${stale || callChip}
+      ${stale ? '' : edge} ${stale ? '' : anchor} ${left}
     </div>
-    ${r.reasoning ? `<div class="ai-why open" style="margin-top:9px">${esc(r.reasoning)}</div>` : ''}`;
+    ${(!stale && r.reasoning) ? `<div class="ai-why open" style="margin-top:9px">${esc(r.reasoning)}</div>` : ''}`;
 }
 
 function paintUpdown(live) {
