@@ -81,6 +81,42 @@
   .pm-cents{display:inline-flex;gap:6px;font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:15px}
   .pm-cents .pm-up{color:#86efac;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.4);border-radius:4px;padding:3px 10px}
   .pm-cents .pm-dn{color:#fca5a5;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:3px 10px}
+  /* ── collapsible paper-trade log ── */
+  .tradelog{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:4px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.35)}
+  .tradelog summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:11px;
+    padding:14px 16px;user-select:none}
+  .tradelog summary::-webkit-details-marker{display:none}
+  .tl-caret{color:var(--vio);font-size:12px;transition:transform .18s ease}
+  .tradelog[open] .tl-caret{transform:rotate(90deg)}
+  .tl-title{font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:800;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--mut)}
+  .tl-meta{margin-left:auto;font-size:10.5px;color:var(--dim)}
+  .tl-body{border-top:1px solid var(--line);padding:12px 14px 14px}
+  .tl-lanes{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .tl-lane{font-family:ui-monospace,Menlo,monospace;font-size:10px;font-weight:700;letter-spacing:.06em;
+    padding:3px 9px;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);cursor:pointer}
+  .tl-lane.on{color:var(--txt);border-color:rgba(139,92,246,.5);background:rgba(139,92,246,.14)}
+  .tl-lane .c{color:var(--dim);margin-left:5px}
+  .tl-rows{max-height:460px;overflow-y:auto}
+  .tl-rows::-webkit-scrollbar{width:8px}.tl-rows::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+  .tl-row{display:grid;grid-template-columns:52px 84px 1fr auto;gap:10px;align-items:center;
+    padding:9px 4px;border-bottom:1px solid var(--line)}
+  .tl-row:last-child{border-bottom:0}
+  .tl-row .tl-time{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--dim)}
+  .tl-row .tl-side{font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:750;text-align:center;
+    padding:2px 0;border-radius:3px}
+  .tl-row .tl-side.yes{color:#86efac;background:rgba(34,197,94,.12)}
+  .tl-row .tl-side.no{color:#fca5a5;background:rgba(239,68,68,.12)}
+  .tl-row .tl-q{min-width:0}
+  .tl-row .tl-q a,.tl-row .tl-q span{font-size:12.5px;color:#cfd4dd;text-decoration:none;
+    display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tl-row .tl-q a:hover{color:#fff}
+  .tl-row .tl-q .tl-lc{font-family:ui-monospace,Menlo,monospace;font-size:9.5px;color:var(--dim);letter-spacing:.06em}
+  .tl-row .tl-nums{font-family:ui-monospace,Menlo,monospace;font-size:11px;text-align:right;white-space:nowrap}
+  .tl-row .tl-nums .ai{color:var(--teal)} .tl-row .tl-nums .mk{color:var(--mut)}
+  .tl-row .tl-nums .eg{font-weight:750}.tl-row .tl-nums .eg.up{color:var(--up)}.tl-row .tl-nums .eg.dn{color:var(--dn)}
+  .tl-empty{font-size:12px;color:var(--dim);padding:14px 2px}
   .sort-wrap .sort-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;
     font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
   #sort-mode{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:600;
@@ -466,6 +502,19 @@ void main(){
   </section>
 
   <div class="grid" id="grid"></div>
+
+  <!-- paper-trade log: every recorded divergence, collapsible -->
+  <details id="tradelog" class="tradelog">
+    <summary>
+      <span class="tl-caret">▸</span>
+      <span class="tl-title">Paper-trade log</span>
+      <span class="tl-meta mono" id="tl-meta"></span>
+    </summary>
+    <div class="tl-body">
+      <div class="tl-lanes" id="tl-lanes"></div>
+      <div class="tl-rows" id="tl-rows"></div>
+    </div>
+  </details>
 
   <footer class="text-[10px] mt-8 text-center" style="color:var(--dim)">
     shadow only · zero capital · not financial advice
@@ -866,6 +915,62 @@ async function pollUpdownLive() {
 }
 loadUpdown();
 setInterval(loadUpdown, 30000);
+
+// ── collapsible paper-trade log ──────────────────────────────────────────
+let TRADES = null, TL_LANE = 'all';
+function fmtAgoShort(ms) {
+  if (!ms) return '—';
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 60) return m + 'm';
+  if (m < 1440) return Math.floor(m / 60) + 'h';
+  return Math.floor(m / 1440) + 'd';
+}
+function tlRow(r) {
+  const side = (r.side || '').toLowerCase();
+  const q = r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.question)}</a>`
+                  : `<span>${esc(r.question)}</span>`;
+  const edge = r.edge == null ? '' :
+    `<span class="eg ${r.edge >= 0 ? 'up' : 'dn'}">${r.edge >= 0 ? '+' : ''}${Math.round(r.edge * 100)}pp</span>`;
+  return `<div class="tl-row">
+    <span class="tl-time">${fmtAgoShort(r.ts)}</span>
+    <span class="tl-side ${side === 'yes' ? 'yes' : 'no'}">${esc(r.side || '')}</span>
+    <span class="tl-q">${q}<span class="tl-lc">${esc(r.lane)}${r.breaking ? ' · breaking' : ''}</span></span>
+    <span class="tl-nums"><span class="ai">AI ${pct(r.our_yes)}</span> <span class="mk">/ mkt ${pct(r.mkt_yes)}</span> ${edge}</span>
+  </div>`;
+}
+function renderTrades() {
+  const rows = (TRADES && TRADES.rows) || [];
+  const shown = TL_LANE === 'all' ? rows : rows.filter(r => r.lane === TL_LANE);
+  document.getElementById('tl-rows').innerHTML = shown.length
+    ? shown.map(tlRow).join('')
+    : '<div class="tl-empty">no trades in this lane yet.</div>';
+}
+async function loadTrades() {
+  try {
+    TRADES = await (await fetch('/api/dashboard/predictions/trades?limit=120')).json();
+    const c = TRADES.counts || {};
+    document.getElementById('tl-meta').textContent =
+      `${TRADES.total} recorded · showing ${(TRADES.rows || []).length} newest`;
+    const lanes = ['all', ...Object.keys(c).sort((a, b) => c[b] - c[a])];
+    document.getElementById('tl-lanes').innerHTML = lanes.map(l =>
+      `<span class="tl-lane ${l === TL_LANE ? 'on' : ''}" data-lane="${l}">${l}` +
+      (l === 'all' ? `<span class="c">${TRADES.total}</span>` : `<span class="c">${c[l]}</span>`) + '</span>').join('');
+    renderTrades();
+  } catch (e) {
+    document.getElementById('tl-rows').innerHTML = '<div class="tl-empty">trade log failed to load.</div>';
+  }
+}
+document.getElementById('tl-lanes').addEventListener('click', e => {
+  const el = e.target.closest('.tl-lane'); if (!el) return;
+  TL_LANE = el.dataset.lane;
+  document.querySelectorAll('.tl-lane').forEach(x => x.classList.toggle('on', x.dataset.lane === TL_LANE));
+  renderTrades();
+});
+// load lazily on first open, then keep it fresh while open
+document.getElementById('tradelog').addEventListener('toggle', function () {
+  if (this.open && !TRADES) loadTrades();
+});
+setInterval(() => { if (document.getElementById('tradelog').open) loadTrades(); }, 30000);
 setInterval(pollUpdownLive, 3000);
 
 // ── live sub-second BTC ticker (direct Binance WS — same feed the latency bots

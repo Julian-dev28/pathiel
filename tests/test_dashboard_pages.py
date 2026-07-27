@@ -1331,6 +1331,33 @@ def test_predictions_cards_cannot_blow_out_the_grid(client):
     assert "overflow-wrap:anywhere" in r
 
 
+def test_predictions_trade_log_endpoint(client, monkeypatch, tmp_path):
+    """The collapsible paper-trade log reads the ledger (no network), newest
+    first, with per-lane counts."""
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    from services.polymarket_scout import ledger
+    ledger.record(market_id="1", question="A?", side="YES", token_id="y",
+                  llm_yes=0.7, mkt_yes=0.4, fill_px=0.42, edge=0.3, end_date="",
+                  lane="trending", ts=100)
+    ledger.record(market_id="2", question="B?", side="NO", token_id="n",
+                  llm_yes=0.3, mkt_yes=0.5, fill_px=0.5, edge=-0.2, end_date="",
+                  lane="updown_5m", ts=200)
+    db._TTL_CACHE.clear()
+    body = client.get("/api/dashboard/predictions/trades?limit=50").json()
+    assert body["total"] == 2
+    assert body["counts"] == {"trending": 1, "updown_5m": 1}
+    assert [r["question"] for r in body["rows"]] == ["B?", "A?"]   # newest first
+    assert body["rows"][0]["our_side_prob"] == pytest.approx(0.7)  # NO side of 0.3
+
+
+def test_predictions_page_ships_the_collapsible_trade_log(client):
+    r = client.get("/predictions").text
+    assert 'id="tradelog"' in r and "<details" in r and "<summary" in r
+    assert "PAPER-TRADE LOG" in r.upper() or "Paper-trade log" in r
+    assert "/api/dashboard/predictions/trades" in r
+    assert "tl-lane" in r                       # the lane filter chips
+
+
 def test_predictions_page_states_the_zero_capital_contract(client):
     """Operator-facing honesty: the page must say this is shadow/paper, or a
     reader will mistake a divergence card for a position."""

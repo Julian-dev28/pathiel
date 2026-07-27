@@ -1464,6 +1464,40 @@ def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
     return job_id
 
 
+def _predictions_trades_payload(limit: int = 80) -> Dict[str, Any]:
+    """The Polymarket paper-trade log: every recorded divergence from the scout
+    ledger, newest first. Pure ledger read (no network, no grading) so the panel
+    is cheap. Each row carries the side we took, our probability vs the market's,
+    the edge, the lane, and the reasoning. `counts` is per-lane totals for the
+    header. The updown_5m lane is huge and low-signal, so it is summarised in
+    the counts but only surfaced in the rows when it is among the newest."""
+    try:
+        from services.polymarket_scout import ledger
+    except Exception:
+        return {"rows": [], "counts": {}, "total": 0}
+    raw = ledger.load()
+    raw.sort(key=lambda r: int(r.get("ts") or 0), reverse=True)
+    counts: Dict[str, int] = {}
+    for r in raw:
+        counts[ledger.row_lane(r)] = counts.get(ledger.row_lane(r), 0) + 1
+    rows: List[Dict[str, Any]] = []
+    for r in raw[:limit]:
+        llm = r.get("llm_yes")
+        mkt = r.get("mkt_yes")
+        rows.append({
+            "ts": r.get("ts"), "lane": ledger.row_lane(r),
+            "question": r.get("question"), "side": r.get("side"),
+            "our_yes": llm, "mkt_yes": mkt, "fill": r.get("fill_px"),
+            "edge": r.get("edge"),
+            "our_side_prob": (llm if r.get("side") == "YES" else
+                              (1 - llm if llm is not None else None)),
+            "reasoning": r.get("reasoning"),
+            "breaking": bool((r.get("meta") or {}).get("breaking")),
+            "url": (r.get("meta") or {}).get("url"),
+        })
+    return {"rows": rows, "counts": counts, "total": len(raw)}
+
+
 def _predictions_payload() -> Dict[str, Any]:
     """Polymarket board: trending + breaking markets, our AI brain's forecast on
     the ones it has judged, and the shadow ledger's scoreboard.
@@ -1630,6 +1664,14 @@ def register_routes(app: FastAPI) -> None:
         # TTL (20s) >= the page's poll interval (30s); the underlying cache only
         # changes when the scout cron runs, so this is generous already.
         return JSONResponse(_ttl_cached("predictions", 20.0, _predictions_payload))
+
+    @app.get("/api/dashboard/predictions/trades")
+    async def dashboard_predictions_trades(
+        limit: int = Query(80, ge=1, le=300),
+    ) -> JSONResponse:
+        """Paper-trade log (ledger read, newest first). Cheap — TTL 20s."""
+        return JSONResponse(_ttl_cached(f"pred-trades:{limit}", 20.0,
+                                        lambda: _predictions_trades_payload(limit)))
 
     @app.post("/api/dashboard/predictions/analyze",
               dependencies=[Depends(_require_operator)])
