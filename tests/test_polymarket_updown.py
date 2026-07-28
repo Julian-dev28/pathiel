@@ -398,19 +398,32 @@ def test_build_prompt_leads_with_resolution_and_pushes_a_decisive_call():
 
 
 # ── decisive "bonafide" verdicts ─────────────────────────────────────────────
-def test_call_label_is_decisive_across_the_range():
+def test_call_label_always_picks_a_side_never_toss_up():
     assert updown.call_label(0.90) == "STRONG UP"
-    assert updown.call_label(0.62) == "LEAN UP"
-    assert updown.call_label(0.50) == "TOSS-UP"
-    assert updown.call_label(0.38) == "LEAN DOWN"
+    assert updown.call_label(0.58) == "LEAN UP"
+    assert updown.call_label(0.50, "UP") == "LEAN UP"      # exactly even -> the verdict decides
+    assert updown.call_label(0.50, "DOWN") == "LEAN DOWN"
+    assert updown.call_label(0.40) == "LEAN DOWN"
     assert updown.call_label(0.12) == "STRONG DOWN"
+    assert "TOSS" not in updown.call_label(0.499) and "TOSS" not in updown.call_label(0.501)
     assert updown.call_label(None) == "—"
 
 
-def test_sys_prompt_demands_commitment_and_bans_hedging():
-    assert "DECISIVE" in updown._SYS
-    assert "BANNED" in updown._SYS and "coin flip" in updown._SYS
-    assert "do NOT drift back toward 0.50" in updown._SYS.replace("Do", "do")
+def test_sys_prompt_forces_a_side_and_bans_hedging():
+    assert "MUST PICK A SIDE" in updown._SYS
+    assert "TIE-BREAK" in updown._SYS
+    assert "BANNED" in updown._SYS and "coin flip" in updown._SYS and "toss-up" in updown._SYS
+    assert "<= 0.45 or >= 0.55" in updown._SYS
+
+
+def test_analyze_nudges_a_fence_sit_off_0_50(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    # model returns 0.50 UP -> must be nudged to a committed side, never TOSS
+    out = updown.analyze("btc", brain=ClaudeCliBrain(0.50), now=1784995866,
+                         http_get=lambda u: _mkt(),
+                         kline_runner=lambda u: _klines([100.0] * 16))
+    assert out["up_prob"] >= 0.55 and out["verdict"] == "UP"
+    assert "TOSS" not in out["call"] and out["call"] == "LEAN UP"
 
 
 def test_analyze_attaches_the_call_label(tmp_path, monkeypatch):

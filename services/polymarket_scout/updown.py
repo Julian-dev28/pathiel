@@ -70,33 +70,32 @@ _SYS = (
     "resolves UP iff the price closes ABOVE the window-open. You are given the "
     "position vs open, the time left, the volatility, a computed random-walk "
     "P(UP), and multi-timeframe momentum.\n"
-    "GIVE A DECISIVE ANSWER. The random-walk P(UP) is a real, computed number — "
-    "START THERE and adjust only for clear momentum. Do NOT drift back toward 0.50. "
-    "When price is clearly on one side of the open with little time left, COMMIT to "
-    "a strong number (0.75-0.97 or 0.03-0.25).\n"
-    "BANNED unless your final probability is truly 0.47-0.53: the words 'coin flip', "
-    "'thin', 'essentially even', 'marginal', 'toss-up', and any 'X but Y so it's "
-    "unclear' hedging. Your reasoning must be ONE sentence that states the CALL and "
-    "its single strongest driver — a verdict, not a survey of every timeframe.\n"
+    "YOU MUST PICK A SIDE — UP or DOWN — EVERY TIME. Never sit on the fence. A "
+    "50/50 non-answer is forbidden: your probability must be <= 0.45 or >= 0.55, "
+    "never between. When the price is clearly one side of the open with little "
+    "time left, commit hard (0.75-0.97 / 0.03-0.25).\n"
+    "TIE-BREAK ORDER when the position is near the open: (1) freshest tape — the "
+    "10s/30s 1-second momentum and its 3-bar trend; (2) the 1m trend; (3) the 5m "
+    "trend; (4) range position in the 15m window. Read the candle and name the "
+    "side it favors, however slightly — do NOT call it balanced.\n"
+    "BANNED words: 'coin flip', 'balanced', 'toss-up', 'thin', 'essentially even', "
+    "'no directional', 'marginal', 'pinned'. Reasoning is ONE sentence: the side "
+    "you picked and the single signal that broke the tie.\n"
     'Reply with ONLY this JSON on the last line: {"verdict":"UP"|"DOWN",'
-    '"up_prob":<0..1>,"reasoning":"<one decisive sentence>"}'
+    '"up_prob":<0..1>,"reasoning":"<one decisive sentence naming the side>"}'
 )
 
 
-def call_label(up_prob: Optional[float]) -> str:
-    """A bonafide verdict label from the probability — no 'ehh'."""
+def call_label(up_prob: Optional[float], verdict: Optional[str] = None) -> str:
+    """A directional verdict label — always a side, never a toss-up. Strength from
+    the distance off 0.50; the side from the verdict (falls back to the prob)."""
     if up_prob is None:
         return "—"
     p = float(up_prob)
-    if p >= 0.70:
-        return "STRONG UP"
-    if p >= 0.57:
-        return "LEAN UP"
-    if p <= 0.30:
-        return "STRONG DOWN"
-    if p <= 0.43:
-        return "LEAN DOWN"
-    return "TOSS-UP"
+    up = (verdict or ("UP" if p >= 0.5 else "DOWN")).upper() == "UP"
+    if up:
+        return "STRONG UP" if p >= 0.62 else "LEAN UP"
+    return "STRONG DOWN" if p <= 0.38 else "LEAN DOWN"
 
 
 def window_start(now: Optional[float] = None) -> int:
@@ -370,11 +369,16 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
     if v is None:
         out["reasoning"] = "unparseable verdict"
         return out
-    out.update({"up_prob": v["up_prob"], "verdict": v["verdict"], "reasoning": v["reasoning"],
-                "call": call_label(v["up_prob"]),
+    # enforce a side: never let a 0.46-0.54 slip through as a fence-sit — nudge to
+    # the verdict's side of the line so the label and the number always commit.
+    up_prob = v["up_prob"]
+    if 0.46 <= up_prob <= 0.54:
+        up_prob = 0.56 if v["verdict"] == "UP" else 0.44
+    out.update({"up_prob": up_prob, "verdict": v["verdict"], "reasoning": v["reasoning"],
+                "call": call_label(up_prob, v["verdict"]),
                 "drift_prob_up": (ctx or {}).get("drift_prob_up")})
     if out["mkt_up"] is not None:
-        out["edge"] = round(v["up_prob"] - out["mkt_up"], 4)
+        out["edge"] = round(up_prob - out["mkt_up"], 4)
     if record and out["market_id"]:
         _mkt = out["mkt_up"] if out["mkt_up"] is not None else 0.5
         # fill is the price of the SIDE we took: UP costs mkt_up, DOWN costs
@@ -382,7 +386,7 @@ def analyze(asset: str = "btc", brain: Any = None, now: Optional[float] = None,
         _fill = _mkt if v["verdict"] == "UP" else round(1.0 - _mkt, 4)
         record_fn(market_id=out["market_id"], question=out["question"] or "",
                   side="YES" if v["verdict"] == "UP" else "NO",
-                  token_id="", llm_yes=v["up_prob"], mkt_yes=_mkt,
+                  token_id="", llm_yes=up_prob, mkt_yes=_mkt,
                   fill_px=_fill, edge=out["edge"] or 0.0,
                   end_date=out["end_date"] or "", category=asset.lower(),
                   reasoning=v["reasoning"], lane="updown_5m",
