@@ -116,7 +116,7 @@ def window_outcome(bars: List[List[float]], win_start: int) -> Optional[bool]:
 
 def backtest(n: int = 30, decision_frac: float = 0.7, minutes: int = 4000,
              brain: Any = None, runner: Optional[Callable] = None,
-             progress: bool = True) -> Dict[str, Any]:
+             progress: bool = True, fill: str = "0.50") -> Dict[str, Any]:
     """Sample `n` complete windows spread across ~`minutes` of history, ask the
     brain for each, grade on the close. `decision_frac` = how far into the window
     the read is taken (0.7 = ~3.5min in, ~90s left)."""
@@ -150,8 +150,17 @@ def backtest(n: int = 30, decision_frac: float = 0.7, minutes: int = 4000,
             continue
         up = v["verdict"] == "UP"
         won = (up == outcome)
-        # paper EV: buy the side at a 0.50 fill, fee-aware
-        pnl = (1.0 - 0.50) - 2 * FEE_PER_FILL if won else -0.50 - FEE_PER_FILL
+        # fill price of the side we took. '0.50' = optimistic (assume the market
+        # sat at a coin flip). 'rw' = the random-walk fair price (what an EFFICIENT
+        # market charges for this exact position/time/vol) — the honest fill, since
+        # a real book prices the momentum you can see.
+        rw_up = ctx["drift_prob_up"]
+        if fill == "rw":
+            fp = rw_up if up else (1.0 - rw_up)
+            fp = min(max(fp, 0.02), 0.98)
+        else:
+            fp = 0.50
+        pnl = ((1.0 - fp) - 2 * FEE_PER_FILL) if won else (-fp - FEE_PER_FILL)
         results.append({"verdict": v["verdict"], "up_prob": v["up_prob"],
                         "call": call_label(v["up_prob"], v["verdict"]),
                         "vs_open": ctx["vs_open_pct"], "rw": ctx["drift_prob_up"],
@@ -169,8 +178,9 @@ def backtest(n: int = 30, decision_frac: float = 0.7, minutes: int = 4000,
     followed = sum(1 for r in results if (r["vs_open"] > 0) == (r["verdict"] == "UP"))
     return {
         "n": n_g, "decision_frac": decision_frac, "seconds_left": secs_left,
+        "fill": fill,
         "hit_rate": round(hits / n_g, 3),
-        "ev_per_bet_at_0.50": round(pnl / n_g, 4),
+        "ev_per_bet": round(pnl / n_g, 4),
         "total_pnl_per_$": round(pnl, 3),
         "followed_position_vs_open_pct": round(followed / n_g, 3),
         "sample": results[:12],
@@ -182,17 +192,19 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=30, help="windows to sample")
     ap.add_argument("--decision", type=float, default=0.7, help="fraction into the window for the read")
     ap.add_argument("--minutes", type=int, default=4000, help="history to span")
+    ap.add_argument("--fill", choices=("0.50", "rw"), default="0.50",
+                    help="0.50=optimistic coin-flip fill; rw=efficient random-walk fair price")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
-    r = backtest(n=args.n, decision_frac=args.decision, minutes=args.minutes)
+    r = backtest(n=args.n, decision_frac=args.decision, minutes=args.minutes, fill=args.fill)
     if args.json:
         print(json.dumps(r, indent=1)); return 0
     if r.get("n", 0) == 0:
         print("backtest:", r.get("error")); return 1
     print(f"# AI up/down backtest — {r['n']} historical windows, read at "
-          f"{r['decision_frac']:.0%} in ({r['seconds_left']}s left)")
+          f"{r['decision_frac']:.0%} in ({r['seconds_left']}s left), fill={r['fill']}")
     print(f"#   hit rate         {r['hit_rate']:.1%}   (50% = no edge over the coin)")
-    print(f"#   EV / bet @0.50   {r['ev_per_bet_at_0.50']:+.4f}   (fee-aware, optimistic fill)")
+    print(f"#   EV / bet         {r['ev_per_bet']:+.4f}   (fee-aware, fill={r['fill']})")
     print(f"#   followed vs-open {r['followed_position_vs_open_pct']:.0%}   (how often it just rode momentum)")
     return 0
 

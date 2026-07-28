@@ -60,7 +60,7 @@ def test_backtest_grades_the_ai_against_the_close(monkeypatch):
     r = bt.backtest(n=10, decision_frac=0.7, minutes=400, brain=_Brain(), progress=False)
     assert r["n"] > 0
     assert 0.0 <= r["hit_rate"] <= 1.0
-    assert "ev_per_bet_at_0.50" in r and "followed_position_vs_open_pct" in r
+    assert "ev_per_bet" in r and "followed_position_vs_open_pct" in r
 
 
 def test_backtest_reports_nothing_without_history(monkeypatch):
