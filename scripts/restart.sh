@@ -5,6 +5,7 @@
 #   scripts/restart.sh                # stop both, start both
 #   scripts/restart.sh loop           # restart trading loop only
 #   scripts/restart.sh server         # restart FastAPI server only
+#   scripts/restart.sh stoploop       # STOP the trading loop, keep server + scheduler up
 #   scripts/restart.sh sched          # restart the job scheduler only
 #   scripts/restart.sh stop           # stop both, don't start
 #   scripts/restart.sh status         # show what's running
@@ -245,6 +246,12 @@ case "$action" in
   loop)
     stop_proc "trading loop" "$LOOP_PATTERN"
     start_loop
+    show_status
+    ;;
+  stoploop)
+    # stop ONLY the trading loop (no scans/trades); leave the dashboard + scheduler
+    # running so /predictions and the board/updown refresh stay up.
+    stop_proc "trading loop" "$LOOP_PATTERN"
     show_status
     ;;
   server)
