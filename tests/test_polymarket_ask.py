@@ -197,3 +197,32 @@ def test_no_match_returns_nothing_and_says_so():
     assert ask.ask(FakeClient(), StubForecaster(lambda q, d: (0.9, "x")),
                    needles=["nope"], rows=[_row()], printer=said.append) == []
     assert "no market matched" in said[0]
+
+
+# ── mutually-exclusive event coherence (NVIDIA/Apple "largest company?") ─────
+def test_siblings_of_finds_same_event_options():
+    board = {"trending": [
+        {"market_id": "1", "event_id": "e", "question": "NVIDIA largest?", "yes": 0.13},
+        {"market_id": "2", "event_id": "e", "question": "Apple largest?", "yes": 0.88},
+        {"market_id": "3", "event_id": "other", "question": "unrelated", "yes": 0.5},
+    ], "breaking": [], "sports": [], "longshots": [], "edges": []}
+    row = board["trending"][0]
+    sibs = ask.siblings_of(row, board)
+    assert [s["market_id"] for s in sibs] == ["2"]     # same event, not self, not other
+    assert ask.siblings_of({"event_id": "solo"}, board) == []
+
+
+def test_analyze_row_feeds_siblings_into_the_prompt():
+    seen = {}
+
+    class Spy:
+        def forecast(self, q, ctx):
+            seen["ctx"] = ctx
+            return (0.30, "coherent now")
+    row = {"market_id": "1", "event_id": "e", "question": "NVIDIA largest?",
+           "yes": 0.13, "yes_token": "y", "no_token": "n", "tags": ["tech"],
+           "event_title": "Largest company?"}
+    sibs = [{"market_id": "2", "question": "Apple largest?", "yes": 0.88}]
+    ask.analyze_row(row, Spy(), siblings=sibs)
+    assert "MUTUALLY-EXCLUSIVE" in seen["ctx"]
+    assert "Apple largest?" in seen["ctx"] and "88%" in seen["ctx"]

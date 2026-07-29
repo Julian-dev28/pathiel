@@ -143,9 +143,30 @@ def ask(client: PolymarketClient, forecaster, needles: Sequence[str] = (),
     return verdicts
 
 
+def siblings_of(row: Dict[str, Any], board: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Other options in the SAME event (mutually-exclusive markets like each
+    company in 'largest company?'). Found by event_id/event_title across every
+    board feed. Empty for a standalone binary market."""
+    if not board:
+        return []
+    ev = str(row.get("event_id") or row.get("event_title") or "")
+    if not ev:
+        return []
+    out, seen = [], {str(row.get("market_id"))}
+    for feed in ("trending", "breaking", "sports", "longshots", "edges"):
+        for r in board.get(feed) or []:
+            mid = str(r.get("market_id"))
+            same = str(r.get("event_id") or r.get("event_title") or "")
+            if same == ev and mid not in seen:
+                seen.add(mid)
+                out.append(r)
+    return out
+
+
 def analyze_row(row: Dict[str, Any], forecaster, record: bool = False,
                 record_fn=ledger.record,
-                client: Optional[PolymarketClient] = None) -> Dict[str, Any]:
+                client: Optional[PolymarketClient] = None,
+                siblings: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """Forecast ONE already-fetched board row (the dashboard 'Analyze' button).
 
     No universe scan: the row carries everything (`yes`, tokens, tags, score), so
@@ -179,6 +200,18 @@ def analyze_row(row: Dict[str, Any], forecaster, record: bool = False,
     ctx = (f"{row.get('event_title','')} | tags: {', '.join(row.get('tags') or [])} | "
            f"{'LIVE, current score ' + row['score'] if row.get('score') else ''} | "
            f"resolves {row.get('end_date','')}")
+    # mutually-exclusive siblings: tell the model the other options exist and are
+    # priced, so it can't say NVIDIA 85% AND Apple 52% for the same #1 slot. It
+    # must keep this option's YES consistent with the rest summing to ~1.
+    sibs = siblings if siblings is not None else []
+    if sibs:
+        opts = "; ".join(f"{(s.get('question') or '')[:60]} = market {int((s.get('yes') or 0)*100)}%"
+                         for s in sibs[:8])
+        ctx += (f"\nThis is ONE option in a MUTUALLY-EXCLUSIVE event — exactly one "
+                f"resolves YES. The other options and their market prices: {opts}. "
+                f"Your YES probability for THIS option must be consistent with them "
+                f"summing to ~100%; do not give a high YES to two options that can't "
+                f"both win.")
     fc = forecaster.forecast(row.get("question") or "", ctx)
     if fc is None:
         v["skip_reason"] = "brain declined / unparseable"
@@ -224,7 +257,8 @@ def analyze_market_id(market_id: str, forecaster, board_payload: Dict[str, Any],
         for row in board_payload.get(feed) or []:
             if str(row.get("market_id")) == str(market_id):
                 return analyze_row(row, forecaster, record=record,
-                                   record_fn=record_fn, client=client)
+                                   record_fn=record_fn, client=client,
+                                   siblings=siblings_of(row, board_payload))
     return None
 
 

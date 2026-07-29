@@ -131,12 +131,25 @@ def scan_trending(client: PolymarketClient, forecaster, cfg: Optional[Dict[str, 
     if skip_ids is None:
         skip_ids = {str(r.get("market_id")) for r in ledger.load()}
     recorded: List[Dict[str, Any]] = []
+    # index all collected rows by event so a multi-option event (NVIDIA/Apple for
+    # "largest company?") is forecast coherently, not as independent 85%+52%.
+    by_event: Dict[str, List[Dict[str, Any]]] = {}
+    for r in rows:
+        by_event.setdefault(str(r.get("event_id") or r.get("event_title") or ""), []).append(r)
     for row in trending.forecast_queue(rows, skip_ids=skip_ids, limit=limit, cfg=c):
         mkt_yes = row.get("yes")
         if mkt_yes is None:
             continue
         ctx = (f"{row.get('event_title','')} | tags: {', '.join(row.get('tags') or [])} | "
                f"market resolves {row.get('end_date','')}")
+        ev = str(row.get("event_id") or row.get("event_title") or "")
+        sibs = [s for s in by_event.get(ev, []) if str(s.get("market_id")) != str(row.get("market_id"))]
+        if sibs:
+            opts = "; ".join(f"{(s.get('question') or '')[:60]} = market {int((s.get('yes') or 0)*100)}%"
+                             for s in sibs[:8])
+            ctx += (f"\nONE option in a MUTUALLY-EXCLUSIVE event — exactly one resolves "
+                    f"YES. Others + market prices: {opts}. Keep this option's YES "
+                    f"consistent with them summing to ~100%.")
         fc = forecaster.forecast(row.get("question") or "", ctx)
         if fc is None:
             continue
