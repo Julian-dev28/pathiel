@@ -274,7 +274,7 @@
   },
   "funding_spike_short": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "scan_interval_hours": 6,
     "entry_z": 2.0,
     "exit_z": 1.0,
@@ -376,7 +376,7 @@
   },
   "uw_flow_xs": {
     "enabled": true,
-    "shadow_only": false,
+    "shadow_only": true,
     "k_per_leg": 2,
     "notional_usd": 20.0,
     "leverage": 3,
@@ -386,7 +386,7 @@
     "max_scan": 20
   },
   "main_engine": {
-    "entries_enabled": true,
+    "entries_enabled": false,
     "recorder_enabled": true
   },
   "max_daily_loss_pct": 0.15,
@@ -404,8 +404,8 @@
   },
   "hip3_max_leverage": 6,
   "ai_only_mode": {
-    "enabled": true,
-    "place": true,
+    "enabled": false,
+    "place": false,
     "interval_min": 30,
     "min_volume_usd": 0,
     "max_markets": 40,

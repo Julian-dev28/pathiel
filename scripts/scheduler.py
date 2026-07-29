@@ -52,11 +52,13 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "log": "logs/polymarket_scout.log",
         "why": "hourly Polymarket board cache refresh (no LLM, no capital)",
     },
-    "poly-daily": {
-        "args": [PY, "-m", "services.polymarket_scout.daily"],
-        "hour": 9, "minute": 45,
+    "poly-judgment": {
+        "args": [PY, "-m", "services.polymarket_scout.daily", "--lanes",
+                 "judgment,trending,sports", "--judgment-limit", "16",
+                 "--trending-limit", "14"],
+        "interval_min": 240,          # every 4h — the judgment lanes are the real edge
         "log": "logs/polymarket_scout.log",
-        "why": "both forecast lanes + grade resolved paper trades (spends tokens)",
+        "why": "judgment/trending/sports forecasts (web-search edge) + grade; every 4h",
     },
     "autonomous-cycle": {
         "args": [PY, os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
@@ -64,12 +66,10 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "log": "logs/autonomous_cycle.log",
         "why": "grade every book, auto-demote refuted, auto-promote validated",
     },
-    "updown-5m": {
-        "args": [PY, "-m", "services.polymarket_scout.updown", "--assets", "btc"],
-        "interval_min": 5,
-        "log": "logs/updown.log",
-        "why": "AI read on the CURRENT 5-min up/down window (shadow, latency market)",
-    },
+    # updown-5m REMOVED 2026-07-29: proven no edge (backtest 74d0846 — the venue
+    # prices the momentum; live ledger -18.8% Kelly). It spammed 898 coin-flip
+    # reads that dragged the scoreboard's Brier below the market. The reader +
+    # panel + on-demand "Analyze now" still work by hand; only the auto-spam is off.
 }
 # updown-5m spends a model call every 5 min. TIMEOUT_S below (3600) is generous
 # for it; the read is short (no web search) so it finishes in seconds.

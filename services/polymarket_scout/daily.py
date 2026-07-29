@@ -51,32 +51,50 @@ def main() -> int:
                     default=int(os.environ.get("POLY_SCOUT_LIMIT", "14")))
     ap.add_argument("--trending-limit", type=int,
                     default=int(os.environ.get("POLY_SCOUT_TRENDING_LIMIT", "10")))
+    ap.add_argument("--sports-limit", type=int, default=6)
+    ap.add_argument("--lanes", default="judgment,trending",
+                    help="comma list of lanes to forecast (judgment,trending,sports)")
     args = ap.parse_args()
+    lanes = {l.strip() for l in args.lanes.split(",") if l.strip()}
 
     client = PolymarketClient()
-    n_j = n_t = 0
+    n_j = n_t = n_s = 0
     provider = ""
     if not args.board_only:
+        from services.polymarket_scout.run import SPORTS_LANE_CFG
+        from services.polymarket_scout import trending as _tr
         fc = BrainForecaster()
         provider = fc.provider
-        # One skip set shared by both lanes: the trending lane must not
-        # re-forecast a market the judgment lane just recorded — that is a
-        # correlated duplicate, not independent evidence.
+        # One skip set shared by every lane: no market gets forecast twice —
+        # correlated duplicates are not independent evidence.
         skip = {str(r.get("market_id")) for r in ledger.load()}
-        try:
-            rec_j = scan(client, fc, CFG, limit=args.judgment_limit, skip_ids=skip)
-        except Exception as exc:            # a scan error must never skip grading
-            rec_j = []
-            print(f"[scout-daily] judgment scan error: {exc}")
-        n_j = len(rec_j)
-        skip |= {str(r.get("market_id")) for r in rec_j}
-        try:
-            rec_t = scan_trending(client, fc, cfg=TRENDING_CFG,
-                                  limit=args.trending_limit, skip_ids=skip)
-        except Exception as exc:
-            rec_t = []
-            print(f"[scout-daily] trending scan error: {exc}")
-        n_t = len(rec_t)
+        if "judgment" in lanes:
+            try:
+                rec_j = scan(client, fc, CFG, limit=args.judgment_limit, skip_ids=skip)
+            except Exception as exc:        # a scan error must never skip grading
+                rec_j = []
+                print(f"[scout-daily] judgment scan error: {exc}")
+            n_j = len(rec_j)
+            skip |= {str(r.get("market_id")) for r in rec_j}
+        if "trending" in lanes:
+            try:
+                rec_t = scan_trending(client, fc, cfg=TRENDING_CFG,
+                                      limit=args.trending_limit, skip_ids=skip)
+            except Exception as exc:
+                rec_t = []
+                print(f"[scout-daily] trending scan error: {exc}")
+            n_t = len(rec_t)
+            skip |= {str(r.get("market_id")) for r in rec_t}
+        if "sports" in lanes:
+            try:
+                rec_s = scan_trending(client, fc, cfg=SPORTS_LANE_CFG,
+                                      limit=args.sports_limit, skip_ids=skip,
+                                      rows=_tr.collect_sports(client, cfg=SPORTS_LANE_CFG),
+                                      lane="sports")
+            except Exception as exc:
+                rec_s = []
+                print(f"[scout-daily] sports scan error: {exc}")
+            n_s = len(rec_s)
 
     try:
         payload = board.refresh(client, provider=provider)
@@ -87,7 +105,7 @@ def main() -> int:
         board_seg = f"board: refresh FAILED ({exc})"
 
     line = (f"[{time.strftime('%Y-%m-%d %H:%M')}] polymarket_scout "
-            f"+{n_j} judgment +{n_t} trending | {_grade_line(client)} | {board_seg}")
+            f"+{n_j} judgment +{n_t} trending +{n_s} sports | {_grade_line(client)} | {board_seg}")
     print(line)
     try:
         with open(os.path.join(ledger._state_dir(), "daily.log"), "a") as fh:
