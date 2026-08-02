@@ -1620,13 +1620,16 @@ def _trends_arb_fire_payload() -> Dict[str, Any]:
     try:
         from services.trend_engine import env
         from services.trend_engine.arb_watch import (
-            ArbWatcher, ensure_subscribed, execution_readiness, order_tickets)
+            SUBSCRIBE_WAIT_S, ArbWatcher, ensure_subscribed,
+            execution_readiness, order_tickets)
     except Exception:
         return {"status": "unavailable"}
     try:
         env.load()
         ready = execution_readiness()
-        ensure_subscribed()          # 0ms re-quote, not a 300ms REST poll
+        # 0ms re-quote, not a 300ms REST poll. The wait only bites right after a
+        # window rolls, which is exactly when firing off a stale book is worst.
+        ensure_subscribed(wait_s=SUBSCRIBE_WAIT_S)
         w = ArbWatcher(mode="shadow", cooldown_s=0.0)
         event = w.check()
     except Exception as exc:

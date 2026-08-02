@@ -279,6 +279,13 @@
 
   <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
   <div id="lane-updown" class="hidden">
+    <!-- The arb (claim 3) is the only actionable thing on this lane — it holds
+         the FIRE button — so it sits above the read-only analysis. -->
+    <div class="card mb-4">
+      <div class="sec-label">microstructure · the three HFT claims, tested</div>
+      <div id="ud-edges"><span class="dim text-[11.5px]">loading…</span></div>
+    </div>
+
     <div id="pb-updown" class="mb-4"></div>
         <div class="card mb-4">
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -316,11 +323,6 @@
         </div>
         <div class="text-[10.5px] dim mt-3" id="ud-calib-note"></div>
       </div>
-    </div>
-
-    <div class="card mb-4">
-      <div class="sec-label">microstructure · the three HFT claims, tested</div>
-      <div id="ud-edges"><span class="dim text-[11.5px]">loading…</span></div>
     </div>
 
     <div class="card mb-4">
@@ -965,16 +967,10 @@ function renderEdges(e) {
       (<b>rate × min(p, 1−p) × shares</b>) — at the rate the tape actually charged, not the one
       Gamma advertises. Measured 2026-08-02: Gamma says 1000bps, 79 of 79 executed trades charged
       <b>0</b>. Trusting the advertised number called a 1¢ crossed pair a loss when it is 1¢ of edge.</div>
-    ${e.ws ? `<div class="mono text-[10.5px] mt-1 mb-2 ${e.ws.connected && !e.ws.stale ? 'teal' : 'amb'}">
-      websocket ${e.ws.connected ? 'LIVE' : 'down'}${e.ws.stale ? ' · STALE' : ''}
-      · ${e.ws.events || 0} events (${e.ws.price_changes || 0} price changes, ${e.ws.trades || 0} trades)
-      · last ${e.ws.last_msg_age_s == null ? '–' : num(e.ws.last_msg_age_s, 1) + 's'} ago
-      · reconnects ${e.ws.reconnects || 0}
-      ${e.ws.observed_fee_bps != null ? `· fee CHARGED ${e.ws.observed_fee_bps}bps` : ''}
-      ${e.ws.last_error ? `<br/><span class="dn">${esc(e.ws.last_error)}</span>` : ''}
-    </div>` : ''}
     ${lp.status === 'ok' ? `<div class="mono text-[11.5px]" style="line-height:1.9">
-      live pair <b>${esc(lp.slug || '')}</b> <span class="badge ${lp.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(lp.source || '')}</span><br/>
+      pair at last refresh <b>${esc(lp.slug || '')}</b>
+      <span class="badge ${lp.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(lp.source || '')}</span>
+      <span class="dim">${e.generated_at ? age(Date.now() / 1000 - e.generated_at) : ''}</span><br/>
       UP ${lp.up.bid}/${lp.up.ask} · DOWN ${lp.down.bid}/${lp.down.ask}
       · tick ${lp.tick}<br/>
       fee <b>${lp.fee_bps}</b>bps charged
@@ -1012,12 +1008,13 @@ function renderEdges(e) {
     : `<div class="text-[11.5px] amb">${esc(ts.hint || ts.status || '')} — the fat tail above says the
          opportunity should exist; this line says whether the book actually pays for it.</div>`;
 
+  // Claim 3 leads: it is the only block on the tab with a button on it.
   $('#ud-edges').innerHTML =
-    claim(2, 'the leading side loses more often than a random walk says',
-      t.tail_is_fat ? 'CONFIRMED' : 'not found', t.tail_is_fat ? 'b-up' : 'b-mut', tailBody) +
     claim(3, 'buy both sides for under $1',
       arb.buy_both_net_hits ? 'seen' : 'not at our latency',
       arb.buy_both_net_hits ? 'b-up' : 'b-chop', arbBody) +
+    claim(2, 'the leading side loses more often than a random walk says',
+      t.tail_is_fat ? 'CONFIRMED' : 'not found', t.tail_is_fat ? 'b-up' : 'b-mut', tailBody) +
     claim(1, 'market prices are mis-calibrated by price bucket',
       c30.status === 'ok' ? (c30.mispriced && c30.mispriced.length ? 'mispriced' : 'calibrated') : 'needs data',
       c30.status === 'ok' ? ((c30.mispriced || []).length ? 'b-up' : 'b-mut') : 'b-chop', calBody) +
@@ -1122,6 +1119,27 @@ function renderAI(lane, ai) {
 // button is the event, not the default.
 let ARB = null;
 
+// Socket status, ALWAYS from the process being asked. The cached lane payload
+// carries a health block too, but it is written by the refresher — a process
+// that starts a socket and exits seconds later — so rendering that one showed
+// "down · 0 events · reconnects 0" forever while the server's feed was live.
+function wsHealthLine(ws) {
+  if (!ws) return '';
+  const live = ws.connected && !ws.stale;
+  const state = live ? 'LIVE'
+    : ws.connected ? 'connected · STALE'
+      : ws.running ? 'connecting' : 'not started';
+  return `<div class="mono text-[10.5px] mb-2 ${live ? 'teal' : 'amb'}">
+    websocket ${state}
+    · ${ws.events || 0} events (${ws.price_changes || 0} price changes, ${ws.trades || 0} trades)
+    · last ${ws.last_msg_age_s == null ? '–' : num(ws.last_msg_age_s, 1) + 's'} ago
+    · reconnects ${ws.reconnects || 0}
+    ${ws.observed_fee_bps != null ? `· fee CHARGED ${ws.observed_fee_bps}bps` : ''}
+    ${ws.pid ? `· pid ${ws.pid}` : ''}
+    ${ws.last_error ? `<br/><span class="dn">${esc(ws.last_error)}</span>` : ''}
+  </div>`;
+}
+
 function renderArbFire(p) {
   const el = $('#arb-fire');
   if (!el) return;
@@ -1139,7 +1157,9 @@ function renderArbFire(p) {
         <div class="sec-label" style="margin-bottom:0">fire the pair</div>
         <span class="badge ${armed ? 'b-up' : 'b-mut'}">${armed ? 'ARB LIVE' : 'no crossing'}</span>
       </div>
+      ${wsHealthLine(p.ws)}
       <div class="mono text-[11.5px]" style="line-height:1.8">
+        <span class="badge ${q.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(q.source || '')}</span>
         best net edge <span class="${sgn(q.best_net_edge)}">${num(q.best_net_edge, 4)}</span>/share
         · <b>${q.ticks_to_gross_arb == null ? '–' : q.ticks_to_gross_arb}</b> tick(s) away
         · fee ${q.fee_bps == null ? '–' : q.fee_bps}bps

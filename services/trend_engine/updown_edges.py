@@ -225,6 +225,39 @@ def current_market(now: Optional[float] = None,
     return m if isinstance(m, dict) else None
 
 
+WS_WARM_S = 3.0
+
+
+def warm_feed(market: Optional[Dict[str, Any]], wait_s: float = WS_WARM_S) -> bool:
+    """Start + subscribe the socket for this window and wait for both legs.
+
+    `pair_quote` subscribes lazily and falls back to REST until the first book
+    lands, which is fine in a daemon and wrong in a SHORT-LIVED process: the
+    lane refresher subscribes, quotes over REST in the same millisecond, records
+    a health block from a socket that never got to connect, and exits. That
+    snapshot then renders on the dashboard as a permanently dead feed while the
+    server's own socket is live. Waiting here makes the cached snapshot mean
+    what it says.
+
+    Returns True when both legs are two-sided on the socket.
+    """
+    if not market:
+        return False
+    try:
+        toks = json.loads(market.get("clobTokenIds") or "[]")
+    except Exception:
+        return False
+    if len(toks) != 2:
+        return False
+    try:
+        from services.trend_engine.updown_ws import feed as ws_feed
+        f = ws_feed()                       # creates and starts the thread
+        f.subscribe(list(toks))
+        return bool(f.wait_pair(toks, wait_s)) if wait_s > 0 else False
+    except Exception:
+        return False
+
+
 def pair_quote(market: Optional[Dict[str, Any]] = None, now: Optional[float] = None,
                getter: Optional[Callable[[str], Any]] = None,
                fee_bps: Optional[float] = None,
@@ -458,15 +491,10 @@ def record_window(offsets_s: Sequence[int] = SAMPLE_OFFSETS_S,
 
     # Warm the socket BEFORE the first offset. pair_quote() subscribes lazily
     # and falls back to REST until the first book arrives, so without this the
-    # earliest snapshot of every window is a 300ms-stale poll.
+    # earliest snapshot of every window is a 300ms-stale poll. No wait needed:
+    # the loop below sleeps to the first offset anyway.
     if getter is None:
-        try:
-            from services.trend_engine.updown_ws import feed as ws_feed
-            toks = json.loads(market.get("clobTokenIds") or "[]")
-            if len(toks) == 2:
-                ws_feed().subscribe(toks)
-        except Exception:
-            pass
+        warm_feed(market, wait_s=0.0)
 
     rows: List[Dict[str, Any]] = []
     for secs_left in sorted(offsets_s, reverse=True):
@@ -788,7 +816,12 @@ def read(windows: Optional[Sequence[Dict[str, Any]]] = None,
         "sample_offsets_s": list(SAMPLE_OFFSETS_S),
     }
     if with_live:
-        out["live_pair"] = pair_quote()
+        # Warm BEFORE quoting: this function runs in the lane refresher, which
+        # lives for seconds. Without the wait the snapshot is a REST quote next
+        # to a health block from a socket that never connected.
+        market = current_market()
+        warm_feed(market)
+        out["live_pair"] = pair_quote(market)
         try:
             from services.trend_engine.updown_ws import feed as ws_feed
             out["ws"] = ws_feed(start=False).health()

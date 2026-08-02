@@ -70,6 +70,11 @@ class ArbWatcher:
         self.hits = 0
         self.fires = 0
         self.best_edge: Optional[float] = None
+        # The quote `check()` actually decided on. Callers that need to show it
+        # (the preflight endpoint) must not re-quote: a second read is a second
+        # book, so the number on the button would not be the number that armed
+        # it — and on the REST fallback it is another 300ms round trip.
+        self.last_quote: Dict[str, Any] = {}
         self._last_fire_slug: Optional[str] = None
         self._last_fire_ts: float = 0.0
 
@@ -79,6 +84,7 @@ class ArbWatcher:
         """One look at the book. Returns the event when it qualifies, else None."""
         now = time.time() if now is None else now
         q = self._quoter()
+        self.last_quote = q if isinstance(q, dict) else {}
         self.checks += 1
         if q.get("status") != "ok":
             return None
@@ -282,31 +288,59 @@ def order_tickets(event: Optional[Dict[str, Any]], cap_usd: float = MAX_NOTIONAL
     } for leg, name in legs]
 
 
-def ensure_subscribed(slug: Optional[str] = None) -> Optional[str]:
+def ensure_subscribed(slug: Optional[str] = None,
+                      wait_s: float = 0.0) -> Optional[str]:
     """Point the CLOB websocket at the live window's two tokens.
 
     Idempotent and best-effort. Without this, a caller that only ever asks for
     a quote gets the REST fallback forever (~300ms) — and a one-tick edge that
     takes 300ms to see is one another desk already took. Returns the slug now
     subscribed, or None if the socket could not be reached.
+
+    `wait_s > 0` blocks until both legs are two-sided, so the FIRST call after a
+    window rolls is a socket read instead of a poll. The wait only happens on an
+    actual (re)subscribe, and the slug check is backed by the feed's own asset
+    list — a `stop_feed()` between calls would otherwise leave this believing it
+    was still subscribed to a socket that no longer exists.
     """
     global _SUBSCRIBED
     try:
+        from services.trend_engine.updown_ws import feed
         slug = slug or slug_for()
-        if slug and slug == _SUBSCRIBED:
+        f = feed()
+        if slug and slug == _SUBSCRIBED and f.health().get("assets"):
             return slug
         toks = tokens_for(slug)
         if not toks:
             return None
-        from services.trend_engine.updown_ws import feed
-        feed().subscribe(toks)
+        f.subscribe(toks)
         _SUBSCRIBED = slug
+        if wait_s > 0:
+            f.wait_pair(toks, wait_s)
         return slug
     except Exception:
         return None
 
 
+def ws_health() -> Dict[str, Any]:
+    """This process's socket state, for the dashboard.
+
+    Deliberately read HERE rather than out of the cached lane payload: that one
+    is written by the refresher, which exits seconds after starting a socket, so
+    it always reads as down. The button's status line has to come from the
+    process that owns the live feed.
+    """
+    try:
+        from services.trend_engine.updown_ws import feed
+        return feed(start=False).health()
+    except Exception as exc:
+        return {"connected": False, "running": False,
+                "last_error": str(exc)[:120]}
+
+
 _SUBSCRIBED: Optional[str] = None
+# First call after a window rolls pays this at most, and only once per window.
+SUBSCRIBE_WAIT_S = 2.0
 
 
 def preflight(quoter: Optional[Callable[[], Dict[str, Any]]] = None,
@@ -320,18 +354,20 @@ def preflight(quoter: Optional[Callable[[], Dict[str, Any]]] = None,
     Backs the dashboard button. Always read-only — it prices the trade and
     reports what would be sent, and it places nothing regardless of creds.
 
-    Subscribes the websocket on the way in so the SECOND call onward is served
-    from memory at 0ms. The first call in a process still pays REST, and the
-    returned `quote.source` says which it was — a `rest` source on a live book
-    means the button is a poll behind the market.
+    Subscribes the websocket on the way in and waits (bounded) for both legs, so
+    even the first call after a window rolls is served from memory at 0ms rather
+    than a 300ms poll. `quote.source` still says which one answered — a `rest`
+    source on a live book means the button is a poll behind the market — and
+    `ws` carries THIS process's socket health, which is the only honest place to
+    read it from.
     """
     if subscribe and quoter is None:
-        ensure_subscribed()
+        ensure_subscribed(wait_s=SUBSCRIBE_WAIT_S)
     w = ArbWatcher(mode="shadow", min_edge=min_edge, max_notional_usd=cap_usd,
                    cooldown_s=0.0, quoter=quoter)
     event = w.check()
     ready = execution_readiness(getenv)
-    q = w._quoter()
+    q = w.last_quote                      # the quote that armed it, not a new one
     armed = bool(event) and event.get("action") != "skipped_cooldown"
     return {
         "status": "ok",
@@ -339,6 +375,7 @@ def preflight(quoter: Optional[Callable[[], Dict[str, Any]]] = None,
         "event": event,
         "tickets": order_tickets(event, cap_usd) if armed else [],
         "readiness": ready,
+        "ws": ws_health(),
         "quote": {k: q.get(k) for k in
                   ("slug", "source", "fee_bps", "best_net_edge", "arb",
                    "ticks_to_gross_arb", "buy_both", "sell_both", "up", "down")},

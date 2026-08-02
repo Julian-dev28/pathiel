@@ -1221,6 +1221,30 @@ def test_feed_subscribes_on_connect_and_survives_a_dead_stream():
     assert f.reconnects >= 1                     # the stream ended, it retried
 
 
+def test_wait_pair_holds_out_for_two_sided_quotes_on_both_legs():
+    """`wait_ready` is satisfied by one leg holding a lone bid. `pair_quote`
+    needs bid AND ask on both, so a caller that warmed on the weak condition
+    quotes over REST believing the socket answered."""
+    f = uw.BookFeed()
+    f._ingest(_book_frame("A", [(0.4, 1)], [(0.5, 1)]))
+    f._ingest(json.dumps({"event_type": "book", "asset_id": "B",
+                          "bids": [{"price": "0.5", "size": "1"}], "asks": []}))
+    assert f.wait_ready(timeout_s=0.05) is True          # weak condition: met
+    assert f.wait_pair(["A", "B"], timeout_s=0.05) is False
+    f._ingest(_book_frame("B", [(0.5, 1)], [(0.6, 1)]))
+    assert f.wait_pair(["A", "B"], timeout_s=0.05) is True
+
+
+def test_health_separates_a_thread_that_never_started_from_a_failed_connect():
+    """The lane refresher starts a socket and exits seconds later; its snapshot
+    rendered as a dead feed forever. `running` names which fault it is, `pid`
+    says which process measured it."""
+    f = uw.BookFeed()
+    h = f.health()
+    assert h["running"] is False and h["connected"] is False
+    assert h["pid"] == os.getpid() and h["measured_at"] > 0
+
+
 def test_feed_ignores_junk_frames():
     f = uw.BookFeed()
     f._ingest("not json")
@@ -1257,6 +1281,63 @@ def test_pair_quote_falls_back_to_rest_when_the_socket_is_cold(monkeypatch):
     q = ue.pair_quote(market, getter=get)
     assert q["source"] == "rest"
     assert q["buy_both"]["cost"] == pytest.approx(0.90)
+
+
+class FakeFeed:
+    """Stand-in for the process-wide BookFeed: records subscribes and waits."""
+
+    def __init__(self, assets=None, ready=True):
+        self.subs, self.waits = [], []
+        self.assets = list(assets or [])
+        self._ready = ready
+
+    def subscribe(self, toks):
+        self.subs.append(list(toks))
+        self.assets = list(toks)
+
+    def wait_pair(self, toks, timeout_s=3.0):
+        self.waits.append((list(toks), timeout_s))
+        return self._ready
+
+    def health(self):
+        return {"pid": 4242, "running": True, "connected": True, "stale": False,
+                "assets": list(self.assets), "events": 7, "reconnects": 0,
+                "measured_at": int(time.time())}
+
+
+def test_warm_feed_subscribes_and_waits_for_both_legs(monkeypatch):
+    """The refresher lives for seconds. Subscribing without waiting means it
+    quotes over REST and then records health from a socket that never
+    connected — which is what rendered on the tab as a permanently dead feed."""
+    f = FakeFeed()
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
+    assert ue.warm_feed({"clobTokenIds": '["t-up", "t-dn"]'}, wait_s=1.0) is True
+    assert f.subs == [["t-up", "t-dn"]]
+    assert f.waits == [(["t-up", "t-dn"], 1.0)]
+
+
+def test_warm_feed_declines_anything_that_is_not_a_two_token_market(monkeypatch):
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("warm_feed reached the socket without a real market")))
+    assert ue.warm_feed(None) is False
+    assert ue.warm_feed({"clobTokenIds": "[]"}) is False
+    assert ue.warm_feed({"clobTokenIds": "not json"}) is False
+
+
+def test_read_warms_the_socket_before_it_quotes(monkeypatch):
+    """Ordering is the whole fix: warm, THEN quote, THEN read health."""
+    order = []
+    f = FakeFeed(["t-up", "t-dn"])
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
+    monkeypatch.setattr(ue, "current_market",
+                        lambda *a, **k: {"clobTokenIds": '["t-up", "t-dn"]'})
+    monkeypatch.setattr(ue, "warm_feed", lambda m, *a, **k: order.append("warm"))
+    monkeypatch.setattr(ue, "pair_quote", lambda *a, **k: (
+        order.append("quote") or {"status": "ok", "source": "websocket"}))
+    out = ue.read(windows=[], samples=[], resolver=lambda *a, **k: None)
+    assert order == ["warm", "quote"]
+    assert out["live_pair"]["source"] == "websocket"
+    assert out["ws"]["running"] is True and out["ws"]["pid"] == 4242
 
 
 # ── recorders ────────────────────────────────────────────────────────────────
@@ -1693,31 +1774,91 @@ def test_preflight_arms_but_refuses_to_execute_without_credentials():
 def test_preflight_subscribes_the_socket_so_the_next_quote_is_free(monkeypatch):
     """A button quoting over REST is ~300ms behind a one-tick market. The
     first call pays that; every call after it must be served from memory."""
-    calls = []
+    f = FakeFeed()
     monkeypatch.setattr(aw, "_SUBSCRIBED", None)
     monkeypatch.setattr(aw, "slug_for", lambda *a, **k: "w1")
     monkeypatch.setattr(aw, "tokens_for", lambda s: ["t-up", "t-dn"])
     monkeypatch.setattr(aw, "pair_quote", lambda *a, **k: {"status": "no_book"})
-    import services.trend_engine.updown_ws as uw
-    monkeypatch.setattr(uw, "feed",
-                        lambda: type("F", (), {"subscribe": lambda self, t: calls.append(t)})())
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
     aw.preflight()
     aw.preflight()
-    assert calls == [["t-up", "t-dn"]]        # idempotent, not once per poll
+    assert f.subs == [["t-up", "t-dn"]]       # idempotent, not once per poll
+
+
+def test_preflight_waits_for_the_socket_on_the_first_call_of_a_window(monkeypatch):
+    """Without the wait, the first quote after every 5m roll is a 300ms poll —
+    exactly when a one-tick crossing is most likely to be there and gone."""
+    f = FakeFeed()
+    monkeypatch.setattr(aw, "_SUBSCRIBED", None)
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: "w1")
+    monkeypatch.setattr(aw, "tokens_for", lambda s: ["t-up", "t-dn"])
+    monkeypatch.setattr(aw, "pair_quote", lambda *a, **k: {"status": "no_book"})
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
+    aw.preflight()
+    assert f.waits == [(["t-up", "t-dn"], aw.SUBSCRIBE_WAIT_S)]
+    aw.preflight()
+    assert len(f.waits) == 1                  # only on an actual (re)subscribe
 
 
 def test_preflight_resubscribes_when_the_5m_window_rolls(monkeypatch):
-    calls, slug = [], ["w1"]
+    slug = ["w1"]
+    f = FakeFeed()
     monkeypatch.setattr(aw, "_SUBSCRIBED", None)
     monkeypatch.setattr(aw, "slug_for", lambda *a, **k: slug[0])
     monkeypatch.setattr(aw, "tokens_for", lambda s: [s + "-up", s + "-dn"])
-    import services.trend_engine.updown_ws as uw
-    monkeypatch.setattr(uw, "feed",
-                        lambda: type("F", (), {"subscribe": lambda self, t: calls.append(t)})())
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
     aw.ensure_subscribed()
     slug[0] = "w2"
     aw.ensure_subscribed()
-    assert calls == [["w1-up", "w1-dn"], ["w2-up", "w2-dn"]]
+    assert f.subs == [["w1-up", "w1-dn"], ["w2-up", "w2-dn"]]
+
+
+def test_ensure_subscribed_resubscribes_when_the_feed_lost_its_assets(monkeypatch):
+    """The slug memo is not proof of a subscription: a `stop_feed()` between
+    calls leaves a fresh socket holding nothing while the memo still matches."""
+    f = FakeFeed()
+    monkeypatch.setattr(aw, "_SUBSCRIBED", None)
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: "w1")
+    monkeypatch.setattr(aw, "tokens_for", lambda s: ["t-up", "t-dn"])
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
+    aw.ensure_subscribed()
+    f.assets = []                             # socket replaced under us
+    aw.ensure_subscribed()
+    assert f.subs == [["t-up", "t-dn"], ["t-up", "t-dn"]]
+
+
+def test_preflight_reports_the_socket_of_the_process_that_answers(monkeypatch):
+    """The cached lane payload carries a health block too, but it is written by
+    a process that exits seconds after starting a socket. The button's status
+    line has to come from the process holding the live feed."""
+    f = FakeFeed(["t-up", "t-dn"])
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: f)
+    p = aw.preflight(quoter=_quote(0.51, 0.50), getenv={}.get)
+    assert p["ws"]["pid"] == 4242 and p["ws"]["running"] is True
+    assert p["ws"]["events"] == 7
+
+
+def test_preflight_survives_a_socket_that_cannot_report_health(monkeypatch):
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("feed gone")))
+    p = aw.preflight(quoter=_quote(0.51, 0.50), getenv={}.get)
+    assert p["status"] == "ok"
+    assert p["ws"]["connected"] is False and "feed gone" in p["ws"]["last_error"]
+
+
+def test_preflight_shows_the_quote_that_armed_it_instead_of_re_reading():
+    """Two reads are two books: the number under the button would not be the
+    number that armed it, and on the REST fallback it is another 300ms."""
+    reads = []
+
+    def quoter():
+        reads.append(1)
+        return _quote(0.48, 0.49)()
+
+    p = aw.preflight(quoter=quoter, getenv=_FULL_CREDS.get)
+    assert len(reads) == 1
+    assert p["quote"]["buy_both"]["cost"] == pytest.approx(0.97)
+    assert p["quote"]["source"] == "websocket"
 
 
 def test_ensure_subscribed_swallows_a_dead_socket(monkeypatch):
@@ -1930,6 +2071,25 @@ def test_the_fire_button_is_on_the_page_and_says_it_places_no_order(client):
     assert "/api/dashboard/trends/arb/fire" in body
     assert "places <b>no order</b>" in body
     assert "FOK" in body
+
+
+def test_the_arb_card_leads_the_updown_lane(client):
+    """It is the only block on the lane with a control on it, so it sits above
+    the read-only analysis and claim 3 renders before the other claims."""
+    body = client.get("/trends").text
+    lane = body.index('id="lane-updown"')
+    assert body.index('id="ud-edges"', lane) < body.index('id="pb-updown"', lane)
+    assert body.index("claim(3,") < body.index("claim(2,") < body.index("claim(1,")
+
+
+def test_the_socket_status_line_is_read_live_and_never_from_the_cache(client):
+    """The cached `ws` block is a snapshot from the refresher, which exits
+    seconds after starting a socket — rendering it showed a dead feed on the
+    tab while the server's own socket was pushing thousands of events."""
+    body = client.get("/trends").text
+    assert "wsHealthLine(p.ws)" in body
+    assert "e.ws" not in body                  # cached health is never rendered
+    assert "pair at last refresh" in body      # the cached quote says it is old
 
 
 def test_the_arb_route_never_reports_an_order_as_sent(monkeypatch):

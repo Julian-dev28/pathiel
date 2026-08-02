@@ -29,9 +29,10 @@ which this does not touch.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 # Beyond this the cached top-of-book is not trustworthy and callers fall back
@@ -130,6 +131,24 @@ class BookFeed:
             time.sleep(0.05)
         return False
 
+    def wait_pair(self, asset_ids: Sequence[str], timeout_s: float = 3.0) -> bool:
+        """Block until BOTH legs are two-sided (or the timeout).
+
+        `wait_ready` is too weak for anything that prices a pair: one leg
+        holding a lone bid satisfies it, while `pair_quote` needs bid AND ask on
+        both legs before it will trust the socket. A caller that waits on the
+        weaker condition believes it warmed the feed and then quotes over REST.
+        """
+        deadline = time.time() + timeout_s
+        while True:
+            rows = self.pair(list(asset_ids))
+            if rows and all(r.get("bid") is not None and r.get("ask") is not None
+                            for r in rows):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(0.05)
+
     # ── reads ────────────────────────────────────────────────────────────────
 
     def top(self, asset_id: str) -> Optional[Dict[str, Any]]:
@@ -161,10 +180,22 @@ class BookFeed:
             return float(max(self._fee_bps_seen.items(), key=lambda kv: kv[1])[0])
 
     def health(self) -> Dict[str, Any]:
+        """State of THIS process's socket.
+
+        `pid` and `running` are here because the failure that actually happened
+        was reading a health block written by another, short-lived process: the
+        lane refresher starts a feed, exits seconds later, and its snapshot
+        renders forever as a dead socket. `running=False` means the thread was
+        never started (or has died) — a different fault from `connected=False`,
+        which means the handshake is failing and `last_error` says why.
+        """
         with self._lock:
             quotes = len([v for v in self._top.values() if v.get("ask") is not None])
         age = (time.time() - self.last_msg_ts) if self.last_msg_ts else None
         return {
+            "pid": os.getpid(),
+            "running": bool(self._thread is not None and self._thread.is_alive()),
+            "measured_at": int(time.time()),
             "connected": self.connected,
             "assets": list(self._assets),
             "quotes": quotes,

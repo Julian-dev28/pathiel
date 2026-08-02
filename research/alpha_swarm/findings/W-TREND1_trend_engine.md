@@ -140,6 +140,24 @@ took a quote from ~840 ms to ~245 ms. The CLOB market **websocket** takes it to
 **0 ms**: 6,630 `price_change` events in 25 s for one pair, and each entry
 carries `best_bid`/`best_ask` so no order-book reconstruction is needed.
 
+## 9. TRAP — health measured in a process that exits is a permanent lie
+
+The `/trends` arb card showed `websocket down · STALE · 0 events · reconnects 0`
+for hours while the socket was fine. The status block came from the cached lane
+payload, and that cache is written by `run --refresh-all`: a process that
+subscribes, quotes in the same millisecond, snapshots `feed().health()`, and
+exits. `reconnects 0` with an empty `last_error` was the tell — a socket that
+*failed* would have retried; this one never got the chance.
+
+Two consequences, both fixed: the cached `live_pair` was a REST read on every
+refresh (`warm_feed()` now waits for both legs before quoting, 1.06s), and the
+dashboard now reads socket health from `preflight()`, which runs in the
+long-lived server process, tagged with `pid`. Verified after the fix: server pid
+98510 reporting 7,244 events / 371 trades / `fee_rate_bps 0` on its own feed.
+
+Generalisable: a health metric is only meaningful from the process that owns the
+resource. Cache the *measurement*, never the *liveness*.
+
 ### What ships from this
 
 - `/trends` tab, four lanes, every forecast next to its own backtest verdict.

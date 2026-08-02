@@ -242,6 +242,15 @@ Two defects were fixed building it, both of which hid real crossings:
   still `None`, reporting `source: websocket, best_net_edge: null`. A live arb
   read as no crossing, silently, exactly when a new 5m window opened. Both legs
   must be two-sided now or it falls through to REST.
+- The card's socket status line read the **cached** `ws` block, which the lane
+  refresher writes — a process that starts a socket, quotes in the same
+  millisecond and exits. It always said `down · 0 events · reconnects 0` while
+  the server's own feed was pushing thousands of events a minute. Two fixes:
+  `read()` calls `warm_feed()` (subscribe, then `wait_pair()` for both legs) so
+  the cached snapshot is a real socket read, and the tab renders `preflight().ws`
+  — health from the process that answers, tagged with its `pid`. Health now also
+  reports `running` (thread alive) separately from `connected` (handshake), so
+  "never started" and "cannot connect" stop looking identical.
 
 ### The sampler (the missing instrument)
 
