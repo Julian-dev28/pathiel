@@ -129,6 +129,8 @@
   .ai-nar{font-size:12px;line-height:1.7;color:var(--mut)}
   .setup{border-top:1px solid var(--line);padding:8px 0;font-size:11.5px;color:var(--mut)}
   .setup b{color:var(--txt)}
+  .act{padding:9px 0 9px 11px;border-bottom:1px solid var(--line)}
+  .act:last-child{border-bottom:0}
   .hidden{display:none}
   ::selection{background:rgba(139,92,246,.32)}
   html{scrollbar-color:#2c313c #0a0b0d;scrollbar-width:thin}
@@ -182,7 +184,9 @@
   </nav>
 
   <div class="note">
-    <b>What the market has actually done</b>, measured, then extrapolated with its own error bars.
+    <b>Start with the WHAT TO DO card</b> on each tab — it turns everything below into
+    instructions with a trigger and a stop. The rest is the evidence behind it:
+    <b>what the market has actually done</b>, measured, then extrapolated with its own error bars.
     Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up 20% on a round
     trip is labelled CHOP, and the label is what ranks it. Forecasts are a
     <b>shrunken-drift baseline</b> and every lane ships the backtest that says what it is worth;
@@ -199,7 +203,8 @@
 
   <!-- ── LANE: HYPERLIQUID ─────────────────────────────────────────────── -->
   <div id="lane-hl">
-    <div class="strip" id="hl-strip">
+    <div id="pb-hl" class="mb-4"></div>
+        <div class="strip" id="hl-strip">
       <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
     </div>
 
@@ -274,7 +279,8 @@
 
   <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
   <div id="lane-updown" class="hidden">
-    <div class="card mb-4">
+    <div id="pb-updown" class="mb-4"></div>
+        <div class="card mb-4">
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <div class="sec-label" style="margin-bottom:0">live window · model vs market</div>
         <span class="text-[10px] mono dim" id="ud-clock"></span>
@@ -341,7 +347,8 @@
 
   <!-- ── LANE: POLITICS ────────────────────────────────────────────────── -->
   <div id="lane-politics" class="hidden">
-    <div class="strip" id="pol-strip">
+    <div id="pb-politics" class="mb-4"></div>
+        <div class="strip" id="pol-strip">
       <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
     </div>
 
@@ -395,7 +402,8 @@
 
   <!-- ── LANE: RECORDERS / P&L ─────────────────────────────────────────── -->
   <div id="lane-recorders" class="hidden">
-    <div class="strip" id="rec-strip">
+    <div id="pb-recorders" class="mb-4"></div>
+        <div class="strip" id="rec-strip">
       <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
     </div>
 
@@ -467,6 +475,8 @@ const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
 const num = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : Number(v).toFixed(d);
 const pct = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+// percentage POINTS — pct() already appends '%', so "pct(x)+'pp'" printed "+2.1%pp"
+const pp = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + 'pp';
 const sgn = v => (v === null || v === undefined || isNaN(v)) ? 'dim' : (v > 0 ? 'up' : (v < 0 ? 'dn' : 'mut'));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -563,12 +573,54 @@ async function loadLane(l) {
   if (l === 'updown') renderUpdown(d);
   if (l === 'politics') renderPolitics(d);
   if (l === 'recorders') renderRecorders(d);
+  renderPlaybook(l, d.playbook);
   if (LANE === l) showLane(l);
 }
 
 function emptyState(el, d, lane) {
   el.innerHTML = `<div class="card"><span class="amb mono text-[11.5px]">no cached ${lane} read</span>
     <div class="dim text-[11px] mt-2">${esc(d.hint || 'run the refresher')}</div></div>`;
+}
+
+// ── the action layer: what to actually do ───────────────────────────────────
+const PB_META = {
+  do:    { label: 'DO',    cls: 'b-up',   dot: 'var(--up)' },
+  dont:  { label: "DON'T", cls: 'b-dn',   dot: 'var(--dn)' },
+  watch: { label: 'WATCH', cls: 'b-chop', dot: 'var(--amb)' },
+};
+const PB_ORDER = { do: 0, dont: 1, watch: 2 };
+
+function renderPlaybook(lane, pb) {
+  const el = $('#pb-' + lane);
+  if (!el) return;
+  const acts = (pb && pb.actions) || [];
+  if (!acts.length) {
+    el.innerHTML = `<div class="card"><div class="sec-label">what to do</div>
+      <span class="dim text-[11.5px]">No action call for this lane yet — refresh the data.</span></div>`;
+    return;
+  }
+  const sorted = acts.slice().sort((a, b) => (PB_ORDER[a.kind] ?? 9) - (PB_ORDER[b.kind] ?? 9));
+  const c = pb.counts || {};
+  el.innerHTML = `<div class="card" style="border-color:rgba(139,92,246,.35)">
+    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+      <div class="sec-label" style="margin-bottom:0">what to do · read this first</div>
+      <span class="text-[10px] mono dim">${c.do || 0} do · ${c.dont || 0} don't · ${c.watch || 0} watch</span>
+    </div>
+    ${sorted.map(a => {
+      const m = PB_META[a.kind] || PB_META.watch;
+      return `<div class="act" style="border-left:2px solid ${m.dot}">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <span class="badge ${m.cls}">${m.label}</span>
+          <span style="font-size:12.5px;font-weight:600;color:var(--txt)">${esc(a.do)}</span>
+        </div>
+        <div class="text-[11px] mut mt-1">${esc(a.because)}</div>
+        ${a.trigger ? `<div class="text-[10.5px] mt-1"><span class="teal">go:</span>
+          <span class="dim">${esc(a.trigger)}</span></div>` : ''}
+        ${a.invalidate ? `<div class="text-[10.5px] mt-1"><span class="dn">stop:</span>
+          <span class="dim">${esc(a.invalidate)}</span></div>` : ''}
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 // ── LANE 1: Hyperliquid ─────────────────────────────────────────────────────
@@ -794,8 +846,8 @@ function renderLive(l) {
         book <span style="color:var(--txt)">${m.bid == null ? '–' : num(m.bid * 100, 1)}</span>
         / <span style="color:var(--txt)">${m.ask == null ? '–' : num(m.ask * 100, 1)}</span>
         <span class="dim">(${m.bid_size == null ? '–' : num(m.bid_size, 0)} × ${m.ask_size == null ? '–' : num(m.ask_size, 0)})</span><br/>
-        buy UP edge <span class="${sgn(l.edge_up_pp)}">${l.edge_up_pp == null ? '–' : pct(l.edge_up_pp, 1) + 'pp'}</span> ·
-        buy DOWN edge <span class="${sgn(l.edge_down_pp)}">${l.edge_down_pp == null ? '–' : pct(l.edge_down_pp, 1) + 'pp'}</span><br/>
+        buy UP edge <span class="${sgn(l.edge_up_pp)}">${pp(l.edge_up_pp, 1)}</span> ·
+        buy DOWN edge <span class="${sgn(l.edge_down_pp)}">${pp(l.edge_down_pp, 1)}</span><br/>
         ${l.base_rate != null ? `unconditional base rate <span class="amb">${num(l.base_rate * 100, 2)}%</span> — a coin flip` : ''}
       </div>
     </div>`;
@@ -844,7 +896,7 @@ function renderPolitics(d) {
   $('#pol-ls').innerHTML = (ls.rows || []).map(r => `<tr>
       <td>${esc(r.bucket)}</td>
       <td class="mono mut">${r.n}</td>
-      <td class="mono ${sgn(r.mean_delta_pp)}">${pct(r.mean_delta_pp, 1)}pp</td>
+      <td class="mono ${sgn(r.mean_delta_pp)}">${pp(r.mean_delta_pp, 1)}</td>
       <td class="mono">${num(r.pct_up, 0)}%</td>
       <td class="mono dim">${num(r.ci_lo_pct_up, 0)}–${num(r.ci_hi_pct_up, 0)}%</td>
     </tr>`).join('');
@@ -858,8 +910,8 @@ function renderPolitics(d) {
       </td>
       <td>${spark(r.spark)}</td>
       <td class="mono" style="font-weight:600">${num(r.p_now * 100, 1)}%</td>
-      <td class="mono ${sgn(r.delta_1d_pp)}">${pct(r.delta_1d_pp, 1)}</td>
-      <td class="mono ${sgn(r.delta_7d_pp)}">${pct(r.delta_7d_pp, 1)}</td>
+      <td class="mono ${sgn(r.delta_1d_pp)}">${pp(r.delta_1d_pp, 1)}</td>
+      <td class="mono ${sgn(r.delta_7d_pp)}">${pp(r.delta_7d_pp, 1)}</td>
       <td class="mono ${sgn(r.slope_pp_day)}">${num(r.slope_pp_day, 2)}</td>
       <td>${badge(r.label)}</td>
       <td class="mono mut">${num(f.p10 * 100, 0)} · <b style="color:var(--txt)">${num(f.p50 * 100, 0)}</b> · ${num(f.p90 * 100, 0)}%</td>
@@ -879,7 +931,7 @@ function calibTable(rows, headLeft) {
       <td class="mono mut">${r.n}</td>
       <td class="mono">${num(r.implied * 100, 1)}%</td>
       <td class="mono ${r.diff_pp < 0 ? 'dn' : 'up'}">${num(r.realized * 100, 1)}%</td>
-      <td class="mono ${sgn(r.diff_pp)}">${pct(r.diff_pp, 1)}pp</td>
+      <td class="mono ${sgn(r.diff_pp)}">${pp(r.diff_pp, 1)}</td>
       <td class="mono dim">${num(r.ci_lo * 100, 1)}–${num(r.ci_hi * 100, 1)}%</td>
       <td style="text-align:left">${r.significant ? '<span class="badge b-info">outside</span>'
     : '<span class="badge b-mut">inside</span>'}</td>

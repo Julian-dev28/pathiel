@@ -1,0 +1,368 @@
+"""What to actually DO with each lane — the action layer over the evidence.
+
+The rest of this service answers "what happened and is it real". This module
+answers the only question that matters afterwards: **do something, or don't?**
+
+Every action carries four fields so it can be acted on without re-reading the
+tables:
+
+    do            the instruction, imperative, specific
+    because       the number it came from (never a vibe)
+    trigger       the observable that says "now"
+    invalidate    the observable that says "stop"
+
+Rules, not opinions:
+
+  - An action whose evidence is a coin flip is a **DON'T**, and it is stated as
+    loudly as a DO. Most weeks, most lanes, that is the honest output.
+  - Nothing here sizes a position or names a dollar amount. It says what the
+    evidence supports; capital is the operator's call.
+  - Confidence is derived from the lane's own backtest, not asserted.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Sequence
+
+# do / don't / watch — the three shapes an action can take
+DO, DONT, WATCH = "do", "dont", "watch"
+
+
+def _a(kind: str, do: str, because: str, trigger: str = "", invalidate: str = "",
+       confidence: str = "medium", tag: str = "") -> Dict[str, Any]:
+    return {"kind": kind, "do": do, "because": because, "trigger": trigger,
+            "invalidate": invalidate, "confidence": confidence, "tag": tag}
+
+
+# ── HL ───────────────────────────────────────────────────────────────────────
+
+
+def hl_actions(payload: Dict[str, Any], max_names: int = 4) -> List[Dict[str, Any]]:
+    """Actions from the 7-day Hyperliquid read, per sector."""
+    out: List[Dict[str, Any]] = []
+    ev = payload.get("eval") or {}
+    reads = payload.get("reads") or []
+
+    # 1. The forecast's own verdict decides how the whole tab may be used.
+    if ev.get("status") == "ok":
+        if ev.get("beats_coinflip"):
+            out.append(_a(DO, "Trade the forecast direction — it clears the coin-flip bar.",
+                          f"walk-forward {ev['dir_hit']*100:.1f}% over n={ev['n']} "
+                          f"({ev['dir_edge_sigma']}σ)", confidence="high", tag="method"))
+        else:
+            out.append(_a(DONT,
+                          "Do NOT trade the p(up) column as a direction call. Use the band: "
+                          "size so the p10–p90 range is survivable, and put stops outside it.",
+                          f"walk-forward {ev['dir_hit']*100:.1f}% over n={ev['n']} "
+                          f"({ev['dir_edge_sigma']}σ vs a coin flip), but band coverage "
+                          f"{ev['coverage_80']*100:.1f}% vs 80% nominal — the range is honest, "
+                          f"the arrow is not",
+                          confidence="high", tag="method"))
+
+    for sector, reg in sorted((payload.get("regimes") or {}).items()):
+        if reg.get("status") != "ok":
+            continue
+        rows = [r for r in reads if r.get("sector", "crypto") == sector]
+        bench = reg.get("bench", "BTC")
+        tag = sector
+
+        # 2. Regime -> which BOOK is even appropriate this week.
+        breadth, trend_share = reg.get("breadth_pct", 50), reg.get("trend_share_pct", 0)
+        if trend_share < 40:
+            out.append(_a(DONT,
+                          f"Skip trend-following in {sector} this week — run mean-reversion "
+                          f"or stay flat.",
+                          f"only {trend_share:.0f}% of the scan is in a real trend; the rest "
+                          f"round-tripped", tag=tag))
+        elif breadth >= 60:
+            out.append(_a(DO, f"Long the {sector} leaders — breadth supports it.",
+                          f"{breadth:.0f}% of the scan green, {trend_share:.0f}% trending, "
+                          f"{bench} {reg.get('bench_ret_7d'):+.1f}%", tag=tag))
+        elif breadth <= 40:
+            out.append(_a(DO, f"Favour the SHORT side in {sector}; longs are fighting the tape.",
+                          f"only {breadth:.0f}% of the scan is green with {bench} "
+                          f"{reg.get('bench_ret_7d'):+.1f}%", tag=tag))
+
+        # 3. Dispersion -> pair trades vs directional.
+        alt = reg.get("alt_strength_pct")
+        if alt is not None and abs(alt) >= 2:
+            out.append(_a(DO,
+                          ("Trade relative strength (long leaders / short laggards), not direction."
+                           if alt > 0 else
+                           f"Do not pay up for single names — express the view in {bench} itself."),
+                          f"median residual vs {bench} is {alt:+.1f}pp", tag=tag))
+
+        # 4. The actual names, with levels.
+        ups = [r for r in rows if r.get("label") in ("STRONG_UP", "UP")]
+        downs = [r for r in rows if r.get("label") in ("STRONG_DOWN", "DOWN")]
+        ups.sort(key=lambda r: -(r.get("score") or 0))
+        downs.sort(key=lambda r: (r.get("score") or 0))
+        for r in ups[:max_names]:
+            f = r.get("forecast") or {}
+            out.append(_a(WATCH,
+                          f"{r['coin']} — long candidate on a pullback, not at the highs.",
+                          f"{float(r.get('ret_7d') or 0):+.1f}% on the week, efficiency "
+                          f"{r.get('efficiency'):.2f} (clean path), {r.get('label')}",
+                          trigger=f"holds the 7d EMA around {_fmt(r.get('ema7'))}",
+                          invalidate=f"closes below {_fmt(r.get('low_7d'))} (7d low) or "
+                                     f"below the p10 {_fmt(f.get('p10'))}",
+                          confidence="medium", tag=tag))
+        for r in downs[:max_names]:
+            f = r.get("forecast") or {}
+            out.append(_a(WATCH,
+                          f"{r['coin']} — short candidate on a bounce.",
+                          f"{float(r.get('ret_7d') or 0):+.1f}% on the week, efficiency "
+                          f"{r.get('efficiency'):.2f}, {r.get('label')}",
+                          trigger=f"fails at the 7d EMA around {_fmt(r.get('ema7'))}",
+                          invalidate=f"closes above {_fmt(r.get('high_7d'))} (7d high) or "
+                                     f"above the p90 {_fmt(f.get('p90'))}",
+                          confidence="medium", tag=tag))
+
+        # 5. Traps.
+        chops = [r for r in rows if r.get("label") == "CHOP"
+                 and abs(float(r.get("ret_7d") or 0)) >= 8]
+        if chops:
+            out.append(_a(DONT,
+                          "Do not chase these — the weekly number is a round trip, not a trend: "
+                          + ", ".join(f"{r['coin']} {float(r['ret_7d'] or 0):+.0f}%"
+                                      for r in chops[:5]),
+                          "big weekly move with efficiency under 0.15", tag=tag))
+
+        fund = reg.get("mean_funding_apr_pct")
+        if fund is not None and fund >= 15:
+            out.append(_a(WATCH,
+                          "Crowded longs — a flush is cheap to hedge here.",
+                          f"scan funding averages {fund:+.1f}% APR", tag=tag))
+
+    # 6. Dated catalysts beat everything else in the window.
+    for r in reads:
+        for fl in (r.get("flags") or []):
+            if fl.get("kind") == "event":
+                out.append(_a(WATCH, f"{r['coin']} — dated catalyst inside the forecast window.",
+                              fl.get("note", ""),
+                              trigger="position before the date, not after",
+                              confidence="high", tag="catalyst"))
+                break
+    return out
+
+
+def _fmt(v: Optional[float]) -> str:
+    if v is None:
+        return "–"
+    return f"{v:,.0f}" if v >= 1000 else (f"{v:.2f}" if v >= 1 else f"{v:.4g}")
+
+
+# ── BTC 5m ───────────────────────────────────────────────────────────────────
+
+
+def updown_actions(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    pat = payload.get("patterns") or {}
+    cal = payload.get("calibration") or {}
+    live = payload.get("live") or {}
+    edges = payload.get("edges") or {}
+
+    if pat.get("status") == "ok" and not (pat.get("significant") or []):
+        out.append(_a(DONT,
+                      "Never take a 5m window on a hunch, a streak, or the time of day. "
+                      "There is no standing edge to be early to.",
+                      f"base rate {pat['base_rate']*100:.2f}% (95% CI "
+                      f"{pat['base_ci'][0]*100:.1f}–{pat['base_ci'][1]*100:.1f}), and 0 of the "
+                      f"conditionals across 7 families survived correction",
+                      confidence="high", tag="method"))
+
+    if cal.get("status") == "ok" and cal.get("brier", 1) < cal.get("brier_null", 0.25):
+        out.append(_a(DO,
+                      "The ONLY read worth acting on is the live panel: model probability vs "
+                      "the executable book, mid-window.",
+                      f"the in-window model is calibrated — Brier {cal['brier']} vs "
+                      f"{cal['brier_null']} null ({cal['skill_pct']}% skill), calibration error "
+                      f"{cal['calibration_err_pp']}pp over n={cal['n']}",
+                      trigger=f"the live card says ACTIONABLE (edge clears the "
+                              f"{live.get('feed_buffer_pp', 5)}pp feed buffer)",
+                      invalidate="edge under the buffer — that is Chainlink-vs-Binance noise",
+                      confidence="high", tag="method"))
+
+    if live.get("status") == "ok":
+        if live.get("actionable"):
+            out.append(_a(DO,
+                          f"RIGHT NOW: buy {live.get('best_side')} in "
+                          f"{live.get('slug', 'this window')}.",
+                          f"{live.get('best_edge_pp'):+.1f}pp after paying the spread, "
+                          f"{live.get('minutes_left')}min left, model "
+                          f"{live.get('p_up_randomwalk')}",
+                          trigger="now — the window closes in minutes",
+                          invalidate="the edge decays as the book re-prices; re-check before lifting",
+                          confidence="medium", tag="live"))
+        else:
+            out.append(_a(DONT, "No trade in the current window.",
+                          live.get("note", ""), tag="live"))
+
+    tail = edges.get("tail_edge_60s") or {}
+    if tail.get("tail_is_fat"):
+        w = tail.get("worst_bucket") or {}
+        out.append(_a(WATCH,
+                      "The structural candidate: buy the CHEAP side (≤5¢) in the last 30s. "
+                      "The leader is over-favoured relative to a Gaussian.",
+                      f"at 60s left the {w.get('bucket')} bucket is priced "
+                      f"{float(w.get('implied', 0))*100:.1f}% and resolves "
+                      f"{float(w.get('realized', 0))*100:.1f}% (n={w.get('n')})",
+                      trigger="only once the sampler's own EV line turns +EV with a "
+                              "win-rate interval clear of breakeven",
+                      invalidate="that interval straddling breakeven — which is where it is now",
+                      confidence="low", tag="research"))
+
+    ts = edges.get("tail_strategy") or {}
+    if ts.get("status") == "ok":
+        clear = ts["win_ci"][0] > ts["breakeven_win_rate"]
+        out.append(_a(DO if clear else DONT,
+                      ("Cheap-side tickets are paying — the win rate is clear of the price."
+                       if clear else
+                       "Do NOT run the cheap-side ticket yet — the sample cannot tell it from noise."),
+                      f"n={ts['n']}, win {ts['win_rate']*100:.1f}% (CI "
+                      f"{ts['win_ci'][0]*100:.1f}–{ts['win_ci'][1]*100:.1f}%) vs breakeven "
+                      f"{ts['breakeven_win_rate']*100:.1f}%",
+                      trigger="the lower CI bound clearing breakeven",
+                      confidence="high" if clear else "medium", tag="research"))
+    else:
+        out.append(_a(WATCH,
+                      "Leave the book sampler running — it is the only thing that can settle "
+                      "the cheap-side question.",
+                      f"{edges.get('samples', 0)} snapshots so far; needs a few days",
+                      trigger="`scripts/restart.sh sampler` if it is not running",
+                      tag="research"))
+
+    arb = edges.get("arb") or {}
+    lp = edges.get("live_pair") or {}
+    if lp.get("status") == "ok":
+        ticks = lp.get("ticks_to_gross_arb")
+        out.append(_a(WATCH,
+                      "Both-sides arb: arm the watcher, do not hunt it by hand.",
+                      f"the pair sits at ${(lp.get('buy_both') or {}).get('cost')} — "
+                      f"{ticks} tick(s) from any gross edge, at {lp.get('fee_bps')}bps fee. "
+                      + str(arb.get("verdict") or ""),
+                      trigger="`python -m services.trend_engine.run --arb-watch` (shadow) — "
+                              "it records every sub-$1 print so you learn if it is ever reachable",
+                      invalidate="a clicking human cannot win this race; it is bot-vs-bot",
+                      confidence="high", tag="arb"))
+    return out
+
+
+# ── politics ─────────────────────────────────────────────────────────────────
+
+
+def politics_actions(payload: Dict[str, Any], max_names: int = 4) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    mom = payload.get("momentum_test") or {}
+    brd = payload.get("board") or {}
+    reads = payload.get("reads") or []
+
+    if mom.get("status") == "ok" and not mom.get("usable"):
+        out.append(_a(DONT,
+                      "Do not trade political drift. A market moving your way this week says "
+                      "nothing about next week.",
+                      f"gapped drift correlation {mom.get('corr')} (z {mom.get('fisher_z')}, "
+                      f"n={mom.get('n')}) — {mom.get('verdict')}",
+                      confidence="high", tag="method"))
+        out.append(_a(DO,
+                      "Trade these only where you have an information view the price lacks — "
+                      "a poll, a filing, a court date. Not a chart.",
+                      "the board is a martingale; the only edge left is knowing something",
+                      confidence="high", tag="method"))
+
+    soon = brd.get("resolving_soon") or []
+    for s in soon[:max_names]:
+        p = float(s.get("p_now") or 0)
+        if 0.05 <= p <= 0.95:
+            out.append(_a(WATCH,
+                          f"Research: \"{s['question']}\" — resolves in {s.get('days_left'):.0f}d "
+                          f"at {p*100:.0f}%.",
+                          f"still genuinely uncertain this close to resolution "
+                          f"({s.get('delta_7d_pp'):+.1f}pp this week)",
+                          trigger="a dated, checkable fact you can verify before the market does",
+                          confidence="medium", tag="resolving"))
+
+    movers = brd.get("top_movers") or []
+    for m in movers[:2]:
+        if abs(float(m.get("delta_7d_pp") or 0)) >= 10:
+            out.append(_a(WATCH,
+                          f"Find out WHY: \"{m['question']}\" repriced "
+                          f"{float(m['delta_7d_pp']):+.0f}pp to {float(m['p_now'])*100:.0f}%.",
+                          "a move this size is either news you missed or an overreaction — "
+                          "both are worth ten minutes",
+                          trigger="read the event page before forming a view",
+                          confidence="medium", tag="mover"))
+    return out
+
+
+# ── recorders ────────────────────────────────────────────────────────────────
+
+
+def recorders_actions(payload: Dict[str, Any], max_names: int = 5) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    books = payload.get("books") or []
+
+    validated = [b for b in books if b.get("verdict") == "VALIDATED"]
+    refuted = [b for b in books if b.get("verdict") == "REFUTED"]
+    decaying = [b for b in books if b.get("decaying")]
+    stale = [b for b in books
+             if isinstance(b.get("last_age_h"), (int, float)) and b["last_age_h"] > 336]
+
+    for b in validated[:max_names]:
+        out.append(_a(DO, f"Fund {b['book']} — it earned it.",
+                      f"{b['ev_pct']:+.2f}%/signal at 12bps over {b['resolved']} resolved, "
+                      f"still {b['ev25_pct']:+.2f}% at 25bps, both halves positive "
+                      f"({b['ev_first']:+.2f}/{b['ev_second']:+.2f})",
+                      trigger="the standing rule: VALIDATED goes live same day at $20/1x with a kill",
+                      invalidate="second-half EV turning negative on the next grade",
+                      confidence="high", tag="promote"))
+    for b in decaying[:max_names]:
+        out.append(_a(DONT, f"Pull capital from {b['book']} — the edge is decaying.",
+                      f"first half {b['ev_first']:+.2f}%, second half {b['ev_second']:+.2f}% — "
+                      f"the {b['ev_pct']:+.2f}% average is hiding it",
+                      confidence="high", tag="demote"))
+    if refuted:
+        out.append(_a(DONT,
+                      "Kill or leave dead: " + ", ".join(b["book"] for b in refuted[:6])
+                      + (f" (+{len(refuted)-6} more)" if len(refuted) > 6 else ""),
+                      f"{len(refuted)} book(s) with no forward edge at 12bps",
+                      confidence="high", tag="demote"))
+    if stale:
+        out.append(_a(WATCH,
+                      "These recorders have gone quiet — check the lane is still armed: "
+                      + ", ".join(b["book"] for b in stale[:5]),
+                      "no signal written in over two weeks",
+                      trigger="grep the loop logs for the book name", tag="health"))
+
+    scout = (payload.get("scout") or {}).get("lanes") or {}
+    for lane, g in scout.items():
+        if not g.get("n"):
+            continue
+        if g.get("llm_beats_market") is False and g["n"] >= 50:
+            out.append(_a(DONT,
+                          f"Stop treating the {lane} forecast as an edge over the price.",
+                          f"our Brier {g.get('brier_llm')} vs the market's {g.get('brier_mkt')} "
+                          f"over {g['n']} resolved",
+                          confidence="high", tag="calibration"))
+    return out
+
+
+BUILDERS = {"hl": hl_actions, "updown": updown_actions,
+            "politics": politics_actions, "recorders": recorders_actions}
+
+
+def build(lane: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Actions for one lane, grouped so the tab can lead with DO and DON'T."""
+    fn = BUILDERS.get(lane)
+    if not fn or not payload or payload.get("status") not in ("ok", None):
+        return {"status": "empty", "actions": []}
+    try:
+        actions = fn(payload)
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200], "actions": []}
+    return {
+        "status": "ok",
+        "lane": lane,
+        "actions": actions,
+        "counts": {k: sum(1 for a in actions if a["kind"] == k)
+                   for k in (DO, DONT, WATCH)},
+    }

@@ -156,6 +156,13 @@ def main(argv: Any = None) -> int:
                          "every other job")
     ap.add_argument("--max-windows", type=int, default=0,
                     help="stop the sampler after N windows (0 = forever)")
+    ap.add_argument("--arb-watch", action="store_true",
+                    help="watch the 5m pair for a sub-$1 both-sides print "
+                         "(SHADOW: records only, places nothing)")
+    ap.add_argument("--arb-min-edge", type=float, default=0.01,
+                    help="net edge required before the watcher fires (default 1 tick)")
+    ap.add_argument("--arb-max-checks", type=int, default=0,
+                    help="stop after N checks (0 = run forever)")
     ap.add_argument("--edges", action="store_true",
                     help="microstructure edges: fat tail, arb frequency, price calibration")
     ap.add_argument("--save", action="store_true", help="write the lane to .state/trend_engine/")
@@ -223,6 +230,13 @@ def main(argv: Any = None) -> int:
         print(f"recorded {len(rows)} snapshots")
         return 0 if rows else 1
 
+    if a.arb_watch:
+        from services.trend_engine.arb_watch import ArbWatcher
+        w = ArbWatcher(mode="shadow", min_edge=a.arb_min_edge)
+        res = w.run(max_checks=a.arb_max_checks)
+        print(json.dumps(res, indent=1))
+        return 0
+
     if a.edges:
         from services.trend_engine.updown_edges import read as edges_read
         res = edges_read()
@@ -257,6 +271,9 @@ def main(argv: Any = None) -> int:
         payload = read(min_n=a.min_n)
         printer = _print_recorders
 
+    from services.trend_engine.playbook import build as build_playbook
+    payload["playbook"] = build_playbook(a.lane, payload)
+
     if a.ai:
         from services.trend_engine.ai import analyze
         payload["ai"] = analyze(a.lane, payload, web_search=a.web_search)
@@ -270,6 +287,17 @@ def main(argv: Any = None) -> int:
         return 0
 
     printer(payload)
+    pb = payload.get("playbook") or {}
+    if pb.get("actions"):
+        print("\n─── WHAT TO DO ───")
+        order = {"do": 0, "dont": 1, "watch": 2}
+        for act in sorted(pb["actions"], key=lambda x: order.get(x["kind"], 9)):
+            print(f"  [{act['kind'].upper():5s}] {act['do']}")
+            print(f"          because: {act['because']}")
+            if act.get("trigger"):
+                print(f"          trigger: {act['trigger']}")
+            if act.get("invalidate"):
+                print(f"          stop if: {act['invalidate']}")
     ai = payload.get("ai") or {}
     if ai.get("status") == "ok":
         print(f"\nAI [{ai['model']}] {ai['headline']}\n{ai['narrative']}")

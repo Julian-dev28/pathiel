@@ -30,11 +30,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from services.trend_engine import ai as tai
+from services.trend_engine import arb_watch as aw
 from services.trend_engine import cache as tcache
 from services.trend_engine import flags as tflags
 from services.trend_engine import forecast as tfc
 from services.trend_engine import hl_trends as hl
 from services.trend_engine import metrics as M
+from services.trend_engine import playbook as pb
 from services.trend_engine import political_trends as pol
 from services.trend_engine import recorders as rec
 from services.trend_engine import updown_edges as ue
@@ -1260,6 +1262,251 @@ def test_recorders_read_without_network_is_inventory_only(monkeypatch):
     assert out["books"] == []
     assert out["summary"]["n_books"] == 0
     assert out["observations"][0].startswith("No recorder has resolved")
+
+
+# ── playbook (the action layer) ──────────────────────────────────────────────
+
+
+def _kinds(actions):
+    return [(a["kind"], a["do"]) for a in actions]
+
+
+def test_playbook_forbids_trading_a_coin_flip_forecast():
+    """The loudest action must be the DON'T when the lane's own backtest says
+    the direction is noise — that is the whole point of shipping the eval."""
+    acts = pb.hl_actions({
+        "eval": {"status": "ok", "n": 1317, "dir_hit": 0.4966, "dir_edge_sigma": -0.25,
+                 "coverage_80": 0.804, "beats_coinflip": False},
+        "regimes": {}, "reads": []})
+    first = acts[0]
+    assert first["kind"] == pb.DONT
+    assert "p(up)" in first["do"] and "band" in first["do"]
+    assert "1317" in first["because"]
+
+
+def test_playbook_allows_the_direction_when_the_backtest_earns_it():
+    acts = pb.hl_actions({
+        "eval": {"status": "ok", "n": 900, "dir_hit": 0.57, "dir_edge_sigma": 4.2,
+                 "coverage_80": 0.80, "beats_coinflip": True},
+        "regimes": {}, "reads": []})
+    assert acts[0]["kind"] == pb.DO and acts[0]["confidence"] == "high"
+
+
+def test_playbook_reads_the_regime_into_a_book_choice():
+    base = {"eval": {}, "reads": []}
+    chop = pb.hl_actions({**base, "regimes": {"crypto": {
+        "status": "ok", "bench": "BTC", "bench_ret_7d": 0.1, "breadth_pct": 50,
+        "trend_share_pct": 20, "alt_strength_pct": 0.0}}})
+    assert any(a["kind"] == pb.DONT and "trend-following" in a["do"] for a in chop)
+
+    strong = pb.hl_actions({**base, "regimes": {"crypto": {
+        "status": "ok", "bench": "BTC", "bench_ret_7d": 5.0, "breadth_pct": 75,
+        "trend_share_pct": 70, "alt_strength_pct": 0.0}}})
+    assert any(a["kind"] == pb.DO and "Long" in a["do"] for a in strong)
+
+    weak = pb.hl_actions({**base, "regimes": {"crypto": {
+        "status": "ok", "bench": "BTC", "bench_ret_7d": -5.0, "breadth_pct": 20,
+        "trend_share_pct": 70, "alt_strength_pct": 0.0}}})
+    assert any(a["kind"] == pb.DO and "SHORT" in a["do"] for a in weak)
+
+
+def test_playbook_names_coins_with_a_trigger_and_an_invalidation():
+    read = hl.coin_read("SOL", ramp(40, step_pct=2.0))
+    read["sector"] = "crypto"
+    acts = pb.hl_actions({"eval": {}, "reads": [read], "regimes": {"crypto": {
+        "status": "ok", "bench": "BTC", "bench_ret_7d": 3.0, "breadth_pct": 70,
+        "trend_share_pct": 70, "alt_strength_pct": 0.0}}})
+    sol = [a for a in acts if a["do"].startswith("SOL")]
+    assert sol, "the strongest uptrend must be named"
+    assert sol[0]["trigger"] and sol[0]["invalidate"]
+    assert "EMA" in sol[0]["trigger"]
+
+
+def test_playbook_flags_the_round_trip_trap():
+    trap = hl.coin_read("FAKE", sawtooth(40, amp=9.0))
+    trap["sector"] = "crypto"
+    trap["ret_7d"] = -12.0
+    acts = pb.hl_actions({"eval": {}, "reads": [trap], "regimes": {"crypto": {
+        "status": "ok", "bench": "BTC", "bench_ret_7d": 0.0, "breadth_pct": 50,
+        "trend_share_pct": 60, "alt_strength_pct": 0.0}}})
+    trap = [a for a in acts if a["kind"] == pb.DONT and "round trip" in a["do"]]
+    assert trap and "FAKE" in trap[0]["do"]
+    assert "efficiency" in trap[0]["because"]
+
+
+def test_playbook_updown_says_dont_when_nothing_survived_correction():
+    acts = pb.updown_actions({
+        "patterns": {"status": "ok", "base_rate": 0.4968, "base_ci": [0.484, 0.509],
+                     "significant": []},
+        "calibration": {}, "live": {}, "edges": {}})
+    assert acts[0]["kind"] == pb.DONT
+    assert "hunch" in acts[0]["do"] or "streak" in acts[0]["do"]
+
+
+def test_playbook_updown_promotes_the_live_card_when_it_is_actionable():
+    acts = pb.updown_actions({
+        "patterns": {}, "calibration": {},
+        "live": {"status": "ok", "actionable": True, "best_side": "UP",
+                 "best_edge_pp": 7.2, "minutes_left": 1.4, "slug": "s",
+                 "p_up_randomwalk": 0.8},
+        "edges": {}})
+    live = [a for a in acts if a["tag"] == "live"]
+    assert live and live[0]["kind"] == pb.DO and "RIGHT NOW" in live[0]["do"]
+
+
+def test_playbook_updown_refuses_the_tail_ticket_while_it_straddles_breakeven():
+    acts = pb.updown_actions({
+        "patterns": {}, "calibration": {}, "live": {},
+        "edges": {"tail_strategy": {"status": "ok", "n": 24, "win_rate": 0.042,
+                                    "win_ci": [0.007, 0.202],
+                                    "breakeven_win_rate": 0.021}}})
+    ticket = [a for a in acts if a["tag"] == "research"]
+    assert ticket and ticket[0]["kind"] == pb.DONT
+
+    acts2 = pb.updown_actions({
+        "patterns": {}, "calibration": {}, "live": {},
+        "edges": {"tail_strategy": {"status": "ok", "n": 400, "win_rate": 0.09,
+                                    "win_ci": [0.065, 0.12],
+                                    "breakeven_win_rate": 0.03}}})
+    ok = [a for a in acts2 if a["tag"] == "research"]
+    assert ok and ok[0]["kind"] == pb.DO
+
+
+def test_playbook_politics_bans_drift_trading_on_a_martingale():
+    acts = pb.politics_actions({
+        "momentum_test": {"status": "ok", "usable": False, "corr": -0.1,
+                          "fisher_z": -0.4, "n": 19, "verdict": "martingale"},
+        "board": {}, "reads": []})
+    assert acts[0]["kind"] == pb.DONT and "drift" in acts[0]["do"]
+    assert any(a["kind"] == pb.DO and "information view" in a["do"] for a in acts)
+
+
+def test_playbook_recorders_promotes_validated_and_pulls_decaying():
+    acts = pb.recorders_actions({"books": [
+        {"book": "good", "verdict": "VALIDATED", "ev_pct": 3.9, "ev25_pct": 3.7,
+         "resolved": 14, "ev_first": 0.7, "ev_second": 7.1, "decaying": False,
+         "last_age_h": 2},
+        {"book": "fading", "verdict": "MARGINAL", "ev_pct": 1.1, "ev25_pct": 0.9,
+         "resolved": 42, "ev_first": 4.2, "ev_second": -2.1, "decaying": True,
+         "last_age_h": 2},
+        {"book": "dead", "verdict": "REFUTED", "ev_pct": -2.0, "ev25_pct": -2.2,
+         "resolved": 30, "ev_first": -1, "ev_second": -3, "decaying": False,
+         "last_age_h": 2},
+    ], "scout": {}})
+    kinds = _kinds(acts)
+    assert any(k == pb.DO and "Fund good" in d for k, d in kinds)
+    assert any(k == pb.DONT and "Pull capital from fading" in d for k, d in kinds)
+    assert any(k == pb.DONT and "dead" in d for k, d in kinds)
+
+
+def test_playbook_calls_out_a_lane_the_market_out_calibrates():
+    acts = pb.recorders_actions({"books": [], "scout": {"lanes": {
+        "updown_5m": {"n": 898, "brier_llm": 0.238, "brier_mkt": 0.220,
+                      "llm_beats_market": False}}}})
+    assert any(a["kind"] == pb.DONT and "updown_5m" in a["do"] for a in acts)
+
+
+def test_playbook_build_groups_and_survives_a_broken_payload():
+    out = pb.build("hl", {"status": "ok", "eval": {}, "regimes": {}, "reads": []})
+    assert out["status"] == "ok" and set(out["counts"]) == {"do", "dont", "watch"}
+    assert pb.build("nope", {"status": "ok"})["status"] == "empty"
+    assert pb.build("hl", {"status": "empty"})["actions"] == []
+
+
+# ── arb watcher ──────────────────────────────────────────────────────────────
+
+
+def _quote(up_ask, dn_ask, up_bid=0.0, dn_bid=0.0, fee=0.0, size=100.0, slug="w1"):
+    cost = up_ask + dn_ask
+    credit = up_bid + dn_bid
+    return lambda: {
+        "status": "ok", "slug": slug, "fee_bps": fee, "source": "websocket",
+        "up": {"bid": up_bid, "ask": up_ask, "ask_size": size, "bid_size": size},
+        "down": {"bid": dn_bid, "ask": dn_ask, "ask_size": size, "bid_size": size},
+        "buy_both": {"cost": cost, "gross_edge": 1 - cost, "net_edge": 1 - cost,
+                     "size": size},
+        "sell_both": {"credit": credit, "gross_edge": credit - 1,
+                      "net_edge": credit - 1, "size": size},
+    }
+
+
+def test_arb_watcher_is_silent_on_a_normal_book(tmp_path):
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"),
+                      quoter=_quote(0.51, 0.50))          # pair costs 1.01
+    assert w.check() is None
+    assert w.fires == 0 and w.best_edge == pytest.approx(-0.01)
+    assert "no sub-$1 pair" in w.summary()["verdict"]
+
+
+def test_arb_watcher_records_a_real_crossed_pair(tmp_path):
+    p = str(tmp_path / "a.jsonl")
+    w = aw.ArbWatcher(ledger_path=p, quoter=_quote(0.48, 0.49))   # pair costs 0.97
+    ev = w.check()
+    assert ev["action"] == "shadow" and ev["side"] == "buy_both"
+    assert ev["net_edge"] == pytest.approx(0.03)
+    assert ev["expected_profit_usd"] == pytest.approx(0.03 * 50)   # capped notional
+    assert len(aw.load_events(p)) == 1
+
+
+def test_arb_watcher_caps_the_notional(tmp_path):
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"), max_notional_usd=10.0,
+                      quoter=_quote(0.48, 0.49, size=9999.0))
+    assert w.check()["notional_usd"] == 10.0
+
+
+def test_arb_watcher_fires_once_per_window(tmp_path):
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"),
+                      quoter=_quote(0.48, 0.49, slug="same"))
+    assert w.check()["action"] == "shadow"
+    assert w.check()["action"] == "skipped_cooldown"
+    assert w.fires == 1
+
+
+def test_arb_watcher_respects_the_min_edge_floor(tmp_path):
+    # half a tick of edge is a rounding artifact, not an opportunity
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"), min_edge=0.01,
+                      quoter=_quote(0.495, 0.50))
+    assert w.check() is None
+
+
+def test_arb_watcher_sees_the_sell_side_too(tmp_path):
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"),
+                      quoter=_quote(0.60, 0.60, up_bid=0.55, dn_bid=0.50))
+    ev = w.check()
+    assert ev["side"] == "sell_both" and ev["net_edge"] == pytest.approx(0.05)
+
+
+def test_arb_watcher_refuses_live_mode_without_an_executor():
+    """Live-without-executor would silently be shadow while reporting live."""
+    with pytest.raises(ValueError, match="executor"):
+        aw.ArbWatcher(mode="live")
+    with pytest.raises(ValueError):
+        aw.ArbWatcher(mode="yolo")
+
+
+def test_arb_watcher_live_mode_calls_the_injected_executor(tmp_path):
+    seen = []
+    w = aw.ArbWatcher(mode="live", ledger_path=str(tmp_path / "a.jsonl"),
+                      executor=lambda ev: seen.append(ev) or {"filled": True},
+                      quoter=_quote(0.48, 0.49))
+    ev = w.check()
+    assert ev["action"] == "executed" and ev["result"] == {"filled": True}
+    assert len(seen) == 1
+
+
+def test_arb_watcher_records_an_executor_failure_instead_of_raising(tmp_path):
+    def boom(ev):
+        raise RuntimeError("venue down")
+    w = aw.ArbWatcher(mode="live", ledger_path=str(tmp_path / "a.jsonl"),
+                      executor=boom, quoter=_quote(0.48, 0.49))
+    ev = w.check()
+    assert ev["action"] == "execute_failed" and "venue down" in ev["error"]
+
+
+def test_arb_watcher_run_loop_stops_at_max_checks(tmp_path):
+    w = aw.ArbWatcher(ledger_path=str(tmp_path / "a.jsonl"), quoter=_quote(0.51, 0.50))
+    res = w.run(max_checks=5, sleeper=lambda s: None, printer=lambda m: None)
+    assert res["checks"] == 5 and res["fires"] == 0
 
 
 # ── cache ────────────────────────────────────────────────────────────────────

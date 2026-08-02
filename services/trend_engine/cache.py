@@ -96,6 +96,14 @@ def refresh(lane: str, keep_ai: bool = True, **kw: Any) -> Dict[str, Any]:
     """
     prev = load(lane) if keep_ai else {}
     payload = compute(lane, **kw)
+    # The action layer is derived, cheap and pure — compute it here so the tab
+    # never has to, and so a stale cache carries the actions that matched its
+    # own numbers rather than newer ones.
+    try:
+        from services.trend_engine.playbook import build as build_playbook
+        payload["playbook"] = build_playbook(lane, payload)
+    except Exception as exc:
+        payload["playbook"] = {"status": "error", "error": str(exc)[:200], "actions": []}
     old_ai = prev.get("ai")
     if keep_ai and isinstance(old_ai, dict) and old_ai.get("status") == "ok":
         old_ai = dict(old_ai)
