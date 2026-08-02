@@ -16,14 +16,17 @@ from services.polymarket_scout.forecaster import (
 class FakeBrain:
     provider = "claude_cli"
 
-    def __init__(self, reply="", boom=False):
+    def __init__(self, reply="", boom=False, replies=None):
         self.reply, self.boom = reply, boom
+        self.replies = list(replies) if replies is not None else None
         self.calls = []
 
     def complete(self, system_prompt, user_message, web_search=False):
         if self.boom:
             raise RuntimeError("cli died")
         self.calls.append({"sys": system_prompt, "user": user_message, "web": web_search})
+        if self.replies is not None:
+            return self.replies.pop(0) if self.replies else ""
         return self.reply
 
 
@@ -58,6 +61,36 @@ def test_brain_forecaster_passes_the_question_and_context_through():
 def test_brain_forecaster_declines_on_an_empty_or_failed_completion():
     assert BrainForecaster(brain=FakeBrain("")).forecast("q", "c") is None
     assert BrainForecaster(brain=FakeBrain(boom=True)).forecast("q", "c") is None
+
+
+def test_a_failed_search_call_retries_once_without_search():
+    """Measured 2026-07-24: the search path can burn all 8 turns and exit
+    non-zero having searched zero times. A prior-only forecast beats a hole in
+    the board — but it must be labelled, never passed off as researched."""
+    brain = FakeBrain(replies=["", json.dumps(
+        {"verdict": "NO", "yes_prob": 0.2, "reasoning": "prior only"})])
+    got = BrainForecaster(brain=brain).forecast("q", "c")
+    assert got[0] == 0.2
+    assert got[1].startswith("[no-search retry]")
+    assert [c["web"] for c in brain.calls] == [True, False]
+
+
+def test_no_retry_when_search_was_never_asked_for():
+    brain = FakeBrain("")
+    assert BrainForecaster(brain=brain, web_search=False).forecast("q", "c") is None
+    assert len(brain.calls) == 1
+
+
+def test_no_retry_when_the_first_call_worked():
+    brain = FakeBrain(json.dumps({"verdict": "YES", "yes_prob": 0.7, "reasoning": "r"}))
+    assert BrainForecaster(brain=brain).forecast("q", "c") == (0.7, "r")
+    assert len(brain.calls) == 1
+
+
+def test_both_attempts_failing_still_declines():
+    brain = FakeBrain(replies=["", ""])
+    assert BrainForecaster(brain=brain).forecast("q", "c") is None
+    assert len(brain.calls) == 2
 
 
 def test_brain_forecaster_exposes_the_provider():
