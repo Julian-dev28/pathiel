@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from services.trend_engine import env
 from services.trend_engine.updown_edges import (
@@ -209,6 +209,146 @@ class ArbWatcher:
                         f"{self.best_edge if self.best_edge is not None else 'n/a'} "
                         f"vs a {self.min_edge} floor"),
         }
+
+
+# ── execution readiness ──────────────────────────────────────────────────────
+# Placing a CLOB order needs BOTH auth layers. L2 is the API-key triplet on the
+# request headers; L1 is an EIP-712 signature over the order struct, which needs
+# the Polygon key that owns the funder address. An API key alone cannot sign, so
+# a button wired to a half-credentialed client would fail at the exchange rather
+# than here — which is the wrong place to find out.
+REQUIRED_CREDS: Tuple[Tuple[str, str], ...] = (
+    ("POLYMARKET_ADDRESS", "funder address that holds the USDC"),
+    ("POLYMARKET_API_KEY", "L2 header: API key"),
+    ("POLYMARKET_SECRET", "L2 header: HMAC secret"),
+    ("POLYMARKET_PASSPHRASE", "L2 header: passphrase"),
+    ("POLYMARKET_PRIVATE_KEY", "L1: signs the EIP-712 order struct"),
+)
+
+
+def execution_readiness(getenv: Callable[[str], Optional[str]] = os.environ.get,
+                        ) -> Dict[str, Any]:
+    """What is missing before a fire can be anything but shadow.
+
+    Reports names only, never values — this dict is rendered on a web page.
+    """
+    missing = [{"key": k, "why": why} for k, why in REQUIRED_CREDS if not getenv(k)]
+    return {
+        "ready": not missing,
+        "present": [k for k, _ in REQUIRED_CREDS if getenv(k)],
+        "missing": missing,
+        "blocker": None if not missing else
+        (f"{len(missing)} credential(s) missing — a fire records the ticket and "
+         f"stops. No order path exists in this repo yet."),
+    }
+
+
+def order_tickets(event: Optional[Dict[str, Any]], cap_usd: float = MAX_NOTIONAL_USD,
+                  ) -> List[Dict[str, Any]]:
+    """The two legs a fire WOULD send, priced and sized off the same quote.
+
+    Marketable limits at the touch, not market orders: the edge here is one
+    tick wide, so a leg that slips a tick is not a smaller profit, it is a
+    loss. Both legs must fill or the position is a naked directional bet on
+    BTC, which is not the trade.
+
+    `None` (no crossing) is the common case, not an error: an empty ticket
+    list is what an unarmed button renders.
+    """
+    if not event:
+        return []
+    side = event.get("side")
+    up, dn = event.get("up") or {}, event.get("down") or {}
+    if side == "buy_both":
+        legs, action, field = ((up, "UP"), (dn, "DOWN")), "BUY", "ask"
+    elif side == "sell_both":
+        legs, action, field = ((up, "UP"), (dn, "DOWN")), "SELL", "bid"
+    else:
+        return []
+    prices = [leg.get(field) for leg, _ in legs]
+    if any(p is None for p in prices):
+        return []
+    # Size on the thinner leg: an unmatched share is naked BTC exposure.
+    book_size = float(event.get("book_size") or 0.0)
+    shares = min(book_size, cap_usd / max(sum(prices), 0.01))
+    return [{
+        "outcome": name,
+        "action": action,
+        "price": float(leg[field]),
+        "shares": round(shares, 2),
+        "notional_usd": round(shares * float(leg[field]), 2),
+        "order_type": "limit",
+        "time_in_force": "FOK",   # both legs or neither
+    } for leg, name in legs]
+
+
+def ensure_subscribed(slug: Optional[str] = None) -> Optional[str]:
+    """Point the CLOB websocket at the live window's two tokens.
+
+    Idempotent and best-effort. Without this, a caller that only ever asks for
+    a quote gets the REST fallback forever (~300ms) — and a one-tick edge that
+    takes 300ms to see is one another desk already took. Returns the slug now
+    subscribed, or None if the socket could not be reached.
+    """
+    global _SUBSCRIBED
+    try:
+        slug = slug or slug_for()
+        if slug and slug == _SUBSCRIBED:
+            return slug
+        toks = tokens_for(slug)
+        if not toks:
+            return None
+        from services.trend_engine.updown_ws import feed
+        feed().subscribe(toks)
+        _SUBSCRIBED = slug
+        return slug
+    except Exception:
+        return None
+
+
+_SUBSCRIBED: Optional[str] = None
+
+
+def preflight(quoter: Optional[Callable[[], Dict[str, Any]]] = None,
+              min_edge: float = MIN_EDGE,
+              cap_usd: float = MAX_NOTIONAL_USD,
+              getenv: Callable[[str], Optional[str]] = os.environ.get,
+              subscribe: bool = True,
+              ) -> Dict[str, Any]:
+    """One-shot: is there an arb RIGHT NOW, and could we take it?
+
+    Backs the dashboard button. Always read-only — it prices the trade and
+    reports what would be sent, and it places nothing regardless of creds.
+
+    Subscribes the websocket on the way in so the SECOND call onward is served
+    from memory at 0ms. The first call in a process still pays REST, and the
+    returned `quote.source` says which it was — a `rest` source on a live book
+    means the button is a poll behind the market.
+    """
+    if subscribe and quoter is None:
+        ensure_subscribed()
+    w = ArbWatcher(mode="shadow", min_edge=min_edge, max_notional_usd=cap_usd,
+                   cooldown_s=0.0, quoter=quoter)
+    event = w.check()
+    ready = execution_readiness(getenv)
+    q = w._quoter()
+    armed = bool(event) and event.get("action") != "skipped_cooldown"
+    return {
+        "status": "ok",
+        "armed": armed,
+        "event": event,
+        "tickets": order_tickets(event, cap_usd) if armed else [],
+        "readiness": ready,
+        "quote": {k: q.get(k) for k in
+                  ("slug", "source", "fee_bps", "best_net_edge", "arb",
+                   "ticks_to_gross_arb", "buy_both", "sell_both", "up", "down")},
+        "would_execute": bool(armed and ready["ready"]),
+        "verdict": (
+            "no crossing right now — nothing to fire" if not armed else
+            (f"ARB LIVE: {event['side']} net {event['net_edge']:+.3f}/share, "
+             f"${event['expected_profit_usd']} on ${event['notional_usd']} — "
+             + ("ready to send" if ready["ready"] else ready["blocker"]))),
+    }
 
 
 def load_events(path: str = LEDGER, cap: int = 50_000) -> List[Dict[str, Any]]:

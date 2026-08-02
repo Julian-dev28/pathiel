@@ -264,11 +264,18 @@ def pair_quote(market: Optional[Dict[str, Any]] = None, now: Optional[float] = N
             rows = f.pair(list(toks))
             observed = f.observed_fee_bps()
             if rows:
-                sides = [{"side": n, "bid": r.get("bid"), "ask": r.get("ask"),
-                          "bid_size": r.get("bid_size"), "ask_size": r.get("ask_size"),
-                          "age_s": r.get("age_s")}
-                         for n, r in zip(("UP", "DOWN"), rows)]
-                source = "websocket"
+                cand = [{"side": n, "bid": r.get("bid"), "ask": r.get("ask"),
+                         "bid_size": r.get("bid_size"), "ask_size": r.get("ask_size"),
+                         "age_s": r.get("age_s")}
+                        for n, r in zip(("UP", "DOWN"), rows)]
+                # A just-subscribed token has a row but no prices in it until
+                # the first price_change lands. Accepting that hollow row makes
+                # a live arb read as "no crossing" — silently, and exactly at
+                # the moment a new 5m window opens. Fall through to REST until
+                # BOTH legs are two-sided.
+                if all(c["bid"] is not None and c["ask"] is not None for c in cand):
+                    sides = cand
+                    source = "websocket"
         except Exception:
             sides = None
 
@@ -657,24 +664,81 @@ def tail_strategy_ev(samples: Sequence[Dict[str, Any]],
     }
 
 
+def row_fee_bps(row: Dict[str, Any]) -> float:
+    """The fee to price a STORED sample with.
+
+    Same distrust rule as `market_fee_bps`, applied on read instead of on
+    record. Rows sampled before 2026-08-02 froze Gamma's advertised 1000 bps
+    into `fee_bps`, and every `*_net` field on those rows was computed against
+    it. Honouring that number would carry a disproved fee forward forever, so
+    a stored 1000 is read as the measured default exactly like a live one.
+    """
+    v = row.get("fee_bps")
+    if v is None:
+        return FEE_BPS_DEFAULT
+    try:
+        stored = float(v)
+    except (TypeError, ValueError):
+        return FEE_BPS_DEFAULT
+    return FEE_BPS_DEFAULT if stored == GAMMA_ADVERTISED_FEE_BPS else stored
+
+
+def _net_from_gross(row: Dict[str, Any], side: str) -> Optional[float]:
+    """Recompute a stored row's net edge at the fee we now trust.
+
+    Never reads `buy_both_net` / `sell_both_net`: those are record-time values
+    and a stale fee in them silently flips a real crossing to unprofitable.
+    Gross is fee-free arithmetic off the book, so it is the honest input.
+    """
+    gross = row.get(f"{side}_both_gross")
+    if gross is None:
+        return None
+    fee_bps = row_fee_bps(row)
+    legs = ("up_ask", "down_ask") if side == "buy" else ("up_bid", "down_bid")
+    prices = [row.get(k) for k in legs]
+    if any(p is None for p in prices):
+        # No leg prices stored: a zero fee costs nothing, anything else is
+        # unpriceable, so decline rather than guess.
+        return float(gross) if fee_bps == 0 else None
+    fees = sum(fee_per_share(float(p), fee_bps) for p in prices)
+    return float(gross) - fees
+
+
 def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """CLAIM 3: how often does a sub-$1 pair actually exist at OUR latency?
 
     Counts snapshots where the two-sided book was crossed enough to pay, gross
-    and net of fees. The gross/net split is the answer to the thread: even when
-    the gross arb prints, Polymarket's per-share fee is an order of magnitude
-    larger than a one-tick edge.
+    and net of fees. Both directions count: BUY both asks under $1 and redeem
+    for $1, or SELL both bids over $1 against a $1 minted set. The sell side is
+    the one that actually prints from here, so burying it was hiding the edge.
+
+    Net is recomputed from gross at `row_fee_bps`, never read off the row.
     """
     rows = [s for s in samples if s.get("buy_both_gross") is not None]
     if not rows:
         return {"status": "no_samples",
                 "hint": "run: python -m services.trend_engine.run --sample-updown"}
+    buy_nets = [_net_from_gross(s, "buy") for s in rows]
+    sell_nets = [_net_from_gross(s, "sell") for s in rows]
     gross_buy = [s for s in rows if (s.get("buy_both_gross") or 0) > 0]
-    net_buy = [s for s in rows if (s.get("buy_both_net") or 0) > 0]
+    net_buy = [s for s, n in zip(rows, buy_nets) if n is not None and n > 0]
     gross_sell = [s for s in rows if (s.get("sell_both_gross") or 0) > 0]
-    net_sell = [s for s in rows if (s.get("sell_both_net") or 0) > 0]
+    net_sell = [s for s, n in zip(rows, sell_nets) if n is not None and n > 0]
     costs = [1.0 - float(s["buy_both_gross"]) for s in rows]
-    fees = [float(s.get("fee_bps") or FEE_BPS_DEFAULT) for s in rows]
+    fees = [row_fee_bps(s) for s in rows]
+    stale = sum(1 for s in rows if float(s.get("fee_bps") or 0) == GAMMA_ADVERTISED_FEE_BPS)
+    best_buy = max((n for n in buy_nets if n is not None), default=-9.0)
+    best_sell = max((n for n in sell_nets if n is not None), default=-9.0)
+    if net_buy or net_sell:
+        verdict = (f"{len(net_buy)}/{len(rows)} snapshots had a NET-profitable BUY pair, "
+                   f"{len(net_sell)}/{len(rows)} a NET-profitable SELL pair "
+                   f"(best ${max(best_buy, best_sell):.2f}/share)")
+    elif gross_buy or gross_sell:
+        verdict = (f"{len(gross_buy) + len(gross_sell)} snapshot(s) crossed gross but NONE "
+                   f"survived the fee at {round(mean(fees))}bps")
+    else:
+        verdict = ("no crossed pair observed at our sampling latency — the book never "
+                   "sat under $1 when we looked")
     return {
         "status": "ok",
         "samples": len(rows),
@@ -683,19 +747,14 @@ def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "buy_both_net_hits": len(net_buy),
         "sell_both_gross_hits": len(gross_sell),
         "sell_both_net_hits": len(net_sell),
+        "net_hits": len(net_buy) + len(net_sell),
         "mean_pair_cost": round(mean(costs), 4),
         "min_pair_cost": round(min(costs), 4),
         "mean_fee_bps": round(mean(fees), 1),
-        "best_net_edge": round(max((float(s.get("buy_both_net") or -9) for s in rows),
-                                   default=-9), 4),
-        "verdict": (
-            f"{len(net_buy)}/{len(rows)} snapshots had a NET-profitable pair"
-            if net_buy else
-            (f"{len(gross_buy)} snapshot(s) crossed gross but NONE survived the fee — "
-             f"at {round(mean(fees))}bps the per-share fee dwarfs a one-tick edge"
-             if gross_buy else
-             "no crossed pair observed at our sampling latency — the book never "
-             "sat under $1 when we looked")),
+        "rows_repriced_off_advertised_fee": stale,
+        "best_net_edge": round(best_buy, 4),
+        "best_sell_net_edge": round(best_sell, 4),
+        "verdict": verdict,
     }
 
 

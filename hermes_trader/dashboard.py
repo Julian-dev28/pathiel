@@ -1592,6 +1592,59 @@ def _trends_updown_live_payload() -> Dict[str, Any]:
     return out
 
 
+def _trends_arb_preflight_payload() -> Dict[str, Any]:
+    """Live both-sides quote + what a fire would send. No network write, no
+    order. Never raises into the request: a dead websocket renders as
+    `status: unavailable`, not a 500 on the dashboard."""
+    try:
+        from services.trend_engine import env
+        from services.trend_engine.arb_watch import preflight
+    except Exception:
+        return {"status": "unavailable",
+                "hint": "services.trend_engine not importable in this tree"}
+    try:
+        env.load()
+        return preflight()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+
+
+def _trends_arb_fire_payload() -> Dict[str, Any]:
+    """One armed pass: re-quote, and if the pair is crossed write the ticket.
+
+    Re-quotes rather than trusting the preflight the browser is holding — a
+    5-minute window and a 0ms feed mean the arb the operator clicked on may be
+    seconds stale, and firing on a stale book is how a one-tick edge becomes a
+    directional bet.
+    """
+    try:
+        from services.trend_engine import env
+        from services.trend_engine.arb_watch import (
+            ArbWatcher, ensure_subscribed, execution_readiness, order_tickets)
+    except Exception:
+        return {"status": "unavailable"}
+    try:
+        env.load()
+        ready = execution_readiness()
+        ensure_subscribed()          # 0ms re-quote, not a 300ms REST poll
+        w = ArbWatcher(mode="shadow", cooldown_s=0.0)
+        event = w.check()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+    if not event or event.get("action") == "skipped_cooldown":
+        return {"status": "no_arb", "fired": False, "readiness": ready,
+                "best_edge": w.best_edge,
+                "message": "book was not crossed on re-quote — nothing sent"}
+    return {
+        "status": "recorded",
+        "fired": False,                     # no order path; never claim otherwise
+        "event": event,
+        "tickets": order_tickets(event),
+        "readiness": ready,
+        "message": ("ticket recorded to the arb ledger. " + (ready["blocker"] or "")),
+    }
+
+
 def _predictions_payload() -> Dict[str, Any]:
     """Polymarket board: trending + breaking markets, our AI brain's forecast on
     the ones it has judged, and the shadow ledger's scoreboard.
@@ -1833,6 +1886,31 @@ def register_routes(app: FastAPI) -> None:
         Binance + CLOB call rate while still tracking a 5-minute clock."""
         return JSONResponse(_ttl_cached("trends-updown-live", 5.0,
                                         _trends_updown_live_payload))
+
+    @app.get("/api/dashboard/trends/arb/preflight",
+             dependencies=[Depends(_require_operator)])
+    async def dashboard_trends_arb_preflight() -> JSONResponse:
+        """Is the sub-$1 pair crossed RIGHT NOW, and could we take it?
+
+        Backs the FIRE button. Read-only by construction: it prices the two
+        legs and reports what would be sent, and places nothing whatever the
+        credentials say. TTL 2s because the quote is served from the CLOB
+        websocket at 0ms and a stale arb is not an arb.
+        """
+        return JSONResponse(_ttl_cached("trends-arb-preflight", 2.0,
+                                        _trends_arb_preflight_payload))
+
+    @app.post("/api/dashboard/trends/arb/fire",
+              dependencies=[Depends(_require_operator)])
+    async def dashboard_trends_arb_fire() -> JSONResponse:
+        """Press the button. Records the ticket to the arb ledger.
+
+        This CANNOT place an order: the repo has no Polymarket order path and
+        `execution_readiness()` gates on the signing credentials. A fire with
+        creds missing is logged `action: shadow` and says so in the response,
+        because a button that silently no-ops is worse than no button.
+        """
+        return JSONResponse(_trends_arb_fire_payload())
 
     @app.post("/api/dashboard/trends/{lane}/refresh",
               dependencies=[Depends(_require_operator)])

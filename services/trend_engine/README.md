@@ -173,7 +173,7 @@ our own data rather than repeated.
 | claim | verdict | evidence |
 |---|---|---|
 | the leading side loses more than priced near the close | **CONFIRMED** | at 60s left, a Gaussian says the leader wins 99.8% in the top bucket; the tape says **97.2%** (n=1305). Every extreme bucket is negative at both minute 3 and minute 4 |
-| buy both sides for under $1 | **not at our latency** | the pair sits at exactly $1.00 ± 1 tick; the live book is typically **2 ticks** from any gross arb |
+| buy both sides for under $1 | **BUY no, SELL yes (twice)** | at n=276 the buy side never crossed (min pair cost **$1.001**); the **sell** side crossed **2/276** — `up_bid 0.42 + down_bid 0.59 = $1.01` against a $1 minted set |
 | 75-90c overperform / 95c+ overpriced | **needs the sampler** | our 898 existing scout rows are selected (recorded only on disagreement), so they cannot answer a calibration question |
 
 Two facts bound the arb, both read off the live market payload:
@@ -215,6 +215,33 @@ To go live you would need, in this order: Polymarket L2 credentials (key,
 secret, passphrase) and a funded Polygon wallet; an executor that signs and
 posts both legs; and evidence from this ledger that a reachable edge exists at
 all. Step three is the one that is currently missing.
+
+### The FIRE button (`/trends`, claim 3 card)
+
+Dark until the book is actually crossed, then lit with the two legs it would
+send. Polls `GET /api/dashboard/trends/arb/preflight` every 3s; `POST
+/api/dashboard/trends/arb/fire` re-quotes and writes the ticket.
+
+**It places no order, and cannot.** `execution_readiness()` reports which
+credentials are missing by name; `fired` is hard-false on every path in
+`_trends_arb_fire_payload()` because there is no code in this repo that could
+place the order it would otherwise claim. What a press produces is a ledger row
+in `.state/trend_engine/arb_events.jsonl` with the exact tickets — the evidence
+that step three above is or is not satisfiable.
+
+Both legs are **FOK**. A filled UP leg with no DOWN leg is not a smaller arb,
+it is naked BTC exposure, which is the trade this whole lane exists to avoid.
+
+Two defects were fixed building it, both of which hid real crossings:
+
+- `arb_stats` read the *stored* `fee_bps`, and 251 of the first 276 rows had
+  Gamma's disproved 1000bps frozen in. Net is now recomputed from gross at
+  `row_fee_bps()` on read, never trusted from record time. This is what turned
+  "no crossed pair observed" into "2 net-profitable SELL pairs".
+- `pair_quote` accepted a just-subscribed websocket row whose `bid`/`ask` were
+  still `None`, reporting `source: websocket, best_net_edge: null`. A live arb
+  read as no crossing, silently, exactly when a new 5m window opened. Both legs
+  must be two-sided now or it falls through to REST.
 
 ### The sampler (the missing instrument)
 

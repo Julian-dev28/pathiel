@@ -903,17 +903,118 @@ def test_tail_strategy_skips_tickets_above_the_price_cap():
     assert ue.tail_strategy_ev(samples, lambda e: True, max_ask=0.05)["status"] == "too_small"
 
 
+def test_a_warming_websocket_falls_back_to_rest_instead_of_quoting_holes(monkeypatch):
+    """Measured 2026-08-02: right after subscribe, `feed().pair()` returns two
+    rows whose bid/ask are still None. Trusting them reported `source:
+    websocket, best_net_edge: null` — a live arb reading as no crossing, at
+    exactly the moment a new 5m window opens."""
+    import services.trend_engine.updown_ws as uw
+    hollow = type("F", (), {
+        "subscribe": lambda self, t: None,
+        "pair": lambda self, t: [{"bid": None, "ask": None}, {"bid": None, "ask": None}],
+        "observed_fee_bps": lambda self: 0.0})
+    monkeypatch.setattr(uw, "feed", lambda: hollow())
+    monkeypatch.setattr(ue, "current_market", lambda *a, **k: {
+        "slug": "w1", "clobTokenIds": '["t1", "t2"]'})
+    monkeypatch.setattr(ue, "books_batch", lambda toks: [
+        {"bids": [{"price": "0.40", "size": "9"}], "asks": [{"price": "0.51", "size": "9"}]},
+        {"bids": [{"price": "0.40", "size": "9"}], "asks": [{"price": "0.50", "size": "9"}]}])
+    q = ue.pair_quote()
+    assert q["source"] == "rest"
+    assert q["best_net_edge"] is not None
+    assert q["up"]["ask"] == 0.51
+
+
+def test_a_live_websocket_is_preferred_once_both_legs_are_two_sided(monkeypatch):
+    import services.trend_engine.updown_ws as uw
+    live = type("F", (), {
+        "subscribe": lambda self, t: None,
+        "pair": lambda self, t: [{"bid": 0.40, "ask": 0.51, "bid_size": 9, "ask_size": 9},
+                                 {"bid": 0.40, "ask": 0.50, "bid_size": 9, "ask_size": 9}],
+        "observed_fee_bps": lambda self: 0.0})
+    monkeypatch.setattr(uw, "feed", lambda: live())
+    monkeypatch.setattr(ue, "current_market", lambda *a, **k: {
+        "slug": "w1", "clobTokenIds": '["t1", "t2"]'})
+    monkeypatch.setattr(ue, "books_batch", lambda toks: (_ for _ in ()).throw(
+        AssertionError("paid for REST with a live socket")))
+    assert ue.pair_quote()["source"] == "websocket"
+
+
 def test_arb_stats_separates_gross_hits_from_net_hits():
+    """A fee the market genuinely charges still kills a one-tick crossing.
+
+    500bps is not the disproved 1000, so it is honoured: 0.025/leg on a 50c
+    book is 0.05 of fee against 0.01 of gross edge.
+    """
     samples = [
-        {"buy_both_gross": 0.01, "buy_both_net": -0.04, "fee_bps": 1000,
-         "window_start_ms": 1},                       # crossed, but the fee eats it
-        {"buy_both_gross": -0.01, "buy_both_net": -0.06, "fee_bps": 1000,
-         "window_start_ms": 2},
+        {"buy_both_gross": 0.01, "buy_both_net": -0.04, "fee_bps": 500,
+         "up_ask": 0.5, "down_ask": 0.49, "window_start_ms": 1},
+        {"buy_both_gross": -0.01, "buy_both_net": -0.06, "fee_bps": 500,
+         "up_ask": 0.5, "down_ask": 0.51, "window_start_ms": 2},
     ]
     a = ue.arb_stats(samples)
     assert a["buy_both_gross_hits"] == 1
     assert a["buy_both_net_hits"] == 0
     assert "NONE survived the fee" in a["verdict"]
+
+
+def test_row_fee_bps_reads_a_stored_advertised_fee_as_the_measured_one():
+    """The distrust rule has to apply on READ, not just on record.
+
+    251 of the first 276 real samples froze Gamma's 1000bps into the row.
+    Honouring it would carry a fee nobody is charged forward forever.
+    """
+    assert ue.row_fee_bps({"fee_bps": 1000.0}) == ue.FEE_BPS_DEFAULT
+    assert ue.row_fee_bps({"fee_bps": 500.0}) == 500.0
+    assert ue.row_fee_bps({}) == ue.FEE_BPS_DEFAULT
+    assert ue.row_fee_bps({"fee_bps": "junk"}) == ue.FEE_BPS_DEFAULT
+
+
+def test_arb_stats_reprices_rows_that_froze_the_disproved_advertised_fee():
+    """Measured 2026-08-02: this exact row sat in the ledger reading
+    unprofitable. At the fee actually charged it is a cent a share."""
+    row = {"buy_both_gross": 0.01, "buy_both_net": -0.04, "fee_bps": 1000,
+           "up_ask": 0.5, "down_ask": 0.49, "window_start_ms": 1}
+    a = ue.arb_stats([row])
+    assert a["buy_both_net_hits"] == 1
+    assert a["mean_fee_bps"] == 0.0
+    assert a["rows_repriced_off_advertised_fee"] == 1
+    assert "NET-profitable BUY pair" in a["verdict"]
+
+
+def test_arb_stats_counts_the_sell_side_crossing():
+    """The real find: up_bid 0.42 + down_bid 0.59 = $1.01 against a $1 set.
+
+    The buy side has never crossed from here; the sell side has. Reporting
+    only the buy side read as 'no arb exists' when one had already printed.
+    """
+    row = {"buy_both_gross": -0.03, "sell_both_gross": 0.01,
+           "sell_both_net": -0.073, "fee_bps": 1000,
+           "up_ask": 0.43, "down_ask": 0.60,
+           "up_bid": 0.42, "down_bid": 0.59, "window_start_ms": 1}
+    a = ue.arb_stats([row])
+    assert a["buy_both_net_hits"] == 0
+    assert a["sell_both_net_hits"] == 1
+    assert a["net_hits"] == 1
+    assert a["best_sell_net_edge"] == 0.01
+    assert "NET-profitable SELL pair" in a["verdict"]
+
+
+def test_arb_stats_ignores_the_stored_net_and_recomputes_from_gross():
+    """Record-time net is a snapshot of whatever fee was believed that day.
+    Gross is fee-free arithmetic off the book, so gross is the input."""
+    row = {"buy_both_gross": 0.02, "buy_both_net": -0.99, "fee_bps": 0,
+           "up_ask": 0.5, "down_ask": 0.48, "window_start_ms": 1}
+    assert ue.arb_stats([row])["buy_both_net_hits"] == 1
+
+
+def test_arb_stats_declines_a_crossing_it_cannot_price():
+    """A charged fee with no leg prices is unpriceable. Decline, never guess:
+    guessing here invents an arb that the book may not support."""
+    row = {"buy_both_gross": 0.01, "fee_bps": 500, "window_start_ms": 1}
+    a = ue.arb_stats([row])
+    assert a["buy_both_gross_hits"] == 1
+    assert a["buy_both_net_hits"] == 0
 
 
 def test_arb_stats_says_so_when_nothing_was_ever_crossed():
@@ -1509,6 +1610,140 @@ def test_arb_watcher_run_loop_stops_at_max_checks(tmp_path):
     assert res["checks"] == 5 and res["fires"] == 0
 
 
+# ── the FIRE button: readiness, tickets, preflight ───────────────────────────
+
+_FULL_CREDS = {k: "x" for k, _ in aw.REQUIRED_CREDS}
+
+
+def test_execution_readiness_names_every_missing_credential():
+    """Placing a CLOB order needs L2 headers AND an L1 signature. Holding only
+    the API key fails at the exchange, which is the wrong place to learn it."""
+    r = aw.execution_readiness(getenv={"POLYMARKET_API_KEY": "k",
+                                       "POLYMARKET_ADDRESS": "0x1"}.get)
+    assert r["ready"] is False
+    missing = {m["key"] for m in r["missing"]}
+    assert missing == {"POLYMARKET_SECRET", "POLYMARKET_PASSPHRASE",
+                       "POLYMARKET_PRIVATE_KEY"}
+    assert "POLYMARKET_API_KEY" in r["present"]
+
+
+def test_execution_readiness_never_leaks_a_credential_value():
+    """This dict is rendered on a web page. Names only, never values."""
+    r = aw.execution_readiness(getenv={**_FULL_CREDS,
+                                       "POLYMARKET_SECRET": "sup3rsecret"}.get)
+    assert "sup3rsecret" not in json.dumps(r)
+    assert r["ready"] is True and r["blocker"] is None
+
+
+def test_order_tickets_price_both_legs_at_the_touch_and_size_the_thin_one():
+    w = aw.ArbWatcher(quoter=_quote(0.48, 0.49, size=30.0), ledger_path=os.devnull)
+    tickets = aw.order_tickets(w.check(), cap_usd=50.0)
+    assert [t["action"] for t in tickets] == ["BUY", "BUY"]
+    assert [t["price"] for t in tickets] == [0.48, 0.49]
+    # 50/0.97 = 51.5 shares wanted, but the book only shows 30.
+    assert all(t["shares"] == 30.0 for t in tickets)
+
+
+def test_order_tickets_are_fill_or_kill_because_one_leg_is_a_naked_bet():
+    """A filled UP leg with no DOWN leg is not a smaller arb, it is directional
+    BTC exposure — the exact trade this lane exists to avoid."""
+    w = aw.ArbWatcher(quoter=_quote(0.48, 0.49), ledger_path=os.devnull)
+    assert {t["time_in_force"] for t in aw.order_tickets(w.check())} == {"FOK"}
+
+
+def test_order_tickets_sell_side_lifts_the_bids():
+    """The side that actually printed from here: up_bid 0.42 + down_bid 0.59."""
+    w = aw.ArbWatcher(quoter=_quote(0.60, 0.60, up_bid=0.42, dn_bid=0.59),
+                      ledger_path=os.devnull)
+    ev = w.check()
+    assert ev["side"] == "sell_both"
+    tickets = aw.order_tickets(ev)
+    assert [t["action"] for t in tickets] == ["SELL", "SELL"]
+    assert [t["price"] for t in tickets] == [0.42, 0.59]
+
+
+def test_order_tickets_are_empty_when_there_is_nothing_to_send():
+    assert aw.order_tickets(None) == []
+    assert aw.order_tickets({"side": "buy_both", "up": {}, "down": {}}) == []
+
+
+def test_preflight_is_dark_on_an_uncrossed_book(tmp_path):
+    p = aw.preflight(quoter=_quote(0.51, 0.50), getenv=_FULL_CREDS.get)
+    assert p["armed"] is False and p["would_execute"] is False
+    assert p["tickets"] == []
+    assert "nothing to fire" in p["verdict"]
+
+
+def test_preflight_arms_and_prices_a_real_crossing():
+    p = aw.preflight(quoter=_quote(0.48, 0.49), getenv=_FULL_CREDS.get)
+    assert p["armed"] is True and p["would_execute"] is True
+    assert len(p["tickets"]) == 2
+    assert "ARB LIVE" in p["verdict"]
+
+
+def test_preflight_arms_but_refuses_to_execute_without_credentials():
+    """The button must light on a real arb even when it cannot send — the
+    alternative is never learning that the opportunity was there."""
+    p = aw.preflight(quoter=_quote(0.48, 0.49), getenv={}.get)
+    assert p["armed"] is True
+    assert p["would_execute"] is False
+    assert "credential(s) missing" in p["verdict"]
+
+
+def test_preflight_subscribes_the_socket_so_the_next_quote_is_free(monkeypatch):
+    """A button quoting over REST is ~300ms behind a one-tick market. The
+    first call pays that; every call after it must be served from memory."""
+    calls = []
+    monkeypatch.setattr(aw, "_SUBSCRIBED", None)
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: "w1")
+    monkeypatch.setattr(aw, "tokens_for", lambda s: ["t-up", "t-dn"])
+    monkeypatch.setattr(aw, "pair_quote", lambda *a, **k: {"status": "no_book"})
+    import services.trend_engine.updown_ws as uw
+    monkeypatch.setattr(uw, "feed",
+                        lambda: type("F", (), {"subscribe": lambda self, t: calls.append(t)})())
+    aw.preflight()
+    aw.preflight()
+    assert calls == [["t-up", "t-dn"]]        # idempotent, not once per poll
+
+
+def test_preflight_resubscribes_when_the_5m_window_rolls(monkeypatch):
+    calls, slug = [], ["w1"]
+    monkeypatch.setattr(aw, "_SUBSCRIBED", None)
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: slug[0])
+    monkeypatch.setattr(aw, "tokens_for", lambda s: [s + "-up", s + "-dn"])
+    import services.trend_engine.updown_ws as uw
+    monkeypatch.setattr(uw, "feed",
+                        lambda: type("F", (), {"subscribe": lambda self, t: calls.append(t)})())
+    aw.ensure_subscribed()
+    slug[0] = "w2"
+    aw.ensure_subscribed()
+    assert calls == [["w1-up", "w1-dn"], ["w2-up", "w2-dn"]]
+
+
+def test_ensure_subscribed_swallows_a_dead_socket(monkeypatch):
+    """The button degrades to REST rather than 500ing the dashboard."""
+    monkeypatch.setattr(aw, "_SUBSCRIBED", None)
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: "w1")
+    monkeypatch.setattr(aw, "tokens_for", lambda s: (_ for _ in ()).throw(OSError("down")))
+    assert aw.ensure_subscribed() is None
+
+
+def test_preflight_with_an_injected_quoter_never_touches_the_socket(monkeypatch):
+    """Tests and backtests pass a quoter; that path must stay offline."""
+    monkeypatch.setattr(aw, "slug_for", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("preflight reached the network with a quoter injected")))
+    assert aw.preflight(quoter=_quote(0.51, 0.50), getenv={}.get)["armed"] is False
+
+
+def test_preflight_places_no_order_even_with_every_credential(monkeypatch):
+    """Read-only by construction, not by configuration."""
+    fired = []
+    monkeypatch.setattr(aw.ArbWatcher, "_record", lambda self, ev: fired.append(ev))
+    p = aw.preflight(quoter=_quote(0.48, 0.49), getenv=_FULL_CREDS.get)
+    assert all(ev.get("action") == "shadow" for ev in fired)
+    assert p["event"]["mode"] == "shadow"
+
+
 # ── cache ────────────────────────────────────────────────────────────────────
 
 
@@ -1679,9 +1914,62 @@ def test_unknown_lane_is_a_404(client):
 
 
 def test_mutating_trend_routes_are_operator_gated(client):
-    for path in ("/api/dashboard/trends/hl/refresh", "/api/dashboard/trends/hl/ai"):
+    for path in ("/api/dashboard/trends/hl/refresh", "/api/dashboard/trends/hl/ai",
+                 "/api/dashboard/trends/arb/fire"):
         assert client.post(path).status_code in (401, 403, 503)
-    assert client.get("/api/dashboard/trends/job/result?job_id=x").status_code in (401, 403, 404, 503)
+    for path in ("/api/dashboard/trends/job/result?job_id=x",
+                 "/api/dashboard/trends/arb/preflight"):
+        assert client.get(path).status_code in (401, 403, 404, 503)
+
+
+def test_the_fire_button_is_on_the_page_and_says_it_places_no_order(client):
+    """The button must state its own limits where it is pressed. A control
+    labelled FIRE that quietly records is worse than no control."""
+    body = client.get("/trends").text
+    assert 'id="arb-fire"' in body and 'id="arb-fire-btn"' in body
+    assert "/api/dashboard/trends/arb/fire" in body
+    assert "places <b>no order</b>" in body
+    assert "FOK" in body
+
+
+def test_the_arb_route_never_reports_an_order_as_sent(monkeypatch):
+    """`fired` is hard-false on every path. No credential state can flip it,
+    because there is no code here that could place the order it would claim."""
+    import hermes_trader.dashboard as dash
+    crossed = {"status": "ok", "slug": "w1", "fee_bps": 0.0, "source": "websocket",
+               "up": {"bid": 0.4, "ask": 0.48, "ask_size": 50.0, "bid_size": 50.0},
+               "down": {"bid": 0.4, "ask": 0.49, "ask_size": 50.0, "bid_size": 50.0},
+               "buy_both": {"cost": 0.97, "gross_edge": 0.03, "net_edge": 0.03,
+                            "size": 50.0}}
+    monkeypatch.setattr(aw, "pair_quote", lambda *a, **k: crossed)
+    monkeypatch.setattr(aw.ArbWatcher, "_record", lambda self, ev: None)
+    monkeypatch.setattr(aw, "execution_readiness", lambda *a, **k:
+                        {"ready": True, "present": [], "missing": [], "blocker": None})
+    out = dash._trends_arb_fire_payload()
+    assert out["status"] == "recorded"
+    assert out["fired"] is False
+    assert len(out["tickets"]) == 2
+
+
+def test_the_arb_route_reports_no_arb_without_pretending_it_failed(monkeypatch):
+    import hermes_trader.dashboard as dash
+    monkeypatch.setattr(aw, "pair_quote", lambda *a, **k: {
+        "status": "ok", "slug": "w1", "fee_bps": 0.0, "source": "websocket",
+        "up": {"bid": 0.4, "ask": 0.51, "ask_size": 5.0, "bid_size": 5.0},
+        "down": {"bid": 0.4, "ask": 0.50, "ask_size": 5.0, "bid_size": 5.0},
+        "buy_both": {"cost": 1.01, "gross_edge": -0.01, "net_edge": -0.01, "size": 5.0}})
+    out = dash._trends_arb_fire_payload()
+    assert out["status"] == "no_arb" and out["fired"] is False
+    assert "nothing sent" in out["message"]
+
+
+def test_the_arb_preflight_payload_degrades_instead_of_500ing(monkeypatch):
+    """A dead websocket must not take the dashboard down with it."""
+    import hermes_trader.dashboard as dash
+    monkeypatch.setattr(aw, "preflight", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("feed gone")))
+    out = dash._trends_arb_preflight_payload()
+    assert out["status"] == "error" and "feed gone" in out["error"]
 
 
 def test_css_build_is_current():
