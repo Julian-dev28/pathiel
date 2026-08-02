@@ -26,7 +26,19 @@ from services.trend_engine.metrics import (
 )
 
 MAJORS: Tuple[str, ...] = ("BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK")
+# HIP-3 (the `xyz` dex): equities, indices and commodities on Hyperliquid.
+# They are a genuinely different tape and MUST NOT be benchmarked against BTC —
+# a residual-vs-BTC number for NVDA is noise wearing a decimal point. Each
+# sector gets its own benchmark, its own breadth, and its own regime read.
+XYZ_MAJORS: Tuple[str, ...] = ("xyz:SP500", "xyz:XYZ100", "xyz:NVDA", "xyz:SPCX",
+                               "xyz:GOLD", "xyz:CL", "xyz:AAPL", "xyz:GOOGL")
 BENCH = "BTC"
+XYZ_BENCH = "xyz:SP500"
+BENCH_BY_SECTOR = {"crypto": BENCH, "xyz": XYZ_BENCH}
+SECTOR_LABEL = {"crypto": "crypto perps", "xyz": "xyz equities / commodities"}
+# HIP-3 books are thinner than the crypto majors; a separate floor keeps the
+# scan from filling up with markets nobody can get out of.
+MIN_VOL_USD_XYZ = 500_000.0
 DEFAULT_DAYS = 60          # candles pulled per coin (30d vol + 7d trend + slack)
 DEFAULT_TOP_N = 40         # coins scanned, by 24h notional volume
 MAX_WORKERS = 4            # HL info endpoint is rate-limited — do not raise blindly
@@ -41,11 +53,17 @@ def closes_of(bars: Sequence[Any]) -> List[float]:
     return [_c(b, "c") for b in bars if _c(b, "c") > 0]
 
 
+def sector_of(coin: str) -> str:
+    """`xyz:NVDA` -> "xyz", `BTC` -> "crypto". The prefix IS the dex."""
+    return "xyz" if ":" in str(coin) else "crypto"
+
+
 # ── pure: one coin ───────────────────────────────────────────────────────────
 
 
 def coin_read(coin: str, bars: Sequence[Any], bench_bars: Optional[Sequence[Any]] = None,
-              uni_row: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+              uni_row: Optional[Dict[str, Any]] = None,
+              bench: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Full 7d-centred trend read for one coin from daily bars (oldest first).
 
     Returns None when there is not enough history to fit a 7-day trend AND a
@@ -64,8 +82,12 @@ def coin_read(coin: str, bars: Sequence[Any], bench_bars: Optional[Sequence[Any]
     sigma_day = stdev(rets30)
 
     ret_7d = pct_change(cs[-8], px) if len(cs) >= 8 else None
+    sector = sector_of(coin)
+    bench = bench if bench is not None else BENCH_BY_SECTOR[sector]
     read: Dict[str, Any] = {
         "coin": coin,
+        "sector": sector,
+        "bench": bench,
         "px": px,
         "ret_1d": pct_change(cs[-2], px) if len(cs) >= 2 else None,
         "ret_3d": pct_change(cs[-4], px) if len(cs) >= 4 else None,
@@ -94,7 +116,7 @@ def coin_read(coin: str, bars: Sequence[Any], bench_bars: Optional[Sequence[Any]
     read["score"] = trend_score(slope, r2, eff, ret_7d or 0.0)
 
     # relative-to-benchmark block (skipped for the benchmark itself)
-    if bench_bars is not None and coin != BENCH:
+    if bench_bars is not None and coin != bench:
         bcs = closes_of(bench_bars)
         if len(bcs) >= 10:
             br = daily_returns(bcs[-31:])
@@ -146,17 +168,19 @@ def attach_flags(reads: List[Dict[str, Any]], now_ms: Optional[int] = None,
         r["flag_bias"] = round(flagmod.flag_bias(r["flags"]), 3)
 
 
-def regime(reads: List[Dict[str, Any]]) -> Dict[str, Any]:
+def regime(reads: List[Dict[str, Any]], sector: str = "crypto") -> Dict[str, Any]:
     """Market-level read: what the whole tape did this week, not one coin.
 
     Breadth and dispersion carry the message. A +5% BTC week with 30% breadth
     is a BTC week; the same move with 80% breadth is a market week, and those
     two demand opposite books.
     """
+    reads = [r for r in reads if r.get("sector", "crypto") == sector] or reads
     if not reads:
         return {"status": "empty"}
+    bench_name = BENCH_BY_SECTOR.get(sector, BENCH)
     by_coin = {r["coin"]: r for r in reads}
-    btc = by_coin.get(BENCH)
+    btc = by_coin.get(bench_name)
     r7 = [float(r["ret_7d"]) for r in reads if r.get("ret_7d") is not None]
     ups = [x for x in r7 if x > 0]
     above_ema = [r for r in reads if r.get("ema21") and r["px"] > r["ema21"]]
@@ -165,9 +189,11 @@ def regime(reads: List[Dict[str, Any]]) -> Dict[str, Any]:
         labels[r["label"]] = labels.get(r["label"], 0) + 1
     trending = labels.get("STRONG_UP", 0) + labels.get("UP", 0) \
         + labels.get("DOWN", 0) + labels.get("STRONG_DOWN", 0)
-    corrs = [float(r["corr_btc"]) for r in reads if r.get("corr_btc") is not None and r["coin"] != BENCH]
+    corrs = [float(r["corr_btc"]) for r in reads
+             if r.get("corr_btc") is not None and r["coin"] != bench_name]
     fund = [float(r["funding_apr_pct"]) for r in reads if r.get("funding_apr_pct") is not None]
-    resid = [float(r["resid_7d"]) for r in reads if r.get("resid_7d") is not None and r["coin"] != BENCH]
+    resid = [float(r["resid_7d"]) for r in reads
+             if r.get("resid_7d") is not None and r["coin"] != bench_name]
 
     breadth = len(ups) / len(r7) * 100.0 if r7 else 0.0
     btc_7d = float(btc.get("ret_7d") or 0.0) if btc else 0.0
@@ -186,10 +212,15 @@ def regime(reads: List[Dict[str, Any]]) -> Dict[str, Any]:
     ranked = rank(reads)
     return {
         "status": "ok",
+        "sector": sector,
+        "sector_label": SECTOR_LABEL.get(sector, sector),
+        "bench": bench_name,
         "label": label,
         "tone": tone,
         "shape": shape,
+        "bench_ret_7d": round(btc_7d, 2),
         "btc_ret_7d": round(btc_7d, 2),
+        "bench_label": btc_label,
         "btc_label": btc_label,
         "btc_px": btc.get("px") if btc else None,
         "eth_ret_7d": round(float(by_coin["ETH"]["ret_7d"]), 2) if by_coin.get("ETH") and by_coin["ETH"].get("ret_7d") is not None else None,
@@ -218,28 +249,39 @@ def rank(reads: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def observations(reads: List[Dict[str, Any]], reg: Dict[str, Any]) -> List[str]:
-    """Deterministic plain-English lines about the week.
+    """Deterministic plain-English lines about the week, for ONE sector.
 
     These are the "observations" on the tab. They are generated from the same
     numbers shown next to them, so they can never drift from the data — the
     optional AI pass adds interpretation on top, never facts.
+
+    Sector-scoped on purpose: naming xyz:GOOGL as the crypto tape's strongest
+    uptrend (which the unscoped version did) is a category error, not a read.
     """
     out: List[str] = []
     if reg.get("status") != "ok":
         return out
+    sector = reg.get("sector", "crypto")
+    reads = [r for r in reads if r.get("sector", "crypto") == sector] or reads
+    bench = reg.get("bench", BENCH)
+    what = "names" if sector == "xyz" else "coins"
+    label = SECTOR_LABEL.get(sector, sector)
     ranked = rank(reads)
     out.append(
-        f"Tape is {reg['label'].replace('_', ' ').lower()}: BTC {reg['btc_ret_7d']:+.1f}% "
-        f"on the week, {reg['breadth_pct']:.0f}% of the scan green, "
-        f"{reg['trend_share_pct']:.0f}% of coins in an actual trend (rest is chop).")
+        f"{label.capitalize()} tape is {reg['label'].replace('_', ' ').lower()}: "
+        f"{bench} {reg['bench_ret_7d']:+.1f}% on the week, "
+        f"{reg['breadth_pct']:.0f}% of the scan green, "
+        f"{reg['trend_share_pct']:.0f}% of {what} in an actual trend (rest is chop).")
     if reg.get("alt_strength_pct") is not None:
         alt = reg["alt_strength_pct"]
+        movers = "single names" if sector == "xyz" else "alts"
         out.append(
-            f"Alts are {'outrunning' if alt > 1 else ('lagging' if alt < -1 else 'tracking')} BTC "
+            f"{movers.capitalize()} are "
+            f"{'outrunning' if alt > 1 else ('lagging' if alt < -1 else 'tracking')} {bench} "
             f"after beta ({alt:+.1f}% median residual) — "
-            + ("rotation is live, relative-strength books work here."
+            + ("dispersion is live, relative-strength books work here."
                if alt > 1 else
-               ("BTC is the only bid; alt longs are paying beta for nothing."
+               (f"{bench} is the only bid; long the components and you pay beta for nothing."
                 if alt < -1 else "no rotation signal, index-like tape.")))
     # "strongest" must mean strongest TREND, not biggest number — a CHOP coin
     # topping the score table is a ranking artifact, not the week's leader
@@ -274,17 +316,37 @@ def observations(reads: List[Dict[str, Any]], reg: Dict[str, Any]) -> List[str]:
 # ── fetch ────────────────────────────────────────────────────────────────────
 
 
-def _universe_rows(top_n: int, min_vol: float) -> List[Dict[str, Any]]:
+def _universe_rows(top_n: int, min_vol: float, include_hip3: bool = True,
+                   top_n_xyz: int = 25,
+                   min_vol_xyz: float = MIN_VOL_USD_XYZ) -> List[Dict[str, Any]]:
+    """Top markets by 24h volume, per SECTOR, with each sector's majors pinned.
+
+    Ranking crypto and HIP-3 together would let one tape crowd the other out of
+    the scan entirely (BTC alone does more volume than the whole xyz dex), so
+    each sector gets its own quota and its own volume floor.
+    """
     from hermes_trader.client.universe import get_universe
-    uni = [u for u in get_universe()
-           if u.get("type") == "perp" and float(u.get("dayNtlVlm") or 0) >= min_vol]
-    uni.sort(key=lambda u: float(u.get("dayNtlVlm") or 0), reverse=True)
-    picked = uni[:top_n]
-    have = {u["coin"] for u in picked}
-    for u in uni:                                  # majors always in the scan
-        if u["coin"] in MAJORS and u["coin"] not in have:
-            picked.append(u)
-            have.add(u["coin"])
+
+    uni = [u for u in get_universe(include_hip3=include_hip3)
+           if u.get("type") == "perp"]
+    picked: List[Dict[str, Any]] = []
+    have: set = set()
+    for sector, quota, floor, majors in (
+            ("crypto", top_n, min_vol, MAJORS),
+            ("xyz", top_n_xyz if include_hip3 else 0, min_vol_xyz, XYZ_MAJORS)):
+        rows = [u for u in uni
+                if sector_of(u["coin"]) == sector
+                and float(u.get("dayNtlVlm") or 0) >= floor]
+        rows.sort(key=lambda u: float(u.get("dayNtlVlm") or 0), reverse=True)
+        for u in rows[:quota]:
+            if u["coin"] not in have:
+                picked.append(u)
+                have.add(u["coin"])
+        if quota:                                   # majors are never dropped
+            for u in rows:
+                if u["coin"] in majors and u["coin"] not in have:
+                    picked.append(u)
+                    have.add(u["coin"])
     return picked
 
 
@@ -307,32 +369,40 @@ def _fetch_candles(coins: Sequence[str], days: int) -> Dict[str, List[Any]]:
 
 def scan(top_n: int = DEFAULT_TOP_N, days: int = DEFAULT_DAYS,
          min_vol: float = MIN_VOL_USD, coins: Optional[Sequence[str]] = None,
-         now_ms: Optional[int] = None) -> Dict[str, Any]:
+         now_ms: Optional[int] = None, include_hip3: bool = True,
+         top_n_xyz: int = 25) -> Dict[str, Any]:
     """Full HL trend lane: universe -> candles -> reads -> regime -> forecasts.
 
     One network burst (universe + one candle call per coin, 4 at a time), then
     everything else is pure. Safe to call from a request handler behind a TTL.
     """
     t0 = time.time()
-    rows = _universe_rows(top_n, min_vol)
+    rows = _universe_rows(top_n, min_vol, include_hip3=include_hip3,
+                          top_n_xyz=top_n_xyz)
     by_coin_row = {r["coin"]: r for r in rows}
     wanted = list(coins) if coins else list(by_coin_row.keys())
-    if BENCH not in wanted:
-        wanted.append(BENCH)
+    for b in (BENCH, XYZ_BENCH if include_hip3 else None):
+        if b and b not in wanted:
+            wanted.append(b)
     candles = _fetch_candles(wanted, days)
-    bench = candles.get(BENCH) or []
+    benches = {sec: candles.get(name) or []
+               for sec, name in BENCH_BY_SECTOR.items()}
 
     reads: List[Dict[str, Any]] = []
     for coin in wanted:
         bars = candles.get(coin)
         if not bars:
             continue
-        r = coin_read(coin, bars, bench, by_coin_row.get(coin))
+        sec = sector_of(coin)
+        r = coin_read(coin, bars, benches.get(sec), by_coin_row.get(coin),
+                      bench=BENCH_BY_SECTOR[sec])
         if r:
             reads.append(r)
 
     attach_flags(reads, now_ms=now_ms)
-    reg = regime(reads)
+    reg = regime(reads, "crypto")
+    regimes = {sec: regime(reads, sec)
+               for sec in sorted({r.get("sector", "crypto") for r in reads})}
     ranked = rank(reads)
     # The walk-forward is a separate, much heavier fetch (hundreds of daily
     # bars per coin), so it runs on its own slow cadence and is attached from
@@ -341,15 +411,26 @@ def scan(top_n: int = DEFAULT_TOP_N, days: int = DEFAULT_DAYS,
     ev = load_eval()
     majors = [r for r in reads if r["coin"] in MAJORS]
     majors.sort(key=lambda r: MAJORS.index(r["coin"]))
+    xyz_majors = [r for r in reads if r["coin"] in XYZ_MAJORS]
+    xyz_majors.sort(key=lambda r: XYZ_MAJORS.index(r["coin"]))
     return {
         "status": "ok" if reads else "no_data",
         "generated_at": int(time.time()),
         "elapsed_s": round(time.time() - t0, 2),
         "scanned": len(reads),
         "regime": reg,
+        "regimes": regimes,
+        "sector_counts": {sec: sum(1 for r in reads if r.get("sector") == sec)
+                          for sec in sorted({r.get("sector", "crypto") for r in reads})},
         "majors": majors,
+        "xyz_majors": xyz_majors,
         "reads": ranked,
-        "observations": observations(reads, reg),
+        # one block per sector; `observations` scopes itself to the regime's
+        # sector so the crypto lines can never name an equity and vice versa
+        "observations": [line for sec, g in sorted(regimes.items())
+                         for line in observations(reads, g)],
+        "observations_by_sector": {sec: observations(reads, g)
+                                   for sec, g in sorted(regimes.items())},
         "eval": ev,
         "closes": {r["coin"]: closes_of(candles[r["coin"]])[-30:] for r in reads
                    if candles.get(r["coin"])},

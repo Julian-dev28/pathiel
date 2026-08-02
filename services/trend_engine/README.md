@@ -14,6 +14,7 @@ services/trend_engine/
   flags.py              catalyst / structure / positioning flags
   hl_trends.py          LANE HL        — Hyperliquid 7d trend + regime
   updown_trends.py      LANE UPDOWN    — Polymarket BTC 5m base rates
+  updown_edges.py       microstructure — the three HFT claims + the book sampler
   political_trends.py   LANE POLITICS  — political markets in probability space
   recorders.py          LANE RECORDERS — forward-graded P&L of every shadow book
   ai.py                 optional LLM pass (local Claude Code CLI, never an API)
@@ -51,7 +52,18 @@ the same rule the predictions board follows.
 
 A missing cache renders as `status: empty` carrying the command that fills it.
 
-## Lane HL — Hyperliquid, 7 days
+## Lane HL — Hyperliquid, 7 days (crypto AND HIP-3)
+
+**Two sectors, two benchmarks.** `crypto` (perps, benchmarked to BTC) and `xyz`
+(HIP-3: SP500, XYZ100, NVDA, SPCX, GOOGL, AAPL, GOLD, CL, …, benchmarked to
+`xyz:SP500`). A residual-vs-BTC number for NVDA is noise wearing a decimal
+point, so beta, residual momentum, breadth, dispersion, funding and the regime
+label are all computed **per sector**, and the observation lines are scoped so
+the crypto block can never name an equity.
+
+Each sector gets its own volume floor and its own quota in the scan — BTC alone
+out-trades the whole xyz dex, so a single ranking would drop every equity off
+the tab. `scan(include_hip3=False)` turns it off.
 
 Per coin: returns (1/3/7/14/30d), OLS log-slope in %/day with R², Kaufman
 efficiency, EMA stack, streak, ATR, range position, drawdown, beta/correlation
@@ -112,6 +124,59 @@ its CI. That is the only model the live price may be compared to.
 
 The market settles on **Chainlink BTC/USD**, not Binance, so a `FEED_BUFFER`
 (5pp) must be cleared before a deviation is called actionable.
+
+## Microstructure — the three HFT claims (`updown_edges.py`)
+
+A widely-shared thread on 2M updown trades made three claims. Each is tested on
+our own data rather than repeated.
+
+| claim | verdict | evidence |
+|---|---|---|
+| the leading side loses more than priced near the close | **CONFIRMED** | at 60s left, a Gaussian says the leader wins 99.8% in the top bucket; the tape says **97.2%** (n=1305). Every extreme bucket is negative at both minute 3 and minute 4 |
+| buy both sides for under $1 | **not at our latency** | the pair sits at exactly $1.00 ± 1 tick; the live book is typically **2 ticks** from any gross arb |
+| 75-90c overperform / 95c+ overpriced | **needs the sampler** | our 898 existing scout rows are selected (recorded only on disagreement), so they cannot answer a calibration question |
+
+Two facts bound the arb, both read off the live market payload:
+
+- `orderPriceMinTickSize` = **0.01**, so complementary asks summing to 0.97 means
+  the book is *three ticks crossed* — a stale-quote event, not a standing spread.
+- `takerBaseFee` = **1000 bps**, and Polymarket's fee is `rate × min(p, 1−p) ×
+  shares` — up to 5¢/share. That is an order of magnitude more than a one-tick
+  edge, which is why `pair_quote()` reports gross AND net and the tab shows net.
+
+### The sampler (the missing instrument)
+
+```bash
+scripts/restart.sh sampler          # start it (own process — see below)
+scripts/restart.sh stopsampler
+python -m services.trend_engine.run --sample-updown   # one window, by hand
+python -m services.trend_engine.run --edges           # read the results
+```
+
+Snapshots BOTH books at 240/180/120/60/30s remaining in **every** window,
+unconditionally — unconditional is the entire point, since a sampler that only
+fires when something looks interesting reproduces the selection bias that makes
+the existing rows unusable. ~288 windows/day. Grades offline against the klines.
+
+It runs as **its own process, not a scheduler job**: `scripts/scheduler.py`
+fires jobs serially, so a sampler that blocks for most of a 5-minute window
+would starve every other job.
+
+### Polymarket latency (measured 2026-08-02, median of 8)
+
+| call | latency |
+|---|---|
+| `gamma /markets?slug` | 188 ms |
+| `clob /book` (one side) | 327 ms |
+| **`clob POST /books` (both sides, one trip)** | **302 ms** |
+| curl subprocess vs keep-alive session | 323 ms vs 297 ms |
+
+So the TLS handshake is *not* the bottleneck — raw RTT to their edge is. Two
+wins exist in code and both are implemented: batch the two books into one call,
+and keep the slug→token lookup off the critical path (`tokens_for()` caches it
+forever, `prewarm()` fills the next window's entry while the current one runs).
+
+**Result: 840 ms → ~245 ms per quote.** The remaining ~245 ms is geography.
 
 ## Lane POLITICS — probability space
 

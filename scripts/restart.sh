@@ -7,6 +7,8 @@
 #   scripts/restart.sh server         # restart FastAPI server only
 #   scripts/restart.sh stoploop       # STOP the trading loop, keep server + scheduler up
 #   scripts/restart.sh sched          # restart the job scheduler only
+#   scripts/restart.sh sampler        # start/restart the Polymarket 5m book sampler
+#   scripts/restart.sh stopsampler    # stop the sampler only
 #   scripts/restart.sh stop           # stop both, don't start
 #   scripts/restart.sh status         # show what's running
 #
@@ -47,6 +49,8 @@ SCHED_LOG="$LOG_DIR/scheduler.log"
 LOOP_PATTERN="scripts/trading_loop.py"
 SERVER_PATTERN="hermes_trader.server"
 SCHED_PATTERN="scripts/scheduler.py"
+SAMPLER_PATTERN="--sample-daemon"
+SAMPLER_LOG="$LOG_DIR/updown_sampler.log"
 
 # Our own PID — must not be killed by pgrep matches.
 SELF_PID=$$
@@ -233,6 +237,28 @@ show_status() {
 }
 
 action="${1:-restart}"
+start_sampler() {
+  local pids
+  pids=$(pgrep -f "$SAMPLER_PATTERN" || true)
+  if [ -n "$pids" ]; then
+    warn "updown sampler already running (pids: $pids) — skipping"
+    return 0
+  fi
+  info "starting Polymarket 5m book sampler (log: $SAMPLER_LOG)"
+  # Its OWN process, not a scheduler job: scheduler.py fires jobs serially and
+  # this one blocks for most of a 5-minute window, which would starve every
+  # other job. Zero capital — it only snapshots both books and writes JSONL.
+  nohup "$PY" -m services.trend_engine.run --sample-daemon \
+    >> "$SAMPLER_LOG" 2>&1 &
+  local pid=$!
+  sleep 2
+  if kill -0 "$pid" 2>/dev/null; then
+    ok "updown sampler: pid $pid"
+  else
+    err "updown sampler died immediately — see $SAMPLER_LOG"
+  fi
+}
+
 case "$action" in
   restart|"")
     stop_proc "trading loop" "$LOOP_PATTERN"
@@ -264,10 +290,20 @@ case "$action" in
     start_sched
     show_status
     ;;
+  sampler)
+    stop_proc "updown sampler" "$SAMPLER_PATTERN"
+    start_sampler
+    show_status
+    ;;
+  stopsampler)
+    stop_proc "updown sampler" "$SAMPLER_PATTERN"
+    show_status
+    ;;
   stop)
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
+    stop_proc "updown sampler" "$SAMPLER_PATTERN"
     show_status
     ;;
   status)
@@ -275,7 +311,7 @@ case "$action" in
     ;;
   *)
     err "unknown action: $action"
-    err "usage: $0 [restart|loop|server|sched|stop|status]"
+    err "usage: $0 [restart|loop|server|sched|sampler|stopsampler|stoploop|stop|status]"
     exit 2
     ;;
 esac

@@ -608,6 +608,16 @@ def live_window(windows: Sequence[Dict[str, Any]],
     return out
 
 
+def _edges_block(windows: Sequence[Dict[str, Any]], with_live: bool) -> Dict[str, Any]:
+    """Microstructure edges, isolated so a Gamma/CLOB hiccup cannot take the
+    whole lane down with it."""
+    try:
+        from services.trend_engine.updown_edges import read as edges_read
+        return edges_read(windows=windows, with_live=with_live)
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+
+
 def live_spot() -> Optional[float]:
     d = _curl("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT")
     try:
@@ -642,6 +652,8 @@ def read(minutes: int = DEFAULT_MINUTES, runner: Optional[Callable] = None,
         "forecast": fc,
         "live": live_window(ws, book, now_ms=now_ms) if with_market else {"status": "off"},
         "calibration": rw_calibration(ws, minute=3),
+        # microstructure block: the three HFT claims, tested on our own data
+        "edges": _edges_block(ws, with_live=with_market),
         "recent": [{k: v for k, v in w.items() if k != "c1m"} for w in ws[-24:]],
     }
 

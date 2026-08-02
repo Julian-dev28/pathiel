@@ -177,10 +177,8 @@
   <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
-    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
     <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
     <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
-    <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
   </nav>
 
   <div class="note">
@@ -207,10 +205,17 @@
 
     <div class="card mb-4">
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">majors · 7 day</div>
+        <div class="sec-label" style="margin-bottom:0">crypto majors · 7 day</div>
         <span class="text-[10px] mono dim" id="hl-age"></span>
       </div>
       <div class="grid3" id="hl-majors"></div>
+    </div>
+
+    <div class="strip" id="hl-strip-xyz"></div>
+
+    <div class="card mb-4" id="hl-xyz-card">
+      <div class="sec-label">xyz (HIP-3) · equities, indices, commodities · 7 day</div>
+      <div class="grid3" id="hl-xyz-majors"></div>
     </div>
 
     <div class="grid2 mb-4">
@@ -233,18 +238,22 @@
           <button class="btn" data-filter="all" id="f-all">all</button>
           <button class="btn" data-filter="trend">trending only</button>
           <button class="btn" data-filter="flagged">flagged</button>
+          <span class="dim" style="padding:0 4px">|</span>
+          <button class="btn" data-sector="all" id="s-all">both</button>
+          <button class="btn" data-sector="crypto">crypto</button>
+          <button class="btn" data-sector="xyz">xyz</button>
           <button class="btn go" id="hl-refresh">refresh data</button>
         </div>
       </div>
       <div class="overflow-x-auto">
         <table>
           <thead><tr>
-            <th>coin</th><th>price</th><th>1d</th><th>7d</th><th>30d</th>
+            <th>coin</th><th>sector</th><th>price</th><th>1d</th><th>7d</th><th>30d</th>
             <th>slope/d</th><th>r²</th><th>eff</th><th>trend</th>
             <th>7d forecast (p10 · p50 · p90)</th><th>p(up)</th><th>funding</th>
             <th style="text-align:left">flags</th>
           </tr></thead>
-          <tbody id="hl-rows"><tr><td colspan="13" class="dim">loading…</td></tr></tbody>
+          <tbody id="hl-rows"><tr><td colspan="14" class="dim">loading…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -301,6 +310,11 @@
         </div>
         <div class="text-[10.5px] dim mt-3" id="ud-calib-note"></div>
       </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="sec-label">microstructure · the three HFT claims, tested</div>
+      <div id="ud-edges"><span class="dim text-[11.5px]">loading…</span></div>
     </div>
 
     <div class="card mb-4">
@@ -529,6 +543,7 @@ const DATA = { hl: null, updown: null, politics: null, recorders: null };
 let LANE = (location.hash || '#hl').slice(1);
 if (!LANES.includes(LANE)) LANE = 'hl';
 let HL_FILTER = 'all';
+let HL_SECTOR = 'all';
 
 function showLane(l) {
   LANE = l;
@@ -557,35 +572,31 @@ function emptyState(el, d, lane) {
 }
 
 // ── LANE 1: Hyperliquid ─────────────────────────────────────────────────────
-function renderHL(d) {
-  $('#n-hl').textContent = d.scanned ? d.scanned : '';
-  $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
-  if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
-  const g = d.regime || {};
-
-  $('#hl-strip').innerHTML = [
-    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} coins scanned`, 'vio'],
-    ['btc 7d', pct(g.btc_ret_7d), String(g.btc_label || '').replace(/_/g, ' '), sgn(g.btc_ret_7d)],
+function regimeStrip(g, extra) {
+  if (!g || g.status !== 'ok') return '';
+  return [
+    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} ${extra} scanned`, 'vio'],
+    [`${g.bench} 7d`, pct(g.bench_ret_7d), String(g.bench_label || '').replace(/_/g, ' '), sgn(g.bench_ret_7d)],
     ['breadth', num(g.breadth_pct, 0) + '%', 'green on the week', g.breadth_pct >= 50 ? 'up' : 'dn'],
     ['trending', num(g.trend_share_pct, 0) + '%', 'rest is chop', 'mut'],
     ['dispersion', num(g.dispersion_pct, 1) + '%', 'spread of 7d returns', 'mut'],
-    ['alt strength', pct(g.alt_strength_pct), 'median residual vs BTC', sgn(g.alt_strength_pct)],
+    ['rel strength', pct(g.alt_strength_pct), `median residual vs ${g.bench}`, sgn(g.alt_strength_pct)],
     ['funding', pct(g.mean_funding_apr_pct), 'mean APR', sgn(-(g.mean_funding_apr_pct || 0))],
     ['consensus', num((g.consensus || {}).pct_up, 0) + '%', 'forecasts pointing up', 'mut'],
-  ].map(([l, v, s, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
-      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
+  ].map(([l, v, sub, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(sub)}</span></div>`).join('');
+}
 
-  $('#hl-majors').innerHTML = (d.majors || []).map(r => {
-    const f = r.forecast || {};
-    const cl = d.closes && d.closes[r.coin];
-    return `<div class="card" style="padding:11px">
+function majorCard(r, closes) {
+  const f = r.forecast || {};
+  return `<div class="card" style="padding:11px">
       <div class="flex items-center justify-between mb-2">
         <span class="mono" style="font-weight:700;font-size:13px">${esc(r.coin)}</span>
         ${badge(r.label)}
       </div>
       <div class="flex items-center justify-between gap-2 mb-2">
         <span class="mono text-[14px]">${price(r.px)}</span>
-        <span>${spark(cl)}</span>
+        <span>${spark(closes)}</span>
       </div>
       <div class="mono text-[10.5px] mut">
         7d <span class="${sgn(r.ret_7d)}">${pct(r.ret_7d)}</span> ·
@@ -593,9 +604,28 @@ function renderHL(d) {
         eff ${num(r.efficiency)}
       </div>
       <div class="mt-2">${bandHtml(r.px, f)}</div>
-      <div class="mono text-[10px] dim mt-1">p(up) ${num(f.prob_up, 2)} · band ±${num(f.sigma_h_pct, 1)}%</div>
+      <div class="mono text-[10px] dim mt-1">p(up) ${num(f.prob_up, 2)} · band ±${num(f.sigma_h_pct, 1)}%
+        ${r.resid_7d ? ` · vs ${esc(r.bench || '')} ${pct(r.resid_7d, 1)}` : ''}</div>
     </div>`;
-  }).join('');
+}
+
+function renderHL(d) {
+  $('#n-hl').textContent = d.scanned ? d.scanned : '';
+  $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+  if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
+  const g = d.regime || {};
+
+  const regs = d.regimes || { crypto: g };
+  $('#hl-strip').innerHTML = regimeStrip(regs.crypto || g, 'coins');
+  const xr = regs.xyz;
+  $('#hl-strip-xyz').innerHTML = regimeStrip(xr, 'markets');
+  $('#hl-strip-xyz').style.display = xr && xr.status === 'ok' ? '' : 'none';
+  $('#hl-xyz-card').style.display = (d.xyz_majors || []).length ? '' : 'none';
+
+  $('#hl-majors').innerHTML = (d.majors || [])
+    .map(r => majorCard(r, d.closes && d.closes[r.coin])).join('');
+  $('#hl-xyz-majors').innerHTML = (d.xyz_majors || [])
+    .map(r => majorCard(r, d.closes && d.closes[r.coin])).join('');
 
   $('#hl-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
     || '<li class="dim">no observations</li>';
@@ -635,12 +665,14 @@ function renderHL(d) {
 function renderHLRows() {
   const d = DATA.hl; if (!d || d.status !== 'ok') return;
   let rows = d.reads || [];
+  if (HL_SECTOR !== 'all') rows = rows.filter(r => (r.sector || 'crypto') === HL_SECTOR);
   if (HL_FILTER === 'trend') rows = rows.filter(r => r.label !== 'CHOP');
   if (HL_FILTER === 'flagged') rows = rows.filter(r => (r.flags || []).length > 0);
   $('#hl-rows').innerHTML = rows.map(r => {
     const f = r.forecast || {};
     return `<tr>
       <td><span class="mono" style="font-weight:600">${esc(r.coin)}</span></td>
+      <td><span class="badge ${r.sector === 'xyz' ? 'b-teal' : 'b-mut'}">${esc(r.sector || 'crypto')}</span></td>
       <td class="mono">${price(r.px)}</td>
       <td class="mono ${sgn(r.ret_1d)}">${pct(r.ret_1d)}</td>
       <td class="mono ${sgn(r.ret_7d)}">${pct(r.ret_7d)}</td>
@@ -657,8 +689,13 @@ function renderHLRows() {
       `<span class="chip ${KIND_CLASS[fl.kind] || ''}" title="${esc(fl.note)}">${esc(fl.code)}</span>`).join('')}
       </td>
     </tr>`;
-  }).join('') || '<tr><td colspan="13" class="dim">nothing matches this filter</td></tr>';
+  }).join('') || '<tr><td colspan="14" class="dim">nothing matches this filter</td></tr>';
 }
+$$('[data-sector]').forEach(b => b.onclick = () => {
+  HL_SECTOR = b.dataset.sector;
+  $$('[data-sector]').forEach(x => x.classList.toggle('go', x === b));
+  renderHLRows();
+});
 $$('[data-filter]').forEach(b => b.onclick = () => {
   HL_FILTER = b.dataset.filter;
   $$('[data-filter]').forEach(x => x.classList.toggle('go', x === b));
@@ -709,6 +746,8 @@ function renderUpdown(d) {
        The unconditional window is a coin flip; the in-progress one is not, and this is the model the
        live price is compared against.`
     : 'not enough history for a reliability table';
+
+  renderEdges(d.edges);
 
   $('#ud-roll').innerHTML = (d.rolling || []).slice().reverse().map(r => {
     const real = r.ci_lo > 0.5 || r.ci_hi < 0.5;
@@ -828,6 +867,94 @@ function renderPolitics(d) {
       <td class="mono dim">$${((r.volume || 0) / 1e6).toFixed(1)}m</td>
     </tr>`;
   }).join('');
+}
+
+// ── microstructure block (the three HFT claims) ─────────────────────────────
+function calibTable(rows, headLeft) {
+  return `<div class="overflow-x-auto"><table>
+    <thead><tr><th style="text-align:left">${esc(headLeft)}</th><th>n</th><th>priced</th>
+      <th>actual</th><th>gap</th><th>95% ci</th><th style="text-align:left">real?</th></tr></thead>
+    <tbody>${(rows || []).map(r => `<tr>
+      <td class="mono">${esc(r.bucket)}</td>
+      <td class="mono mut">${r.n}</td>
+      <td class="mono">${num(r.implied * 100, 1)}%</td>
+      <td class="mono ${r.diff_pp < 0 ? 'dn' : 'up'}">${num(r.realized * 100, 1)}%</td>
+      <td class="mono ${sgn(r.diff_pp)}">${pct(r.diff_pp, 1)}pp</td>
+      <td class="mono dim">${num(r.ci_lo * 100, 1)}–${num(r.ci_hi * 100, 1)}%</td>
+      <td style="text-align:left">${r.significant ? '<span class="badge b-info">outside</span>'
+    : '<span class="badge b-mut">inside</span>'}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function renderEdges(e) {
+  if (!e) { $('#ud-edges').innerHTML = '<span class="dim text-[11.5px]">no microstructure block in this payload</span>'; return; }
+  const t = e.tail_edge_60s || {}, arb = e.arb || {}, ts = e.tail_strategy || {},
+    c30 = e.price_calibration_30s || {}, lp = e.live_pair || {};
+
+  const claim = (n, title, verdict, tone, body) => `
+    <div class="card mb-3" style="background:var(--card2)">
+      <div class="flex items-center gap-2 mb-2 flex-wrap">
+        <span class="badge b-info">CLAIM ${n}</span>
+        <span style="font-weight:600;font-size:12px">${esc(title)}</span>
+        <span class="badge ${tone}">${esc(verdict)}</span>
+      </div>${body}</div>`;
+
+  const tailBody = t.status === 'ok' ? `
+    <div class="text-[11.5px] mut mb-2">Replay every window at ${t.secs_left}s left, ask a Gaussian
+      random walk for the leader's win probability, compare with what happened. n=${t.n}, no market
+      data involved.</div>
+    ${calibTable(t.table, 'gaussian says leader wins')}
+    <div class="text-[11px] mt-2 ${t.tail_is_fat ? 'teal' : 'mut'}">${esc(t.verdict)}</div>`
+    : '<span class="dim text-[11px]">not enough windows</span>';
+
+  const arbBody = `
+    <div class="text-[11.5px] mut mb-2">Buy both sides under $1, redeem the winner for $1. Checked
+      against the real book in both directions, gross and net of Polymarket's per-share fee
+      (<b>rate × min(p, 1−p) × shares</b>).</div>
+    ${lp.status === 'ok' ? `<div class="mono text-[11.5px]" style="line-height:1.9">
+      live pair <b>${esc(lp.slug || '')}</b><br/>
+      UP ${lp.up.bid}/${lp.up.ask} · DOWN ${lp.down.bid}/${lp.down.ask}
+      · tick ${lp.tick} · fee ${lp.fee_bps}bps<br/>
+      buy both costs <span class="${(lp.buy_both || {}).gross_edge > 0 ? 'up' : 'dn'}">$${num((lp.buy_both || {}).cost, 3)}</span>
+      · net edge <span class="${sgn((lp.buy_both || {}).net_edge)}">${num((lp.buy_both || {}).net_edge, 4)}</span>
+      · <b>${lp.ticks_to_gross_arb}</b> tick(s) from any gross arb
+    </div>` : '<span class="dim text-[11px]">no live book</span>'}
+    <div class="text-[11px] mt-2 ${arb.status === 'ok' && arb.buy_both_net_hits ? 'teal' : 'amb'}">
+      ${esc(arb.verdict || arb.hint || '')}</div>`;
+
+  const calBody = c30.status === 'ok'
+    ? `<div class="text-[11.5px] mut mb-2">Unbiased book snapshots at ${c30.secs_left}s left
+         (n=${c30.n}), graded on the window's real outcome.</div>
+       ${calibTable(c30.rows, 'market price bucket')}
+       <div class="text-[11px] mt-2">${esc(c30.verdict)}</div>`
+    : `<div class="text-[11.5px] amb">Not answerable yet — needs the unbiased sampler.
+         ${esc(c30.hint || '')}<br/><span class="dim">Our 898 existing scout rows can't answer it:
+         they were only recorded when the model disagreed with the price, so the price
+         distribution is selected.</span></div>`;
+
+  const stratBody = ts.status === 'ok'
+    ? `<div class="mono text-[11.5px]" style="line-height:1.9">
+         buy any side at ≤ ${num(ts.max_ask * 100, 0)}¢ with ${ts.secs_left}s left · n=${ts.n}<br/>
+         win ${num(ts.win_rate * 100, 1)}% (ci ${num(ts.win_ci[0] * 100, 1)}–${num(ts.win_ci[1] * 100, 1)}%)
+         vs breakeven ${num(ts.breakeven_win_rate * 100, 1)}%<br/>
+         EV per $ staked <span class="${sgn(ts['ev_per_$staked'])}">${num(ts['ev_per_$staked'], 4)}</span>
+         · fee ${ts.fee_bps}bps</div>
+       <div class="text-[11px] mt-2">${esc(ts.verdict)}</div>`
+    : `<div class="text-[11.5px] amb">${esc(ts.hint || ts.status || '')} — the fat tail above says the
+         opportunity should exist; this line says whether the book actually pays for it.</div>`;
+
+  $('#ud-edges').innerHTML =
+    claim(2, 'the leading side loses more often than a random walk says',
+      t.tail_is_fat ? 'CONFIRMED' : 'not found', t.tail_is_fat ? 'b-up' : 'b-mut', tailBody) +
+    claim(3, 'buy both sides for under $1',
+      arb.buy_both_net_hits ? 'seen' : 'not at our latency',
+      arb.buy_both_net_hits ? 'b-up' : 'b-chop', arbBody) +
+    claim(1, 'market prices are mis-calibrated by price bucket',
+      c30.status === 'ok' ? (c30.mispriced && c30.mispriced.length ? 'mispriced' : 'calibrated') : 'needs data',
+      c30.status === 'ok' ? ((c30.mispriced || []).length ? 'b-up' : 'b-mut') : 'b-chop', calBody) +
+    claim('2b', 'tradeable version: buy the cheap side near the close',
+      ts.status === 'ok' ? (ts['ev_per_$staked'] > 0 ? '+EV' : '−EV') : 'needs data',
+      ts.status === 'ok' ? (ts['ev_per_$staked'] > 0 ? 'b-up' : 'b-dn') : 'b-chop', stratBody);
 }
 
 // ── LANE 4: recorders / P&L ─────────────────────────────────────────────────
@@ -971,6 +1098,7 @@ $$('[data-ai]').forEach(btn => btn.onclick = async () => {
 // ── boot ────────────────────────────────────────────────────────────────────
 $$('a[data-nav]').forEach(a => { if (a.dataset.nav === location.pathname) a.classList.add('nav-active'); });
 $('#f-all').classList.add('go');
+$('#s-all').classList.add('go');
 
 (async function boot() {
   await Promise.all(LANES.map(loadLane));

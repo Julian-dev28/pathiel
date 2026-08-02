@@ -37,6 +37,7 @@ from services.trend_engine import hl_trends as hl
 from services.trend_engine import metrics as M
 from services.trend_engine import political_trends as pol
 from services.trend_engine import recorders as rec
+from services.trend_engine import updown_edges as ue
 from services.trend_engine import updown_trends as ud
 
 
@@ -360,6 +361,77 @@ def test_attach_flags_uses_a_cross_sectional_funding_z():
     assert any(f["code"] == "FUNDING_CROWDED_LONG" for f in reads[0]["flags"])
 
 
+def test_sector_is_read_off_the_dex_prefix():
+    assert hl.sector_of("BTC") == "crypto"
+    assert hl.sector_of("xyz:NVDA") == "xyz"
+    assert hl.sector_of("xyz:SP500") == "xyz"
+
+
+def test_hip3_reads_benchmark_against_sp500_not_btc():
+    """A residual-vs-BTC number for NVDA is noise wearing a decimal point."""
+    r = hl.coin_read("xyz:NVDA", ramp(40, step_pct=2.0), ramp(40, step_pct=1.0))
+    assert r["sector"] == "xyz"
+    assert r["bench"] == hl.XYZ_BENCH
+    assert r["resid_7d"] > 0                       # outran its own index
+
+    btc = hl.coin_read("BTC", ramp())
+    assert btc["sector"] == "crypto" and btc["bench"] == hl.BENCH
+
+
+def test_the_benchmark_itself_has_no_residual():
+    r = hl.coin_read("xyz:SP500", ramp(40, step_pct=1.0), ramp(40, step_pct=1.0))
+    assert r["resid_7d"] == 0.0 and r["beta_btc"] == 1.0
+
+
+def test_regime_is_computed_per_sector_and_never_mixes_them():
+    reads = ([hl.coin_read("BTC", ramp(40, step_pct=1.0))]
+             + [hl.coin_read(f"C{i}", ramp(40, step_pct=1.0)) for i in range(6)]
+             + [hl.coin_read("xyz:SP500", sawtooth())]
+             + [hl.coin_read(f"xyz:E{i}", sawtooth()) for i in range(5)])
+    hl.attach_flags(reads, unlocks={}, news={})
+    crypto = hl.regime(reads, "crypto")
+    xyz = hl.regime(reads, "xyz")
+    assert crypto["bench"] == "BTC" and xyz["bench"] == hl.XYZ_BENCH
+    assert crypto["n"] == 7 and xyz["n"] == 6
+    assert crypto["breadth_pct"] == 100.0          # the ramps
+    assert xyz["shape"] == "CHOPPY"                # the sawtooths
+
+
+def test_observations_never_name_an_equity_in_the_crypto_block():
+    """The unscoped version called xyz:GOOGL the crypto tape's strongest
+    uptrend — a category error, not a read."""
+    reads = ([hl.coin_read("BTC", sawtooth())]
+             + [hl.coin_read(f"C{i}", sawtooth()) for i in range(4)]
+             + [hl.coin_read("xyz:SP500", ramp(40, step_pct=1.0))]
+             + [hl.coin_read("xyz:GOOGL", ramp(40, step_pct=3.0))])
+    hl.attach_flags(reads, unlocks={}, news={})
+    crypto_lines = " ".join(hl.observations(reads, hl.regime(reads, "crypto")))
+    xyz_lines = " ".join(hl.observations(reads, hl.regime(reads, "xyz")))
+    assert "xyz:" not in crypto_lines
+    assert "xyz:GOOGL" in xyz_lines
+    assert hl.XYZ_BENCH in xyz_lines               # benchmarked against its index
+
+
+def test_universe_quota_keeps_one_sector_from_crowding_out_the_other(monkeypatch):
+    """BTC alone out-trades the whole xyz dex; a single ranking would drop
+    every equity off the scan."""
+    uni = ([{"coin": f"C{i}", "type": "perp", "dayNtlVlm": 1e9 - i}
+            for i in range(50)]
+           + [{"coin": "xyz:SP500", "type": "perp", "dayNtlVlm": 7e7},
+              {"coin": "xyz:NVDA", "type": "perp", "dayNtlVlm": 7e6},
+              {"coin": "xyz:TINY", "type": "perp", "dayNtlVlm": 100.0}])
+    import hermes_trader.client.universe as U
+    monkeypatch.setattr(U, "get_universe", lambda **kw: uni)
+    rows = hl._universe_rows(top_n=5, min_vol=1e6, top_n_xyz=5)
+    coins = [r["coin"] for r in rows]
+    assert sum(1 for c in coins if c.startswith("xyz:")) == 2   # TINY under the floor
+    assert "xyz:SP500" in coins and "xyz:NVDA" in coins
+    assert len([c for c in coins if not c.startswith("xyz:")]) == 5
+
+    off = [r["coin"] for r in hl._universe_rows(5, 1e6, include_hip3=False)]
+    assert not any(c.startswith("xyz:") for c in off)
+
+
 def test_eval_cache_roundtrip_and_expiry(tmp_path):
     p = str(tmp_path / "ev.json")
     hl.save_eval({"dir_hit": 0.5, "n": 10}, p)
@@ -653,6 +725,249 @@ def test_read_drops_markets_already_past_their_end_date():
     out = pol.read(limit=5, min_volume=1.0, getter=getter, now=now)
     assert out["expired_dropped"] == 1
     assert out["scanned"] == 0
+
+
+# ── updown microstructure edges ──────────────────────────────────────────────
+
+
+def test_fee_formula_is_symmetric_and_peaks_at_the_middle():
+    """Polymarket charges rate x min(p, 1-p): identical on both outcomes, so it
+    cannot be dodged by picking a side."""
+    assert ue.fee_per_share(0.3) == pytest.approx(ue.fee_per_share(0.7))
+    assert ue.fee_per_share(0.5) > ue.fee_per_share(0.05)
+    assert ue.fee_per_share(0.5, 1000) == pytest.approx(0.05)
+    assert ue.fee_per_share(0.02, 1000) == pytest.approx(0.002)
+    assert ue.fee_per_share(1.0) == 0.0
+
+
+def test_market_fee_bps_reads_the_payload_before_defaulting():
+    assert ue.market_fee_bps({"takerBaseFee": 250}) == 250.0
+    assert ue.market_fee_bps({}) == ue.FEE_BPS_DEFAULT
+    assert ue.market_fee_bps(None) == ue.FEE_BPS_DEFAULT
+
+
+def _fake_getter(up_bid, up_ask, dn_bid, dn_ask, fee=1000, size=100.0):
+    market = {"slug": "btc-updown-5m-1", "clobTokenIds": '["A","B"]',
+              "takerBaseFee": fee, "orderPriceMinTickSize": 0.01, "orderMinSize": 5}
+
+    def get(url):
+        if "gamma" in url:
+            return [market]
+        tok = url.rsplit("=", 1)[-1]
+        bid, ask = (up_bid, up_ask) if tok == "A" else (dn_bid, dn_ask)
+        return {"bids": [{"price": str(bid), "size": str(size)}],
+                "asks": [{"price": str(ask), "size": str(size)}]}
+    return get, market
+
+
+def test_pair_quote_finds_a_real_arb_and_nets_the_fee():
+    # asks sum to 0.90 — a 10c gross arb, which even a 1000bps fee survives
+    get, m = _fake_getter(0.44, 0.45, 0.44, 0.45)
+    q = ue.pair_quote(m, getter=get)
+    assert q["buy_both"]["cost"] == pytest.approx(0.90)
+    assert q["buy_both"]["gross_edge"] == pytest.approx(0.10)
+    assert q["buy_both"]["net_edge"] < q["buy_both"]["gross_edge"]
+    assert q["buy_both"]["profitable"] is True
+    assert q["arb"] is True
+
+
+def test_pair_quote_kills_a_one_tick_arb_with_the_fee():
+    """The whole point of the net column: a 1c gross edge at 1000bps is a loss."""
+    get, m = _fake_getter(0.48, 0.49, 0.49, 0.50)          # asks sum to 0.99
+    q = ue.pair_quote(m, getter=get)
+    assert q["buy_both"]["gross_edge"] == pytest.approx(0.01)
+    assert q["buy_both"]["net_edge"] < 0
+    assert q["buy_both"]["profitable"] is False
+    assert q["arb"] is False
+
+
+def test_pair_quote_counts_ticks_to_a_gross_arb_on_a_normal_book():
+    get, m = _fake_getter(0.96, 0.97, 0.03, 0.04)          # asks sum to 1.01
+    q = ue.pair_quote(m, getter=get)
+    assert q["buy_both"]["gross_edge"] < 0
+    assert q["ticks_to_gross_arb"] == 2
+    assert q["sell_both"]["credit"] == pytest.approx(0.99)
+
+
+def test_pair_quote_reports_the_sell_side_arb_too():
+    get, m = _fake_getter(0.60, 0.61, 0.55, 0.56)          # bids sum to 1.15
+    q = ue.pair_quote(m, getter=get)
+    assert q["sell_both"]["gross_edge"] == pytest.approx(0.15)
+    assert q["sell_both"]["profitable"] is True
+
+
+def test_pair_quote_degrades_without_a_market_or_tokens():
+    assert ue.pair_quote(None, getter=lambda u: None)["status"] == "no_market"
+    assert ue.pair_quote({"clobTokenIds": "[]"}, getter=lambda u: None)["status"] == "no_tokens"
+
+
+def test_tail_edge_finds_the_fat_tail_on_jumpy_prices():
+    """Windows built from a jump process must show the leader losing MORE than
+    a Gaussian says — that is the whole claim, and it must not fire on data
+    that is genuinely Gaussian."""
+    ws = ud.enrich(ud.build_windows(klines(9000)))
+    t = ue.tail_edge(ws, minute=4)
+    assert t["status"] == "ok" and t["n"] > 1000
+    assert t["table"] and all(r["ci_lo"] <= r["realized"] <= r["ci_hi"] for r in t["table"])
+    # every bucket's implied probability is the mean of the model's own output
+    assert all(0.5 <= r["implied"] <= 1.0 for r in t["table"])
+
+
+def test_tail_edge_refuses_a_tiny_sample():
+    assert ue.tail_edge(ud.enrich(ud.build_windows(klines(60))))["status"] == "too_small"
+
+
+def test_price_calibration_needs_an_unbiased_sample_first():
+    out = ue.price_calibration([], lambda e: True, secs_left=30)
+    assert out["status"] == "too_small"
+    assert "sampler" in out["hint"]
+
+
+def test_price_calibration_buckets_by_market_price():
+    # 200 samples priced at 0.80 that win only 60% of the time -> mispriced
+    samples = [{"secs_left": 30, "mid_up": 0.80, "window_end_ms": i}
+               for i in range(200)]
+    won = {i: (i % 10) < 6 for i in range(200)}
+    out = ue.price_calibration(samples, lambda e: won.get(e), secs_left=30)
+    assert out["status"] == "ok" and out["n"] == 200
+    row = [r for r in out["rows"] if r["bucket"].startswith("0.75")][0]
+    assert row["realized"] == pytest.approx(0.6, abs=0.01)
+    assert row["significant"] is True
+    assert out["mispriced"]
+
+
+def test_price_calibration_only_uses_the_requested_offset():
+    samples = [{"secs_left": 30, "mid_up": 0.5, "window_end_ms": 1},
+               {"secs_left": 240, "mid_up": 0.5, "window_end_ms": 2}]
+    out = ue.price_calibration(samples, lambda e: True, secs_left=30)
+    assert out["n"] == 1
+
+
+def test_tail_strategy_ev_prices_the_ticket_net_of_fees():
+    # 5c tickets that win 20% of the time: gross EV clearly positive
+    samples = []
+    for i in range(100):
+        samples.append({"secs_left": 30, "up_ask": 0.05, "down_ask": 0.99,
+                        "window_end_ms": i})
+    won = {i: (i % 5 == 0) for i in range(100)}     # UP wins 20%
+    ev = ue.tail_strategy_ev(samples, lambda e: won.get(e), max_ask=0.05,
+                             secs_left=30, fee_bps=0.0)
+    assert ev["status"] == "ok" and ev["n"] == 100
+    assert ev["win_rate"] == pytest.approx(0.20)
+    assert ev["breakeven_win_rate"] == pytest.approx(0.05)
+    assert ev["ev_per_$staked"] > 0
+    assert "+EV" in ev["verdict"]
+
+
+def test_tail_strategy_ev_turns_negative_once_the_fee_bites():
+    samples = [{"secs_left": 30, "up_ask": 0.05, "down_ask": 0.99,
+                "window_end_ms": i} for i in range(100)]
+    won = {i: (i % 25 == 0) for i in range(100)}    # UP wins 4% < 5c cost
+    ev = ue.tail_strategy_ev(samples, lambda e: won.get(e), max_ask=0.05, secs_left=30)
+    assert ev["ev_per_$staked"] < 0
+    assert "-EV" in ev["verdict"] or "inconclusive" in ev["verdict"]
+
+
+def test_tail_strategy_skips_tickets_above_the_price_cap():
+    samples = [{"secs_left": 30, "up_ask": 0.40, "down_ask": 0.61,
+                "window_end_ms": i} for i in range(50)]
+    assert ue.tail_strategy_ev(samples, lambda e: True, max_ask=0.05)["status"] == "too_small"
+
+
+def test_arb_stats_separates_gross_hits_from_net_hits():
+    samples = [
+        {"buy_both_gross": 0.01, "buy_both_net": -0.04, "fee_bps": 1000,
+         "window_start_ms": 1},                       # crossed, but the fee eats it
+        {"buy_both_gross": -0.01, "buy_both_net": -0.06, "fee_bps": 1000,
+         "window_start_ms": 2},
+    ]
+    a = ue.arb_stats(samples)
+    assert a["buy_both_gross_hits"] == 1
+    assert a["buy_both_net_hits"] == 0
+    assert "NONE survived the fee" in a["verdict"]
+
+
+def test_arb_stats_says_so_when_nothing_was_ever_crossed():
+    a = ue.arb_stats([{"buy_both_gross": -0.02, "buy_both_net": -0.07,
+                       "window_start_ms": 1}])
+    assert "never sat under $1" in a["verdict"]
+
+
+def test_arb_stats_without_samples_prints_the_command_that_makes_them():
+    assert "--sample-updown" in ue.arb_stats([])["hint"]
+
+
+def test_sample_row_records_the_book_not_a_derived_probability():
+    q = {"slug": "s", "fee_bps": 1000,
+         "up": {"bid": 0.6, "ask": 0.61, "bid_size": 10, "ask_size": 12},
+         "down": {"bid": 0.39, "ask": 0.40, "bid_size": 8, "ask_size": 9},
+         "buy_both": {"net_edge": -0.05, "gross_edge": -0.01},
+         "sell_both": {"net_edge": -0.05, "gross_edge": -0.01}}
+    row = ue.sample_row(q, 1_700_000_000_000, 30.0, 100.5, 100.0, 2.0)
+    assert row["up_ask"] == 0.61 and row["down_bid"] == 0.39
+    assert row["mid_up"] == pytest.approx(0.605)
+    assert row["move_bp"] == pytest.approx(50.0)
+    assert 0.0 <= row["p_model_up"] <= 1.0
+    assert row["window_end_ms"] == 1_700_000_000_000 + ud.WINDOW_MS
+
+
+def test_sampler_writes_and_reloads_jsonl(tmp_path):
+    p = str(tmp_path / "s.jsonl")
+    rows = [{"ts": 1, "slug": "a"}, {"ts": 2, "slug": "b"}]
+    assert ue.append_samples(rows, p) == 2
+    assert [r["slug"] for r in ue.load_samples(p)] == ["a", "b"]
+    assert ue.load_samples(str(tmp_path / "missing.jsonl")) == []
+
+
+def test_record_window_samples_every_offset_without_sleeping(monkeypatch, tmp_path):
+    get, market = _fake_getter(0.5, 0.51, 0.49, 0.50)
+    monkeypatch.setattr(ue, "current_market", lambda *a, **k: market)
+    monkeypatch.setattr(ud, "live_spot", lambda: 100.0)
+    monkeypatch.setattr(ud, "load_1m", lambda *a, **k: klines(200))
+    slept = []
+    p = str(tmp_path / "s.jsonl")
+    # frozen clock at the window's open, so every offset is still ahead
+    w_open = (int(time.time()) // 300) * 300
+    rows = ue.record_window(offsets_s=(240, 60, 30), path=p,
+                            sleeper=lambda s: slept.append(s), getter=get,
+                            clock=lambda: float(w_open))
+    assert [r["secs_left"] for r in rows] == [240, 60, 30]
+    # clock is frozen at the open, so each wait is measured from t0:
+    # 240s-left is 60s in, 60s-left is 240s in, 30s-left is 270s in
+    assert slept == [60.0, 240.0, 270.0]
+    assert len(ue.load_samples(p)) == 3
+    assert all(r["slug"] == "btc-updown-5m-1" for r in rows)
+
+
+def test_record_window_skips_offsets_that_are_already_past(monkeypatch, tmp_path):
+    """A daemon that starts mid-window must not backfill snapshots it never took."""
+    get, market = _fake_getter(0.5, 0.51, 0.49, 0.50)
+    monkeypatch.setattr(ue, "current_market", lambda *a, **k: market)
+    monkeypatch.setattr(ud, "live_spot", lambda: 100.0)
+    monkeypatch.setattr(ud, "load_1m", lambda *a, **k: klines(200))
+    w_open = (int(time.time()) // 300) * 300
+    rows = ue.record_window(offsets_s=(240, 60, 30), path=str(tmp_path / "s.jsonl"),
+                            sleeper=lambda s: None, getter=get,
+                            clock=lambda: float(w_open + 200),   # 100s left
+                            skip_partial=False)
+    assert [r["secs_left"] for r in rows] == [60, 30]
+
+
+def test_record_window_waits_for_a_whole_window_instead_of_a_partial(monkeypatch, tmp_path):
+    """The daemon calls this in a tight loop. Without the skip it re-enters the
+    window it just finished and logs a one-snapshot record for it (observed
+    live: three 'windows' in four seconds)."""
+    get, market = _fake_getter(0.5, 0.51, 0.49, 0.50)
+    monkeypatch.setattr(ue, "current_market", lambda *a, **k: market)
+    monkeypatch.setattr(ud, "live_spot", lambda: 100.0)
+    monkeypatch.setattr(ud, "load_1m", lambda *a, **k: klines(200))
+    w_open = (int(time.time()) // 300) * 300
+    slept = []
+    rows = ue.record_window(offsets_s=(240, 60, 30), path=str(tmp_path / "s.jsonl"),
+                            sleeper=lambda s: slept.append(s), getter=get,
+                            clock=lambda: float(w_open + 280))   # 20s left
+    assert [r["secs_left"] for r in rows] == [240, 60, 30]       # full next window
+    assert slept and slept[0] > 0
 
 
 # ── recorders ────────────────────────────────────────────────────────────────

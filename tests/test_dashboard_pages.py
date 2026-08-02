@@ -462,9 +462,16 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert "hermes-modal" not in r.text           # terminal window removed
     assert "operator-toggle" not in r.text        # operator chrome removed
     assert "matrix-feed" not in r.text            # old sidebar feed removed
-    assert 'data-nav="/activity"' in r.text and 'data-nav="/news"' in r.text
-    assert 'data-nav="/analytics"' in r.text
-    # nav is DASHBOARD · ACTIVITY · NEWS — config/operator tabs deleted
+    assert 'data-nav="/activity"' in r.text and 'data-nav="/predictions"' in r.text
+    assert 'data-nav="/trends"' in r.text
+    # NEWS and ANALYTICS are MUTED (operator, 2026-08-02): dropped from the nav
+    # to cut the bar down, but the routes and templates are intentionally kept
+    # — /news and /analytics still render if you navigate to them directly.
+    assert 'data-nav="/news"' not in r.text
+    assert 'data-nav="/analytics"' not in r.text
+    assert client.get("/news").status_code == 200
+    assert client.get("/analytics").status_code == 200
+    # nav is DASHBOARD · ACTIVITY · PREDICTIONS · TRENDS — config/operator deleted
     assert 'data-nav="/config"' not in r.text
     assert 'data-nav="/operator"' not in r.text
     # token entry moved to the landing footer (localStorage only)
@@ -1207,7 +1214,8 @@ def test_analytics_page_markers(client):
                   "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
                   "heat-body", "whale-body", "news-body", "hermes-an-"):
         assert marker in r, f"missing {marker}"
-    assert 'data-nav="/analytics"' in r
+    # muted from the nav, still served — the page must keep working
+    assert 'data-nav="/analytics"' not in r
     # whale $ runs into the millions — must render abbreviated ($1.31M), not
     # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
     assert "fmtMoneyCompact" in r

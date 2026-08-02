@@ -91,6 +91,47 @@ def _print_recorders(p: Dict[str, Any]) -> None:
         print(f" * {o}")
 
 
+def _print_edges(r: Dict[str, Any]) -> None:
+    for key in ("tail_edge_60s", "tail_edge_120s"):
+        t = r.get(key) or {}
+        if t.get("status") != "ok":
+            continue
+        print(f"\nFAT TAIL @{t['secs_left']}s left — n={t['n']}, "
+              f"tail_is_fat={t['tail_is_fat']}")
+        print(f"{'leader priced':>14}{'n':>7}{'implied':>9}{'realized':>10}{'diff_pp':>9}  sig")
+        for row in t.get("table") or []:
+            print(f"{row['bucket']:>14}{row['n']:>7}{row['implied']:>9.3f}"
+                  f"{row['realized']:>10.3f}{row['diff_pp']:>+9.1f}  {row['significant']}")
+        print(f"  {t['verdict']}")
+    a = r.get("arb") or {}
+    print(f"\nARB: {a.get('verdict', a.get('hint', ''))}")
+    if a.get("status") == "ok":
+        print(f"  samples={a['samples']} windows={a['windows']} "
+              f"mean pair cost ${a['mean_pair_cost']} min ${a['min_pair_cost']} "
+              f"fee {a['mean_fee_bps']}bps")
+    for key in ("price_calibration_30s", "price_calibration_60s"):
+        c = r.get(key) or {}
+        if c.get("status") != "ok":
+            print(f"\n{key}: {c.get('status')} — {c.get('hint', '')}")
+            continue
+        print(f"\nMARKET PRICE CALIBRATION @{c['secs_left']}s — n={c['n']}")
+        for row in c.get("rows") or []:
+            print(f"{row['bucket']:>14}{row['n']:>7}{row['implied']:>9.3f}"
+                  f"{row['realized']:>10.3f}{row['diff_pp']:>+9.1f}  {row['significant']}")
+        print(f"  {c['verdict']}")
+    ts = r.get("tail_strategy") or {}
+    print(f"\nTAIL STRATEGY (buy <= {ts.get('max_ask')} with {ts.get('secs_left')}s left): "
+          f"{ts.get('verdict', ts.get('hint', ts.get('status')))}")
+    if ts.get("status") == "ok":
+        print(f"  n={ts['n']} win {ts['win_rate']} (ci {ts['win_ci']}) vs breakeven "
+              f"{ts['breakeven_win_rate']} | EV/$staked {ts['ev_per_$staked']}")
+    lp = r.get("live_pair") or {}
+    if lp.get("status") == "ok":
+        print(f"\nLIVE PAIR {lp['slug']}: buy both ${(lp.get('buy_both') or {}).get('cost')} "
+              f"net {(lp.get('buy_both') or {}).get('net_edge')} | "
+              f"{lp.get('ticks_to_gross_arb')} ticks from a gross arb | fee {lp['fee_bps']}bps")
+
+
 def main(argv: Any = None) -> int:
     # BEFORE any hermes_trader import: `rebalancer_owned` freezes the state
     # directory at import time, and a CLI run that skips this reads a different
@@ -104,6 +145,19 @@ def main(argv: Any = None) -> int:
     ap.add_argument("--ai", action="store_true", help="run the optional LLM pass")
     ap.add_argument("--web-search", action="store_true", help="let the AI pass search")
     ap.add_argument("--backtest", action="store_true", help="walk the HL forecaster forward")
+    ap.add_argument("--sample-updown", action="store_true",
+                    help="snapshot both 5m books at fixed offsets of ONE window "
+                         "(blocks ~4min; the unbiased instrument for the price-"
+                         "calibration and arb questions)")
+    ap.add_argument("--sample-daemon", action="store_true",
+                    help="run the book sampler forever, one window at a time. "
+                         "Its own process on purpose: the scheduler fires jobs "
+                         "SERIALLY, so a 4-minute sampler inside it would starve "
+                         "every other job")
+    ap.add_argument("--max-windows", type=int, default=0,
+                    help="stop the sampler after N windows (0 = forever)")
+    ap.add_argument("--edges", action="store_true",
+                    help="microstructure edges: fat tail, arb frequency, price calibration")
     ap.add_argument("--save", action="store_true", help="write the lane to .state/trend_engine/")
     ap.add_argument("--refresh-all", action="store_true",
                     help="refresh lane caches (what the scheduler calls)")
@@ -130,6 +184,53 @@ def main(argv: Any = None) -> int:
         # skipped on purpose; only a real error is a non-zero exit, or the
         # scheduler would log a failure every single half-hour tick.
         return 0 if all(v.get("status") in ("ok", "fresh") for v in res.values()) else 1
+
+    if a.sample_daemon:
+        import time as _t
+        from services.trend_engine.updown_edges import record_window, SAMPLES
+        print(f"[sampler] writing {SAMPLES} — one window at a time, "
+              f"{'forever' if not a.max_windows else a.max_windows} window(s)")
+        done = 0
+        while not a.max_windows or done < a.max_windows:
+            try:
+                rows = record_window()
+                done += 1
+                if rows:
+                    last = rows[-1]
+                    print(f"[sampler] {_t.strftime('%H:%M:%S')} window {done}: "
+                          f"{len(rows)} snapshots, last pair "
+                          f"{(last['up_ask'] or 0) + (last['down_ask'] or 0):.2f} "
+                          f"@{last['secs_left']:.0f}s", flush=True)
+                else:
+                    print(f"[sampler] {_t.strftime('%H:%M:%S')} window {done}: "
+                          f"no snapshots (market missing or late start)", flush=True)
+            except KeyboardInterrupt:
+                print("[sampler] stopped")
+                return 0
+            except Exception as exc:      # a dead API must not kill the daemon
+                print(f"[sampler] error: {exc}", flush=True)
+                _t.sleep(30)
+        return 0
+
+    if a.sample_updown:
+        from services.trend_engine.updown_edges import record_window
+        rows = record_window()
+        for r in rows:
+            print(f"{r['secs_left']:>5.0f}s left  up {r['up_bid']}/{r['up_ask']}  "
+                  f"down {r['down_bid']}/{r['down_ask']}  pair "
+                  f"{(r['up_ask'] or 0) + (r['down_ask'] or 0):.2f}  "
+                  f"net {r['buy_both_net']}")
+        print(f"recorded {len(rows)} snapshots")
+        return 0 if rows else 1
+
+    if a.edges:
+        from services.trend_engine.updown_edges import read as edges_read
+        res = edges_read()
+        if a.json:
+            print(json.dumps(res, indent=1, default=str))
+            return 0
+        _print_edges(res)
+        return 0
 
     if a.backtest:
         from services.trend_engine.hl_trends import backtest, save_eval
