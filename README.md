@@ -143,6 +143,21 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_trader/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
 | `hermes_trader/models/types.py` | Shared data type: `Candle` (OHLCV) |
 | `hermes_trader/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
+| `services/polymarket_scout/` | Polymarket board, forecasts, paper ledger (own README) |
+| `services/trend_engine/` | `/trends` tab: 7d HL regime, BTC 5m base rates, political drift, recorder P&L (own README) |
+
+### Dashboard tabs
+
+| Path | What it shows |
+|------|---------------|
+| `/` | Landing — equity, positions, live books |
+| `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
+| `/news` | News-catalyst reads + research events with news context |
+| `/predictions` | Polymarket board — our probability vs the market's |
+| `/trends` | Trend analysis + forecasts + recorder P&L (see `services/trend_engine/README.md`) |
+| `/analytics` | Funnel, book league, coin chart with our trade markers, funding heat |
+
+Keyboard: `g` then `d` / `a` / `n` / `p` / `t` / `y`.
 
 ---
 

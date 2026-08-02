@@ -66,6 +66,22 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "log": "logs/autonomous_cycle.log",
         "why": "grade every book, auto-demote refuted, auto-promote validated",
     },
+    "trends-price": {
+        "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
+                 "--lanes", "hl,updown,politics"],
+        "interval_min": 30,
+        "log": "logs/trend_engine.log",
+        "why": "/trends price lanes — HL 7d scan, BTC 5m base rates, political drift. "
+               "No LLM, no capital; the tab reads this cache and never fetches itself",
+    },
+    "trends-recorders": {
+        "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
+                 "--lanes", "recorders"],
+        "interval_min": 360,          # every 6h — forward-grading is minutes of candles
+        "log": "logs/trend_engine.log",
+        "why": "/trends P&L lane — forward-grade every shadow book + the Polymarket "
+               "paper ledger. Slow on purpose, so it runs on its own clock",
+    },
     # updown-5m REMOVED 2026-07-29: proven no edge (backtest 74d0846 — the venue
     # prices the momentum; live ledger -18.8% Kelly). It spammed 898 coin-flip
     # reads that dragged the scoreboard's Brier below the market. The reader +

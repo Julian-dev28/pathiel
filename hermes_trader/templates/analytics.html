@@ -186,10 +186,10 @@
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
 </script>
 <script>
-// g-then-key tab hops (g d / g a / g n / g y) — app-style keyboard nav,
+// g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
 // inert while typing in a field or holding a modifier
 (function () {
-  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics' };
+  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics', t: '/trends' };
   let armed = 0;
   addEventListener('keydown', e => {
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -356,6 +356,7 @@ void main(){
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
     <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
     <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
+    <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
     <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
   </nav>
 

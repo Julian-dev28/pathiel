@@ -1464,6 +1464,58 @@ def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
     return job_id
 
 
+def _start_trend_job(kind: str, lane: str, web_search: bool = False,
+                     **kw: Any) -> str:
+    """Background job for the trend tab: `refresh` (network) or `ai` (model call).
+
+    Shares the analyze-job store so both kinds prune and expire together. Both
+    are far too slow for a request: a full HL scan is ~20s and an AI pass with
+    search is minutes.
+    """
+    import uuid
+    job_id = uuid.uuid4().hex[:16]
+    now = time.time()
+    with _ANALYZE_LOCK:
+        _prune_analyze_jobs(now)
+        _ANALYZE_JOBS[job_id] = {"status": "running", "started": now,
+                                 "kind": kind, "lane": lane, "result": None}
+
+    def _work() -> None:
+        try:
+            from services.trend_engine import cache
+            if kind == "refresh":
+                payload = cache.refresh(lane, **kw)
+                result = {"status": payload.get("status"),
+                          "generated_at": payload.get("generated_at")}
+            elif kind == "ai":
+                from services.trend_engine.ai import analyze
+                payload = cache.load(lane)
+                if payload.get("status") == "empty":
+                    raise RuntimeError(f"{lane} cache is empty — refresh it first")
+                ai = analyze(lane, payload, web_search=web_search)
+                cache.attach_ai(lane, ai)
+                result = ai
+            else:
+                raise ValueError(f"unknown job kind: {kind}")
+            with _ANALYZE_LOCK:
+                j = _ANALYZE_JOBS.get(job_id)
+                if j is not None:
+                    j["status"] = "done" if result.get("status") in ("ok", None) else "error"
+                    j["result"] = result
+                    if result.get("status") not in ("ok", None):
+                        j["error"] = str(result.get("error") or result.get("status"))[:200]
+            _TTL_CACHE.pop(f"trends:{lane}", None)
+        except Exception as exc:
+            with _ANALYZE_LOCK:
+                j = _ANALYZE_JOBS.get(job_id)
+                if j is not None:
+                    j["status"] = "error"
+                    j["error"] = str(exc)[:200]
+
+    threading.Thread(target=_work, daemon=True).start()
+    return job_id
+
+
 def _predictions_trades_payload(limit: int = 80) -> Dict[str, Any]:
     """The Polymarket paper-trade log: every recorded divergence from the scout
     ledger, newest first. Pure ledger read (no network, no grading) so the panel
@@ -1496,6 +1548,48 @@ def _predictions_trades_payload(limit: int = 80) -> Dict[str, Any]:
             "url": (r.get("meta") or {}).get("url"),
         })
     return {"rows": rows, "counts": counts, "total": len(raw)}
+
+
+# ── trend lanes (services/trend_engine) ──────────────────────────────────────
+
+
+def _trends_payload(lane: str) -> Dict[str, Any]:
+    """One trend lane, PURE CACHE READ (`.state/trend_engine/<lane>.json`).
+
+    Same contract as the predictions board: every lane does live network work
+    (HL candles / Binance klines / Gamma + CLOB), so none of it happens inside
+    a request. The refresher is `python -m services.trend_engine.run
+    --refresh-all` (scheduler) or the operator-gated POST below. A missing
+    cache renders as `status: empty` with the command to fill it.
+    """
+    try:
+        from services.trend_engine import cache
+    except Exception:
+        return {"status": "empty", "lane": lane, "stale": True,
+                "hint": "services.trend_engine not importable in this tree"}
+    return cache.load(lane)
+
+
+def _trends_updown_live_payload() -> Dict[str, Any]:
+    """The in-progress 5m window only: elapsed move, random-walk fair value,
+    live market mid. Two HTTP calls, no pattern mining — cheap enough to poll
+    every few seconds, which the 5-minute clock actually needs. The windows
+    come from the cached klines so this never pages Binance."""
+    try:
+        from services.trend_engine import cache
+        from services.trend_engine import updown_trends as ud
+    except Exception:
+        return {"status": "unavailable"}
+    bars = ud.load_1m(3600, use_cache=True)          # cache-first, ~1 batch
+    windows = ud.enrich(ud.build_windows(bars))
+    if not windows:
+        return {"status": "no_data"}
+    cached = cache.load("updown")
+    out = ud.live_window(windows, ud.live_market_book())
+    pat = (cached.get("patterns") or {}) if isinstance(cached, dict) else {}
+    if pat.get("base_rate") is not None:
+        out["base_rate"] = pat["base_rate"]
+    return out
 
 
 def _predictions_payload() -> Dict[str, Any]:
@@ -1534,6 +1628,7 @@ _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 _ANALYTICS_HTML = _load_template("analytics.html")
 _PREDICTIONS_HTML = _load_template("predictions.html")
+_TRENDS_HTML = _load_template("trends.html")
 
 
 # ── route registration ──────────────────────────────────────────────────────
@@ -1571,6 +1666,14 @@ def register_routes(app: FastAPI) -> None:
         """Polymarket board — trending + breaking prediction markets with our AI
         brain's probability next to the market's, and the shadow scoreboard."""
         return HTMLResponse(content=_PREDICTIONS_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/trends", response_class=HTMLResponse)
+    async def trends_page() -> HTMLResponse:
+        """Trend analysis: 7d Hyperliquid regime + per-coin trend + next-week
+        forecast, the Polymarket BTC 5m base-rate mine, and the political
+        board's probability drift. Every number is computed in
+        services/trend_engine; the AI pass is optional and additive."""
+        return HTMLResponse(content=_TRENDS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/analytics", response_class=HTMLResponse)
     async def analytics_page() -> HTMLResponse:
@@ -1708,6 +1811,60 @@ def register_routes(app: FastAPI) -> None:
     ) -> JSONResponse:
         """Poll one analyze job. status in {running, done, error}; when done the
         `verdict` field carries the result."""
+        job = _analyze_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="unknown or expired job")
+        return JSONResponse(job)
+
+    _TREND_LANES = ("hl", "updown", "politics", "recorders")
+
+    @app.get("/api/dashboard/trends/{lane}")
+    async def dashboard_trends(lane: str) -> JSONResponse:
+        """One trend lane from cache. TTL 15s over a file read is plenty — the
+        file only changes when a refresh job runs."""
+        if lane not in _TREND_LANES:
+            raise HTTPException(status_code=404, detail="unknown lane")
+        return JSONResponse(_ttl_cached(f"trends:{lane}", 15.0,
+                                        lambda: _trends_payload(lane)))
+
+    @app.get("/api/dashboard/trends/updown/live")
+    async def dashboard_trends_updown_live() -> JSONResponse:
+        """In-progress 5m window vs random-walk fair value. TTL 5s bounds the
+        Binance + CLOB call rate while still tracking a 5-minute clock."""
+        return JSONResponse(_ttl_cached("trends-updown-live", 5.0,
+                                        _trends_updown_live_payload))
+
+    @app.post("/api/dashboard/trends/{lane}/refresh",
+              dependencies=[Depends(_require_operator)])
+    async def dashboard_trends_refresh(lane: str) -> JSONResponse:
+        """Recompute one lane now (background job). Operator-gated: an HL scan
+        is ~40 HL info calls and this repo has burned that rate budget before."""
+        if lane not in _TREND_LANES:
+            raise HTTPException(status_code=404, detail="unknown lane")
+        return JSONResponse({"job_id": _start_trend_job("refresh", lane),
+                             "status": "running"})
+
+    @app.post("/api/dashboard/trends/{lane}/ai",
+              dependencies=[Depends(_require_operator)])
+    async def dashboard_trends_ai(
+        lane: str,
+        web_search: bool = Query(False),
+    ) -> JSONResponse:
+        """Run the optional AI pass over the cached lane (background job).
+
+        Operator-gated because it spends a model call. The model only reads the
+        numbers already on the tab — it never produces one."""
+        if lane not in _TREND_LANES:
+            raise HTTPException(status_code=404, detail="unknown lane")
+        return JSONResponse({"job_id": _start_trend_job("ai", lane, web_search=web_search),
+                             "status": "running"})
+
+    @app.get("/api/dashboard/trends/job/result",
+             dependencies=[Depends(_require_operator)])
+    async def dashboard_trends_job(
+        job_id: str = Query(..., min_length=1, max_length=64),
+    ) -> JSONResponse:
+        """Poll a trend refresh/AI job: running | done | error."""
         job = _analyze_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="unknown or expired job")

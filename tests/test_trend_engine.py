@@ -1,0 +1,947 @@
+"""Gate tests for services/trend_engine — deterministic, offline, <2s.
+
+No network anywhere: every lane is exercised through synthetic bars, fixture
+klines, and injected `getter` / `runner` callables. What is covered:
+
+  metrics      : slope/efficiency/EMA/streak/Wilson/binomial identities on
+                 series whose answers are known by construction
+  forecast     : band ordering, drift shrink, the walk-forward's own nulls,
+                 and the split-half stability report
+  flags        : each predicate fires only on the state it claims
+  hl_trends    : coin read, regime labelling, observation honesty
+  updown       : window building (incl. the tie rule), conditional families
+                 with Bonferroni, random-walk calibration, executable-edge
+                 pricing off a book
+  politics     : probability-space read, the drift null test and its
+                 shared-endpoint guard, the expired-market drop
+  cache        : atomic write, staleness, AI carry-forward
+  dashboard    : /trends renders, the lane APIs are pure cache reads, and the
+                 operator-gated routes exist
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import time
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from services.trend_engine import ai as tai
+from services.trend_engine import cache as tcache
+from services.trend_engine import flags as tflags
+from services.trend_engine import forecast as tfc
+from services.trend_engine import hl_trends as hl
+from services.trend_engine import metrics as M
+from services.trend_engine import political_trends as pol
+from services.trend_engine import recorders as rec
+from services.trend_engine import updown_trends as ud
+
+
+# ── fixtures ─────────────────────────────────────────────────────────────────
+
+
+class Bar:
+    """Minimal candle stand-in matching the HL client's attribute shape."""
+
+    def __init__(self, t, o, h, l, c, v=1.0):
+        self.t, self.o, self.h, self.l, self.c, self.v = t, o, h, l, c, v
+
+
+def ramp(n=40, start=100.0, step_pct=1.0):
+    """Clean uptrend: same percentage step every bar (efficiency 1.0)."""
+    bars, px = [], start
+    for i in range(n):
+        nxt = px * (1 + step_pct / 100)
+        bars.append(Bar(i * 86_400_000, px, max(px, nxt), min(px, nxt), nxt))
+        px = nxt
+    return bars
+
+
+def sawtooth(n=40, start=100.0, amp=5.0):
+    """Round trip: big bars, no net progress (efficiency near 0)."""
+    bars = []
+    for i in range(n):
+        o = start + (amp if i % 2 else -amp)
+        c = start + (-amp if i % 2 else amp)
+        bars.append(Bar(i * 86_400_000, o, max(o, c) + 1, min(o, c) - 1, c))
+    return bars
+
+
+def klines(n=600, start_ms=None, price=60_000.0, drift=0.0, seed=7):
+    """Deterministic pseudo-random 1m klines aligned to the 5m grid.
+
+    Ends at the current 5m boundary by default — `load_1m` windows its output
+    by wall-clock age, so a fixture pinned to 2023 would read as empty.
+    """
+    if start_ms is None:
+        start_ms = int(time.time() * 1000) - n * 60_000
+    start_ms -= start_ms % ud.WINDOW_MS
+    rows, px, s = [], price, seed
+    for i in range(n):
+        s = (1103515245 * s + 12345) % 2147483648
+        r = (s / 2147483648 - 0.5) * 0.0004 + drift
+        nxt = px * (1 + r)
+        rows.append([start_ms + i * 60_000, f"{px:.2f}", f"{max(px, nxt) * 1.0001:.2f}",
+                     f"{min(px, nxt) * 0.9999:.2f}", f"{nxt:.2f}", "1.0"])
+        px = nxt
+    return rows
+
+
+# ── metrics ──────────────────────────────────────────────────────────────────
+
+
+def test_log_slope_recovers_a_constant_percentage_step():
+    closes = [100 * (1.02 ** i) for i in range(10)]
+    slope, r2 = M.log_slope(closes)
+    assert slope == pytest.approx(2.0, abs=1e-6)
+    assert r2 == pytest.approx(1.0, abs=1e-9)
+
+
+def test_log_slope_is_zero_and_unfit_on_a_flat_line():
+    slope, r2 = M.log_slope([50.0] * 10)
+    assert slope == pytest.approx(0.0)
+    assert r2 == 0.0
+
+
+def test_efficiency_ratio_endpoints():
+    assert M.efficiency_ratio([1, 2, 3, 4, 5]) == pytest.approx(1.0)
+    assert M.efficiency_ratio([1, 5, 1, 5, 1]) == pytest.approx(0.0)
+
+
+def test_ema_and_stack_directions():
+    assert M.ema([1, 2, 3, 4, 5], 3) == pytest.approx(4.0)
+    assert M.ema_stack([float(i) for i in range(1, 30)]) == "bull"
+    assert M.ema_stack([float(i) for i in range(30, 1, -1)]) == "bear"
+    assert M.ema_stack([5.0] * 30) == "mixed"
+    assert M.ema([1, 2], 5) is None
+
+
+def test_streak_counts_and_signs():
+    assert M.streak([1, 2, 3, 4]) == 3
+    assert M.streak([4, 3, 2, 1]) == -3
+    assert M.streak([1, 2, 3, 3]) == 0
+    assert M.streak([1, 5, 4, 3]) == -2
+
+
+def test_range_position_and_atr():
+    assert M.range_position([1, 2, 3, 4, 5], 5) == pytest.approx(1.0)
+    assert M.range_position([5, 4, 3, 2, 1], 5) == pytest.approx(0.0)
+    bars = [Bar(0, 10, 12, 8, 10), Bar(1, 10, 11, 9, 10)]
+    assert M.atr_pct(bars, 5) == pytest.approx(20.0)
+
+
+def test_wilson_brackets_the_point_estimate_and_narrows_with_n():
+    lo, hi = M.wilson(50, 100)
+    assert lo < 0.5 < hi
+    lo2, hi2 = M.wilson(500, 1000)
+    assert (hi2 - lo2) < (hi - lo)
+    assert M.wilson(0, 0) == (0.0, 1.0)
+
+
+def test_binomial_p_matches_the_hand_computable_case():
+    # 8 heads in 10 flips, two-sided: 2 * P(X >= 8) = 0.109375
+    assert M.binom_two_sided_p(8, 10, 0.5) == pytest.approx(0.109375, abs=1e-9)
+    assert M.binom_two_sided_p(5, 10, 0.5) == pytest.approx(1.0)
+
+
+def test_binomial_p_survives_a_sample_that_overflows_math_comb():
+    # math.comb(6000, 3000) overflows float — the log-space path must not
+    p = M.binom_two_sided_p(3000, 6000, 0.5)
+    assert 0.9 <= p <= 1.0
+    assert M.binom_two_sided_p(3300, 6000, 0.5) < 1e-6
+
+
+def test_norm_ppf_is_the_inverse_of_norm_cdf():
+    for q in (0.01, 0.1, 0.5, 0.9, 0.99):
+        assert M.norm_cdf(M.norm_ppf(q)) == pytest.approx(q, abs=1e-6)
+
+
+def test_linear_slope_is_exact_on_a_line():
+    slope, r2 = M.linear_slope([0.1, 0.2, 0.3, 0.4])
+    assert slope == pytest.approx(0.1)
+    assert r2 == pytest.approx(1.0)
+
+
+def test_trend_label_separates_clean_trend_from_round_trip():
+    assert M.trend_label(1.5, 0.9, 0.9, "bull") == "STRONG_UP"
+    assert M.trend_label(-1.5, 0.9, 0.9, "bear") == "STRONG_DOWN"
+    # same drift, no cleanliness -> chop, which is the whole point of the tab
+    assert M.trend_label(1.5, 0.05, 0.05, "mixed") == "CHOP"
+    assert M.trend_label(0.05, 0.9, 0.9, "bull") == "CHOP"
+
+
+def test_trend_score_penalises_a_dirty_trend():
+    clean = M.trend_score(1.0, 0.9, 0.9, 7.0)
+    dirty = M.trend_score(1.0, 0.1, 0.1, 7.0)
+    assert clean > dirty > 0
+
+
+# ── forecast ─────────────────────────────────────────────────────────────────
+
+
+def test_project_orders_the_band_and_shrinks_the_drift():
+    closes = [100 * (1.02 ** i) for i in range(40)]
+    f = tfc.project(closes, 7)
+    assert f["p10"] < f["p50"] < f["p90"]
+    assert f["prob_up"] > 0.5
+    # 7 days at +2%/day is +14.9% raw; the shrink must keep the forecast well under
+    assert 0 < f["drift_pct"] < 14.9 * tfc.SHRINK + 1
+
+
+def test_project_refuses_a_series_too_short_to_fit():
+    assert tfc.project([100, 101, 102], 7) is None
+
+
+def test_project_caps_drift_at_the_sigma_ceiling():
+    closes = [100 * (1.10 ** i) for i in range(40)]      # violent clean trend
+    f = tfc.project(closes, 7)
+    assert abs(f["drift_pct"]) <= tfc.MAX_DRIFT_SIGMA * f["sigma_h_pct"] + 1e-6
+
+
+def test_walk_forward_reports_its_nulls_and_defaults_to_non_overlapping():
+    series = {"A": [100 * (1.01 ** i) for i in range(120)],
+              "B": [100 * (0.99 ** i) for i in range(120)]}
+    res = tfc.walk_forward(series, horizon_days=7)
+    assert res["status"] == "ok" and res["n"] > 0
+    assert 0.0 <= res["dir_hit"] <= 1.0
+    assert "mae_naive_pct" in res and "coverage_80" in res
+    assert res["split_half"]["early_n"] > 0 and res["split_half"]["late_n"] > 0
+    dense = tfc.walk_forward(series, horizon_days=7, step=1)
+    assert dense["n"] > res["n"]                     # default really is non-overlapping
+
+
+def test_walk_forward_nails_direction_on_a_pure_trend():
+    series = {"UP": [100 * (1.01 ** i) for i in range(200)]}
+    res = tfc.walk_forward(series, horizon_days=7)
+    assert res["dir_hit"] == 1.0
+
+
+def test_walk_forward_says_insufficient_history_instead_of_guessing():
+    assert tfc.walk_forward({"A": [1, 2, 3]})["status"] == "insufficient_history"
+
+
+def test_consensus_counts_only_upward_forecasts():
+    reads = [{"forecast": {"prob_up": 0.7, "drift_pct": 2.0}},
+             {"forecast": {"prob_up": 0.3, "drift_pct": -2.0}}]
+    c = tfc.consensus(reads)
+    assert c["pct_up"] == 50.0
+    assert c["mean_drift_pct"] == pytest.approx(0.0)
+
+
+# ── flags ────────────────────────────────────────────────────────────────────
+
+
+BASE_READ = {"coin": "X", "range_pos_7d": 0.5, "range_pos_30d": 0.5, "efficiency": 0.5,
+             "ret_7d": 1.0, "ema_stack": "mixed", "streak_days": 1, "atr_pct": 2.0,
+             "atr_pct_30d": 2.0, "volume_ratio": 1.0, "resid_7d": 0.0, "corr_btc": 0.8}
+
+
+def codes(**over):
+    r = dict(BASE_READ, **over)
+    return {f["code"] for f in tflags.flags_for(r)}
+
+
+def test_flags_fire_only_on_their_own_state():
+    assert codes() == set()
+    assert "BREAKOUT_7D" in codes(range_pos_7d=0.99, ret_7d=5.0)
+    assert "BREAKDOWN_7D" in codes(range_pos_7d=0.0, ret_7d=-5.0)
+    assert "HIGH_30D" in codes(range_pos_30d=0.99)
+    assert "LOW_30D" in codes(range_pos_30d=0.0)
+    assert "EMA_STACK_BULL" in codes(ema_stack="bull")
+    assert "STREAK_5D" in codes(streak_days=5)
+    assert "CHOP_TRAP" in codes(efficiency=0.05, ret_7d=12.0)
+    assert "VOL_EXPANSION" in codes(atr_pct=4.0, atr_pct_30d=2.0)
+    assert "OVEREXTENDED_UP" in codes(ret_7d=30.0)
+    assert "LEADER" in codes(resid_7d=15.0)
+    assert "LAGGARD" in codes(resid_7d=-15.0)
+    assert "DECOUPLED" in codes(corr_btc=0.1)
+
+
+def test_funding_flags_need_the_z_and_point_the_right_way():
+    hot = tflags.flags_for(dict(BASE_READ), funding_z=3.0)
+    assert any(f["code"] == "FUNDING_CROWDED_LONG" and f["weight"] < 0 for f in hot)
+    cold = tflags.flags_for(dict(BASE_READ), funding_z=-3.0)
+    assert any(f["code"] == "FUNDING_CROWDED_SHORT" and f["weight"] > 0 for f in cold)
+
+
+def test_event_flags_sort_first_and_bias_is_clipped():
+    fl = tflags.flags_for(dict(BASE_READ, range_pos_30d=0.99),
+                          unlocks=[{"pct": 5.0, "hours": 40.0}])
+    assert fl[0]["kind"] == "event"
+    assert -1.0 <= tflags.flag_bias(fl) <= 1.0
+    assert tflags.flag_bias([{"weight": 9.0}, {"weight": 9.0}]) == 1.0
+
+
+def test_unlock_loader_windows_and_sorts(tmp_path):
+    now = 1_700_000_000_000
+    p = tmp_path / "unlock.json"
+    p.write_text(json.dumps({"upcoming": [
+        {"coin": "AAA", "t_ms": now + 3 * tflags.DAY_MS, "pct": 2.0},
+        {"coin": "AAA", "t_ms": now + 1 * tflags.DAY_MS, "pct": 1.0},
+        {"coin": "BBB", "t_ms": now + 40 * tflags.DAY_MS, "pct": 9.0},   # outside 8d
+        {"coin": "CCC", "t_ms": now - tflags.DAY_MS, "pct": 9.0},        # already past
+    ]}))
+    out = tflags.load_unlocks(str(p), now_ms=now)
+    assert set(out) == {"AAA"}
+    assert [e["pct"] for e in out["AAA"]] == [1.0, 2.0]
+
+
+def test_unlock_loader_degrades_to_empty_on_a_missing_file():
+    assert tflags.load_unlocks("/nonexistent/path.json", now_ms=1) == {}
+
+
+# ── hl_trends ────────────────────────────────────────────────────────────────
+
+
+def test_coin_read_labels_a_clean_ramp_up_and_a_sawtooth_chop():
+    up = hl.coin_read("UP", ramp())
+    assert up["label"] in ("UP", "STRONG_UP")
+    assert up["efficiency"] > 0.9 and up["ret_7d"] > 0
+    assert up["forecast"]["p10"] < up["forecast"]["p50"] < up["forecast"]["p90"]
+
+    chop = hl.coin_read("CHOP", sawtooth())
+    assert chop["label"] == "CHOP"
+    assert chop["efficiency"] < 0.2
+
+
+def test_coin_read_refuses_a_short_history():
+    assert hl.coin_read("X", ramp(5)) is None
+
+
+def test_coin_read_computes_residual_against_the_benchmark():
+    r = hl.coin_read("ALT", ramp(40, step_pct=2.0), ramp(40, step_pct=1.0))
+    assert r["beta_btc"] > 0
+    assert r["resid_7d"] > 0            # outran the bench after beta
+
+
+def test_coin_read_annualises_funding_from_the_hourly_rate():
+    r = hl.coin_read("X", ramp(), None, {"funding": 0.0001, "dayNtlVlm": 1e6,
+                                         "openInterest": 10})
+    assert r["funding_apr_pct"] == pytest.approx(0.0001 * 24 * 365 * 100, rel=1e-6)
+
+
+def test_regime_reads_breadth_not_just_btc():
+    reads = [hl.coin_read("BTC", ramp(40, step_pct=0.5))] + \
+            [hl.coin_read(f"C{i}", ramp(40, step_pct=1.0)) for i in range(8)]
+    hl.attach_flags(reads, unlocks={}, news={})
+    reg = hl.regime(reads)
+    assert reg["status"] == "ok"
+    assert reg["breadth_pct"] == 100.0
+    assert reg["tone"] == "RISK_ON"
+    assert reg["leaders"] and reg["laggards"]
+
+
+def test_regime_calls_a_choppy_tape_choppy():
+    reads = [hl.coin_read("BTC", sawtooth())] + \
+            [hl.coin_read(f"C{i}", sawtooth()) for i in range(6)]
+    hl.attach_flags(reads, unlocks={}, news={})
+    reg = hl.regime(reads)
+    assert reg["shape"] == "CHOPPY"
+
+
+def test_observations_never_call_a_chop_coin_the_strongest_uptrend():
+    reads = [hl.coin_read("BTC", sawtooth())] + \
+            [hl.coin_read(f"C{i}", sawtooth()) for i in range(4)]
+    hl.attach_flags(reads, unlocks={}, news={})
+    obs = hl.observations(reads, hl.regime(reads))
+    assert any("No coin in the scan holds a clean uptrend" in o for o in obs)
+    assert not any("Strongest uptrend" in o for o in obs)
+
+
+def test_attach_flags_uses_a_cross_sectional_funding_z():
+    reads = [hl.coin_read(f"C{i}", ramp()) for i in range(10)]
+    for i, r in enumerate(reads):
+        r["funding_apr_pct"] = 1.0 if i else 100.0        # C0 is the outlier
+    hl.attach_flags(reads, unlocks={}, news={})
+    assert reads[0]["funding_z_xs"] > 2.0
+    assert any(f["code"] == "FUNDING_CROWDED_LONG" for f in reads[0]["flags"])
+
+
+def test_eval_cache_roundtrip_and_expiry(tmp_path):
+    p = str(tmp_path / "ev.json")
+    hl.save_eval({"dir_hit": 0.5, "n": 10}, p)
+    assert hl.load_eval(p)["dir_hit"] == 0.5
+    assert hl.load_eval(p, max_age_s=-1) is None
+    assert hl.load_eval(str(tmp_path / "missing.json")) is None
+
+
+# ── updown ───────────────────────────────────────────────────────────────────
+
+
+def test_build_windows_only_emits_complete_aligned_windows():
+    bars = klines(20)
+    ws = ud.build_windows(bars)
+    assert len(ws) == 4
+    assert all(w["t"] % ud.WINDOW_MS == 0 for w in ws)
+    holed = bars[:3] + bars[4:]                       # drop one minute
+    assert len(ud.build_windows(holed)) == 3
+
+
+def test_a_flat_window_resolves_up_like_polymarket_does():
+    t = 1_700_000_000_000
+    t -= t % ud.WINDOW_MS
+    flat = [[t + i * 60_000, "100.0", "100.0", "100.0", "100.0", "1"] for i in range(5)]
+    w = ud.build_windows(flat)[0]
+    assert w["up"] is True and w["tie"] is True
+
+
+def test_enrich_conditions_are_backward_looking():
+    ws = ud.enrich(ud.build_windows(klines(200)))
+    assert ws[0]["prior_up"] is None                   # nothing before the first
+    for i in range(1, len(ws)):
+        assert ws[i]["prior_up"] == ws[i - 1]["up"]
+        assert ws[i]["prior_ret_bp"] == ws[i - 1]["ret_bp"]
+
+
+def test_conditional_applies_bonferroni_over_its_own_family():
+    ws = ud.enrich(ud.build_windows(klines(3000)))
+    fam = ud.conditional(ws, lambda w: w["session"], "session")
+    assert fam["buckets_tested"] == len({w["session"] for w in ws})
+    for row in fam["rows"]:
+        assert row["p_bonf"] >= row["p"]
+        assert row["ci_lo"] <= row["rate"] <= row["ci_hi"]
+
+
+def test_a_tiny_bucket_can_never_be_called_significant():
+    ws = ud.enrich(ud.build_windows(klines(400)))
+    fam = ud.conditional(ws, lambda w: "always", "single", min_n=10_000)
+    assert all(not r["significant"] for r in fam["rows"])
+
+
+def test_patterns_reports_a_coin_flip_as_a_coin_flip():
+    pat = ud.patterns(ud.enrich(ud.build_windows(klines(4000))))
+    assert pat["status"] == "ok"
+    assert 0.35 < pat["base_rate"] < 0.65
+    assert pat["base_ci"][0] <= pat["base_rate"] <= pat["base_ci"][1]
+    if not pat["significant"]:
+        assert "coin flip" in pat["verdict"]
+
+
+def test_patterns_finds_a_planted_conditional():
+    # every window that follows a DOWN window is forced up
+    ws = ud.enrich(ud.build_windows(klines(6000)))
+    for i in range(1, len(ws)):
+        if ws[i - 1]["up"] is False:
+            ws[i]["up"] = True
+    pat = ud.patterns(ws)
+    hits = {h["bucket"] for h in pat["significant"]}
+    assert "prior_down" in hits
+
+
+def test_randomwalk_prob_limits_are_sane():
+    assert ud.randomwalk_prob(10.0, 2.0, 0.0) == 1.0
+    assert ud.randomwalk_prob(-10.0, 2.0, 0.0) == 0.0
+    assert ud.randomwalk_prob(0.0, 2.0, 3.0) == pytest.approx(0.5)
+    assert ud.randomwalk_prob(4.0, 2.0, 1.0) > ud.randomwalk_prob(1.0, 2.0, 1.0)
+    # more time left = more uncertainty = closer to a coin flip
+    assert ud.randomwalk_prob(4.0, 2.0, 4.0) < ud.randomwalk_prob(4.0, 2.0, 1.0)
+
+
+def test_rw_calibration_scores_against_the_half_null():
+    cal = ud.rw_calibration(ud.enrich(ud.build_windows(klines(9000))), minute=3)
+    assert cal["status"] == "ok"
+    assert cal["brier_null"] == pytest.approx(0.25, abs=0.02)
+    assert cal["brier"] < cal["brier_null"]            # the in-window model has skill
+    assert sum(t["n"] for t in cal["table"]) == cal["n"]
+
+
+def test_rw_calibration_refuses_a_tiny_sample():
+    assert ud.rw_calibration(ud.enrich(ud.build_windows(klines(100))))["status"] == "too_small"
+
+
+def test_forecast_next_falls_back_to_the_base_rate_when_nothing_survives():
+    ws = ud.enrich(ud.build_windows(klines(4000)))
+    pat = ud.patterns(ws)
+    fc = ud.forecast_next(ws, pat, now_ms=ws[-1]["t"] + ud.WINDOW_MS)
+    assert fc["status"] == "ok"
+    if not fc["applied"]:
+        assert fc["p_up"] == pytest.approx(pat["base_rate"])
+        assert "base rate" in fc["note"]
+
+
+def test_odds_shift_stays_inside_zero_one():
+    p = 0.5
+    for _ in range(20):
+        p = ud._odds_shift(p, 0.99, 0.5)
+    assert 0.0 < p < 1.0
+
+
+def test_live_window_prices_the_executable_side_not_the_mid():
+    ws = ud.enrich(ud.build_windows(klines(600)))
+    start = ws[-1]["t"] + ud.WINDOW_MS
+    bars_open = ws[-1]["close"]
+    ws.append({**ws[-1], "t": start, "open": bars_open})
+    book = {"status": "ok", "bid": 0.40, "ask": 0.42, "mid": 0.41, "spread": 0.02,
+            "bid_size": 100.0, "ask_size": 100.0}
+    out = ud.live_window(ws, book, spot=bars_open * 1.001,
+                         now_ms=start + 60_000)
+    assert out["status"] == "ok"
+    p = out["p_up_randomwalk"]
+    assert out["edge_up_pp"] == pytest.approx((p - 0.42) * 100, abs=0.011)
+    assert out["edge_down_pp"] == pytest.approx((0.40 - p) * 100, abs=0.011)
+    assert out["best_edge_pp"] == max(out["edge_up_pp"], out["edge_down_pp"])
+
+
+def test_live_window_will_not_call_a_sub_buffer_gap_actionable():
+    ws = ud.enrich(ud.build_windows(klines(600)))
+    start = ws[-1]["t"] + ud.WINDOW_MS
+    px = ws[-1]["close"]
+    ws.append({**ws[-1], "t": start, "open": px})
+    book = {"status": "ok", "bid": 0.49, "ask": 0.51, "mid": 0.50, "spread": 0.02}
+    out = ud.live_window(ws, book, spot=px, now_ms=start + 60_000)
+    assert out["actionable"] is False
+    assert "no trade" in out["note"]
+    out2 = ud.live_window(ws, book, spot=px, now_ms=start + 60_000, feed_buffer=0.0)
+    assert out2["feed_buffer_pp"] == 0.0
+
+
+def test_live_window_reports_unavailable_without_a_spot_or_open():
+    assert ud.live_window([], None, spot=None, now_ms=1)["status"] == "unavailable"
+
+
+def test_rolling_trend_blocks_are_whole_and_bounded():
+    ws = ud.enrich(ud.build_windows(klines(6000)))
+    roll = ud.rolling_trend(ws, block=100)
+    assert all(r["n"] == 100 for r in roll)
+    assert all(r["ci_lo"] <= r["up_rate"] <= r["ci_hi"] for r in roll)
+
+
+def test_load_1m_uses_the_injected_runner_and_writes_its_cache(tmp_path):
+    rows = klines(1200)
+    calls = {"n": 0}
+
+    def runner(url):
+        calls["n"] += 1
+        return rows[-1000:] if "endTime" not in url else rows[:1000]
+
+    p = str(tmp_path / "k.json")
+    out = ud.load_1m(1200, runner=runner, cache_path=p, use_cache=True)
+    assert calls["n"] >= 1 and out
+    assert os.path.exists(p)
+
+
+# ── politics ─────────────────────────────────────────────────────────────────
+
+
+def hist(vals, now, hours=1):
+    return [{"t": int(now - (len(vals) - 1 - i) * 3600 * hours), "p": v}
+            for i, v in enumerate(vals)]
+
+
+def test_market_read_measures_in_percentage_points():
+    now = time.time()
+    row = {"market_id": "1", "event": "E", "question": "Q?", "slug": "s",
+           "volume": 1e6, "volume_24h": 1e5, "liquidity": 1e5,
+           "end_date": "", "tags": [], "yes_token": "t"}
+    h = hist([0.30] * 168 + [0.42], now)
+    r = pol.market_read(row, h, now=now)
+    assert r["delta_7d_pp"] == pytest.approx(12.0, abs=0.01)
+    assert r["label"] in ("REPRICING_YES", "DRIFTING_YES")
+    assert r["forecast"]["p10"] <= r["forecast"]["p50"] <= r["forecast"]["p90"]
+    assert 0.01 <= r["forecast"]["p50"] <= 0.99
+
+
+def test_market_read_calls_a_round_trip_churn():
+    now = time.time()
+    row = {"market_id": "1", "event": "E", "question": "Q?", "slug": "s",
+           "volume": 1e6, "volume_24h": 1e5, "liquidity": 1e5,
+           "end_date": "", "tags": [], "yes_token": "t"}
+    vals = [0.30 + (0.2 if i % 2 else -0.2) for i in range(168)] + [0.35]
+    r = pol.market_read(row, hist(vals, now), now=now)
+    assert r["label"] == "CHURN"
+
+
+def test_market_read_needs_a_week_of_history():
+    now = time.time()
+    row = {"market_id": "1", "event": "E", "question": "Q?", "slug": "s",
+           "volume": 1, "volume_24h": 1, "liquidity": 1, "end_date": "",
+           "tags": [], "yes_token": "t"}
+    assert pol.market_read(row, hist([0.5] * 3, now), now=now) is None
+
+
+def test_project_prob_is_a_martingale_until_a_carry_is_proven():
+    r = {"p_now": 0.4, "vol_pp_hour": 1.0, "delta_7d_pp": 20.0}
+    assert pol.project_prob(r)["p50"] == pytest.approx(0.4)
+    assert pol.project_prob(r)["model"] == "martingale"
+    assert pol.project_prob(r, carry=0.5)["p50"] > 0.4
+
+
+def test_momentum_test_refuses_an_ungapped_measurement():
+    """Without 21 days of history the only available windows share the t-7d
+    price, which manufactures a negative correlation. That reading must never
+    be usable no matter how clean it looks."""
+    reads = [{"delta_prev_week_pp": x, "delta_7d_pp": -x, "liquidity": 1000.0,
+              "p_7d": 0.5, "p_now": 0.5}
+             for x in range(-15, 16) if x]
+    m = pol.momentum_test(reads)
+    assert m["gapped"] is False
+    assert m["significant"] is True and m["corr"] < 0
+    assert m["usable"] is False
+    assert "OVERLAPPING" in m["verdict"]
+
+
+def test_momentum_test_prefers_the_gapped_windows_when_available():
+    reads = [{"delta_gap_week_pp": x, "delta_prev_week_pp": -x, "delta_7d_pp": x,
+              "liquidity": float(i), "p_7d": 0.5, "p_now": 0.5}
+             for i, x in enumerate(r for r in range(-15, 16) if r)]
+    m = pol.momentum_test(reads)
+    assert m["gapped"] is True
+    assert m["corr"] > 0                       # read off the gapped column
+    assert m["shared_endpoint_corr"] < 0       # the confounded one is still shown
+    assert m["usable"] is True
+    assert "CONTINUE" in m["verdict"]
+
+
+def test_momentum_test_needs_the_liquidity_split_to_agree():
+    """A relationship that only exists in the thin half is a spread artifact."""
+    thin = [{"delta_gap_week_pp": x, "delta_7d_pp": x, "liquidity": 1.0,
+             "p_7d": 0.5, "p_now": 0.5} for x in range(-12, 13) if x]
+    deep = [{"delta_gap_week_pp": x, "delta_7d_pp": -x, "liquidity": 1e6,
+             "p_7d": 0.5, "p_now": 0.5} for x in range(-12, 13) if x]
+    m = pol.momentum_test(thin + deep)
+    assert m["robust"] is False
+    assert m["usable"] is False
+
+
+def test_momentum_test_says_too_small_below_the_floor():
+    assert pol.momentum_test([{"delta_prev_week_pp": 1, "delta_7d_pp": 1}])["status"] == "too_small"
+
+
+def test_longshot_test_buckets_and_reports_intervals():
+    reads = ([{"p_7d": 0.05, "delta_7d_pp": -2.0} for _ in range(10)]
+             + [{"p_7d": 0.90, "delta_7d_pp": 3.0} for _ in range(10)]
+             + [{"p_7d": 0.50, "delta_7d_pp": 0.0} for _ in range(10)])
+    ls = pol.longshot_test(reads)
+    by = {r["bucket"]: r for r in ls["rows"]}
+    assert by["longshot (<=15%)"]["mean_delta_pp"] == -2.0
+    assert by["favourite (>=85%)"]["mean_delta_pp"] == 3.0
+    assert "textbook" in ls["verdict"]
+
+
+def test_fetch_markets_filters_by_volume_and_binary_shape():
+    ev = {"title": "E", "volume24hr": 10, "tags": [{"slug": "politics"}], "markets": [
+        {"id": "1", "question": "big", "clobTokenIds": '["a","b"]',
+         "outcomePrices": '["0.5","0.5"]', "volumeNum": 1e6, "slug": "s1"},
+        {"id": "2", "question": "small", "clobTokenIds": '["c","d"]',
+         "outcomePrices": '["0.5","0.5"]', "volumeNum": 10.0, "slug": "s2"},
+        {"id": "3", "question": "multi", "clobTokenIds": '["e","f","g"]',
+         "outcomePrices": '["0.3","0.3","0.4"]', "volumeNum": 1e6, "slug": "s3"},
+        {"id": "4", "question": "closed", "closed": True, "clobTokenIds": '["h","i"]',
+         "outcomePrices": '["0.5","0.5"]', "volumeNum": 1e6, "slug": "s4"},
+    ]}
+    rows = pol.fetch_markets(limit=10, min_volume=1000.0, getter=lambda u: [ev])
+    assert [r["market_id"] for r in rows] == ["1"]
+
+
+def test_read_drops_markets_already_past_their_end_date():
+    now = time.time()
+    ev = {"title": "E", "volume24hr": 10, "tags": [], "markets": [
+        {"id": "1", "question": "expired", "clobTokenIds": '["a","b"]',
+         "outcomePrices": '["0.5","0.5"]', "volumeNum": 1e6, "slug": "s1",
+         "endDate": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 86400))},
+    ]}
+
+    def getter(url):
+        if "events" in url:
+            return [ev]
+        return {"history": [{"t": int(now - (200 - i) * 3600), "p": 0.5}
+                            for i in range(200)]}
+
+    out = pol.read(limit=5, min_volume=1.0, getter=getter, now=now)
+    assert out["expired_dropped"] == 1
+    assert out["scanned"] == 0
+
+
+# ── recorders ────────────────────────────────────────────────────────────────
+
+
+def test_updown_resolver_reads_the_window_by_its_end_time():
+    ws = ud.enrich(ud.build_windows(klines(200)))
+    resolve = rec.updown_resolver(ws)
+    w = ws[5]
+    assert resolve(w["t"] + 5 * 60_000) == w["up"]
+    assert resolve(w["t"] + 5 * 60_000 + 30_000) == w["up"]     # inside tolerance
+    assert resolve(w["t"] + 10 * 86_400_000) is None             # outside the sample
+    assert resolve(w["t"] + 5 * 60_000 + 120_000) is None        # past the tolerance
+    assert resolve(None) is None
+
+
+def test_grade_scout_splits_lanes_and_never_pools_them():
+    ws = ud.enrich(ud.build_windows(klines(400)))
+    end = lambda w: time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                  time.gmtime((w["t"] + 5 * 60_000) / 1000))
+    rows = [
+        {"lane": "updown_5m", "market_id": "u1", "side": "YES", "fill_px": 0.5,
+         "llm_yes": 0.6, "mkt_yes": 0.5, "end_date": end(ws[3])},
+        {"lane": "updown_5m", "market_id": "u2", "side": "NO", "fill_px": 0.4,
+         "llm_yes": 0.3, "mkt_yes": 0.5, "end_date": end(ws[4])},
+        {"lane": "judgment", "market_id": "j1", "side": "YES", "fill_px": 0.3,
+         "llm_yes": 0.7, "mkt_yes": 0.3, "end_date": "2026-01-01T00:00:00Z"},
+    ]
+    out = rec.grade_scout(rows=rows, windows=ws, gamma_resolver=lambda mid: True)
+    assert set(out["lanes"]) == {"updown_5m", "judgment"}
+    assert out["lanes"]["updown_5m"]["n"] == 2
+    assert out["lanes"]["judgment"]["n"] == 1
+    assert "chainlink" in out["lanes"]["updown_5m"]["source"]
+
+
+def test_grade_scout_marks_ungradeable_lanes_pending_instead_of_zero():
+    rows = [{"lane": "judgment", "market_id": "j1", "side": "YES", "fill_px": 0.3,
+             "llm_yes": 0.7, "mkt_yes": 0.3, "end_date": "2026-01-01T00:00:00Z"}]
+    out = rec.grade_scout(rows=rows, windows=[], gamma_resolver=None)
+    g = out["lanes"]["judgment"]
+    assert g["n"] == 0 and g["pending"] == 1
+    assert "not graded" in g["source"]
+
+
+def test_grade_books_flags_a_decaying_edge():
+    """A book whose average is positive only because of its first half must be
+    flagged — that is the failure mode a single mean hides."""
+    class FakeSL:
+        @staticmethod
+        def summary(now):
+            return [{"book": "decayer", "n": 20, "coins": 3, "last_age_h": 2.0,
+                     "pending": 0}]
+
+        @staticmethod
+        def list_books():
+            return ["decayer", "neg_funding_fade"]        # second one is REMOVED
+
+        @staticmethod
+        def load(book):
+            return [{"coin": "X"}]
+
+        @staticmethod
+        def grade_records(recs, fetch_fwd, now_ms=None, fetch_funding=None):
+            return {"n": 20, "pending": 0,
+                    "slip12": {"mean_pct": 0.5, "win": 0.55, "total_pct": 10.0},
+                    "slip25": {"mean_pct": 0.2},
+                    "oos_12bps": {"first": 1.4, "second": -0.4,
+                                  "n_first": 10, "n_second": 10},
+                    "funding_included": True,
+                    "verdict": {"label": "MARGINAL", "why": "second half flipped"}}
+
+        @staticmethod
+        def classify(grade, min_n=8):
+            return {"label": "PENDING", "why": ""}
+
+    rows = rec.grade_books(fetch_fwd=lambda *a, **k: [], fetch_funding=None, sl=FakeSL)
+    assert [r["book"] for r in rows] == ["decayer"]       # removed book skipped
+    r = rows[0]
+    assert r["decaying"] is True
+    assert r["verdict"] == "MARGINAL"
+    assert r["win_ci"][0] < 0.55 < r["win_ci"][1]
+
+
+def test_recorders_observations_call_out_decay_and_calibration():
+    books = [{"book": "a", "verdict": "VALIDATED", "resolved": 20, "ev_pct": 0.8,
+              "win_rate": 0.6, "ev_first": 0.9, "ev_second": 0.7, "decaying": False,
+              "last_age_h": 3.0, "signals": 20},
+             {"book": "b", "verdict": "MARGINAL", "resolved": 20, "ev_pct": 0.1,
+              "win_rate": 0.5, "ev_first": 1.0, "ev_second": -0.8, "decaying": True,
+              "last_age_h": 400.0, "signals": 20}]
+    scout = {"lanes": {"judgment": {"n": 12, "mean_pnl_per_$": 0.05, "win_rate": 0.6,
+                                    "brier_llm": 0.18, "brier_mkt": 0.22,
+                                    "llm_beats_market": True}}}
+    obs = rec.observations(books, scout)
+    joined = " ".join(obs)
+    assert "Decaying" in joined and "b " in joined
+    assert "not written in over a week" in joined
+    assert "better calibrated than the price" in joined
+
+
+def test_recorders_read_without_network_is_inventory_only(monkeypatch):
+    monkeypatch.setattr(rec, "grade_scout", lambda **kw: {"lanes": {}})
+    out = rec.read(with_network=False)
+    assert out["books"] == []
+    assert out["summary"]["n_books"] == 0
+    assert out["observations"][0].startswith("No recorder has resolved")
+
+
+# ── cache ────────────────────────────────────────────────────────────────────
+
+
+def test_cache_roundtrip_marks_staleness(tmp_path, monkeypatch):
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    tcache.save("hl", {"status": "ok", "generated_at": int(time.time())})
+    got = tcache.load("hl")
+    assert got["status"] == "ok" and got["stale"] is False
+    tcache.save("hl", {"status": "ok", "generated_at": 1})
+    assert tcache.load("hl")["stale"] is True
+
+
+def test_cache_miss_returns_the_command_that_fills_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    got = tcache.load("politics")
+    assert got["status"] == "empty"
+    assert "--lane politics" in got["hint"]
+
+
+def test_cache_refresh_carries_the_ai_block_forward(tmp_path, monkeypatch):
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    tcache.save("hl", {"status": "ok", "generated_at": int(time.time()),
+                       "ai": {"status": "ok", "headline": "old"}})
+    monkeypatch.setattr(tcache, "compute",
+                        lambda lane, **kw: {"status": "ok", "generated_at": int(time.time())})
+    out = tcache.refresh("hl")
+    assert out["ai"]["headline"] == "old"
+    assert out["ai"]["stale_for_this_read"] is True
+
+
+def test_cache_attach_ai_does_not_recompute(tmp_path, monkeypatch):
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    tcache.save("updown", {"status": "ok", "generated_at": int(time.time())})
+    tcache.attach_ai("updown", {"status": "ok", "headline": "hi"})
+    assert tcache.load("updown")["ai"]["headline"] == "hi"
+
+
+def test_cache_refresh_all_isolates_a_failing_lane(tmp_path, monkeypatch):
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    monkeypatch.setattr(tcache, "refresh_eval", lambda **kw: {"status": "fresh"})
+
+    def compute(lane, **kw):
+        if lane == "updown":
+            raise RuntimeError("binance down")
+        return {"status": "ok", "generated_at": int(time.time())}
+
+    monkeypatch.setattr(tcache, "compute", compute)
+    out = tcache.refresh_all()
+    assert out["hl"]["status"] == "ok"
+    assert out["updown"]["status"] == "error"
+    assert out["politics"]["status"] == "ok"
+    assert out["recorders"]["status"] == "ok"
+
+
+def test_cache_refresh_all_can_run_one_clock_at_a_time(tmp_path, monkeypatch):
+    """The scheduler runs the price lanes every 30 min and the recorders lane
+    every 6 hours — `only` is what keeps the slow grade off the fast clock."""
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    seen = []
+    monkeypatch.setattr(tcache, "refresh_eval", lambda **kw: seen.append("eval") or {"status": "fresh"})
+    monkeypatch.setattr(tcache, "compute",
+                        lambda lane, **kw: seen.append(lane) or {"status": "ok",
+                                                                 "generated_at": int(time.time())})
+    out = tcache.refresh_all(only=["recorders"])
+    assert set(out) == {"recorders"}
+    assert seen == ["recorders"]                 # no eval, no price lanes
+
+
+# ── ai pass ──────────────────────────────────────────────────────────────────
+
+
+def test_ai_prompts_carry_the_numbers_and_the_eval_verdict():
+    payload = {"regime": {"label": "RISK_OFF_TRENDING", "btc_ret_7d": -3.9,
+                          "btc_label": "DOWN", "breadth_pct": 18.2,
+                          "trend_share_pct": 72.7, "dispersion_pct": 5.1,
+                          "alt_strength_pct": -0.4, "mean_funding_apr_pct": 6.4},
+               "reads": [{"coin": "BTC", "ret_7d": -3.9, "slope_pct_day": -0.46,
+                          "r2": 0.58, "efficiency": 0.55, "label": "DOWN",
+                          "forecast": {"drift_pct": -0.6, "prob_up": 0.44},
+                          "flags": [{"code": "EMA_STACK_BEAR"}]}],
+               "eval": {"n": 1317, "dir_hit": 0.4966, "dir_edge_sigma": -0.25,
+                        "coverage_80": 0.8, "beats_coinflip": False},
+               "observations": ["tape is risk off"]}
+    p = tai.hl_prompt(payload)
+    assert "RISK_OFF_TRENDING" in p and "BTC" in p
+    assert "beats_coinflip=False" in p
+    assert "tape is risk off" in p
+
+
+def test_ai_parses_json_out_of_prose_and_fences():
+    body = ('here you go\n```json\n{"headline": "h", "narrative": "n", '
+            '"setups": [], "watch": [], "risks": []}\n```\nthanks')
+    out = tai._parse(body)
+    assert out["headline"] == "h"
+    assert tai._parse("no json here") is None
+
+
+def test_ai_analyze_reports_failure_instead_of_inventing_a_read():
+    out = tai.analyze("hl", {"regime": {}, "reads": [], "observations": []},
+                      runner=lambda *a, **k: "")
+    assert out["status"] == "failed"
+    assert out["lane"] == "hl"
+
+
+def test_ai_analyze_returns_the_parsed_block_on_success():
+    envelope = json.dumps({"result": json.dumps(
+        {"headline": "h", "narrative": "n", "setups": [{"ticker": "BTC"}],
+         "watch": ["w"], "risks": ["r"]})})
+    out = tai.analyze("politics", {"board": {}, "momentum_test": {}, "reads": [],
+                                   "observations": []},
+                      runner=lambda *a, **k: envelope)
+    assert out["status"] == "ok" and out["headline"] == "h"
+    assert out["setups"][0]["ticker"] == "BTC"
+
+
+def test_ai_rejects_an_unknown_lane():
+    assert tai.analyze("nope", {})["status"] == "bad_lane"
+
+
+# ── dashboard wiring ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    from hermes_trader import dashboard as db
+    monkeypatch.setattr(tcache, "DIR", str(tmp_path))
+    db._TTL_CACHE.clear()
+    app = FastAPI()
+    db.register_routes(app)
+    return TestClient(app)
+
+
+def test_trends_page_renders_self_contained(client):
+    r = client.get("/trends")
+    assert r.status_code == 200
+    body = r.text
+    assert "TRENDS" in body and "HYPERLIQUID" in body
+    assert "BTC 5M UP/DOWN" in body and "POLITICS" in body
+    assert "RECORDERS" in body
+    # no third-party asset may be pulled at render time
+    assert "http://" not in body and "https://" not in body
+    assert 'href="/static/app.css"' in body
+
+
+def test_every_page_links_the_new_tab(client):
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics"):
+        assert 'data-nav="/trends"' in client.get(path).text
+
+
+def test_lane_apis_are_pure_cache_reads(client):
+    for lane in ("hl", "updown", "politics", "recorders"):
+        r = client.get(f"/api/dashboard/trends/{lane}")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "empty"          # tmp cache dir, nothing written
+        assert body["stale"] is True
+
+
+def test_lane_api_serves_what_the_refresher_wrote(client, tmp_path):
+    tcache.save("hl", {"status": "ok", "generated_at": int(time.time()),
+                       "scanned": 3, "regime": {"label": "RISK_ON_TRENDING"}})
+    r = client.get("/api/dashboard/trends/hl")
+    assert r.json()["regime"]["label"] == "RISK_ON_TRENDING"
+
+
+def test_unknown_lane_is_a_404(client):
+    assert client.get("/api/dashboard/trends/bogus").status_code == 404
+
+
+def test_mutating_trend_routes_are_operator_gated(client):
+    for path in ("/api/dashboard/trends/hl/refresh", "/api/dashboard/trends/hl/ai"):
+        assert client.post(path).status_code in (401, 403, 503)
+    assert client.get("/api/dashboard/trends/job/result?job_id=x").status_code in (401, 403, 404, 503)
+
+
+def test_css_build_is_current():
+    """The committed app.css must match what the builder emits for the
+    templates as they stand — a new class in trends.html without a rebuild
+    would render the page unstyled."""
+    import subprocess
+    import sys
+    out = subprocess.run([sys.executable, "scripts/build_static_css.py", "--check"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr

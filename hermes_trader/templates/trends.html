@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>hermes-trader · trends</title>
+<link rel="stylesheet" href="/static/app.css" />
+<style>
+  /* ── same design system as the other tabs: sans for words, mono for every
+     number, indigo→violet brand, green/red for direction only. One extra
+     colour role here: AMBER = "the evidence does not support this", used on
+     every honesty badge (coin-flip verdicts, stale caches, chop labels). ── */
+  :root{
+    --card:#14161b; --card2:#181b21;
+    --line:#23262e; --line2:#2c313c;
+    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
+    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
+    --vio:#8b5cf6;
+    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
+  }
+  body{
+    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--txt);
+    background:#0a0b0d;
+    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
+    background-repeat:no-repeat;background-attachment:fixed;
+  }
+  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
+  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
+  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
+  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
+  .nav-link:hover{color:var(--txt);background:var(--card)}
+  .nav-link:active{transform:translateY(1px)}
+  .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
+
+  .note{font-size:11.5px;line-height:1.65;color:var(--mut);background:var(--card);
+        border:1px solid var(--line);border-left:2px solid var(--vio);border-radius:3px;
+        padding:11px 14px;margin-bottom:16px}
+  .note b{color:var(--txt);font-weight:600}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:14px}
+  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:700;
+             letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:10px}
+
+  /* KPI strip */
+  .strip{display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;background:rgba(14,16,20,.82);
+         border:1px solid var(--line);border-radius:4px;padding:10px 8px;margin-bottom:16px}
+  .kpi{flex:1 1 118px;min-width:106px;padding:4px 10px;border-right:1px solid var(--line);
+       display:flex;flex-direction:column;gap:3px}
+  .kpi:last-child{border-right:0}
+  .kpi .v{font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;letter-spacing:-.01em}
+  .kpi .l{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+  .kpi .s{font-size:10px;color:var(--mut)}
+
+  /* lane tabs */
+  .tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{padding:8px 16px;font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--mut);
+       border-bottom:2px solid transparent;background:transparent}
+  .tab[aria-selected="true"]{color:var(--txt);border-bottom-color:var(--vio)}
+  .tab .n{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--dim);margin-left:6px}
+
+  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.06em;
+         border-radius:3px;border:1px solid transparent;white-space:nowrap;
+         font-family:ui-monospace,Menlo,monospace}
+  .b-up{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
+  .b-sup{color:#4ade80;background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.6)}
+  .b-dn{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
+  .b-sdn{color:#f87171;background:rgba(239,68,68,.22);border-color:rgba(239,68,68,.6)}
+  .b-chop{color:#fcd34d;background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.4)}
+  .b-info{color:#c4b5fd;background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4)}
+  .b-teal{color:#5eead4;background:rgba(45,212,191,.12);border-color:rgba(45,212,191,.4)}
+  .b-mut{color:var(--mut);background:#171a20;border-color:var(--line2)}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;font-size:10px;border-radius:3px;
+        border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap;
+        font-family:ui-monospace,Menlo,monospace;margin:2px 3px 0 0}
+  .chip.ev{color:#fcd34d;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08)}
+  .chip.st{color:#c4b5fd;border-color:rgba(139,92,246,.35);background:rgba(139,92,246,.08)}
+  .chip.po{color:#5eead4;border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.08)}
+  .chip.rk{color:#fca5a5;border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08)}
+
+  table{width:100%;font-size:11.5px}
+  th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+     font-weight:600;padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:rgba(139,92,246,.05)}
+  .up{color:var(--up)} .dn{color:var(--dn)} .mut{color:var(--mut)} .dim{color:var(--dim)}
+  .amb{color:var(--amb)} .teal{color:var(--teal)} .vio{color:#c4b5fd}
+
+  .obs{list-style:none;padding:0;margin:0}
+  .obs li{font-size:12px;line-height:1.6;color:var(--mut);padding:7px 0 7px 16px;position:relative;
+          border-bottom:1px solid var(--line)}
+  .obs li:last-child{border-bottom:0}
+  .obs li::before{content:'';position:absolute;left:2px;top:14px;width:5px;height:5px;border-radius:1px;
+                  background:var(--grad)}
+  .obs li b{color:var(--txt)}
+
+  .btn{padding:6px 12px;font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--mut);
+       background:var(--card2);border:1px solid var(--line2);border-radius:3px;
+       font-family:ui-monospace,Menlo,monospace}
+  .btn:hover{color:var(--txt);border-color:var(--vio)}
+  .btn:disabled{opacity:.45}
+  .btn.go{color:#c4b5fd;border-color:rgba(139,92,246,.45);background:rgba(139,92,246,.1)}
+
+  /* forecast band: p10 ── p50 ── p90 on one rail */
+  .band{position:relative;height:16px;background:#101319;border:1px solid var(--line2);border-radius:2px}
+  .band .fill{position:absolute;top:0;bottom:0;background:rgba(139,92,246,.18)}
+  .band .mid{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--vio)}
+  .band .now{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--mut)}
+
+  /* probability meter for the binary lanes */
+  .meter{position:relative;height:20px;background:#101319;border:1px solid var(--line2);border-radius:2px;overflow:hidden}
+  .meter .bar{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(99,102,241,.5),rgba(168,85,247,.5))}
+  .meter .tick{position:absolute;top:0;bottom:0;width:2px;background:var(--teal);box-shadow:0 0 6px rgba(45,212,191,.8)}
+  .meter .lab{position:absolute;left:7px;top:2px;font-size:11px;font-family:ui-monospace,Menlo,monospace;color:var(--txt)}
+  .meter .lab2{position:absolute;right:7px;top:2px;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:var(--mut)}
+
+  .grid2{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:60rem){.grid2{grid-template-columns:1fr 1fr}}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+
+  .skeleton{color:var(--faint)}
+  .ai-box{border:1px solid rgba(139,92,246,.3);background:linear-gradient(180deg,rgba(139,92,246,.06),transparent);
+          border-radius:4px;padding:14px;margin-top:12px}
+  .ai-head{font-size:13px;font-weight:600;color:var(--txt);line-height:1.5;margin-bottom:6px}
+  .ai-nar{font-size:12px;line-height:1.7;color:var(--mut)}
+  .setup{border-top:1px solid var(--line);padding:8px 0;font-size:11.5px;color:var(--mut)}
+  .setup b{color:var(--txt)}
+  .hidden{display:none}
+  ::selection{background:rgba(139,92,246,.32)}
+  html{scrollbar-color:#2c313c #0a0b0d;scrollbar-width:thin}
+  @view-transition{navigation:auto}
+</style>
+</head>
+<body class="min-h-screen">
+<script>
+// g-then-key tab hops, same map as the other pages (t = trends)
+(function () {
+  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics', t: '/trends' };
+  let armed = 0;
+  addEventListener('keydown', e => {
+    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'g') { armed = Date.now(); return; }
+    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
+    armed = 0;
+  });
+})();
+</script>
+
+<div class="max-w-[1240px] mx-auto px-6 py-6">
+
+  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
+    <span class="brand flex items-center">
+      <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ TRENDS</small>
+    </span>
+    <span class="flex items-center gap-2">
+      <button id="op-token-btn" class="btn" type="button"
+              title="refresh and AI passes spend network / model calls, so they are operator-gated">set token</button>
+      <span class="text-[10px] mono" style="color:var(--dim)" id="lane-meta"></span>
+    </span>
+  </header>
+
+  <div id="token-row" class="hidden flex flex-wrap gap-2 items-center mb-4">
+    <input id="token-input" type="password" placeholder="operator token"
+           autocomplete="off" spellcheck="false"
+           style="flex:1;min-width:180px;max-width:320px;padding:7px 10px;font-size:12px;
+                  font-family:ui-monospace,Menlo,monospace;color:var(--txt);background:var(--card2);
+                  border:1px solid var(--line2);border-radius:3px;outline:none" />
+    <button id="token-save" class="btn" type="button" style="color:var(--up);border-color:rgba(34,197,94,.4)">save</button>
+    <button id="token-clear" class="btn" type="button" style="color:var(--dn);border-color:rgba(239,68,68,.4)">clear</button>
+    <span class="text-[10px] mono" style="color:var(--dim)">stored in this browser only · same token as the dashboard footer</span>
+  </div>
+
+  <nav class="flex items-center gap-1 mb-5 flex-wrap">
+    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
+    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
+    <a href="/news" data-nav="/news" class="nav-link">NEWS</a>
+    <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
+    <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
+    <a href="/analytics" data-nav="/analytics" class="nav-link">ANALYTICS</a>
+  </nav>
+
+  <div class="note">
+    <b>What the market has actually done</b>, measured, then extrapolated with its own error bars.
+    Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up 20% on a round
+    trip is labelled CHOP, and the label is what ranks it. Forecasts are a
+    <b>shrunken-drift baseline</b> and every lane ships the backtest that says what it is worth;
+    where that backtest says "coin flip", the tab says so in amber instead of hiding it.
+    The <b>AI pass is optional and additive</b>: it reads these numbers, it never produces one.
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-lane="hl" aria-selected="true">HYPERLIQUID <span class="n" id="n-hl"></span></button>
+    <button class="tab" role="tab" data-lane="updown" aria-selected="false">BTC 5M UP/DOWN <span class="n" id="n-updown"></span></button>
+    <button class="tab" role="tab" data-lane="politics" aria-selected="false">POLITICS <span class="n" id="n-politics"></span></button>
+    <button class="tab" role="tab" data-lane="recorders" aria-selected="false">RECORDERS · P&amp;L <span class="n" id="n-recorders"></span></button>
+  </div>
+
+  <!-- ── LANE: HYPERLIQUID ─────────────────────────────────────────────── -->
+  <div id="lane-hl">
+    <div class="strip" id="hl-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">majors · 7 day</div>
+        <span class="text-[10px] mono dim" id="hl-age"></span>
+      </div>
+      <div class="grid3" id="hl-majors"></div>
+    </div>
+
+    <div class="grid2 mb-4">
+      <div class="card">
+        <div class="sec-label">what the week showed</div>
+        <ul class="obs" id="hl-obs"></ul>
+      </div>
+      <div class="card">
+        <div class="sec-label">forecaster honesty · walk-forward</div>
+        <div id="hl-eval" class="text-[11.5px] mut"></div>
+        <div class="sec-label mt-6">dated catalysts this week</div>
+        <div id="hl-cats" class="text-[11.5px] mut"></div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">every ticker · trend + next-week forecast</div>
+        <div class="flex gap-2 items-center flex-wrap">
+          <button class="btn" data-filter="all" id="f-all">all</button>
+          <button class="btn" data-filter="trend">trending only</button>
+          <button class="btn" data-filter="flagged">flagged</button>
+          <button class="btn go" id="hl-refresh">refresh data</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th>coin</th><th>price</th><th>1d</th><th>7d</th><th>30d</th>
+            <th>slope/d</th><th>r²</th><th>eff</th><th>trend</th>
+            <th>7d forecast (p10 · p50 · p90)</th><th>p(up)</th><th>funding</th>
+            <th style="text-align:left">flags</th>
+          </tr></thead>
+          <tbody id="hl-rows"><tr><td colspan="13" class="dim">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <div class="flex gap-2 items-center">
+          <label class="text-[10px] mono dim flex items-center gap-1">
+            <input type="checkbox" id="hl-ws" /> web search
+          </label>
+          <button class="btn go" data-ai="hl">run ai pass</button>
+        </div>
+      </div>
+      <div id="hl-ai" class="text-[11.5px] dim">Not run. The tab is complete without it — the AI pass only interprets the numbers above.</div>
+    </div>
+  </div>
+
+  <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
+  <div id="lane-updown" class="hidden">
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">live window · model vs market</div>
+        <span class="text-[10px] mono dim" id="ud-clock"></span>
+      </div>
+      <div id="ud-live"><span class="dim text-[11.5px]">loading…</span></div>
+    </div>
+
+    <div class="strip" id="ud-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <div class="grid2 mb-4">
+      <div class="card">
+        <div class="sec-label">conditional base rates · Bonferroni-corrected</div>
+        <div class="overflow-x-auto">
+          <table>
+            <thead><tr>
+              <th>family</th><th>strongest bucket</th><th>n</th><th>up rate</th>
+              <th>lift</th><th>p (corrected)</th><th>verdict</th>
+            </tr></thead>
+            <tbody id="ud-fams"><tr><td colspan="7" class="dim">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="text-[10.5px] dim mt-3" id="ud-verdict"></div>
+      </div>
+      <div class="card">
+        <div class="sec-label">in-window model · reliability at minute 3 of 5</div>
+        <div class="overflow-x-auto">
+          <table>
+            <thead><tr><th>predicted</th><th>realized</th><th>95% ci</th><th>n</th></tr></thead>
+            <tbody id="ud-calib"><tr><td colspan="4" class="dim">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="text-[10.5px] dim mt-3" id="ud-calib-note"></div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">daily up-rate · is the tape leaning?</div>
+        <button class="btn go" id="ud-refresh">refresh data</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr><th>date (ET)</th><th>windows</th><th>up rate</th><th>95% ci</th><th>net move</th><th style="text-align:left">vs coin flip</th></tr></thead>
+          <tbody id="ud-roll"><tr><td colspan="6" class="dim">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <button class="btn go" data-ai="updown">run ai pass</button>
+      </div>
+      <div id="updown-ai" class="text-[11.5px] dim">Not run.</div>
+    </div>
+  </div>
+
+  <!-- ── LANE: POLITICS ────────────────────────────────────────────────── -->
+  <div id="lane-politics" class="hidden">
+    <div class="strip" id="pol-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <div class="grid2 mb-4">
+      <div class="card">
+        <div class="sec-label">what the political board showed</div>
+        <ul class="obs" id="pol-obs"></ul>
+      </div>
+      <div class="card">
+        <div class="sec-label">drift null test · does last week predict next week?</div>
+        <div id="pol-null" class="text-[11.5px] mut"></div>
+        <div class="sec-label mt-6">longshot decay check</div>
+        <div class="overflow-x-auto">
+          <table>
+            <thead><tr><th>bucket</th><th>n</th><th>mean 7d move</th><th>% up</th><th>95% ci on % up</th></tr></thead>
+            <tbody id="pol-ls"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">markets · 7-day probability trend + next-week band</div>
+        <button class="btn go" id="pol-refresh">refresh data</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th style="text-align:left">market</th><th>7d path</th><th>now</th><th>1d</th><th>7d</th>
+            <th>pp/day</th><th>trend</th><th>next-week band</th><th>resolves</th><th>volume</th>
+          </tr></thead>
+          <tbody id="pol-rows"><tr><td colspan="10" class="dim">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <div class="flex gap-2 items-center">
+          <label class="text-[10px] mono dim flex items-center gap-1">
+            <input type="checkbox" id="pol-ws" /> web search
+          </label>
+          <button class="btn go" data-ai="politics">run ai pass</button>
+        </div>
+      </div>
+      <div id="politics-ai" class="text-[11.5px] dim">Not run.</div>
+    </div>
+  </div>
+
+  <!-- ── LANE: RECORDERS / P&L ─────────────────────────────────────────── -->
+  <div id="lane-recorders" class="hidden">
+    <div class="strip" id="rec-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <div class="note">
+      This is the scoreboard the other three lanes get judged against. Every book here trades
+      <b>zero capital</b>; <b>EV%</b> is mean forward return per signal net of funding at 12bps
+      slippage, graded on real candles after the signal — the same grader
+      <code>scripts/shadow_status.py</code> uses. <b>1st / 2nd</b> split the book's own history:
+      a positive average built on a negative second half is a decaying edge, and it is flagged.
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">shadow books · forward EV per signal</div>
+        <button class="btn go" id="rec-refresh">re-grade (slow)</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th style="text-align:left">book</th><th>verdict</th><th>signals</th><th>resolved</th>
+            <th>pending</th><th>ev% @12bps</th><th>@25bps</th><th>total%</th>
+            <th>win</th><th>95% ci</th><th>1st half</th><th>2nd half</th><th>last signal</th>
+          </tr></thead>
+          <tbody id="rec-rows"><tr><td colspan="13" class="dim">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid2 mb-4">
+      <div class="card">
+        <div class="sec-label">polymarket paper lanes · realised per $</div>
+        <div class="overflow-x-auto">
+          <table>
+            <thead><tr>
+              <th style="text-align:left">lane</th><th>rows</th><th>resolved</th><th>pnl / $</th>
+              <th>total $</th><th>win</th><th>brier ours</th><th>brier market</th><th>calibrated?</th>
+            </tr></thead>
+            <tbody id="rec-scout"><tr><td colspan="9" class="dim">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="text-[10.5px] dim mt-3" id="rec-scout-note"></div>
+      </div>
+      <div class="card">
+        <div class="sec-label">what the recorders show</div>
+        <ul class="obs" id="rec-obs"></ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <button class="btn go" data-ai="recorders">run ai pass</button>
+      </div>
+      <div id="recorders-ai" class="text-[11.5px] dim">Not run.</div>
+    </div>
+  </div>
+
+  <div class="text-[10px] mono dim mt-8 leading-relaxed">
+    computed by <b>services/trend_engine</b> · refresh with
+    <code>python -m services.trend_engine.run --refresh-all</code> ·
+    forecaster eval: <code>python -m services.trend_engine.run --backtest</code> ·
+    keyboard: g then d / a / n / p / t / y
+  </div>
+</div>
+
+<script>
+// ── shared helpers ──────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const num = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : Number(v).toFixed(d);
+const pct = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+const sgn = v => (v === null || v === undefined || isNaN(v)) ? 'dim' : (v > 0 ? 'up' : (v < 0 ? 'dn' : 'mut'));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const price = v => v == null ? '–' : (v >= 1000 ? Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })
+  : v >= 1 ? Number(v).toFixed(2) : Number(v).toPrecision(3));
+const age = s => s == null ? 'never' : (s < 90 ? Math.round(s) + 's ago'
+  : s < 5400 ? Math.round(s / 60) + 'm ago' : Math.round(s / 3600) + 'h ago');
+
+const LABEL_CLASS = {
+  STRONG_UP: 'b-sup', UP: 'b-up', CHOP: 'b-chop', DOWN: 'b-dn', STRONG_DOWN: 'b-sdn',
+  STABLE: 'b-mut', CHURN: 'b-chop', DRIFTING_YES: 'b-up', REPRICING_YES: 'b-sup',
+  DRIFTING_NO: 'b-dn', REPRICING_NO: 'b-sdn'
+};
+const badge = l => `<span class="badge ${LABEL_CLASS[l] || 'b-mut'}">${esc(String(l).replace(/_/g, ' '))}</span>`;
+const KIND_CLASS = { event: 'ev', structure: 'st', positioning: 'po', risk: 'rk' };
+
+function spark(vals, w = 74, h = 20) {
+  if (!vals || vals.length < 2) return '';
+  const lo = Math.min(...vals), hi = Math.max(...vals), rng = (hi - lo) || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * w},${h - ((v - lo) / rng) * (h - 2) - 1}`).join(' ');
+  const rising = vals[vals.length - 1] >= vals[0];
+  const col = rising ? '#22c55e' : '#ef4444';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+}
+
+// forecast rail: current price marked, p10..p90 shaded, p50 ticked
+function bandHtml(px, f) {
+  if (!f) return '<span class="dim">–</span>';
+  const lo = Math.min(f.p10, px), hi = Math.max(f.p90, px), rng = (hi - lo) || 1;
+  const x = v => ((v - lo) / rng) * 100;
+  return `<div style="min-width:150px">
+    <div class="band">
+      <div class="fill" style="left:${x(f.p10)}%;width:${Math.max(1, x(f.p90) - x(f.p10))}%"></div>
+      <div class="now" style="left:${x(px)}%"></div>
+      <div class="mid" style="left:${x(f.p50)}%;background:${f.p50 >= px ? 'var(--up)' : 'var(--dn)'}"></div>
+    </div>
+    <div class="mono text-[9.5px] dim mt-1">${price(f.p10)} · <span class="${sgn(f.drift_pct)}">${price(f.p50)}</span> · ${price(f.p90)}</div>
+  </div>`;
+}
+
+function meter(pModel, pMarket) {
+  const m = Math.max(0, Math.min(1, pModel || 0));
+  const k = pMarket == null ? null : Math.max(0, Math.min(1, pMarket));
+  return `<div class="meter">
+    <div class="bar" style="width:${(k == null ? m : k) * 100}%"></div>
+    ${k == null ? '' : `<div class="tick" style="left:calc(${m * 100}% - 1px)"></div>`}
+    <div class="lab">${k == null ? 'model ' : 'market '}${((k == null ? m : k) * 100).toFixed(1)}%</div>
+    ${k == null ? '' : `<div class="lab2">model ${(m * 100).toFixed(1)}%</div>`}
+  </div>`;
+}
+
+// ── operator token (same storage key as the other tabs) ────────────────────
+const TOKEN_KEY = 'hermes_operator_token';
+const token = () => localStorage.getItem(TOKEN_KEY) || '';
+function authHeaders() {
+  const t = token();
+  return t ? { 'X-Operator-Token': t } : {};
+}
+$('#op-token-btn').onclick = () => {
+  const row = $('#token-row');
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) { $('#token-input').value = token(); $('#token-input').focus(); }
+};
+$('#token-save').onclick = () => {
+  localStorage.setItem(TOKEN_KEY, $('#token-input').value.trim());
+  $('#token-row').classList.add('hidden');
+};
+$('#token-clear').onclick = () => { localStorage.removeItem(TOKEN_KEY); $('#token-input').value = ''; };
+
+// ── lane state ──────────────────────────────────────────────────────────────
+const LANES = ['hl', 'updown', 'politics', 'recorders'];
+const DATA = { hl: null, updown: null, politics: null, recorders: null };
+let LANE = (location.hash || '#hl').slice(1);
+if (!LANES.includes(LANE)) LANE = 'hl';
+let HL_FILTER = 'all';
+
+function showLane(l) {
+  LANE = l;
+  location.hash = l;
+  LANES.forEach(x => $('#lane-' + x).classList.toggle('hidden', x !== l));
+  $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.lane === l)));
+  const d = DATA[l];
+  $('#lane-meta').textContent = d ? `${l} · ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+}
+$$('.tab').forEach(t => t.onclick = () => showLane(t.dataset.lane));
+
+async function loadLane(l) {
+  const r = await fetch('/api/dashboard/trends/' + l);
+  const d = await r.json();
+  DATA[l] = d;
+  if (l === 'hl') renderHL(d);
+  if (l === 'updown') renderUpdown(d);
+  if (l === 'politics') renderPolitics(d);
+  if (l === 'recorders') renderRecorders(d);
+  if (LANE === l) showLane(l);
+}
+
+function emptyState(el, d, lane) {
+  el.innerHTML = `<div class="card"><span class="amb mono text-[11.5px]">no cached ${lane} read</span>
+    <div class="dim text-[11px] mt-2">${esc(d.hint || 'run the refresher')}</div></div>`;
+}
+
+// ── LANE 1: Hyperliquid ─────────────────────────────────────────────────────
+function renderHL(d) {
+  $('#n-hl').textContent = d.scanned ? d.scanned : '';
+  $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+  if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
+  const g = d.regime || {};
+
+  $('#hl-strip').innerHTML = [
+    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} coins scanned`, 'vio'],
+    ['btc 7d', pct(g.btc_ret_7d), String(g.btc_label || '').replace(/_/g, ' '), sgn(g.btc_ret_7d)],
+    ['breadth', num(g.breadth_pct, 0) + '%', 'green on the week', g.breadth_pct >= 50 ? 'up' : 'dn'],
+    ['trending', num(g.trend_share_pct, 0) + '%', 'rest is chop', 'mut'],
+    ['dispersion', num(g.dispersion_pct, 1) + '%', 'spread of 7d returns', 'mut'],
+    ['alt strength', pct(g.alt_strength_pct), 'median residual vs BTC', sgn(g.alt_strength_pct)],
+    ['funding', pct(g.mean_funding_apr_pct), 'mean APR', sgn(-(g.mean_funding_apr_pct || 0))],
+    ['consensus', num((g.consensus || {}).pct_up, 0) + '%', 'forecasts pointing up', 'mut'],
+  ].map(([l, v, s, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
+
+  $('#hl-majors').innerHTML = (d.majors || []).map(r => {
+    const f = r.forecast || {};
+    const cl = d.closes && d.closes[r.coin];
+    return `<div class="card" style="padding:11px">
+      <div class="flex items-center justify-between mb-2">
+        <span class="mono" style="font-weight:700;font-size:13px">${esc(r.coin)}</span>
+        ${badge(r.label)}
+      </div>
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <span class="mono text-[14px]">${price(r.px)}</span>
+        <span>${spark(cl)}</span>
+      </div>
+      <div class="mono text-[10.5px] mut">
+        7d <span class="${sgn(r.ret_7d)}">${pct(r.ret_7d)}</span> ·
+        30d <span class="${sgn(r.ret_30d)}">${pct(r.ret_30d)}</span> ·
+        eff ${num(r.efficiency)}
+      </div>
+      <div class="mt-2">${bandHtml(r.px, f)}</div>
+      <div class="mono text-[10px] dim mt-1">p(up) ${num(f.prob_up, 2)} · band ±${num(f.sigma_h_pct, 1)}%</div>
+    </div>`;
+  }).join('');
+
+  $('#hl-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
+    || '<li class="dim">no observations</li>';
+
+  const ev = d.eval || null;
+  $('#hl-eval').innerHTML = ev && ev.status === 'ok' ? `
+    <div class="mono text-[11px]">
+      n=${ev.n} anchors · horizon ${ev.horizon_days}d · non-overlapping<br/>
+      directional hit <b class="${ev.beats_coinflip ? 'up' : 'amb'}">${num(ev.dir_hit * 100, 1)}%</b>
+      (${num(ev.dir_edge_sigma, 2)}σ vs coin flip)<br/>
+      p50 error ${num(ev.mae_pct, 2)}% vs random walk ${num(ev.mae_naive_pct, 2)}%
+      → <b class="${ev.beats_randomwalk ? 'up' : 'amb'}">${ev.beats_randomwalk ? 'better' : 'worse'}</b><br/>
+      band coverage ${num(ev.coverage_80 * 100, 1)}% vs 80% nominal<br/>
+      split-half: ${num(ev.split_half.early_hit * 100, 1)}% early / ${num(ev.split_half.late_hit * 100, 1)}% late
+      → <b class="${ev.split_half.sign_stable ? 'up' : 'amb'}">${ev.split_half.sign_stable ? 'sign stable' : 'sign FLIPS'}</b>
+    </div>
+    <div class="text-[11px] mt-3 ${ev.beats_coinflip ? 'mut' : 'amb'}">
+      ${ev.beats_coinflip
+      ? 'Direction clears the coin-flip bar on this sample.'
+      : 'Direction does NOT clear the coin-flip bar. Read the band, not the arrow: the 80% interval is calibrated, the p50 is not a call.'}
+    </div>`
+    : `<div class="dim text-[11px]">No walk-forward in this payload. Run
+       <code>python -m services.trend_engine.run --backtest</code>.</div>`;
+
+  const cats = (d.reads || []).filter(r => (r.flags || []).some(f => f.kind === 'event'));
+  $('#hl-cats').innerHTML = cats.length ? cats.slice(0, 8).map(r =>
+    `<div style="padding:5px 0;border-bottom:1px solid var(--line)">
+      <span class="mono" style="font-weight:600">${esc(r.coin)}</span>
+      ${(r.flags || []).filter(f => f.kind === 'event').map(f =>
+      `<span class="chip ev">${esc(f.note)}</span>`).join('')}
+    </div>`).join('')
+    : '<span class="dim text-[11px]">no dated unlock or news catalyst on the scanned coins</span>';
+
+  renderHLRows();
+}
+
+function renderHLRows() {
+  const d = DATA.hl; if (!d || d.status !== 'ok') return;
+  let rows = d.reads || [];
+  if (HL_FILTER === 'trend') rows = rows.filter(r => r.label !== 'CHOP');
+  if (HL_FILTER === 'flagged') rows = rows.filter(r => (r.flags || []).length > 0);
+  $('#hl-rows').innerHTML = rows.map(r => {
+    const f = r.forecast || {};
+    return `<tr>
+      <td><span class="mono" style="font-weight:600">${esc(r.coin)}</span></td>
+      <td class="mono">${price(r.px)}</td>
+      <td class="mono ${sgn(r.ret_1d)}">${pct(r.ret_1d)}</td>
+      <td class="mono ${sgn(r.ret_7d)}">${pct(r.ret_7d)}</td>
+      <td class="mono ${sgn(r.ret_30d)}">${pct(r.ret_30d)}</td>
+      <td class="mono ${sgn(r.slope_pct_day)}">${pct(r.slope_pct_day, 2)}</td>
+      <td class="mono mut">${num(r.r2)}</td>
+      <td class="mono mut">${num(r.efficiency)}</td>
+      <td>${badge(r.label)}</td>
+      <td>${bandHtml(r.px, f)}</td>
+      <td class="mono ${f.prob_up > 0.5 ? 'up' : (f.prob_up < 0.5 ? 'dn' : 'mut')}">${num(f.prob_up, 2)}</td>
+      <td class="mono ${sgn(-(r.funding_apr_pct || 0))}">${pct(r.funding_apr_pct, 1)}</td>
+      <td style="text-align:left;white-space:normal;max-width:280px">
+        ${(r.flags || []).slice(0, 4).map(fl =>
+      `<span class="chip ${KIND_CLASS[fl.kind] || ''}" title="${esc(fl.note)}">${esc(fl.code)}</span>`).join('')}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="13" class="dim">nothing matches this filter</td></tr>';
+}
+$$('[data-filter]').forEach(b => b.onclick = () => {
+  HL_FILTER = b.dataset.filter;
+  $$('[data-filter]').forEach(x => x.classList.toggle('go', x === b));
+  renderHLRows();
+});
+
+// ── LANE 2: BTC 5m up/down ──────────────────────────────────────────────────
+function renderUpdown(d) {
+  if (d.status !== 'ok') { emptyState($('#ud-live'), d, 'btc 5m'); return; }
+  const p = d.patterns || {}, c = d.calibration || {};
+  $('#n-updown').textContent = p.n_windows || '';
+
+  const flip = (p.base_p_vs_coinflip == null) || p.base_p_vs_coinflip > 0.05;
+  $('#ud-strip').innerHTML = [
+    ['sample', (p.n_windows || 0).toLocaleString(), `${d.sample_days}d of 5m windows`, 'vio'],
+    ['base up rate', num(p.base_rate * 100, 2) + '%', `95% ci ${num(p.base_ci[0] * 100, 1)}–${num(p.base_ci[1] * 100, 1)}%`, flip ? 'amb' : 'up'],
+    ['vs coin flip', 'p=' + num(p.base_p_vs_coinflip, 3), flip ? 'indistinguishable' : 'distinguishable', flip ? 'amb' : 'up'],
+    ['patterns', String((p.significant || []).length), 'survived correction', (p.significant || []).length ? 'up' : 'amb'],
+    ['in-window skill', num(c.skill_pct, 1) + '%', `Brier ${num(c.brier, 3)} vs ${num(c.brier_null, 2)}`, 'teal'],
+    ['calibration', '±' + num(c.calibration_err_pp, 2) + 'pp', 'predicted vs realized', 'teal'],
+  ].map(([l, v, s, cl]) => `<div class="kpi"><span class="v ${cl}">${esc(v)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
+
+  $('#ud-fams').innerHTML = (p.families || []).map(f => {
+    const t = (f.rows || [])[0] || {};
+    return `<tr>
+      <td>${esc(f.family.replace(/_/g, ' '))}</td>
+      <td class="mono">${esc(t.bucket)}</td>
+      <td class="mono mut">${t.n}</td>
+      <td class="mono">${num(t.rate * 100, 1)}%</td>
+      <td class="mono ${sgn(t.lift_pp)}">${pct(t.lift_pp, 2)}</td>
+      <td class="mono ${t.significant ? 'up' : 'dim'}">${num(t.p_bonf, 3)}</td>
+      <td class="mono" style="text-align:left">${t.significant
+      ? '<span class="badge b-up">real</span>'
+      : '<span class="badge b-chop">noise</span>'}</td>
+    </tr>`;
+  }).join('');
+  $('#ud-verdict').textContent = p.verdict || '';
+
+  $('#ud-calib').innerHTML = (c.table || []).map(t => `<tr>
+      <td class="mono">${num(t.predicted * 100, 0)}%</td>
+      <td class="mono">${num(t.realized * 100, 1)}%</td>
+      <td class="mono dim">${num(t.ci_lo * 100, 1)}–${num(t.ci_hi * 100, 1)}%</td>
+      <td class="mono mut">${t.n}</td>
+    </tr>`).join('');
+  $('#ud-calib-note').innerHTML = c.status === 'ok'
+    ? `n=${c.n} windows replayed at minute ${c.decision_minute}. <b class="teal">${esc(c.verdict)}</b>.
+       The unconditional window is a coin flip; the in-progress one is not, and this is the model the
+       live price is compared against.`
+    : 'not enough history for a reliability table';
+
+  $('#ud-roll').innerHTML = (d.rolling || []).slice().reverse().map(r => {
+    const real = r.ci_lo > 0.5 || r.ci_hi < 0.5;
+    return `<tr>
+      <td class="mono">${esc(r.date_et)}</td>
+      <td class="mono mut">${r.n}</td>
+      <td class="mono ${r.up_rate > 0.5 ? 'up' : 'dn'}">${num(r.up_rate * 100, 1)}%</td>
+      <td class="mono dim">${num(r.ci_lo * 100, 1)}–${num(r.ci_hi * 100, 1)}%</td>
+      <td class="mono ${sgn(r.net_bp)}">${num(r.net_bp, 0)}bp</td>
+      <td style="text-align:left">${real ? '<span class="badge b-info">outside</span>'
+        : '<span class="badge b-mut">inside</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderLive(l) {
+  if (!l || l.status !== 'ok') {
+    $('#ud-live').innerHTML = `<span class="dim text-[11.5px]">${esc((l && l.status) || 'unavailable')} — the window is between prints</span>`;
+    return;
+  }
+  const act = l.actionable;
+  const m = l.market || {};
+  $('#ud-clock').textContent = `${l.window_start_et} · ${num(l.minutes_left, 1)}min left`;
+  $('#ud-live').innerHTML = `
+    <div class="grid2">
+      <div>
+        ${meter(l.p_up_randomwalk, l.mkt_up)}
+        <div class="mono text-[10.5px] dim mt-2">
+          bar = Polymarket book mid · teal tick = random-walk fair value given the move so far
+        </div>
+        <div class="text-[11.5px] mt-3 ${act ? 'teal' : 'mut'}">${esc(l.note || '')}</div>
+        <div class="text-[10.5px] dim mt-2">
+          Edges price the side you would have to lift: UP costs the ask, DOWN costs 1 − bid.
+          The market resolves on <b>Chainlink BTC/USD</b>; these windows are mined from Binance,
+          so anything under the ${num(l.feed_buffer_pp, 0)}pp buffer is feed noise, not edge.
+        </div>
+      </div>
+      <div class="mono text-[11.5px] mut" style="line-height:1.9">
+        window open <span style="color:var(--txt)">${price(l.open_px)}</span> ·
+        spot <span style="color:var(--txt)">${price(l.spot)}</span><br/>
+        move so far <span class="${sgn(l.move_bp)}">${num(l.move_bp, 2)}bp</span> ·
+        1m vol <span style="color:var(--txt)">${num(l.sigma_bp_per_min, 2)}bp</span><br/>
+        model <span class="teal">${num(l.p_up_randomwalk * 100, 1)}%</span> ·
+        book <span style="color:var(--txt)">${m.bid == null ? '–' : num(m.bid * 100, 1)}</span>
+        / <span style="color:var(--txt)">${m.ask == null ? '–' : num(m.ask * 100, 1)}</span>
+        <span class="dim">(${m.bid_size == null ? '–' : num(m.bid_size, 0)} × ${m.ask_size == null ? '–' : num(m.ask_size, 0)})</span><br/>
+        buy UP edge <span class="${sgn(l.edge_up_pp)}">${l.edge_up_pp == null ? '–' : pct(l.edge_up_pp, 1) + 'pp'}</span> ·
+        buy DOWN edge <span class="${sgn(l.edge_down_pp)}">${l.edge_down_pp == null ? '–' : pct(l.edge_down_pp, 1) + 'pp'}</span><br/>
+        ${l.base_rate != null ? `unconditional base rate <span class="amb">${num(l.base_rate * 100, 2)}%</span> — a coin flip` : ''}
+      </div>
+    </div>`;
+}
+
+// ── LANE 3: politics ────────────────────────────────────────────────────────
+function renderPolitics(d) {
+  if (d.status !== 'ok') { emptyState($('#pol-rows').parentElement, d, 'politics'); return; }
+  const b = d.board || {}, m = d.momentum_test || {}, ls = d.longshot_test || {};
+  $('#n-politics').textContent = d.scanned || '';
+
+  const lc = b.label_counts || {};
+  $('#pol-strip').innerHTML = [
+    ['markets', String(b.n || 0), `${d.expired_dropped || 0} expired dropped`, 'vio'],
+    ['median move', num(b.median_abs_move_pp, 1) + 'pp', 'over 7 days', 'mut'],
+    ['mean move', num(b.mean_abs_move_pp, 1) + 'pp', 'skewed by repricings', 'mut'],
+    ['stable', String(lc.STABLE || 0), 'moved under 2pp', 'mut'],
+    ['churn', String(lc.CHURN || 0), 'moved without trending', 'amb'],
+    ['repricing', String((lc.REPRICING_YES || 0) + (lc.REPRICING_NO || 0)), 'moved over 10pp', 'teal'],
+    ['drift carries', m.usable ? 'YES' : 'NO', `corr ${num(m.corr, 2)} · z ${num(m.fisher_z, 2)}`, m.usable ? 'up' : 'amb'],
+  ].map(([l, v, s, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
+
+  $('#pol-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('');
+
+  $('#pol-null').innerHTML = m.status === 'ok' ? `
+    <div class="mono text-[11px]">
+      windows <b>${esc(m.windows || '')}</b> ${m.gapped
+      ? '<span class="badge b-teal">gapped</span>'
+      : '<span class="badge b-chop">overlapping</span>'}<br/>
+      corr = <b class="${m.usable ? 'up' : 'amb'}">${num(m.corr, 3)}</b>
+      · fisher z ${num(m.fisher_z, 2)} · n=${m.n}<br/>
+      same test on OVERLAPPING windows: <span class="amb">${num(m.shared_endpoint_corr, 3)}</span>
+      <span class="dim">← the confounded number</span><br/>
+      liquidity split: thin ${num((m.halves.thin || {}).corr, 2)} / deep ${num((m.halves.deep || {}).corr, 2)}
+      → ${m.robust ? 'same sign' : 'sign differs'}<br/>
+      carry coefficient ${num(m.carry_coef, 3)} · <b>${m.usable ? 'USED in the forecast' : 'NOT used'}</b>
+    </div>
+    <div class="text-[11px] mt-3 ${m.usable ? 'mut' : 'amb'}">${esc(m.verdict)}</div>
+    <div class="text-[10.5px] mt-2 dim">The obvious version of this test correlates last week's move with
+      this week's, but both windows share the t-7d price — noise in that one observation enters the two
+      changes with opposite signs and fabricates mean reversion. The measurement above skips a week so the
+      windows share nothing. Compare the two rows: that gap is the artifact.</div>`
+    : '<span class="dim text-[11px]">sample too small for the null test</span>';
+
+  $('#pol-ls').innerHTML = (ls.rows || []).map(r => `<tr>
+      <td>${esc(r.bucket)}</td>
+      <td class="mono mut">${r.n}</td>
+      <td class="mono ${sgn(r.mean_delta_pp)}">${pct(r.mean_delta_pp, 1)}pp</td>
+      <td class="mono">${num(r.pct_up, 0)}%</td>
+      <td class="mono dim">${num(r.ci_lo_pct_up, 0)}–${num(r.ci_hi_pct_up, 0)}%</td>
+    </tr>`).join('');
+
+  $('#pol-rows').innerHTML = (d.reads || []).map(r => {
+    const f = r.forecast || {};
+    return `<tr>
+      <td style="text-align:left;white-space:normal;max-width:340px">
+        <div>${esc(r.question)}</div>
+        <div class="dim text-[10px] mono mt-1">${esc(r.event)}</div>
+      </td>
+      <td>${spark(r.spark)}</td>
+      <td class="mono" style="font-weight:600">${num(r.p_now * 100, 1)}%</td>
+      <td class="mono ${sgn(r.delta_1d_pp)}">${pct(r.delta_1d_pp, 1)}</td>
+      <td class="mono ${sgn(r.delta_7d_pp)}">${pct(r.delta_7d_pp, 1)}</td>
+      <td class="mono ${sgn(r.slope_pp_day)}">${num(r.slope_pp_day, 2)}</td>
+      <td>${badge(r.label)}</td>
+      <td class="mono mut">${num(f.p10 * 100, 0)} · <b style="color:var(--txt)">${num(f.p50 * 100, 0)}</b> · ${num(f.p90 * 100, 0)}%</td>
+      <td class="mono ${r.days_left != null && r.days_left <= 14 ? 'teal' : 'dim'}">${r.days_left == null ? '–' : num(r.days_left, 0) + 'd'}</td>
+      <td class="mono dim">$${((r.volume || 0) / 1e6).toFixed(1)}m</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── LANE 4: recorders / P&L ─────────────────────────────────────────────────
+const VERDICT_CLASS = { VALIDATED: 'b-sup', MARGINAL: 'b-chop', PENDING: 'b-mut', REFUTED: 'b-sdn' };
+
+function renderRecorders(d) {
+  if (d.status !== 'ok') { emptyState($('#rec-rows').parentElement, d, 'recorders'); return; }
+  const s = d.summary || {}, v = s.verdicts || {};
+  $('#n-recorders').textContent = s.n_books || '';
+
+  $('#rec-strip').innerHTML = [
+    ['books', String(s.n_books || 0), `${s.n_graded || 0} with resolved signals`, 'vio'],
+    ['validated', String(v.VALIDATED || 0), 'forward +EV both halves', (v.VALIDATED || 0) ? 'up' : 'mut'],
+    ['marginal', String(v.MARGINAL || 0), 'positive but fragile', 'amb'],
+    ['refuted', String(v.REFUTED || 0), 'no forward edge', (v.REFUTED || 0) ? 'dn' : 'mut'],
+    ['pending', String(v.PENDING || 0), 'under the evidence floor', 'mut'],
+    ['mean ev', s.mean_ev_pct == null ? '–' : pct(s.mean_ev_pct, 3), 'per signal @12bps', sgn(s.mean_ev_pct)],
+    ['signals', String(s.total_signals || 0), `${s.total_resolved || 0} resolved`, 'mut'],
+  ].map(([l, val, sub, c]) => `<div class="kpi"><span class="v ${c}">${esc(val)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(sub)}</span></div>`).join('');
+
+  $('#rec-rows').innerHTML = (d.books || []).map(b => {
+    const decay = b.decaying;
+    return `<tr>
+      <td><span class="mono" style="font-weight:600">${esc(b.book)}</span>
+        ${decay ? '<span class="badge b-chop" title="first half positive, second half negative">decaying</span>' : ''}</td>
+      <td><span class="badge ${VERDICT_CLASS[b.verdict] || 'b-mut'}" title="${esc(b.why)}">${esc(b.verdict)}</span></td>
+      <td class="mono mut">${b.signals}</td>
+      <td class="mono">${b.resolved}</td>
+      <td class="mono dim">${b.pending}</td>
+      <td class="mono ${sgn(b.ev_pct)}" style="font-weight:600">${b.ev_pct == null ? '–' : pct(b.ev_pct, 3)}</td>
+      <td class="mono ${sgn(b.ev25_pct)}">${b.ev25_pct == null ? '–' : pct(b.ev25_pct, 3)}</td>
+      <td class="mono ${sgn(b.total_pct)}">${b.total_pct == null ? '–' : pct(b.total_pct, 1)}</td>
+      <td class="mono">${b.win_rate == null ? '–' : num(b.win_rate * 100, 0) + '%'}</td>
+      <td class="mono dim">${b.win_ci ? num(b.win_ci[0] * 100, 0) + '–' + num(b.win_ci[1] * 100, 0) + '%' : '–'}</td>
+      <td class="mono ${sgn(b.ev_first)}">${b.ev_first == null ? '–' : pct(b.ev_first, 2)}</td>
+      <td class="mono ${sgn(b.ev_second)}">${b.ev_second == null ? '–' : pct(b.ev_second, 2)}</td>
+      <td class="mono dim">${b.last_age_h == null ? '–' : (b.last_age_h < 48 ? num(b.last_age_h, 0) + 'h' : num(b.last_age_h / 24, 0) + 'd')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="13" class="dim">no shadow books recorded yet</td></tr>';
+
+  const lanes = (d.scout || {}).lanes || {};
+  $('#rec-scout').innerHTML = Object.keys(lanes).map(k => {
+    const g = lanes[k];
+    return `<tr>
+      <td class="mono">${esc(k)}</td>
+      <td class="mono mut">${g.rows == null ? '–' : g.rows}</td>
+      <td class="mono">${g.n || 0}</td>
+      <td class="mono ${sgn(g['mean_pnl_per_$'])}" style="font-weight:600">${g['mean_pnl_per_$'] == null ? '–' : num(g['mean_pnl_per_$'], 4)}</td>
+      <td class="mono ${sgn(g['total_pnl_per_$'])}">${g['total_pnl_per_$'] == null ? '–' : num(g['total_pnl_per_$'], 2)}</td>
+      <td class="mono">${g.win_rate == null ? '–' : num(g.win_rate * 100, 1) + '%'}</td>
+      <td class="mono">${g.brier_llm == null ? '–' : num(g.brier_llm, 4)}</td>
+      <td class="mono mut">${g.brier_mkt == null ? '–' : num(g.brier_mkt, 4)}</td>
+      <td>${g.n ? (g.llm_beats_market ? '<span class="badge b-up">we beat it</span>'
+      : '<span class="badge b-chop">market wins</span>') : '<span class="badge b-mut">no data</span>'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9" class="dim">no paper trades recorded</td></tr>';
+
+  const srcs = Object.values(lanes).map(g => g.source).filter(Boolean);
+  $('#rec-scout-note').innerHTML =
+    `PnL is per $1 position at the recorded fill. Sources: ${esc([...new Set(srcs)].join(' · '))}.
+     Brier compares OUR probability to the MARKET'S on the same resolved question — money can be made
+     with a worse Brier (by buying cheap sides) and lost with a better one, so both columns matter.`;
+
+  $('#rec-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
+    || '<li class="dim">nothing graded yet</li>';
+}
+
+// ── AI pass + refresh (operator-gated background jobs) ──────────────────────
+function renderAI(lane, ai) {
+  const el = $('#' + lane + '-ai');
+  if (!ai) { el.innerHTML = '<span class="dim">Not run.</span>'; return; }
+  if (ai.status !== 'ok') {
+    el.innerHTML = `<span class="amb mono">ai pass ${esc(ai.status)}</span>
+      <span class="dim"> ${esc(ai.error || '')}</span>`;
+    return;
+  }
+  el.innerHTML = `<div class="ai-box">
+    <div class="ai-head">${esc(ai.headline)}</div>
+    <div class="ai-nar">${esc(ai.narrative)}</div>
+    ${(ai.setups || []).map(s => `<div class="setup">
+      <b>${esc(s.ticker)}</b> — ${esc(s.read)}
+      <div class="dim mt-1">trigger: ${esc(s.trigger)} · invalidation: ${esc(s.invalidation)}
+        · <span class="badge ${s.confidence === 'high' ? 'b-up' : s.confidence === 'low' ? 'b-chop' : 'b-info'}">${esc(s.confidence)}</span></div>
+    </div>`).join('')}
+    ${(ai.watch || []).length ? `<div class="setup"><b>watch</b><div class="dim mt-1">${(ai.watch || []).map(esc).join(' · ')}</div></div>` : ''}
+    ${(ai.risks || []).length ? `<div class="setup"><b>risks</b><div class="dim mt-1">${(ai.risks || []).map(esc).join(' · ')}</div></div>` : ''}
+    <div class="dim text-[10px] mono mt-3">${esc(ai.model)} · ${ai.web_search ? 'web search on' : 'no web search'}
+      · ${num(ai.elapsed_s, 0)}s${ai.stale_for_this_read ? ' · WRITTEN AGAINST AN OLDER READ' : ''}</div>
+  </div>`;
+}
+
+async function pollJob(jobId, onDone) {
+  for (let i = 0; i < 150; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const res = await fetch('/api/dashboard/trends/job/result?job_id=' + jobId, { headers: authHeaders() });
+    if (!res.ok) return onDone({ status: 'error', error: 'job poll failed (' + res.status + ')' });
+    const j = await res.json();
+    if (j.status !== 'running') return onDone(j.result || { status: j.status, error: j.error });
+  }
+  onDone({ status: 'error', error: 'timed out waiting for the job' });
+}
+
+async function post(url) {
+  if (!token()) { alert('set the operator token first (button top right)'); return null; }
+  const r = await fetch(url, { method: 'POST', headers: authHeaders() });
+  if (!r.ok) { alert('request failed: ' + r.status); return null; }
+  return r.json();
+}
+
+$$('[data-ai]').forEach(btn => btn.onclick = async () => {
+  const lane = btn.dataset.ai;
+  const wsEl = lane === 'hl' ? $('#hl-ws') : (lane === 'politics' ? $('#pol-ws') : null);
+  const ws = (wsEl && wsEl.checked) ? '?web_search=true' : '';
+  btn.disabled = true; btn.textContent = 'running…';
+  $('#' + lane + '-ai').innerHTML = '<span class="dim mono">model call running — this takes 20s to a few minutes…</span>';
+  const j = await post('/api/dashboard/trends/' + lane + '/ai' + ws);
+  if (!j) { btn.disabled = false; btn.textContent = 'run ai pass'; return; }
+  pollJob(j.job_id, res => {
+    renderAI(lane, res);
+    btn.disabled = false; btn.textContent = 'run ai pass';
+    loadLane(lane);
+  });
+});
+
+[['hl-refresh', 'hl'], ['ud-refresh', 'updown'], ['pol-refresh', 'politics'],
+ ['rec-refresh', 'recorders']].forEach(([id, lane]) => {
+  const el = $('#' + id);
+  if (!el) return;
+  el.onclick = async () => {
+    el.disabled = true; el.textContent = 'refreshing…';
+    const j = await post('/api/dashboard/trends/' + lane + '/refresh');
+    if (!j) { el.disabled = false; el.textContent = 'refresh data'; return; }
+    pollJob(j.job_id, () => {
+      el.disabled = false; el.textContent = 'refresh data';
+      loadLane(lane);
+    });
+  };
+});
+
+// ── boot ────────────────────────────────────────────────────────────────────
+$$('a[data-nav]').forEach(a => { if (a.dataset.nav === location.pathname) a.classList.add('nav-active'); });
+$('#f-all').classList.add('go');
+
+(async function boot() {
+  await Promise.all(LANES.map(loadLane));
+  LANES.forEach(l => renderAI(l, (DATA[l] || {}).ai));
+  showLane(LANE);
+  const tick = async () => {
+    try { renderLive(await (await fetch('/api/dashboard/trends/updown/live')).json()); } catch (e) { }
+  };
+  tick();
+  setInterval(tick, 6000);
+  setInterval(() => LANES.forEach(loadLane), 60000);
+})();
+</script>
+</body>
+</html>
