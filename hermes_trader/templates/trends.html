@@ -910,11 +910,24 @@ function renderEdges(e) {
   const arbBody = `
     <div class="text-[11.5px] mut mb-2">Buy both sides under $1, redeem the winner for $1. Checked
       against the real book in both directions, gross and net of Polymarket's per-share fee
-      (<b>rate × min(p, 1−p) × shares</b>).</div>
+      (<b>rate × min(p, 1−p) × shares</b>) — at the rate the tape actually charged, not the one
+      Gamma advertises. Measured 2026-08-02: Gamma says 1000bps, 79 of 79 executed trades charged
+      <b>0</b>. Trusting the advertised number called a 1¢ crossed pair a loss when it is 1¢ of edge.</div>
+    ${e.ws ? `<div class="mono text-[10.5px] mt-1 mb-2 ${e.ws.connected && !e.ws.stale ? 'teal' : 'amb'}">
+      websocket ${e.ws.connected ? 'LIVE' : 'down'}${e.ws.stale ? ' · STALE' : ''}
+      · ${e.ws.events || 0} events (${e.ws.price_changes || 0} price changes, ${e.ws.trades || 0} trades)
+      · last ${e.ws.last_msg_age_s == null ? '–' : num(e.ws.last_msg_age_s, 1) + 's'} ago
+      · reconnects ${e.ws.reconnects || 0}
+      ${e.ws.observed_fee_bps != null ? `· fee CHARGED ${e.ws.observed_fee_bps}bps` : ''}
+      ${e.ws.last_error ? `<br/><span class="dn">${esc(e.ws.last_error)}</span>` : ''}
+    </div>` : ''}
     ${lp.status === 'ok' ? `<div class="mono text-[11.5px]" style="line-height:1.9">
-      live pair <b>${esc(lp.slug || '')}</b><br/>
+      live pair <b>${esc(lp.slug || '')}</b> <span class="badge ${lp.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(lp.source || '')}</span><br/>
       UP ${lp.up.bid}/${lp.up.ask} · DOWN ${lp.down.bid}/${lp.down.ask}
-      · tick ${lp.tick} · fee ${lp.fee_bps}bps<br/>
+      · tick ${lp.tick}<br/>
+      fee <b>${lp.fee_bps}</b>bps charged
+      ${lp.fee_bps_advertised != null && Number(lp.fee_bps_advertised) !== Number(lp.fee_bps)
+      ? `<span class="amb">(gamma advertises ${lp.fee_bps_advertised} — the tape charges ${lp.fee_bps_observed != null ? lp.fee_bps_observed : lp.fee_bps})</span>` : ''}<br/>
       buy both costs <span class="${(lp.buy_both || {}).gross_edge > 0 ? 'up' : 'dn'}">$${num((lp.buy_both || {}).cost, 3)}</span>
       · net edge <span class="${sgn((lp.buy_both || {}).net_edge)}">${num((lp.buy_both || {}).net_edge, 4)}</span>
       · <b>${lp.ticks_to_gross_arb}</b> tick(s) from any gross arb

@@ -39,6 +39,7 @@ from services.trend_engine import political_trends as pol
 from services.trend_engine import recorders as rec
 from services.trend_engine import updown_edges as ue
 from services.trend_engine import updown_trends as ud
+from services.trend_engine import updown_ws as uw
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -731,16 +732,31 @@ def test_read_drops_markets_already_past_their_end_date():
 
 
 def test_fee_formula_is_symmetric_and_peaks_at_the_middle():
-    """Polymarket charges rate x min(p, 1-p): identical on both outcomes, so it
+    """The formula is rate x min(p, 1-p): identical on both outcomes, so a fee
     cannot be dodged by picking a side."""
-    assert ue.fee_per_share(0.3) == pytest.approx(ue.fee_per_share(0.7))
-    assert ue.fee_per_share(0.5) > ue.fee_per_share(0.05)
+    assert ue.fee_per_share(0.3, 1000) == pytest.approx(ue.fee_per_share(0.7, 1000))
+    assert ue.fee_per_share(0.5, 1000) > ue.fee_per_share(0.05, 1000)
     assert ue.fee_per_share(0.5, 1000) == pytest.approx(0.05)
     assert ue.fee_per_share(0.02, 1000) == pytest.approx(0.002)
-    assert ue.fee_per_share(1.0) == 0.0
+    assert ue.fee_per_share(1.0, 1000) == 0.0
 
 
-def test_market_fee_bps_reads_the_payload_before_defaulting():
+def test_the_default_fee_is_what_the_tape_charged_not_what_gamma_advertises():
+    """Measured 2026-08-02: Gamma says takerBaseFee 1000 on these markets, and
+    79 of 79 executed trades on the websocket charged fee_rate_bps 0. Trusting
+    the advertised field understated every arb by up to 5c a share and flipped
+    the verdict on the both-sides trade."""
+    assert ue.FEE_BPS_DEFAULT == 0.0
+    assert ue.GAMMA_ADVERTISED_FEE_BPS == 1000.0
+    assert ue.fee_per_share(0.5) == 0.0
+
+
+def test_market_fee_bps_prefers_the_observed_rate_over_the_advertised_one():
+    # observed always wins — it is the only one that took money
+    assert ue.market_fee_bps({"takerBaseFee": 1000}, observed=0.0) == 0.0
+    assert ue.market_fee_bps({"takerBaseFee": 0}, observed=250.0) == 250.0
+    # the disproved advertised value is ignored; any OTHER value is believed
+    assert ue.market_fee_bps({"takerBaseFee": 1000}) == ue.FEE_BPS_DEFAULT
     assert ue.market_fee_bps({"takerBaseFee": 250}) == 250.0
     assert ue.market_fee_bps({}) == ue.FEE_BPS_DEFAULT
     assert ue.market_fee_bps(None) == ue.FEE_BPS_DEFAULT
@@ -760,21 +776,32 @@ def _fake_getter(up_bid, up_ask, dn_bid, dn_ask, fee=1000, size=100.0):
     return get, market
 
 
-def test_pair_quote_finds_a_real_arb_and_nets_the_fee():
-    # asks sum to 0.90 — a 10c gross arb, which even a 1000bps fee survives
+def test_pair_quote_finds_a_real_arb():
+    # asks sum to 0.90 — a 10c gross arb
     get, m = _fake_getter(0.44, 0.45, 0.44, 0.45)
     q = ue.pair_quote(m, getter=get)
     assert q["buy_both"]["cost"] == pytest.approx(0.90)
     assert q["buy_both"]["gross_edge"] == pytest.approx(0.10)
-    assert q["buy_both"]["net_edge"] < q["buy_both"]["gross_edge"]
     assert q["buy_both"]["profitable"] is True
     assert q["arb"] is True
+    assert q["source"] == "rest"
 
 
-def test_pair_quote_kills_a_one_tick_arb_with_the_fee():
-    """The whole point of the net column: a 1c gross edge at 1000bps is a loss."""
+def test_a_one_tick_arb_survives_at_the_real_zero_fee():
+    """At the fee the tape actually charges, a 1c crossed pair IS 1c of edge.
+    The old assumption (1000bps) called this a loss."""
     get, m = _fake_getter(0.48, 0.49, 0.49, 0.50)          # asks sum to 0.99
     q = ue.pair_quote(m, getter=get)
+    assert q["buy_both"]["gross_edge"] == pytest.approx(0.01)
+    assert q["buy_both"]["net_edge"] == pytest.approx(0.01)
+    assert q["buy_both"]["profitable"] is True
+
+
+def test_a_one_tick_arb_dies_if_a_market_really_does_charge():
+    """The netting still has to be right for a market that does charge — the
+    fee model was not deleted, only its default corrected."""
+    get, m = _fake_getter(0.48, 0.49, 0.49, 0.50)
+    q = ue.pair_quote(m, getter=get, fee_bps=1000)
     assert q["buy_both"]["gross_edge"] == pytest.approx(0.01)
     assert q["buy_both"]["net_edge"] < 0
     assert q["buy_both"]["profitable"] is False
@@ -968,6 +995,165 @@ def test_record_window_waits_for_a_whole_window_instead_of_a_partial(monkeypatch
                             clock=lambda: float(w_open + 280))   # 20s left
     assert [r["secs_left"] for r in rows] == [240, 60, 30]       # full next window
     assert slept and slept[0] > 0
+
+
+# ── websocket book feed ──────────────────────────────────────────────────────
+
+
+class FakeWS:
+    """Scripted websocket: `recv()` walks a list of frames, then blocks-ish."""
+
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.sent = []
+        self.closed = False
+
+    def send(self, payload):
+        self.sent.append(json.loads(payload))
+
+    def recv(self):
+        if self.frames:
+            return self.frames.pop(0)
+        raise RuntimeError("stream ended")
+
+    def close(self):
+        self.closed = True
+
+
+def _book_frame(asset, bids, asks):
+    return json.dumps({"event_type": "book", "asset_id": asset,
+                       "bids": [{"price": str(p), "size": str(s)} for p, s in bids],
+                       "asks": [{"price": str(p), "size": str(s)} for p, s in asks]})
+
+
+def _change_frame(asset, best_bid, best_ask):
+    return json.dumps([{"event_type": "price_change", "changes": [
+        {"asset_id": asset, "price": str(best_ask), "size": "10", "side": "SELL",
+         "best_bid": str(best_bid), "best_ask": str(best_ask)}]}])
+
+
+def _trade_frame(asset, price, fee_bps):
+    return json.dumps({"event_type": "last_trade_price", "asset_id": asset,
+                       "price": str(price), "size": "1", "fee_rate_bps": str(fee_bps)})
+
+
+def test_feed_reads_top_of_book_from_a_snapshot():
+    f = uw.BookFeed()
+    f._ingest(_book_frame("A", [(0.40, 100), (0.39, 50)], [(0.42, 20), (0.45, 9)]))
+    top = f.top("A")
+    assert top["bid"] == 0.40 and top["ask"] == 0.42
+    assert top["bid_size"] == 100 and top["ask_size"] == 20
+    assert f.books == 1 and f.events == 1
+
+
+def test_feed_takes_best_bid_ask_straight_off_a_price_change():
+    """price_change entries carry best_bid/best_ask, so no delta reconstruction
+    is needed — that is the whole reason this is a top-of-book cache and not an
+    order-book engine."""
+    f = uw.BookFeed()
+    f._ingest(_book_frame("A", [(0.40, 100)], [(0.42, 20)]))
+    f._ingest(_change_frame("A", 0.55, 0.56))
+    top = f.top("A")
+    assert top["bid"] == 0.55 and top["ask"] == 0.56
+    assert top["src"] == "price_change"
+    # sizes are NOT carried on a top-of-book change; stale depth must not persist
+    assert top["bid_size"] is None and top["ask_size"] is None
+    assert f.price_changes == 1
+
+
+def test_feed_goes_stale_and_refuses_to_answer():
+    f = uw.BookFeed(stale_after_s=0.01)
+    f._ingest(_book_frame("A", [(0.4, 1)], [(0.5, 1)]))
+    assert f.top("A") is not None
+    time.sleep(0.05)
+    assert f.top("A") is None
+    assert f.health()["stale"] is True
+
+
+def test_feed_never_returns_half_a_pair():
+    f = uw.BookFeed()
+    f._ingest(_book_frame("A", [(0.4, 1)], [(0.5, 1)]))
+    assert f.pair(["A", "B"]) is None            # B unknown
+    f._ingest(_book_frame("B", [(0.5, 1)], [(0.6, 1)]))
+    assert len(f.pair(["A", "B"])) == 2
+
+
+def test_feed_reports_the_fee_the_tape_actually_charged():
+    f = uw.BookFeed()
+    for _ in range(9):
+        f._ingest(_trade_frame("A", 0.5, 0))
+    f._ingest(_trade_frame("A", 0.5, 1000))      # a stray outlier
+    assert f.observed_fee_bps() == 0.0           # modal, not last-seen
+    assert f.trades == 10
+
+
+def test_feed_drops_the_previous_windows_book_on_resubscribe():
+    """A 5m window rolls every 300s. Keeping the old tokens' quotes around
+    would let a dead market read as live."""
+    f = uw.BookFeed()
+    f.subscribe(["A", "B"])
+    f._ingest(_book_frame("A", [(0.4, 1)], [(0.5, 1)]))
+    assert f.top("A") is not None
+    f.subscribe(["C", "D"])
+    assert f.top("A") is None
+    assert f.health()["assets"] == ["C", "D"]
+
+
+def test_feed_subscribes_on_connect_and_survives_a_dead_stream():
+    frames = [_book_frame("A", [(0.4, 1)], [(0.5, 1)])]
+    made = []
+
+    def connector(url):
+        ws = FakeWS(list(frames))
+        made.append(ws)
+        return ws
+
+    f = uw.BookFeed(connector=connector)
+    f.subscribe(["A"])
+    f.start()
+    assert f.wait_ready(timeout_s=3.0)
+    f.stop()
+    time.sleep(0.05)
+    assert made[0].sent[0] == {"assets_ids": ["A"], "type": "market"}
+    assert f.reconnects >= 1                     # the stream ended, it retried
+
+
+def test_feed_ignores_junk_frames():
+    f = uw.BookFeed()
+    f._ingest("not json")
+    f._ingest(json.dumps({"event_type": "book"}))          # no asset_id
+    f._ingest(json.dumps([{"event_type": "price_change", "changes": [{}]}]))
+    assert f.top("A") is None
+
+
+def test_pair_quote_prefers_the_socket_and_says_which_answered(monkeypatch):
+    get, market = _fake_getter(0.10, 0.11, 0.10, 0.11)     # REST would say 0.22
+
+    class Feed:
+        def subscribe(self, a): pass
+        def pair(self, a):
+            return [{"bid": 0.44, "ask": 0.45, "bid_size": 5, "ask_size": 6, "age_s": 0.01},
+                    {"bid": 0.44, "ask": 0.45, "bid_size": 5, "ask_size": 6, "age_s": 0.01}]
+        def observed_fee_bps(self): return 0.0
+
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: Feed())
+    q = ue.pair_quote(market)                              # getter=None -> ws path
+    assert q["source"] == "websocket"
+    assert q["buy_both"]["cost"] == pytest.approx(0.90)    # socket prices, not REST
+    assert q["fee_bps"] == 0.0
+
+
+def test_pair_quote_falls_back_to_rest_when_the_socket_is_cold(monkeypatch):
+    class Feed:
+        def subscribe(self, a): pass
+        def pair(self, a): return None                     # nothing fresh
+        def observed_fee_bps(self): return None
+
+    monkeypatch.setattr(uw, "feed", lambda *a, **k: Feed())
+    get, market = _fake_getter(0.44, 0.45, 0.44, 0.45)
+    q = ue.pair_quote(market, getter=get)
+    assert q["source"] == "rest"
+    assert q["buy_both"]["cost"] == pytest.approx(0.90)
 
 
 # ── recorders ────────────────────────────────────────────────────────────────

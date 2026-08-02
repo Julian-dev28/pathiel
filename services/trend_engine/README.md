@@ -140,9 +140,14 @@ Two facts bound the arb, both read off the live market payload:
 
 - `orderPriceMinTickSize` = **0.01**, so complementary asks summing to 0.97 means
   the book is *three ticks crossed* — a stale-quote event, not a standing spread.
-- `takerBaseFee` = **1000 bps**, and Polymarket's fee is `rate × min(p, 1−p) ×
-  shares` — up to 5¢/share. That is an order of magnitude more than a one-tick
-  edge, which is why `pair_quote()` reports gross AND net and the tab shows net.
+- Fees: Gamma **advertises** `takerBaseFee: 1000`, but the tape charges
+  something else. Every executed trade on the websocket
+  (`last_trade_price.fee_rate_bps`) reported **0** — 79 of 79 on 2026-08-02.
+  So `FEE_BPS_DEFAULT` is **0**, taken from what was charged rather than what is
+  advertised, and `observed_fee_bps()` keeps checking live. An earlier version
+  of this file trusted the Gamma field and concluded a 1¢ crossed pair was a
+  loss; net of a zero fee it is 1¢ of edge. The constraint on the arb is
+  latency, not fees.
 
 ### The sampler (the missing instrument)
 
@@ -162,7 +167,9 @@ It runs as **its own process, not a scheduler job**: `scripts/scheduler.py`
 fires jobs serially, so a sampler that blocks for most of a 5-minute window
 would starve every other job.
 
-### Polymarket latency (measured 2026-08-02, median of 8)
+### Polymarket latency: 840 ms → 0 ms (`updown_ws.py`)
+
+Polling, measured 2026-08-02 (median of 8):
 
 | call | latency |
 |---|---|
@@ -171,12 +178,35 @@ would starve every other job.
 | **`clob POST /books` (both sides, one trip)** | **302 ms** |
 | curl subprocess vs keep-alive session | 323 ms vs 297 ms |
 
-So the TLS handshake is *not* the bottleneck — raw RTT to their edge is. Two
-wins exist in code and both are implemented: batch the two books into one call,
-and keep the slug→token lookup off the critical path (`tokens_for()` caches it
-forever, `prewarm()` fills the next window's entry while the current one runs).
+TLS is *not* the bottleneck — raw RTT to their edge is. Both polling wins are
+implemented (batch the two books into one call; cache the immutable slug→token
+lookup off the critical path via `tokens_for()` / `prewarm()`), taking a quote
+from 840 ms to ~245 ms.
 
-**Result: 840 ms → ~245 ms per quote.** The remaining ~245 ms is geography.
+**Then stop polling.** The CLOB market channel pushes:
+`wss://ws-subscriptions-clob.polymarket.com/ws/market`, subscribe with
+`{"assets_ids": [...], "type": "market"}`. One 5m pair produced **6,630
+`price_change` events and 106 `book` snapshots in 25 seconds**.
+
+Two facts make the client small:
+
+- `price_change` entries carry `best_bid` / `best_ask` per `asset_id`, so
+  top-of-book needs **no delta reconstruction** — this is a quote cache, not an
+  order-book engine.
+- `book` events are full snapshots, so a reconnect re-syncs itself.
+
+`pair_quote()` reads the feed when it is fresh and falls back to the batched
+REST path otherwise; `source` on the result says which answered, so a silent
+fallback to a 300 ms path is visible rather than assumed. Measured end to end:
+**first quote 642 ms (socket cold, REST), warm quotes 0.0 ms.**
+
+Gotcha: the python.org macOS build ships no system trust store, so
+`websocket.create_connection` dies with `CERTIFICATE_VERIFY_FAILED` while
+`requests` works. `_ssl_opt()` passes certifi's bundle.
+
+The feed is read-only on a public channel and holds no key —
+`POLYMARKET_API_KEY` is only needed for the `user` channel, which this does not
+touch.
 
 ## Lane POLITICS — probability space
 

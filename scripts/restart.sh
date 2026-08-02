@@ -49,7 +49,7 @@ SCHED_LOG="$LOG_DIR/scheduler.log"
 LOOP_PATTERN="scripts/trading_loop.py"
 SERVER_PATTERN="hermes_trader.server"
 SCHED_PATTERN="scripts/scheduler.py"
-SAMPLER_PATTERN="--sample-daemon"
+SAMPLER_PATTERN="sample-daemon"
 SAMPLER_LOG="$LOG_DIR/updown_sampler.log"
 
 # Our own PID — must not be killed by pgrep matches.
@@ -214,10 +214,11 @@ start_sched() {
 
 show_status() {
   printf "\n%sStatus%s\n" "$C_DIM" "$C_OFF"
-  local loop_pids server_pids sched_pids
+  local loop_pids server_pids sched_pids sampler_pids
   loop_pids="$(pids_for "$LOOP_PATTERN")"
   server_pids="$(pids_for "$SERVER_PATTERN")"
   sched_pids="$(pids_for "$SCHED_PATTERN")"
+  sampler_pids="$(pids_for "$SAMPLER_PATTERN")"
   if [[ -n "$loop_pids" ]]; then
     ok "trading loop: pids $loop_pids"
   else
@@ -233,13 +234,18 @@ show_status() {
   else
     warn "scheduler:    stopped"
   fi
+  if [[ -n "$sampler_pids" ]]; then
+    ok "updown sampler: pids $sampler_pids"
+  else
+    warn "updown sampler: stopped"
+  fi
   printf "\n"
 }
 
 action="${1:-restart}"
 start_sampler() {
   local pids
-  pids=$(pgrep -f "$SAMPLER_PATTERN" || true)
+  pids="$(pids_for "$SAMPLER_PATTERN")"
   if [ -n "$pids" ]; then
     warn "updown sampler already running (pids: $pids) — skipping"
     return 0

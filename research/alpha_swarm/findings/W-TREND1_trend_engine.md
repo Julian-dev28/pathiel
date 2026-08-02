@@ -113,10 +113,50 @@ every entry point. Worth checking in any future service with a CLI.
 
 ---
 
+## 7. CORRECTION — the advertised Polymarket fee is not the charged fee
+
+Gamma's market payload for the 5m updown markets advertises
+`takerBaseFee: 1000` / `makerBaseFee: 1000`. On the CLOB websocket, **79 of 79
+executed trades reported `fee_rate_bps: "0"`** (2026-08-02).
+
+This mattered: with the advertised 1000 bps and Polymarket's
+`rate × min(p, 1−p) × shares` formula, a fee is up to 5¢/share, which turns any
+one-tick crossed pair into a loss — the conclusion originally written here. At
+the charged rate of 0, a 1¢ crossed pair is 1¢ of edge, and the only thing
+standing between us and it is latency. `FEE_BPS_DEFAULT` is now 0 with the
+advertised value explicitly distrusted, and `observed_fee_bps()` reads the live
+rate off `last_trade_price` so the tape keeps the number honest.
+
+Generalisable: price the fee off executions, never off the market metadata.
+
+## 8. Latency — polling floor is geography, so stop polling
+
+Measured medians from this machine: `gamma /markets?slug` 188 ms, `clob /book`
+327 ms, `clob POST /books` (BOTH sides) 302 ms, curl-subprocess 323 ms vs
+keep-alive session 297 ms. TLS handshake is not the bottleneck; RTT is.
+
+Batching both books into one call plus caching the immutable slug→token lookup
+took a quote from ~840 ms to ~245 ms. The CLOB market **websocket** takes it to
+**0 ms**: 6,630 `price_change` events in 25 s for one pair, and each entry
+carries `best_bid`/`best_ask` so no order-book reconstruction is needed.
+
 ### What ships from this
 
 - `/trends` tab, four lanes, every forecast next to its own backtest verdict.
-- 86 gate tests, offline, <1s.
-- Scheduler jobs `trends-price` (30 min) and `trends-recorders` (6 h).
+- HL lane covers crypto AND HIP-3 (`xyz:`) as separate sectors with separate
+  benchmarks — SP500 for equities, BTC for perps.
+- Microstructure block: the fat tail (confirmed), the both-sides arb (real math,
+  latency-bound), and the price-calibration question (needs the sampler).
+- CLOB websocket feed: quotes served from memory at 0 ms with a REST fallback.
+- 127 gate tests, offline, <1s.
+- Scheduler jobs `trends-price` (30 min), `trends-recorders` (6 h), plus the
+  book sampler as its own process (`scripts/restart.sh sampler`).
 - No new capital, no new book. The HL lane's honest read is: the band is
   usable, the arrow is not.
+
+### Open, accruing
+
+The unbiased book sampler (~288 windows/day) is the only path to answering
+claim 1 (price-bucket calibration) and the tradeable half of claim 2 (buying
+the cheap side near the close). At n=25 the late-ticket EV interval still
+straddles breakeven. Re-read `--edges` after a few days.

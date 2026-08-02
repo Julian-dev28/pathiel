@@ -28,11 +28,16 @@ CLAIM 3 — "buy both sides for under $1, redeem for $1"
       - `orderPriceMinTickSize` is 0.01, so complementary asks summing to 0.97
         means the book is THREE ticks crossed — a stale-quote event, not a
         standing spread.
-      - `takerBaseFee` on these markets reads 1000 (bps), and Polymarket's fee
-        formula is `rate * min(p, 1-p) * shares`. At 1000bps that is up to 5c a
-        share round trip, i.e. an order of magnitude more than any tick-level
-        arb. `FEE_BPS_DEFAULT` and `fee_per_share()` make this explicit so the
-        net number is on the tab instead of the gross one.
+      - Fees: Gamma advertises `takerBaseFee: 1000` on these markets, but the
+        tape disagrees. Every executed trade seen on the websocket
+        (`last_trade_price.fee_rate_bps`) charged **0** — 79 of 79 on
+        2026-08-02. So `FEE_BPS_DEFAULT` is 0, taken from what was actually
+        charged rather than what is advertised, and `observed_fee_bps()` on the
+        live feed keeps checking. `fee_per_share()` stays because a market that
+        does charge must still be priced correctly.
+
+    Net of a zero fee, a crossed pair IS free money — the constraint is purely
+    that the pair sits at $1.00 +/- one tick and crossing it is a latency race.
 """
 from __future__ import annotations
 
@@ -64,8 +69,12 @@ SAMPLES = os.path.join(env.state_dir(), "trend_engine", "updown_book_samples.jso
 # books. Chosen to bracket the thread's "30 seconds left" claim and to give a
 # price path, not a point.
 SAMPLE_OFFSETS_S: Tuple[int, ...] = (240, 180, 120, 60, 30)
-# Read off a live market payload 2026-08-02: makerBaseFee = takerBaseFee = 1000.
-FEE_BPS_DEFAULT = 1000.0
+# MEASURED, not advertised. Gamma's payload says takerBaseFee = 1000 on these
+# markets; 79 of 79 executed trades on the websocket reported fee_rate_bps = 0
+# (2026-08-02). Trusting the Gamma field understated every arb by up to 5c a
+# share and produced the wrong verdict on the both-sides trade.
+FEE_BPS_DEFAULT = 0.0
+GAMMA_ADVERTISED_FEE_BPS = 1000.0
 TICK = 0.01
 
 
@@ -82,17 +91,29 @@ def fee_per_share(price: float, fee_bps: float = FEE_BPS_DEFAULT) -> float:
     return (fee_bps / 10_000.0) * min(p, 1.0 - p)
 
 
-def market_fee_bps(market: Optional[Dict[str, Any]]) -> float:
-    """Taker fee in bps from the market payload, defaulting to the observed 1000."""
+def market_fee_bps(market: Optional[Dict[str, Any]],
+                   observed: Optional[float] = None) -> float:
+    """The fee rate to price with, in bps.
+
+    Precedence: what the tape CHARGED (`observed`, from executed trades) beats
+    what Gamma ADVERTISES, because they disagree and only one of them takes
+    money. Falls back to the measured default rather than the advertised field
+    — a wrong fee here flips the sign of every arb verdict.
+    """
+    if observed is not None:
+        return float(observed)
     if not market:
         return FEE_BPS_DEFAULT
     for key in ("takerBaseFee", "makerBaseFee", "fee"):
         v = market.get(key)
         if v is not None:
             try:
-                return float(v)
+                advertised = float(v)
             except Exception:
                 continue
+            # Only trust the advertised number when it is NOT the value we have
+            # already disproved on the wire.
+            return FEE_BPS_DEFAULT if advertised == GAMMA_ADVERTISED_FEE_BPS else advertised
     return FEE_BPS_DEFAULT
 
 
@@ -206,14 +227,20 @@ def current_market(now: Optional[float] = None,
 
 def pair_quote(market: Optional[Dict[str, Any]] = None, now: Optional[float] = None,
                getter: Optional[Callable[[str], Any]] = None,
-               fee_bps: Optional[float] = None) -> Dict[str, Any]:
+               fee_bps: Optional[float] = None,
+               use_ws: bool = True) -> Dict[str, Any]:
     """Both sides of the current window's book, priced for the two arbs.
 
     `buy_both` = pay both asks, redeem the winner for $1.
     `sell_both` = mint a complete set for $1, hit both bids.
 
-    Gross edge ignores fees; net subtracts Polymarket's per-share fee on BOTH
-    legs. The net number is the only one worth looking at.
+    Reads the WEBSOCKET feed when it is live and fresh (~0ms, and fresher than
+    any poll), falling back to the batched REST call otherwise. `source` on the
+    result says which one answered, so a silent fallback to a 300ms path is
+    visible instead of assumed.
+
+    Gross edge ignores fees; net subtracts the per-share fee on BOTH legs at
+    the rate the tape actually charged.
     """
     get = getter or _curl
     market = market if market is not None else current_market(now, getter=get)
@@ -225,27 +252,49 @@ def pair_quote(market: Optional[Dict[str, Any]] = None, now: Optional[float] = N
         toks = []
     if len(toks) != 2:
         return {"status": "no_tokens"}
-    fee_bps = market_fee_bps(market) if fee_bps is None else fee_bps
+    observed = None
+    sides: Optional[List[Dict[str, Any]]] = None
+    source = "rest"
 
-    # ONE round trip for both sides (see the latency note at the top). The
-    # injected-getter path stays sequential so tests can stub a plain GET.
-    if getter is None:
-        books = books_batch(toks)
-    else:
-        books = [get(f"{CLOB}/book?token_id={t}") for t in toks]
-    sides: List[Dict[str, Any]] = []
-    for name, book in zip(("UP", "DOWN"), books):
-        if not isinstance(book, dict):
-            return {"status": "no_book", "side": name}
-        bid, bid_sz = _top(book.get("bids"), "bid")
-        ask, ask_sz = _top(book.get("asks"), "ask")
-        sides.append({"side": name, "bid": bid, "ask": ask,
-                      "bid_size": bid_sz, "ask_size": ask_sz})
+    if use_ws and getter is None:
+        try:
+            from services.trend_engine.updown_ws import feed as ws_feed
+            f = ws_feed()
+            f.subscribe(list(toks))
+            rows = f.pair(list(toks))
+            observed = f.observed_fee_bps()
+            if rows:
+                sides = [{"side": n, "bid": r.get("bid"), "ask": r.get("ask"),
+                          "bid_size": r.get("bid_size"), "ask_size": r.get("ask_size"),
+                          "age_s": r.get("age_s")}
+                         for n, r in zip(("UP", "DOWN"), rows)]
+                source = "websocket"
+        except Exception:
+            sides = None
+
+    fee_bps = market_fee_bps(market, observed) if fee_bps is None else fee_bps
+
+    if sides is None:
+        # ONE round trip for both sides (see the latency note at the top). The
+        # injected-getter path stays sequential so tests can stub a plain GET.
+        books = books_batch(toks) if getter is None else [
+            get(f"{CLOB}/book?token_id={t}") for t in toks]
+        sides = []
+        for name, book in zip(("UP", "DOWN"), books):
+            if not isinstance(book, dict):
+                return {"status": "no_book", "side": name}
+            bid, bid_sz = _top(book.get("bids"), "bid")
+            ask, ask_sz = _top(book.get("asks"), "ask")
+            sides.append({"side": name, "bid": bid, "ask": ask,
+                          "bid_size": bid_sz, "ask_size": ask_sz})
     up, dn = sides
     out: Dict[str, Any] = {
         "status": "ok",
         "slug": market.get("slug"),
+        "source": source,
         "fee_bps": fee_bps,
+        "fee_bps_observed": observed,
+        "fee_bps_advertised": market.get("takerBaseFee"),
         "tick": float(market.get("orderPriceMinTickSize") or TICK),
         "min_order": float(market.get("orderMinSize") or 0.0),
         "up": up, "down": dn,
@@ -317,6 +366,11 @@ def sample_row(quote: Dict[str, Any], window_start_ms: int, secs_left: float,
         "buy_both_gross": (quote.get("buy_both") or {}).get("gross_edge"),
         "sell_both_gross": (quote.get("sell_both") or {}).get("gross_edge"),
         "fee_bps": quote.get("fee_bps"),
+        "fee_bps_observed": quote.get("fee_bps_observed"),
+        # push vs poll: a REST snapshot is up to 300ms stale, a websocket one is
+        # not. Recording which answered keeps that out of the analysis' blind spot.
+        "source": quote.get("source"),
+        "book_age_s": (quote.get("up") or {}).get("age_s"),
         "spot": spot, "open_px": open_px, "move_bp": move_bp,
         "sigma_bp_per_min": sigma_bp_min, "p_model_up": p_model,
     }
@@ -394,6 +448,18 @@ def record_window(offsets_s: Sequence[int] = SAMPLE_OFFSETS_S,
             break
     if open_px is None and ws:
         open_px = ws[-1]["close"]
+
+    # Warm the socket BEFORE the first offset. pair_quote() subscribes lazily
+    # and falls back to REST until the first book arrives, so without this the
+    # earliest snapshot of every window is a 300ms-stale poll.
+    if getter is None:
+        try:
+            from services.trend_engine.updown_ws import feed as ws_feed
+            toks = json.loads(market.get("clobTokenIds") or "[]")
+            if len(toks) == 2:
+                ws_feed().subscribe(toks)
+        except Exception:
+            pass
 
     rows: List[Dict[str, Any]] = []
     for secs_left in sorted(offsets_s, reverse=True):
@@ -664,4 +730,9 @@ def read(windows: Optional[Sequence[Dict[str, Any]]] = None,
     }
     if with_live:
         out["live_pair"] = pair_quote()
+        try:
+            from services.trend_engine.updown_ws import feed as ws_feed
+            out["ws"] = ws_feed(start=False).health()
+        except Exception as exc:
+            out["ws"] = {"connected": False, "last_error": str(exc)[:120]}
     return out
