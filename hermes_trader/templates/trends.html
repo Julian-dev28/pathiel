@@ -1245,16 +1245,53 @@ $$('[data-ai]').forEach(btn => btn.onclick = async () => {
   });
 });
 
-[['hl-refresh', 'hl'], ['ud-refresh', 'updown'], ['pol-refresh', 'politics'],
- ['rec-refresh', 'recorders']].forEach(([id, lane]) => {
+// One note per lane, parked next to its own refresh button.
+function setRefreshNote(lane, msg, cls) {
+  const btn = $('#' + REFRESH_BTN[lane]);
+  if (!btn) return;
+  let note = document.getElementById(lane + '-refresh-note');
+  if (!note) {
+    note = document.createElement('span');
+    note.id = lane + '-refresh-note';
+    btn.insertAdjacentElement('afterend', note);
+  }
+  note.className = 'text-[10.5px] mono ml-2 ' + (cls || 'dim');
+  note.textContent = msg || '';
+}
+
+const REFRESH_BTN = {
+  hl: 'hl-refresh', updown: 'ud-refresh', politics: 'pol-refresh',
+  recorders: 'rec-refresh',
+};
+
+Object.entries(REFRESH_BTN).forEach(([lane, id]) => {
   const el = $('#' + id);
   if (!el) return;
   el.onclick = async () => {
-    el.disabled = true; el.textContent = 'refreshing…';
+    const label = el.textContent;
+    const started = Date.now();
+    // A refresh runs a full scan in its own process (~60s for HL). Without a
+    // clock on the button a slow job is indistinguishable from a dead one.
+    const tick = setInterval(() => {
+      el.textContent = 'refreshing… ' + Math.round((Date.now() - started) / 1000) + 's';
+    }, 1000);
+    const done = (msg, cls) => {
+      clearInterval(tick);
+      el.disabled = false; el.textContent = label;
+      setRefreshNote(lane, msg, cls);
+    };
+    el.disabled = true; el.textContent = 'refreshing… 0s';
+    setRefreshNote(lane, '', '');
     const j = await post('/api/dashboard/trends/' + lane + '/refresh');
-    if (!j) { el.disabled = false; el.textContent = 'refresh data'; return; }
-    pollJob(j.job_id, () => {
-      el.disabled = false; el.textContent = 'refresh data';
+    if (!j) { done('', ''); return; }
+    pollJob(j.job_id, res => {
+      // An errored job used to land here and be thrown away, so a failed
+      // refresh looked exactly like a successful one.
+      if (res && (res.status === 'error' || res.error)) {
+        done('refresh failed: ' + (res.error || res.status), 'dn');
+      } else {
+        done('refreshed ' + new Date().toLocaleTimeString(), 'teal');
+      }
       loadLane(lane);
     });
   };

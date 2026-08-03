@@ -200,6 +200,16 @@ def regime(reads: List[Dict[str, Any]], sector: str = "crypto") -> Dict[str, Any
     btc_label = btc.get("label") if btc else "unknown"
     trend_share = trending / len(reads) * 100.0
 
+    # TODAY, separately from the week. Everything above is a 7-day read off
+    # daily bars, so it only moves when a bar closes — which makes a week-old
+    # instruction read as current at any hour. Breadth today against breadth on
+    # the week is the cheapest honest answer to "is this still the same tape?".
+    # NOT a seasonality claim: weekday buckets were tested on the 5m lane and
+    # none survived Bonferroni, so nothing here varies by day of week.
+    r1 = [float(r["ret_1d"]) for r in reads if r.get("ret_1d") is not None]
+    breadth_1d = len([x for x in r1 if x > 0]) / len(r1) * 100.0 if r1 else None
+    btc_1d = float(btc.get("ret_1d") or 0.0) if btc and btc.get("ret_1d") is not None else None
+
     if breadth >= 60 and btc_7d > 0:
         tone = "RISK_ON"
     elif breadth <= 40 and btc_7d < 0:
@@ -225,7 +235,10 @@ def regime(reads: List[Dict[str, Any]], sector: str = "crypto") -> Dict[str, Any
         "btc_px": btc.get("px") if btc else None,
         "eth_ret_7d": round(float(by_coin["ETH"]["ret_7d"]), 2) if by_coin.get("ETH") and by_coin["ETH"].get("ret_7d") is not None else None,
         "sol_ret_7d": round(float(by_coin["SOL"]["ret_7d"]), 2) if by_coin.get("SOL") and by_coin["SOL"].get("ret_7d") is not None else None,
+        "bench_ret_1d": round(btc_1d, 2) if btc_1d is not None else None,
         "breadth_pct": round(breadth, 1),
+        "breadth_1d_pct": round(breadth_1d, 1) if breadth_1d is not None else None,
+        "median_ret_1d": round(summarize(reads, "ret_1d")["med"], 2) if r1 else None,
         "pct_above_ema21": round(len(above_ema) / len(reads) * 100.0, 1),
         "trend_share_pct": round(trend_share, 1),
         "dispersion_pct": round(stdev(r7), 2),

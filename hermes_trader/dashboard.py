@@ -40,7 +40,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -1464,6 +1464,50 @@ def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
     return job_id
 
 
+_REFRESH_TIMEOUT_S = 600.0
+
+
+def _refresh_lane_subprocess(lane: str, timeout_s: float = _REFRESH_TIMEOUT_S,
+                             runner: Optional[Callable[..., Any]] = None,
+                             loader: Optional[Callable[[str], Dict[str, Any]]] = None,
+                             ) -> Dict[str, Any]:
+    """Refresh one lane in its OWN process, the way the scheduler does.
+
+    Not `cache.refresh()` in-process: `restart.sh` starts the server on a
+    hard-throttled HL token bucket (refill 2/s, capacity 60) so its background
+    polls yield to the trading loop on a shared, per-IP rate limit. An HL scan
+    is ~26 coins x `candleSnapshot` at weight 20, which inside that budget means
+    every request waits its 30s ceiling and then SKIPS — the log fills with
+    `rate budget exhausted for candleSnapshot`, the job never finishes, and the
+    button reads as dead. The child inherits everything except the throttle, so
+    an operator refresh costs exactly what the scheduler's 30-minute job costs.
+
+    `HERMES_STATE_READONLY` is deliberately NOT stripped: it guards agent memory
+    and DSL exits, neither of which a lane refresh has any business writing.
+    """
+    import subprocess
+    import sys
+    run = runner or subprocess.run
+    load = loader or (lambda ln: __import__(
+        "services.trend_engine.cache", fromlist=["load"]).load(ln))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("HERMES_HL_RATE_")}
+    cmd = [sys.executable, "-m", "services.trend_engine.run",
+           "--refresh-all", "--lanes", lane]
+    try:
+        proc = run(cmd, cwd=str(Path(__file__).resolve().parent.parent), env=env,
+                   capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return {"status": "error",
+                "error": f"{lane} refresh exceeded {int(timeout_s)}s and was killed"}
+    if proc.returncode != 0:
+        tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return {"status": "error",
+                "error": (tail[-1] if tail else f"exit {proc.returncode}")[:200]}
+    payload = load(lane)
+    return {"status": payload.get("status"),
+            "generated_at": payload.get("generated_at")}
+
+
 def _start_trend_job(kind: str, lane: str, web_search: bool = False,
                      **kw: Any) -> str:
     """Background job for the trend tab: `refresh` (network) or `ai` (model call).
@@ -1484,9 +1528,7 @@ def _start_trend_job(kind: str, lane: str, web_search: bool = False,
         try:
             from services.trend_engine import cache
             if kind == "refresh":
-                payload = cache.refresh(lane, **kw)
-                result = {"status": payload.get("status"),
-                          "generated_at": payload.get("generated_at")}
+                result = _refresh_lane_subprocess(lane)
             elif kind == "ai":
                 from services.trend_engine.ai import analyze
                 payload = cache.load(lane)

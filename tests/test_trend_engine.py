@@ -1533,6 +1533,92 @@ def test_playbook_reads_the_regime_into_a_book_choice():
     assert any(a["kind"] == pb.DO and "SHORT" in a["do"] for a in weak)
 
 
+def _regime(**kw):
+    base = {"status": "ok", "bench": "BTC", "bench_ret_7d": 0.1, "breadth_pct": 50,
+            "trend_share_pct": 60, "alt_strength_pct": 0.0}
+    base.update(kw)
+    return {"eval": {}, "reads": [], "regimes": {"crypto": base}}
+
+
+def test_playbook_calls_out_a_day_that_contradicts_the_week():
+    """The HL read is 7 daily bars: it is the same number all day, so a
+    week-old instruction reads as current at any hour. Observed 2026-08-03:
+    6% of the scan green on the day against 50% on the week."""
+    acts = pb.hl_actions(_regime(breadth_1d_pct=6.2, breadth_pct=50.0,
+                                 bench_ret_1d=-1.14))
+    day = [a for a in acts if a["do"].startswith("Today")]
+    assert len(day) == 1 and day[0]["kind"] == pb.DONT
+    assert "broadly RED" in day[0]["do"]
+    assert "6% of the scan is green vs 50% on the week" in day[0]["because"]
+    assert "BTC -1.1% on the day" in day[0]["because"]
+
+
+def test_playbook_calls_out_a_green_day_against_a_red_week():
+    acts = pb.hl_actions(_regime(breadth_1d_pct=80.0, breadth_pct=30.0,
+                                 bench_ret_1d=2.5))
+    day = [a for a in acts if a["do"].startswith("Today")][0]
+    assert day["kind"] == pb.DONT and "broadly GREEN" in day["do"]
+
+
+def test_playbook_leaves_the_week_alone_when_the_day_agrees_with_it():
+    acts = pb.hl_actions(_regime(breadth_1d_pct=44.0, breadth_pct=50.0,
+                                 bench_ret_1d=-0.2))
+    day = [a for a in acts if a["do"].startswith("Today")][0]
+    assert day["kind"] == pb.WATCH and "still holds" in day["do"]
+
+
+def test_playbook_has_no_day_line_without_the_day_number():
+    """Old caches have no `breadth_1d_pct`; the tab must not invent one."""
+    acts = pb.hl_actions(_regime())
+    assert not [a for a in acts if a["do"].startswith("Today")]
+
+
+def test_playbook_says_whether_todays_entry_is_live_in_daily_sigma():
+    """`long candidate on a pullback` is only actionable on a day it is
+    actually pulling back, and a 7d read cannot say which day that is. Sized in
+    the coin's own sigma so 3% means different things on ADA and BTC."""
+    r = {"coin": "ADA", "sector": "crypto", "label": "STRONG_UP", "score": 9,
+         "ret_7d": 18.7, "efficiency": 0.69, "ema7": 0.177, "low_7d": 0.16,
+         "px": 0.19, "sigma_day_pct": 3.2, "ret_1d": -2.6}
+    acts = pb.hl_actions({**_regime(breadth_pct=70), "reads": [r]})
+    watch = [a for a in acts if a["do"].startswith("ADA")][0]
+    assert "TODAY -2.6% (0.8σ): the pullback is happening now" in watch["because"]
+
+    extending = pb.hl_actions({**_regime(breadth_pct=70), "reads": [{**r, "ret_1d": 4.0}]})
+    assert "wrong day to pay up" in [a for a in extending
+                                     if a["do"].startswith("ADA")][0]["because"]
+
+    quiet = pb.hl_actions({**_regime(breadth_pct=70), "reads": [{**r, "ret_1d": -0.4}]})
+    assert "inside a normal day" in [a for a in quiet
+                                     if a["do"].startswith("ADA")][0]["because"]
+
+
+def test_playbook_says_when_the_named_trigger_is_already_blown():
+    """`holds the 7d EMA` is not a trigger when price is already under it."""
+    r = {"coin": "ADA", "sector": "crypto", "label": "UP", "score": 5,
+         "ret_7d": 9.0, "efficiency": 0.5, "ema7": 0.20, "low_7d": 0.16,
+         "px": 0.18, "sigma_day_pct": 3.0, "ret_1d": -3.0}
+    watch = [a for a in pb.hl_actions({**_regime(breadth_pct=70), "reads": [r]})
+             if a["do"].startswith("ADA")][0]
+    assert "already under the 7d EMA, so the trigger below is not live" in watch["because"]
+
+
+def test_the_regime_reports_todays_breadth_next_to_the_weeks():
+    """Same reads, two horizons: the week is a 7-bar average, the day is one
+    bar. Without the day number the tab cannot tell them apart."""
+    reads = [{"coin": "A", "sector": "crypto", "label": "UP", "px": 2.0, "ema21": 1.0,
+              "ret_7d": 5.0, "ret_1d": -1.0, "corr_btc": 0.5, "resid_7d": 1.0, "score": 3.0},
+             {"coin": "B", "sector": "crypto", "label": "UP", "px": 2.0, "ema21": 1.0,
+              "ret_7d": 3.0, "ret_1d": -2.0, "corr_btc": 0.5, "resid_7d": 1.0, "score": 2.0},
+             {"coin": "BTC", "sector": "crypto", "label": "DOWN", "px": 2.0, "ema21": 1.0,
+              "ret_7d": 1.0, "ret_1d": -0.5, "corr_btc": 1.0, "resid_7d": 0.0, "score": 1.0}]
+    reg = hl.regime(reads, sector="crypto")
+    assert reg["breadth_pct"] == 100.0          # all three green on the week
+    assert reg["breadth_1d_pct"] == 0.0         # none green today
+    assert reg["bench_ret_1d"] == -0.5
+    assert reg["median_ret_1d"] == -1.0
+
+
 def test_playbook_names_coins_with_a_trigger_and_an_invalidation():
     read = hl.coin_read("SOL", ramp(40, step_pct=2.0))
     read["sector"] = "crypto"
@@ -2112,6 +2198,70 @@ def test_the_fire_button_is_on_the_page_and_says_it_places_no_order(client):
     assert "/api/dashboard/trends/arb/fire" in body
     assert "places <b>no order</b>" in body
     assert "FOK" in body
+
+
+class _Proc:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def test_refresh_runs_in_its_own_process_without_the_servers_hl_throttle(monkeypatch):
+    """`restart.sh` gives the server a hard-throttled HL bucket (refill 2/s) so
+    its polls yield to the trading loop. An HL scan is ~26 coins x
+    `candleSnapshot` at weight 20: inside that budget every request waits its
+    30s ceiling and skips, and the refresh never returns. Measured on the live
+    server: still running after 601s, while the UI gives up at 300s."""
+    import hermes_trader.dashboard as dash
+    seen = {}
+
+    def runner(cmd, **kw):
+        seen["cmd"], seen["env"] = cmd, kw["env"]
+        return _Proc()
+
+    monkeypatch.setenv("HERMES_HL_RATE_REFILL_PER_SEC", "2")
+    monkeypatch.setenv("HERMES_HL_RATE_CAPACITY", "60")
+    monkeypatch.setenv("HERMES_STATE_READONLY", "1")
+    out = dash._refresh_lane_subprocess(
+        "hl", runner=runner, loader=lambda ln: {"status": "ok", "generated_at": 7})
+    assert out == {"status": "ok", "generated_at": 7}
+    assert cmd_has(seen["cmd"], "--refresh-all", "--lanes", "hl")
+    assert not [k for k in seen["env"] if k.startswith("HERMES_HL_RATE_")]
+    # the readonly guard covers agent memory and DSL exits — a lane refresh has
+    # no business writing either, so it is NOT stripped
+    assert seen["env"]["HERMES_STATE_READONLY"] == "1"
+
+
+def cmd_has(cmd, *parts):
+    return all(p in cmd for p in parts)
+
+
+def test_refresh_reports_a_failed_child_instead_of_claiming_success(monkeypatch):
+    import hermes_trader.dashboard as dash
+    out = dash._refresh_lane_subprocess(
+        "hl", runner=lambda cmd, **kw: _Proc(returncode=1, stderr="boom\nRuntimeError: hl down"),
+        loader=lambda ln: {"status": "ok"})
+    assert out["status"] == "error" and "hl down" in out["error"]
+
+
+def test_refresh_reports_a_timeout_instead_of_hanging_the_job(monkeypatch):
+    import subprocess
+
+    import hermes_trader.dashboard as dash
+
+    def runner(cmd, **kw):
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    out = dash._refresh_lane_subprocess("hl", timeout_s=5, runner=runner,
+                                        loader=lambda ln: {})
+    assert out["status"] == "error" and "exceeded 5s" in out["error"]
+
+
+def test_the_refresh_button_surfaces_a_failed_job(client):
+    """A refresh that errored used to land in a callback that ignored the
+    result, so failure looked exactly like success."""
+    body = client.get("/trends").text
+    assert "refresh failed: " in body
+    assert "setRefreshNote" in body and "refreshing… ' +" in body
 
 
 def test_the_arb_card_leads_the_updown_lane(client):
