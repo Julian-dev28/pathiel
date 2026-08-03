@@ -277,6 +277,25 @@ Two defects were fixed building it, both of which hid real crossings:
   reports `running` (thread alive) separately from `connected` (handshake), so
   "never started" and "cannot connect" stop looking identical.
 
+### The recorders lane fetched candles per SIGNAL
+
+`_live_fetchers()` handed `grade_records` a fetcher that pulled forward candles
+on every record. Every signal in a book asks about the same coin, and each miss
+is a rate-limited HL info call at weight 20, so the lane ran **2h13m for 4.8s of
+CPU** — pure waiting — and the /trends P&L card was permanently stale behind it.
+Now one pull per `(coin, interval)` per run, deepened when an older signal needs
+a longer lookback; the per-signal slice (`bars after signal_bar_t`) was always
+the only thing that varied. Measured on six books: 59 candle calls for
+`main_engine` instead of one per record.
+
+Funding is cached per coin on the UNION of the windows asked for, and
+deliberately **not** widened to now: pulling each coin's funding through to the
+present turned 85s of funding into 449s on a single book, because the API cost
+scales with the range and one old signal drags the start back months.
+
+The lane's `STALE_AFTER` is 8h against a 6h cadence — the extra hour is the run
+itself, so a lane that is exactly on schedule stops rendering as STALE.
+
 ### Proving it is wired: `scripts/smoke_trends.py`
 
 The gate tests prove each piece with the network stubbed. The smoke proves the

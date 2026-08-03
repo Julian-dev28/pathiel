@@ -29,8 +29,13 @@ LANES = ("hl", "updown", "politics", "recorders")
 # Roughly one refresh interval per lane. The recorders lane grades every
 # shadow book against forward candles (minutes of network), so it runs on a
 # much slower clock than the price lanes.
+#
+# recorders is cadence (6h) PLUS the run itself: the job takes tens of minutes
+# even with the per-coin candle cache, so a threshold equal to the cadence
+# painted the lane STALE for the tail of every cycle while it was perfectly on
+# schedule. 8h leaves headroom without hiding a genuinely missed run.
 STALE_AFTER = {"hl": 1800.0, "updown": 900.0, "politics": 3600.0,
-               "recorders": 21600.0}
+               "recorders": 28800.0}
 
 
 def path(lane: str) -> str:

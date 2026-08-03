@@ -21,7 +21,7 @@ same cache + background-refresh contract as the others.
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from services.trend_engine.metrics import mean, wilson
 
@@ -128,15 +128,46 @@ def _live_fetchers():
     from hermes_trader.client.hl_client import fetch_funding_history, fetch_hl_candles
 
     bar_ms = {"1d": 86_400_000, "1h": 3_600_000, "4h": 14_400_000}
+    # One fetch per (coin, interval) per run, not one per SIGNAL. Every signal
+    # on a book asks for forward bars on the same coin, and each miss is a
+    # rate-limited HL info call at weight 20 — measured 2026-08-04, the lane
+    # took over two hours of almost pure waiting (4.8s of CPU in 2h13m) and the
+    # /trends P&L lane was chronically stale because of it. Bars come back
+    # newest-window-anchored, so a cached pull of N bars answers every ask for
+    # <= N bars exactly: the slice below is the only thing that ever varied.
+    candles: Dict[Tuple[str, str], Tuple[int, List[Any]]] = {}
+    funding: Dict[str, Tuple[int, int, List[Any]]] = {}
 
     def fetch_fwd(coin: str, signal_bar_t: int, n_bars: int, interval: str = "1d"):
         ms = bar_ms.get(interval, 86_400_000)
         age_bars = max(0, int((time.time() * 1000 - int(signal_bar_t)) // ms))
-        bars = fetch_hl_candles(coin, interval, n_bars + age_bars + 3)
+        need = n_bars + age_bars + 3
+        key = (coin, interval)
+        hit = candles.get(key)
+        if hit is None or hit[0] < need:
+            candles[key] = (need, fetch_hl_candles(coin, interval, need))
+        bars = candles[key][1]
         return [b for b in bars if int(getattr(b, "t", 0)) > int(signal_bar_t)]
 
     def fetch_funding(coin: str, start_ms: int, end_ms: int):
-        return fetch_funding_history(coin, int(start_ms), int(end_ms))
+        """Funding for one signal's window, cached per coin.
+
+        Cached on the UNION of the windows asked for, never widened to now:
+        measured 2026-08-04, pulling each coin's funding through to now turned
+        85s of funding into 449s on one book, because the API cost scales with
+        the range and an old signal drags the start back months.
+        """
+        start_ms, end_ms = int(start_ms), int(end_ms)
+        hit = funding.get(coin)
+        if hit is not None and hit[0] <= start_ms and hit[1] >= end_ms:
+            return [f for f in hit[2]
+                    if start_ms <= int(f.get("time", f.get("t", 0))) <= end_ms]
+        lo = min(start_ms, hit[0]) if hit else start_ms
+        hi = max(end_ms, hit[1]) if hit else end_ms
+        rows = fetch_funding_history(coin, lo, hi)
+        funding[coin] = (lo, hi, rows)
+        return [f for f in rows
+                if start_ms <= int(f.get("time", f.get("t", 0))) <= end_ms]
 
     return fetch_fwd, fetch_funding
 

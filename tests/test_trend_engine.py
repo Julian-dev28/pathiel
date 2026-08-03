@@ -2437,6 +2437,77 @@ def test_the_refresh_button_surfaces_a_failed_job(client):
     assert "setRefreshNote" in body and "refreshing… ' +" in body
 
 
+class _Bar:
+    def __init__(self, t):
+        self.t = t
+
+
+def test_forward_candles_are_fetched_once_per_coin_not_once_per_signal(monkeypatch):
+    """Every signal on a book asks for forward bars on the same coin, and each
+    miss is a rate-limited HL info call at weight 20. Measured 2026-08-04 the
+    recorders lane ran 2h13m for 4.8s of CPU — pure waiting — and the /trends
+    P&L lane was permanently stale behind it."""
+    calls = []
+    day = 86_400_000
+    now = int(time.time() * 1000)
+    bars = [_Bar(now - i * day) for i in range(60)][::-1]
+
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles",
+                        lambda coin, interval, n: calls.append((coin, n)) or bars)
+    monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
+
+    fwd, _ = rec._live_fetchers()
+    first = fwd("BTC", now - 10 * day, 5)
+    for i in range(1, 8):                       # seven more signals, same coin
+        fwd("BTC", now - (10 - i) * day, 5)
+    fwd("ETH", now - 10 * day, 5)               # a different coin does fetch
+    assert [c[0] for c in calls] == ["BTC", "ETH"]
+    # and the answer is unchanged: still only bars strictly after the signal
+    assert first == [b for b in bars if b.t > now - 10 * day]
+
+
+def test_a_deeper_lookback_refetches_instead_of_serving_a_short_cache(monkeypatch):
+    """A cached 10-bar pull cannot answer a 400-bar ask. Serving it would
+    silently grade an old signal on a window that never covered it."""
+    calls = []
+    day = 86_400_000
+    now = int(time.time() * 1000)
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles",
+                        lambda coin, interval, n: calls.append(n) or [])
+    monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
+
+    fwd, _ = rec._live_fetchers()
+    fwd("BTC", now - day, 5)                    # shallow
+    fwd("BTC", now - 200 * day, 5)              # much older signal -> deeper need
+    fwd("BTC", now - day, 5)                    # covered by the deep pull now
+    assert len(calls) == 2 and calls[1] > calls[0]
+
+
+def test_funding_is_widened_and_sliced_rather_than_refetched(monkeypatch):
+    calls = []
+    rows = [{"time": t} for t in range(0, 10_000, 1_000)]
+    import hermes_trader.client.hl_client as hl_client
+    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a: [])
+    monkeypatch.setattr(hl_client, "fetch_funding_history",
+                        lambda coin, lo, hi: calls.append((lo, hi)) or rows)
+
+    _, funding = rec._live_fetchers()
+    inner = funding("BTC", 2_000, 5_000)
+    assert [r["time"] for r in inner] == [2_000, 3_000, 4_000, 5_000]
+    funding("BTC", 3_000, 4_000)                # inside the cached range
+    assert len(calls) == 1
+    # a window outside the cache refetches ONCE, widened to the union — never
+    # widened to now, which made the API pull months of history per coin and
+    # turned 85s of funding into 449s on a single book (measured 2026-08-04)
+    funding("BTC", 1_000, 9_000)
+    assert len(calls) == 2 and calls[1] == (1_000, 9_000)
+    funding("BTC", 1_500, 8_000)
+    funding("BTC", 2_500, 6_000)
+    assert len(calls) == 2, "a nested window refetched"
+
+
 def test_the_arb_card_leads_the_updown_lane(client):
     """It is the only block on the lane with a control on it, so it sits above
     the read-only analysis and claim 3 renders before the other claims."""
