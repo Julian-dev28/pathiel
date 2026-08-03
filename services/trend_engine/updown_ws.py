@@ -82,6 +82,7 @@ class BookFeed:
         self.price_changes = 0
         self.trades = 0
         self.reconnects = 0
+        self.timeouts = 0
         self.last_msg_ts: float = 0.0
         self.last_error: str = ""
         self._fee_bps_seen: Dict[str, int] = {}
@@ -204,6 +205,7 @@ class BookFeed:
             "price_changes": self.price_changes,
             "trades": self.trades,
             "reconnects": self.reconnects,
+            "quiet_timeouts": self.timeouts,
             "last_msg_age_s": round(age, 2) if age is not None else None,
             "stale": bool(age is None or age > self.stale_after_s),
             "observed_fee_bps": self.observed_fee_bps(),
@@ -226,6 +228,20 @@ class BookFeed:
             return
         self._ws.send(json.dumps({"assets_ids": assets, "type": "market"}))
 
+    @staticmethod
+    def _is_timeout(exc: BaseException) -> bool:
+        """A quiet socket, not a broken one.
+
+        `recv()` raises after its 20s ceiling whenever nothing was pushed —
+        which is NORMAL here: a 5m market goes silent the moment it resolves,
+        and stays silent until someone subscribes the next window's tokens.
+        Treating that as a dead connection tore the socket down and rebuilt it
+        on a loop: 257 reconnects in one server session, and every teardown is
+        a window where `pair_quote` silently falls back to the 300ms REST path.
+        """
+        return type(exc).__name__ in (
+            "WebSocketTimeoutException", "timeout", "TimeoutError")
+
     def _run(self) -> None:
         attempt = 0
         while not self._stop.is_set():
@@ -235,7 +251,19 @@ class BookFeed:
                 attempt = 0
                 self._send_subscribe()
                 while not self._stop.is_set():
-                    raw = self._ws.recv()
+                    try:
+                        raw = self._ws.recv()
+                    except Exception as exc:
+                        if not self._is_timeout(exc):
+                            raise
+                        # hold the connection open: ping so the far end keeps
+                        # it, and flush a subscribe that arrived while quiet
+                        self.timeouts += 1
+                        self._ws.ping()
+                        if self._resubscribe.is_set():
+                            self._resubscribe.clear()
+                            self._send_subscribe()
+                        continue
                     if not raw:
                         continue
                     self._ingest(raw)

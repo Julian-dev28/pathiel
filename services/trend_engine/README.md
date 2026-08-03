@@ -368,6 +368,24 @@ Gotcha: the python.org macOS build ships no system trust store, so
 `websocket.create_connection` dies with `CERTIFICATE_VERIFY_FAILED` while
 `requests` works. `_ssl_opt()` passes certifi's bundle.
 
+Two things keep it actually live, both found by `scripts/smoke_trends.py`
+rather than by reading the code:
+
+- **A quiet socket is not a broken socket.** `recv()` raises after its 20s
+  ceiling whenever nothing is pushed, which is normal — a 5m market goes silent
+  the moment it resolves. That was treated as a dead connection: **257
+  reconnects in one server session**, and every teardown is a window where
+  `pair_quote` silently falls back to the 300 ms REST path. The read loop now
+  pings and holds the connection, counts it as `quiet_timeouts`, and flushes a
+  subscribe that arrived while the market was silent.
+- **Nothing re-subscribed on its own.** The window rolls every 300s, so a feed
+  that only re-points when a caller asks sits on a resolved market the whole
+  time nobody is looking; the next click came back `source: rest`.
+  `arb_watch.start_autoroll()` re-points every 15s while the tab is in use and
+  releases the socket 5 minutes after the last preflight, so a closed tab does
+  not leave the process parsing ~390 events/second. Measured after the fix: 330s
+  idle across a window roll, `source: websocket`, **0 reconnects**, not stale.
+
 The feed is read-only on a public channel and holds no key —
 `POLYMARKET_API_KEY` is only needed for the `user` channel, which this does not
 touch.

@@ -1286,6 +1286,74 @@ def test_health_separates_a_thread_that_never_started_from_a_failed_connect():
     assert h["pid"] == os.getpid() and h["measured_at"] > 0
 
 
+class TimeoutWS(FakeWS):
+    """Scripted socket that goes QUIET before it delivers — a 5m market the
+    moment it resolves, which is every 5 minutes."""
+
+    def __init__(self, frames, quiet=1):
+        super().__init__(frames)
+        self.quiet = quiet
+        self.pings = 0
+
+    def ping(self):
+        self.pings += 1
+
+    def recv(self):
+        if self.quiet > 0:
+            self.quiet -= 1
+            raise TimeoutError("Connection timed out")
+        if not self.frames:
+            raise TimeoutError("Connection timed out")   # quiet, not closed
+        return self.frames.pop(0)
+
+
+def test_a_quiet_socket_is_not_a_broken_socket():
+    """`recv` times out after 20s whenever nothing is pushed, which is normal
+    between windows. Tearing the connection down on it produced 257 reconnects
+    in one server session, and every teardown drops callers to the 300ms REST
+    path. Measured on the live server 2026-08-03."""
+    made = []
+
+    def connector(url):
+        ws = TimeoutWS([_book_frame("A", [(0.4, 1)], [(0.5, 1)])], quiet=2)
+        made.append(ws)
+        return ws
+
+    f = uw.BookFeed(connector=connector)
+    f.subscribe(["A"])
+    f.start()
+    assert f.wait_ready(timeout_s=3.0)
+    f.stop()
+    time.sleep(0.05)
+    assert len(made) == 1                    # ONE connection, not one per quiet gap
+    assert made[0].pings >= 2                # kept alive instead of rebuilt
+    h = f.health()
+    assert h["quiet_timeouts"] >= 2
+    assert h["reconnects"] == 0              # the stream ending is what reconnects
+
+
+def test_a_subscribe_that_arrives_while_quiet_still_goes_out():
+    """The window rolls while the old one is silent, so the resubscribe has to
+    flush on the timeout path too — otherwise it waits for a message that will
+    never come on the dead market."""
+    made = []
+
+    def connector(url):
+        ws = TimeoutWS([_book_frame("B", [(0.4, 1)], [(0.5, 1)])], quiet=3)
+        made.append(ws)
+        return ws
+
+    f = uw.BookFeed(connector=connector)
+    f.subscribe(["A"])
+    f.start()
+    time.sleep(0.1)
+    f._ws = made[0] if made else None
+    f.subscribe(["B"])                       # new window, old one silent
+    assert f.wait_ready(timeout_s=3.0)
+    f.stop()
+    assert {"assets_ids": ["B"], "type": "market"} in made[0].sent
+
+
 def test_feed_ignores_junk_frames():
     f = uw.BookFeed()
     f._ingest("not json")
@@ -1952,6 +2020,45 @@ def test_ensure_subscribed_resubscribes_when_the_feed_lost_its_assets(monkeypatc
     f.assets = []                             # socket replaced under us
     aw.ensure_subscribed()
     assert f.subs == [["t-up", "t-dn"], ["t-up", "t-dn"]]
+
+
+def test_autoroll_keeps_the_socket_on_the_live_window(monkeypatch):
+    """The window rolls every 300s and nothing re-subscribes on its own, so a
+    feed only re-points when a caller asks. Measured 2026-08-03: after one idle
+    window the next preflight came back `source: rest` — a 300ms poll on the
+    one click that wanted 0ms."""
+    calls, slug = [], ["w1"]
+    monkeypatch.setattr(aw, "_ROLL_THREAD", None)
+    monkeypatch.setattr(aw, "_LAST_USE", time.time())
+    monkeypatch.setattr(aw, "ensure_subscribed", lambda *a, **k: calls.append(slug[0]))
+    stopped = []
+    import services.trend_engine.updown_ws as uwmod
+    monkeypatch.setattr(uwmod, "stop_feed", lambda: stopped.append(True))
+
+    def sleeper(_s):
+        slug[0] = "w2"                       # the window rolls under the thread
+        if len(calls) >= 3:
+            monkeypatch.setattr(aw, "_LAST_USE", 0.0)   # tab closed
+
+    aw.start_autoroll(every_s=0.0, idle_stop_s=300.0, sleeper=sleeper)
+    for _ in range(50):
+        if stopped:
+            break
+        time.sleep(0.02)
+    assert calls[:1] == ["w1"] and "w2" in calls        # followed the roll
+    assert stopped, "an idle roller must release the socket, not hold it open"
+
+
+def test_autoroll_does_not_stack_threads(monkeypatch):
+    monkeypatch.setattr(aw, "_ROLL_THREAD", None)
+    monkeypatch.setattr(aw, "_LAST_USE", time.time())
+    monkeypatch.setattr(aw, "ensure_subscribed", lambda *a, **k: None)
+    started = []
+    aw.start_autoroll(every_s=0.05, sleeper=lambda s: started.append(s) or time.sleep(0.01))
+    first = aw._ROLL_THREAD
+    aw.start_autoroll(every_s=0.05)
+    assert aw._ROLL_THREAD is first          # one roller per process
+    monkeypatch.setattr(aw, "_LAST_USE", 0.0)
 
 
 def test_preflight_reports_the_socket_of_the_process_that_answers(monkeypatch):

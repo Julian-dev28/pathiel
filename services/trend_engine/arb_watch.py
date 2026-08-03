@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -322,6 +323,49 @@ def ensure_subscribed(slug: Optional[str] = None,
         return None
 
 
+_ROLL_LOCK = threading.Lock()
+_ROLL_THREAD: Optional[threading.Thread] = None
+_LAST_USE: float = 0.0
+ROLL_EVERY_S = 15.0
+ROLL_IDLE_STOP_S = 300.0
+
+
+def start_autoroll(every_s: float = ROLL_EVERY_S, idle_stop_s: float = ROLL_IDLE_STOP_S,
+                   sleeper: Callable[[float], None] = time.sleep) -> None:
+    """Keep the socket pointed at the LIVE window while the tab is in use.
+
+    Nothing re-subscribes on its own: the window rolls every 300s, and a feed
+    that only re-points when a caller asks is subscribed to a resolved market
+    the entire time nobody is looking. Measured 2026-08-03: after one idle
+    window the next preflight was served `source: rest` — a 300ms poll on the
+    one click that wanted 0ms.
+
+    Idle-stops itself `idle_stop_s` after the last preflight so a closed tab
+    does not leave this process parsing ~390 events/second forever.
+    """
+    global _ROLL_THREAD
+    with _ROLL_LOCK:
+        if _ROLL_THREAD is not None and _ROLL_THREAD.is_alive():
+            return
+
+        def _loop() -> None:
+            global _ROLL_THREAD
+            try:
+                while time.time() - _LAST_USE < idle_stop_s:
+                    ensure_subscribed()
+                    sleeper(every_s)
+            finally:
+                from services.trend_engine.updown_ws import stop_feed
+                global _SUBSCRIBED
+                stop_feed()                 # release the socket with the thread
+                _SUBSCRIBED = None
+                with _ROLL_LOCK:
+                    _ROLL_THREAD = None
+
+        _ROLL_THREAD = threading.Thread(target=_loop, name="arb-autoroll", daemon=True)
+        _ROLL_THREAD.start()
+
+
 def ws_health() -> Dict[str, Any]:
     """This process's socket state, for the dashboard.
 
@@ -362,7 +406,10 @@ def preflight(quoter: Optional[Callable[[], Dict[str, Any]]] = None,
     read it from.
     """
     if subscribe and quoter is None:
+        global _LAST_USE
+        _LAST_USE = time.time()
         ensure_subscribed(wait_s=SUBSCRIBE_WAIT_S)
+        start_autoroll()          # keep it warm across the next window roll
     w = ArbWatcher(mode="shadow", min_edge=min_edge, max_notional_usd=cap_usd,
                    cooldown_s=0.0, quoter=quoter)
     event = w.check()

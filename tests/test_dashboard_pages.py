@@ -1551,3 +1551,54 @@ def test_summary_equity_is_true_account_equity(monkeypatch):
     s = db._summary_payload()
     assert s["equity"] == 20.42          # 20.40 perps + 0.02 spot
     assert s["spot_usdc"] == 0.02
+
+
+# ── wiring audit: every page, not just the one being worked on ───────────────
+
+
+def _template_files():
+    tdir = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "hermes_trader", "templates")
+    return [(f, open(os.path.join(tdir, f)).read()) for f in sorted(os.listdir(tdir))
+            if f.endswith(".html")]
+
+
+def test_no_page_reaches_for_an_element_that_does_not_exist():
+    """`$('#renamed')` is null in the browser and the block it feeds silently
+    never renders — the page looks like a quiet market instead of a bug. This
+    is the cheapest place to catch a rename."""
+    for name, html in _template_files():
+        defined = set(re.findall(r'id="([\w-]+)"', html))
+        used = (set(re.findall(r"\$\('#([\w-]+)'\)", html))
+                | set(re.findall(r"getElementById\('([\w-]+)'\)", html)))
+        assert not (used - defined), f"{name} reaches for missing ids: {sorted(used - defined)}"
+
+
+def test_no_page_calls_an_endpoint_that_is_not_registered(client):
+    """Every page is a static shell over the JSON API. A route renamed on the
+    server and not in the template is a control that 404s in production."""
+    routes = {r.path for r in client.app.routes if hasattr(r, "path")}
+    for name, html in _template_files():
+        for raw in set(re.findall(r"'(/api/[\w/{}?=&.-]*)'", html)):
+            path = raw.split("?")[0].rstrip("/")
+            if not path:
+                continue                      # a prefix the script concatenates onto
+            if path in routes:
+                continue
+            # the last segment may be a path parameter the script fills in
+            templated = [re.sub(r"/[\w.-]+$", "/{%s}" % p, path)
+                         for p in ("lane", "market_id", "book", "name", "coin")]
+            assert (any(t in routes for t in templated)
+                    or any(p.startswith(path) for p in routes)), \
+                f"{name} calls unregistered endpoint {raw}"
+
+
+def test_no_page_pulls_a_third_party_asset(client):
+    """The dashboard runs on a trading box. Every asset is vendored under
+    /static so a CDN outage (or a CDN owner) cannot change what it renders."""
+    for path in ("/", "/activity", "/news", "/predictions", "/analytics", "/trends"):
+        # the SVG namespace is an identifier, not a fetch — everything else is
+        body = client.get(path).text.replace(
+            'xmlns="http://www.w3.org/2000/svg"', "")
+        external = re.findall(r'https?://[^\s"\'<>)]+', body)
+        assert not external, f"{path} pulls {sorted(set(external))}"

@@ -179,6 +179,12 @@ class Smoke:
                    "server owns a live socket",
                    f"pid={ws.get('pid')} events={ws.get('events')} "
                    f"stale={ws.get('stale')} fee={ws.get('observed_fee_bps')}")
+        # Churn is the failure that hides: a socket that rebuilds itself every
+        # quiet gap is "connected" at every sample and REST-backed in between.
+        self.check((ws.get("reconnects") or 0) <= 5, "socket is not churning",
+                   f"reconnects={ws.get('reconnects')} "
+                   f"quiet_timeouts={ws.get('quiet_timeouts')} "
+                   f"last_error={ws.get('last_error') or 'none'}")
         # A second call must be served from the socket, not another REST poll.
         code, p2 = self.call("/api/dashboard/trends/arb/preflight")
         q2 = (p2 or {}).get("quote") or {}
