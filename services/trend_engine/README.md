@@ -232,6 +232,14 @@ that step three above is or is not satisfiable.
 Both legs are **FOK**. A filled UP leg with no DOWN leg is not a smaller arb,
 it is naked BTC exposure, which is the trade this whole lane exists to avoid.
 
+**What the tape says so far (n=1,126 samples / 225 windows, 2026-08-03):** the
+BUY pair has never crossed net (0/1056, min cost $1.001). The SELL pair crossed
+in **one window of 225** — two snapshots 2.5 minutes apart, worth **$0.077** on
+the 7.73-share thin leg — and nothing in the 224 windows since. `arb_stats`
+therefore reports `net_hit_windows`, `best_hit_usd` and the drought alongside
+the snapshot counts: the sampler takes five shots per window, so one resting
+order otherwise reads as five independent events.
+
 Two defects were fixed building it, both of which hid real crossings:
 
 - `arb_stats` read the *stored* `fee_bps`, and 251 of the first 276 rows had

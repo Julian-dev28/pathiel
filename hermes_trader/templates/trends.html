@@ -982,6 +982,11 @@ function renderEdges(e) {
     </div>` : '<span class="dim text-[11px]">no live book</span>'}
     <div class="text-[11px] mt-2 ${arb.status === 'ok' && arb.net_hits ? 'teal' : 'amb'}">
       ${esc(arb.verdict || arb.hint || '')}</div>
+    ${arb.net_hits ? `<div class="text-[10.5px] mt-1 mut">Counted per WINDOW as well as per
+      snapshot: the sampler takes 5 shots of every window, so one resting order can be counted
+      five times and read as five events. Both prints so far were in
+      <b>${arb.net_hit_windows}</b> window; the sell side also needs a minted complete set plus
+      Polygon gas, which <b>$${num(arb.best_hit_usd, 2)}</b> on the thin leg does not clear.</div>` : ''}
     ${arb.rows_repriced_off_advertised_fee ? `<div class="text-[10.5px] mt-1 dim">
       ${arb.rows_repriced_off_advertised_fee} stored sample(s) had Gamma's 1000bps frozen in and were
       re-priced at the charged rate on read.</div>` : ''}

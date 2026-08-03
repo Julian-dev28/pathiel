@@ -158,6 +158,32 @@ long-lived server process, tagged with `pid`. Verified after the fix: server pid
 Generalisable: a health metric is only meaningful from the process that owns the
 resource. Cache the *measurement*, never the *liveness*.
 
+## 10. CORRECTION — the "2 sell-side prints" are one window, worth 8 cents
+
+Re-read at n=1,126 samples / 225 windows (2026-08-03, 19h of unbiased
+sampling). Both net-profitable SELL snapshots are the **same 5-minute window**
+(`btc-updown-5m-1785648300`, 13:27:01 and 13:29:32), which is also the very
+first window ever sampled. Nothing in the **224 windows since**.
+
+| read | number |
+|---|---|
+| BUY pair under $1, net | **0 / 1056** snapshots, min pair cost $1.001 |
+| SELL pair over $1, net | 2 snapshots, **1 window of 225** |
+| best takeable | **$0.077** (1c/share x the 7.73-share thin leg) |
+| drought | 224 windows / 19.2h |
+
+Two things were wrong with how this was reported. The sampler takes five shots
+per window, so one resting order gets counted up to five times and
+`2/1056 snapshots` reads as an independent rate. And a per-share edge with no
+size next to it hides that the fat leg (122.8 shares) is irrelevant — the trade
+is capped by the thin one. `arb_stats` now reports `net_hit_windows`,
+`best_hit_usd`, and the drought, and the verdict string leads with windows.
+
+Against that $0.077 the sell side also has to mint a complete set on the CTF
+contract and pay Polygon gas. Claim 3 is **not tradeable from here** — not
+because the fee killed it (the fee is 0), but because the opportunity is one
+window in 225 and worth eight cents when it appears.
+
 ### What ships from this
 
 - `/trends` tab, four lanes, every forecast next to its own backtest verdict.
@@ -178,3 +204,18 @@ The unbiased book sampler (~288 windows/day) is the only path to answering
 claim 1 (price-bucket calibration) and the tradeable half of claim 2 (buying
 the cheap side near the close). At n=25 the late-ticket EV interval still
 straddles breakeven. Re-read `--edges` after a few days.
+
+**Update 2026-08-03, n=1,126 samples / 225 windows:**
+
+- **Claim 1 — calibrated.** @60s (n=205) no price bucket sits outside its own
+  interval. @30s (n=180) one does: 0.10–0.25 priced 0.169, resolved 0.321
+  (+15.2pp, n=28) — one bucket out of ten at 95%, which is what noise looks
+  like. No edge to trade.
+- **Claim 2b — still negative.** Buy any side ≤5c with 30s left: n=122, win
+  1.64% (CI 0.45–5.78%) against a 2.01% breakeven, EV/$ −0.185. The fat tail is
+  real (claim 2, @120s the leader priced 0.981 resolves 0.940, n=315) and the
+  book still does not pay for it at the touch.
+- **Claim 3 — see section 10.** One window in 225, $0.08 takeable.
+
+Nothing here is promotable. The sampler keeps running because claim 2b is the
+only line whose interval could still move.

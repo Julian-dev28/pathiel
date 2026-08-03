@@ -979,7 +979,7 @@ def test_arb_stats_reprices_rows_that_froze_the_disproved_advertised_fee():
     assert a["buy_both_net_hits"] == 1
     assert a["mean_fee_bps"] == 0.0
     assert a["rows_repriced_off_advertised_fee"] == 1
-    assert "NET-profitable BUY pair" in a["verdict"]
+    assert "1 BUY + 0 SELL net-profitable" in a["verdict"]
 
 
 def test_arb_stats_counts_the_sell_side_crossing():
@@ -997,7 +997,7 @@ def test_arb_stats_counts_the_sell_side_crossing():
     assert a["sell_both_net_hits"] == 1
     assert a["net_hits"] == 1
     assert a["best_sell_net_edge"] == 0.01
-    assert "NET-profitable SELL pair" in a["verdict"]
+    assert "0 BUY + 1 SELL net-profitable" in a["verdict"]
 
 
 def test_arb_stats_ignores_the_stored_net_and_recomputes_from_gross():
@@ -1015,6 +1015,47 @@ def test_arb_stats_declines_a_crossing_it_cannot_price():
     a = ue.arb_stats([row])
     assert a["buy_both_gross_hits"] == 1
     assert a["buy_both_net_hits"] == 0
+
+
+def _sample(up_bid, up_ask, dn_bid, dn_ask, fee=0.0, window=1, ts=0,
+            up_bid_size=10.0, down_bid_size=10.0,
+            up_ask_size=10.0, down_ask_size=10.0):
+    """One sampler row in the on-disk (flat) shape `record_window` writes."""
+    return {"up_bid": up_bid, "up_ask": up_ask, "down_bid": dn_bid, "down_ask": dn_ask,
+            "up_bid_size": up_bid_size, "down_bid_size": down_bid_size,
+            "up_ask_size": up_ask_size, "down_ask_size": down_ask_size,
+            "buy_both_gross": round(1.0 - (up_ask + dn_ask), 4),
+            "sell_both_gross": round((up_bid + dn_bid) - 1.0, 4),
+            "fee_bps": fee, "window_start_ms": window, "ts": ts}
+
+
+def test_arb_stats_counts_windows_not_just_snapshots():
+    """Five shots of one window is one event, not five. The first 1,126 real
+    samples held two sell-side prints and both were in the SAME window, 2.5
+    minutes apart — `2/1056 snapshots` reads as a rate you could size against."""
+    w = 1_700_000_000_000
+    rows = [_sample(0.42, 0.43, 0.59, 0.60, fee=0.0, window=w, ts=1000),      # crossed
+            _sample(0.42, 0.43, 0.59, 0.60, fee=0.0, window=w, ts=1150),      # same window
+            _sample(0.40, 0.45, 0.50, 0.56, fee=0.0, window=w + 300_000, ts=1400),
+            _sample(0.40, 0.45, 0.50, 0.56, fee=0.0, window=w + 600_000, ts=1700)]
+    a = ue.arb_stats(rows)
+    assert a["net_hits"] == 2 and a["net_hit_windows"] == 1
+    assert a["windows"] == 3
+    assert a["windows_since_last_hit"] == 2          # not 3: the hit window is not clean
+    assert "1 of 3 windows" in a["verdict"]
+    assert "none in the 2 windows since" in a["verdict"]
+
+
+def test_arb_stats_prices_the_crossing_in_dollars_off_the_thin_leg():
+    """1c/share on 4 shares is 4 cents. The per-share number is what makes an
+    arb sound like an opportunity; this is what it would have paid."""
+    w = 1_700_000_000_000
+    rows = [_sample(0.42, 0.43, 0.59, 0.60, fee=0.0, window=w, ts=1000,
+                    up_bid_size=7.73, down_bid_size=122.8)]
+    a = ue.arb_stats(rows)
+    assert a["best_sell_net_edge"] == pytest.approx(0.01)
+    assert a["best_hit_usd"] == pytest.approx(0.0773)   # thin leg, not the fat one
+    assert "$0.08 takeable" in a["verdict"]
 
 
 def test_arb_stats_says_so_when_nothing_was_ever_crossed():

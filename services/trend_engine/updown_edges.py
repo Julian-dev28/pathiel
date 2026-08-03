@@ -732,6 +732,21 @@ def _net_from_gross(row: Dict[str, Any], side: str) -> Optional[float]:
     return float(gross) - fees
 
 
+def _hit_usd(row: Dict[str, Any], side: str, net_edge: float) -> float:
+    """Dollars actually takeable on a crossing: edge x the THIN leg's size.
+
+    A 1c edge on 4 shares is 4 cents. The per-share number is what makes an arb
+    sound like an opportunity; this is what it pays, and on the sell side it has
+    to clear minting a complete set plus gas before it means anything.
+    """
+    legs = ("up_ask_size", "down_ask_size") if side == "buy" else \
+        ("up_bid_size", "down_bid_size")
+    sizes = [row.get(k) for k in legs]
+    if any(s is None for s in sizes):
+        return 0.0
+    return round(net_edge * min(float(s) for s in sizes), 4)
+
+
 def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     """CLAIM 3: how often does a sub-$1 pair actually exist at OUR latency?
 
@@ -741,6 +756,13 @@ def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     the one that actually prints from here, so burying it was hiding the edge.
 
     Net is recomputed from gross at `row_fee_bps`, never read off the row.
+
+    Counted per WINDOW as well as per snapshot, because the events cluster: the
+    first 1,126 samples held two net-profitable sell prints and BOTH were in one
+    5-minute window, 2.5 minutes apart. `2/1056 snapshots` reads as a rate you
+    could size against; `1 window in 225, none in the 224 since` is the same
+    data and the honest version of it. Snapshots inside one window are not
+    independent draws — the same resting order gets counted at every offset.
     """
     rows = [s for s in samples if s.get("buy_both_gross") is not None]
     if not rows:
@@ -757,10 +779,35 @@ def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     stale = sum(1 for s in rows if float(s.get("fee_bps") or 0) == GAMMA_ADVERTISED_FEE_BPS)
     best_buy = max((n for n in buy_nets if n is not None), default=-9.0)
     best_sell = max((n for n in sell_nets if n is not None), default=-9.0)
+
+    # Per-window, not per-snapshot: the sampler takes 5 shots of every window,
+    # so one resting order can be counted five times and look like five events.
+    all_windows = {s.get("window_start_ms") for s in rows}
+    hit_rows = ([(s, n, "buy") for s, n in zip(rows, buy_nets) if n is not None and n > 0]
+                + [(s, n, "sell") for s, n in zip(rows, sell_nets) if n is not None and n > 0])
+    hit_windows = {s.get("window_start_ms") for s, _, _ in hit_rows}
+    hit_usds = [_hit_usd(s, side, n) for s, n, side in hit_rows]
+    best_usd = round(max(hit_usds), 4) if hit_usds else 0.0
+    last_hit_ts = max((int(s.get("ts") or 0) for s, _, _ in hit_rows), default=0)
+    latest_ts = max((int(s.get("ts") or 0) for s in rows), default=0)
+    # Count WINDOWS after the last hit's window, not rows after its timestamp:
+    # the hit window's own later snapshots would otherwise re-count it as a
+    # clean window and quietly inflate the drought by one.
+    last_hit_window = max((int(s.get("window_start_ms") or 0) for s, _, _ in hit_rows),
+                          default=0)
+    windows_since = len({s.get("window_start_ms") for s in rows
+                         if int(s.get("window_start_ms") or 0) > last_hit_window}) \
+        if hit_rows else None
+    hours_since = (round((latest_ts - last_hit_ts) / 3600.0, 1)
+                   if hit_rows and last_hit_ts else None)
+
     if net_buy or net_sell:
-        verdict = (f"{len(net_buy)}/{len(rows)} snapshots had a NET-profitable BUY pair, "
-                   f"{len(net_sell)}/{len(rows)} a NET-profitable SELL pair "
-                   f"(best ${max(best_buy, best_sell):.2f}/share)")
+        verdict = (f"{len(net_buy)} BUY + {len(net_sell)} SELL net-profitable snapshot(s) "
+                   f"in {len(hit_windows)} of {len(all_windows)} windows "
+                   f"(best ${max(best_buy, best_sell):.2f}/share, "
+                   f"${best_usd:.2f} takeable on the thin leg)")
+        if windows_since:
+            verdict += f" — none in the {windows_since} windows since ({hours_since}h)"
     elif gross_buy or gross_sell:
         verdict = (f"{len(gross_buy) + len(gross_sell)} snapshot(s) crossed gross but NONE "
                    f"survived the fee at {round(mean(fees))}bps")
@@ -776,6 +823,10 @@ def arb_stats(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "sell_both_gross_hits": len(gross_sell),
         "sell_both_net_hits": len(net_sell),
         "net_hits": len(net_buy) + len(net_sell),
+        "net_hit_windows": len(hit_windows),
+        "best_hit_usd": best_usd,
+        "windows_since_last_hit": windows_since,
+        "hours_since_last_hit": hours_since,
         "mean_pair_cost": round(mean(costs), 4),
         "min_pair_cost": round(min(costs), 4),
         "mean_fee_bps": round(mean(fees), 1),
