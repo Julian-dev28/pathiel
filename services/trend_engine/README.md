@@ -277,6 +277,25 @@ Two defects were fixed building it, both of which hid real crossings:
   reports `running` (thread alive) separately from `connected` (handshake), so
   "never started" and "cannot connect" stop looking identical.
 
+### Proving it is wired: `scripts/smoke_trends.py`
+
+The gate tests prove each piece with the network stubbed. The smoke proves the
+pieces are wired to each other in the process the operator actually loads:
+
+```bash
+python scripts/smoke_trends.py                     # 41 read-only checks
+python scripts/smoke_trends.py --with-refresh politics --with-fire   # 47, write paths
+```
+
+It checks every route answers, every lane payload carries the fields the page
+renders (`LANE_CONTRACT`), the operator surface is 401 without a token, the
+second preflight is served off the socket rather than REST, execution stays
+blocked on the missing signing credentials, and — with the flags — that a
+refresh job completes and moves the cache stamp and that FIRE round-trips
+without placing an order. Exit code is the failure count, so it can gate a
+deploy. Two gate tests keep it honest: the lane set must match
+`dashboard._TREND_LANES`, and every id/endpoint the page reaches for must exist.
+
 ### The `refresh data` button runs in its own process
 
 `restart.sh` starts the server on a hard-throttled HL token bucket (refill 2/s,

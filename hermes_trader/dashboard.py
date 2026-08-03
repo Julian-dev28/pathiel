@@ -1464,6 +1464,9 @@ def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
     return job_id
 
 
+# The lanes the tab serves. Module level because it is a contract: the page,
+# the refresh/AI routes and scripts/smoke_trends.py all have to agree on it.
+_TREND_LANES = ("hl", "updown", "politics", "recorders")
 _REFRESH_TIMEOUT_S = 600.0
 
 
@@ -1913,8 +1916,6 @@ def register_routes(app: FastAPI) -> None:
         if job is None:
             raise HTTPException(status_code=404, detail="unknown or expired job")
         return JSONResponse(job)
-
-    _TREND_LANES = ("hl", "updown", "politics", "recorders")
 
     @app.get("/api/dashboard/trends/{lane}")
     async def dashboard_trends(lane: str) -> JSONResponse:

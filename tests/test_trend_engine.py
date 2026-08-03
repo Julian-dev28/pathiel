@@ -2278,8 +2278,10 @@ def test_the_socket_status_line_is_read_live_and_never_from_the_cache(client):
     seconds after starting a socket — rendering it showed a dead feed on the
     tab while the server's own socket was pushing thousands of events."""
     body = client.get("/trends").text
-    assert "wsHealthLine(p.ws)" in body
-    assert "e.ws" not in body                  # cached health is never rendered
+    assert "wsHealthLine(p.ws, 'now')" in body
+    # the cached block is only a labelled fallback for the no-token case
+    assert "wsHealthLine(cached, 'at last lane refresh')" in body
+    assert "${e.ws" not in body                # never rendered as if it were live
     assert "pair at last refresh" in body      # the cached quote says it is old
 
 
@@ -2321,6 +2323,77 @@ def test_the_arb_preflight_payload_degrades_instead_of_500ing(monkeypatch):
         RuntimeError("feed gone")))
     out = dash._trends_arb_preflight_payload()
     assert out["status"] == "error" and "feed gone" in out["error"]
+
+
+def test_the_action_card_folds_the_named_setups(client):
+    """HL alone emits 21 actions. A 21-item wall under a header that says
+    'read this first' is not a briefing — the rules and the refusals stay
+    open, the per-coin WATCH list folds behind a count."""
+    body = client.get("/trends").text
+    assert "named setups</button>" in body
+    assert "const sorted = acts.slice();" in body        # source order, not by kind
+    assert "PB_ORDER" not in body                        # the sort is gone, not bypassed
+
+
+def test_the_action_card_shows_which_sector_each_line_belongs_to(client):
+    """crypto and xyz actions are interleaved; without the tag the reader
+    cannot tell which tape a line is about."""
+    body = client.get("/trends").text
+    assert "a.tag && a.tag !== 'method'" in body
+
+
+def test_a_stale_lane_is_visible_from_another_tab(client):
+    body = client.get("/trends").text
+    assert ".tab-stale::after" in body and "tab-stale" in body
+
+
+def test_every_element_the_page_scripts_reach_for_exists(client):
+    """A renamed id fails silently in the browser — `$('#gone')` is null and the
+    block it feeds just never renders. Catch it here instead of on the tab."""
+    import re
+    body = client.get("/trends").text
+    defined = set(re.findall(r'id="([\w-]+)"', body))
+    used = (set(re.findall(r"\$\('#([\w-]+)'\)", body))
+            | set(re.findall(r"getElementById\('([\w-]+)'\)", body)))
+    assert not (used - defined), f"script reaches for missing ids: {sorted(used - defined)}"
+    # ids built at runtime from the lane map must resolve too
+    lanes = re.search(r"const REFRESH_BTN = \{(.*?)\};", body, re.S).group(1)
+    for btn in re.findall(r"'([\w-]+)'", lanes):
+        assert btn in defined, f"REFRESH_BTN points at a missing button: {btn}"
+
+
+def test_every_endpoint_the_page_calls_is_registered(client):
+    """The page is a static shell over the JSON API. A route renamed on the
+    server and not in the template is a button that 404s."""
+    import re
+    body = client.get("/trends").text
+    called = set(re.findall(r"'(/api/dashboard/trends/[\w/{}?=-]*)'", body))
+    registered = {r.path for r in client.app.routes if hasattr(r, "path")}
+    for raw in called:
+        path = raw.split("?")[0].rstrip("/")
+        if not path:
+            continue                                  # the lane-prefix literal
+        # the template concatenates the lane, so match on the templated route
+        candidates = {path, path.replace("/hl", "/{lane}"),
+                      re.sub(r"/trends/[\w-]+/", "/trends/{lane}/", path)}
+        assert candidates & registered or any(
+            p.startswith(path) for p in registered), f"page calls unregistered {raw}"
+
+
+def test_the_smoke_script_contract_matches_the_lanes_the_tab_serves():
+    """`scripts/smoke_trends.py` asserts a field contract per lane. If a lane is
+    added or renamed, the smoke must know about it or it silently checks less."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "smoke_trends", os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                     "scripts", "smoke_trends.py"))
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    from hermes_trader import dashboard as dash
+    assert set(smoke.LANE_CONTRACT) == set(dash._TREND_LANES)
+    assert set(smoke.LANES) == set(dash._TREND_LANES)
+    for lane, keys in smoke.LANE_CONTRACT.items():
+        assert "playbook" in keys, f"{lane} smoke contract forgot the action layer"
 
 
 def test_css_build_is_current():

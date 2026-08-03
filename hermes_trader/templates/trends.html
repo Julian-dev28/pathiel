@@ -59,6 +59,8 @@
        border-bottom:2px solid transparent;background:transparent}
   .tab[aria-selected="true"]{color:var(--txt);border-bottom-color:var(--vio)}
   .tab .n{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--dim);margin-left:6px}
+  /* a lane whose cache went stale while you were on another tab */
+  .tab-stale::after{content:"·";color:var(--amb);font-size:16px;line-height:0;margin-left:5px}
 
   .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.06em;
          border-radius:3px;border:1px solid transparent;white-space:nowrap;
@@ -282,18 +284,21 @@
     <!-- The arb (claim 3) is the only actionable thing on this lane — it holds
          the FIRE button — so it sits above the read-only analysis. -->
     <div class="card mb-4">
-      <div class="sec-label">microstructure · the three HFT claims, tested</div>
+      <div class="sec-label">microstructure · the HFT claims, tested — most actionable first</div>
       <div id="ud-edges"><span class="dim text-[11.5px]">loading…</span></div>
     </div>
 
-    <div id="pb-updown" class="mb-4"></div>
-        <div class="card mb-4">
+    <!-- Both "now" surfaces sit together: the FIRE card prices the pair, this
+         one says how much of the 5-minute window is left to act in. -->
+    <div class="card mb-4">
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <div class="sec-label" style="margin-bottom:0">live window · model vs market</div>
         <span class="text-[10px] mono dim" id="ud-clock"></span>
       </div>
       <div id="ud-live"><span class="dim text-[11.5px]">loading…</span></div>
     </div>
+
+    <div id="pb-updown" class="mb-4"></div>
 
     <div class="strip" id="ud-strip">
       <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
@@ -564,6 +569,13 @@ function showLane(l) {
   $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.lane === l)));
   const d = DATA[l];
   $('#lane-meta').textContent = d ? `${l} · ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+  // A stale lane the operator is not looking at is the one that misleads, so
+  // the staleness lives on the tab, not only on the open lane.
+  LANES.forEach(x => {
+    const tab = $$('.tab').find(t => t.dataset.lane === x);
+    const dx = DATA[x];
+    if (tab) tab.classList.toggle('tab-stale', !!(dx && dx.stale));
+  });
 }
 $$('.tab').forEach(t => t.onclick = () => showLane(t.dataset.lane));
 
@@ -576,7 +588,11 @@ async function loadLane(l) {
   if (l === 'politics') renderPolitics(d);
   if (l === 'recorders') renderRecorders(d);
   renderPlaybook(l, d.playbook);
-  if (LANE === l) showLane(l);
+  // Every refresh button carries the age of the data it would replace, so the
+  // freshness question is answered where the fix is, not only in the header.
+  setRefreshNote(l, d.generated_at ? 'data ' + age(d.age_s) : 'no cached read',
+                 d.stale ? 'amb' : 'dim');
+  showLane(LANE);
 }
 
 function emptyState(el, d, lane) {
@@ -590,7 +606,6 @@ const PB_META = {
   dont:  { label: "DON'T", cls: 'b-dn',   dot: 'var(--dn)' },
   watch: { label: 'WATCH', cls: 'b-chop', dot: 'var(--amb)' },
 };
-const PB_ORDER = { do: 0, dont: 1, watch: 2 };
 
 function renderPlaybook(lane, pb) {
   const el = $('#pb-' + lane);
@@ -601,28 +616,47 @@ function renderPlaybook(lane, pb) {
       <span class="dim text-[11.5px]">No action call for this lane yet — refresh the data.</span></div>`;
     return;
   }
-  const sorted = acts.slice().sort((a, b) => (PB_ORDER[a.kind] ?? 9) - (PB_ORDER[b.kind] ?? 9));
+  // Source order, NOT sorted by kind: playbook.py already emits in reading
+  // order (how to use the tab -> today vs the week -> regime -> named setups),
+  // and re-sorting by DO/DON'T buried the freshest line under the method note.
+  const sorted = acts.slice();
   const c = pb.counts || {};
+  // The card that says "read this first" must be readable first: HL alone
+  // produces 21 actions, and a 21-item wall is not a briefing. The rules and
+  // the refusals lead; the named-coin WATCH list folds away behind a toggle.
+  const head = sorted.filter(a => a.kind !== 'watch' || !a.trigger);
+  const tail = sorted.filter(a => a.kind === 'watch' && a.trigger);
+  const item = a => {
+    const m = PB_META[a.kind] || PB_META.watch;
+    return `<div class="act" style="border-left:2px solid ${m.dot}">
+      <div class="flex items-baseline gap-2 flex-wrap">
+        <span class="badge ${m.cls}">${m.label}</span>
+        ${a.tag && a.tag !== 'method' ? `<span class="badge b-mut">${esc(a.tag)}</span>` : ''}
+        <span style="font-size:12.5px;font-weight:600;color:var(--txt)">${esc(a.do)}</span>
+      </div>
+      <div class="text-[11px] mut mt-1">${esc(a.because)}</div>
+      ${a.trigger ? `<div class="text-[10.5px] mt-1"><span class="teal">go:</span>
+        <span class="dim">${esc(a.trigger)}</span></div>` : ''}
+      ${a.invalidate ? `<div class="text-[10.5px] mt-1"><span class="dn">stop:</span>
+        <span class="dim">${esc(a.invalidate)}</span></div>` : ''}
+    </div>`;
+  };
   el.innerHTML = `<div class="card" style="border-color:rgba(139,92,246,.35)">
     <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
       <div class="sec-label" style="margin-bottom:0">what to do · read this first</div>
       <span class="text-[10px] mono dim">${c.do || 0} do · ${c.dont || 0} don't · ${c.watch || 0} watch</span>
     </div>
-    ${sorted.map(a => {
-      const m = PB_META[a.kind] || PB_META.watch;
-      return `<div class="act" style="border-left:2px solid ${m.dot}">
-        <div class="flex items-baseline gap-2 flex-wrap">
-          <span class="badge ${m.cls}">${m.label}</span>
-          <span style="font-size:12.5px;font-weight:600;color:var(--txt)">${esc(a.do)}</span>
-        </div>
-        <div class="text-[11px] mut mt-1">${esc(a.because)}</div>
-        ${a.trigger ? `<div class="text-[10.5px] mt-1"><span class="teal">go:</span>
-          <span class="dim">${esc(a.trigger)}</span></div>` : ''}
-        ${a.invalidate ? `<div class="text-[10.5px] mt-1"><span class="dn">stop:</span>
-          <span class="dim">${esc(a.invalidate)}</span></div>` : ''}
-      </div>`;
-    }).join('')}
+    ${head.map(item).join('')}
+    ${tail.length ? `<div id="pb-${lane}-tail" class="hidden">${tail.map(item).join('')}</div>
+      <button class="btn mt-2" type="button" id="pb-${lane}-more">
+        show the ${tail.length} named setups</button>` : ''}
   </div>`;
+  const more = $('#pb-' + lane + '-more');
+  if (more) more.onclick = () => {
+    const box = $('#pb-' + lane + '-tail');
+    const open = box.classList.toggle('hidden');
+    more.textContent = open ? `show the ${tail.length} named setups` : 'hide the named setups';
+  };
 }
 
 // ── LANE 1: Hyperliquid ─────────────────────────────────────────────────────
@@ -1128,14 +1162,14 @@ let ARB = null;
 // carries a health block too, but it is written by the refresher — a process
 // that starts a socket and exits seconds later — so rendering that one showed
 // "down · 0 events · reconnects 0" forever while the server's feed was live.
-function wsHealthLine(ws) {
+function wsHealthLine(ws, label) {
   if (!ws) return '';
   const live = ws.connected && !ws.stale;
   const state = live ? 'LIVE'
     : ws.connected ? 'connected · STALE'
       : ws.running ? 'connecting' : 'not started';
   return `<div class="mono text-[10.5px] mb-2 ${live ? 'teal' : 'amb'}">
-    websocket ${state}
+    websocket${label ? ' ' + label : ''} ${state}
     · ${ws.events || 0} events (${ws.price_changes || 0} price changes, ${ws.trades || 0} trades)
     · last ${ws.last_msg_age_s == null ? '–' : num(ws.last_msg_age_s, 1) + 's'} ago
     · reconnects ${ws.reconnects || 0}
@@ -1149,8 +1183,13 @@ function renderArbFire(p) {
   const el = $('#arb-fire');
   if (!el) return;
   if (!p || (p.status !== 'ok' && p.status !== undefined)) {
+    // No live preflight (no operator token, or the call failed). Fall back to
+    // the refresher's snapshot, clearly stamped as the older read — showing
+    // nothing at all would read as "there is no socket".
+    const cached = ((DATA.updown || {}).edges || {}).ws;
     el.innerHTML = `<span class="dim text-[11px] mono">arb preflight ${esc((p && p.status) || 'unavailable')}
-      ${p && p.error ? '· ' + esc(p.error) : ''}</span>`;
+      ${p && p.error ? '· ' + esc(p.error) : ''}</span>`
+      + (cached ? wsHealthLine(cached, 'at last lane refresh') : '');
     return;
   }
   const rd = p.readiness || {}, ev = p.event || {}, q = p.quote || {};
@@ -1162,7 +1201,7 @@ function renderArbFire(p) {
         <div class="sec-label" style="margin-bottom:0">fire the pair</div>
         <span class="badge ${armed ? 'b-up' : 'b-mut'}">${armed ? 'ARB LIVE' : 'no crossing'}</span>
       </div>
-      ${wsHealthLine(p.ws)}
+      ${wsHealthLine(p.ws, 'now')}
       <div class="mono text-[11.5px]" style="line-height:1.8">
         <span class="badge ${q.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(q.source || '')}</span>
         best net edge <span class="${sgn(q.best_net_edge)}">${num(q.best_net_edge, 4)}</span>/share
