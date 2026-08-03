@@ -244,11 +244,16 @@ def test_agent_config_block_values():
     cfg = json.load(open(os.path.join(_REPO, ".agent-config.json")))
     b = cfg["xs_xyz_equities"]
     # SPEC keys are frozen — do not "tune" these without a new validated cell.
-    spec = {"enabled": True, "shadow_only": False, "lookback_days": 7,
+    # `shadow_only` is NOT in here: arming and disarming is an operator decision
+    # (everything went to shadow on 2026-07-29 when perp candle trading was
+    # measured dead), and a gate test that fails on it turns a deliberate safety
+    # move into a red suite. The arm state gets its own assertion below.
+    spec = {"enabled": True, "lookback_days": 7,
             "k_per_leg": 5, "hold_days": 5, "min_volume_usd": 250000,
             "benchmark": "xyz:XYZ100", "max_book_positions": 10,
             "history_bars": 60}
     assert {k: b[k] for k in spec} == spec
+    assert isinstance(b["shadow_only"], bool)
     # SIZING is deliberately NOT the global fraction any more (2026-07-20): 10
     # simultaneous legs off the global 0.1 put 12x gross on the xyz dex, where a
     # 20pp momentum crash — momentum's documented failure mode, measured live
@@ -258,7 +263,7 @@ def test_agent_config_block_values():
     # the ~5%-maintenance xyz dex (2026-07-22); must stay <=4x.
     assert 0 < b["leverage"] <= 4
     assert "notional_usd" not in b and "equity_fraction" not in b
-    assert set(b) - set(spec) == {"equity_frac", "leverage"}
+    assert set(b) - set(spec) == {"equity_frac", "leverage", "shadow_only"}
 
 
 # ── live wiring: offline end-to-end rebalance ────────────────────────────────
@@ -412,9 +417,15 @@ def test_configured_frac_keeps_xyz_gross_survivable():
     import json
     from pathlib import Path
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    frac = float(cfg["xs_xyz_equities"]["equity_frac"])
-    lev = float(cfg["leverage"])
-    legs = 2 * int(cfg["xs_xyz_equities"]["k_per_leg"])
+    book = cfg["xs_xyz_equities"]
+    frac = float(book["equity_frac"])
+    # The BOOK's leverage, not the global one: xs_xyz_live.py:358 reads
+    # `cfg["leverage"]` off the book and sends it as `leverage_override`
+    # (xs_xyz_live.py:151), which is the key the executor honours. Measuring
+    # this against the global 12x reported 8.4x gross for a book that actually
+    # runs 2.1x.
+    lev = float(book.get("leverage", cfg["leverage"]))
+    legs = 2 * int(book["k_per_leg"])
     gross_mult = frac * lev * legs          # gross notional / dex equity
     assert gross_mult <= 6.0, f"xs_xyz gross {gross_mult:.1f}x is too hot"
     assert (gross_mult / 2) * 0.20 < 1.0, "a 20pp crash would exceed dex equity"

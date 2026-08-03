@@ -76,12 +76,16 @@ class BookFeed:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._resubscribe = threading.Event()
+        # set when WE closed the socket to re-point it: that is a planned
+        # redial, not a failure, so it skips the backoff and the error counter
+        self._reconnect_now = threading.Event()
         self.connected = False
         self.events = 0
         self.books = 0
         self.price_changes = 0
         self.trades = 0
         self.reconnects = 0
+        self.resubscribes = 0
         self.timeouts = 0
         self.last_msg_ts: float = 0.0
         self.last_error: str = ""
@@ -107,7 +111,16 @@ class BookFeed:
             pass
 
     def subscribe(self, asset_ids: List[str]) -> None:
-        """Point the feed at a new set of tokens (a new 5m window)."""
+        """Point the feed at a new set of tokens (a new 5m window).
+
+        Forces a RECONNECT rather than sending a second subscribe frame down
+        the open socket. Measured 2026-08-04: a live connection re-subscribed
+        in place reported `connected: true`, one leg quoted, and then nothing
+        for 122 seconds while the market traded — the venue takes the asset list
+        at connect and does not honour a later one. This was invisible until the
+        feed stopped tearing itself down every window for other reasons, at
+        which point every quote after the first window fell back to REST.
+        """
         with self._lock:
             if list(asset_ids) == self._assets:
                 return
@@ -115,9 +128,10 @@ class BookFeed:
             # drop the old window's book rather than let it read as live
             self._top = {a: v for a, v in self._top.items() if a in self._assets}
         self._resubscribe.set()
+        self._reconnect_now.set()
         try:
             if self._ws is not None:
-                self._send_subscribe()
+                self._ws.close()                # recv raises; the loop redials
         except Exception:
             pass                                # the run loop will reconnect
 
@@ -205,6 +219,7 @@ class BookFeed:
             "price_changes": self.price_changes,
             "trades": self.trades,
             "reconnects": self.reconnects,
+            "resubscribes": self.resubscribes,
             "quiet_timeouts": self.timeouts,
             "last_msg_age_s": round(age, 2) if age is not None else None,
             "stale": bool(age is None or age > self.stale_after_s),
@@ -282,6 +297,14 @@ class BookFeed:
                 self._ws = None
             if self._stop.is_set():
                 break
+            if self._reconnect_now.is_set():
+                # our own re-point: redial immediately, and do not let a window
+                # roll every 5 minutes read as a flapping connection
+                self._reconnect_now.clear()
+                self.resubscribes += 1
+                self.last_error = ""
+                attempt = 0
+                continue
             self.reconnects += 1
             wait = RECONNECT_BACKOFF_S[min(attempt, len(RECONNECT_BACKOFF_S) - 1)]
             attempt += 1

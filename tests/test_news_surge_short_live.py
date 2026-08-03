@@ -118,7 +118,16 @@ class _FakeClaims:
 
 
 def _live_cfg(shadow_only=False, **overrides):
+    """A config with the EQUITY arm on.
+
+    The book gained per-asset-class arms (`equity_live` / `crypto_live`, both
+    default OFF) when the xyz-equity short overlay was shadowed on 2026-07-23
+    for bleeding into the semis rally. `shadow_only=False` alone stopped being
+    enough to open anything, so these tests have to name the arm they exercise
+    — the alternative is a suite that passes because nothing trades.
+    """
     cfg = {"enabled": True, "shadow_only": shadow_only,
+           "equity_live": True, "crypto_live": False,
            "notional_usd": 20.0, "leverage": 10,
            "stop_pct": 15.0, "hold_days": 1.0,
            "max_new_per_cycle": 1}
@@ -158,18 +167,48 @@ def test_breaking_equity_opens_live_short(monkeypatch, _live_iso):
     assert a["dsl_exit_override"]["protect_pct"] == 9999.0
 
 
-def test_breaking_crypto_is_recorded_not_traded(monkeypatch, _live_iso):
-    """The evidence boundary: 6/7 graded episodes were equities, the lone
-    crypto read was a single outlier (CASHCAT). Crypto breaking reads must
-    keep recording but never place an order until they earn their own n>=8."""
+def test_each_asset_class_trades_only_behind_its_own_arm(monkeypatch, _live_iso):
+    """Crypto and equities are separately gated, and both arms are OFF by
+    default: the equity overlay was shadowed 2026-07-23 for bleeding into the
+    semis rally, and crypto only opened later on W-SOC1 (n=219). A breaking
+    read still RECORDS on either side — the ledger is how an arm earns its way
+    back — but it must not place an order unless its own arm is on."""
     _captured(monkeypatch)
     monkeypatch.setattr(nssl, "coin_catalyst", lambda c: _report(breaking=True, surge=6.0))
     opened = []
     execute = lambda a: opened.append(a) or {"executed": True}
 
+    # crypto read, crypto arm OFF (the equity arm must not authorise it)
     n = nssl.maybe_run(_live_cfg(), [{"coin": "CASHCAT", "mid": 0.06}], [], execute)
-    assert n == 1          # recorded
-    assert opened == []    # never traded
+    assert n == 1 and opened == []
+
+    # crypto read, crypto arm ON
+    nssl._mark_pass(0)
+    n = nssl.maybe_run(_live_cfg(crypto_live=True, equity_live=False),
+                       [{"coin": "CASHCAT", "mid": 0.06}], [], execute)
+    assert n == 1 and [a["coin"] for a in opened] == ["CASHCAT"]
+
+    # equity read, equity arm OFF
+    opened.clear()
+    nssl._mark_pass(0)
+    n = nssl.maybe_run(_live_cfg(equity_live=False, crypto_live=True),
+                       [{"coin": "xyz:HOT", "mid": 2.0}], [], execute)
+    assert n == 1 and opened == []
+
+
+def test_both_arms_are_off_unless_the_config_says_otherwise(monkeypatch, _live_iso):
+    """The safety invariant: a config that only says `shadow_only: false` opens
+    nothing. Losing this is how a disarmed book quietly starts trading again."""
+    _captured(monkeypatch)
+    monkeypatch.setattr(nssl, "coin_catalyst", lambda c: _report(breaking=True, surge=6.0))
+    opened = []
+    cfg = {"news_surge_short": {"enabled": True, "shadow_only": False,
+                                "notional_usd": 20.0, "leverage": 10,
+                                "stop_pct": 15.0, "hold_days": 1.0}}
+    n = nssl.maybe_run(cfg, [{"coin": "xyz:HOT", "mid": 2.0},
+                             {"coin": "CASHCAT", "mid": 0.06}], [],
+                       lambda a: opened.append(a) or {"executed": True})
+    assert n == 2 and opened == []
 
 
 def test_mixed_pass_trades_only_the_equity(monkeypatch, _live_iso):

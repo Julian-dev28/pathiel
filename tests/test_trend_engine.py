@@ -1156,6 +1156,8 @@ class FakeWS:
         self.sent.append(json.loads(payload))
 
     def recv(self):
+        if self.closed:
+            raise RuntimeError("socket closed")     # a closed socket raises
         if self.frames:
             return self.frames.pop(0)
         raise RuntimeError("stream ended")
@@ -1299,6 +1301,8 @@ class TimeoutWS(FakeWS):
         self.pings += 1
 
     def recv(self):
+        if self.closed:
+            raise RuntimeError("socket closed")
         if self.quiet > 0:
             self.quiet -= 1
             raise TimeoutError("Connection timed out")
@@ -1332,26 +1336,75 @@ def test_a_quiet_socket_is_not_a_broken_socket():
     assert h["reconnects"] == 0              # the stream ending is what reconnects
 
 
-def test_a_subscribe_that_arrives_while_quiet_still_goes_out():
-    """The window rolls while the old one is silent, so the resubscribe has to
-    flush on the timeout path too — otherwise it waits for a message that will
-    never come on the dead market."""
+def test_a_subscribe_that_arrives_while_quiet_still_takes_effect():
+    """The window rolls while the OLD market is silent — the common case, since
+    a resolved market stops printing. The re-point must not wait for a message
+    that will never arrive on the dead book."""
     made = []
 
     def connector(url):
-        ws = TimeoutWS([_book_frame("B", [(0.4, 1)], [(0.5, 1)])], quiet=3)
+        coin = "A" if not made else "B"
+        ws = TimeoutWS([_book_frame(coin, [(0.4, 1)], [(0.5, 1)])] * 5, quiet=1)
         made.append(ws)
         return ws
 
     f = uw.BookFeed(connector=connector)
     f.subscribe(["A"])
     f.start()
-    time.sleep(0.1)
-    f._ws = made[0] if made else None
+    assert f.wait_pair(["A"], timeout_s=3.0)
     f.subscribe(["B"])                       # new window, old one silent
-    assert f.wait_ready(timeout_s=3.0)
+    assert f.wait_pair(["B"], timeout_s=3.0)
     f.stop()
-    assert {"assets_ids": ["B"], "type": "market"} in made[0].sent
+    assert made[-1].sent[0] == {"assets_ids": ["B"], "type": "market"}
+
+
+def test_repointing_the_feed_redials_instead_of_re_subscribing_in_place():
+    """Measured live 2026-08-04: a connection re-subscribed in place reported
+    `connected: true`, one leg quoted, then silence for 122s while the market
+    traded. The venue takes the asset list at CONNECT. The window rolls every
+    300s, so in-place re-subscription means every quote after the first window
+    comes off REST."""
+    made = []
+
+    def connector(url):                      # each connection serves its own book
+        coin = "A" if not made else "B"
+        ws = TimeoutWS([_book_frame(coin, [(0.4, 1)], [(0.5, 1)])] * 5, quiet=0)
+        made.append(ws)
+        return ws
+
+    f = uw.BookFeed(connector=connector)
+    f.subscribe(["A"])
+    f.start()
+    assert f.wait_pair(["A"], timeout_s=3.0)
+    f.subscribe(["B"])                       # the window rolls
+    assert f.wait_pair(["B"], timeout_s=3.0), "the new window never quoted"
+    f.stop()
+    assert len(made) >= 2, "the socket was reused for a new asset set"
+    assert made[-1].sent[0] == {"assets_ids": ["B"], "type": "market"}
+
+
+def test_a_planned_redial_is_not_counted_as_a_flapping_connection():
+    """A window roll every 5 minutes must not look like an unstable feed, and
+    must not pay the reconnect backoff before it re-points."""
+    made = []
+
+    def connector(url):
+        coin = "A" if not made else "B"
+        ws = TimeoutWS([_book_frame(coin, [(0.4, 1)], [(0.5, 1)])] * 5, quiet=0)
+        made.append(ws)
+        return ws
+
+    f = uw.BookFeed(connector=connector)
+    f.subscribe(["A"])
+    f.start()
+    assert f.wait_pair(["A"], timeout_s=3.0)
+    f.subscribe(["B"])
+    assert f.wait_pair(["B"], timeout_s=3.0)
+    f.stop()
+    h = f.health()
+    assert h["resubscribes"] >= 1
+    assert h["reconnects"] == 0
+    assert h["last_error"] == ""              # our own close is not an error
 
 
 def test_feed_ignores_junk_frames():
@@ -2361,6 +2414,19 @@ def test_refresh_reports_a_timeout_instead_of_hanging_the_job(monkeypatch):
     out = dash._refresh_lane_subprocess("hl", timeout_s=5, runner=runner,
                                         loader=lambda ln: {})
     assert out["status"] == "error" and "exceeded 5s" in out["error"]
+
+
+def test_a_gated_control_says_why_instead_of_alerting(client):
+    """`alert()` is a button that does nothing whenever the browser suppresses
+    it — which is exactly how the refresh button read from the operator's side
+    with no token stored. Every failure path now writes next to the control."""
+    body = client.get("/trends").text
+    assert "alert('" not in body and 'alert("' not in body
+    assert "needs the operator token — paste it above and press save" in body
+    assert "operator token rejected (" in body
+    assert "openTokenRow(" in body and 'id="token-why"' in body
+    # and the gate is visible BEFORE the click, not only after it
+    assert "needs the operator token to refresh" in body
 
 
 def test_the_refresh_button_surfaces_a_failed_job(client):

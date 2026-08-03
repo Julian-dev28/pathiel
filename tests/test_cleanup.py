@@ -2272,16 +2272,22 @@ def test_backup_sl_capped_inside_liquidation_buffer():
     assert abs((entry - sl) / entry - 0.06) < 1e-9
 
 
-def test_backup_sl_override_capped_logs_actual_percentage(monkeypatch, caplog):
-    """Regression (2026-07-15): a 15%-configured backup_sl_pct_override at
-    10x leverage silently becomes a 6.0% stop — backup_sl_max_frac_of_liq
-    correctly caps it inside the liquidation buffer (executor.py:1006-1010),
-    this IS correct/safe behavior, not a bug. But the log line said only
-    "15.0% spot override, capped at 60% of ~liq buffer", leaving the real
-    resulting distance to be reconstructed by hand (0.60/leverage). The real
-    xyz:SKHY trade (2026-07-15 18:38, entry 181.37, backup stop 170.49 —
-    exactly this path) hit this. The log must show the actual number, not
-    just the cap fraction that produced it."""
+def test_backup_sl_override_keeps_the_stop_and_caps_the_leverage(monkeypatch, caplog):
+    """Two regressions, in order.
+
+    2026-07-15: a 15% `backup_sl_pct_override` at 10x silently became a 6.0%
+    stop — `backup_sl_max_frac_of_liq` capping it inside the liquidation buffer
+    — and the log named only the cap fraction, leaving the real distance to be
+    reconstructed by hand. The live xyz:SKHY trade (18:38, entry 181.37, backup
+    stop 170.49) is exactly this path.
+
+    2026-07-24 superseded the fix: shrinking the stop silently swaps the
+    strategy (measured on 51 xyz equities / 78 bars, the 10% variant forced 33%
+    of legs out vs 3.3% at the intended stop, and lost money in every sampling
+    scheme). The stop is the validated parameter, so `stop_honoring_leverage`
+    caps LEVERAGE to fit the stop instead: 15% at a 0.60 buffer -> 4x, and the
+    stop stays where the book asked for it.
+    """
     ex, _, _ = _exec_baseline(monkeypatch, {"leverage": 10})
     triggers = []
     monkeypatch.setattr(
@@ -2297,15 +2303,38 @@ def test_backup_sl_override_capped_logs_actual_percentage(monkeypatch, caplog):
         ))
     assert r["executed"] is True, r
     sl_trigger = next(t for t in triggers if t["kind"] == "sl")
-    # entry 100 (get_hl_price baseline), 10x, 60% liq-buffer cap -> 6.0%
-    assert abs(sl_trigger["px"] - 94.0) < 1e-6
+    # entry 100 (get_hl_price baseline): the ASKED-FOR 15% stop, not 0.60/10
+    assert abs(sl_trigger["px"] - 85.0) < 1e-6
 
-    placed = [rec.message for rec in caplog.records if "Placed backup SL" in rec.message]
-    assert placed, "no 'Placed backup SL' log line captured"
-    msg = placed[0]
-    assert "15.0% spot override" in msg     # the intended, configured distance
-    assert "actual 6.0%" in msg, msg         # the real, resulting distance
-    assert "60% of ~liq buffer at 10x" in msg, msg
+    capped = [rec.message for rec in caplog.records
+              if "capping leverage" in rec.message]
+    assert capped, "leverage was not capped to honour the stop"
+    msg = capped[0]
+    assert "15.0% stop" in msg and "capping leverage to 4x" in msg, msg
+    # the shrunken distance the old path would have produced is still named, so
+    # the log says WHY the leverage moved
+    assert "6.0%" in msg, msg
+
+
+def test_a_stop_that_fits_the_buffer_leaves_leverage_alone(monkeypatch, caplog):
+    """The cap only fires on a conflict. A 6% stop at 10x needs exactly the
+    0.60 buffer, so nothing is capped and nothing is shrunk."""
+    ex, _, _ = _exec_baseline(monkeypatch, {"leverage": 10})
+    triggers = []
+    monkeypatch.setattr(
+        ex, "place_hl_trigger_order",
+        lambda is_buy, sz, px, kind, coin: triggers.append(
+            {"kind": kind, "px": px}) or {"ok": True},
+    )
+    with caplog.at_level("INFO", logger="hermes_trader.agents.executor"):
+        r = ex.maybe_execute(_analysis(
+            leverage_override=10,
+            backup_sl_pct_override=6.0,
+            tp_scale_fraction_override=0.0,
+        ))
+    assert r["executed"] is True, r
+    assert abs(next(t for t in triggers if t["kind"] == "sl")["px"] - 94.0) < 1e-6
+    assert not [rec for rec in caplog.records if "capping leverage" in rec.message]
 
 
 def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):

@@ -176,6 +176,7 @@
     <button id="token-save" class="btn" type="button" style="color:var(--up);border-color:rgba(34,197,94,.4)">save</button>
     <button id="token-clear" class="btn" type="button" style="color:var(--dn);border-color:rgba(239,68,68,.4)">clear</button>
     <span class="text-[10px] mono" style="color:var(--dim)">stored in this browser only · same token as the dashboard footer</span>
+    <span class="text-[10.5px] mono amb" id="token-why"></span>
   </div>
 
   <nav class="flex items-center gap-1 mb-5 flex-wrap">
@@ -543,10 +544,21 @@ function authHeaders() {
   const t = token();
   return t ? { 'X-Operator-Token': t } : {};
 }
+// Opening this is what a gated control does when it cannot run, instead of an
+// alert() the browser may suppress — a suppressed alert is a button that does
+// nothing, which is exactly how this read from the operator's side.
+function openTokenRow(why) {
+  const row = $('#token-row');
+  row.classList.remove('hidden');
+  $('#token-input').value = token();
+  $('#token-input').focus();
+  const note = $('#token-why');
+  if (note) note.textContent = why || '';
+}
 $('#op-token-btn').onclick = () => {
   const row = $('#token-row');
   row.classList.toggle('hidden');
-  if (!row.classList.contains('hidden')) { $('#token-input').value = token(); $('#token-input').focus(); }
+  if (!row.classList.contains('hidden')) openTokenRow('');
 };
 $('#token-save').onclick = () => {
   localStorage.setItem(TOKEN_KEY, $('#token-input').value.trim());
@@ -590,8 +602,11 @@ async function loadLane(l) {
   renderPlaybook(l, d.playbook);
   // Every refresh button carries the age of the data it would replace, so the
   // freshness question is answered where the fix is, not only in the header.
-  setRefreshNote(l, d.generated_at ? 'data ' + age(d.age_s) : 'no cached read',
-                 d.stale ? 'amb' : 'dim');
+  // Say up front that the control is gated: finding out only after a click
+  // that produced no visible change is how "the button does nothing" starts.
+  setRefreshNote(l, (d.generated_at ? 'data ' + age(d.age_s) : 'no cached read')
+    + (token() ? '' : ' · needs the operator token to refresh'),
+    d.stale || !token() ? 'amb' : 'dim');
   showLane(LANE);
 }
 
@@ -1235,7 +1250,10 @@ async function fireArb() {
   btn.disabled = true; btn.textContent = 'firing…';
   const j = await post('/api/dashboard/trends/arb/fire');
   btn.textContent = 'FIRE — record ticket'; btn.disabled = false;
-  if (!j) { return; }
+  if (!j || j._error) {
+    out.innerHTML = `<span class="dn">${esc((j && j._error) || 'no response')}</span>`;
+    return;
+  }
   const ok = j.status === 'recorded';
   out.innerHTML = `<span class="${ok ? 'teal' : 'amb'}">${esc(j.message || j.status || '')}</span>`;
   loadArb();
@@ -1262,10 +1280,24 @@ async function pollJob(jobId, onDone) {
   onDone({ status: 'error', error: 'timed out waiting for the job' });
 }
 
+// Returns the JSON, or an object carrying `_error` — never null, so a caller
+// can always say WHY nothing happened where the control is.
 async function post(url) {
-  if (!token()) { alert('set the operator token first (button top right)'); return null; }
-  const r = await fetch(url, { method: 'POST', headers: authHeaders() });
-  if (!r.ok) { alert('request failed: ' + r.status); return null; }
+  if (!token()) {
+    openTokenRow('this control needs the operator token');
+    return { _error: 'needs the operator token — paste it above and press save' };
+  }
+  let r;
+  try {
+    r = await fetch(url, { method: 'POST', headers: authHeaders() });
+  } catch (e) {
+    return { _error: 'server unreachable: ' + String(e) };
+  }
+  if (r.status === 401 || r.status === 403) {
+    openTokenRow('the server rejected that token');
+    return { _error: 'operator token rejected (' + r.status + ')' };
+  }
+  if (!r.ok) return { _error: 'request failed: http ' + r.status };
   return r.json();
 }
 
@@ -1276,7 +1308,10 @@ $$('[data-ai]').forEach(btn => btn.onclick = async () => {
   btn.disabled = true; btn.textContent = 'running…';
   $('#' + lane + '-ai').innerHTML = '<span class="dim mono">model call running — this takes 20s to a few minutes…</span>';
   const j = await post('/api/dashboard/trends/' + lane + '/ai' + ws);
-  if (!j) { btn.disabled = false; btn.textContent = 'run ai pass'; return; }
+  if (!j || j._error) {
+    $('#' + lane + '-ai').innerHTML = `<span class="dn">${esc((j && j._error) || 'no response')}</span>`;
+    btn.disabled = false; btn.textContent = 'run ai pass'; return;
+  }
   pollJob(j.job_id, res => {
     renderAI(lane, res);
     btn.disabled = false; btn.textContent = 'run ai pass';
@@ -1322,7 +1357,7 @@ Object.entries(REFRESH_BTN).forEach(([lane, id]) => {
     el.disabled = true; el.textContent = 'refreshing… 0s';
     setRefreshNote(lane, '', '');
     const j = await post('/api/dashboard/trends/' + lane + '/refresh');
-    if (!j) { done('', ''); return; }
+    if (!j || j._error) { done(j && j._error ? j._error : 'no response', 'dn'); return; }
     pollJob(j.job_id, res => {
       // An errored job used to land here and be thrown away, so a failed
       // refresh looked exactly like a successful one.

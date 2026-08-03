@@ -36,6 +36,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -43,6 +44,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(ROOT, ".venv", "bin", "python")
 STATE = os.path.join(ROOT, ".state", "scheduler.json")
 TICK_S = 60.0
+# Jobs run CONCURRENTLY, one run per job at a time. Serially was the bug:
+# `poly-board` ran 3612s on 2026-08-03 (right into TIMEOUT_S) and `trends-price`
+# — a 55s cache refresh on a 30-minute cadence — could not fire for 11 hours, so
+# the /trends tab served an 11h-old read with no sign anything was wrong.
+# Capped so a catch-up burst after the lid opens cannot put every scan on the
+# HL/Gamma rate limit at once.
+MAX_CONCURRENT_JOBS = 3
 
 # name -> job. `hour=None` means every hour at `minute`.
 JOBS: Dict[str, Dict[str, Any]] = {
@@ -181,32 +189,87 @@ def run_job(name: str, job: Dict[str, Any],
             "elapsed_s": round(time.time() - started, 1)}
 
 
+_RUNNING: Dict[str, threading.Thread] = {}
+_RUN_LOCK = threading.Lock()
+
+
+def running_jobs() -> List[str]:
+    with _RUN_LOCK:
+        return sorted(n for n, t in _RUNNING.items() if t.is_alive())
+
+
+def _stamp(name: str, now: float, res: Optional[Dict[str, Any]],
+           state_path: str) -> None:
+    """Write one job's outcome, re-reading state so concurrent jobs do not
+    clobber each other's entries."""
+    with _RUN_LOCK:
+        state = load_state(state_path)
+        entry = dict(state.get(name) or {})
+        entry["last_run"] = now
+        entry["last_run_iso"] = time.strftime("%Y-%m-%d %H:%M:%S",
+                                              time.localtime(now))
+        if res is not None:
+            entry["last_rc"] = res["rc"]
+            entry["last_elapsed_s"] = res["elapsed_s"]
+        state[name] = entry
+        save_state(state, state_path)
+
+
 def tick(now: Optional[float] = None, state: Optional[Dict[str, Any]] = None,
          jobs: Optional[Dict[str, Dict[str, Any]]] = None,
          runner: Optional[Callable[[List[str], str], int]] = None,
          state_path: str = STATE,
-         printer: Callable[[str], None] = print) -> List[Dict[str, Any]]:
-    """One pass: fire everything that is due, record it, return the results."""
+         printer: Callable[[str], None] = print,
+         join: bool = False) -> List[Dict[str, Any]]:
+    """One pass: start everything that is due, on its own thread.
+
+    Concurrent because serial starved the cheap jobs: one hour-long LLM lane
+    blocked an 11-hour backlog of 55-second cache refreshes. Each job still runs
+    at most one copy at a time — a slow job is skipped, not stacked — and no
+    more than `MAX_CONCURRENT_JOBS` run together.
+
+    `last_run` is stamped when the job STARTS, so a job that takes longer than
+    its own interval keeps its cadence instead of firing again the moment it
+    finishes. `join=True` waits for this pass (used by `--once` and the tests).
+    """
     now = time.time() if now is None else now
     jobs = jobs if jobs is not None else JOBS
-    own_state = state is None
-    state = load_state(state_path) if own_state else state
-    fired: List[Dict[str, Any]] = []
+    state = load_state(state_path) if state is None else state
+    started: List[Dict[str, Any]] = []
+    threads: List[threading.Thread] = []
     for name, job in jobs.items():
         entry = state.get(name) or {}
         if not is_due(job, entry.get("last_run"), now):
             continue
+        with _RUN_LOCK:
+            live = [n for n, t in _RUNNING.items() if t.is_alive()]
+            if name in live:
+                printer(f"[scheduler] {name} still running from the last pass — skipped")
+                continue
+            if len(live) >= MAX_CONCURRENT_JOBS:
+                printer(f"[scheduler] {name} due but {len(live)} jobs already "
+                        f"running — next tick")
+                continue
         printer(f"[scheduler] firing {name} — {job['why']}")
-        res = run_job(name, job, runner=runner)
-        state[name] = {"last_run": now, "last_rc": res["rc"],
-                       "last_elapsed_s": res["elapsed_s"],
-                       "last_run_iso": time.strftime("%Y-%m-%d %H:%M:%S",
-                                                     time.localtime(now))}
-        save_state(state, state_path)
-        printer(f"[scheduler] {name} rc={res['rc']} in {res['elapsed_s']}s"
-                + ("  <<< FAILED" if res["rc"] != 0 else ""))
-        fired.append(res)
-    return fired
+        _stamp(name, now, None, state_path)      # claim the slot before running
+        state.setdefault(name, {})["last_run"] = now
+
+        def _work(name: str = name, job: Dict[str, Any] = job) -> None:
+            res = run_job(name, job, runner=runner)
+            _stamp(name, now, res, state_path)
+            printer(f"[scheduler] {name} rc={res['rc']} in {res['elapsed_s']}s"
+                    + ("  <<< FAILED" if res["rc"] != 0 else ""))
+            started.append(res)
+
+        t = threading.Thread(target=_work, name=f"job-{name}", daemon=True)
+        with _RUN_LOCK:
+            _RUNNING[name] = t
+        threads.append(t)
+        t.start()
+    if join:
+        for t in threads:
+            t.join()
+    return started
 
 
 def status(now: Optional[float] = None, state_path: str = STATE) -> List[Dict[str, Any]]:
@@ -255,7 +318,7 @@ def main() -> int:
             print(f"[scheduler] forced {name} rc={res['rc']} in {res['elapsed_s']}s")
         return 0
     if args.once:
-        fired = tick()
+        fired = tick(join=True)
         print(f"[scheduler] one pass: fired {len(fired)}")
         return 0
 

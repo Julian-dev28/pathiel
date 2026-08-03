@@ -183,13 +183,20 @@ class Smoke:
         # quiet gap is "connected" at every sample and REST-backed in between.
         self.check((ws.get("reconnects") or 0) <= 5, "socket is not churning",
                    f"reconnects={ws.get('reconnects')} "
+                   f"resubscribes={ws.get('resubscribes')} "
                    f"quiet_timeouts={ws.get('quiet_timeouts')} "
                    f"last_error={ws.get('last_error') or 'none'}")
-        # A second call must be served from the socket, not another REST poll.
-        code, p2 = self.call("/api/dashboard/trends/arb/preflight")
-        q2 = (p2 or {}).get("quote") or {}
-        self.check(q2.get("source") == "websocket", "second quote comes off the socket",
-                   f"source={q2.get('source')}")
+        # A later call must be served from the socket, not another REST poll.
+        # The route caches for 2s, so an immediate re-read returns the SAME
+        # payload — polling past that window is the only honest way to ask.
+        src, waited = q.get("source"), 0.0
+        while src != "websocket" and waited < 12.0:
+            time.sleep(2.5)
+            waited += 2.5
+            _, pn = self.call("/api/dashboard/trends/arb/preflight")
+            src = ((pn or {}).get("quote") or {}).get("source")
+        self.check(src == "websocket", "quotes settle on the socket",
+                   f"source={src} after {waited:.0f}s")
         rd = p.get("readiness") or {}
         self.check(rd.get("ready") is False,
                    "execution stays blocked without signing credentials",
