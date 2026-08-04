@@ -2442,6 +2442,35 @@ class _Bar:
         self.t = t
 
 
+def test_a_signal_the_grader_could_not_price_shrinks_the_sample_not_the_ev():
+    """A venue outage returns empty forward candles. `simulate_exit` refuses
+    those (None, not 0%), so the signal is skipped — but a smaller sample then
+    looks exactly like a quieter book unless the count is carried out."""
+    class _SL:
+        @staticmethod
+        def summary(now):
+            return [{"book": "b1", "n": 3, "coins": 1, "pending": 0, "gradeable": 3}]
+
+        @staticmethod
+        def list_books():
+            return ["b1"]
+
+        @staticmethod
+        def load(book):
+            return [{"coin": "BTC"}]
+
+        @staticmethod
+        def grade_records(recs, fwd, now_ms=None, fetch_funding=None):
+            return {"n": 1, "pending": 0, "errors": 2, "slip12": {"mean_pct": 1.0}}
+
+        @staticmethod
+        def classify(grade, min_n=8):
+            return {"label": "PENDING", "why": ""}
+
+    row = rec.grade_books(fetch_fwd=lambda *a, **k: [], sl=_SL())[0]
+    assert row["resolved"] == 1 and row["ungraded_errors"] == 2
+
+
 def test_forward_candles_are_fetched_once_per_coin_not_once_per_signal(monkeypatch):
     """Every signal on a book asks for forward bars on the same coin, and each
     miss is a rate-limited HL info call at weight 20. Measured 2026-08-04 the

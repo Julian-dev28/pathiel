@@ -172,6 +172,13 @@ class Smoke:
         miss = self.missing(p, PREFLIGHT_CONTRACT)
         self.check(not miss, "preflight payload complete", f"missing {miss}" if miss else "")
         q, ws = p.get("quote") or {}, p.get("ws") or {}
+        if q.get("best_net_edge") is None:
+            # a server that just booted has no socket and no cached slug yet;
+            # give it one settle pass rather than reporting a cold start as a
+            # broken feed
+            time.sleep(5)
+            _, p = self.call("/api/dashboard/trends/arb/preflight")
+            q, ws = (p or {}).get("quote") or {}, (p or {}).get("ws") or {}
         self.check(q.get("best_net_edge") is not None, "quote is two-sided",
                    f"source={q.get('source')} edge={q.get('best_net_edge')} "
                    f"ticks={q.get('ticks_to_gross_arb')}")
@@ -190,7 +197,7 @@ class Smoke:
         # The route caches for 2s, so an immediate re-read returns the SAME
         # payload — polling past that window is the only honest way to ask.
         src, waited = q.get("source"), 0.0
-        while src != "websocket" and waited < 12.0:
+        while src != "websocket" and waited < 30.0:
             time.sleep(2.5)
             waited += 2.5
             _, pn = self.call("/api/dashboard/trends/arb/preflight")

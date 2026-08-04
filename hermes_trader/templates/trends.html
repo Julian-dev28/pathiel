@@ -1104,7 +1104,9 @@ function renderRecorders(d) {
       <td><span class="badge ${VERDICT_CLASS[b.verdict] || 'b-mut'}" title="${esc(b.why)}">${esc(b.verdict)}</span></td>
       <td class="mono mut">${b.signals}</td>
       <td class="mono">${b.resolved}</td>
-      <td class="mono dim">${b.pending}</td>
+      <td class="mono dim">${b.pending}${b.ungraded_errors
+        ? `<span class="amb" title="the grader could not price these this run (venue outage or empty candles) — they are SKIPPED, never scored flat"> +${b.ungraded_errors}?</span>`
+        : ''}</td>
       <td class="mono ${sgn(b.ev_pct)}" style="font-weight:600">${b.ev_pct == null ? '–' : pct(b.ev_pct, 3)}</td>
       <td class="mono ${sgn(b.ev25_pct)}">${b.ev25_pct == null ? '–' : pct(b.ev25_pct, 3)}</td>
       <td class="mono ${sgn(b.total_pct)}">${b.total_pct == null ? '–' : pct(b.total_pct, 1)}</td>

@@ -95,6 +95,11 @@ def grade_books(books: Optional[Sequence[str]] = None, min_n: int = 8,
             "coins": iv.get("coins", 0),
             "resolved": n,
             "pending": grade.get("pending", iv.get("pending", 0)),
+            # Signals the grader could not price this run — an empty forward
+            # fetch is skipped, never scored as a flat trade, so a venue outage
+            # shrinks the SAMPLE rather than dragging EV toward zero. Surfaced
+            # so a short sample is distinguishable from a quiet book.
+            "ungraded_errors": int(grade.get("errors") or 0),
             "last_age_h": iv.get("last_age_h"),
             "ev_pct": s12.get("mean_pct"),
             "ev25_pct": s25.get("mean_pct"),
