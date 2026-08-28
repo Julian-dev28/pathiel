@@ -9,13 +9,19 @@
 #   scripts/restart.sh sched          # restart the job scheduler only
 #   scripts/restart.sh sampler        # start/restart the Polymarket 5m book sampler
 #   scripts/restart.sh stopsampler    # stop the sampler only
+#   scripts/restart.sh rotate         # restart the log rotator daemon only
+#   scripts/restart.sh stoprotate     # stop the log rotator daemon only
 #   scripts/restart.sh stop           # stop both, don't start
 #   scripts/restart.sh status         # show what's running
 #
-# Two processes are managed:
+# Four processes are managed:
 #   1. Trading loop  — scripts/trading_loop.py        (continuous scan→trade)
 #   2. API server    — python -m hermes_trader.server (FastAPI dashboard on HERMES_PORT, default 8000)
 #   3. Scheduler     — scripts/scheduler.py            (cron replacement; cron+launchd are TCC-blocked)
+#   4. Log rotator   — scripts/log_rotate.py --daemon  (see docs/LOGGING.md — every process here
+#                       logs via `nohup ... >> file 2>&1`, an append fd the process never reopens,
+#                       so rotation has to run externally, on an interval, for the whole time the
+#                       box is up — not just at restart.sh invocation time)
 #
 # The MCP server (scripts/hermes-mcp-server.py) is intentionally NOT managed
 # here — it's a transient stdio process respawned by Hermes Agent on each
@@ -51,6 +57,8 @@ SERVER_PATTERN="hermes_trader.server"
 SCHED_PATTERN="scripts/scheduler.py"
 SAMPLER_PATTERN="sample-daemon"
 SAMPLER_LOG="$LOG_DIR/updown_sampler.log"
+ROTATOR_LOG="$LOG_DIR/log_rotate.log"
+ROTATOR_PATTERN="log_rotate\.py --daemon"
 
 # Our own PID — must not be killed by pgrep matches.
 SELF_PID=$$
@@ -214,11 +222,12 @@ start_sched() {
 
 show_status() {
   printf "\n%sStatus%s\n" "$C_DIM" "$C_OFF"
-  local loop_pids server_pids sched_pids sampler_pids
+  local loop_pids server_pids sched_pids sampler_pids rotator_pids
   loop_pids="$(pids_for "$LOOP_PATTERN")"
   server_pids="$(pids_for "$SERVER_PATTERN")"
   sched_pids="$(pids_for "$SCHED_PATTERN")"
   sampler_pids="$(pids_for "$SAMPLER_PATTERN")"
+  rotator_pids="$(pids_for "$ROTATOR_PATTERN")"
   if [[ -n "$loop_pids" ]]; then
     ok "trading loop: pids $loop_pids"
   else
@@ -239,6 +248,13 @@ show_status() {
   else
     warn "updown sampler: stopped"
   fi
+  if [[ -n "$rotator_pids" ]]; then
+    ok "log rotator:  pids $rotator_pids"
+  else
+    warn "log rotator:  stopped"
+  fi
+  printf "\n"
+  "$PY" "$ROOT/scripts/log_rotate.py" --guard 2>&1 | sed "s/^/${C_DIM}[disk]${C_OFF} /" || true
   printf "\n"
 }
 
@@ -265,6 +281,85 @@ start_sampler() {
   fi
 }
 
+start_rotator() {
+  local pids
+  pids="$(pids_for "$ROTATOR_PATTERN")"
+  if [[ -n "$pids" ]]; then
+    warn "log rotator already running (pids: $pids) — skipping"
+    return 0
+  fi
+  info "starting log rotator (log: $ROTATOR_LOG)"
+  # Every process above logs via shell `>>` append redirection — an fd none
+  # of them ever reopens (see hermes_trader/log_setup.py). Rotation has to
+  # run externally, on its own clock, for as long as the box is up; it
+  # cannot be a one-shot step at restart.sh invocation time, since a process
+  # can run for days between restarts. This mirrors the sampler/caffeinate
+  # pattern above: its own long-lived nohup'd process, managed the same way.
+  nohup "$PY" "$ROOT/scripts/log_rotate.py" --daemon >> "$ROTATOR_LOG" 2>&1 &
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$pid" 2>/dev/null; then
+    ok "log rotator: pid $pid"
+  else
+    err "log rotator died immediately — see $ROTATOR_LOG"
+    tail -n 20 "$ROTATOR_LOG" >&2 || true
+  fi
+}
+
+# Refuse to (re)start processes when free disk is critically low, and (for
+# every action except a pure `status` read) run one immediate rotation pass
+# so a long-since-oversized logs/ doesn't have to wait for the daemon's next
+# tick. `HERMES_SKIP_DISK_GUARD=1` overrides the refusal for a deliberate
+# emergency start (e.g. restarting just to free the sampler while disk
+# cleanup happens by hand); it never skips the rotation pass itself.
+run_disk_guard() {
+  local enforce="$1" do_rotate="$2"
+  local out rc
+  # `out="$(...)"` alone would abort the script right here under `set -e`
+  # when the guard exits 1 (critical) — a plain assignment's exit status IS
+  # the substitution's, and set -e treats that as any other failing simple
+  # command. The `&& rc=0 || rc=$?` keeps this a compound list, which set -e
+  # does not abort on, so the critical/override decision below actually runs.
+  out="$("$PY" "$ROOT/scripts/log_rotate.py" --guard 2>&1)" && rc=0 || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    err "DISK GUARD: $out"
+    if [[ "$enforce" == "1" && "${HERMES_SKIP_DISK_GUARD:-0}" != "1" ]]; then
+      err "refusing to start — free disk below critical threshold."
+      err "free up space, or set HERMES_SKIP_DISK_GUARD=1 to override and start anyway."
+      exit 1
+    else
+      warn "DISK GUARD tripped but not blocking ($([[ "$enforce" == "1" ]] && echo "HERMES_SKIP_DISK_GUARD=1 set" || echo "action does not start processes"))"
+    fi
+  elif [[ "$out" == *WARN:* ]]; then
+    warn "$out"
+  fi
+  # Full status line (ok/warn/critical) is echoed again at the bottom of
+  # show_status on every action; only surface it here when it's actionable.
+  if [[ "$do_rotate" == "1" ]]; then
+    "$PY" "$ROOT/scripts/log_rotate.py" --once --quiet || true
+  fi
+}
+
+# Disk-guard enforcement: block only actions that (re)start a trading/serving
+# process. Actions that merely stop things, check status, or manage the
+# rotator itself must never be blocked by the guard they exist to unblock.
+#
+# Rotation sweep: run on every action that actually manages a process —
+# every one of them represents the operator touching the box, and this is
+# the only reliable periodic touchpoint outside the rotator daemon itself
+# (cron/launchd are TCC-blocked here, see scripts/scheduler.py). `status` is
+# the one exception, kept a pure read with no side effect.
+DISK_GUARD_ENFORCE=0
+DISK_GUARD_ROTATE=1
+case "$action" in
+  restart|""|loop|server|sched|scheduler|sampler) DISK_GUARD_ENFORCE=1 ;;
+esac
+case "$action" in
+  status) DISK_GUARD_ROTATE=0 ;;
+esac
+run_disk_guard "$DISK_GUARD_ENFORCE" "$DISK_GUARD_ROTATE"
+
 case "$action" in
   restart|"")
     stop_proc "trading loop" "$LOOP_PATTERN"
@@ -273,6 +368,7 @@ case "$action" in
     start_server
     start_loop
     start_sched
+    start_rotator
     show_status
     ;;
   loop)
@@ -305,11 +401,21 @@ case "$action" in
     stop_proc "updown sampler" "$SAMPLER_PATTERN"
     show_status
     ;;
+  rotate|rotator)
+    stop_proc "log rotator" "$ROTATOR_PATTERN"
+    start_rotator
+    show_status
+    ;;
+  stoprotate|stoprotator)
+    stop_proc "log rotator" "$ROTATOR_PATTERN"
+    show_status
+    ;;
   stop)
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
     stop_proc "updown sampler" "$SAMPLER_PATTERN"
+    stop_proc "log rotator" "$ROTATOR_PATTERN"
     show_status
     ;;
   status)
@@ -317,7 +423,7 @@ case "$action" in
     ;;
   *)
     err "unknown action: $action"
-    err "usage: $0 [restart|loop|server|sched|sampler|stopsampler|stoploop|stop|status]"
+    err "usage: $0 [restart|loop|server|sched|sampler|stopsampler|stoploop|rotate|stoprotate|stop|status]"
     exit 2
     ;;
 esac
