@@ -26,6 +26,7 @@ import statistics
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from hermes_trader.agents.atomic_io import append_line
 from hermes_trader.agents.rebalancer_owned import state_file
 
 SCHEMA_VERSION = 1
@@ -91,8 +92,11 @@ def record(book: str, *, coin: str, side: str, signal_bar_t: Optional[int] = Non
         "meta": meta or {},
     }
     try:
-        with open(_book_path(book), "a") as fh:
-            fh.write(json.dumps(rec, sort_keys=True) + "\n")
+        # fsync'd: the caller's next act is usually to size a trade against
+        # what it just recorded, so "written" has to mean on disk. A truncated
+        # row here is a trade that never happened, in the file every
+        # promote/demote decision is made from.
+        append_line(_book_path(book), json.dumps(rec, sort_keys=True))
     except Exception:
         pass
     return rec

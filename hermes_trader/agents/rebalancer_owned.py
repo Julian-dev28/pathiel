@@ -49,6 +49,8 @@ from __future__ import annotations
 
 import json
 import logging
+
+from hermes_trader.agents.atomic_io import write_json_atomic
 import os
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -132,10 +134,15 @@ class ClaimsRegistry:
         return self
 
     def save(self) -> None:
-        """Persist current claims to disk (best-effort)."""
+        """Persist current claims to disk (best-effort), atomically.
+
+        Atomicity is load-bearing here, not hygiene: load() treats a corrupt
+        file as empty, which is the right failure mode for a torn read but means
+        a crash mid-write would silently drop every cross-book claim — and a
+        dropped claim is two books opening the same coin.
+        """
         try:
-            with open(self._path, "w") as fh:
-                json.dump({"claims": self._claims}, fh, sort_keys=True)
+            write_json_atomic(self._path, {"claims": self._claims}, sort_keys=True)
         except Exception as exc:
             logger.warning(f"[rebalancer_claims] could not save to {self._path}: {exc}")
 
@@ -280,10 +287,14 @@ class OwnedPositions:
         return self
 
     def save(self) -> None:
-        """Persist current owned set to disk (best-effort)."""
+        """Persist current owned set to disk (best-effort), atomically.
+
+        A torn write here would make the book forget which positions it owns,
+        and an unowned position is one nothing will ever close.
+        """
         try:
-            with open(self._path, "w") as fh:
-                json.dump({"longs": sorted(self._longs), "shorts": sorted(self._shorts)}, fh)
+            write_json_atomic(self._path, {"longs": sorted(self._longs),
+                                           "shorts": sorted(self._shorts)})
         except Exception as exc:
             logger.warning(f"[rebalancer_owned] could not save state to {self._path}: {exc}")
 

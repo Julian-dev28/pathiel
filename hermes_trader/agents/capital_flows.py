@@ -34,6 +34,8 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from hermes_trader.agents.atomic_io import append_json_line
+
 logger = logging.getLogger(__name__)
 
 _STATE_DIR = os.environ.get("HERMES_STATE_DIR") or os.path.join(
@@ -91,9 +93,8 @@ def append_flows(rows: Sequence[Dict[str, Any]], path: Optional[str] = None) -> 
     fresh = [r for r in rows if r.get("key") not in known]
     if not fresh:
         return 0
-    with open(p, "a") as fh:
-        for r in fresh:
-            fh.write(json.dumps(r, separators=(",", ":")) + "\n")
+    for r in fresh:
+        append_json_line(p, r)
     return len(fresh)
 
 
