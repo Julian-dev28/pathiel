@@ -58,13 +58,21 @@ def test_a_dead_loop_fails_the_system_check(client, monkeypatch):
     assert "loop" in r.json()["failing"]
 
 
-def test_a_live_loop_passes(client, monkeypatch):
+def test_a_live_loop_passes_its_own_check(client, monkeypatch):
+    """Asserts the LOOP check, not the aggregate.
+
+    The aggregate also covers the AI brain, which legitimately fails in an
+    environment with no credentials — a fresh CI checkout has no .env.local.
+    Pinning the aggregate here would make this test assert something about the
+    machine it runs on rather than about the loop.
+    """
     monkeypatch.setattr(db, "_read_log_lines", lambda: _hb(30))
     monkeypatch.setattr(db, "_feed_health",
                         lambda: {"trustworthy": True, "gap_frac": 0.0,
                                  "gaps": 0, "markets": 40, "ts": 1})
-    r = client.get("/api/health/system")
-    assert r.status_code == 200 and r.json()["ok"] is True
+    body = client.get("/api/health/system").json()
+    assert body["checks"]["loop"]["ok"] is True
+    assert "loop" not in body["failing"]
 
 
 def test_a_degraded_feed_fails_the_system_check(client, monkeypatch):
@@ -97,8 +105,11 @@ def test_an_unavailable_disk_check_does_not_fail_the_healthcheck(client, monkeyp
     import hermes_trader.log_setup as ls
     monkeypatch.setattr(ls, "check_disk_guard",
                         lambda *a, **k: (_ for _ in ()).throw(OSError("nope")))
-    r = client.get("/api/health/system")
-    assert r.status_code == 200 and r.json()["checks"]["disk"]["ok"] is True
+    body = client.get("/api/health/system").json()
+    # The DISK check specifically must degrade to ok, whatever else the
+    # environment makes unhealthy.
+    assert body["checks"]["disk"]["ok"] is True
+    assert "disk" not in body["failing"]
 
 
 def test_the_deep_check_leaks_no_position_or_credential(client, monkeypatch):
@@ -131,3 +142,26 @@ def test_fly_checks_both_shallow_and_deep():
     fly = (pathlib.Path(__file__).resolve().parents[1] / "fly.toml").read_text()
     assert 'path = "/api/health"' in fly
     assert 'path = "/api/health/system"' in fly
+
+
+def test_a_fully_healthy_system_returns_200(client, monkeypatch):
+    """The aggregate green path, with every dependency pinned rather than
+    inherited from whatever machine the suite runs on."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: _hb(30))
+    monkeypatch.setattr(db, "_feed_health",
+                        lambda: {"trustworthy": True, "gap_frac": 0.0,
+                                 "gaps": 0, "markets": 40, "ts": 1})
+    monkeypatch.setenv("AI_BRAIN_PROVIDER", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    r = client.get("/api/health/system")
+    assert r.status_code == 200 and r.json()["ok"] is True, r.json()["failing"]
+
+
+def test_a_credential_less_container_reports_unhealthy(client, monkeypatch):
+    """A fresh deploy with no keys SHOULD be 503. Verified against the real
+    image on 2026-08-29: ['ai_brain', 'loop']."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: _hb(99_999))
+    monkeypatch.setenv("AI_BRAIN_PROVIDER", "openrouter")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    body = client.get("/api/health/system").json()
+    assert set(body["failing"]) >= {"ai_brain", "loop"}
