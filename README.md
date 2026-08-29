@@ -18,8 +18,8 @@ part of this system that reliably works, and it is worth more than the trading.
 - **Max drawdown -94.78%** over the last 90 days, flow-neutral (deposits and
   withdrawals are recorded and netted out, so that is a trading loss, not a
   withdrawal). Peak equity was $225.93.
-- **Four books carry a validated forward edge.** All four ship `shadow_only`:
-  a validated grade earns a capital PATH, not capital.
+- **Four books, all LIVE.** There is no shadow tier: a book trades or it does
+  not exist. What stops them today is the structural dust floor, not a flag.
 - The account is below the structural minimum, so the executor refuses every
   order regardless of what `mode` says. That is deliberate.
 
@@ -33,10 +33,16 @@ part of this system that reliably works, and it is worth more than the trading.
 These are SHADOW-ledger grades, not realized P&L. This repo has a documented
 history of books whose comments claimed +EV while they ran live and lost.
 
-### Nothing is a recorder
+### No recorders, no shadow
 
-Every book either has a switch `scripts/autonomous_cycle.py` can flip, or it
-does not exist. There is no third state.
+Every book trades and has a switch `scripts/autonomous_cycle.py` can flip, or it
+does not exist. There is no third state, and tests enforce that in the defaults
+and in the live config.
+
+**Fund this account above $25 and start the loop, and four books place real
+orders unattended.** What holds them right now is the dust floor in
+`executor.maybe_execute`, the majors allowlist, the daily-loss kill switch, and
+the nightly grader that demotes any book whose forward ledger turns negative.
 
 The exemption list that used to hold ten capital-less books is empty and a test
 keeps it empty. It produced exactly the failure it sounds like: on 2026-08-29
@@ -442,10 +448,9 @@ values are optimal in future market regimes. Missing keys are filled from
   blocked purely by capital (book full / notional cap), evicts the weakest
   non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
   room.
-- **The six books that can place orders**, all bounded, all switchable by
-  `scripts/autonomous_cycle.py`: the four validated ones above plus
-  `mover_pass_short` and `young_mover_short` (both MARGINAL). The cycle grades
-  them nightly and demotes anything its own forward ledger refutes.
+- **The four live books**, each bounded at $20/1x with a 15% stop and a 1-day
+  horizon — the geometry each was graded on. `scripts/autonomous_cycle.py`
+  grades them nightly and demotes anything its own forward ledger refutes;
   `scripts/book_status.py` shows where each stands without needing the exchange.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
