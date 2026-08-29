@@ -1,0 +1,171 @@
+"""Gate tests for the risk panel (2026-08-29).
+
+Why this exists: the landing page counted 45 mentions of pnl and 25 of equity
+and ZERO of drawdown, fee drag, or win rate. It showed upside and activity and
+never once showed what the account could lose. These tests pin the numbers a
+person with money actually asks for, and — just as important — pin the honesty
+caveat, because a drawdown number that quietly counts a withdrawal as a loss is
+worse than no number at all.
+"""
+from __future__ import annotations
+
+import time
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+import hermes_trader.dashboard as db
+
+
+def _hb(ts, equity):
+    return {"ts": ts, "event": "loop_heartbeat", "equity": equity,
+            "daily_pnl": 0.0, "open_positions": 0, "available": equity}
+
+
+@pytest.fixture
+def curve(monkeypatch):
+    """A rise to 200 then a fall to 140: a hand-checkable -30% drawdown.
+
+    The decline is deliberately gentle. _equity_curve_payload rejects any point
+    below 70% of the trailing median as a partial-dex degraded read, and needs
+    three consecutive such points before it believes a real crash. A fixture
+    that fell faster would be testing that filter, not the drawdown maths.
+    """
+    now = int(time.time() * 1000)
+    day = 86_400_000
+    pts = [(now - 9 * day, 100.0), (now - 8 * day, 150.0), (now - 7 * day, 200.0),
+           (now - 6 * day, 180.0), (now - 5 * day, 160.0), (now - 4 * day, 140.0)]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [_hb(t, e) for t, e in pts])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config",
+                        lambda: {"max_daily_loss_usd": -100, "mode": "LIVE"})
+    return pts
+
+
+# ── the numbers ──────────────────────────────────────────────────────────────
+
+def test_drawdown_is_measured_from_the_peak_not_the_start(curve):
+    r = db._risk_payload()
+    assert r["peak_equity"] == 200.0
+    assert r["drawdown_pct"] == pytest.approx(-30.0, abs=0.01)
+
+
+def test_max_drawdown_walks_forward_and_never_goes_positive(curve):
+    r = db._risk_payload()
+    assert r["max_drawdown_pct"] == pytest.approx(-30.0, abs=0.01)
+    assert r["max_drawdown_pct"] <= 0
+
+
+def test_a_monotonically_rising_account_has_no_drawdown(monkeypatch):
+    now = int(time.time() * 1000)
+    monkeypatch.setattr(db, "_read_log_lines",
+                        lambda: [_hb(now - i * 86_400_000, 100.0 + (9 - i))
+                                 for i in range(9, -1, -1)])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    r = db._risk_payload()
+    assert r["drawdown_pct"] == 0.0 and r["max_drawdown_pct"] == 0.0
+
+
+def test_win_rate_and_fee_drag_come_from_graded_closes(monkeypatch, curve):
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [
+        {"pnl_pct": 10.0, "spot_pct": 1.0, "leverage": 10, "fees_pct": 0.5},
+        {"pnl_pct": -5.0, "spot_pct": -0.5, "leverage": 10, "fees_pct": 0.5},
+        {"pnl_pct": 2.0, "spot_pct": 0.2, "leverage": 10, "fees_pct": 0.5},
+    ])
+    r = db._risk_payload()
+    assert r["trades_graded"] == 3
+    assert r["win_rate"] == pytest.approx(2 / 3, abs=1e-4)
+    # gross |pnl| = 10 + 5 + 2 = 17; fees = 1.5 -> 8.82%
+    assert r["fee_drag_pct"] == pytest.approx(8.82, abs=0.02)
+
+
+def test_kill_switch_distance_is_zero_when_green_and_one_at_the_floor(monkeypatch, curve):
+    now = int(time.time() * 1000)
+
+    def _with_daily(pnl):
+        monkeypatch.setattr(db, "_read_log_lines", lambda: [
+            {"ts": now, "event": "loop_heartbeat", "equity": 100.0,
+             "daily_pnl": pnl, "open_positions": 0, "available": 100.0}])
+        return db._risk_payload()
+
+    assert _with_daily(5.0)["kill_used_frac"] == 0.0
+    assert _with_daily(-50.0)["kill_used_frac"] == pytest.approx(0.5)
+    # already past the floor clamps at 1.0 rather than reporting 250%
+    assert _with_daily(-250.0)["kill_used_frac"] == 1.0
+
+
+def test_empty_history_does_not_divide_by_zero(monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    r = db._risk_payload()
+    assert r["drawdown_pct"] == 0.0 and r["win_rate"] is None
+
+
+# ── the honesty caveat ───────────────────────────────────────────────────────
+
+def test_the_payload_admits_it_cannot_tell_a_withdrawal_from_a_loss(curve):
+    """Nothing logs deposits or withdrawals, so the equity curve cannot
+    distinguish them. Saying so is the whole difference between a risk panel and
+    a flattering one — if capital flows ever get logged, flip the flag."""
+    r = db._risk_payload()
+    assert r["capital_flows_tracked"] is False
+    assert "withdrawal" in r["drawdown_caveat"].lower()
+
+
+# ── it reaches the page ──────────────────────────────────────────────────────
+
+@pytest.fixture
+def client():
+    app = FastAPI()
+    db.register_routes(app)
+    return TestClient(app)
+
+
+def test_risk_endpoint_serves(client, curve):
+    body = client.get("/api/dashboard/risk").json()
+    assert body["peak_equity"] == 200.0
+    assert set(body) >= {"drawdown_pct", "max_drawdown_pct", "win_rate",
+                         "fee_drag_pct", "kill_used_frac", "mode"}
+
+
+def test_the_landing_page_actually_renders_the_risk_numbers(client):
+    """The panel has to be ON the page, not merely available at an endpoint —
+    an endpoint nobody renders is exactly the gap this work closed."""
+    body = client.get("/").text
+    for marker in ("risk-band", "risk-dd", "risk-maxdd", "risk-win",
+                   "risk-fees", "risk-kill", "risk-caveat", "refreshRisk"):
+        assert marker in body, f"landing page lost {marker}"
+
+
+def test_the_page_carries_an_off_switch_that_says_what_it_does(client):
+    body = client.get("/").text
+    assert "kill-btn" in body and "/api/agent/stop" in body
+    assert "CONFIRM STOP" in body, "a live kill needs a confirm step"
+    assert "does not flatten" in body, (
+        "the button must say it leaves positions open — an off switch people "
+        "misread is worse than no off switch")
+
+
+def test_the_stop_endpoint_is_operator_gated():
+    from hermes_trader.server import app as real_app
+    assert TestClient(real_app).post("/api/agent/stop").status_code in (401, 403)
+
+
+def test_a_partial_dex_blip_does_not_invent_a_drawdown(monkeypatch):
+    """A HIP-3 fetch failure reports main-dex-only equity — a one-tick crater.
+    The drawdown must be computed over the FILTERED curve, or every blip would
+    print a terrifying and entirely fictional loss on the front page."""
+    now = int(time.time() * 1000)
+    day = 86_400_000
+    vals = [100.0, 150.0, 200.0, 20.0, 200.0, 190.0]   # 20.0 is the bad read
+    monkeypatch.setattr(db, "_read_log_lines",
+                        lambda: [_hb(now - (len(vals) - i) * day, v)
+                                 for i, v in enumerate(vals)])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    r = db._risk_payload()
+    assert r["max_drawdown_pct"] == pytest.approx(-5.0, abs=0.01), (
+        "the 20.0 degraded read leaked into the drawdown")

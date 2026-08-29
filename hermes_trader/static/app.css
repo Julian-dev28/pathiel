@@ -43,6 +43,7 @@ canvas,svg{display:block}
 .mb-6{margin-bottom:1.5rem}
 @media (min-width:48rem){.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (min-width:48rem){.md\:grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (min-width:48rem){.md\:grid-cols-5{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .min-h-screen{min-height:100vh}
 .ml-auto{margin-left:auto}
 .mt-1{margin-top:.25rem}

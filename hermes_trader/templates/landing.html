@@ -349,6 +349,53 @@
        connect, so it is never blank while the loop runs) -->
   <div id="wire" class="mono" aria-live="polite" hidden></div>
 
+  <!-- RISK BAND. Deliberately above the fold and above the pretty things:
+       this page showed upside and activity for months and never once showed
+       what the account could lose. Drawdown first, cost of trading second,
+       distance to the kill switch third. -->
+  <section class="card p-4 mb-6" id="risk-band" aria-label="risk">
+    <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+      <div class="sec-label" style="margin-bottom:0">risk</div>
+      <div class="flex items-center gap-2">
+        <span class="badge b-off mono" id="risk-mode">—</span>
+        <button type="button" id="kill-btn"
+                style="font-family:ui-monospace,monospace;font-size:10px;font-weight:800;
+                       letter-spacing:.12em;padding:3px 10px;border-radius:3px;cursor:pointer;
+                       color:#fca5a5;background:rgba(239,68,68,.10);
+                       border:1px solid rgba(239,68,68,.45)">STOP TRADING</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div>
+        <div class="sec-label mb-1">drawdown from peak</div>
+        <div class="kv" id="risk-dd">—</div>
+        <div class="ksub mono" id="risk-peak"></div>
+      </div>
+      <div>
+        <div class="sec-label mb-1">max drawdown</div>
+        <div class="kv" id="risk-maxdd">—</div>
+        <div class="ksub mono" id="risk-window"></div>
+      </div>
+      <div>
+        <div class="sec-label mb-1">win rate</div>
+        <div class="kv" id="risk-win">—</div>
+        <div class="ksub mono" id="risk-n"></div>
+      </div>
+      <div>
+        <div class="sec-label mb-1">fee drag</div>
+        <div class="kv" id="risk-fees">—</div>
+        <div class="ksub mono">of gross p&amp;l</div>
+      </div>
+      <div>
+        <div class="sec-label mb-1">to kill switch</div>
+        <div class="kv" id="risk-kill">—</div>
+        <div class="ksub mono" id="risk-kill-sub"></div>
+      </div>
+    </div>
+    <div class="ksub mt-3" id="risk-caveat"></div>
+    <div class="ksub mono mt-1" id="kill-out"></div>
+  </section>
+
   <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
     <div class="card glow kpi p-4">
       <div class="sec-label mb-1">equity</div>
@@ -865,6 +912,97 @@ async function refreshSummary() {
   } catch (e) {}
 }
 
+// ── the off switch ──────────────────────────────────────────────────────────
+// Stops the loop process. It does NOT close open positions, and the button
+// says so rather than letting someone assume it flattened the book — an off
+// switch people misread is worse than no off switch. Two presses, because a
+// single stray click on a live trading system is not an intention.
+let killArmed = false;
+(function wireKill() {
+  const btn = document.getElementById('kill-btn');
+  const out = document.getElementById('kill-out');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const token = localStorage.getItem('hermes-op-token');
+    if (!token) {
+      out.innerHTML = '<span style="color:var(--amb)">set an operator token first ' +
+                      '(the link under the header)</span>';
+      return;
+    }
+    if (!killArmed) {
+      killArmed = true;
+      btn.textContent = 'CONFIRM STOP';
+      out.textContent = 'stops the trading loop. Open positions stay open and ' +
+                        'keep running their DSL exits — this does not flatten.';
+      setTimeout(() => {
+        if (!killArmed) return;
+        killArmed = false; btn.textContent = 'STOP TRADING'; out.textContent = '';
+      }, 8000);
+      return;
+    }
+    killArmed = false;
+    btn.disabled = true; btn.textContent = 'stopping…';
+    try {
+      const r = await fetch('/api/agent/stop',
+                            { method: 'POST', headers: { 'X-Operator-Token': token } });
+      const j = await r.json();
+      out.textContent = r.ok ? ('loop ' + (j.status || 'stopped') +
+                                (j.pid ? ' (pid ' + j.pid + ')' : ''))
+                             : ('stop failed: http ' + r.status);
+    } catch (e) {
+      out.textContent = 'stop failed: ' + String(e);
+    }
+    btn.disabled = false; btn.textContent = 'STOP TRADING';
+    refreshRisk();
+  });
+})();
+
+async function refreshRisk() {
+  try {
+    const r = await (await fetch('/api/dashboard/risk')).json();
+    const $id = id => document.getElementById(id);
+    const pct = v => (v == null ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(2) + '%');
+
+    // Drawdown is negative-or-zero. Red when the account is off its high; the
+    // colour is the point, so it is never neutral-styled.
+    const dd = $id('risk-dd');
+    dd.textContent = pct(r.drawdown_pct);
+    dd.className = 'kv ' + ((r.drawdown_pct || 0) < -0.01 ? 'neg' : 'pos');
+    $id('risk-peak').textContent = r.peak_equity != null ? 'peak $' + r.peak_equity : '';
+
+    const mdd = $id('risk-maxdd');
+    mdd.textContent = pct(r.max_drawdown_pct);
+    mdd.className = 'kv ' + ((r.max_drawdown_pct || 0) < -0.01 ? 'neg' : 'pos');
+    $id('risk-window').textContent = (r.window_days || 0) + 'd window · ' + (r.points || 0) + ' pts';
+
+    $id('risk-win').textContent =
+      r.win_rate == null ? '—' : (r.win_rate * 100).toFixed(1) + '%';
+    $id('risk-n').textContent = (r.trades_graded || 0) + ' graded trades';
+
+    $id('risk-fees').textContent =
+      r.fee_drag_pct == null ? '—' : r.fee_drag_pct.toFixed(2) + '%';
+
+    // How much of today's loss budget is spent. 100% = the hard kill fires.
+    const kill = $id('risk-kill');
+    const used = (r.kill_used_frac || 0) * 100;
+    kill.textContent = used.toFixed(0) + '%';
+    kill.className = 'kv ' + (used > 60 ? 'neg' : 'pos');
+    $id('risk-kill-sub').textContent =
+      'today ' + (r.daily_pnl >= 0 ? '+' : '') + '$' + Number(r.daily_pnl || 0).toFixed(2) +
+      ' of $' + Math.abs(r.kill_at_usd || 0).toFixed(0) + ' floor';
+
+    const mode = $id('risk-mode');
+    mode.textContent = r.mode || '—';
+    mode.className = 'badge mono ' + (r.mode === 'LIVE' ? 'b-live' : 'b-off');
+
+    // The caveat is not decoration. Deposits and withdrawals are not logged,
+    // so a withdrawal and a loss are indistinguishable in this number, and
+    // saying so is the difference between a risk panel and a flattering one.
+    $id('risk-caveat').textContent =
+      r.capital_flows_tracked ? '' : r.drawdown_caveat || '';
+  } catch (e) {}
+}
+
 // ── the cat reacts to the tape: sleep > red-day flat ears > position-open
 // alert > idle tail flick; equity uptick = bounce ─────────────────────────────
 let catLastEquity = null;
@@ -1054,9 +1192,10 @@ async function refreshLeague() {
   } catch (e) {}
 }
 
-refreshSummary(); refreshPositions(); refreshBooks(); refreshChart(86400);
+refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();
 setInterval(refreshSummary, 6000);
+setInterval(refreshRisk, 61000);   // endpoint TTL is 60s
 setInterval(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
 setInterval(refreshBooks, 30000);
 setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s

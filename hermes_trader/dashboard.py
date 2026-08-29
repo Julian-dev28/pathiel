@@ -440,6 +440,85 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
     return out
 
 
+def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
+    """What a person with money asks first: how much can this lose, how much has
+    it already lost from its high, what does trading itself cost, and where is
+    the off switch.
+
+    Every number is derived from data the dashboard already holds — the
+    heartbeat equity series and the closed-trade log — so this endpoint adds no
+    network calls. It reuses _equity_curve_payload deliberately: that function
+    already filters partial-dex degraded reads, and a drawdown computed over
+    unfiltered equity would invent a 60% crash every time a HIP-3 fetch blipped.
+
+    `fee_drag_pct` is fees as a share of GROSS profit-and-loss magnitude, not of
+    equity. That is the number that answers "is churn eating this", which is the
+    failure mode this account actually had.
+
+    HONESTY LIMIT, surfaced rather than hidden: nothing in this repo logs
+    deposits or withdrawals, so an equity curve cannot tell a trading loss from
+    the operator moving USDC out. `capital_flows_tracked` is therefore False and
+    the drawdown is labelled an equity decline, not a loss. Presenting it as a
+    loss would be the exact kind of flattering misreport this panel exists to
+    prevent. Wire a transfer log and this becomes a real drawdown.
+    """
+    curve = _equity_curve_payload(range_s)
+    equities = [float(p["equity"]) for p in curve if p.get("equity")]
+
+    peak = max(equities) if equities else 0.0
+    current = equities[-1] if equities else 0.0
+    dd_now_pct = ((current - peak) / peak * 100) if peak > 0 else 0.0
+
+    # Max drawdown: deepest trough below any preceding peak, walked forward.
+    max_dd_pct, running_peak = 0.0, 0.0
+    for eq in equities:
+        running_peak = max(running_peak, eq)
+        if running_peak > 0:
+            max_dd_pct = min(max_dd_pct, (eq - running_peak) / running_peak * 100)
+
+    closes = _closed_trades_payload(limit=500)
+    graded = [c for c in closes if c.get("pnl_pct") is not None]
+    wins = [c for c in graded if float(c["pnl_pct"]) > 0]
+    win_rate = (len(wins) / len(graded)) if graded else None
+
+    gross_abs = sum(abs(float(c.get("spot_pct") or 0) * float(c.get("leverage") or 1))
+                    for c in graded)
+    fees_total = sum(float(c.get("fees_pct") or 0) for c in graded)
+    fee_drag_pct = (fees_total / gross_abs * 100) if gross_abs > 0 else None
+
+    summary = _summary_payload()
+    try:
+        cfg = read_agent_config()
+    except Exception:
+        cfg = {}
+    kill_at = float(cfg.get("max_daily_loss_usd", 0) or 0)
+    daily_pnl = float(summary.get("daily_pnl") or 0)
+    # Fraction of the way to the hard kill, 0 when green and 1 at the floor.
+    kill_used = (min(1.0, daily_pnl / kill_at) if kill_at < 0 and daily_pnl < 0 else 0.0)
+
+    return {
+        "equity": summary.get("equity"),
+        "peak_equity": round(peak, 2),
+        "drawdown_pct": round(dd_now_pct, 2),
+        "max_drawdown_pct": round(max_dd_pct, 2),
+        "win_rate": round(win_rate, 4) if win_rate is not None else None,
+        "trades_graded": len(graded),
+        "fee_drag_pct": round(fee_drag_pct, 2) if fee_drag_pct is not None else None,
+        "fees_pct_total": round(fees_total, 2),
+        "daily_pnl": daily_pnl,
+        "kill_at_usd": kill_at,
+        "kill_used_frac": round(kill_used, 4),
+        "mode": str(cfg.get("mode", "UNKNOWN")).upper(),
+        "window_days": round(range_s / 86400, 1),
+        "points": len(equities),
+        # False until deposits/withdrawals are logged — see the docstring.
+        "capital_flows_tracked": False,
+        "drawdown_caveat": ("equity decline, not necessarily a trading loss: "
+                            "deposits and withdrawals are not logged, so a "
+                            "withdrawal reads identically to a loss here"),
+    }
+
+
 def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
     """Series of (ts, equity) points from loop_heartbeat events within `range_s`.
 
@@ -1683,6 +1762,16 @@ def register_routes(app: FastAPI) -> None:
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
         return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 65.0,
                                         lambda: _equity_curve_payload(range_s)))
+
+    @app.get("/api/dashboard/risk")
+    async def dashboard_risk(range_s: int = Query(7_776_000, ge=86_400,
+                                                  le=31_536_000)) -> JSONResponse:
+        """Drawdown, fee drag, win rate, and distance to the hard kill.
+
+        Cached for a minute: it walks the whole session log twice and the
+        numbers move on a heartbeat cadence, not a request cadence."""
+        return JSONResponse(_ttl_cached(f"risk:{range_s}", 60.0,
+                                        lambda: _risk_payload(range_s)))
 
     @app.get("/api/dashboard/closed-trades")
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:

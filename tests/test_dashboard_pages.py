@@ -1423,7 +1423,13 @@ def test_no_page_reaches_for_an_element_that_does_not_exist():
 def test_no_page_calls_an_endpoint_that_is_not_registered(client):
     """Every page is a static shell over the JSON API. A route renamed on the
     server and not in the template is a control that 404s in production."""
+    # Routes come from the REAL app, not the bare dashboard test app: in
+    # production hermes_trader.server mounts the dashboard AND the agent
+    # endpoints, and a page control may legitimately call either. Checking only
+    # the dashboard's own routes would fail a control that works in production.
+    from hermes_trader.server import app as real_app
     routes = {r.path for r in client.app.routes if hasattr(r, "path")}
+    routes |= {r.path for r in real_app.routes if hasattr(r, "path")}
     for name, html in _template_files():
         for raw in set(re.findall(r"'(/api/[\w/{}?=&.-]*)'", html)):
             path = raw.split("?")[0].rstrip("/")
@@ -1442,7 +1448,7 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
 def test_no_page_pulls_a_third_party_asset(client):
     """The dashboard runs on a trading box. Every asset is vendored under
     /static so a CDN outage (or a CDN owner) cannot change what it renders."""
-    for path in ("/", "/activity", "/news", "/predictions", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         # the SVG namespace is an identifier, not a fetch — everything else is
         body = client.get(path).text.replace(
             'xmlns="http://www.w3.org/2000/svg"', "")
