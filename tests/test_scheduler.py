@@ -171,9 +171,29 @@ def test_a_job_due_while_the_machine_slept_fires_on_wake():
 
 
 def test_a_job_that_just_ran_is_not_due():
+    """Pinned to a fixed clock, not time.time().
+
+    interval_min jobs recur on a FIXED GRID: last_occurrence is
+    (now // step) * step. With a wall-clock `now`, "ran 60 seconds ago" lands in
+    the previous grid cell whenever the test happens to run within 60s after an
+    hour boundary — and is then correctly due. The test passed by luck about
+    98% of the time and failed the rest; the pre-commit hook caught it on a run
+    that landed in the unlucky window.
+    """
     job = {"interval_min": 60, "why": "x"}
-    now = time.time()
+    now = 1_700_000_000.0                 # 3600-aligned + 800s into the cell
+    grid = (int(now) // 3600) * 3600
+    assert now - grid > 60, "fixture must sit well inside one grid cell"
     assert sched.is_due(job, now - 60, now) is False
+
+
+def test_a_job_is_due_again_at_the_next_grid_boundary():
+    """The other half of the contract, which the flaky version was accidentally
+    exercising: crossing a boundary makes a recently-run job due again."""
+    job = {"interval_min": 60, "why": "x"}
+    now = 1_700_000_000.0
+    grid = (int(now) // 3600) * 3600
+    assert sched.is_due(job, grid - 1, now) is True
 
 
 def test_the_running_table_reports_what_is_in_flight(tmp_path):

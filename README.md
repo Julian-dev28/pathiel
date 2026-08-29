@@ -346,7 +346,7 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
     "mover_min_composite": 20.0
   },
   "late_chase_relax": { "enabled": true, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
-  "capital_rotation": { "enabled": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 },
+  "capital_rotation": { "enabled": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 }
 }
 ```
 

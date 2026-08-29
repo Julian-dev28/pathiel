@@ -65,3 +65,45 @@ def test_the_allowlist_is_only_the_files_that_must_carry_the_pattern():
         "scripts/check_no_absolute_paths.py",
         "tests/test_no_absolute_paths.py",
     }
+
+
+def test_every_json_block_in_the_docs_parses():
+    """A config sample that does not parse is a config sample someone pastes and
+    then debugs. Editing the README broke exactly this on 2026-08-29 by leaving a
+    trailing comma behind a removed book."""
+    import json
+    import re
+
+    for doc in ("README.md", "DEPLOY.md", "docs/SECRETS.md", "docs/LOGGING.md"):
+        path = ROOT / doc
+        if not path.exists():
+            continue
+        for i, block in enumerate(re.findall(r"```json\n(.*?)```", path.read_text(), re.S)):
+            try:
+                json.loads(block)
+            except json.JSONDecodeError as exc:
+                raise AssertionError(f"{doc} json block {i} does not parse: {exc}")
+
+
+def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
+    """Documentation that confidently describes something that is gone is worse
+    than none — it is the first thing a reader trusts.
+
+    A changelog entry SAYING a thing was removed is correct and must not trip
+    this; only prose outside such a section counts. So the check skips any
+    section whose heading says the thing was removed.
+    """
+    import re
+
+    gone = ("polymarket_scout", "hermes_trader/v2/", "xs_momentum_live",
+            "extreme_fade_live", "--sample-daemon")
+    for doc in ("README.md", "DEPLOY.md"):
+        text = (ROOT / doc).read_text()
+        # drop sections headed "What was removed" / "Removed" and the like
+        sections = re.split(r"\n(?=#{1,3} )", text)
+        live = "\n".join(sec for sec in sections
+                          if not re.match(r"#{1,3} .*(removed|deleted)",
+                                          sec.split("\n")[0], re.I))
+        for name in gone:
+            assert name not in live, (
+                f"{doc} describes deleted {name} as if it still exists")
