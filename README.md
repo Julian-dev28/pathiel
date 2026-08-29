@@ -1,7 +1,44 @@
 # Hermes-Trader
-> Autonomous multi-market trading agent for Hyperliquid — crypto perps, equity perps (TSLA, NVDA, AAPL), and commodities (NATGAS, SILVER, COPPER). A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP server.
+> Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Hermes Agent](https://github.com/NousResearch/hermes-agent) through an MCP server.
 
-**What it does:** Scans every Hyperliquid market (500+ perps + spot), fires statistical triggers on price/volume/breakout signals, runs a cheap pre-AI technical analysis filter, and only calls AI on CONFIRMED setups. Executes real trades with DSL-managed dynamic exits — no human in the loop.
+**What it does:** Scans the majors universe, fires statistical triggers on
+price/volume/breakout signals, runs a cheap pre-AI technical analysis filter,
+and only calls AI on CONFIRMED setups. Executes with DSL-managed dynamic exits.
+
+**What it mostly does, honestly:** kills ideas. The measurement layer — the
+recorders, the shadow ledger, the point-in-time grader — has correctly refuted
+perpetual-candle trading (a 2-minute BTC move averages 0.028% against a 0.09%
+round trip), prediction-market forecasting (n=263 against a market already at
+Brier 0.088), Markov regime models, numerology, social-surge signals, and a
+"top 25 leaderboard" that lost to random 2000 times out of 2000. That is the
+part of this system that reliably works, and it is worth more than the trading.
+
+### Read this before funding it
+
+- **Max drawdown -94.78%** over the last 90 days, flow-neutral (deposits and
+  withdrawals are recorded and netted out, so that is a trading loss, not a
+  withdrawal). Peak equity was $225.93.
+- **Three books survive**, all mover-recorder arms, all still PENDING a verdict.
+  No strategy in this repo currently has a validated forward edge.
+- The account is below the structural minimum, so the executor refuses every
+  order regardless of what `mode` says. That is deliberate.
+
+---
+
+## What was removed (2026-08-29)
+
+The candle-strategy space is saturated and the perp fee math is fatal, not
+fixable. Deleted rather than disabled, because a half-removal that leaves a live
+route is worse than either end state:
+
+- **17 strategy books** and every order-placing call site, plus `hermes_trader/v2/`
+  (a parallel engine whose only three signal generators were among them)
+- **The entire prediction-market side** — the arb crossed 2 of 276 sampled
+  windows and the forecasts lost to the market's own calibration
+
+What survives is the engine: ingestion, the TA filter, the risk gates, the
+executor, the DSL exit engine, the shadow ledger and its grader, and the three
+mover-recorder live arms. Roughly 26,000 lines came out.
 
 ---
 
@@ -27,13 +64,32 @@ Dashboard served at `http://localhost:8000` (port from `HERMES_PORT`).
 
 Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Hermes-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
 
-1. **Scan** — 500+ markets in parallel with volume pre-filtering and rate-limit-aware batching
+1. **Scan** — the majors universe in parallel with volume pre-filtering and rate-limit-aware batching. The allowlist is applied at scan time, not just at the entry gate, so the tail costs nothing in candles or AI calls
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
 3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst, through the selected AI brain provider
 4. **Execution** — ATR equal-risk sizing, Hyperliquid-valid order normalization, and DSL dynamic exits (loss protection → profit locking)
 5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
 
 This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving signal quality.
+
+---
+
+## The failure modes it now refuses to hide
+
+Every one of these was a real silent failure in this system, where broken and
+"nothing to report" were indistinguishable. Each is now something that fails
+loudly, blocks, or pages:
+
+| was silent | now |
+|---|---|
+| A dead trading loop read as healthy | `/api/health/system` returns 503; `HermesLoopDead` alerts |
+| An exchange outage read as a quiet market | Entries blocked while the scan feed is degraded |
+| A withdrawal read as a trading loss | Drawdown is flow-neutral; capital flows are recorded |
+| An unusable AI brain read as a PASS verdict | `provider_readiness()` gates the deploy and the healthcheck |
+| `mode: LIVE` on a dust account | Structural floor in the executor; no config can bypass it |
+| Logs growing until the disk filled | Rotation, a directory cap, and a disk guard on startup |
+| A crash mid-write dropping every claim | Atomic writes with fsync on the state that matters |
+| Tests passing on one laptop only | CI installs from a lockfile and rejects absolute paths |
 
 ---
 
@@ -143,17 +199,18 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `hermes_trader/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
 | `hermes_trader/models/types.py` | Shared data type: `Candle` (OHLCV) |
 | `hermes_trader/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
-| `services/polymarket_scout/` | Polymarket board, forecasts, paper ledger (own README) |
-| `services/trend_engine/` | `/trends` tab: 7d HL regime, BTC 5m base rates, political drift, recorder P&L (own README) |
+| `services/trend_engine/` | `/trends` tab: 7d HL regime + recorder P&L (own README) |
+| `hermes_trader/agents/universe.py` | The majors allowlist, applied at scan time as well as at the gate |
+| `hermes_trader/agents/capital_flows.py` | Deposits/withdrawals + the flow-neutral NAV index the drawdown uses |
+| `hermes_trader/agents/atomic_io.py` | Crash-safe state writes (temp + fsync + rename + dir fsync) |
 
 ### Dashboard tabs
 
 | Path | What it shows |
 |------|---------------|
-| `/` | Landing — equity, positions, live books |
+| `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, live books |
 | `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
 | `/news` | News-catalyst reads + research events with news context |
-| `/predictions` | Polymarket board — our probability vs the market's |
 | `/trends` | Trend analysis + forecasts + recorder P&L (see `services/trend_engine/README.md`) |
 | `/analytics` | Funnel, book league, coin chart with our trade markers, funding heat |
 
@@ -290,10 +347,6 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
   },
   "late_chase_relax": { "enabled": true, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
   "capital_rotation": { "enabled": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 },
-  "xs_momentum": { "enabled": true, "ranking": "pct_k", "lookback_days": 7, "hold_days": 5, "k_per_leg": 4 },
-  "extreme_fade": { "enabled": true, "crash_pct": -0.12, "max_new_per_cycle": 2, "scan_interval_min": 30 },
-  "rally_exhaustion": { "enabled": true, "threshold_pct": 12.0, "min_volume_usd": 20000000, "leverage": 1 },
-  "hail_mary_short": { "enabled": true, "shadow_only": true, "min_breadth_bearish_pct": 0.55, "min_volume_usd": 20000000 }
 }
 ```
 
@@ -368,17 +421,11 @@ values are optimal in future market regimes. Missing keys are filled from
   blocked purely by capital (book full / notional cap), evicts the weakest
   non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
   room.
-- **`xs_momentum`** — live cross-sectional momentum book using the validated
-  `pct_k` rank.
-- **`extreme_fade`** — live long-only crash-fade book, crash-bar deduped and
-  cadence-throttled by `scan_interval_min` so it cannot block later hooks every
-  scan.
-- **`rally_exhaustion`** — live short-only post-rally exhaustion book, isolated
-  from crash-fade long logic.
-- **`hail_mary_short`** — AI/semis HIP-3 short basket, currently shadow-only.
-  It logs when basket breadth and proxy trend are bearish, then waits for fresh
-  daily breakdowns before it would become tradeable. Do not set
-  `shadow_only=false` until the shadow/backtest sample is EV+.
+- **`mover_recorders.pass_short_live` / `young_short_live`, `news_ta_aligned`** —
+  the three books that still place orders, all bounded. Each is switchable by
+  `scripts/autonomous_cycle.py`, which grades them nightly and demotes anything
+  its own forward ledger refutes. `scripts/book_status.py` shows where each
+  stands without needing the exchange.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
@@ -606,7 +653,7 @@ Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage =
 ## Design Decisions
 
 ### Why volume pre-filtering?
-HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning all 500+ markets naively requires 10,000+ weight -> instant 429. Volume pre-filtering to 45 core markets plus a small rotating sweep leaves room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. Sustained usage is roughly `1200 * markets / interval` weight/min, so the safe rule is **markets plus sweep should stay below the scan interval in seconds**.
+HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning the full 500+ market universe naively required 10,000+ weight -> instant 429. The majors allowlist removes most of that pressure on its own. Volume pre-filtering to 45 core markets plus a small rotating sweep leaves room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. Sustained usage is roughly `1200 * markets / interval` weight/min, so the safe rule is **markets plus sweep should stay below the scan interval in seconds**.
 
 ### Why DSL exit engine?
 Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. State is persisted on disk so a daemon restart doesn't reset the ratchet, and the registry is reconciled against the exchange each tick so manually-opened or externally-closed positions stay coherent. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
