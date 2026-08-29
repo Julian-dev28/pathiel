@@ -4,8 +4,9 @@ Read-only. Measures forward return after each skip for a LONG the bot was consid
 WRONG skip = coin then mooned (big up move missed). RIGHT skip = flat/down.
 """
 import os, json, sys, collections, statistics, time
+from pathlib import Path
 
-ROOT='/Users/julian_dev/Documents/code/hermes-trader'
+ROOT=str(Path(__file__).resolve().parents[3])
 LOG=os.path.expanduser('~/.hermes-trader-session-log.jsonl')
 os.chdir(ROOT)
 for line in open(os.path.join(ROOT,'.env.local')):

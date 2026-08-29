@@ -212,11 +212,17 @@ def main() -> int:
         h1, h2 = halves.get("first"), halves.get("second")
         verdict = grade.get("verdict", {})
         null = row.get("null") or {}
+        m12_s = f"{m12:+.3f}%" if m12 is not None else "-"
+        halves_s = f"{h1:+.3f}/{h2:+.3f}" if h1 is not None and h2 is not None else "-"
+        excess_pct = null.get("excess_pct")
+        mc_p = null.get("mc_p")
+        excess_s = f"{excess_pct:+.2f}%" if excess_pct is not None else "-"
+        mc_p_s = f"{mc_p:.4f}" if mc_p is not None else "-"
         print(f"{row['book']:<24} {row['records']:>4} {grade.get('n', 0):>4} "
-              f"{(f'{m12:+.3f}%' if m12 is not None else '-'):>10} "
-              f"{(f'{h1:+.3f}/{h2:+.3f}' if h1 is not None and h2 is not None else '-'):>20} "
-              f"{(f'{null['excess_pct']:+.2f}%' if 'excess_pct' in null else '-'):>8} "
-              f"{(f'{null['mc_p']:.4f}' if 'mc_p' in null else '-'):>6}   "
+              f"{m12_s:>10} "
+              f"{halves_s:>20} "
+              f"{excess_s:>8} "
+              f"{mc_p_s:>6}   "
               f"{verdict.get('label', '?')}: {verdict.get('why', '')}")
     if any(row.get("null") for row in report):
         print("\n# excess = inverse mean MINUS same-coin random-time mean (price-only @12bps both sides).")

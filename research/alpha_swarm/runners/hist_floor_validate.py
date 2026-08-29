@@ -10,7 +10,7 @@ garbage 5-bar TA. If the 2.5-60d bucket is ALSO -EV, keep the 60-daily floor.
 """
 import json, os, sys, time, statistics
 from pathlib import Path
-_REPO = Path("/Users/julian_dev/Documents/code/hermes-trader"); sys.path.insert(0, str(_REPO))
+_REPO = Path(__file__).resolve().parents[3]; sys.path.insert(0, str(_REPO))
 for _l in (_REPO/".env.local").read_text().splitlines():
     _l=_l.strip()
     if _l and not _l.startswith("#") and "=" in _l:

@@ -4,8 +4,9 @@ through the IDENTICAL shadow_ledger.classify, time-OOS via sorted records.
 """
 from __future__ import annotations
 import sys
+from pathlib import Path
 import alpha_lib as A
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from hermes_trader.agents import shadow_ledger as SL
 
 DAY = 86_400_000

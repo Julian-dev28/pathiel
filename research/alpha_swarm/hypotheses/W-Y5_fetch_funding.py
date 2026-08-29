@@ -12,8 +12,9 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from hermes_trader.client.hl_client import fetch_funding_history  # noqa: E402
 
 import importlib.util

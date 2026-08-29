@@ -19,7 +19,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "research" / "alpha_swarm" / "lib"))
 import alpha_lib as A  # noqa: E402

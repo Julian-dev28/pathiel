@@ -19,7 +19,37 @@ def _cfg(entries_enabled):
     return {"mode": "LIVE", "main_engine": {"entries_enabled": entries_enabled}}
 
 
+def _stub_network(monkeypatch):
+    """maybe_execute() reaches several real-network calls past the books-only
+    gate (fetch_account_state, get_max_leverage, get_hl_price, ... all real
+    HTTP POSTs to api.hyperliquid.xyz). Unpatched, any test whose analysis
+    clears the gate (strategy_book set, or entries_enabled defaulting True)
+    hits the real network — flaky (ConnectionError) and slow (real
+    retry/backoff, seconds per call) offline / on CI. Same full stub set as
+    test_claims_registry_and_sizing.py's `_execute` helper."""
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xtest")
+    monkeypatch.setattr(ex, "fetch_account_state", lambda user, include_hip3=False: {
+        "equity": 60.0,
+        "available": 60.0,
+        "asset_positions": [],
+        "total_ntl": 0.0,
+        "dex_equity": {"": 60.0},
+        "dex_available": {"": 60.0},
+    })
+    monkeypatch.setattr(ex, "get_hl_price", lambda coin: 100.0)
+    monkeypatch.setattr(ex, "get_max_leverage", lambda coin: 20)
+    monkeypatch.setattr(ex, "set_leverage", lambda coin, lev: None)
+    monkeypatch.setattr(ex, "get_hl_atr", lambda interval, period, coin: 1.0)
+    monkeypatch.setattr(ex, "entry_size_for_notional",
+                        lambda coin, notional, px: round(notional / px, 4))
+    monkeypatch.setattr(ex, "min_entry_notional_usd", lambda coin, px: 10.0)
+    monkeypatch.setattr(ex, "place_hl_order", lambda *a, **kw: {
+        "status": "ok", "filled": True, "avg_px": 100.0, "order_id": "test-order",
+    })
+
+
 def test_main_engine_entry_blocked_when_disabled(monkeypatch):
+    _stub_network(monkeypatch)
     monkeypatch.setattr(ex, "read_agent_config", lambda: _cfg(False))
     r = ex.maybe_execute(_analysis())
     assert r["executed"] is False
@@ -27,6 +57,7 @@ def test_main_engine_entry_blocked_when_disabled(monkeypatch):
 
 
 def test_book_entry_passes_the_gate(monkeypatch):
+    _stub_network(monkeypatch)
     monkeypatch.setattr(ex, "read_agent_config", lambda: _cfg(False))
     r = ex.maybe_execute(_analysis(strategy_book="extreme_fade"))
     # must NOT be blocked by the books-only gate — downstream gates may still
@@ -35,6 +66,7 @@ def test_book_entry_passes_the_gate(monkeypatch):
 
 
 def test_absent_config_defaults_to_enabled(monkeypatch):
+    _stub_network(monkeypatch)
     monkeypatch.setattr(ex, "read_agent_config", lambda: {"mode": "LIVE"})
     r = ex.maybe_execute(_analysis())
     assert r.get("reason") != "main_engine_entries_disabled"

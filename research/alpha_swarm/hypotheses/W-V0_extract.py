@@ -26,14 +26,16 @@ scripts.trading_loop.
 import json
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+_REPO = str(Path(__file__).resolve().parents[3])
+sys.path.insert(0, _REPO)
 
 from hermes_trader.agents.mover_recorders import classify_news_polarity  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SESSION_LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
-MEMORY = "/Users/julian_dev/Documents/code/hermes-trader/.agent-memory.json"
+MEMORY = os.path.join(_REPO, ".agent-memory.json")
 OUT = os.path.join(HERE, "W-V0_events.json")
 
 

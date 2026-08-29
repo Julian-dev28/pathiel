@@ -69,9 +69,10 @@ import os
 import random
 import statistics
 import sys
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 CACHE = os.path.join(REPO, "research", "alpha_swarm", "hypotheses", "W-X2_cache_daily.json")
 
 T, O, H_, L_, C, V = 0, 1, 2, 3, 4, 5

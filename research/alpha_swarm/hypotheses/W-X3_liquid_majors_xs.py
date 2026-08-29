@@ -69,9 +69,10 @@ import math
 import os
 import statistics
 import sys
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 HYP = os.path.join(REPO, "research", "alpha_swarm", "hypotheses")
 
 # ---- import the shared W-X2 engine (same harness, by construction) ----------------------

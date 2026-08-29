@@ -30,7 +30,7 @@ import time
 from bisect import bisect_right
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 LOG = REPO / "logs" / "trading_loop.log"
 SCRATCH = Path(
     "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"

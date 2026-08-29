@@ -23,15 +23,17 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+_REPO = str(Path(__file__).resolve().parents[3])
+sys.path.insert(0, _REPO)
 
 from hermes_trader.client.hl_client import (  # noqa: E402
     fetch_funding_history, fetch_hl_candles,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = "/Users/julian_dev/Documents/code/hermes-trader/logs/trading_loop.log"
+LOG = os.path.join(_REPO, "logs", "trading_loop.log")
 H1_CACHE = os.path.join(HERE, "W-Y3_cache_1h.json")
 FUND_CACHE = os.path.join(HERE, "W-Y3_cache_funding.json")
 EPS_FILE = os.path.join(HERE, "W-Y3_episodes.json")

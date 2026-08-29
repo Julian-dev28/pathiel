@@ -19,11 +19,12 @@ import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
 
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 CACHE = os.path.join(REPO, "research", "alpha_swarm", "hypotheses", "W-GAP1_cache_1h.json")
 ET = ZoneInfo("America/New_York")
 RNG = np.random.default_rng(20260722)

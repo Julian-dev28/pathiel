@@ -18,14 +18,15 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+REPO = str(Path(__file__).resolve().parents[3])
+sys.path.insert(0, REPO)
 
 from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
 from hermes_trader.client.universe import get_universe  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
 UNI_CACHE = os.path.join(HERE, "W-Y5_cache_universe.json")
 DAILY_CACHE = os.path.join(HERE, "W-Y5_cache_daily.json")
 HOURLY_CACHE = os.path.join(HERE, "W-Y5_cache_blocked_1h.json")

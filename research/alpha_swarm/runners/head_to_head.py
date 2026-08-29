@@ -5,7 +5,7 @@ If C ~= A, my equation is redundant (the bot already does it). If C >> A, it's a
 import json, sys
 import numpy as np
 from pathlib import Path
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from hermes_trader.indicators import triggers as T
 from hermes_trader.agents.config import TRIGGER_CONFIG
 from hermes_trader.models.types import Candle

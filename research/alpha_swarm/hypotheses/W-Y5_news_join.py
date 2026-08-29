@@ -12,12 +12,14 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+_REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPO))
 from hermes_trader.agents.mover_recorders import classify_news_polarity  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ST = "/Users/julian_dev/Documents/code/hermes-trader/.state/shadow_ledger"
+ST = str(_REPO / ".state" / "shadow_ledger")
 HOURLY = json.load(open(os.path.join(HERE, "W-Y5_cache_blocked_1h.json")))
 BPS = 25
 

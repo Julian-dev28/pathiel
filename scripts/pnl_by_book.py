@@ -59,11 +59,10 @@ import os
 import re
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) \
-    if os.path.basename(os.path.dirname(os.path.abspath(__file__))) == "scripts" \
-    else "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[1])
 ENV_FILE = os.path.join(REPO, ".env.local")
 SESSION_LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
 LOOP_LOG = os.path.join(REPO, "logs", "trading_loop.log")

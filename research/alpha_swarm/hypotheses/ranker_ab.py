@@ -12,7 +12,7 @@ import sys, statistics, math
 from pathlib import Path
 
 SCRATCH = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad"
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, SCRATCH)
 sys.path.insert(0, REPO)
 

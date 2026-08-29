@@ -12,7 +12,7 @@ from __future__ import annotations
 import json, os, sys, time
 from pathlib import Path
 
-_REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+_REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO))
 for _line in (_REPO / ".env.local").read_text().splitlines():
     _line = _line.strip()

@@ -46,7 +46,7 @@ import random
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 HYP = REPO / "research" / "alpha_swarm" / "hypotheses"
 HOURLY_CACHE = Path(
     "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"

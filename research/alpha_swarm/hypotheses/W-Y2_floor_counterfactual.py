@@ -19,9 +19,10 @@ import os
 import re
 import statistics as st
 from datetime import datetime, timezone
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = "/Users/julian_dev/Documents/code/hermes-trader/logs/trading_loop.log"
+LOG = str(Path(__file__).resolve().parents[3] / "logs" / "trading_loop.log")
 HOURLY = json.load(open(os.path.join(HERE, "W-Y_cache_blocked_1h.json")))
 
 PAT = re.compile(

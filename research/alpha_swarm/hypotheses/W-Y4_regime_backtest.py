@@ -33,6 +33,7 @@ import os
 import random
 import statistics as st
 from datetime import datetime, timezone
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EPIS = json.load(open(os.path.join(HERE, "W-Y4_episodes.json")))
@@ -417,7 +418,7 @@ def main():
               f"| btc7-up subset: {fmt(stats([t for t in bare if t['btc7'] and t['btc7'] > 0]))}")
 
     # forward ledger cross-check (young_mover_short.jsonl, wired 2026-07-20)
-    led_path = "/Users/julian_dev/Documents/code/hermes-trader/.state/shadow_ledger/young_mover_short.jsonl"
+    led_path = str(Path(__file__).resolve().parents[3] / ".state" / "shadow_ledger" / "young_mover_short.jsonl")
     if os.path.exists(led_path):
         print("\n== forward ledger cross-check (young_mover_short book) ==")
         rows = [json.loads(l) for l in open(led_path) if l.strip()]

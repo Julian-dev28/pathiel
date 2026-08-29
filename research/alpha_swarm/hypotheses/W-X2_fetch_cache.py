@@ -14,8 +14,9 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, REPO)
 OUT = os.path.join(REPO, "research", "alpha_swarm", "hypotheses", "W-X2_cache_daily.json")
 

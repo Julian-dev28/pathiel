@@ -52,9 +52,10 @@ import os
 import random
 import statistics
 import sys
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
-REPO = "/Users/julian_dev/Documents/code/hermes-trader"
+REPO = str(Path(__file__).resolve().parents[3])
 HYP = os.path.join(REPO, "research", "alpha_swarm", "hypotheses")
 
 _spec = importlib.util.spec_from_file_location("wx2", os.path.join(HYP, "W-X2_xs_widening.py"))

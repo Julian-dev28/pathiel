@@ -28,7 +28,7 @@ import sys
 import time
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 SWARM = REPO / "research" / "alpha_swarm"
 SCRATCH = Path(
     "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"

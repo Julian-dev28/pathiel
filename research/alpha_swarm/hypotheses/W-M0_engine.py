@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 SWARM = REPO / "research" / "alpha_swarm"
 sys.path.insert(0, str(SWARM / "lib"))
 

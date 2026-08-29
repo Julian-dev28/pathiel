@@ -32,7 +32,7 @@ import statistics
 import sys
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 HYP = REPO / "research" / "alpha_swarm" / "hypotheses"
 sys.path.insert(0, str(REPO / "research" / "alpha_swarm" / "lib"))
 import alpha_lib as al  # noqa: E402

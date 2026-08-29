@@ -21,13 +21,15 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
+_REPO = str(Path(__file__).resolve().parents[3])
+sys.path.insert(0, _REPO)
 
 import requests  # noqa: E402
 
 # Load .env.local (proxy vars etc.) without hard-depending on python-dotenv.
-_ENV_LOCAL = "/Users/julian_dev/Documents/code/hermes-trader/.env.local"
+_ENV_LOCAL = os.path.join(_REPO, ".env.local")
 try:
     from dotenv import load_dotenv
     load_dotenv(_ENV_LOCAL)

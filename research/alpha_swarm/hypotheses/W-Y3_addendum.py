@@ -7,6 +7,7 @@ import json
 import os
 import random
 import statistics as st
+from pathlib import Path
 
 import importlib.util as _il
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ for lo, hi, h, s in [(15, 25, 3, 0.15), (15, 25, 2, 0.15), (15, 25, 5, 0.20),
           f"excess={(real-null_mean)*100:+.2f}% mc_p={p:.4f}")
 
 print("\n=== live ledger forward grade (1d/6%, from 1h cache) ===")
-LEDGER = "/Users/julian_dev/Documents/code/hermes-trader/.state/shadow_ledger/young_mover_short.jsonl"
+LEDGER = str(Path(__file__).resolve().parents[3] / ".state" / "shadow_ledger" / "young_mover_short.jsonl")
 rows = [json.loads(l) for l in open(LEDGER)]
 res, unres = [], 0
 for r in rows:

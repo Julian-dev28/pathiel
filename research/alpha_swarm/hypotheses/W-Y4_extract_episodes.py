@@ -17,9 +17,10 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOG = "/Users/julian_dev/Documents/code/hermes-trader/logs/trading_loop.log"
+LOG = str(Path(__file__).resolve().parents[3] / "logs" / "trading_loop.log")
 OUT = os.path.join(HERE, "W-Y4_episodes.json")
 
 PAT = re.compile(

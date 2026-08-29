@@ -46,7 +46,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path("/Users/julian_dev/Documents/code/hermes-trader")
+REPO = Path(__file__).resolve().parents[3]
 ST_DIR = REPO / ".state" / "shadow_ledger"
 SCRATCH = Path(os.environ.get("SOC1_SCRATCH",
     "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"

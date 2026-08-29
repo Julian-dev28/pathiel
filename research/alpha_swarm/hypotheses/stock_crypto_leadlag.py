@@ -2,8 +2,10 @@
 """Stock(HIP-3) vs crypto lead-lag: does SP500 / SKHX / xyz markets LEAD crypto, or just move with it?
 contemp = same-bar corr (co-move). lead = does X[i] predict Y[i+1] (the tradeable part)."""
 import os, sys, statistics, math
-sys.path.insert(0, "/Users/julian_dev/Documents/code/hermes-trader")
-for line in open("/Users/julian_dev/Documents/code/hermes-trader/.env.local"):
+from pathlib import Path
+_REPO = str(Path(__file__).resolve().parents[3])
+sys.path.insert(0, _REPO)
+for line in open(os.path.join(_REPO, ".env.local")):
     line = line.strip()
     if line and not line.startswith("#") and "=" in line:
         k, _, v = line.partition("="); os.environ.setdefault(k.strip(), v.strip())
