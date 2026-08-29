@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import collections
+import hmac
 import os
 import re
 import threading
@@ -661,18 +662,108 @@ async def _tail_log_sse() -> AsyncIterator[str]:
 # ── operator gate ────────────────────────────────────────────────────────────
 
 
+# ── operator auth: brute-force lockout + audit ───────────────────────────────
+# One shared bearer token guards 21 endpoints, several of which move real money.
+# Three things were missing and all three are cheap:
+#   1. constant-time comparison — `!=` on a secret leaks its prefix through
+#      timing. Small, real, and free to fix
+#   2. a failure ceiling — an unlimited-attempt endpoint on the public internet
+#      is a token that gets guessed eventually
+#   3. an audit trail — there was no record of who fired a trade, so a leaked
+#      token would leave no evidence of what was done with it
+_AUTH_FAILURES: "collections.OrderedDict[str, List[float]]" = collections.OrderedDict()
+_AUTH_LOCK = threading.Lock()
+_AUTH_WINDOW_S = 300.0        # failures older than this stop counting
+_AUTH_MAX_FAILURES = 10       # per client, per window
+_AUTH_CLIENTS_MAX = 512       # bound the dict so a spray cannot exhaust memory
+
+
+def _client_id(request: Request) -> str:
+    return (request.client.host if request.client else "unknown") or "unknown"
+
+
+def _auth_failures(client: str, now: float) -> int:
+    with _AUTH_LOCK:
+        hits = [t for t in _AUTH_FAILURES.get(client, []) if now - t < _AUTH_WINDOW_S]
+        if hits:
+            _AUTH_FAILURES[client] = hits
+        else:
+            _AUTH_FAILURES.pop(client, None)
+        return len(hits)
+
+
+def _note_auth_failure(client: str, now: float) -> None:
+    with _AUTH_LOCK:
+        hits = [t for t in _AUTH_FAILURES.get(client, []) if now - t < _AUTH_WINDOW_S]
+        hits.append(now)
+        _AUTH_FAILURES[client] = hits
+        _AUTH_FAILURES.move_to_end(client)
+        while len(_AUTH_FAILURES) > _AUTH_CLIENTS_MAX:
+            _AUTH_FAILURES.popitem(last=False)
+
+
+def _audit(event: str, request: Request, **fields: Any) -> None:
+    """Append one operator action to the shared session log.
+
+    Never raises: an audit-log failure must not block the action, and must not
+    be the reason a kill switch does not fire.
+    """
+    try:
+        session_log.append({
+            "event": "operator_action", "action": event,
+            "client": _client_id(request),
+            "path": str(request.url.path), "method": request.method,
+            **fields,
+        })
+    except Exception:
+        pass
+
+
 def _require_operator(request: Request) -> None:
     """401 unless `?token=` or `X-Operator-Token` matches `HERMES_OPERATOR_TOKEN`.
 
     Checking at request time (not import time) means rotating the token doesn't
-    need a restart. Missing env var = operator surface is closed.
+    need a restart. Missing env var = operator surface is closed (503), which
+    fails CLOSED: a missing token must never mean "no auth required".
     """
     expected = os.environ.get("HERMES_OPERATOR_TOKEN", "")
     if not expected:
-        raise HTTPException(status_code=503, detail="operator surface disabled (set HERMES_OPERATOR_TOKEN)")
+        raise HTTPException(status_code=503,
+                            detail="operator surface disabled (set HERMES_OPERATOR_TOKEN)")
+
+    client, now = _client_id(request), time.time()
     provided = request.query_params.get("token") or request.headers.get("X-Operator-Token", "")
-    if provided != expected:
+
+    # The token is checked BEFORE the lockout, deliberately. A correct token is
+    # proof the caller is not guessing, so it is always honoured and clears the
+    # counter. The alternative — refusing a valid token during a lockout —
+    # would let anyone spraying wrong guesses from a shared egress IP lock the
+    # operator out of their own KILL SWITCH, turning a brute-force defence into
+    # a denial of service on the one control that must never be unreachable.
+    #
+    # compare_digest, not !=: a plain comparison returns early on the first
+    # differing byte and leaks the token prefix through response timing.
+    if hmac.compare_digest(str(provided), str(expected)):
+        with _AUTH_LOCK:
+            _AUTH_FAILURES.pop(client, None)
+    else:
+        # Wrong token. Count it, and once the ceiling is hit stop answering
+        # guesses at all — the ceiling only ever gates WRONG credentials.
+        locked = _auth_failures(client, now) >= _AUTH_MAX_FAILURES
+        _note_auth_failure(client, now)
+        _audit("auth_locked_out" if locked else "auth_failed", request)
+        if locked:
+            raise HTTPException(
+                status_code=429,
+                detail=(f"too many failed operator attempts; wrong tokens are "
+                        f"refused for {int(_AUTH_WINDOW_S)}s. A CORRECT token "
+                        f"still works."))
         raise HTTPException(status_code=401, detail="invalid operator token")
+
+    # Only mutations are audited. Auditing every authenticated GET would bury
+    # the actions that matter under dashboard polling.
+    if request.method != "GET":
+        _audit("authorized", request)
 
 
 # ── live books ───────────────────────────────────────────────────────────────
