@@ -13,9 +13,6 @@ services/trend_engine/
   forecast.py           7-day price projection + the walk-forward that grades it
   flags.py              catalyst / structure / positioning flags
   hl_trends.py          LANE HL        — Hyperliquid 7d trend + regime
-  updown_trends.py      LANE UPDOWN    — Polymarket BTC 5m base rates
-  updown_edges.py       microstructure — the three HFT claims + the book sampler
-  political_trends.py   LANE POLITICS  — political markets in probability space
   recorders.py          LANE RECORDERS — forward-graded P&L of every shadow book
   ai.py                 optional LLM pass (local Claude Code CLI, never an API)
   cache.py              disk cache + background refresh contract
@@ -64,13 +61,6 @@ Read the lanes like this:
   invalidation levels. The forecast's p(up) column is **not** a direction call
   unless its backtest says so; today it does not, so use the p10–p90 band for
   sizing and stops.
-- **BTC 5M UP/DOWN** — never trade the window on a hunch: the unconditional
-  read is a coin flip and nothing survived correction. The only actionable
-  thing is the **live card** mid-window, and only when it says ACTIONABLE
-  (edge clear of the 5pp Chainlink/Binance feed buffer).
-- **POLITICS** — drift is a martingale, so do not trade a chart here. The card
-  points at markets resolving soon that are still genuinely uncertain, and at
-  big repricings worth ten minutes of reading.
 - **RECORDERS · P&L** — the scoreboard. VALIDATED books are fund candidates,
   `decaying` ones are pulls, REFUTED are kills.
 
@@ -82,11 +72,7 @@ python -m services.trend_engine.run --lane hl     # prints the same actions in t
 
 ```bash
 python -m services.trend_engine.run --lane hl              # regime + per-coin table
-python -m services.trend_engine.run --lane updown          # BTC 5m base rates
-python -m services.trend_engine.run --lane politics        # political drift
 python -m services.trend_engine.run --lane recorders       # what the books earned
-python -m services.trend_engine.run --edges                # the three HFT claims
-python -m services.trend_engine.run --arb-watch            # watch for a sub-$1 pair (shadow)
 python -m services.trend_engine.run --refresh-all          # what the scheduler runs
 python -m services.trend_engine.run --backtest --save      # re-grade the forecaster
 python -m services.trend_engine.run --lane hl --ai         # + optional AI read
@@ -96,13 +82,11 @@ Then open `/trends`.
 
 ## The dashboard contract
 
-Every lane does live network work, so **none of it runs inside a request** —
-the same rule the predictions board follows.
+Every lane does live network work, so **none of it runs inside a request**.
 
 | path | what it does |
 |---|---|
 | `GET /api/dashboard/trends/{lane}` | pure read of `.state/trend_engine/<lane>.json` |
-| `GET /api/dashboard/trends/updown/live` | in-progress 5m window only (2 HTTP calls, TTL 5s) |
 | `POST /api/dashboard/trends/{lane}/refresh` | operator-gated background recompute |
 | `POST /api/dashboard/trends/{lane}/ai` | operator-gated background LLM pass |
 | `GET /api/dashboard/trends/job/result?job_id=` | poll either job |
@@ -152,287 +136,6 @@ So: the band is honest, the arrow is not. The tab prints that verdict next to
 the forecast column instead of hiding it, and the AI prompt is fed the same
 numbers so it cannot narrate a confident call over a coin flip.
 
-## Lane UPDOWN — Polymarket BTC 5m
-
-~6,000 resolved windows from 21 days of Binance 1m klines, on the market's own
-5-minute grid, using **Polymarket's own tie rule** (`close >= open` resolves
-UP; the scout's older backtest uses a strict `>`).
-
-Conditioning families, each Bonferroni-corrected inside itself: hour of day,
-session, day of week, prior direction, prior streak, prior magnitude,
-volatility regime, and the HL daily trend the window sits inside.
-
-Measured 2026-08-02: base UP rate **49.4%** (95% CI 48.2–50.7, p=0.37 vs a coin
-flip) and **zero** conditionals survived correction. The nearest miss was
-"after an UP window" at 47.4% (p_bonf 0.06).
-
-The in-progress window is different. A driftless random walk from the elapsed
-move and realised 1m vol is **calibrated**: Brier 0.160 vs 0.25 null (36%
-skill), calibration error 1.1pp, every reliability bin's realised rate inside
-its CI. That is the only model the live price may be compared to.
-
-**Two traps this lane exists to avoid:**
-
-1. Comparing a next-window base rate to the current window's price invents a
-   ~20pp edge — the market already contains the move that happened.
-2. `clob.polymarket.com/midpoint` has been observed quoting **0.325 against a
-   live 0.27/0.28 book**. Everything here reads the book and prices the side
-   you would have to lift (UP costs the ask, DOWN costs 1 − bid).
-
-The market settles on **Chainlink BTC/USD**, not Binance, so a `FEED_BUFFER`
-(5pp) must be cleared before a deviation is called actionable.
-
-## Microstructure — the three HFT claims (`updown_edges.py`)
-
-A widely-shared thread on 2M updown trades made three claims. Each is tested on
-our own data rather than repeated.
-
-| claim | verdict | evidence |
-|---|---|---|
-| the leading side loses more than priced near the close | **CONFIRMED** | at 60s left, a Gaussian says the leader wins 99.8% in the top bucket; the tape says **97.2%** (n=1305). Every extreme bucket is negative at both minute 3 and minute 4 |
-| buy both sides for under $1 | **BUY no, SELL yes (twice)** | at n=276 the buy side never crossed (min pair cost **$1.001**); the **sell** side crossed **2/276** — `up_bid 0.42 + down_bid 0.59 = $1.01` against a $1 minted set |
-| 75-90c overperform / 95c+ overpriced | **needs the sampler** | our 898 existing scout rows are selected (recorded only on disagreement), so they cannot answer a calibration question |
-
-Two facts bound the arb, both read off the live market payload:
-
-- `orderPriceMinTickSize` = **0.01**, so complementary asks summing to 0.97 means
-  the book is *three ticks crossed* — a stale-quote event, not a standing spread.
-- Fees: Gamma **advertises** `takerBaseFee: 1000`, but the tape charges
-  something else. Every executed trade on the websocket
-  (`last_trade_price.fee_rate_bps`) reported **0** — 79 of 79 on 2026-08-02.
-  So `FEE_BPS_DEFAULT` is **0**, taken from what was charged rather than what is
-  advertised, and `observed_fee_bps()` keeps checking live. An earlier version
-  of this file trusted the Gamma field and concluded a 1¢ crossed pair was a
-  loss; net of a zero fee it is 1¢ of edge. The constraint on the arb is
-  latency, not fees.
-
-### The arb watcher
-
-```bash
-python -m services.trend_engine.run --arb-watch                    # shadow, forever
-python -m services.trend_engine.run --arb-watch --arb-max-checks 500
-```
-
-Watches the live pair off the websocket (~0ms after the book moves) and records
-every print where the two complementary asks sum to under $1 net of fees, with
-its size and the profit it would have carried.
-
-**Shadow by default, and it places nothing.** `mode="live"` raises unless an
-executor is injected — this repo has no Polymarket order path, and hiding one
-behind a watcher would be the wrong way to acquire one. Guards: `min_edge` (one
-tick — anything smaller is a rounding artifact), `max_notional_usd` (per-fire
-cap), `cooldown_s` (one fire per window, so a persistent quote is one event and
-not five hundred).
-
-First run, 120 checks over 31s: **0 hits, best edge −0.01** — the pair sat at
-$1.01 the whole time. That is the expected answer, and the ledger
-(`.state/trend_engine/arb_events.jsonl`) is how it stops being a guess.
-
-To go live you would need, in this order: Polymarket L2 credentials (key,
-secret, passphrase) and a funded Polygon wallet; an executor that signs and
-posts both legs; and evidence from this ledger that a reachable edge exists at
-all. Step three is the one that is currently missing.
-
-### The FIRE button (`/trends`, claim 3 card)
-
-Dark until the book is actually crossed, then lit with the two legs it would
-send. Polls `GET /api/dashboard/trends/arb/preflight` every 3s; `POST
-/api/dashboard/trends/arb/fire` re-quotes and writes the ticket.
-
-**It places no order, and cannot.** `execution_readiness()` reports which
-credentials are missing by name; `fired` is hard-false on every path in
-`_trends_arb_fire_payload()` because there is no code in this repo that could
-place the order it would otherwise claim. What a press produces is a ledger row
-in `.state/trend_engine/arb_events.jsonl` with the exact tickets — the evidence
-that step three above is or is not satisfiable.
-
-Both legs are **FOK**. A filled UP leg with no DOWN leg is not a smaller arb,
-it is naked BTC exposure, which is the trade this whole lane exists to avoid.
-
-**What the tape says so far (n=1,126 samples / 225 windows, 2026-08-03):** the
-BUY pair has never crossed net (0/1056, min cost $1.001). The SELL pair crossed
-in **one window of 225** — two snapshots 2.5 minutes apart, worth **$0.077** on
-the 7.73-share thin leg — and nothing in the 224 windows since. `arb_stats`
-therefore reports `net_hit_windows`, `best_hit_usd` and the drought alongside
-the snapshot counts: the sampler takes five shots per window, so one resting
-order otherwise reads as five independent events.
-
-Two defects were fixed building it, both of which hid real crossings:
-
-- `arb_stats` read the *stored* `fee_bps`, and 251 of the first 276 rows had
-  Gamma's disproved 1000bps frozen in. Net is now recomputed from gross at
-  `row_fee_bps()` on read, never trusted from record time. This is what turned
-  "no crossed pair observed" into "2 net-profitable SELL pairs".
-- `pair_quote` accepted a just-subscribed websocket row whose `bid`/`ask` were
-  still `None`, reporting `source: websocket, best_net_edge: null`. A live arb
-  read as no crossing, silently, exactly when a new 5m window opened. Both legs
-  must be two-sided now or it falls through to REST.
-- The card's socket status line read the **cached** `ws` block, which the lane
-  refresher writes — a process that starts a socket, quotes in the same
-  millisecond and exits. It always said `down · 0 events · reconnects 0` while
-  the server's own feed was pushing thousands of events a minute. Two fixes:
-  `read()` calls `warm_feed()` (subscribe, then `wait_pair()` for both legs) so
-  the cached snapshot is a real socket read, and the tab renders `preflight().ws`
-  — health from the process that answers, tagged with its `pid`. Health now also
-  reports `running` (thread alive) separately from `connected` (handshake), so
-  "never started" and "cannot connect" stop looking identical.
-
-### The recorders lane fetched candles per SIGNAL
-
-`_live_fetchers()` handed `grade_records` a fetcher that pulled forward candles
-on every record. Every signal in a book asks about the same coin, and each miss
-is a rate-limited HL info call at weight 20, so the lane ran **2h13m for 4.8s of
-CPU** — pure waiting — and the /trends P&L card was permanently stale behind it.
-Now one pull per `(coin, interval)` per run, deepened when an older signal needs
-a longer lookback; the per-signal slice (`bars after signal_bar_t`) was always
-the only thing that varied. Measured on six books: 59 candle calls for
-`main_engine` instead of one per record.
-
-Funding is cached per coin on the UNION of the windows asked for, and
-deliberately **not** widened to now: pulling each coin's funding through to the
-present turned 85s of funding into 449s on a single book, because the API cost
-scales with the range and one old signal drags the start back months.
-
-The lane's `STALE_AFTER` is 8h against a 6h cadence — the extra hour is the run
-itself, so a lane that is exactly on schedule stops rendering as STALE.
-
-### Proving it is wired: `scripts/smoke_trends.py`
-
-The gate tests prove each piece with the network stubbed. The smoke proves the
-pieces are wired to each other in the process the operator actually loads:
-
-```bash
-python scripts/smoke_trends.py                     # 41 read-only checks
-python scripts/smoke_trends.py --with-refresh politics --with-fire   # 47, write paths
-```
-
-It checks every route answers, every lane payload carries the fields the page
-renders (`LANE_CONTRACT`), the operator surface is 401 without a token, the
-second preflight is served off the socket rather than REST, execution stays
-blocked on the missing signing credentials, and — with the flags — that a
-refresh job completes and moves the cache stamp and that FIRE round-trips
-without placing an order. Exit code is the failure count, so it can gate a
-deploy. Two gate tests keep it honest: the lane set must match
-`dashboard._TREND_LANES`, and every id/endpoint the page reaches for must exist.
-
-### The `refresh data` button runs in its own process
-
-`restart.sh` starts the server on a hard-throttled HL token bucket (refill 2/s,
-capacity 60) so its background polls yield to the trading loop on a shared,
-per-IP rate limit. An HL scan is ~26 coins x `candleSnapshot` at weight 20, so
-in-process the refresh spends its life in
-`rate budget exhausted for candleSnapshot ... skipping request this retry`:
-measured 2026-08-03, still running after **601s** while the page gives up at
-300s — the button looked dead. `_refresh_lane_subprocess()` shells out to
-`python -m services.trend_engine.run --refresh-all --lanes <lane>` with the
-`HERMES_HL_RATE_*` overrides stripped, which is exactly what the scheduler
-already runs every 30 minutes. Same button, 57s, and a failed child now surfaces
-next to the button instead of being swallowed by the poll callback.
-
-`HERMES_STATE_READONLY` is deliberately NOT stripped from the child: it guards
-agent memory and DSL exits, neither of which a lane refresh should write.
-
-### The sampler (the missing instrument)
-
-```bash
-scripts/restart.sh sampler          # start it (own process — see below)
-scripts/restart.sh stopsampler
-python -m services.trend_engine.run --sample-updown   # one window, by hand
-python -m services.trend_engine.run --edges           # read the results
-```
-
-Snapshots BOTH books at 240/180/120/60/30s remaining in **every** window,
-unconditionally — unconditional is the entire point, since a sampler that only
-fires when something looks interesting reproduces the selection bias that makes
-the existing rows unusable. ~288 windows/day. Grades offline against the klines.
-
-It runs as **its own process, not a scheduler job**: `scripts/scheduler.py`
-fires jobs serially, so a sampler that blocks for most of a 5-minute window
-would starve every other job.
-
-### Polymarket latency: 840 ms → 0 ms (`updown_ws.py`)
-
-Polling, measured 2026-08-02 (median of 8):
-
-| call | latency |
-|---|---|
-| `gamma /markets?slug` | 188 ms |
-| `clob /book` (one side) | 327 ms |
-| **`clob POST /books` (both sides, one trip)** | **302 ms** |
-| curl subprocess vs keep-alive session | 323 ms vs 297 ms |
-
-TLS is *not* the bottleneck — raw RTT to their edge is. Both polling wins are
-implemented (batch the two books into one call; cache the immutable slug→token
-lookup off the critical path via `tokens_for()` / `prewarm()`), taking a quote
-from 840 ms to ~245 ms.
-
-**Then stop polling.** The CLOB market channel pushes:
-`wss://ws-subscriptions-clob.polymarket.com/ws/market`, subscribe with
-`{"assets_ids": [...], "type": "market"}`. One 5m pair produced **6,630
-`price_change` events and 106 `book` snapshots in 25 seconds**.
-
-Two facts make the client small:
-
-- `price_change` entries carry `best_bid` / `best_ask` per `asset_id`, so
-  top-of-book needs **no delta reconstruction** — this is a quote cache, not an
-  order-book engine.
-- `book` events are full snapshots, so a reconnect re-syncs itself.
-
-`pair_quote()` reads the feed when it is fresh and falls back to the batched
-REST path otherwise; `source` on the result says which answered, so a silent
-fallback to a 300 ms path is visible rather than assumed. Measured end to end:
-**first quote 642 ms (socket cold, REST), warm quotes 0.0 ms.**
-
-Gotcha: the python.org macOS build ships no system trust store, so
-`websocket.create_connection` dies with `CERTIFICATE_VERIFY_FAILED` while
-`requests` works. `_ssl_opt()` passes certifi's bundle.
-
-Two things keep it actually live, both found by `scripts/smoke_trends.py`
-rather than by reading the code:
-
-- **A quiet socket is not a broken socket.** `recv()` raises after its 20s
-  ceiling whenever nothing is pushed, which is normal — a 5m market goes silent
-  the moment it resolves. That was treated as a dead connection: **257
-  reconnects in one server session**, and every teardown is a window where
-  `pair_quote` silently falls back to the 300 ms REST path. The read loop now
-  pings and holds the connection, counts it as `quiet_timeouts`, and flushes a
-  subscribe that arrived while the market was silent.
-- **Nothing re-subscribed on its own.** The window rolls every 300s, so a feed
-  that only re-points when a caller asks sits on a resolved market the whole
-  time nobody is looking; the next click came back `source: rest`.
-  `arb_watch.start_autoroll()` re-points every 15s while the tab is in use and
-  releases the socket 5 minutes after the last preflight, so a closed tab does
-  not leave the process parsing ~390 events/second. Measured after the fix: 330s
-  idle across a window roll, `source: websocket`, **0 reconnects**, not stale.
-
-The feed is read-only on a public channel and holds no key —
-`POLYMARKET_API_KEY` is only needed for the `user` channel, which this does not
-touch.
-
-## Lane POLITICS — probability space
-
-Everything in percentage POINTS: current probability, 1d/7d change, pp/day
-slope (linear OLS — a log fit distorts moves near 0 and 1), realised hourly
-vol, days to resolution, and a martingale forecast band.
-
-**The null test is gapped.** The obvious version correlates last week's move
-with this week's, but both windows share the t−7d price: noise in that single
-observation enters the two changes with opposite signs and manufactures mean
-reversion. Measured 2026-08-02 on the same 26 markets:
-
-| measurement | corr | verdict |
-|---|---|---|
-| overlapping (t−14→t−7 vs t−7→now) | **−0.22** | looks like overshoot-and-fade |
-| gapped (t−21→t−14 vs t−7→now) | **+0.18**, z=0.81 | martingale, not significant |
-
-The apparent effect was the artifact. Only a `usable` carry (significant AND
-robust across a liquidity split AND gapped AND n≥25) is ever allowed to bend a
-forecast; otherwise today's price is the forecast.
-
-Markets Gamma still lists as open past their own end date are dropped — they
-cannot move and they poison every drift statistic (an earlier run read −0.60,
-z=−3.47 purely from expired markets collapsing to zero).
-
 ## Lane RECORDERS — the scoreboard
 
 Forward-grades every shadow book through
@@ -443,11 +146,6 @@ Per book: signals, resolved, pending, EV%/signal at 12bps and 25bps, win rate
 with a Wilson interval, **first-half vs second-half EV** (a positive average
 built on a negative second half is flagged `decaying`), and the
 VALIDATED / MARGINAL / PENDING / REFUTED verdict.
-
-Plus the Polymarket paper ledger, per lane, never pooled: realised PnL per $1
-position, win rate, and our Brier against the market's on the same resolved
-questions. The `updown_5m` lane is resolved **offline** from the klines lane 2
-already caches — ~900 rows graded with zero Gamma calls.
 
 This lane takes minutes to grade, which is exactly why it lives behind the
 cache with a 6-hour staleness window.

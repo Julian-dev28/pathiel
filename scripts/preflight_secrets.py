@@ -97,11 +97,6 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("BRAVE_API_KEY", "Brave Search API key — news context for research (optional)", "optional"),
     SecretSpec("UW_API_KEY", "Unusual Whales API key — options-flow alt-data (optional)", "optional"),
     SecretSpec("HYDROMANCER_API_KEY", "Hydromancer data-plane API key (research/backfill only)", "optional"),
-    SecretSpec("POLYMARKET_ADDRESS", "Polymarket funder address (arb — no live order path yet)", "optional"),
-    SecretSpec("POLYMARKET_API_KEY", "Polymarket CLOB L2 API key (arb — no live order path yet)", "optional"),
-    SecretSpec("POLYMARKET_SECRET", "Polymarket CLOB L2 HMAC secret (arb — no live order path yet)", "optional"),
-    SecretSpec("POLYMARKET_PASSPHRASE", "Polymarket CLOB L2 passphrase (arb — no live order path yet)", "optional"),
-    SecretSpec("POLYMARKET_PRIVATE_KEY", "Polymarket L1 signing key (arb — no live order path yet)", "optional"),
 )
 
 

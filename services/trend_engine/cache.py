@@ -25,7 +25,7 @@ from services.trend_engine import env
 # would write its cache next to a different shadow ledger than the one the
 # dashboard reads (see services/trend_engine/env.py).
 DIR = os.path.join(env.state_dir(), "trend_engine")
-LANES = ("hl", "updown", "politics", "recorders")
+LANES = ("hl", "recorders")
 # Roughly one refresh interval per lane. The recorders lane grades every
 # shadow book against forward candles (minutes of network), so it runs on a
 # much slower clock than the price lanes.
@@ -34,8 +34,7 @@ LANES = ("hl", "updown", "politics", "recorders")
 # even with the per-coin candle cache, so a threshold equal to the cadence
 # painted the lane STALE for the tail of every cycle while it was perfectly on
 # schedule. 8h leaves headroom without hiding a genuinely missed run.
-STALE_AFTER = {"hl": 1800.0, "updown": 900.0, "politics": 3600.0,
-               "recorders": 28800.0}
+STALE_AFTER = {"hl": 1800.0, "recorders": 28800.0}
 
 
 def path(lane: str) -> str:
@@ -80,12 +79,6 @@ def compute(lane: str, **kw: Any) -> Dict[str, Any]:
     if lane == "hl":
         from services.trend_engine.hl_trends import scan
         return scan(**kw)
-    if lane == "updown":
-        from services.trend_engine.updown_trends import read as ud_read
-        return ud_read(**kw)
-    if lane == "politics":
-        from services.trend_engine.political_trends import read as pol_read
-        return pol_read(**kw)
     if lane == "recorders":
         from services.trend_engine.recorders import read as rec_read
         return rec_read(**kw)

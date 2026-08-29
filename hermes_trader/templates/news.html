@@ -221,7 +221,7 @@
 // g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
 // inert while typing in a field or holding a modifier
 (function () {
-  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics', t: '/trends' };
+  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
   let armed = 0;
   addEventListener('keydown', e => {
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -386,16 +386,12 @@ void main(){
   <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
-    <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
     <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
   </nav>
 
   <div class="text-[12px] mb-4" style="color:var(--mut);line-height:1.6">
     Every 5 min the watcher reads each candidate's headlines. Quiet reads are the
     control group; BREAKING = coverage surging vs the coin's own baseline.
-    For news priced as a probability rather than counted as coverage, see
-    <a href="/predictions" style="color:var(--vio);text-decoration:none;border-bottom:1px dotted var(--line2)">PREDICTIONS</a>
-    — the live Polymarket board with our AI's own number next to the market's.
   </div>
 
   <div class="strip" id="news-strip">

@@ -104,23 +104,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "tp_pct": 0.16,
         "allow_shorts": True,
     },
-    # 5-min up/down LIVE execution (operator-armed 2026-07-26). Polymarket order
-    # placement is geoblocked/keyless, so "not shadow" = trade the AI's up/down
-    # call on a Hyperliquid BTC PERP: long UP / short DOWN, flattened at the
-    # window close. On record this is a latency-disadvantaged coin flip and 5-min
-    # churn is fee-dominated (-EV) — hence tiny/bounded/killable. place=false
-    # records only; place=true arms it. All risk gates (kill, margin, notional)
-    # still apply. See services/polymarket_scout/updown.py:live_maybe_run.
-    "updown_live": {
-        "enabled": False,
-        "place": False,
-        "coin": "BTC",
-        "min_lean": 0.06,
-        "equity_frac": 0.02,
-        "leverage": 3,
-        "stop_pct": 0.01,
-        "tp_pct": 0.015,
-    },
     # Existing strategy books place WITHOUT an AI veto (they route straight
     # through maybe_execute's risk gates). This flag documents and controls that:
     # true = current behavior (books self-place); set false to require the books

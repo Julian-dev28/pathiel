@@ -131,60 +131,6 @@ def hl_prompt(payload: Dict[str, Any], top_n: int = 15) -> str:
     return "\n".join(lines)
 
 
-def updown_prompt(payload: Dict[str, Any]) -> str:
-    pat = payload.get("patterns") or {}
-    cal = payload.get("calibration") or {}
-    live = payload.get("live") or {}
-    lines = [
-        "LANE: Polymarket BTC 5-minute up/down.",
-        f"SAMPLE: {pat.get('n_windows')} resolved windows ({payload.get('sample_days')} days). "
-        f"Base UP rate {pat.get('base_rate')} CI {pat.get('base_ci')} "
-        f"(p vs coin flip {pat.get('base_p_vs_coinflip')}).",
-        f"CONDITIONALS SURVIVING BONFERRONI: {len(pat.get('significant') or [])} — {pat.get('verdict')}",
-    ]
-    for fam in (pat.get("families") or []):
-        top = (fam.get("rows") or [{}])[0]
-        lines.append(f"  {fam['family']}: strongest bucket {top.get('bucket')} "
-                     f"n={top.get('n')} rate={top.get('rate')} lift={top.get('lift_pp')}pp "
-                     f"p_bonf={top.get('p_bonf')}")
-    lines += ["",
-              f"IN-WINDOW MODEL (random walk at minute 3 of 5): Brier {cal.get('brier')} "
-              f"vs null {cal.get('brier_null')} ({cal.get('skill_pct')}% skill), "
-              f"calibration error {cal.get('calibration_err_pp')}pp, n={cal.get('n')} — {cal.get('verdict')}",
-              f"LIVE WINDOW: move {live.get('move_bp')}bp, {live.get('minutes_left')}min left, "
-              f"model p(up) {live.get('p_up_randomwalk')}, book "
-              f"{(live.get('market') or {}).get('bid')}/{(live.get('market') or {}).get('ask')}, "
-              f"buy-UP edge {live.get('edge_up_pp')}pp, buy-DOWN edge {live.get('edge_down_pp')}pp, "
-              f"actionable={live.get('actionable')} ({live.get('note')})",
-              "NOTE: the market resolves on Chainlink BTC/USD; these windows are mined from "
-              "Binance klines, so sub-5pp gaps are feed noise, not edge."]
-    roll = payload.get("rolling") or []
-    if roll:
-        lines.append("DAILY UP-RATE: " + ", ".join(
-            f"{d['date_et']} {d['up_rate']:.3f}" for d in roll[-7:]))
-    return "\n".join(lines)
-
-
-def politics_prompt(payload: Dict[str, Any]) -> str:
-    brd = payload.get("board") or {}
-    mom = payload.get("momentum_test") or {}
-    lines = [
-        "LANE: Polymarket political markets, 7-day probability trend.",
-        f"BOARD: {brd.get('n')} markets, median absolute weekly move "
-        f"{brd.get('median_abs_move_pp')}pp, labels {brd.get('label_counts')}",
-        f"DRIFT NULL TEST: corr {mom.get('corr')} z {mom.get('fisher_z')} n {mom.get('n')} "
-        f"usable={mom.get('usable')} — {mom.get('verdict')}",
-        "",
-        "MOVERS (question | now | 7d change | label | days to resolve):",
-    ]
-    for r in (payload.get("reads") or [])[:14]:
-        lines.append(f"{r['question'][:78]} | {r['p_now']:.2f} | {r['delta_7d_pp']:+.1f}pp "
-                     f"| {r['label']} | {r.get('days_left')}d")
-    lines += ["", "DETERMINISTIC OBSERVATIONS:"] + \
-             [f"- {o}" for o in (payload.get("observations") or [])]
-    return "\n".join(lines)
-
-
 def recorders_prompt(payload: Dict[str, Any]) -> str:
     s = payload.get("summary") or {}
     lines = [
@@ -199,11 +145,6 @@ def recorders_prompt(payload: Dict[str, Any]) -> str:
         lines.append(f"{b['book']}: {b['verdict']} | n={b['resolved']} | {b.get('ev_pct')} | "
                      f"{b.get('ev25_pct')} | {b.get('win_rate')} | {b.get('ev_first')} | "
                      f"{b.get('ev_second')}{' | DECAYING' if b.get('decaying') else ''}")
-    lines += ["", "POLYMARKET PAPER LANES:"]
-    for lane, g in ((payload.get("scout") or {}).get("lanes") or {}).items():
-        lines.append(f"{lane}: rows={g.get('rows')} resolved={g.get('n')} "
-                     f"pnl/$={g.get('mean_pnl_per_$')} win={g.get('win_rate')} "
-                     f"brier_ours={g.get('brier_llm')} brier_mkt={g.get('brier_mkt')}")
     lines += ["", "DETERMINISTIC OBSERVATIONS:"] + \
              [f"- {o}" for o in (payload.get("observations") or [])]
     lines += ["", "In `setups`, use the BOOK NAME as `ticker` and say whether the evidence "
@@ -212,7 +153,7 @@ def recorders_prompt(payload: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-BUILDERS = {"hl": hl_prompt, "updown": updown_prompt, "politics": politics_prompt,
+BUILDERS = {"hl": hl_prompt,
             "recorders": recorders_prompt}
 
 

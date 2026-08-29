@@ -143,7 +143,7 @@
 <script>
 // g-then-key tab hops, same map as the other pages (t = trends)
 (function () {
-  const map = { d: '/', a: '/activity', n: '/news', p: '/predictions', y: '/analytics', t: '/trends' };
+  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
   let armed = 0;
   addEventListener('keydown', e => {
     if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -182,7 +182,6 @@
   <nav class="flex items-center gap-1 mb-5 flex-wrap">
     <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
     <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
-    <a href="/predictions" data-nav="/predictions" class="nav-link">PREDICTIONS</a>
     <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
   </nav>
 
@@ -199,8 +198,6 @@
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-lane="hl" aria-selected="true">HYPERLIQUID <span class="n" id="n-hl"></span></button>
-    <button class="tab" role="tab" data-lane="updown" aria-selected="false">BTC 5M UP/DOWN <span class="n" id="n-updown"></span></button>
-    <button class="tab" role="tab" data-lane="politics" aria-selected="false">POLITICS <span class="n" id="n-politics"></span></button>
     <button class="tab" role="tab" data-lane="recorders" aria-selected="false">RECORDERS · P&amp;L <span class="n" id="n-recorders"></span></button>
   </div>
 
@@ -281,133 +278,7 @@
   </div>
 
   <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
-  <div id="lane-updown" class="hidden">
-    <!-- The arb (claim 3) is the only actionable thing on this lane — it holds
-         the FIRE button — so it sits above the read-only analysis. -->
-    <div class="card mb-4">
-      <div class="sec-label">microstructure · the HFT claims, tested — most actionable first</div>
-      <div id="ud-edges"><span class="dim text-[11.5px]">loading…</span></div>
-    </div>
-
-    <!-- Both "now" surfaces sit together: the FIRE card prices the pair, this
-         one says how much of the 5-minute window is left to act in. -->
-    <div class="card mb-4">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">live window · model vs market</div>
-        <span class="text-[10px] mono dim" id="ud-clock"></span>
-      </div>
-      <div id="ud-live"><span class="dim text-[11.5px]">loading…</span></div>
-    </div>
-
-    <div id="pb-updown" class="mb-4"></div>
-
-    <div class="strip" id="ud-strip">
-      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
-    </div>
-
-    <div class="grid2 mb-4">
-      <div class="card">
-        <div class="sec-label">conditional base rates · Bonferroni-corrected</div>
-        <div class="overflow-x-auto">
-          <table>
-            <thead><tr>
-              <th>family</th><th>strongest bucket</th><th>n</th><th>up rate</th>
-              <th>lift</th><th>p (corrected)</th><th>verdict</th>
-            </tr></thead>
-            <tbody id="ud-fams"><tr><td colspan="7" class="dim">loading…</td></tr></tbody>
-          </table>
-        </div>
-        <div class="text-[10.5px] dim mt-3" id="ud-verdict"></div>
-      </div>
-      <div class="card">
-        <div class="sec-label">in-window model · reliability at minute 3 of 5</div>
-        <div class="overflow-x-auto">
-          <table>
-            <thead><tr><th>predicted</th><th>realized</th><th>95% ci</th><th>n</th></tr></thead>
-            <tbody id="ud-calib"><tr><td colspan="4" class="dim">loading…</td></tr></tbody>
-          </table>
-        </div>
-        <div class="text-[10.5px] dim mt-3" id="ud-calib-note"></div>
-      </div>
-    </div>
-
-    <div class="card mb-4">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">daily up-rate · is the tape leaning?</div>
-        <button class="btn go" id="ud-refresh">refresh data</button>
-      </div>
-      <div class="overflow-x-auto">
-        <table>
-          <thead><tr><th>date (ET)</th><th>windows</th><th>up rate</th><th>95% ci</th><th>net move</th><th style="text-align:left">vs coin flip</th></tr></thead>
-          <tbody id="ud-roll"><tr><td colspan="6" class="dim">loading…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
-        <button class="btn go" data-ai="updown">run ai pass</button>
-      </div>
-      <div id="updown-ai" class="text-[11.5px] dim">Not run.</div>
-    </div>
-  </div>
-
   <!-- ── LANE: POLITICS ────────────────────────────────────────────────── -->
-  <div id="lane-politics" class="hidden">
-    <div id="pb-politics" class="mb-4"></div>
-        <div class="strip" id="pol-strip">
-      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
-    </div>
-
-    <div class="grid2 mb-4">
-      <div class="card">
-        <div class="sec-label">what the political board showed</div>
-        <ul class="obs" id="pol-obs"></ul>
-      </div>
-      <div class="card">
-        <div class="sec-label">drift null test · does last week predict next week?</div>
-        <div id="pol-null" class="text-[11.5px] mut"></div>
-        <div class="sec-label mt-6">longshot decay check</div>
-        <div class="overflow-x-auto">
-          <table>
-            <thead><tr><th>bucket</th><th>n</th><th>mean 7d move</th><th>% up</th><th>95% ci on % up</th></tr></thead>
-            <tbody id="pol-ls"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card mb-4">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">markets · 7-day probability trend + next-week band</div>
-        <button class="btn go" id="pol-refresh">refresh data</button>
-      </div>
-      <div class="overflow-x-auto">
-        <table>
-          <thead><tr>
-            <th style="text-align:left">market</th><th>7d path</th><th>now</th><th>1d</th><th>7d</th>
-            <th>pp/day</th><th>trend</th><th>next-week band</th><th>resolves</th><th>volume</th>
-          </tr></thead>
-          <tbody id="pol-rows"><tr><td colspan="10" class="dim">loading…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
-        <div class="flex gap-2 items-center">
-          <label class="text-[10px] mono dim flex items-center gap-1">
-            <input type="checkbox" id="pol-ws" /> web search
-          </label>
-          <button class="btn go" data-ai="politics">run ai pass</button>
-        </div>
-      </div>
-      <div id="politics-ai" class="text-[11.5px] dim">Not run.</div>
-    </div>
-  </div>
-
   <!-- ── LANE: RECORDERS / P&L ─────────────────────────────────────────── -->
   <div id="lane-recorders" class="hidden">
     <div id="pb-recorders" class="mb-4"></div>
@@ -440,20 +311,7 @@
       </div>
     </div>
 
-    <div class="grid2 mb-4">
-      <div class="card">
-        <div class="sec-label">polymarket paper lanes · realised per $</div>
-        <div class="overflow-x-auto">
-          <table>
-            <thead><tr>
-              <th style="text-align:left">lane</th><th>rows</th><th>resolved</th><th>pnl / $</th>
-              <th>total $</th><th>win</th><th>brier ours</th><th>brier market</th><th>calibrated?</th>
-            </tr></thead>
-            <tbody id="rec-scout"><tr><td colspan="9" class="dim">loading…</td></tr></tbody>
-          </table>
-        </div>
-        <div class="text-[10.5px] dim mt-3" id="rec-scout-note"></div>
-      </div>
+    <div class="mb-4">
       <div class="card">
         <div class="sec-label">what the recorders show</div>
         <ul class="obs" id="rec-obs"></ul>
@@ -567,8 +425,8 @@ $('#token-save').onclick = () => {
 $('#token-clear').onclick = () => { localStorage.removeItem(TOKEN_KEY); $('#token-input').value = ''; };
 
 // ── lane state ──────────────────────────────────────────────────────────────
-const LANES = ['hl', 'updown', 'politics', 'recorders'];
-const DATA = { hl: null, updown: null, politics: null, recorders: null };
+const LANES = ['hl', 'recorders'];
+const DATA = { hl: null, recorders: null };
 let LANE = (location.hash || '#hl').slice(1);
 if (!LANES.includes(LANE)) LANE = 'hl';
 let HL_FILTER = 'all';
@@ -596,8 +454,6 @@ async function loadLane(l) {
   const d = await r.json();
   DATA[l] = d;
   if (l === 'hl') renderHL(d);
-  if (l === 'updown') renderUpdown(d);
-  if (l === 'politics') renderPolitics(d);
   if (l === 'recorders') renderRecorders(d);
   renderPlaybook(l, d.playbook);
   // Every refresh button carries the age of the data it would replace, so the
@@ -805,278 +661,6 @@ $$('[data-filter]').forEach(b => b.onclick = () => {
   renderHLRows();
 });
 
-// ── LANE 2: BTC 5m up/down ──────────────────────────────────────────────────
-function renderUpdown(d) {
-  if (d.status !== 'ok') { emptyState($('#ud-live'), d, 'btc 5m'); return; }
-  const p = d.patterns || {}, c = d.calibration || {};
-  $('#n-updown').textContent = p.n_windows || '';
-
-  const flip = (p.base_p_vs_coinflip == null) || p.base_p_vs_coinflip > 0.05;
-  $('#ud-strip').innerHTML = [
-    ['sample', (p.n_windows || 0).toLocaleString(), `${d.sample_days}d of 5m windows`, 'vio'],
-    ['base up rate', num(p.base_rate * 100, 2) + '%', `95% ci ${num(p.base_ci[0] * 100, 1)}–${num(p.base_ci[1] * 100, 1)}%`, flip ? 'amb' : 'up'],
-    ['vs coin flip', 'p=' + num(p.base_p_vs_coinflip, 3), flip ? 'indistinguishable' : 'distinguishable', flip ? 'amb' : 'up'],
-    ['patterns', String((p.significant || []).length), 'survived correction', (p.significant || []).length ? 'up' : 'amb'],
-    ['in-window skill', num(c.skill_pct, 1) + '%', `Brier ${num(c.brier, 3)} vs ${num(c.brier_null, 2)}`, 'teal'],
-    ['calibration', '±' + num(c.calibration_err_pp, 2) + 'pp', 'predicted vs realized', 'teal'],
-  ].map(([l, v, s, cl]) => `<div class="kpi"><span class="v ${cl}">${esc(v)}</span>
-      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
-
-  $('#ud-fams').innerHTML = (p.families || []).map(f => {
-    const t = (f.rows || [])[0] || {};
-    return `<tr>
-      <td>${esc(f.family.replace(/_/g, ' '))}</td>
-      <td class="mono">${esc(t.bucket)}</td>
-      <td class="mono mut">${t.n}</td>
-      <td class="mono">${num(t.rate * 100, 1)}%</td>
-      <td class="mono ${sgn(t.lift_pp)}">${pct(t.lift_pp, 2)}</td>
-      <td class="mono ${t.significant ? 'up' : 'dim'}">${num(t.p_bonf, 3)}</td>
-      <td class="mono" style="text-align:left">${t.significant
-      ? '<span class="badge b-up">real</span>'
-      : '<span class="badge b-chop">noise</span>'}</td>
-    </tr>`;
-  }).join('');
-  $('#ud-verdict').textContent = p.verdict || '';
-
-  $('#ud-calib').innerHTML = (c.table || []).map(t => `<tr>
-      <td class="mono">${num(t.predicted * 100, 0)}%</td>
-      <td class="mono">${num(t.realized * 100, 1)}%</td>
-      <td class="mono dim">${num(t.ci_lo * 100, 1)}–${num(t.ci_hi * 100, 1)}%</td>
-      <td class="mono mut">${t.n}</td>
-    </tr>`).join('');
-  $('#ud-calib-note').innerHTML = c.status === 'ok'
-    ? `n=${c.n} windows replayed at minute ${c.decision_minute}. <b class="teal">${esc(c.verdict)}</b>.
-       The unconditional window is a coin flip; the in-progress one is not, and this is the model the
-       live price is compared against.`
-    : 'not enough history for a reliability table';
-
-  renderEdges(d.edges);
-
-  $('#ud-roll').innerHTML = (d.rolling || []).slice().reverse().map(r => {
-    const real = r.ci_lo > 0.5 || r.ci_hi < 0.5;
-    return `<tr>
-      <td class="mono">${esc(r.date_et)}</td>
-      <td class="mono mut">${r.n}</td>
-      <td class="mono ${r.up_rate > 0.5 ? 'up' : 'dn'}">${num(r.up_rate * 100, 1)}%</td>
-      <td class="mono dim">${num(r.ci_lo * 100, 1)}–${num(r.ci_hi * 100, 1)}%</td>
-      <td class="mono ${sgn(r.net_bp)}">${num(r.net_bp, 0)}bp</td>
-      <td style="text-align:left">${real ? '<span class="badge b-info">outside</span>'
-        : '<span class="badge b-mut">inside</span>'}</td>
-    </tr>`;
-  }).join('');
-}
-
-function renderLive(l) {
-  if (!l || l.status !== 'ok') {
-    $('#ud-live').innerHTML = `<span class="dim text-[11.5px]">${esc((l && l.status) || 'unavailable')} — the window is between prints</span>`;
-    return;
-  }
-  const act = l.actionable;
-  const m = l.market || {};
-  $('#ud-clock').textContent = `${l.window_start_et} · ${num(l.minutes_left, 1)}min left`;
-  $('#ud-live').innerHTML = `
-    <div class="grid2">
-      <div>
-        ${meter(l.p_up_randomwalk, l.mkt_up)}
-        <div class="mono text-[10.5px] dim mt-2">
-          bar = Polymarket book mid · teal tick = random-walk fair value given the move so far
-        </div>
-        <div class="text-[11.5px] mt-3 ${act ? 'teal' : 'mut'}">${esc(l.note || '')}</div>
-        <div class="text-[10.5px] dim mt-2">
-          Edges price the side you would have to lift: UP costs the ask, DOWN costs 1 − bid.
-          The market resolves on <b>Chainlink BTC/USD</b>; these windows are mined from Binance,
-          so anything under the ${num(l.feed_buffer_pp, 0)}pp buffer is feed noise, not edge.
-        </div>
-      </div>
-      <div class="mono text-[11.5px] mut" style="line-height:1.9">
-        window open <span style="color:var(--txt)">${price(l.open_px)}</span> ·
-        spot <span style="color:var(--txt)">${price(l.spot)}</span><br/>
-        move so far <span class="${sgn(l.move_bp)}">${num(l.move_bp, 2)}bp</span> ·
-        1m vol <span style="color:var(--txt)">${num(l.sigma_bp_per_min, 2)}bp</span><br/>
-        model <span class="teal">${num(l.p_up_randomwalk * 100, 1)}%</span> ·
-        book <span style="color:var(--txt)">${m.bid == null ? '–' : num(m.bid * 100, 1)}</span>
-        / <span style="color:var(--txt)">${m.ask == null ? '–' : num(m.ask * 100, 1)}</span>
-        <span class="dim">(${m.bid_size == null ? '–' : num(m.bid_size, 0)} × ${m.ask_size == null ? '–' : num(m.ask_size, 0)})</span><br/>
-        buy UP edge <span class="${sgn(l.edge_up_pp)}">${pp(l.edge_up_pp, 1)}</span> ·
-        buy DOWN edge <span class="${sgn(l.edge_down_pp)}">${pp(l.edge_down_pp, 1)}</span><br/>
-        ${l.base_rate != null ? `unconditional base rate <span class="amb">${num(l.base_rate * 100, 2)}%</span> — a coin flip` : ''}
-      </div>
-    </div>`;
-}
-
-// ── LANE 3: politics ────────────────────────────────────────────────────────
-function renderPolitics(d) {
-  if (d.status !== 'ok') { emptyState($('#pol-rows').parentElement, d, 'politics'); return; }
-  const b = d.board || {}, m = d.momentum_test || {}, ls = d.longshot_test || {};
-  $('#n-politics').textContent = d.scanned || '';
-
-  const lc = b.label_counts || {};
-  $('#pol-strip').innerHTML = [
-    ['markets', String(b.n || 0), `${d.expired_dropped || 0} expired dropped`, 'vio'],
-    ['median move', num(b.median_abs_move_pp, 1) + 'pp', 'over 7 days', 'mut'],
-    ['mean move', num(b.mean_abs_move_pp, 1) + 'pp', 'skewed by repricings', 'mut'],
-    ['stable', String(lc.STABLE || 0), 'moved under 2pp', 'mut'],
-    ['churn', String(lc.CHURN || 0), 'moved without trending', 'amb'],
-    ['repricing', String((lc.REPRICING_YES || 0) + (lc.REPRICING_NO || 0)), 'moved over 10pp', 'teal'],
-    ['drift carries', m.usable ? 'YES' : 'NO', `corr ${num(m.corr, 2)} · z ${num(m.fisher_z, 2)}`, m.usable ? 'up' : 'amb'],
-  ].map(([l, v, s, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
-      <span class="l">${esc(l)}</span><span class="s">${esc(s)}</span></div>`).join('');
-
-  $('#pol-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('');
-
-  $('#pol-null').innerHTML = m.status === 'ok' ? `
-    <div class="mono text-[11px]">
-      windows <b>${esc(m.windows || '')}</b> ${m.gapped
-      ? '<span class="badge b-teal">gapped</span>'
-      : '<span class="badge b-chop">overlapping</span>'}<br/>
-      corr = <b class="${m.usable ? 'up' : 'amb'}">${num(m.corr, 3)}</b>
-      · fisher z ${num(m.fisher_z, 2)} · n=${m.n}<br/>
-      same test on OVERLAPPING windows: <span class="amb">${num(m.shared_endpoint_corr, 3)}</span>
-      <span class="dim">← the confounded number</span><br/>
-      liquidity split: thin ${num((m.halves.thin || {}).corr, 2)} / deep ${num((m.halves.deep || {}).corr, 2)}
-      → ${m.robust ? 'same sign' : 'sign differs'}<br/>
-      carry coefficient ${num(m.carry_coef, 3)} · <b>${m.usable ? 'USED in the forecast' : 'NOT used'}</b>
-    </div>
-    <div class="text-[11px] mt-3 ${m.usable ? 'mut' : 'amb'}">${esc(m.verdict)}</div>
-    <div class="text-[10.5px] mt-2 dim">The obvious version of this test correlates last week's move with
-      this week's, but both windows share the t-7d price — noise in that one observation enters the two
-      changes with opposite signs and fabricates mean reversion. The measurement above skips a week so the
-      windows share nothing. Compare the two rows: that gap is the artifact.</div>`
-    : '<span class="dim text-[11px]">sample too small for the null test</span>';
-
-  $('#pol-ls').innerHTML = (ls.rows || []).map(r => `<tr>
-      <td>${esc(r.bucket)}</td>
-      <td class="mono mut">${r.n}</td>
-      <td class="mono ${sgn(r.mean_delta_pp)}">${pp(r.mean_delta_pp, 1)}</td>
-      <td class="mono">${num(r.pct_up, 0)}%</td>
-      <td class="mono dim">${num(r.ci_lo_pct_up, 0)}–${num(r.ci_hi_pct_up, 0)}%</td>
-    </tr>`).join('');
-
-  $('#pol-rows').innerHTML = (d.reads || []).map(r => {
-    const f = r.forecast || {};
-    return `<tr>
-      <td style="text-align:left;white-space:normal;max-width:340px">
-        <div>${esc(r.question)}</div>
-        <div class="dim text-[10px] mono mt-1">${esc(r.event)}</div>
-      </td>
-      <td>${spark(r.spark)}</td>
-      <td class="mono" style="font-weight:600">${num(r.p_now * 100, 1)}%</td>
-      <td class="mono ${sgn(r.delta_1d_pp)}">${pp(r.delta_1d_pp, 1)}</td>
-      <td class="mono ${sgn(r.delta_7d_pp)}">${pp(r.delta_7d_pp, 1)}</td>
-      <td class="mono ${sgn(r.slope_pp_day)}">${num(r.slope_pp_day, 2)}</td>
-      <td>${badge(r.label)}</td>
-      <td class="mono mut">${num(f.p10 * 100, 0)} · <b style="color:var(--txt)">${num(f.p50 * 100, 0)}</b> · ${num(f.p90 * 100, 0)}%</td>
-      <td class="mono ${r.days_left != null && r.days_left <= 14 ? 'teal' : 'dim'}">${r.days_left == null ? '–' : num(r.days_left, 0) + 'd'}</td>
-      <td class="mono dim">$${((r.volume || 0) / 1e6).toFixed(1)}m</td>
-    </tr>`;
-  }).join('');
-}
-
-// ── microstructure block (the three HFT claims) ─────────────────────────────
-function calibTable(rows, headLeft) {
-  return `<div class="overflow-x-auto"><table>
-    <thead><tr><th style="text-align:left">${esc(headLeft)}</th><th>n</th><th>priced</th>
-      <th>actual</th><th>gap</th><th>95% ci</th><th style="text-align:left">real?</th></tr></thead>
-    <tbody>${(rows || []).map(r => `<tr>
-      <td class="mono">${esc(r.bucket)}</td>
-      <td class="mono mut">${r.n}</td>
-      <td class="mono">${num(r.implied * 100, 1)}%</td>
-      <td class="mono ${r.diff_pp < 0 ? 'dn' : 'up'}">${num(r.realized * 100, 1)}%</td>
-      <td class="mono ${sgn(r.diff_pp)}">${pp(r.diff_pp, 1)}</td>
-      <td class="mono dim">${num(r.ci_lo * 100, 1)}–${num(r.ci_hi * 100, 1)}%</td>
-      <td style="text-align:left">${r.significant ? '<span class="badge b-info">outside</span>'
-    : '<span class="badge b-mut">inside</span>'}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-}
-
-function renderEdges(e) {
-  if (!e) { $('#ud-edges').innerHTML = '<span class="dim text-[11.5px]">no microstructure block in this payload</span>'; return; }
-  const t = e.tail_edge_60s || {}, arb = e.arb || {}, ts = e.tail_strategy || {},
-    c30 = e.price_calibration_30s || {}, lp = e.live_pair || {};
-
-  const claim = (n, title, verdict, tone, body) => `
-    <div class="card mb-3" style="background:var(--card2)">
-      <div class="flex items-center gap-2 mb-2 flex-wrap">
-        <span class="badge b-info">CLAIM ${n}</span>
-        <span style="font-weight:600;font-size:12px">${esc(title)}</span>
-        <span class="badge ${tone}">${esc(verdict)}</span>
-      </div>${body}</div>`;
-
-  const tailBody = t.status === 'ok' ? `
-    <div class="text-[11.5px] mut mb-2">Replay every window at ${t.secs_left}s left, ask a Gaussian
-      random walk for the leader's win probability, compare with what happened. n=${t.n}, no market
-      data involved.</div>
-    ${calibTable(t.table, 'gaussian says leader wins')}
-    <div class="text-[11px] mt-2 ${t.tail_is_fat ? 'teal' : 'mut'}">${esc(t.verdict)}</div>`
-    : '<span class="dim text-[11px]">not enough windows</span>';
-
-  const arbBody = `
-    <div class="text-[11.5px] mut mb-2">Buy both sides under $1, redeem the winner for $1. Checked
-      against the real book in both directions, gross and net of Polymarket's per-share fee
-      (<b>rate × min(p, 1−p) × shares</b>) — at the rate the tape actually charged, not the one
-      Gamma advertises. Measured 2026-08-02: Gamma says 1000bps, 79 of 79 executed trades charged
-      <b>0</b>. Trusting the advertised number called a 1¢ crossed pair a loss when it is 1¢ of edge.</div>
-    ${lp.status === 'ok' ? `<div class="mono text-[11.5px]" style="line-height:1.9">
-      pair at last refresh <b>${esc(lp.slug || '')}</b>
-      <span class="badge ${lp.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(lp.source || '')}</span>
-      <span class="dim">${e.generated_at ? age(Date.now() / 1000 - e.generated_at) : ''}</span><br/>
-      UP ${lp.up.bid}/${lp.up.ask} · DOWN ${lp.down.bid}/${lp.down.ask}
-      · tick ${lp.tick}<br/>
-      fee <b>${lp.fee_bps}</b>bps charged
-      ${lp.fee_bps_advertised != null && Number(lp.fee_bps_advertised) !== Number(lp.fee_bps)
-      ? `<span class="amb">(gamma advertises ${lp.fee_bps_advertised} — the tape charges ${lp.fee_bps_observed != null ? lp.fee_bps_observed : lp.fee_bps})</span>` : ''}<br/>
-      buy both costs <span class="${(lp.buy_both || {}).gross_edge > 0 ? 'up' : 'dn'}">$${num((lp.buy_both || {}).cost, 3)}</span>
-      · net edge <span class="${sgn((lp.buy_both || {}).net_edge)}">${num((lp.buy_both || {}).net_edge, 4)}</span>
-      · <b>${lp.ticks_to_gross_arb}</b> tick(s) from any gross arb
-    </div>` : '<span class="dim text-[11px]">no live book</span>'}
-    <div class="text-[11px] mt-2 ${arb.status === 'ok' && arb.net_hits ? 'teal' : 'amb'}">
-      ${esc(arb.verdict || arb.hint || '')}</div>
-    ${arb.net_hits ? `<div class="text-[10.5px] mt-1 mut">Counted per WINDOW as well as per
-      snapshot: the sampler takes 5 shots of every window, so one resting order can be counted
-      five times and read as five events. Both prints so far were in
-      <b>${arb.net_hit_windows}</b> window; the sell side also needs a minted complete set plus
-      Polygon gas, which <b>$${num(arb.best_hit_usd, 2)}</b> on the thin leg does not clear.</div>` : ''}
-    ${arb.rows_repriced_off_advertised_fee ? `<div class="text-[10.5px] mt-1 dim">
-      ${arb.rows_repriced_off_advertised_fee} stored sample(s) had Gamma's 1000bps frozen in and were
-      re-priced at the charged rate on read.</div>` : ''}
-    <div id="arb-fire" class="mt-3"></div>`;
-
-  const calBody = c30.status === 'ok'
-    ? `<div class="text-[11.5px] mut mb-2">Unbiased book snapshots at ${c30.secs_left}s left
-         (n=${c30.n}), graded on the window's real outcome.</div>
-       ${calibTable(c30.rows, 'market price bucket')}
-       <div class="text-[11px] mt-2">${esc(c30.verdict)}</div>`
-    : `<div class="text-[11.5px] amb">Not answerable yet — needs the unbiased sampler.
-         ${esc(c30.hint || '')}<br/><span class="dim">Our 898 existing scout rows can't answer it:
-         they were only recorded when the model disagreed with the price, so the price
-         distribution is selected.</span></div>`;
-
-  const stratBody = ts.status === 'ok'
-    ? `<div class="mono text-[11.5px]" style="line-height:1.9">
-         buy any side at ≤ ${num(ts.max_ask * 100, 0)}¢ with ${ts.secs_left}s left · n=${ts.n}<br/>
-         win ${num(ts.win_rate * 100, 1)}% (ci ${num(ts.win_ci[0] * 100, 1)}–${num(ts.win_ci[1] * 100, 1)}%)
-         vs breakeven ${num(ts.breakeven_win_rate * 100, 1)}%<br/>
-         EV per $ staked <span class="${sgn(ts['ev_per_$staked'])}">${num(ts['ev_per_$staked'], 4)}</span>
-         · fee ${ts.fee_bps}bps</div>
-       <div class="text-[11px] mt-2">${esc(ts.verdict)}</div>`
-    : `<div class="text-[11.5px] amb">${esc(ts.hint || ts.status || '')} — the fat tail above says the
-         opportunity should exist; this line says whether the book actually pays for it.</div>`;
-
-  // Claim 3 leads: it is the only block on the tab with a button on it.
-  $('#ud-edges').innerHTML =
-    claim(3, 'buy both sides for under $1',
-      arb.buy_both_net_hits ? 'seen' : 'not at our latency',
-      arb.buy_both_net_hits ? 'b-up' : 'b-chop', arbBody) +
-    claim(2, 'the leading side loses more often than a random walk says',
-      t.tail_is_fat ? 'CONFIRMED' : 'not found', t.tail_is_fat ? 'b-up' : 'b-mut', tailBody) +
-    claim(1, 'market prices are mis-calibrated by price bucket',
-      c30.status === 'ok' ? (c30.mispriced && c30.mispriced.length ? 'mispriced' : 'calibrated') : 'needs data',
-      c30.status === 'ok' ? ((c30.mispriced || []).length ? 'b-up' : 'b-mut') : 'b-chop', calBody) +
-    claim('2b', 'tradeable version: buy the cheap side near the close',
-      ts.status === 'ok' ? (ts['ev_per_$staked'] > 0 ? '+EV' : '−EV') : 'needs data',
-      ts.status === 'ok' ? (ts['ev_per_$staked'] > 0 ? 'b-up' : 'b-dn') : 'b-chop', stratBody);
-}
-
 // ── LANE 4: recorders / P&L ─────────────────────────────────────────────────
 const VERDICT_CLASS = { VALIDATED: 'b-sup', MARGINAL: 'b-chop', PENDING: 'b-mut', REFUTED: 'b-sdn' };
 
@@ -1118,29 +702,6 @@ function renderRecorders(d) {
     </tr>`;
   }).join('') || '<tr><td colspan="13" class="dim">no shadow books recorded yet</td></tr>';
 
-  const lanes = (d.scout || {}).lanes || {};
-  $('#rec-scout').innerHTML = Object.keys(lanes).map(k => {
-    const g = lanes[k];
-    return `<tr>
-      <td class="mono">${esc(k)}</td>
-      <td class="mono mut">${g.rows == null ? '–' : g.rows}</td>
-      <td class="mono">${g.n || 0}</td>
-      <td class="mono ${sgn(g['mean_pnl_per_$'])}" style="font-weight:600">${g['mean_pnl_per_$'] == null ? '–' : num(g['mean_pnl_per_$'], 4)}</td>
-      <td class="mono ${sgn(g['total_pnl_per_$'])}">${g['total_pnl_per_$'] == null ? '–' : num(g['total_pnl_per_$'], 2)}</td>
-      <td class="mono">${g.win_rate == null ? '–' : num(g.win_rate * 100, 1) + '%'}</td>
-      <td class="mono">${g.brier_llm == null ? '–' : num(g.brier_llm, 4)}</td>
-      <td class="mono mut">${g.brier_mkt == null ? '–' : num(g.brier_mkt, 4)}</td>
-      <td>${g.n ? (g.llm_beats_market ? '<span class="badge b-up">we beat it</span>'
-      : '<span class="badge b-chop">market wins</span>') : '<span class="badge b-mut">no data</span>'}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="9" class="dim">no paper trades recorded</td></tr>';
-
-  const srcs = Object.values(lanes).map(g => g.source).filter(Boolean);
-  $('#rec-scout-note').innerHTML =
-    `PnL is per $1 position at the recorded fill. Sources: ${esc([...new Set(srcs)].join(' · '))}.
-     Brier compares OUR probability to the MARKET'S on the same resolved question — money can be made
-     with a worse Brier (by buying cheap sides) and lost with a better one, so both columns matter.`;
-
   $('#rec-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
     || '<li class="dim">nothing graded yet</li>';
 }
@@ -1170,107 +731,6 @@ function renderAI(lane, ai) {
 }
 
 // ── the FIRE button: sub-$1 pair on BTC ─────────────────────────────────────
-// Dark until the book is actually crossed. It has stayed dark on the buy side
-// for every one of the first 276 samples (min pair cost $1.001), so a lit
-// button is the event, not the default.
-let ARB = null;
-
-// Socket status, ALWAYS from the process being asked. The cached lane payload
-// carries a health block too, but it is written by the refresher — a process
-// that starts a socket and exits seconds later — so rendering that one showed
-// "down · 0 events · reconnects 0" forever while the server's feed was live.
-function wsHealthLine(ws, label) {
-  if (!ws) return '';
-  const live = ws.connected && !ws.stale;
-  const state = live ? 'LIVE'
-    : ws.connected ? 'connected · STALE'
-      : ws.running ? 'connecting' : 'not started';
-  return `<div class="mono text-[10.5px] mb-2 ${live ? 'teal' : 'amb'}">
-    websocket${label ? ' ' + label : ''} ${state}
-    · ${ws.events || 0} events (${ws.price_changes || 0} price changes, ${ws.trades || 0} trades)
-    · last ${ws.last_msg_age_s == null ? '–' : num(ws.last_msg_age_s, 1) + 's'} ago
-    · reconnects ${ws.reconnects || 0}
-    ${ws.observed_fee_bps != null ? `· fee CHARGED ${ws.observed_fee_bps}bps` : ''}
-    ${ws.pid ? `· pid ${ws.pid}` : ''}
-    ${ws.last_error ? `<br/><span class="dn">${esc(ws.last_error)}</span>` : ''}
-  </div>`;
-}
-
-function renderArbFire(p) {
-  const el = $('#arb-fire');
-  if (!el) return;
-  if (!p || (p.status !== 'ok' && p.status !== undefined)) {
-    // No live preflight (no operator token, or the call failed). Fall back to
-    // the refresher's snapshot, clearly stamped as the older read — showing
-    // nothing at all would read as "there is no socket".
-    const cached = ((DATA.updown || {}).edges || {}).ws;
-    el.innerHTML = `<span class="dim text-[11px] mono">arb preflight ${esc((p && p.status) || 'unavailable')}
-      ${p && p.error ? '· ' + esc(p.error) : ''}</span>`
-      + (cached ? wsHealthLine(cached, 'at last lane refresh') : '');
-    return;
-  }
-  const rd = p.readiness || {}, ev = p.event || {}, q = p.quote || {};
-  const miss = (rd.missing || []).map(m => m.key).join(', ');
-  const armed = !!p.armed;
-  el.innerHTML = `
-    <div class="card" style="border-color:${armed ? 'rgba(34,197,94,.55)' : 'rgba(148,163,184,.25)'}">
-      <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <div class="sec-label" style="margin-bottom:0">fire the pair</div>
-        <span class="badge ${armed ? 'b-up' : 'b-mut'}">${armed ? 'ARB LIVE' : 'no crossing'}</span>
-      </div>
-      ${wsHealthLine(p.ws, 'now')}
-      <div class="mono text-[11.5px]" style="line-height:1.8">
-        <span class="badge ${q.source === 'websocket' ? 'b-teal' : 'b-mut'}">${esc(q.source || '')}</span>
-        best net edge <span class="${sgn(q.best_net_edge)}">${num(q.best_net_edge, 4)}</span>/share
-        · <b>${q.ticks_to_gross_arb == null ? '–' : q.ticks_to_gross_arb}</b> tick(s) away
-        · fee ${q.fee_bps == null ? '–' : q.fee_bps}bps
-        ${armed ? `<br/><span class="up">${esc(ev.side || '')}</span> ${num(ev.book_size, 1)} shares
-          · stake $${num(ev.notional_usd, 2)} · expect $${num(ev.expected_profit_usd, 2)}` : ''}
-      </div>
-      ${(p.tickets || []).length ? `<div class="mono text-[10.5px] mt-2 dim">
-        ${p.tickets.map(t => `${t.action} ${t.outcome} ${num(t.shares, 1)} @ ${num(t.price, 2)} (${t.time_in_force})`).join('<br/>')}
-      </div>` : ''}
-      <div class="mt-3 flex items-center gap-2 flex-wrap">
-        <button class="btn ${armed ? 'go' : ''}" id="arb-fire-btn" type="button" ${armed ? '' : 'disabled'}
-          style="${armed ? 'color:var(--up);border-color:rgba(34,197,94,.5)' : ''}">
-          ${armed ? 'FIRE — record ticket' : 'nothing to fire'}</button>
-        <span class="text-[10.5px] ${rd.ready ? 'teal' : 'amb'}">
-          ${rd.ready ? 'credentials present' : 'shadow only — missing ' + esc(miss || 'credentials')}</span>
-      </div>
-      <div id="arb-fire-out" class="text-[11px] mt-2"></div>
-      <div class="text-[10.5px] mut mt-2">Pressing this places <b>no order</b>. There is no Polymarket
-        order path in this repo; a fire re-quotes the book and writes the ticket it would have sent to
-        <span class="mono">.state/trend_engine/arb_events.jsonl</span>. Both legs are FOK — one leg
-        filled alone is a naked BTC bet, not an arb.</div>
-    </div>`;
-  const btn = $('#arb-fire-btn');
-  if (btn && armed) btn.onclick = fireArb;
-}
-
-async function fireArb() {
-  const btn = $('#arb-fire-btn'), out = $('#arb-fire-out');
-  btn.disabled = true; btn.textContent = 'firing…';
-  const j = await post('/api/dashboard/trends/arb/fire');
-  btn.textContent = 'FIRE — record ticket'; btn.disabled = false;
-  if (!j || j._error) {
-    out.innerHTML = `<span class="dn">${esc((j && j._error) || 'no response')}</span>`;
-    return;
-  }
-  const ok = j.status === 'recorded';
-  out.innerHTML = `<span class="${ok ? 'teal' : 'amb'}">${esc(j.message || j.status || '')}</span>`;
-  loadArb();
-}
-
-async function loadArb() {
-  if (!token()) { renderArbFire({ status: 'needs operator token' }); return; }
-  try {
-    const r = await fetch('/api/dashboard/trends/arb/preflight', { headers: authHeaders() });
-    if (!r.ok) { renderArbFire({ status: 'http ' + r.status }); return; }
-    ARB = await r.json();
-    renderArbFire(ARB);
-  } catch (e) { renderArbFire({ status: 'error', error: String(e) }); }
-}
-
 async function pollJob(jobId, onDone) {
   for (let i = 0; i < 150; i++) {
     await new Promise(r => setTimeout(r, 2000));
@@ -1305,7 +765,7 @@ async function post(url) {
 
 $$('[data-ai]').forEach(btn => btn.onclick = async () => {
   const lane = btn.dataset.ai;
-  const wsEl = lane === 'hl' ? $('#hl-ws') : (lane === 'politics' ? $('#pol-ws') : null);
+  const wsEl = lane === 'hl' ? $('#hl-ws') : null;
   const ws = (wsEl && wsEl.checked) ? '?web_search=true' : '';
   btn.disabled = true; btn.textContent = 'running…';
   $('#' + lane + '-ai').innerHTML = '<span class="dim mono">model call running — this takes 20s to a few minutes…</span>';
@@ -1336,7 +796,7 @@ function setRefreshNote(lane, msg, cls) {
 }
 
 const REFRESH_BTN = {
-  hl: 'hl-refresh', updown: 'ud-refresh', politics: 'pol-refresh',
+  hl: 'hl-refresh',
   recorders: 'rec-refresh',
 };
 
@@ -1382,15 +842,6 @@ $('#s-all').classList.add('go');
   await Promise.all(LANES.map(loadLane));
   LANES.forEach(l => renderAI(l, (DATA[l] || {}).ai));
   showLane(LANE);
-  const tick = async () => {
-    try { renderLive(await (await fetch('/api/dashboard/trends/updown/live')).json()); } catch (e) { }
-  };
-  tick();
-  loadArb();
-  setInterval(tick, 6000);
-  // 3s: the quote is served from the websocket at 0ms, so the only thing
-  // between us and a crossing is how often the page looks.
-  setInterval(loadArb, 3000);
   setInterval(() => LANES.forEach(loadLane), 60000);
 })();
 </script>

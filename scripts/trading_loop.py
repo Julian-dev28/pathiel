@@ -77,7 +77,6 @@ from hermes_trader.agents.social_trending_recorder import maybe_record as _socia
 from hermes_trader.agents.numerology_recorder import maybe_record as _numerology_maybe_record
 from hermes_trader.agents.uw_flow_xs_live import maybe_run as _uw_flow_xs_maybe_run
 from hermes_trader.agents.ai_only_scan import maybe_run as _ai_only_maybe_run
-from services.polymarket_scout.updown import live_maybe_run as _updown_live_maybe_run
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
@@ -952,17 +951,6 @@ while True:
             _ai_only_maybe_run(read_agent_config(), universe, positions, _book_execute)
         except Exception as _aoe:
             logger.debug(f"[ai-only] pass failed (non-fatal): {_aoe}")
-
-        # 5-min up/down LIVE (operator-armed 2026-07-26): trade the AI's up/down
-        # call on a HL BTC perp, flattened at the window close. Polymarket order
-        # placement is geoblocked, so this is the real-money path. Tiny/bounded/
-        # killable; -EV latency coin flip on record. DEFAULT updown_live.enabled
-        # controls it; place=false records only. Never fatal to the loop.
-        try:
-            _updown_live_maybe_run(read_agent_config(), universe, positions,
-                                   _book_execute, close_position_market)
-        except Exception as _ude:
-            logger.debug(f"[updown-live] pass failed (non-fatal): {_ude}")
 
         # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
         # inside the 48-72h pre-unlock window, exits AT the event. Kill:

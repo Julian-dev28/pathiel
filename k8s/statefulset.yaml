@@ -149,30 +149,6 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-        # ── sampler: services.trend_engine.run --sample-daemon ─────────────────
-        # The Polymarket 5m book sampler. Its own container on purpose — it
-        # blocks for most of a 5-minute window and would starve every other
-        # `sched` job if it ran inside that process (see scripts/restart.sh).
-        # Zero capital: it only snapshots both books and writes JSONL.
-        - name: sampler
-          image: hermes-trader:local
-          imagePullPolicy: IfNotPresent
-          args: ["python3", "-m", "services.trend_engine.run", "--sample-daemon"]
-          envFrom:
-            - configMapRef:
-                name: hermes-config
-            - secretRef:
-                name: hermes-secrets
-          volumeMounts:
-            - name: data
-              mountPath: /data
-          resources:
-            requests:
-              cpu: "25m"
-              memory: "64Mi"
-            limits:
-              cpu: "250m"
-              memory: "256Mi"
         # ── rotator: scripts/log_rotate.py --daemon ─────────────────────────────
         # `sched` writes its fired jobs' stdout/stderr to real files under
         # logs/ (scripts/scheduler.py:run_job opens them directly — this is

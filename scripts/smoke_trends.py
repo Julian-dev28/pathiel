@@ -5,16 +5,13 @@ The gate tests prove each piece in isolation with the network stubbed out. This
 proves the pieces are actually wired to each other in the process the operator
 loads: every route answers, every lane payload carries the fields the page
 renders, the operator surface is closed without a token and open with one, and
-the two buttons (refresh, FIRE) complete a full round trip.
+the refresh button completes a full round trip.
 
     python scripts/smoke_trends.py                 # read-only checks
     python scripts/smoke_trends.py --with-refresh  # also runs a real lane refresh
-    python scripts/smoke_trends.py --with-fire     # also presses FIRE (records
-                                                   # a shadow ticket, no order)
 
 Exit code is the number of failures, so it can gate a deploy. Read-only by
-default: `--with-refresh` spends a scan (~60s for HL) and `--with-fire` writes
-one row to the arb ledger.
+default: `--with-refresh` spends a scan (~60s for HL).
 """
 from __future__ import annotations
 
@@ -28,28 +25,15 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE = os.environ.get("HERMES_SMOKE_BASE", "http://127.0.0.1:8000")
-LANES = ("hl", "updown", "politics", "recorders")
+LANES = ("hl", "recorders")
 
 # What the page reads out of each lane payload. A missing key here renders as a
 # blank cell or `undefined` on the tab, which is indistinguishable from "the
 # market is quiet" — the exact failure this file exists to catch.
 LANE_CONTRACT: Dict[str, Tuple[str, ...]] = {
     "hl": ("status", "generated_at", "scanned", "reads", "regimes", "eval", "playbook"),
-    "updown": ("status", "generated_at", "patterns", "rolling", "calibration",
-               "edges", "live", "playbook"),
-    "politics": ("status", "generated_at", "board", "momentum_test", "reads",
-                 "observations", "playbook"),
     "recorders": ("status", "generated_at", "summary", "books", "playbook"),
 }
-
-# Nested fields the microstructure card and the FIRE button read.
-EDGE_CONTRACT = ("tail_edge_60s", "arb", "price_calibration_30s", "tail_strategy",
-                 "live_pair", "ws", "samples")
-ARB_CONTRACT = ("samples", "windows", "net_hits", "net_hit_windows", "best_hit_usd",
-                "mean_pair_cost", "verdict")
-PREFLIGHT_CONTRACT = ("status", "armed", "readiness", "quote", "ws", "verdict",
-                      "would_execute")
-
 
 class Smoke:
     def __init__(self, token: Optional[str]) -> None:
@@ -93,14 +77,11 @@ class Smoke:
         self.check(code == 200, "/trends renders", f"http {code}")
         if not isinstance(body, str):
             return
-        for marker in ('id="lane-hl"', 'id="ud-edges"', 'id="arb-fire"',
+        for marker in ('id="lane-hl"', 'id="lane-recorders"',
                        'id="hl-refresh"', 'href="/static/app.css"'):
             self.check(marker in body, f"page carries {marker}")
         self.check("http://" not in body and "https://" not in body,
                    "page pulls no third-party asset")
-        lane = body.index('id="lane-updown"')
-        self.check(body.index('id="ud-edges"', lane) < body.index('id="pb-updown"', lane),
-                   "arb card leads the updown lane")
 
     def lanes(self) -> None:
         print("\nLANES (pure cache reads)")
@@ -120,94 +101,15 @@ class Smoke:
             self.check(bool(pb.get("actions")), f"{lane} playbook has actions",
                        f"{len(pb.get('actions') or [])} actions")
 
-    def edges(self) -> None:
-        print("\nMICROSTRUCTURE (claim 3 + the FIRE card)")
-        code, payload = self.call("/api/dashboard/trends/updown", auth=False)
-        if code != 200 or not isinstance(payload, dict):
-            self.check(False, "updown payload", f"http {code}")
-            return
-        edges = payload.get("edges") or {}
-        miss = self.missing(edges, EDGE_CONTRACT)
-        self.check(not miss, "edges block complete", f"missing {miss}" if miss else "")
-        arb = edges.get("arb") or {}
-        miss = self.missing(arb, ARB_CONTRACT)
-        self.check(not miss, "arb stats complete", f"missing {miss}" if miss else
-                   f"{arb.get('net_hits')} hits in {arb.get('net_hit_windows')} window(s)")
-        lp = edges.get("live_pair") or {}
-        self.check(lp.get("status") == "ok", "cached live pair priced",
-                   f"source={lp.get('source')} slug={lp.get('slug')}")
-        ws = edges.get("ws") or {}
-        self.check(bool(ws.get("running")), "cached socket snapshot is a real read",
-                   f"pid={ws.get('pid')} events={ws.get('events')} "
-                   f"connected={ws.get('connected')}")
-
-    def live_window(self) -> None:
-        print("\nLIVE 5m WINDOW")
-        code, payload = self.call("/api/dashboard/trends/updown/live", auth=False)
-        if not self.check(code == 200, "GET updown/live", f"http {code}"):
-            return
-        self.check(payload.get("status") in ("ok", "no_data"), "live window answers",
-                   f"status={payload.get('status')} secs_left={payload.get('secs_left')}")
-
     def operator_gate(self) -> None:
         print("\nOPERATOR GATE")
-        for path, method in (("/api/dashboard/trends/arb/preflight", "GET"),
-                             ("/api/dashboard/trends/arb/fire", "POST"),
-                             ("/api/dashboard/trends/hl/refresh", "POST"),
+        for path, method in (("/api/dashboard/trends/hl/refresh", "POST"),
                              ("/api/dashboard/trends/hl/ai", "POST")):
             code, _ = self.call(path, method, auth=False)
             self.check(code in (401, 403, 503), f"{path} closed without a token",
                        f"http {code}")
         code, _ = self.call("/api/dashboard/trends/bogus")
         self.check(code == 404, "unknown lane is a 404", f"http {code}")
-
-    def preflight(self) -> None:
-        print("\nARB PREFLIGHT (the FIRE button's read)")
-        if not self.token:
-            self.check(False, "preflight", "no HERMES_OPERATOR_TOKEN in .env.local")
-            return
-        code, p = self.call("/api/dashboard/trends/arb/preflight")
-        if not self.check(code == 200, "GET preflight", f"http {code}"):
-            return
-        miss = self.missing(p, PREFLIGHT_CONTRACT)
-        self.check(not miss, "preflight payload complete", f"missing {miss}" if miss else "")
-        q, ws = p.get("quote") or {}, p.get("ws") or {}
-        if q.get("best_net_edge") is None:
-            # a server that just booted has no socket and no cached slug yet;
-            # give it one settle pass rather than reporting a cold start as a
-            # broken feed
-            time.sleep(5)
-            _, p = self.call("/api/dashboard/trends/arb/preflight")
-            q, ws = (p or {}).get("quote") or {}, (p or {}).get("ws") or {}
-        self.check(q.get("best_net_edge") is not None, "quote is two-sided",
-                   f"source={q.get('source')} edge={q.get('best_net_edge')} "
-                   f"ticks={q.get('ticks_to_gross_arb')}")
-        self.check(bool(ws.get("running")) and ws.get("connected") is True,
-                   "server owns a live socket",
-                   f"pid={ws.get('pid')} events={ws.get('events')} "
-                   f"stale={ws.get('stale')} fee={ws.get('observed_fee_bps')}")
-        # Churn is the failure that hides: a socket that rebuilds itself every
-        # quiet gap is "connected" at every sample and REST-backed in between.
-        self.check((ws.get("reconnects") or 0) <= 5, "socket is not churning",
-                   f"reconnects={ws.get('reconnects')} "
-                   f"resubscribes={ws.get('resubscribes')} "
-                   f"quiet_timeouts={ws.get('quiet_timeouts')} "
-                   f"last_error={ws.get('last_error') or 'none'}")
-        # A later call must be served from the socket, not another REST poll.
-        # The route caches for 2s, so an immediate re-read returns the SAME
-        # payload — polling past that window is the only honest way to ask.
-        src, waited = q.get("source"), 0.0
-        while src != "websocket" and waited < 30.0:
-            time.sleep(2.5)
-            waited += 2.5
-            _, pn = self.call("/api/dashboard/trends/arb/preflight")
-            src = ((pn or {}).get("quote") or {}).get("source")
-        self.check(src == "websocket", "quotes settle on the socket",
-                   f"source={src} after {waited:.0f}s")
-        rd = p.get("readiness") or {}
-        self.check(rd.get("ready") is False,
-                   "execution stays blocked without signing credentials",
-                   f"missing {[m.get('key') for m in (rd.get('missing') or [])]}")
 
     def refresh(self, lane: str) -> None:
         print(f"\nREFRESH BUTTON ({lane})")
@@ -236,20 +138,6 @@ class Smoke:
         self.check(moved, "cache stamp advanced",
                    f"{before.get('generated_at')} -> {after.get('generated_at')}")
 
-    def fire(self) -> None:
-        print("\nFIRE BUTTON")
-        if not self.token:
-            self.check(False, "fire", "no operator token")
-            return
-        code, out = self.call("/api/dashboard/trends/arb/fire", "POST", timeout=60)
-        if not self.check(code == 200, "POST fire", f"http {code}"):
-            return
-        self.check(out.get("status") in ("recorded", "no_arb"), "fire answers",
-                   f"status={out.get('status')} {out.get('message', '')[:80]}")
-        self.check(out.get("fired") is False, "fire placed NO order (it cannot)")
-
-    # ── report ──────────────────────────────────────────────────────────────
-
     def report(self) -> int:
         bad = [r for r in self.rows if not r[0]]
         print(f"\n{'-' * 64}\n{len(self.rows) - len(bad)}/{len(self.rows)} checks passed")
@@ -271,10 +159,8 @@ def read_token() -> Optional[str]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--with-refresh", metavar="LANE", nargs="?", const="politics",
-                    help="run a real refresh job for LANE (default politics — cheap)")
-    ap.add_argument("--with-fire", action="store_true",
-                    help="press FIRE (records a shadow ticket, places no order)")
+    ap.add_argument("--with-refresh", metavar="LANE", nargs="?", const="hl",
+                    help="run a real refresh job for LANE (default hl — cheap)")
     a = ap.parse_args(argv)
 
     print(f"smoke: {BASE}")
@@ -283,14 +169,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("  WARN  no operator token found — gated checks will be skipped")
     s.page()
     s.lanes()
-    s.edges()
-    s.live_window()
     s.operator_gate()
-    s.preflight()
     if a.with_refresh:
         s.refresh(a.with_refresh)
-    if a.with_fire:
-        s.fire()
     return s.report()
 
 

@@ -35,18 +35,6 @@ AGENT_DIR = os.path.expanduser("~/Library/LaunchAgents")
 # label -> (module args, schedule, log). Schedule is a list of
 # StartCalendarInterval dicts; {"Minute": 5} alone means "every hour at :05".
 JOBS: Dict[str, Dict[str, Any]] = {
-    "com.hermes.polymarket-board": {
-        "args": ["-m", "services.polymarket_scout.daily", "--board-only"],
-        "schedule": [{"Minute": 5}],
-        "log": "logs/polymarket_scout.log",
-        "why": "hourly board cache refresh so /predictions is never stale (no LLM)",
-    },
-    "com.hermes.polymarket-daily": {
-        "args": ["-m", "services.polymarket_scout.daily"],
-        "schedule": [{"Hour": 9, "Minute": 45}],
-        "log": "logs/polymarket_scout.log",
-        "why": "both forecast lanes + grade resolved paper trades (spends tokens)",
-    },
     "com.hermes.autonomous-cycle": {
         "args": [os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
         "schedule": [{"Hour": 9, "Minute": 15}],
@@ -153,7 +141,7 @@ def main() -> int:
     rc = install(labels, dry_run=args.dry_run)
     if not args.dry_run:
         print("\n# verify:  python scripts/install_launchd_jobs.py --status")
-        print("# kick one: launchctl kickstart -k gui/$UID/com.hermes.polymarket-board")
+        print("# kick one: launchctl kickstart -k gui/$UID/com.hermes.trends-price")
         print("# REMOVE the matching crontab lines — cron cannot run these "
               "(TCC blocks ~/Documents).")
     return rc

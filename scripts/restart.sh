@@ -7,8 +7,6 @@
 #   scripts/restart.sh server         # restart FastAPI server only
 #   scripts/restart.sh stoploop       # STOP the trading loop, keep server + scheduler up
 #   scripts/restart.sh sched          # restart the job scheduler only
-#   scripts/restart.sh sampler        # start/restart the Polymarket 5m book sampler
-#   scripts/restart.sh stopsampler    # stop the sampler only
 #   scripts/restart.sh rotate         # restart the log rotator daemon only
 #   scripts/restart.sh stoprotate     # stop the log rotator daemon only
 #   scripts/restart.sh stop           # stop both, don't start
@@ -55,8 +53,6 @@ SCHED_LOG="$LOG_DIR/scheduler.log"
 LOOP_PATTERN="scripts/trading_loop.py"
 SERVER_PATTERN="hermes_trader.server"
 SCHED_PATTERN="scripts/scheduler.py"
-SAMPLER_PATTERN="sample-daemon"
-SAMPLER_LOG="$LOG_DIR/updown_sampler.log"
 ROTATOR_LOG="$LOG_DIR/log_rotate.log"
 ROTATOR_PATTERN="log_rotate\.py --daemon"
 
@@ -222,11 +218,10 @@ start_sched() {
 
 show_status() {
   printf "\n%sStatus%s\n" "$C_DIM" "$C_OFF"
-  local loop_pids server_pids sched_pids sampler_pids rotator_pids
+  local loop_pids server_pids sched_pids rotator_pids
   loop_pids="$(pids_for "$LOOP_PATTERN")"
   server_pids="$(pids_for "$SERVER_PATTERN")"
   sched_pids="$(pids_for "$SCHED_PATTERN")"
-  sampler_pids="$(pids_for "$SAMPLER_PATTERN")"
   rotator_pids="$(pids_for "$ROTATOR_PATTERN")"
   if [[ -n "$loop_pids" ]]; then
     ok "trading loop: pids $loop_pids"
@@ -243,11 +238,6 @@ show_status() {
   else
     warn "scheduler:    stopped"
   fi
-  if [[ -n "$sampler_pids" ]]; then
-    ok "updown sampler: pids $sampler_pids"
-  else
-    warn "updown sampler: stopped"
-  fi
   if [[ -n "$rotator_pids" ]]; then
     ok "log rotator:  pids $rotator_pids"
   else
@@ -259,28 +249,6 @@ show_status() {
 }
 
 action="${1:-restart}"
-start_sampler() {
-  local pids
-  pids="$(pids_for "$SAMPLER_PATTERN")"
-  if [ -n "$pids" ]; then
-    warn "updown sampler already running (pids: $pids) — skipping"
-    return 0
-  fi
-  info "starting Polymarket 5m book sampler (log: $SAMPLER_LOG)"
-  # Its OWN process, not a scheduler job: scheduler.py fires jobs serially and
-  # this one blocks for most of a 5-minute window, which would starve every
-  # other job. Zero capital — it only snapshots both books and writes JSONL.
-  nohup "$PY" -m services.trend_engine.run --sample-daemon \
-    >> "$SAMPLER_LOG" 2>&1 &
-  local pid=$!
-  sleep 2
-  if kill -0 "$pid" 2>/dev/null; then
-    ok "updown sampler: pid $pid"
-  else
-    err "updown sampler died immediately — see $SAMPLER_LOG"
-  fi
-}
-
 start_rotator() {
   local pids
   pids="$(pids_for "$ROTATOR_PATTERN")"
@@ -293,7 +261,7 @@ start_rotator() {
   # of them ever reopens (see hermes_trader/log_setup.py). Rotation has to
   # run externally, on its own clock, for as long as the box is up; it
   # cannot be a one-shot step at restart.sh invocation time, since a process
-  # can run for days between restarts. This mirrors the sampler/caffeinate
+  # can run for days between restarts. This mirrors the caffeinate
   # pattern above: its own long-lived nohup'd process, managed the same way.
   nohup "$PY" "$ROOT/scripts/log_rotate.py" --daemon >> "$ROTATOR_LOG" 2>&1 &
   local pid=$!
@@ -311,7 +279,7 @@ start_rotator() {
 # every action except a pure `status` read) run one immediate rotation pass
 # so a long-since-oversized logs/ doesn't have to wait for the daemon's next
 # tick. `HERMES_SKIP_DISK_GUARD=1` overrides the refusal for a deliberate
-# emergency start (e.g. restarting just to free the sampler while disk
+# emergency start (e.g. restarting just to free a wedged process while disk
 # cleanup happens by hand); it never skips the rotation pass itself.
 run_disk_guard() {
   local enforce="$1" do_rotate="$2"
@@ -353,7 +321,7 @@ run_disk_guard() {
 DISK_GUARD_ENFORCE=0
 DISK_GUARD_ROTATE=1
 case "$action" in
-  restart|""|loop|server|sched|scheduler|sampler) DISK_GUARD_ENFORCE=1 ;;
+  restart|""|loop|server|sched|scheduler) DISK_GUARD_ENFORCE=1 ;;
 esac
 case "$action" in
   status) DISK_GUARD_ROTATE=0 ;;
@@ -377,8 +345,8 @@ case "$action" in
     show_status
     ;;
   stoploop)
-    # stop ONLY the trading loop (no scans/trades); leave the dashboard + scheduler
-    # running so /predictions and the board/updown refresh stay up.
+    # stop ONLY the trading loop (no scans/trades); leave the dashboard +
+    # scheduler running so the /trends cache refresh stays up.
     stop_proc "trading loop" "$LOOP_PATTERN"
     show_status
     ;;
@@ -390,15 +358,6 @@ case "$action" in
   sched|scheduler)
     stop_proc "scheduler" "$SCHED_PATTERN"
     start_sched
-    show_status
-    ;;
-  sampler)
-    stop_proc "updown sampler" "$SAMPLER_PATTERN"
-    start_sampler
-    show_status
-    ;;
-  stopsampler)
-    stop_proc "updown sampler" "$SAMPLER_PATTERN"
     show_status
     ;;
   rotate|rotator)
@@ -414,7 +373,6 @@ case "$action" in
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
-    stop_proc "updown sampler" "$SAMPLER_PATTERN"
     stop_proc "log rotator" "$ROTATOR_PATTERN"
     show_status
     ;;
@@ -423,7 +381,7 @@ case "$action" in
     ;;
   *)
     err "unknown action: $action"
-    err "usage: $0 [restart|loop|server|sched|sampler|stopsampler|stoploop|rotate|stoprotate|stop|status]"
+    err "usage: $0 [restart|loop|server|sched|stoploop|rotate|stoprotate|stop|status]"
     exit 2
     ;;
 esac

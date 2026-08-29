@@ -1,22 +1,16 @@
 """Lane RECORDERS — what every zero-capital recorder has actually earned.
 
 The other three lanes forecast. This one grades: each shadow book's forward EV
-per signal, each Polymarket paper lane's realised PnL per dollar, and the TREND
+per signal, and the TREND
 in both (first half vs second half), because a recorder whose edge is decaying
 looks identical to a healthy one in a single average.
 
-Two graders, two sources of truth:
+One grader, one source of truth: `hermes_trader.agents.shadow_ledger.grade_records`
+— the same path `scripts/shadow_status.py` uses, forward candles net of funding,
+so the numbers here and in the survey agree.
 
-  shadow books   `hermes_trader.agents.shadow_ledger.grade_records` — the same
-                 path `scripts/shadow_status.py` uses, forward candles net of
-                 funding, so the numbers here and in the survey agree.
-  scout ledger   `services/polymarket_scout/ledger.grade` with an injected
-                 resolver. The updown_5m lane is resolved offline from the 1m
-                 klines lane 2 already caches (free, no Gamma calls); the
-                 judgment / trending / sports lanes need Gamma.
-
-Both graders are network-heavy, which is exactly why this lane lives behind the
-same cache + background-refresh contract as the others.
+Grading is network-heavy, which is exactly why this lane lives behind the same
+cache + background-refresh contract as the others.
 """
 from __future__ import annotations
 
@@ -177,41 +171,6 @@ def _live_fetchers():
     return fetch_fwd, fetch_funding
 
 
-# ── polymarket paper ledger ──────────────────────────────────────────────────
-
-
-def updown_resolver(windows: Sequence[Dict[str, Any]],
-                    tolerance_ms: int = 60_000) -> Callable[[str], Optional[bool]]:
-    """Resolve an updown_5m paper trade OFFLINE, from cached 1m klines.
-
-    The ledger row carries the window's end timestamp, so the window is
-    identifiable without a single Gamma call — 900 rows graded for free. The
-    resolver is keyed on end-time rather than market id, so it is built as a
-    closure over a lookup and handed the row's `end_ms` by `grade_scout`.
-
-    Caveat kept visible: Polymarket settles these on Chainlink, this grades on
-    Binance. Sub-tick disagreements will misgrade a handful of near-flat
-    windows, which is why the lane reports its own n next to the number.
-    """
-    by_end: Dict[int, bool] = {}
-    for w in windows:
-        by_end[int(w["t"]) + 5 * 60_000] = bool(w["up"])
-
-    def resolve(end_ms: Optional[int]) -> Optional[bool]:
-        if end_ms is None:
-            return None
-        # Snap to the nearest 5-minute boundary rather than probing fixed
-        # offsets: a recorded end time can be seconds off the grid, and an
-        # offset probe only matches the exact deltas it was given.
-        window = 5 * 60_000
-        snapped = round(int(end_ms) / window) * window
-        if abs(snapped - int(end_ms)) > tolerance_ms:
-            return None
-        return by_end.get(snapped)
-
-    return resolve
-
-
 def _end_ms(row: Dict[str, Any]) -> Optional[int]:
     from datetime import datetime
     iso = str(row.get("end_date") or "")
@@ -223,55 +182,10 @@ def _end_ms(row: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-def grade_scout(rows: Optional[List[Dict[str, Any]]] = None,
-                windows: Optional[Sequence[Dict[str, Any]]] = None,
-                gamma_resolver: Optional[Callable[[str], Optional[bool]]] = None,
-                ) -> Dict[str, Any]:
-    """Realised paper PnL per lane for the Polymarket scout ledger.
-
-    Lanes are separate hypotheses and are never pooled — the updown lane is
-    thousands of latency coin flips, the judgment lane is a few dozen
-    considered forecasts, and averaging them would hide both.
-    """
-    from services.polymarket_scout import ledger as L
-
-    rows = L.load() if rows is None else rows
-    by_lane: Dict[str, List[Dict[str, Any]]] = {}
-    for r in rows:
-        by_lane.setdefault(L.row_lane(r), []).append(r)
-
-    ud_resolve = updown_resolver(windows or [])
-    out: Dict[str, Any] = {"lanes": {}, "total_rows": len(rows)}
-    for lane, lrows in sorted(by_lane.items()):
-        if lane == "updown_5m":
-            resolver_by_row = {str(r.get("market_id")): ud_resolve(_end_ms(r)) for r in lrows}
-            source = "binance klines (market settles on chainlink)"
-        elif gamma_resolver is not None:
-            resolver_by_row = {str(r.get("market_id")): gamma_resolver(str(r.get("market_id")))
-                               for r in lrows}
-            source = "gamma resolution"
-        else:
-            out["lanes"][lane] = {"n": 0, "pending": len(lrows), "rows": len(lrows),
-                                  "source": "not graded (no resolver)"}
-            continue
-        graded = L.grade(lambda mid: resolver_by_row.get(str(mid)), lrows)
-        graded.pop("detail", None)
-        graded["rows"] = len(lrows)
-        graded["source"] = source
-        if graded.get("n"):
-            wins = round(float(graded.get("win_rate") or 0.0) * graded["n"])
-            lo, hi = wilson(wins, graded["n"])
-            graded["win_ci"] = [round(lo, 3), round(hi, 3)]
-            half = graded["n"] // 2
-            graded["halves_note"] = f"{half}/{graded['n'] - half} split"
-        out["lanes"][lane] = graded
-    return out
-
-
 # ── assembly ─────────────────────────────────────────────────────────────────
 
 
-def observations(books: Sequence[Dict[str, Any]], scout: Dict[str, Any]) -> List[str]:
+def observations(books: Sequence[Dict[str, Any]]) -> List[str]:
     """Plain-English reads generated from the same rows shown beside them."""
     out: List[str] = []
     graded = [b for b in books if (b.get("resolved") or 0) > 0]
@@ -308,44 +222,15 @@ def observations(books: Sequence[Dict[str, Any]], scout: Dict[str, Any]) -> List
                    + ", ".join(b["book"] for b in stale[:5])
                    + " — either the lane is off or its trigger has stopped firing.")
 
-    for lane, g in (scout.get("lanes") or {}).items():
-        if not g.get("n"):
-            continue
-        beat = g.get("llm_beats_market")
-        out.append(
-            f"Polymarket {lane}: {g['n']} resolved, {g.get('mean_pnl_per_$'):+.4f} per $ "
-            f"per position, win {g.get('win_rate')}, Brier {g.get('brier_llm')} vs the "
-            f"market's {g.get('brier_mkt')} — "
-            + ("our forecast is better calibrated than the price."
-               if beat else "the market is better calibrated than our forecast."))
     return out
 
 
 def read(min_n: int = 8, books: Optional[Sequence[str]] = None,
-         windows: Optional[Sequence[Dict[str, Any]]] = None,
-         gamma_resolver: Optional[Callable[[str], Optional[bool]]] = None,
          with_network: bool = True, now_ms: Optional[int] = None) -> Dict[str, Any]:
     """Full recorders lane. `with_network=False` grades nothing and returns the
     inventory only — used by tests and by any caller that must not fetch."""
     t0 = time.time()
-    if with_network and windows is None:
-        try:
-            from services.trend_engine import updown_trends as ud
-            windows = ud.enrich(ud.build_windows(ud.load_1m(30_240)))
-        except Exception:
-            windows = []
-    if with_network and gamma_resolver is None:
-        try:
-            from services.polymarket_scout.scout import PolymarketClient, make_gamma_resolver
-            gamma_resolver = make_gamma_resolver(PolymarketClient())
-        except Exception:
-            gamma_resolver = None
-
     rows = grade_books(books=books, min_n=min_n, now_ms=now_ms) if with_network else []
-    try:
-        scout = grade_scout(windows=windows, gamma_resolver=gamma_resolver)
-    except Exception as exc:
-        scout = {"lanes": {}, "error": str(exc)[:200]}
 
     graded = [b for b in rows if (b.get("resolved") or 0) > 0]
     evs = [b["ev_pct"] for b in graded if b.get("ev_pct") is not None]
@@ -353,11 +238,10 @@ def read(min_n: int = 8, books: Optional[Sequence[str]] = None,
     for b in rows:
         counts[b["verdict"]] = counts.get(b["verdict"], 0) + 1
     return {
-        "status": "ok" if rows or scout.get("lanes") else "no_data",
+        "status": "ok" if rows else "no_data",
         "generated_at": int(time.time()),
         "elapsed_s": round(time.time() - t0, 2),
         "books": rows,
-        "scout": scout,
         "summary": {
             "n_books": len(rows),
             "n_graded": len(graded),
@@ -367,5 +251,5 @@ def read(min_n: int = 8, books: Optional[Sequence[str]] = None,
             "total_signals": sum(int(b.get("signals") or 0) for b in rows),
             "total_resolved": sum(int(b.get("resolved") or 0) for b in rows),
         },
-        "observations": observations(rows, scout),
+        "observations": observations(rows),
     }

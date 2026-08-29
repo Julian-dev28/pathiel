@@ -12,13 +12,9 @@ primary_region = "iad"  # change to a region near you
 # container; each process is launched directly so Fly supervises it):
 #   web      — FastAPI server (dashboard + JSON API + SSE feed + /metrics)
 #   loop     — autonomous trading loop (scan → research → execute → DSL monitor)
-#   sched    — scripts/scheduler.py: fires poly-board (hourly), poly-judgment
-#              (4h), autonomous-cycle (daily), trends-price (30min), and
-#              trends-recorders (6h) — see scripts/scheduler.py:JOBS
-#   sampler  — services.trend_engine.run --sample-daemon: the Polymarket 5m
-#              book sampler. Its own process on purpose — it blocks for most
-#              of a 5-minute window and would starve every other scheduled
-#              job if it ran inside `sched`
+#   sched    — scripts/scheduler.py: fires autonomous-cycle (daily),
+#              trends-price (30min), and trends-recorders (6h)
+#              — see scripts/scheduler.py:JOBS
 #   rotator  — scripts/log_rotate.py --daemon: truncates logs/*.log in place
 #              on an interval and refuses new starts under the disk-guard
 #              threshold (see hermes_trader/log_setup.py). Needed because
@@ -29,10 +25,9 @@ primary_region = "iad"  # change to a region near you
   web     = "env HERMES_STATE_READONLY=1 HERMES_HL_RATE_REFILL_PER_SEC=2 HERMES_HL_RATE_CAPACITY=60 python3 -m hermes_trader.server"
   loop    = "python3 scripts/trading_loop.py"
   sched   = "python3 scripts/scheduler.py"
-  sampler = "python3 -m services.trend_engine.run --sample-daemon"
   rotator = "python3 scripts/log_rotate.py --daemon"
 
-# web/loop/sched/sampler all read or write state under /data (see the
+# web/loop/sched all read or write state under /data (see the
 # Dockerfile's "Runtime state" comment — HERMES_STATE_DIR plus the
 # scheduler's .state symlink). `rotator` only touches logs/ inside the
 # container's own writable layer (deliberately NOT on the volume — log
@@ -42,12 +37,12 @@ primary_region = "iad"  # change to a region near you
 [[mounts]]
   source = "hermes_data"   # `fly volumes create hermes_data --size 1`
   destination = "/data"
-  processes = ["web", "loop", "sched", "sampler"]
+  processes = ["web", "loop", "sched"]
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = false  # don't sleep — the loop/sched/sampler must keep running
+  auto_stop_machines = false  # don't sleep — the loop/sched must keep running
   auto_start_machines = true
   min_machines_running = 1
   processes = ["web"]
@@ -73,11 +68,6 @@ primary_region = "iad"  # change to a region near you
   size = "shared-cpu-1x"
   memory = "512mb"
   processes = ["sched"]
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
-  processes = ["sampler"]
 
 [[vm]]
   size = "shared-cpu-1x"

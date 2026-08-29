@@ -7,7 +7,6 @@ Pages (markup in hermes_trader/templates/*.html, assets vendored in /static):
   GET /activity                  — the trading-desk journal: tiered flowing
                                    stream + 6h session strip
   GET /news                      — news-catalyst reads + research news context
-  GET /predictions               — Polymarket trending/breaking + our AI forecast
 
 JSON APIs:
 
@@ -16,7 +15,6 @@ JSON APIs:
   GET /api/dashboard/activity    — classified session-log events (tiered,
                                    filterable, incremental via ?since=)
   GET /api/dashboard/news        — news ledger reads, newest first
-  GET /api/dashboard/predictions — Polymarket board cache (trending/breaking/edges)
   GET /api/dashboard/positions   — open positions + DSL tracker state
   GET /api/dashboard/equity-curve?range=24h|7d|30d
   GET /api/feed/stream           — Server-Sent Events tailing the session log
@@ -1428,45 +1426,9 @@ def _prune_analyze_jobs(now: float) -> None:
         _ANALYZE_JOBS.pop(k, None)
 
 
-def _start_analyze_job(market_id: str, payload: Dict[str, Any], record: bool,
-                       web_search: bool) -> str:
-    import uuid
-    job_id = uuid.uuid4().hex[:16]
-    now = time.time()
-    with _ANALYZE_LOCK:
-        _prune_analyze_jobs(now)
-        _ANALYZE_JOBS[job_id] = {"status": "running", "started": now,
-                                 "market_id": market_id, "verdict": None}
-
-    def _work() -> None:
-        try:
-            from services.polymarket_scout import ask
-            from services.polymarket_scout.forecaster import BrainForecaster
-            from services.polymarket_scout.scout import PolymarketClient
-            verdict = ask.analyze_market_id(
-                market_id, BrainForecaster(web_search=web_search), payload,
-                record=record, client=PolymarketClient() if record else None)
-            with _ANALYZE_LOCK:
-                j = _ANALYZE_JOBS.get(job_id)
-                if j is not None:
-                    j["status"] = "done" if verdict else "error"
-                    j["verdict"] = verdict
-                    if not verdict:
-                        j["error"] = "market not found on board"
-        except Exception as exc:
-            with _ANALYZE_LOCK:
-                j = _ANALYZE_JOBS.get(job_id)
-                if j is not None:
-                    j["status"] = "error"
-                    j["error"] = str(exc)[:200]
-
-    threading.Thread(target=_work, daemon=True).start()
-    return job_id
-
-
 # The lanes the tab serves. Module level because it is a contract: the page,
 # the refresh/AI routes and scripts/smoke_trends.py all have to agree on it.
-_TREND_LANES = ("hl", "updown", "politics", "recorders")
+_TREND_LANES = ("hl", "recorders")
 _REFRESH_TIMEOUT_S = 600.0
 
 
@@ -1561,47 +1523,13 @@ def _start_trend_job(kind: str, lane: str, web_search: bool = False,
     return job_id
 
 
-def _predictions_trades_payload(limit: int = 80) -> Dict[str, Any]:
-    """The Polymarket paper-trade log: every recorded divergence from the scout
-    ledger, newest first. Pure ledger read (no network, no grading) so the panel
-    is cheap. Each row carries the side we took, our probability vs the market's,
-    the edge, the lane, and the reasoning. `counts` is per-lane totals for the
-    header. The updown_5m lane is huge and low-signal, so it is summarised in
-    the counts but only surfaced in the rows when it is among the newest."""
-    try:
-        from services.polymarket_scout import ledger
-    except Exception:
-        return {"rows": [], "counts": {}, "total": 0}
-    raw = ledger.load()
-    raw.sort(key=lambda r: int(r.get("ts") or 0), reverse=True)
-    counts: Dict[str, int] = {}
-    for r in raw:
-        counts[ledger.row_lane(r)] = counts.get(ledger.row_lane(r), 0) + 1
-    rows: List[Dict[str, Any]] = []
-    for r in raw[:limit]:
-        llm = r.get("llm_yes")
-        mkt = r.get("mkt_yes")
-        rows.append({
-            "ts": r.get("ts"), "lane": ledger.row_lane(r),
-            "question": r.get("question"), "side": r.get("side"),
-            "our_yes": llm, "mkt_yes": mkt, "fill": r.get("fill_px"),
-            "edge": r.get("edge"),
-            "our_side_prob": (llm if r.get("side") == "YES" else
-                              (1 - llm if llm is not None else None)),
-            "reasoning": r.get("reasoning"),
-            "breaking": bool((r.get("meta") or {}).get("breaking")),
-            "url": (r.get("meta") or {}).get("url"),
-        })
-    return {"rows": rows, "counts": counts, "total": len(raw)}
-
-
 # ── trend lanes (services/trend_engine) ──────────────────────────────────────
 
 
 def _trends_payload(lane: str) -> Dict[str, Any]:
     """One trend lane, PURE CACHE READ (`.state/trend_engine/<lane>.json`).
 
-    Same contract as the predictions board: every lane does live network work
+    Every lane does live network work
     (HL candles / Binance klines / Gamma + CLOB), so none of it happens inside
     a request. The refresher is `python -m services.trend_engine.run
     --refresh-all` (scheduler) or the operator-gated POST below. A missing
@@ -1613,103 +1541,6 @@ def _trends_payload(lane: str) -> Dict[str, Any]:
         return {"status": "empty", "lane": lane, "stale": True,
                 "hint": "services.trend_engine not importable in this tree"}
     return cache.load(lane)
-
-
-def _trends_updown_live_payload() -> Dict[str, Any]:
-    """The in-progress 5m window only: elapsed move, random-walk fair value,
-    live market mid. Two HTTP calls, no pattern mining — cheap enough to poll
-    every few seconds, which the 5-minute clock actually needs. The windows
-    come from the cached klines so this never pages Binance."""
-    try:
-        from services.trend_engine import cache
-        from services.trend_engine import updown_trends as ud
-    except Exception:
-        return {"status": "unavailable"}
-    bars = ud.load_1m(3600, use_cache=True)          # cache-first, ~1 batch
-    windows = ud.enrich(ud.build_windows(bars))
-    if not windows:
-        return {"status": "no_data"}
-    cached = cache.load("updown")
-    out = ud.live_window(windows, ud.live_market_book())
-    pat = (cached.get("patterns") or {}) if isinstance(cached, dict) else {}
-    if pat.get("base_rate") is not None:
-        out["base_rate"] = pat["base_rate"]
-    return out
-
-
-def _trends_arb_preflight_payload() -> Dict[str, Any]:
-    """Live both-sides quote + what a fire would send. No network write, no
-    order. Never raises into the request: a dead websocket renders as
-    `status: unavailable`, not a 500 on the dashboard."""
-    try:
-        from services.trend_engine import env
-        from services.trend_engine.arb_watch import preflight
-    except Exception:
-        return {"status": "unavailable",
-                "hint": "services.trend_engine not importable in this tree"}
-    try:
-        env.load()
-        return preflight()
-    except Exception as exc:
-        return {"status": "error", "error": str(exc)[:200]}
-
-
-def _trends_arb_fire_payload() -> Dict[str, Any]:
-    """One armed pass: re-quote, and if the pair is crossed write the ticket.
-
-    Re-quotes rather than trusting the preflight the browser is holding — a
-    5-minute window and a 0ms feed mean the arb the operator clicked on may be
-    seconds stale, and firing on a stale book is how a one-tick edge becomes a
-    directional bet.
-    """
-    try:
-        from services.trend_engine import env
-        from services.trend_engine.arb_watch import (
-            SUBSCRIBE_WAIT_S, ArbWatcher, ensure_subscribed,
-            execution_readiness, order_tickets)
-    except Exception:
-        return {"status": "unavailable"}
-    try:
-        env.load()
-        ready = execution_readiness()
-        # 0ms re-quote, not a 300ms REST poll. The wait only bites right after a
-        # window rolls, which is exactly when firing off a stale book is worst.
-        ensure_subscribed(wait_s=SUBSCRIBE_WAIT_S)
-        w = ArbWatcher(mode="shadow", cooldown_s=0.0)
-        event = w.check()
-    except Exception as exc:
-        return {"status": "error", "error": str(exc)[:200]}
-    if not event or event.get("action") == "skipped_cooldown":
-        return {"status": "no_arb", "fired": False, "readiness": ready,
-                "best_edge": w.best_edge,
-                "message": "book was not crossed on re-quote — nothing sent"}
-    return {
-        "status": "recorded",
-        "fired": False,                     # no order path; never claim otherwise
-        "event": event,
-        "tickets": order_tickets(event),
-        "readiness": ready,
-        "message": ("ticket recorded to the arb ledger. " + (ready["blocker"] or "")),
-    }
-
-
-def _predictions_payload() -> Dict[str, Any]:
-    """Polymarket board: trending + breaking markets, our AI brain's forecast on
-    the ones it has judged, and the shadow ledger's scoreboard.
-
-    Pure cache read (`.state/polymarket_scout/board.json`, written by
-    `python -m services.polymarket_scout.daily`). NO network and NO LLM call
-    happens inside the request — a slow Gamma API or a hung CLI must never be
-    able to hang a dashboard poll. A missing/old cache renders with
-    `status: empty|stale` instead of failing.
-    """
-    try:
-        from services.polymarket_scout import board
-    except Exception:                       # service not installed in this tree
-        return {"status": "empty", "stale": True, "trending": [], "breaking": [],
-                "edges": [], "counts": {"trending": 0, "breaking": 0, "edges": 0},
-                "universe": 0, "scoreboard": {"n": 0, "pending": 0}}
-    return board.load()
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────────
@@ -1728,7 +1559,6 @@ _PUBLIC_HTML = _load_template("landing.html")
 _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 _ANALYTICS_HTML = _load_template("analytics.html")
-_PREDICTIONS_HTML = _load_template("predictions.html")
 _TRENDS_HTML = _load_template("trends.html")
 
 
@@ -1762,18 +1592,12 @@ def register_routes(app: FastAPI) -> None:
         """News-catalyst reads (shadow ledger) + research events with news context."""
         return HTMLResponse(content=_NEWS_HTML, headers=_NO_CACHE_HEADERS)
 
-    @app.get("/predictions", response_class=HTMLResponse)
-    async def predictions_page() -> HTMLResponse:
-        """Polymarket board — trending + breaking prediction markets with our AI
-        brain's probability next to the market's, and the shadow scoreboard."""
-        return HTMLResponse(content=_PREDICTIONS_HTML, headers=_NO_CACHE_HEADERS)
-
     @app.get("/trends", response_class=HTMLResponse)
     async def trends_page() -> HTMLResponse:
         """Trend analysis: 7d Hyperliquid regime + per-coin trend + next-week
-        forecast, the Polymarket BTC 5m base-rate mine, and the political
-        board's probability drift. Every number is computed in
-        services/trend_engine; the AI pass is optional and additive."""
+        forecast, plus the recorders lane's forward-graded P&L. Every number is
+        computed in services/trend_engine; the AI pass is optional and
+        additive."""
         return HTMLResponse(content=_TRENDS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/analytics", response_class=HTMLResponse)
@@ -1816,107 +1640,6 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(_ttl_cached(f"news:{limit}", 30.0,
                                         lambda: _news_payload(limit)))
 
-    @app.get("/api/dashboard/updown")
-    async def dashboard_updown() -> JSONResponse:
-        """Latest AI reads on the current 5-min up/down window(s). Pure cache read
-        (`.state/polymarket_scout/updown.json`, written by the 5-min job) — no
-        network, no brain call in the request. SHADOW ONLY (latency market)."""
-        try:
-            from services.polymarket_scout import updown
-        except Exception:
-            return JSONResponse({"status": "empty", "reads": []})
-        return JSONResponse(_ttl_cached("updown", 10.0, updown.load))
-
-    @app.get("/api/dashboard/updown/live")
-    async def dashboard_updown_live(
-        asset: str = Query("btc", min_length=1, max_length=8),
-    ) -> JSONResponse:
-        """Live YES/NO from the CLOB book + countdown, no brain — cheap enough to
-        poll every few seconds so the panel's market % tracks the book in real
-        time. TTL 3s bounds the CLOB call rate."""
-        try:
-            from services.polymarket_scout import updown
-        except Exception:
-            return JSONResponse({"mkt_up": None})
-        return JSONResponse(_ttl_cached(f"updown-live:{asset}", 3.0,
-                                        lambda: updown.live_price(asset)))
-
-    @app.post("/api/dashboard/updown/analyze",
-              dependencies=[Depends(_require_operator)])
-    async def dashboard_updown_analyze(
-        asset: str = Query("btc", min_length=1, max_length=8),
-    ) -> JSONResponse:
-        """Force a FRESH AI read on the current window now, like the card Analyze
-        button. Operator-gated (spends a model call). Fast — no web search at a
-        5-min horizon — so it runs synchronously off the event loop. SHADOW: it
-        records to the updown_5m ledger, never trades. Refreshes the cache the
-        ticker reads so the panel updates too."""
-        try:
-            from services.polymarket_scout import updown
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"scout unavailable: {exc}")
-        import anyio
-        payload = await anyio.to_thread.run_sync(
-            lambda: updown.refresh([asset.lower()], record=True))
-        _TTL_CACHE.pop("updown", None)          # let the ticker pick up the fresh read
-        reads = payload.get("reads") or []
-        return JSONResponse(reads[0] if reads else {"up_prob": None,
-                            "reasoning": "no read"})
-
-    @app.get("/api/dashboard/predictions")
-    async def dashboard_predictions() -> JSONResponse:
-        # TTL (20s) >= the page's poll interval (30s); the underlying cache only
-        # changes when the scout cron runs, so this is generous already.
-        return JSONResponse(_ttl_cached("predictions", 20.0, _predictions_payload))
-
-    @app.get("/api/dashboard/predictions/trades")
-    async def dashboard_predictions_trades(
-        limit: int = Query(80, ge=1, le=300),
-    ) -> JSONResponse:
-        """Paper-trade log (ledger read, newest first). Cheap — TTL 20s."""
-        return JSONResponse(_ttl_cached(f"pred-trades:{limit}", 20.0,
-                                        lambda: _predictions_trades_payload(limit)))
-
-    @app.post("/api/dashboard/predictions/analyze",
-              dependencies=[Depends(_require_operator)])
-    async def dashboard_predictions_analyze(
-        market_id: str = Query(..., min_length=1, max_length=64),
-        record: bool = Query(False),
-        web_search: bool = Query(True),
-    ) -> JSONResponse:
-        """Kick off an on-demand AI verdict for ONE market and return a job id.
-
-        web_search defaults TRUE — it is the edge: without it the model guesses a
-        base rate ('no pitching data, so mid-30s%') instead of reading the news.
-        But a web-search claude_cli call runs 1-4 min, far past any HTTP timeout,
-        so this does NOT block: it starts the work on a background thread and
-        returns {job_id}. The client polls GET .../analyze/result?job_id until
-        status flips to done/error. `record=true` writes a paper trade only if
-        the divergence clears the lane threshold. 404 if the id is off-board."""
-        try:
-            from services.polymarket_scout import board
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail=f"scout unavailable: {exc}")
-        payload = board.load()
-        if not any(str(r.get("market_id")) == market_id
-                   for feed in ("trending", "breaking", "sports", "longshots", "edges")
-                   for r in (payload.get(feed) or [])):
-            raise HTTPException(status_code=404, detail="market not on the current board")
-        job_id = _start_analyze_job(market_id, payload, record, web_search)
-        return JSONResponse({"job_id": job_id, "status": "running"})
-
-    @app.get("/api/dashboard/predictions/analyze/result",
-             dependencies=[Depends(_require_operator)])
-    async def dashboard_predictions_analyze_result(
-        job_id: str = Query(..., min_length=1, max_length=64),
-    ) -> JSONResponse:
-        """Poll one analyze job. status in {running, done, error}; when done the
-        `verdict` field carries the result."""
-        job = _analyze_job(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="unknown or expired job")
-        return JSONResponse(job)
-
     @app.get("/api/dashboard/trends/{lane}")
     async def dashboard_trends(lane: str) -> JSONResponse:
         """One trend lane from cache. TTL 15s over a file read is plenty — the
@@ -1925,38 +1648,6 @@ def register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="unknown lane")
         return JSONResponse(_ttl_cached(f"trends:{lane}", 15.0,
                                         lambda: _trends_payload(lane)))
-
-    @app.get("/api/dashboard/trends/updown/live")
-    async def dashboard_trends_updown_live() -> JSONResponse:
-        """In-progress 5m window vs random-walk fair value. TTL 5s bounds the
-        Binance + CLOB call rate while still tracking a 5-minute clock."""
-        return JSONResponse(_ttl_cached("trends-updown-live", 5.0,
-                                        _trends_updown_live_payload))
-
-    @app.get("/api/dashboard/trends/arb/preflight",
-             dependencies=[Depends(_require_operator)])
-    async def dashboard_trends_arb_preflight() -> JSONResponse:
-        """Is the sub-$1 pair crossed RIGHT NOW, and could we take it?
-
-        Backs the FIRE button. Read-only by construction: it prices the two
-        legs and reports what would be sent, and places nothing whatever the
-        credentials say. TTL 2s because the quote is served from the CLOB
-        websocket at 0ms and a stale arb is not an arb.
-        """
-        return JSONResponse(_ttl_cached("trends-arb-preflight", 2.0,
-                                        _trends_arb_preflight_payload))
-
-    @app.post("/api/dashboard/trends/arb/fire",
-              dependencies=[Depends(_require_operator)])
-    async def dashboard_trends_arb_fire() -> JSONResponse:
-        """Press the button. Records the ticket to the arb ledger.
-
-        This CANNOT place an order: the repo has no Polymarket order path and
-        `execution_readiness()` gates on the signing credentials. A fire with
-        creds missing is logged `action: shadow` and says so in the response,
-        because a button that silently no-ops is worse than no button.
-        """
-        return JSONResponse(_trends_arb_fire_payload())
 
     @app.post("/api/dashboard/trends/{lane}/refresh",
               dependencies=[Depends(_require_operator)])

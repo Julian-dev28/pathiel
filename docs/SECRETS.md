@@ -32,11 +32,6 @@ each check exists; the script is what actually enforces it.
 | `BRAVE_API_KEY` | Brave Search — news context for research | `hermes_trader/agents/research.py` | Optional | Silent by design — returns `"no news"` and continues |
 | `UW_API_KEY` | Unusual Whales — options-flow alt-data (xyz equities) | `hermes_trader/client/uw_client.py` | Optional | Silent by design — best-effort client, returns `None`/`[]`, never raises |
 | `HYDROMANCER_API_KEY` | Hydromancer data-plane client (research/backfill, not live execution) | `hermes_trader/data_providers/hydromancer.py` | Optional | Silent — empty key string; the first real call fails with an auth error, not checked upfront |
-| `POLYMARKET_ADDRESS` | Funder address holding Polymarket USDC | `services/trend_engine/arb_watch.py` | Optional | Loud and enumerated: `execution_readiness()` lists every missing credential by name and reports the arb lane as shadow-only |
-| `POLYMARKET_API_KEY` | Polymarket CLOB L2 header — API key | `services/trend_engine/arb_watch.py`, `services/trend_engine/updown_ws.py` | Optional | Same as above |
-| `POLYMARKET_SECRET` | Polymarket CLOB L2 header — HMAC secret | `services/trend_engine/arb_watch.py` | Optional | Same as above |
-| `POLYMARKET_PASSPHRASE` | Polymarket CLOB L2 header — passphrase | `services/trend_engine/arb_watch.py` | Optional | Same as above |
-| `POLYMARKET_PRIVATE_KEY` | Polymarket L1 key — signs the EIP-712 order struct | `services/trend_engine/arb_watch.py` | Optional | Same as above |
 
 Non-secret vars read alongside these (model names, timeouts, CLI binary
 paths, scan-tuning knobs, state-file path overrides) are listed — grouped and
@@ -51,19 +46,6 @@ the live `.env.local` but is not read by any module in `hermes_trader/`,
 leftover from an earlier iteration. Safe to drop; harmless to leave (it is
 not a secret, just an unused knob).
 
-**One secret with no safe deploy story yet:** the Polymarket credentials.
-`arb_watch.py`'s `execution_readiness()` and the docstring on
-`order_tickets()` are explicit that *no live order-placement code path exists
-in this repo* — a "fire" prices the trade and records a shadow ticket, full
-stop. That means there is currently nothing to contain: the credentials
-unlock a *report*, not a transaction. The moment a real order path gets
-built, it needs the same agent-vs-master treatment `HYPERLIQUID_*` gets today
-(a scoped API key that can trade but not withdraw, verified at startup) —
-Polymarket's proxy-wallet / API-key model supports this, but it is not wired
-up, and `scripts/preflight_secrets.py` has no check for it yet because there
-is nothing to check. Do not treat "the creds are set" as "the arb lane is
-safe to go live" — check `execution_readiness()`'s `ready` field and the
-absence of any actual `Exchange`/order-signing call in `arb_watch.py`.
 
 ## Provisioning for a deploy
 
@@ -184,7 +166,6 @@ revoke the old value at the provider once the new one is confirmed live.
 | `BRAVE_API_KEY` | https://api.search.brave.com/ dashboard | Yes | Revoke at Brave. Low severity — a news-search key. |
 | `UW_API_KEY` | Unusual Whales account dashboard | Yes | Revoke at Unusual Whales. Low-medium severity — paid data quota, not funds. |
 | `HYDROMANCER_API_KEY` | Hydromancer account dashboard | Yes | Revoke at Hydromancer. Low severity — read-only data plane. |
-| `POLYMARKET_*` (5 vars) | Polymarket CLOB API-key management (L2) / wallet re-key (L1) | Yes | No live order path exists today (see inventory above), so a leak currently costs nothing beyond visibility into the shadow-arb math. Rotate anyway before this ever goes live. |
 
 After rotating anything that touched a tracked file (it shouldn't have, but
 if `scripts/preflight_secrets.py`'s git-index scan ever fires): rotating the

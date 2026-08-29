@@ -25,12 +25,8 @@ RUN pip install -e .
 #                                client, data_providers (imported by every process below)
 #   scripts/                    trading_loop.py, scheduler.py, log_rotate.py,
 #                                autonomous_cycle.py, and CLI tooling
-#   services/trend_engine/      /trends lanes + the 5m book sampler
-#                                (services.trend_engine.run — imported by
-#                                dashboard.py, trading_loop.py, scheduler.py)
-#   services/polymarket_scout/  /predictions board + judgment + updown
-#                                (services.polymarket_scout.daily — imported
-#                                by dashboard.py, trading_loop.py, scheduler.py)
+#   services/trend_engine/      /trends lanes (services.trend_engine.run —
+#                                imported by dashboard.py, scheduler.py)
 # `services/hermes_data_api` is its OWN deploy unit — own Dockerfile, own
 # Postgres, own requirements.txt (sqlalchemy/psycopg2, never installed here)
 # — deliberately NOT bundled into this image. `research/` (159MB, dev-only
@@ -40,19 +36,18 @@ RUN pip install -e .
 COPY hermes_trader/ hermes_trader/
 COPY scripts/ scripts/
 COPY services/trend_engine/ services/trend_engine/
-COPY services/polymarket_scout/ services/polymarket_scout/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
 # State lives on a persistent volume mounted at /data (fly.toml [[mounts]] /
-# k8s volumeClaimTemplates) so the loop, server, scheduler, sampler, and
-# rotator all share one source of truth across restarts and redeploys.
+# k8s volumeClaimTemplates) so the loop, server, scheduler, and rotator all
+# share one source of truth across restarts and redeploys.
 #
 # Almost every state path in this app routes through HERMES_STATE_DIR (see
 # hermes_trader/agents/rebalancer_owned.py:state_file — the claims registry,
 # per-strategy timers, and hermes_trader/agents/shadow_ledger.py's
 # <state>/shadow_ledger/<book>.jsonl all resolve relative to it; also
-# services/polymarket_scout/ledger.py and services/trend_engine/env.py).
+# services/trend_engine/env.py).
 # Pointing that ONE var at /data/.state redirects all of them together.
 #
 # scripts/scheduler.py's own job-run bookkeeping (.state/scheduler.json —
@@ -108,7 +103,7 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 EXPOSE 8000
 
 # Default command runs the FastAPI server (dashboard + API). The trading
-# loop, scheduler, book sampler, and log rotator each run as separate
+# loop, scheduler, and log rotator each run as separate
 # Fly processes / k8s containers sharing this same image — see
 # fly.toml [processes] and k8s/statefulset.yaml.
 CMD ["python3", "-m", "hermes_trader.server"]

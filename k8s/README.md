@@ -15,7 +15,6 @@ StatefulSet hermes-trader  (replicas: 1 — singleton by design)
 ├── container: web      python -m hermes_trader.server        :8000  /api/health + /metrics
 ├── container: loop     scripts/trading_loop.py                      (writes /data snapshot)
 ├── container: sched    scripts/scheduler.py                         (poly-board/judgment, autonomous-cycle, trends-*)
-├── container: sampler  services.trend_engine.run --sample-daemon    (Polymarket 5m book sampler)
 ├── container: rotator  scripts/log_rotate.py --daemon               (bounds logs/, no /data mount)
         └── PVC data → /data   (.dsl-state.json, .agent-memory.json, positions snapshot,
                                  .state/ — shadow ledgers, scheduler bookkeeping, per-strategy timers)
@@ -23,7 +22,7 @@ StatefulSet hermes-trader  (replicas: 1 — singleton by design)
 
 **Why one replica / StatefulSet, not a Deployment?** The `loop` is stateful and
 must be a singleton — two loops would double-trade and corrupt the DSL ratchet.
-`web`, `sched`, and `sampler` all read or write the same shared state the loop
+`web` and `sched` both read or write the same shared state the loop
 owns, so co-locating everything in one pod keeps the shared volume simple (no
 ReadWriteMany needed) and portable to multi-node clusters. `rotator` doesn't
 touch `/data` at all — it only bounds `logs/` inside the pod's own writable

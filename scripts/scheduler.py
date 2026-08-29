@@ -27,7 +27,7 @@ and it fires at 14:00.
     python scripts/scheduler.py              # run forever (restart.sh does this)
     python scripts/scheduler.py --once       # one pass, fire what is due, exit
     python scripts/scheduler.py --status     # what ran, what is due next
-    python scripts/scheduler.py --force poly-board
+    python scripts/scheduler.py --force trends-price
 """
 from __future__ import annotations
 
@@ -44,30 +44,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(ROOT, ".venv", "bin", "python")
 STATE = os.path.join(ROOT, ".state", "scheduler.json")
 TICK_S = 60.0
-# Jobs run CONCURRENTLY, one run per job at a time. Serially was the bug:
-# `poly-board` ran 3612s on 2026-08-03 (right into TIMEOUT_S) and `trends-price`
-# — a 55s cache refresh on a 30-minute cadence — could not fire for 11 hours, so
-# the /trends tab served an 11h-old read with no sign anything was wrong.
+# Jobs run CONCURRENTLY, one run per job at a time. Serially was the bug: a
+# single long job ran 3612s on 2026-08-03 (right into TIMEOUT_S) and
+# `trends-price` — a 55s cache refresh on a 30-minute cadence — could not fire
+# for 11 hours, so the /trends tab served an 11h-old read with no sign anything
+# was wrong.
 # Capped so a catch-up burst after the lid opens cannot put every scan on the
 # HL/Gamma rate limit at once.
 MAX_CONCURRENT_JOBS = 3
 
 # name -> job. `hour=None` means every hour at `minute`.
 JOBS: Dict[str, Dict[str, Any]] = {
-    "poly-board": {
-        "args": [PY, "-m", "services.polymarket_scout.daily", "--board-only"],
-        "hour": None, "minute": 5,
-        "log": "logs/polymarket_scout.log",
-        "why": "hourly Polymarket board cache refresh (no LLM, no capital)",
-    },
-    "poly-judgment": {
-        "args": [PY, "-m", "services.polymarket_scout.daily", "--lanes",
-                 "judgment,trending,sports", "--judgment-limit", "16",
-                 "--trending-limit", "14"],
-        "interval_min": 240,          # every 4h — the judgment lanes are the real edge
-        "log": "logs/polymarket_scout.log",
-        "why": "judgment/trending/sports forecasts (web-search edge) + grade; every 4h",
-    },
     "autonomous-cycle": {
         "args": [PY, os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
         "hour": 9, "minute": 15,
@@ -76,28 +63,22 @@ JOBS: Dict[str, Dict[str, Any]] = {
     },
     "trends-price": {
         "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
-                 "--lanes", "hl,updown,politics"],
+                 "--lanes", "hl"],
         "interval_min": 30,
         "log": "logs/trend_engine.log",
-        "why": "/trends price lanes — HL 7d scan, BTC 5m base rates, political drift. "
-               "No LLM, no capital; the tab reads this cache and never fetches itself",
+        "why": "/trends price lane — HL 7d scan. No LLM, no capital; the tab "
+               "reads this cache and never fetches itself",
     },
     "trends-recorders": {
         "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
                  "--lanes", "recorders"],
         "interval_min": 360,          # every 6h — forward-grading is minutes of candles
         "log": "logs/trend_engine.log",
-        "why": "/trends P&L lane — forward-grade every shadow book + the Polymarket "
-               "paper ledger. Slow on purpose, so it runs on its own clock",
+        "why": "/trends P&L lane — forward-grade every shadow book. Slow on "
+               "purpose, so it runs on its own clock",
     },
-    # updown-5m REMOVED 2026-07-29: proven no edge (backtest 74d0846 — the venue
-    # prices the momentum; live ledger -18.8% Kelly). It spammed 898 coin-flip
-    # reads that dragged the scoreboard's Brier below the market. The reader +
-    # panel + on-demand "Analyze now" still work by hand; only the auto-spam is off.
 }
-# updown-5m spends a model call every 5 min. TIMEOUT_S below (3600) is generous
-# for it; the read is short (no web search) so it finishes in seconds.
-# A job that hangs must not wedge the scheduler. Generous, because poly-daily
+# A job that hangs must not wedge the scheduler. Generous, because
 # makes several multi-minute web-search LLM calls.
 TIMEOUT_S = 3600.0
 

@@ -3,8 +3,8 @@ k8s/statefulset.yaml.
 
 This is the test that would have caught `services/` going missing from a
 3-months-stale Dockerfile (the app grew services/trend_engine and
-services/polymarket_scout after the last deploy-config touch; the Dockerfile
-never learned about either). It works by NOT hardcoding the expected package
+after the last deploy-config touch; the Dockerfile never learned about it).
+It works by NOT hardcoding the expected package
 list — it statically scans every import under hermes_trader/, scripts/, and
 services/ for `import services.<x>` / `from services.<x> import ...` /
 `from hermes_trader...`, then asserts the Dockerfile actually COPYs each
@@ -74,7 +74,7 @@ _IMPORT_RE = re.compile(
 def _imported_top_level_packages() -> set[str]:
     """Every top-level package (or services.<subpackage>) referenced by an
     import statement anywhere under SCAN_DIRS. Returns entries like
-    {"hermes_trader", "services.trend_engine", "services.polymarket_scout"}."""
+    {"hermes_trader", "services.trend_engine"}."""
     found: set[str] = set()
     for base in SCAN_DIRS:
         base_path = ROOT / base
@@ -165,14 +165,13 @@ def test_scan_found_the_known_services_packages():
     broken, not the Dockerfile, and every other assertion below is moot."""
     assert "hermes_trader" in IMPORTED_PACKAGES
     assert "services.trend_engine" in IMPORTED_PACKAGES
-    assert "services.polymarket_scout" in IMPORTED_PACKAGES
 
 
 def test_dockerfile_copies_every_imported_top_level_package():
     """The regression test: every package hermes_trader/scripts/services
     actually imports must have a matching `COPY <pkg>/ <pkg>/` line in the
-    Dockerfile. This is what would have caught services/trend_engine and
-    services/polymarket_scout being entirely absent from the image."""
+    Dockerfile. This is what would have caught services/trend_engine being
+    entirely absent from the image."""
     copies = _dockerfile_copy_sources()
     for pkg in sorted(IMPORTED_PACKAGES):
         expected_dir = pkg.replace(".", "/") + "/"
@@ -246,12 +245,12 @@ def test_dockerignore_does_not_exclude_runtime_source():
 RESTART_SH_PATTERNS = _restart_sh_process_patterns()
 
 
-def test_restart_sh_defines_the_five_known_processes():
+def test_restart_sh_defines_the_four_known_processes():
     """Sanity check on the parser — if restart.sh's own process list changes
     shape, this fails loudly instead of the real checks below silently
     passing on an empty set."""
     assert set(RESTART_SH_PATTERNS) >= {
-        "LOOP", "SERVER", "SCHED", "SAMPLER", "ROTATOR",
+        "LOOP", "SERVER", "SCHED", "ROTATOR",
     }
 
 
