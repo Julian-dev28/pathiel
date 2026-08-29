@@ -20,10 +20,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: requirements.lock
 
-      - name: Install (with dev extras)
-        run: pip install -e ".[dev]"
+      # Install the EXACT pinned set, not a fresh resolve of the ranges in
+      # pyproject.toml. A green CI against a different dependency set than
+      # production runs is not evidence about production.
+      - name: Install (pinned)
+        run: |
+          pip install -r requirements.lock
+          pip install -e . --no-deps
+
+      # This repo was green locally and red on CI for weeks because 50 files
+      # hardcoded /Users/julian_dev/... Cheap check, runs before the suite so
+      # the failure names the actual cause instead of a FileNotFoundError.
+      - name: No machine-bound absolute paths
+        run: python scripts/check_no_absolute_paths.py
 
       # pytest's addopts deselects the `online` and `live` markers, so this runs
       # only the offline suite — no network, no real-money orders, CI-safe.
