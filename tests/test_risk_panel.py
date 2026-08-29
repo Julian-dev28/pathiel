@@ -149,9 +149,34 @@ def test_the_page_carries_an_off_switch_that_says_what_it_does(client):
         "misread is worse than no off switch")
 
 
-def test_the_stop_endpoint_is_operator_gated():
+def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
+    """The off switch must be unreachable without the operator token in BOTH
+    states, and the two states are different code paths:
+
+      - token configured, none or a wrong one supplied -> 401
+      - no HERMES_OPERATOR_TOKEN at all                 -> 503, surface disabled
+
+    The second is the one that matters on a fresh box. It fails CLOSED, and this
+    test exists to keep it that way: a future refactor that made a missing token
+    mean "no auth required" would open a live kill switch to the internet.
+
+    The root conftest loads the real .env.local into os.environ, so the token is
+    usually present here and absent on CI. Both are pinned explicitly rather
+    than left to the environment.
+    """
     from hermes_trader.server import app as real_app
-    assert TestClient(real_app).post("/api/agent/stop").status_code in (401, 403)
+    client = TestClient(real_app)
+
+    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "a-token-that-is-set")
+    assert client.post("/api/agent/stop").status_code == 401
+    assert client.post("/api/agent/stop",
+                       headers={"X-Operator-Token": "wrong"}).status_code == 401
+
+    monkeypatch.delenv("HERMES_OPERATOR_TOKEN", raising=False)
+    r = client.post("/api/agent/stop")
+    assert r.status_code == 503, "a missing token must close the surface, not open it"
+    assert client.post("/api/agent/stop",
+                       headers={"X-Operator-Token": "anything"}).status_code == 503
 
 
 def test_a_partial_dex_blip_does_not_invent_a_drawdown(monkeypatch):
