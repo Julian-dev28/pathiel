@@ -292,6 +292,30 @@ def _asset_notional_multiplier(coin: str, config: Dict[str, Any]) -> float:
 
 
 
+# ── minimum tradable equity ──────────────────────────────────────────────────
+# Hyperliquid rejects orders under roughly $10 notional. With the 10% free-margin
+# floor and any leverage cap, an account below this cannot open a position that
+# both clears the exchange minimum and leaves headroom — every attempt is a
+# guaranteed reject. $25 is the smallest equity where a $10 order still leaves
+# real margin behind it.
+MIN_TRADABLE_EQUITY_USD = 25.0
+
+
+def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
+    """The floor, with a config override for deliberately tiny test accounts.
+
+    Negative or non-numeric values fall back to the constant rather than
+    disabling the floor: a typo in a config file must not silently unlock
+    trading on a dust account.
+    """
+    try:
+        v = float((config or {}).get("min_tradable_equity_usd",
+                                     MIN_TRADABLE_EQUITY_USD))
+    except (TypeError, ValueError):
+        return MIN_TRADABLE_EQUITY_USD
+    return v if v >= 0 else MIN_TRADABLE_EQUITY_USD
+
+
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     """Execute an analysis through risk gates and into the market."""
     config = read_agent_config()
@@ -606,6 +630,23 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
             "reason": "equity_unavailable (live account state returned 0 after retries)",
+        }
+
+    # Structural dust floor. `mode: LIVE` sitting in a config against a $0.03
+    # account is not a safe state just because the loop happens to be stopped:
+    # any restart would start firing orders that HL rejects under its ~$10
+    # minimum, burning rate budget and filling the log with failures that read
+    # like signal problems. This is enforced HERE, in the single choke point
+    # every order passes through, so no book and no config edit can route
+    # around it. Below the floor the system is structurally incapable of
+    # trading, whatever the mode says.
+    if equity < min_tradable_equity(config):
+        return {
+            "executed": False, "mode": mode,
+            "analysis_id": analysis["id"],
+            "reason": (f"below_min_tradable_equity (${equity:.2f} < "
+                       f"${min_tradable_equity(config):.2f} floor — fund the "
+                       f"account or lower min_tradable_equity_usd)"),
         }
 
     # Free-margin floor: leave headroom for maintenance + slippage so HL

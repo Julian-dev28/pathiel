@@ -991,9 +991,22 @@ async function refreshRisk() {
       'today ' + (r.daily_pnl >= 0 ? '+' : '') + '$' + Number(r.daily_pnl || 0).toFixed(2) +
       ' of $' + Math.abs(r.kill_at_usd || 0).toFixed(0) + ' floor';
 
+    // LIVE is not the same as "can trade". Below the structural dust floor the
+    // executor refuses every order whatever the mode says, and a green LIVE
+    // badge over an account that cannot place a trade is the misreport this
+    // panel exists to stop.
     const mode = $id('risk-mode');
-    mode.textContent = r.mode || '—';
-    mode.className = 'badge mono ' + (r.mode === 'LIVE' ? 'b-live' : 'b-off');
+    if (r.can_trade === false) {
+      mode.textContent = (r.mode || '—') + ' · BLOCKED';
+      mode.className = 'badge mono b-shadow';
+      mode.title = 'equity $' + Number(r.equity || 0).toFixed(2) +
+                   ' is under the $' + Number(r.min_tradable_equity || 0).toFixed(0) +
+                   ' floor — the executor refuses every order';
+    } else {
+      mode.textContent = r.mode || '—';
+      mode.className = 'badge mono ' + (r.mode === 'LIVE' ? 'b-live' : 'b-off');
+      mode.title = '';
+    }
 
     // The caveat is not decoration. Deposits and withdrawals are not logged,
     // so a withdrawal and a loss are indistinguishable in this number, and

@@ -66,6 +66,7 @@ from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_
 from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
+    min_tradable_equity as _min_tradable_equity,
     _runner_entry_block_reason,
     close_position_market,
     maybe_execute,
@@ -370,6 +371,14 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
 
     if equity <= 0:
         return "account_state_unavailable (equity<=0)"
+
+    # Same structural dust floor the executor enforces, checked early so a dust
+    # account does not spend research and AI budget on trades that can never be
+    # placed. The executor is still the authority — this is the cheap path.
+    _min_eq = _min_tradable_equity(config)
+    if equity < _min_eq:
+        return (f"below_min_tradable_equity (${equity:.2f} < ${_min_eq:.2f}) — "
+                f"the account cannot place an order HL would accept")
 
     try:
         max_concurrent = int(config.get("max_concurrent", 3) or 3)

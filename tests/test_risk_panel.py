@@ -194,3 +194,55 @@ def test_a_partial_dex_blip_does_not_invent_a_drawdown(monkeypatch):
     r = db._risk_payload()
     assert r["max_drawdown_pct"] == pytest.approx(-5.0, abs=0.01), (
         "the 20.0 degraded read leaked into the drawdown")
+
+
+# ── the structural dust floor ────────────────────────────────────────────────
+
+def test_the_executor_refuses_to_trade_a_dust_account():
+    """`mode: LIVE` against $0.03 was not a safe state just because the loop
+    happened to be stopped — a restart would have fired orders HL rejects under
+    its ~$10 minimum. The floor is enforced in the executor, the single choke
+    point every order passes through, so no book can route around it."""
+    from hermes_trader.agents.executor import (MIN_TRADABLE_EQUITY_USD,
+                                               min_tradable_equity)
+    assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD
+    assert MIN_TRADABLE_EQUITY_USD >= 10.0, (
+        "the floor has to clear HL's own minimum order size or it does nothing")
+
+
+def test_a_bad_floor_value_falls_back_instead_of_unlocking_trading():
+    """A typo in a config file must never silently disable the guard."""
+    from hermes_trader.agents.executor import (MIN_TRADABLE_EQUITY_USD as M,
+                                               min_tradable_equity)
+    assert min_tradable_equity({"min_tradable_equity_usd": "oops"}) == M
+    assert min_tradable_equity({"min_tradable_equity_usd": None}) == M
+    assert min_tradable_equity({"min_tradable_equity_usd": -1}) == M
+    # a deliberate, valid override still works
+    assert min_tradable_equity({"min_tradable_equity_usd": 5}) == 5.0
+
+
+def test_the_panel_reports_blocked_rather_than_a_green_live_badge(monkeypatch, curve):
+    """A LIVE badge over an account that cannot place a trade is exactly the
+    flattering misreport this panel exists to stop."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [
+        {"ts": 1, "event": "loop_heartbeat", "equity": 0.03, "daily_pnl": 0.0,
+         "open_positions": 0, "available": 0.03}])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    r = db._risk_payload()
+    assert r["mode"] == "LIVE"
+    assert r["can_trade"] is False
+    assert r["min_tradable_equity"] >= 10.0
+
+
+def test_a_funded_account_reads_tradable(monkeypatch):
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [
+        {"ts": 1, "event": "loop_heartbeat", "equity": 500.0, "daily_pnl": 0.0,
+         "open_positions": 0, "available": 500.0}])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    assert db._risk_payload()["can_trade"] is True
+
+
+def test_the_page_shows_the_blocked_state(client):
+    body = client.get("/").text
+    assert "BLOCKED" in body and "can_trade" in body

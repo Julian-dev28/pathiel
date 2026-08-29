@@ -46,6 +46,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from hermes_trader import session_log
 from hermes_trader.agents import dsl_exit
 from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.executor import min_tradable_equity as _min_tradable_equity
 from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
 from hermes_trader.positions_snapshot import read_snapshot as read_position_snapshot
 from hermes_trader.agents.rebalancer_owned import state_file
@@ -509,6 +510,12 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
         "kill_at_usd": kill_at,
         "kill_used_frac": round(kill_used, 4),
         "mode": str(cfg.get("mode", "UNKNOWN")).upper(),
+        # `mode: LIVE` is not the same thing as "can actually trade". Below the
+        # structural dust floor the executor refuses every order regardless of
+        # mode, and the panel must say so rather than showing a green LIVE badge
+        # over an account that cannot place a trade.
+        "min_tradable_equity": _min_tradable_equity(cfg),
+        "can_trade": bool(float(summary.get("equity") or 0) >= _min_tradable_equity(cfg)),
         "window_days": round(range_s / 86400, 1),
         "points": len(equities),
         # False until deposits/withdrawals are logged — see the docstring.
