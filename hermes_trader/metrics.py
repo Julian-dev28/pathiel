@@ -30,6 +30,36 @@ UNREALIZED_PNL = Gauge(
 TRADES_TOTAL = Gauge("hermes_trades_total", "Number of recorded trades")
 LIVE_MODE = Gauge("hermes_live_mode", "1 when agent mode is LIVE, 0 otherwise")
 
+# ── failure-mode metrics ─────────────────────────────────────────────────────
+# Everything above measures the happy path: equity, positions, PnL. None of it
+# moves when the system BREAKS, which is how a dead loop, a blind market feed
+# and an unrotated disk all went unnoticed. These are the failures, exported so
+# something can page on them instead of a human noticing weeks later.
+HEARTBEAT_AGE = Gauge(
+    "hermes_heartbeat_age_seconds",
+    "Seconds since the trading loop last wrote a heartbeat. Grows without "
+    "bound when the loop is dead — which is the point")
+FEED_GAP_FRAC = Gauge(
+    "hermes_feed_gap_fraction",
+    "Share of the scanned universe that was unreadable on the last scan. A "
+    "degraded feed reads downstream as a quiet market")
+FEED_TRUSTWORTHY = Gauge(
+    "hermes_feed_trustworthy", "1 when the last scan was trustworthy enough to "
+    "trade on, 0 when entries are blocked")
+DISK_FREE = Gauge("hermes_disk_free_bytes", "Free bytes on the state filesystem")
+LOG_DIR_BYTES = Gauge("hermes_log_dir_bytes", "Total bytes under logs/")
+BRAIN_READY = Gauge(
+    "hermes_ai_brain_ready", "1 when the selected AI brain can actually run. A "
+    "dead brain returns empty completions, which downstream reads as a PASS")
+CAN_TRADE = Gauge(
+    "hermes_can_trade", "1 when equity clears the structural minimum. LIVE mode "
+    "with 0 here means the executor refuses every order")
+DRAWDOWN_PCT = Gauge(
+    "hermes_drawdown_pct", "Current drawdown from peak, flow-neutral where "
+    "capital flows are recorded (negative)")
+MAX_DRAWDOWN_PCT = Gauge(
+    "hermes_max_drawdown_pct", "Worst drawdown over the risk window (negative)")
+
 
 def _to_float(value: object) -> float:
     try:
@@ -77,6 +107,55 @@ def _refresh() -> None:
         UNREALIZED_PNL.set(upnl)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] snapshot read failed: {e}")
+
+    # ── the failure modes ────────────────────────────────────────────────────
+    # Each block is independently guarded: one broken source must degrade a
+    # single metric, never blank the whole scrape. A monitoring gap that hides
+    # the other metrics is worse than the gap itself.
+    try:
+        from hermes_trader import dashboard as _db
+
+        age = (_db._summary_payload() or {}).get("last_tick_age_s")
+        # No heartbeat at all is not "age 0" — that would read as perfectly
+        # healthy. A large sentinel keeps the alert firing.
+        HEARTBEAT_AGE.set(float(age) if age is not None else 1e9)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] heartbeat read failed: {e}")
+
+    try:
+        from hermes_trader.agents import perception
+
+        st = perception.last_scan_integrity()
+        FEED_GAP_FRAC.set(_to_float(st.get("gap_frac")))
+        FEED_TRUSTWORTHY.set(1.0 if perception.scan_is_trustworthy() else 0.0)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] feed read failed: {e}")
+
+    try:
+        from hermes_trader import log_setup
+
+        g = log_setup.check_disk_guard()
+        DISK_FREE.set(float(g.free_bytes))
+        LOG_DIR_BYTES.set(float(g.log_dir_bytes))
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] disk read failed: {e}")
+
+    try:
+        from hermes_trader.agents.ai_brain import provider_readiness
+
+        BRAIN_READY.set(1.0 if provider_readiness().get("ready") else 0.0)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] brain read failed: {e}")
+
+    try:
+        from hermes_trader import dashboard as _db
+
+        r = _db._risk_payload()
+        CAN_TRADE.set(1.0 if r.get("can_trade") else 0.0)
+        DRAWDOWN_PCT.set(_to_float(r.get("drawdown_pct")))
+        MAX_DRAWDOWN_PCT.set(_to_float(r.get("max_drawdown_pct")))
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] risk read failed: {e}")
 
 
 def render_metrics() -> tuple[bytes, str]:

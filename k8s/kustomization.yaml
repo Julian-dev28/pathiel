@@ -3,8 +3,12 @@ kind: Kustomization
 namespace: hermes
 
 # Core app only — applies cleanly with `kubectl apply -k k8s/` on any cluster.
-# servicemonitor.yaml is intentionally excluded (it needs the Prometheus
-# Operator CRDs); apply it separately after installing kube-prometheus-stack.
+# servicemonitor.yaml and prometheusrule.yaml are intentionally excluded (they
+# need the Prometheus Operator CRDs). Both live in the monitoring overlay:
+#
+#     kubectl apply -k k8s/              # core, works anywhere
+#     kubectl apply -k k8s/monitoring/   # after kube-prometheus-stack
+#
 # The Secret is created imperatively from .env.local — see k8s/README.md.
 resources:
   - namespace.yaml

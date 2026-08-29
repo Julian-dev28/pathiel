@@ -160,6 +160,14 @@ def _summary_payload() -> Dict[str, Any]:
     events = _read_log_lines()
     heartbeat = _last_event(events, "loop_heartbeat") or {}
     last_scan = _last_event(events, "scan")
+    # The age that matters is the age of the LOOP HEARTBEAT, not of the last
+    # log line of any kind. Using events[-1] meant ANY write to the session log
+    # — a dashboard action, an operator audit entry, a scheduler job — reset the
+    # "loop is alive" signal. Found 2026-08-29 with the loop dead for 27 days
+    # while this reported 325 seconds, because an audit write had just landed.
+    # The status heuristic below has always been written in terms of heartbeat
+    # cadence (p50 ~90s / p99 ~420s), so the heartbeat was the intent all along.
+    last_hb_ts = int(heartbeat.get("ts") or 0)
     last_event_ts = events[-1]["ts"] if events else 0
 
     equity = float(heartbeat.get("equity", 0) or 0)
@@ -170,7 +178,8 @@ def _summary_payload() -> Dict[str, Any]:
     daily_pnl_pct = (daily_pnl / sod * 100) if sod > 0 else 0.0
 
     now_ms = int(time.time() * 1000)
-    last_tick_age_s = max(0, (now_ms - last_event_ts) // 1000) if last_event_ts else None
+    last_tick_age_s = max(0, (now_ms - last_hb_ts) // 1000) if last_hb_ts else None
+    last_event_age_s = max(0, (now_ms - last_event_ts) // 1000) if last_event_ts else None
 
     # Heuristic status: heartbeat cadence is p50 ~90s / p99 ~420s on healthy
     # days, so 180s flickered "stale" on ordinary cycles (audit 2026-07-10).
@@ -199,6 +208,9 @@ def _summary_payload() -> Dict[str, Any]:
         "daily_pnl_pct": round(daily_pnl_pct, 2),
         "open_positions": int(heartbeat.get("open_positions", 0) or 0),
         "last_tick_age_s": last_tick_age_s,
+        # Kept separate and named honestly: this moves on ANY log write, so it
+        # says the process is writing, not that the loop is running.
+        "last_event_age_s": last_event_age_s,
         "last_scan_triggers": int((last_scan or {}).get("triggers", 0) or 0),
         "status": status,
         "ts": now_ms,

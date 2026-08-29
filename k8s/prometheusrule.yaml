@@ -1,0 +1,105 @@
+# Alerts for the failures, not the happy path.
+#
+# hermes_equity_usd, hermes_open_positions and friends all measure a working
+# system. None of them move when it BREAKS, which is how a dead trading loop, a
+# blind market feed and an unrotated disk each went unnoticed for weeks. Every
+# rule below corresponds to a silent failure this system has actually had.
+#
+# Apply with the rest of k8s/; requires the Prometheus Operator (same dependency
+# as servicemonitor.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hermes-trader
+  labels:
+    app: hermes-trader
+spec:
+  groups:
+    - name: hermes-trader.silent-failures
+      rules:
+        # The zombie week: the machine slept, the loop stopped, and nothing
+        # said so. 15m is ~2x the p99 heartbeat gap, so an ordinary slow cycle
+        # does not page.
+        - alert: HermesLoopDead
+          expr: hermes_heartbeat_age_seconds > 900
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Trading loop has not written a heartbeat in {{ $value | humanizeDuration }}"
+            description: >-
+              The loop is not running. Positions are unmanaged: DSL exits are
+              not being monitored. Check `scripts/restart.sh status`.
+
+        # A data outage reads downstream as a quiet market — an unreadable coin
+        # returns an empty candle list, which is indistinguishable from "no
+        # signal". Entries are already blocked automatically; this says why.
+        - alert: HermesFeedDegraded
+          expr: hermes_feed_trustworthy == 0
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Market data feed degraded — entries are blocked"
+            description: >-
+              {{ with query "hermes_feed_gap_fraction" }}{{ . | first | value | humanizePercentage }}{{ end }}
+              of the scanned universe was unreadable. This is usually the
+              exchange, not us. Entries stay blocked until it recovers.
+
+        # LIVE mode against an account that cannot place an order. Harmless
+        # because the executor refuses, but it means the config says something
+        # the system cannot do.
+        - alert: HermesLiveButCannotTrade
+          expr: hermes_live_mode == 1 and hermes_can_trade == 0
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: "Mode is LIVE but equity is below the structural minimum"
+            description: >-
+              The executor refuses every order under the dust floor. Either fund
+              the account or take it out of LIVE so the config matches reality.
+
+        # A dead brain returns empty completions, which downstream has
+        # historically defaulted to PASS — so it looks like a brain that looked
+        # and declined.
+        - alert: HermesBrainUnusable
+          expr: hermes_ai_brain_ready == 0
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "The selected AI brain cannot run"
+            description: >-
+              Empty completions read as PASS downstream, so this fails silently.
+              In a container the cause is almost always AI_BRAIN_PROVIDER set to
+              a CLI provider that needs a local binary.
+
+        # An unrotated log directory took this system down before anything else
+        # noticed it was low.
+        - alert: HermesDiskLow
+          expr: hermes_disk_free_bytes < 2e9
+          for: 15m
+          labels: {severity: critical}
+          annotations:
+            summary: "Under 2GB free on the state filesystem"
+            description: >-
+              The loop refuses to start below the critical floor. Check
+              `python scripts/log_rotate.py --guard`.
+
+        - alert: HermesLogDirOversized
+          expr: hermes_log_dir_bytes > 8e8
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: "logs/ is over 800MB despite rotation"
+            description: >-
+              The rotator should hold this under its directory cap. If it is
+              growing anyway the rotator is not running.
+
+        # Not a system fault — a money fault. Worth a human looking.
+        - alert: HermesDeepDrawdown
+          expr: hermes_max_drawdown_pct < -25
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: "Max drawdown {{ $value }}% over the risk window"
+            description: >-
+              Flow-neutral where capital flows are recorded, so this is not a
+              withdrawal. Review before adding capital.
