@@ -14,6 +14,8 @@ import logging
 import os
 from typing import Any, Dict
 
+from hermes_trader.agents import universe as _universe
+
 logger = logging.getLogger(__name__)
 
 # Use absolute path based on this file's location (hermes-trader project root)
@@ -64,7 +66,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "min_market_volume_usd": 5_000_000,
     "min_hip3_volume_usd": 5_000_000,
     "min_short_volume_usd": 50_000_000,
-    "coin_allowlist": [],
+    # 2026-08-29: restricted to majors. Bare tickers — the HIP-3 dex prefix is
+    # stripped when matching, so "GOLD" covers xyz:GOLD and km:GOLD. Empty list
+    # restores the unrestricted behaviour. See hermes_trader/agents/universe.py
+    # for why this is a capacity decision and not an edge claim.
+    "coin_allowlist": list(_universe.MAJORS),
     "coin_blocklist": ["TON", "TRX"],
     "hip3_dex_allowlist": ["xyz"],
     "hip3_dex_blocklist": [],

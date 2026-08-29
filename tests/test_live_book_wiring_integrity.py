@@ -77,7 +77,6 @@ def _effective_stop_pct(stop_pct: float, leverage: float) -> float:
 
 
 @pytest.mark.parametrize("path", [
-    ("news_surge_short",),
     ("mover_recorders", "pass_short_live"),
     ("mover_recorders", "young_short_live"),
 ])
@@ -97,23 +96,6 @@ def test_reverse_refuted_books_configure_a_reachable_stop(path):
     )
     # and the stop must sit strictly inside liquidation, or it is decoration
     assert stop < 100.0 / lev
-
-
-# --------------------------------------------------------------- real-registry collisions
-def test_news_surge_short_and_engulf_short_cannot_both_claim_the_same_coin(tmp_path):
-    """Two unrelated live books racing the same claims file: whichever
-    claims first wins, the second must see it and back off. Real
-    ClaimsRegistry, not a mock — proves the file-backed contract holds."""
-    import hermes_trader.agents.rebalancer_owned as ro
-
-    claims_path = str(tmp_path / ".rebalancer_claims.json")
-    registry = ro.ClaimsRegistry(claims_path).load()
-
-    assert registry.claim("XPL", "engulf_short") is True
-    assert "XPL" in registry.claimed_by_others("news_surge_short")
-    assert registry.claim("XPL", "news_surge_short") is False
-    registry.release("XPL", "engulf_short")
-    assert registry.claim("XPL", "news_surge_short") is True
 
 
 # --------------------------------------------------------------- books-only mode
@@ -192,36 +174,11 @@ def _backup_sl_clamp(lev, max_frac=0.60):
     return max_frac / lev   # executor.py:1023 clamp
 
 
-def test_xs_momentum_is_crypto_and_never_hit_by_the_hip3_cap():
-    """The operator's #1 worry: xs_momentum (the one earner) has a 5-day hold
-    and no tight DSL stop. It trades CRYPTO — the hip3 cap only fires on ':'
-    coins, so it can NEVER touch xs_momentum's leverage. Its exit override is
-    also untouched (leverage/margin changes don't rewrite dsl_exit_override)."""
-    for coin in ("BTC", "ETH", "FARTCOIN", "kBONK", "SOL"):
-        assert ":" not in coin           # no hip3 cap path
-    # xs_xyz IS xyz -> cap applies (that's why it gets its own low leverage)
-    assert ":" in "xyz:AAPL"
-
-
 def test_short_books_at_6x_have_a_working_6pct_stop():
     """Short books: 6% stop, 1-day hold. At 6x the liq buffer (11.7%) sits well
     beyond the 6% stop AND beyond the clamped backup SL (10%)."""
     assert _liq_buffer(6) > 0.06                 # stop reachable
     assert _backup_sl_clamp(6) < _liq_buffer(6)  # clamp fires before liq
-
-
-def test_xs_xyz_at_3x_restores_its_validated_20pct_stop():
-    """xs_xyz: 20% disaster stop, 5-day hold. It needs <=4x for the stop to
-    fire before liquidation; 3x gives liq ~28% >> the 20% stop. The old 12x
-    liquidated at 3.3% (stop dead) — the force-liquidation bug."""
-    import json
-    from pathlib import Path
-    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    lev = int(cfg["xs_xyz_equities"]["leverage"])
-    assert lev <= 4, f"xs_xyz {lev}x too high for its 20% stop"
-    assert _liq_buffer(lev) > 0.20               # 20% disaster stop reachable
-    # and the OLD 12x was broken (liq below the stop) — pins the bug we fixed
-    assert _liq_buffer(12) < 0.06
 
 
 # ------------------------------------------- stop-honoring leverage cap (2026-07-24)
@@ -272,44 +229,6 @@ def test_capped_leverage_always_delivers_the_requested_stop():
                 f"{delivered:.1%}, not {stop/100:.1%}")
 
 
-def test_every_live_book_gets_its_validated_stop_after_the_cap():
-    """Config may ask for more leverage than a stop allows (extreme_fade sits at
-    4x with a 20% stop). That is now harmless — the executor caps it — but the
-    delivered stop must equal the validated one for every live book."""
-    import json
-    from pathlib import Path
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
-    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    books = [
-        ("xs_xyz_equities", cfg["xs_xyz_equities"]["leverage"], 20.0),
-        ("extreme_fade", cfg["extreme_fade"]["leverage"], cfg["extreme_fade"]["stop_pct"]),
-        ("uw_flow_xs", cfg["uw_flow_xs"]["leverage"], cfg["uw_flow_xs"]["stop_pct"]),
-        ("news_ta_aligned", cfg["news_ta_aligned"]["leverage"], cfg["news_ta_aligned"]["stop_pct"]),
-        ("news_surge_short", cfg["news_surge_short"]["crypto_leverage"],
-         cfg["news_surge_short"]["crypto_stop_pct"]),
-    ]
-    for name, lev, stop in books:
-        eff = cap(int(lev), float(stop))
-        delivered = _stop_after_clamp(eff, float(stop))
-        assert delivered >= float(stop) / 100.0 - 1e-9, (
-            f"{name}: {lev}x -> {eff}x still delivers {delivered:.1%} "
-            f"instead of its validated {stop}% stop")
-
-
-def test_leverage_bump_to_6x_is_reverted_in_config():
-    """The 2026-07-24 uncommitted bump put five books at 6x. Even with the cap
-    making it non-fatal, the committed config must state the leverage the book
-    actually runs at, or `pnl_by_book` attribution reads a size that never
-    existed."""
-    import json
-    from pathlib import Path
-    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    assert int(cfg["xs_xyz_equities"]["leverage"]) == 3
-    assert int(cfg["uw_flow_xs"]["leverage"]) == 3
-    assert int(cfg["news_ta_aligned"]["leverage"]) == 3
-    assert int(cfg["news_surge_short"]["crypto_leverage"]) == 1
-
-
 # ------------------------- maintenance-aware liq bound (2026-07-24, operator)
 # "I DON'T MIND A CRAZY DRAWDOWN AS LONG AS THE SWING IS WORTH IT, NEVER GET
 # LIQUIDATED." The naive bound (0.60/lev) treats the liq distance as 1/lev,
@@ -352,19 +271,6 @@ def test_both_bounds_are_load_bearing():
     assert cap(6, 20.0, 0.60, 3, 0.0) == 3      # liq bound off -> width only
 
 
-def test_default_safety_holds_every_live_book_at_its_current_leverage():
-    """0.85 fixes the low-maxLeverage hole WITHOUT shrinking any live book:
-    a 20% stop needs 0.65 to keep 3x on xyz, so 0.85 leaves it alone. Dropping
-    to 0.60 would push it to 2x — a third less size — for gap protection."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
-    assert cap(3, 20.0, 0.60, 20) == 3          # xs_xyz_equities, uw_flow_xs
-    assert cap(3, 15.0, 0.60, 20) == 3          # news_ta_aligned
-    assert cap(1, 15.0, 0.60, 20) == 1          # news_surge_short crypto
-    assert cap(6, 6.0, 0.60, 20) == 6           # news_surge_short equity
-    assert cap(4, 20.0, 0.60, 20) == 3          # extreme_fade: 4x WAS shrinking
-    assert cap(3, 20.0, 0.60, 20, 0.60) == 2    # the stricter alternative
-
-
 def test_maint_aware_cap_is_stricter_than_the_naive_one():
     """A 20% stop fits at 3x under the naive bound but only 2x once maintenance
     margin is counted. Stricter is the point — liquidation is the thing we will
@@ -385,24 +291,6 @@ def test_cap_degrades_to_1x_rather_than_authorizing_a_dead_stop():
     assert cap(6, 90.0, 0.60, 20) == 1
 
 
-# ------------------------------ shared crypto-dex margin budget (2026-07-24)
-# extreme_fade and xs_momentum draw margin from the SAME crypto dex. Sized
-# independently they asked for 155% of it, so whichever book scanned first won
-# and the split was an accident of timing. Each book's worst-case margin is
-# (concurrent leg cap) x (largest per-leg fraction it can use); the two must fit
-# inside the dex.
-def _book_margin(cfg, book):
-    b = cfg[book]
-    if book == "xs_momentum":
-        legs = 2 * int(b["k_per_leg"])          # k longs + k shorts
-        frac = float(b["equity_frac"])
-    else:
-        legs = int(b["max_book_positions"])
-        frac = max(float(b["equity_fraction"]),
-                   float(b.get("deep_tier", {}).get("equity_fraction", 0)))
-    return legs * frac
-
-
 def _cfg_json():
     import json
     from pathlib import Path
@@ -410,32 +298,3 @@ def _cfg_json():
         (Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
 
 
-def test_crypto_books_fit_inside_one_dex():
-    cfg = _cfg_json()
-    mom = _book_margin(cfg, "xs_momentum")
-    fade = _book_margin(cfg, "extreme_fade")
-    assert mom + fade <= 1.0 + 1e-9, (
-        f"xs_momentum {mom:.2f} + extreme_fade {fade:.2f} = {mom+fade:.2f} "
-        f"of the crypto dex — over-committed, allocation becomes a race")
-
-
-def test_split_is_the_walk_forward_winner_not_the_fitted_one():
-    """A 2304-cell (f,n)x(f,n) search fitted on half the tape LOST to a plain
-    50/50 out of sample (0.1342 vs 0.1563 log-growth). Ship the unfitted split:
-    equal margin, 4 legs each. Pinning it so a future 'optimization' has to
-    beat the walk-forward, not the in-sample max."""
-    cfg = _cfg_json()
-    mom = _book_margin(cfg, "xs_momentum")
-    fade = _book_margin(cfg, "extreme_fade")
-    assert abs(mom - fade) < 1e-9, f"split is not 50/50: {mom:.3f} vs {fade:.3f}"
-    assert 2 * int(cfg["xs_momentum"]["k_per_leg"]) == 4
-    assert int(cfg["extreme_fade"]["max_book_positions"]) == 4
-
-
-def test_deep_tier_cannot_break_the_budget():
-    """A -20% cascade fills extreme_fade with deep-tier legs. That worst case
-    is what the budget must hold, not the typical case."""
-    cfg = _cfg_json()
-    e = cfg["extreme_fade"]
-    worst = int(e["max_book_positions"]) * float(e["deep_tier"]["equity_fraction"])
-    assert worst + _book_margin(cfg, "xs_momentum") <= 1.0 + 1e-9

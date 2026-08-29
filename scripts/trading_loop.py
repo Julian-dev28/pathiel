@@ -74,6 +74,7 @@ from hermes_trader.agents.executor import (
     route_verdict,
 )
 from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
+from hermes_trader.agents import universe as _universe
 from hermes_trader.agents.config import get_config
 
 
@@ -341,11 +342,10 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
     if (not is_hip3) and not bool(config.get("enable_crypto", True)):
         return "crypto_disabled"
 
-    blocklist = set(config.get("coin_blocklist", []) or [])
-    allowlist = set(config.get("coin_allowlist", []) or [])
-    if coin in blocklist:
+    blocklist = {str(c).upper() for c in (config.get("coin_blocklist") or [])}
+    if coin.upper() in blocklist or _universe.bare_ticker(coin) in blocklist:
         return f"{coin} is on the coin blocklist"
-    if allowlist and coin not in allowlist:
+    if not _universe.in_allowlist(coin, config.get("coin_allowlist")):
         return f"{coin} not on the coin allowlist"
 
     loss_remaining = memory.loss_cooldown_remaining_min(coin)

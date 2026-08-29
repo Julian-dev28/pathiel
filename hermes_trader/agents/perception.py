@@ -16,6 +16,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
 
+from hermes_trader.agents import universe as universe_filter
 from hermes_trader.agents.config import get_config
 from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles
 from hermes_trader.client.universe import get_universe
@@ -347,6 +348,12 @@ def scan_once(
             eligible = [m for m in eligible if not m.get("dex") or m.get("dex") in allow]
         if block:
             eligible = [m for m in eligible if not m.get("dex") or m.get("dex") not in block]
+    # Coin allowlist, applied HERE and not only at the entry gate. Gating only
+    # at entry still spends the candle budget and the AI budget on markets the
+    # system can never trade — the restriction has to bind where the cost is.
+    # Empty list = unrestricted, the historical meaning of the key.
+    eligible = universe_filter.filter_markets(eligible, _cfg.get("coin_allowlist"))
+
     # Bucketed budget so HIP-3 markets and low-volume big-movers each get
     # candle fetches instead of being crowded out by crypto majors. Crypto
     # gets `max_markets - max_markets_hip3` slots, further split between

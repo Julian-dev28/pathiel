@@ -8,6 +8,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
+from hermes_trader.agents import universe as universe_filter
+
 GateResult = Dict[str, Any]  # {pass: bool, reason?: str}
 
 
@@ -251,9 +253,11 @@ def book_block_event(analysis: Dict[str, Any], result: Any) -> Optional[Dict[str
 
 
 def coin_allowlist_gate(ctx: GateContext, allowlist: List[str], blocklist: List[str]) -> GateResult:
-    if blocklist and ctx.coin in blocklist:
+    if blocklist and (ctx.coin in blocklist
+                      or universe_filter.bare_ticker(ctx.coin) in
+                      {str(c).upper() for c in blocklist}):
         return {"pass": False, "reason": f"{ctx.coin} is on the coin blocklist"}
-    if allowlist and ctx.coin not in allowlist:
+    if not universe_filter.in_allowlist(ctx.coin, allowlist):
         return {"pass": False, "reason": f"{ctx.coin} not on the allowlist"}
     return {"pass": True}
 
