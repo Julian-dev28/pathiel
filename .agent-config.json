@@ -174,43 +174,22 @@
     "min_pct_circ": 1.0,
     "refresh_hours": 12.0
   },
-  "mover_recorders": {
-    "pass_short_live": {
-      "enabled": true,
-      "shadow_only": true,
-      "regime_gate_eq7": true,
-      "notional_usd": 20.0,
-      "leverage": 10,
-      "stop_pct": 6.0,
-      "hold_days": 1.0
-    },
-    "young_short_live": {
-      "enabled": true,
-      "shadow_only": true,
-      "regime_gate_eq7": true,
-      "notional_usd": 20.0,
-      "leverage": 10,
-      "stop_pct": 6.0,
-      "hold_days": 1.0,
-      "min_volume_usd": 250000.0
-    }
-  },
   "wallet_follow": {
     "enabled": true,
     "poll_minutes": 30
   },
   "main_engine": {
     "entries_enabled": false,
-    "recorder_enabled": true
+    "recorder_enabled": false
   },
   "max_daily_loss_pct": 0.15,
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,
   "news_surge_short": {
     "enabled": true,
-    "shadow_only": true,
-    "equity_live": false,
-    "crypto_live": false,
+    "shadow_only": false,
+    "equity_live": true,
+    "crypto_live": true,
     "notional_usd": 20.0,
     "leverage": 1,
     "stop_pct": 15.0,
@@ -219,7 +198,7 @@
   },
   "news_surge_multi": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "notional_usd": 20.0,
     "leverage": 1,
     "stop_pct": 15.0,
@@ -228,7 +207,7 @@
   },
   "social_trending": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "poll_hours": 1.0,
     "dedup_hours": 24.0,
     "horizon_days": 1.0,
@@ -239,7 +218,7 @@
   },
   "unlock_short": {
     "enabled": true,
-    "shadow_only": true,
+    "shadow_only": false,
     "notional_usd": 20.0,
     "leverage": 1,
     "stop_pct": 15.0

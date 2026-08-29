@@ -68,8 +68,7 @@ STRICT_FEE_TIER = "slip25"   # promotions must survive 4x the real cost
 # ("top", key)            -> cfg[key]["shadow_only"]
 # ("nested", key, sub)    -> cfg[key][sub]["shadow_only"]
 _SWITCHES: Dict[str, tuple] = {
-    "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
-    "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
+
     # Restored 2026-08-30 with capital paths. All four graded VALIDATED on their
     # own forward ledgers on 2026-08-29, hours after being deleted — the
     # deletion was made while the exchange was down and nothing could be graded.

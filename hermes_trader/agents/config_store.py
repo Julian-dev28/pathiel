@@ -73,29 +73,34 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "coin_allowlist": list(_universe.MAJORS),
     "coin_blocklist": ["TON", "TRX"],
     # ── the four books that graded VALIDATED on 2026-08-29 ───────────────────
-    # All four ship shadow_only=true. A validated grade earns a book a capital
-    # PATH, not capital — scripts/autonomous_cycle.py promotes it on the next
-    # run if the evidence still holds, which keeps the decision in the evidence
-    # loop instead of in a config edit nobody reviewed.
+    # LIVE. Operator directive 2026-08-30: "if it's shadow, nuke it" — a book is
+    # either trading or it does not exist, so there is no shadow tier left to
+    # sit in. Each is bounded at $20/1x with a 15% stop and a 1-day horizon,
+    # which is the geometry each was GRADED on.
+    #
+    # What still stands between these and a bad day: the structural dust floor
+    # in executor.maybe_execute (nothing trades under $25 equity), the majors
+    # allowlist, the daily-loss kill switch, and autonomous_cycle, which demotes
+    # any of them the moment its forward ledger turns negative.
     "news_surge_short": {
-        "enabled": True, "shadow_only": True,
-        "equity_live": False, "crypto_live": False,
+        "enabled": True, "shadow_only": False,
+        "equity_live": True, "crypto_live": True,
         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
         "hold_days": 1.0, "max_new_per_cycle": 1,
     },
     "news_surge_multi": {
-        "enabled": True, "shadow_only": True,
+        "enabled": True, "shadow_only": False,
         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
         "hold_days": 1.0, "max_new_per_cycle": 1,
     },
     "social_trending": {
-        "enabled": True, "shadow_only": True,
+        "enabled": True, "shadow_only": False,
         "poll_hours": 1.0, "dedup_hours": 24.0, "horizon_days": 1.0,
         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
         "max_new_per_cycle": 1,
     },
     "unlock_short": {
-        "enabled": True, "shadow_only": True,
+        "enabled": True, "shadow_only": False,
         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
     },
     "hip3_dex_allowlist": ["xyz"],

@@ -20,7 +20,7 @@ _SPEC.loader.exec_module(AC)
 
 
 def _g(**ov):
-    g = {"book": "mover_pass_short", "n": 12, "ev_real": 2.0, "ev_strict": 1.0,
+    g = {"book": "news_surge_short", "n": 12, "ev_real": 2.0, "ev_strict": 1.0,
          "halves": {"first": 1.0, "second": 3.0}, "mc_p": 0.01}
     g.update(ov)
     return g
@@ -112,22 +112,20 @@ def test_already_live_validated_book_is_left_alone():
 # ------------------------------------------------------------------ config mutation
 def _cfg():
     return {
-        "mover_recorders": {
-            "pass_short_live": {"enabled": True, "shadow_only": False,
-                                "leverage": 12, "notional_usd": 20.0,
-                                "stop_pct": 20.0},
-            "young_short_live": {"enabled": True, "shadow_only": True,
-                                 "leverage": 12, "stop_pct": 15.0},
-        },
+        "news_surge_short": {"enabled": True, "shadow_only": False,
+                             "leverage": 12, "notional_usd": 20.0,
+                             "stop_pct": 20.0},
+        "social_trending": {"enabled": True, "shadow_only": True,
+                            "leverage": 12, "stop_pct": 15.0},
     }
 
 
 def test_demote_sets_shadow_only():
     c = _cfg()
-    assert AC.apply_action(c, "mover_pass_short", "demote") is True
-    assert c["mover_recorders"]["pass_short_live"]["shadow_only"] is True
+    assert AC.apply_action(c, "news_surge_short", "demote") is True
+    assert c["news_surge_short"]["shadow_only"] is True
     # idempotent: a second demote is a no-op, so the cycle won't churn commits
-    assert AC.apply_action(c, "mover_pass_short", "demote") is False
+    assert AC.apply_action(c, "news_surge_short", "demote") is False
 
 
 def test_promote_writes_a_bounded_and_REACHABLE_geometry():
@@ -135,8 +133,8 @@ def test_promote_writes_a_bounded_and_REACHABLE_geometry():
     (entry * 60/leverage percent) or the book trades a geometry it was
     never graded at — the bug found live on 2026-07-20."""
     c = _cfg()
-    assert AC.apply_action(c, "mover_pass_short", "promote") is True
-    b = c["mover_recorders"]["pass_short_live"]
+    assert AC.apply_action(c, "social_trending", "promote") is True
+    b = c["social_trending"]
     assert b["shadow_only"] is False and b["enabled"] is True
     assert b["notional_usd"] == 20.0 and b["leverage"] == 10
     assert b["stop_pct"] == 6.0

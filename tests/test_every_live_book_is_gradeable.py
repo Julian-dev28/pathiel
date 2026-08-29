@@ -204,14 +204,43 @@ def test_the_validated_books_all_have_switches():
         assert book in AC._SWITCHES, f"{book} graded VALIDATED but has no switch"
 
 
-def test_the_validated_books_ship_shadow_not_live():
-    """A validated grade earns a capital PATH, not capital. Promotion goes
-    through the evidence loop so the decision stays in one reviewable place
-    rather than in a config edit."""
+def test_no_book_ships_shadow():
+    """Operator directive 2026-08-30: "if it's shadow, nuke it".
+
+    There is no shadow tier any more. A book is trading or it does not exist,
+    so a shadow_only=true default is now a book that should have been deleted.
+    Inverted from the version written hours earlier, which asserted the exact
+    opposite — worth knowing when reading the history.
+
+    What keeps this from being reckless is not a shadow flag: it is the
+    structural dust floor (nothing trades under $25 equity), the majors
+    allowlist, the daily-loss kill switch, and autonomous_cycle demoting any
+    book whose forward ledger turns negative.
+    """
     import hermes_trader.agents.config_store as cs
     defaults = next(v for v in vars(cs).values()
                     if isinstance(v, dict) and "coin_allowlist" in v)
-    for key in ("news_surge_short", "news_surge_multi", "social_trending",
-                "unlock_short"):
-        assert defaults[key]["shadow_only"] is True, (
-            f"{key} ships live — promotion is the grader's call, not a default")
+    shadowed = [k for k, v in defaults.items()
+                if isinstance(v, dict) and v.get("shadow_only") is True]
+    assert not shadowed, (
+        f"{shadowed} ship shadow_only — a book that does not trade should not "
+        f"exist. Make it live or delete it.")
+
+
+def test_the_live_config_has_no_shadow_book_either():
+    """The default is not the authority — the live file is. A shadow book left
+    in .agent-config.json would sit there recording forever regardless of what
+    config_store says."""
+    import json
+    cfg = json.loads((ROOT / ".agent-config.json").read_text())
+    shadowed = [k for k, v in cfg.items()
+                if isinstance(v, dict) and v.get("shadow_only") is True]
+    assert not shadowed, f"{shadowed} are shadow in the LIVE config"
+
+
+def test_the_dust_floor_is_what_makes_all_live_safe():
+    """Every book being live is only defensible because the executor refuses to
+    trade a dust account. If that floor is ever lowered or removed, this
+    arrangement stops being safe — this test is the tripwire."""
+    from hermes_trader.agents.executor import MIN_TRADABLE_EQUITY_USD
+    assert MIN_TRADABLE_EQUITY_USD >= 25.0

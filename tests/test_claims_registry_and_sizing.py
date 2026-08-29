@@ -190,18 +190,18 @@ class TestClaimsRegistryUnit:
 
         path = str(tmp_path / "claims.json")
         cr = ro.ClaimsRegistry(path, active_books=ro.active_claim_books()).load()
-        cr.claim("A", "mover_pass_short")
-        cr.claim("B", "young_mover_short")
+        cr.claim("A", "news_surge_multi")
+        cr.claim("B", "social_trending")
         cr.claim("C", "news_surge_short")
         cr.save()
         monkeypatch.setattr(ro, "_claims_registry", cr)
 
         dropped = ro.prune_claims_to_live([_pos("B", -1.0)])
 
-        assert dropped == {"A": "mover_pass_short", "C": "news_surge_short"}
-        assert cr.claims() == {"B": "young_mover_short"}
+        assert dropped == {"A": "news_surge_multi", "C": "news_surge_short"}
+        assert cr.claims() == {"B": "social_trending"}
         saved = json.loads((tmp_path / "claims.json").read_text())
-        assert saved["claims"] == {"B": "young_mover_short"}
+        assert saved["claims"] == {"B": "social_trending"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Integration: exclusion propagates through xs_momentum_live target-book

@@ -77,8 +77,10 @@ def _effective_stop_pct(stop_pct: float, leverage: float) -> float:
 
 
 @pytest.mark.parametrize("path", [
-    ("mover_recorders", "pass_short_live"),
-    ("mover_recorders", "young_short_live"),
+    ("news_surge_short",),
+    ("news_surge_multi",),
+    ("social_trending",),
+    ("unlock_short",),
 ])
 def test_reverse_refuted_books_configure_a_reachable_stop(path):
     """The stop these books advertise must be the stop that actually fires."""

@@ -786,12 +786,6 @@ def _require_operator(request: Request) -> None:
 # below, resolved by book NAME, not a blanket pass_live assumption).
 
 _BOOKS: List[tuple] = [
-    ("mover_pass_short", None,
-     "Inverse of mover_pass — short the mover the AI just PASSed instead of "
-     "buying it (own forward ledger interim-refuted the long side)."),
-    ("young_mover_short", None,
-     "Short the young listing the history floor just blocked from a long — "
-     "that cohort does -2.71%/next-day vs a flat mature-xyz tape."),
     ("unlock_short_runin", "unlock_short",
      "Short the run-in 48-72h before large token unlocks (>=1% of circulating). "
      "VALIDATED n=14: +3.75%/sig net25, halves +0.71/+7.06, mc_p=0.0375."),

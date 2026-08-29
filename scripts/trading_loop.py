@@ -61,10 +61,6 @@ from hermes_trader.agents.social_trending_recorder import maybe_record as _socia
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
-from hermes_trader.agents.mover_recorders import (
-    record_mover_pass_short as _record_mover_pass_short,
-    record_young_mover_short as _record_young_mover_short,
-)
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -949,17 +945,6 @@ while True:
                                "score": round(float(score), 1),
                                "trigger_score": round(float(score), 1),
                                "reason": entry_preblock})
-                    # young_mover_short: the history floor is RIGHT to block the
-                    # long (blocked population does -2.71%/next-day vs -0.13%
-                    # matched mature-xyz same-day baseline) — take the other side.
-                    try:
-                        _ym_mid = next((float(m.get("midPx") or m.get("markPx") or 0)
-                                        for m in universe if m.get("coin") == coin), 0.0)
-                        _record_young_mover_short(coin, entry_preblock, _ym_mid,
-                                                  read_agent_config(),
-                                                  execute_fn=_book_execute)
-                    except Exception:
-                        pass
                     continue
                 # Not held but executed within cooldown_min → re-entry would be
                 # gate-blocked, so skip the paid AI call.
@@ -1055,20 +1040,6 @@ while True:
                 routed = route_verdict(analysis)
                 action = routed["action"]
                 result = routed["result"] or {}
-                if action == "none":
-                    # W-M4: AI PASS on a researched mover forfeited +4.5% mean fwd-24h.
-                    # Zero-capital ledger record; promotion needs >=30 graded episodes.
-                    # mover_pass_short LIVE (operator flip 2026-07-20, reverse-refuted
-                    # audit): SHORT the mover the AI just PASSed — validated inverse
-                    # (+6.745%/sig, mc_p 0.0005, both halves +).
-                    try:
-                        analysis["last_price"] = next(
-                            (float(m.get("midPx") or m.get("markPx") or 0)
-                             for m in universe if m.get("coin") == coin), 0.0)
-                        _record_mover_pass_short(analysis, read_agent_config(),
-                                                 execute_fn=_book_execute)
-                    except Exception:
-                        pass
                 if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))

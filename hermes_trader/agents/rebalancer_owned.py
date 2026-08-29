@@ -78,8 +78,7 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # set that still calls ClaimsRegistry — the mover recorders' live arms. This is
 # the mechanism working as designed: a claim left on disk by a now-deleted book
 # is not in this set, so it can never block a surviving book.
-_ACTIVE_CLAIM_BOOKS = frozenset({"mover_pass_short", "young_mover_short",
-                                 "news_surge_short", "news_surge_multi",
+_ACTIVE_CLAIM_BOOKS = frozenset({"news_surge_short", "news_surge_multi",
                                  "social_trending", "unlock_short_runin"})
 
 
