@@ -25,3 +25,7 @@ forward n before it sees capital.
 
 ## 2026-07-26 09:39 autonomous cycle
 - **INVERSE of social_trending** — n=10, EV(real)=+4.84%, EV(25bps)=+4.65%, halves +4.34/+5.23, excess 4.837pp, mc_p=0.0005
+
+## 2026-08-29 17:38 autonomous cycle
+- **INVERSE of news_ta_aligned** — n=9, EV(real)=+4.23%, EV(25bps)=+4.04%, halves +7.37/+1.60, excess 4.8783pp, mc_p=0.023
+- **INVERSE of xs_xyz_equities** — n=30, EV(real)=+3.91%, EV(25bps)=+3.72%, halves +6.96/+0.75, excess 4.7512pp, mc_p=0.007
