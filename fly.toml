@@ -47,12 +47,25 @@ primary_region = "iad"  # change to a region near you
   min_machines_running = 1
   processes = ["web"]
 
+  # Shallow: is the web process serving. This one gates routing, so it must not
+  # fail because the trading loop died — that would take the dashboard offline
+  # exactly when it is needed.
   [[http_service.checks]]
     grace_period = "30s"
     interval = "30s"
     method = "GET"
     timeout = "10s"
     path = "/api/health"
+
+  # Deep: is the SYSTEM working — loop heartbeat, market-feed integrity, disk
+  # headroom. Returns 503 when it is not, which is what should page someone.
+  # Kept separate from the routing check above on purpose.
+  [[http_service.checks]]
+    grace_period = "120s"
+    interval = "60s"
+    method = "GET"
+    timeout = "10s"
+    path = "/api/health/system"
 
 [[vm]]
   size = "shared-cpu-1x"

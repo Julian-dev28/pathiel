@@ -694,7 +694,76 @@ async def cancel_order(request: Request):
 
 @app.get("/api/health")
 async def health():
-    return {"service": "Hermes-Trader", "version": __version__, "status": "running"}
+    """LIVENESS of this web process only. Always 200 if we can serve a request.
+
+    Deliberately NOT system health. fly.toml and k8s/statefulset.yaml both point
+    a livenessProbe here, and a liveness probe that fails because the TRADING
+    LOOP died would restart the web container — which fixes nothing and loses
+    the dashboard that is the only way to see what happened.
+
+    System health lives at /api/health/system and returns 503. Use that for
+    alerting and readiness, never for liveness.
+    """
+    return {"service": "Hermes-Trader", "version": __version__,
+            "status": "running", "system_health": "/api/health/system"}
+
+
+@app.get("/api/health/system")
+async def health_system(response: Response):
+    """Is the SYSTEM working, not just this process. 503 when it is not.
+
+    This exists because /api/health answered "running" unconditionally, so a
+    dead trading loop behind a live web process read as perfectly healthy to
+    every probe pointed at it — the same silent-failure shape as a data outage
+    reading as a quiet market, and as an unrotated log filling a disk.
+
+    Unauthenticated, like /api/health and /metrics, so an external monitor can
+    reach it. It exposes no position, size, or credential — only whether the
+    parts are alive.
+    """
+    from hermes_trader import dashboard as _db
+
+    checks: Dict[str, Any] = {}
+    summary = _db._summary_payload()
+
+    # 1. Is the loop alive? The heartbeat is written every cycle; p99 is ~420s
+    #    on healthy days, so 900s is a genuinely dead loop, not a slow one.
+    age = summary.get("last_tick_age_s")
+    loop_ok = age is not None and age <= 900
+    checks["loop"] = {"ok": bool(loop_ok), "last_tick_age_s": age,
+                      "detail": ("no heartbeat yet" if age is None
+                                 else f"last heartbeat {age}s ago")}
+
+    # 2. Is the market data trustworthy? A degraded feed reads downstream as a
+    #    quiet market, so it has to surface as a health problem, not silence.
+    feed = _db._feed_health()
+    feed_ok = feed.get("trustworthy") is not False
+    checks["feed"] = {"ok": bool(feed_ok), **feed}
+
+    # 3. Is there room to keep logging? An unrotated disk took this system down
+    #    before anything else noticed.
+    try:
+        from hermes_trader import log_setup
+        g = log_setup.check_disk_guard()
+        checks["disk"] = {
+            "ok": not g.critical,
+            "free_bytes": g.free_bytes,
+            "log_dir_bytes": g.log_dir_bytes,
+            "warn": bool(g.warn),
+            "detail": ("free space below the critical floor" if g.critical
+                       else "log directory over its cap" if g.warn
+                       else "ok"),
+        }
+    except Exception as exc:
+        # An unavailable disk check must not itself fail the healthcheck, or a
+        # monitoring gap becomes an outage.
+        checks["disk"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
+
+    ok = all(c.get("ok") for c in checks.values())
+    if not ok:
+        response.status_code = 503
+    return {"ok": ok, "checks": checks,
+            "failing": sorted(k for k, v in checks.items() if not v.get("ok"))}
 
 
 @app.get("/metrics")

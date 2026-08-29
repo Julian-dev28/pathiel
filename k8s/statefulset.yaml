@@ -65,12 +65,20 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          # Readiness answers "should traffic go here", so it uses the DEEP
+          # check: a pod whose trading loop is dead or whose market feed is
+          # degraded should not be presented as a working system.
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/health/system
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 3
+          # Liveness answers "is THIS process wedged", and must stay on the
+          # shallow check. Restarting the web container because the trading loop
+          # died fixes nothing and destroys the dashboard that is the only way
+          # to see what happened.
           livenessProbe:
             httpGet:
               path: /api/health
