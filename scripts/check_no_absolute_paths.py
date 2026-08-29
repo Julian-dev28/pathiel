@@ -26,9 +26,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # "/home/<name>" are machine-bound by construction.
 PATTERN = re.compile(r"['\"](/Users/[^/'\"]+|/home/[^/'\"]+)/")
 
-# Files whose whole job is to describe a specific machine.
+# Files that must contain the pattern to do their job: this checker documents
+# the exact literal that shipped, and its test asserts against it. Excluding
+# them is not a loophole — a guard that cannot describe what it guards against
+# is unmaintainable, and any real offender still has to live somewhere else.
 ALLOWED = {
     ".env.local.example",
+    "scripts/check_no_absolute_paths.py",
+    "tests/test_no_absolute_paths.py",
 }
 
 

@@ -54,3 +54,14 @@ def test_ci_installs_from_the_lockfile():
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     assert "requirements.lock" in ci
     assert (ROOT / "requirements.lock").exists()
+
+
+def test_the_allowlist_is_only_the_files_that_must_carry_the_pattern():
+    """The escape hatch has to stay tiny. Every entry is a file whose job is to
+    describe the pattern; anything else in here would be a real offender being
+    waved through."""
+    assert checker.ALLOWED == {
+        ".env.local.example",
+        "scripts/check_no_absolute_paths.py",
+        "tests/test_no_absolute_paths.py",
+    }
