@@ -18,10 +18,31 @@ part of this system that reliably works, and it is worth more than the trading.
 - **Max drawdown -94.78%** over the last 90 days, flow-neutral (deposits and
   withdrawals are recorded and netted out, so that is a trading loss, not a
   withdrawal). Peak equity was $225.93.
-- **Three books survive**, all mover-recorder arms, all still PENDING a verdict.
-  No strategy in this repo currently has a validated forward edge.
+- **Four books carry a validated forward edge.** All four ship `shadow_only`:
+  a validated grade earns a capital PATH, not capital.
 - The account is below the structural minimum, so the executor refuses every
   order regardless of what `mode` says. That is deliberate.
+
+| book | n | EV@25bps | OOS halves | null p |
+|---|---|---|---|---|
+| `news_surge_short` | 255 | +1.24% | +0.58 / +2.16 | 0.0005 |
+| `news_surge_multi` | 230 | +1.87% | +1.50 / +2.50 | 0.0005 |
+| `social_trending` | 185 | +0.89% | +0.54 / +1.50 | 0.0005 |
+| `unlock_short_runin` | 14 | +3.75% | +0.71 / +7.06 | 0.0375 |
+
+These are SHADOW-ledger grades, not realized P&L. This repo has a documented
+history of books whose comments claimed +EV while they ran live and lost.
+
+### Nothing is a recorder
+
+Every book either has a switch `scripts/autonomous_cycle.py` can flip, or it
+does not exist. There is no third state.
+
+The exemption list that used to hold ten capital-less books is empty and a test
+keeps it empty. It produced exactly the failure it sounds like: on 2026-08-29
+the grader printed `unlock_short — VALIDATED: validated but has no bounded
+capital path`. A book that can prove itself and still never trade costs budget,
+log volume and attention to maintain evidence nothing may act on.
 
 ---
 
@@ -421,11 +442,11 @@ values are optimal in future market regimes. Missing keys are filled from
   blocked purely by capital (book full / notional cap), evicts the weakest
   non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
   room.
-- **`mover_recorders.pass_short_live` / `young_short_live`, `news_ta_aligned`** —
-  the three books that still place orders, all bounded. Each is switchable by
-  `scripts/autonomous_cycle.py`, which grades them nightly and demotes anything
-  its own forward ledger refutes. `scripts/book_status.py` shows where each
-  stands without needing the exchange.
+- **The six books that can place orders**, all bounded, all switchable by
+  `scripts/autonomous_cycle.py`: the four validated ones above plus
+  `mover_pass_short` and `young_mover_short` (both MARGINAL). The cycle grades
+  them nightly and demotes anything its own forward ledger refutes.
+  `scripts/book_status.py` shows where each stands without needing the exchange.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `hermes_trader/agents/config.py` — edit there to tune the scan itself.
