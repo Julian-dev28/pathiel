@@ -45,7 +45,9 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from hermes_trader.agents.perception import scan_once, _fetch_candles_sync
+from hermes_trader.agents.perception import (scan_once, _fetch_candles_sync,
+                                             last_scan_integrity as _last_scan_integrity,
+                                             scan_is_trustworthy as _scan_is_trustworthy)
 from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
 from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
 from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
@@ -379,6 +381,17 @@ def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
     if equity < _min_eq:
         return (f"below_min_tradable_equity (${equity:.2f} < ${_min_eq:.2f}) — "
                 f"the account cannot place an order HL would accept")
+
+    # A blind scan is not a quiet market. When Hyperliquid bulk-500s, every
+    # unreadable coin comes back as an empty candle list and reads downstream as
+    # "no signal" — indistinguishable from a market we looked at and passed on.
+    # Entering on that is entering on an absence of evidence. Blocked until the
+    # feed recovers; the next healthy scan clears it on its own.
+    if not _scan_is_trustworthy():
+        _st = _last_scan_integrity()
+        return (f"degraded_feed ({_st.get('gaps')}/{_st.get('markets')} markets "
+                f"unreadable, {float(_st.get('gap_frac') or 0) * 100:.0f}%) — a "
+                f"data outage is not a quiet market")
 
     try:
         max_concurrent = int(config.get("max_concurrent", 3) or 3)

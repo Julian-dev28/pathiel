@@ -246,3 +246,56 @@ def test_a_funded_account_reads_tradable(monkeypatch):
 def test_the_page_shows_the_blocked_state(client):
     body = client.get("/").text
     assert "BLOCKED" in body and "can_trade" in body
+
+
+# ── a degraded feed is not a quiet market ────────────────────────────────────
+
+def test_a_blind_scan_is_not_trustworthy(monkeypatch):
+    """When Hyperliquid bulk-500s, every unreadable coin returns an empty candle
+    list and reads downstream as 'no signal' — indistinguishable from a market
+    we looked at and passed on. Entering on that is entering on an absence of
+    evidence."""
+    from hermes_trader.agents import perception as P
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 1, "markets": 100, "gaps": 80, "gap_frac": 0.8,
+                         "errors": 0})
+    assert P.scan_is_trustworthy() is False
+
+
+def test_a_healthy_scan_is_trustworthy(monkeypatch):
+    from hermes_trader.agents import perception as P
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 1, "markets": 100, "gaps": 3, "gap_frac": 0.03,
+                         "errors": 0})
+    assert P.scan_is_trustworthy() is True
+
+
+def test_a_cold_start_is_not_treated_as_degraded(monkeypatch):
+    """The gate catches a DEGRADED feed. It must not block the first scan of a
+    fresh process, which has no integrity record yet."""
+    from hermes_trader.agents import perception as P
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
+                         "errors": 0})
+    assert P.scan_is_trustworthy() is True
+
+
+def test_the_threshold_is_the_one_that_was_already_worth_warning_about():
+    from hermes_trader.agents.perception import MAX_SCAN_GAP_FRAC
+    assert MAX_SCAN_GAP_FRAC == 0.25
+
+
+def test_feed_health_reaches_the_risk_payload(monkeypatch, curve):
+    from hermes_trader.agents import perception as P
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 1, "markets": 40, "gaps": 30, "gap_frac": 0.75,
+                         "errors": 0})
+    feed = db._risk_payload()["feed"]
+    assert feed["trustworthy"] is False and feed["gaps"] == 30
+
+
+def test_the_page_renders_the_degraded_feed_state(client):
+    body = client.get("/").text
+    assert "risk-feed" in body
+    assert "not a quiet market" in body, (
+        "the page must name the failure mode, not just show a number")

@@ -392,6 +392,7 @@
         <div class="ksub mono" id="risk-kill-sub"></div>
       </div>
     </div>
+    <div class="ksub mt-3" id="risk-feed"></div>
     <div class="ksub mt-3" id="risk-caveat"></div>
     <div class="ksub mono mt-1" id="kill-out"></div>
   </section>
@@ -1006,6 +1007,25 @@ async function refreshRisk() {
       mode.textContent = r.mode || '—';
       mode.className = 'badge mono ' + (r.mode === 'LIVE' ? 'b-live' : 'b-off');
       mode.title = '';
+    }
+
+    // Feed health sits next to the risk numbers on purpose: a degraded candle
+    // feed reads downstream as "no signal", so an outage and a quiet market
+    // look identical unless the page says which one it is.
+    const feed = r.feed || {};
+    const feedEl = $id('risk-feed');
+    if (feedEl) {
+      if (feed.trustworthy === false) {
+        feedEl.innerHTML = '<span style="color:var(--dn)">degraded feed — ' +
+          feed.gaps + '/' + feed.markets + ' markets unreadable (' +
+          Math.round((feed.gap_frac || 0) * 100) + '%). Entries are blocked; ' +
+          'a data outage is not a quiet market.</span>';
+      } else if (feed.markets) {
+        feedEl.innerHTML = '<span class="dim">feed ok · ' + feed.gaps + '/' +
+          feed.markets + ' unreadable on the last scan</span>';
+      } else {
+        feedEl.textContent = '';
+      }
     }
 
     // The caveat is not decoration. Deposits and withdrawals are not logged,

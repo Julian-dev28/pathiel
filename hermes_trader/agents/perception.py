@@ -36,6 +36,21 @@ logger = logging.getLogger(__name__)
 _data_gap_lock = threading.Lock()
 _data_gap_count = 0
 
+# The result of the LAST completed scan, so callers can gate on feed health
+# without changing scan_once's return type (a plain list, read in many places).
+# `gap_frac` is the share of the scanned universe we could not read. 1.0 means
+# the scan was completely blind, which is NOT the same thing as a quiet market
+# and must never be traded as one.
+_last_scan_integrity: Dict[str, Any] = {
+    "ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0, "errors": 0,
+}
+
+# Above this share of unreadable markets the scan is not evidence about the
+# market, and entries are blocked for that cycle. Chosen at the same 25% the
+# existing FEED-FRESHNESS warning already used, so the number that was worth
+# warning about is now the number that is worth acting on.
+MAX_SCAN_GAP_FRAC = 0.25
+
 
 def _reset_data_gaps() -> None:
     global _data_gap_count
@@ -52,6 +67,24 @@ def _note_data_gap() -> None:
 def _get_data_gaps() -> int:
     with _data_gap_lock:
         return _data_gap_count
+
+
+def last_scan_integrity() -> Dict[str, Any]:
+    """Feed health from the most recent completed scan. Copy, not the live dict."""
+    with _data_gap_lock:
+        return dict(_last_scan_integrity)
+
+
+def scan_is_trustworthy(max_gap_frac: float = MAX_SCAN_GAP_FRAC) -> bool:
+    """False when the last scan was too blind to be evidence about the market.
+
+    A scan that never ran (ts == 0) is trustworthy by default: this gate exists
+    to catch a DEGRADED feed, not to block a cold start before the first scan.
+    """
+    st = last_scan_integrity()
+    if not st.get("ts"):
+        return True
+    return float(st.get("gap_frac") or 0.0) <= max_gap_frac
 
 # ── Candle cache (module-level, shared across ticks) ──────────────────────────
 
@@ -532,11 +565,18 @@ def scan_once(
     elapsed = (time.time() - started) * 1000
     data_gaps = _get_data_gaps()
     logger.info(f"[scan] scanned {len(markets)} markets, {len(results)} triggers in {elapsed:.0f}ms ({errors} errors, {data_gaps} data-gaps)")
-    if data_gaps > 0 and len(markets) > 0 and data_gaps / len(markets) > 0.25:
-        # >25% of the universe unreadable this scan = a degraded data feed, not a
-        # quiet market. Surface loudly so a silent miss-the-move window is visible.
+    gap_frac = (data_gaps / len(markets)) if markets else 0.0
+    with _data_gap_lock:
+        _last_scan_integrity.update({
+            "ts": int(time.time() * 1000), "markets": len(markets),
+            "gaps": data_gaps, "gap_frac": round(gap_frac, 4), "errors": errors,
+        })
+    if gap_frac > MAX_SCAN_GAP_FRAC:
+        # Over a quarter of the universe unreadable is a degraded data feed, not
+        # a quiet market. This used to be a log line nobody acted on; it now
+        # also fails scan_is_trustworthy(), which the entry path gates on.
         logger.warning(
             f"[scan] FEED-FRESHNESS: {data_gaps}/{len(markets)} markets had empty/short "
-            f"candles ({data_gaps/len(markets)*100:.0f}%) — possible degraded candle feed; "
-            f"signals may be silently missed this scan")
+            f"candles ({gap_frac*100:.0f}%) — degraded candle feed; entries are "
+            f"BLOCKED this cycle rather than reading an outage as a quiet market")
     return sorted(results, key=lambda r: r["composite_score"], reverse=True)

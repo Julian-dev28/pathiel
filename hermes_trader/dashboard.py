@@ -441,6 +441,24 @@ def _closed_trades_payload(limit: int = 20) -> List[Dict[str, Any]]:
     return out
 
 
+def _feed_health() -> Dict[str, Any]:
+    """Scan feed integrity, imported lazily so the dashboard keeps rendering in
+    a tree where the agents package is unavailable."""
+    try:
+        from hermes_trader.agents import perception
+        st = perception.last_scan_integrity()
+        return {
+            "gap_frac": st.get("gap_frac", 0.0),
+            "gaps": st.get("gaps", 0),
+            "markets": st.get("markets", 0),
+            "trustworthy": perception.scan_is_trustworthy(),
+            "ts": st.get("ts", 0),
+        }
+    except Exception:
+        return {"gap_frac": None, "gaps": 0, "markets": 0,
+                "trustworthy": None, "ts": 0}
+
+
 def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
     """What a person with money asks first: how much can this lose, how much has
     it already lost from its high, what does trading itself cost, and where is
@@ -515,6 +533,10 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
         # mode, and the panel must say so rather than showing a green LIVE badge
         # over an account that cannot place a trade.
         "min_tradable_equity": _min_tradable_equity(cfg),
+        # Feed health from the last completed scan. A degraded feed reads
+        # downstream as a quiet market, so it has to be visible next to the
+        # numbers people would otherwise interpret as "nothing is happening".
+        "feed": _feed_health(),
         "can_trade": bool(float(summary.get("equity") or 0) >= _min_tradable_equity(cfg)),
         "window_days": round(range_s / 86400, 1),
         "points": len(equities),

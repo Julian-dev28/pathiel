@@ -112,3 +112,24 @@ def test_the_shipped_default_config_is_restricted_to_majors():
 def test_the_restriction_is_documented_as_capacity_not_edge():
     """A future reader must not mistake a universe cut for an alpha claim."""
     assert "not a strategy" in U.__doc__.lower() or "not an edge" in U.__doc__.lower()
+
+
+# ── the degraded-feed entry gate, end to end through the loop's own path ─────
+
+def test_the_loop_blocks_entries_on_a_degraded_feed():
+    """The gate has to bind inside the loop's own entry-block function, not just
+    exist as a helper nobody calls. Checked by source inspection rather than by
+    importing trading_loop, because importing that module starts the live loop.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    start = src.index("def _fresh_entry_preblock_reason")
+    end = src.index("\ndef ", start + 1)
+    body = src[start:end]
+    assert "_scan_is_trustworthy()" in body, (
+        "the degraded-feed gate is not in the entry-block path — an outage "
+        "would again read as a quiet market")
+    assert "degraded_feed" in body
+    assert "below_min_tradable_equity" in body, (
+        "the dust floor left the entry-block path")
