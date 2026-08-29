@@ -9,11 +9,10 @@ and supervises it:
 |-----------|---------------------------------------------------------|------------|
 | `web`     | `python3 -m hermes_trader.server`                        | Dashboard + JSON API + SSE feed + `/metrics`, public |
 | `loop`    | `python3 scripts/trading_loop.py`                        | Autonomous scan → research → execute → DSL monitor, private |
-| `sched`   | `python3 scripts/scheduler.py`                           | Cron replacement — fires `poly-board` (hourly), `poly-judgment` (4h), `autonomous-cycle` (daily), `trends-price` (30min), `trends-recorders` (6h) |
-| `sampler` | `python3 -m services.trend_engine.run --sample-daemon`   | Polymarket 5m book sampler — its own process because it blocks for most of a 5-minute window and would starve `sched`'s other jobs |
+| `sched`   | `python3 scripts/scheduler.py`                           | Cron replacement — fires `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min), `trends-recorders` (6h) |
 | `rotator` | `python3 scripts/log_rotate.py --daemon`                 | Bounds `logs/` growth — `sched`'s fired jobs write real log files regardless of how `sched` itself was launched |
 
-All five run from one image. `web`, `loop`, `sched`, and `sampler` share the
+All four run from one image. `web`, `loop`, and `sched` share the
 `/data` volume; `rotator` doesn't touch `/data` (see "Runtime state" below).
 
 Cost: roughly **$5–8/month** for five `shared-cpu-1x` VMs (three at 512MB, two
@@ -40,7 +39,7 @@ them with `flyctl secrets set` / a `kubectl create secret` (see
 
 | Secret | Required? | Unlocks |
 |--------|-----------|---------|
-| `OPENROUTER_API_KEY` | **Required** | The default AI brain (`AI_BRAIN_PROVIDER=openrouter`, baked into the image) — research, the Polymarket forecaster, the /trends narrative pass |
+| `OPENROUTER_API_KEY` | **Required** | The default AI brain (`AI_BRAIN_PROVIDER=openrouter`, baked into the image) — research and the /trends narrative pass |
 | `HYPERLIQUID_WALLET_ADDRESS` | **Required** | The trading account |
 | `HYPERLIQUID_PRIVATE_KEY` | **Required** | Signs orders — the money key |
 | `HERMES_OPERATOR_TOKEN` | **Required** | Gates every mutating dashboard endpoint (`?token=` / `X-Operator-Token`). Missing = the operator console 503s closed, which is safe but means you can't start/stop/configure the bot from the dashboard |
@@ -79,36 +78,32 @@ plain HTTPS call authenticated by `OPENROUTER_API_KEY` and works out of the
 box in any container.
 
 The alternative provider, `claude_cli` (what CLAUDE.md's "route LLM calls
-through local Claude Code" rule refers to, and what's actually configured on
-the operator's Mac today per `.env.local`), shells out to a **locally
+through local Claude Code" rule refers to, and what is configured on the
+operator's Mac today per `.env.local`), shells out to a **locally
 authenticated Claude Code CLI session** — an interactive desktop
 subscription, not a credential you can bake into an image or hand to
-`flyctl secrets set`. It does not run in a stateless cloud container as
-currently wired. Two features depend on it differently:
+`flyctl secrets set`. It does not run in a stateless cloud container.
 
-- `services/polymarket_scout/forecaster.py`'s default `BrainForecaster`
-  routes through `AI_BRAIN_PROVIDER` like everything else — leaving the
-  image default (`openrouter`) in place is enough for the `poly-board` /
-  `poly-judgment` jobs to work fully in the container.
-- `services/trend_engine/ai.py` (the `/trends` narrative pass) is
-  **unconditionally** routed through the local CLI regardless of
-  `AI_BRAIN_PROVIDER` — it will fail every call in a container. This fails
-  *gracefully by design*: "If the LLM call fails, the tab is unchanged except
-  for a status line, because the deterministic half is the product and this
-  is the garnish" (its own module docstring). The deterministic trend data
-  (7d trend, BTC-5m base rates, political drift) still populates; only the
-  AI-written headline/narrative is missing.
+Two things now make that impossible to get wrong silently:
 
-Do not set `AI_BRAIN_PROVIDER=claude_cli` in `fly.toml`/`k8s/configmap.yaml`
-— there is no `claude` binary in the image and no way to authenticate one
-non-interactively. If you need that provider in production, that's an
-architecture change (bake the CLI + solve the credential-mounting problem)
-that belongs with `docs/AI_BRAIN_OPERATOR_WIRING.md`, not this deploy config.
+- `scripts/preflight_secrets.py --deploy` **fails** on a CLI provider. Run it
+  before every deploy; it refuses rather than shipping an image whose brain
+  cannot start.
+- `/api/health/system` reports `ai_brain` as failing when the selected brain
+  cannot run, so a misconfigured deploy shows up as a 503 instead of as a
+  system that quietly never produces a verdict.
+
+Fixed 2026-08-29: `services/trend_engine/ai.py` used to shell out to the
+`claude` binary **unconditionally**, ignoring `AI_BRAIN_PROVIDER`, so the
+/trends narrative pass failed every call in a container and returned an empty
+string — indistinguishable from a model with nothing to say. It now routes
+through the shared brain like everything else, so the image default
+(`openrouter`) works.
 
 ## Runtime state
 
 Everything the app persists lives on one Fly volume mounted at `/data`,
-shared by `web`, `loop`, `sched`, and `sampler`:
+shared by `web`, `loop`, and `sched`:
 
 | Path | What |
 |------|------|
@@ -117,7 +112,7 @@ shared by `web`, `loop`, `sched`, and `sampler`:
 | `/data/.agent-memory.json` | Perception/analysis memory (`HERMES_AGENT_MEMORY_FILE`) |
 | `/data/session-log.jsonl` | Trade/action session log (`SESSION_LOG_PATH`) |
 | `/data/.positions-snapshot.json` | Cross-process position snapshot the loop writes and the dashboard reads (`HERMES_POSITIONS_SNAPSHOT_FILE`) — also what `loop`'s k8s `startupProbe` checks |
-| `/data/.state/` | Everything routed through `HERMES_STATE_DIR`: shadow ledgers (`.state/shadow_ledger/<book>.jsonl`), the cross-book claims registry, per-strategy throttle timers, `services/polymarket_scout`'s paper ledger, `services/trend_engine`'s cached lanes, and `scripts/scheduler.py`'s own job-run bookkeeping (via a symlink — see the Dockerfile) |
+| `/data/.state/` | Everything routed through `HERMES_STATE_DIR`: shadow ledgers (`.state/shadow_ledger/<book>.jsonl`), the cross-book claims registry, the capital-flow record the drawdown is computed from (`.state/capital_flows.jsonl`), per-strategy throttle timers, `services/trend_engine`'s cached lanes, and `scripts/scheduler.py`'s own job-run bookkeeping (via a symlink — see the Dockerfile) |
 
 `logs/` is deliberately **not** on the volume — see the Dockerfile and
 `k8s/statefulset.yaml`'s `rotator` container comment for why.
@@ -149,18 +144,52 @@ flyctl deploy
 After a successful deploy you'll get a URL like `https://hermes-trader-julian.fly.dev`.
 The dashboard is at `/`, the operator console is at `/operator?token=<HERMES_OPERATOR_TOKEN>`.
 
+## Verifying the image before you ship it
+
+The image was built and exercised on 2026-08-29 — these are the exact commands,
+not an aspiration:
+
+```bash
+docker build -t hermes-test .
+
+# Every module a running process imports must be IN the image. This is the
+# check that would have caught services/ being absent from a 3-month-stale
+# Dockerfile.
+docker run --rm hermes-test python3 -c "
+import hermes_trader.server, hermes_trader.dashboard, hermes_trader.metrics
+from hermes_trader.agents import executor, perception, risk_gates, ta_filter
+import services.trend_engine.run"
+
+# The server boots and every page renders inside the container.
+docker run --rm -e HERMES_OPERATOR_TOKEN=t hermes-test python3 -c "
+from fastapi.testclient import TestClient
+from hermes_trader.server import app
+c = TestClient(app)
+print({p: c.get(p).status_code for p in ('/','/activity','/news','/analytics','/trends')})"
+```
+
+Expect all five pages to return 200, and `/api/health/system` to return **503**
+with `['ai_brain', 'loop']` failing — a container with no credentials and no
+running loop SHOULD report unhealthy. That 503 is the deep healthcheck working,
+not a build problem.
+
 ## Verifying the deploy is healthy
 
 ```bash
-flyctl status                          # all 5 process groups should show "started"
-flyctl checks list                     # the web http_service check should be "passing"
-curl -s https://<your-app>.fly.dev/api/health   # {"status": "ok", ...}
+flyctl status                          # all 4 process groups should show "started"
+flyctl checks list                     # both http_service checks should be "passing"
+
+# Shallow: is the web process serving?
+curl -s https://<your-app>.fly.dev/api/health
+
+# Deep: is the SYSTEM working? 503 lists exactly what is broken. This is the
+# one to alert on — /api/health answers 200 even with a dead trading loop.
+curl -s https://<your-app>.fly.dev/api/health/system | jq
 
 # Confirm every process actually came up (not just the machine)
 flyctl logs -i web     | tail -20      # "Starting Hermes server on port 8000"
 flyctl logs -i loop    | tail -20      # first scan cycle log lines
-flyctl logs -i sched   | tail -20      # "[scheduler] up — 5 jobs, 60s tick, catch-up on wake"
-flyctl logs -i sampler | tail -20      # "[sampler] writing ... one window at a time"
+flyctl logs -i sched   | tail -20      # "[scheduler] up — N jobs, 60s tick"
 flyctl logs -i rotator | tail -20      # first disk-guard pass
 
 # Confirm the loop is actually writing state to the volume (not just running)
@@ -179,7 +208,6 @@ flyctl logs                          # combined, all five processes
 flyctl logs -i web
 flyctl logs -i loop
 flyctl logs -i sched
-flyctl logs -i sampler
 flyctl logs -i rotator
 ```
 
@@ -190,7 +218,7 @@ flyctl machines stop --process-group loop                # halt trading loop
 flyctl machines start --process-group loop                # resume
 ```
 
-`web`, `sched`, and `sampler` keep running either way — the dashboard stays
+`web` and `sched` keep running either way — the dashboard stays
 readable, `/predictions` and `/trends` keep refreshing, without the loop
 placing trades. You can also flip mode to `OFF` in the operator console — the
 loop process stays alive but stops opening new positions; existing positions
@@ -204,7 +232,7 @@ flyctl deploy     # builds image + rolls all five processes
 ```
 
 Fly does a rolling restart for `web` for free (zero-downtime). `loop`,
-`sched`, `sampler`, and `rotator` briefly drop and restart; the loop's next
+`sched` and `rotator` briefly drop and restart; the loop's next
 scan tick (~60s later) resumes, and `sched`'s catch-up logic
 (`scripts/scheduler.py:is_due`) means a job due during the restart window
 fires on the next tick instead of being silently skipped.
@@ -256,7 +284,7 @@ flyctl certs show hermes.yourdomain.com    # follow the DNS-CNAME instructions
 ## Common gotchas
 
 - **Four of the five processes need the volume mount.** `web`, `loop`,
-  `sched`, and `sampler` all read or write `/data` (directly, or through
+  and `sched` all read or write `/data` (directly, or through
   `HERMES_STATE_DIR`); `rotator` deliberately does not. `[[mounts]] processes`
   in `fly.toml` reflects this exactly — don't add `rotator` to it and don't
   remove any of the other four.
@@ -285,7 +313,7 @@ docker build -t hermes-trader:local .
 # Prove the image actually contains every package it imports:
 docker run --rm hermes-trader:local python3 -c \
   "import hermes_trader.server, hermes_trader.dashboard, scripts.trading_loop, \
-   services.trend_engine.run, services.polymarket_scout.daily; print('ok')"
+   services.trend_engine.run; print('ok')"
 
 # Prove the server actually binds reachably and serves /api/health:
 docker run --rm -d --name hermes-smoke -p 8000:8000 \
@@ -364,7 +392,6 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
 | `CLAUDE_CLI_COMMAND`, `CLAUDE_CLI_MODEL`, `CLAUDE_CLI_MAX_TURNS`, `CLAUDE_CLI_WEB_MAX_TURNS` | see `ai_brain.py` | Only relevant if `AI_BRAIN_PROVIDER=claude_cli` — not viable in this deploy, see "AI provider" |
 | `CODEX_CLI_COMMAND` | `codex` | Only relevant for the unused `codex_cli` provider |
 | `POLY_SCOUT_MODEL` | `claude-opus-4-8` | Forecaster model (via the AI brain, so effectively an openrouter model in this deploy) |
-| `POLY_SCOUT_LIMIT`, `POLY_SCOUT_TRENDING_LIMIT` | 14 / 10 | Markets scanned per `poly-board`/`poly-judgment` run |
 | `TREND_AI_MODEL`, `TREND_AI_TIMEOUT_S` | `claude-opus-4-8` / 180 | Only relevant to the `/trends` narrative pass, which is not reachable in this deploy — see "AI provider" |
 | `HYDROMANCER_TESTNET`, `HYDROMANCER_TIMEOUT_S` | unset / 10 | Hydromancer provider tuning |
 | `UW_CACHE_DIR` | unset (disabled) | On-disk cache for Unusual Whales responses — opt-in, off by default |

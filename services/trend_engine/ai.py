@@ -20,7 +20,9 @@ import time
 from typing import Any, Dict, List, Optional
 
 CLI = os.environ.get("CLAUDE_CLI_COMMAND", "claude")
-MODEL = os.environ.get("TREND_AI_MODEL", "claude-opus-4-8")
+# Was "claude-opus-4-8", which is not a model that exists — every call carrying
+# it was relying on the CLI ignoring an unknown --model.
+MODEL = os.environ.get("TREND_AI_MODEL", "claude-opus-5")
 TIMEOUT_S = float(os.environ.get("TREND_AI_TIMEOUT_S", "180"))
 
 SYSTEM = """You are a markets analyst reading a PRE-COMPUTED trend report.
@@ -45,6 +47,46 @@ Reply with ONE json object and nothing else:
 
 
 def _run(prompt: str, web_search: bool, model: str, timeout_s: float) -> str:
+    """Call the LLM, honouring AI_BRAIN_PROVIDER.
+
+    This used to shell out to the `claude` binary unconditionally, ignoring
+    AI_BRAIN_PROVIDER entirely — so in a container, where no such binary exists,
+    every /trends narrative call failed and returned "". An empty reply is
+    indistinguishable from a model that had nothing to say, so the tab would
+    have rendered "AI pass unavailable" forever without anyone learning why.
+
+    CLAUDE.md's rule (route LLM calls through the local Claude Code, not a
+    hosted API) is preserved: claude_cli is still the provider on the operator's
+    machine. What changes is that the choice is now made in ONE place, so a
+    deployed instance can select openrouter and actually work.
+    """
+    try:
+        from hermes_trader.agents.ai_brain import get_brain, provider_readiness
+    except Exception:
+        return _run_cli_direct(prompt, web_search, model, timeout_s)
+
+    r = provider_readiness()
+    if not r.get("ready"):
+        # Loud, because the failure is otherwise silent: an unusable brain and a
+        # brain with nothing to say produce the same empty string.
+        _log_unusable(r)
+        return ""
+    try:
+        return get_brain().complete(SYSTEM, prompt, web_search=web_search)
+    except Exception:
+        return ""
+
+
+def _log_unusable(readiness: Dict[str, Any]) -> None:
+    import logging
+    logging.getLogger(__name__).error(
+        f"[trend-ai] the selected AI brain cannot run: {readiness.get('reason')} "
+        f"— the /trends narrative pass will return nothing until this is fixed")
+
+
+def _run_cli_direct(prompt: str, web_search: bool, model: str, timeout_s: float) -> str:
+    """Fallback for a tree where hermes_trader is not importable (the trend
+    engine is meant to stand alone). Same behaviour as before this change."""
     args = [CLI, "-p", "--output-format", "json", "--max-turns",
             "8" if web_search else "1", "--tools", "WebSearch" if web_search else "",
             "--safe-mode", "--no-session-persistence", "--model", model]
