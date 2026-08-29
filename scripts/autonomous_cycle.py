@@ -70,6 +70,13 @@ STRICT_FEE_TIER = "slip25"   # promotions must survive 4x the real cost
 _SWITCHES: Dict[str, tuple] = {
     "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
     "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
+    # 2026-08-29: news_ta_aligned places real bounded orders
+    # (mover_recorders.maybe_trade_news_ta_aligned) but had NO entry here, so the
+    # evidence loop could neither promote nor demote it. A live money path the
+    # automated grader cannot switch off is the one shape this script exists to
+    # rule out. Its kill is `news_ta_aligned.shadow_only`, per that function's
+    # own docstring.
+    "news_ta_aligned": ("top", "news_ta_aligned"),
     # The main engine is a thesis like any other. Its live arm is an ENTRIES
     # flag rather than shadow_only, so it gets its own switch shape. It was
     # demoted 2026-07-20 on -$172.33/157 trades with every slice negative; it

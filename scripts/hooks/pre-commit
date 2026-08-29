@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Gate tests on every commit. CLAUDE.md has claimed this ran since the project
+# started; it did not exist until 2026-08-29, so nothing was gating anything.
+#
+# Install:  scripts/install_hooks.sh
+# Skip:     not with --no-verify (banned). Fix the failure.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+PY="$ROOT/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+fail() { printf '\033[31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
+ok()   { printf '\033[32m✓ %s\033[0m\n' "$1"; }
+
+# 1. Never commit a secret. Cheap, and the one failure that cannot be undone by
+#    a later commit — a pushed key is a rotated key.
+if git diff --cached --name-only | grep -qE '(^|/)\.env(\.local)?$'; then
+  fail "refusing to commit a .env file"
+fi
+
+# 2. Machine-bound absolute paths. This is the defect that kept CI red for weeks
+#    while the suite was green locally.
+"$PY" scripts/check_no_absolute_paths.py >/dev/null || \
+  fail "machine-bound absolute paths (run: python scripts/check_no_absolute_paths.py)"
+ok "no machine-bound paths"
+
+# 3. Everything staged must at least parse. Catches a torn edit before it is
+#    history.
+STAGED_PY="$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)"
+if [ -n "$STAGED_PY" ]; then
+  echo "$STAGED_PY" | while read -r f; do
+    [ -f "$f" ] || continue
+    "$PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f" >/dev/null \
+      || fail "syntax error in $f"
+  done
+  ok "staged Python parses"
+fi
+
+# 4. The gate suite. Offline and deterministic by construction — pytest's
+#    addopts deselect the `online` and `live` markers, so this places no orders
+#    and makes no network calls.
+#
+#    HERMES_STATE_DIR points at a throwaway directory: the root conftest loads
+#    the real .env.local, and a test that writes state must never touch the live
+#    ledger the running system reads.
+TMP_STATE="$(mktemp -d)"
+trap 'rm -rf "$TMP_STATE"' EXIT
+if ! HERMES_STATE_DIR="$TMP_STATE" "$PY" -m pytest -q -x --no-header \
+     -p no:cacheprovider 2>&1 | tail -15; then
+  fail "gate tests failed — fix them, do not use --no-verify"
+fi
+ok "gate suite green"
