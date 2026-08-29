@@ -20,7 +20,7 @@ _SPEC.loader.exec_module(AC)
 
 
 def _g(**ov):
-    g = {"book": "engulf_short", "n": 12, "ev_real": 2.0, "ev_strict": 1.0,
+    g = {"book": "mover_pass_short", "n": 12, "ev_real": 2.0, "ev_strict": 1.0,
          "halves": {"first": 1.0, "second": 3.0}, "mc_p": 0.01}
     g.update(ov)
     return g
@@ -96,19 +96,22 @@ def test_already_live_validated_book_is_left_alone():
 # ------------------------------------------------------------------ config mutation
 def _cfg():
     return {
-        "engulf_short": {"enabled": True, "shadow_only": False, "leverage": 12,
-                         "notional_usd": 20.0, "stop_pct": 20.0},
-        "mover_recorders": {"pass_short_live": {"enabled": True, "shadow_only": True,
-                                                "leverage": 12, "stop_pct": 15.0}},
+        "mover_recorders": {
+            "pass_short_live": {"enabled": True, "shadow_only": False,
+                                "leverage": 12, "notional_usd": 20.0,
+                                "stop_pct": 20.0},
+            "young_short_live": {"enabled": True, "shadow_only": True,
+                                 "leverage": 12, "stop_pct": 15.0},
+        },
     }
 
 
 def test_demote_sets_shadow_only():
     c = _cfg()
-    assert AC.apply_action(c, "engulf_short", "demote") is True
-    assert c["engulf_short"]["shadow_only"] is True
+    assert AC.apply_action(c, "mover_pass_short", "demote") is True
+    assert c["mover_recorders"]["pass_short_live"]["shadow_only"] is True
     # idempotent: a second demote is a no-op, so the cycle won't churn commits
-    assert AC.apply_action(c, "engulf_short", "demote") is False
+    assert AC.apply_action(c, "mover_pass_short", "demote") is False
 
 
 def test_promote_writes_a_bounded_and_REACHABLE_geometry():

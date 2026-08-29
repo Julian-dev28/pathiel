@@ -190,35 +190,18 @@ class TestClaimsRegistryUnit:
 
         path = str(tmp_path / "claims.json")
         cr = ro.ClaimsRegistry(path, active_books=ro.active_claim_books()).load()
-        cr.claim("A", "xs_momentum")
-        cr.claim("B", "rally_exhaustion")
-        cr.claim("C", "engulf_short")
+        cr.claim("A", "mover_pass_short")
+        cr.claim("B", "young_mover_short")
+        cr.claim("C", "news_ta_aligned")
         cr.save()
         monkeypatch.setattr(ro, "_claims_registry", cr)
 
         dropped = ro.prune_claims_to_live([_pos("B", -1.0)])
 
-        assert dropped == {"A": "xs_momentum", "C": "engulf_short"}
-        assert cr.claims() == {"B": "rally_exhaustion"}
+        assert dropped == {"A": "mover_pass_short", "C": "news_ta_aligned"}
+        assert cr.claims() == {"B": "young_mover_short"}
         saved = json.loads((tmp_path / "claims.json").read_text())
-        assert saved["claims"] == {"B": "rally_exhaustion"}
-
-    def test_active_claim_books_include_live_claimants(self):
-        from hermes_trader.agents.rebalancer_owned import active_claim_books
-        import hermes_trader.agents.rally_exhaustion_live as rel
-
-        active = active_claim_books()
-        assert rel._BOOK_NAME in active
-        assert "xs_momentum" in active
-        # ripped-out books (2026-07-09 + nff 2026-07-12) must NOT hold claims
-        assert "hail_mary_short" not in active
-        assert "neg_funding_fade" not in active
-        # demolition 2026-07-18: refuted/never-validated books lose claim rights
-        assert "majors_swing" not in active
-        assert "young_listings" not in active
-        assert "news_catalyst" not in active
-        assert "vol_breakout_long" not in active
-
+        assert saved["claims"] == {"B": "young_mover_short"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Integration: exclusion propagates through xs_momentum_live target-book
@@ -242,137 +225,6 @@ _RETS = {"A": 0.50, "B": 0.20, "C": 0.05, "D": -0.05, "E": -0.20, "F": -0.40}
 
 class TestCrossBookExclusion:
     """Verify that xs_momentum excludes coins claimed by another book."""
-
-    def test_coin_claimed_by_other_book_is_not_opened(self, tmp_path, monkeypatch):
-        """If another book already claimed 'A', xs_momentum must not open 'A'."""
-        import hermes_trader.agents.xs_momentum_live as xl
-        import hermes_trader.agents.rebalancer_owned as ro
-
-        # Point claims registry to tmp path
-        claims_path = str(tmp_path / ".rebalancer_claims.json")
-        new_registry = ro.ClaimsRegistry(claims_path).load()
-        new_registry.claim("A", "other_book")  # A is the best long normally
-        new_registry.save()
-        monkeypatch.setattr(ro, "_claims_registry", new_registry)
-
-        monkeypatch.setattr(xl, "_OWNED_FILE", str(tmp_path / ".xs_momentum_positions.json"))
-        monkeypatch.setattr(xl, "_owned", None)
-        monkeypatch.setattr(xl, "_last_ts", lambda: 0.0)
-        monkeypatch.setattr(xl, "_save_ts", lambda t: None)
-        monkeypatch.setattr(xl, "log_event", lambda e: None)
-
-        opened = []
-        xl.maybe_rebalance(
-            _XS_CFG, _uni(_RETS), [],
-            _fetch_factory(_RETS),
-            lambda a: opened.append(a["coin"]),
-            lambda c: None,
-        )
-
-        # A was claimed by another book → xs_momentum must not open it
-        assert "A" not in opened, f"xs_momentum opened A despite another book's claim: {opened}"
-        # B (next best long) should be opened instead
-        assert "B" in opened, f"Expected B opened as fallback; got: {opened}"
-
-    def test_own_claimed_coins_are_still_opened(self, tmp_path, monkeypatch):
-        """xs_momentum's OWN claimed coins (from a prior rebalance) don't block itself."""
-        import hermes_trader.agents.xs_momentum_live as xl
-        import hermes_trader.agents.rebalancer_owned as ro
-
-        claims_path = str(tmp_path / ".rebalancer_claims.json")
-        new_registry = ro.ClaimsRegistry(claims_path).load()
-        new_registry.claim("A", "xs_momentum")  # xs_momentum already owns A
-        new_registry.save()
-        monkeypatch.setattr(ro, "_claims_registry", new_registry)
-
-        monkeypatch.setattr(xl, "_OWNED_FILE", str(tmp_path / ".xs_momentum_positions.json"))
-        monkeypatch.setattr(xl, "_owned", None)
-        monkeypatch.setattr(xl, "_last_ts", lambda: 0.0)
-        monkeypatch.setattr(xl, "_save_ts", lambda t: None)
-        monkeypatch.setattr(xl, "log_event", lambda e: None)
-
-        opened = []
-        xl.maybe_rebalance(
-            _XS_CFG, _uni(_RETS), [],
-            _fetch_factory(_RETS),
-            lambda a: opened.append(a["coin"]),
-            lambda c: None,
-        )
-
-        # A is in the target and owned by this book → should still be opened
-        assert "A" in opened, f"xs_momentum should open A (self-owned claim); got: {opened}"
-
-    def test_claim_registered_on_open_live(self, tmp_path, monkeypatch):
-        """After a LIVE open, the coin should appear in the claims file as owned by xs_momentum."""
-        import hermes_trader.agents.xs_momentum_live as xl
-        import hermes_trader.agents.rebalancer_owned as ro
-
-        claims_path = str(tmp_path / ".rebalancer_claims.json")
-        new_registry = ro.ClaimsRegistry(claims_path).load()
-        monkeypatch.setattr(ro, "_claims_registry", new_registry)
-
-        monkeypatch.setattr(xl, "_OWNED_FILE", str(tmp_path / ".xs_momentum_positions.json"))
-        monkeypatch.setattr(xl, "_owned", None)
-        monkeypatch.setattr(xl, "_last_ts", lambda: 0.0)
-        monkeypatch.setattr(xl, "_save_ts", lambda t: None)
-        monkeypatch.setattr(xl, "log_event", lambda e: None)
-
-        xl.maybe_rebalance(
-            _XS_CFG, _uni(_RETS), [],
-            _fetch_factory(_RETS),
-            lambda a: None,  # simulate execute succeeding
-            lambda c: None,
-        )
-
-        # Read the saved claims file and verify xs_momentum claimed its opens
-        with open(claims_path) as fh:
-            saved = json.load(fh)
-        claims = saved.get("claims", {})
-        # At least one claim should be by xs_momentum
-        assert any(v == "xs_momentum" for v in claims.values()), \
-            f"No xs_momentum claims found after LIVE rebalance: {claims}"
-
-    def test_claim_released_on_close_live(self, tmp_path, monkeypatch):
-        """When xs_momentum closes a coin, the claim is released from the registry."""
-        import hermes_trader.agents.xs_momentum_live as xl
-        import hermes_trader.agents.rebalancer_owned as ro
-
-        claims_path = str(tmp_path / ".rebalancer_claims.json")
-        owned_path = str(tmp_path / ".xs_momentum_positions.json")
-
-        # Pre-state: xs_momentum previously owned B (long), has a claim on it
-        with open(owned_path, "w") as fh:
-            json.dump({"longs": ["B"], "shorts": []}, fh)
-        new_registry = ro.ClaimsRegistry(claims_path).load()
-        new_registry.claim("B", "xs_momentum")
-        new_registry.save()
-        monkeypatch.setattr(ro, "_claims_registry", new_registry)
-
-        monkeypatch.setattr(xl, "_OWNED_FILE", owned_path)
-        monkeypatch.setattr(xl, "_owned", None)
-        monkeypatch.setattr(xl, "_last_ts", lambda: 0.0)
-        monkeypatch.setattr(xl, "_save_ts", lambda t: None)
-        monkeypatch.setattr(xl, "log_event", lambda e: None)
-
-        # Universe that forces B out (B not in rets → not in target)
-        custom_rets = {"A": 0.50, "X": 0.40, "C": 0.05, "D": -0.05, "E": -0.20, "F": -0.40}
-        positions = [_pos("B", 1.0)]  # B is currently open
-        closed = []
-
-        xl.maybe_rebalance(
-            _XS_CFG, _uni(custom_rets), positions,
-            _fetch_factory(custom_rets),
-            lambda a: None,
-            lambda c: closed.append(c),
-        )
-
-        assert "B" in closed, f"Expected B to be closed; got {closed}"
-        # Claim on B should be released
-        with open(claims_path) as fh:
-            saved = json.load(fh)
-        assert saved.get("claims", {}).get("B") is None, \
-            f"Claim on B not released after close: {saved['claims']}"
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TASK 2: strategy_book_equity_frac sizing in maybe_execute

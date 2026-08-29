@@ -53,16 +53,6 @@ from hermes_trader.agents.risk_gates import books_bypass_ai as _books_bypass_ai
 from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
-from hermes_trader.agents.xs_momentum_live import (
-    maybe_rebalance as _xs_maybe_rebalance,
-    prune_state_to_live as _xs_prune_state_to_live,
-)
-from hermes_trader.agents.xs_xyz_live import maybe_rebalance as _xs_xyz_maybe_rebalance
-from hermes_trader.agents.extreme_fade_live import maybe_run as _ef_maybe_run
-from hermes_trader.agents.rally_exhaustion_live import maybe_run as _rally_exhaustion_maybe_run
-from hermes_trader.agents.crash_continue_div_short_live import maybe_run as _crash_continue_div_short_maybe_run
-from hermes_trader.agents.engulf_short_live import maybe_run as _engulf_short_maybe_run
-from hermes_trader.agents.funding_spike_short_live import maybe_run as _funding_spike_short_maybe_run
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass_short as _record_mover_pass_short,
@@ -73,13 +63,6 @@ from hermes_trader.agents.mover_recorders import (
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
-from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
-from hermes_trader.agents.numerology_recorder import maybe_record as _numerology_maybe_record
-from hermes_trader.agents.uw_flow_xs_live import maybe_run as _uw_flow_xs_maybe_run
-from hermes_trader.agents.ai_only_scan import maybe_run as _ai_only_maybe_run
-from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
-from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
-from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
 from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
@@ -735,11 +718,9 @@ while True:
         if equity > 0:
             try:
                 _dropped_claims = prune_claims_to_live(positions)
-                _xs_dropped = _xs_prune_state_to_live(positions)
-                if _dropped_claims or any(_xs_dropped.values()):
+                if _dropped_claims:
                     logger.info(
-                        f"[rebalancer_claims] live-position scrub claims={_dropped_claims} "
-                        f"xs={_xs_dropped}"
+                        f"[rebalancer_claims] live-position scrub claims={_dropped_claims}"
                     )
             except Exception as _claim_prune_exc:
                 logger.warning(
@@ -779,107 +760,9 @@ while True:
         results = scan_once(universe=universe, min_score=min_score, config=config)
         logger.info(f"Scan found {len(results)} triggers")
 
-        # Cross-sectional momentum rebalancer (validated +EV edge). Self-gates on the hold-days
-        # timer and routes live orders through maybe_execute so account/margin/order gates still apply.
-        try:
-            _xs_maybe_rebalance(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _xse:
-            logger.warning(f"[xs-momentum] rebalance failed (non-fatal): {_xse}")
-
-        # xs_xyz_equities — the xs recipe on the xyz tokenized-equity universe
-        # (W-X2 cell A ROBUST: +0.65%/rebal net25, p=0.0055, both OOS halves;
-        # operator pre-authorized LIVE wiring). Self-gates on its own 5d
-        # hold-days timer; residual momentum vs xyz:XYZ100; wide-only exits
-        # owned by the rebalance. Pre-committed kills live as constants in
-        # hermes_trader/agents/xs_xyz.py and grade via shadow_status.
-        try:
-            _xs_xyz_maybe_rebalance(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 6 * 3600 * 1000)),
-                _book_execute, close_position_market,
-            )
-        except Exception as _xxe:
-            logger.warning(f"[xs-xyz] rebalance failed (non-fatal): {_xxe}")
-
-        # Extreme-fade edge (validated LONG-only @ -12% = +4.71%/trade, SETTLE-2 2026-06-24).
-        # strategy_book execution: a counter-trend fade can't clear the runner/trend ENTRY gates by
-        # design, so it bypasses them while every SAFETY gate still applies. held-coin de-dup +
-        # max_new_per_cycle cap live inside maybe_run.
-        try:
-            _ef_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 6 * 3600 * 1000)),
-                _book_execute, close_position_market,
-            )
-        except Exception as _efe:
-            logger.warning(f"[extreme-fade] cycle failed (non-fatal): {_efe}")
-
-        # Rally-exhaustion short. Self-gated by rally_exhaustion.enabled.
-        # LIVE uses tiny notional, 1x default leverage, wide stop,
-        # held/claim/dedup preflight, and still routes through maybe_execute.
-        try:
-            # W-L latency verdict (2026-07-13): monotone EV decay -2%/6h on
-            # rally signals — hourly scans + ~15min staggered candle TTL
-            # capture +0.8-1.0%/episode at near-zero extra weight.
-            _rally_exhaustion_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, _staggered_ttl_ms(c, 900_000, 600_000)),
-                _book_execute, close_position_market,
-            )
-        except Exception as _ree:
-            logger.warning(f"[rally-exhaustion] cycle failed (non-fatal): {_ree}")
-
-        # Crash-continuation divergent-weakness short. Swarm-discovered (extreme_surface 2026-06-27):
-        # BTC-up tape + coin -8%/2d divergent weakness -> short continuation. DEFAULT SHADOW
-        # (shadow_only:true) — logs candidates + a forward-validation jsonl, allocates ZERO capital
-        # until the forward log confirms and an operator flips it. Self-gated by .enabled.
-        try:
-            _crash_continue_div_short_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _ccdse:
-            logger.warning(f"[crash-continue-div-short] cycle failed (non-fatal): {_ccdse}")
-
-        # Cross-sectional bearish-engulf short. Swarm-discovered (Lane C/C2 2026-06-27): a daily bearish
-        # full-body engulf predicts next-day weakness; SHORT-only (long leg refuted), orthogonal to momentum.
-        # DEFAULT SHADOW — records candidates (all regimes, regime-tagged) to forward-confirm the up-regime
-        # excess the down-tape backtest couldn't. ZERO capital until a VALIDATED verdict + operator flip.
-        try:
-            _engulf_short_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _ese:
-            logger.warning(f"[engulf-short] cycle failed (non-fatal): {_ese}")
-
         # neg_funding_fade RIPPED 2026-07-12 (operator refuted-rule): fixed
         # grader read it -2.0%/ep net of funding forward; the original +EV
         # claims were cluster double-counting. Ledger history stays graded.
-
-        # Young-listing lane (2026-07-10): xyz coins UNDER the 60-bar history floor
-        # — the floor still protects the main engine; this bounded lane (min 2 bars,
-        # $3M vol, max 1 position, $15/1x) covers the excluded population. Actions
-        # are OFF until W-Y1 validates continuation vs fade; every trigger records
-        # to the shadow ledger for forward grading either way.
-        # Funding-spike crowded-long fade (W-F2A, VALIDATED 2026-07-09: +6.2%/ep
-        # net, MC p=0.0027, n=25 dedup). SHADOW until the forward ledger confirms;
-        # KILL if forward EV25 < 0 over 15 episodes. 6h cadence, funding history
-        # fetched per liquid coin only.
-        try:
-            _funding_spike_short_maybe_run(
-                read_agent_config(), universe, positions,
-                lambda c, i, n: _fetch_candles_sync(c, i, n, 6 * 3600 * 1000),
-                _book_execute, close_position_market,
-            )
-        except Exception as _fsse:
-            logger.warning(f"[funding-spike-short] cycle failed (non-fatal): {_fsse}")
 
         # Majors-swing book (operator-designed 2026-07-09): trend + pullback-resume
         # LONGS on the fixed deep-liquidity allowlist (BTC/ETH/SOL/AAVE + xyz:SP500/
@@ -911,78 +794,6 @@ while True:
             _wallet_follow_maybe_record(read_agent_config(), universe)
         except Exception as _wfre:
             logger.debug(f"[wallet-follow-recorder] pass failed (non-fatal): {_wfre}")
-
-        # social_trending recorder (W-SOC lane, 2026-07-23): zero-capital forward
-        # attention log. Every free social-HISTORY source is dead (fxtwitter no
-        # search; CoinGecko/{id}/history reddit=0.0; LunarCrush 401), so we accrue
-        # our own from CoinGecko /search/trending (free, no key), 1h-throttled inside
-        # the module, deduped 24h/coin. NOT tradeable — a W-SOC2 backtest grades it.
-        try:
-            _social_trending_maybe_record(universe, read_agent_config())
-        except Exception as _stre:
-            logger.debug(f"[social-trending-recorder] pass failed (non-fatal): {_stre}")
-
-        # numerology_eth book (W-FUN lane): paper-trades the day_root_odd "money formula"
-        # (odd day-root -> LONG ETH) at zero capital so the KNOWN noise proves itself
-        # forward. DEFAULT shadow_only=true -> records only. Wired with positions+execute
-        # so that flipping numerology_eth.shadow_only=false ARMS it: it then claims ETH and
-        # routes a LIVE 40x/50%-equity trade through the executor. Null already showed it's
-        # a -86% coin flip (random flips median -86%, formula = luck tail, inverse -> $6).
-        try:
-            _numerology_maybe_record(universe, read_agent_config(), positions, _book_execute)
-        except Exception as _nre:
-            logger.debug(f"[numerology-recorder] pass failed (non-fatal): {_nre}")
-
-        # uw_flow_xs LIVE book (W-UW1/2, 2026-07-23): cross-sectional options-flow edge on
-        # xyz equities — LONG top-k bullish UW net-flow / SHORT bottom-k bearish. Validated
-        # +2.0%/leg net25, both OOS halves, matched-null p=0.0005. Bounded $20/leg, 3x, k=2,
-        # 5d hold, 20% stop; once/UTC-day. KILL: cumulative fwd EV25<0 over 12 rebalances.
-        try:
-            _uw_flow_xs_maybe_run(read_agent_config(), universe, positions, _book_execute)
-        except Exception as _uwe:
-            logger.debug(f"[uw-flow-xs] pass failed (non-fatal): {_uwe}")
-
-        # AI-only scan (operator experiment 2026-07-25): hand the WHOLE board to
-        # the LLM with NO TA/volume signal gate and let it decide, on its own
-        # interval (default 30min). Risk gates in maybe_execute still apply.
-        # DEFAULT enabled=false -> total no-op; place=false -> shadow-records
-        # only. See ai_only_mode in the config. One batched brain call per scan.
-        try:
-            _ai_only_maybe_run(read_agent_config(), universe, positions, _book_execute)
-        except Exception as _aoe:
-            logger.debug(f"[ai-only] pass failed (non-fatal): {_aoe}")
-
-        # unlock_short_runin LIVE book (operator flip 2026-07-11): $20/1x short
-        # inside the 48-72h pre-unlock window, exits AT the event. Kill:
-        # unlock_short.shadow_only=true after 10 episodes if forward EV25 < 0.
-        try:
-            _unlock_short_maybe_run(read_agent_config(), universe, positions,
-                                    _book_execute)
-        except Exception as _use:
-            logger.warning(f"[unlock-short-live] cycle failed (non-fatal): {_use}")
-
-        # W-N3 news-catalyst recorder: zero-capital ledger reads of the live
-        # Google News coverage-surge signal on the cycle's scan candidates
-        # (30-min throttle inside the module; non-breaking reads = the null).
-        # news_surge_short LIVE book (operator flip 2026-07-20, reverse-refuted
-        # audit): SHORT a breaking coverage surge on xyz equities, $20/10x, 15%
-        # stop, 1d hold — the exact geometry graded in
-        # findings/reverse_refuted_direction_audit.md (+13.82%/sig n=7, excess
-        # +11.69% over the matched null, mc_p 0.0005). Crypto surges still
-        # record (zero capital) pending their own n>=8 read. Mandatory review
-        # at 8 resolved forward episodes.
-        try:
-            _news_surge_short_maybe_run(read_agent_config(), results,
-                                        positions, _book_execute)
-        except Exception as _nsse:
-            logger.warning(f"[news-surge-short-live] pass failed (non-fatal): {_nsse}")
-
-        # news_surge_multi: zero-capital multi-firehose surge recorder
-        # (worldmonitor thesis). Grades vs the single-source book; no capital.
-        try:
-            _news_surge_multi_maybe_run(read_agent_config(), results, positions)
-        except Exception as _nsme:
-            logger.debug(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the

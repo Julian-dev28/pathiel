@@ -136,24 +136,6 @@ def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
 
 # ── xs basket exit ownership (2026-07-19 incident) ───────────────────────────
 
-def test_xs_analysis_carries_book_exit_policy():
-    """Caught live 2026-07-19, 1.7h after the first full basket deploy: xs
-    legs registered under the MAIN-ENGINE DSL policy (30h timeout, 8h
-    stale-flat, 2.5% stop) which would shred the validated 5-day
-    rebalance-owned hold. The analysis must carry the wide book override."""
-    from hermes_trader.agents.xs_momentum_live import _analysis
-    a = _analysis("BTC", "long", 0.12, hold_days=5.0)
-    dsl = a["dsl_exit_override"]
-    assert dsl["hard_timeout_minutes"] == 5.0 * 1440.0     # the full hold
-    assert dsl["stale_flat_timeout_minutes"] == 0.0        # no flat-cutter
-    assert dsl["protect_pct"] == 1000.0                    # phase-2 never arms
-    assert dsl["max_loss_pct"] == 20.0                     # disaster stop only
-    assert a["backup_sl_pct_override"] == 20.0
-    # shorts carry it too
-    s = _analysis("XPL", "short", -0.2, hold_days=5.0)
-    assert s["dsl_exit_override"]["hard_timeout_minutes"] == 7200.0
-
-
 def test_book_owned_holds_skip_ai_close_check():
     """Book-claimed coins are exempt from the AI close-check (their books own
     exits); the loop consults the claims registry before researching a held
@@ -168,30 +150,3 @@ def test_book_owned_holds_skip_ai_close_check():
     assert block.index("owner_of(coin)") < block.index("(now_ms - last_research)")
 
 
-def test_xs_exclude_coins_filters_before_ranking():
-    """W-X4 (b02276b): declared meme names drop from the eligible set BEFORE
-    volume ranking; absent config key changes nothing."""
-    from hermes_trader.agents.xs_momentum_live import _eligible
-    uni = [{"coin": c, "type": "perp", "dayNtlVlm": 1e9} for c in
-           ("BTC", "ETH", "FARTCOIN", "kBONK", "SOL")]
-    cfg = {"xs_momentum": {"min_volume_usd": 0, "universe_top_n": 50,
-                           "exclude_coins": ["FARTCOIN", "kBONK"]}}
-    out = _eligible(uni, cfg)
-    assert "FARTCOIN" not in out and "kBONK" not in out
-    assert {"BTC", "ETH", "SOL"} <= set(out)
-    cfg2 = {"xs_momentum": {"min_volume_usd": 0, "universe_top_n": 50}}
-    assert "FARTCOIN" in _eligible(uni, cfg2)
-
-
-def test_xs_book_integrity_alert_fires_below_40(monkeypatch, caplog):
-    """W-X5: below ~$40 equity the 3x-cap legs fall under HL's min order and
-    vanish silently — the rebalance must WARN loudly (never block)."""
-    import logging
-    import hermes_trader.agents.xs_momentum_live as xsl
-    from hermes_trader.agents import memory as mem_mod
-    monkeypatch.setattr(mem_mod.memory, "_equity", 35.0, raising=False)
-    monkeypatch.setattr(xsl, "_last_ts", lambda: 2**62, raising=False)  # not rebalance time
-    with caplog.at_level(logging.WARNING):
-        xsl.maybe_rebalance({"xs_momentum": {"enabled": True}}, [], [],
-                            lambda *a: [], lambda a: None, lambda *a: None)
-    assert any("BOOK-INTEGRITY" in r.message for r in caplog.records)

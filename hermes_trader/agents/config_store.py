@@ -83,27 +83,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "stale_flat_timeout_minutes": 480,
     },
     "ta_sidestep_force_execute": True,
-    # AI-only scan (operator experiment 2026-07-25): hand the WHOLE board to the
-    # LLM with NO TA/volume signal filter and let it decide. Risk gates in
-    # maybe_execute still apply — only the SIGNAL gates are sidestepped. One
-    # batched brain call per scan (token-efficient dense table). Shadow-first:
-    # place=false records to the `ai_only` shadow ledger and executes nothing;
-    # place=true arms it at the small bounded size below. interval_min sets the
-    # cadence (default 30). See hermes_trader/agents/ai_only_scan.py.
-    "ai_only_mode": {
-        "enabled": False,
-        "place": False,
-        "interval_min": 30,
-        "min_volume_usd": 0,
-        "max_markets": 40,
-        "min_confidence": 0.7,
-        "web_search": False,
-        "equity_fraction_per_trade": 0.05,
-        "leverage": 5,
-        "stop_pct": 0.08,
-        "tp_pct": 0.16,
-        "allow_shorts": True,
-    },
     # Existing strategy books place WITHOUT an AI veto (they route straight
     # through maybe_execute's risk gates). This flag documents and controls that:
     # true = current behavior (books self-place); set false to require the books
@@ -147,64 +126,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "strategy_book_equity_frac": 0.1,
     "strategy_book_notional_usd": 0,
 
-    # Cross-sectional momentum rebalancer (validated +EV edge). Market-neutral:
-    # long top-K / short bottom-K by trailing return, rebalanced every hold_days.
-    "xs_momentum": {
-        "enabled": True,
-        "lookback_days": 7,
-        "hold_days": 10,
-        "k_per_leg": 8,
-        "universe_top_n": 50,
-        "min_volume_usd": 5_000_000,
-        # audit-driven upgrades: rank on the BTC-neutral RESIDUAL (stronger + smoother), and GATE
-        # on BTC vol (momentum lives in low-vol; go flat in high-vol = the dead regime).
-        "residual": True,
-        "ranking": "pct_k",       # Codex audit: cleaner robust expression than z_ext; do not stack both
-        "zext_window": 14,        # shared channel window for pct_k / z_ext rankers
-        "beta_window": 30,
-        "vol_gate": True,
-        "vol_short": 14,
-        "vol_long": 90,
-        # Vol-managed sizing (W6, Moreira-Muir): scale exposure by target_vol/realized_vol,
-        # clamped to [0.3, cap]. Realized vol = pstdev of last ~20 rebalance-period returns,
-        # persisted to .xs_volmgd_history. OFF by default — enable after history accumulates.
-        "vol_managed": {
-            "enabled": False,
-            "target_vol": 0.02,   # per-period return vol target (rebalance-period units)
-            "cap": 2.0,           # max exposure scalar (2x = never more than double notional)
-        },
-    },
-    # Extreme-fade overlay: validated long-after-crash only.
-    # Rally-exhaustion shorts use their own gated module and config.
-    # After a completed daily crash, fade it near the next daily open.
-    # Not a primary edge — small overlay. Runs inside scanner loop (not a rebalancer).
-    # Pure engine: hermes_trader/agents/extreme_fade.py
-    "extreme_fade": {
-        "enabled": False,
-        "crash_pct": -0.12,      # negative threshold for long leg (e.g. -0.12 = prior day ≤ -12%)
-        "scan_interval_min": 30,
-    },
-    # Codex-discovered rally-exhaustion short. Live wiring uses tiny notional,
-    # low leverage, a wide strategy-specific stop, held/claim/dedup preflight,
-    # and still routes through maybe_execute for margin/liquidity/news/concurrency/order gates.
-    "rally_exhaustion": {
-        "enabled": False,
-        "scan_interval_hours": 6,
-        "entry_window_hours": 8,
-        "lookback_days": 2,
-        "threshold_pct": 12.0,
-        "btc_window": 20,
-        "min_volume_usd": 20_000_000,
-        "executor_short_volume_floor_usd": 20_000_000,
-        "volume_window": 30,
-        "hold_days": 5,
-        "stop_pct": 25.0,
-        "notional_usd": 20.0,
-        "leverage": 1,
-        "tp_scale_fraction": 0.0,
-        "max_new_per_cycle": 1,
-        "history_bars": 40,
-    },
 }
 
 

@@ -54,18 +54,6 @@ def test_no_two_modules_share_a_state_file_path():
     assert dupes == {}, f"duplicate state_file(...) path across modules: {dupes}"
 
 
-def test_news_surge_short_registered_everywhere_it_needs_to_be():
-    """A book that opens live orders but is missing from claim rights or
-    priority attribution is a silent leak: it trades, but claims/PnL don't
-    know it exists (the exact 2026-07-18 demolition trap, in reverse)."""
-    import scripts.pnl_by_book as pbb
-    from hermes_trader.agents.rebalancer_owned import active_claim_books
-    from hermes_trader.agents import news_surge_short_live as nssl
-
-    assert nssl._BOOK_NAME in active_claim_books()
-    assert nssl._BOOK_NAME in pbb.BOOK_PRIORITY
-
-
 # --------------------------------------------------------------- stop reachability
 # executor.py:1023 clamps the on-exchange backup stop to
 #   entry * (backup_sl_max_frac_of_liq / leverage)
@@ -234,34 +222,6 @@ def test_xs_xyz_at_3x_restores_its_validated_20pct_stop():
     assert _liq_buffer(lev) > 0.20               # 20% disaster stop reachable
     # and the OLD 12x was broken (liq below the stop) — pins the bug we fixed
     assert _liq_buffer(12) < 0.06
-
-
-def test_xs_xyz_analysis_actually_emits_the_low_leverage():
-    """End-to-end: the built analysis must carry the 3x override so the
-    executor's min() lands on 3, not the global 12/6-cap."""
-    from hermes_trader.agents import xs_xyz_live as xl
-    a = xl._analysis("xyz:AAPL", "long", 0.05, leverage=3)
-    assert a["leverage_override"] == 3
-    assert a["backup_sl_pct_override"] == 20.0   # validated wide stop intact
-    assert a["dsl_exit_override"]["max_loss_pct"] == 20.0
-
-
-# --------------------------------------------------------------- size the winner
-def test_xs_momentum_has_its_own_equity_frac_decoupled_from_shorts():
-    """2026-07-22: the proven earner shared strategy_book_equity_frac with the
-    unproven shorts, so it couldn't be sized up without sizing them up too.
-    It now carries its own per-book fraction; the shorts keep the global."""
-    from hermes_trader.agents import xs_momentum_live as xl
-    a = xl._analysis("BTC", "long", 0.5, equity_frac=0.15)
-    assert a["strategy_book_equity_frac_override"] == 0.15
-    a0 = xl._analysis("BTC", "long", 0.5)   # unset -> global path
-    assert "strategy_book_equity_frac_override" not in a0
-    import json
-    from pathlib import Path
-    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    # decoupled: xs_momentum has its OWN knob, raisable independently of the
-    # shorts once capital moves to the main dex (the $30 dex caps it at ~0.1 now)
-    assert cfg["xs_momentum"]["equity_frac"] >= cfg["strategy_book_equity_frac"]
 
 
 # ------------------------------------------- stop-honoring leverage cap (2026-07-24)

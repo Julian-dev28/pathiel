@@ -102,6 +102,8 @@ FIXTURE_CONFIG = {
     "news_catalyst": {"enabled": False, "notional_usd": 20.0, "leverage": 1},
     "mover_recorders": {"pass_live": {"enabled": True, "shadow_only": False,
                                       "notional_usd": 20.0, "leverage": 1}},
+    "news_ta_aligned": {"enabled": True, "shadow_only": False,
+                        "notional_usd": 20.0, "leverage": 3},
 }
 
 
@@ -141,7 +143,7 @@ def test_activity_newest_first_and_types(monkeypatch):
     assert by_ts[500]["type"] == "book" and by_ts[500]["shadow"] is True
     assert by_ts[500]["candidates"][0]["coin"] == "TRUMP"
     assert by_ts[650]["type"] == "book" and by_ts[650]["subtype"] == "open"
-    assert set(out["books"]) == db._KNOWN_BOOK_NAMES
+    assert set(out["books"]) == db._RENDERABLE_BOOK_NAMES
 
 
 def test_activity_alias_maps_to_book(monkeypatch):
@@ -322,28 +324,18 @@ def test_ai_close_classified_as_close(monkeypatch):
 def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
-    # demolition 2026-07-18: majors_swing / young_listings / news_catalyst
-    # books deleted (never validated / refuted); +xs_xyz_equities (W-X2
-    # ROBUST); +news_surge_short +mover_pass_short (mover_pass LONG
-    # (reverse-refuted audit 2026-07-20) +news_surge_multi (worldmonitor
-    # thesis, operator flip 2026-07-21) +news_ta_aligned (VALIDATED aligned
-    # quadrant, 2026-07-22) — 13 books
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 13
-    assert rows["engulf_short"]["status"] == "live"
-    assert rows["rally_exhaustion"]["status"] == "live"   # no shadow_only key → live
-    assert rows["xs_momentum"]["size"] == "4/leg basket"
-    assert rows["xs_xyz_equities"]["status"] == "live"
-    assert rows["xs_xyz_equities"]["size"] == "5/leg basket"
-    assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
-    assert rows["unlock_short_runin"]["size"] == "$20 @ 1x"
-    assert "news_ta_aligned" in rows and rows["news_ta_aligned"]["thesis"]
+    # 2026-08-29: every candle-strategy book was deleted. What can still trade
+    # is the mover recorders' live arms — 3 books.
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 3
+    assert rows["news_ta_aligned"]["status"] == "live"
+    assert rows["news_ta_aligned"]["size"] == "$20 @ 3x"
     assert all(r["thesis"] for r in rows.values())
 
 
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 13 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 3 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -922,7 +914,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 13
+    assert len(rows) == 3
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 
@@ -1042,8 +1034,9 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
                              "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
-    assert rows["extreme_fade"]["status"] == "live"
-    assert rows["extreme_fade"]["size"] == "0.4x eq @ 1x"
+    # extreme_fade's module was deleted 2026-08-29 but its ledger survives, so
+    # the league renders it as a graded recorder, not as something that can trade
+    assert rows["extreme_fade"]["status"] == "recorder"
     assert rows["extreme_fade"]["resolved"] == 1        # far past its 3d horizon
     # whale_flow REFUTED + removed 2026-07-22 -> in _REMOVED_BOOKS, never renders
     assert "whale_flow" not in rows

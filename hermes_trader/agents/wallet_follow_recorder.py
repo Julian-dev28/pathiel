@@ -16,7 +16,7 @@ Last szi per (wallet, coin) persists in the state file. Detected deltas:
 
 - OPEN  (|szi| 0 -> nonzero, or sign flip): gradeable row, side long/short,
   entry_ref_px = OUR mid at detection (copy latency is priced into the grade),
-  horizon 3d / stop 20% (the validated extreme_fade structure, matching the
+  horizon 3d / stop 20% (matching the
   follow set's 12h-2.3d central hold mass; recorded per-row for re-grades).
 - ADD   (same-sign |szi| growth >= 25%): meta-only row (side="meta_add",
   horizon 0 -> ungradeable by design) for later add-following analysis.

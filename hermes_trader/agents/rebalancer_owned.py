@@ -72,15 +72,12 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # Only books that currently use ClaimsRegistry may persist claims in live mode.
 # This prevents claims left behind by deleted strategy modules from blocking
 # active EV+ books after a refactor or cleanup.
-_ACTIVE_CLAIM_BOOKS = frozenset({"xs_momentum", "xs_xyz_equities",
-                                 "rally_exhaustion",
-                                 "crash_continue_div_short", "engulf_short",
-                                 "funding_spike_short",
-                                 "unlock_short_runin",
-                                 "mover_pass_short",
-                                 "news_surge_short", "young_mover_short",
-                                 "news_surge_multi", "news_ta_aligned",
-                                 "numerology_eth", "uw_flow_xs"})
+# 2026-08-29: the strategy books were deleted. What remains here is exactly the
+# set that still calls ClaimsRegistry — the mover recorders' live arms. This is
+# the mechanism working as designed: a claim left on disk by a now-deleted book
+# is not in this set, so it can never block a surviving book.
+_ACTIVE_CLAIM_BOOKS = frozenset({"mover_pass_short", "young_mover_short",
+                                 "news_ta_aligned"})
 
 
 def active_claim_books() -> Set[str]:
@@ -97,7 +94,7 @@ class ClaimsRegistry:
     locked by a *different* book — callers exclude these from their candidate
     universe before ranking.
 
-    File format: {"claims": {"BTC": "xs_momentum", "ETH": "rally_exhaustion", ...}}
+    File format: {"claims": {"BTC": "mover_pass_short", ...}}
 
     All mutations are in-memory until save() is called.  save() and load() are
     best-effort: a failure is logged but never raises (same contract as
@@ -387,7 +384,7 @@ def prune_claims_to_live(positions, books: Optional[Set[str]] = None) -> Dict[st
     """Release claims whose coins are no longer open in the live account.
 
     Strategy modules also prune their own claims, but some are cadence-gated
-    (for example xs_momentum rebalances every N days). This cycle-level scrub
+    (a book rebalances on its own cadence, not every cycle). This cycle-level scrub
     prevents vanished/stopped coins from blocking other live books until the
     owning strategy's next scheduled run.
     """

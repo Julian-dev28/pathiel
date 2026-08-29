@@ -68,14 +68,6 @@ STRICT_FEE_TIER = "slip25"   # promotions must survive 4x the real cost
 # ("top", key)            -> cfg[key]["shadow_only"]
 # ("nested", key, sub)    -> cfg[key][sub]["shadow_only"]
 _SWITCHES: Dict[str, tuple] = {
-    "engulf_short": ("top", "engulf_short"),
-    "crash_continue_div_short": ("top", "crash_continue_div_short"),
-    "rally_exhaustion": ("top", "rally_exhaustion"),
-    "funding_spike_short": ("top", "funding_spike_short"),
-    "unlock_short_runin": ("top", "unlock_short"),
-    "news_surge_short": ("top", "news_surge_short"),
-    "xs_xyz_equities": ("top", "xs_xyz_equities"),
-    "extreme_fade": ("top", "extreme_fade"),
     "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
     "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
     # The main engine is a thesis like any other. Its live arm is an ENTRIES
@@ -84,16 +76,14 @@ _SWITCHES: Dict[str, tuple] = {
     # can earn its way back the same way anything else does — by grading
     # VALIDATED on its own forward ledger. No exemption for being the flagship.
     "main_engine": ("entries", "main_engine"),
-    "news_surge_multi": ("top", "news_surge_multi"),
 }
 
 # Books whose live arm is a counterfactual/recorder with no capital path, or
 # whose direction is owned by another book. Never auto-promoted.
 _NEVER_PROMOTE = frozenset({
     "news_catalyst", "young_listings", "majors_swing", "mover_b15_up",
-    "whale_flow", "news_ta_quadrant", "wallet_follow", "v2_xs_momentum",
+    "whale_flow", "news_ta_quadrant", "wallet_follow",
     "unlock_short", "premium_fade_short", "neg_funding_fade",
-    "news_surge_multi",  # recorder; promotion = head-to-head vs news_surge_short, not the absolute bar
 })
 
 # Promotion sizing — bounded, and the stop must be REACHABLE: the executor

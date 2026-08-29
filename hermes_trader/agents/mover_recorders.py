@@ -122,7 +122,7 @@ def _pass_short_live_analysis(coin: str, move: float, cfg: Dict[str, Any]) -> Di
     2026-07-20, reverse-refuted-direction audit): SHORT the mover the AI just
     PASSed, $20/10x, 15% stop, 1d hold, no trail — the exact geometry the
     audit graded. Short-liquidity floor is asset-class-aware: xyz equities
-    use the $250k convention (xs_xyz_live), crypto uses the trigger's own
+    use the $250k convention, crypto uses the trigger's own
     $5M eligibility floor (already cleared by definition)."""
     stop_pct = float(cfg.get("stop_pct", 15.0))
     leverage = max(1, int(cfg.get("leverage", 10)))

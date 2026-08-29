@@ -193,6 +193,11 @@ def build_episodes(fills: List[Dict[str, Any]]) -> List[Episode]:
 
 
 # ----------------------------------------------------------------------------- book footprints
+# NOTE (2026-08-29): most books named in this file were deleted. The names stay
+# on purpose — this script reconstructs realised PnL from the historical log, and
+# those fills really happened. Removing the names here would not clean anything
+# up, it would silently drop past trades out of the accounting.
+
 # Modules whose stripped name is not the book name (xs_xyz_live -> xs_xyz_equities).
 _MODULE_BOOK_ALIASES = {"xs_xyz": "xs_xyz_equities"}
 

@@ -552,45 +552,31 @@ def _require_operator(request: Request) -> None:
 # below, resolved by book NAME, not a blanket pass_live assumption).
 
 _BOOKS: List[tuple] = [
-    ("xs_momentum", "xs_momentum",
-     "Cross-sectional momentum basket — long the strongest, short the weakest "
-     "of the top-50 by 7d return, vol-managed rebalance."),
-    ("xs_xyz_equities", "xs_xyz_equities",
-     "The xs recipe on xyz tokenized equities — 7d residual momentum vs "
-     "xyz:XYZ100, 5/leg, 5d hold (W-X2 ROBUST: +0.65%/rebal net, p=0.0055)."),
-    ("extreme_fade", "extreme_fade",
-     "Fade single-day crashes of -12% or worse — long the panic with a wide "
-     "20% stop, 3-day hold."),
-    ("rally_exhaustion", "rally_exhaustion",
-     "Short a +12%/2d rally when BTC is in a downtape — wide stop, $20M "
-     "volume floor."),
-    ("crash_continue_div_short", "crash_continue_div_short",
-     "BTC up while a coin bleeds -8%/2d — short the divergent laggard's "
-     "continuation."),
-    ("engulf_short", "engulf_short",
-     "Bearish daily engulfing candle on a liquid coin — short the next day."),
-    ("funding_spike_short", "funding_spike_short",
-     "Funding-rate z-score spike above 2 — short until funding normalizes."),
-    ("unlock_short_runin", "unlock_short",
-     "Short the run-in 48-72h before large token unlocks (>=1% of circulating)."),
     ("mover_pass_short", None,
      "Inverse of mover_pass — short the mover the AI just PASSed instead of "
      "buying it (own forward ledger interim-refuted the long side)."),
     ("young_mover_short", None,
      "Short the young listing the history floor just blocked from a long — "
      "that cohort does -2.71%/next-day vs a flat mature-xyz tape."),
-    ("news_surge_short", "news_surge_short",
-     "Inverse of the refuted news_catalyst LONG — short a breaking Google "
-     "News coverage surge on xyz equities, 15% stop, 1-day hold."),
-    ("news_surge_multi", "news_surge_multi",
-     "Short a breaking coverage surge measured across 15 pooled finance/tech "
-     "firehoses (worldmonitor thesis); unvalidated trigger, n=8 kill."),
     ("news_ta_aligned", "news_ta_aligned",
      "Trade the AI's own LONG/SHORT verdict only when news polarity AGREES "
      "with it (validated aligned quadrant: +1.80%/sig, win 0.86); $20/3x, 15% stop."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
+
+# Books deleted 2026-08-29. Nothing writes their events any more, but the
+# session log is append-only and still holds months of them, so the /activity
+# classifier has to recognise these names or that history renders as untyped
+# `other` rows. Deliberately NOT part of _BOOKS: the books panel shows what can
+# trade today, the activity feed shows what happened.
+_HISTORICAL_BOOK_NAMES = frozenset({
+    "xs_momentum", "xs_xyz_equities", "extreme_fade", "rally_exhaustion",
+    "crash_continue_div_short", "engulf_short", "funding_spike_short",
+    "unlock_short_runin", "news_surge_short", "news_surge_multi",
+    "uw_flow_xs", "ai_only", "numerology_eth", "social_trending",
+})
+_RENDERABLE_BOOK_NAMES = _KNOWN_BOOK_NAMES | _HISTORICAL_BOOK_NAMES
 
 
 def _book_size_str(cfg: Dict[str, Any]) -> str:
@@ -644,6 +630,10 @@ def _books_payload() -> List[Dict[str, Any]]:
 # with a fields dict the client renders as key-value rows.
 
 # Legacy/aliased event names that are really book events.
+# HISTORICAL. These books were deleted 2026-08-29, but their events are already
+# written into the session log and the /activity page still has to render that
+# history correctly. Deleting a live code path is not a licence to misrender the
+# past, so this map stays even though nothing writes these events any more.
 _EVENT_BOOK_ALIASES = {
     "extreme_fade_candidates": "extreme_fade",
     "xs_rebalance": "xs_momentum",
@@ -866,7 +856,7 @@ def _classify_event(e: Dict[str, Any]) -> Dict[str, Any]:
                 "side": e.get("side"), "extra": extra, "tier": 1}
 
     book = _EVENT_BOOK_ALIASES.get(ev, ev)
-    if (book in _KNOWN_BOOK_NAMES or isinstance(e.get("skipped"), dict)
+    if (book in _RENDERABLE_BOOK_NAMES or isinstance(e.get("skipped"), dict)
             or "candidates" in e or ("signals" in e and "opened" in e)):
         core = {"ts", "event", "shadow", "signals", "opened", "skipped", "candidates"}
         extra = {k: v for k, v in e.items() if k not in core}
@@ -977,7 +967,7 @@ def _activity_payload(limit: int = 150, book: str = "", etype: str = "",
         if len(out) >= limit:
             break
     return {"events": out,
-            "books": sorted(_KNOWN_BOOK_NAMES),
+            "books": sorted(_RENDERABLE_BOOK_NAMES),
             "types": _ACTIVITY_TYPES,
             "fresh_window_s": _FRESH_WINDOW_S}
 
@@ -1049,13 +1039,9 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
     it's the same walk. Pure log walk, no network.
 
     'executed' counts real opens from BOTH paths: the main engine's
-    `execute` event (executed=True) AND every strategy book's `book_open`
-    event — the two are disjoint (a book trade never emits `execute`). An
-    execute-only count silently zeroed out every book fill, incl. the ones
-    xs_momentum had open right now (operator screenshot 2026-07-14).
-    xs_momentum's OWN legs still don't appear here: it logs one aggregate
-    `xs_rebalance` (current basket membership, not a per-leg open event) —
-    see the book-league panel for that book's real signal count."""
+    `execute` event (executed=True) AND every book's `book_open` event — the
+    two are disjoint (a book trade never emits `execute`). An execute-only
+    count silently zeroed out every book fill."""
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     cutoff = now - window_s * 1000
     events = _read_log_lines()

@@ -758,7 +758,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # random-time null) and HIGHER confidence did worse, so a confidence floor
     # can't fix it. Cap the main engine's AI-long notional instead: exposure
     # drops ~10x while entries keep flowing for the confirmation window.
-    # Strategy books (validated long edges like extreme_fade) are EXEMPT.
+    # Strategy books are EXEMPT.
     # 0 disables (hot-read, reversible).
     _ai_long_notional = float(config.get("ai_long_notional_usd", 0) or 0)
     if (analysis.get("side") != "short" and not analysis.get("strategy_book")
