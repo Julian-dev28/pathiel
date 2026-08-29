@@ -9,12 +9,14 @@ Books hosted here (mover_pass LONG and b15_up were REFUTED and removed
   0.0005, both OOS halves + (see reverse_refuted_direction_audit.md).
 - young_mover_short (LIVE): SHORT the young listing the history floor blocks
   from a long (that cohort does -2.71%/next-day vs a flat mature-xyz tape).
-- news_ta_quadrant (recorder): tags each directional verdict news-vs-TA
-  aligned/conflict/neutral for forward grading.
-- trend_block_news_long (recorder): catalyst-positive LONG that died only at
-  the trend filter, zero-capital counterfactual.
+Removed 2026-08-30 — operator directive "nothing should be a recorder":
+- news_ta_aligned (was LIVE): REFUTED on its own forward ledger, -5.02%/sig at
+  n=9, mc_p=0.9915.
+- news_ta_quadrant, trend_block_news_long: zero-capital counterfactuals with no
+  path to capital, which is the shape the directive rules out.
 
-All record to the unified shadow ledger; scripts/shadow_status.py grades them.
+Both survivors have a switch in scripts/autonomous_cycle.py, so the evidence
+loop can promote or demote them without a code change.
 """
 from __future__ import annotations
 
@@ -344,50 +346,6 @@ def record_young_mover_short(coin: str, preblock_reason: str, mid_px: float,
     return True
 
 
-def record_trend_block_news_long(analysis: Dict[str, Any], result: Any,
-                                 config: Dict[str, Any]) -> bool:
-    """W-G pocket test (2026-07-12, ARB/Robinhood case): the trend filter is
-    forward-validated on the FULL population (blocked entries avg −1.68%/ep,
-    n=4,644 decision audit) — but catalyst-backed longs were rare in that
-    sample. Every LONG with positive news risk that dies ONLY at the trend
-    filter records a hypothetical entry; the ledger answers whether a real
-    catalyst overrides a daily downtrend. Promotion bar: >=20 episodes,
-    EV25 > 0 both halves — until then the gate keeps blocking."""
-    cfg = (config.get("mover_recorders") or {})
-    if not bool(cfg.get("enabled", True)):
-        return False
-    if not isinstance(result, dict) or result.get("executed"):
-        return False
-    blocked = result.get("blocked_by") or []
-    if isinstance(blocked, str):
-        blocked = [blocked]
-    if not any("trend_filter" in str(b) or "200d-MA" in str(b) for b in blocked):
-        return False
-    if (analysis.get("verdict") or "").upper() != "LONG":
-        return False
-    if (analysis.get("news_risk") or "").lower() != "positive":
-        return False
-    coin = analysis.get("coin") or ""
-    try:
-        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
-    except (TypeError, ValueError):
-        px = 0.0
-    if not coin or px <= 0:
-        return False
-    now_ms = int(time.time() * 1000)
-    if not _dedup_key_hit("tbnl", coin, now_ms):
-        return False
-    shadow_ledger.record("trend_block_news_long", coin=coin, side="long",
-                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
-                         entry_ref_px=px, horizon_days=2.0, stop_pct=15.0,
-                         meta={"confidence": float(analysis.get("confidence") or 0),
-                               "web_search_used": bool(analysis.get("web_search_used")),
-                               "shadow": True})
-    logger.info(f"[mover-recorders] trend-blocked catalyst LONG recorded: {coin} "
-                f"(conf {float(analysis.get('confidence') or 0):.2f}, news positive)")
-    return True
-
-
 # ── W-V news-vs-TA quadrant (2026-07-13, SKHX case) ─────────────────────────
 # Operator question: is NEWS stronger than PRICE ACTION? History cannot answer
 # it (session log carries no news_context; polar news_risk verdicts n=9, zero
@@ -432,166 +390,3 @@ def classify_news_polarity(news_risk: Optional[str],
     return "neutral", "keywords"
 
 
-def record_news_ta_quadrant(analysis: Dict[str, Any],
-                            config: Dict[str, Any]) -> bool:
-    """Call on every research verdict. Directional verdicts (LONG/SHORT) that
-    were researched with a REAL news_context record a hypothetical trade in
-    the verdict direction (1d horizon, 15% stop) tagged with the news-vs-TA
-    quadrant, so 'do conflict verdicts underperform aligned ones?' grades
-    itself forward. One row per coin per UTC day. Nothing here trades."""
-    cfg = (config.get("mover_recorders") or {})
-    if not bool(cfg.get("enabled", True)):
-        return False
-    verdict = (analysis.get("verdict") or "").upper()
-    if verdict not in ("LONG", "SHORT"):
-        return False
-    news = (analysis.get("news_context") or "").strip()
-    if not news or news.lower() == "no news":
-        return False
-    coin = analysis.get("coin") or ""
-    try:
-        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
-    except (TypeError, ValueError):
-        px = 0.0
-    if not coin or px <= 0:
-        return False
-    now_ms = int(time.time() * 1000)
-    if not _dedup_key_hit("ntq", coin, now_ms):
-        return False
-    polarity, source = classify_news_polarity(analysis.get("news_risk"), news)
-    side = "long" if verdict == "LONG" else "short"
-    if polarity == "neutral":
-        quadrant = "neutral"
-    elif (polarity == "positive") == (side == "long"):
-        quadrant = "aligned"
-    else:
-        quadrant = "conflict"
-    shadow_ledger.record("news_ta_quadrant", coin=coin, side=side,
-                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
-                         entry_ref_px=px, horizon_days=1.0, stop_pct=15.0,
-                         meta={"quadrant": quadrant,
-                               "news_polarity": polarity,
-                               "polarity_source": source,
-                               "news_risk": (analysis.get("news_risk") or "none"),
-                               "confidence": float(analysis.get("confidence") or 0),
-                               "web_search_used": bool(analysis.get("web_search_used")),
-                               "shadow": True})
-    logger.info(f"[mover-recorders] news_ta_quadrant recorded: {coin} {side} "
-                f"{quadrant} (news {polarity}/{source}, "
-                f"conf {float(analysis.get('confidence') or 0):.2f})")
-    return True
-
-
-def _ntq_aligned_analysis(coin: str, side: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Bounded book order for the LIVE news_ta_aligned arm. confidence=0.99 (like the
-    other book legs) so the executor's runner/confidence gates pass; the REAL AI
-    confidence is preserved in the ledger meta for grading. leverage default 3: a 15%
-    stop needs 1/lev - maint > 0.15, i.e. lev <= ~4x, so the DSL stop fires before
-    liquidation even on a high-maint alt."""
-    stop_pct = float(cfg.get("stop_pct", 15.0))
-    leverage = max(1, int(cfg.get("leverage", 3)))
-    verdict = "LONG" if side == "long" else "SHORT"
-    short_floor = 250_000.0 if ":" in coin else float(cfg.get("min_volume_usd", 5_000_000.0))
-    return {
-        "id": str(uuid.uuid4()), "coin": coin,
-        "verdict": verdict, "side": side,
-        "confidence": 0.99, "entry_px": 0.0, "stop_px": 0.0, "tp_px": 0.0,
-        "reasoning": (f"[news_ta_aligned] AI {verdict} confirmed by aligned news polarity — "
-                      f"validated quadrant (aligned +1.80%/sig, win 0.86)"),
-        "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
-        "composite_score": 0.0, "strategy_book": "news_ta_aligned",
-        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
-        "leverage_override": leverage,
-        "backup_sl_pct_override": stop_pct,
-        "tp_scale_fraction_override": 0.0,
-        "min_short_volume_usd_override": short_floor,
-        "dsl_exit_override": {
-            "max_loss_pct": stop_pct,
-            "max_loss_roe_pct": stop_pct * leverage,
-            "protect_pct": 9999.0,
-            "retrace_threshold": 0.5,
-            "hard_timeout_minutes": float(cfg.get("hold_days", 1.0)) * 1440.0,
-            "breakeven_trigger_pct": 0.0,
-            "breakeven_lock_pct": 0.0,
-            "stale_flat_timeout_minutes": 0.0,
-            "consecutive_breaches_required": 1,
-            "atr_stop": {"enabled": False},
-            "noise_band": {"enabled": False},
-        },
-    }
-
-
-def maybe_trade_news_ta_aligned(analysis: Dict[str, Any], config: Dict[str, Any],
-                                execute_fn: Optional[Callable] = None) -> bool:
-    """LIVE leg for the VALIDATED aligned quadrant. news_ta_quadrant graded the
-    news-vs-TA split forward: ALIGNED (AI direction agrees with news polarity) =
-    +1.80%/sig, win 0.86 (n=7); the pooled book VALIDATED at n=10, both OOS halves +,
-    survives 25bps. CONFLICT is noise (+0.80%, win 0.33, one outlier). This trades ONLY
-    the aligned subset — the AI's OWN directional verdict when news agrees — which is the
-    +EV slice the blanket main-engine-off drops on the floor. Conflict/neutral NEVER trade.
-
-    Runs on the same raw verdict the recorder tags (before route_verdict mutates it), so
-    live policy == graded policy. Records to its OWN ledger (news_ta_aligned) for a clean
-    live-policy forward grade, separate from the research quadrant ledger. Kill:
-    news_ta_aligned.enabled=false or shadow_only=true."""
-    cfg = config.get("news_ta_aligned") or {}
-    if not bool(cfg.get("enabled", False)):
-        return False
-    verdict = (analysis.get("verdict") or "").upper()
-    if verdict not in ("LONG", "SHORT"):
-        return False
-    news = (analysis.get("news_context") or "").strip()
-    if not news or news.lower() == "no news":
-        return False
-    coin = analysis.get("coin") or ""
-    try:
-        px = float(analysis.get("last_price") or analysis.get("entry_px") or 0.0)
-    except (TypeError, ValueError):
-        px = 0.0
-    if not coin or px <= 0:
-        return False
-    polarity, source = classify_news_polarity(analysis.get("news_risk"), news)
-    side = "long" if verdict == "LONG" else "short"
-    aligned = (polarity != "neutral") and ((polarity == "positive") == (side == "long"))
-    if not aligned:
-        return False
-    conf = float(analysis.get("confidence") or 0.0)
-    if conf < float(cfg.get("min_confidence", 0.0)):
-        return False
-    now_ms = int(time.time() * 1000)
-    if not _dedup_key_hit("ntq_trade", coin, now_ms):   # own key — independent of the recorder
-        return False
-    stop_pct = float(cfg.get("stop_pct", 15.0))
-    live = (not bool(cfg.get("shadow_only", False))) and execute_fn is not None
-    shadow_ledger.record("news_ta_aligned", coin=coin, side=side,
-                         signal_bar_t=(now_ms // 3_600_000) * 3_600_000,
-                         entry_ref_px=px, horizon_days=float(cfg.get("hold_days", 1.0)),
-                         stop_pct=stop_pct,
-                         meta={"quadrant": "aligned", "news_polarity": polarity,
-                               "polarity_source": source, "confidence": conf,
-                               "macro_regime": _macro_regime(coin),
-                               "web_search_used": bool(analysis.get("web_search_used")),
-                               "shadow": not live})
-    logger.info(f"[news-ta-aligned] recorded: {coin} {side} aligned "
-                f"(news {polarity}/{source}, conf {conf:.2f}, {'LIVE' if live else 'shadow'})")
-    if live:
-        claims = get_claims_registry()
-        if (coin not in claims.claimed_by_others("news_ta_aligned")
-                and claims.claim(coin, "news_ta_aligned")):
-            try:
-                result = execute_fn(_ntq_aligned_analysis(coin, side, cfg))
-                opened = isinstance(result, dict) and (
-                    bool(result.get("executed"))
-                    or bool((result.get("result") or {}).get("executed")
-                            if isinstance(result.get("result"), dict) else False))
-                if opened:
-                    claims.save()
-                    logger.info(f"[news-ta-aligned] LIVE opened {side} {coin}")
-                else:
-                    claims.release(coin, "news_ta_aligned")
-                    why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
-                    logger.warning(f"[news-ta-aligned] {coin} not opened: {why}")
-            except Exception as exc:
-                claims.release(coin, "news_ta_aligned")
-                logger.warning(f"[news-ta-aligned] open {coin} failed: {exc}")
-    return True

@@ -72,6 +72,32 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # for why this is a capacity decision and not an edge claim.
     "coin_allowlist": list(_universe.MAJORS),
     "coin_blocklist": ["TON", "TRX"],
+    # ── the four books that graded VALIDATED on 2026-08-29 ───────────────────
+    # All four ship shadow_only=true. A validated grade earns a book a capital
+    # PATH, not capital — scripts/autonomous_cycle.py promotes it on the next
+    # run if the evidence still holds, which keeps the decision in the evidence
+    # loop instead of in a config edit nobody reviewed.
+    "news_surge_short": {
+        "enabled": True, "shadow_only": True,
+        "equity_live": False, "crypto_live": False,
+        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
+        "hold_days": 1.0, "max_new_per_cycle": 1,
+    },
+    "news_surge_multi": {
+        "enabled": True, "shadow_only": True,
+        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
+        "hold_days": 1.0, "max_new_per_cycle": 1,
+    },
+    "social_trending": {
+        "enabled": True, "shadow_only": True,
+        "poll_hours": 1.0, "dedup_hours": 24.0, "horizon_days": 1.0,
+        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
+        "max_new_per_cycle": 1,
+    },
+    "unlock_short": {
+        "enabled": True, "shadow_only": True,
+        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
+    },
     "hip3_dex_allowlist": ["xyz"],
     "hip3_dex_blocklist": [],
     "dsl_exit": {

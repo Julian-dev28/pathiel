@@ -80,6 +80,15 @@ ALL_EVENTS = [RESEARCH_NEWS, RESEARCH_PLAIN, EXEC_BLOCKED, EXEC_OK,
               DSL_EXIT, BOOK_EVT, BOOK_ALIAS_EVT, BOOK_OPEN_EVT, UNKNOWN_EVT]
 
 FIXTURE_CONFIG = {
+    # the four VALIDATED books, restored 2026-08-30 with capital paths
+    "news_surge_short": {"enabled": True, "shadow_only": True,
+                         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0},
+    "news_surge_multi": {"enabled": True, "shadow_only": True,
+                         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0},
+    "social_trending": {"enabled": True, "shadow_only": True,
+                        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0},
+    "unlock_short": {"enabled": True, "shadow_only": True,
+                     "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0},
     "xs_momentum": {"enabled": True, "k_per_leg": 4},
     "xs_xyz_equities": {"enabled": True, "shadow_only": False, "k_per_leg": 5,
                         "hold_days": 5, "min_volume_usd": 250000},
@@ -324,18 +333,20 @@ def test_ai_close_classified_as_close(monkeypatch):
 def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
-    # 2026-08-29: every candle-strategy book was deleted. What can still trade
-    # is the mover recorders' live arms — 3 books.
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 3
-    assert rows["news_ta_aligned"]["status"] == "live"
-    assert rows["news_ta_aligned"]["size"] == "$20 @ 3x"
+    # 2026-08-30: the four books that graded VALIDATED were restored with
+    # capital paths, and the REFUTED news_ta_aligned was removed. Six books can
+    # trade; none is a recorder, because a book with no capital path no longer
+    # exists in this system.
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 6
+    assert rows["news_surge_short"]["status"] == "shadow"
+    assert "VALIDATED" in rows["news_surge_short"]["thesis"]
     assert all(r["thesis"] for r in rows.values())
 
 
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 3 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 6 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -914,7 +925,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 3
+    assert len(rows) == 6
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 

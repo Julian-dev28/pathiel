@@ -56,16 +56,16 @@ from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effec
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
+from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
+from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
+from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
+from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
+from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
 from hermes_trader.agents.mover_recorders import (
     record_mover_pass_short as _record_mover_pass_short,
     record_young_mover_short as _record_young_mover_short,
-    record_trend_block_news_long as _record_trend_block_news_long,
-    record_news_ta_quadrant as _record_news_ta_quadrant,
-    maybe_trade_news_ta_aligned as _maybe_trade_news_ta_aligned,
 )
 from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
-from hermes_trader.agents.wallet_follow_recorder import maybe_record as _wallet_follow_maybe_record
-from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from hermes_trader.agents.executor import (
     min_tradable_equity as _min_tradable_equity,
@@ -791,6 +791,31 @@ while True:
         # xyz:XYZ100) at equity_fraction x leverage sizing. UNVALIDATED entry — starts
         # shadow_only=true and must earn a VALIDATED forward verdict from
         # scripts/shadow_status.py before any live flip. Daily bars, 6h candle TTL.
+        # unlock_short_runin (VALIDATED n=14, EV25 +3.75%, halves +0.71/+7.06,
+        # mc_p=0.0375): short inside the 48-72h pre-unlock window, exit AT the
+        # event.
+        try:
+            _unlock_short_maybe_run(read_agent_config(), universe, positions,
+                                    _book_execute)
+        except Exception as _use:
+            logger.warning(f"[unlock-short-live] cycle failed (non-fatal): {_use}")
+
+        # news_surge_short (VALIDATED n=255, EV25 +1.24%, halves +0.58/+2.16,
+        # mc_p=0.0005): short a breaking Google News coverage surge.
+        try:
+            _news_surge_short_maybe_run(read_agent_config(), results,
+                                        positions, _book_execute)
+        except Exception as _nsse:
+            logger.warning(f"[news-surge-short] pass failed (non-fatal): {_nsse}")
+
+        # news_surge_multi (VALIDATED n=230, EV25 +1.87%, halves +1.50/+2.50,
+        # mc_p=0.0005): the same surge measured across 15 pooled firehoses.
+        try:
+            _news_surge_multi_maybe_run(read_agent_config(), results, positions,
+                                        _book_execute)
+        except Exception as _nsme:
+            logger.warning(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
+
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
         # OI-divergence backtests once ~1-2 weeks of history accrue).
@@ -799,23 +824,22 @@ while True:
         except Exception as _dle:
             logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
 
-        # W-U unlock recorder: zero-capital shadow SHORTs when an HL coin
-        # enters the 24h window before a >=1%-of-circ scheduled unlock
-        # (DefiLlama calendar, refreshed twice a day inside the module).
+        # Unlock calendar refresh + the run-in signal. The T-1d recorder arm was
+        # removed 2026-08-30 (validated but no capital path); what remains feeds
+        # unlock_short_runin below, which trades it.
         try:
             _unlock_maybe_record(universe, read_agent_config())
         except Exception as _ure:
             logger.debug(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
 
-        # wallet_follow recorder: zero-capital copy-trading reads of the 9
-        # verified profitable HL wallets (VERIFIED_TRADERS.md §4). 30-min
-        # throttle inside the module; 9 x weight-2 clearinghouseState per poll
-        # ~= 0.6 weight/min. Grading bar: shadow_status VALIDATED at >= 30
-        # episodes PLUS scripts/wallet_follow_null.py p < 0.01.
+        # social_trending (VALIDATED n=185, EV25 +0.89%, halves +0.54/+1.50,
+        # mc_p=0.0005). Records always; trades when its own shadow_only is off.
         try:
-            _wallet_follow_maybe_record(read_agent_config(), universe)
-        except Exception as _wfre:
-            logger.debug(f"[wallet-follow-recorder] pass failed (non-fatal): {_wfre}")
+            _social_trending_maybe_record(read_agent_config() and universe,
+                                          read_agent_config(), positions,
+                                          _book_execute)
+        except Exception as _stre:
+            logger.warning(f"[social-trending] pass failed (non-fatal): {_stre}")
 
         # Per-cycle heartbeat — proof of life even when nothing triggers.
         # `coin_scores` carries the composite score for each trigger so the
@@ -1011,31 +1035,6 @@ while True:
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})
 
-                # W-V (SKHX case): tag every directional verdict researched
-                # with a real headline string as news-vs-TA aligned/conflict/
-                # neutral — zero-capital ledger row, graded forward by
-                # shadow_status. Runs BEFORE route_verdict so the AI's own
-                # verdict (not a sidestep-mutated one) is what gets tagged.
-                try:
-                    if float(analysis.get("last_price") or 0.0) <= 0:
-                        analysis["last_price"] = next(
-                            (float(m.get("midPx") or m.get("markPx") or 0)
-                             for m in universe if m.get("coin") == coin), 0.0)
-                    _record_news_ta_quadrant(analysis, read_agent_config())
-                except Exception:
-                    pass
-
-                # news_ta_aligned (LIVE): trade the VALIDATED aligned quadrant —
-                # the AI's own directional verdict when news polarity AGREES with
-                # it (aligned +1.80%/sig, win 0.86; pooled book VALIDATED n=10).
-                # The +EV slice the blanket main-engine-off drops. Conflict/neutral
-                # never trade. Runs on the raw verdict so live policy == graded policy.
-                try:
-                    _maybe_trade_news_ta_aligned(analysis, read_agent_config(),
-                                                 execute_fn=_book_execute)
-                except Exception:
-                    pass
-
                 # main-engine thesis ledger: the engine was the ONE surface
                 # trading without a forward ledger, which is why -$172 over
                 # 157 trades went unmeasured for 30 days. Recorded on the
@@ -1073,15 +1072,6 @@ while True:
                 if action == "execute":
                     logger.info(f"Trade result: {result}")
                     executed = bool(result.get("executed"))
-                    # W-G pocket recorder: catalyst-positive LONG that died
-                    # only at the trend filter -> zero-capital counterfactual.
-                    try:
-                        analysis.setdefault("last_price", next(
-                            (float(m.get("midPx") or m.get("markPx") or 0)
-                             for m in universe if m.get("coin") == coin), 0.0))
-                        _record_trend_block_news_long(analysis, result, read_agent_config())
-                    except Exception:
-                        pass
                     # Surface the regime decision so the log answers "why did a
                     # counter-regime trade fire?" — via is one of aligned /
                     # neutral / confidence / composite / trigger:<name> / blocked.

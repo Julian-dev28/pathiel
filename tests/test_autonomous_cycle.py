@@ -79,13 +79,29 @@ def test_any_single_failure_blocks_promotion(bad):
     assert d["verdict"] in ("MARGINAL", "PENDING")
 
 
-def test_recorders_never_get_promoted_even_when_validated():
-    """A book with no bounded capital path stays a recorder no matter how
-    good its numbers look — otherwise the cycle would 'promote' something
-    that has no live order path at all."""
-    for book in ("whale_flow", "news_catalyst", "mover_b15_up", "young_listings"):
-        d = AC.decide(_g(book=book), live=False)
-        assert d["verdict"] == "VALIDATED" and d["action"] == "none"
+def test_nothing_is_exempt_from_promotion_any_more():
+    """Inverted 2026-08-30 on the operator directive "nothing should be a
+    recorder".
+
+    This test used to assert the opposite: that a book with no capital path
+    stays unpromotable however good its numbers are. That produced exactly the
+    state the directive rules out — on 2026-08-29 the grader printed
+    `unlock_short — VALIDATED: validated but has no bounded capital path
+    (recorder//counterfactual)`. A book that can prove itself and still never
+    trade is dead weight.
+
+    The exemption set is now empty and stays empty: every book either has a
+    switch the evidence loop can flip, or it does not exist.
+    """
+    assert AC._NEVER_PROMOTE == frozenset(), (
+        "a book was exempted from promotion again — give it a capital path or "
+        "delete it")
+
+
+def test_a_validated_book_with_a_switch_is_promoted():
+    """The consequence of the above: evidence now actually moves capital."""
+    d = AC.decide(_g(book="news_surge_short"), live=False)
+    assert d["verdict"] == "VALIDATED" and d["action"] == "promote"
 
 
 def test_already_live_validated_book_is_left_alone():

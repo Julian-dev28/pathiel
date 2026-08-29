@@ -79,7 +79,8 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # the mechanism working as designed: a claim left on disk by a now-deleted book
 # is not in this set, so it can never block a surviving book.
 _ACTIVE_CLAIM_BOOKS = frozenset({"mover_pass_short", "young_mover_short",
-                                 "news_ta_aligned"})
+                                 "news_surge_short", "news_surge_multi",
+                                 "social_trending", "unlock_short_runin"})
 
 
 def active_claim_books() -> Set[str]:

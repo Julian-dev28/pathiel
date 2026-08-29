@@ -792,9 +792,18 @@ _BOOKS: List[tuple] = [
     ("young_mover_short", None,
      "Short the young listing the history floor just blocked from a long — "
      "that cohort does -2.71%/next-day vs a flat mature-xyz tape."),
-    ("news_ta_aligned", "news_ta_aligned",
-     "Trade the AI's own LONG/SHORT verdict only when news polarity AGREES "
-     "with it (validated aligned quadrant: +1.80%/sig, win 0.86); $20/3x, 15% stop."),
+    ("unlock_short_runin", "unlock_short",
+     "Short the run-in 48-72h before large token unlocks (>=1% of circulating). "
+     "VALIDATED n=14: +3.75%/sig net25, halves +0.71/+7.06, mc_p=0.0375."),
+    ("news_surge_short", "news_surge_short",
+     "Short a breaking Google News coverage surge, 15% stop, 1-day hold. "
+     "VALIDATED n=255: +1.24%/sig net25, halves +0.58/+2.16, mc_p=0.0005."),
+    ("news_surge_multi", "news_surge_multi",
+     "The same surge measured across 15 pooled finance/tech firehoses. "
+     "VALIDATED n=230: +1.87%/sig net25, halves +1.50/+2.50, mc_p=0.0005."),
+    ("social_trending", "social_trending",
+     "Long a coin entering CoinGecko's trending list — an attention spike. "
+     "VALIDATED n=185: +0.89%/sig net25, halves +0.54/+1.50, mc_p=0.0005."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)

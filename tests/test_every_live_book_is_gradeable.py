@@ -149,3 +149,69 @@ def test_book_status_loads_env_before_resolving_state():
     assert env_load < first_agent_import, (
         "book_status.py imports state-resolving modules before loading "
         ".env.local — it would read the wrong ledger directory")
+
+
+# ── "nothing should be a recorder" (operator directive, 2026-08-30) ──────────
+
+def test_no_book_is_exempt_from_promotion():
+    """The exemption set must stay empty.
+
+    It used to hold ten books with no capital path, which produced the state
+    the directive rules out: on 2026-08-29 the grader printed
+    `unlock_short — VALIDATED: validated but has no bounded capital path
+    (recorder//counterfactual)`. A book that can prove itself and still never
+    trade costs API budget, log volume and attention to maintain evidence
+    nothing is allowed to act on.
+
+    If you are adding to this set, the answer is a switch or a deletion.
+    """
+    assert AC._NEVER_PROMOTE == frozenset(), (
+        f"{sorted(AC._NEVER_PROMOTE)} were exempted from promotion — give each "
+        f"a capital path or delete it")
+
+
+def test_every_book_the_loop_calls_can_reach_capital():
+    """Source-level check on the loop itself: any book invoked per-cycle must
+    have a switch, so evidence can move it. Verified by inspection because
+    importing trading_loop starts the live loop."""
+    import pathlib
+    import re
+
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    called = set(re.findall(r"from hermes_trader\.agents\.(\w+) import", src))
+    # modules that are data sources or infrastructure, not books
+    infra = {"perception", "risk_gates", "ta_filter", "research", "executor",
+             "dsl_exit", "config", "config_store", "memory", "rebalancer_owned",
+             "data_logger", "oi_logger", "universe", "shadow_ledger", "ai_brain",
+             "market_regime", "hyperfeed", "sizing", "system_prompt",
+             "unlock_recorder", "main_engine_recorder", "mover_recorders",
+             "capital_flows", "atomic_io"}
+    book_modules = called - infra
+    for mod in book_modules:
+        assert any(mod.startswith(b.split("_live")[0][:12]) or b in mod
+                   or mod.replace("_live", "") in b
+                   for b in AC._SWITCHES), (
+            f"{mod} is called by the loop but has no switch — it would record "
+            f"forever with no way to earn or lose capital")
+
+
+def test_the_validated_books_all_have_switches():
+    """The four that graded VALIDATED on 2026-08-29 must be reachable by the
+    evidence loop, or restoring them accomplished nothing."""
+    for book in ("news_surge_short", "news_surge_multi", "social_trending",
+                 "unlock_short_runin"):
+        assert book in AC._SWITCHES, f"{book} graded VALIDATED but has no switch"
+
+
+def test_the_validated_books_ship_shadow_not_live():
+    """A validated grade earns a capital PATH, not capital. Promotion goes
+    through the evidence loop so the decision stays in one reviewable place
+    rather than in a config edit."""
+    import hermes_trader.agents.config_store as cs
+    defaults = next(v for v in vars(cs).values()
+                    if isinstance(v, dict) and "coin_allowlist" in v)
+    for key in ("news_surge_short", "news_surge_multi", "social_trending",
+                "unlock_short"):
+        assert defaults[key]["shadow_only"] is True, (
+            f"{key} ships live — promotion is the grader's call, not a default")

@@ -1,4 +1,4 @@
-"""Zero-capital token-unlock recorder (W-U lane, 2026-07-11).
+"""Unlock calendar + the run-in signal token-unlock recorder (W-U lane, 2026-07-11).
 
 Scheduled supply unlocks are the one news type knowable IN ADVANCE: DefiLlama
 publishes the cliff calendar, so "unlock in <=24h" is a point-in-time-safe
@@ -124,9 +124,19 @@ def _refresh_calendar(state: Dict[str, Any], min_pct: float,
 
 
 # (book_name, window lower/upper bound in hours before the unlock, horizon)
+# 2026-08-30 — the T-1d `unlock_short` arm is gone. Operator directive:
+# "nothing should be a recorder". It graded VALIDATED (n=14, +3.41%, mc_p=0.034)
+# and the grader's own note on it was "validated but has no bounded capital
+# path (recorder//counterfactual)" — a book that can prove itself and still
+# never trade is dead weight, and keeping it meant paying to maintain evidence
+# nothing could act on.
+#
+# The run-in arm survives because it HAS a capital path: unlock_short_live.py
+# trades exactly this signal and graded VALIDATED at n=14, +3.94% net25,
+# mc_p=0.0375. The calendar this module maintains is what feeds it, which is why
+# the module stays even though its recorder half does not.
 _ARMS = (
     ("unlock_short_runin", 48.0, 72.0, 3.0),  # W-U1 run-in drift: -2.1% T-3d->T
-    ("unlock_short", 0.0, 24.0, 3.0),          # registered T-1d cell (p=0.10, unresolved)
 )
 
 

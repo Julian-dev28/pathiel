@@ -70,13 +70,13 @@ STRICT_FEE_TIER = "slip25"   # promotions must survive 4x the real cost
 _SWITCHES: Dict[str, tuple] = {
     "mover_pass_short": ("nested", "mover_recorders", "pass_short_live"),
     "young_mover_short": ("nested", "mover_recorders", "young_short_live"),
-    # 2026-08-29: news_ta_aligned places real bounded orders
-    # (mover_recorders.maybe_trade_news_ta_aligned) but had NO entry here, so the
-    # evidence loop could neither promote nor demote it. A live money path the
-    # automated grader cannot switch off is the one shape this script exists to
-    # rule out. Its kill is `news_ta_aligned.shadow_only`, per that function's
-    # own docstring.
-    "news_ta_aligned": ("top", "news_ta_aligned"),
+    # Restored 2026-08-30 with capital paths. All four graded VALIDATED on their
+    # own forward ledgers on 2026-08-29, hours after being deleted — the
+    # deletion was made while the exchange was down and nothing could be graded.
+    "news_surge_short": ("top", "news_surge_short"),
+    "news_surge_multi": ("top", "news_surge_multi"),
+    "social_trending": ("top", "social_trending"),
+    "unlock_short_runin": ("top", "unlock_short"),
     # The main engine is a thesis like any other. Its live arm is an ENTRIES
     # flag rather than shadow_only, so it gets its own switch shape. It was
     # demoted 2026-07-20 on -$172.33/157 trades with every slice negative; it
@@ -85,13 +85,23 @@ _SWITCHES: Dict[str, tuple] = {
     "main_engine": ("entries", "main_engine"),
 }
 
-# Books whose live arm is a counterfactual/recorder with no capital path, or
-# whose direction is owned by another book. Never auto-promoted.
-_NEVER_PROMOTE = frozenset({
-    "news_catalyst", "young_listings", "majors_swing", "mover_b15_up",
-    "whale_flow", "news_ta_quadrant", "wallet_follow",
-    "unlock_short", "premium_fade_short", "neg_funding_fade",
-})
+# EMPTY, and it stays empty. Operator directive 2026-08-30: "nothing should be a
+# recorder".
+#
+# This set used to exempt ten books from promotion because they had no capital
+# path. That produced the state the directive is aimed at: on 2026-08-29 the
+# grader printed `unlock_short — VALIDATED: validated but has no bounded capital
+# path (recorder//counterfactual)`. A book that can prove itself and still never
+# trade is dead weight — it costs API budget, log volume and attention to
+# maintain evidence nothing is allowed to act on.
+#
+# Every book now either has a switch in _SWITCHES or does not exist. The ones
+# that were in here are gone: refuted books deleted, and unlock_short's arm
+# removed from unlock_recorder in favour of unlock_short_runin, which trades the
+# same signal and graded VALIDATED.
+#
+# tests/test_every_live_book_is_gradeable.py fails if this grows again.
+_NEVER_PROMOTE: frozenset = frozenset()
 
 # Promotion sizing — bounded, and the stop must be REACHABLE: the executor
 # clamps the backup SL to entry*(backup_sl_max_frac_of_liq/leverage).

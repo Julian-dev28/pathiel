@@ -34,17 +34,6 @@ def _uni(coin="ARB", px=1.0):
     return [{"coin": coin, "midPx": px, "dayNtlVlm": 1e7}]
 
 
-def test_records_short_inside_24h_window(monkeypatch, tmp_path):
-    out = _captured(monkeypatch)
-    ur._save_state(_state_with([{"coin": "ARB", "t_ms": _NOW + 6 * _H, "pct": 2.5}]))
-    assert ur.maybe_record(_uni("ARB", 0.42), {}) == 1
-    book, kw = out[0]
-    assert book == "unlock_short" and kw["side"] == "short"
-    assert kw["entry_ref_px"] == 0.42 and kw["stop_pct"] == 15.0
-    assert kw["horizon_days"] == 3.0
-    assert kw["meta"]["unlock_pct_circ"] == 2.5
-
-
 def test_outside_windows_records_nothing(monkeypatch):
     out = _captured(monkeypatch)
     ur._save_state(_state_with([
@@ -66,33 +55,22 @@ def test_runin_arm_records_at_three_days_out(monkeypatch):
     assert 59.9 <= kw["meta"]["hours_to_unlock"] <= 60.1
 
 
-def test_same_event_records_once_per_arm(monkeypatch):
-    """One event passes through BOTH windows as time advances — each arm gets
-    exactly one episode (distinct dedup keys)."""
-    out = _captured(monkeypatch)
-    t_unlock = _NOW + 60 * _H
-    ur._save_state(_state_with([{"coin": "ARB", "t_ms": t_unlock, "pct": 4.0}]))
-    assert ur.maybe_record(_uni("ARB"), {}) == 1          # run-in arm fires
-    assert ur.maybe_record(_uni("ARB"), {}) == 0          # deduped
-    # simulate time advancing into the last-24h window
-    monkeypatch.setattr(ur.time, "time", lambda: (t_unlock - 6 * _H) / 1000)
-    assert ur.maybe_record(_uni("ARB"), {}) == 1          # 24h arm fires
-    assert [b for b, _ in out] == ["unlock_short_runin", "unlock_short"]
-
-
 def test_event_dedup_and_seen_persistence(monkeypatch):
+    """60h out — inside the surviving 48-72h run-in arm. The 0-24h
+    `unlock_short` arm was removed 2026-08-30: it graded VALIDATED and had no
+    capital path, which is the shape "nothing should be a recorder" rules out."""
     out = _captured(monkeypatch)
-    ur._save_state(_state_with([{"coin": "ARB", "t_ms": _NOW + 6 * _H, "pct": 2.5}]))
+    ur._save_state(_state_with([{"coin": "ARB", "t_ms": _NOW + 60 * _H, "pct": 2.5}]))
     assert ur.maybe_record(_uni("ARB"), {}) == 1
     assert ur.maybe_record(_uni("ARB"), {}) == 0  # same event, second scan
     assert len(out) == 1
     seen = ur._load_state()["seen"]
-    assert list(seen) == [f"unlock_short:ARB:{(_NOW + 6 * _H) // _D}"]
+    assert list(seen) == [f"unlock_short_runin:ARB:{(_NOW + 60 * _H) // _D}"]
 
 
 def test_no_mid_skips_without_marking_seen(monkeypatch):
     out = _captured(monkeypatch)
-    ur._save_state(_state_with([{"coin": "GONE", "t_ms": _NOW + 6 * _H, "pct": 2.0}]))
+    ur._save_state(_state_with([{"coin": "GONE", "t_ms": _NOW + 60 * _H, "pct": 2.0}]))
     assert ur.maybe_record(_uni("OTHER"), {}) == 0
     assert out == []
     # not marked seen -> a later scan with a mid can still record
@@ -145,3 +123,11 @@ def test_shipped_map_is_valid_and_nonempty():
     m = ur._load_map()
     assert len(m) >= 50
     assert m.get("Celestia") == "TIA"
+
+
+def test_the_capital_less_arm_is_gone():
+    """`unlock_short` (0-24h) recorded forever and could never trade — the
+    grader's own note was "validated but has no bounded capital path". Its
+    signal is covered by unlock_short_runin, which trades it and graded
+    VALIDATED at n=14, +3.75% net25, mc_p=0.0375."""
+    assert [a[0] for a in ur._ARMS] == ["unlock_short_runin"]
