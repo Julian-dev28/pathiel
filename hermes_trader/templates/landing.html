@@ -1028,11 +1028,21 @@ async function refreshRisk() {
       }
     }
 
-    // The caveat is not decoration. Deposits and withdrawals are not logged,
-    // so a withdrawal and a loss are indistinguishable in this number, and
-    // saying so is the difference between a risk panel and a flattering one.
-    $id('risk-caveat').textContent =
-      r.capital_flows_tracked ? '' : r.drawdown_caveat || '';
+    // Say which basis the drawdown is on. On NAV it is flow-neutral and a
+    // withdrawal does not read as a loss; on raw equity it cannot tell them
+    // apart, and the caveat has to stay visible rather than the panel quietly
+    // upgrading its own confidence.
+    const cav = $id('risk-caveat');
+    if (r.capital_flows_tracked) {
+      const net = Number(r.net_capital_in || 0);
+      cav.innerHTML = '<span class="dim">flow-neutral (NAV basis) · ' +
+        (r.flow_events || 0) + ' capital flows recorded, net ' +
+        (net >= 0 ? '+' : '') + '$' + net.toFixed(2) +
+        ' — a deposit or withdrawal does not move this number</span>';
+    } else {
+      cav.innerHTML = '<span style="color:var(--amb)">' +
+        (r.drawdown_caveat || '') + '</span>';
+    }
   } catch (e) {}
 }
 

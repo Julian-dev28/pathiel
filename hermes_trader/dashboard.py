@@ -45,6 +45,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from hermes_trader import session_log
 from hermes_trader.agents import dsl_exit
+from hermes_trader.agents import capital_flows
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.executor import min_tradable_equity as _min_tradable_equity
 from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
@@ -474,26 +475,43 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
     equity. That is the number that answers "is churn eating this", which is the
     failure mode this account actually had.
 
-    HONESTY LIMIT, surfaced rather than hidden: nothing in this repo logs
-    deposits or withdrawals, so an equity curve cannot tell a trading loss from
-    the operator moving USDC out. `capital_flows_tracked` is therefore False and
-    the drawdown is labelled an equity decline, not a loss. Presenting it as a
-    loss would be the exact kind of flattering misreport this panel exists to
-    prevent. Wire a transfer log and this becomes a real drawdown.
+    Drawdown is computed on a flow-neutral NAV index whenever
+    hermes_trader.agents.capital_flows has deposits and withdrawals recorded
+    across the whole window. Raw equity would count a withdrawal as a loss; the
+    NAV index normalises each interval by the capital actually at risk during
+    it, so moving money in or out leaves the number alone.
+
+    When the flow record does NOT cover the window the panel falls back to raw
+    equity AND says so, rather than silently upgrading its own confidence. A
+    drawdown that cannot tell a withdrawal from a loss is not a risk metric, and
+    pretending otherwise is the flattering misreport this panel exists to stop.
     """
     curve = _equity_curve_payload(range_s)
     equities = [float(p["equity"]) for p in curve if p.get("equity")]
 
     peak = max(equities) if equities else 0.0
     current = equities[-1] if equities else 0.0
-    dd_now_pct = ((current - peak) / peak * 100) if peak > 0 else 0.0
 
-    # Max drawdown: deepest trough below any preceding peak, walked forward.
-    max_dd_pct, running_peak = 0.0, 0.0
-    for eq in equities:
-        running_peak = max(running_peak, eq)
-        if running_peak > 0:
-            max_dd_pct = min(max_dd_pct, (eq - running_peak) / running_peak * 100)
+    # Drawdown on a FLOW-NEUTRAL NAV index when capital flows are recorded for
+    # the whole window, and on raw equity only when they are not. Raw equity
+    # counts a withdrawal as a loss, which is the defect this replaces; the NAV
+    # index normalises each interval by the capital actually at risk during it,
+    # so moving money in or out does not move the number.
+    flows = capital_flows.load_flows()
+    cover = capital_flows.coverage(curve, flows)
+    if cover.get("covered"):
+        nav = capital_flows.nav_series(curve, flows)
+        dd = capital_flows.drawdown_from_nav(nav)
+        dd_now_pct, max_dd_pct = dd["drawdown_pct"], dd["max_drawdown_pct"]
+        dd_basis = "nav"
+    else:
+        dd_now_pct = ((current - peak) / peak * 100) if peak > 0 else 0.0
+        max_dd_pct, running_peak = 0.0, 0.0
+        for eq in equities:
+            running_peak = max(running_peak, eq)
+            if running_peak > 0:
+                max_dd_pct = min(max_dd_pct, (eq - running_peak) / running_peak * 100)
+        dd_basis = "equity"
 
     closes = _closed_trades_payload(limit=500)
     graded = [c for c in closes if c.get("pnl_pct") is not None]
@@ -540,11 +558,16 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
         "can_trade": bool(float(summary.get("equity") or 0) >= _min_tradable_equity(cfg)),
         "window_days": round(range_s / 86400, 1),
         "points": len(equities),
-        # False until deposits/withdrawals are logged — see the docstring.
-        "capital_flows_tracked": False,
-        "drawdown_caveat": ("equity decline, not necessarily a trading loss: "
-                            "deposits and withdrawals are not logged, so a "
-                            "withdrawal reads identically to a loss here"),
+        "capital_flows_tracked": bool(cover.get("covered")),
+        "drawdown_basis": dd_basis,
+        "net_capital_in": round(sum(float(f.get("usd") or 0) for f in flows
+                                    if not str(f.get("kind", "")).startswith("_")), 2),
+        "flow_events": sum(1 for f in flows
+                           if not str(f.get("kind", "")).startswith("_")),
+        "drawdown_caveat": ("" if cover.get("covered") else
+                            "equity decline, not necessarily a trading loss: "
+                            f"{cover.get('reason')} — run "
+                            "scripts/record_capital_flows.py"),
     }
 
 

@@ -55,6 +55,14 @@ MAX_CONCURRENT_JOBS = 3
 
 # name -> job. `hour=None` means every hour at `minute`.
 JOBS: Dict[str, Dict[str, Any]] = {
+    "capital-flows": {
+        "args": [PY, os.path.join(ROOT, "scripts", "record_capital_flows.py"),
+                 "--since-days", "7"],
+        "interval_min": 360,          # every 6h — flows are rare, misses are cheap
+        "log": "logs/capital_flows.log",
+        "why": "record deposits/withdrawals so the drawdown is flow-neutral and "
+               "a withdrawal stops reading as a trading loss",
+    },
     "autonomous-cycle": {
         "args": [PY, os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
         "hour": 9, "minute": 15,

@@ -106,13 +106,50 @@ def test_empty_history_does_not_divide_by_zero(monkeypatch):
 
 # ── the honesty caveat ───────────────────────────────────────────────────────
 
-def test_the_payload_admits_it_cannot_tell_a_withdrawal_from_a_loss(curve):
-    """Nothing logs deposits or withdrawals, so the equity curve cannot
-    distinguish them. Saying so is the whole difference between a risk panel and
-    a flattering one — if capital flows ever get logged, flip the flag."""
+def test_an_uncovered_window_still_admits_it_cannot_tell_the_difference(
+        curve, monkeypatch, tmp_path):
+    """When flows are not recorded across the window the panel must fall back to
+    raw equity AND say so, rather than quietly upgrading its own confidence."""
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
     r = db._risk_payload()
     assert r["capital_flows_tracked"] is False
-    assert "withdrawal" in r["drawdown_caveat"].lower()
+    assert r["drawdown_basis"] == "equity"
+    assert "not necessarily a trading loss" in r["drawdown_caveat"]
+
+
+def test_a_covered_window_reports_a_flow_neutral_drawdown(curve, monkeypatch, tmp_path):
+    """With flows recorded across the whole window the drawdown is computed on
+    the NAV index, and the caveat goes away because it no longer applies."""
+    from hermes_trader.agents import capital_flows as cf
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    cf.mark_recording_started(1)          # before the fixture's first point
+    cf.append_flows([{"ts": 2, "usd": 0.0, "kind": "deposit", "key": "k"}])
+    r = db._risk_payload()
+    assert r["capital_flows_tracked"] is True
+    assert r["drawdown_basis"] == "nav"
+    assert r["drawdown_caveat"] == ""
+
+
+def test_a_withdrawal_no_longer_reads_as_a_loss_on_the_panel(monkeypatch, tmp_path):
+    """End to end through the real payload: the exact case that was
+    mislabelled."""
+    from hermes_trader.agents import capital_flows as cf
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    now = int(time.time() * 1000)
+    day = 86_400_000
+    vals = [(now - 5 * day, 200.0), (now - 4 * day, 190.0), (now - 3 * day, 180.0),
+            (now - 2 * day, 170.0), (now - day, 160.0)]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [_hb(t, e) for t, e in vals])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    cf.mark_recording_started(now - 9 * day)
+    # every dollar of the decline was withdrawn, not lost
+    cf.append_flows([{"ts": t, "usd": -10.0, "kind": "withdraw", "key": f"w{i}"}
+                     for i, (t, _) in enumerate(vals[1:], 1)])
+    r = db._risk_payload()
+    assert r["drawdown_basis"] == "nav"
+    assert r["max_drawdown_pct"] == pytest.approx(0.0, abs=0.01), (
+        "a pure withdrawal is still being reported as a drawdown")
 
 
 # ── it reaches the page ──────────────────────────────────────────────────────
