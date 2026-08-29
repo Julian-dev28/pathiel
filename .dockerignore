@@ -1,17 +1,34 @@
 # Local state / secrets — must never end up in the image.
 .env
 .env.local
+.env.local.example
 .agent-config.json
 .agent-memory.json
 .dsl-state.json
+.rebalancer_claims.json
+.positions-snapshot.json
+.extreme_fade_live_ts
 *.pid
 logs/
+
+# Runtime-generated data — created/written by the app at runtime, on the
+# mounted volume in every real deploy (see Dockerfile "Runtime state"). Never
+# source; must never ship baked INTO the image with a stale operator's data.
+.state/
+shadow_ledger/
+
+# Research artifacts / notebooks — 159MB, dev-only. Nothing under
+# hermes_trader/, scripts/, or services/ imports from this at runtime
+# (verified 2026-08-29: the only hits are doc-comment references to spec
+# files, e.g. hermes_trader/agents/wallet_follow_recorder.py's docstring).
+research/
 
 # Build / runtime junk
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
 .venv/
 .venv-*/
@@ -29,4 +46,21 @@ docs/
 *.md
 !README.md
 skills/
+skills-lock.json
 tests/
+
+# Other local-machine / agent-session directories that never belong in the
+# image and are irrelevant to any deploy target.
+.backups/
+.agents/
+.forge/
+.qwen/
+.claude/
+scratchpad/
+socket_full.txt
+
+# services/hermes_data_api is its own deploy unit with its own Dockerfile,
+# its own build context (services/hermes_data_api/.dockerignore), and its own
+# Postgres-backed dependency set — never bundled into this image, so it does
+# not need to be part of this build context either.
+services/hermes_data_api/

@@ -26,7 +26,10 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
-      # fsGroup so the mounted PVC is group-writable for state files.
+      # fsGroup so the mounted PVC is group-writable for state files. No
+      # container here sets runAsUser (they all run as the image's default,
+      # root), so this is currently a no-op — kept for forward compat if a
+      # future hardening pass adds a non-root user to the Dockerfile.
       securityContext:
         fsGroup: 1000
       containers:
@@ -34,7 +37,23 @@ spec:
         - name: web
           image: hermes-trader:local
           imagePullPolicy: IfNotPresent
-          command: ["python3", "-m", "hermes_trader.server"]
+          # No `command:` — falls through to the image's ENTRYPOINT
+          # (docker-entrypoint.sh), which bootstraps /data/.state then execs
+          # `args`. See Dockerfile "Runtime state" for why that step exists.
+          args: ["python3", "-m", "hermes_trader.server"]
+          env:
+            # Dashboard shares the account with `loop`; HL rate-limits per
+            # source IP-ish identity, not per process, so give the server a
+            # HARD-throttled token bucket (~1/4 budget) and readonly state
+            # mode — mirrors scripts/restart.sh's start_server(). `loop`
+            # keeps the full code-default budget (300 cap / 15 refill); it's
+            # the money path.
+            - name: HERMES_STATE_READONLY
+              value: "1"
+            - name: HERMES_HL_RATE_REFILL_PER_SEC
+              value: "2"
+            - name: HERMES_HL_RATE_CAPACITY
+              value: "60"
           ports:
             - name: http
               containerPort: 8000
@@ -70,7 +89,7 @@ spec:
         - name: loop
           image: hermes-trader:local
           imagePullPolicy: IfNotPresent
-          command: ["python3", "scripts/trading_loop.py"]
+          args: ["python3", "scripts/trading_loop.py"]
           envFrom:
             - configMapRef:
                 name: hermes-config
@@ -83,6 +102,8 @@ spec:
           # first positions snapshot (proves it booted AND reached Hyperliquid);
           # after that, a process crash is the failure signal (restartPolicy
           # Always restarts it). No liveness flapping on transient API blips.
+          # HERMES_POSITIONS_SNAPSHOT_FILE is baked to /data/.positions-snapshot.json
+          # in the Dockerfile — this probe path must stay in sync with that.
           startupProbe:
             exec:
               command:
@@ -99,6 +120,87 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+        # ── sched: scripts/scheduler.py — cron replacement, fires the below ────
+        # (poly-board hourly, poly-judgment 4h, autonomous-cycle daily,
+        # trends-price 30min, trends-recorders 6h — see scripts/scheduler.py:JOBS)
+        - name: sched
+          image: hermes-trader:local
+          imagePullPolicy: IfNotPresent
+          args: ["python3", "scripts/scheduler.py"]
+          envFrom:
+            - configMapRef:
+                name: hermes-config
+            - secretRef:
+                name: hermes-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # No HTTP, and no reliable file-freshness signal either — jobs run
+          # on independent clocks from 30min to 6h, so a "last write" check
+          # would false-positive on the longest-interval job for hours after
+          # a clean boot. Same precedent as `loop`: a process crash IS the
+          # failure signal: restartPolicy Always restarts it, and each job's
+          # own last_run timestamp makes a restart catch up rather than skip
+          # (scripts/scheduler.py:is_due).
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+        # ── sampler: services.trend_engine.run --sample-daemon ─────────────────
+        # The Polymarket 5m book sampler. Its own container on purpose — it
+        # blocks for most of a 5-minute window and would starve every other
+        # `sched` job if it ran inside that process (see scripts/restart.sh).
+        # Zero capital: it only snapshots both books and writes JSONL.
+        - name: sampler
+          image: hermes-trader:local
+          imagePullPolicy: IfNotPresent
+          args: ["python3", "-m", "services.trend_engine.run", "--sample-daemon"]
+          envFrom:
+            - configMapRef:
+                name: hermes-config
+            - secretRef:
+                name: hermes-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+        # ── rotator: scripts/log_rotate.py --daemon ─────────────────────────────
+        # `sched` writes its fired jobs' stdout/stderr to real files under
+        # logs/ (scripts/scheduler.py:run_job opens them directly — this is
+        # independent of shell `nohup >>` wrapping, so it happens whether or
+        # not restart.sh is involved). This container truncates them in
+        # place on an interval so a long-lived pod's logs/ doesn't grow
+        # unbounded; see hermes_trader/log_setup.py for the policy. Logs live
+        # in the container's own writable layer, deliberately NOT on the
+        # shared /data volume — log history isn't state that needs the same
+        # backup/rollback guarantees as .state/ or shadow_ledger/, and
+        # keeping it off the volume keeps the one singleton-sensitive PVC
+        # smaller. No probe: same "process crash is the signal" precedent.
+        - name: rotator
+          image: hermes-trader:local
+          imagePullPolicy: IfNotPresent
+          args: ["python3", "scripts/log_rotate.py", "--daemon"]
+          envFrom:
+            - configMapRef:
+                name: hermes-config
+            - secretRef:
+                name: hermes-secrets
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
   volumeClaimTemplates:
     - metadata:
         name: data
