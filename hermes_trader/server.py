@@ -759,6 +759,22 @@ async def health_system(response: Response):
         # monitoring gap becomes an outage.
         checks["disk"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
 
+    # 4. Can the AI brain actually run? Every failure here is silent: a missing
+    #    CLI binary returns an empty completion, which fails to parse, which has
+    #    historically defaulted to PASS. A dead brain looks exactly like a brain
+    #    that looked and declined.
+    try:
+        from hermes_trader.agents.ai_brain import provider_readiness
+        pr = provider_readiness()
+        checks["ai_brain"] = {
+            "ok": bool(pr.get("ready")),
+            "provider": pr.get("provider"),
+            "deployable": pr.get("deployable"),
+            "detail": pr.get("reason") or "usable",
+        }
+    except Exception as exc:
+        checks["ai_brain"] = {"ok": True, "detail": f"unavailable: {str(exc)[:80]}"}
+
     ok = all(c.get("ok") for c in checks.values())
     if not ok:
         response.status_code = 503

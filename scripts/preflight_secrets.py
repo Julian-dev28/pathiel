@@ -143,11 +143,39 @@ def is_deploy_context(env: Mapping[str, str], forced: bool = False) -> bool:
 
 # ── redaction ─────────────────────────────────────────────────────────────────
 
+# Undeclared env values at or above this length are treated as credentials and
+# redacted anyway. Short values are config — a provider name, a model slug, a
+# boolean — and redacting those made findings unreadable ("[REDACTED]: shells
+# out to a local binary" does not tell you WHICH provider) without protecting
+# anything, since no credential is 10 characters long.
+_UNDECLARED_SECRET_MIN_LEN = 20
+
+
+def _redaction_values(env: Mapping[str, str]) -> List[str]:
+    """Values that must never appear in output.
+
+    Two sources, deliberately: every DECLARED secret in REGISTRY regardless of
+    length, because that list is the authority on what is sensitive; plus any
+    other env value long enough to be a credential, which catches something
+    added to .env.local that nobody remembered to declare here.
+    """
+    declared = {spec.name for spec in REGISTRY}
+    out: List[str] = []
+    for k, v in env.items():
+        if not v:
+            continue
+        if k in declared and len(v) >= 4:
+            out.append(v)
+        elif len(v) >= _UNDECLARED_SECRET_MIN_LEN:
+            out.append(v)
+    return out
+
+
 def _redact(text: str, secret_values: Sequence[str]) -> str:
     """Defense in depth: strip any known secret VALUE out of a line before it
-    is ever printed, even if a check bug tried to put one there. Only values
-    long enough to not be common substrings are redacted, matching the git
-    scan's own threshold."""
+    is ever printed, even if a check bug tried to put one there. See
+    _redaction_values for which values those are and why the set is scoped
+    rather than "everything in the environment"."""
     out = text
     for v in secret_values:
         if v and len(v) >= 4:
@@ -351,6 +379,45 @@ def check_git_index_for_secrets(repo_root: Path, secrets: Mapping[str, str]) -> 
 
 # ── orchestration ─────────────────────────────────────────────────────────────
 
+def check_ai_brain_usable(env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
+    """The selected AI brain must be able to actually run.
+
+    Every failure here is silent: a missing CLI binary makes the brain return an
+    empty completion, an empty completion fails to parse, and an unparseable
+    verdict has historically defaulted to PASS. So "the brain is broken" and
+    "the brain looked and declined" are indistinguishable at runtime.
+
+    Under --deploy this also FAILS on a CLI provider, because claude_cli and
+    codex_cli shell out to a binary on the operator's machine and neither exists
+    in a container. An image built with either selected would run with a
+    permanently dead brain.
+    """
+    out: List[Finding] = []
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        for k, v in env.items():                 # readiness reads os.environ
+            os.environ.setdefault(k, v)
+        from hermes_trader.agents.ai_brain import provider_readiness
+        r = provider_readiness()
+    except Exception as exc:
+        return [Finding("ai_brain_usable", "WARN", "-",
+                        f"could not evaluate the AI brain: {str(exc)[:120]}")]
+
+    name = str(r.get("provider"))
+    if not r.get("ready"):
+        out.append(Finding("ai_brain_usable", "FAIL", name,
+                           r.get("reason") or "selected brain is not usable"))
+    elif deploy_mode and not r.get("deployable"):
+        out.append(Finding("ai_brain_deployable", "FAIL", name,
+                           r.get("deploy_note") or
+                           "provider cannot run in a deployed container"))
+    else:
+        note = "" if r.get("deployable") else f" ({r.get('deploy_note')})"
+        out.append(Finding("ai_brain_usable", "PASS", name,
+                           f"selected brain is usable{note}"))
+    return out
+
+
 def run_all(repo_root: Path, env: Mapping[str, str], deploy_mode: bool) -> List[Finding]:
     findings: List[Finding] = []
     findings += check_required_present(env)
@@ -359,6 +426,7 @@ def run_all(repo_root: Path, env: Mapping[str, str], deploy_mode: bool) -> List[
     findings += check_env_files_gitignored(repo_root)
     findings += check_env_files_not_tracked(repo_root)
     findings += check_env_file_permissions(repo_root)
+    findings += check_ai_brain_usable(env, deploy_mode)
     scan_values = {spec.name: (env.get(spec.name) or "") for spec in REGISTRY}
     findings += check_git_index_for_secrets(repo_root, scan_values)
     return findings
@@ -380,7 +448,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     deploy_mode = is_deploy_context(env, forced=args.deploy)
     findings = run_all(repo_root, env, deploy_mode)
 
-    secret_values = [v for v in env.values() if v and len(v) >= 4]
+    secret_values = _redaction_values(env)
 
     print(f"preflight_secrets: repo={repo_root} env_file={env_file} "
           f"deploy_mode={deploy_mode}")

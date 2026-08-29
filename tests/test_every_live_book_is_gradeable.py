@@ -67,3 +67,16 @@ def test_the_promotion_bar_is_stricter_than_the_demotion_bar():
         "promotions must be tested at a more conservative cost tier than the "
         "one demotions use")
     assert AC.MIN_N >= 8
+
+
+def test_the_abort_diagnostic_reports_state_rather_than_guessing():
+    """The old message asserted 'likely HL rate-budget contention with the live
+    loop' without checking whether the loop was running. On 2026-08-29 it
+    printed that while the loop had been stopped for weeks and the real cause
+    was the exchange returning bulk 500s. A diagnostic that guesses sends the
+    reader to the wrong place, which is worse than one that says it does not
+    know."""
+    msg = AC._diagnose_slowness()
+    assert msg and "likely" not in msg.lower()
+    assert ("loop IS running" in msg or "loop is NOT running" in msg
+            or "could not determine" in msg)

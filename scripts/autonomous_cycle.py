@@ -298,6 +298,44 @@ def apply_action(cfg: Dict[str, Any], book: str, action: str) -> bool:
 _DEADLINE_S = int(os.environ.get("HERMES_CYCLE_DEADLINE_S", "1500"))  # 25 min
 
 
+def _diagnose_slowness() -> str:
+    """What is ACTUALLY slow, from observable state.
+
+    The old abort message asserted "likely HL rate-budget contention with the
+    live loop" without checking whether the loop was even running. On
+    2026-08-29 it printed that while the loop had been stopped for weeks and the
+    real cause was Hyperliquid returning bulk 500s. A diagnostic that guesses
+    sends the reader to the wrong place, which is worse than one that says it
+    does not know.
+    """
+    bits = []
+    try:
+        # Same PID file hermes_trader.server writes and reads.
+        pid_file = os.path.expanduser("~/.hermes-trader.pid")
+        running = False
+        if os.path.exists(pid_file):
+            try:
+                os.kill(int(open(pid_file).read().strip()), 0)
+                running = True
+            except (OSError, ValueError, ProcessLookupError):
+                running = False
+        bits.append("live loop IS running (rate-budget contention is plausible)"
+                    if running else
+                    "live loop is NOT running — contention is not the cause")
+    except Exception:
+        bits.append("could not determine whether the live loop is running")
+    try:
+        from hermes_trader.agents import perception
+        st = perception.last_scan_integrity()
+        if st.get("ts"):
+            bits.append(f"last scan feed gap {float(st.get('gap_frac') or 0) * 100:.0f}%"
+                        + (" (DEGRADED — the exchange is likely the bottleneck)"
+                           if not perception.scan_is_trustworthy() else ""))
+    except Exception:
+        pass
+    return "; ".join(bits) or "no diagnostic state available"
+
+
 def _install_deadline() -> None:
     """Abort the run rather than let a contended fetch loop wedge the daily
     job. A cron cycle with no ceiling is a silent single point of failure."""
@@ -305,8 +343,8 @@ def _install_deadline() -> None:
 
     def _die(signum, frame):
         raise SystemExit(f"[autonomous-cycle] ABORTED — exceeded {_DEADLINE_S}s "
-                         f"deadline (likely HL rate-budget contention with the "
-                         f"live loop); no config changed. Re-runs tomorrow.")
+                         f"deadline. {_diagnose_slowness()}. No config changed; "
+                         f"re-runs on the next scheduled tick.")
     try:
         signal.signal(signal.SIGALRM, _die)
         signal.alarm(_DEADLINE_S)

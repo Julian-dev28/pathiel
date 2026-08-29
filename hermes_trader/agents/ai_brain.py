@@ -197,6 +197,56 @@ def selected_ai_brain_provider(config: Mapping[str, Any] | None = None) -> str:
     return _normalise_provider(brain_cfg.get("provider", DEFAULT_AI_BRAIN_PROVIDER))
 
 
+def provider_readiness(provider: str | None = None) -> Dict[str, Any]:
+    """Can the selected brain actually run, right now, in this process.
+
+    This exists because every failure mode here is SILENT. A missing CLI binary
+    makes _run_cli return "" (see the FileNotFoundError branch), an empty
+    completion fails to parse, and an unparseable verdict has historically
+    defaulted to PASS — so a brain that cannot run looks exactly like a brain
+    that looked and declined. The same shape as a data outage reading as a quiet
+    market.
+
+    It also names the deploy problem out loud: `claude_cli` and `codex_cli`
+    shell out to a binary on the operator's machine. Neither exists in a
+    container, so an image built with either selected would run with a
+    permanently dead brain unless something checks.
+
+    Returns a dict rather than raising: callers are a healthcheck and a
+    preflight, and both want the reason, not a traceback.
+    """
+    import shutil
+
+    selected = _normalise_provider(provider) if provider else selected_ai_brain_provider()
+    if selected in ("claude_cli", "codex_cli"):
+        env_key = "CLAUDE_CLI_COMMAND" if selected == "claude_cli" else "CODEX_CLI_COMMAND"
+        raw = os.environ.get(env_key) or ("claude" if selected == "claude_cli" else "codex")
+        binary = _command_parts(raw, [raw])[0]
+        found = shutil.which(binary) or (binary if os.path.exists(binary) else None)
+        return {
+            "provider": selected,
+            "ready": bool(found),
+            "binary": binary,
+            "resolved": found,
+            "deployable": False,
+            "reason": ("" if found else
+                       f"{selected} needs the `{binary}` binary and it is not on "
+                       f"PATH — the brain would return empty completions, which "
+                       f"downstream reads as a PASS"),
+            "deploy_note": ("shells out to a local binary; not usable in a "
+                            "container — set AI_BRAIN_PROVIDER=openrouter for a "
+                            "deployed instance"),
+        }
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    return {
+        "provider": "openrouter",
+        "ready": bool(key),
+        "deployable": True,
+        "reason": "" if key else "openrouter selected but OPENROUTER_API_KEY is unset",
+        "deploy_note": "",
+    }
+
+
 def get_brain(provider: str | None = None) -> AiBrain:
     """Return the configured AI brain strategy."""
     selected = _normalise_provider(provider) if provider else selected_ai_brain_provider()
