@@ -26,8 +26,12 @@ import statistics
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import logging
+
 from hermes_trader.agents.atomic_io import append_line
 from hermes_trader.agents.rebalancer_owned import state_file
+
+logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 _DIR = "shadow_ledger"
@@ -55,8 +59,36 @@ def resolve_after_ms(horizon_days: float) -> int:
     return (n_bars + 2) * bar_ms
 
 
+_AMBIGUITY_WARNED = False
+
+
 def _ledger_dir() -> str:
+    """Where the ledgers live: <HERMES_STATE_DIR>/shadow_ledger.
+
+    Loud when it is ambiguous. HERMES_STATE_DIR is set in .env.local, so a tool
+    that forgets to load it resolves to <repo root>/shadow_ledger instead — and
+    if a stale directory happens to exist there, every book silently reads as
+    "0 signals" rather than erroring. That is the same shape as a data outage
+    reading as a quiet market, and it burned a real investigation on
+    2026-08-29: three books reported zero while 95 records sat in the other
+    directory.
+
+    A one-time warning is the whole fix. It cannot change behaviour (some caller
+    may legitimately want the repo-root path), but it makes the failure
+    self-describing instead of silent.
+    """
+    global _AMBIGUITY_WARNED
     d = state_file(_DIR)
+    if not _AMBIGUITY_WARNED and not os.environ.get("HERMES_STATE_DIR"):
+        other = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), ".state", _DIR)
+        if os.path.isdir(other) and os.path.abspath(other) != os.path.abspath(d):
+            _AMBIGUITY_WARNED = True
+            logger.warning(
+                f"[shadow-ledger] HERMES_STATE_DIR is unset so ledgers resolve to "
+                f"{d}, but a populated ledger directory also exists at {other}. "
+                f"Books will read as EMPTY from the wrong one. Load .env.local "
+                f"or set HERMES_STATE_DIR.")
     try:
         os.makedirs(d, exist_ok=True)
     except Exception:

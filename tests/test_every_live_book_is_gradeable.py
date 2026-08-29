@@ -11,6 +11,7 @@ through, and fails on any book in the first that is missing from the second.
 """
 from __future__ import annotations
 
+import os
 import importlib.util
 from pathlib import Path
 
@@ -80,3 +81,71 @@ def test_the_abort_diagnostic_reports_state_rather_than_guessing():
     assert msg and "likely" not in msg.lower()
     assert ("loop IS running" in msg or "loop is NOT running" in msg
             or "could not determine" in msg)
+
+
+# ── the ledger-path trap ─────────────────────────────────────────────────────
+
+def test_an_ambiguous_ledger_path_warns_instead_of_reading_empty(caplog, monkeypatch):
+    """HERMES_STATE_DIR lives in .env.local. A tool that forgets to load it
+    resolves ledgers to the repo root instead, and if a stale directory exists
+    there every book silently reads as '0 signals' rather than erroring.
+
+    That burned a real investigation on 2026-08-29: three books reported zero
+    while 95 records sat in the other directory. Same shape as a data outage
+    reading as a quiet market.
+
+    Exercised against the real repo layout rather than a faked one — the guard's
+    whole job is to notice a condition of THIS tree.
+    """
+    import logging
+    import pathlib as _pl
+
+    from hermes_trader.agents import shadow_ledger as SL
+
+    root = _pl.Path(__file__).resolve().parents[1]
+    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
+    monkeypatch.setattr(SL, "state_file", lambda name: str(root / name))
+
+    state_ledger = root / ".state" / SL._DIR
+    with caplog.at_level(logging.WARNING):
+        SL._ledger_dir()
+    warned = any("HERMES_STATE_DIR is unset" in r.message for r in caplog.records)
+    # The warning fires exactly when the ambiguity actually exists.
+    assert warned is state_ledger.is_dir(), (
+        "the guard did not match the real state of the tree")
+
+
+def test_the_ambiguity_warning_fires_at_most_once(caplog, monkeypatch):
+    """A per-call warning on a hot path becomes noise, and noise gets muted."""
+    import logging
+
+    from hermes_trader.agents import shadow_ledger as SL
+    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
+    with caplog.at_level(logging.WARNING):
+        for _ in range(5):
+            SL._ledger_dir()
+    assert sum("HERMES_STATE_DIR is unset" in r.message
+               for r in caplog.records) <= 1
+
+
+def test_the_ledger_ambiguity_guard_never_raises(monkeypatch):
+    from hermes_trader.agents import shadow_ledger as SL
+    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
+    assert isinstance(SL._ledger_dir(), str)
+
+
+def test_book_status_loads_env_before_resolving_state():
+    """The script exists because the ad-hoc version of it read the wrong
+    directory and reported every book as empty. If it stops loading .env.local
+    first, it silently lies again."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "book_status.py").read_text()
+    env_load = src.index(".env.local")
+    first_agent_import = src.index("from hermes_trader.agents")
+    assert env_load < first_agent_import, (
+        "book_status.py imports state-resolving modules before loading "
+        ".env.local — it would read the wrong ledger directory")
