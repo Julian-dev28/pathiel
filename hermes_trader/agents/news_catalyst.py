@@ -185,7 +185,12 @@ def _get_json(url: str, timeout: float = 25.0) -> Optional[Dict[str, Any]]:
             logger.warning("[news] GDELT rate-limited — backing off")
             return None
         return json.loads(body) if body.strip() else None
-    except Exception:
+    except Exception as exc:
+        # A systemic failure here (endpoint moved, DNS broke, SSL cert
+        # issue) makes every caller compute a legitimate-looking "no
+        # coverage" read forever — feeds the LIVE news_surge_short_live and
+        # news_surge_multi books, indirectly. Make it visible.
+        logger.warning(f"[news] GDELT fetch failed for {url}: {exc}")
         return None
 
 
@@ -194,7 +199,12 @@ def _get_text(url: str, timeout: float = 12.0) -> Optional[str]:
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_SSL) as r:
             return r.read().decode("utf-8", "replace")
-    except Exception:
+    except Exception as exc:
+        # Same rationale as _get_json above — this is the shared fetch used
+        # by rss_headlines/google_news_search, which feed the LIVE
+        # news_surge_short_live and news_surge_multi books plus research.py's
+        # news context. Was completely silent; now visible.
+        logger.warning(f"[news] fetch failed for {url}: {exc}")
         return None
 
 

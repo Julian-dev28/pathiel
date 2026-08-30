@@ -129,8 +129,11 @@ def record(book: str, *, coin: str, side: str, signal_bar_t: Optional[int] = Non
         # row here is a trade that never happened, in the file every
         # promote/demote decision is made from.
         append_line(_book_path(book), json.dumps(rec, sort_keys=True))
-    except Exception:
-        pass
+    except Exception as exc:
+        # Per the comment above: a truncated row here IS a trade that never
+        # happened, in the file every promote/demote decision is made from.
+        # That deserves to be loud, not silent.
+        logger.error(f"[shadow-ledger] failed to record {book}/{coin}: {exc}")
     return rec
 
 
@@ -166,7 +169,13 @@ def load(book: str) -> List[Dict[str, Any]]:
                     out.append(json.loads(line))
                 except Exception:
                     continue
-    except Exception:
+    except Exception as exc:
+        # The file exists (checked above) but couldn't be read — every
+        # promote/demote decision for this book is made from this data, so a
+        # partial/failed read (returning whatever was parsed before the
+        # failure) should be visible, not silent.
+        logger.error(f"[shadow-ledger] {book}: read failed partway, returning "
+                     f"{len(out)} row(s) parsed so far: {exc}")
         return out
     return out
 

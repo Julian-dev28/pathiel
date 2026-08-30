@@ -826,7 +826,11 @@ while True:
         try:
             _unlock_maybe_record(universe, read_agent_config())
         except Exception as _ure:
-            logger.debug(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
+            # This feeds the calendar the LIVE unlock_short_live book reads —
+            # its siblings on this pass (unlock-short-live, news-surge-*,
+            # data-logger) already log at warning; this one was the odd one
+            # out at debug.
+            logger.warning(f"[unlock-recorder] pass failed (non-fatal): {_ure}")
 
         # social_trending (VALIDATED n=185, EV25 +0.89%, halves +0.54/+1.50,
         # mc_p=0.0005). Records always; trades when its own shadow_only is off.
@@ -1028,8 +1032,12 @@ while True:
                 # notional cap is still evidence about the thesis.
                 try:
                     _record_main_engine_verdict(analysis, read_agent_config())
-                except Exception:
-                    pass
+                except Exception as _mev_e:
+                    # This is the exact blind spot the comment above names:
+                    # the main engine traded WITHOUT a forward ledger for
+                    # -$172.33 over 157 trades before anyone measured it. A
+                    # silent write failure here reproduces that same gap.
+                    logger.warning(f"[main-engine-ledger] record failed (non-fatal): {_mev_e}")
 
                 # All verdict→action routing lives in executor.route_verdict
                 # (unit-tested) so no verdict can be silently dropped again.

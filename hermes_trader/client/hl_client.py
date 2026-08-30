@@ -399,8 +399,12 @@ def fetch_aggregate_contributions_since(user: str, start_ms: int) -> float:
     try:
         from hermes_trader.client.universe import list_hip3_dexes
         in_pool.update(list_hip3_dexes())
-    except Exception:
-        pass
+    except Exception as exc:
+        # On failure, a HIP-3-dex-internal transfer gets miscounted as
+        # external capital flow, which distorts daily_pnl (feeds the
+        # kill-switch) for any account holding HIP-3 positions.
+        logger.warning(f"[hl] HIP-3 dex enumeration failed, contribution "
+                       f"accounting may miscount HIP-3 transfers: {exc}")
 
     user_lc = (user or "").lower()
     net = 0.0

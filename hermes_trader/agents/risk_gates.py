@@ -5,11 +5,14 @@ All gates are evaluated; results are collected for telemetry (no short-circuit).
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents import universe as universe_filter
 from hermes_trader.models.types import Candle
+
+logger = logging.getLogger(__name__)
 
 GateResult = Dict[str, Any]  # {pass: bool, reason?: str}
 
@@ -194,7 +197,12 @@ def history_floor_reason(
         return ""
     try:
         daily = fetch_daily(coin, min_hist + 5)
-    except Exception:
+    except Exception as exc:
+        # Fail-open is intentional (don't punish a 429) — but a systematic
+        # fetch failure (not just a transient one) would silently disable this
+        # gate forever, indistinguishable from "every coin has enough
+        # history." Log it so that's visible.
+        logger.error(f"[history_floor] fetch_daily failed for {coin}: {exc}")
         return ""  # transient fetch failure → don't block
     if daily is not None and 0 < len(daily) < min_hist:
         return f"history_floor_preflight ({len(daily)}d < {min_hist}d history)"
@@ -412,7 +420,11 @@ def market_regime_gate(ctx: GateContext, counter_regime_min_conf: float = 0.7,
         coin_class = classify_asset(ctx.coin)
         by_class = funding_data.get("regimes_by_class") or {}
         funding_regime = by_class.get(coin_class) or funding_data.get("regime", "NEUTRAL")
-    except Exception:
+    except Exception as exc:
+        # A systematic failure here silently and permanently disables the
+        # symmetric counter-funding-regime enforcement below (it always sees
+        # NEUTRAL), indistinguishable from an actually-neutral market.
+        logger.warning(f"[market_regime_gate] funding regime lookup failed for {ctx.coin}: {exc}")
         funding_regime = "NEUTRAL"
 
     # Symmetric counter-funding-regime detection.
@@ -551,8 +563,11 @@ def eval_all_gates(
                        (_rg == "down" and ctx.trade_side == "short")
             if _aligned:
                 min_conf = min(min_conf, float(aligned_min_conf))
-        except Exception:
-            pass
+        except Exception as exc:
+            # Fails toward the stricter default confidence bar (safe
+            # direction), but should still be visible if it's happening on
+            # every call rather than the rare transient case it's meant for.
+            logger.warning(f"[eval_all_gates] aligned_min_conf lookup failed for {ctx.coin}: {exc}")
     results["confidence"] = confidence_gate(ctx, min_conf)
     results["max_concurrent"] = ({"pass": True, "reason": "book_carveout"} if carveout
                                  else max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3)))

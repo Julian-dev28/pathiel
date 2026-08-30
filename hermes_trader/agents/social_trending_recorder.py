@@ -65,7 +65,10 @@ def fetch_trending(timeout: float = 15.0) -> List[Dict[str, Any]]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode())
     except Exception as exc:  # noqa: BLE001
-        logger.debug(f"[social-trending] fetch failed (non-fatal): {exc}")
+        # This book now trades (2026-08-30, see module docstring) — a
+        # persistent fetch failure means every pass silently records
+        # nothing, indistinguishable from "nothing trending today."
+        logger.warning(f"[social-trending] fetch failed (non-fatal): {exc}")
         return []
     out = []
     for entry in (data.get("coins") or []):

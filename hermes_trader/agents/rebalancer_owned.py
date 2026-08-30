@@ -408,8 +408,12 @@ def held_coins_with_dsl(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
     held = set(_live_coin_set(positions))
     try:
         held.update(active_position_coins().keys())
-    except Exception:
-        pass
+    except Exception as exc:
+        # This merge IS the restart-safe backstop against re-entry stacking
+        # (see docstring above) — a silent failure here defeats it with no
+        # trace, exactly when a flaky read makes it needed most.
+        logger.error(f"[rebalancer_owned] DSL-registry merge failed, re-entry "
+                     f"stacking backstop degraded this cycle: {exc}")
     return held
 
 

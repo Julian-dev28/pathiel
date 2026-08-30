@@ -90,7 +90,10 @@ def _get_daily_move_pct(coin: str) -> float | None:
                 return (cur - prev) / prev * 100
             return None
     except Exception as e:
-        logger.debug(f"[executor] daily move lookup failed for {coin}: {e}")
+        # Feeds the sidestep bearish/extension block reasons — a systematic
+        # failure here silently disables that protection (bearish_move can
+        # never trip), so this needs to be visible, not debug-only.
+        logger.warning(f"[executor] daily move lookup failed for {coin}: {e}")
     return None
 
 
@@ -1422,7 +1425,11 @@ def _daily_ma_direction(coin: str, period: int) -> int:
             if ma:
                 direction = 1 if closes[-1] > ma[-1] else -1
     except Exception as e:
-        logger.debug(f"[trend-filter] daily MA fetch failed for {coin}: {e}")
+        # Fail-open (direction=0/"unknown") is intentional and unchanged — but
+        # a systemic candle-fetch outage would silently and completely
+        # disable the trend filter (the same "outage reads as no signal"
+        # shape as a known prior bug), cached for an hour. Make it visible.
+        logger.warning(f"[trend-filter] daily MA fetch failed for {coin}: {e}")
         direction = 0
     _trend_ma_cache[coin] = (now, direction)
     return direction
@@ -1443,7 +1450,10 @@ def _volume_confirmed(coin: str, min_ratio: float, lookback: int = 20) -> bool:
         avg = sum(candle_val(c, "v") for c in cd[-lookback - 1:-1]) / lookback
         return avg <= 0 or candle_val(cd[-1], "v") >= avg * min_ratio
     except Exception as e:
-        logger.debug(f"[vol-confirm] fetch failed for {coin}: {e}")
+        # Fail-open (allow) is intentional and unchanged — same rationale as
+        # the trend-filter fetch above; only the log level changes so a
+        # systemic outage is visible instead of silently always-passing.
+        logger.warning(f"[vol-confirm] fetch failed for {coin}: {e}")
         return True
 
 

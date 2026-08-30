@@ -10,6 +10,10 @@ regardless of the cycle.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _set_session_timeout(client, timeout_s: float = 10.0):
     """Give an SDK client's requests.Session a DEFAULT read timeout. The SDK
@@ -27,6 +31,10 @@ def _set_session_timeout(client, timeout_s: float = 10.0):
             return _orig(method, url, **kw)
 
         sess.request = _req
-    except Exception:
-        pass
+    except Exception as exc:
+        # This monkeypatch exists BECAUSE of the 15-minute-hang incident
+        # named above. If it silently fails to apply, that exact bug is back
+        # with zero trace — the client "still works," just unprotected.
+        logger.warning(f"[http_session] could not install read timeout, "
+                       f"client is UNPROTECTED against a hung read: {exc}")
     return client

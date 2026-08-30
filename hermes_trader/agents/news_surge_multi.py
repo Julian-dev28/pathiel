@@ -188,7 +188,10 @@ def maybe_run(config: Dict[str, Any],
     try:
         pool = rss_headlines(feeds=FIREHOSES, limit=400)
     except Exception as exc:
-        logger.debug(f"[news-surge-multi] firehose fetch failed ({exc})")
+        # This is a LIVE book — a persistent fetch failure means this pass
+        # records nothing and opens nothing, indistinguishable from "no
+        # surge today." Needs to be visible, not debug-only.
+        logger.warning(f"[news-surge-multi] firehose fetch failed ({exc})")
         return 0
 
     shadow_only = bool(cfg.get("shadow_only", True))

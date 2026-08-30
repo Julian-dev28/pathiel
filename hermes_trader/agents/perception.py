@@ -318,7 +318,11 @@ def scan_once(
         include_crypto = bool(_cfg.get("enable_crypto", True))
         include_hip3 = bool(_cfg.get("enable_hip3", False))
         trend_surface_enabled = bool(_cfg.get("trend_surface_enabled", False))
-    except Exception:
+    except Exception as exc:
+        # A failing config read silently narrows what the scanner even looks
+        # at (e.g. HIP-3 off) every cycle with no trace — make it visible.
+        logger.warning(f"[scan] live config read failed, using hardcoded "
+                       f"asset-class defaults this cycle: {exc}")
         _cfg = {}
         include_crypto = True
         include_hip3 = False

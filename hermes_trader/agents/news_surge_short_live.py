@@ -176,7 +176,10 @@ def maybe_run(config: Dict[str, Any],
         try:
             rep = coin_catalyst(coin)
         except Exception as exc:
-            logger.debug(f"[news-surge-short-live] {coin}: read failed ({exc})")
+            # LIVE book — a persistent per-coin read failure silently drops
+            # that coin from this pass's evidence every cycle, indistinguishable
+            # from "no catalyst." Needs to be visible, not debug-only.
+            logger.warning(f"[news-surge-short-live] {coin}: read failed ({exc})")
             continue
         shadow_only = bool(cfg.get("shadow_only", False))
         rows.append({

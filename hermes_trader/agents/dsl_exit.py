@@ -604,7 +604,12 @@ def _policy_from_config() -> ExitPolicy:
             noise_band_atr_mult=float(noise_cfg.get("atr_mult", ExitPolicy.noise_band_atr_mult)),
             phase2_tiers=tiers if tiers else ExitPolicy().phase2_tiers,
         )
-    except Exception:
+    except Exception as exc:
+        # A config-read failure here silently produces a synthesized tracker
+        # with the (looser) class defaults instead of the live config's
+        # stops — exactly the "policy drift" this function's docstring
+        # names as a prior real bug. Make it visible.
+        logger.error(f"[dsl] failed to build policy from config, using class defaults: {exc}")
         return ExitPolicy()
 
 
@@ -631,7 +636,12 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         try:
             szi = float(pos.get("szi", "0") or 0)
             entry = float(pos.get("entryPx") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
+            # This coin never enters live_keys below, so if its dex WAS
+            # queried this cycle it can be swept into `stale` and its DSL
+            # tracker deleted even though the position is genuinely open —
+            # make that visible rather than a silent skip.
+            logger.warning(f"[dsl] unparseable position payload for {coin!r}, skipping: {e}")
             continue
         if szi == 0 or entry <= 0:
             continue
@@ -730,7 +740,11 @@ def check_all_positions(mids: Dict[str, float]) -> List[ExitVerdict]:
         if mark_px is not None:
             try:
                 mark_px = float(mark_px)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                # Failing to check a stop is worse than any exception —
+                # this position's floor/max-loss is NOT evaluated this tick.
+                logger.warning(f"[dsl] unparseable mark price for {tracker.coin}, "
+                               f"stop not checked this tick: {e}")
                 continue
             if mark_px > 0:
                 verdict = tracker.check(mark_px)

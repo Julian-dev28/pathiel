@@ -256,8 +256,14 @@ class AgentMemory:
             # five restarts across a -$75 night, kill never saw it).
             try:
                 self.flush()
-            except Exception:
-                pass
+            except Exception as e:
+                # This flush exists BECAUSE of a real incident: without it, a
+                # mid-day restart on a no-trade day re-baselines SOD to
+                # current equity and launders the day's drawdown out of the
+                # kill-switch (five restarts across a -$75 night, kill never
+                # saw it). If the flush itself now fails silently, that exact
+                # bug is back — make it loud.
+                logger.error(f"[memory] failed to persist SOD baseline reset: {e}")
         else:
             prev_daily = self._daily_pnl
             self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
