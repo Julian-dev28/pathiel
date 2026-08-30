@@ -74,5 +74,6 @@ may act on.
 | finding | what died |
 |---|---|
 | W-ME1 | main_engine — no excess over null (p=0.117), 0 signals in 17 days at the live gate |
+| W-ME2 | the main-engine trigger stack, every component, 208 days, n up to 1140 — zero of 12 pre-registered cells clear Bonferroni. trendStrength's claimed +2.08% lift does NOT survive out of sample |
 | W-SESS1 | Asia/London session-sweep reversal — fails Bonferroni, decays 8x across halves |
 | W-U2 | (validated — unlock run-in, n=408, p=0.0040) |
