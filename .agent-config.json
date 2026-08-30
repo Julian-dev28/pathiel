@@ -178,10 +178,6 @@
     "enabled": true,
     "poll_minutes": 30
   },
-  "main_engine": {
-    "entries_enabled": false,
-    "recorder_enabled": false
-  },
   "max_daily_loss_pct": 0.15,
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,

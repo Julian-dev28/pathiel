@@ -82,12 +82,6 @@ _SWITCHES: Dict[str, tuple] = {
     "news_surge_multi": ("top", "news_surge_multi"),
     "social_trending": ("top", "social_trending"),
     "unlock_short_runin": ("top", "unlock_short"),
-    # The main engine is a thesis like any other. Its live arm is an ENTRIES
-    # flag rather than shadow_only, so it gets its own switch shape. It was
-    # demoted 2026-07-20 on -$172.33/157 trades with every slice negative; it
-    # can earn its way back the same way anything else does — by grading
-    # VALIDATED on its own forward ledger. No exemption for being the flagship.
-    "main_engine": ("entries", "main_engine"),
 }
 
 # EMPTY, and it stays empty. Operator directive 2026-08-30: "nothing should be a

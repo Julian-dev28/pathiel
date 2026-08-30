@@ -115,20 +115,59 @@ def test_the_restriction_is_documented_as_capacity_not_edge():
 
 # ── the degraded-feed entry gate, end to end through the loop's own path ─────
 
-def test_the_loop_blocks_entries_on_a_degraded_feed():
-    """The gate has to bind inside the loop's own entry-block function, not just
-    exist as a helper nobody calls. Checked by source inspection rather than by
-    importing trading_loop, because importing that module starts the live loop.
+def test_the_book_execute_path_blocks_on_a_degraded_feed():
+    """The gate has to sit where the money actually flows.
+
+    It used to live only in _fresh_entry_preblock_reason — the main_engine entry
+    preflight — so it guarded a path that (W-ME1) could not fire on the majors
+    universe, while the four books that DO trade went through unguarded. When
+    main_engine's entries were deleted the gate moved to _book_execute, the
+    single choke point every book passes.
+
+    Checked by source inspection rather than import, because importing
+    trading_loop starts the live loop.
     """
     import pathlib
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "scripts" / "trading_loop.py").read_text()
-    start = src.index("def _fresh_entry_preblock_reason")
+    start = src.index("def _book_execute")
     end = src.index("\ndef ", start + 1)
     body = src[start:end]
     assert "_scan_is_trustworthy()" in body, (
-        "the degraded-feed gate is not in the entry-block path — an outage "
-        "would again read as a quiet market")
+        "the degraded-feed gate is not in the book execute path — an exchange "
+        "outage would again read as a quiet market for the books that trade")
     assert "degraded_feed" in body
-    assert "below_min_tradable_equity" in body, (
-        "the dust floor left the entry-block path")
+
+
+def test_the_dust_floor_guards_every_book():
+    """The other half of what the deleted preflight used to cover. The floor
+    lives in the executor, which every book reaches through _book_execute, so
+    it survived the deletion — this pins that."""
+    import inspect
+
+    from hermes_trader.agents import executor
+    src = inspect.getsource(executor.maybe_execute)
+    assert "min_tradable_equity" in src
+
+
+def test_main_engine_entries_are_gone():
+    """W-ME1: refuted by backtest, and structurally unable to fire on the
+    majors universe (0 signals in 17 days at the live gate of 54, peak 45.9)."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    assert "MAIN_ENGINE_DELETED" in src
+    assert "_fresh_entry_preblock_reason" not in src
+
+
+def test_ai_closes_survived_the_deletion():
+    """A standing hard operator requirement: "AI powered closes are a MUST
+    HAVE". Only main_engine's ENTRIES were removed; held coins still get their
+    throttled AI close-check."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    assert "held_research_ms" in src, "the held-coin AI close throttle is gone"
+    assert "analysis = research(coin, perception)" in src, (
+        "the research call the AI close path depends on was removed")
+    assert "route_verdict" in src

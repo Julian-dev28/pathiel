@@ -162,46 +162,6 @@ def test_every_switch_target_exists_in_the_live_config():
         assert AC._block(cfg, book) is not None, f"{book} switch points at nothing"
 
 
-# ------------------------------------------------- main engine is in the loop
-def test_main_engine_uses_the_entries_flag_shape():
-    """The engine's live arm is entries_enabled, not shadow_only. If the cycle
-    read it as a shadow_only book it would see 'enabled: absent' and report it
-    permanently not-live — silently exempting the single largest loss source
-    from the loop."""
-    cfg = {"main_engine": {"entries_enabled": False, "recorder_enabled": True}}
-    assert AC._is_live(cfg, "main_engine") is False
-    cfg["main_engine"]["entries_enabled"] = True
-    assert AC._is_live(cfg, "main_engine") is True
-
-
-def test_main_engine_promote_and_demote_flip_only_the_entries_flag():
-    cfg = {"main_engine": {"entries_enabled": False, "recorder_enabled": True}}
-    assert AC.apply_action(cfg, "main_engine", "promote") is True
-    assert cfg["main_engine"]["entries_enabled"] is True
-    # no sizing knobs invented on an entries-flag book
-    assert "notional_usd" not in cfg["main_engine"]
-    assert "stop_pct" not in cfg["main_engine"]
-    assert AC.apply_action(cfg, "main_engine", "demote") is True
-    assert cfg["main_engine"]["entries_enabled"] is False
-    # idempotent both ways
-    assert AC.apply_action(cfg, "main_engine", "demote") is False
-
-
-def test_main_engine_can_earn_its_way_back_automatically():
-    """It was demoted on evidence; it must be promotable on evidence too, or
-    the loop is a one-way ratchet and the thesis can never be revisited."""
-    g = {"book": "main_engine", "n": 12, "ev_real": 2.0, "ev_strict": 1.0,
-         "halves": {"first": 1.0, "second": 3.0}, "mc_p": 0.01}
-    assert AC.decide(g, live=False)["action"] == "promote"
-    assert "main_engine" not in AC._NEVER_PROMOTE
-
-
-def test_main_engine_demotes_again_if_it_turns():
-    g = {"book": "main_engine", "n": 20, "ev_real": -1.5, "ev_strict": -1.7,
-         "halves": {"first": -1.0, "second": -2.0}, "mc_p": 0.9}
-    assert AC.decide(g, live=True)["action"] == "demote"
-
-
 # ------------------------------------------- evolution stage: robustness + dedup
 def test_already_acted_theses_are_registered_with_reasons():
     """Without this the cycle re-proposes the same candidates every day and

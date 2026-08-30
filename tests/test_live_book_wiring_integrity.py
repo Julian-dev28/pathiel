@@ -99,29 +99,6 @@ def test_reverse_refuted_books_configure_a_reachable_stop(path):
     assert stop < 100.0 / lev
 
 
-# --------------------------------------------------------------- books-only mode
-def test_main_engine_entries_stay_disabled():
-    """main-engine entries are the measured #1 loss source, twice over:
-    2026-07-18 forensics (2,721 fills) and again 2026-07-20 (-$172.33 of a
-    -$187.24 30-day loss across 157 trades, EVERY slice negative — side,
-    entry path, regime, asset class). Inverting it is NOT supported (n=8,
-    and the as-called sample was positive), so the fix is to stop taking
-    the entries, not to flip them.
-
-    Sub-2h holds are -$163.66 of the bleed; a minimum-hold gate is the wrong
-    fix because those exits are stop-outs — forcing the hold would remove
-    the stop from entries that were already wrong.
-
-    Strategy books tag `strategy_book` and pass untouched; AI close-checks
-    never route through maybe_execute, so exits and held-position management
-    are unaffected. Flipping this back on needs fresh evidence that the
-    engine's entries are +EV, not a hunch."""
-    import json
-    from pathlib import Path
-    cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    assert cfg["main_engine"]["entries_enabled"] is False
-
-
 # --------------------------------------------------------------- margin floor
 def test_margin_floor_preserves_a_real_liquidation_buffer():
     """2026-07-22 root-cause of the equity bleed: min_available_margin_pct was

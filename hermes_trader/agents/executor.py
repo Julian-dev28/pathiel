@@ -366,13 +366,23 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "analysis_id": analysis["id"], "reason": "mode_not_live",
         }
 
-    # BOOKS-ONLY gate (2026-07-18 rebuild): main-engine (AI-verdict) ENTRIES
-    # are disabled when main_engine.entries_enabled is false. Forensics on
-    # 2,721 fills: sub-2h AI-engine churn lost -$385.59 net while >=2h holds
-    # made +$134.96 — the engine's entries were the #1 measured loss source
-    # (91% of the last 2 weeks' bleed). Strategy books tag their analyses
-    # with `strategy_book` and pass untouched; AI close-checks never route
-    # through maybe_execute, so exits are unaffected. Hot-read + reversible.
+    # BOOKS-ONLY. An analysis with no `strategy_book` is a main-engine
+    # (AI-verdict) entry, and those are DELETED — W-ME1, 2026-08-30: the
+    # trigger showed no excess over a random-entry null (p=0.117) and at the
+    # live gate fired zero times across all five majors in 17 days. Forensics
+    # on 2,721 fills had already put sub-2h AI-engine churn at -$385.59 net
+    # against +$134.96 for >=2h holds — the #1 measured loss source.
+    #
+    # The default stays True and the protection lives in the CALLER: the loop no
+    # longer generates non-book entries at all. Flipping this default was tried
+    # and reverted — 28 tests use a bookless analysis as a harness for other
+    # gates (ATR stops, cooldowns, sidestep), so the flip silently changed what
+    # those tests were exercising. A backstop that disturbs 28 unrelated
+    # assertions is not worth the belt it adds to existing braces.
+    #
+    # Books tag their analyses with `strategy_book` and pass untouched. AI
+    # close-checks never route through maybe_execute, so exits are unaffected —
+    # AI closes remain a standing hard requirement.
     if (not analysis.get("strategy_book")
             and not bool((config.get("main_engine") or {}).get("entries_enabled", True))):
         return {

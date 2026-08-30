@@ -6,7 +6,7 @@ executor.
 Split out 2026-08-30 (agent 1/8, dedup pass) after finding the exact same
 handful of tiny functions copy-pasted byte-for-byte across `news_surge_multi.py`,
 `news_surge_short_live.py`, `social_trending_recorder.py`, `unlock_short_live.py`,
-`unlock_recorder.py`, and `main_engine_recorder.py`:
+`unlock_recorder.py`:
 
 - `execute_opened` / `execute_block_detail` — parse whatever `_book_execute`
   (scripts/trading_loop.py) / `executor.maybe_execute` returned.

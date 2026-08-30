@@ -56,7 +56,6 @@ from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effec
 from hermes_trader.agents.ta_filter import analyze_perception
 from hermes_trader.agents.research import research
 from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
-from hermes_trader.agents.main_engine_recorder import record_verdict as _record_main_engine_verdict
 from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
 from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
@@ -99,6 +98,28 @@ def _book_execute(analysis):
     own — a book entry is then blocked here (surfaced to the feed) so only the
     main AI engine opens positions. The ai_only book is exempt: it IS the AI's
     verdict, so it places whenever ai_only_mode.place is on regardless."""
+    # A blind scan is not a quiet market. This gate used to live ONLY in the
+    # main_engine entry preflight, so it protected a path that (per W-ME1) could
+    # not fire on the majors universe — while the four books that DO trade went
+    # through unguarded. Moved here, to the single choke point every book passes.
+    if not _scan_is_trustworthy():
+        _st = _last_scan_integrity()
+        result = {"executed": False, "coin": analysis.get("coin"),
+                  "side": analysis.get("side"),
+                  "strategy_book": analysis.get("strategy_book"),
+                  "reason": (f"degraded_feed ({_st.get('gaps')}/{_st.get('markets')} "
+                             f"markets unreadable) — a data outage is not a quiet market"),
+                  "blocked_by": ["degraded_feed"]}
+        logger.warning(f"[book] {analysis.get('strategy_book')} blocked: "
+                       f"{result['reason']}")
+        try:
+            evt = _book_block_event(analysis, result)
+            if evt:
+                log_event(evt)
+        except Exception:
+            pass
+        return result
+
     _cfg = read_agent_config()
     if (not _books_bypass_ai(_cfg)
             and analysis.get("strategy_book") not in (None, "ai_only")):
@@ -329,139 +350,6 @@ def _position_value_usd(row) -> float:
         return 0.0
 
 
-def _fresh_entry_preblock_reason(coin, perception, config, equity, available,
-                                 positions, state, daily_pnl):
-    """Cheap deterministic gates before paid AI research on fresh entries."""
-    is_hip3 = ":" in (coin or "")
-    mode = str(config.get("mode", "OFF")).upper()
-    if mode == "LIVE" and not os.environ.get("HYPERLIQUID_PRIVATE_KEY"):
-        return "private_key_missing (fresh entries cannot execute)"
-    if is_hip3 and not bool(config.get("enable_hip3", False)):
-        return "hip3_disabled"
-    if (not is_hip3) and not bool(config.get("enable_crypto", True)):
-        return "crypto_disabled"
-
-    blocklist = {str(c).upper() for c in (config.get("coin_blocklist") or [])}
-    if coin.upper() in blocklist or _universe.bare_ticker(coin) in blocklist:
-        return f"{coin} is on the coin blocklist"
-    if not _universe.in_allowlist(coin, config.get("coin_allowlist")):
-        return f"{coin} not on the coin allowlist"
-
-    loss_remaining = memory.loss_cooldown_remaining_min(coin)
-    if loss_remaining > 0:
-        return f"loss_cooldown ({loss_remaining:.0f}min remaining)"
-
-    max_daily_loss = _effective_daily_loss_limit(config, equity, daily_pnl)
-    if daily_pnl <= max_daily_loss:
-        return f"daily_loss_gate (PnL ${daily_pnl:.2f} <= ${max_daily_loss:.0f})"
-
-    try:
-        halt_pct = float(config.get("daily_giveback_halt_pct", 0.0) or 0.0)
-        min_peak = float(config.get("daily_giveback_min_peak_usd", 20.0) or 0.0)
-        peak = float(memory.peak_daily_pnl())
-    except (TypeError, ValueError):
-        halt_pct, min_peak, peak = 0.0, 0.0, 0.0
-    if halt_pct > 0 and peak >= min_peak:
-        floor = peak * (1.0 - halt_pct)
-        if daily_pnl <= floor:
-            return (f"daily_giveback_gate (PnL ${daily_pnl:.2f} <= "
-                    f"${floor:.2f} floor from ${peak:.2f} peak)")
-
-    if equity <= 0:
-        return "account_state_unavailable (equity<=0)"
-
-    # Same structural dust floor the executor enforces, checked early so a dust
-    # account does not spend research and AI budget on trades that can never be
-    # placed. The executor is still the authority — this is the cheap path.
-    _min_eq = _min_tradable_equity(config)
-    if equity < _min_eq:
-        return (f"below_min_tradable_equity (${equity:.2f} < ${_min_eq:.2f}) — "
-                f"the account cannot place an order HL would accept")
-
-    # A blind scan is not a quiet market. When Hyperliquid bulk-500s, every
-    # unreadable coin comes back as an empty candle list and reads downstream as
-    # "no signal" — indistinguishable from a market we looked at and passed on.
-    # Entering on that is entering on an absence of evidence. Blocked until the
-    # feed recovers; the next healthy scan clears it on its own.
-    if not _scan_is_trustworthy():
-        _st = _last_scan_integrity()
-        return (f"degraded_feed ({_st.get('gaps')}/{_st.get('markets')} markets "
-                f"unreadable, {float(_st.get('gap_frac') or 0) * 100:.0f}%) — a "
-                f"data outage is not a quiet market")
-
-    try:
-        max_concurrent = int(config.get("max_concurrent", 3) or 3)
-    except (TypeError, ValueError):
-        max_concurrent = 3
-    if max_concurrent > 0 and len(positions or []) >= max_concurrent:
-        return f"max_positions_reached ({len(positions or [])}/{max_concurrent})"
-
-    total_ntl = 0.0
-    try:
-        total_ntl = float((state or {}).get("total_ntl", 0) or 0)
-    except (TypeError, ValueError):
-        total_ntl = sum(_position_value_usd(p) for p in (positions or []))
-    try:
-        max_total_pct = float(config.get("max_total_notional_pct", 0) or 0)
-    except (TypeError, ValueError):
-        max_total_pct = 0.0
-    if max_total_pct > 0 and total_ntl >= equity * max_total_pct:
-        return (f"notional_room_full (${total_ntl:.0f} >= "
-                f"${equity * max_total_pct:.0f} cap)")
-
-    try:
-        min_avail_pct = float(config.get("min_available_margin_pct", 0.10) or 0.0)
-    except (TypeError, ValueError):
-        min_avail_pct = 0.10
-    dex = coin.split(":", 1)[0] if is_hip3 else ""
-    dex_equity = (state or {}).get("dex_equity") or {}
-    dex_available = (state or {}).get("dex_available") or {}
-    try:
-        target_equity = float(dex_equity.get(dex, equity) or 0)
-        target_available = float(dex_available.get(dex, available) or 0)
-    except (TypeError, ValueError):
-        target_equity, target_available = equity, available
-    if target_equity > 0 and min_avail_pct > 0:
-        avail_pct = target_available / target_equity
-        if avail_pct < min_avail_pct:
-            label = dex or "main"
-            return (f"insufficient_free_margin_preflight ({label}: "
-                    f"{avail_pct*100:.1f}% < {min_avail_pct*100:.0f}%)")
-
-    try:
-        vol = float(perception.get("daily_volume_usd", 0) or 0)
-        vol_floor = float(config.get("min_hip3_volume_usd" if is_hip3 else "min_market_volume_usd",
-                                     0) or 0)
-    except (TypeError, ValueError):
-        vol, vol_floor = 0.0, 0.0
-    if vol_floor > 0 and 0 < vol < vol_floor:
-        return f"liquidity_floor_preflight (${vol/1e6:.2f}M < ${vol_floor/1e6:.2f}M)"
-
-    # History-age floor (swarm-found gap): a high-volume NEW listing passes the volume
-    # floor with ~6 daily bars; gate it on minimum daily-bar history. Bounded cost — only
-    # coins that already cleared margin/liquidity run this one daily-candle fetch.
-    hist_reason = _history_floor_reason(
-        coin, int(config.get("min_history_bars", 0) or 0),
-        lambda c, n: _fetch_candles_sync(c, "1d", n, 6 * 3600 * 1000))
-    if hist_reason:
-        return hist_reason
-
-    # Per-coin re-entry cap (audit fix): the book is fee-dominated by over-churned longs
-    # (BTC re-entered 44x). Block the (cap+1)-th entry on a coin within the rolling window.
-    # memory already tracks executed entries — no new state. Risk-REDUCING.
-    _rc = config.get("reentry_cap") or {}
-    if bool(_rc.get("enabled", False)):
-        try:
-            _cap = int(_rc.get("max_per_coin", 0) or 0)
-            _win_ms = float(_rc.get("window_hours", 24.0) or 24.0) * 3_600_000
-            _n = memory.count_entries_since(coin, time.time() * 1000 - _win_ms)
-        except Exception:
-            _cap, _n = 0, 0
-        cap_reason = _reentry_cap_reason(coin, _n, _cap)
-        if cap_reason:
-            return cap_reason
-
-    return ""
 
 
 # Last-known per-dex equity + consecutive-miss streaks for the idle-capital
@@ -935,43 +823,28 @@ while True:
                                         f"{min_hold_min:.0f}min — infancy, skip close-check")
                             continue
             else:
-                # Fresh entry preflight: skip paid research when deterministic
-                # downstream gates already prove this entry cannot execute.
-                # Held positions took the branch above and still get their
-                # periodic AI close-check.
-                entry_preblock = _fresh_entry_preblock_reason(
-                    coin, perception, _cfg_cd, equity, available,
-                    positions, state, daily_pnl,
-                )
-                if entry_preblock:
-                    logger.info(f"{coin}: pre-research {entry_preblock} — skip AI research")
-                    log_event({"event": "entry_preflight", "coin": coin,
-                               "score": round(float(score), 1),
-                               "trigger_score": round(float(score), 1),
-                               "reason": entry_preblock})
-                    continue
-                # Not held but executed within cooldown_min → re-entry would be
-                # gate-blocked, so skip the paid AI call.
-                last_ms = recent_trades_by_coin.get(coin)
-                if last_ms and (now_ms - last_ms) < cooldown_ms:
-                    remaining_min = _remaining_minutes(cooldown_ms - (now_ms - last_ms))
-                    logger.info(f"{coin}: pre-research cooldown ({remaining_min}min remaining) — skip")
-                    log_event({"event": "ta_skip", "coin": coin,
-                               "signal": "COOLDOWN",
-                               "score": round(float(score), 1),
-                               "trigger_score": round(float(score), 1)})
-                    continue
-                # Re-research throttle: already researched recently (any verdict) →
-                # don't re-pay the LLM until research_cooldown_min lapses.
-                last_research = _last_research_by_coin.get(coin, 0)
-                if (now_ms - last_research) < research_cooldown_ms:
-                    remaining_min = _remaining_minutes(research_cooldown_ms - (now_ms - last_research))
-                    logger.info(f"{coin}: re-research throttle ({remaining_min}min remaining) — skip")
-                    log_event({"event": "ta_skip", "coin": coin,
-                               "signal": "RESEARCH_THROTTLE",
-                               "score": round(float(score), 1),
-                               "trigger_score": round(float(score), 1)})
-                    continue
+                # main_engine ENTRIES DELETED — W-ME1, 2026-08-30.
+                #
+                # Backtested rather than left MARGINAL: its deterministic
+                # trigger returned +2.15% against a +1.61% random-entry null
+                # (excess p=0.117 — beta, not signal), and at the live gate of
+                # 54 it fired ZERO times across all five majors in 17 days,
+                # peaking at 45.9. On the majors universe it cannot fire at all.
+                # Its forward record spans 7.5 days, so the MARGINAL verdict
+                # could never have resolved either way. Live record: -$172.33
+                # over 157 trades.
+                #
+                # AI CLOSES ARE UNAFFECTED, deliberately: they are a standing
+                # hard requirement, not an optimisation. Held coins take the
+                # branch ABOVE and still get their throttled close-check. Only
+                # NEW positions from an AI verdict are gone — which also means
+                # the loop no longer pays for research on coins it will not
+                # trade.
+                log_event({"event": "ta_skip", "coin": coin,
+                           "signal": "MAIN_ENGINE_DELETED",
+                           "score": round(float(score), 1),
+                           "trigger_score": round(float(score), 1)})
+                continue
 
             # TA filter — cheap statistical gate before the paid AI call.
             ta = analyze_perception(perception)
@@ -1023,21 +896,6 @@ while True:
                            "entry_px": analysis.get('entry_px'),
                            "stop_px": analysis.get('stop_px'),
                            "tp_px": analysis.get('tp_px')})
-
-                # main-engine thesis ledger: the engine was the ONE surface
-                # trading without a forward ledger, which is why -$172 over
-                # 157 trades went unmeasured for 30 days. Recorded on the
-                # AI's own verdict BEFORE route_verdict can mutate it, and
-                # whether or not it executes — a verdict blocked by the
-                # notional cap is still evidence about the thesis.
-                try:
-                    _record_main_engine_verdict(analysis, read_agent_config())
-                except Exception as _mev_e:
-                    # This is the exact blind spot the comment above names:
-                    # the main engine traded WITHOUT a forward ledger for
-                    # -$172.33 over 157 trades before anyone measured it. A
-                    # silent write failure here reproduces that same gap.
-                    logger.warning(f"[main-engine-ledger] record failed (non-fatal): {_mev_e}")
 
                 # All verdict→action routing lives in executor.route_verdict
                 # (unit-tested) so no verdict can be silently dropped again.
