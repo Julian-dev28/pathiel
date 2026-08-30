@@ -379,16 +379,16 @@ class AgentMemory:
         return None
 
     def get_win_rate(self) -> Dict[str, float]:
-        # Prefer the realized outcome store; fall back to the legacy (never-
-        # populated) trades[].pnl shape for backward compat.
-        if self._closes:
-            wins = sum(1 for c in self._closes if (c.get("realized_pnl_pct") or 0) > 0)
-            total = len(self._closes)
-            return {"wins": wins, "total": total, "rate": wins / total if total else 0}
-        closed = [t for t in self._trades if t.get("exitPx") is not None and t.get("pnl") is not None]
-        wins = sum(1 for t in closed if (t.get("pnl") or 0) > 0)
-        total = len(closed)
-        return {"wins": wins, "total": total, "rate": wins / total if total > 0 else 0}
+        """Realized win-rate from the outcome store (record_close()).
+
+        record_trade() (the only writer of self._trades) never sets `pnl` or
+        `exitPx` — those keys are never populated by any caller — so a
+        trades[]-shaped fallback can only ever compute zeros. Return the
+        zeros directly instead of a dead loop over an empty match set.
+        """
+        wins = sum(1 for c in self._closes if (c.get("realized_pnl_pct") or 0) > 0)
+        total = len(self._closes)
+        return {"wins": wins, "total": total, "rate": wins / total if total else 0}
 
     def get_payoff_stats(self, limit: int = 200) -> Dict[str, float]:
         """Realized win-rate + payoff ratio (avg win / avg loss) from the outcome

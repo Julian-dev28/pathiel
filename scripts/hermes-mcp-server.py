@@ -1700,8 +1700,11 @@ def handle_get_account_summary(params: Dict[str, Any]) -> str:
     """Handle get_account_summary tool call."""
     try:
         from hermes_trader.client.exchange import _get_info
-        info = _get_info()
-        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        _get_info()
+        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
+        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
+        # always returned empty. Use get_user_fills/get_positions for real data.
+        state: Dict[str, Any] = {}
         return json.dumps({'summary': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1711,8 +1714,11 @@ def handle_get_asset_positions(params: Dict[str, Any]) -> str:
     coin = _norm_coin(params.get('coin', ''))
     try:
         from hermes_trader.client.exchange import _get_info
-        info = _get_info()
-        positions = info.frontend_open_positions() if hasattr(info, 'frontend_open_positions') else []
+        _get_info()
+        # frontend_open_positions does not exist on hyperliquid-python-sdk's
+        # Info class (checked 0.5.0 through the pinned >=0.23.0 floor) — this
+        # has always returned empty.
+        positions = []
         if coin:
             positions = [p for p in positions if _norm_coin(p.get('coin', '')) == coin]
         return json.dumps({'coin': coin, 'positions': positions}, default=str)
@@ -1735,8 +1741,11 @@ def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
     """Handle get_portfolio_pnl tool call."""
     try:
         from hermes_trader.client.exchange import _get_info
-        info = _get_info()
-        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        _get_info()
+        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
+        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
+        # always returned empty.
+        state: Dict[str, Any] = {}
         return json.dumps({'pnl': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1745,8 +1754,11 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
     """Handle get_risk_metrics tool call."""
     try:
         from hermes_trader.client.exchange import _get_info
-        info = _get_info()
-        state = info.frontend_user_state() if hasattr(info, 'frontend_user_state') else {}
+        _get_info()
+        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
+        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
+        # always returned empty.
+        state: Dict[str, Any] = {}
         return json.dumps({'risk': state}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1757,7 +1769,7 @@ def handle_get_markets_info(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        meta = info.meta() if hasattr(info, 'meta') else {}
+        meta = info.meta()
         return json.dumps({'markets': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1768,7 +1780,7 @@ def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        spot_meta = info.spot_meta() if hasattr(info, 'spot_meta') else {}
+        spot_meta = info.spot_meta()
         return json.dumps({'spot_markets': spot_meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1778,7 +1790,7 @@ def handle_get_perp_markets(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        meta = info.meta() if hasattr(info, 'meta') else {}
+        meta = info.meta()
         return json.dumps({'perp_markets': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1789,7 +1801,7 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        l2 = info.l2_snapshot(coin) if hasattr(info, 'l2_snapshot') else {}
+        l2 = info.l2_snapshot(coin)
         return json.dumps({'coin': coin, 'depth': l2}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1808,7 +1820,7 @@ def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        meta = info.meta() if hasattr(info, 'meta') else {}
+        meta = info.meta()
         return json.dumps({'contexts': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1847,7 +1859,7 @@ def handle_get_max_leverage(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        meta = info.meta() if hasattr(info, 'meta') else {}
+        meta = info.meta()
         universe = meta.get('universe', []) if isinstance(meta, dict) else []
         for asset in universe:
             if _norm_coin(asset.get('name', '')) == coin:
@@ -1866,10 +1878,8 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info
         info = _get_info()
-        if hasattr(info, 'query_order_by_oid'):
-            res = info.query_order_by_oid(user, int(oid))
-            return json.dumps({'order': res}, default=str)
-        return json.dumps({'order': None}, default=str)
+        res = info.query_order_by_oid(user, int(oid))
+        return json.dumps({'order': res}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -1879,7 +1889,7 @@ def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
     try:
         from hermes_trader.client.exchange import _get_info, HL_ACCOUNT
         info = _get_info()
-        if hasattr(info, 'user_fees') and HL_ACCOUNT:
+        if HL_ACCOUNT:
             res = info.user_fees(HL_ACCOUNT)
             return json.dumps({'fees': res}, default=str)
         return json.dumps({'fees': {}, 'note': 'no address or SDK method pending'}, default=str)

@@ -3,11 +3,14 @@
 PURE FUNCTIONS ONLY. No network, no config reads, no side effects — so they are
 trivially testable and carry zero live impact until a caller wires them in.
 
-The executor uses this module when `atr_risk_sizing.enabled=true`. In live
-config the primary sizing basis is the DSL stop, while the ATR basis remains
-available for backup-stop experiments and legacy replays. Both modes share the
-same risk-first idea: size so that, if the configured stop is hit, the loss is a
-fixed fraction of equity, then clamp by exchange leverage and notional caps.
+The live executor does NOT call this module — its ATR-equal-risk branch was
+ripped out 2026-07-09 (it had been gated off since the 429-amplification
+incident; live sizing is equity × fraction × leverage, the DSL stop bounds
+the loss). These pure functions survive for `scripts/backtest_logged.py` and
+`scripts/strategy_grid_search.py`, which use them to explore an equal-risk
+sizing basis offline: size so that, if the configured stop is hit, the loss
+is a fixed fraction of equity, then clamp by exchange leverage and notional
+caps.
 """
 
 from __future__ import annotations

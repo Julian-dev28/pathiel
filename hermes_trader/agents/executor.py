@@ -1056,13 +1056,6 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
 
     is_buy = trade_side == "long"
 
-    # Fetch live mid if legacy sizing did not already need it for ATR sizing.
-    if mid_price <= 0:
-        mid_price = get_hl_price(coin)
-        if mid_price <= 0:
-            return {"executed": False, "mode": mode, "analysis_id": analysis["id"],
-                    "reason": f"invalid_price_for_{coin}"}
-
     position_notional = trade_notional
 
     if atr <= 0:

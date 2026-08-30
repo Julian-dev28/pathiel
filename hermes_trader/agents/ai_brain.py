@@ -68,16 +68,15 @@ class AiBrainResult(str):
 
 
 def completion_text(completion: object) -> str:
-    """Return completion text from new metadata results or legacy strings."""
+    """Return completion text.
+
+    Every producer of a completion — the AiBrain Protocol
+    (`complete(...) -> str`), all 3 configured brains, the injected MCP
+    sampling brain, and AiBrainResult (a real `str` subclass) — returns a
+    plain `str`, so that's the only shape this needs to handle.
+    """
     if completion is None:
         return ""
-    if isinstance(completion, str):
-        return str(completion)
-    text = getattr(completion, "text", None)
-    if text is not None:
-        return str(text)
-    if isinstance(completion, Mapping):
-        return str(completion.get("text") or completion.get("content") or "")
     return str(completion)
 
 
