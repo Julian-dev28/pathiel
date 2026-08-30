@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import requests
 
+from hermes_trader.client.http_session import _set_session_timeout
 from hermes_trader.client.rate_limit import HL_LIMITER as _HL_LIMITER, endpoint_weight as _endpoint_weight
 from hermes_trader.models.types import Candle
 
@@ -86,7 +87,6 @@ def init_info() -> None:
             # skip_ws=True prevents blocking WS connect + meta fetch
             # We already have meta from HTTP above
             _info_instance = Info(skip_ws=True, meta=perp_meta, spot_meta=spot_meta)
-            from hermes_trader.client.exchange import _set_session_timeout
             _set_session_timeout(_info_instance)
             logger.info("[hl] Info client initialized (HTTP-only, 10s timeout)")
         except Exception as e:
