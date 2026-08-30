@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.agents import unlock_recorder
+from hermes_trader.models.types import BookAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def _execute_opened(result: Any) -> bool:
 
 
 def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
-              cfg: Dict[str, Any]) -> Dict[str, Any]:
+              cfg: Dict[str, Any]) -> BookAnalysis:
     stop_pct = float(cfg.get("stop_pct", 15.0))
     leverage = max(1, int(cfg.get("leverage", 1)))
     return {

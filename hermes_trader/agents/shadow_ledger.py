@@ -312,7 +312,12 @@ def grade_records(records: List[Dict[str, Any]],
     """Forward-grade resolved records. `fetch_fwd(coin, signal_bar_t, n_bars, interval)`
     must return bars of `interval` AFTER signal_bar_t (caller injects real or fake fetch).
     `fetch_funding(coin, start_ms, end_ms)` (optional) returns HL fundingHistory rows;
-    when provided, graded returns are NET of funding over the simulated holding time."""
+    when provided, graded returns are NET of funding over the simulated holding time.
+
+    Return shape is documented as `hermes_trader.models.types.GradeResult`
+    (kept as `Dict[str, Any]` here, not that TypedDict, because the slip-tier
+    keys are built dynamically — `out[f"slip{bps}"] = ...` — and a TypedDict
+    requires literal string keys; see 2-type-consolidation.md)."""
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     if dedup:
         records, deduped = dedup_episodes(records)

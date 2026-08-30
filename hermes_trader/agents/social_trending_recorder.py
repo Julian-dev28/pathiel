@@ -34,6 +34,7 @@ import uuid
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,7 @@ def _execute_opened(result: Any) -> bool:
     return result is None
 
 
-def _analysis(coin: str, row: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _analysis(coin: str, row: Dict[str, Any], cfg: Dict[str, Any]) -> BookAnalysis:
     """The graded geometry, verbatim: LONG, 1-day horizon, hard stop, no trail.
 
     The ledger recorded side=long with horizon_days=1 and that is what graded

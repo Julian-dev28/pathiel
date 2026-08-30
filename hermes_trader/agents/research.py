@@ -31,7 +31,7 @@ from hermes_trader.client.hl_client import (
     resolve_user_address,
 )
 from hermes_trader.indicators.math import adx, atr, candle_val, ema, rsi
-from hermes_trader.models.types import Candle
+from hermes_trader.models.types import BookAnalysis, Candle, WebSearchTelemetry
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +343,7 @@ def _call_ai(
     return ""
 
 
-def _web_search_telemetry(completion: Any, *, requested: bool) -> Dict[str, Any]:
+def _web_search_telemetry(completion: Any, *, requested: bool) -> WebSearchTelemetry:
     """Return truthful, JSON-safe web-search telemetry for one completion.
 
     ``requested`` is the research eligibility decision; ``used`` is evidence
@@ -569,7 +569,12 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
     # then ran straight to the stop). Decline outright — PASS, no LLM call, no entry.
     if len(c4h) < 30:
         logger.warning(f"[research] thin 4h history for {coin}: only {len(c4h)} candles — PASS (skip)")
-        analysis = {
+        # `_typed` is checked against the full `BookAnalysis` contract
+        # (hermes_trader/models/types.py) at construction time — mypy will
+        # flag a misspelled/wrong-type key here even though `analysis` itself
+        # stays a plain dict for the rest of the codebase (every caller of
+        # `research()` predates a typed contract and expects `Dict[str, Any]`).
+        _typed: BookAnalysis = {
             "id": str(uuid.uuid4()), "perception_id": perception.get("id", "unknown"),
             "coin": coin, "verdict": "PASS", "confidence": 0.0, "side": None,
             "entry_px": perception.get("mid", 0), "stop_px": 0.0, "tp_px": 0.0,
@@ -594,6 +599,7 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         "daily_move_pct": perception.get("daily_move_pct"),
             "daily_volume_usd": perception.get("daily_volume_usd"),
         }
+        analysis = dict(_typed)
         memory.record_analysis(analysis)
         return analysis
 
@@ -653,7 +659,11 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
     parsed = parse_verdict(ai_text, coin, perception)
     web_telemetry = _web_search_telemetry(completion, requested=use_web)
 
-    analysis = {
+    # `_typed_full` is checked against the full `BookAnalysis` contract
+    # (hermes_trader/models/types.py) at construction time; `analysis` (a
+    # plain dict from here on) is what every caller of `research()` actually
+    # expects — see the comment on `executor.maybe_execute`.
+    _typed_full: BookAnalysis = {
         "id": str(uuid.uuid4()),
         "perception_id": perception.get("id", "unknown"),
         "coin": coin,
@@ -729,6 +739,7 @@ def research(coin: str, perception: Dict[str, Any], brain: Any | None = None) ->
         "daily_move_pct": perception.get("daily_move_pct"),
         "daily_volume_usd": perception.get("daily_volume_usd"),
     }
+    analysis = dict(_typed_full)
 
     memory.record_analysis(analysis)
     return analysis

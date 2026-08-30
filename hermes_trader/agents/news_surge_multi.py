@@ -36,6 +36,7 @@ from hermes_trader.agents.news_catalyst import (
     _title_relevant, _within_hours, rss_headlines,
 )
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -174,7 +175,7 @@ def _execute_block_detail(result: Any) -> Any:
             or result.get("blocked_by") or result.get("gate_results") or result)
 
 
-def _live_analysis(coin: str, surge_x: float, n_recent: int, cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _live_analysis(coin: str, surge_x: float, n_recent: int, cfg: Dict[str, Any]) -> BookAnalysis:
     """Bounded live order (operator flip 2026-07-21): $20/10x, 6% stop, 1d — the
     exact validated geometry of news_surge_short. Rides the VALIDATED
     attention-fade DIRECTION (short a coverage spike); the multi-source firehose

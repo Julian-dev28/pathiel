@@ -46,6 +46,7 @@ from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.news_catalyst import coin_catalyst
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ def _held_coins(positions) -> set:
     return held
 
 
-def _analysis(coin: str, rep, cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _analysis(coin: str, rep, cfg: Dict[str, Any]) -> BookAnalysis:
     # Asset-aware sizing. Equity arm = the original reverse-refuted geometry.
     # Crypto arm (W-SOC1, 2026-07-23): crypto coverage-surge SHORT graded net25
     # +4.30%/24h, BOTH halves positive (+4.52/+5.08), same-coin random-time null

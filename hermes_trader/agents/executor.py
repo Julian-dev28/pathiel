@@ -316,8 +316,39 @@ def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
     return v if v >= 0 else MIN_TRADABLE_EQUITY_USD
 
 
+def _position_notional(entry: Dict[str, Any]) -> float:
+    """USD notional of a held position, from Hyperliquid's own field.
+
+    Falls back to |szi| * entryPx when positionValue is absent. A degraded read
+    must under-report rather than raise: the gates consuming this only ever
+    BLOCK on it, so a low value fails open (a trade is allowed that maybe should
+    not have been) while an exception would take the executor down entirely.
+    """
+    pos = entry.get("position") or {}
+    try:
+        v = abs(float(pos.get("positionValue") or 0))
+        if v > 0:
+            return v
+    except (TypeError, ValueError):
+        pass
+    try:
+        return abs(float(pos.get("szi") or 0)) * float(pos.get("entryPx") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute an analysis through risk gates and into the market."""
+    """Execute an analysis through risk gates and into the market.
+
+    ``analysis`` is the shape documented as `hermes_trader.models.types.
+    BookAnalysis` — kept as `Dict[str, Any]` here (not the TypedDict itself)
+    because real callers hand this in after a storage/JSON round-trip
+    (`memory.get_analysis_by_id`, an HTTP request body in `server.py`, an MCP
+    tool call in `scripts/hermes-mcp-server.py`) where the static type is
+    already erased; only the 6 construction sites that build the dict fresh
+    (`research.py` x2 + the 4 live books' `_analysis`/`_live_analysis`) are
+    annotated against `BookAnalysis` directly.
+    """
     config = read_agent_config()
     mode = str(config.get("mode", "OFF")).upper()
 
@@ -667,11 +698,18 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # the daily giveback peak.
     daily_pnl = memory.get_daily_pnl()
 
+    # `positionValue` is Hyperliquid's own USD notional and the only correct
+    # source here. The previous `szi * analysis.entry_px` computed EVERY held
+    # position's size using the entry price of the coin currently being
+    # evaluated, which is meaningless for any other coin. No gate read that key,
+    # so it was wrong and inert; passing the real value also makes
+    # xyz_short_concentration_gate's notional cap work for the first time.
     positions = [
         {
             "coin": p["position"]["coin"],
             "side": "long" if float(p["position"]["szi"]) > 0 else "short",
-            "size_usd": abs(float(p["position"]["szi"])) * (analysis.get("entry_px") or 0),
+            "size_usd": _position_notional(p),
+            "positionValue": _position_notional(p),
         }
         for p in state["asset_positions"]
     ]
