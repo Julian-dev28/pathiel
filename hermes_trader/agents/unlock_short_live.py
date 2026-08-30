@@ -21,14 +21,17 @@ clears the >=6h fee-viability bar easily.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
-from hermes_trader.agents.dsl_exit import active_position_coins
+from hermes_trader.agents.book_helpers import bounded_exit_override
+from hermes_trader.agents.book_helpers import execute_block_detail as _execute_block_detail
+from hermes_trader.agents.book_helpers import execute_opened as _execute_opened
+from hermes_trader.agents.book_helpers import load_seen, save_seen
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from hermes_trader.agents import unlock_recorder
 from hermes_trader.models.types import BookAnalysis
 
@@ -43,49 +46,11 @@ from hermes_trader.session_log import append as log_event
 
 
 def _load_seen() -> Dict[str, int]:
-    try:
-        raw = json.load(open(_SEEN_FILE))
-        return {str(k): int(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_seen(_SEEN_FILE)
 
 
 def _save_seen(seen: Dict[str, int]) -> None:
-    try:
-        with open(_SEEN_FILE, "w") as fh:
-            json.dump(seen, fh, sort_keys=True)
-    except Exception:
-        pass
-
-
-def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
-    held: Set[str] = set()
-    for p in positions or []:
-        pos = p.get("position", p) if isinstance(p, dict) else {}
-        coin = pos.get("coin")
-        try:
-            szi = float(pos.get("szi", 0) or 0)
-        except (TypeError, ValueError):
-            szi = 0.0
-        if coin and szi != 0:
-            held.add(coin)
-    try:
-        held.update(active_position_coins().keys())
-    except Exception:
-        pass
-    return held
-
-
-def _execute_opened(result: Any) -> bool:
-    if isinstance(result, dict):
-        nested = result.get("result")
-        if isinstance(nested, dict):
-            return bool(nested.get("executed"))
-        if "executed" in result:
-            return bool(result.get("executed"))
-        if "ok" in result:
-            return bool(result.get("ok"))
-    return result is None
+    save_seen(_SEEN_FILE, seen)
 
 
 def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
@@ -106,21 +71,14 @@ def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
         "min_short_volume_usd_override": float(cfg.get("min_volume_usd", 5_000_000.0)),
-        "dsl_exit_override": {
-            # Backtested shape: ride the run-in, exit AT the unlock, 15% stop,
-            # no trail (protect disabled via huge threshold).
-            "max_loss_pct": stop_pct,
-            "max_loss_roe_pct": stop_pct * leverage,
-            "protect_pct": 9999.0,
-            "retrace_threshold": 0.5,
-            "hard_timeout_minutes": max(hours_to_unlock, 1.0) * 60.0,
-            "breakeven_trigger_pct": 0.0,
-            "breakeven_lock_pct": 0.0,
-            "stale_flat_timeout_minutes": 0.0,
-            "consecutive_breaches_required": 1,
-            "atr_stop": {"enabled": False},
-            "noise_band": {"enabled": False},
-        },
+        # Backtested shape: ride the run-in, exit AT the unlock, 15% stop,
+        # no trail (protect disabled via huge threshold). Timeout is set to
+        # the unlock event itself (hours_to_unlock), NOT a fixed hold-days
+        # horizon like the other reverse-refuted books -- this book's whole
+        # thesis is "exit AT the event," so this is the one deliberate input
+        # difference vs. bounded_exit_override's other 3 callers.
+        "dsl_exit_override": bounded_exit_override(
+            stop_pct, leverage, max(hours_to_unlock, 1.0) * 60.0),
     }
 
 
@@ -208,7 +166,7 @@ def maybe_run(config: Dict[str, Any],
             else:
                 skipped["blocked"] += 1
                 claims.release(coin, _BOOK_NAME)
-                why = (result.get("reason") or result.get("blocked_by")) if isinstance(result, dict) else result
+                why = _execute_block_detail(result)
                 logger.warning(f"[unlock-short-live] {coin} not opened: {why}")
         except Exception as exc:
             skipped["blocked"] += 1

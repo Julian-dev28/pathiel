@@ -33,6 +33,8 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_trader.agents import shadow_ledger
+from hermes_trader.agents.book_helpers import load_state, save_state
+from hermes_trader.agents.book_helpers import safe_float as _num
 from hermes_trader.agents.rebalancer_owned import state_file
 
 logger = logging.getLogger(__name__)
@@ -44,27 +46,12 @@ _STATE_FILE = state_file(".unlock_recorder_state.json")
 _MAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "unlock_map.json")
 
 
-def _num(x: Any) -> float:
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _load_state() -> Dict[str, Any]:
-    try:
-        raw = json.load(open(_STATE_FILE))
-        return raw if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_state(_STATE_FILE)
 
 
 def _save_state(state: Dict[str, Any]) -> None:
-    try:
-        with open(_STATE_FILE, "w") as fh:
-            json.dump(state, fh)
-    except Exception:
-        pass
+    save_state(_STATE_FILE, state)
 
 
 def _load_map() -> Dict[str, str]:

@@ -51,6 +51,7 @@ import json
 import logging
 
 from hermes_trader.agents.atomic_io import write_json_atomic
+from hermes_trader.agents.dsl_exit import active_position_coins
 import os
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -389,6 +390,27 @@ def _live_coin_set(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
         if coin and szi != 0:
             coins.add(coin)
     return coins
+
+
+def held_coins_with_dsl(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
+    """`_live_coin_set(...)` plus every coin the DSL exit registry still
+    tracks — the restart-safe backstop against re-entry stacking. DSL
+    rehydrates from disk on startup, so a coin can show as "held" here even
+    in the window where a live account read flakes/returns empty, which
+    otherwise would let a book's re-entry guard fail open and pyramid a
+    position (see `active_position_coins`'s own docstring in dsl_exit.py).
+
+    Split out 2026-08-30 (agent 1/8, dedup pass): this exact loop, plus this
+    exact DSL-merge step, was copy-pasted as `_held_coins` in every live
+    strategy book (news_surge_multi, news_surge_short_live,
+    social_trending_recorder, unlock_short_live) — diffed character-for-
+    character across all four before extracting; they were byte-identical."""
+    held = set(_live_coin_set(positions))
+    try:
+        held.update(active_position_coins().keys())
+    except Exception:
+        pass
+    return held
 
 
 def prune_claims_to_live(positions: Optional[List[Dict[str, Any]]], books: Optional[Set[str]] = None) -> Dict[str, str]:

@@ -36,16 +36,19 @@ thin-evidence live flip in this file.
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from hermes_trader.agents import shadow_ledger
-from hermes_trader.agents.dsl_exit import active_position_coins
+from hermes_trader.agents.book_helpers import bounded_exit_override
+from hermes_trader.agents.book_helpers import execute_block_detail as _execute_block_detail
+from hermes_trader.agents.book_helpers import execute_opened as _execute_opened
+from hermes_trader.agents.book_helpers import last_pass_ms, load_seen, mark_pass, save_seen
 from hermes_trader.agents.news_catalyst import CatalystReport, coin_catalyst
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
 
@@ -67,19 +70,11 @@ def _is_xyz_equity(coin: str) -> bool:
 
 
 def _last_pass_ms() -> int:
-    try:
-        raw = json.load(open(_TS_FILE))
-        return int(raw.get("ts", 0)) if isinstance(raw, dict) else 0
-    except Exception:
-        return 0
+    return last_pass_ms(_TS_FILE)
 
 
 def _mark_pass(now_ms: int) -> None:
-    try:
-        with open(_TS_FILE, "w") as fh:
-            json.dump({"ts": now_ms}, fh)
-    except Exception:
-        pass
+    mark_pass(_TS_FILE, now_ms)
 
 
 def _macro_regime(coin: str) -> Optional[str]:
@@ -104,37 +99,11 @@ def _macro_regime(coin: str) -> Optional[str]:
 
 
 def _load_seen() -> Dict[str, int]:
-    try:
-        raw = json.load(open(_SEEN_FILE))
-        return {str(k): int(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_seen(_SEEN_FILE)
 
 
 def _save_seen(seen: Dict[str, int]) -> None:
-    try:
-        with open(_SEEN_FILE, "w") as fh:
-            json.dump(seen, fh, sort_keys=True)
-    except Exception:
-        pass
-
-
-def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
-    held: Set[str] = set()
-    for p in positions or []:
-        pos = p.get("position", p) if isinstance(p, dict) else {}
-        coin = pos.get("coin")
-        try:
-            szi = float(pos.get("szi", 0) or 0)
-        except (TypeError, ValueError):
-            szi = 0.0
-        if coin and szi != 0:
-            held.add(coin)
-    try:
-        held.update(active_position_coins().keys())
-    except Exception:
-        pass
-    return held
+    save_seen(_SEEN_FILE, seen)
 
 
 def _analysis(coin: str, rep: CatalystReport, cfg: Dict[str, Any]) -> BookAnalysis:
@@ -166,40 +135,9 @@ def _analysis(coin: str, rep: CatalystReport, cfg: Dict[str, Any]) -> BookAnalys
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
         "min_short_volume_usd_override": float(cfg.get("min_volume_usd", 250_000.0)),
-        "dsl_exit_override": {
-            # Exact graded geometry: 15% stop or 1d horizon close, no trail.
-            "max_loss_pct": stop_pct,
-            "max_loss_roe_pct": stop_pct * leverage,
-            "protect_pct": 9999.0,
-            "retrace_threshold": 0.5,
-            "hard_timeout_minutes": hold_days * 1440.0,
-            "breakeven_trigger_pct": 0.0,
-            "breakeven_lock_pct": 0.0,
-            "stale_flat_timeout_minutes": 0.0,
-            "consecutive_breaches_required": 1,
-            "atr_stop": {"enabled": False},
-            "noise_band": {"enabled": False},
-        },
+        # Exact graded geometry: 15% stop or 1d horizon close, no trail.
+        "dsl_exit_override": bounded_exit_override(stop_pct, leverage, hold_days * 1440.0),
     }
-
-
-def _execute_opened(result: Any) -> bool:
-    if isinstance(result, dict):
-        nested = result.get("result")
-        if isinstance(nested, dict):
-            return bool(nested.get("executed"))
-        if "executed" in result:
-            return bool(result.get("executed"))
-        if "ok" in result:
-            return bool(result.get("ok"))
-    return result is None
-
-
-def _execute_block_detail(result: Any) -> Any:
-    if not isinstance(result, dict):
-        return result
-    return (result.get("reason") or result.get("error")
-            or result.get("blocked_by") or result.get("gate_results") or result)
 
 
 def maybe_run(config: Dict[str, Any],

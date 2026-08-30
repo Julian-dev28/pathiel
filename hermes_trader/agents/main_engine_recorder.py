@@ -29,6 +29,7 @@ import time
 from typing import Any, Dict, Optional
 
 from hermes_trader.agents import shadow_ledger
+from hermes_trader.agents.book_helpers import load_seen, save_seen
 from hermes_trader.agents.rebalancer_owned import state_file
 
 logger = logging.getLogger(__name__)
@@ -48,21 +49,11 @@ _STOP_PCT = 6.0
 
 
 def _load_seen() -> Dict[str, int]:
-    import json
-    try:
-        raw = json.load(open(_SEEN_FILE))
-        return {str(k): int(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_seen(_SEEN_FILE)
 
 
 def _save_seen(seen: Dict[str, int]) -> None:
-    import json
-    try:
-        with open(_SEEN_FILE, "w") as fh:
-            json.dump(seen, fh, sort_keys=True)
-    except Exception:
-        pass
+    save_seen(_SEEN_FILE, seen)
 
 
 def _dedup(coin: str, now_ms: int) -> bool:

@@ -27,13 +27,17 @@ import json
 import logging
 import time
 import urllib.request
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 import uuid
 
 from hermes_trader.agents import shadow_ledger
-from hermes_trader.agents.dsl_exit import active_position_coins
+from hermes_trader.agents.book_helpers import bounded_exit_override
+from hermes_trader.agents.book_helpers import execute_opened as _execute_opened
+from hermes_trader.agents.book_helpers import load_state, save_state
+from hermes_trader.agents.book_helpers import safe_float as _num
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
+from hermes_trader.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
 
@@ -45,27 +49,12 @@ _STATE_FILE = state_file(".social_trending_state.json")
 _TRENDING_URL = "https://api.coingecko.com/api/v3/search/trending"
 
 
-def _num(x: Any) -> float:
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _load_state() -> Dict[str, Any]:
-    try:
-        raw = json.load(open(_STATE_FILE))
-        return raw if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_state(_STATE_FILE)
 
 
 def _save_state(state: Dict[str, Any]) -> None:
-    try:
-        with open(_STATE_FILE, "w") as fh:
-            json.dump(state, fh)
-    except Exception:
-        pass
+    save_state(_STATE_FILE, state)
 
 
 def fetch_trending(timeout: float = 15.0) -> List[Dict[str, Any]]:
@@ -110,36 +99,6 @@ def _universe_mids(universe: Optional[List[Dict[str, Any]]]) -> Dict[str, float]
     return mids
 
 
-def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
-    held: Set[str] = set()
-    for p in positions or []:
-        pos = p.get("position", p) if isinstance(p, dict) else {}
-        coin = pos.get("coin")
-        try:
-            szi = float(pos.get("szi", 0) or 0)
-        except (TypeError, ValueError):
-            szi = 0.0
-        if coin and szi != 0:
-            held.add(coin)
-    try:
-        held.update(active_position_coins().keys())
-    except Exception:
-        pass
-    return held
-
-
-def _execute_opened(result: Any) -> bool:
-    if isinstance(result, dict):
-        nested = result.get("result")
-        if isinstance(nested, dict):
-            return bool(nested.get("executed"))
-        if "executed" in result:
-            return bool(result.get("executed"))
-        if "ok" in result:
-            return bool(result.get("ok"))
-    return result is None
-
-
 def _analysis(coin: str, row: Dict[str, Any], cfg: Dict[str, Any]) -> BookAnalysis:
     """The graded geometry, verbatim: LONG, 1-day horizon, hard stop, no trail.
 
@@ -165,19 +124,7 @@ def _analysis(coin: str, row: Dict[str, Any], cfg: Dict[str, Any]) -> BookAnalys
         "leverage_override": leverage,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
-        "dsl_exit_override": {
-            "max_loss_pct": stop_pct,
-            "max_loss_roe_pct": stop_pct * leverage,
-            "protect_pct": 9999.0,
-            "retrace_threshold": 0.5,
-            "hard_timeout_minutes": hold_days * 1440.0,
-            "breakeven_trigger_pct": 0.0,
-            "breakeven_lock_pct": 0.0,
-            "stale_flat_timeout_minutes": 0.0,
-            "consecutive_breaches_required": 1,
-            "atr_stop": {"enabled": False},
-            "noise_band": {"enabled": False},
-        },
+        "dsl_exit_override": bounded_exit_override(stop_pct, leverage, hold_days * 1440.0),
     }
 
 
