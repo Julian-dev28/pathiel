@@ -25,7 +25,6 @@ import os
 import time
 from pathlib import Path
 
-import pytest
 
 from hermes_trader import log_setup
 
@@ -372,7 +371,6 @@ def test_resolve_log_dir_env_override(monkeypatch, tmp_path):
 # ── in-process handler helper (unwired today, but must actually rotate+gzip) ─
 
 def test_configure_logging_rotates_and_gzips(tmp_path):
-    import logging
 
     target = str(tmp_path / "inprocess.log")
     logger = log_setup.configure_logging(

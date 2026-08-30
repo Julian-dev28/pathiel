@@ -173,18 +173,6 @@ def simulate(bars: Sequence[Sequence[float]], i_dec: int, side: str, hold: int,
     return ret_gross, ret_net, mae, mfe, stopped, t_exit
 
 
-def dedup_non_overlapping(cands: List[Tuple[int, int]], hold: int) -> List[int]:
-    """cands = [(t_dec_ms, i_dec)] sorted; keep first, then next whose decision
-    bar is after the previous trade's exit."""
-    out: List[int] = []
-    next_free = -1
-    for t, i in cands:
-        if t >= next_free:
-            out.append(i)
-            next_free = t + (hold + 1) * BAR_H * HOUR_MS
-    return out
-
-
 # ---------------------------------------------------------------------------
 # strategy families
 # ---------------------------------------------------------------------------

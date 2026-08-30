@@ -25,7 +25,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
@@ -42,11 +41,6 @@ from hermes_trader.client.hl_client import _http_post, fetch_account_state, reso
 # HL spot pair indices (verified live from /info spotMeta on 2026-05-28).
 SPOT_PAIR_USDH_USDC = "@230"   # USDH/USDC
 SPOT_PAIR_USDT_USDC = "@166"   # USDT0/USDC
-
-# Token names used by send_asset (case-sensitive per HL SDK).
-TOKEN_USDC = "USDC"
-TOKEN_USDH = "USDH"
-TOKEN_USDT = "USDT0"
 
 
 def _exchange():

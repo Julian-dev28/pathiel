@@ -219,12 +219,3 @@ def detect_regime(coin: str, *, force: bool = False) -> Regime:
     regime = _detect_for_proxy(proxy)
     _regime_cache[proxy] = (regime, now)
     return regime
-
-
-def regime_snapshot() -> Dict[str, Dict[str, object]]:
-    """Operator-facing summary: every cached proxy + its regime + cache age."""
-    now = time.time()
-    return {
-        proxy: {"regime": regime, "age_s": round(now - ts, 1)}
-        for proxy, (regime, ts) in _regime_cache.items()
-    }

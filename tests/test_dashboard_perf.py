@@ -1,10 +1,7 @@
 """Dashboard audit fixes (2026-07-10): incremental log reader, bounded tail,
 equity-curve sustained-drop acceptance, state-write gating in the server process."""
-import importlib
 import json
-import os
 
-import pytest
 
 
 def _write_lines(path, events):

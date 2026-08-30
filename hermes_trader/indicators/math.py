@@ -144,18 +144,3 @@ def adx(candles: List[Candle], period: int = 14) -> List[float]:
 
     return out
 
-
-def fib_618_retracement_long(candles: List[Candle], swing: int = 20, band_pct: float = 0.025) -> bool | None:
-    """True when close sits within `band_pct` of the 0.618 retracement of the recent `swing`-bar
-    up-range — a retracement-bounce long candidate (tv_pivots_fib.py, bull-regime). None if short."""
-    if len(candles) < swing + 1:
-        return None
-    h = [candle_val(c, "h") for c in candles[-swing:]]
-    l = [candle_val(c, "l") for c in candles[-swing:]]
-    cur = candle_val(candles[-1], "c")
-    lo, hi = min(l), max(h)
-    rng = hi - lo
-    if rng <= 0 or cur <= 0:
-        return None
-    return abs(cur - (hi - 0.618 * rng)) <= band_pct * cur
-

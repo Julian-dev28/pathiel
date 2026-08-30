@@ -7,16 +7,6 @@ def _patch_vol(monkeypatch, confirmed):
     monkeypatch.setattr(ex, "_volume_confirmed", lambda coin, mr, lb=20: confirmed)
 
 
-def _base_pass_analysis():
-    # a PASS that qualifies for ta_sidestep (strong composite)
-    return {
-        "id": "t1", "coin": "DOGE", "verdict": "PASS", "side": None,
-        "confidence": 0.5, "composite_score": 80, "momentum_burst_fired": True,
-        "entry_px": 0, "stop_px": 0, "tp_px": 0, "reasoning": "", "news_risk": "none",
-        "ai_down": False, "created_at": 0,
-    }
-
-
 def test_helper_fails_open_on_fetch_error(monkeypatch):
     # _volume_confirmed imports fetch_hl_candles from the client module at call time;
     # patch it there to raise -> the helper must fail OPEN (return True, don't block).

@@ -29,3 +29,7 @@ forward n before it sees capital.
 ## 2026-08-29 17:38 autonomous cycle
 - **INVERSE of news_ta_aligned** — n=9, EV(real)=+4.23%, EV(25bps)=+4.04%, halves +7.37/+1.60, excess 4.8783pp, mc_p=0.023
 - **INVERSE of xs_xyz_equities** — n=30, EV(real)=+3.91%, EV(25bps)=+3.72%, halves +6.96/+0.75, excess 4.7512pp, mc_p=0.007
+
+## 2026-08-30 07:40 autonomous cycle
+- **INVERSE of news_ta_aligned** — n=9, EV(real)=+4.23%, EV(25bps)=+4.04%, halves +7.37/+1.60, excess 4.8088pp, mc_p=0.024
+- **INVERSE of xs_xyz_equities** — n=30, EV(real)=+3.91%, EV(25bps)=+3.72%, halves +6.96/+0.75, excess 4.7512pp, mc_p=0.007

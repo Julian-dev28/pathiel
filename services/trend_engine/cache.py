@@ -17,7 +17,7 @@ import json
 import os
 import tempfile
 import time
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 from services.trend_engine import env
 

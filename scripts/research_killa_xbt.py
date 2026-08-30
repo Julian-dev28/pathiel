@@ -32,9 +32,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 REPO = Path(__file__).resolve().parents[1]
 KILLA = REPO / "research" / "killa_xbt"

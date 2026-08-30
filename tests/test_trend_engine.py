@@ -21,7 +21,6 @@ klines, and injected `getter` / `runner` callables. What is covered:
 from __future__ import annotations
 
 import json
-import math
 import os
 import pathlib
 import re
@@ -420,133 +419,6 @@ def test_eval_cache_roundtrip_and_expiry(tmp_path):
     assert hl.load_eval(str(tmp_path / "missing.json")) is None
 
 
-# ── updown ───────────────────────────────────────────────────────────────────
-
-
-# ── politics ─────────────────────────────────────────────────────────────────
-
-
-def hist(vals, now, hours=1):
-    return [{"t": int(now - (len(vals) - 1 - i) * 3600 * hours), "p": v}
-            for i, v in enumerate(vals)]
-
-
-# ── updown microstructure edges ──────────────────────────────────────────────
-
-
-def _fake_getter(up_bid, up_ask, dn_bid, dn_ask, fee=1000, size=100.0):
-    market = {"slug": "btc-updown-5m-1", "clobTokenIds": '["A","B"]',
-              "takerBaseFee": fee, "orderPriceMinTickSize": 0.01, "orderMinSize": 5}
-
-    def get(url):
-        if "gamma" in url:
-            return [market]
-        tok = url.rsplit("=", 1)[-1]
-        bid, ask = (up_bid, up_ask) if tok == "A" else (dn_bid, dn_ask)
-        return {"bids": [{"price": str(bid), "size": str(size)}],
-                "asks": [{"price": str(ask), "size": str(size)}]}
-    return get, market
-
-
-def _sample(up_bid, up_ask, dn_bid, dn_ask, fee=0.0, window=1, ts=0,
-            up_bid_size=10.0, down_bid_size=10.0,
-            up_ask_size=10.0, down_ask_size=10.0):
-    """One sampler row in the on-disk (flat) shape `record_window` writes."""
-    return {"up_bid": up_bid, "up_ask": up_ask, "down_bid": dn_bid, "down_ask": dn_ask,
-            "up_bid_size": up_bid_size, "down_bid_size": down_bid_size,
-            "up_ask_size": up_ask_size, "down_ask_size": down_ask_size,
-            "buy_both_gross": round(1.0 - (up_ask + dn_ask), 4),
-            "sell_both_gross": round((up_bid + dn_bid) - 1.0, 4),
-            "fee_bps": fee, "window_start_ms": window, "ts": ts}
-
-
-# ── websocket book feed ──────────────────────────────────────────────────────
-
-
-class FakeWS:
-    """Scripted websocket: `recv()` walks a list of frames, then blocks-ish."""
-
-    def __init__(self, frames):
-        self.frames = list(frames)
-        self.sent = []
-        self.closed = False
-
-    def send(self, payload):
-        self.sent.append(json.loads(payload))
-
-    def recv(self):
-        if self.closed:
-            raise RuntimeError("socket closed")     # a closed socket raises
-        if self.frames:
-            return self.frames.pop(0)
-        raise RuntimeError("stream ended")
-
-    def close(self):
-        self.closed = True
-
-
-def _book_frame(asset, bids, asks):
-    return json.dumps({"event_type": "book", "asset_id": asset,
-                       "bids": [{"price": str(p), "size": str(s)} for p, s in bids],
-                       "asks": [{"price": str(p), "size": str(s)} for p, s in asks]})
-
-
-def _change_frame(asset, best_bid, best_ask):
-    return json.dumps([{"event_type": "price_change", "changes": [
-        {"asset_id": asset, "price": str(best_ask), "size": "10", "side": "SELL",
-         "best_bid": str(best_bid), "best_ask": str(best_ask)}]}])
-
-
-def _trade_frame(asset, price, fee_bps):
-    return json.dumps({"event_type": "last_trade_price", "asset_id": asset,
-                       "price": str(price), "size": "1", "fee_rate_bps": str(fee_bps)})
-
-
-class TimeoutWS(FakeWS):
-    """Scripted socket that goes QUIET before it delivers — a 5m market the
-    moment it resolves, which is every 5 minutes."""
-
-    def __init__(self, frames, quiet=1):
-        super().__init__(frames)
-        self.quiet = quiet
-        self.pings = 0
-
-    def ping(self):
-        self.pings += 1
-
-    def recv(self):
-        if self.closed:
-            raise RuntimeError("socket closed")
-        if self.quiet > 0:
-            self.quiet -= 1
-            raise TimeoutError("Connection timed out")
-        if not self.frames:
-            raise TimeoutError("Connection timed out")   # quiet, not closed
-        return self.frames.pop(0)
-
-
-class FakeFeed:
-    """Stand-in for the process-wide BookFeed: records subscribes and waits."""
-
-    def __init__(self, assets=None, ready=True):
-        self.subs, self.waits = [], []
-        self.assets = list(assets or [])
-        self._ready = ready
-
-    def subscribe(self, toks):
-        self.subs.append(list(toks))
-        self.assets = list(toks)
-
-    def wait_pair(self, toks, timeout_s=3.0):
-        self.waits.append((list(toks), timeout_s))
-        return self._ready
-
-    def health(self):
-        return {"pid": 4242, "running": True, "connected": True, "stale": False,
-                "assets": list(self.assets), "events": 7, "reconnects": 0,
-                "measured_at": int(time.time())}
-
-
 # ── recorders ────────────────────────────────────────────────────────────────
 
 
@@ -781,23 +653,6 @@ def test_playbook_build_groups_and_survives_a_broken_payload():
     assert out["status"] == "ok" and set(out["counts"]) == {"do", "dont", "watch"}
     assert pb.build("nope", {"status": "ok"})["status"] == "empty"
     assert pb.build("hl", {"status": "empty"})["actions"] == []
-
-
-# ── arb watcher ──────────────────────────────────────────────────────────────
-
-
-def _quote(up_ask, dn_ask, up_bid=0.0, dn_bid=0.0, fee=0.0, size=100.0, slug="w1"):
-    cost = up_ask + dn_ask
-    credit = up_bid + dn_bid
-    return lambda: {
-        "status": "ok", "slug": slug, "fee_bps": fee, "source": "websocket",
-        "up": {"bid": up_bid, "ask": up_ask, "ask_size": size, "bid_size": size},
-        "down": {"bid": dn_bid, "ask": dn_ask, "ask_size": size, "bid_size": size},
-        "buy_both": {"cost": cost, "gross_edge": 1 - cost, "net_edge": 1 - cost,
-                     "size": size},
-        "sell_both": {"credit": credit, "gross_edge": credit - 1,
-                      "net_edge": credit - 1, "size": size},
-    }
 
 
 # ── cache ────────────────────────────────────────────────────────────────────

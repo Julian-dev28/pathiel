@@ -12,7 +12,6 @@ either selected would run with a permanently dead brain.
 """
 from __future__ import annotations
 
-import pytest
 
 from hermes_trader.agents.ai_brain import provider_readiness
 

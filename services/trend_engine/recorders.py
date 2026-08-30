@@ -171,17 +171,6 @@ def _live_fetchers():
     return fetch_fwd, fetch_funding
 
 
-def _end_ms(row: Dict[str, Any]) -> Optional[int]:
-    from datetime import datetime
-    iso = str(row.get("end_date") or "")
-    if not iso:
-        return None
-    try:
-        return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() * 1000)
-    except Exception:
-        return None
-
-
 # ── assembly ─────────────────────────────────────────────────────────────────
 
 

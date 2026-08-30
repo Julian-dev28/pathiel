@@ -1,6 +1,5 @@
 """Min-order bump: sub-floor entries round UP instead of being dropped."""
 import pytest
-from hermes_trader.agents import executor as ex
 
 
 def _cases():

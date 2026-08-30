@@ -781,9 +781,7 @@ def _require_operator(request: Request) -> None:
 # ── live books ───────────────────────────────────────────────────────────────
 # (name, config key, thesis one-liner). Sizing + live/shadow status come from
 # the live .agent-config.json at request time, so a shadow flip shows on the
-# next poll without a server restart. mover_pass / mover_pass_short nest under
-# mover_recorders.pass_live / pass_short_live (config key None → special-cased
-# below, resolved by book NAME, not a blanket pass_live assumption).
+# next poll without a server restart.
 
 _BOOKS: List[tuple] = [
     ("unlock_short_runin", "unlock_short",
@@ -841,13 +839,7 @@ def _books_payload() -> List[Dict[str, Any]]:
         config = {}
     out: List[Dict[str, Any]] = []
     for name, cfg_key, thesis in _BOOKS:
-        if cfg_key is None:
-            # mover_pass / mover_pass_short nest under mover_recorders.<x>_live
-            nested_key = {"mover_pass_short": "pass_short_live",
-                          "young_mover_short": "young_short_live"}.get(name, "pass_live")
-            cfg = (config.get("mover_recorders") or {}).get(nested_key) or {}
-        else:
-            cfg = config.get(cfg_key) or {}
+        cfg = config.get(cfg_key) or {}
         if not isinstance(cfg, dict) or not cfg or not cfg.get("enabled", False):
             status = "off"
         elif cfg.get("shadow_only"):

@@ -1580,7 +1580,6 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
                         lambda: {"enable_hip3": True})
 
     seen = []
-    real_scan = perception._scan_single_market
     def _capture(m, mid, cfg, ms, ws=None, wsb=False, tse=True):
         seen.append(m["coin"])
         return (True, None)

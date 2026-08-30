@@ -278,7 +278,6 @@ def test_every_restart_sh_process_is_in_k8s_statefulset():
 
 def test_fly_toml_mounts_data_volume_for_state_bearing_processes():
     data = tomllib.loads(FLY_TOML.read_text())
-    mounts = data.get("mounts") or [data.get("mounts", {})]
     # tomllib returns [[mounts]] as a list under the "mounts" key.
     mount_procs: set[str] = set()
     for m in data.get("mounts", []) if isinstance(data.get("mounts"), list) else []:

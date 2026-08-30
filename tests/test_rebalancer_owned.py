@@ -1,48 +1,11 @@
 """Ownership and claim-registry tests for live strategy books."""
 
-import json
 
 from hermes_trader.agents.rebalancer_owned import OwnedPositions, _live_coin_set
 
 
 def _pos(coin: str, szi: float):
     return {"position": {"coin": coin, "szi": szi}}
-
-
-def _fetch_factory(rets):
-    def fetch(coin, interval, n):
-        r = rets.get(coin, 0.0)
-        return [
-            {"t": 0, "o": 100, "h": 100, "l": 100, "c": 100, "v": 1},
-            {
-                "t": 1,
-                "o": 100 * (1 + r),
-                "h": 100 * (1 + r),
-                "l": 100 * (1 + r),
-                "c": 100 * (1 + r),
-                "v": 1,
-            },
-        ]
-    return fetch
-
-
-def _uni(coins_or_rets):
-    coins = coins_or_rets.keys() if isinstance(coins_or_rets, dict) else coins_or_rets
-    return [{"coin": c, "dayNtlVlm": 1e8, "type": "perp"} for c in coins]
-
-
-_XS_CFG = {
-    "xs_momentum": {
-        "enabled": True,
-        "lookback_days": 1,
-        "hold_days": 10,
-        "k_per_leg": 2,
-        "universe_top_n": 50,
-        "min_volume_usd": 1e6,
-        "vol_gate": False,
-    }
-}
-_RETS = {"A": 0.50, "B": 0.20, "C": 0.05, "D": -0.05, "E": -0.20, "F": -0.40}
 
 
 def test_owned_starts_empty(tmp_path):

@@ -45,7 +45,6 @@ from typing import Any, Callable, Dict, List, Optional
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.news_catalyst import coin_catalyst
-from hermes_trader.agents.mover_recorders import _macro_regime
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.session_log import append as log_event
 
@@ -80,6 +79,27 @@ def _mark_pass(now_ms: int) -> None:
             json.dump({"ts": now_ms}, fh)
     except Exception:
         pass
+
+
+def _macro_regime(coin: str) -> Optional[str]:
+    """Cheap macro-regime tag (up/down/neutral) for a coin's asset class — BTC
+    for crypto, the xyz equity index for tokenized equities.
+
+    Metadata ONLY: it never gates a trade. It exists so the forward grader can
+    split this book by regime and settle on live evidence whether a regime tilt
+    helps. Never raises.
+
+    Moved here 2026-08-30 from mover_recorders, which was deleted while this
+    module still imported it — see the import-check test that now guards that.
+    """
+    try:
+        from hermes_trader.agents.market_regime import (
+            CRYPTO_PROXY, EQUITY_PROXY, classify_asset, detect_regime,
+        )
+        proxy = EQUITY_PROXY if classify_asset(coin) == "equity" else CRYPTO_PROXY
+        return str(detect_regime(proxy))
+    except Exception:
+        return None
 
 
 def _load_seen() -> Dict[str, int]:

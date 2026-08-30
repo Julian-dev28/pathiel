@@ -292,7 +292,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     if include_hip3:
         from hermes_trader.client.universe import list_hip3_dexes
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
         try:
             dexes = list_hip3_dexes()
         except Exception as e:

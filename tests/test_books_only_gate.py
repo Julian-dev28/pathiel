@@ -120,7 +120,6 @@ def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
     m._last_eq_reading_ts = 0.0
     import datetime as _dt
     # same-day branch requires day_start >= today's midnight: pin it
-    import hermes_trader.agents.memory as mem_mod
     m._day_start_ts = int(_dt.datetime.now(_dt.timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0).timestamp())
 

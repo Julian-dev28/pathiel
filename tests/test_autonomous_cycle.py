@@ -282,7 +282,6 @@ def test_evolution_skips_already_acted_and_never_promote(monkeypatch):
 def test_research_fetch_retries_are_reduced_not_aggressive():
     """The cycle is research, not trading — a data gap is harmless, so it must
     not retry as hard as the live loop or it amplifies API contention."""
-    import os
     # main() sets these defaults; verify the intended values are the ones set
     assert AC.__dict__  # module importable
     # the defaults main() installs

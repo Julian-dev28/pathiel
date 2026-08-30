@@ -21,7 +21,7 @@ Rules, not opinions:
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 # do / don't / watch — the three shapes an action can take
 DO, DONT, WATCH = "do", "dont", "watch"

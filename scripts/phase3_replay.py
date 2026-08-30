@@ -14,7 +14,7 @@ and % of the move KEPT after fees + funding at the stated leverage.
 Usage: python3 scripts/phase3_replay.py GRASS 0.47055 3 7.27   # coin entry lev spot_move%
        (spot_move% optional, just annotates the target)
 """
-import sys, time, json
+import sys, time
 from hermes_trader.client.hl_client import fetch_hl_candles  # paced via the shared limiter
 from hermes_trader.agents.dsl_exit import DSLTracker, ExitPolicy, RetraceTier
 from hermes_trader.agents.config_store import read_agent_config

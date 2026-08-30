@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.rebalancer_owned import state_file

@@ -23,7 +23,6 @@ LOG = _REPO / "logs" / "trading_loop.log"
 SIDE = re.compile(r"^(\S+ \S+).*TA sidestep on (.+?): AI PASS")
 EXECUTED = re.compile(r"'executed': True")
 ENTRY = re.compile(r"'entry_px': ([0-9.]+)")
-BLOCK = re.compile(r"'reason': '([^']+)'|runner_gate_blocked \(([^)]+)\)|sidestep SKIPPED on \S+: (\S[^\n]*)")
 
 caught, conf_blocked, struct_blocked = [], [], []
 pending = None

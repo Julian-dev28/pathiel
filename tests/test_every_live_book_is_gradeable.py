@@ -11,7 +11,6 @@ through, and fails on any book in the first that is missing from the second.
 """
 from __future__ import annotations
 
-import os
 import importlib.util
 from pathlib import Path
 

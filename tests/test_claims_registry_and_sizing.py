@@ -5,12 +5,7 @@
 from __future__ import annotations
 
 import json
-import tempfile
-import types
-import unittest.mock as mock
-from pathlib import Path
 
-import pytest
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -18,10 +13,6 @@ import pytest
 
 def _pos(coin: str, szi: float):
     return {"position": {"coin": coin, "szi": szi}}
-
-
-def _uni(coins):
-    return [{"coin": c, "dayNtlVlm": 1e8, "type": "perp"} for c in coins]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -203,29 +194,6 @@ class TestClaimsRegistryUnit:
         saved = json.loads((tmp_path / "claims.json").read_text())
         assert saved["claims"] == {"B": "social_trending"}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Integration: exclusion propagates through xs_momentum_live target-book
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Minimal fetch factory for xs_momentum (needs lb+1 bars with lb=1 → 2 bars)
-def _fetch_factory(rets):
-    def fetch(coin, interval, n):
-        r = rets.get(coin, 0.0)
-        return [{"t": 0, "o": 100, "h": 100, "l": 100, "c": 100, "v": 1},
-                {"t": 1, "o": 100 * (1 + r), "h": 100 * (1 + r), "l": 100 * (1 + r),
-                 "c": 100 * (1 + r), "v": 1}]
-    return fetch
-
-
-_XS_CFG = {"xs_momentum": {"enabled": True, "lookback_days": 1,
-                            "hold_days": 10, "k_per_leg": 2, "universe_top_n": 50,
-                            "min_volume_usd": 1e6, "vol_gate": False}}
-_RETS = {"A": 0.50, "B": 0.20, "C": 0.05, "D": -0.05, "E": -0.20, "F": -0.40}
-
-
-class TestCrossBookExclusion:
-    """Verify that xs_momentum excludes coins claimed by another book."""
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # TASK 2: strategy_book_equity_frac sizing in maybe_execute
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -318,7 +286,6 @@ class TestStrategyBookEquityFracSizing:
         monkeypatch.setattr(memory, "record_entry_context", lambda *a, **kw: None)
         monkeypatch.setattr(memory, "latest_trade_ts_by_coin", lambda n: {})
 
-        import os
         monkeypatch.setenv("HYPERLIQUID_PRIVATE_KEY", "0xdeadbeef")
 
         return ex.maybe_execute(analysis)

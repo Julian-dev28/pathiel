@@ -32,7 +32,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from .config import Settings, get_settings
-from .logging_setup import new_request_id, request_id
+from .logging_setup import new_request_id
 
 # Paths that never consume a token — liveness/readiness probes and docs must not be
 # throttled or they will flap under load. Matched by exact path or path prefix.

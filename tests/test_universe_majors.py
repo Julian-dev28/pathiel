@@ -10,7 +10,6 @@ cover every HIP-3 venue's prefix for the same underlying.
 """
 from __future__ import annotations
 
-import pytest
 
 from hermes_trader.agents import universe as U
 

@@ -49,17 +49,3 @@ async def get_ohlc(coin: str, interval: str = "1d", limit: int = 100) -> list[di
             logger.warning("[hl_resource] skipping malformed candle for %s: %s", coin, e)
             continue
     return out
-
-
-async def get_price(coin: str) -> float | None:
-    """Latest close for `coin` (the most recent 1d bar's close).
-
-    Returns `None` when no bar is available rather than raising or guessing.
-    """
-    bars = await get_ohlc(coin, interval="1d", limit=1)
-    if not bars:
-        # Fall back to a slightly wider window in case the newest bar was blanked.
-        bars = await get_ohlc(coin, interval="1d", limit=2)
-    if not bars:
-        return None
-    return bars[-1]["c"]

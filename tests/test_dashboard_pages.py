@@ -1106,7 +1106,6 @@ def test_funding_heat_accruing_below_threshold(monkeypatch, tmp_path):
 
 def test_funding_heat_ranks_by_extremity(monkeypatch, tmp_path):
     log = tmp_path / "funding.jsonl"
-    now = 200 * db._HOUR_MS if hasattr(db, "_HOUR_MS") else 200 * 3_600_000
     hour = 3_600_000
     rows = []
     # BTC funding drifts low->low->...->HIGH (current = new high = 100th pctile)

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import urllib.request
 from typing import Any, Callable, Dict, List, Optional

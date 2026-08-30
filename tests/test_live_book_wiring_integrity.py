@@ -14,7 +14,6 @@ Two kinds of check live here:
 """
 from __future__ import annotations
 
-import glob
 import re
 from pathlib import Path
 
@@ -291,12 +290,5 @@ def test_cap_degrades_to_1x_rather_than_authorizing_a_dead_stop():
     leverage where the stop cannot fire."""
     from hermes_trader.agents.executor import stop_honoring_leverage as cap
     assert cap(6, 90.0, 0.60, 20) == 1
-
-
-def _cfg_json():
-    import json
-    from pathlib import Path
-    return json.loads(
-        (Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
 
 

@@ -332,9 +332,6 @@ def max_drawdown_pct(closes: Sequence[float]) -> float:
 
 # ── labelling ────────────────────────────────────────────────────────────────
 
-# Ordered strongest-up to strongest-down. The dashboard colours off these.
-TREND_LABELS = ("STRONG_UP", "UP", "CHOP", "DOWN", "STRONG_DOWN")
-
 
 def trend_label(slope_pct_day: float, r2: float, eff: float, stack: str) -> str:
     """Classify a trend from its shape, not just its sign.

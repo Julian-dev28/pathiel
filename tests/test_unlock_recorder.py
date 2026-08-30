@@ -1,5 +1,4 @@
 """Gate tests for the zero-capital unlock recorder (W-U lane)."""
-import json
 import time
 
 import pytest
