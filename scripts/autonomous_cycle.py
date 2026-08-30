@@ -63,6 +63,12 @@ NULL_DRAWS = 2000
 PROMOTE_MAX_P = 0.05
 REAL_FEE_TIER = "slip6"      # measured 6.1bps round-trip (730 fills, 30d)
 STRICT_FEE_TIER = "slip25"   # promotions must survive 4x the real cost
+# The tier a REFUTED verdict is decided at, imported so this script and the
+# dashboard cannot drift apart. They did until 2026-08-30: this demoted on
+# slip6 while shadow_ledger.classify refuted on slip12, so a book at slip6
+# +0.2% / slip12 -0.1% showed REFUTED on /trends and kept its capital here.
+# Demotion is the safety direction, so it uses the stricter of the two.
+VERDICT_FEE_TIER = SL.VERDICT_FEE_TIER
 
 # book -> where its live switch lives in .agent-config.json.
 # ("top", key)            -> cfg[key]["shadow_only"]
@@ -171,6 +177,7 @@ def grade_book(book: str, now_ms: int) -> Dict[str, Any]:
     n = int(g.get("n", 0))
     out = {"book": book, "n": n,
            "ev_real": (g.get(REAL_FEE_TIER) or {}).get("mean_pct"),
+           "ev_verdict": (g.get(VERDICT_FEE_TIER) or {}).get("mean_pct"),
            "ev_strict": (g.get(STRICT_FEE_TIER) or {}).get("mean_pct"),
            "halves": g.get("oos_12bps") or {}}
     if n >= MIN_N:
@@ -253,12 +260,18 @@ def decide(grade: Dict[str, Any], live: Optional[bool]) -> Dict[str, str]:
     ev = grade.get("ev_real")
     if ev is None:
         return {"verdict": "PENDING", "action": "none", "why": "no EV"}
-    if ev <= 0:
+    # Demote on the tier the dashboard refutes at, not the measured-cost tier.
+    # `ev_verdict` falls back to ev_real only for a grade row built before this
+    # key existed; a live grade always carries it.
+    ev_v = grade.get("ev_verdict")
+    if ev_v is None:
+        ev_v = ev
+    if ev_v <= 0:
         return ({"verdict": "REFUTED", "action": "demote",
-                 "why": f"EV{REAL_FEE_TIER}={ev:+.2f}% <= 0 at n={n}"}
+                 "why": f"EV{VERDICT_FEE_TIER}={ev_v:+.2f}% <= 0 at n={n}"}
                 if live else
                 {"verdict": "REFUTED", "action": "none",
-                 "why": f"EV{REAL_FEE_TIER}={ev:+.2f}% <= 0, already not live"})
+                 "why": f"EV{VERDICT_FEE_TIER}={ev_v:+.2f}% <= 0, already not live"})
     h1, h2 = grade.get("halves", {}).get("first"), grade.get("halves", {}).get("second")
     strict, p = grade.get("ev_strict"), grade.get("mc_p")
     passes = (h1 is not None and h2 is not None and h1 > 0 and h2 > 0

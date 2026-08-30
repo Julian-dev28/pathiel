@@ -1366,6 +1366,15 @@ def route_verdict(analysis: Dict[str, Any], *, execute_fn=None, close_fn=None) -
     if verdict in ("LONG", "SHORT"):
         return {"action": "execute", "verdict": verdict, "result": execute_fn(analysis)}
     if verdict == "CLOSE":
+        # A CLOSE with no coin would call close_position_market(None), which
+        # takes `coin: str`. Not reachable from today's callers, but the failure
+        # mode if it ever were is closing the wrong thing or a TypeError deep in
+        # the exchange client — refuse loudly at the boundary instead.
+        if not coin:
+            logger.error("[route_verdict] CLOSE verdict with no coin — refusing "
+                         f"to call close_fn; analysis id={analysis.get('id')}")
+            return {"action": "none", "verdict": verdict,
+                    "result": {"ok": False, "reason": "close_verdict_without_coin"}}
         return {"action": "close", "verdict": verdict, "result": close_fn(coin)}
     if verdict == "PASS":
         # A hedging AI PASS can still carry a narrow TA-sidestep hint. The

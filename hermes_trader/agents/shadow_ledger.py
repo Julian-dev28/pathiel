@@ -402,6 +402,12 @@ def grade_records(records: List[Dict[str, Any]],
     return out
 
 
+# The fee tier a VERDICT is decided at. Exported so scripts/autonomous_cycle.py
+# gates on the same number this function does — they disagreed until 2026-08-30,
+# and the disagreement was in the unsafe direction (see classify's docstring).
+VERDICT_FEE_TIER = "slip12"
+
+
 def classify(grade: Dict[str, Any], min_n: int = 8) -> Dict[str, Any]:
     """Turn a forward grade into a survey VERDICT for the strategy. This is the
     PIT forward read (no survivorship upper-bound bias), so it is the authoritative
@@ -411,15 +417,24 @@ def classify(grade: Dict[str, Any], min_n: int = 8) -> Dict[str, Any]:
     - VALIDATED : mean@12bps > 0 AND both OOS halves > 0 AND still > 0 at 25bps.
     - MARGINAL  : positive @12bps but dies by 25bps or one OOS half is weak/negative.
     - REFUTED   : non-positive @12bps (the edge is not there forward).
+
+    `VERDICT_FEE_TIER` is the single definition of "12bps" here.
+    scripts/autonomous_cycle.py demotes on the same tier. Until 2026-08-30 it
+    demoted on slip6 instead, so a book at slip6 +0.2% / slip12 -0.1% read
+    REFUTED on the dashboard while the loop left it live — the dashboard saying
+    the edge was gone and the capital staying on it anyway.
+
+    Promotion never disagreed: since slip25 <= slip12 <= slip6, requiring
+    survival at 25bps already implies a positive 12bps read.
     """
     n = int(grade.get("n", 0))
     if n < min_n:
         return {"label": "PENDING", "why": f"only {n} resolved (need {min_n})"}
-    m12 = grade.get("slip12", {}).get("mean_pct")
+    m12 = grade.get(VERDICT_FEE_TIER, {}).get("mean_pct")
     m25 = grade.get("slip25", {}).get("mean_pct")
     oos = grade.get("oos_12bps", {})
     h1, h2 = oos.get("first"), oos.get("second")
-    win12 = grade.get("slip12", {}).get("win")
+    win12 = grade.get(VERDICT_FEE_TIER, {}).get("win")
     if m12 is None:
         return {"label": "PENDING", "why": "no graded returns"}
     both_halves_pos = (h1 is not None and h2 is not None and h1 > 0 and h2 > 0)

@@ -33,7 +33,10 @@ import uuid
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.book_helpers import bounded_exit_override
-from hermes_trader.agents.book_helpers import execute_opened as _execute_opened
+from hermes_trader.agents.book_helpers import (
+    execute_block_detail as _execute_block_detail,
+    execute_opened as _execute_opened,
+)
 from hermes_trader.agents.book_helpers import load_state, save_state
 from hermes_trader.agents.book_helpers import safe_float as _num
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
@@ -213,7 +216,8 @@ def maybe_record(universe: Optional[List[Dict[str, Any]]],
         if not claims.claim(coin, _BOOK):
             continue
         try:
-            if _execute_opened(execute_fn(_analysis(coin, row, cfg))):
+            result = execute_fn(_analysis(coin, row, cfg))
+            if _execute_opened(result):
                 opened += 1
                 log_event({"event": "book_open", "book": _BOOK, "coin": coin,
                            "side": "long", "sig_t": now_ms})
@@ -221,6 +225,12 @@ def maybe_record(universe: Optional[List[Dict[str, Any]]],
                             f"(cg rank {row.get('rank')})")
             else:
                 claims.release(coin, _BOOK)
+                # The other three live books all log why an open was refused.
+                # This one did not, so a book that stopped trading entirely --
+                # every signal blocked by a gate -- was indistinguishable from a
+                # book with no signals.
+                logger.warning(f"[social-trending] {coin} not opened: "
+                               f"{_execute_block_detail(result)}")
         except Exception as exc:
             claims.release(coin, _BOOK)
             logger.warning(f"[social-trending] open {coin} failed: {exc}")

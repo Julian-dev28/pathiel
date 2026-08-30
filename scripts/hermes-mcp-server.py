@@ -1526,7 +1526,9 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
     user = resolve_user_address()
     try:
         info = _get_info()
-        referral = info.referral(user)
+        # `info.referral` does not exist on the SDK's Info class; the real
+        # method is query_referral_state. This handler raised on every call.
+        referral = info.query_referral_state(user)
         return json.dumps(referral, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -1550,7 +1552,12 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
     user = resolve_user_address()
     try:
         info = _get_info()
-        state = info.frontend_user_state(user)
+        # `frontend_user_state` does not exist in ANY hyperliquid-python-sdk
+        # version checked back to 0.5.0, so this handler raised on every call
+        # and returned an {'error': ...} payload that looked like an API
+        # failure. `user_state` is the real method and returns the same
+        # clearinghouse state the rest of this repo reads.
+        state = info.user_state(user)
         return json.dumps(state, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
