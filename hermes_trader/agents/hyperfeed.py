@@ -79,6 +79,16 @@ def leaderboard_get_top(time_frame: str = "DAILY",
 
     Returns empty unless TRUSTED_WALLETS is populated (HL's leaderboard
     endpoint is not publicly exposed).
+
+    `time_frame`, `sort_by`, `consistency` and `open_position_filter` are
+    ACCEPTED AND IGNORED. There is no leaderboard to filter — the function
+    reads the fixed TRUSTED_WALLETS list — so no ranking window can be applied.
+    They are kept because scripts/hermes-mcp-server.py passes time_frame
+    straight through from a tool call; dropping them would break that caller
+    for no gain. Said out loud here because an MCP client asking for MONTHLY
+    silently gets the same wallets as DAILY, and a signature that advertises
+    filtering it does not do is the same defect as a docstring promising data
+    it does not return.
     """
     results: List[Dict[str, Any]] = []
     for addr in TRUSTED_WALLETS:

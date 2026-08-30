@@ -48,8 +48,6 @@ logging.basicConfig(
 from hermes_trader.agents.perception import (scan_once, _fetch_candles_sync,
                                              last_scan_integrity as _last_scan_integrity,
                                              scan_is_trustworthy as _scan_is_trustworthy)
-from hermes_trader.agents.risk_gates import history_floor_reason as _history_floor_reason
-from hermes_trader.agents.risk_gates import reentry_cap_reason as _reentry_cap_reason
 from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
 from hermes_trader.agents.risk_gates import books_bypass_ai as _books_bypass_ai
 from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit

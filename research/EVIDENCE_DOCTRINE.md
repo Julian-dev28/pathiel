@@ -77,3 +77,6 @@ may act on.
 | W-ME2 | the main-engine trigger stack, every component, 208 days, n up to 1140 — zero of 12 pre-registered cells clear Bonferroni. trendStrength's claimed +2.08% lift does NOT survive out of sample |
 | W-SESS1 | Asia/London session-sweep reversal — fails Bonferroni, decays 8x across halves |
 | W-U2 | (validated — unlock run-in, n=408, p=0.0040) |
+| W-FND1 | funding z-score battery — 8 cells, majors, 208d. Zero survivors. Funding on majors is asymmetric: +2σ fires 20x, −2σ fires 219x |
+| W-XS2 | cross-sectional momentum/reversal — 6 cells, 833d. Zero survivors. Momentum-120 shows the edge EXPIRING: h1 +1.37%, h2 −0.90% |
+| W-SEARCH | the 2026-08-30 search in full: 39 pre-registered cells, one survivor, and that one was already live |
