@@ -179,3 +179,55 @@ def test_the_marker_distinguishes_no_deposits_from_no_recording():
     assert cf._recording_started_at() == 1234
     cf.mark_recording_started(9999)          # idempotent
     assert cf._recording_started_at() == 1234
+
+
+# ── a flow that dwarfs the capital base ──────────────────────────────────────
+
+def test_a_flow_dwarfing_the_base_does_not_destroy_the_index():
+    """Observed live 2026-08-31: a $24.46 deposit landed while equity was $0.02.
+
+    r = (12.93 - 24.46) / 0.02 = -576. Compounding that pinned the index at
+    4.7e-10 and the risk panel reported -100% while the account held $12.94.
+    This is the standard time-weighted-return breakdown at near-zero capital,
+    not a bad reading — a fund treats a large external flow as ending the
+    measurement sub-period.
+    """
+    pts = [{"ts": 1, "equity": 100.0}, {"ts": 2, "equity": 0.02},
+           {"ts": 3, "equity": 12.93}]
+    flows = [{"ts": 3, "usd": 24.46, "kind": "deposit"}]
+    nav = cf.nav_series(pts, flows=flows)
+    assert nav[-1]["nav"] > 0, "the index was destroyed by a deposit"
+    assert cf.drawdown_from_nav(nav)["max_drawdown_pct"] > -99.99
+
+
+def test_the_re_anchored_interval_is_marked_not_hidden():
+    """Re-anchoring must leave a trace — a silently skipped interval is how a
+    data problem becomes invisible."""
+    pts = [{"ts": 1, "equity": 100.0}, {"ts": 2, "equity": 0.02},
+           {"ts": 3, "equity": 12.93}]
+    nav = cf.nav_series(pts, flows=[{"ts": 3, "usd": 24.46, "kind": "deposit"}])
+    assert any(p.get("anomaly") == "flow_dwarfs_base" for p in nav)
+
+
+def test_a_normal_sized_flow_is_still_netted_out():
+    """The guard must stay narrow. A deposit small relative to the base is
+    exactly what the index exists to neutralise, and must NOT re-anchor."""
+    pts = [{"ts": 1, "equity": 100.0}, {"ts": 2, "equity": 200.0}]
+    nav = cf.nav_series(pts, flows=[{"ts": 2, "usd": 100.0, "kind": "deposit"}])
+    assert nav[-1]["nav"] == pytest.approx(1.0), "a normal deposit moved the index"
+    assert not any(p.get("anomaly") for p in nav)
+
+
+def test_real_ruin_still_reads_as_ruin():
+    """The correction must not become permissive: a genuine wipeout with no
+    flow involved must still floor."""
+    pts = [{"ts": 1, "equity": 100.0}, {"ts": 2, "equity": 0.0}]
+    nav = cf.nav_series(pts, flows=[])
+    assert cf.drawdown_from_nav(nav)["max_drawdown_pct"] < -99
+
+
+def test_a_real_loss_is_still_a_real_loss():
+    """And an ordinary drawdown is not laundered."""
+    pts = [{"ts": 1, "equity": 200.0}, {"ts": 2, "equity": 100.0}]
+    nav = cf.nav_series(pts, flows=[])
+    assert cf.drawdown_from_nav(nav)["max_drawdown_pct"] == pytest.approx(-50.0, abs=0.01)

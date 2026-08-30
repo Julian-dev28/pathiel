@@ -199,9 +199,12 @@ def nav_series(points: Sequence[Dict[str, Any]],
       - an interval starting from non-positive equity has no capital at risk and
         no defined return, so the index carries forward flat rather than
         dividing by zero
-      - a non-positive computed return would make the index negative or zero and
-        poison every later point; it is floored just above zero, which reads as
-        a total loss and stays arithmetically valid
+      - an interval whose net flow DWARFS the opening equity has no meaningful
+        time-weighted return (a $24.46 deposit onto a $0.02 base gives r=-576).
+        That is the standard TWR breakdown at near-zero capital. The flow ends
+        the sub-period, the index carries forward, the post-flow balance becomes
+        the new base, and the point is marked `anomaly`. Compounding it instead
+        pinned the drawdown at -100% permanently on 2026-08-31
     """
     rows = list(flows) if flows is not None else load_flows()
     out: List[Dict[str, Any]] = []
@@ -217,8 +220,27 @@ def nav_series(points: Sequence[Dict[str, Any]],
             continue
         flow = net_flow_between(prev_ts, ts, rows)
         if prev_eq > 0:
+            # A flow that dwarfs the capital base makes the time-weighted
+            # return meaningless. Observed live 2026-08-31: a $24.46 deposit
+            # landed while equity was $0.02, giving r = (12.93 - 24.46)/0.02 =
+            # -576. Compounding that pinned the index at 4.7e-10 and the panel
+            # reported -100% while the account held $12.94.
+            #
+            # This is the standard TWR breakdown at near-zero capital, not a bad
+            # reading. A fund handles it the same way: a large external flow
+            # ENDS the measurement sub-period and the post-flow balance becomes
+            # the new base. Carry the index, re-anchor, mark the point.
+            if abs(flow) > prev_eq:
+                out.append({"ts": ts, "nav": nav, "equity": eq, "anomaly": "flow_dwarfs_base"})
+                prev_eq, prev_ts = eq, ts
+                continue
             r = (eq - flow) / prev_eq
-            nav = nav * max(r, 1e-9)
+            if r > 0:
+                nav = nav * r
+            else:
+                # Non-positive return with the flow small relative to the base:
+                # this is real ruin, and the index should say so.
+                nav = nav * 1e-9
         out.append({"ts": ts, "nav": nav, "equity": eq})
         prev_eq, prev_ts = eq, ts
     return out
