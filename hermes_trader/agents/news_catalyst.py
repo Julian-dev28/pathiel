@@ -32,7 +32,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import median
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def _parse_gdelt_date(s: str) -> Optional[datetime]:
         return None
 
 
-def parse_gdelt_artlist(payload: dict) -> List[Article]:
+def parse_gdelt_artlist(payload: Dict[str, Any]) -> List[Article]:
     out: List[Article] = []
     for a in (payload or {}).get("articles", []) or []:
         out.append(Article(
@@ -97,7 +97,7 @@ def parse_gdelt_artlist(payload: dict) -> List[Article]:
     return out
 
 
-def detect_surge(volume_points: List[float], min_baseline: float = 1e-9) -> tuple:
+def detect_surge(volume_points: List[float], min_baseline: float = 1e-9) -> Tuple[bool, float]:
     """Given a coverage-volume timeline (oldest->newest), is the latest bin a
     SURGE vs the baseline (median of the earlier bins)? Returns (breaking, x)."""
     if len(volume_points) < 3:
@@ -109,7 +109,7 @@ def detect_surge(volume_points: List[float], min_baseline: float = 1e-9) -> tupl
     return (x >= 2.5 and latest > 0, round(x, 2))
 
 
-def parse_gdelt_timeline(payload: dict) -> List[float]:
+def parse_gdelt_timeline(payload: Dict[str, Any]) -> List[float]:
     """Extract the coverage-volume series from a GDELT TimelineVol payload."""
     tl = (payload or {}).get("timeline") or []
     if not tl:
@@ -161,7 +161,7 @@ def filter_keywords(articles: List[Article], keywords: List[str]) -> List[Articl
 
 # ── thin cached fetch ────────────────────────────────────────────────────────
 _CACHE_TTL_S = 300.0           # news moves fast; 5-min cache
-_cache: Dict[str, tuple] = {}
+_cache: Dict[str, Tuple[float, Any]] = {}
 _lock = threading.Lock()
 
 
@@ -169,7 +169,7 @@ _GDELT_MIN_INTERVAL_S = 5.5      # GDELT hard-limits to 1 req / 5s (observed 202
 _gdelt_last_req = [0.0]
 
 
-def _get_json(url: str, timeout: float = 25.0) -> Optional[dict]:
+def _get_json(url: str, timeout: float = 25.0) -> Optional[Dict[str, Any]]:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     # pace GDELT requests globally — a rate-limited reply is plain text, not JSON
     if "gdeltproject.org" in url:
@@ -420,7 +420,7 @@ def macro_headlines(per_query: int = 2, ttl: float = 1800.0) -> List[str]:
     """Top world/market headlines across the macro query set — deduped,
     newest-first within each bucket, bounded. Google News RSS, keyless."""
     out: List[str] = []
-    seen: set = set()
+    seen: Set[str] = set()
     for tag, q in _MACRO_QUERIES:
         try:
             arts = google_news_search(q, when="1d", limit=10, ttl=ttl)

@@ -27,7 +27,7 @@ import json
 import logging
 import time
 import urllib.request
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import uuid
 
@@ -110,8 +110,8 @@ def _universe_mids(universe: Optional[List[Dict[str, Any]]]) -> Dict[str, float]
     return mids
 
 
-def _held_coins(positions) -> set:
-    held = set()
+def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
+    held: Set[str] = set()
     for p in positions or []:
         pos = p.get("position", p) if isinstance(p, dict) else {}
         coin = pos.get("coin")

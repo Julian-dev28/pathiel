@@ -32,7 +32,7 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -611,7 +611,7 @@ def _policy_from_config() -> ExitPolicy:
 def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
                             policy: Optional[ExitPolicy] = None,
                             default_leverage: int = 1,
-                            queried_dexes: Optional[set] = None) -> List[Dict[str, Any]]:
+                            queried_dexes: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
     """Reconcile the tracker registry with the exchange's live position list.
 
     Synthesizes a tracker for any open position without one (entry_time =

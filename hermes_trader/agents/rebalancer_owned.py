@@ -52,7 +52,7 @@ import logging
 
 from hermes_trader.agents.atomic_io import write_json_atomic
 import os
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +337,7 @@ class OwnedPositions:
         """Return (owned_longs, owned_shorts) — coins we opened that we track."""
         return sorted(self._longs), sorted(self._shorts)
 
-    def filter_to_owned(self, positions) -> Tuple[List[str], List[str]]:
+    def filter_to_owned(self, positions: Optional[List[Dict[str, Any]]]) -> Tuple[List[str], List[str]]:
         """Derive cur_long/cur_short by intersecting live positions with our owned set.
 
         A coin counts as 'ours' only if:
@@ -376,7 +376,7 @@ class OwnedPositions:
         return frozenset(self._shorts)
 
 
-def _live_coin_set(positions) -> Set[str]:
+def _live_coin_set(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
     """Extract the set of coins with nonzero size from a live positions list."""
     coins: Set[str] = set()
     for p in positions or []:
@@ -391,7 +391,7 @@ def _live_coin_set(positions) -> Set[str]:
     return coins
 
 
-def prune_claims_to_live(positions, books: Optional[Set[str]] = None) -> Dict[str, str]:
+def prune_claims_to_live(positions: Optional[List[Dict[str, Any]]], books: Optional[Set[str]] = None) -> Dict[str, str]:
     """Release claims whose coins are no longer open in the live account.
 
     Strategy modules also prune their own claims, but some are cadence-gated

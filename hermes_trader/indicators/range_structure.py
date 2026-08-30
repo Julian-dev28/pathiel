@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 # bar layout: [t_ms, open, high, low, close, volume]
 T, O, H, L, C, V = 0, 1, 2, 3, 4, 5
@@ -224,10 +224,10 @@ class RangeSnapshot:
     touches_high: int = 0
     touches_low: int = 0
     # deviation / acceptance (spec Part 4C) — keyed by threshold
-    upper_deviation: dict = field(default_factory=dict)   # {thr_atr: bool}
-    lower_deviation: dict = field(default_factory=dict)
-    upper_acceptance: dict = field(default_factory=dict)  # {k_closes: bool}
-    lower_acceptance: dict = field(default_factory=dict)
+    upper_deviation: Dict[float, bool] = field(default_factory=dict)   # {thr_atr: bool}
+    lower_deviation: Dict[float, bool] = field(default_factory=dict)
+    upper_acceptance: Dict[int, bool] = field(default_factory=dict)  # {k_closes: bool}
+    lower_acceptance: Dict[int, bool] = field(default_factory=dict)
     # time-in-structure (spec Part 4D)
     bars_in_range: int = 0
     bars_since_impulse: int = -1          # -1 = no impulse seen in window

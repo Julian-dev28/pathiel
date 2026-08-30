@@ -32,7 +32,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from hermes_trader.agents.atomic_io import append_json_line
 
@@ -135,7 +135,8 @@ def classify(event: Dict[str, Any], user: str) -> Optional[Tuple[int, float, str
     return None
 
 
-def record_flows(user: str, start_ms: int, fetcher=None,
+def record_flows(user: str, start_ms: int,
+                 fetcher: Optional[Callable[[str, int], Any]] = None,
                  path: Optional[str] = None) -> Dict[str, Any]:
     """Fetch the ledger since `start_ms` and persist any new capital flows.
 

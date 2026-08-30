@@ -28,7 +28,7 @@ def append_oi(universe: List[Dict[str, Any]], min_oi_usd: float = 5e6) -> int:
     now = time.time()
     if now - _last_log_ts < _MIN_INTERVAL_S:
         return 0
-    snap: Dict[str, list] = {}
+    snap: Dict[str, List[float]] = {}
     for m in universe or []:
         coin = m.get("coin")
         oi_coins = float(m.get("openInterest", 0) or 0)

@@ -6,9 +6,10 @@ All gates are evaluated; results are collected for telemetry (no short-circuit).
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from hermes_trader.agents import universe as universe_filter
+from hermes_trader.models.types import Candle
 
 GateResult = Dict[str, Any]  # {pass: bool, reason?: str}
 
@@ -81,7 +82,7 @@ def per_trade_notional_cap_gate(ctx: GateContext, cap_usd: float) -> GateResult:
     return {"pass": False, "reason": f"trade notional ${ctx.trade_notional_usd:.2f} exceeds cap ${cap:.2f}"}
 
 
-def effective_daily_loss_limit(config, equity: float, daily_pnl: float) -> float:
+def effective_daily_loss_limit(config: Dict[str, Any], equity: float, daily_pnl: float) -> float:
     """Negative USD daily-loss floor. Prefers max_daily_loss_pct (fraction of
     start-of-day equity; SOD = equity - daily_pnl) when set > 0, else falls
     back to max_daily_loss_usd. Rebuild 2026-07-18: the static -$100 was
@@ -165,7 +166,11 @@ def short_liquidity_floor(ctx: GateContext, min_short_volume: float) -> GateResu
                        f"< short floor ${min_short_volume/1e6:.0f}M (squeeze risk)")}
 
 
-def history_floor_reason(coin: str, min_history_bars: int, fetch_daily) -> str:
+def history_floor_reason(
+    coin: str,
+    min_history_bars: int,
+    fetch_daily: Callable[[str, int], Optional[List[Candle]]],
+) -> str:
     """Preflight gate: block coins younger than `min_history_bars` completed DAILY bars.
 
     Separate from the volume floors because a brand-new but high-volume listing sails

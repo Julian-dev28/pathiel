@@ -19,7 +19,7 @@ not what it is.
 """
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 # The default majors universe. Bare tickers; every listing venue's prefix for
 # the same underlying resolves here.
@@ -59,7 +59,7 @@ def in_allowlist(coin: str, allowlist: Optional[Iterable[str]]) -> bool:
     return (coin or "").upper() in allowed or bare_ticker(coin) in allowed
 
 
-def filter_markets(markets: Iterable[dict], allowlist: Optional[Iterable[str]]) -> List[dict]:
+def filter_markets(markets: Iterable[Dict[str, Any]], allowlist: Optional[Iterable[str]]) -> List[Dict[str, Any]]:
     """Filter a universe payload down to the allowlist. Empty list = unrestricted."""
     allowed: Set[str] = {str(c).upper() for c in (allowlist or []) if c}
     if not allowed:

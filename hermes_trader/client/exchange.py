@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Hyperliquid rejects any order below $10 notional. Target a small buffer above
 # it so the IOC price offset and mark-vs-limit rounding can't dip under.
@@ -57,7 +57,7 @@ HL_LEVERAGE = 5  # 5x cross margin
 _exchange_instance = None  # Singleton instance
 
 
-def _resolve_perp_dexs() -> Optional[list]:
+def _resolve_perp_dexs() -> Optional[List[str]]:
     """Discover HIP-3 perpDex names so the SDK can resolve colon-namespaced coins.
 
     Only invoked when HIP-3 is enabled via .agent-config.json `enable_hip3`.
@@ -135,11 +135,11 @@ def _get_info() -> Info:
 # "Unknown coin: xyz:SMSN", and the HIP-3 backup stop-loss silently failed.
 # Cache the meta universe per dex so a transient 429 can't break coin
 # resolution and we stop hammering the API. TTL is long — meta rarely changes.
-_META_CACHE: Dict[str, Tuple[float, list]] = {}
+_META_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 _META_TTL_S = float(os.environ.get("HERMES_META_TTL_S", "3600"))
 
 
-def _cached_universe(dex: Optional[str] = None) -> list:
+def _cached_universe(dex: Optional[str] = None) -> List[Dict[str, Any]]:
     """Return the meta `universe` for a dex (None = main), cached for _META_TTL_S.
 
     On a fetch failure we serve a stale cached copy if we have one, rather than
@@ -173,7 +173,7 @@ def prewarm_meta_cache() -> int:
     return empty. Best-effort: a dex that 429s now will be retried lazily later.
     Returns the number of dex universes successfully cached.
     """
-    dexes: list = [None]  # main perp dex
+    dexes: List[Optional[str]] = [None]  # main perp dex
     try:
         for d in (_resolve_perp_dexs() or []):
             if d and d not in dexes:
@@ -181,12 +181,12 @@ def prewarm_meta_cache() -> int:
     except Exception:
         pass
     warmed = 0
-    for d in dexes:
+    for dex in dexes:
         try:
-            if _cached_universe(dex=d):
+            if _cached_universe(dex=dex):
                 warmed += 1
         except Exception as e:
-            logger.warning(f"[prewarm_meta_cache] dex={d!r} failed (will retry lazily): {e}")
+            logger.warning(f"[prewarm_meta_cache] dex={dex!r} failed (will retry lazily): {e}")
     logger.info(f"[prewarm_meta_cache] warmed {warmed}/{len(dexes)} dex meta universes")
     return warmed
 

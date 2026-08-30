@@ -40,11 +40,11 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
-from hermes_trader.agents.news_catalyst import coin_catalyst
+from hermes_trader.agents.news_catalyst import CatalystReport, coin_catalyst
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
 from hermes_trader.models.types import BookAnalysis
 from hermes_trader.session_log import append as log_event
@@ -119,8 +119,8 @@ def _save_seen(seen: Dict[str, int]) -> None:
         pass
 
 
-def _held_coins(positions) -> set:
-    held = set()
+def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
+    held: Set[str] = set()
     for p in positions or []:
         pos = p.get("position", p) if isinstance(p, dict) else {}
         coin = pos.get("coin")
@@ -137,7 +137,7 @@ def _held_coins(positions) -> set:
     return held
 
 
-def _analysis(coin: str, rep, cfg: Dict[str, Any]) -> BookAnalysis:
+def _analysis(coin: str, rep: CatalystReport, cfg: Dict[str, Any]) -> BookAnalysis:
     # Asset-aware sizing. Equity arm = the original reverse-refuted geometry.
     # Crypto arm (W-SOC1, 2026-07-23): crypto coverage-surge SHORT graded net25
     # +4.30%/24h, BOTH halves positive (+4.52/+5.08), same-coin random-time null
@@ -221,7 +221,7 @@ def maybe_run(config: Dict[str, Any],
     _mark_pass(now_ms)  # mark first: a failing RSS pass must not retry-storm
 
     rows: List[Dict[str, Any]] = []
-    seen: set = set()
+    seen: Set[str] = set()
     for p in perceptions or []:
         coin = str(p.get("coin") or "")
         if not coin or coin in seen:

@@ -28,7 +28,7 @@ import logging
 import time
 import uuid
 from statistics import median
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.dsl_exit import active_position_coins
@@ -138,8 +138,8 @@ def _save_seen(seen: Dict[str, int]) -> None:
         pass
 
 
-def _held_coins(positions) -> set:
-    held = set()
+def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
+    held: Set[str] = set()
     for p in positions or []:
         pos = p.get("position", p) if isinstance(p, dict) else {}
         coin = pos.get("coin")
@@ -255,7 +255,7 @@ def maybe_run(config: Dict[str, Any],
     shadow_only = bool(cfg.get("shadow_only", True))
     baseline = _load_baseline()
     rows: List[Dict[str, Any]] = []
-    seen: set = set()
+    seen: Set[str] = set()
     for p in perceptions or []:
         coin = str(p.get("coin") or "")
         if not coin or coin in seen:

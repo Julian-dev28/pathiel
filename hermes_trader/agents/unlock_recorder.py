@@ -30,7 +30,7 @@ import logging
 import os
 import time
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_trader.agents import shadow_ledger
 from hermes_trader.agents.rebalancer_owned import state_file
@@ -80,7 +80,7 @@ def _extract_upcoming(index: Dict[str, Any], name_to_sym: Dict[str, str],
                       min_pct: float, now_ms: int) -> List[Dict[str, Any]]:
     """Reduce the 21MB index to [{coin, t_ms, pct}] within the next 45 days."""
     horizon = now_ms + 45 * _DAY_MS
-    merged: Dict[tuple, Dict[str, Any]] = {}
+    merged: Dict[Tuple[str, int], Dict[str, Any]] = {}
     for r in index.get("data") or []:
         sym = name_to_sym.get(str(r.get("name") or ""))
         circ = _num(r.get("circSupply"))

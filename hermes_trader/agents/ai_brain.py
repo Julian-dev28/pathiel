@@ -10,7 +10,7 @@ import re
 import shlex
 import signal
 import subprocess
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Dict, Iterable, Mapping, Protocol
 
 import httpx
 

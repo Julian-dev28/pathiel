@@ -88,11 +88,11 @@ def _load_max_lev_table() -> Dict[str, int]:
 # every few seconds; without this each poll re-reads + re-parses the 800KB+
 # session-log JSONL from disk. Keyed by (name, args) so parametrized
 # endpoints (equity-curve range, closed-trades limit) cache per-variant.
-_TTL_CACHE: Dict[str, tuple] = {}
+_TTL_CACHE: Dict[str, Tuple[float, Any]] = {}
 _TTL_CACHE_LOCK = threading.Lock()
 
 
-def _ttl_cached(key: str, ttl: float, fn):
+def _ttl_cached(key: str, ttl: float, fn: Callable[[], Any]) -> Any:
     now = time.time()
     with _TTL_CACHE_LOCK:
         hit = _TTL_CACHE.get(key)
@@ -598,7 +598,7 @@ def _equity_curve_payload(range_s: int) -> List[Dict[str, Any]]:
     from statistics import median
 
     cutoff = int(time.time() * 1000) - range_s * 1000
-    raw: List[tuple] = []
+    raw: List[Tuple[int, float]] = []
     for e in _read_log_lines():
         if e.get("event") != "loop_heartbeat":
             continue
@@ -783,7 +783,7 @@ def _require_operator(request: Request) -> None:
 # the live .agent-config.json at request time, so a shadow flip shows on the
 # next poll without a server restart.
 
-_BOOKS: List[tuple] = [
+_BOOKS: List[Tuple[str, str, str]] = [
     ("unlock_short_runin", "unlock_short",
      "Short the run-in 48-72h before large token unlocks (>=1% of circulating). "
      "VALIDATED n=14: +3.75%/sig net25, halves +0.71/+7.06, mc_p=0.0375."),

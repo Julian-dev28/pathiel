@@ -11,7 +11,7 @@ import os
 import re
 import time
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from hermes_trader.agents.config_store import read_agent_config
 from hermes_trader.agents.dsl_exit import (
@@ -623,7 +623,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # and vice versa. Main-dex (crypto) trades behave exactly as before.
     _target_dex = analysis["coin"].split(":", 1)[0] if ":" in analysis["coin"] else ""
 
-    def _read_state() -> tuple[dict, float, float]:
+    def _read_state() -> tuple[Dict[str, Any], float, float]:
         st = fetch_account_state(user, include_hip3=True) or {}
         deq = st.get("dex_equity") or {}
         dav = st.get("dex_available") or {}

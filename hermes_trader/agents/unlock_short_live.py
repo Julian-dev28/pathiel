@@ -25,7 +25,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from hermes_trader.agents.dsl_exit import active_position_coins
 from hermes_trader.agents.rebalancer_owned import get_claims_registry, state_file
@@ -58,8 +58,8 @@ def _save_seen(seen: Dict[str, int]) -> None:
         pass
 
 
-def _held_coins(positions) -> set:
-    held = set()
+def _held_coins(positions: Optional[List[Dict[str, Any]]]) -> Set[str]:
+    held: Set[str] = set()
     for p in positions or []:
         pos = p.get("position", p) if isinstance(p, dict) else {}
         coin = pos.get("coin")
@@ -124,8 +124,10 @@ def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
     }
 
 
-def maybe_run(config: Dict[str, Any], universe, positions,
-              execute_fn: Callable) -> Optional[Dict[str, Any]]:
+def maybe_run(config: Dict[str, Any],
+             universe: Optional[List[Dict[str, Any]]],
+             positions: Optional[List[Dict[str, Any]]],
+             execute_fn: Callable[[BookAnalysis], Any]) -> Optional[Dict[str, Any]]:
     """Open bounded live shorts inside the [lo_h, hi_h) pre-unlock window.
 
     Shadow rows for this arm keep coming from unlock_recorder (runs every

@@ -21,7 +21,7 @@ import logging
 import os
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
 
 import requests
 
@@ -52,7 +52,7 @@ _info_instance: "Info | None" = None
 _info_lock = threading.Lock()
 
 
-def _fetch_meta_sync() -> tuple:
+def _fetch_meta_sync() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Fetch meta and spot_meta via HTTP (fast, no WS needed)."""
     try:
         perp = requests.post(f"{HL_API}/info", json={"type": "meta"}, timeout=10)
@@ -169,7 +169,7 @@ def resolve_user_address() -> str:
 # doubling the API pressure behind the recurring 429 storms that kill scans. A
 # small per-(coin,interval) TTL collapses those duplicates within a cycle. TTL is
 # well under a candle period so freshness is unaffected; env-tunable / 0 disables.
-_CANDLE_CACHE: Dict[str, tuple] = {}
+_CANDLE_CACHE: Dict[str, Tuple[float, List[Candle]]] = {}
 _CANDLE_CACHE_TTL_S = float(os.environ.get("HERMES_CANDLE_CACHE_TTL_S", "90"))
 
 
@@ -287,7 +287,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     dex_equity: Dict[str, float] = {"": perp_equity}
     dex_available: Dict[str, float] = {"": available}
-    queried_dexes: set = {""}
+    queried_dexes: Set[str] = {""}
     available_aggregated = available  # starts as main; HIP-3 adds in
 
     if include_hip3:
@@ -354,8 +354,8 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
 
 def missing_material_dexes(last_dex_equity: Optional[Dict[str, float]],
-                           queried_dexes: set,
-                           floor_usd: float = 0.50) -> set:
+                           queried_dexes: Set[str],
+                           floor_usd: float = 0.50) -> Set[str]:
     """Dexes that held material equity on the last good read but are absent
     from this read's `queried_dexes`.
 
