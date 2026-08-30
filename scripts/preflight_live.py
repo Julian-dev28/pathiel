@@ -76,15 +76,20 @@ def check_brain(r: Report) -> None:
 
 
 def check_capital(r: Report) -> None:
+    from hermes_trader.agents.config_store import read_agent_config
     from hermes_trader.agents.executor import min_tradable_equity
     from hermes_trader.dashboard import _risk_payload
     x = _risk_payload()
-    floor = min_tradable_equity({})
+    # The LIVE config's floor, not the bare backstop — it is derived from the
+    # enabled book set, so quoting min_tradable_equity({}) here would print $25
+    # while the executor actually refuses below $88.89.
+    floor = min_tradable_equity(read_agent_config())
     eq = float(x.get("equity") or 0)
     if eq >= floor:
         r.ok("equity", f"${eq:.2f} clears the ${floor:.0f} floor")
     else:
-        r.block("equity", f"${eq:.2f} is under the ${floor:.0f} structural floor",
+        r.block("equity", f"${eq:.2f} is under the ${floor:.2f} floor "
+                          f"(what all enabled books cost to hold at once)",
                 "fund the account; the executor refuses every order below it")
     if x.get("mode") != "LIVE":
         r.warn("mode", f"{x.get('mode')} — books will not trade until mode is LIVE")

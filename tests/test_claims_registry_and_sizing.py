@@ -231,6 +231,12 @@ class TestStrategyBookEquityFracSizing:
             "equity_fraction_per_trade": 0.2,
             "max_trade_notional_usd": 0,
             "min_available_margin_pct": 0.0,         # don't block on margin
+            # These tests exercise SIZING, not the equity floor. The floor is
+            # derived from the enabled book set (executor.book_margin_requirement),
+            # so DEFAULT_CONFIG's four books would push it to $80 and block the
+            # $60 fixture before any sizing ran. Pin it low deliberately — that
+            # is what the override exists for.
+            "min_tradable_equity_usd": 1.0,
             "max_total_notional_pct": 100.0,         # 10000% of equity = permissive
             "max_concurrent": 20,
             "max_daily_loss_usd": -10000,

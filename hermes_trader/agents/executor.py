@@ -296,27 +296,81 @@ def _asset_notional_multiplier(coin: str, config: Dict[str, Any]) -> float:
 
 
 # ── minimum tradable equity ──────────────────────────────────────────────────
-# Hyperliquid rejects orders under roughly $10 notional. With the 10% free-margin
-# floor and any leverage cap, an account below this cannot open a position that
-# both clears the exchange minimum and leaves headroom — every attempt is a
-# guaranteed reject. $25 is the smallest equity where a $10 order still leaves
-# real margin behind it.
+# Hyperliquid rejects orders under roughly $10 notional, so this is the absolute
+# floor below which no order can clear the exchange at all.
 MIN_TRADABLE_EQUITY_USD = 25.0
 
 
-def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
-    """The floor, with a config override for deliberately tiny test accounts.
+def book_margin_requirement(config: Optional[Dict[str, Any]] = None) -> float:
+    """Equity needed for EVERY enabled book to hold a position simultaneously.
 
-    Negative or non-numeric values fall back to the constant rather than
-    disabling the floor: a typo in a config file must not silently unlock
-    trading on a dust account.
+    Sum of each book's margin (notional / leverage), grossed up by the
+    free-margin floor the executor enforces.
+
+    Why this is derived rather than a constant: W-FUND1 (2026-08-30) simulated a
+    funded account and found the flat $25 floor let the FIRST book to fire
+    consume the whole budget while the other three sat margin-blocked behind it.
+    Funding to the floor bought a crippled subset of the system that would have
+    looked, from outside, like books that simply were not firing.
+
+    Derived from `config` alone — no import of the book registry, which would
+    put executor -> dashboard and create a cycle.
+
+    A book is a block carrying `enabled`, `notional_usd` AND `shadow_only`.
+    That third key is the discriminator, and it is load-bearing: `enabled` +
+    `notional_usd` alone also matches gate RELAXATIONS like `thin_short_relax`,
+    which carries a notional it applies to but opens no position of its own.
+    Counting it inflated the requirement from $88.89 to $111.11. Only something
+    that can trade declares whether it is trading.
     """
+    cfg = config or {}
     try:
-        v = float((config or {}).get("min_tradable_equity_usd",
-                                     MIN_TRADABLE_EQUITY_USD))
+        free_floor = float(cfg.get("min_available_margin_pct", 0.10) or 0.0)
     except (TypeError, ValueError):
+        free_floor = 0.10
+    if not 0.0 <= free_floor < 1.0:
+        free_floor = 0.10
+
+    total = 0.0
+    for block in cfg.values():
+        if not isinstance(block, dict):
+            continue
+        if not {"enabled", "notional_usd", "shadow_only"} <= block.keys():
+            continue
+        if not block.get("enabled", False):
+            continue
+        try:
+            notional = float(block.get("notional_usd") or 0)
+            leverage = max(1, int(block.get("leverage", 1) or 1))
+        except (TypeError, ValueError):
+            continue
+        total += notional / leverage
+    return total / (1.0 - free_floor) if total > 0 else 0.0
+
+
+def min_tradable_equity(config: Optional[Dict[str, Any]] = None) -> float:
+    """The floor the executor refuses to trade below.
+
+    Precedence:
+      1. an explicit `min_tradable_equity_usd` — deliberate override for a
+         small test account
+      2. what the enabled book set actually costs, so the system refuses to run
+         a crippled subset of itself
+      3. MIN_TRADABLE_EQUITY_USD, the exchange-minimum backstop
+
+    A negative or non-numeric override falls back rather than disabling the
+    floor: a typo must not silently unlock trading on a dust account.
+    """
+    cfg = config or {}
+    if "min_tradable_equity_usd" in cfg:
+        try:
+            v = float(cfg["min_tradable_equity_usd"])
+            if v >= 0:
+                return v
+        except (TypeError, ValueError):
+            pass
         return MIN_TRADABLE_EQUITY_USD
-    return v if v >= 0 else MIN_TRADABLE_EQUITY_USD
+    return max(MIN_TRADABLE_EQUITY_USD, book_margin_requirement(cfg))
 
 
 def _position_notional(entry: Dict[str, Any]) -> float:
