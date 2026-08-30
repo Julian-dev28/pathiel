@@ -8,8 +8,9 @@ Two kinds of resource live here, and the distinction is the whole point:
 
 2. Licensed-data adapter SLOTS. `net_flow` is options-flow data that requires the
    OPRA options tape, a licensed feed we do not have. We do NOT reproduce a
-   competitor's proprietary tape or fabricate numbers. The slot returns `None`
-   until/unless we wire a licensed upstream, so the router answers 501 honestly.
+   competitor's proprietary tape or fabricate numbers. Unconfigured, the slot
+   returns `None` so the router answers 501 honestly; configured-but-not-yet-
+   wired, it raises `NotImplementedError` rather than fabricate a value.
 """
 from __future__ import annotations
 
@@ -31,8 +32,10 @@ async def net_flow(ticker: str, date: str | None = None) -> dict | None:
     Behaviour:
       - `settings.options_flow_upstream` empty  -> return `None`
         (the router turns this into an honest HTTP 501 "adapter not configured").
-      - `settings.options_flow_upstream` set     -> our OWN licensed feed is wired;
-        fetch from it and return the normalized flow dict.
+      - `settings.options_flow_upstream` set     -> raises `NotImplementedError`.
+        The env var alone does not wire a feed: the httpx call below is only a
+        worked example, not live code. Once it's uncommented and returns the
+        normalized flow dict, this branch starts serving real data.
 
     When/if we license our own options-flow feed, plug it in below. Example wiring
     (kept commented so no external call is made until a real upstream exists):
