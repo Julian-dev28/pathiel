@@ -44,7 +44,14 @@ def _complete_env(**overrides: str) -> Dict[str, str]:
         "HYPERLIQUID_MASTER_ADDRESS": FAKE_MASTER_ADDR,
         "HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY,
         "HERMES_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
-        "AI_BRAIN_PROVIDER": "claude_cli",  # sidesteps the OPENROUTER_API_KEY requirement
+        # openrouter + a fake key, NOT claude_cli. Selecting a CLI provider here
+        # used to "sidestep the OPENROUTER_API_KEY requirement", but the brain
+        # readiness check verifies the `claude` binary is on PATH — so the test
+        # passed on a developer machine and failed on CI, which has no such
+        # binary. openrouter's readiness is a pure env-var check with no host
+        # dependency, which is what a fixture should assert against.
+        "AI_BRAIN_PROVIDER": "openrouter",
+        "OPENROUTER_API_KEY": FAKE_OPENROUTER_KEY,
     }
     base.update(overrides)
     return base
@@ -86,8 +93,11 @@ def test_required_present_passes_with_complete_synthetic_env():
 
 
 def test_openrouter_key_required_only_when_provider_is_openrouter():
-    # provider unset -> defaults to openrouter -> key required
-    findings_default = pf.check_required_present(_complete_env(AI_BRAIN_PROVIDER=""))
+    # provider unset -> defaults to openrouter -> key required. The key must be
+    # cleared explicitly: _complete_env now supplies one by default so the
+    # fixture does not depend on a CLI binary being installed on the host.
+    findings_default = pf.check_required_present(
+        _complete_env(AI_BRAIN_PROVIDER="", OPENROUTER_API_KEY=""))
     assert "OPENROUTER_API_KEY" in _names_with_status(findings_default, "FAIL")
 
     # provider explicitly claude_cli -> key not required, no finding for it at all
