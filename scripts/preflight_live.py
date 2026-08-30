@@ -130,6 +130,85 @@ def check_books(r: Report) -> None:
         r.ok("book imports", "all live books import")
 
 
+def check_book_reachability(r: Report) -> None:
+    """Can the live books actually fire under the current allowlist?
+
+    W-FUND1: the majors allowlist blocked 92-100% of every book's historical
+    signals, and 100% of unlock_short_runin's. A book that is live, validated
+    and structurally unable to fire is the shadow state wearing a live badge —
+    and it is invisible until someone funds the account and waits.
+    """
+    import json
+
+    import hermes_trader.dashboard as db
+    from hermes_trader.agents import shadow_ledger as SL
+    from hermes_trader.agents.config_store import read_agent_config
+    from hermes_trader.agents.universe import in_allowlist
+
+    allow = read_agent_config().get("coin_allowlist") or []
+    if not allow:
+        r.ok("book reachability", "no allowlist — books trade their own universe")
+        return
+    worst = []
+    for book in sorted(db._KNOWN_BOOK_NAMES):
+        path = SL._book_path(book)
+        if not os.path.exists(path):
+            continue
+        coins = []
+        with open(path) as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    try:
+                        coins.append(json.loads(line)["coin"])
+                    except Exception:
+                        continue
+        if not coins:
+            continue
+        ok = sum(1 for c in coins if in_allowlist(c, allow))
+        pct = 100 * ok / len(coins)
+        if pct < 25:
+            worst.append(f"{book} {pct:.0f}%")
+    if worst:
+        r.block("book reachability",
+                f"allowlist blocks most signals: {', '.join(worst)}",
+                "clear coin_allowlist (volume floors still gate liquidity), or "
+                "delete the books that cannot fire — see W-FUND1")
+    else:
+        r.ok("book reachability", "books can fire under the allowlist")
+
+
+def check_margin_headroom(r: Report) -> None:
+    """Enough equity for the books to hold positions simultaneously.
+
+    Funding to exactly the dust floor buys a system where the first book to fire
+    consumes the whole budget and the rest are margin-blocked behind it.
+    """
+    import hermes_trader.dashboard as db
+    from hermes_trader.agents.config_store import read_agent_config
+    from hermes_trader.dashboard import _risk_payload
+
+    cfg = read_agent_config()
+    min_avail = float(cfg.get("min_available_margin_pct", 0.10))
+    total = 0.0
+    for book in db._KNOWN_BOOK_NAMES:
+        c = cfg.get(book) or cfg.get("unlock_short") or {}
+        n = float(c.get("notional_usd", 0) or 0)
+        lev = max(1, int(c.get("leverage", 1) or 1))
+        total += n / lev
+    needed = total / (1 - min_avail) if min_avail < 1 else total
+    eq = float(_risk_payload().get("equity") or 0)
+    if eq >= needed:
+        r.ok("margin headroom", f"${eq:.2f} covers all {len(db._KNOWN_BOOK_NAMES)} books "
+                                f"(${needed:.2f})")
+    else:
+        holdable = int(eq * (1 - min_avail) // (total / max(len(db._KNOWN_BOOK_NAMES), 1))) \
+            if total else 0
+        r.warn("margin headroom",
+               f"${eq:.2f} holds {holdable} of {len(db._KNOWN_BOOK_NAMES)} books at once "
+               f"— ${needed:.2f} needed for all")
+
+
 def check_feed(r: Report) -> None:
     from hermes_trader.agents import perception
     st = perception.last_scan_integrity()
@@ -175,6 +254,7 @@ def main(argv=None) -> int:
     print(f"\n{DIM}hermes-trader — live readiness{OFF}\n")
     r = Report()
     for check in (check_secrets, check_brain, check_capital, check_books,
+                  check_book_reachability, check_margin_headroom,
                   check_feed, check_disk, check_processes):
         try:
             check(r)
