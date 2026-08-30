@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_trader.agents import universe as universe_filter
 from hermes_trader.agents.config import get_config
+from hermes_trader.agents.rebalancer_owned import state_file
 from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles
 from hermes_trader.client.universe import get_universe
 from hermes_trader.indicators import triggers as trigger_mod
@@ -69,10 +70,29 @@ def _get_data_gaps() -> int:
         return _data_gap_count
 
 
+# Scan integrity is written to disk as well as held in memory. It has to be:
+# the SCAN runs in the trading-loop process, while every consumer —
+# /api/health/system, the hermes_feed_trustworthy metric, preflight_live.py —
+# runs in the server or a CLI. Reading module state cross-process gave them
+# `ts: 0, markets: 0` forever, so the HermesFeedDegraded alert could never fire
+# and the degraded-feed gate was invisible to everything that watches it.
+# Found 2026-08-31 with the loop running and the healthcheck reporting no scan.
+_INTEGRITY_FILE = state_file("scan_integrity.json")
+
+
 def last_scan_integrity() -> Dict[str, Any]:
-    """Feed health from the most recent completed scan. Copy, not the live dict."""
+    """Feed health from the most recent completed scan.
+
+    In-process value wins when this process ran the scan; otherwise the value
+    the scanning process persisted. Returns a copy, never the live dict.
+    """
     with _data_gap_lock:
-        return dict(_last_scan_integrity)
+        local = dict(_last_scan_integrity)
+    if local.get("ts"):
+        return local
+    from hermes_trader.agents.atomic_io import read_json
+    stored = read_json(_INTEGRITY_FILE, default=None)
+    return stored if isinstance(stored, dict) else local
 
 
 def scan_is_trustworthy(max_gap_frac: float = MAX_SCAN_GAP_FRAC) -> bool:
@@ -575,6 +595,14 @@ def scan_once(
             "ts": int(time.time() * 1000), "markets": len(markets),
             "gaps": data_gaps, "gap_frac": round(gap_frac, 4), "errors": errors,
         })
+        snapshot = dict(_last_scan_integrity)
+    try:
+        from hermes_trader.agents.atomic_io import write_json_atomic
+        write_json_atomic(_INTEGRITY_FILE, snapshot)
+    except Exception as exc:
+        # Never fatal: a scan that cannot publish its integrity is still a scan.
+        # But say so — a silent failure here re-blinds every health surface.
+        logger.warning(f"[scan] could not publish scan integrity: {exc}")
     if gap_frac > MAX_SCAN_GAP_FRAC:
         # Over a quarter of the universe unreadable is a degraded data feed, not
         # a quiet market. This used to be a log line nobody acted on; it now

@@ -171,3 +171,59 @@ def test_ai_closes_survived_the_deletion():
     assert "analysis = research(coin, perception)" in src, (
         "the research call the AI close path depends on was removed")
     assert "route_verdict" in src
+
+
+# ── scan integrity must cross process boundaries ─────────────────────────────
+
+def test_scan_integrity_is_readable_from_another_process(tmp_path, monkeypatch):
+    """The scan runs in the trading loop; every consumer runs elsewhere.
+
+    /api/health/system, the hermes_feed_trustworthy metric and
+    preflight_live.py all read scan integrity, and all three run in the server
+    or a CLI — not in the loop. While it was module state they saw
+    `ts: 0, markets: 0` forever, so HermesFeedDegraded could never fire and the
+    degraded-feed gate was invisible to everything watching it. Found
+    2026-08-31 with the loop scanning and the healthcheck reporting no scan.
+    """
+    from hermes_trader.agents import perception as P
+    from hermes_trader.agents.atomic_io import write_json_atomic
+
+    f = tmp_path / "scan_integrity.json"
+    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
+    # a reader process: nothing in memory, everything on disk
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
+                         "errors": 0})
+    write_json_atomic(str(f), {"ts": 123, "markets": 40, "gaps": 30,
+                               "gap_frac": 0.75, "errors": 0})
+    got = P.last_scan_integrity()
+    assert got["markets"] == 40 and got["gaps"] == 30
+    assert P.scan_is_trustworthy() is False, (
+        "a degraded feed published by the loop was invisible to the reader")
+
+
+def test_the_in_process_value_wins_when_this_process_scanned(tmp_path, monkeypatch):
+    """The scanning process must not read its own stale file back."""
+    from hermes_trader.agents import perception as P
+    from hermes_trader.agents.atomic_io import write_json_atomic
+
+    f = tmp_path / "scan_integrity.json"
+    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
+    write_json_atomic(str(f), {"ts": 1, "markets": 999, "gaps": 999,
+                               "gap_frac": 1.0, "errors": 0})
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 555, "markets": 40, "gaps": 0, "gap_frac": 0.0,
+                         "errors": 0})
+    assert P.last_scan_integrity()["markets"] == 40
+
+
+def test_a_missing_integrity_file_is_a_cold_start_not_a_fault(tmp_path, monkeypatch):
+    """No file yet must read as 'no scan', which is trustworthy — the gate
+    catches a DEGRADED feed, not a fresh process."""
+    from hermes_trader.agents import perception as P
+    monkeypatch.setattr(P, "_INTEGRITY_FILE", str(tmp_path / "absent.json"))
+    monkeypatch.setattr(P, "_last_scan_integrity",
+                        {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
+                         "errors": 0})
+    assert P.last_scan_integrity()["ts"] == 0
+    assert P.scan_is_trustworthy() is True
