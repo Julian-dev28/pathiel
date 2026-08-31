@@ -709,8 +709,8 @@ Object.entries(REFRESH_BTN).forEach(([lane, id]) => {
     const j = await post('/api/dashboard/trends/' + lane + '/refresh');
     if (!j || j._error) { done(j && j._error ? j._error : 'no response', 'dn'); return; }
     pollJob(j.job_id, res => {
-      // An errored job used to land here and be thrown away, so a failed
-      // refresh looked exactly like a successful one.
+      // A job that finished with an error still resolves — say so, or a failed
+      // refresh reads as a successful one.
       if (res && (res.status === 'error' || res.error)) {
         done('refresh failed: ' + (res.error || res.status), 'dn');
       } else {

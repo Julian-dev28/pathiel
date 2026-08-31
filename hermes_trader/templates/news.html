@@ -134,9 +134,9 @@ function researchCard(c) {
   const verdict = c.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
                 : c.verdict === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
                 : `<span class="badge b-pass">${esc(c.verdict || '?')}</span>`;
-  // The chip's colour has to mean what the word says. Every news-risk chip
-  // used to render red, including "positive" — colour that carries no
-  // information is decoration, and the reader stops trusting it.
+  // The chip's colour has to mean what the word says: colour carrying no
+  // information is decoration, and the reader stops trusting the colours that
+  // do mean something.
   const riskTone = { positive: 'chip-green', negative: 'chip-red' }[c.news_risk] || 'chip-amber';
   const risk = c.news_risk && c.news_risk !== 'none'
     ? `<span class="chip ${riskTone}">news risk: ${esc(c.news_risk)}</span>` : '';

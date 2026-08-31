@@ -514,8 +514,7 @@ td.num,td[class*="text-right"]{ text-align:right; }
 
 /* ── pipeline ─────────────────────────────────────────────────────────── */
 
-/* Numbered steps as a plain ordered list. The old version was six glowing
-   chips; this is a table of contents. */
+/* Numbered steps, read as a table of contents. */
 .pipe{
   display:grid; gap:0;
   grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
