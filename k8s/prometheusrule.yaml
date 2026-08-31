@@ -5,8 +5,18 @@
 # blind market feed and an unrotated disk each went unnoticed for weeks. Every
 # rule below corresponds to a silent failure this system has actually had.
 #
-# Apply with the rest of k8s/; requires the Prometheus Operator (same dependency
-# as servicemonitor.yaml).
+# Two consumers, one definition:
+#   - In Kubernetes: apply with the rest of k8s/; requires the Prometheus
+#     Operator (same dependency as servicemonitor.yaml).
+#   - On the operator's Mac, where nothing runs Kubernetes:
+#     scripts/alert_eval.py reads THIS file every 2 minutes, honours `for:`,
+#     and delivers via macOS notification + logs/alerts.log. Until that
+#     existed these rules fired nowhere and were documentation.
+#
+# The local evaluator handles `metric OP number` joined by `and`, and nothing
+# more. A rule written outside that subset FAILS LOUDLY there rather than
+# silently never firing — but it does mean a new rule should stay in the
+# subset unless you are extending the evaluator with it.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:

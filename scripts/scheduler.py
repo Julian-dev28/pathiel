@@ -77,6 +77,15 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "why": "/trends price lane — HL 7d scan. No LLM, no capital; the tab "
                "reads this cache and never fetches itself",
     },
+    "alerts": {
+        "args": [PY, os.path.join(ROOT, "scripts", "alert_eval.py")],
+        "interval_min": 2,            # one HTTP GET; cheap enough to be frequent
+        "log": "logs/alerts_eval.log",
+        "why": "evaluate k8s/prometheusrule.yaml locally and deliver. The rules "
+               "were written for the Prometheus Operator; nothing here runs "
+               "Kubernetes, so until this job existed all seven alerts were "
+               "documentation and every silent failure stayed silent",
+    },
     "supervisor": {
         "args": [PY, os.path.join(ROOT, "scripts", "supervise_processes.py")],
         "interval_min": 2,            # a dead loop should cost minutes, not days
