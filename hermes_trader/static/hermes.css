@@ -20,29 +20,32 @@
    ========================================================================= */
 
 :root{
-  /* paper + ink. White page, near-black masthead: the register is an asset
-     manager's site, not an app shell. */
+  /* Paper and ink, with the venue's colour underneath it. Hyperliquid is a
+     green-cast near-black and a mint accent; taken literally on a white page
+     that reads as a crypto app, so the mint is darkened to a deep teal for
+     light mode and the masthead carries the green cast. Dark mode is the
+     venue's palette as-is. */
   --paper:#ffffff;
   --surface:#ffffff;
-  --surface-2:#f5f6f7;
-  --ink:#0d0f13;
-  --ink-2:#4e5560;
-  --ink-3:#858c97;
-  --rule:#e3e5e8;
-  --rule-2:#c9ccd1;
+  --surface-2:#f4f7f6;
+  --ink:#0a1211;
+  --ink-2:#4c5956;
+  --ink-3:#838f8b;
+  --rule:#e2e8e6;
+  --rule-2:#c6d0cd;
 
-  --bar:#0d0f13;          /* masthead */
+  --bar:#0a1211;          /* masthead — Hyperliquid's near-black */
   --bar-ink:#ffffff;
-  --bar-ink-2:#9ba3ae;
+  --bar-ink-2:#93a29d;
 
-  /* one accent, used for: active state, links, focus. Nothing else. */
-  --accent:#11406e;
-  --accent-ink:#0c3054;
-  --accent-wash:#eef2f7;
+  /* One accent: active state, links, focus. Nothing else. */
+  --accent:#0d6b5c;
+  --accent-ink:#085146;
+  --accent-wash:#eaf5f2;
 
-  /* money + status. Print-weight, not neon. */
-  --up:#0f6b43;
-  --up-wash:#edf5f0;
+  /* Money and status. Print-weight, not neon. */
+  --up:#0d6b52;
+  --up-wash:#eaf5f1;
   --down:#a02b25;
   --down-wash:#faeeed;
   --amber:#8a6410;
@@ -62,25 +65,25 @@
    redefined; no rule below branches on theme. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#0d0f13; --surface:#14171c; --surface-2:#1a1e24;
-    --ink:#eceef1; --ink-2:#a2aab5; --ink-3:#767d88;
-    --rule:#232830; --rule-2:#333a44;
-    --bar:#08090c; --bar-ink:#ffffff; --bar-ink-2:#9ba3ae;
-    --accent:#8fb4dc; --accent-ink:#bcd3ea; --accent-wash:#161f2a;
-    --up:#4ba97a; --up-wash:#16241d;
-    --down:#d1706a; --down-wash:#26191a;
-    --amber:#c79a4a; --amber-wash:#241e14;
+    --paper:#0a1211; --surface:#0f1a18; --surface-2:#14211f;
+    --ink:#e8efec; --ink-2:#9aaaa5; --ink-3:#6e807b;
+    --rule:#1c2a27; --rule-2:#2b3c38;
+    --bar:#060d0c; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
+    --accent:#4fd1b8; --accent-ink:#7fe6d4; --accent-wash:#0f2622;
+    --up:#4fd1b8; --up-wash:#0f2622;
+    --down:#e8756d; --down-wash:#2a1614;
+    --amber:#d0a45c; --amber-wash:#26200f;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#0d0f13; --surface:#14171c; --surface-2:#1a1e24;
-  --ink:#eceef1; --ink-2:#a2aab5; --ink-3:#767d88;
-  --rule:#232830; --rule-2:#333a44;
-  --bar:#08090c; --bar-ink:#ffffff; --bar-ink-2:#9ba3ae;
-  --accent:#8fb4dc; --accent-ink:#bcd3ea; --accent-wash:#161f2a;
-  --up:#4ba97a; --up-wash:#16241d;
-  --down:#d1706a; --down-wash:#26191a;
-  --amber:#c79a4a; --amber-wash:#241e14;
+  --paper:#0a1211; --surface:#0f1a18; --surface-2:#14211f;
+  --ink:#e8efec; --ink-2:#9aaaa5; --ink-3:#6e807b;
+  --rule:#1c2a27; --rule-2:#2b3c38;
+  --bar:#060d0c; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
+  --accent:#4fd1b8; --accent-ink:#7fe6d4; --accent-wash:#0f2622;
+  --up:#4fd1b8; --up-wash:#0f2622;
+  --down:#e8756d; --down-wash:#2a1614;
+  --amber:#d0a45c; --amber-wash:#26200f;
 }
 
 /* ── base ─────────────────────────────────────────────────────────────── */
@@ -210,16 +213,13 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 }
 .section-meta{ margin-left:auto; font-size:12px; color:var(--ink-3); }
 
-/* `.card` survives because five templates use it, but it is now a quiet
-   panel: hairline, no fill, no shadow, small radius. `.glow` is kept as a
-   no-op alias so old markup does not break — nothing glows. */
+/* A quiet panel: hairline, no fill, no shadow, small radius. */
 .card{
   background:var(--surface);
   border:1px solid var(--rule);
   border-radius:var(--radius);
   padding:20px;
 }
-.card.glow,.glow{ box-shadow:none; }
 .panel,.pane,.panel-wrap{
   background:var(--surface); border:1px solid var(--rule);
   border-radius:var(--radius);
@@ -230,10 +230,6 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 }
 .panel-body,.pane-flow{ padding:16px; }
 .pane-empty,.empty{ padding:20px 16px; color:var(--ink-3); font-size:13px; }
-.blank{
-  padding:26px 0; color:var(--ink-3); font-size:13.5px;
-  border-bottom:1px solid var(--rule);
-}
 .pane-flow > *{ padding:7px 0; font-size:13px; }
 .pane-flow > * + *{ border-top:1px solid var(--rule); }
 
@@ -569,6 +565,16 @@ body.discreet .dollar-mask{ display:inline; }
 .chart-readout{ font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
 
 /* ── loading ──────────────────────────────────────────────────────────── */
+
+/* A panel whose refresh threw. The numbers in it are the last good read, so
+   they stay on screen — but they are marked, because a stale figure presented
+   as current is worse than a gap. */
+.is-stale{ position:relative; }
+.is-stale::after{
+  content:"not updating"; position:absolute; top:0; right:0;
+  font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--amber);
+}
 
 /* A flat grey block. A loading placeholder that sweeps a highlight across
    itself is the single most consumer-app tell on a page like this. */

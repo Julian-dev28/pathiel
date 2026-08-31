@@ -6,25 +6,12 @@
 <title>hermes-trader · analytics</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/hermes.css" />
+<script defer src="/static/hermes.js"></script>
 
 </head>
 <body>
 <script type="speculationrules">
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
-</script>
-<script>
-// g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
-// inert while typing in a field or holding a modifier
-(function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
-  let armed = 0;
-  addEventListener('keydown', e => {
-    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
-    armed = 0;
-  });
-})();
 </script>
 <div class="masthead">
   <div class="masthead-inner">
@@ -51,7 +38,7 @@
   </div>
 
   <!-- FUNNEL -->
-  <section class="card glow p-0 mb-4 panel span2" id="panel-funnel">
+  <section class="card p-0 mb-4 panel span2" id="panel-funnel">
     <button class="panel-head" data-panel="funnel" type="button" aria-expanded="true">
       <span class="sec-label">funnel</span>
       <span class="pmeta mono" id="funnel-meta"></span>
@@ -174,8 +161,6 @@
 </div>
 
 <script>
-const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
 // Whale flow runs into the millions — fmtMoney's fixed 2dp reads as
 // "-$1310471.00". Abbreviate past $10k, keep small values exact.
@@ -186,7 +171,6 @@ const fmtMoneyCompact = v => {
   if (a >= 1e4) return sign + (a / 1e3).toFixed(1) + 'k';
   return sign + a.toFixed(2);
 };
-const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
 const fmtAge = h => h == null ? '—' : (h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : (h / 24).toFixed(1) + 'd');
 const fmtNum = v => {
   if (v == null || typeof v !== 'number' || !isFinite(v)) return '—';
@@ -298,7 +282,7 @@ async function loadLeague() {
     leagueRows = await (await fetch('/api/dashboard/book_league')).json();
     document.getElementById('league-meta').textContent = leagueRows.length + ' books';
     renderLeague();
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('loadLeague', e); }
 }
 
 // ── COIN CHART — hand-drawn candles, no plugins ─────────────────────────────
@@ -382,7 +366,7 @@ async function loadCoinChart(coin) {
   try {
     chartData = await (await fetch('/api/dashboard/coin_chart?coin=' + encodeURIComponent(coin) + '&interval=1h')).json();
     drawChart();
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('loadCoinChart', e); }
 }
 function populateCoinSelect(coins) {
   const sel = document.getElementById('coin-select');
@@ -419,7 +403,7 @@ async function loadHeat() {
         <span class="heat-pctile mono" style="color:${heatColor(r.funding_pctile)}">${r.funding_pctile.toFixed(0)}%ile</span>
         <span class="heat-oi mono">OI ${r.oi_change_24h_pct == null ? '—' : fmtPct(r.oi_change_24h_pct)}</span>
       </div>`).join('') || '<div class="empty">no coins with enough history yet</div>';
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('loadHeat', e); }
 }
 
 // ── WHALE + NEWS TAPES ───────────────────────────────────────────────────────
@@ -463,7 +447,7 @@ async function loadTapes() {
     }
     document.getElementById('tapes-meta').textContent =
       `${(whale.rows || []).length} whale · ${(news.rows || []).length} news`;
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('loadTapes', e); }
 }
 
 // ── boot ─────────────────────────────────────────────────────────────────────

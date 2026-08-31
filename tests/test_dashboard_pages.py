@@ -602,10 +602,17 @@ def test_citations_are_chips_not_blue_links(client):
         assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
 
 
+# Helpers shared by every page live in static/hermes.js now, so the extractor
+# searches there too rather than only in the served markup.
+SHARED_JS = (pathlib.Path(__file__).resolve().parent.parent
+             / "hermes_trader" / "static" / "hermes.js").read_text()
+
+
 def _extract_js_block(html: str, kind: str, name: str) -> str:
     """Pull one pure-logic const one-liner or multi-line function out of a
     served page's <script> block by name, so it can be executed in
     isolation under node — no DOM/fetch dependency, safe outside a browser."""
+    html = html + "\n" + SHARED_JS
     if kind == "const":
         pat = r"^const " + re.escape(name) + r" = .*?;$"
         flags = re.M
@@ -1296,7 +1303,8 @@ def test_v4_speculation_rules_and_hotkeys(client):
         r = client.get(path).text
         assert 'type="speculationrules"' in r, path
         assert '"eagerness":"moderate"' in r, path
-        assert "keydown" in r and "e.target.closest('input,textarea,select')" in r, path
+        # hotkeys live in static/hermes.js; every page has to load it
+        assert "/static/hermes.js" in r, path
 
 
 def test_v4_landing_wire_sse(client):
@@ -1559,9 +1567,13 @@ def test_every_page_reaches_every_other_page(client):
 
 
 def test_the_nav_marks_the_page_you_are_on(client):
+    """The marking runs from static/hermes.js — every page has to load it and
+    give the nav something to match on."""
+    assert "nav-active" in SHARED_JS
     for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         page = client.get(path).text
-        assert "nav-active" in page, f"{path} never marks the current tab"
+        assert "/static/hermes.js" in page, f"{path} does not load the shared script"
+        assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
 
 
 def test_a_removed_subsystem_is_not_reported_as_a_refusal(monkeypatch):
@@ -1588,3 +1600,13 @@ def test_a_zero_stage_draws_no_bar(client):
     """A 2% stub next to the number 0 says something happened."""
     r = client.get("/").text
     assert "s.n ? Math.max(2," in r, "zero-count stages still draw a minimum bar"
+
+
+def test_the_hotkeys_are_defined_once(client):
+    assert "keydown" in SHARED_JS
+    assert "e.target.closest('input,textarea,select')" in SHARED_JS
+    for name in ("landing", "activity", "analytics", "news", "trends"):
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "hermes_trader" / "templates" / f"{name}.html").read_text()
+        assert "addEventListener('keydown'" not in src, (
+            f"{name}.html re-declares the hotkey handler")

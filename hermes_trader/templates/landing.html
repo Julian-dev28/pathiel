@@ -6,6 +6,7 @@
 <title>hermes-trader · live</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/hermes.css" />
+<script defer src="/static/hermes.js"></script>
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
@@ -20,20 +21,6 @@
 <body>
 <script type="speculationrules">
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
-</script>
-<script>
-// g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
-// inert while typing in a field or holding a modifier
-(function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
-  let armed = 0;
-  addEventListener('keydown', e => {
-    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
-    armed = 0;
-  });
-})();
 </script>
 
 <div class="masthead">
@@ -288,22 +275,12 @@
 </div>
 
 <script>
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
-const fmtPct = n => (n >= 0 ? '+' : '') + (n ?? 0).toFixed(2) + '%';
 const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s / 60) + 'm ago');
 const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
-const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class="dollar-mask">•••</span>`;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-// active-page highlight
-(function () {
-  const here = window.location.pathname.replace(/\/$/, '') || '/';
-  document.querySelectorAll('a[data-nav]').forEach(a => {
-    if (a.dataset.nav === here) a.classList.add('nav-active');
-  });
-})();
 
 
 // operator token entry — popover form, same localStorage key as ever so
@@ -503,7 +480,7 @@ async function refreshChart(rangeSec) {
       chart.options.scales.x.time.unit = RANGE_UNIT[rangeSec] || 'hour';
       chart.update('none');
     }
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshChart', e); }
 }
 // range switches ride a view transition where the browser has one — the
 // cross-fade makes the rescale read as one move instead of a hard swap
@@ -544,7 +521,7 @@ async function refreshSummary() {
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshSummary', e); }
 }
 
 // ── the off switch ──────────────────────────────────────────────────────────
@@ -677,7 +654,7 @@ async function refreshRisk() {
       cav.innerHTML = '<span style="color:var(--amber)">' +
         (r.drawdown_caveat || '') + '</span>';
     }
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshRisk', e); }
 }
 
 
@@ -735,7 +712,7 @@ async function refreshPositions() {
     }).join('');
     const totCls = totalPnl >= 0 ? 'pos' : 'neg';
     count.innerHTML = `${ps.length} open · ${dollarHTML(fmtMoney(totalNtl))} notional · <span class="pnl-cell ${totCls}">${dollarHTML(fmtMoney(totalPnl))}</span> uPnL`;
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshPositions', e); }
 }
 
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
@@ -770,7 +747,7 @@ async function refreshBooks() {
     document.getElementById('books-count').textContent =
       [`${live} live`, shadow ? `${shadow} shadow` : '', off ? `${off} off` : '']
         .filter(Boolean).join(' · ');
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshBooks', e); }
 }
 
 // ── decision funnel — scans → candidates → researched → executed, with the
@@ -794,7 +771,7 @@ async function refreshFunnel() {
     document.getElementById('funnel-reasons').innerHTML = rs.length
       ? rs.map(r => `<span class="rs">${esc(r.reason)} <b>${r.n}</b></span>`).join('')
       : '';
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshFunnel', e); }
 }
 
 // ── recent closes tape — realized results, newest first. pnl_pct may be
@@ -825,7 +802,7 @@ async function refreshTape() {
     const wins = ts.filter(t => (t.pnl_pct ?? 0) > 0).length;
     const graded = ts.filter(t => t.pnl_pct != null).length;
     document.getElementById('tape-meta').textContent = graded ? `${wins}/${graded} green` : '';
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshTape', e); }
 }
 
 // ── evidence league — every shadow-ledger book with its inventory. status
@@ -870,7 +847,7 @@ async function refreshLeague() {
     const live = rows.filter(r => r.status === 'live').length;
     document.getElementById('league-meta').textContent =
       `${live} ${live === 1 ? 'book' : 'books'} spending capital`;
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('refreshLeague', e); }
 }
 
 // Retired ledgers stay one click away rather than gone: they are the evidence
@@ -916,9 +893,9 @@ setInterval(refreshLeague, 90000);      // local ledger files only
         el.innerHTML = fmt(JSON.parse(m.data));
         el.hidden = false;
         el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick');
-      } catch (_) {}
+      } catch (_) { reportRefreshFailure('refreshLeague', _); }
     };
-  } catch (_) {}
+  } catch (_) { reportRefreshFailure('refreshLeague', _); }
 })();
 </script>
 </body>

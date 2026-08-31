@@ -6,22 +6,9 @@
 <title>hermes-trader · trends</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/hermes.css" />
+<script defer src="/static/hermes.js"></script>
 </head>
 <body>
-<script>
-const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-// g-then-key tab hops, same map as the other pages (t = trends)
-(function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
-  let armed = 0;
-  addEventListener('keydown', e => {
-    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
-    armed = 0;
-  });
-})();
-</script>
 
 <div class="masthead">
   <div class="masthead-inner">
@@ -228,8 +215,6 @@ const pct = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : 
 // percentage POINTS — pct() already appends '%', so "pct(x)+'pp'" printed "+2.1%pp"
 const pp = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + 'pp';
 const sgn = v => (v === null || v === undefined || isNaN(v)) ? 'dim' : (v > 0 ? 'up' : (v < 0 ? 'dn' : 'mut'));
-const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const price = v => v == null ? '–' : (v >= 1000 ? Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })
   : v >= 1 ? Number(v).toFixed(2) : Number(v).toPrecision(3));
 const age = s => s == null ? 'never' : (s < 90 ? Math.round(s) + 's ago'

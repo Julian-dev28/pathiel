@@ -6,25 +6,12 @@
 <title>hermes-trader · news</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/hermes.css" />
+<script defer src="/static/hermes.js"></script>
 
 </head>
 <body>
 <script type="speculationrules">
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
-</script>
-<script>
-// g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
-// inert while typing in a field or holding a modifier
-(function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
-  let armed = 0;
-  addEventListener('keydown', e => {
-    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
-    armed = 0;
-  });
-})();
 </script>
 <div class="masthead">
   <div class="masthead-inner">
@@ -76,7 +63,6 @@
 </div>
 
 <script>
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
 const fmtAgo = ms => {
   if (!ms) return '—';

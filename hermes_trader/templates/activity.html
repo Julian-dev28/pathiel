@@ -6,25 +6,12 @@
 <title>hermes-trader · activity</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/hermes.css" />
+<script defer src="/static/hermes.js"></script>
 
 </head>
 <body>
 <script type="speculationrules">
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
-</script>
-<script>
-// g-then-key tab hops (g d / g a / g n / g p / g t / g y) — app-style keyboard nav,
-// inert while typing in a field or holding a modifier
-(function () {
-  const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
-  let armed = 0;
-  addEventListener('keydown', e => {
-    if (e.target.closest('input,textarea,select') || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === 'g') { armed = Date.now(); return; }
-    if (armed && Date.now() - armed < 900 && map[e.key]) location.href = map[e.key];
-    armed = 0;
-  });
-})();
 </script>
 <div class="masthead">
   <div class="masthead-inner">
@@ -83,7 +70,6 @@
 </div>
 
 <script>
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtTime = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 8); };
 const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
 const fmtDur = ms => {
@@ -101,7 +87,6 @@ const fmtNum = v => {
   if (a >= 1) return v.toFixed(3);
   return v.toFixed(5);
 };
-const fmtPct = n => (n >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
 
 // Readable scalar for any value — no raw JSON, ever.
 function readable(v, depth) {
@@ -588,7 +573,7 @@ async function fullLoad() {
 }
 
 async function pollNew() {
-  if (!newestTs) return fullLoad().catch(() => {});
+  if (!newestTs) return fullLoad().catch(e => reportRefreshFailure('fullLoad', e));
   try {
     const data = await (await fetch('/api/dashboard/activity?limit=100&since=' + (newestTs - 1))).json();
     renderStrip(data.session);
@@ -596,7 +581,7 @@ async function pollNew() {
     for (const e of chrono) ingest(e, true);
     foldAged();
     setMeta();
-  } catch (e) {}
+  } catch (e) { reportRefreshFailure('pollNew', e); }
 }
 
 // book dropdown — scoped to the BOOKS pane only (client-side visibility)
