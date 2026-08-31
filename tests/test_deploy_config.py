@@ -5,9 +5,9 @@ This is the test that would have caught `services/` going missing from a
 3-months-stale Dockerfile (the app grew services/trend_engine and
 after the last deploy-config touch; the Dockerfile never learned about it).
 It works by NOT hardcoding the expected package
-list — it statically scans every import under hermes_trader/, scripts/, and
+list — it statically scans every import under pathia/, scripts/, and
 services/ for `import services.<x>` / `from services.<x> import ...` /
-`from hermes_trader...`, then asserts the Dockerfile actually COPYs each
+`from pathia...`, then asserts the Dockerfile actually COPYs each
 referenced top-level package. Add a new services/<name> package and start
 importing it from the app, and this test fails on the next commit until the
 Dockerfile is updated to match — same mechanism that would have caught the
@@ -38,12 +38,12 @@ CONFIGMAP = ROOT / "k8s" / "configmap.yaml"
 RESTART_SH = ROOT / "scripts" / "restart.sh"
 
 # Directories actually scanned for imports (mirrors what a managed process
-# can reach at runtime). services/hermes_data_api is its own deploy unit —
+# can reach at runtime). services/pathia_data_api is its own deploy unit —
 # own Dockerfile, own Postgres deps, own requirements.txt — and must never
 # be bundled into the main image, so it is excluded from the import scan on
 # purpose: nothing under it should ever be "required" by this Dockerfile.
-SCAN_DIRS = ("hermes_trader", "scripts", "services")
-EXCLUDE_PREFIXES = ("services/hermes_data_api",)
+SCAN_DIRS = ("pathia", "scripts", "services")
+EXCLUDE_PREFIXES = ("services/pathia_data_api",)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -67,14 +67,14 @@ def _dockerfile_copy_sources() -> list[str]:
 
 
 _IMPORT_RE = re.compile(
-    r"^\s*(?:from|import)\s+(hermes_trader|services)(?:\.([a-zA-Z0-9_]+))?"
+    r"^\s*(?:from|import)\s+(pathia|services)(?:\.([a-zA-Z0-9_]+))?"
 )
 
 
 def _imported_top_level_packages() -> set[str]:
     """Every top-level package (or services.<subpackage>) referenced by an
     import statement anywhere under SCAN_DIRS. Returns entries like
-    {"hermes_trader", "services.trend_engine"}."""
+    {"pathia", "services.trend_engine"}."""
     found: set[str] = set()
     for base in SCAN_DIRS:
         base_path = ROOT / base
@@ -93,8 +93,8 @@ def _imported_top_level_packages() -> set[str]:
                 if not m:
                     continue
                 top, sub = m.group(1), m.group(2)
-                if top == "hermes_trader":
-                    found.add("hermes_trader")
+                if top == "pathia":
+                    found.add("pathia")
                 elif top == "services" and sub:
                     found.add(f"services.{sub}")
     return found
@@ -163,12 +163,12 @@ def _k8s_container_names() -> list[str]:
 def test_scan_found_the_known_services_packages():
     """Sanity check on the scanner itself — if this fails, the import scan is
     broken, not the Dockerfile, and every other assertion below is moot."""
-    assert "hermes_trader" in IMPORTED_PACKAGES
+    assert "pathia" in IMPORTED_PACKAGES
     assert "services.trend_engine" in IMPORTED_PACKAGES
 
 
 def test_dockerfile_copies_every_imported_top_level_package():
-    """The regression test: every package hermes_trader/scripts/services
+    """The regression test: every package pathia/scripts/services
     actually imports must have a matching `COPY <pkg>/ <pkg>/` line in the
     Dockerfile. This is what would have caught services/trend_engine being
     entirely absent from the image."""
@@ -176,28 +176,28 @@ def test_dockerfile_copies_every_imported_top_level_package():
     for pkg in sorted(IMPORTED_PACKAGES):
         expected_dir = pkg.replace(".", "/") + "/"
         assert any(c == expected_dir or c.startswith(expected_dir) for c in copies), (
-            f"{pkg!r} is imported under hermes_trader/scripts/services but the "
+            f"{pkg!r} is imported under pathia/scripts/services but the "
             f"Dockerfile has no `COPY {expected_dir}...` line — the built image "
             f"would ship a partial app that fails on first import of {pkg}."
         )
 
 
-def test_dockerfile_does_not_bundle_hermes_data_api():
-    """services/hermes_data_api is its own deploy unit (own Dockerfile, own
+def test_dockerfile_does_not_bundle_pathia_data_api():
+    """services/pathia_data_api is its own deploy unit (own Dockerfile, own
     Postgres deps) — bundling it here would ship dead weight (and its own
     requirements.txt deps, never installed by this Dockerfile, so importing
     it from the main image would fail anyway)."""
     copies = _dockerfile_copy_sources()
-    assert not any("hermes_data_api" in c for c in copies)
+    assert not any("pathia_data_api" in c for c in copies)
 
 
 def test_dockerfile_installs_the_package_before_copying_source():
     """Layer-caching sanity: `pip install -e .` must run before the bulk
-    `COPY hermes_trader/ ...` / `COPY services/...` lines, or every source
+    `COPY pathia/ ...` / `COPY services/...` lines, or every source
     change invalidates the (slow) dependency-install layer."""
     text = _dockerfile_text()
     install_at = text.index("pip install -e .")
-    bulk_copy_at = text.index("COPY hermes_trader/ hermes_trader/")
+    bulk_copy_at = text.index("COPY pathia/ pathia/")
     assert install_at < bulk_copy_at
 
 
@@ -284,7 +284,7 @@ def test_fly_toml_mounts_data_volume_for_state_bearing_processes():
         mount_procs.update(m.get("processes", []))
     fly_processes = set(_fly_processes())
     # web/loop/sched/sampler read or write /data (directly or via
-    # HERMES_STATE_DIR); rotator deliberately does not (see DEPLOY.md
+    # PATHIA_STATE_DIR); rotator deliberately does not (see DEPLOY.md
     # "Runtime state").
     for proc in fly_processes - {"rotator"}:
         assert proc in mount_procs, (

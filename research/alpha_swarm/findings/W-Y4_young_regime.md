@@ -81,7 +81,7 @@ as FAIL (fail-closed: pooled ungated EV is ~0, down-regime EV is -3.3%, so an
 unknown regime forgoes ~nothing and dodges the tail). Crypto arm (zero
 capital) mirrors with BTC 7d, evidence n=12 only.
 
-**Code hook** (`hermes_trader/agents/mover_recorders.py`,
+**Code hook** (`pathia/agents/mover_recorders.py`,
 `record_young_mover_short`): the book already tags `macro_regime` via
 `_macro_regime()` — that tag stays for continuity but is NOT the gate
 (validated useless above). Add:

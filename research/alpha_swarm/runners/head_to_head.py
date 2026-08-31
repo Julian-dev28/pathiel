@@ -6,11 +6,11 @@ import json, sys
 import numpy as np
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from hermes_trader.indicators import triggers as T
-from hermes_trader.agents.config import TRIGGER_CONFIG
-from hermes_trader.models.types import Candle
+from pathia.indicators import triggers as T
+from pathia.agents.config import TRIGGER_CONFIG
+from pathia.models.types import Candle
 
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 d = json.loads((SCR/"movers_dataset.json").read_text())   # v1 (160 coins) for speed
 W=48; FEE=0.0012; wt=TRIGGER_CONFIG["weights"]; th=TRIGGER_CONFIG["thresholds"]
 def mean(xs): return sum(xs)/len(xs) if xs else 0.0

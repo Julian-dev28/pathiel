@@ -5,7 +5,7 @@ the BTC benchmark). Lane W-A4/A2 claimed BTC-beta-RESIDUAL momentum (`ranking="r
 tests better (Sharpe +0.63 vs pct_k +0.30 @H10) and removes a down-beta confound. Settle it.
 
 ## Method (what makes this honest)
-- Imported the **EXACT live scorers** from `hermes_trader/agents/xs_momentum.py`
+- Imported the **EXACT live scorers** from `pathia/agents/xs_momentum.py`
   (`rank_universe`, `zext_score`, `pctk_score`, `residual_score`, `trailing_return`). Bars
   converted to dicts because the live `candle_val()` reads keys/attrs not list indices.
 - Built a **continuous market-neutral L/S DAILY-return series** per ranker. Book decided on

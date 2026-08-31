@@ -3,7 +3,7 @@
 
 This repo's CI was red on every push for weeks while the suite was green
 locally. The cause was 50 files carrying
-`REPO = "/Users/julian_dev/Documents/code/hermes-trader"`. Nothing caught it,
+`REPO = "/Users/julian_dev/Documents/code/pathia"`. Nothing caught it,
 because on the one machine that mattered the path existed.
 
 Deterministic and offline, so it runs as the first CI step: when it fails, the

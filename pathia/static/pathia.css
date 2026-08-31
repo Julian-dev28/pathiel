@@ -1,0 +1,709 @@
+/* ============================================================================
+   pathia — design system
+   ----------------------------------------------------------------------------
+   One stylesheet for all five pages. Previously each template carried its own
+   ~250-line <style> block, so a colour changed in four places and drifted in
+   the fifth.
+
+   The register is a private-bank statement, not a consumer app: paper white,
+   ink black, hairline rules, one navy accent. There are no gradients, no
+   glows, no shadows on content, no decorative motion, and no colour that is
+   not carrying information. Green and red mean money moved; amber means
+   attention; everything else is ink.
+
+   Numbers are the product. Every figure sits on tabular-nums so columns align
+   and a digit changing does not reflow the row.
+
+   Type scale is deliberately larger than a trading terminal's. The reader is
+   40-something with money, reading on a 27-inch display, and 10px type reads
+   as a toy rather than a document.
+   ========================================================================= */
+
+:root{
+  /* Hyperliquid's palette: a green-cast near-black with a mint accent. Dark is
+     the default — this is a trading desk, read at night, and the venue it
+     trades on is dark. Light is the second skin; taken literally on white the
+     mint reads as a crypto app, so it darkens to a deep teal there.
+
+     Dark is unconditional, not a `prefers-color-scheme` default: the OS
+     preference is about documents, and this is an instrument. Light is opt-in
+     via data-theme="light".
+
+     Only tokens are redefined per theme. No rule below this block branches. */
+  --paper:#0a1211;
+  --surface:#0f1a18;
+  --surface-2:#14211f;
+  --ink:#e8efec;
+  --ink-2:#9aaaa5;
+  --ink-3:#6e807b;
+  --rule:#1c2a27;
+  --rule-2:#2b3c38;
+
+  --bar:#060d0c;          /* masthead — a shade under the page */
+  --bar-ink:#ffffff;
+  --bar-ink-2:#93a29d;
+
+  --accent:#4fd1b8;
+  --accent-ink:#7fe6d4;
+  --accent-wash:#0f2622;
+
+  --up:#4fd1b8;
+  --up-wash:#0f2622;
+  --down:#e8756d;
+  --down-wash:#2a1614;
+  --amber:#d0a45c;
+  --amber-wash:#26200f;
+
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  --radius:3px;
+  --gutter:32px;
+  --measure:1220px;
+}
+
+:root[data-theme="light"]{
+  --paper:#ffffff; --surface:#ffffff; --surface-2:#f4f7f6;
+  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#838f8b;
+  --rule:#e2e8e6; --rule-2:#c6d0cd;
+  --bar:#0a1211; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
+  --accent:#0d6b5c; --accent-ink:#085146; --accent-wash:#eaf5f2;
+  --up:#0d6b52; --up-wash:#eaf5f1;
+  --down:#a02b25; --down-wash:#faeeed;
+  --amber:#8a6410; --amber-wash:#faf3e6;
+}
+:root[data-theme="dark"]{
+  --paper:#0a1211;
+  --surface:#0f1a18;
+  --surface-2:#14211f;
+  --ink:#e8efec;
+  --ink-2:#9aaaa5;
+  --ink-3:#6e807b;
+  --rule:#1c2a27;
+  --rule-2:#2b3c38;
+
+  --bar:#060d0c;          /* masthead — a shade under the page */
+  --bar-ink:#ffffff;
+  --bar-ink-2:#93a29d;
+
+  --accent:#4fd1b8;
+  --accent-ink:#7fe6d4;
+  --accent-wash:#0f2622;
+
+  --up:#4fd1b8;
+  --up-wash:#0f2622;
+  --down:#e8756d;
+  --down-wash:#2a1614;
+  --amber:#d0a45c;
+  --amber-wash:#26200f;
+}
+
+/* ── base ─────────────────────────────────────────────────────────────── */
+
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.shell{ max-width:var(--measure); margin:0 auto; padding:0 var(--gutter) 80px; }
+
+/* Composition. A single full-width column for eight sections reads as a
+   scroll of unrelated facts; pairing what is read together — the chart with
+   the risk that frames it, the funnel with what came out of it — gives the
+   page a shape and cuts its length by a third. Collapses to one column under
+   1040px, where side-by-side stops being legible. */
+.row{ display:grid; gap:40px; align-items:start; margin-bottom:44px; }
+.row-2{ grid-template-columns:1fr 1fr; }
+.row-wide{ grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); }
+.row > .section{ margin-bottom:0; }
+@media (max-width:1040px){
+  .row-2,.row-wide{ grid-template-columns:1fr; }
+  .row{ gap:36px; }
+}
+
+a{ color:var(--accent); text-decoration:none; }
+a:hover{ text-decoration:underline; text-underline-offset:2px; }
+
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+
+.mono{ font-family:var(--mono); font-size:.92em; }
+
+/* Every number in the product. Tabular figures keep columns from dancing when
+   a digit changes, which is the difference between a table you can read down
+   and one you have to re-scan. */
+.kv,.ksub,.mono,table,.tk,.v,.n,.pnl,.dv,.cnt{ font-variant-numeric:tabular-nums; }
+
+/* ── masthead ─────────────────────────────────────────────────────────── */
+
+/* Sticky: this page is long, and the nav plus the live status pill are the two
+   things you reach for from the bottom of it. */
+.masthead{
+  background:var(--bar); color:var(--bar-ink); margin-bottom:34px;
+  position:sticky; top:0; z-index:40;
+}
+.masthead-inner{
+  max-width:var(--measure); margin:0 auto;
+  padding:0 var(--gutter);
+  display:flex; align-items:stretch; gap:32px;
+  min-height:60px;
+}
+.brand{
+  display:flex; align-items:center;
+  font-weight:600; font-size:15px; letter-spacing:.2em;
+  color:var(--bar-ink); text-transform:uppercase; white-space:nowrap;
+}
+.brand:hover{ text-decoration:none; color:var(--bar-ink); }
+
+/* Nav marks the current page with a rule under it, not a filled pill. A pill
+   is an app control; a rule is a masthead. */
+nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
+.nav-link{
+  display:flex; align-items:center; padding:0;
+  font-size:13.5px; color:var(--bar-ink-2);
+  border-bottom:2px solid transparent; white-space:nowrap;
+}
+.nav-link:hover{ color:var(--bar-ink); text-decoration:none; }
+.nav-link.on,.nav-link.nav-active{
+  color:var(--bar-ink); border-bottom-color:var(--bar-ink); font-weight:500;
+}
+
+.masthead-right{
+  margin-left:auto; display:flex; align-items:center; gap:16px;
+  color:var(--bar-ink-2); font-size:12.5px;
+}
+.masthead-right .icon-btn{
+  color:var(--bar-ink-2); background:transparent;
+  border-color:rgba(255,255,255,.22);
+}
+.masthead-right .icon-btn:hover{ color:var(--bar-ink); border-color:rgba(255,255,255,.5); }
+.masthead-right .pill{ color:var(--bar-ink-2); }
+.masthead-right .mut{ color:var(--bar-ink-2); }
+
+/* status: a dot and a word. Not a glowing capsule. */
+.pill{
+  display:inline-flex; align-items:center; gap:6px; text-transform:capitalize;
+  font-size:12px; color:var(--ink-2); white-space:nowrap;
+}
+.pill::before{
+  content:""; width:6px; height:6px; border-radius:50%;
+  background:var(--up); flex:none;
+}
+.pill.stale::before{ background:var(--amber); }
+.pill.offline::before{ background:var(--ink-3); }
+.pill.offline{ color:var(--ink-3); }
+
+/* ── page title ───────────────────────────────────────────────────────── */
+
+.page-head{ margin-bottom:26px; }
+.page-title{ font-size:30px; font-weight:600; letter-spacing:-.022em; margin:0; }
+.page-sub{ font-size:14.5px; color:var(--ink-2); margin-top:6px; max-width:70ch; }
+
+/* ── sections ─────────────────────────────────────────────────────────── */
+
+/* A section is a rule and a label, not a box. Boxes everywhere make a page
+   look like a dashboard demo; rules make it look like a document. */
+.section{ margin-bottom:44px; }
+.section-head{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-bottom:10px; margin-bottom:18px;
+  border-bottom:1px solid var(--ink);
+}
+/* A table brings its own header rule. Two stacked rules read as a mistake, so
+   the section rule steps back to a hairline when a table follows it. */
+.section-head:has(+ .scroll-x),
+.section-head:has(+ table),
+.section-head:has(+ .pipe){ border-bottom-color:var(--rule); }
+.sec-label{
+  font-size:10.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); margin:0;
+}
+.section-meta{ margin-left:auto; font-size:12px; color:var(--ink-3); }
+
+/* A quiet panel: hairline, no fill, no shadow, small radius. */
+.card{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:var(--radius);
+  padding:20px;
+}
+.panel,.pane,.panel-wrap{
+  background:var(--surface); border:1px solid var(--rule);
+  border-radius:var(--radius);
+}
+.panel-head,.pane-head{
+  padding:12px 16px; border-bottom:1px solid var(--rule);
+  display:flex; align-items:baseline; gap:10px;
+}
+.panel-body,.pane-flow{ padding:16px; }
+.pane-empty,.empty{ padding:20px 16px; color:var(--ink-3); font-size:13px; }
+.pane-flow > *{ padding:7px 0; font-size:13px; }
+.pane-flow > * + *{ border-top:1px solid var(--rule); }
+
+/* the little colour key beside each pane's name */
+.pm{ width:6px; height:6px; border-radius:1px; background:var(--ink-3); flex:none; }
+.pm-trade{ background:var(--accent); }
+.pm-research{ background:var(--amber); }
+.pm-books{ background:var(--up); }
+.pm-machine,.pm-watcher,.pm-catalysts{ background:var(--ink-3); }
+
+/* ── figures ──────────────────────────────────────────────────────────── */
+
+/* The headline number. One per screen region; large, plain, unmissable. */
+.kv{ font-size:28px; font-weight:450; letter-spacing:-.024em; line-height:1.1; }
+.kv.hero{ font-size:52px; font-weight:400; letter-spacing:-.032em; }
+
+/* Units, not information. The currency symbol and the cents are set lighter
+   and smaller so the eye lands on the magnitude — the convention that
+   separates a finance screen from a generic dashboard. */
+.kv .cur{ color:var(--ink-3); font-size:.62em; font-weight:500;
+          vertical-align:baseline; margin-right:.06em; }
+.kv .dec{ color:var(--ink-3); font-size:.62em; }
+.kv.hero .cur{ margin-right:.08em; }
+.ksub{ font-size:12.5px; color:var(--ink-3); margin-top:5px; }
+.kpi{ min-width:0; }
+.kpi .sec-label{ margin-bottom:6px; }
+
+.stat-row{
+  display:grid; gap:28px 40px;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+}
+
+.up,.pos{ color:var(--up); }
+.dn,.neg{ color:var(--down); }
+.amb{ color:var(--amber); }
+.mut,.dim{ color:var(--ink-3); }
+
+/* ── tables ───────────────────────────────────────────────────────────── */
+
+table{ width:100%; border-collapse:collapse; }
+thead th{
+  font-size:10.5px; font-weight:700; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--ink-3); text-align:left;
+  padding:0 18px 10px 0; border-bottom:1px solid var(--rule-2);
+  white-space:nowrap;
+}
+thead th.num,thead th[class*="text-right"]{ text-align:right; }
+tbody td{
+  padding:12px 18px 12px 0; font-size:13.5px;
+  border-bottom:1px solid var(--rule); vertical-align:top;
+}
+tbody tr:last-child td{ border-bottom:0; }
+tbody tr:hover{ background:var(--surface-2); }
+td.num,td[class*="text-right"]{ text-align:right; }
+.scroll-x{ overflow-x:auto; }
+
+.sortable{ cursor:pointer; user-select:none; }
+.sortable:hover{ color:var(--ink); }
+
+/* ── badges ───────────────────────────────────────────────────────────── */
+
+/* Word-shaped, not pill-shaped. A badge names a state; it should read as a
+   label in a ledger, not a notification. */
+.badge{
+  display:inline-block; padding:2px 7px;
+  font-size:11px; font-weight:500; letter-spacing:.02em;
+  border-radius:2px; border:1px solid var(--rule-2);
+  color:var(--ink-2); background:var(--surface-2);
+  white-space:nowrap;
+}
+.badge.b-live,.badge.b-long,.badge.b-pass{
+  color:var(--up); background:var(--up-wash); border-color:transparent;
+}
+.badge.b-short,.badge.b-fail,.badge.b-breaking{
+  color:var(--down); background:var(--down-wash); border-color:transparent;
+}
+.badge.b-shadow,.badge.b-rec,.badge.b-recorder,.badge.b-off,.badge.b-mut{
+  color:var(--ink-3); background:var(--surface-2);
+}
+.badge.b-chop{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
+
+.chip{
+  display:inline-block; padding:1px 6px; margin:0 4px 4px 0;
+  font-size:11px; border-radius:2px;
+  background:var(--surface-2); border:1px solid var(--rule);
+  color:var(--ink-2);
+}
+.chip-red{ color:var(--down); background:var(--down-wash); border-color:transparent; }
+.chip-green{ color:var(--up); background:var(--up-wash); border-color:transparent; }
+.chip-amber{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
+
+.kind-tag{
+  font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+
+.btn,.icon-btn{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 11px; font-size:12px; font-weight:500;
+  color:var(--ink-2); background:var(--surface);
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+  cursor:pointer;
+}
+.btn:hover,.icon-btn:hover{ color:var(--ink); border-color:var(--ink-3); }
+.btn:disabled,.icon-btn:disabled{ opacity:.5; cursor:default; }
+
+/* The one destructive control on the site. It reads as serious by being
+   plainly labelled and red-outlined — not by shouting in all caps. */
+.btn-danger{
+  color:var(--down); background:var(--surface);
+  border-color:color-mix(in srgb,var(--down) 40%,transparent);
+}
+.btn-danger:hover{ color:#fff; background:var(--down); border-color:var(--down); }
+
+.seg{
+  display:inline-flex; border:1px solid var(--rule-2);
+  border-radius:var(--radius); overflow:hidden;
+}
+.seg > *{ border-right:1px solid var(--rule-2); }
+.seg > *:last-child{ border-right:0; }
+.range-btn,.tab,.fsel{
+  padding:4px 11px; font-size:12px; color:var(--ink-2);
+  background:var(--surface); border:0; cursor:pointer;
+}
+.range-btn:hover,.tab:hover,.fsel:hover{ background:var(--surface-2); color:var(--ink); }
+.range-btn.on,.tab.on,.fsel.on{
+  background:var(--accent-wash); color:var(--accent-ink); font-weight:500;
+}
+
+.tabs{ display:flex; gap:2px; flex-wrap:wrap; }
+
+/* A lane whose data is stale is marked on its own tab, so it is visible from
+   whichever lane you happen to be reading. An amber dot, not a colour change:
+   the tab still has to read as a tab. */
+.tab-stale{ position:relative; }
+.tab-stale::after{
+  content:""; position:absolute; top:5px; right:5px;
+  width:5px; height:5px; border-radius:50%; background:var(--amber);
+}
+
+/* ── disclosure ───────────────────────────────────────────────────────── */
+
+.books-head{
+  display:flex; align-items:center; gap:10px; width:100%;
+  padding:14px 20px; background:transparent; border:0;
+  cursor:pointer; text-align:left; color:inherit;
+}
+.books-head:hover{ background:var(--surface-2); }
+.chev{
+  margin-left:auto; width:8px; height:8px; flex:none;
+  border-right:1.5px solid var(--ink-3); border-bottom:1.5px solid var(--ink-3);
+  transform:rotate(45deg); transition:transform .12s ease;
+}
+[aria-expanded="true"] .chev{ transform:rotate(-135deg); }
+/* `books-open` on the SECTION is what the existing JS toggles (and what it
+   persists to localStorage) — the selector matches the script, not the other
+   way round. */
+/* A quiet "show the rest" control: retired ledgers, folded sections. Reads as
+   a footnote, not a button. */
+.disclose{
+  display:flex; align-items:center; gap:8px; width:100%;
+  margin-top:14px; padding:10px 0;
+  background:transparent; border:0; border-top:1px solid var(--rule);
+  color:var(--ink-3); font-size:12.5px; cursor:pointer; text-align:left;
+}
+.disclose:hover{ color:var(--ink); }
+.disclose .chev{ margin-left:auto; }
+
+.books-wrap{ display:none; border-top:1px solid var(--rule); }
+.books-open .books-wrap{ display:block; }
+.books-flow{ padding:16px 20px; }
+
+/* ── book cards ───────────────────────────────────────────────────────── */
+
+.book-head{
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:4px;
+}
+.book-thesis{ font-size:13px; color:var(--ink-2); margin-bottom:14px; }
+.lg-status{ font-size:12px; color:var(--ink-2); }
+
+/* ── bars + meters ────────────────────────────────────────────────────── */
+
+/* A bar is a measurement, so it is flat and one colour. Rounded, gradient-
+   filled bars read as a game's progress meter. */
+.fn-row,.funnel-row,.heat-row,.tape-row,.reason-row{
+  display:grid; grid-template-columns:150px 1fr auto;
+  align-items:center; gap:12px; padding:5px 0; font-size:13px;
+}
+.fn-lbl,.funnel-label,.reason-n{ color:var(--ink-2); }
+.fn-n,.funnel-n,.cnt{ color:var(--ink); font-variant-numeric:tabular-nums; }
+/* The row's middle cell is the track; whatever sits inside it is the fill.
+   `.fn-bar` carries an inline width% from the script, so it is a FILL — making
+   it the track drew a full-width bar on every row. */
+.fn-row > div,.funnel-bar-wrap,.heat-bar-wrap,.tape-bar-wrap,.bar,.meter{
+  height:6px; background:var(--surface-2); border-radius:1px; overflow:hidden;
+}
+.fn-bar,.funnel-bar,.heat-bar,.fill{
+  height:100%; background:var(--accent); border-radius:1px;
+}
+.tape-bar-buy{ height:100%; background:var(--up); }
+.tape-bar-sell{ height:100%; background:var(--down); }
+.heat-oi{ color:var(--ink-2); }
+.heat-pctile{ color:var(--ink-3); font-size:12px; }
+.tape-net{ font-variant-numeric:tabular-nums; }
+
+.legend{ display:flex; gap:16px; font-size:12px; color:var(--ink-2); flex-wrap:wrap; }
+.leg-dot{ display:inline-block; width:8px; height:8px; border-radius:1px; margin-right:5px; }
+
+/* ── tape / feed ──────────────────────────────────────────────────────── */
+
+/* Recent closes: one row per trade, fields spaced. Rendered as inline spans
+   by the script, so the gap has to come from the row. */
+.tape{ display:flex; flex-direction:column; gap:0; }
+
+/* The session strip is a ROW of figures, not a stack. Each `.kpi` inside it
+   is a value over a label — as a column stack the two ran together and read
+   as "154scans". */
+.strip{
+  display:grid; gap:20px 32px;
+  grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+  padding:20px 0 24px; margin-bottom:28px;
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+}
+.strip .kpi{ display:flex; flex-direction:column; gap:2px; }
+.strip .v{ font-size:20px; font-weight:500; letter-spacing:-.01em;
+           font-variant-numeric:tabular-nums; }
+.strip .v.pos{ color:var(--up); } .strip .v.neg{ color:var(--down); }
+.strip .l{ font-size:11px; font-weight:600; letter-spacing:.08em;
+           text-transform:uppercase; color:var(--ink-3); }
+/* An optional third line: what the figure above it means. */
+.strip .s{ font-size:12px; color:var(--ink-2); }
+/* A cell whose "value" is prose rather than a figure. */
+.strip .v.words{ font-size:15px; font-weight:600; letter-spacing:0;
+                 text-transform:capitalize; line-height:1.25; }
+
+/* Four independent log panes, stacked with air between them. */
+.deck{ display:flex; flex-direction:column; gap:20px; }
+.tp{
+  display:flex; align-items:baseline; gap:14px;
+  padding:9px 0; border-bottom:1px solid var(--rule); font-size:13px;
+}
+.tp:last-child{ border-bottom:0; }
+.tp .c{ font-weight:500; min-width:9ch; }
+.tp .a{ color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.tp .p{ margin-left:auto; font-variant-numeric:tabular-nums; }
+.tp .p.pos{ color:var(--up); }
+.tp .p.neg{ color:var(--down); }
+
+/* refused-by-gate reasons, under the funnel */
+.rs{
+  display:inline-block; margin:8px 8px 0 0; padding:3px 8px;
+  font-size:12px; color:var(--ink-2);
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:2px;
+}
+.rs b{ font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+
+.ev-head{ font-size:13px; font-weight:500; }
+.ev-sub{ font-size:12px; color:var(--ink-2); margin-top:2px; }
+.ev-ts,.pmeta{ font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.ev-body{ font-size:13px; color:var(--ink-2); }
+
+/* The live wire: one line of engine output. Quiet by default — it is
+   ambient, not an alert. */
+#wire{
+  font-family:var(--mono); font-size:12px; color:var(--ink-3);
+  margin:10px 0 0; padding:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* Long model reasoning, clamped to two lines. The full text is one click
+   away; twenty cards each opening with a five-line paragraph is a page nobody
+   scans. `clamp` is set by JS only when the text actually overflows, so short
+   reasoning keeps no affordance. */
+.prose-clamp{
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden;
+}
+.prose-more{
+  display:none; margin-top:1px; padding:0; background:none; border:0;
+  font-size:11.5px; line-height:1.4; color:var(--ink-3); cursor:pointer;
+}
+.prose-more:hover{ color:var(--accent); }
+.prose.is-long .prose-more{ display:inline; }
+.prose.is-open .prose-clamp{ -webkit-line-clamp:unset; }
+
+/* ── citations ────────────────────────────────────────────────────────── */
+
+.cite-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+.cite,.src-link{
+  font-size:12px; color:var(--ink-2);
+  border-bottom:1px solid var(--rule-2); padding-bottom:1px;
+}
+.cite:hover,.src-link:hover{ color:var(--accent); border-color:var(--accent); text-decoration:none; }
+.titles{ font-size:13px; }
+
+/* ── pipeline ─────────────────────────────────────────────────────────── */
+
+/* Numbered steps, read as a table of contents. */
+.pipe{
+  display:grid; gap:0;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  border-top:1px solid var(--rule);
+}
+.pn{ padding:14px 20px 14px 0; border-bottom:1px solid var(--rule); }
+.pn .s{
+  font-size:11px; font-weight:600; color:var(--ink-3);
+  font-variant-numeric:tabular-nums; letter-spacing:.06em;
+}
+.pn .n{ font-size:13px; font-weight:600; margin-top:2px; }
+.pn .d{ font-size:13px; color:var(--ink-2); margin-top:3px; }
+.hiw{ font-size:13px; color:var(--ink-2); margin-top:20px; max-width:70ch; }
+
+/* Explanatory copy, folded. A page that opens with a paragraph of theory
+   makes the reader work before it tells them anything; the explanation is
+   still there, one click down, for the first visit that needs it. */
+.explainer{
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  margin:0 0 28px; padding:0;
+}
+.explainer > summary{
+  list-style:none; cursor:pointer; padding:11px 0;
+  font-size:12.5px; color:var(--ink-3);
+  display:flex; align-items:center; gap:8px;
+}
+.explainer > summary::-webkit-details-marker{ display:none; }
+.explainer > summary::after{
+  content:""; width:7px; height:7px; margin-left:auto;
+  border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg); transition:transform .12s ease;
+}
+.explainer[open] > summary::after{ transform:rotate(-135deg); }
+.explainer > summary:hover{ color:var(--ink); }
+.explainer p{
+  font-size:13.5px; color:var(--ink-2); margin:0 0 10px; max-width:78ch;
+}
+.explainer p:last-child{ margin-bottom:16px; }
+
+/* The playbook card. Its default read is one line per instruction: badge,
+   sentence, nothing else. The evidence under each — the measurement, the
+   trigger, the invalidation — is three more lines per row, and eight rows of
+   that is a wall rather than a briefing, so it sits behind one "Why". */
+.playbook{ padding:18px 20px; }
+.act-head-row{
+  display:flex; align-items:center; gap:12px;
+  padding-bottom:10px; margin-bottom:6px; border-bottom:1px solid var(--rule);
+}
+.act-head-row .icon-btn{ margin-left:auto; }
+.act{ padding:9px 0 9px 12px; border-bottom:1px solid var(--rule); }
+.act:last-child{ border-bottom:0; }
+.act-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.act-do{ font-size:13.5px; font-weight:500; color:var(--ink); }
+/* Which market the instruction applies to. Two rows carry the same sentence
+   for crypto and for xyz, so this is what tells them apart. Set at the end of
+   the line rather than in front of it: the instruction reads first. */
+.act-tag{ margin-left:auto; font-size:11px; color:var(--ink-3);
+          font-variant-numeric:tabular-nums; }
+.why{ display:none; margin-top:6px; }
+.playbook.show-why .why{ display:block; }
+.why-line{ font-size:12px; color:var(--ink-3); margin-top:3px; }
+.why-line .teal{ color:var(--accent); font-weight:600; margin-right:4px; }
+.why-line .dn{ color:var(--down); font-weight:600; margin-right:4px; }
+
+/* ── popover ──────────────────────────────────────────────────────────── */
+
+.pop{
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+  background:var(--surface); color:var(--ink);
+  padding:18px; min-width:320px;
+  box-shadow:0 8px 28px rgba(0,0,0,.10);
+}
+.pop::backdrop{ background:rgba(0,0,0,.18); }
+.pop input{
+  width:100%; padding:7px 9px; font-size:13px;
+  background:var(--paper); color:var(--ink);
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+}
+
+/* ── discreet mode ────────────────────────────────────────────────────── */
+
+/* Every money figure ships as a value span plus a mask span; exactly one is
+   ever visible. The mask must be hidden by DEFAULT — shipping it visible put
+   "$12.94•••" on the page for everyone. */
+.dollar-mask{ display:none; letter-spacing:.1em; color:var(--ink-3); }
+body.discreet .dollar-value{ display:none; }
+body.discreet .dollar-mask{ display:inline; }
+
+/* A value that just changed. One brief wash, no bounce — enough to catch the
+   eye on a moving table, not enough to be a toy. */
+.tick{ animation:tick-wash .9s ease-out; }
+@keyframes tick-wash{ from{ background:var(--accent-wash); } to{ background:transparent; } }
+
+/* ── charts ───────────────────────────────────────────────────────────── */
+
+.chart-wrap{ position:relative; }
+.chart-readout{ font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+
+/* ── loading ──────────────────────────────────────────────────────────── */
+
+/* A panel whose refresh threw. The numbers in it are the last good read, so
+   they stay on screen — but they are marked, because a stale figure presented
+   as current is worse than a gap. */
+.is-stale{ position:relative; }
+.is-stale::after{
+  content:"not updating"; position:absolute; top:0; right:0;
+  font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--amber);
+}
+
+/* A flat grey block. A loading placeholder that sweeps a highlight across
+   itself is the single most consumer-app tell on a page like this. */
+.skeleton{
+  background:var(--surface-2); border-radius:2px;
+  color:transparent; min-height:1em;
+}
+
+/* ── misc holdovers ───────────────────────────────────────────────────── */
+
+.grid2{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+.grid3{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+.span2{ grid-column:span 2; }
+.note{ font-size:12px; color:var(--ink-3); }
+.band{ padding:10px 0; border-bottom:1px solid var(--rule); }
+.ai-box{ border:1px solid var(--rule); border-radius:var(--radius); padding:16px; }
+.ai-head{ font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-2); }
+.ai-nar{ font-size:13px; color:var(--ink-2); margin-top:8px; }
+.setup,.obs,.act{ font-size:13px; }
+.o-badge{ font-size:11px; color:var(--ink-3); }
+.o-manual{ font-size:11px; color:var(--amber); }
+.pnl-cell{ font-variant-numeric:tabular-nums; }
+
+footer.site-foot{
+  margin-top:56px; padding-top:20px; border-top:1px solid var(--rule);
+  font-size:12px; color:var(--ink-3);
+  display:flex; gap:14px; flex-wrap:wrap; align-items:center;
+}
+
+/* ── responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width:720px){
+  :root{ --gutter:18px; }
+  .kv{ font-size:22px; }
+  .kv.hero{ font-size:32px; }
+  .masthead-inner{ flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
+  nav.tabs-main{ order:3; width:100%; margin-left:0; overflow-x:auto; }
+  .fn-row,.funnel-row,.heat-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
+}
+
+/* ── print ────────────────────────────────────────────────────────────── */
+
+/* Someone with this much money will hand a page to an accountant. */
+@media print{
+  .masthead,nav.tabs-main,.btn,.icon-btn,.seg,#wire,footer.site-foot{ display:none !important; }
+  body{ background:#fff; font-size:11pt; }
+  .card,.panel,.pane{ border-color:#ccc; break-inside:avoid; }
+}
+
+/* ── motion ───────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}

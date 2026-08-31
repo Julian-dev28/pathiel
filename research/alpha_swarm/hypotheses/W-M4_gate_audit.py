@@ -33,7 +33,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 LOG = REPO / "logs" / "trading_loop.log"
 SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad")
 CACHE = SCRATCH / "W-M4_movers_1h.json"
 
@@ -130,7 +130,7 @@ def fetch_candles(coins: list[str]) -> dict:
     todo = [c for c in coins if c not in cache]
     if todo:
         sys.path.insert(0, str(REPO))
-        from hermes_trader.client.hl_client import fetch_hl_candles
+        from pathia.client.hl_client import fetch_hl_candles
         for i, coin in enumerate(todo):
             try:
                 cs = fetch_hl_candles(coin, "1h", 450)

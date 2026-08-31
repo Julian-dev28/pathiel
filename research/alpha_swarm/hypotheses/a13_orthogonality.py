@@ -3,7 +3,7 @@
 Is A13 (relative_strength_drawdown: long nearest-50d-high / short deepest-drawdown,
 market-neutral) NEW capacity, or a re-expression of the LIVE xs-momentum book?
 
-LIVE book (from hermes_trader/agents/config_store.py xs_momentum + xs_momentum_live.py):
+LIVE book (from pathia/agents/config_store.py xs_momentum + xs_momentum_live.py):
   ranking = "pct_k"  (pctk_score: percent-location in trailing 14d high/low channel, centered 0)
   k_per_leg = 8, hold_days = 10, zext_window = 14
   vol_gate = True  -> go FLAT in high-BTC-vol regime (short=14 vs trailing 90d median)

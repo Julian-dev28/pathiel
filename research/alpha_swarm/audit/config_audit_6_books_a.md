@@ -34,7 +34,7 @@ equity-frac branch entirely.
 
 ## Block: xs_momentum (LIVE momentum rebalancer — FIRES, short leg blocked)
 
-Engine: hermes_trader/agents/xs_momentum_live.py. Rebalances every hold_days.
+Engine: pathia/agents/xs_momentum_live.py. Rebalances every hold_days.
 Last live rebalance 2026-06-26 21:26 UTC: `target 4L/4S; open 4L+4S, close 0`.
 The 4 shorts were ALL blocked by the executor $50M short floor (ENA/NEAR/TAO/kPEPE, thin markets).
 `.xs_momentum_positions.json` currently `{"longs": [], "shorts": []}`.
@@ -69,7 +69,7 @@ short floor for this book (validate first) or accept it is a long-only momentum 
 
 ## Block: extreme_fade (LONG-after-crash overlay — FIRES daily, blocked by long volume floor)
 
-Engine: hermes_trader/agents/extreme_fade.py + extreme_fade_live.py. Signal module reads `crash_pct`
+Engine: pathia/agents/extreme_fade.py + extreme_fade_live.py. Signal module reads `crash_pct`
 at extreme_fade.py:56.
 
 | key | value | read at | controls | verdict |
@@ -88,7 +88,7 @@ KEEP enabled but understand it rarely clears the floor on the micro-cap crashes 
 
 ## Block: rally_exhaustion (SHORT — FIRES, mostly signals=0, btc-gated)
 
-Engine: hermes_trader/agents/rally_exhaustion_live.py. Reads its sub-block via `cfg = config.get("rally_exhaustion")`.
+Engine: pathia/agents/rally_exhaustion_live.py. Reads its sub-block via `cfg = config.get("rally_exhaustion")`.
 
 | key | value | read at | controls | verdict |
 |-----|-------|---------|----------|---------|

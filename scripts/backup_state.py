@@ -17,9 +17,9 @@ that justified it, and there is no way to re-derive it after the fact.
 
 Where it goes
 -------------
-Outside the repo by default (~/hermes-backups), because the most likely way to
+Outside the repo by default (~/pathia-backups), because the most likely way to
 lose the state is to lose the directory it sits in. Override with
-HERMES_BACKUP_DIR.
+PATHIA_BACKUP_DIR.
 
 What it never contains
 ----------------------
@@ -45,8 +45,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _state_env
 _state_env.load_env_local(ROOT)
 STATE_DIR = _state_env.state_dir(ROOT)
-BACKUP_DIR = os.environ.get("HERMES_BACKUP_DIR") or os.path.expanduser("~/hermes-backups")
-KEEP = int(os.environ.get("HERMES_BACKUP_KEEP", "14"))
+BACKUP_DIR = os.environ.get("PATHIA_BACKUP_DIR") or os.path.expanduser("~/pathia-backups")
+KEEP = int(os.environ.get("PATHIA_BACKUP_KEEP", "14"))
 RECEIPT = os.path.join(STATE_DIR, "backup.json")
 
 # Relative to ROOT. Missing entries are reported, never fatal — a fresh install
@@ -127,7 +127,7 @@ def prune(backup_dir: str, keep: int, now: Optional[float] = None) -> List[str]:
         return []
     try:
         entries = [os.path.join(backup_dir, f) for f in os.listdir(backup_dir)
-                   if f.startswith("hermes-state-") and f.endswith(".tar.gz")]
+                   if f.startswith("pathia-state-") and f.endswith(".tar.gz")]
     except FileNotFoundError:
         return []
     entries.sort(key=os.path.getmtime, reverse=True)
@@ -167,7 +167,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    archive = os.path.join(args.dest, f"hermes-state-{stamp}.tar.gz")
+    archive = os.path.join(args.dest, f"pathia-state-{stamp}.tar.gz")
     print(f"[backup] {len(files)} files, {total / 1e6:.1f}MB -> {archive}")
     if args.dry_run:
         return 0

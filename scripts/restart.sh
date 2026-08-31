@@ -14,15 +14,15 @@
 #
 # Four processes are managed:
 #   1. Trading loop  — scripts/trading_loop.py        (continuous scan→trade)
-#   2. API server    — python -m hermes_trader.server (FastAPI dashboard on HERMES_PORT, default 8000)
+#   2. API server    — python -m pathia.server (FastAPI dashboard on PATHIA_PORT, default 8000)
 #   3. Scheduler     — scripts/scheduler.py            (cron replacement; cron+launchd are TCC-blocked)
 #   4. Log rotator   — scripts/log_rotate.py --daemon  (see docs/LOGGING.md — every process here
 #                       logs via `nohup ... >> file 2>&1`, an append fd the process never reopens,
 #                       so rotation has to run externally, on an interval, for the whole time the
 #                       box is up — not just at restart.sh invocation time)
 #
-# The MCP server (scripts/hermes-mcp-server.py) is intentionally NOT managed
-# here — it's a transient stdio process respawned by Hermes Agent on each
+# The MCP server (scripts/pathia-mcp-server.py) is intentionally NOT managed
+# here — it's a transient stdio process respawned by Pathia Agent on each
 # tool call.
 
 set -euo pipefail
@@ -35,9 +35,9 @@ cd "$ROOT"
 
 # Prefer the project venv interpreter (it has the full dep set incl.
 # prometheus_client + the hyperliquid stack). Bare `python3` on PATH was a
-# different interpreter missing server deps. Override with HERMES_PY if needed.
-if [[ -n "${HERMES_PY:-}" ]]; then
-  PY="$HERMES_PY"
+# different interpreter missing server deps. Override with PATHIA_PY if needed.
+if [[ -n "${PATHIA_PY:-}" ]]; then
+  PY="$PATHIA_PY"
 elif [[ -x "$ROOT/.venv/bin/python" ]]; then
   PY="$ROOT/.venv/bin/python"
 else
@@ -51,7 +51,7 @@ LOOP_LOG="$LOG_DIR/trading_loop.log"
 SERVER_LOG="$LOG_DIR/server.log"
 SCHED_LOG="$LOG_DIR/scheduler.log"
 LOOP_PATTERN="scripts/trading_loop.py"
-SERVER_PATTERN="hermes_trader.server"
+SERVER_PATTERN="pathia.server"
 SCHED_PATTERN="scripts/scheduler.py"
 ROTATOR_LOG="$LOG_DIR/log_rotate.log"
 ROTATOR_PATTERN="log_rotate\.py --daemon"
@@ -77,18 +77,18 @@ err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 # `stoploop` as a kill switch — the one control that has to work. So every
 # stop-and-stay-stopped action records its component here, and every start
 # clears it. The marker is the operator's intent; the supervisor obeys it.
-# Must match STATE_DIR in scripts/supervise_processes.py — HERMES_STATE_DIR,
+# Must match STATE_DIR in scripts/supervise_processes.py — PATHIA_STATE_DIR,
 # else the project root. A halt marker written where the supervisor does not
 # look is a kill switch that silently does nothing, which is exactly what
-# happened: .env.local carries HERMES_STATE_DIR and this script never read it,
+# happened: .env.local carries PATHIA_STATE_DIR and this script never read it,
 # so `stoploop` wrote the marker to the repo root while the supervisor — run by
 # the scheduler, which does load the env — looked in .state/ and restarted the
 # loop two minutes later.
-if [[ -z "${HERMES_STATE_DIR:-}" && -f "$ROOT/.env.local" ]]; then
-  HERMES_STATE_DIR="$(grep -E '^HERMES_STATE_DIR=' "$ROOT/.env.local" | tail -1 | cut -d= -f2-)"
-  export HERMES_STATE_DIR
+if [[ -z "${PATHIA_STATE_DIR:-}" && -f "$ROOT/.env.local" ]]; then
+  PATHIA_STATE_DIR="$(grep -E '^PATHIA_STATE_DIR=' "$ROOT/.env.local" | tail -1 | cut -d= -f2-)"
+  export PATHIA_STATE_DIR
 fi
-HALT_FILE="${HERMES_STATE_DIR:-$ROOT}/supervisor_halt.json"
+HALT_FILE="${PATHIA_STATE_DIR:-$ROOT}/supervisor_halt.json"
 
 halt_mark() {   # halt_mark <component>
   mkdir -p "$(dirname "$HALT_FILE")"
@@ -188,8 +188,8 @@ start_loop() {
     return 0
   fi
   info "starting trading loop (log: $LOOP_LOG)"
-  HERMES_STARTUP_GRACE_S="${HERMES_STARTUP_GRACE_S:-12}" \
-  HERMES_META_PREWARM_TIMEOUT_S="${HERMES_META_PREWARM_TIMEOUT_S:-3}" \
+  PATHIA_STARTUP_GRACE_S="${PATHIA_STARTUP_GRACE_S:-12}" \
+  PATHIA_META_PREWARM_TIMEOUT_S="${PATHIA_META_PREWARM_TIMEOUT_S:-3}" \
     nohup "$PY" "$ROOT/scripts/trading_loop.py" >> "$LOOP_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
@@ -222,16 +222,16 @@ start_server() {
     warn "server already running (pids: $pids) — skipping"
     return 0
   fi
-  local port="${HERMES_PORT:-8000}"
+  local port="${PATHIA_PORT:-8000}"
   info "starting FastAPI server on port $port (log: $SERVER_LOG)"
   # Dashboard shares the IP with the trading loop; HL rate-limits per-IP. Give the
   # server a HARD-throttled token bucket (~1/4 budget) so its background polls yield
   # to the loop's fetches — cuts the chronic ~24% /info 429 collisions. The loop keeps
   # its full budget (it's the money path). Tunable: bump if the dashboard feels sluggish.
-  nohup env HERMES_STATE_READONLY=1 \
-    HERMES_HL_RATE_REFILL_PER_SEC="${HERMES_SERVER_RATE_REFILL:-2}" \
-    HERMES_HL_RATE_CAPACITY="${HERMES_SERVER_RATE_CAPACITY:-60}" \
-    "$PY" -m hermes_trader.server >> "$SERVER_LOG" 2>&1 &
+  nohup env PATHIA_STATE_READONLY=1 \
+    PATHIA_HL_RATE_REFILL_PER_SEC="${PATHIA_SERVER_RATE_REFILL:-2}" \
+    PATHIA_HL_RATE_CAPACITY="${PATHIA_SERVER_RATE_CAPACITY:-60}" \
+    "$PY" -m pathia.server >> "$SERVER_LOG" 2>&1 &
   local pid=$!
   disown "$pid" 2>/dev/null || true
   sleep 2
@@ -313,7 +313,7 @@ start_rotator() {
   fi
   info "starting log rotator (log: $ROTATOR_LOG)"
   # Every process above logs via shell `>>` append redirection — an fd none
-  # of them ever reopens (see hermes_trader/log_setup.py). Rotation has to
+  # of them ever reopens (see pathia/log_setup.py). Rotation has to
   # run externally, on its own clock, for as long as the box is up; it
   # cannot be a one-shot step at restart.sh invocation time, since a process
   # can run for days between restarts. This mirrors the caffeinate
@@ -333,7 +333,7 @@ start_rotator() {
 # Refuse to (re)start processes when free disk is critically low, and (for
 # every action except a pure `status` read) run one immediate rotation pass
 # so a long-since-oversized logs/ doesn't have to wait for the daemon's next
-# tick. `HERMES_SKIP_DISK_GUARD=1` overrides the refusal for a deliberate
+# tick. `PATHIA_SKIP_DISK_GUARD=1` overrides the refusal for a deliberate
 # emergency start (e.g. restarting just to free a wedged process while disk
 # cleanup happens by hand); it never skips the rotation pass itself.
 run_disk_guard() {
@@ -347,12 +347,12 @@ run_disk_guard() {
   out="$("$PY" "$ROOT/scripts/log_rotate.py" --guard 2>&1)" && rc=0 || rc=$?
   if [[ $rc -ne 0 ]]; then
     err "DISK GUARD: $out"
-    if [[ "$enforce" == "1" && "${HERMES_SKIP_DISK_GUARD:-0}" != "1" ]]; then
+    if [[ "$enforce" == "1" && "${PATHIA_SKIP_DISK_GUARD:-0}" != "1" ]]; then
       err "refusing to start — free disk below critical threshold."
-      err "free up space, or set HERMES_SKIP_DISK_GUARD=1 to override and start anyway."
+      err "free up space, or set PATHIA_SKIP_DISK_GUARD=1 to override and start anyway."
       exit 1
     else
-      warn "DISK GUARD tripped but not blocking ($([[ "$enforce" == "1" ]] && echo "HERMES_SKIP_DISK_GUARD=1 set" || echo "action does not start processes"))"
+      warn "DISK GUARD tripped but not blocking ($([[ "$enforce" == "1" ]] && echo "PATHIA_SKIP_DISK_GUARD=1 set" || echo "action does not start processes"))"
     fi
   elif [[ "$out" == *WARN:* ]]; then
     warn "$out"

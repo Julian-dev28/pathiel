@@ -13,7 +13,7 @@
       "evidence": ["K03 direct text", "K10 direct text", "K05/K01 article-quoted model stages (distribution band, capitulation, macro base)"],
       "confidence": "high",
       "can_be_quantified": "partially",
-      "possible_definition": "state machine over 4h/1d bars: TREND_UP/DOWN, RANGE, BREAKOUT_*_CANDIDATE, ACCUMULATION/REDISTRIBUTION_CANDIDATE via ADX level+slope, EMA slopes, range width/ATR, boundary touches (implemented in hermes_trader/indicators/range_structure.py)",
+      "possible_definition": "state machine over 4h/1d bars: TREND_UP/DOWN, RANGE, BREAKOUT_*_CANDIDATE, ACCUMULATION/REDISTRIBUTION_CANDIDATE via ADX level+slope, EMA slopes, range width/ATR, boundary touches (implemented in pathia/indicators/range_structure.py)",
       "lookahead_risk": "HIGH in his usage: 'redistribution' vs 'accumulation' is only knowable after resolution; any honest implementation must use _CANDIDATE labels from trailing data only",
       "implementation_risk": "state thresholds are free parameters; regime labels are regime-fit magnets"
     },

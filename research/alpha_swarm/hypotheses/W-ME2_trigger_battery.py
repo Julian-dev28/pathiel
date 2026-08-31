@@ -38,9 +38,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from hermes_trader.agents.config import get_config          # noqa: E402
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
-from hermes_trader.indicators import triggers as T           # noqa: E402
+from pathia.agents.config import get_config          # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.indicators import triggers as T           # noqa: E402
 
 TH = get_config()["thresholds"]
 COINS = ("BTC", "ETH", "SOL", "BNB", "XRP")

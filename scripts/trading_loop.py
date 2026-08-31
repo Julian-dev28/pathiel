@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Continuous trading loop for hermes-trader.
+"""Continuous trading loop for pathia.
 
 Per cycle: scan the universe, run every live book, review open positions, and
 manage exits. ENTRIES COME FROM BOOKS ONLY — the discretionary
@@ -18,7 +18,7 @@ backs the /activity feed and the decision funnel.
 Flags (tolerant — unknown flags are ignored so legacy callers keep working):
   --env {prod,dev}  Currently informational; loaded from .env.local in CWD.
   --daemon          Currently informational; the loop already daemonizes via
-                    `nohup ... &` / Hermes background. Kept for skill scripts.
+                    `nohup ... &` / Pathia background. Kept for skill scripts.
 """
 import argparse
 import math
@@ -52,22 +52,22 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from hermes_trader.agents.perception import (scan_once, _fetch_candles_sync,
+from pathia.agents.perception import (scan_once, _fetch_candles_sync,
                                              last_scan_integrity as _last_scan_integrity,
                                              scan_is_trustworthy as _scan_is_trustworthy)
-from hermes_trader.agents.risk_gates import book_block_event as _book_block_event
-from hermes_trader.agents.risk_gates import books_bypass_ai as _books_bypass_ai
-from hermes_trader.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
-from hermes_trader.agents.ta_filter import analyze_perception
-from hermes_trader.agents.research import research
-from hermes_trader.agents.data_logger import maybe_log as _data_logger_maybe_log
-from hermes_trader.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
-from hermes_trader.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
-from hermes_trader.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
-from hermes_trader.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
-from hermes_trader.agents.unlock_recorder import maybe_record as _unlock_maybe_record
-from hermes_trader.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
-from hermes_trader.agents.executor import (
+from pathia.agents.risk_gates import book_block_event as _book_block_event
+from pathia.agents.risk_gates import books_bypass_ai as _books_bypass_ai
+from pathia.agents.risk_gates import effective_daily_loss_limit as _effective_daily_loss_limit
+from pathia.agents.ta_filter import analyze_perception
+from pathia.agents.research import research
+from pathia.agents.data_logger import maybe_log as _data_logger_maybe_log
+from pathia.agents.social_trending_recorder import maybe_record as _social_trending_maybe_record
+from pathia.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
+from pathia.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
+from pathia.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
+from pathia.agents.unlock_recorder import maybe_record as _unlock_maybe_record
+from pathia.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
+from pathia.agents.executor import (
     min_tradable_equity as _min_tradable_equity,
     _runner_entry_block_reason,
     close_position_market,
@@ -76,9 +76,9 @@ from hermes_trader.agents.executor import (
     record_external_position_close,
     route_verdict,
 )
-from hermes_trader.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
-from hermes_trader.agents import universe as _universe
-from hermes_trader.agents.config import get_config
+from pathia.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
+from pathia.agents import universe as _universe
+from pathia.agents.config import get_config
 
 
 
@@ -147,13 +147,13 @@ def _book_execute(analysis):
     except Exception:
         pass
     return result
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.agents.memory import memory
-from hermes_trader.client.exchange import get_all_hl_mids, prewarm_meta_cache
-from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, missing_material_dexes, resolve_user_address
-from hermes_trader.positions_snapshot import write_snapshot
-from hermes_trader.session_log import append as log_event
+from pathia.agents.config_store import read_agent_config
+from pathia.agents.memory import memory
+from pathia.client.exchange import get_all_hl_mids, prewarm_meta_cache
+from pathia.client.universe import get_universe
+from pathia.client.hl_client import fetch_account_state, fetch_aggregate_contributions_since, missing_material_dexes, resolve_user_address
+from pathia.positions_snapshot import write_snapshot
+from pathia.session_log import append as log_event
 
 logger = logging.getLogger(__name__)
 
@@ -168,12 +168,12 @@ def _remaining_minutes(ms_remaining: float) -> int:
 # load / prewarm) where the watchdog wasn't armed yet, so it stayed hung ~58min.
 # Arm it before any network call so BOTH a startup hang and a mid-scan hang
 # self-heal via re-exec. `_last_progress_ts` is bumped after each completed scan
-# cycle; if it goes stale > HERMES_WATCHDOG_TIMEOUT_S (default 600s, generous so
+# cycle; if it goes stale > PATHIA_WATCHDOG_TIMEOUT_S (default 600s, generous so
 # a slow-but-progressing scan isn't killed) the process re-execs (startup
 # rehydrates trackers from disk; the stacking backstop prevents a re-entry
 # pyramid). A persistent DNS outage just re-execs every ~600s until it clears.
 _last_progress_ts = time.time()
-_watchdog_timeout_s = int(os.environ.get('HERMES_WATCHDOG_TIMEOUT_S', '600'))
+_watchdog_timeout_s = int(os.environ.get('PATHIA_WATCHDOG_TIMEOUT_S', '600'))
 
 
 def _watchdog() -> None:
@@ -194,7 +194,7 @@ def _watchdog() -> None:
             os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
-threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
+threading.Thread(target=_watchdog, name="pathia-watchdog", daemon=True).start()
 logger.info(f"[watchdog] armed pre-startup: re-exec if no progress for {_watchdog_timeout_s}s")
 
 
@@ -209,7 +209,7 @@ logger.info(f"[watchdog] armed pre-startup: re-exec if no progress for {_watchdo
 # all the logic — the halt marker so `restart.sh stop` still wins, the
 # crash-loop cap, the pgrep detector — so this is a subprocess call, not a
 # second implementation. Failure here is logged and never touches trading.
-_SUPERVISE_SCHED_S = int(os.environ.get("HERMES_SUPERVISE_SCHEDULER_S", "120"))
+_SUPERVISE_SCHED_S = int(os.environ.get("PATHIA_SUPERVISE_SCHEDULER_S", "120"))
 
 
 def _supervise_scheduler() -> None:
@@ -230,11 +230,11 @@ def _supervise_scheduler() -> None:
 
 
 if _SUPERVISE_SCHED_S > 0:
-    threading.Thread(target=_supervise_scheduler, name="hermes-supervise-sched",
+    threading.Thread(target=_supervise_scheduler, name="pathia-supervise-sched",
                      daemon=True).start()
     logger.info(f"[supervise] watching the scheduler every {_SUPERVISE_SCHED_S}s")
 
-logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
+logger.info("=== PATHIA TRADER - Starting Continuous Trading Loop ===")
 
 config = get_config()
 startup_agent_config = read_agent_config()
@@ -270,7 +270,7 @@ def _prewarm_meta_cache_bounded(timeout_s: float) -> None:
         finally:
             state["done"] = True
 
-    t = threading.Thread(target=_run, name="hermes-meta-prewarm", daemon=True)
+    t = threading.Thread(target=_run, name="pathia-meta-prewarm", daemon=True)
     t.start()
     t.join(timeout_s)
     if t.is_alive():
@@ -281,14 +281,14 @@ def _prewarm_meta_cache_bounded(timeout_s: float) -> None:
         logger.warning(f"[startup] meta prewarm failed (will warm lazily): {state['error']}")
 
 
-_prewarm_meta_cache_bounded(float(os.environ.get('HERMES_META_PREWARM_TIMEOUT_S', '3')))
+_prewarm_meta_cache_bounded(float(os.environ.get('PATHIA_META_PREWARM_TIMEOUT_S', '3')))
 # The universe carries prevDayPx / dayNtlVlm / funding which DRIFT over the
 # day; fetched once here they'd freeze at loop-start for the whole process,
 # so mover-selection + volume-ranking would rank stale 24h windows (a coin
 # ripping now would never enter the movers slot). Re-fetch on a TTL so those
 # fields track the live market. metaAndAssetCtxs is ~20 weight (+~8 POSTs for
 # HIP-3) — trivial against HL's 1200 weight/min. Env-overridable; 0 disables.
-universe_refresh_s = int(os.environ.get('HERMES_UNIVERSE_REFRESH_S', '1800'))
+universe_refresh_s = int(os.environ.get('PATHIA_UNIVERSE_REFRESH_S', '1800'))
 _last_universe_refresh = time.time()
 memory.load()  # hydrate from .agent-memory.json so cache + flush work.
 try:
@@ -305,14 +305,14 @@ except Exception as _claim_exc:
 # ~30% scan data-gaps for ~2min, loop stalled). Pause so the rate-limiter bucket
 # refills before the first scan fires its full candle burst. Env-overridable;
 # 0 disables. Cheap one-time cost; steady-state scans are unaffected.
-_startup_grace_s = float(os.environ.get('HERMES_STARTUP_GRACE_S', '12'))
+_startup_grace_s = float(os.environ.get('PATHIA_STARTUP_GRACE_S', '12'))
 if _startup_grace_s > 0:
     logger.info(f"[startup] grace delay {_startup_grace_s:.0f}s — letting HL rate budget refill before the first cold scan")
     time.sleep(_startup_grace_s)
 
 # Scan cadence: env-overridable, default 60s. Keep it above the candle cache
 # TTL (config.scan.cacheTtlMs) so every scan reads a fresh candle snapshot.
-scan_interval = int(os.environ.get('HERMES_SCAN_INTERVAL', '60'))
+scan_interval = int(os.environ.get('PATHIA_SCAN_INTERVAL', '60'))
 min_score = config['scan']['minCompositeScore']
 
 logger.info(f"Scan interval: {scan_interval}s, Min score: {min_score}")
@@ -685,7 +685,7 @@ while True:
 
         # Refresh the universe on a TTL so prevDayPx / dayNtlVlm / funding track
         # the live market instead of freezing at loop-start (stale fields make
-        # the scanner rank yesterday's movers — see HERMES_UNIVERSE_REFRESH_S).
+        # the scanner rank yesterday's movers — see PATHIA_UNIVERSE_REFRESH_S).
         if universe_refresh_s > 0 and (time.time() - _last_universe_refresh) >= universe_refresh_s:
             try:
                 universe = get_universe(force_refresh=True, include_hip3=_enable_hip3)
@@ -699,7 +699,7 @@ while True:
         # later. Piggybacks the universe already in hand (no extra API call), throttled +
         # size-capped, wrapped so it can never break the scan.
         try:
-            from hermes_trader.agents.oi_logger import append_oi
+            from pathia.agents.oi_logger import append_oi
             append_oi(universe)
         except Exception as _oie:
             logger.debug(f"[oi-logger] append failed (non-fatal): {_oie}")
@@ -857,7 +857,7 @@ while True:
                 # protect an infant position; only the AI's second-guess waits.
                 min_hold_min = float(_cfg_cd.get("min_ai_close_hold_min", 0) or 0)
                 if min_hold_min > 0:
-                    from hermes_trader.agents import dsl_exit as _dsl
+                    from pathia.agents import dsl_exit as _dsl
                     _tr = (_dsl._active_positions.get(f"{coin}_long")
                            or _dsl._active_positions.get(f"{coin}_short"))
                     if _tr is not None:

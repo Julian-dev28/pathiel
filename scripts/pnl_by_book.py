@@ -20,7 +20,7 @@ DATA SOURCES
 1. Hyperliquid fills:  /info userFillsByTime (paginated; 2000-row cap, advance by
    last fill time). Each fill: {coin, dir, px, sz, closedPnl, fee, time, tid, ...}.
    Realized PnL for a closing fill = closedPnl; net = closedPnl - fee.
-2. Session log (~/.hermes-trader-session-log.jsonl): per-book "open footprints".
+2. Session log (~/.pathia-session-log.jsonl): per-book "open footprints".
    The live books all route their opens through the SAME executor (execute_fn) as
    the main engine, so an Open fill alone can NOT tell you which book opened it.
    Attribution therefore JOINS each position's open-time against the book's own
@@ -64,7 +64,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 REPO = str(Path(__file__).resolve().parents[1])
 ENV_FILE = os.path.join(REPO, ".env.local")
-SESSION_LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
+SESSION_LOG = os.path.expanduser("~/.pathia-session-log.jsonl")
 LOOP_LOG = os.path.join(REPO, "logs", "trading_loop.log")
 
 MATCH_WINDOW_MS = 15 * 60 * 1000   # +/-15 min coin+time join tolerance
@@ -94,10 +94,10 @@ BOOK_PRIORITY = (
     "external_alpha",
 )
 
-# "2026-06-27 08:07:01,658 INFO:hermes_trader.agents.rally_exhaustion_live:[rally-exhaustion] LIVE opened short XPL ..."
+# "2026-06-27 08:07:01,658 INFO:pathia.agents.rally_exhaustion_live:[rally-exhaustion] LIVE opened short XPL ..."
 OPEN_LINE_RE = re.compile(
     r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3}) "
-    r"INFO:hermes_trader\.agents\.([A-Za-z0-9_]+):\[[^\]]+\] "
+    r"INFO:pathia\.agents\.([A-Za-z0-9_]+):\[[^\]]+\] "
     r"LIVE opened (long|short) (\S+)"
 )
 
@@ -116,7 +116,7 @@ def load_env() -> None:
 
 def fetch_all_fills(since_ms: int) -> List[Dict[str, Any]]:
     """Paginate userFillsByTime forward (2000-row cap) until caught up to now."""
-    from hermes_trader.client.hl_client import resolve_user_address, _http_post
+    from pathia.client.hl_client import resolve_user_address, _http_post
     addr = resolve_user_address()
     out: List[Dict[str, Any]] = []
     seen = set()
@@ -203,7 +203,7 @@ _MODULE_BOOK_ALIASES = {"xs_xyz": "xs_xyz_equities"}
 
 
 def _log_module_to_book(mod: str) -> str:
-    """hermes_trader.agents.<mod> logger name -> book name (strip the _live suffix)."""
+    """pathia.agents.<mod> logger name -> book name (strip the _live suffix)."""
     base = mod[:-5] if mod.endswith("_live") else mod
     return _MODULE_BOOK_ALIASES.get(base, base)
 

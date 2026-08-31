@@ -150,7 +150,7 @@ independent of the pluggable research brain.
 Turn the brain into a small strategy chosen by config/env. Suggested shape (adapt to
 the codebase's conventions):
 
-- New module `hermes_trader/agents/ai_brain.py` with a trivial contract:
+- New module `pathia/agents/ai_brain.py` with a trivial contract:
   `complete(system_prompt: str, user_message: str) -> str` (returns `""` on any
   failure). Implementations: `OpenRouterBrain` (move the current
   `_async_do_call`/402 logic here verbatim), `ClaudeCliBrain`, `CodexCliBrain`.
@@ -220,7 +220,7 @@ $USER_MESSAGE" | codex exec -   # final message → stdout
 
 ## 4. Option 3 — MCP server as the autonomous engine (bigger; after 1–3)
 
-The MCP server (`scripts/hermes-mcp-server.py`, `tool_handlers` at `:1118`, 100 tools
+The MCP server (`scripts/pathia-mcp-server.py`, `tool_handlers` at `:1118`, 100 tools
 = 52 real + 48 honest stubs) already exposes the whole pipeline: `handle_scan`
 (`:882`), `handle_research` (`:963`), `handle_execute` (`:1007`),
 `handle_close_position` (`:1257`), `state`, `market_*`, `whale_index`, etc. An external
@@ -351,10 +351,10 @@ path — and because `monitor_exits` runs in the same cycle, a slow research pha
   but be careful).
 
 ## 9. Environment, run & gotchas
-- Repo `/Users/julian_dev/Documents/code/hermes-trader`, branch `able`; release by
+- Repo `/Users/julian_dev/Documents/code/pathia`, branch `able`; release by
   fast-forwarding `able` → `main`.
 - Python venv `.venv/bin/python`. Loop `scripts/trading_loop.py`; dashboard
-  `hermes_trader.server` :8000; restart via `scripts/restart.sh`.
+  `pathia.server` :8000; restart via `scripts/restart.sh`.
 - `.agent-config.json` (repo root) is **hot-read per-trade** (config changes are
   instant); **code changes need a restart**. Make the provider selector config/env so
   switching/reverting is hot.

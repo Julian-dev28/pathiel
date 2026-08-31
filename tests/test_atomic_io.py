@@ -20,7 +20,7 @@ import textwrap
 
 import pytest
 
-from hermes_trader.agents.atomic_io import (append_json_line, append_line,
+from pathia.agents.atomic_io import (append_json_line, append_line,
                                             read_json, write_json_atomic)
 
 
@@ -89,8 +89,8 @@ def test_a_process_killed_mid_write_leaves_the_old_state_intact(tmp_path):
         import os, sys, time
         sys.path.insert(0, {str(tmp_path.parents[-1])!r})
         sys.path.insert(0, {os.getcwd()!r})
-        from hermes_trader.agents.atomic_io import write_json_atomic
-        import hermes_trader.agents.atomic_io as aio
+        from pathia.agents.atomic_io import write_json_atomic
+        import pathia.agents.atomic_io as aio
         # die between the temp write and the rename — the exact window that
         # destroys state with a truncating writer
         real = os.replace
@@ -132,7 +132,7 @@ def test_directories_are_created_on_demand(tmp_path):
 def test_the_claims_registry_writes_atomically(tmp_path):
     """A torn claims file drops every claim, and a dropped claim is two books
     opening the same coin."""
-    from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+    from pathia.agents.rebalancer_owned import ClaimsRegistry
     p = str(tmp_path / "claims.json")
     cr = ClaimsRegistry(p, active_books={"book_a"}).load()
     cr.claim("BTC", "book_a")
@@ -146,9 +146,9 @@ def test_the_state_writers_no_longer_truncate_before_writing():
     where a torn write has a named, specific consequence."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
-    for rel in ("hermes_trader/agents/rebalancer_owned.py",
-                "hermes_trader/agents/shadow_ledger.py",
-                "hermes_trader/agents/capital_flows.py"):
+    for rel in ("pathia/agents/rebalancer_owned.py",
+                "pathia/agents/shadow_ledger.py",
+                "pathia/agents/capital_flows.py"):
         src = (root / rel).read_text()
         assert 'open(self._path, "w")' not in src, rel
         assert 'atomic_io' in src, f"{rel} stopped using the safe writer"

@@ -28,7 +28,7 @@ from pathlib import Path
 _REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, _REPO)
 
-from hermes_trader.client.hl_client import (  # noqa: E402
+from pathia.client.hl_client import (  # noqa: E402
     fetch_funding_history, fetch_hl_candles,
 )
 

@@ -3,7 +3,7 @@
 Agent: `ta_ai_audit` (read-only). Date 2026-06-28.
 Window: events with `ts` in [now−15d, now−72h] = **2026-06-13 → 2026-06-25** (every event gets a full 72h forward).
 Forward returns: HL 1h candles fetched live, ref price = close of the candle containing the event ts.
-Source: `~/.hermes-trader-session-log.jsonl`. Script: `scratchpad/analyze_audit.py` (+ `candle_cache.json`, `audit_events.json`).
+Source: `~/.pathia-session-log.jsonl`. Script: `scratchpad/analyze_audit.py` (+ `candle_cache.json`, `audit_events.json`).
 
 Dedupe: research events deduped per (coin, verdict, hour-bucket); TA-skips deduped per (coin, signal, hour) then random-sampled.
 185 unique coins, all candle fetches succeeded.

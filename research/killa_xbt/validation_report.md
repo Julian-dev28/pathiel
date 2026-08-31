@@ -1,7 +1,7 @@
 # Range-structure validation report (KillaXBT methodology, quantitative half)
 
 Lane K2, 2026-07-11. SPEC: `research/killa_xbt/SPEC.md` Parts 3-7, 9-10 (quant).
-Code: `hermes_trader/indicators/range_structure.py` (research-only),
+Code: `pathia/indicators/range_structure.py` (research-only),
 `scripts/backtest_range_structure.py`, `tests/test_range_structure.py` (26 gate
 tests, all green, 0.12s). Results: `research/killa_xbt/validation_results.json`.
 

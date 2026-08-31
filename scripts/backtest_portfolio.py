@@ -31,9 +31,9 @@ from backtest_logged import (  # reuse validated primitives
     fetch_candles_at, detect_regime_at, passes_counter_regime,
     _load_disk_cache, _save_disk_cache,
 )
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.agents.executor import _runner_entry_block_reason
-from hermes_trader.models.types import Candle
+from pathia.agents.config_store import read_agent_config
+from pathia.agents.executor import _runner_entry_block_reason
+from pathia.models.types import Candle
 from _memory_io import load_memory
 
 STEP_MS = 300_000  # 5-min clock
@@ -321,7 +321,7 @@ def main():
     ap.add_argument("--sweep-concurrent", default="", help="e.g. 4,6,8,10,15")
     ap.add_argument("--skip-runner-gate", action="store_true",
                     help="Do not apply the current live runner_entry_gate to candidates")
-    ap.add_argument("--cache-file", default=f"{tempfile.gettempdir()}/hermes_backtest_logged_candles.json",
+    ap.add_argument("--cache-file", default=f"{tempfile.gettempdir()}/pathia_backtest_logged_candles.json",
                     help="Disk candle cache shared with backtest_logged.py")
     ap.add_argument("--cache-only", action="store_true",
                     help="Use only cached candles; skip uncached candidates instead of hitting HL")

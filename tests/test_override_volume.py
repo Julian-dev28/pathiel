@@ -1,6 +1,6 @@
 """Williams volume-confirm on the override path — gate-logic unit tests (no network)."""
 
-import hermes_trader.agents.executor as ex
+import pathia.agents.executor as ex
 
 
 def _patch_vol(monkeypatch, confirmed):
@@ -10,13 +10,13 @@ def _patch_vol(monkeypatch, confirmed):
 def test_helper_fails_open_on_fetch_error(monkeypatch):
     # _volume_confirmed imports fetch_hl_candles from the client module at call time;
     # patch it there to raise -> the helper must fail OPEN (return True, don't block).
-    import hermes_trader.client.hl_client as hl
+    import pathia.client.hl_client as hl
     monkeypatch.setattr(hl, "fetch_hl_candles", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("net")))
     assert ex._volume_confirmed("DOGE", 1.5) is True
 
 
 def test_helper_fails_open_on_thin_history(monkeypatch):
-    import hermes_trader.client.hl_client as hl
+    import pathia.client.hl_client as hl
     monkeypatch.setattr(hl, "fetch_hl_candles", lambda *a, **k: [])  # too few bars
     assert ex._volume_confirmed("DOGE", 1.5) is True
 

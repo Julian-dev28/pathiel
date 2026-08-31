@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from hermes_trader.agents.dsl_exit import (
+from pathia.agents.dsl_exit import (
     DSLTracker,
     ExitPolicy,
     _tracker_from_dict,
@@ -97,7 +97,7 @@ def test_noise_band_policy_survives_state_roundtrip():
 
 
 def test_parse_verdict_tags_ai_down():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     failed = parse_verdict("", "BTC", {"mid": 100.0})
     assert failed["verdict"] == "PASS" and failed["ai_down"] is True
     ok = parse_verdict('{"verdict": "PASS", "confidence": 0.4}', "BTC", {"mid": 100.0})
@@ -106,7 +106,7 @@ def test_parse_verdict_tags_ai_down():
 
 def test_ta_sidestep_blocked_when_ai_down(monkeypatch):
     """A TA-sidestep failure-PASS must NOT be upgraded to a blind LONG."""
-    from hermes_trader.agents import executor as ex
+    from pathia.agents import executor as ex
     monkeypatch.setattr(
         ex, "read_agent_config",
         lambda: {"mode": "LIVE", "enable_crypto": True,
@@ -123,7 +123,7 @@ def test_ta_sidestep_blocked_when_ai_down(monkeypatch):
 
 def test_loss_cooldown_blocks_reentry(monkeypatch):
     """A coin with an active loss cooldown must be refused before any order."""
-    from hermes_trader.agents import executor as ex
+    from pathia.agents import executor as ex
     import time as _t
     monkeypatch.setattr(
         ex, "read_agent_config",
@@ -147,7 +147,7 @@ def test_loss_cooldown_blocks_reentry(monkeypatch):
 def test_degraded_read_filter_protects_daily_pnl(monkeypatch):
     """A >25% equity spike within 180s must be IGNORED (partial-dex read);
     the same value re-asserted after 180s must be ACCEPTED (real move)."""
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     m = AgentMemory()
     monkeypatch.setattr(m, "flush", lambda: None)
     m._initialized = True

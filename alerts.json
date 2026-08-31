@@ -2,53 +2,53 @@
  "ts": 1788137322.193059,
  "firing": [],
  "errors": [
-  "HermesBackupStale: hermes_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+  "PathiaBackupStale: pathia_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
  ],
  "alerts": {
-  "HermesLoopDead": {
+  "PathiaLoopDead": {
    "firing": false,
    "pending_since": null,
    "severity": "critical"
   },
-  "HermesFeedDegraded": {
+  "PathiaFeedDegraded": {
    "firing": false,
    "pending_since": null,
    "severity": "warning"
   },
-  "HermesLiveButCannotTrade": {
+  "PathiaLiveButCannotTrade": {
    "firing": false,
    "pending_since": 1788136722.111817,
    "severity": "warning"
   },
-  "HermesBrainUnusable": {
+  "PathiaBrainUnusable": {
    "firing": false,
    "pending_since": null,
    "severity": "critical"
   },
-  "HermesDiskLow": {
+  "PathiaDiskLow": {
    "firing": false,
    "pending_since": null,
    "severity": "critical"
   },
-  "HermesLogDirOversized": {
+  "PathiaLogDirOversized": {
    "firing": false,
    "pending_since": null,
    "severity": "warning"
   },
-  "HermesSupervisionStale": {
+  "PathiaSupervisionStale": {
    "firing": false,
    "pending_since": null,
    "severity": "critical"
   },
-  "HermesAlertingStale": {
+  "PathiaAlertingStale": {
    "firing": false,
    "pending_since": null,
    "severity": "critical"
   },
-  "HermesBackupStale": {
-   "error": "hermes_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+  "PathiaBackupStale": {
+   "error": "pathia_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "HermesDeepDrawdown": {
+  "PathiaDeepDrawdown": {
    "firing": false,
    "pending_since": 1788136722.111817,
    "severity": "warning"

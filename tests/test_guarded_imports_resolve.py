@@ -5,10 +5,10 @@ health checks and optional lanes all use it so one broken source degrades one
 value instead of blanking a whole endpoint. The cost is that an ImportError
 inside the guard is indistinguishable from the failure the guard is FOR.
 
-That is not hypothetical. hermes_trader/metrics.py imported
-`hermes_trader.agents.paths`, a module that has never existed. The guard caught
-the ImportError and set the "never ran" sentinel, so hermes_supervisor_age_seconds
-and hermes_alert_eval_age_seconds read 1e6 on a live box whose supervisor had
+That is not hypothetical. pathia/metrics.py imported
+`pathia.agents.paths`, a module that has never existed. The guard caught
+the ImportError and set the "never ran" sentinel, so pathia_supervisor_age_seconds
+and pathia_alert_eval_age_seconds read 1e6 on a live box whose supervisor had
 run 74 seconds earlier — and the test covering them asserted the sentinel, so it
 passed. The bug was found by reading the live scrape.
 
@@ -21,14 +21,14 @@ import importlib
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FIRST_PARTY = ("hermes_trader", "services")
+FIRST_PARTY = ("pathia", "services")
 
 
 def _guarded_imports():
     """(file, line, module, name) for each first-party `from X import Y` that
     sits inside a try block with a bare or broad `except`."""
     out = []
-    for base in ("hermes_trader", "scripts", "services"):
+    for base in ("pathia", "scripts", "services"):
         for path in (ROOT / base).rglob("*.py"):
             if "__pycache__" in str(path):
                 continue

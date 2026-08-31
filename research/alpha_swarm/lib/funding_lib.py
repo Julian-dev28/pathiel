@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 FUNDING = Path(os.environ.get(
-    "HERMES_ALPHA_FUNDING",
+    "PATHIA_ALPHA_FUNDING",
     Path(__file__).resolve().parent.parent / "funding.json",
 ))
 

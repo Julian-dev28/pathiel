@@ -49,7 +49,7 @@ def test_the_hook_checks_for_machine_bound_paths():
 def test_the_hook_isolates_state_from_the_live_tree():
     """The root conftest loads the real .env.local, and a test that writes state
     must never touch the ledger the running system reads."""
-    assert "HERMES_STATE_DIR" in HOOK.read_text()
+    assert "PATHIA_STATE_DIR" in HOOK.read_text()
 
 
 def test_the_hook_does_not_offer_a_bypass():

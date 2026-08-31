@@ -19,8 +19,8 @@ for _line in (_REPO / ".env.local").read_text().splitlines():
     if _line and not _line.startswith("#") and "=" in _line:
         k, _, v = _line.partition("="); os.environ.setdefault(k.strip(), v.strip())
 
-from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.universe import get_universe
+from pathia.client.hl_client import fetch_hl_candles
 
 OUT = Path(__file__).resolve().parent / "marginal_dataset.json"
 LOG = Path("/tmp/marginal-ds/progress.log"); LOG.parent.mkdir(parents=True, exist_ok=True)

@@ -27,7 +27,7 @@ if _env.is_file():
             k, _, v = _line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from hermes_trader.client.hl_client import fetch_funding_history
+from pathia.client.hl_client import fetch_funding_history
 
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (Path(__file__).resolve().parent.parent / "funding.json")
 LOG = Path("/tmp/alpha-funding/progress.log")
@@ -51,7 +51,7 @@ def _coins_from_candles() -> list:
         except Exception:
             pass
     # fallback: top liquid perps
-    from hermes_trader.client.universe import get_universe
+    from pathia.client.universe import get_universe
     uni = [u for u in get_universe(include_hip3=False) if u.get("type") == "perp" and u.get("dex") is None]
     uni.sort(key=lambda u: u.get("dayNtlVlm", 0), reverse=True)
     return [u["coin"] for u in uni[:40]]

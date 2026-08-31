@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_trader.agents.executor import route_verdict
+from pathia.agents.executor import route_verdict
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -48,7 +48,7 @@ def test_the_mcp_server_calls_only_sdk_methods_that_exist():
 
     from hyperliquid.info import Info
 
-    src = (ROOT / "scripts" / "hermes-mcp-server.py").read_text()
+    src = (ROOT / "scripts" / "pathia-mcp-server.py").read_text()
     called = set(re.findall(r"\binfo\.([a-z_][a-z0-9_]*)\(", src))
     missing = sorted(m for m in called if not hasattr(Info, m))
     assert not missing, f"the MCP server calls SDK methods that do not exist: {missing}"
@@ -61,7 +61,7 @@ def test_the_repo_calls_only_sdk_methods_that_exist():
     from hyperliquid.info import Info
 
     offenders = []
-    for sub in ("hermes_trader", "scripts", "services"):
+    for sub in ("pathia", "scripts", "services"):
         for f in (ROOT / sub).rglob("*.py"):
             for m in set(re.findall(r"\binfo\.([a-z_][a-z0-9_]*)\(", f.read_text())):
                 if not hasattr(Info, m):

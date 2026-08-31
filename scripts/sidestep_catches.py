@@ -45,7 +45,7 @@ for line in LOG.read_text(errors="ignore").splitlines():
 # current marks for PnL-so-far on the catches
 marks = {}
 try:
-    from hermes_trader.client.hl_client import fetch_all_mids
+    from pathia.client.hl_client import fetch_all_mids
     marks = fetch_all_mids(include_hip3=True)
 except Exception as e:
     print(f"# (mark fetch failed: {e})")

@@ -98,7 +98,7 @@ TIER12, TIER25 = 0.0012, 0.0025
 DEFAULT_HOURLY_RATE = 1.25e-5  # HL baseline funding, conservative long-pay fallback
 
 SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad")
 
 # ── pre-registered grid ──────────────────────────────────────────────────────

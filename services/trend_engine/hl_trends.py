@@ -347,7 +347,7 @@ def _universe_rows(top_n: int, min_vol: float, include_hip3: bool = True,
     the scan entirely (BTC alone does more volume than the whole xyz dex), so
     each sector gets its own quota and its own volume floor.
     """
-    from hermes_trader.client.universe import get_universe
+    from pathia.client.universe import get_universe
 
     uni = [u for u in get_universe(include_hip3=include_hip3)
            if u.get("type") == "perp"]
@@ -373,7 +373,7 @@ def _universe_rows(top_n: int, min_vol: float, include_hip3: bool = True,
 
 
 def _fetch_candles(coins: Sequence[str], days: int) -> Dict[str, List[Any]]:
-    from hermes_trader.client.hl_client import fetch_hl_candles
+    from pathia.client.hl_client import fetch_hl_candles
 
     out: Dict[str, List[Any]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:

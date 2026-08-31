@@ -1,7 +1,7 @@
-# Fly.io deploy config for hermes-trader.
+# Fly.io deploy config for pathia.
 # Edit `app` to your chosen name; `flyctl launch` will offer a default.
 
-app = "hermes-trader"
+app = "pathia"
 primary_region = "iad"  # change to a region near you
 
 [build]
@@ -17,25 +17,25 @@ primary_region = "iad"  # change to a region near you
 #              — see scripts/scheduler.py:JOBS
 #   rotator  — scripts/log_rotate.py --daemon: truncates logs/*.log in place
 #              on an interval and refuses new starts under the disk-guard
-#              threshold (see hermes_trader/log_setup.py). Needed because
+#              threshold (see pathia/log_setup.py). Needed because
 #              `sched` writes its fired jobs' output to real files
 #              (scripts/scheduler.py:run_job), independent of how sched
 #              itself is launched
 [processes]
-  web     = "env HERMES_STATE_READONLY=1 HERMES_HL_RATE_REFILL_PER_SEC=2 HERMES_HL_RATE_CAPACITY=60 python3 -m hermes_trader.server"
+  web     = "env PATHIA_STATE_READONLY=1 PATHIA_HL_RATE_REFILL_PER_SEC=2 PATHIA_HL_RATE_CAPACITY=60 python3 -m pathia.server"
   loop    = "python3 scripts/trading_loop.py"
   sched   = "python3 scripts/scheduler.py"
   rotator = "python3 scripts/log_rotate.py --daemon"
 
 # web/loop/sched all read or write state under /data (see the
-# Dockerfile's "Runtime state" comment — HERMES_STATE_DIR plus the
+# Dockerfile's "Runtime state" comment — PATHIA_STATE_DIR plus the
 # scheduler's .state symlink). `rotator` only touches logs/ inside the
 # container's own writable layer (deliberately NOT on the volume — log
 # history isn't state that needs backup/rollback semantics, and letting it
 # live outside the shared volume keeps the one singleton-sensitive volume
 # smaller); it does not need the mount.
 [[mounts]]
-  source = "hermes_data"   # `fly volumes create hermes_data --size 1`
+  source = "pathia_data"   # `fly volumes create pathia_data --size 1`
   destination = "/data"
   processes = ["web", "loop", "sched"]
 
@@ -88,5 +88,5 @@ primary_region = "iad"  # change to a region near you
   processes = ["rotator"]
 
 [env]
-  HERMES_PORT = "8000"
-  HERMES_SCAN_INTERVAL = "60"
+  PATHIA_PORT = "8000"
+  PATHIA_SCAN_INTERVAL = "60"

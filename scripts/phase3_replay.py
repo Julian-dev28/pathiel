@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Phase-3 no-lookahead post-mortem replay (READ-ONLY — no orders, no writes).
 
-Drives the REAL exit engine (hermes_trader.agents.dsl_exit.DSLTracker.check) against
+Drives the REAL exit engine (pathia.agents.dsl_exit.DSLTracker.check) against
 REAL historical 15m OHLCV from HL candleSnapshot. No indicator peeks at future bars:
 each bar is processed in time order, peak updated from the bar HIGH then the stop/
 trailing floor tested against the bar LOW (the within-bar worst case for a long) then
@@ -15,9 +15,9 @@ Usage: python3 scripts/phase3_replay.py GRASS 0.47055 3 7.27   # coin entry lev 
        (spot_move% optional, just annotates the target)
 """
 import sys, time
-from hermes_trader.client.hl_client import fetch_hl_candles  # paced via the shared limiter
-from hermes_trader.agents.dsl_exit import DSLTracker, ExitPolicy, RetraceTier
-from hermes_trader.agents.config_store import read_agent_config
+from pathia.client.hl_client import fetch_hl_candles  # paced via the shared limiter
+from pathia.agents.dsl_exit import DSLTracker, ExitPolicy, RetraceTier
+from pathia.agents.config_store import read_agent_config
 
 INTERVAL = "1m"   # match the ~60s live loop cadence: one mark per tick, true time order
 BARS = 1500       # ~25h of 1m (covers a 24h run + lead-in)
@@ -108,7 +108,7 @@ def replay(coin, entry_px, leverage):
     # fire intra-bar server-side, so those we test against each bar's LOW (the
     # wick) separately and report whichever (trailing-on-close vs wick-stop)
     # would fire FIRST in time.
-    import hermes_trader.agents.dsl_exit as dmod
+    import pathia.agents.dsl_exit as dmod
     _real_time = time.time
     peak_run = entry_px
     max_dd_pct = 0.0
@@ -160,7 +160,7 @@ def ablate(coin, entry_px, lev, A, B, cfg, nb_mult=1.0, cooldown_min=30.0, reent
     (real engine; A = noise-band on) and RE-ENTRY (B = cooldown + no-buy-above-
     last-exit). 'captured%' = net spot PnL across all legs / max capturable spot
     move from the first entry. No lookahead: each bar uses only prior state."""
-    import hermes_trader.agents.dsl_exit as dmod
+    import pathia.agents.dsl_exit as dmod
     candles = fetch_hl_candles(coin, INTERVAL, BARS)
     if not candles or len(candles) < 50:
         return None

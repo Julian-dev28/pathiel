@@ -4,7 +4,7 @@ Then: does trading the top-decile-by-fitted-prob beat taking all breakouts (tigh
 import json, statistics
 import numpy as np
 from pathlib import Path
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 prog = Path("/tmp/movers-v2/progress.log")
 ds = SCR/"movers_v2.json" if (SCR/"movers_v2.json").exists() and prog.exists() and "MOVERS v2 done" in prog.read_text() else SCR/"movers_dataset.json"
 d = json.loads(ds.read_text())

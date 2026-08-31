@@ -17,15 +17,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-import hermes_trader.dashboard as db
-from hermes_trader.server import app
+import pathia.dashboard as db
+from pathia.server import app
 
 TOKEN = "correct-horse-battery-staple"
 
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", TOKEN)
+    monkeypatch.setenv("PATHIA_OPERATOR_TOKEN", TOKEN)
     with db._AUTH_LOCK:
         db._AUTH_FAILURES.clear()
     return TestClient(app)
@@ -44,7 +44,7 @@ def test_a_wrong_token_is_rejected(client):
 
 
 def test_a_missing_token_fails_closed(client, monkeypatch):
-    monkeypatch.delenv("HERMES_OPERATOR_TOKEN", raising=False)
+    monkeypatch.delenv("PATHIA_OPERATOR_TOKEN", raising=False)
     assert client.post("/api/agent/stop").status_code == 503
 
 

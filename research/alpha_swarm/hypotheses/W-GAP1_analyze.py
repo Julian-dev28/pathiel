@@ -30,7 +30,7 @@ ET = ZoneInfo("America/New_York")
 RNG = np.random.default_rng(20260722)
 
 # Non-equity xyz (indices/commodities/fx/baskets) — verbatim from
-# hermes_trader/agents/xs_xyz.py NON_EQUITY_XYZ. US-equity-open hypothesis
+# pathia/agents/xs_xyz.py NON_EQUITY_XYZ. US-equity-open hypothesis
 # targets SINGLE STOCKS; these are excluded from the core equity pool.
 NON_EQUITY_XYZ = frozenset({
     "xyz:XYZ100", "xyz:SP500", "xyz:GOLD", "xyz:SILVER", "xyz:BRENTOIL", "xyz:CL",

@@ -15,8 +15,8 @@ scripts/config_preset.py apply --account-size 250      # auto-pick by equity
 
 All per-book runtime state (dedup `*_seen.json`, scan-timer `*_ts`, the claims
 registry, `shadow_ledger/`, the funding/OI data loggers, the positions snapshot)
-lives under **`.state/`** at the repo root, via `HERMES_STATE_DIR` +
-`HERMES_POSITIONS_SNAPSHOT_FILE` set in `.env.local` (moved out of the repo
+lives under **`.state/`** at the repo root, via `PATHIA_STATE_DIR` +
+`PATHIA_POSITIONS_SNAPSHOT_FILE` set in `.env.local` (moved out of the repo
 root 2026-07-09). Everything routes through
 `rebalancer_owned.state_file()`, which is frozen at import — so the env var
 must be set before the process starts (`.env.local` is loaded first by the

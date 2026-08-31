@@ -24,7 +24,7 @@ def test_a_corrupt_baseline_is_logged_not_swallowed(tmp_path, monkeypatch, caplo
     every coin, nothing is ever `breaking`, and the book cannot fire — while
     looking exactly like a quiet news day. _save_baseline then overwrites the
     damaged file, so the history is gone too."""
-    from hermes_trader.agents import news_surge_multi as M
+    from pathia.agents import news_surge_multi as M
 
     bad = tmp_path / "baseline.json"
     bad.write_text("{not json at all")
@@ -36,7 +36,7 @@ def test_a_corrupt_baseline_is_logged_not_swallowed(tmp_path, monkeypatch, caplo
 
 
 def test_a_baseline_of_the_wrong_shape_is_logged(tmp_path, monkeypatch, caplog):
-    from hermes_trader.agents import news_surge_multi as M
+    from pathia.agents import news_surge_multi as M
 
     bad = tmp_path / "baseline.json"
     bad.write_text(json.dumps(["not", "an", "object"]))
@@ -49,7 +49,7 @@ def test_a_baseline_of_the_wrong_shape_is_logged(tmp_path, monkeypatch, caplog):
 def test_a_missing_baseline_is_a_cold_start_not_a_fault(tmp_path, monkeypatch, caplog):
     """A fresh install has no baseline. Warning on that would train the operator
     to ignore the warning that matters."""
-    from hermes_trader.agents import news_surge_multi as M
+    from pathia.agents import news_surge_multi as M
 
     monkeypatch.setattr(M, "_BASELINE_FILE", str(tmp_path / "absent.json"))
     with caplog.at_level(logging.WARNING):
@@ -58,7 +58,7 @@ def test_a_missing_baseline_is_a_cold_start_not_a_fault(tmp_path, monkeypatch, c
 
 
 def test_a_good_baseline_still_loads(tmp_path, monkeypatch):
-    from hermes_trader.agents import news_surge_multi as M
+    from pathia.agents import news_surge_multi as M
 
     f = tmp_path / "baseline.json"
     f.write_text(json.dumps({"ETH": [1, 2, 3]}))
@@ -69,7 +69,7 @@ def test_a_good_baseline_still_loads(tmp_path, monkeypatch):
 def test_an_empty_baseline_reads_as_neutral_never_breaking():
     """The guard that stopped a live entry off a single unbaselined spike
     (xyz:BE, 2026-07-12). Kept pinned because the fix above touches this path."""
-    from hermes_trader.agents.news_surge_multi import _surge
+    from pathia.agents.news_surge_multi import _surge
 
     assert _surge(count=99, prior=[]) == 1.0
 
@@ -80,9 +80,9 @@ def test_an_unavailable_macro_regime_is_logged(monkeypatch, caplog):
     """Recorded in meta, not gated on — so it does not change the trade, it
     corrupts the record used to judge the book. Analysis splitting by
     macro_regime would read the None bucket as a regime."""
-    from hermes_trader.agents import news_surge_short_live as S
+    from pathia.agents import news_surge_short_live as S
 
-    import hermes_trader.agents.market_regime as MR
+    import pathia.agents.market_regime as MR
     monkeypatch.setattr(MR, "detect_regime",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("upstream down")))
     with caplog.at_level(logging.WARNING):
@@ -111,7 +111,7 @@ def test_nothing_returns_an_empty_value_from_a_broad_except_without_saying_so():
     off on a corrupt read. Scope is now the whole package.
     """
     offenders = []
-    for path in (ROOT / "hermes_trader").rglob("*.py"):
+    for path in (ROOT / "pathia").rglob("*.py"):
         try:
             tree = ast.parse(path.read_text())
         except SyntaxError:
@@ -156,7 +156,7 @@ def test_a_corrupt_throttle_file_fails_closed(tmp_path, caplog):
     book's interval check then always fires)". Firing is the unsafe direction:
     a damaged throttle file switched the throttle OFF. Now it reads as "just
     ran", which costs one delayed pass and heals on the next mark_pass."""
-    from hermes_trader.agents.book_helpers import last_pass_ms
+    from pathia.agents.book_helpers import last_pass_ms
 
     f = tmp_path / "ts.json"
     f.write_text("{ this is not json")
@@ -171,7 +171,7 @@ def test_a_corrupt_throttle_file_fails_closed(tmp_path, caplog):
 def test_a_missing_throttle_file_lets_the_book_run(tmp_path, caplog):
     """A book that has never run should run now — that is a cold start, not a
     fault, and must not warn."""
-    from hermes_trader.agents.book_helpers import last_pass_ms
+    from pathia.agents.book_helpers import last_pass_ms
 
     with caplog.at_level(logging.WARNING):
         assert last_pass_ms(str(tmp_path / "absent.json")) == 0
@@ -181,7 +181,7 @@ def test_a_missing_throttle_file_lets_the_book_run(tmp_path, caplog):
 def test_a_corrupt_dedup_file_is_loud_and_quarantined(tmp_path, caplog):
     """An empty dedup map makes every coin read as never-opened, so the book
     re-enters what it already traded today."""
-    from hermes_trader.agents.book_helpers import load_seen
+    from pathia.agents.book_helpers import load_seen
 
     f = tmp_path / "seen.json"
     f.write_text('["not", "a", "map"]')
@@ -193,7 +193,7 @@ def test_a_corrupt_dedup_file_is_loud_and_quarantined(tmp_path, caplog):
 
 def test_one_unparseable_dedup_entry_does_not_discard_the_rest(tmp_path, caplog):
     """Dropping the whole map over a single bad key would re-open every coin."""
-    from hermes_trader.agents.book_helpers import load_seen
+    from pathia.agents.book_helpers import load_seen
 
     f = tmp_path / "seen.json"
     f.write_text(json.dumps({"ETH:2026-08-31": 1, "BTC:2026-08-31": "junk"}))
@@ -204,7 +204,7 @@ def test_one_unparseable_dedup_entry_does_not_discard_the_rest(tmp_path, caplog)
 
 
 def test_good_files_still_round_trip(tmp_path):
-    from hermes_trader.agents.book_helpers import (
+    from pathia.agents.book_helpers import (
         last_pass_ms, load_seen, load_state, mark_pass, save_seen, save_state)
 
     s, t, st = (str(tmp_path / n) for n in ("seen.json", "ts.json", "state.json"))
@@ -222,7 +222,7 @@ def test_a_failed_position_fetch_serves_the_last_good_read(monkeypatch, caplog):
     """An empty list means FLAT to the operator view, the public view and
     /api/positions. Returning [] because the fetch threw tells the operator
     they have no positions while they may have several open and unmanaged."""
-    import hermes_trader.dashboard as db
+    import pathia.dashboard as db
 
     good = [{"coin": "ETH", "szi": 1.0}]
     monkeypatch.setitem(db._POSITIONS_CACHE, "ts", 0.0)
@@ -236,7 +236,7 @@ def test_a_failed_position_fetch_serves_the_last_good_read(monkeypatch, caplog):
 
 def test_a_genuinely_flat_account_still_reads_flat(monkeypatch):
     """The fix must not make an empty position list impossible to express."""
-    import hermes_trader.dashboard as db
+    import pathia.dashboard as db
 
     monkeypatch.setitem(db._POSITIONS_CACHE, "ts", 0.0)
     monkeypatch.setitem(db._POSITIONS_CACHE, "data", [{"coin": "ETH"}])

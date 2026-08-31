@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # Load .env.local BEFORE importing anything that resolves state paths.
-# HERMES_STATE_DIR lives there, and without it the ledgers resolve to the repo
+# PATHIA_STATE_DIR lives there, and without it the ledgers resolve to the repo
 # root and every book reads as zero signals — silently.
 _env = ROOT / ".env.local"
 if _env.exists():
@@ -31,8 +31,8 @@ if _env.exists():
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from hermes_trader.agents import shadow_ledger as SL  # noqa: E402
-import hermes_trader.dashboard as db                  # noqa: E402
+from pathia.agents import shadow_ledger as SL  # noqa: E402
+import pathia.dashboard as db                  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
     "autonomous_cycle", ROOT / "scripts" / "autonomous_cycle.py")

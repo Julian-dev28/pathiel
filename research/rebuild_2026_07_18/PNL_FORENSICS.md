@@ -5,7 +5,7 @@ Fetched 2026-07-18 from the Hyperliquid `/info` API (`userFillsByTime`, `userFun
 `userNonFundingLedgerUpdates`, `portfolio`, `clearinghouseState`) for
 `0x2c2e...6985`. All timestamps in this doc are UTC. Fills are ms-epoch; the
 loop log is local (+0800) and was converted. Raw data + scripts:
-`/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/79fc4494-d85c-45f4-b633-3f5e34eb766a/scratchpad/`
+`/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/79fc4494-d85c-45f4-b633-3f5e34eb766a/scratchpad/`
 (`fetch_data.py`, `analyze.py`, `match_bot_manual.py`, `details.py`, `raw_data.json`).
 
 Pagination: 2 pages (2000 + 722), 1 duplicate at the boundary deduped by tid.

@@ -9,7 +9,7 @@ the reference for what rotates, how, and how to check or force it.
 
 ## Where each process logs
 
-Every hermes-trader process is started by `scripts/restart.sh` with shell
+Every pathia process is started by `scripts/restart.sh` with shell
 append redirection — `nohup "$PY" ... >> logs/<name>.log 2>&1 &`. That `>>`
 opens the file once, in append mode, and the process's entire stdout/stderr
 (its `logging` output, any bare `print()`, and any uncaught traceback) flows
@@ -19,7 +19,7 @@ outside every process" below for why that fact drives the whole design.
 | File | Written by | Started via |
 |---|---|---|
 | `logs/trading_loop.log` | `scripts/trading_loop.py` | `restart.sh loop` / `restart.sh restart` |
-| `logs/server.log` | `python -m hermes_trader.server` | `restart.sh server` / `restart.sh restart` |
+| `logs/server.log` | `python -m pathia.server` | `restart.sh server` / `restart.sh restart` |
 | `logs/scheduler.log` | `scripts/scheduler.py`'s own stdout/stderr | `restart.sh sched` / `restart.sh restart` |
 | `logs/log_rotate.log` | the log-rotator daemon itself | `restart.sh rotate` / `restart.sh restart` |
 | `logs/autonomous_cycle.log` | `scheduler.py` job `autonomous-cycle` | fired by the scheduler |
@@ -65,7 +65,7 @@ So `scripts/log_rotate.py` rotates **in place** — same path, same inode:
    older numbered backups down and dropping anything past the retention count
 
 Full reasoning and the in-process `RotatingFileHandler` alternative (kept
-available via `hermes_trader.log_setup.configure_logging()` for a future
+available via `pathia.log_setup.configure_logging()` for a future
 process that owns its own fd outright) live in that module's docstring.
 
 ### The copytruncate race, named and bounded
@@ -76,7 +76,7 @@ in neither the captured backup (already read) nor the truncated file
 "read-and-truncate." This is not eliminated; it's bounded:
 
 - nothing except the read and the truncate happens in between — no gzip, no
-  renames — so the window is the time to read up to `HERMES_LOG_MAX_BYTES`
+  renames — so the window is the time to read up to `PATHIA_LOG_MAX_BYTES`
   (default 20 MB) off local disk: low single-digit milliseconds in practice
 - a file only rotates once it's already over threshold, swept on a fixed
   interval (default every 300s) — the window opens rarely, not per write
@@ -97,35 +97,35 @@ for.
 
 ## Rotation policy
 
-All defaults live in `hermes_trader/log_setup.py`, overridable via env
+All defaults live in `pathia/log_setup.py`, overridable via env
 (set in `.env.local` or the process environment):
 
 | Setting | Env var | Default |
 |---|---|---|
-| Per-file size that triggers rotation | `HERMES_LOG_MAX_BYTES` | 20 MB |
-| Backups kept per file (`name.log.1.gz` .. `.N.gz`) | `HERMES_LOG_BACKUP_COUNT` | 5 |
-| Cap on `logs/`'s total size (live + backups) | `HERMES_LOG_DIR_MAX_BYTES` | 750 MB |
-| Rotator daemon sweep interval | `HERMES_LOG_ROTATE_INTERVAL_SEC` | 300s (5 min) |
-| Disk-free level that just warns | `HERMES_DISK_FREE_WARN_MB` | 2048 MB |
-| Disk-free level that refuses to start | `HERMES_DISK_FREE_CRITICAL_MB` | 500 MB |
-| Override the critical-disk refusal | `HERMES_SKIP_DISK_GUARD=1` | unset |
-| Point rotation at a different directory | `HERMES_LOG_DIR` | `<repo>/logs` |
+| Per-file size that triggers rotation | `PATHIA_LOG_MAX_BYTES` | 20 MB |
+| Backups kept per file (`name.log.1.gz` .. `.N.gz`) | `PATHIA_LOG_BACKUP_COUNT` | 5 |
+| Cap on `logs/`'s total size (live + backups) | `PATHIA_LOG_DIR_MAX_BYTES` | 750 MB |
+| Rotator daemon sweep interval | `PATHIA_LOG_ROTATE_INTERVAL_SEC` | 300s (5 min) |
+| Disk-free level that just warns | `PATHIA_DISK_FREE_WARN_MB` | 2048 MB |
+| Disk-free level that refuses to start | `PATHIA_DISK_FREE_CRITICAL_MB` | 500 MB |
+| Override the critical-disk refusal | `PATHIA_SKIP_DISK_GUARD=1` | unset |
+| Point rotation at a different directory | `PATHIA_LOG_DIR` | `<repo>/logs` |
 
 **Compression**: every rotated backup is gzip'd (`name.log.N.gz`); nothing is
 kept uncompressed once truncation has happened.
 
 **Retention**: newest generation is always `.1.gz`; on the next rotation
-`.1.gz`→`.2.gz`, …, and anything beyond `HERMES_LOG_BACKUP_COUNT` is deleted.
+`.1.gz`→`.2.gz`, …, and anything beyond `PATHIA_LOG_BACKUP_COUNT` is deleted.
 Retention is per-file, not calendar-based — a quiet file's backups simply sit
 there until that file itself rotates again.
 
 **Directory cap**: if `logs/`'s total size (summed across every live file and
-every backup) exceeds `HERMES_LOG_DIR_MAX_BYTES`, the oldest `*.gz` backups
+every backup) exceeds `PATHIA_LOG_DIR_MAX_BYTES`, the oldest `*.gz` backups
 are deleted first (never a live, non-backup `.log` file). If the cap is still
 exceeded after every backup is gone — meaning live files alone account for
 more than the cap — the single largest live file is force-rotated
 immediately, regardless of whether it's individually over
-`HERMES_LOG_MAX_BYTES` yet, rather than ever deleting log content that
+`PATHIA_LOG_MAX_BYTES` yet, rather than ever deleting log content that
 hasn't been captured anywhere.
 
 ## Disk guard
@@ -133,12 +133,12 @@ hasn't been captured anywhere.
 `scripts/restart.sh` runs `scripts/log_rotate.py --guard` before every
 action. Two things can happen:
 
-- **free disk < `HERMES_DISK_FREE_CRITICAL_MB`**: `restart.sh` refuses to
+- **free disk < `PATHIA_DISK_FREE_CRITICAL_MB`**: `restart.sh` refuses to
   start any process (`loop`, `server`, `sched`, `sampler`, or plain
   `restart`) and exits 1. Override for a deliberate emergency start with
-  `HERMES_SKIP_DISK_GUARD=1`. This never blocks an action that doesn't start
+  `PATHIA_SKIP_DISK_GUARD=1`. This never blocks an action that doesn't start
   a process (`status`, `stop`, `stoploop`, `stopsampler`, `stoprotate`).
-- **free disk < `HERMES_DISK_FREE_WARN_MB`, or `logs/` over its cap**: prints
+- **free disk < `PATHIA_DISK_FREE_WARN_MB`, or `logs/` over its cap**: prints
   a loud warning but does not block anything.
 
 Every action **except `status`** also runs one immediate rotation pass
@@ -156,7 +156,7 @@ run continuously while the box is up. `restart.sh` manages a fifth
 long-lived process for exactly that:
 
 ```
-scripts/log_rotate.py --daemon     # loops forever, sweeps logs/ every HERMES_LOG_ROTATE_INTERVAL_SEC
+scripts/log_rotate.py --daemon     # loops forever, sweeps logs/ every PATHIA_LOG_ROTATE_INTERVAL_SEC
 ```
 
 Started/stopped the same way as the other managed processes:
@@ -196,9 +196,9 @@ gzip -dc logs/trading_loop.log.1.gz | less
 Nothing under `logs/*.log` — the rotator globs the whole directory. Two
 things worth knowing:
 
-- **`hermes_trader/log_setup.py`'s `configure_logging()` (in-process
+- **`pathia/log_setup.py`'s `configure_logging()` (in-process
   `RotatingFileHandler`) is not wired into any current entrypoint.**
-  `scripts/trading_loop.py` and `hermes_trader/server.py` both call
+  `scripts/trading_loop.py` and `pathia/server.py` both call
   `logging.basicConfig()` with no `filename=`, i.e. they log to
   stdout/stderr — which is exactly the fd `restart.sh`'s `nohup >>`
   redirection owns, so the external rotator (not this helper) is what

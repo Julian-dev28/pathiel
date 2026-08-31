@@ -399,7 +399,7 @@ def test_universe_quota_keeps_one_sector_from_crowding_out_the_other(monkeypatch
            + [{"coin": "xyz:SP500", "type": "perp", "dayNtlVlm": 7e7},
               {"coin": "xyz:NVDA", "type": "perp", "dayNtlVlm": 7e6},
               {"coin": "xyz:TINY", "type": "perp", "dayNtlVlm": 100.0}])
-    import hermes_trader.client.universe as U
+    import pathia.client.universe as U
     monkeypatch.setattr(U, "get_universe", lambda **kw: uni)
     rows = hl._universe_rows(top_n=5, min_vol=1e6, top_n_xyz=5)
     coins = [r["coin"] for r in rows]
@@ -777,7 +777,7 @@ def test_ai_rejects_an_unknown_lane():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    from hermes_trader import dashboard as db
+    from pathia import dashboard as db
     monkeypatch.setattr(tcache, "DIR", str(tmp_path))
     db._TTL_CACHE.clear()
     app = FastAPI()
@@ -828,24 +828,24 @@ def test_refresh_runs_in_its_own_process_without_the_servers_hl_throttle(monkeyp
     `candleSnapshot` at weight 20: inside that budget every request waits its
     30s ceiling and skips, and the refresh never returns. Measured on the live
     server: still running after 601s, while the UI gives up at 300s."""
-    import hermes_trader.dashboard as dash
+    import pathia.dashboard as dash
     seen = {}
 
     def runner(cmd, **kw):
         seen["cmd"], seen["env"] = cmd, kw["env"]
         return _Proc()
 
-    monkeypatch.setenv("HERMES_HL_RATE_REFILL_PER_SEC", "2")
-    monkeypatch.setenv("HERMES_HL_RATE_CAPACITY", "60")
-    monkeypatch.setenv("HERMES_STATE_READONLY", "1")
+    monkeypatch.setenv("PATHIA_HL_RATE_REFILL_PER_SEC", "2")
+    monkeypatch.setenv("PATHIA_HL_RATE_CAPACITY", "60")
+    monkeypatch.setenv("PATHIA_STATE_READONLY", "1")
     out = dash._refresh_lane_subprocess(
         "hl", runner=runner, loader=lambda ln: {"status": "ok", "generated_at": 7})
     assert out == {"status": "ok", "generated_at": 7}
     assert cmd_has(seen["cmd"], "--refresh-all", "--lanes", "hl")
-    assert not [k for k in seen["env"] if k.startswith("HERMES_HL_RATE_")]
+    assert not [k for k in seen["env"] if k.startswith("PATHIA_HL_RATE_")]
     # the readonly guard covers agent memory and DSL exits — a lane refresh has
     # no business writing either, so it is NOT stripped
-    assert seen["env"]["HERMES_STATE_READONLY"] == "1"
+    assert seen["env"]["PATHIA_STATE_READONLY"] == "1"
 
 
 def cmd_has(cmd, *parts):
@@ -853,7 +853,7 @@ def cmd_has(cmd, *parts):
 
 
 def test_refresh_reports_a_failed_child_instead_of_claiming_success(monkeypatch):
-    import hermes_trader.dashboard as dash
+    import pathia.dashboard as dash
     out = dash._refresh_lane_subprocess(
         "hl", runner=lambda cmd, **kw: _Proc(returncode=1, stderr="boom\nRuntimeError: hl down"),
         loader=lambda ln: {"status": "ok"})
@@ -863,7 +863,7 @@ def test_refresh_reports_a_failed_child_instead_of_claiming_success(monkeypatch)
 def test_refresh_reports_a_timeout_instead_of_hanging_the_job(monkeypatch):
     import subprocess
 
-    import hermes_trader.dashboard as dash
+    import pathia.dashboard as dash
 
     def runner(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, kw["timeout"])
@@ -938,7 +938,7 @@ def test_forward_candles_are_fetched_once_per_coin_not_once_per_signal(monkeypat
     now = int(time.time() * 1000)
     bars = [_Bar(now - i * day) for i in range(60)][::-1]
 
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles",
                         lambda coin, interval, n: calls.append((coin, n)) or bars)
     monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
@@ -959,7 +959,7 @@ def test_a_deeper_lookback_refetches_instead_of_serving_a_short_cache(monkeypatc
     calls = []
     day = 86_400_000
     now = int(time.time() * 1000)
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles",
                         lambda coin, interval, n: calls.append(n) or [])
     monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
@@ -974,7 +974,7 @@ def test_a_deeper_lookback_refetches_instead_of_serving_a_short_cache(monkeypatc
 def test_funding_is_widened_and_sliced_rather_than_refetched(monkeypatch):
     calls = []
     rows = [{"time": t} for t in range(0, 10_000, 1_000)]
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a: [])
     monkeypatch.setattr(hl_client, "fetch_funding_history",
                         lambda coin, lo, hi: calls.append((lo, hi)) or rows)
@@ -1016,7 +1016,7 @@ def test_a_stale_lane_is_visible_from_another_tab(client):
     to be the thing that applies it."""
     import pathlib as _p
     css = (_p.Path(__file__).resolve().parent.parent
-           / "hermes_trader" / "static" / "hermes.css").read_text()
+           / "pathia" / "static" / "pathia.css").read_text()
     body = client.get("/trends").text
     assert ".tab-stale::after" in css
     assert "tab-stale" in body
@@ -1064,7 +1064,7 @@ def test_the_smoke_script_contract_matches_the_lanes_the_tab_serves():
                                      "scripts", "smoke_trends.py"))
     smoke = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smoke)
-    from hermes_trader import dashboard as dash
+    from pathia import dashboard as dash
     assert set(smoke.LANE_CONTRACT) == set(dash._TREND_LANES)
     assert set(smoke.LANES) == set(dash._TREND_LANES)
     for lane, keys in smoke.LANE_CONTRACT.items():
@@ -1130,7 +1130,7 @@ def test_no_module_imports_the_deleted_polymarket_package():
     the request that first reaches it."""
     root = pathlib.Path(__file__).resolve().parents[1]
     offenders = []
-    for sub in ("hermes_trader", "scripts", "services"):
+    for sub in ("pathia", "scripts", "services"):
         for f in (root / sub).rglob("*.py"):
             if "polymarket_scout" in f.read_text():
                 offenders.append(str(f.relative_to(root)))

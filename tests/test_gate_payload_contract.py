@@ -24,8 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from hermes_trader.agents import risk_gates
-from hermes_trader.agents.executor import _position_notional
+from pathia.agents import risk_gates
+from pathia.agents.executor import _position_notional
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,7 +37,7 @@ def _executor_position_keys() -> set[str]:
     account. If the literal moves, this test fails loudly rather than passing
     on a stale assumption.
     """
-    tree = ast.parse((ROOT / "hermes_trader" / "agents" / "executor.py").read_text())
+    tree = ast.parse((ROOT / "pathia" / "agents" / "executor.py").read_text())
     for node in ast.walk(tree):
         if not isinstance(node, ast.ListComp):
             continue
@@ -139,5 +139,5 @@ def test_a_degraded_read_under_reports_rather_than_raising():
 def test_the_old_computation_is_gone():
     """It multiplied EVERY held position's size by the entry price of the coin
     being evaluated — meaningless for any other coin."""
-    src = (ROOT / "hermes_trader" / "agents" / "executor.py").read_text()
+    src = (ROOT / "pathia" / "agents" / "executor.py").read_text()
     assert 'analysis.get("entry_px") or 0)' not in src.split("positions = [")[1][:400]

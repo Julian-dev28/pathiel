@@ -44,7 +44,7 @@ PDOC_CACHE = os.path.join(HERE, "W-P3_cache_primary_docs.json")
 TEXT_DIR = os.path.join(HERE, "W-P3_cache_texts")
 MANIFEST = os.path.join(TEXT_DIR, "_manifest.json")
 
-SEC_UA = {"User-Agent": "hermes-research team.recoin@gmail.com"}
+SEC_UA = {"User-Agent": "pathia-research team.recoin@gmail.com"}
 SEC_SLEEP = 0.5           # ~2 req/s
 HOUR_MS = 3_600_000
 TEXT_CAP = 60_000         # chars kept on disk (prompt truncation happens later)

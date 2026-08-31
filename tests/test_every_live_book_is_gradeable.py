@@ -14,7 +14,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import hermes_trader.dashboard as db
+import pathia.dashboard as db
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
@@ -85,7 +85,7 @@ def test_the_abort_diagnostic_reports_state_rather_than_guessing():
 # ── the ledger-path trap ─────────────────────────────────────────────────────
 
 def test_an_ambiguous_ledger_path_warns_instead_of_reading_empty(caplog, monkeypatch):
-    """HERMES_STATE_DIR lives in .env.local. A tool that forgets to load it
+    """PATHIA_STATE_DIR lives in .env.local. A tool that forgets to load it
     resolves ledgers to the repo root instead, and if a stale directory exists
     there every book silently reads as '0 signals' rather than erroring.
 
@@ -99,17 +99,17 @@ def test_an_ambiguous_ledger_path_warns_instead_of_reading_empty(caplog, monkeyp
     import logging
     import pathlib as _pl
 
-    from hermes_trader.agents import shadow_ledger as SL
+    from pathia.agents import shadow_ledger as SL
 
     root = _pl.Path(__file__).resolve().parents[1]
-    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    monkeypatch.delenv("PATHIA_STATE_DIR", raising=False)
     monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
     monkeypatch.setattr(SL, "state_file", lambda name: str(root / name))
 
     state_ledger = root / ".state" / SL._DIR
     with caplog.at_level(logging.WARNING):
         SL._ledger_dir()
-    warned = any("HERMES_STATE_DIR is unset" in r.message for r in caplog.records)
+    warned = any("PATHIA_STATE_DIR is unset" in r.message for r in caplog.records)
     # The warning fires exactly when the ambiguity actually exists.
     assert warned is state_ledger.is_dir(), (
         "the guard did not match the real state of the tree")
@@ -119,19 +119,19 @@ def test_the_ambiguity_warning_fires_at_most_once(caplog, monkeypatch):
     """A per-call warning on a hot path becomes noise, and noise gets muted."""
     import logging
 
-    from hermes_trader.agents import shadow_ledger as SL
-    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    from pathia.agents import shadow_ledger as SL
+    monkeypatch.delenv("PATHIA_STATE_DIR", raising=False)
     monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
     with caplog.at_level(logging.WARNING):
         for _ in range(5):
             SL._ledger_dir()
-    assert sum("HERMES_STATE_DIR is unset" in r.message
+    assert sum("PATHIA_STATE_DIR is unset" in r.message
                for r in caplog.records) <= 1
 
 
 def test_the_ledger_ambiguity_guard_never_raises(monkeypatch):
-    from hermes_trader.agents import shadow_ledger as SL
-    monkeypatch.delenv("HERMES_STATE_DIR", raising=False)
+    from pathia.agents import shadow_ledger as SL
+    monkeypatch.delenv("PATHIA_STATE_DIR", raising=False)
     monkeypatch.setattr(SL, "_AMBIGUITY_WARNED", False)
     assert isinstance(SL._ledger_dir(), str)
 
@@ -144,7 +144,7 @@ def test_book_status_loads_env_before_resolving_state():
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "scripts" / "book_status.py").read_text()
     env_load = src.index(".env.local")
-    first_agent_import = src.index("from hermes_trader.agents")
+    first_agent_import = src.index("from pathia.agents")
     assert env_load < first_agent_import, (
         "book_status.py imports state-resolving modules before loading "
         ".env.local — it would read the wrong ledger directory")
@@ -178,7 +178,7 @@ def test_every_book_the_loop_calls_can_reach_capital():
 
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "scripts" / "trading_loop.py").read_text()
-    called = set(re.findall(r"from hermes_trader\.agents\.(\w+) import", src))
+    called = set(re.findall(r"from pathia\.agents\.(\w+) import", src))
     # modules that are data sources or infrastructure, not books
     infra = {"perception", "risk_gates", "ta_filter", "research", "executor",
              "dsl_exit", "config", "config_store", "memory", "rebalancer_owned",
@@ -216,7 +216,7 @@ def test_no_book_ships_shadow():
     allowlist, the daily-loss kill switch, and autonomous_cycle demoting any
     book whose forward ledger turns negative.
     """
-    import hermes_trader.agents.config_store as cs
+    import pathia.agents.config_store as cs
     defaults = next(v for v in vars(cs).values()
                     if isinstance(v, dict) and "coin_allowlist" in v)
     shadowed = [k for k, v in defaults.items()
@@ -241,5 +241,5 @@ def test_the_dust_floor_is_what_makes_all_live_safe():
     """Every book being live is only defensible because the executor refuses to
     trade a dust account. If that floor is ever lowered or removed, this
     arrangement stops being safe — this test is the tripwire."""
-    from hermes_trader.agents.executor import MIN_TRADABLE_EQUITY_USD
+    from pathia.agents.executor import MIN_TRADABLE_EQUITY_USD
     assert MIN_TRADABLE_EQUITY_USD >= 25.0

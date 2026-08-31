@@ -21,8 +21,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-import hermes_trader.dashboard as db
-from hermes_trader.server import app
+import pathia.dashboard as db
+from pathia.server import app
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ def test_an_unavailable_disk_check_does_not_fail_the_healthcheck(client, monkeyp
     monkeypatch.setattr(db, "_feed_health",
                         lambda: {"trustworthy": True, "gap_frac": 0.0,
                                  "gaps": 0, "markets": 40, "ts": 1})
-    import hermes_trader.log_setup as ls
+    import pathia.log_setup as ls
     monkeypatch.setattr(ls, "check_disk_guard",
                         lambda *a, **k: (_ for _ in ()).throw(OSError("nope")))
     body = client.get("/api/health/system").json()

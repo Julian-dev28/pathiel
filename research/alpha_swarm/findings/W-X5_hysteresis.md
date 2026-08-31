@@ -55,7 +55,7 @@ NOT recommended for wiring; recorded so the decision is reversible and pre-commi
 operator ever wants the turnover cut (e.g. under a fee-tier regression or API-budget
 pressure):
 ```
-change          hermes_trader/agents/xs_momentum_live.py rebalance selection: keep an
+change          pathia/agents/xs_momentum_live.py rebalance selection: keep an
                 incumbent (coin,side) while its pct_k14 rank is inside top/bottom
                 (k_per_leg + buffer); fill vacated slots with best-ranked non-incumbents.
 config          xs_momentum.rank_buffer = 2 (hot-readable int; 0 = exact live behavior,

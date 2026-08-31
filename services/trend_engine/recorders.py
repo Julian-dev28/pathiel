@@ -5,7 +5,7 @@ per signal, and the TREND
 in both (first half vs second half), because a recorder whose edge is decaying
 looks identical to a healthy one in a single average.
 
-One grader, one source of truth: `hermes_trader.agents.shadow_ledger.grade_records`
+One grader, one source of truth: `pathia.agents.shadow_ledger.grade_records`
 — the same path `scripts/shadow_status.py` uses, forward candles net of funding,
 so the numbers here and in the survey agree.
 
@@ -49,7 +49,7 @@ def grade_books(books: Optional[Sequence[str]] = None, min_n: int = 8,
     fails in a full suite run.
     """
     if sl is None:
-        from hermes_trader.agents import shadow_ledger as sl
+        from pathia.agents import shadow_ledger as sl
 
     SL = sl
     now = int(now_ms if now_ms is not None else time.time() * 1000)
@@ -124,7 +124,7 @@ def _live_fetchers():
     anything older than the pad — the grader window-rot bug from the 2026-07-09
     audit).
     """
-    from hermes_trader.client.hl_client import fetch_funding_history, fetch_hl_candles
+    from pathia.client.hl_client import fetch_funding_history, fetch_hl_candles
 
     bar_ms = {"1d": 86_400_000, "1h": 3_600_000, "4h": 14_400_000}
     # One fetch per (coin, interval) per run, not one per SIGNAL. Every signal

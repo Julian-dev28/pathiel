@@ -12,7 +12,7 @@ def _verdict_text(verdict: str = "PASS") -> str:
 
 
 def test_selected_provider_hot_read_env_overrides_config(monkeypatch):
-    from hermes_trader.agents.ai_brain import selected_ai_brain_provider
+    from pathia.agents.ai_brain import selected_ai_brain_provider
 
     cfg = {"ai_brain": {"provider": "claude_cli"}}
     monkeypatch.setenv("AI_BRAIN_PROVIDER", "codex")
@@ -26,7 +26,7 @@ def test_selected_provider_hot_read_env_overrides_config(monkeypatch):
 
 
 def test_openrouter_web_tool_only_sent_when_gated(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     payloads: list[dict] = []
     monkeypatch.delenv("OPENROUTER_WEB_ENGINE", raising=False)
@@ -73,7 +73,7 @@ def test_openrouter_web_tool_only_sent_when_gated(monkeypatch):
 
 
 def test_openrouter_web_tool_caps_env_overrides(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.setenv("OPENROUTER_WEB_ENGINE", "exa")
     monkeypatch.setenv("OPENROUTER_WEB_MAX_RESULTS", "999")
@@ -87,7 +87,7 @@ def test_openrouter_web_tool_caps_env_overrides(monkeypatch):
 
 
 def test_openrouter_result_preserves_usage_citations_and_string_api(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     annotation = {
         "type": "url_citation",
@@ -137,7 +137,7 @@ def test_openrouter_result_preserves_usage_citations_and_string_api(monkeypatch)
 
 
 def test_openrouter_402_retry_preserves_web_tool_and_final_metadata(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     payloads: list[dict] = []
 
@@ -185,7 +185,7 @@ def test_openrouter_402_retry_preserves_web_tool_and_final_metadata(monkeypatch)
 
 
 def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     # server.py loads .env.local into os.environ at import time, and the env var
     # outranks the mocked config in _cli_timeout_s — without this the test
@@ -225,7 +225,7 @@ def test_claude_cli_parses_envelope_and_requires_verdict_json(monkeypatch):
 
 
 def test_claude_cli_error_envelope_maps_to_ai_down(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.setattr(ai_brain, "_read_ai_brain_config", lambda: {"timeout_s": 5})
     monkeypatch.setattr(
@@ -238,7 +238,7 @@ def test_claude_cli_error_envelope_maps_to_ai_down(monkeypatch):
 
 
 def test_codex_cli_uses_read_only_sandbox_and_rejects_jsonless_output(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     seen: dict[str, object] = {}
     monkeypatch.setattr(ai_brain, "_read_ai_brain_config", lambda: {"timeout_s": 5})
@@ -258,7 +258,7 @@ def test_codex_cli_uses_read_only_sandbox_and_rejects_jsonless_output(monkeypatc
 def test_claude_cli_web_search_flag_switches_tools_and_turns(monkeypatch):
     """web_search=True must grant exactly the WebSearch tool with multi-turn
     headroom; web_search=False keeps the sealed zero-tool single-turn call."""
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
     monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
@@ -291,7 +291,7 @@ def test_claude_cli_web_search_flag_switches_tools_and_turns(monkeypatch):
 
 
 def test_claude_cli_web_max_turns_config_override(monkeypatch):
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
     monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
@@ -317,7 +317,7 @@ def test_claude_cli_model_pin_from_config(monkeypatch):
     """A configured model reaches the CLI as --model; unset config sends no
     --model at all (the CLI's own default), and CLAUDE_CLI_MODEL outranks config
     like every other claude_cli knob. Operator pin 2026-07-20: claude-sonnet-5."""
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.delenv("AI_BRAIN_TIMEOUT_S", raising=False)
     monkeypatch.delenv("CLAUDE_CLI_COMMAND", raising=False)
@@ -352,7 +352,7 @@ def test_claude_cli_model_pin_from_config(monkeypatch):
 def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
     """The research seam passes web_search unconditionally to the configured
     provider — non-claude providers must swallow it, not raise."""
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert ai_brain.OpenRouterBrain().complete("S", "U", web_search=True) == ""
@@ -367,7 +367,7 @@ def test_openrouter_and_codex_accept_web_search_kwarg(monkeypatch):
 
 
 def test_citations_never_glue_url_to_url():
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     class R:
         citations = ({"url_citation": {"url": "https://x.test/a", "title": "https://x.test/a"}},
@@ -384,7 +384,7 @@ def test_cli_env_claude_pins_every_model_knob_to_the_brain_model():
     """Operator order 2026-07-22: ONLY the configured model does brain work. The
     ambient env pins CLAUDE_CODE_SUBAGENT_MODEL=claude-fable-5 — for claude_cli
     _cli_env must override it so no fable/haiku ever runs a verdict or subagent."""
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     base = {"PATH": "/usr/bin", "CLAUDE_CODE_SUBAGENT_MODEL": "claude-fable-5"}
 
@@ -412,7 +412,7 @@ def test_cli_env_codex_strips_claude_aux_pins_and_openrouter_has_no_exec_model()
     """The Haiku search-executor is claude_cli ONLY. codex_cli must NOT inherit
     any Claude aux model (strip the fable pin); openrouter has no CLI so no exec
     model is declared for it."""
-    from hermes_trader.agents import ai_brain
+    from pathia.agents import ai_brain
 
     base = {"PATH": "/usr/bin", "CLAUDE_CODE_SUBAGENT_MODEL": "claude-fable-5",
             "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4-5-20251001"}

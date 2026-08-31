@@ -28,7 +28,7 @@ from typing import Any, Callable
 # Resolve the dataset: env override wins, else the candle file next to this package
 # (research/alpha_swarm/dataset.json — gitignored 17MB data, rebuild with lib/build_dataset.py).
 DATASET = Path(os.environ.get(
-    "HERMES_ALPHA_DATASET",
+    "PATHIA_ALPHA_DATASET",
     Path(__file__).resolve().parent.parent / "dataset.json",
 ))
 

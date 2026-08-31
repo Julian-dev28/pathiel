@@ -11,7 +11,7 @@ Survivor universe (today's liquid set) => positive results are an UPPER BOUND.
 """
 import json, statistics, random
 from pathlib import Path
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 T,O,H,L,Cl,Vv = 0,1,2,3,4,5
 random.seed(7)
 def mean(xs): return sum(xs)/len(xs) if xs else 0.0

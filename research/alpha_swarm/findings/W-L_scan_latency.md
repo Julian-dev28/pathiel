@@ -4,7 +4,7 @@
 
 **Method.** Entry-latency study on the VALIDATED books' OWN signals — no new
 signals invented. Each book's historical entries were reconstructed per its
-LIVE rules (`hermes_trader/agents/*_live.py` + `.agent-config.json` geometry),
+LIVE rules (`pathia/agents/*_live.py` + `.agent-config.json` geometry),
 then the SAME signal was entered with a delay of {0, 1, 3, 6, 12} h after the
 signal bar close. Net 25bps, pessimistic intra-bar stops (stop checked first in
 every hourly bar, gap-through fills at the open), live stop/hold per book.

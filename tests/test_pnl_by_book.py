@@ -33,7 +33,7 @@ def test_every_book_is_in_priority(pbb):
 
 
 def test_open_line_regex_parses_loop_log(pbb):
-    line = ("2026-06-27 08:07:01,658 INFO:hermes_trader.agents.rally_exhaustion_live:"
+    line = ("2026-06-27 08:07:01,658 INFO:pathia.agents.rally_exhaustion_live:"
             "[rally-exhaustion] LIVE opened short XPL (rally +12.8%, dvol $22.3M)")
     m = pbb.OPEN_LINE_RE.match(line)
     assert m is not None
@@ -43,7 +43,7 @@ def test_open_line_regex_parses_loop_log(pbb):
 
 
 def test_open_line_regex_vol_book_short_flip(pbb):
-    line = ("2026-07-01 12:00:00,000 INFO:hermes_trader.agents.vol_breakout_long_live:"
+    line = ("2026-07-01 12:00:00,000 INFO:pathia.agents.vol_breakout_long_live:"
             "[vol-breakout-long] LIVE opened short MANTA (breakout 3.2x, confirm 1.8x)")
     m = pbb.OPEN_LINE_RE.match(line)
     assert m is not None
@@ -92,9 +92,9 @@ def test_extract_exact_footprints_reads_both_sources(pbb, tmp_path):
     # loop-log line: local-time stamp -> epoch ms must round-trip through mktime
     stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(open_ts_ms / 1000))
     log = tmp_path / "trading_loop.log"
-    log.write_text(f"{stamp},123 INFO:hermes_trader.agents.engulf_short_live:"
+    log.write_text(f"{stamp},123 INFO:pathia.agents.engulf_short_live:"
                    f"[engulf-short] LIVE opened short DOGE (body-ratio 1.50, dvol $25.0M)\n"
-                   f"{stamp},124 INFO:hermes_trader.agents.engulf_short_live:"
+                   f"{stamp},124 INFO:pathia.agents.engulf_short_live:"
                    f"[engulf-short] SHADOW btc_up=True signals=3\n")
     foot = pbb.extract_exact_footprints(0, loop_log=str(log), session_log=str(session))
     assert foot["neg_funding_fade"] == [("ALT", "short", open_ts_ms)]

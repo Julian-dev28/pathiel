@@ -16,7 +16,7 @@ zero capital moved):
 
 The operator's framing ("AI weighed TA over news") is not what happened at
 23:04 — **the AI never saw the news**. Root cause is deterministic and sits in
-`hermes_trader/agents/news_catalyst.py`:
+`pathia/agents/news_catalyst.py`:
 
 1. `_coin_query("xyz:SKHX")` queries Google News for `"SKHX" stock`. The
    listing coverage says "SK Hynix", never "SKHX".
@@ -117,7 +117,7 @@ weight; the quadrant ledger is what settles it.
 ## 3. What is wired forward (the real product)
 
 `record_news_ta_quadrant(analysis, config)` in
-`hermes_trader/agents/mover_recorders.py`, called from
+`pathia/agents/mover_recorders.py`, called from
 `scripts/trading_loop.py` right after the research log event (before
 route_verdict can mutate the verdict). For every LONG/SHORT verdict researched
 with a REAL news_context it records to shadow ledger book
@@ -166,5 +166,5 @@ At n>=30 graded episodes in BOTH the aligned and conflict quadrants
 - `research/alpha_swarm/hypotheses/W-V0_extract.py` / `W-V0_events.json`
 - `research/alpha_swarm/hypotheses/W-V1_quadrant_backtest.py` /
   `W-V1_results.json` / `W-V_cache_1h.json`
-- Live (uncommitted, this lane): `hermes_trader/agents/mover_recorders.py`,
+- Live (uncommitted, this lane): `pathia/agents/mover_recorders.py`,
   `scripts/trading_loop.py`, `tests/test_mover_recorders.py`

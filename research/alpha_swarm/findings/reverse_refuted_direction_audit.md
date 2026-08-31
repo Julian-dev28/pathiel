@@ -89,7 +89,7 @@ verdict is possible; not evidence either way.
 
 ## LIVE 2026-07-20 (operator order: "rebuild then rewire live, $20 / 10x")
 
-`hermes_trader/agents/news_surge_short_live.py` restores the demolished
+`pathia/agents/news_surge_short_live.py` restores the demolished
 coin_catalyst() read and rewires it SHORT-only, bounded per the evidence:
 
 - **Records every scan candidate** (crypto AND xyz equities, breaking and
@@ -160,7 +160,7 @@ re-graded at 5% the way the two new books were, and any that dies there needs
 its leverage cut (a 20% stop needs ≤3x) or its verdict revisited. Not done
 here; flagged for the operator.
 
-**Second book, same order:** `hermes_trader/agents/mover_recorders.py` gained
+**Second book, same order:** `pathia/agents/mover_recorders.py` gained
 `record_mover_pass_short` — the cleanest inverse in the whole audit (n=17, no
 outlier dependency, both halves +6.70/+6.79, mixed crypto+equities). Same
 $20/10x/15%-stop/1d-hold geometry, own ledger book `mover_pass_short`, own
@@ -188,7 +188,7 @@ turned into a different, untested rule.
 
 `scripts/shadow_inverse_status.py` reads existing shadow ledgers without
 writing to them or placing orders. It uses the production forward grader
-(`hermes_trader.agents.shadow_ledger.grade_records`) and caches each public
+(`pathia.agents.shadow_ledger.grade_records`) and caches each public
 candle/funding series once per coin. That means inverse trades retain the
 normal same-side stop simulation, round-trip cost tiers, episode de-duplication
 and funding PnL.

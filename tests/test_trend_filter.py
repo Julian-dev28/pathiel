@@ -1,6 +1,6 @@
 """PTJ 200-day-MA trend-regime filter — gate-logic unit tests (no network)."""
 
-import hermes_trader.agents.executor as ex
+import pathia.agents.executor as ex
 
 
 def _patch_direction(monkeypatch, direction):

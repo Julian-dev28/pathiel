@@ -38,7 +38,7 @@ sys.path.insert(0, str(REPO / "research" / "alpha_swarm" / "lib"))
 import alpha_lib as al  # noqa: E402
 
 HOURLY_CACHE = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "4b037816-5b27-4d2d-a13e-a6ebd68a2340/scratchpad/hourly_ext.json"
 )
 RESULTS = HYP / "W-N1_precedence_results.json"

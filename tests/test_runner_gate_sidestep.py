@@ -5,7 +5,7 @@ LONG @ min_ai_confidence (0.62), then the runner gate re-blocked it on min_confi
 (0.65/0.67) — 54 rescues all blocked while the coins ran +21-75%. The exemption lets a
 sidestep override clear the CONF check; structure/composite checks still apply.
 """
-from hermes_trader.agents.executor import _runner_entry_block_reason
+from pathia.agents.executor import _runner_entry_block_reason
 
 
 def _cfg(**gate):

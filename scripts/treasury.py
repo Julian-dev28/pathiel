@@ -36,7 +36,7 @@ if _env.exists():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from hermes_trader.client.hl_client import _http_post, fetch_account_state, resolve_user_address
+from pathia.client.hl_client import _http_post, fetch_account_state, resolve_user_address
 
 # HL spot pair indices (verified live from /info spotMeta on 2026-05-28).
 SPOT_PAIR_USDH_USDC = "@230"   # USDH/USDC

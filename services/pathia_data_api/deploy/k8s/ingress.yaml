@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pathia-data-api
+  namespace: pathia
+  labels:
+    app.kubernetes.io/name: pathia-data-api
+    app.kubernetes.io/part-of: pathia-data-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # cert-manager issues/renews the TLS cert referenced below.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pathia-data.example.com
+      secretName: pathia-data-api-tls
+  rules:
+    - host: pathia-data.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pathia-data-api
+                port:
+                  number: 80

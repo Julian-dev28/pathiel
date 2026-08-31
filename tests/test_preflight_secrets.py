@@ -43,7 +43,7 @@ def _complete_env(**overrides: str) -> Dict[str, str]:
         "HYPERLIQUID_WALLET_ADDRESS": FAKE_AGENT_WALLET,
         "HYPERLIQUID_MASTER_ADDRESS": FAKE_MASTER_ADDR,
         "HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY,
-        "HERMES_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
+        "PATHIA_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
         # openrouter + a fake key, NOT claude_cli. Selecting a CLI provider here
         # used to "sidestep the OPENROUTER_API_KEY requirement", but the brain
         # readiness check verifies the `claude` binary is on PATH — so the test
@@ -82,7 +82,7 @@ def test_required_present_fails_when_missing():
     assert "HYPERLIQUID_WALLET_ADDRESS" in failed
     assert "HYPERLIQUID_PRIVATE_KEY" in failed
     assert "HYPERLIQUID_MASTER_ADDRESS" in failed
-    assert "HERMES_OPERATOR_TOKEN" in failed
+    assert "PATHIA_OPERATOR_TOKEN" in failed
 
 
 def test_required_present_passes_with_complete_synthetic_env():
@@ -164,7 +164,7 @@ def test_master_private_key_absent_passes_either_mode():
 
 
 def test_is_deploy_context_detects_platform_signals():
-    assert pf.is_deploy_context({"FLY_APP_NAME": "hermes-trader"}) is True
+    assert pf.is_deploy_context({"FLY_APP_NAME": "pathia"}) is True
     assert pf.is_deploy_context({"KUBERNETES_SERVICE_HOST": "10.0.0.1"}) is True
     assert pf.is_deploy_context({}) is False
     assert pf.is_deploy_context({}, forced=True) is True

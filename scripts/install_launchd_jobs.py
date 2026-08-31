@@ -35,7 +35,7 @@ AGENT_DIR = os.path.expanduser("~/Library/LaunchAgents")
 # label -> (module args, schedule, log). Schedule is a list of
 # StartCalendarInterval dicts; {"Minute": 5} alone means "every hour at :05".
 JOBS: Dict[str, Dict[str, Any]] = {
-    "com.hermes.autonomous-cycle": {
+    "com.pathia.autonomous-cycle": {
         "args": [os.path.join(ROOT, "scripts", "autonomous_cycle.py")],
         "schedule": [{"Hour": 9, "Minute": 15}],
         "log": "logs/autonomous_cycle.log",
@@ -141,7 +141,7 @@ def main() -> int:
     rc = install(labels, dry_run=args.dry_run)
     if not args.dry_run:
         print("\n# verify:  python scripts/install_launchd_jobs.py --status")
-        print("# kick one: launchctl kickstart -k gui/$UID/com.hermes.trends-price")
+        print("# kick one: launchctl kickstart -k gui/$UID/com.pathia.trends-price")
         print("# REMOVE the matching crontab lines — cron cannot run these "
               "(TCC blocks ~/Documents).")
     return rc

@@ -47,7 +47,7 @@ the TA short is currently RIGHT. Anecdote only; the ledger decides.
 
 ## What changed on the live tree (uncommitted, per lane scope)
 
-- `hermes_trader/agents/mover_recorders.py`: `classify_news_polarity()` +
+- `pathia/agents/mover_recorders.py`: `classify_news_polarity()` +
   `record_news_ta_quadrant()` (1d horizon, 15% stop, dedup coin/UTC-day,
   hot-kill mover_recorders.enabled).
 - `scripts/trading_loop.py`: import + call right after the research

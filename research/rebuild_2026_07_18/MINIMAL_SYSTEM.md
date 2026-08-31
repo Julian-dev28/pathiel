@@ -7,15 +7,15 @@ with no successor.
 
 ---
 
-## 1. The ground layer: `hermes_trader/client/` stays (1,651 lines, already rebuilt)
+## 1. The ground layer: `pathia/client/` stays (1,651 lines, already rebuilt)
 
 The data layer is NOT the problem. It was audited 2026-07-10 and hardened; v2 builds on it as-is.
 
 | file | lines | what it gives v2 |
 |---|---|---|
-| `client/hl_client.py` | 495 | `_http_post` (all /info traffic through one token-bucket-metered, keep-alive `requests.Session`), `fetch_hl_candles` (90s TTL cache, `HERMES_CANDLE_CACHE_TTL_S`; retries transient non-list responses up to `HERMES_CANDLE_RETRIES=6` so a 429 never silently reads as "no signal"), `fetch_account_state` (per-dex equity + `queried_dexes`), `missing_material_dexes` (partial-dex degraded-read guard), `fetch_aggregate_contributions_since` (transfers don't fake PnL), `fetch_all_mids`, `fetch_funding_history` |
+| `client/hl_client.py` | 495 | `_http_post` (all /info traffic through one token-bucket-metered, keep-alive `requests.Session`), `fetch_hl_candles` (90s TTL cache, `PATHIA_CANDLE_CACHE_TTL_S`; retries transient non-list responses up to `PATHIA_CANDLE_RETRIES=6` so a 429 never silently reads as "no signal"), `fetch_account_state` (per-dex equity + `queried_dexes`), `missing_material_dexes` (partial-dex degraded-read guard), `fetch_aggregate_contributions_since` (transfers don't fake PnL), `fetch_all_mids`, `fetch_funding_history` |
 | `client/rate_limit.py` | 92 | `HL_LIMITER` token bucket: 300 burst + 15/s refill = 900 weight/min sustained for the loop, sized so loop + dashboard fit HL's 1,200/min per-IP budget. Per-endpoint weights (`candleSnapshot`=20, `allMids`=2, `clearinghouseState`=2, `fundingHistory` unlisted → default 20) |
-| `client/universe.py` | 288 | `get_universe` (volume-ranked perp+spot+HIP-3, 24h disk cache in `~/.hermes/universe_cache/`), `list_hip3_dexes` (stale-serving on empty response — the 07-17 phantom-empty fix) |
+| `client/universe.py` | 288 | `get_universe` (volume-ranked perp+spot+HIP-3, 24h disk cache in `~/.pathia/universe_cache/`), `list_hip3_dexes` (stale-serving on empty response — the 07-17 phantom-empty fix) |
 | `client/exchange.py` | 748 | SDK signing, `place_hl_order` (IOC, L2-anchored cross price, `reduce_only` close semantics, `MIN_ORDER_USD=10.5` floor), `place_hl_trigger_order` (on-exchange SL/TP), `cancel_open_orders_for_coin`, `_cached_universe` meta cache + `prewarm_meta_cache`, `_set_session_timeout` (kills the SDK's `timeout=None` 15-min hangs), `get_all_hl_mids` with feed-freshness warnings |
 
 Two client-audit truths that become v2 LAW, not code:
@@ -31,7 +31,7 @@ Two client-audit truths that become v2 LAW, not code:
 
 ## 2. What exists today (the delta v2 is measured against)
 
-`hermes_trader/agents/`: **35 modules, 12,451 lines**, plus `scripts/trading_loop.py` (1,211 lines)
+`pathia/agents/`: **35 modules, 12,451 lines**, plus `scripts/trading_loop.py` (1,211 lines)
 importing 20+ of them. Zero agents import `scripts/trading_loop` (grep confirms — only two comment
 mentions), so the strategy layer is already severable from the loop.
 
@@ -52,7 +52,7 @@ Net: ~12.5k lines of agents → **~3.5k lines in 7 modules**.
 ## 3. v2 spec — 7 modules on top of `client/`
 
 ```
-hermes_trader/
+pathia/
   client/            # unchanged (4 files, above)
   v2/
     loop.py          # ONE process, ONE cadence
@@ -209,7 +209,7 @@ Rollback: flip the flags back. Verify with heartbeat + `positions_snapshot` that
 orphaned (per `feedback_validate_before_escalating`: cross-check live-fetch + ledger + dsl-state).
 
 **Phase 1 — build v2 in a worktree; v1 untouched.**
-`hermes_trader/v2/` with its own gate tests (<2s, pre-commit): completed-bar contract test,
+`pathia/v2/` with its own gate tests (<2s, pre-commit): completed-bar contract test,
 claims-registry exclusivity, kill-switch SOD persistence, DSL floor math golden cases,
 min-order/sizing floor arithmetic at $19. The 3 book signal functions are ports of already-live
 logic, not rewrites: `extreme_fade_live.compute`, `funding_spike_short_live` z-episode logic,

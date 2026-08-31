@@ -6,7 +6,7 @@ module is not yet wired — wiring is gated/default-off and presented separately
 
 import math
 
-from hermes_trader.agents.sizing import (
+from pathia.agents.sizing import (
     atr_equal_risk_notional,
     risk_of_ruin,
 )

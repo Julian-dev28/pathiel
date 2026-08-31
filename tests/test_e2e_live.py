@@ -1,14 +1,14 @@
 """Real-money end-to-end tests against Hyperliquid mainnet.
 
 DOUBLE-GATED — these are excluded from the default run AND skip themselves
-unless ``HERMES_E2E=1`` is set, because they spend real funds:
+unless ``PATHIA_E2E=1`` is set, because they spend real funds:
 
   - test_live_order_roundtrip: sets leverage, opens a tiny (~$14) position and
     closes it — costs trading fees + slippage (~1-2 cents);
   - test_live_research_loop: runs the full research pipeline including the
     billable OpenRouter LLM call.
 
-Run with:  HERMES_E2E=1 pytest -m live
+Run with:  PATHIA_E2E=1 pytest -m live
 """
 import os
 import time
@@ -17,9 +17,9 @@ import pytest
 
 pytestmark = pytest.mark.live
 
-_E2E = os.environ.get("HERMES_E2E") == "1"
+_E2E = os.environ.get("PATHIA_E2E") == "1"
 _needs_e2e = pytest.mark.skipif(
-    not _E2E, reason="set HERMES_E2E=1 to run real-money e2e tests")
+    not _E2E, reason="set PATHIA_E2E=1 to run real-money e2e tests")
 
 
 def _positions(state):
@@ -34,8 +34,8 @@ def _positions(state):
 )
 def test_live_order_roundtrip():
     """Set leverage, open a tiny leveraged position, close it, verify it is flat."""
-    from hermes_trader.client.exchange import HL_LEVERAGE, get_hl_price, place_hl_order, set_leverage
-    from hermes_trader.client.hl_client import _http_post, fetch_account_state, resolve_user_address
+    from pathia.client.exchange import HL_LEVERAGE, get_hl_price, place_hl_order, set_leverage
+    from pathia.client.hl_client import _http_post, fetch_account_state, resolve_user_address
 
     user = resolve_user_address()
     state0 = fetch_account_state(user)
@@ -85,8 +85,8 @@ def test_live_order_roundtrip():
                     reason="OPENROUTER_API_KEY not configured")
 def test_live_research_loop():
     """Run the full research pipeline (incl. the real LLM) and validate the output."""
-    from hermes_trader.agents.research import research
-    from hermes_trader.client.hl_client import fetch_all_mids
+    from pathia.agents.research import research
+    from pathia.client.hl_client import fetch_all_mids
 
     mid = float(fetch_all_mids().get("BTC", 0))
     assert mid > 0

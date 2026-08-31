@@ -9,7 +9,7 @@ for line in open(os.path.join(_REPO, ".env.local")):
     line = line.strip()
     if line and not line.startswith("#") and "=" in line:
         k, _, v = line.partition("="); os.environ.setdefault(k.strip(), v.strip())
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.hl_client import fetch_hl_candles
 
 IV = "5m"; N = 5000
 EQUITY = ["xyz:SP500", "xyz:SKHX", "xyz:NVDA", "xyz:XYZ100", "xyz:MSTR"]

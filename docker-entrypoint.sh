@@ -1,5 +1,5 @@
 #!/bin/sh
-# Shared container entrypoint for every hermes-trader process — web, loop,
+# Shared container entrypoint for every pathia process — web, loop,
 # sched, sampler, rotator (see fly.toml [processes] / k8s/statefulset.yaml).
 # All five run from this one image; this only bootstraps what has to exist on
 # the mounted volume before ANY of them run, then execs the process's real
@@ -12,7 +12,7 @@ set -e
 # symlink target, before `scripts/scheduler.py` can write through the
 # `/app/.state -> /data/.state` symlink created in the Dockerfile (that
 # script hardcodes `<repo root>/.state` for its own job-run bookkeeping and
-# does not read HERMES_STATE_DIR like the rest of the app does — see the
+# does not read PATHIA_STATE_DIR like the rest of the app does — see the
 # Dockerfile's "Runtime state" comment). Cheap and idempotent for every other
 # process too, so it runs unconditionally rather than only for `sched`.
 mkdir -p /data/.state

@@ -144,7 +144,7 @@ def test_verify_notices_a_missing_member(tree, tmp_path):
 
 def test_pruning_keeps_the_newest_and_only_our_own_files(tmp_path):
     for i in range(6):
-        f = tmp_path / f"hermes-state-2026083{i}-000000.tar.gz"
+        f = tmp_path / f"pathia-state-2026083{i}-000000.tar.gz"
         f.write_text("x")
         os.utime(f, (time.time() - (10 - i) * 86400,) * 2)
     (tmp_path / "someone-elses-backup.tar.gz").write_text("x")
@@ -153,7 +153,7 @@ def test_pruning_keeps_the_newest_and_only_our_own_files(tmp_path):
     left = sorted(p.name for p in tmp_path.glob("*.tar.gz"))
     assert len(removed) == 3
     assert "someone-elses-backup.tar.gz" in left, "pruning touched a foreign file"
-    assert "hermes-state-20260835-000000.tar.gz" in left, "newest was deleted"
+    assert "pathia-state-20260835-000000.tar.gz" in left, "newest was deleted"
 
 
 def test_pruning_a_missing_directory_is_not_an_error(tmp_path):
@@ -162,7 +162,7 @@ def test_pruning_a_missing_directory_is_not_an_error(tmp_path):
 
 def test_keep_zero_never_deletes_everything(tmp_path):
     """A misconfigured keep must not wipe every backup there is."""
-    (tmp_path / "hermes-state-20260830-000000.tar.gz").write_text("x")
+    (tmp_path / "pathia-state-20260830-000000.tar.gz").write_text("x")
     assert B.prune(str(tmp_path), keep=0) == []
 
 
@@ -183,12 +183,12 @@ def test_an_unverified_backup_reports_as_no_backup(monkeypatch, tmp_path):
     lets a broken backup read as a working one."""
     import importlib as il
 
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     (tmp_path / "backup.json").write_text(
         json.dumps({"ts": time.time(), "verified": False, "detail": "truncated"}))
 
-    import hermes_trader.agents.rebalancer_owned as ro
-    from hermes_trader import metrics
+    import pathia.agents.rebalancer_owned as ro
+    from pathia import metrics
     il.reload(ro)
     try:
         metrics._refresh()
@@ -206,4 +206,4 @@ def test_backup_staleness_is_alerted_on():
     import yaml
     doc = yaml.safe_load(open(os.path.join(ROOT, "k8s", "prometheusrule.yaml")))
     names = {r["alert"] for g in doc["spec"]["groups"] for r in g["rules"]}
-    assert "HermesBackupStale" in names
+    assert "PathiaBackupStale" in names

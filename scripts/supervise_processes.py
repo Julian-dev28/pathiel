@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Restart hermes processes that have died. Run by the scheduler, every 2 min.
+"""Restart pathia processes that have died. Run by the scheduler, every 2 min.
 
 Why this exists
 ---------------
 `trading_loop.py` already self-heals when it HANGS: a watchdog thread re-execs
-the process if no scan completes inside `HERMES_WATCHDOG_TIMEOUT_S`. That
+the process if no scan completes inside `PATHIA_WATCHDOG_TIMEOUT_S`. That
 covers a live-but-wedged loop. It cannot cover a loop that is GONE — OOM, a
 SIGKILL, a closed terminal, the Mac sleeping. Nothing restarted those, and the
 cost is on record: a full week of no trading in June, diagnosed after the fact
@@ -62,7 +62,7 @@ RESTART_WINDOW_S = 3600.0
 COMPONENTS: Dict[str, Dict[str, Any]] = {
     "loop": {"kind": "script", "target": "scripts/trading_loop.py",
              "action": "loop", "label": "trading loop"},
-    "server": {"kind": "module", "target": "hermes_trader.server",
+    "server": {"kind": "module", "target": "pathia.server",
                "action": "server", "label": "API server"},
     "rotator": {"kind": "script", "target": "scripts/log_rotate.py",
                 "args": ["--daemon"], "action": "rotate", "label": "log rotator"},

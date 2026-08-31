@@ -124,7 +124,7 @@ episodes — rounding error.
 Nothing at real capital. Two zero-cost wirings with exact hooks:
 
 1. **Meta enrichment of the existing recorder** so every overlay grades itself
-   forward: in `hermes_trader/agents/mover_recorders.py::record_young_mover_short`
+   forward: in `pathia/agents/mover_recorders.py::record_young_mover_short`
    add to `meta`: `day_move_pct` (the call site at `scripts/trading_loop.py`
    ~1020-1040 already holds `perception["daily_move_pct"]` — pass it through),
    `funding_24h` (skip if a fetch is needed; only add free fields), `dvol_usd`

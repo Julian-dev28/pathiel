@@ -49,7 +49,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 ST_DIR = REPO / ".state" / "shadow_ledger"
 SCRATCH = Path(os.environ.get("SOC1_SCRATCH",
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "63d7d57b-6290-4704-91fe-5931e8fda8f7/scratchpad"))
 CACHE = SCRATCH / "W-SOC1_1h.json"
 RESULTS = Path(__file__).with_name("W-SOC1_results.json")
@@ -99,7 +99,7 @@ def build_cache(coins, force=False):
     missing = [c for c in coins if c not in have or not have.get(c)]
     if missing:
         sys.path.insert(0, str(REPO))
-        from hermes_trader.client.hl_client import fetch_hl_candles  # network, read-only
+        from pathia.client.hl_client import fetch_hl_candles  # network, read-only
         for attempt in range(3):
             still = []
             for coin in missing:

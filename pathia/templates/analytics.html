@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>pathia · analytics</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathia.css" />
+<script defer src="/static/pathia.js"></script>
+
+</head>
+<body>
+<script type="speculationrules">
+{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
+</script>
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathia</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+    </nav>
+    <div class="masthead-right">
+      <span class="mono mut" id="page-meta"></span>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="page-head">
+    <h1 class="page-title">Analytics</h1>
+    <div class="page-sub">Funding, order flow and the shape of the decision funnel.</div>
+  </div>
+
+  <!-- FUNNEL -->
+  <section class="card p-0 mb-4 panel span2" id="panel-funnel">
+    <button class="panel-head" data-panel="funnel" type="button" aria-expanded="true">
+      <span class="sec-label">funnel</span>
+      <span class="pmeta mono" id="funnel-meta"></span>
+      <span class="seg" onclick="event.stopPropagation()">
+        <button data-window="86400" class="range-btn on">24h</button>
+        <button data-window="604800" class="range-btn">7d</button>
+      </span>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-funnel">
+      <div class="panel-body">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <div id="funnel-bars"><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div></div>
+            <div class="text-[10.5px] mt-2" style="color:var(--ink-3)">executed = main-engine fills + every strategy book's opens; xs_momentum's basket legs aren't individually logged — see book league</div>
+          </div>
+          <div>
+            <div class="sec-label mb-2">why trades didn't happen</div>
+            <div id="funnel-reasons"><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOOK LEAGUE -->
+  <section class="card p-0 mb-4 panel span2" id="panel-league">
+    <button class="panel-head" data-panel="league" type="button" aria-expanded="true">
+      <span class="sec-label">book league</span>
+      <span class="pmeta mono" id="league-meta"></span>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-league">
+      <div class="panel-body">
+        <div class="text-[11px] mb-3" style="color:var(--ink-3)">Signal counts per book. Graded EV is on the Trends tab.</div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left border-b" style="color:var(--ink-3);border-color:var(--rule)">
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">status</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="n">signals</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="resolved">resolved</th>
+                <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="pending">pending</th>
+                <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right sortable" data-sort="last_age_h">last signal</th>
+              </tr>
+            </thead>
+            <tbody id="league-body">
+              <tr><td colspan="7" class="py-2"><div class="skeleton" style="width:100%;height:18px"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COIN CHART -->
+  <section class="card p-0 mb-4 panel span2" id="panel-chart">
+    <button class="panel-head" data-panel="chart" type="button" aria-expanded="true">
+      <span class="sec-label">coin chart</span>
+      <select id="coin-select" class="fsel" style="margin-left:auto" onclick="event.stopPropagation()"></select>
+      <span class="chev"></span>
+    </button>
+    <div class="panel-wrap" id="wrap-chart">
+      <div class="panel-body">
+        <div class="chart-wrap">
+          <canvas id="coin-canvas" width="1180" height="280"></canvas>
+          <div id="chart-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs" style="color:var(--ink-3);top:0">no candle data for this coin</div>
+        </div>
+        <div class="chart-readout mono" id="chart-readout">hover the chart for OHLC</div>
+        <div class="legend">
+          <span><span class="leg-dot" style="background:var(--up)"></span>bullish candle</span>
+          <span><span class="leg-dot" style="background:var(--down)"></span>bearish candle</span>
+          <span><span class="leg-dot" style="background:var(--up);border-radius:50%"></span>entry (long)</span>
+          <span><span class="leg-dot" style="background:var(--down);border-radius:50%"></span>entry (short)</span>
+          <span><span class="leg-dot" style="background:var(--amber);transform:rotate(45deg)"></span>close</span>
+          <span><span class="leg-dot" style="background:var(--accent);border-radius:50%"></span>verdict</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="grid2 mb-4">
+    <!-- FUNDING/OI HEAT -->
+    <section class="card p-0 panel" id="panel-heat">
+      <button class="panel-head" data-panel="heat" type="button" aria-expanded="true">
+        <span class="sec-label">funding / oi heat</span>
+        <span class="pmeta mono" id="heat-meta"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="panel-wrap" id="wrap-heat">
+        <div class="panel-body">
+          <div id="heat-body"><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div><div class="skeleton" style="width:100%;height:16px;margin-bottom:8px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHALE + NEWS TAPES -->
+    <section class="card p-0 panel" id="panel-tapes">
+      <button class="panel-head" data-panel="tapes" type="button" aria-expanded="true">
+        <span class="sec-label">whale + news tapes</span>
+        <span class="pmeta mono" id="tapes-meta"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="panel-wrap" id="wrap-tapes">
+        <div class="panel-body">
+          <div class="sec-label mb-2" style="font-size:9px">whale flow · last 24h</div>
+          <div id="whale-body" class="mb-4"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
+          <div class="sec-label mb-2" style="font-size:9px">news coverage · last 24h</div>
+          <div id="news-body"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="site-foot">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
+// Whale flow runs into the millions — fmtMoney's fixed 2dp reads as
+// "-$1310471.00". Abbreviate past $10k, keep small values exact.
+const fmtMoneyCompact = v => {
+  const n = Number(v ?? 0), a = Math.abs(n), sign = n < 0 ? '-$' : '$';
+  if (a >= 1e9) return sign + (a / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return sign + (a / 1e6).toFixed(2) + 'M';
+  if (a >= 1e4) return sign + (a / 1e3).toFixed(1) + 'k';
+  return sign + a.toFixed(2);
+};
+const fmtAge = h => h == null ? '—' : (h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : (h / 24).toFixed(1) + 'd');
+const fmtNum = v => {
+  if (v == null || typeof v !== 'number' || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return (v / 1e3).toFixed(2) + 'k';
+  if (a >= 1) return v.toFixed(2);
+  return v.toFixed(5);
+};
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+// ── collapsible panels — default OPEN, state remembered per panel ──────────
+document.querySelectorAll('.panel-head').forEach(btn => {
+  const name = btn.dataset.panel;
+  const panel = document.getElementById('panel-' + name);
+  const key = 'pathia-an-' + name;
+  if (localStorage.getItem(key) === '0') {
+    panel.classList.add('closed');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  btn.addEventListener('click', () => {
+    const open = !panel.classList.toggle('closed');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    localStorage.setItem(key, open ? '1' : '0');
+  });
+});
+
+function setPageMeta() {
+  document.getElementById('page-meta').textContent = 'updated ' + new Date().toTimeString().slice(0, 8);
+}
+
+// ── FUNNEL ───────────────────────────────────────────────────────────────────
+let funnelWindow = 86400;
+async function loadFunnel() {
+  try {
+    const d = await (await fetch('/api/dashboard/funnel?window_s=' + funnelWindow)).json();
+    const max = Math.max(1, ...d.funnel.map(s => s.n));
+    document.getElementById('funnel-bars').innerHTML = d.funnel.map(s => `
+      <div class="funnel-row">
+        <span class="funnel-label mono">${esc(s.stage)}</span>
+        <span class="funnel-bar-wrap"><span class="funnel-bar" style="width:${Math.max(2, s.n / max * 100)}%"></span><span class="funnel-n">${s.n}</span></span>
+      </div>`).join('');
+    const reasons = d.top_reasons || [];
+    document.getElementById('funnel-reasons').innerHTML = reasons.length
+      ? reasons.map(r => `<div class="reason-row"><span>${esc(r.reason)}</span><span class="reason-n">×${r.n}</span></div>`).join('')
+      : '<div class="empty">nothing blocked in this window</div>';
+    document.getElementById('funnel-meta').textContent = `${d.blocked_executions} blocked executions`;
+    return d;
+  } catch (e) { return null; }
+}
+document.querySelectorAll('[data-window]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('[data-window]').forEach(x => x.classList.toggle('on', x === b));
+    funnelWindow = parseInt(b.dataset.window);
+    loadFunnel();
+  });
+});
+
+// ── BOOK LEAGUE ──────────────────────────────────────────────────────────────
+const BADGE = { live: '<span class="badge b-live">LIVE</span>',
+                shadow: '<span class="badge b-shadow">NO CAPITAL</span>',
+                off: '<span class="badge b-off">OFF</span>',
+                retired: '<span class="badge b-recorder">RETIRED</span>' };
+let leagueRows = [];
+let leagueSort = { key: 'n', desc: true };
+
+function renderLeague() {
+  const rows = leagueRows.slice().sort((a, b) => {
+    const k = leagueSort.key;
+    const av = a[k] == null ? -Infinity : a[k], bv = b[k] == null ? -Infinity : b[k];
+    return leagueSort.desc ? bv - av : av - bv;
+  });
+  const body = document.getElementById('league-body');
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--ink-3)">No books have recorded a signal yet</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(r => `
+    <tr class="border-b last:border-0" style="border-color:var(--rule)">
+      <td class="py-2 pr-3"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
+      <td class="py-2 pr-3">${BADGE[r.status] || esc(r.status)}</td>
+      <td class="py-2 pr-3 mono text-[10.5px]" style="color:var(--ink-2);max-width:220px">${esc(r.size)}</td>
+      <td class="py-2 pr-3 mono text-right">${r.n}</td>
+      <td class="py-2 pr-3 mono text-right resolved">${r.resolved}</td>
+      <td class="py-2 pr-3 mono text-right pending">${r.pending}</td>
+      <td class="py-2 mono text-right" style="color:var(--ink-2)">${fmtAge(r.last_age_h)}</td>
+    </tr>`).join('');
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.toggle('sort-on', th.dataset.sort === leagueSort.key);
+    th.classList.toggle('desc', leagueSort.desc);
+  });
+}
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    leagueSort = { key, desc: leagueSort.key === key ? !leagueSort.desc : true };
+    renderLeague();
+  });
+});
+async function loadLeague() {
+  try {
+    leagueRows = await (await fetch('/api/dashboard/book_league')).json();
+    document.getElementById('league-meta').textContent = leagueRows.length + ' books';
+    renderLeague();
+  } catch (e) { reportRefreshFailure('loadLeague', e); }
+}
+
+// ── COIN CHART — hand-drawn candles, no plugins ─────────────────────────────
+let chartData = null;
+function drawChart() {
+  const canvas = document.getElementById('coin-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(300, rect.width) * dpr;
+  canvas.height = 280 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.clearRect(0, 0, W, H);
+  document.getElementById('chart-empty').classList.toggle('hidden', !!(chartData && chartData.candles.length));
+  if (!chartData || !chartData.candles.length) return;
+  const cs = chartData.candles;
+  const lo = Math.min(...cs.map(c => c.l)), hi = Math.max(...cs.map(c => c.h));
+  const pad = (hi - lo) * 0.08 || 1;
+  const yMin = lo - pad, yMax = hi + pad;
+  const t0 = cs[0].t, t1 = cs[cs.length - 1].t || t0 + 1;
+  const xOf = t => 40 + (t - t0) / Math.max(1, t1 - t0) * (W - 55);
+  const yOf = p => 12 + (yMax - p) / (yMax - yMin) * (H - 40);
+  const bw = Math.max(2, (W - 95) / cs.length * 0.62);
+
+  ctx.strokeStyle = tok('--rule'); ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = 12 + (H - 40) * i / 4;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 15, y); ctx.stroke();
+    const p = yMax - (yMax - yMin) * i / 4;
+    ctx.fillStyle = tok('--ink-3'); ctx.font = '9px ui-monospace,monospace';
+    ctx.fillText(fmtNum(p), W - 50, y - 2);
+  }
+  cs.forEach(c => {
+    const x = xOf(c.t), up = c.c >= c.o;
+    ctx.strokeStyle = ctx.fillStyle = up ? tok('--up') : tok('--down');
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yOf(c.h)); ctx.lineTo(x, yOf(c.l)); ctx.stroke();
+    const oy = yOf(c.o), cy = yOf(c.c);
+    ctx.fillRect(x - bw / 2, Math.min(oy, cy), bw, Math.max(1.5, Math.abs(cy - oy)));
+  });
+  (chartData.markers || []).forEach(m => {
+    const x = xOf(m.t);
+    if (x < 38 || x > W - 15) return;
+    if (m.kind === 'entry') {
+      ctx.fillStyle = m.side === 'short' ? tok('--down') : tok('--up');
+      const y = m.side === 'short' ? 18 : H - 26;
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    } else if (m.kind === 'close') {
+      ctx.fillStyle = (m.pnl_pct ?? 0) >= 0 ? tok('--amber') : tok('--amber');
+      ctx.save(); ctx.translate(x, 16); ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-3.5, -3.5, 7, 7); ctx.restore();
+    } else if (m.kind === 'verdict') {
+      ctx.fillStyle = tok('--accent');
+      ctx.beginPath(); ctx.arc(x, H - 12, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  canvas._geom = { xOf, yOf, cs, t0, t1, W };
+}
+function coinChartHover(evt) {
+  if (!chartData || !chartData.candles.length) return;
+  const canvas = document.getElementById('coin-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = evt.clientX - rect.left;
+  const g = canvas._geom;
+  if (!g) return;
+  let nearest = g.cs[0], best = Infinity;
+  for (const c of g.cs) {
+    const d = Math.abs(g.xOf(c.t) - mx);
+    if (d < best) { best = d; nearest = c; }
+  }
+  const dt = new Date(nearest.t).toLocaleString();
+  document.getElementById('chart-readout').textContent =
+    `${dt} · O ${fmtNum(nearest.o)} H ${fmtNum(nearest.h)} L ${fmtNum(nearest.l)} C ${fmtNum(nearest.c)} · vol ${fmtNum(nearest.v)}`;
+}
+document.getElementById('coin-canvas').addEventListener('mousemove', coinChartHover);
+window.addEventListener('resize', () => { if (chartData) drawChart(); });
+
+async function loadCoinChart(coin) {
+  if (!coin) return;
+  try {
+    chartData = await (await fetch('/api/dashboard/coin_chart?coin=' + encodeURIComponent(coin) + '&interval=1h')).json();
+    drawChart();
+  } catch (e) { reportRefreshFailure('loadCoinChart', e); }
+}
+function populateCoinSelect(coins) {
+  const sel = document.getElementById('coin-select');
+  if (sel.dataset.filled) return;
+  const list = coins && coins.length ? coins : ['BTC', 'ETH', 'SOL'];
+  sel.innerHTML = list.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.dataset.filled = '1';
+  sel.addEventListener('change', () => loadCoinChart(sel.value));
+  loadCoinChart(sel.value);
+}
+
+// ── FUNDING / OI HEAT ────────────────────────────────────────────────────────
+function heatColor(pctile) {
+  if (pctile >= 80) return tok('--amber');
+  if (pctile <= 20) return tok('--accent');
+  return tok('--accent');
+}
+async function loadHeat() {
+  try {
+    const d = await (await fetch('/api/dashboard/funding_heat')).json();
+    const body = document.getElementById('heat-body');
+    const meta = document.getElementById('heat-meta');
+    if (d.status === 'accruing') {
+      const since = d.since ? new Date(d.since).toLocaleDateString() : 'now';
+      body.innerHTML = `<div class="empty">accruing since ${esc(since)} — ${d.count} snapshot${d.count === 1 ? '' : 's'} so far, needs 20 for a read</div>`;
+      meta.textContent = 'accruing';
+      return;
+    }
+    meta.textContent = d.count + ' snapshots';
+    body.innerHTML = (d.rows || []).map(r => `
+      <div class="heat-row">
+        <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+        <span class="heat-bar-wrap"><span class="heat-bar" style="width:${Math.min(100, Math.abs(r.funding_pctile - 50) * 2)}%;background:${heatColor(r.funding_pctile)}"></span></span>
+        <span class="heat-pctile mono" style="color:${heatColor(r.funding_pctile)}">${r.funding_pctile.toFixed(0)}%ile</span>
+        <span class="heat-oi mono">OI ${r.oi_change_24h_pct == null ? '—' : fmtPct(r.oi_change_24h_pct)}</span>
+      </div>`).join('') || '<div class="empty">no coins with enough history yet</div>';
+  } catch (e) { reportRefreshFailure('loadHeat', e); }
+}
+
+// ── WHALE + NEWS TAPES ───────────────────────────────────────────────────────
+function sparkline(points) {
+  if (!points || !points.length) return '';
+  const max = Math.max(1, ...points);
+  const w = 60, h = 16, step = w / Math.max(1, points.length - 1);
+  const pts = points.map((p, i) => `${(i * step).toFixed(1)},${(h - (p / max) * h).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" style="flex-shrink:0"><polyline points="${pts}" fill="none" stroke="${tok('--accent')}" stroke-width="1.5"/></svg>`;
+}
+async function loadTapes() {
+  try {
+    const d = await (await fetch('/api/dashboard/tapes')).json();
+    const whale = d.whale || {}, news = d.news || {};
+    const wbody = document.getElementById('whale-body');
+    if (whale.status === 'accruing' || !(whale.rows || []).length) {
+      wbody.innerHTML = '<div class="empty">accruing — no whale reads in the last 24h yet</div>';
+    } else {
+      const maxAbs = Math.max(1, ...whale.rows.map(r => Math.abs(r.net_usd)));
+      wbody.innerHTML = whale.rows.map(r => {
+        const buyPct = Math.min(100, Math.abs(r.buy_usd) / maxAbs * 100);
+        const sellPct = Math.min(100, Math.abs(r.sell_usd) / maxAbs * 100);
+        return `<div class="tape-row">
+          <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+          <span class="tape-bar-wrap"><span class="tape-bar-buy" style="width:${buyPct}%"></span><span class="tape-bar-sell" style="width:${sellPct}%"></span></span>
+          <span class="tape-net mono" style="color:${r.net_usd >= 0 ? 'var(--up)' : 'var(--down)'}" title="${fmtMoney(r.net_usd)}">${fmtMoneyCompact(r.net_usd)}</span>
+        </div>`;
+      }).join('');
+    }
+    const nbody = document.getElementById('news-body');
+    if (news.status === 'accruing' || !(news.rows || []).length) {
+      nbody.innerHTML = '<div class="empty">accruing — no news reads in the last 24h yet</div>';
+    } else {
+      nbody.innerHTML = news.rows.map(r => `
+        <div class="tape-row">
+          <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
+          ${sparkline(r.surge_series)}
+          <span class="mono text-[10.5px]" style="color:var(--ink-3)">${r.reads} read${r.reads === 1 ? '' : 's'}</span>
+          ${r.breaking ? '<span class="badge b-breaking" style="margin-left:auto">BREAKING</span>' : ''}
+        </div>`).join('');
+    }
+    document.getElementById('tapes-meta').textContent =
+      `${(whale.rows || []).length} whale · ${(news.rows || []).length} news`;
+  } catch (e) { reportRefreshFailure('loadTapes', e); }
+}
+
+// ── boot ─────────────────────────────────────────────────────────────────────
+(async function () {
+  const f = await loadFunnel();
+  populateCoinSelect(f ? f.coins : []);
+  loadLeague();
+  loadHeat();
+  loadTapes();
+  setPageMeta();
+})();
+setInterval(loadFunnel, 30000);
+setInterval(loadLeague, 30000);
+setInterval(() => { const sel = document.getElementById('coin-select'); if (sel.value) loadCoinChart(sel.value); }, 60000);
+setInterval(loadHeat, 60000);
+setInterval(loadTapes, 30000);
+setInterval(setPageMeta, 30000);
+
+
+</script>
+</body>
+</html>

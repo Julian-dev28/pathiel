@@ -1,15 +1,15 @@
 """Load `.env.local` before anything reads state paths.
 
-`hermes_trader.agents.rebalancer_owned` freezes `_STATE_DIR` at import time
-from `HERMES_STATE_DIR`, and that variable lives in `.env.local`. A CLI entry
+`pathia.agents.rebalancer_owned` freezes `_STATE_DIR` at import time
+from `PATHIA_STATE_DIR`, and that variable lives in `.env.local`. A CLI entry
 point that skips this file silently reads a DIFFERENT shadow-ledger directory
 than the running bot writes — which is exactly how the recorders lane first
 reported "2 books, 4 signals" against a live tree holding 28 books. Wrong
 directory, right code, no error anywhere.
 
 Call `load()` at the top of every entry point, before importing anything from
-`hermes_trader`. `os.environ.setdefault` so a real environment variable always
-outranks the file, matching `hermes_trader/server.py`.
+`pathia`. `os.environ.setdefault` so a real environment variable always
+outranks the file, matching `pathia/server.py`.
 """
 from __future__ import annotations
 
@@ -42,5 +42,5 @@ def load(path: Optional[str] = None) -> bool:
 def state_dir() -> str:
     """The state directory this process will actually use (after `load()`)."""
     load()
-    return os.environ.get("HERMES_STATE_DIR") or os.path.dirname(
+    return os.environ.get("PATHIA_STATE_DIR") or os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -1,5 +1,5 @@
 """Tests for the preflight gates (history_floor_reason + reentry_cap_reason)."""
-from hermes_trader.agents.risk_gates import history_floor_reason, reentry_cap_reason
+from pathia.agents.risk_gates import history_floor_reason, reentry_cap_reason
 
 
 def _bars(n):

@@ -1,4 +1,4 @@
-# DEMOLITION MANIFEST — hermes_trader/agents/ (2026-07-18)
+# DEMOLITION MANIFEST — pathia/agents/ (2026-07-18)
 
 Read-only audit. Nothing deleted. Evidence hierarchy: shadow-ledger verdicts >
 config state > ledger inventories > git activity > import graph. PnL attribution
@@ -46,7 +46,7 @@ modules already deleted (f967e6b, 6916b85).
 | extreme_fade.py | 95 | Pure crash-fade signal engine | Sole consumer extreme_fade_live | KEEP | Pure, tested, tiny. |
 | extreme_fade_live.py | 358 | Flagship long book: fade completed -12% daily crash | SETTLE-2 +4.71%/trade OOS both +; W-B2 skew-arm ROBUST (enforce=true live); ledger 230 sig / 98 res, active 0.5h ago. 14d realized -$4.43 on n=1 (noise) | KEEP | The strongest validated edge in the account. |
 | funding_spike_short_live.py | 321 | Live short: fade funding z>=2 crowded longs, 5d hold | W-F2A VALIDATED +6.2%/ep p=0.0027, dedup made it stronger; live per standing auto-flip order. 0 signals since live 07-09 (z>=2 is rare); no ledger file yet because zero signals ever fired | KEEP | Validated. Dormant by rarity, not by defect. Verify the recording path the first time a signal fires. |
-| hyperfeed.py | 475 | HL leaderboard / trader-discovery / market lookups | Live path uses exactly ONE function: market_get_funding_regime (risk_gates.py:332). The leaderboard_* / discovery_* surface (~270 lines) serves only scripts/hermes-mcp-server.py | SHRINK | Keep funding-regime + universe helpers (~150 lines) in agents/; move the MCP-only discovery surface out (operator tooling, not loop code). Est. -325 lines from agents/. |
+| hyperfeed.py | 475 | HL leaderboard / trader-discovery / market lookups | Live path uses exactly ONE function: market_get_funding_regime (risk_gates.py:332). The leaderboard_* / discovery_* surface (~270 lines) serves only scripts/pathia-mcp-server.py | SHRINK | Keep funding-regime + universe helpers (~150 lines) in agents/; move the MCP-only discovery surface out (operator tooling, not loop code). Est. -325 lines from agents/. |
 | majors_swing_live.py | 386 | Majors trend + pullback-resume longs, 0.25 eq x 12x | UNVALIDATED by its own docstring; breakout cousin on the SAME asset set REFUTED by matched null (e7f3935). Flipped live 07-13 (db9927e) while PENDING, against validate-first. Ledger 21 sig / 0 graded, silent 158.6h. 0 fills 14d. Geometry: 300% notional, 2.2% liq-capped stop; one stop-out ~ -6.6% equity on a $19 account | **KILL** | Live capital on a never-validated entry whose nearest relative is refuted, producing zero graded evidence, at the most aggressive geometry in the stable. |
 | market_regime.py | 230 | Per-asset-class regime classifier (crypto/equity/commodity) | Dep of executor, risk_gates, hyperfeed; feeds the regime gate | KEEP | Risk-gate input. |
 | memory.py | 421 | Disk-backed agent memory singleton | Loop, server, dashboard, research all import; 23 commits | KEEP | Measurement + state. |
@@ -99,9 +99,9 @@ No other keys orphan. `thin_short_relax` stays (executor reads it),
 
 1. `scripts/trading_loop.py`: remove imports (lines 62, 64, 74) and call sites
    (~832 young_listings, ~859 majors_swing, ~909 news_catalyst).
-2. `hermes_trader/dashboard.py`: move the three _BOOKS rows (570, 572, 576)
+2. `pathia/dashboard.py`: move the three _BOOKS rows (570, 572, 576)
    into `_DEAD_BOOKS` with closing verdicts (the 5dfb885 convention).
-3. `hermes_trader/agents/rebalancer_owned.py:77-79`: drop "majors_swing",
+3. `pathia/agents/rebalancer_owned.py:77-79`: drop "majors_swing",
    "young_listings", "news_catalyst" from _ACTIVE_CLAIM_BOOKS. Check the claims
    registry for open claims by these books before removal.
 4. Tests: delete tests/test_majors_swing_live.py, test_news_catalyst_live.py,

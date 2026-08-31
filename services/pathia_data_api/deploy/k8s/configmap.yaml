@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pathia-data-api-config
+  namespace: pathia
+  labels:
+    app.kubernetes.io/name: pathia-data-api
+    app.kubernetes.io/part-of: pathia-data-api
+# Non-secret env only. PATHIA_DATABASE_URL lives in a Secret, not here.
+data:
+  PATHIA_ENV: "prod"
+  PATHIA_LOG_LEVEL: "INFO"
+  PATHIA_LOG_JSON: "true"
+  PATHIA_SERVICE_NAME: "pathia-data-api"
+  PATHIA_RATE_LIMIT_PER_MIN: "500"
+  PATHIA_RATE_LIMIT_BURST: "60"
+  PATHIA_HL_BASE_URL: "https://api.hyperliquid.xyz"

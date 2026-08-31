@@ -4,7 +4,7 @@
 This script deliberately exercises only ``OpenRouterBrain.complete``.  It does
 not import the trading loop, executor, exchange client, account state, or live
 configuration.  The call is billable and is refused unless the operator sets
-``HERMES_RUN_PAID_OPENROUTER_WEB_EVAL=1`` explicitly.
+``PATHIA_RUN_PAID_OPENROUTER_WEB_EVAL=1`` explicitly.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, TextIO
 
 
-OPT_IN_ENV = "HERMES_RUN_PAID_OPENROUTER_WEB_EVAL"
+OPT_IN_ENV = "PATHIA_RUN_PAID_OPENROUTER_WEB_EVAL"
 
 _SYSTEM_PROMPT = """You are validating a web-grounded research transport.
 You must use the available web search tool at least once. Use only sources you
@@ -102,7 +102,7 @@ def main(
     if brain_factory is None or completion_helpers is None:
         # Import only after both safety guards pass.  Nothing in this module can
         # start the live loop, touch account state, or route an order.
-        from hermes_trader.agents.ai_brain import (
+        from pathia.agents.ai_brain import (
             OpenRouterBrain,
             completion_citations,
             completion_text,

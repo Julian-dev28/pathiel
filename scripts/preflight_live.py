@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-# .env.local carries HERMES_STATE_DIR. Load it BEFORE importing anything that
+# .env.local carries PATHIA_STATE_DIR. Load it BEFORE importing anything that
 # resolves a state path, or every book reads as empty from the wrong directory.
 sys.path.insert(0, str(ROOT / "scripts"))
 import _state_env  # noqa: E402
@@ -61,7 +61,7 @@ def check_secrets(r: Report) -> None:
 
 
 def check_brain(r: Report) -> None:
-    from hermes_trader.agents.ai_brain import provider_readiness
+    from pathia.agents.ai_brain import provider_readiness
     x = provider_readiness()
     if x.get("ready"):
         note = "" if x.get("deployable") else "local-only provider"
@@ -73,9 +73,9 @@ def check_brain(r: Report) -> None:
 
 
 def check_capital(r: Report) -> None:
-    from hermes_trader.agents.config_store import read_agent_config
-    from hermes_trader.agents.executor import min_tradable_equity
-    from hermes_trader.dashboard import _risk_payload
+    from pathia.agents.config_store import read_agent_config
+    from pathia.agents.executor import min_tradable_equity
+    from pathia.dashboard import _risk_payload
     x = _risk_payload()
     # The LIVE config's floor, not the bare backstop — it is derived from the
     # enabled book set, so quoting min_tradable_equity({}) here would print $25
@@ -100,7 +100,7 @@ def check_capital(r: Report) -> None:
 
 def check_books(r: Report) -> None:
     import importlib
-    import hermes_trader.dashboard as db
+    import pathia.dashboard as db
     spec = importlib.util.spec_from_file_location(
         "autonomous_cycle", ROOT / "scripts" / "autonomous_cycle.py")
     ac = importlib.util.module_from_spec(spec)
@@ -122,7 +122,7 @@ def check_books(r: Report) -> None:
     for mod in ("news_surge_short_live", "news_surge_multi",
                 "social_trending_recorder", "unlock_short_live"):
         try:
-            importlib.import_module(f"hermes_trader.agents.{mod}")
+            importlib.import_module(f"pathia.agents.{mod}")
         except Exception as exc:
             broken.append(f"{mod}: {str(exc)[:60]}")
     if broken:
@@ -142,10 +142,10 @@ def check_book_reachability(r: Report) -> None:
     """
     import json
 
-    import hermes_trader.dashboard as db
-    from hermes_trader.agents import shadow_ledger as SL
-    from hermes_trader.agents.config_store import read_agent_config
-    from hermes_trader.agents.universe import in_allowlist
+    import pathia.dashboard as db
+    from pathia.agents import shadow_ledger as SL
+    from pathia.agents.config_store import read_agent_config
+    from pathia.agents.universe import in_allowlist
 
     allow = read_agent_config().get("coin_allowlist") or []
     if not allow:
@@ -186,9 +186,9 @@ def check_margin_headroom(r: Report) -> None:
     Funding to exactly the dust floor buys a system where the first book to fire
     consumes the whole budget and the rest are margin-blocked behind it.
     """
-    import hermes_trader.dashboard as db
-    from hermes_trader.agents.config_store import read_agent_config
-    from hermes_trader.dashboard import _risk_payload
+    import pathia.dashboard as db
+    from pathia.agents.config_store import read_agent_config
+    from pathia.dashboard import _risk_payload
 
     cfg = read_agent_config()
     min_avail = float(cfg.get("min_available_margin_pct", 0.10))
@@ -212,7 +212,7 @@ def check_margin_headroom(r: Report) -> None:
 
 
 def check_feed(r: Report) -> None:
-    from hermes_trader.agents import perception
+    from pathia.agents import perception
     st = perception.last_scan_integrity()
     if not st.get("ts"):
         r.ok("market feed", "no scan yet (cold start is not a fault)")
@@ -226,7 +226,7 @@ def check_feed(r: Report) -> None:
 
 
 def check_disk(r: Report) -> None:
-    from hermes_trader import log_setup
+    from pathia import log_setup
     g = log_setup.check_disk_guard()
     gb = g.free_bytes / 1e9
     if g.critical:
@@ -241,14 +241,14 @@ def check_disk(r: Report) -> None:
 def check_watchers(r: Report) -> None:
     """Are supervision and alerting themselves still running?
 
-    Both are scheduler jobs. HermesSupervisionStale and HermesAlertingStale
+    Both are scheduler jobs. PathiaSupervisionStale and PathiaAlertingStale
     cover them under Prometheus, but the local evaluator cannot page for its
     own death — so it is reported here, where a human is already looking.
     """
     import time
 
-    from hermes_trader.agents.atomic_io import read_json
-    from hermes_trader.agents.rebalancer_owned import state_file
+    from pathia.agents.atomic_io import read_json
+    from pathia.agents.rebalancer_owned import state_file
 
     for label, name, why in (
         ("supervision", "supervisor.json", "dead processes stay dead"),
@@ -307,7 +307,7 @@ def check_processes(r: Report) -> None:
 
 def main(argv=None) -> int:
     argparse.ArgumentParser(description=__doc__).parse_args(argv)
-    print(f"\n{DIM}hermes-trader — live readiness{OFF}\n")
+    print(f"\n{DIM}pathia — live readiness{OFF}\n")
     r = Report()
     for check in (check_secrets, check_brain, check_capital, check_books,
                   check_book_reachability, check_margin_headroom,

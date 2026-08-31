@@ -15,7 +15,7 @@ running. The executor reads every override key these books emit:
 `min_short_volume_usd_override` (:873-877), `backup_sl_pct_override` (:1100-1116),
 `tp_scale_fraction_override` (:1152), `strategy_book` exemption (:1311,:1347).
 
-Fire counts from `~/.hermes-trader-session-log.jsonl` (the live session log):
+Fire counts from `~/.pathia-session-log.jsonl` (the live session log):
 
 | Book | cycles logged | total signals | total opened | live? |
 |---|---|---|---|---|

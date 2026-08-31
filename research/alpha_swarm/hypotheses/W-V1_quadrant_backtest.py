@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 EVENTS = os.path.join(HERE, "W-V0_events.json")

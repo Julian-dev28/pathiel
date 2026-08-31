@@ -3,7 +3,7 @@
 Read-only forensic. For every LONG the bot SKIPPED (gated out), measure the coin's forward return
 *after* the skip ts. WRONG skip = coin then mooned (up-move we missed). RIGHT skip = flat/down.
 
-- Source: `~/.hermes-trader-session-log.jsonl`, last **14 days** by ts (log ends 2026-06-28 09:15 UTC).
+- Source: `~/.pathia-session-log.jsonl`, last **14 days** by ts (log ends 2026-06-28 09:15 UTC).
 - Skip sources: `entry_preflight` events (reason field) + `execute` events with `executed=false`
   (the `runner_gate_blocked` / `trend_filter` / etc. live in `execute.detail`, NOT a standalone event).
 - Long-only (the bot was considering a long). Deduped coin+reason+hour.

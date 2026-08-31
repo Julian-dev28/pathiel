@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from hermes_trader.agents import capital_flows as cf   # noqa: E402
+from pathia.agents import capital_flows as cf   # noqa: E402
 
 
 def main(argv=None) -> int:

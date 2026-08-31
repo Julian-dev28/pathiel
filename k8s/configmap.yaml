@@ -1,19 +1,19 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hermes-config
-  namespace: hermes
+  name: pathia-config
+  namespace: pathia
 # Non-secret runtime config (mirrors fly.toml [env]). Secrets — API keys, the
-# wallet key, the operator token — live in the `hermes-secrets` Secret, NOT
-# here. The /data path env vars (HERMES_STATE_DIR, HERMES_POSITIONS_SNAPSHOT_FILE,
-# SESSION_LOG_PATH, HERMES_DSL_STATE_FILE, HERMES_AGENT_CONFIG_FILE,
-# HERMES_AGENT_MEMORY_FILE), HERMES_BIND, and AI_BRAIN_PROVIDER are baked into
+# wallet key, the operator token — live in the `pathia-secrets` Secret, NOT
+# here. The /data path env vars (PATHIA_STATE_DIR, PATHIA_POSITIONS_SNAPSHOT_FILE,
+# SESSION_LOG_PATH, PATHIA_DSL_STATE_FILE, PATHIA_AGENT_CONFIG_FILE,
+# PATHIA_AGENT_MEMORY_FILE), PATHIA_BIND, and AI_BRAIN_PROVIDER are baked into
 # the image (see Dockerfile) so every container already agrees on where
 # shared state lives and how the server binds — they do not need to be
 # repeated here. Per-process overrides (the `web` container's throttled HL
-# rate-limit budget + HERMES_STATE_READONLY) live on that one container's
+# rate-limit budget + PATHIA_STATE_READONLY) live on that one container's
 # `env:` in statefulset.yaml, since a ConfigMap is shared by every container
 # in the pod and can't vary per-container.
 data:
-  HERMES_PORT: "8000"
-  HERMES_SCAN_INTERVAL: "60"
+  PATHIA_PORT: "8000"
+  PATHIA_SCAN_INTERVAL: "60"

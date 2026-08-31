@@ -11,7 +11,7 @@ def _write_lines(path, events):
 
 
 def test_incremental_reader_parses_only_new_bytes(tmp_path, monkeypatch):
-    from hermes_trader import dashboard as db
+    from pathia import dashboard as db
     log = tmp_path / "sess.jsonl"
     monkeypatch.setattr(db, "_LOG_PATH", log)
     monkeypatch.setitem(db._LOG_STATE, "offset", 0)
@@ -31,7 +31,7 @@ def test_incremental_reader_parses_only_new_bytes(tmp_path, monkeypatch):
 
 
 def test_incremental_reader_handles_truncation(tmp_path, monkeypatch):
-    from hermes_trader import dashboard as db
+    from pathia import dashboard as db
     log = tmp_path / "sess.jsonl"
     monkeypatch.setattr(db, "_LOG_PATH", log)
     db._LOG_STATE.update({"offset": 0, "ino": None})
@@ -44,7 +44,7 @@ def test_incremental_reader_handles_truncation(tmp_path, monkeypatch):
 
 
 def test_tail_reads_bounded_block(tmp_path, monkeypatch):
-    from hermes_trader import session_log as sl
+    from pathia import session_log as sl
     log = tmp_path / "sess.jsonl"
     monkeypatch.setattr(sl, "SESSION_LOG_FILE", str(log))
     _write_lines(log, [{"i": i} for i in range(500)])
@@ -54,7 +54,7 @@ def test_tail_reads_bounded_block(tmp_path, monkeypatch):
 
 
 def test_equity_curve_accepts_sustained_drop(monkeypatch):
-    from hermes_trader import dashboard as db
+    from pathia import dashboard as db
     import time as _t
     now = int(_t.time() * 1000)
     events = ([{"ts": now - 10_000 + i, "event": "loop_heartbeat", "equity": 150.0} for i in range(5)]
@@ -69,8 +69,8 @@ def test_equity_curve_accepts_sustained_drop(monkeypatch):
 
 
 def test_state_readonly_gates_memory_flush(tmp_path, monkeypatch):
-    from hermes_trader.agents.memory import memory
-    monkeypatch.setenv("HERMES_STATE_READONLY", "1")
+    from pathia.agents.memory import memory
+    monkeypatch.setenv("PATHIA_STATE_READONLY", "1")
     # flush must be a no-op: point the file somewhere and verify nothing is written
     target = tmp_path / "mem.json"
     monkeypatch.setattr(memory, "_path", str(target), raising=False)

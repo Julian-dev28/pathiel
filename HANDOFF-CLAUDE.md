@@ -133,7 +133,7 @@ refuted −2.0%/ep, dies at n≥8 negative).
 - Research: `research/alpha_swarm/` (W-<letter><n> naming; pre-register
   cells, matched same-coin random-time nulls ≥2000, OOS halves, 25bps+funding,
   survivorship caveat). KillaXBT archive: `research/killa_xbt/`.
-- Journal: `.monitor-journal.md` (gitignored). Screen: `hermes-stack-live`.
+- Journal: `.monitor-journal.md` (gitignored). Screen: `pathia-stack-live`.
 - Memory (Claude-side): `~/.claude/projects/.../memory/MEMORY.md` mirrors most
   of this if you need deeper history.
 

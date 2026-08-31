@@ -4,7 +4,7 @@ leaks, before/during/after — and prefer integration tests over mocked units
 for anything touching shared state).
 
 Two kinds of check live here:
-1. Static scans across hermes_trader/agents/*.py: no two live books may reuse
+1. Static scans across pathia/agents/*.py: no two live books may reuse
    a _BOOK_NAME or a state_file(...) path. A collision here is silent —
    nothing raises, two books just corrupt each other's persisted state or
    fight over the same ledger rows.
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-_AGENTS_DIR = Path(__file__).resolve().parents[1] / "hermes_trader" / "agents"
+_AGENTS_DIR = Path(__file__).resolve().parents[1] / "pathia" / "agents"
 
 
 def _scan(pattern: str) -> dict[str, list[str]]:
@@ -183,7 +183,7 @@ def test_backup_sl_clamp_silently_shrinks_a_20pct_stop_above_3x():
 
 
 def test_stop_honoring_leverage_caps_to_fit_the_stop():
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     assert cap(6, 20.0) == 3          # 0.60/0.20
     assert cap(4, 20.0) == 3
     assert cap(3, 20.0) == 3          # exact fit must NOT floor to 2
@@ -197,7 +197,7 @@ def test_stop_honoring_leverage_caps_to_fit_the_stop():
 
 def test_capped_leverage_always_delivers_the_requested_stop():
     """The invariant the cap exists to hold, over every book/stop combination."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     for stop in (6.0, 15.0, 20.0, 25.0):
         for lev in range(1, 13):
             eff = cap(lev, stop)
@@ -224,7 +224,7 @@ def test_naive_bound_permits_a_stop_outside_liquidation_on_low_maxlev_coins():
 
 def test_maint_aware_cap_never_authorizes_liquidation():
     """The operator constraint, over every coin class / stop / leverage."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     for coin_max in (3, 5, 10, 20, 40):
         maint = 1.0 / (2 * coin_max)
         for stop in (6.0, 15.0, 20.0, 25.0, 30.0, 40.0):
@@ -239,7 +239,7 @@ def test_maint_aware_cap_never_authorizes_liquidation():
 
 def test_both_bounds_are_load_bearing():
     """Width bound and liq bound each bind alone; neither implies the other."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     # xyz (maint 2.5%): the WIDTH clamp binds first — liq alone would allow 3x
     # for a 25% stop (0.85 * 30.8% = 26.2%), but 0.60/3 = 20% < 25%.
     assert cap(6, 25.0, 0.60, 20, 0.85) == 2
@@ -253,7 +253,7 @@ def test_maint_aware_cap_is_stricter_than_the_naive_one():
     """A 20% stop fits at 3x under the naive bound but only 2x once maintenance
     margin is counted. Stricter is the point — liquidation is the thing we will
     not trade against."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     assert cap(6, 20.0, 0.60, 0) == 3          # no coin meta -> width bound
     assert cap(6, 20.0, 0.60, 20, 0.60) == 2   # strict safety -> 2x
     # the cap only ever walks DOWN from what the book asked for
@@ -265,7 +265,7 @@ def test_maint_aware_cap_is_stricter_than_the_naive_one():
 def test_cap_degrades_to_1x_rather_than_authorizing_a_dead_stop():
     """A stop so wide that no leverage fits must fall to 1x, never to a
     leverage where the stop cannot fire."""
-    from hermes_trader.agents.executor import stop_honoring_leverage as cap
+    from pathia.agents.executor import stop_honoring_leverage as cap
     assert cap(6, 90.0, 0.60, 20) == 1
 
 

@@ -1,7 +1,7 @@
 """ranker_ab — decision-grade head-to-head: pct_k vs z_ext vs raw-residual.
 
 Builds a market-neutral L/S DAILY-return series for each ranker at MATCHED params,
-using the EXACT live scorers imported from hermes_trader.agents.xs_momentum. The three
+using the EXACT live scorers imported from pathia.agents.xs_momentum. The three
 rankers score the SAME eligible universe each rebal day, so survivorship cancels in the
 PAIRED (residual - pct_k) difference series — that paired diff is the headline.
 
@@ -11,14 +11,14 @@ from __future__ import annotations
 import sys, statistics, math
 from pathlib import Path
 
-SCRATCH = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad"
+SCRATCH = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad"
 REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, SCRATCH)
 sys.path.insert(0, REPO)
 
 import alpha_lib as al
 import mc_null
-from hermes_trader.agents.xs_momentum import rank_universe  # EXACT live ranker
+from pathia.agents.xs_momentum import rank_universe  # EXACT live ranker
 
 d = al.load_dataset()
 COINS = [c for c in d["coins"] if al.candles(d, c, "1d")]

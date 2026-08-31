@@ -17,7 +17,7 @@ here touches live behavior. Two lanes:
 | `methodology.json` | 10 evidence-based methodology components | K |
 | `scripts/research_killa_xbt.py` | deterministic grader (schema validation, Part-8 rules, selftest) | K |
 | `daily_majors.json` | BTC/ETH/SOL 1d Hyperliquid candles 2020-08..2026-07 (grading + backtests) | shared cache |
-| `hermes_trader/indicators/range_structure.py`, `scripts/backtest_range_structure.py`, `tests/test_range_structure.py`, `validation_results.json`, `validation_report.md` | quantitative half | K2 |
+| `pathia/indicators/range_structure.py`, `scripts/backtest_range_structure.py`, `tests/test_range_structure.py`, `validation_results.json`, `validation_report.md` | quantitative half | K2 |
 
 Repro:
 

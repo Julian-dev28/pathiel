@@ -50,11 +50,11 @@ sys.path.insert(0, str(SWARM / "lib"))
 
 # Lane-H cache (read-only, produced+validated by W-H0_fetch.py on 2026-07-09)
 HOURLY_CACHE = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "4b037816-5b27-4d2d-a13e-a6ebd68a2340/scratchpad/hourly_ext.json")
 # Lane-M scratchpad (results JSONs live here, findings in research/alpha_swarm)
 SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad")
 
 T, O, H, L, C, V = 0, 1, 2, 3, 4, 5

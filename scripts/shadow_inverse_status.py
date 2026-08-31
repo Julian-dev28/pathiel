@@ -32,8 +32,8 @@ if _ENV.is_file():
             _key, _, _value = _line.partition("=")
             os.environ.setdefault(_key.strip(), _value.strip())
 
-from hermes_trader.agents import shadow_ledger as SL  # noqa: E402
-from hermes_trader.client.hl_client import fetch_funding_history, fetch_hl_candles  # noqa: E402
+from pathia.agents import shadow_ledger as SL  # noqa: E402
+from pathia.client.hl_client import fetch_funding_history, fetch_hl_candles  # noqa: E402
 
 
 DEFAULT_BOOKS = [

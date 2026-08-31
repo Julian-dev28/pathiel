@@ -29,7 +29,7 @@ CACHE_HOUSE = os.path.join(HERE, "W-P2_cache_house_rolls.json")
 CACHE_SENATE = os.path.join(HERE, "W-P2_cache_senate.json")
 OUT_CANDIDATES = os.path.join(HERE, "W-P2_candidates.json")
 
-UA = {"User-Agent": "hermes-research w-p2 (contact: team.recoin@gmail.com)"}
+UA = {"User-Agent": "pathia-research w-p2 (contact: team.recoin@gmail.com)"}
 ET_TZ = ZoneInfo("America/New_York")
 UTC = ZoneInfo("UTC")
 

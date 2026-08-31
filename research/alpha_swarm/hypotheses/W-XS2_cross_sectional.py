@@ -40,7 +40,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 COINS = ("BTC", "ETH", "SOL", "BNB", "XRP")
 HOLD = 30

@@ -12,7 +12,7 @@ from pathlib import Path
 import alpha_lib as A
 import funding_lib as F
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from hermes_trader.agents import shadow_ledger as SL
+from pathia.agents import shadow_ledger as SL
 
 DAY = 86_400_000
 Z_THRESHOLD = 2.0      # live config

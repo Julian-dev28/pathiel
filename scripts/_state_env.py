@@ -3,17 +3,17 @@
 Three scripts got this wrong in three different ways in a single session:
 
   - The supervisor, the alert evaluator and restart.sh hardcoded <root>/.state,
-    which equals the live HERMES_STATE_DIR and nothing else. The metrics reader
+    which equals the live PATHIA_STATE_DIR and nothing else. The metrics reader
     used state_file(). Under the test env they pointed at different trees and
     each side looked correct alone.
-  - backup_state.py resolved HERMES_STATE_DIR without loading .env.local, so a
+  - backup_state.py resolved PATHIA_STATE_DIR without loading .env.local, so a
     hand-run wrote its receipt to the repo root while preflight_live.py — which
     does load it — reported "backup never run" thirty seconds after a
     successful backup.
 
 The rule is the same everywhere and it is worth exactly one implementation:
-load .env.local, then HERMES_STATE_DIR, else the project root. It matches
-hermes_trader.agents.rebalancer_owned.state_file(), which is what the running
+load .env.local, then PATHIA_STATE_DIR, else the project root. It matches
+pathia.agents.rebalancer_owned.state_file(), which is what the running
 system uses, and tests/test_supervisor.py pins the two together.
 
 Deliberately dependency-free: these scripts run as scheduler subprocesses and
@@ -48,7 +48,7 @@ def load_env_local(root: str = ROOT) -> None:
 
 
 def state_dir(root: str = ROOT) -> str:
-    return os.environ.get("HERMES_STATE_DIR") or root
+    return os.environ.get("PATHIA_STATE_DIR") or root
 
 
 def state_file(name: str, root: str = ROOT) -> str:

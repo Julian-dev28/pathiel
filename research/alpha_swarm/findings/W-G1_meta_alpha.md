@@ -2,7 +2,7 @@
 
 **Hypothesis:** the bot's PIT-logged decisions (AI verdicts, gate blocks, fills) contain measurable information about what earns and what bleeds — nobody can lookahead on our own exhaust.
 
-**Data:** `~/.hermes-trader-session-log.jsonl` (395,836 lines; 31,400 research / 14,537 execute / 12,287 preflight / 1,016 dsl_exit events). Episodes deduped per (coin, label) with a 6h refractory window: 4,644 research / 4,256 execute / 407 preflight episodes. Fabricated pytest coins (C1/C2/C3) filtered. Fills priced at the NEXT 1h bar open after decision ts (PIT). Forward horizons 1h/6h/24h; costs 12/25 bps round-trip. 4 delisted coins (GRASS, IO, ONDO, W) have no candles and drop out — for the -EV long finding this bias is conservative (dead coins would make longs look worse).
+**Data:** `~/.pathia-session-log.jsonl` (395,836 lines; 31,400 research / 14,537 execute / 12,287 preflight / 1,016 dsl_exit events). Episodes deduped per (coin, label) with a 6h refractory window: 4,644 research / 4,256 execute / 407 preflight episodes. Fabricated pytest coins (C1/C2/C3) filtered. Fills priced at the NEXT 1h bar open after decision ts (PIT). Forward horizons 1h/6h/24h; costs 12/25 bps round-trip. 4 delisted coins (GRASS, IO, ONDO, W) have no candles and drop out — for the -EV long finding this bias is conservative (dead coins would make longs look worse).
 
 **Script:** `research/alpha_swarm/hypotheses/W-G1_meta_alpha.py` (stages: extract / fetch / analyze / robust; caches in scratchpad).
 

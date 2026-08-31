@@ -12,7 +12,7 @@
 """
 import pytest
 
-from hermes_trader.agents import shadow_ledger as SL
+from pathia.agents import shadow_ledger as SL
 
 HOUR = 3_600_000
 DAY = 86_400_000

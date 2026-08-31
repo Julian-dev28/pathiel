@@ -23,8 +23,8 @@ from pathlib import Path
 REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, REPO)
 
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
-from hermes_trader.client.universe import get_universe  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client.universe import get_universe  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UNI_CACHE = os.path.join(HERE, "W-Y5_cache_universe.json")

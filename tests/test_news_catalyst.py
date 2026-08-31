@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from hermes_trader.agents.news_catalyst import (
+from pathia.agents.news_catalyst import (
     parse_gdelt_artlist, detect_surge, parse_gdelt_timeline,
     parse_rss, filter_keywords, _parse_gdelt_date,
 )
@@ -68,7 +68,7 @@ def test_filter_no_keywords_passthrough():
 
 
 def test_google_news_search_parses_and_caches(monkeypatch):
-    from hermes_trader.agents import news_catalyst as nc
+    from pathia.agents import news_catalyst as nc
     xml = """<rss><channel>
       <item><title>Bitcoin ETF sees record inflow</title><link>https://a.example/1</link>
         <pubDate>Fri, 11 Jul 2026 01:00:00 +0000</pubDate></item>
@@ -87,7 +87,7 @@ def test_google_news_search_parses_and_caches(monkeypatch):
 
 
 def test_coin_catalyst_surge_math(monkeypatch):
-    from hermes_trader.agents import news_catalyst as nc
+    from pathia.agents import news_catalyst as nc
     now = datetime.now(timezone.utc)
     def fake_search(query, when="1d", limit=25, ttl=0):
         n = 6 if when == "1h" else 24        # 6/h vs 1/h baseline -> surge 6x
@@ -111,7 +111,7 @@ def test_coin_catalyst_breaking_requires_verified_24h_freshness(monkeypatch):
     2026-07-15): a result with no parseable date, or a date outside 24h,
     must NOT count toward breaking/n_recent even if it lands in the '1h'
     search bucket."""
-    from hermes_trader.agents import news_catalyst as nc
+    from pathia.agents import news_catalyst as nc
     now = datetime.now(timezone.utc)
 
     def fake_search(query, when="1d", limit=25, ttl=0):
@@ -129,7 +129,7 @@ def test_coin_catalyst_breaking_requires_verified_24h_freshness(monkeypatch):
 
 
 def test_fetch_news_prefers_google(monkeypatch):
-    from hermes_trader.agents import research, news_catalyst as nc
+    from pathia.agents import research, news_catalyst as nc
     monkeypatch.setattr(nc, "google_news_search",
                         lambda q, when="1d", limit=5, ttl=0: [
                             nc.Article("SOL upgrade ships", "u", "d", None, "s")])
@@ -138,7 +138,7 @@ def test_fetch_news_prefers_google(monkeypatch):
 
 
 def test_title_relevance_rejects_homonym_noise():
-    from hermes_trader.agents.news_catalyst import _title_relevant
+    from pathia.agents.news_catalyst import _title_relevant
     # the live GRASS false positive (2026-07-12)
     assert _title_relevant(
         "GRASS",
@@ -149,7 +149,7 @@ def test_title_relevance_rejects_homonym_noise():
 
 
 def test_title_relevance_accepts_crypto_context_and_tickers():
-    from hermes_trader.agents.news_catalyst import _title_relevant
+    from pathia.agents.news_catalyst import _title_relevant
     assert _title_relevant("GRASS", "$GRASS jumps 20% after exchange listing") is True
     assert _title_relevant("GRASS", "GRASS token rallies on DePIN news") is True
     assert _title_relevant("GRASS", "Grass airdrop checker goes live") is True   # crypto term
@@ -157,7 +157,7 @@ def test_title_relevance_accepts_crypto_context_and_tickers():
 
 
 def test_coin_catalyst_counts_only_relevant(monkeypatch):
-    from hermes_trader.agents import news_catalyst as nc
+    from pathia.agents import news_catalyst as nc
     now = datetime.now(timezone.utc)
 
     def fake_search(query, when="1d", limit=25, ttl=0):
@@ -176,7 +176,7 @@ def test_coin_catalyst_counts_only_relevant(monkeypatch):
 
 
 def test_macro_headlines_dedup_and_tags(monkeypatch):
-    from hermes_trader.agents import news_catalyst as nc
+    from pathia.agents import news_catalyst as nc
 
     def fake_search(query, when="1d", limit=10, ttl=0):
         mk = lambda t: nc.Article(title=t, url="u", domain="d", seen=None)
@@ -195,7 +195,7 @@ def test_macro_headlines_dedup_and_tags(monkeypatch):
 
 
 def test_user_message_carries_date_and_macro(monkeypatch):
-    from hermes_trader.agents import research
+    from pathia.agents import research
     msg = research._build_user_message(
         "ARB", {"mid": 0.1, "composite_score": 50, "triggers": []},
         {}, {}, {}, "0.00%", "no news", 100.0, [], "LIVE",
@@ -210,7 +210,7 @@ def test_title_relevance_requires_the_symbol_not_just_crypto_context():
     """xyz:BE incident 2026-07-12: generic crypto/macro headlines counted for
     BE, surged 5.4x, fired a live BREAKING entry. Symbol presence is now
     mandatory — crypto context alone must never pass."""
-    from hermes_trader.agents.news_catalyst import _title_relevant
+    from pathia.agents.news_catalyst import _title_relevant
     for t in ("CryptoQuant Bull Score Index Signals More Bitcoin Weakness - HOKANEWS.COM",
               "Trump ends Iran peace deal, Strait of Hormuz blockade raises oil prices - Crypto Briefing",
               "Bitcoin Hits Record Oversold Level Against Gold - HOKANEWS.COM"):
@@ -222,19 +222,19 @@ def test_title_relevance_requires_the_symbol_not_just_crypto_context():
 
 
 def test_alias_lets_bitcoin_headlines_count_for_btc():
-    from hermes_trader.agents.news_catalyst import _title_relevant
+    from pathia.agents.news_catalyst import _title_relevant
     assert _title_relevant("BTC", "Bitcoin ETF inflows hit weekly record") is True
     assert _title_relevant("BTC", "Gold steadies as dollar weakens") is False
 
 
 def test_xyz_coins_query_stock_not_crypto():
-    from hermes_trader.agents.news_catalyst import _coin_query
+    from pathia.agents.news_catalyst import _coin_query
     assert "stock" in _coin_query("xyz:BE") and "crypto" not in _coin_query("xyz:BE")
     assert "crypto" in _coin_query("GRASS")
 
 
 def test_short_symbols_need_hard_ticker_match():
-    from hermes_trader.agents.news_catalyst import _title_relevant
+    from pathia.agents.news_catalyst import _title_relevant
     # "Be" as an English verb + equity context must NOT count for BE
     assert _title_relevant(
         "BE", "It Might Not Be A Great Idea To Buy EUWAX For Its Next Dividend",
@@ -246,7 +246,7 @@ def test_short_symbols_need_hard_ticker_match():
 
 def test_stale_articles_dropped_even_when_relevant():
     from datetime import datetime, timedelta, timezone
-    from hermes_trader.agents.news_catalyst import relevant_articles, Article
+    from pathia.agents.news_catalyst import relevant_articles, Article
     old = Article("$PUMP 82.5B token unlock", "u", "d",
                   datetime.now(timezone.utc) - timedelta(days=360))
     fresh = Article("$PUMP 82.5B token unlock", "u", "d",

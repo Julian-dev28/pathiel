@@ -39,7 +39,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", ".."))
-from hermes_trader.client.hl_client import _http_post  # noqa: E402
+from pathia.client.hl_client import _http_post  # noqa: E402
 
 HOURLY_CACHE = os.path.join(HERE, "W-R_cache_hourly.json")
 RESULTS = os.path.join(HERE, "W-L2_anchor_results.json")

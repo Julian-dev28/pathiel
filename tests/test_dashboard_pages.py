@@ -20,7 +20,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hermes_trader import dashboard as db
+from pathia import dashboard as db
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -353,7 +353,7 @@ def test_books_payload_missing_config_is_off(monkeypatch):
 # ── news payload ─────────────────────────────────────────────────────────────
 
 def _write_news_ledger(rows):
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     path = shadow_ledger._book_path("news_catalyst")
     if os.path.exists(path):
         os.remove(path)
@@ -453,7 +453,7 @@ HOW_IT_WORKS = "No discretionary trading and no manual override."
 # <style> blocks. Anything asserting on CSS has to read the sheet, or it is
 # asserting that a rule is DUPLICATED into the page rather than that it exists.
 CSS = (pathlib.Path(__file__).resolve().parent.parent
-       / "hermes_trader" / "static" / "hermes.css").read_text()
+       / "pathia" / "static" / "pathia.css").read_text()
 
 
 def styled(client, path="/"):
@@ -466,7 +466,7 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert r.status_code == 200
     assert HOW_IT_WORKS in r.text                 # exact operator copy
     assert "live books" in r.text
-    assert "hermes-modal" not in r.text           # terminal window removed
+    assert "pathia-modal" not in r.text           # terminal window removed
     assert "operator-toggle" not in r.text        # operator chrome removed
     assert "matrix-feed" not in r.text            # old sidebar feed removed
     assert 'data-nav="/activity"' in r.text and 'data-nav="/trends"' in r.text
@@ -554,7 +554,7 @@ def test_landing_books_dropdown_wraps_flow(client):
     behind a toggle whose state is remembered."""
     r = client.get("/").text
     assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
-    assert "hermes-books-open" in r                  # state remembered in localStorage
+    assert "pathia-books-open" in r                  # state remembered in localStorage
     assert 'class="books-wrap"' in r                 # static HTML ships collapsed
     assert "books-open .books-wrap" in CSS           # the collapsed/open rule
     assert ".chev" in CSS                            # chevron toggle affordance
@@ -600,10 +600,10 @@ def test_citations_are_chips_not_blue_links(client):
         assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
 
 
-# Helpers shared by every page live in static/hermes.js now, so the extractor
+# Helpers shared by every page live in static/pathia.js now, so the extractor
 # searches there too rather than only in the served markup.
 SHARED_JS = (pathlib.Path(__file__).resolve().parent.parent
-             / "hermes_trader" / "static" / "hermes.js").read_text()
+             / "pathia" / "static" / "pathia.js").read_text()
 
 
 def _extract_js_block(html: str, kind: str, name: str) -> str:
@@ -1023,7 +1023,7 @@ def test_funnel_payload_empty_log(monkeypatch):
 
 
 def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "extreme_fade.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
@@ -1047,7 +1047,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     UI entirely. Their ledger files stay on disk as evidence, but the league
     payload must skip them; a genuinely still-accruing lane like whale_flow
     keeps its 'retired' status."""
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
@@ -1072,7 +1072,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
 
 
 def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     assert db._book_league_payload() == []
@@ -1120,7 +1120,7 @@ def test_funding_heat_missing_file(monkeypatch, tmp_path):
 
 
 def test_tapes_payload_whale_and_news(monkeypatch, tmp_path):
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     now = 10_000_000_000
     with open(tmp_path / "whale_flow.jsonl", "w") as fh:
@@ -1138,7 +1138,7 @@ def test_tapes_payload_whale_and_news(monkeypatch, tmp_path):
 
 
 def test_tapes_payload_empty_is_accruing(monkeypatch, tmp_path):
-    from hermes_trader.agents import shadow_ledger
+    from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     d = db._tapes_payload()
     assert d["whale"]["status"] == "removed" and d["whale"]["rows"] == []
@@ -1157,7 +1157,7 @@ def test_coin_chart_payload_markers_and_candles(monkeypatch):
 
     candles = [FakeCandle(1000 + i * 3_600_000, 100 + i, 101 + i, 99 + i, 100.5 + i, 10)
               for i in range(5)]
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda coin, interval, count: candles)
     events = [
         {"ts": 1000 + 3_600_000, "event": "execute", "coin": "ARB", "executed": True,
@@ -1178,7 +1178,7 @@ def test_coin_chart_payload_markers_and_candles(monkeypatch):
 
 
 def test_coin_chart_payload_fetch_failure(monkeypatch):
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
     d = db._coin_chart_payload("NOPE")
     assert d["status"] == "no_data" and d["candles"] == []
@@ -1192,7 +1192,7 @@ def test_analytics_endpoints_route(client, monkeypatch):
         r = client.get(ep)
         assert r.status_code == 200, ep
 
-    import hermes_trader.client.hl_client as hl_client
+    import pathia.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
     r = client.get("/api/dashboard/coin_chart?coin=BTC")
     assert r.status_code == 200 and r.json()["status"] == "no_data"
@@ -1203,7 +1203,7 @@ def test_analytics_page_markers(client):
     r = client.get("/analytics").text
     for marker in ("panel-funnel", "panel-league", "panel-chart", "panel-heat",
                   "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
-                  "heat-body", "whale-body", "news-body", "hermes-an-"):
+                  "heat-body", "whale-body", "news-body", "pathia-an-"):
         assert marker in r, f"missing {marker}"
     # muted from the nav, still served — the page must keep working
     assert 'data-nav="/analytics"' in r
@@ -1247,7 +1247,7 @@ def test_landing_v3_token_popover_replaces_prompt(client):
     assert "popover" in r and "popovertarget" in r
     assert "::backdrop" in CSS
     assert "prompt(" not in r and "confirm(" not in r
-    assert "hermes-op-token" in r
+    assert "pathia-op-token" in r
     assert "op-token-btn" in r
 
 
@@ -1301,8 +1301,8 @@ def test_v4_speculation_rules_and_hotkeys(client):
         r = client.get(path).text
         assert 'type="speculationrules"' in r, path
         assert '"eagerness":"moderate"' in r, path
-        # hotkeys live in static/hermes.js; every page has to load it
-        assert "/static/hermes.js" in r, path
+        # hotkeys live in static/pathia.js; every page has to load it
+        assert "/static/pathia.js" in r, path
 
 
 def test_v4_landing_wire_sse(client):
@@ -1336,7 +1336,7 @@ def test_summary_equity_is_true_account_equity(monkeypatch):
 
 def _template_files():
     tdir = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                        "hermes_trader", "templates")
+                        "pathia", "templates")
     return [(f, open(os.path.join(tdir, f)).read()) for f in sorted(os.listdir(tdir))
             if f.endswith(".html")]
 
@@ -1356,10 +1356,10 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
     """Every page is a static shell over the JSON API. A route renamed on the
     server and not in the template is a control that 404s in production."""
     # Routes come from the REAL app, not the bare dashboard test app: in
-    # production hermes_trader.server mounts the dashboard AND the agent
+    # production pathia.server mounts the dashboard AND the agent
     # endpoints, and a page control may legitimately call either. Checking only
     # the dashboard's own routes would fail a control that works in production.
-    from hermes_trader.server import app as real_app
+    from pathia.server import app as real_app
     routes = {r.path for r in client.app.routes if hasattr(r, "path")}
     routes |= {r.path for r in real_app.routes if hasattr(r, "path")}
     for name, html in _template_files():
@@ -1433,7 +1433,7 @@ def test_every_page_uses_the_one_stylesheet(client):
     colour changed in four places and drifted in the fifth."""
     for path in PAGES:
         page = client.get(path).text
-        assert "/static/hermes.css" in page, f"{path} does not load the design system"
+        assert "/static/pathia.css" in page, f"{path} does not load the design system"
 
 
 def test_no_page_carries_a_second_design_system(client):
@@ -1441,12 +1441,12 @@ def test_no_page_carries_a_second_design_system(client):
     geometry (chart heights), but not for a whole palette."""
     for name in ("landing", "activity", "analytics", "news", "trends"):
         src = (pathlib.Path(__file__).resolve().parent.parent
-               / "hermes_trader" / "templates" / f"{name}.html").read_text()
+               / "pathia" / "templates" / f"{name}.html").read_text()
         blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
         for b in blocks:
             assert b.count("\n") < 40, (
                 f"{name}.html has a {b.count(chr(10))}-line <style> block — "
-                f"shared rules belong in static/hermes.css")
+                f"shared rules belong in static/pathia.css")
             assert "--ink" not in b and "--accent" not in b, (
                 f"{name}.html redefines design tokens locally")
 
@@ -1504,8 +1504,8 @@ def test_a_book_with_no_module_is_retired_not_a_recorder(monkeypatch):
     lane still accruing toward a decision". Nothing accrues: autonomous_cycle
     stopped grading them entirely, and the doctrine is that a book either
     trades or does not exist. Sixteen of them sat above the four that trade."""
-    import hermes_trader.dashboard as db
-    from hermes_trader.agents import shadow_ledger
+    import pathia.dashboard as db
+    from pathia.agents import shadow_ledger
 
     # imported inside the function, so patch the module it is pulled from
     monkeypatch.setattr(db, "_books_payload", lambda *a, **k: [])
@@ -1553,7 +1553,7 @@ def test_no_template_hard_codes_a_colour():
     """Charts and inline styles kept a neon crypto palette the stylesheet could
     not reach, so a theme change fixed the page and missed the chart."""
     import re as _re
-    tpl = pathlib.Path(__file__).resolve().parent.parent / "hermes_trader" / "templates"
+    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathia" / "templates"
     offenders = []
     for f in sorted(tpl.glob("*.html")):
         for m in _re.finditer(r"#[0-9a-fA-F]{6}\b", f.read_text()):
@@ -1573,12 +1573,12 @@ def test_every_page_reaches_every_other_page(client):
 
 
 def test_the_nav_marks_the_page_you_are_on(client):
-    """The marking runs from static/hermes.js — every page has to load it and
+    """The marking runs from static/pathia.js — every page has to load it and
     give the nav something to match on."""
     assert "nav-active" in SHARED_JS
     for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         page = client.get(path).text
-        assert "/static/hermes.js" in page, f"{path} does not load the shared script"
+        assert "/static/pathia.js" in page, f"{path} does not load the shared script"
         assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
 
 
@@ -1587,7 +1587,7 @@ def test_a_removed_subsystem_is_not_reported_as_a_refusal(monkeypatch):
     24h window — historical rows kept a deleted feature at the top of the
     reasons list, naming something that does not exist and burying the gates
     that actually stopped a trade."""
-    import hermes_trader.dashboard as db
+    import pathia.dashboard as db
 
     now = 100_000_000_000
     events = [
@@ -1613,7 +1613,7 @@ def test_the_hotkeys_are_defined_once(client):
     assert "e.target.closest('input,textarea,select')" in SHARED_JS
     for name in ("landing", "activity", "analytics", "news", "trends"):
         src = (pathlib.Path(__file__).resolve().parent.parent
-               / "hermes_trader" / "templates" / f"{name}.html").read_text()
+               / "pathia" / "templates" / f"{name}.html").read_text()
         assert "addEventListener('keydown'" not in src, (
             f"{name}.html re-declares the hotkey handler")
 

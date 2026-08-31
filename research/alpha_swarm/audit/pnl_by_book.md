@@ -1,7 +1,7 @@
 # PnL attribution by strategy book
 
 Read-only. Source: HL `userFillsByTime` (realized closing fills) joined against
-`~/.hermes-trader-session-log.jsonl` book-open footprints.
+`~/.pathia-session-log.jsonl` book-open footprints.
 Script: `scratchpad/pnl_by_book.py --days N` (self-contained; env-load + paginated
 fills + session-log parse). Generated 2026-06-28.
 

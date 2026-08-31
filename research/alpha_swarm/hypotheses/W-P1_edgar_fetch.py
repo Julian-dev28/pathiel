@@ -11,7 +11,7 @@ in a cache is skipped, so re-runs only fill gaps):
 
 Downstream analysis (`W-P1_edgar_backtest.py`) reads the caches ONLY.
 
-Rate discipline: HL calls go through hermes_trader.client.hl_client._http_post
+Rate discipline: HL calls go through pathia.client.hl_client._http_post
 (token-bucket metered) plus an explicit sleep; SEC calls carry a User-Agent and
 are throttled to ~2/s (SEC allows ~10/s; we stay far under).
 """
@@ -41,7 +41,7 @@ except Exception:
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
-from hermes_trader.client.hl_client import _http_post  # noqa: E402
+from pathia.client.hl_client import _http_post  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UNI_CACHE = os.path.join(HERE, "W-P1_cache_universe.json")
@@ -49,7 +49,7 @@ CIK_CACHE = os.path.join(HERE, "W-P1_cache_cik_map.json")
 FIL_CACHE = os.path.join(HERE, "W-P1_cache_filings.json")
 HR_CACHE = os.path.join(HERE, "W-P1_cache_1h.json")
 
-SEC_UA = {"User-Agent": "hermes-research team.recoin@gmail.com"}
+SEC_UA = {"User-Agent": "pathia-research team.recoin@gmail.com"}
 SEC_SLEEP = 0.5          # ~2 req/s, well under SEC's ~10/s ceiling
 HL_SLEEP = 2.5           # on top of the shared token bucket
 

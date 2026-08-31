@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_trader.agents import shadow_ledger as SL
+from pathia.agents import shadow_ledger as SL
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(

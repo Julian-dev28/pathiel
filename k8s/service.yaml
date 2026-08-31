@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: hermes-trader
-  namespace: hermes
+  name: pathia
+  namespace: pathia
   labels:
-    app: hermes-trader
+    app: pathia
 spec:
   # Headless (clusterIP: None) — this is the StatefulSet's governing service and
   # gives the single pod a stable network identity. Scrape + port-forward both
   # resolve through it on the named `http` port.
   clusterIP: None
   selector:
-    app: hermes-trader
+    app: pathia
   ports:
     - name: http
       port: 8000

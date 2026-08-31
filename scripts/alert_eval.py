@@ -53,7 +53,7 @@ _state_env.load_env_local(ROOT)
 STATE_DIR = _state_env.state_dir(ROOT)
 STATE = os.path.join(STATE_DIR, "alerts.json")
 ALERT_LOG = os.path.join(ROOT, "logs", "alerts.log")
-METRICS_URL = os.environ.get("HERMES_METRICS_URL", "http://localhost:8000/metrics")
+METRICS_URL = os.environ.get("PATHIA_METRICS_URL", "http://localhost:8000/metrics")
 
 _OPS = {
     ">":  lambda a, b: a > b,
@@ -63,7 +63,7 @@ _OPS = {
     "==": lambda a, b: a == b,
     "!=": lambda a, b: a != b,
 }
-# `hermes_foo > 900`, `hermes_foo == 0`, `hermes_disk_free_bytes < 2e9`
+# `pathia_foo > 900`, `pathia_foo == 0`, `pathia_disk_free_bytes < 2e9`
 _TERM = re.compile(
     r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(>=|<=|==|!=|>|<)\s*(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$")
 
@@ -271,7 +271,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # the one case where reporting "nothing firing" would be a lie.
         msg = f"cannot scrape {METRICS_URL}: {str(exc)[:120]}"
         _log(f"ERROR {msg}")
-        notify("hermes: metrics unreachable", msg)
+        notify("pathia: metrics unreachable", msg)
         print(f"[alerts] ERROR {msg}", file=sys.stderr)
         return 2
 
@@ -303,14 +303,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                           f"cannot render: {summary}")
         if st == "started_firing":
             entry["since"] = now
-            notify(f"hermes {entry['severity']}: {name}", summary)
+            notify(f"pathia {entry['severity']}: {name}", summary)
             _log(f"FIRING [{entry['severity']}] {name} — {summary}")
             lines.append(f"FIRING  {name}: {summary}")
         elif st == "firing":
             entry["since"] = p.get("since", now)
             lines.append(f"firing  {name}: {summary}")
         elif st == "resolved":
-            notify(f"hermes resolved: {name}", summary)
+            notify(f"pathia resolved: {name}", summary)
             _log(f"RESOLVED {name}")
             lines.append(f"resolved {name}")
         elif st == "pending":
@@ -328,7 +328,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"[alerts] {line}")
     for e in errors:
         print(f"[alerts] ERROR {e}", file=sys.stderr)
-        notify("hermes: alert rule cannot be evaluated", e)
+        notify("pathia: alert rule cannot be evaluated", e)
     return 2 if errors else (1 if firing else 0)
 
 

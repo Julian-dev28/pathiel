@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from hermes_trader.agents import research
-from hermes_trader.models.types import Candle
+from pathia.agents import research
+from pathia.models.types import Candle
 
 
 def _cfg(enabled=True, min_move=8.0, held=True):

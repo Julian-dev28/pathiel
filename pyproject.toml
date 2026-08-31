@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hermes-trader"
+name = "pathia"
 dynamic = ["version"]
 description = "Autonomous quant trading agent for Hyperliquid perpetual markets"
 requires-python = ">=3.11"
@@ -27,13 +27,13 @@ dev = [
 ]
 
 [project.scripts]
-hermes-trader = "hermes_trader.__main__:main"
+pathia = "pathia.__main__:main"
 
 [tool.hatch.version]
-path = "hermes_trader/__init__.py"
+path = "pathia/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hermes_trader"]
+packages = ["pathia"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -41,5 +41,5 @@ testpaths = ["tests"]
 addopts = "-m 'not online and not live'"
 markers = [
     "online: exercises the live Hyperliquid public API (read-only); deselected by default (run with: pytest -m online)",
-    "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires HERMES_E2E=1 (run with: HERMES_E2E=1 pytest -m live)",
+    "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires PATHIA_E2E=1 (run with: PATHIA_E2E=1 pytest -m live)",
 ]

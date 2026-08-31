@@ -8,7 +8,7 @@ complete bar -> fill next open. Net of 12bps round-trip. OOS both halves + runne
 """
 import json, statistics
 from pathlib import Path
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 d = json.loads((SCR/"movers_5m.json").read_text())
 O,H,L,C,V = 1,2,3,4,5
 FEE = 0.0012

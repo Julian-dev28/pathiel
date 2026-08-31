@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LEGACY HEURISTIC sandbox for hermes-trader trigger/exit experiments.
+"""LEGACY HEURISTIC sandbox for pathia trigger/exit experiments.
 
 This is not the current live-strategy backtest. It walks candle history per
 coin, evaluates trigger/TA heuristics, substitutes AI research with a fixed
@@ -41,13 +41,13 @@ if _env.is_file():
             os.environ.setdefault(_k.strip(), _v.strip())
 sys.path.insert(0, str(_REPO))
 
-from hermes_trader.agents.config import get_config
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.client.hl_client import fetch_hl_candles
-from hermes_trader.client.universe import get_universe
-from hermes_trader.indicators import math as ind
-from hermes_trader.indicators import triggers as trig
-from hermes_trader.models.types import Candle
+from pathia.agents.config import get_config
+from pathia.agents.config_store import read_agent_config
+from pathia.client.hl_client import fetch_hl_candles
+from pathia.client.universe import get_universe
+from pathia.indicators import math as ind
+from pathia.indicators import triggers as trig
+from pathia.models.types import Candle
 
 # Hyperliquid perp taker fee model used by the live executor: 2.5 bps per side.
 ROUND_TRIP_FEE_BPS = 5.0
@@ -326,7 +326,7 @@ def main() -> int:
     perps = [m for m in universe if m["type"] == "perp" and not m["coin"].startswith("@")]
     coins = sorted(perps, key=lambda m: m.get("dayNtlVlm", 0), reverse=True)[: args.coins]
 
-    print("=== hermes-trader backtest ===")
+    print("=== pathia backtest ===")
     print(f"period: {args.days} days   interval: {args.interval}   universe: top-{args.coins} by 24h volume")
     print(f"equity: ${args.equity:.0f}   fraction: {equity_fraction:.0%}   leverage ceiling: {leverage_ceiling}x")
     print(f"DSL: max_loss={max_loss}%  protect={protect}%  retrace={retrace}  atr_mult={atr_mult}")

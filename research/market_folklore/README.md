@@ -2,7 +2,7 @@
 
 This is a deliberately speculative, offline research exercise. It tests calendar,
 solar-position, company-name, and Chinese-zodiac stories as falsifiable trading
-rules. It does not feed Hermes' live loop and is not investment advice.
+rules. It does not feed Pathia' live loop and is not investment advice.
 
 ## What it tests
 

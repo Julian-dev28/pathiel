@@ -19,7 +19,7 @@ that influx-pumped then delisted are absent, so realized EV here is optimistic.
 """
 import json, statistics as st
 
-PATH = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/movers_5m.json"
+PATH = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/movers_5m.json"
 COST = 0.0012          # round-trip fee+slip, 12 bps
 COST_PARTIAL = 0.0006  # extra exit leg for scale-out
 HORIZON = 288          # max hold bars (24h)

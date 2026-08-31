@@ -41,13 +41,13 @@ if _env.exists():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from hermes_trader.agents.config import get_config
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.client.hl_client import _http_post
-from hermes_trader.client.universe import get_universe
-from hermes_trader.indicators import triggers as trigger_mod
-from hermes_trader.indicators.math import ema
-from hermes_trader.models.types import Candle
+from pathia.agents.config import get_config
+from pathia.agents.config_store import read_agent_config
+from pathia.client.hl_client import _http_post
+from pathia.client.universe import get_universe
+from pathia.indicators import triggers as trigger_mod
+from pathia.indicators.math import ema
+from pathia.models.types import Candle
 
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logger = logging.getLogger("backtest")
@@ -205,8 +205,8 @@ def simulate_dsl_exit(entry_px: float, side: str, leverage: int,
 def call_ai_research(coin: str, mid: float, composite: float, c1h: List[Candle], c4h: List[Candle], c1d: List[Candle],
                      slow_burn_hits: List[Dict[str, Any]], prompt_mode: str = "current") -> Tuple[str, float, str]:
     """Real OpenRouter call. Returns (verdict, confidence, reasoning)."""
-    from hermes_trader.agents.research import _build_user_message, _call_ai, parse_verdict, _compute_indicators
-    from hermes_trader.agents.system_prompt import build_system_prompt
+    from pathia.agents.research import _build_user_message, _call_ai, parse_verdict, _compute_indicators
+    from pathia.agents.system_prompt import build_system_prompt
 
     tf1h = _compute_indicators(c1h)
     tf4h = _compute_indicators(c4h)

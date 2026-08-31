@@ -4,8 +4,8 @@ Uses a fresh AgentMemory instance with flush() stubbed so the live
 .agent-memory.json is never touched.
 """
 
-from hermes_trader.agents.memory import AgentMemory
-from hermes_trader.agents.sizing import risk_of_ruin
+from pathia.agents.memory import AgentMemory
+from pathia.agents.sizing import risk_of_ruin
 
 
 def _mem():
@@ -64,7 +64,7 @@ def test_outcome_store_drives_risk_of_ruin():
 
 def test_cap_bounds_closes_list():
     m = _mem()
-    from hermes_trader.agents import memory as _memmod
+    from pathia.agents import memory as _memmod
     for i in range(_memmod.MAX_CLOSES + 50):
         m.record_close(_close(1.0))
     assert len(m._closes) == _memmod.MAX_CLOSES

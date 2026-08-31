@@ -61,7 +61,7 @@ def _run(prompt: str, web_search: bool, model: str, timeout_s: float) -> str:
     deployed instance can select openrouter and actually work.
     """
     try:
-        from hermes_trader.agents.ai_brain import get_brain, provider_readiness
+        from pathia.agents.ai_brain import get_brain, provider_readiness
     except Exception:
         return _run_cli_direct(prompt, web_search, model, timeout_s)
 
@@ -85,7 +85,7 @@ def _log_unusable(readiness: Dict[str, Any]) -> None:
 
 
 def _run_cli_direct(prompt: str, web_search: bool, model: str, timeout_s: float) -> str:
-    """Fallback for a tree where hermes_trader is not importable (the trend
+    """Fallback for a tree where pathia is not importable (the trend
     engine is meant to stand alone). Same behaviour as before this change."""
     args = [CLI, "-p", "--output-format", "json", "--max-turns",
             "8" if web_search else "1", "--tools", "WebSearch" if web_search else "",

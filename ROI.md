@@ -1,4 +1,4 @@
-# ROI — Hermes Bot
+# ROI — Pathia Bot
 
 **2026-07-23. Numbers = EV estimates, NOT promises. Edges = 1-2 month tape. Could be half. Could be wrong.**
 

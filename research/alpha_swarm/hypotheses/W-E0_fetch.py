@@ -5,7 +5,7 @@ The xyz dex trades tokenized US equities 24/7 while the underlyings close nights
 and weekends. Lane E tests that structural mismatch (weekend gap-fade, RTH-open
 reversal, off-hours crypto lead-lag, mark-vs-oracle premium dislocation).
 
-Fetches via hermes_trader.client.hl_client.fetch_hl_candles (the sanctioned path,
+Fetches via pathia.client.hl_client.fetch_hl_candles (the sanctioned path,
 short-TTL cached, rate-limit aware) with modest sleeps, and caches EVERYTHING to
 W-E_dataset.json next to this script so the four W-E hypothesis scripts never
 re-hit the network. Idempotent: re-run only refreshes if the cache is absent.
@@ -31,7 +31,7 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO))
 
-from hermes_trader.client.hl_client import fetch_hl_candles, fetch_funding_history
+from pathia.client.hl_client import fetch_hl_candles, fetch_funding_history
 
 OUT = Path(__file__).resolve().parent / "W-E_dataset.json"
 

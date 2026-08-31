@@ -11,7 +11,7 @@ cover every HIP-3 venue's prefix for the same underlying.
 from __future__ import annotations
 
 
-from hermes_trader.agents import universe as U
+from pathia.agents import universe as U
 
 
 # ── matching ─────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ def test_the_scan_applies_the_allowlist_not_just_the_entry_gate():
     """Gating only at entry still burns the candle and AI budget on markets the
     system can never trade. This is the test that would catch that regression."""
     import inspect
-    from hermes_trader.agents import perception
+    from pathia.agents import perception
     src = inspect.getsource(perception)
     assert "universe_filter.filter_markets" in src, (
         "perception no longer filters the scan universe by coin_allowlist — the "
@@ -74,7 +74,7 @@ def test_the_scan_applies_the_allowlist_not_just_the_entry_gate():
 
 
 def test_risk_gate_rejects_a_coin_off_the_allowlist():
-    from hermes_trader.agents.risk_gates import coin_allowlist_gate
+    from pathia.agents.risk_gates import coin_allowlist_gate
 
     class _Ctx:
         coin = "FARTCOIN"
@@ -83,7 +83,7 @@ def test_risk_gate_rejects_a_coin_off_the_allowlist():
 
 
 def test_risk_gate_admits_a_namespaced_major_on_a_bare_entry():
-    from hermes_trader.agents.risk_gates import coin_allowlist_gate
+    from pathia.agents.risk_gates import coin_allowlist_gate
 
     class _Ctx:
         coin = "xyz:GOLD"
@@ -92,7 +92,7 @@ def test_risk_gate_admits_a_namespaced_major_on_a_bare_entry():
 
 
 def test_blocklist_still_wins_over_the_allowlist():
-    from hermes_trader.agents.risk_gates import coin_allowlist_gate
+    from pathia.agents.risk_gates import coin_allowlist_gate
 
     class _Ctx:
         coin = "BTC"
@@ -102,7 +102,7 @@ def test_blocklist_still_wins_over_the_allowlist():
 
 
 def test_the_shipped_default_config_is_restricted_to_majors():
-    import hermes_trader.agents.config_store as cs
+    import pathia.agents.config_store as cs
     defaults = next(v for v in vars(cs).values()
                     if isinstance(v, dict) and "coin_allowlist" in v)
     assert set(defaults["coin_allowlist"]) == set(U.MAJORS)
@@ -145,7 +145,7 @@ def test_the_dust_floor_guards_every_book():
     it survived the deletion — this pins that."""
     import inspect
 
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     src = inspect.getsource(executor.maybe_execute)
     assert "min_tradable_equity" in src
 
@@ -184,15 +184,15 @@ def test_ai_closes_survived_the_deletion():
 def test_scan_integrity_is_readable_from_another_process(tmp_path, monkeypatch):
     """The scan runs in the trading loop; every consumer runs elsewhere.
 
-    /api/health/system, the hermes_feed_trustworthy metric and
+    /api/health/system, the pathia_feed_trustworthy metric and
     preflight_live.py all read scan integrity, and all three run in the server
     or a CLI — not in the loop. While it was module state they saw
-    `ts: 0, markets: 0` forever, so HermesFeedDegraded could never fire and the
+    `ts: 0, markets: 0` forever, so PathiaFeedDegraded could never fire and the
     degraded-feed gate was invisible to everything watching it. Found
     2026-08-31 with the loop scanning and the healthcheck reporting no scan.
     """
-    from hermes_trader.agents import perception as P
-    from hermes_trader.agents.atomic_io import write_json_atomic
+    from pathia.agents import perception as P
+    from pathia.agents.atomic_io import write_json_atomic
 
     f = tmp_path / "scan_integrity.json"
     monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
@@ -210,8 +210,8 @@ def test_scan_integrity_is_readable_from_another_process(tmp_path, monkeypatch):
 
 def test_the_in_process_value_wins_when_this_process_scanned(tmp_path, monkeypatch):
     """The scanning process must not read its own stale file back."""
-    from hermes_trader.agents import perception as P
-    from hermes_trader.agents.atomic_io import write_json_atomic
+    from pathia.agents import perception as P
+    from pathia.agents.atomic_io import write_json_atomic
 
     f = tmp_path / "scan_integrity.json"
     monkeypatch.setattr(P, "_INTEGRITY_FILE", str(f))
@@ -226,7 +226,7 @@ def test_the_in_process_value_wins_when_this_process_scanned(tmp_path, monkeypat
 def test_a_missing_integrity_file_is_a_cold_start_not_a_fault(tmp_path, monkeypatch):
     """No file yet must read as 'no scan', which is trustworthy — the gate
     catches a DEGRADED feed, not a fresh process."""
-    from hermes_trader.agents import perception as P
+    from pathia.agents import perception as P
     monkeypatch.setattr(P, "_INTEGRITY_FILE", str(tmp_path / "absent.json"))
     monkeypatch.setattr(P, "_last_scan_integrity",
                         {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,

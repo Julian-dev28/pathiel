@@ -2,14 +2,14 @@
 """W-V0: extract every research event and tag its news-vs-TA quadrant.
 
 Sources (the honest inventory — see findings/W-V_news_vs_ta.md):
-  1. Session log (~/.hermes-trader-session-log.jsonl, event=research): EVERY
+  1. Session log (~/.pathia-session-log.jsonl, event=research): EVERY
      research event since 2026-06-19 — ts, coin, verdict, confidence,
      news_risk, entry_px, analysis_id. It does NOT carry news_context (the
      headline string was never logged there; verified 0 occurrences in 102MB).
   2. .agent-memory.json 'analyses': the rolling LAST 200 analyses DO carry
      news_context — joined by id to enrich the tail of the log.
 
-Polarity: hermes_trader.agents.mover_recorders.classify_news_polarity — the
+Polarity: pathia.agents.mover_recorders.classify_news_polarity — the
 SAME deterministic classifier the forward recorder uses (news_risk wins when
 polar, else keyword polarity over the headline string).
 
@@ -31,10 +31,10 @@ from pathlib import Path
 _REPO = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, _REPO)
 
-from hermes_trader.agents.mover_recorders import classify_news_polarity  # noqa: E402
+from pathia.agents.mover_recorders import classify_news_polarity  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SESSION_LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
+SESSION_LOG = os.path.expanduser("~/.pathia-session-log.jsonl")
 MEMORY = os.path.join(_REPO, ".agent-memory.json")
 OUT = os.path.join(HERE, "W-V0_events.json")
 

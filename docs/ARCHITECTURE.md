@@ -1,4 +1,4 @@
-# hermes-trader — architecture
+# pathia — architecture
 
 A standalone Python autonomous trading agent for Hyperliquid perpetuals. Trades
 crypto majors + memes, single-stock equity perps (TSLA, NVDA, AAPL, …), and
@@ -29,32 +29,32 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 
 Two entry processes:
   scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
-  hermes_trader/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/hermes-mcp-server.py — MCP stdio server: exposes 99 tools to Hermes Agent
+  pathia/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
+  scripts/pathia-mcp-server.py — MCP stdio server: exposes 99 tools to Pathia Agent
 ```
 
 All three share the same on-disk state and the same Python modules under
-`hermes_trader/`. The trading loop owns the trade decisions; the server owns
-the human-visible surface; the MCP server owns the Hermes Agent integration.
+`pathia/`. The trading loop owns the trade decisions; the server owns
+the human-visible surface; the MCP server owns the Pathia Agent integration.
 
 ---
 
-## Where the name "Hermes" comes from
+## Where the name "Pathia" comes from
 
-The agent layer is [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+The agent layer is [Pathia Agent](https://github.com/NousResearch/pathia-agent)
 by Nous Research — a Python-native agentic framework that operates external
-systems through MCP (Model Context Protocol) tools. "hermes-trader" is the
-**MCP server** + **trading engine** that Hermes Agent operates as one of its
-skills. Hermes is the driver; hermes-trader is the car.
+systems through MCP (Model Context Protocol) tools. "pathia" is the
+**MCP server** + **trading engine** that Pathia Agent operates as one of its
+skills. Pathia is the driver; pathia is the car.
 
 Two things follow from this design choice:
 
-1. **The trading engine has zero Hermes-framework dependency.** It runs as a
+1. **The trading engine has zero Pathia-framework dependency.** It runs as a
    plain Python process. The MCP boundary is the only contact surface — that's
    what lets you also operate it through Claude Desktop, Cursor, or any
    MCP-aware client without changing a line of trading code.
-2. **Hermes Agent is operational; the engine is autonomous.** The trading loop
-   in `scripts/trading_loop.py` runs on its own forever. Hermes Agent is what
+2. **Pathia Agent is operational; the engine is autonomous.** The trading loop
+   in `scripts/trading_loop.py` runs on its own forever. Pathia Agent is what
    you (a human) use to inspect, configure, and direct the engine — start it,
    stop it, ask "what did you just do," set the mode, etc.
 
@@ -64,24 +64,24 @@ Two things follow from this design choice:
 
 [Senpi.ai](https://www.senpi.ai/) is a hosted multi-tenant platform that
 deploys AI agents to trade Hyperliquid. Three things specifically influenced
-hermes-trader:
+pathia:
 
-| From Senpi | What hermes-trader took |
+| From Senpi | What pathia took |
 |---|---|
-| **DSL (Dynamic Stop Loss) two-phase exit** | `hermes_trader/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
-| **Skill-shaped trading strategies** | The `skills/hermes-trader-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Hermes Agent skill is portable in shape, if not in runtime. |
-| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; hermes-trader does the same with `scripts/hermes-mcp-server.py` (99 tools). Same pattern, open implementation. |
+| **DSL (Dynamic Stop Loss) two-phase exit** | `pathia/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
+| **Skill-shaped trading strategies** | The `skills/pathia-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Pathia Agent skill is portable in shape, if not in runtime. |
+| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathia does the same with `scripts/pathia-mcp-server.py` (99 tools). Same pattern, open implementation. |
 
 The crucial difference: **Senpi's runtime and MCP server are closed.** Their
 open skills can't execute trades without their proprietary infrastructure.
-hermes-trader is the inverse — the **engine + MCP + skills are open**;
+pathia is the inverse — the **engine + MCP + skills are open**;
 deploying a hosted multi-tenant version on top is your business decision.
 
 ---
 
 ## The trading pipeline
 
-One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
+One scan cycle (default 60s, env-tunable via `PATHIA_SCAN_INTERVAL`):
 
 ```
 1. HEARTBEAT
@@ -106,8 +106,8 @@ One scan cycle (default 60s, env-tunable via `HERMES_SCAN_INTERVAL`):
    runs each through the trigger engine (pct move, volume spike, breakout,
    range compression, trend strength, momentum burst). When enable_hip3=true,
    the candle-fetch budget splits into a crypto bucket
-   (HERMES_MAX_MARKETS − HERMES_MAX_MARKETS_HIP3 slots) + a HIP-3 bucket
-   (HERMES_MAX_MARKETS_HIP3 slots, default 25), each sorted by 24h
+   (PATHIA_MAX_MARKETS − PATHIA_MAX_MARKETS_HIP3 slots) + a HIP-3 bucket
+   (PATHIA_MAX_MARKETS_HIP3 slots, default 25), each sorted by 24h
    volume independently — without this split, BTC/ETH/SOL dominate the
    single-list cut and HIP-3 swings (xyz:MU +20%, xyz:CRCL −8%, etc.)
    never surface. Daemon override is min_score=40 (was 75 — too high to
@@ -182,7 +182,7 @@ matters there; the bypass exists deliberately.
 
 ## The DSL exit engine
 
-`hermes_trader/agents/dsl_exit.py` — the most consequential single module
+`pathia/agents/dsl_exit.py` — the most consequential single module
 because it owns *when to leave*, which is the half of trading nobody talks
 about.
 
@@ -253,7 +253,7 @@ and execute these markets end-to-end:
 | `client/hl_client.fetch_all_mids(include_hip3=True)` | Adds one HTTP POST per HIP-3 dex (~8 total) so colon-namespaced mids are populated in the scanner. |
 | `client/exchange.Info / Exchange(perp_dexs=[""] + hip3)` | Teaches the HL SDK to resolve colon names at order placement. **CRITICAL: the empty string `""` must be prepended** — the SDK treats the list as exclusive. Pass only HIP-3 dexes and BTC/ETH start raising `KeyError` at `update_leverage` / `order`. |
 | `client/hl_client.fetch_account_state(user, include_hip3=True)` | Queries each HIP-3 dex's `clearinghouseState` in addition to main, sums `equity` + `total_ntl`, concatenates `asset_positions` (prefixing bare HIP-3 coin names with `<dex>:`), and exposes a per-dex breakdown under `dex_equity`. `available` stays main-only (see "Per-dex equity aggregation" below). |
-| `agents/perception.scan_once` | Splits the candle-fetch budget into a crypto bucket + a HIP-3 bucket (`HERMES_MAX_MARKETS_HIP3`, default 25 of the 60-slot total) so tokenized-equity markets get sorted independently and aren't crowded out by BTC/ETH/SOL volume. |
+| `agents/perception.scan_once` | Splits the candle-fetch budget into a crypto bucket + a HIP-3 bucket (`PATHIA_MAX_MARKETS_HIP3`, default 25 of the 60-slot total) so tokenized-equity markets get sorted independently and aren't crowded out by BTC/ETH/SOL volume. |
 
 ### Asset-class routing
 
@@ -327,7 +327,7 @@ hours volume drops to ~zero, so the scanner naturally skips them
 (filtered by `min_hip3_volume_usd`). No explicit hours-gate is
 implemented — the volume floor handles it.
 
-See `skills/hermes-trader-agent/references/hip3-tokenized-equity-handoff.md`
+See `skills/pathia-agent/references/hip3-tokenized-equity-handoff.md`
 for the original task brief and the post-implementation audit findings.
 
 ---
@@ -339,7 +339,7 @@ for the original task brief and the post-implementation audit findings.
 | `.agent-config.json` | operator + UI | live trading knobs: mode, sizing, risk caps, DSL params, regime thresholds | persistent |
 | `.agent-memory.json` | trading loop | rolling cache of perceptions, analyses, trades, watchlist, cooldowns, equity history | persistent |
 | `.dsl-state.json` | DSL engine | per-position trackers (peak, floor, breach counter, leverage, policy) | persistent |
-| `~/.hermes-trader-session-log.jsonl` | every component | append-only event log: heartbeat, scan, entry_preflight, ta_skip, research, execute, dsl_exit, error | rolling |
+| `~/.pathia-session-log.jsonl` | every component | append-only event log: heartbeat, scan, entry_preflight, ta_skip, research, execute, dsl_exit, error | rolling |
 
 All four are env-overridable for containerized deployment (see `Dockerfile`
 and `fly.toml`). On Fly they live under `/data/` on a mounted volume so they
@@ -354,8 +354,8 @@ user scale.
 
 ## The MCP server
 
-`scripts/hermes-mcp-server.py` — 99 tools over MCP stdio. The contract that
-lets Hermes Agent (and any MCP client) operate the engine.
+`scripts/pathia-mcp-server.py` — 99 tools over MCP stdio. The contract that
+lets Pathia Agent (and any MCP client) operate the engine.
 
 Tool categories:
 
@@ -371,14 +371,14 @@ get a clean `not_implemented` error instead of fake zeros or "tool not found."
 Never treat stub responses as data.
 
 The 99-tool surface is intentionally wide because **the MCP server can't be
-modified at runtime** without a Hermes restart. Better to expose more than
+modified at runtime** without a Pathia restart. Better to expose more than
 the agent needs than to have to teach the agent a new tool mid-session.
 
 ---
 
 ## The web dashboard
 
-`hermes_trader/dashboard.py` — single-file FastAPI extension that adds:
+`pathia/dashboard.py` — single-file FastAPI extension that adds:
 
 - `GET /` — public dashboard (no auth): how-it-works blurb, equity curve
   (LTTB-decimated, gradient fill), KPIs (equity / today PnL / open / last tick),
@@ -386,10 +386,10 @@ the agent needs than to have to teach the agent a new tool mid-session.
   fees-net PnL, streaming live activity feed via SSE.
 - `GET /operator?token=…` — token-gated console: config JSON, in-memory DSL
   trackers, per-position force-close, OFF/LIVE mode toggle.
-- `POST /api/dashboard/operator/terminal?token=…` — Hermes terminal endpoint.
+- `POST /api/dashboard/operator/terminal?token=…` — Pathia terminal endpoint.
   Built-in commands resolve locally (`status`, `pause`, `resume`,
   `close <coin>`, `regime`, `config`, `help`); free-form text falls through
-  to **Nous Hermes 3 70B** via OpenRouter, primed with a structured
+  to **Nous Pathia 3 70B** via OpenRouter, primed with a structured
   world-state snapshot (last 8 real trades from memory, live positions
   with uPnL, recent research verdicts with reasoning, DSL exits with
   reason+PnL, ta_skips) so the chat answers about what the bot is
@@ -407,7 +407,7 @@ Single-file static HTML, no build step. The dashboard intentionally has
 personality:
 
 - **Press Start 2P font + NES.css** — pixel-bordered cards with hard 4px
-  depth offsets on every section. Title block (`HERMES-TRADER`) is an emerald-glow
+  depth offsets on every section. Title block (`PATHIA-TRADER`) is an emerald-glow
   LCD strip.
 - **Matrix-rain sidebar** — the live activity feed sits in a sticky 440px
   right column with CRT scanline overlay, fade-in row animation, and
@@ -432,9 +432,9 @@ personality:
   leaving every % visible. For screenshots / public sharing without
   disclosing capital size.
 - **Operator-mode toggle** (`🔒 op` / `🔓 op` button) — prompts for the
-  `HERMES_OPERATOR_TOKEN`, stashes it in localStorage, reloads with
+  `PATHIA_OPERATOR_TOKEN`, stashes it in localStorage, reloads with
   `?token=`. No more hand-editing the URL to unlock the terminal.
-- **Hermes terminal modal** — **Cmd+K** (Ctrl+K) opens a NES-styled
+- **Pathia terminal modal** — **Cmd+K** (Ctrl+K) opens a NES-styled
   black console with an emerald prompt. Operator-token gated. Esc closes.
 
 Design choice worth knowing: still **static HTML + Tailwind CDN +
@@ -477,8 +477,8 @@ branches are archived. Don't reanimate them.
 ## What the directory layout reflects
 
 ```
-hermes-trader/
-├── hermes_trader/          # the engine — importable as a package
+pathia/
+├── pathia/          # the engine — importable as a package
 │   ├── agents/             # the strategy logic
 │   │   ├── perception.py        # scanner: volume-pre-filtered parallel scan
 │   │   ├── ta_filter.py         # multi-TF gate, pre-AI
@@ -507,9 +507,9 @@ hermes-trader/
 │   └── session_log.py      # JSONL append-only event log
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
-│   ├── hermes-mcp-server.py     # MCP stdio server, 99 tools
+│   ├── pathia-mcp-server.py     # MCP stdio server, 99 tools
 │   └── backtest.py              # historical-candle backtest
-├── skills/hermes-trader-agent/  # Hermes Agent skill (operator's manual + helper scripts)
+├── skills/pathia-agent/  # Pathia Agent skill (operator's manual + helper scripts)
 ├── tests/                       # offline unit + online + live-e2e
 ├── docs/                        # this file + journal-schema
 ├── Dockerfile / fly.toml / DEPLOY.md   # one-machine Fly deploy
@@ -590,10 +590,10 @@ Three roles, three entry points:
 python3 scripts/trading_loop.py
 
 # 2. The web dashboard + JSON API (port 8000)
-python3 -m hermes_trader.server
+python3 -m pathia.server
 
-# 3. The MCP stdio server (driven by Hermes Agent / Claude Desktop / Cursor)
-python3 scripts/hermes-mcp-server.py
+# 3. The MCP stdio server (driven by Pathia Agent / Claude Desktop / Cursor)
+python3 scripts/pathia-mcp-server.py
 ```
 
 Each loads `.env.local` and reads/writes the same on-disk state. On Fly they
@@ -604,10 +604,10 @@ Tail what the engine is doing:
 
 ```bash
 # Live feed in terminal
-python3 skills/hermes-trader-agent/scripts/feed.py --follow
+python3 skills/pathia-agent/scripts/feed.py --follow
 
 # Last 50 events with stats
-python3 skills/hermes-trader-agent/scripts/status.py
+python3 skills/pathia-agent/scripts/status.py
 
 # Browser dashboard
 open http://localhost:8000
@@ -636,34 +636,34 @@ the engine writes to. There's one source of truth for each thing.
 
 ---
 
-## Using hermes-trader — the operator's manual
+## Using pathia — the operator's manual
 
-Three audiences, three workflows: you-the-human via Hermes Agent for ad-hoc
+Three audiences, three workflows: you-the-human via Pathia Agent for ad-hoc
 operation, you-the-human via the dashboard for live monitoring, and the
 trading loop running headless for autonomous execution.
 
-### General use (no Hermes Agent)
+### General use (no Pathia Agent)
 
 The minimum to get from "I cloned this" to "the bot is trading":
 
 ```bash
 # 1. Install
-git clone https://github.com/Julian-dev28/hermes-trader
-cd hermes-trader
+git clone https://github.com/Julian-dev28/pathia
+cd pathia
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # 2. Configure
 cp .env.local.example .env.local
 # Edit: OPENROUTER_API_KEY, HYPERLIQUID_WALLET_ADDRESS, HYPERLIQUID_PRIVATE_KEY
-# Optional: HERMES_OPERATOR_TOKEN (for the operator console), BRAVE_API_KEY (news)
+# Optional: PATHIA_OPERATOR_TOKEN (for the operator console), BRAVE_API_KEY (news)
 
 # 3. Start in OFF mode first — verify the engine reads market data without trading
 echo '{"mode":"OFF","minAiConfidence":0.8,"max_concurrent":3}' > .agent-config.json
 
 # 4. Run the trading loop and the dashboard
 python3 scripts/trading_loop.py &     # scans every 60s
-python3 -m hermes_trader.server &      # dashboard at http://localhost:8000
+python3 -m pathia.server &      # dashboard at http://localhost:8000
 
 # 5. Watch one cycle — the dashboard's live feed shows scans + research verdicts
 open http://localhost:8000
@@ -675,35 +675,35 @@ open http://localhost:8000
 The config is read **fresh on every trade** — no restart needed for changes.
 Same for risk caps, leverage, allowlists.
 
-### Hands-off operating via Hermes Agent (the MCP path)
+### Hands-off operating via Pathia Agent (the MCP path)
 
-If you have Hermes Agent installed and the MCP server registered, you operate
+If you have Pathia Agent installed and the MCP server registered, you operate
 the engine in plain English:
 
 ```yaml
-# ~/.hermes/config.yaml
+# ~/.pathia/config.yaml
 mcp_servers:
-  hermes-trader:
+  pathia:
     command: python3
-    args: [/Users/you/path/to/hermes-trader/scripts/hermes-mcp-server.py]
-    cwd: /Users/you/path/to/hermes-trader
+    args: [/Users/you/path/to/pathia/scripts/pathia-mcp-server.py]
+    cwd: /Users/you/path/to/pathia
     timeout: 60
 ```
 
-Then in a Hermes session:
+Then in a Pathia session:
 
 | Intent | Prompt |
 |---|---|
-| **Check state** | *Load the hermes-trader skill and show me its current state — mode, equity, open positions, recent trades.* |
-| **Tune** | *Set hermes-trader to LIVE mode with `max_concurrent: 5` and `equity_fraction_per_trade: 0.025`.* |
-| **One-shot cycle** | *Run a hermes-trader scan, research the best candidate, and execute it if the verdict is LONG or SHORT with confidence ≥ 0.7. Tell me what happened.* |
-| **Start continuous** | *Start the hermes-trader trading loop in the background. Confirm it is running.* |
-| **Stop continuous** | *Stop the hermes-trader trading loop. Don't close existing positions.* |
-| **Status (in-session)** | *Check hermes-trader status. Highlight anything that changed since the last report.* |
-| **Manual close** | *Close my hermes-trader position in TSLA. Show me the realized PnL.* |
+| **Check state** | *Load the pathia skill and show me its current state — mode, equity, open positions, recent trades.* |
+| **Tune** | *Set pathia to LIVE mode with `max_concurrent: 5` and `equity_fraction_per_trade: 0.025`.* |
+| **One-shot cycle** | *Run a pathia scan, research the best candidate, and execute it if the verdict is LONG or SHORT with confidence ≥ 0.7. Tell me what happened.* |
+| **Start continuous** | *Start the pathia trading loop in the background. Confirm it is running.* |
+| **Stop continuous** | *Stop the pathia trading loop. Don't close existing positions.* |
+| **Status (in-session)** | *Check pathia status. Highlight anything that changed since the last report.* |
+| **Manual close** | *Close my pathia position in TSLA. Show me the realized PnL.* |
 
-The skill at `skills/hermes-trader-agent/` carries the system prompt, the
-`feed.py` / `status.py` helper scripts, and reference docs that Hermes Agent
+The skill at `skills/pathia-agent/` carries the system prompt, the
+`feed.py` / `status.py` helper scripts, and reference docs that Pathia Agent
 loads as context for every session. So the agent knows the conventions —
 session-log glyphs, gate names, restart ritual — without you having to
 re-explain.
@@ -719,7 +719,7 @@ What you see:
 - **Recent closes**: realized PnL net of taker fees, with `~estimated` marker on pre-fill-capture trades
 - **Live feed**: SSE stream of every event the engine emits, with hover-tooltips for AI reasoning + full prices
 
-The operator console at `/operator?token=<HERMES_OPERATOR_TOKEN>` adds:
+The operator console at `/operator?token=<PATHIA_OPERATOR_TOKEN>` adds:
 - **Config viewer** — current `.agent-config.json` rendered as JSON
 - **DSL tracker viewer** — every position's peak/floor/phase/leverage
 - **Force-close buttons** — one click per coin to market-close + deregister
@@ -732,26 +732,26 @@ on every request; missing env var → 503, wrong token → 401.
 
 ```bash
 # Live feed, same format as the dashboard
-python3 skills/hermes-trader-agent/scripts/feed.py --follow
+python3 skills/pathia-agent/scripts/feed.py --follow
 
 # Last hour of activity (one-shot, for cron / piping to Slack)
-python3 skills/hermes-trader-agent/scripts/feed.py --since 1h
+python3 skills/pathia-agent/scripts/feed.py --since 1h
 
 # Compact status block — equity, positions, recent closes, win rate
-python3 skills/hermes-trader-agent/scripts/status.py
+python3 skills/pathia-agent/scripts/status.py
 ```
 
 ---
 
 ## The skill scaffolding + cron for hands-off monitoring
 
-`skills/hermes-trader-agent/` is a self-contained Hermes-Agent skill: a
-folder that Hermes loads as a *capability* for an agent session. The
+`skills/pathia-agent/` is a self-contained Pathia-Agent skill: a
+folder that Pathia loads as a *capability* for an agent session. The
 layout intentionally mirrors Senpi's skill format so the directory pattern is
 portable, even though the runtime semantics differ.
 
 ```
-skills/hermes-trader-agent/
+skills/pathia-agent/
 ├── SKILL.md                       # the system prompt — what this agent IS,
 │                                    what tools it has, how to phrase
 │                                    decisions, what to ask the user before
@@ -763,7 +763,7 @@ skills/hermes-trader-agent/
 └── references/
     ├── cron-jobs.md               # how to wire the hourly status job
     ├── hyperliquid-gotchas.md     # tick-size / sig-fig / IOC fill quirks
-    ├── mcp-config.md              # Hermes ~/.hermes/config.yaml block
+    ├── mcp-config.md              # Pathia ~/.pathia/config.yaml block
     ├── mcp-server.md              # the 100-tool surface
     ├── restart-sequence.md        # the canonical pkill+restart ritual
     ├── signal-vs-action-gap.md    # debugging "scanner fires, no trade"
@@ -771,33 +771,33 @@ skills/hermes-trader-agent/
     └── daemon-investigation.md    # the --daemon flag is informational only
 ```
 
-### Hands-off monitoring via Hermes cron
+### Hands-off monitoring via Pathia cron
 
-Hermes Agent supports scheduled jobs (`hermes cron list/create/resume/pause`).
+Pathia Agent supports scheduled jobs (`pathia cron list/create/resume/pause`).
 The skill includes a recommended **hourly status report** job that runs
 `status.py` and posts the output to whichever channel you have configured
 (Telegram, Slack, email, or just stdout in your terminal).
 
 ```bash
 # One-time setup
-hermes cron create hermes-trader-hourly \
+pathia cron create pathia-hourly \
   --interval "0 * * * *" \
-  --command "python3 /path/to/hermes-trader/skills/hermes-trader-agent/scripts/status.py"
+  --command "python3 /path/to/pathia/skills/pathia-agent/scripts/status.py"
 
 # Status of all jobs
-hermes cron list
+pathia cron list
 
 # Pause / resume
-hermes cron pause  <job-id>
-hermes cron resume <job-id>
+pathia cron pause  <job-id>
+pathia cron resume <job-id>
 ```
 
 The status report is **zero AI cost** — it's a pure CLI script reading the
 session log + memory file. The whole point is to give you ambient awareness
 without paying for an LLM call.
 
-For full AI-summarized reports (Hermes-driven "tell me what changed in the
-last hour and flag anomalies"), set up a separate Hermes cron that prompts
+For full AI-summarized reports (Pathia-driven "tell me what changed in the
+last hour and flag anomalies"), set up a separate Pathia cron that prompts
 the agent — that does cost OpenRouter tokens but produces a much richer
 report.
 
@@ -816,7 +816,7 @@ python3 scripts/backtest.py --coins BTC,ETH --interval 4h --days 30
 python3 scripts/backtest.py --walk-forward 0.5
 
 # Test a specific config (overrides .agent-config.json for the run only)
-HERMES_BACKTEST_CONFIG='{"min_ai_confidence":0.7,"counter_regime_min_conf":0.85}' \
+PATHIA_BACKTEST_CONFIG='{"min_ai_confidence":0.7,"counter_regime_min_conf":0.85}' \
   python3 scripts/backtest.py --coins BTC --days 60
 ```
 
@@ -1083,7 +1083,7 @@ into a loss — they can't drain them.
 - Use a separate machine / VM / Fly instance for the bot — not your
   personal laptop where you also browse the web.
 - Rotate the agent key every 90 days; HL agent wallets revoke instantly.
-- `HERMES_OPERATOR_TOKEN` is in `.env.local` (not in `fly.toml`'s env
+- `PATHIA_OPERATOR_TOKEN` is in `.env.local` (not in `fly.toml`'s env
   block); rotate quarterly or after every "did I share that screen?" moment.
 - The dashboard URL is **public**; the operator URL is `?token=…` which is
   in your browser history. Use a long-lived OS keychain entry to retrieve
@@ -1092,7 +1092,7 @@ into a loss — they can't drain them.
 ### Things that should NEVER be in the repo
 
 ```
-HYPERLIQUID_PRIVATE_KEY    OPENROUTER_API_KEY    HERMES_OPERATOR_TOKEN
+HYPERLIQUID_PRIVATE_KEY    OPENROUTER_API_KEY    PATHIA_OPERATOR_TOKEN
 BRAVE_API_KEY              .agent-memory.json    .dsl-state.json
 ```
 

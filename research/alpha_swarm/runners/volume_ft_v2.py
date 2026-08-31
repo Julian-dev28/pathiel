@@ -3,7 +3,7 @@ runners from pump-and-dumps? Sweep the breakout-vol (Bx) and confirm-vol (Cx) th
 Enter at close of confirm candle -> next bar open (lookahead-safe). Tight-floor exit + raw fwd."""
 import json, statistics
 from pathlib import Path
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 d = json.loads((SCR/"movers_5m.json").read_text())
 O,H,L,C,V = 1,2,3,4,5; W=48
 def mean(xs): return sum(xs)/len(xs) if xs else 0.0

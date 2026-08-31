@@ -35,11 +35,11 @@ def _loop_module_imports() -> list[str]:
     out: list[str] = []
     for node in tree.body:                       # top level only
         if isinstance(node, ast.ImportFrom) and node.module:
-            if node.module.split(".")[0] in {"hermes_trader", "services"}:
+            if node.module.split(".")[0] in {"pathia", "services"}:
                 out.append(node.module)
         elif isinstance(node, ast.Import):
             for a in node.names:
-                if a.name.split(".")[0] in {"hermes_trader", "services"}:
+                if a.name.split(".")[0] in {"pathia", "services"}:
                     out.append(a.name)
     return sorted(set(out))
 
@@ -64,7 +64,7 @@ def test_every_name_the_loop_imports_actually_exists():
     for node in tree.body:
         if not isinstance(node, ast.ImportFrom) or not node.module:
             continue
-        if node.module.split(".")[0] not in {"hermes_trader", "services"}:
+        if node.module.split(".")[0] not in {"pathia", "services"}:
             continue
         mod = importlib.import_module(node.module)
         for alias in node.names:
@@ -75,8 +75,8 @@ def test_every_name_the_loop_imports_actually_exists():
 
 def test_every_live_book_module_is_importable():
     """The books are what spend money. Each must load."""
-    for mod in ("hermes_trader.agents.news_surge_short_live",
-                "hermes_trader.agents.news_surge_multi",
-                "hermes_trader.agents.social_trending_recorder",
-                "hermes_trader.agents.unlock_short_live"):
+    for mod in ("pathia.agents.news_surge_short_live",
+                "pathia.agents.news_surge_multi",
+                "pathia.agents.social_trending_recorder",
+                "pathia.agents.unlock_short_live"):
         importlib.import_module(mod)

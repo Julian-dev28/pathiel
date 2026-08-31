@@ -1,0 +1,63 @@
+# Investigation: `--daemon` Flag Behavior (2026-05-22)
+
+**TL;DR for current operation:** use `scripts/restart.sh` — it handles
+stop/verify/start, logs, `caffeinate`, and status. Section below kept for
+historical context on why the `--daemon` flag is a no-op.
+
+## Problem
+The standard restart command `python3 scripts/trading_loop.py --env prod --daemon` appeared to start but produced no output and the process died quickly.
+
+## Root Cause
+The `--daemon` flag and `--env` flag are **parsed but informational only** -- they have no operational effect on the process. From `scripts/trading_loop.py`:
+
+```python
+_parser.add_argument("--daemon", action="store_true")
+# Later in execution:
+_args, _unknown = _parser.parse_known_args()
+# ... but --daemon is never actually used for any process management
+```
+
+The script loads `.env.local` manually (via direct file reading, not the argparse `--env` value) and respects `PATHIA_SCAN_INTERVAL` env var. The loop itself is a simple `while True` with try/except + sleep.
+
+## Correct Pattern
+The trading loop has its own `while True` loop with `time.sleep(scan_interval)`
+internally, but it does NOT fork to background itself. Use the project restart
+script for persistent operation:
+
+```bash
+scripts/restart.sh loop
+scripts/restart.sh status
+```
+
+## Key Takeaway
+- `--env` and `--daemon` flags are accepted but **informational only**
+- The script does NOT actually daemonize when `--daemon` is passed
+- When run without backgrounding, the process dies when the terminal session ends
+- Always use `scripts/restart.sh` or a proper process manager for persistent operation
+---
+
+## Watchdog "HUNG" re-execs are the host SLEEPING (2026-06-05)
+
+**Symptom:** recurring `[watchdog] no progress for N s (> 600s) — HUNG; re-execing`
+where N is far over 600 — seen up to **5940s (99 min)** and 1793s in one day (5×).
+
+**Not a code hang.** The watchdog is a 60s-tick daemon thread (`scripts/trading_loop.py`
+`_watchdog`). For it to report 5940s of no-progress, the *whole process was suspended* —
+i.e. the MacBook went to idle/maintenance **sleep** (on battery). On wake the thread runs,
+sees the wall-clock gap, and re-execs (correct self-heal). Confirm:
+
+```bash
+pmset -g log | grep -iE "Sleep|Wake|DarkWake" | tail
+# look for: "Entering Sleep state due to 'Maintenance Sleep' ... Using Batt"
+#           "Wake from Deep Idle ..."
+```
+
+**Impact during sleep:** no scans, no 60s DSL tick — open positions are protected ONLY by
+the **server-side SL/TP trigger brackets** placed at entry. (Another reason those brackets
+matter.)
+
+**Fix:** `scripts/restart.sh start_loop` now launches `caffeinate -i -m -w $pid` tied to the
+loop's lifetime (survives the in-place `os.execv` re-exec — same pid). To verify it's active:
+`pmset -g assertions | grep caffeinate`. **Caveat:** `caffeinate -i` blocks idle sleep but a
+closed lid on battery can still clamshell-sleep — keep on AC, or move to an always-on host
+(`k8s/`, `DEPLOY.md`) for true 24/7. Do NOT "fix" the watchdog — it's working as designed.

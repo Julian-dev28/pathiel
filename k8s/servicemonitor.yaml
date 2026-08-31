@@ -6,15 +6,15 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: hermes-trader
-  namespace: hermes
+  name: pathia
+  namespace: pathia
   labels:
-    app: hermes-trader
+    app: pathia
     release: kube-prometheus-stack
 spec:
   selector:
     matchLabels:
-      app: hermes-trader
+      app: pathia
   endpoints:
     - port: http
       path: /metrics

@@ -55,7 +55,7 @@ test sandbox. The live host must be able to run it non-interactively.
 
 ## Mode 2: Agent As MCP Brain And Operator
 
-Use this when Codex / Claude Code / Hermes Agent / OpenClaw owns orchestration:
+Use this when Codex / Claude Code / Pathia Agent / OpenClaw owns orchestration:
 which coins to inspect, when to submit a verdict, when to execute, and when to
 close.
 
@@ -129,17 +129,17 @@ Set loop OFF through MCP or config:
 `mode=OFF` skips scan/research/entry execution in the loop, but the loop still
 monitors exits and can close positions from the DSL engine.
 
-## Hermes Agent
+## Pathia Agent
 
-Register the stdio MCP server in Hermes Agent config:
+Register the stdio MCP server in Pathia Agent config:
 
 ```yaml
 mcp_servers:
-  hermes-trader:
+  pathia:
     command: python3
     args:
-      - /Users/julian_dev/Documents/code/hermes-trader/scripts/hermes-mcp-server.py
-    cwd: /Users/julian_dev/Documents/code/hermes-trader
+      - /Users/julian_dev/Documents/code/pathia/scripts/pathia-mcp-server.py
+    cwd: /Users/julian_dev/Documents/code/pathia
     timeout: 120
     connect_timeout: 30
     env:
@@ -147,13 +147,13 @@ mcp_servers:
       AI_BRAIN_PROVIDER: ${AI_BRAIN_PROVIDER}
 ```
 
-Use the repo skill and instruct Hermes:
+Use the repo skill and instruct Pathia:
 
 ```text
-Use hermes-trader as the MCP operator. Scan, inspect the best candidates with
+Use pathia as the MCP operator. Scan, inspect the best candidates with
 read-only tools, submit your own verdict with submit_verdict, then execute the
 returned analysisId only if the verdict is LONG/SHORT/CLOSE. Keep risk gates
-non-bypassable and never place orders outside hermes-trader tools.
+non-bypassable and never place orders outside pathia tools.
 ```
 
 ## Claude Code
@@ -161,17 +161,17 @@ non-bypassable and never place orders outside hermes-trader tools.
 Claude Code can connect to the same stdio MCP server. Use an MCP config JSON file
 or the CLI's `--mcp-config` option.
 
-Example `hermes-trader.mcp.json`:
+Example `pathia.mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "hermes-trader": {
+    "pathia": {
       "command": "python3",
       "args": [
-        "/Users/julian_dev/Documents/code/hermes-trader/scripts/hermes-mcp-server.py"
+        "/Users/julian_dev/Documents/code/pathia/scripts/pathia-mcp-server.py"
       ],
-      "cwd": "/Users/julian_dev/Documents/code/hermes-trader",
+      "cwd": "/Users/julian_dev/Documents/code/pathia",
       "env": {
         "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
         "AI_BRAIN_PROVIDER": "${AI_BRAIN_PROVIDER}"
@@ -184,13 +184,13 @@ Example `hermes-trader.mcp.json`:
 Launch:
 
 ```bash
-claude --mcp-config /Users/julian_dev/Documents/code/hermes-trader/hermes-trader.mcp.json
+claude --mcp-config /Users/julian_dev/Documents/code/pathia/pathia.mcp.json
 ```
 
 Operator prompt:
 
 ```text
-You are the hermes-trader brain. Use only hermes-trader MCP tools for market
+You are the pathia brain. Use only pathia MCP tools for market
 state and actions. For entries or discretionary closes, submit your own verdict
 with submit_verdict, then call execute on the returned analysisId. Never bypass
 the risk gates or call exchange APIs directly.
@@ -202,12 +202,12 @@ Codex can be used in either mode:
 
 - Provider mode: set `AI_BRAIN_PROVIDER=codex_cli`.
 - MCP operator mode: run Codex in a workspace where the MCP client is configured
-  to expose `hermes-trader`.
+  to expose `pathia`.
 
 For provider mode smoke test:
 
 ```bash
-.venv/bin/python -c 'from hermes_trader.agents.ai_brain import CodexCliBrain; print(CodexCliBrain().complete("Return final-line JSON.", "Return PASS for BTC with numeric fields."))'
+.venv/bin/python -c 'from pathia.agents.ai_brain import CodexCliBrain; print(CodexCliBrain().complete("Return final-line JSON.", "Return PASS for BTC with numeric fields."))'
 ```
 
 For MCP operator mode, use the same `submit_verdict -> execute` contract as
@@ -219,12 +219,12 @@ If the client supports stdio MCP servers, use the same server definition:
 
 ```json
 {
-  "name": "hermes-trader",
+  "name": "pathia",
   "command": "python3",
   "args": [
-    "/Users/julian_dev/Documents/code/hermes-trader/scripts/hermes-mcp-server.py"
+    "/Users/julian_dev/Documents/code/pathia/scripts/pathia-mcp-server.py"
   ],
-  "cwd": "/Users/julian_dev/Documents/code/hermes-trader",
+  "cwd": "/Users/julian_dev/Documents/code/pathia",
   "env": {
     "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
     "AI_BRAIN_PROVIDER": "${AI_BRAIN_PROVIDER}"
@@ -239,7 +239,7 @@ the wrapper shape.
 Required operator instruction:
 
 ```text
-Use hermes-trader MCP tools only. Read market/account context with read-only
+Use pathia MCP tools only. Read market/account context with read-only
 tools. When you decide, call submit_verdict. Then call execute with the returned
 analysisId. Do not call raw exchange tools or create another executor path.
 ```
@@ -256,7 +256,7 @@ sample, or sampling returns nothing, it falls back to the configured provider so
 a verdict is never lost.
 
 - No config needed: it auto-detects the client's `sampling` capability.
-- Force off with `HERMES_MCP_DISABLE_SAMPLING=1` (research then uses `ai_brain`).
+- Force off with `PATHIA_MCP_DISABLE_SAMPLING=1` (research then uses `ai_brain`).
 - `submit_verdict` is unaffected: the harness authored that verdict itself.
 - Tests: `tests/test_mcp_sampling.py` (transport correlation, brain parse, capability gate, fallback).
 
@@ -276,11 +276,11 @@ Safe focused tests:
 MCP wiring audit:
 
 ```bash
-python3 skills/hermes-trader-agent/scripts/audit_mcp_server.py
+python3 skills/pathia-agent/scripts/audit_mcp_server.py
 ```
 
 Codex provider smoke:
 
 ```bash
-.venv/bin/python -c 'from hermes_trader.agents.ai_brain import CodexCliBrain; from hermes_trader.agents.research import parse_verdict; t=CodexCliBrain().complete("Return final-line JSON.", "Return PASS for BTC with confidence 0.0, side null, entryPx 100, stopPx 0, tpPx 0."); print(t); print(parse_verdict(t, "BTC", {"mid": 100.0}))'
+.venv/bin/python -c 'from pathia.agents.ai_brain import CodexCliBrain; from pathia.agents.research import parse_verdict; t=CodexCliBrain().complete("Return final-line JSON.", "Return PASS for BTC with confidence 0.0, side null, entryPx 100, stopPx 0, tpPx 0."); print(t); print(parse_verdict(t, "BTC", {"mid": 100.0}))'
 ```

@@ -27,7 +27,7 @@ for line in open(os.path.join(REPO, ".env.local")):
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-from hermes_trader.client.hl_client import _http_post, fetch_hl_candles  # noqa: E402
+from pathia.client.hl_client import _http_post, fetch_hl_candles  # noqa: E402
 
 
 def main() -> None:

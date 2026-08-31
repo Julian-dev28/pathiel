@@ -2,7 +2,7 @@
 SELLOFF (big red candle + huge volume) fired the same triggers as a breakout and the bot
 bought the falling knife (xyz:SMSN 2026-06-29, -9.3% ROE). _sidestep_bearish_block_reason
 restores the symmetric 'require bullish direction' check the short gate already has."""
-from hermes_trader.agents.executor import _sidestep_bearish_block_reason
+from pathia.agents.executor import _sidestep_bearish_block_reason
 
 CFG = {"runner_entry_gate": {"sidestep_require_bullish": True, "sidestep_bearish_move_pct": -3.0}}
 

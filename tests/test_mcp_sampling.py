@@ -1,4 +1,4 @@
-"""Gate tests for MCP sampling in the hermes-trader MCP server.
+"""Gate tests for MCP sampling in the pathia MCP server.
 
 The `research` tool routes its verdict completion through the connected harness's
 own model (server -> client `sampling/createMessage`) instead of ai_brain/OpenRouter,
@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_server():
-    script = ROOT / "scripts" / "hermes-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("hermes_mcp_server_sampling_test", script)
+    script = ROOT / "scripts" / "pathia-mcp-server.py"
+    spec = importlib.util.spec_from_file_location("pathia_mcp_server_sampling_test", script)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -86,15 +86,15 @@ def test_research_brain_gated_on_capability(monkeypatch):
     assert MOD._research_brain() is None
 
     monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", True)
-    monkeypatch.delenv("HERMES_MCP_DISABLE_SAMPLING", raising=False)
+    monkeypatch.delenv("PATHIA_MCP_DISABLE_SAMPLING", raising=False)
     assert isinstance(MOD._research_brain(), MOD._McpSamplingBrain)
 
-    monkeypatch.setenv("HERMES_MCP_DISABLE_SAMPLING", "1")
+    monkeypatch.setenv("PATHIA_MCP_DISABLE_SAMPLING", "1")
     assert MOD._research_brain() is None
 
 
 def test_handle_research_injects_brain_per_capability(monkeypatch):
-    import hermes_trader.agents.research as rm
+    import pathia.agents.research as rm
     captured = {}
 
     def fake_research(coin, perception, brain=None):
@@ -104,7 +104,7 @@ def test_handle_research_injects_brain_per_capability(monkeypatch):
 
     monkeypatch.setattr(rm, "research", fake_research)
     MOD._perception_cache["BTC"] = {"id": "p1", "coin": "BTC", "mid": 1.0, "triggers": [], "composite_score": 0}
-    monkeypatch.delenv("HERMES_MCP_DISABLE_SAMPLING", raising=False)
+    monkeypatch.delenv("PATHIA_MCP_DISABLE_SAMPLING", raising=False)
 
     monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", True)
     assert json.loads(MOD.handle_research({"coin": "BTC"}))["status"] == "complete"
@@ -117,7 +117,7 @@ def test_handle_research_injects_brain_per_capability(monkeypatch):
 
 # ── research seam: injected brain wins, empty result falls back ────────────────
 def test_call_ai_prefers_injected_brain(monkeypatch):
-    from hermes_trader.agents import research as rm
+    from pathia.agents import research as rm
 
     class FakeBrain:
         provider = "fake"
@@ -133,7 +133,7 @@ def test_call_ai_prefers_injected_brain(monkeypatch):
 
 
 def test_call_ai_falls_back_when_injected_brain_empty(monkeypatch):
-    from hermes_trader.agents import research as rm
+    from pathia.agents import research as rm
 
     class EmptyBrain:
         provider = "empty"

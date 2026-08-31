@@ -16,7 +16,7 @@ from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO))
-from hermes_trader.agents.mover_recorders import classify_news_polarity  # noqa: E402
+from pathia.agents.mover_recorders import classify_news_polarity  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ST = str(_REPO / ".state" / "shadow_ledger")

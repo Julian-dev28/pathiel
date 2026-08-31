@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Grid-search logged Hermes decisions across realistic live config blends.
+"""Grid-search logged Pathia decisions across realistic live config blends.
 
 This complements backtest_logged.py. The older replay is good for entry/exit
-direction, but it assumes fraction-based sizing. Live Hermes can now use ATR
+direction, but it assumes fraction-based sizing. Live Pathia can now use ATR
 equal-risk sizing, so this script tests both the current live sizing mode and
 more aggressive alternatives before changing .agent-config.json.
 """
@@ -24,10 +24,10 @@ sys.path.insert(0, str(_REPO / "scripts"))
 
 import backtest_logged as btlog
 from _memory_io import load_memory
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.agents.executor import _runner_entry_block_reason
-from hermes_trader.agents.sizing import atr_equal_risk_notional
-from hermes_trader.indicators.math import atr as calc_atr
+from pathia.agents.config_store import read_agent_config
+from pathia.agents.executor import _runner_entry_block_reason
+from pathia.agents.sizing import atr_equal_risk_notional
+from pathia.indicators.math import atr as calc_atr
 
 
 @dataclass(frozen=True)
@@ -602,7 +602,7 @@ def main() -> int:
     ap.add_argument("--taker-fee-bps", type=float, default=2.5)
     ap.add_argument("--api-sleep", type=float, default=0.0,
                     help="Seconds to sleep before uncached Hyperliquid candle requests")
-    ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "hermes_backtest_logged_candles.json"))
+    ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "pathia_backtest_logged_candles.json"))
     args = ap.parse_args()
 
     btlog._API_SLEEP_S = max(0.0, float(args.api_sleep or 0.0))

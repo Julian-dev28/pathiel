@@ -23,11 +23,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
-SCRATCH = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+SCRATCH = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
                "63d7d57b-6290-4704-91fe-5931e8fda8f7/scratchpad")
 os.environ["UW_CACHE_DIR"] = str(SCRATCH / "uw_cache")
-from hermes_trader.client import uw_client as uw          # noqa: E402
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client import uw_client as uw          # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 SEED = 20260723
 FEE = 0.0025

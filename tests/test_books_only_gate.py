@@ -5,7 +5,7 @@ the thought-engine were the #1 measured loss source. Strategy books (tagged
 strategy_book) pass; absent config defaults to enabled (old behavior)."""
 import pytest
 
-from hermes_trader.agents import executor as ex
+from pathia.agents import executor as ex
 
 
 def _analysis(**kw):
@@ -74,7 +74,7 @@ def test_absent_config_defaults_to_enabled(monkeypatch):
 
 # ── kill-switch rescale (rebuild step 4) ─────────────────────────────────────
 
-from hermes_trader.agents.risk_gates import effective_daily_loss_limit
+from pathia.agents.risk_gates import effective_daily_loss_limit
 
 
 def test_pct_limit_scales_with_sod_equity():
@@ -109,7 +109,7 @@ def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
     and the give-back gate blocked ALL entries (books included) until UTC
     roll. A single-tick jump > max($10, 30% of equity) must freeze the peak
     high-water for that tick; the corrected next tick proceeds normally."""
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     m = AgentMemory.__new__(AgentMemory)
     m._start_of_day_equity = 18.0
     m._day_start_ts = 2**63 - 1          # force the "same day" branch

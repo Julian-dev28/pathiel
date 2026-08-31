@@ -5,7 +5,7 @@ self-computed from raw Hyperliquid `/info` responses, not trusted from any
 ranking. Raw data + scripts (leaderboard snapshot, per-wallet fills/funding
 JSON, `screen_candidates.py`, `fetch_wallets.py`, `fetch_named.py`,
 `analyze_wallets.py`, `analysis.json`, `pooled.json`):
-`/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/79fc4494-d85c-45f4-b633-3f5e34eb766a/scratchpad/`.
+`/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/79fc4494-d85c-45f4-b633-3f5e34eb766a/scratchpad/`.
 Fetches were paced at one weight-20 call per 4s (~300 weight/min, shared-IP
 budget respected; 1 transient 429 over ~350 calls, recovered by backoff).
 
@@ -19,7 +19,7 @@ no indicator translation — only fills.
 ## 0. Method and attrition funnel
 
 1. **Source**: official `POST /info {"type":"leaderboard"}` returns 422 (not
-   publicly exposed — matches `hermes_trader/agents/hyperfeed.py:80`).
+   publicly exposed — matches `pathia/agents/hyperfeed.py:80`).
    `https://stats-data.hyperliquid.xyz/Mainnet/leaderboard` works: 40,401
    rows, day/week/month/allTime {pnl, roi, vlm} + accountValue per address.
 2. **Copyability screen** (deterministic, `screen_candidates.py`): allTime pnl
@@ -124,7 +124,7 @@ xyz:SKHX). Winners specialize in one or a few markets; none of them shotgun
 
 ## 3. (c) Concrete parameter corrections for the v2 books
 
-Ranked. Each is implementable in `hermes_trader/v2/` (MINIMAL_SYSTEM.md
+Ranked. Each is implementable in `pathia/v2/` (MINIMAL_SYSTEM.md
 spec) without touching the current live loop.
 
 1. **Maker-first entries: post-only limit at (or inside) the touch, taker

@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from hermes_trader.client import polymarket_client as pm  # noqa: E402
+from pathia.client import polymarket_client as pm  # noqa: E402
 
 
 def main():

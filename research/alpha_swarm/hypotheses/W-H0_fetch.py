@@ -31,7 +31,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 SWARM = REPO / "research" / "alpha_swarm"
 SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "4b037816-5b27-4d2d-a13e-a6ebd68a2340/scratchpad"
 )
 CACHE = SCRATCH / "hourly_ext.json"
@@ -60,7 +60,7 @@ def build_cache(force: bool = False) -> dict:
         payload = {"meta": {"interval": "1h", "fetched_ms": int(time.time() * 1000)},
                    "coins": d["coins"], "candles": {}}
         missing = list(d["coins"])
-    from hermes_trader.client.hl_client import fetch_hl_candles  # network import
+    from pathia.client.hl_client import fetch_hl_candles  # network import
     for attempt in range(3):
         still: list[str] = []
         for i, coin in enumerate(missing):

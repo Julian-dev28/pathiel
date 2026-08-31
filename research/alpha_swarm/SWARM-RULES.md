@@ -5,8 +5,8 @@ historic candles. You do NOT touch live code, you do NOT hit any API, you do NOT
 run the project's pytest suite. Real money rides on this repo — stay in your sandbox.
 
 ## Sandbox
-- Python: `/Users/julian_dev/Documents/code/hermes-trader/.venv/bin/python`
-- Work dir: `/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad`
+- Python: `/Users/julian_dev/Documents/code/pathia/.venv/bin/python`
+- Work dir: `/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad`
 - Shared lib: `alpha_lib.py` (import it: `cd` into the work dir or add it to sys.path).
 - Shared data: `dataset.json` — 40 liquid crypto perps, candles 1d(~301 bars)/1h(~2000)/5m(~5000).
   Load with `alpha_lib.load_dataset()`. NEVER re-fetch from the network — cache only.

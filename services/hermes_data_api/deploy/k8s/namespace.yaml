@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: hermes
-  labels:
-    app.kubernetes.io/part-of: hermes-data-api
-    name: hermes

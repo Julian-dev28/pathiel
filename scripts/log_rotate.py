@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""External copytruncate log rotator for hermes-trader.
+"""External copytruncate log rotator for pathia.
 
 WHY EXTERNAL, WHY COPYTRUNCATE
 -------------------------------
-Every hermes-trader process is started by ``scripts/restart.sh`` with shell
+Every pathia process is started by ``scripts/restart.sh`` with shell
 append redirection (``nohup ... >> logs/foo.log 2>&1 &``). The shell opens
 that file once, in ``O_APPEND`` mode, and hands the fd to the child for its
 entire lifetime — including for a bare ``print()`` (the trend_engine
@@ -11,7 +11,7 @@ sample-daemon has no ``logging`` calls at all) and for an uncaught traceback
 dumped straight to stderr. A ``RotatingFileHandler`` running *inside* one of
 these processes cannot touch that fd: it would rotate a second, independent
 handle while the shell's fd keeps appending to whatever inode it was opened
-against. See ``hermes_trader/log_setup.py`` for the full writeup.
+against. See ``pathia/log_setup.py`` for the full writeup.
 
 The fix that works with an fd that never reopens is the same one
 ``logrotate --copytruncate`` uses for exactly this situation:
@@ -37,7 +37,7 @@ atomic "read-and-truncate". It IS bounded:
 
   * nothing except the read (step 2) and the truncate (step 3) happens in
     between — no gzip, no renames, no I/O to another file — so the window is
-    just the time to read up to ``HERMES_LOG_MAX_BYTES`` (default 20 MB) off
+    just the time to read up to ``PATHIA_LOG_MAX_BYTES`` (default 20 MB) off
     local disk, typically low single-digit milliseconds;
   * a file only gets copytruncated when it is already over the size
     threshold, and the daemon sweeps on a fixed interval (default 300s), so
@@ -48,7 +48,7 @@ atomic "read-and-truncate". It IS bounded:
     this replaces (unbounded growth to a full disk).
 
 If a future entrypoint stops depending on shell redirection (own its own fd,
-no ``nohup ... >>``), it should call ``hermes_trader.log_setup.configure_logging``
+no ``nohup ... >>``), it should call ``pathia.log_setup.configure_logging``
 instead — a real in-process ``RotatingFileHandler`` has no race at all.
 
 USAGE
@@ -73,7 +73,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from hermes_trader import log_setup  # noqa: E402
+from pathia import log_setup  # noqa: E402
 
 
 def _log(msg: str, *, quiet: bool = False) -> None:
@@ -92,7 +92,7 @@ def rotate_file(
     ``force``). Returns a result dict, or None if rotation was not needed.
 
     Safe to call on a path with no writer, one writer, or several concurrent
-    O_APPEND writers (hermes-trader's scheduler runs multiple jobs that share
+    O_APPEND writers (pathia's scheduler runs multiple jobs that share
     a log file). Safe to call on a path nothing currently has open — the next
     process to `open(path, "a")` after this just gets a fresh empty file.
     """

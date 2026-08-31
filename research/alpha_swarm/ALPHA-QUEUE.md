@@ -1,4 +1,4 @@
-# Alpha-method queue — hermes-trader swarm (3-lane continuous cycle)
+# Alpha-method queue — pathia swarm (3-lane continuous cycle)
 
 Pull from the top of YOUR lane. Each entry = one test against `dataset.json` via `alpha_lib.py`,
 obeying `SWARM-RULES.md` (lookahead-safe / OOS both-halves / slippage sweep 0-50bps /

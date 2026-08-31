@@ -13,7 +13,7 @@ either selected would run with a permanently dead brain.
 from __future__ import annotations
 
 
-from hermes_trader.agents.ai_brain import provider_readiness
+from pathia.agents.ai_brain import provider_readiness
 
 
 def test_a_cli_provider_is_never_marked_deployable(monkeypatch):
@@ -55,7 +55,7 @@ def test_readiness_never_raises(monkeypatch):
 
 def test_the_deep_healthcheck_reports_the_brain(monkeypatch):
     from fastapi.testclient import TestClient
-    from hermes_trader.server import app
+    from pathia.server import app
     body = TestClient(app).get("/api/health/system").json()
     assert "ai_brain" in body["checks"]
 

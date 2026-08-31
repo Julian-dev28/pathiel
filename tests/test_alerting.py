@@ -15,7 +15,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from hermes_trader.server import app
+from pathia.server import app
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_FILE = ROOT / "k8s" / "prometheusrule.yaml"
@@ -34,10 +34,10 @@ def scrape():
 
 def test_every_failure_mode_has_a_metric(scrape):
     """A dashboard number nobody scrapes cannot page anyone."""
-    for metric in ("hermes_heartbeat_age_seconds", "hermes_feed_trustworthy",
-                   "hermes_feed_gap_fraction", "hermes_can_trade",
-                   "hermes_ai_brain_ready", "hermes_disk_free_bytes",
-                   "hermes_log_dir_bytes", "hermes_max_drawdown_pct"):
+    for metric in ("pathia_heartbeat_age_seconds", "pathia_feed_trustworthy",
+                   "pathia_feed_gap_fraction", "pathia_can_trade",
+                   "pathia_ai_brain_ready", "pathia_disk_free_bytes",
+                   "pathia_log_dir_bytes", "pathia_max_drawdown_pct"):
         assert metric in scrape, f"{metric} is not exported"
 
 
@@ -47,15 +47,15 @@ def test_every_alert_references_a_metric_that_is_actually_exported(rules, scrape
                 if line and not line.startswith("#")}
     for name, rule in rules.items():
         used = {tok for tok in rule["expr"].replace("(", " ").replace(")", " ").split()
-                if tok.startswith("hermes_")}
-        assert used, f"{name} references no hermes metric"
+                if tok.startswith("pathia_")}
+        assert used, f"{name} references no pathia metric"
         for m in used:
             assert m in exported, f"{name} alerts on {m}, which is not exported"
 
 
 def test_the_loop_death_alert_exists_and_is_critical(rules):
     """The zombie week: the machine slept, the loop stopped, nothing said so."""
-    r = rules["HermesLoopDead"]
+    r = rules["PathiaLoopDead"]
     assert r["labels"]["severity"] == "critical"
 
 
@@ -63,7 +63,7 @@ def test_the_loop_alert_threshold_clears_the_p99_heartbeat_gap(rules):
     """p99 is ~420s on healthy days. A tighter threshold pages on ordinary slow
     cycles, and an alert that cries wolf gets muted — which is how you end up
     with no alerting at all."""
-    expr = rules["HermesLoopDead"]["expr"]
+    expr = rules["PathiaLoopDead"]["expr"]
     threshold = float(expr.split(">")[1].strip())
     assert threshold >= 840, "threshold would fire on a normal slow cycle"
 
@@ -106,7 +106,7 @@ def test_heartbeat_age_tracks_the_heartbeat_not_any_log_write(monkeypatch):
     alive" signal. The loop had been dead 27 days and this reported 325s."""
     import time
 
-    import hermes_trader.dashboard as db
+    import pathia.dashboard as db
     now = int(time.time() * 1000)
     monkeypatch.setattr(db, "_read_log_lines", lambda: [
         {"ts": now - 9_000_000, "event": "loop_heartbeat", "equity": 100.0,
@@ -121,8 +121,8 @@ def test_heartbeat_age_tracks_the_heartbeat_not_any_log_write(monkeypatch):
 
 def test_no_heartbeat_at_all_is_not_reported_as_age_zero(monkeypatch):
     """Age 0 would read as perfectly healthy, which is the opposite of true."""
-    import hermes_trader.metrics as M
-    import hermes_trader.dashboard as db
+    import pathia.metrics as M
+    import pathia.dashboard as db
     monkeypatch.setattr(db, "_summary_payload", lambda: {"last_tick_age_s": None})
     M._refresh()
     assert M.HEARTBEAT_AGE._value.get() > 1e6
@@ -167,12 +167,12 @@ def test_grading_staleness_is_exported_and_alerted(monkeypatch, tmp_path):
     import os as _os
     import time as _time
 
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     (tmp_path / "scheduler.json").write_text(
         _json.dumps({"autonomous-cycle": {"last_run": _time.time(),
                                           "last_ok": _time.time() - 9 * 86400}}))
-    import hermes_trader.agents.rebalancer_owned as ro
-    from hermes_trader import metrics
+    import pathia.agents.rebalancer_owned as ro
+    from pathia import metrics
     il.reload(ro)
     try:
         metrics._refresh()
@@ -185,18 +185,18 @@ def test_grading_staleness_is_exported_and_alerted(monkeypatch, tmp_path):
     root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     doc = yaml.safe_load(open(_os.path.join(root, "k8s", "prometheusrule.yaml")))
     names = {r["alert"] for g in doc["spec"]["groups"] for r in g["rules"]}
-    assert "HermesGradingStale" in names
+    assert "PathiaGradingStale" in names
 
 
 def test_a_job_that_has_never_succeeded_reads_as_maximally_stale(monkeypatch, tmp_path):
     import importlib as il
     import json as _json
 
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     (tmp_path / "scheduler.json").write_text(
         _json.dumps({"autonomous-cycle": {"last_run": 1.0, "last_rc": 1}}))
-    import hermes_trader.agents.rebalancer_owned as ro
-    from hermes_trader import metrics
+    import pathia.agents.rebalancer_owned as ro
+    from pathia import metrics
     il.reload(ro)
     try:
         metrics._refresh()
@@ -302,11 +302,11 @@ def test_the_cycle_records_its_own_completion(tmp_path, monkeypatch):
     import json as _json
     import time as _time
 
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     (tmp_path / "grading.json").write_text(
         _json.dumps({"ts": _time.time(), "books_graded": 4}))
-    import hermes_trader.agents.rebalancer_owned as ro
-    from hermes_trader import metrics
+    import pathia.agents.rebalancer_owned as ro
+    from pathia import metrics
     il.reload(ro)
     try:
         metrics._refresh()
@@ -322,11 +322,11 @@ def test_the_scheduler_stamp_is_the_fallback(tmp_path, monkeypatch):
     import json as _json
     import time as _time
 
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     (tmp_path / "scheduler.json").write_text(
         _json.dumps({"autonomous-cycle": {"last_ok": _time.time() - 120}}))
-    import hermes_trader.agents.rebalancer_owned as ro
-    from hermes_trader import metrics
+    import pathia.agents.rebalancer_owned as ro
+    from pathia import metrics
     il.reload(ro)
     try:
         metrics._refresh()

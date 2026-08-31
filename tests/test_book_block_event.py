@@ -1,4 +1,4 @@
-from hermes_trader.agents.risk_gates import book_block_event
+from pathia.agents.risk_gates import book_block_event
 
 
 def test_block_surfaces_blocked_by_list():

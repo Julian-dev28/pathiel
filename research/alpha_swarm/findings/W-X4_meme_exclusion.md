@@ -79,7 +79,7 @@ paid back by better replacement shorts (+0.289%/rebal net short-side delta).
 
 ## SPEC — implementable block (one config-driven line in the live engine; PRIMARY only)
 ```
-change          hermes_trader/agents/xs_momentum_live.py::_eligible (line 134): after the
+change          pathia/agents/xs_momentum_live.py::_eligible (line 134): after the
                 tradeable-perp filter, drop coins in xs_momentum.exclude_coins BEFORE the
                 volume ranking — i.e. the eligible set never contains them, BOTH legs
                 (the asymmetric long-only variant FAILED its gate; do not wire that).

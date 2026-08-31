@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pathia-data-api
+  namespace: pathia
+  labels:
+    app.kubernetes.io/name: pathia-data-api
+    app.kubernetes.io/part-of: pathia-data-api
+    app.kubernetes.io/component: api
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pathia-data-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pathia-data-api
+        app.kubernetes.io/part-of: pathia-data-api
+        app.kubernetes.io/component: api
+    spec:
+      # Pod-level hardening: run as an unprivileged user, non-root enforced.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: pathia-data-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Non-secret config from the ConfigMap, DB URL from a Secret.
+          envFrom:
+            - configMapRef:
+                name: pathia-data-api-config
+          env:
+            - name: PATHIA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pathia-data-api-secrets
+                  key: PATHIA_DATABASE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Container-level hardening.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # readOnlyRootFilesystem needs a writable /tmp for uvicorn/stdlib.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

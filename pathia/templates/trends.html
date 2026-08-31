@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>pathia · trends</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathia.css" />
+<script defer src="/static/pathia.js"></script>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathia</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+    </nav>
+    <div class="masthead-right">
+      <span class="mono mut" id="token-clear
+token-input
+token-row
+token-save
+token-why"></span>
+      <button id="op-token-btn" class="icon-btn" type="button" title="Refreshes and research passes spend network and model calls, so they are operator-gated">Operator token</button>
+      <span class="mono mut" id="lane-meta"></span>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="page-head">
+    <h1 class="page-title">Trends</h1>
+    <div class="page-sub">Standing research lanes. Each card states a trigger and a stop.</div>
+  </div>
+
+  <!-- Refreshes and AI passes spend network and model calls, so they are
+       operator-gated. Token is held in this browser only. -->
+  <div id="token-row" class="hidden" style="margin-bottom:24px">
+    <div class="flex flex-wrap gap-2 items-center">
+      <input id="token-input" type="password" placeholder="Operator token"
+             autocomplete="off" spellcheck="false"
+             style="flex:1;min-width:200px;max-width:340px;padding:6px 9px;font-size:13px;
+                    color:var(--ink);background:var(--surface);
+                    border:1px solid var(--rule-2);border-radius:3px;outline:none" />
+      <button id="token-save" class="icon-btn" type="button">Save</button>
+      <button id="token-clear" class="icon-btn" type="button">Clear</button>
+      <span class="note">Stored in this browser only &middot; same token as the dashboard footer</span>
+      <span class="note amb" id="token-why"></span>
+    </div>
+  </div>
+
+  <details class="explainer">
+    <summary>How to read this page</summary>
+    <p>The <b>What to do</b> card turns everything below into instructions with a
+    trigger and a stop. The rest is the evidence behind it.</p>
+    <p>Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up
+    20% on a round trip is labelled CHOP, and the label is what ranks it.</p>
+    <p>Forecasts are a <b>shrunken-drift baseline</b>, and every lane ships the
+    backtest that says what it is worth. Where that backtest says "coin flip",
+    the tab says so in amber rather than hiding it.</p>
+    <p>The <b>AI pass is optional</b>: it reads these numbers, it never produces one.</p>
+  </details>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-lane="hl" aria-selected="true">HYPERLIQUID <span class="n" id="n-hl"></span></button>
+    <button class="tab" role="tab" data-lane="recorders" aria-selected="false">EVIDENCE · P&amp;L <span class="n" id="n-recorders"></span></button>
+  </div>
+
+  <!-- ── LANE: HYPERLIQUID ─────────────────────────────────────────────── -->
+  <div id="lane-hl">
+    <div id="pb-hl" class="mb-4"></div>
+        <div class="strip" id="hl-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">crypto majors · 7 day</div>
+        <span class="text-[10px] mono dim" id="hl-age"></span>
+      </div>
+      <div class="grid3" id="hl-majors"></div>
+    </div>
+
+    <div class="strip" id="hl-strip-xyz"></div>
+
+    <div class="card mb-4" id="hl-xyz-card">
+      <div class="sec-label">xyz (HIP-3) · equities, indices, commodities · 7 day</div>
+      <div class="grid3" id="hl-xyz-majors"></div>
+    </div>
+
+    <div class="grid2 mb-4">
+      <div class="card">
+        <div class="sec-label">what the week showed</div>
+        <ul class="obs" id="hl-obs"></ul>
+      </div>
+      <div class="card">
+        <div class="sec-label">forecaster honesty · walk-forward</div>
+        <div id="hl-eval" class="text-[11.5px] mut"></div>
+        <div class="sec-label mt-6">dated catalysts this week</div>
+        <div id="hl-cats" class="text-[11.5px] mut"></div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">every ticker · trend + next-week forecast</div>
+        <div class="flex gap-2 items-center flex-wrap">
+          <button class="btn" data-filter="all" id="f-all">all</button>
+          <button class="btn" data-filter="trend">trending only</button>
+          <button class="btn" data-filter="flagged">flagged</button>
+          <span class="dim" style="padding:0 4px">|</span>
+          <button class="btn" data-sector="all" id="s-all">both</button>
+          <button class="btn" data-sector="crypto">crypto</button>
+          <button class="btn" data-sector="xyz">xyz</button>
+          <button class="btn go" id="hl-refresh">refresh data</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th>coin</th><th>sector</th><th>price</th><th>1d</th><th>7d</th><th>30d</th>
+            <th>slope/d</th><th>r²</th><th>eff</th><th>trend</th>
+            <th>7d forecast (p10 · p50 · p90)</th><th>p(up)</th><th>funding</th>
+            <th style="text-align:left">flags</th>
+          </tr></thead>
+          <tbody id="hl-rows"><tr><td colspan="14" class="dim">loading…</td></tr></tbody>
+        </table>
+      <button type="button" id="hl-more" class="disclose" hidden></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <div class="flex gap-2 items-center">
+          <label class="text-[10px] mono dim flex items-center gap-1">
+            <input type="checkbox" id="hl-ws" /> web search
+          </label>
+          <button class="btn go" data-ai="hl">run ai pass</button>
+        </div>
+      </div>
+      <div id="hl-ai" class="text-[11.5px] dim">Not run. The tab is complete without it — the AI pass only interprets the numbers above.</div>
+    </div>
+  </div>
+
+  <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
+  <!-- ── LANE: POLITICS ────────────────────────────────────────────────── -->
+  <!-- ── LANE: RECORDERS / P&L ─────────────────────────────────────────── -->
+  <div id="lane-recorders" class="hidden">
+    <div id="pb-recorders" class="mb-4"></div>
+        <div class="strip" id="rec-strip">
+      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
+    </div>
+
+    <details class="explainer">
+      <summary>What these numbers mean</summary>
+      <p><b>EV%</b> is mean forward return per signal, net of funding, at 12bps
+      slippage — graded on real candles after the signal by the same grader
+      <code>scripts/shadow_status.py</code> uses.</p>
+      <p><b>1st / 2nd</b> split each book's own history. A positive average built
+      on a negative second half is a decaying edge, and it is flagged.</p>
+    </details>
+
+    <div class="card mb-4">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">Forward EV per signal</div>
+        <button class="btn go" id="rec-refresh">re-grade (slow)</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table>
+          <thead><tr>
+            <th style="text-align:left">book</th><th>verdict</th><th>signals</th><th>resolved</th>
+            <th>pending</th><th>ev% @12bps</th><th>@25bps</th><th>total%</th>
+            <th>win</th><th>95% ci</th><th>1st half</th><th>2nd half</th><th>last signal</th>
+          </tr></thead>
+          <tbody id="rec-rows"><tr><td colspan="13" class="dim">loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <div class="card">
+        <div class="sec-label">What the evidence shows</div>
+        <ul class="obs" id="rec-obs"></ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
+        <button class="btn go" data-ai="recorders">run ai pass</button>
+      </div>
+      <div id="recorders-ai" class="text-[11.5px] dim">Not run.</div>
+    </div>
+  </div>
+
+  <div class="text-[10px] mono dim mt-8 leading-relaxed">
+    computed by <b>services/trend_engine</b> · refresh with
+    <code>python -m services.trend_engine.run --refresh-all</code> ·
+    forecaster eval: <code>python -m services.trend_engine.run --backtest</code> ·
+    keyboard: g then d / a / n / p / t / y
+  </div>
+</div>
+
+<script>
+// ── shared helpers ──────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const num = (v, d = 2) => (v === null || v === undefined || isNaN(v)) ? '–' : Number(v).toFixed(d);
+const pct = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+// percentage POINTS — pct() already appends '%', so "pct(x)+'pp'" printed "+2.1%pp"
+const pp = (v, d = 1) => (v === null || v === undefined || isNaN(v)) ? '–' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + 'pp';
+const sgn = v => (v === null || v === undefined || isNaN(v)) ? 'dim' : (v > 0 ? 'up' : (v < 0 ? 'dn' : 'mut'));
+const price = v => v == null ? '–' : (v >= 1000 ? Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })
+  : v >= 1 ? Number(v).toFixed(2) : Number(v).toPrecision(3));
+const age = s => s == null ? 'never' : (s < 90 ? Math.round(s) + 's ago'
+  : s < 5400 ? Math.round(s / 60) + 'm ago' : Math.round(s / 3600) + 'h ago');
+
+const LABEL_CLASS = {
+  STRONG_UP: 'b-sup', UP: 'b-up', CHOP: 'b-chop', DOWN: 'b-dn', STRONG_DOWN: 'b-sdn',
+  STABLE: 'b-mut', CHURN: 'b-chop', DRIFTING_YES: 'b-up', REPRICING_YES: 'b-sup',
+  DRIFTING_NO: 'b-dn', REPRICING_NO: 'b-sdn'
+};
+const badge = l => `<span class="badge ${LABEL_CLASS[l] || 'b-mut'}">${esc(String(l).replace(/_/g, ' '))}</span>`;
+const KIND_CLASS = { event: 'ev', structure: 'st', positioning: 'po', risk: 'rk' };
+
+// Flag codes are machine constants. Shown raw they read as log output —
+// EMA_STACK_BULL, BREAKOUT_7D, FUNDING_CROWDED_SHORT — and, set as adjacent
+// chips, they run together when the page is copied. The full code stays in the
+// title attribute alongside its note, so nothing is lost.
+const FLAG_LABEL = {
+  EMA_STACK_BULL: 'EMAs stacked up',   EMA_STACK_BEAR: 'EMAs stacked down',
+  BREAKOUT_7D: '7-day breakout',       BREAKDOWN_7D: '7-day breakdown',
+  HIGH_30D: '30-day high',             LOW_30D: '30-day low',
+  LEADER: 'sector leader',             LAGGARD: 'sector laggard',
+  DECOUPLED: 'decoupled from sector',  STREAK_4D: '4-day streak',
+  VOLUME_SURGE: 'volume surge',        VOLUME_DRY: 'volume dry',
+  OVEREXTENDED_UP: 'overextended',     OVEREXTENDED_DOWN: 'overextended down',
+  VOL_EXPANSION: 'volatility expanding',
+  FUNDING_CROWDED_LONG: 'crowded long', FUNDING_CROWDED_SHORT: 'crowded short',
+};
+const flagLabel = c => FLAG_LABEL[c] || String(c || '').replace(/_/g, ' ').toLowerCase();
+
+function spark(vals, w = 74, h = 20) {
+  if (!vals || vals.length < 2) return '';
+  const lo = Math.min(...vals), hi = Math.max(...vals), rng = (hi - lo) || 1;
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * w},${h - ((v - lo) / rng) * (h - 2) - 1}`).join(' ');
+  const rising = vals[vals.length - 1] >= vals[0];
+  const col = rising ? tok('--up') : tok('--down');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+}
+
+// forecast rail: current price marked, p10..p90 shaded, p50 ticked
+function bandHtml(px, f) {
+  if (!f) return '<span class="dim">–</span>';
+  const lo = Math.min(f.p10, px), hi = Math.max(f.p90, px), rng = (hi - lo) || 1;
+  const x = v => ((v - lo) / rng) * 100;
+  return `<div style="min-width:150px">
+    <div class="band">
+      <div class="fill" style="left:${x(f.p10)}%;width:${Math.max(1, x(f.p90) - x(f.p10))}%"></div>
+      <div class="now" style="left:${x(px)}%"></div>
+      <div class="mid" style="left:${x(f.p50)}%;background:${f.p50 >= px ? 'var(--up)' : 'var(--down)'}"></div>
+    </div>
+    <div class="mono text-[9.5px] dim mt-1">${price(f.p10)} · <span class="${sgn(f.drift_pct)}">${price(f.p50)}</span> · ${price(f.p90)}</div>
+  </div>`;
+}
+
+function meter(pModel, pMarket) {
+  const m = Math.max(0, Math.min(1, pModel || 0));
+  const k = pMarket == null ? null : Math.max(0, Math.min(1, pMarket));
+  return `<div class="meter">
+    <div class="bar" style="width:${(k == null ? m : k) * 100}%"></div>
+    ${k == null ? '' : `<div class="tick" style="left:calc(${m * 100}% - 1px)"></div>`}
+    <div class="lab">${k == null ? 'model ' : 'market '}${((k == null ? m : k) * 100).toFixed(1)}%</div>
+    ${k == null ? '' : `<div class="lab2">model ${(m * 100).toFixed(1)}%</div>`}
+  </div>`;
+}
+
+// ── operator token (same storage key as the other tabs) ────────────────────
+const TOKEN_KEY = 'pathia_operator_token';
+const token = () => localStorage.getItem(TOKEN_KEY) || '';
+function authHeaders() {
+  const t = token();
+  return t ? { 'X-Operator-Token': t } : {};
+}
+// Opening this is what a gated control does when it cannot run, instead of an
+// alert() the browser may suppress — a suppressed alert is a button that does
+// nothing, which is exactly how this read from the operator's side.
+function openTokenRow(why) {
+  const row = $('#token-row');
+  row.classList.remove('hidden');
+  $('#token-input').value = token();
+  $('#token-input').focus();
+  const note = $('#token-why');
+  if (note) note.textContent = why || '';
+}
+$('#op-token-btn').onclick = () => {
+  const row = $('#token-row');
+  row.classList.toggle('hidden');
+  if (!row.classList.contains('hidden')) openTokenRow('');
+};
+$('#token-save').onclick = () => {
+  localStorage.setItem(TOKEN_KEY, $('#token-input').value.trim());
+  $('#token-row').classList.add('hidden');
+};
+$('#token-clear').onclick = () => { localStorage.removeItem(TOKEN_KEY); $('#token-input').value = ''; };
+
+// ── lane state ──────────────────────────────────────────────────────────────
+const LANES = ['hl', 'recorders'];
+const DATA = { hl: null, recorders: null };
+let LANE = (location.hash || '#hl').slice(1);
+if (!LANES.includes(LANE)) LANE = 'hl';
+let HL_FILTER = 'all';
+let HL_SHOW_ALL = false;
+let HL_SECTOR = 'all';
+
+function showLane(l) {
+  LANE = l;
+  location.hash = l;
+  LANES.forEach(x => $('#lane-' + x).classList.toggle('hidden', x !== l));
+  $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.lane === l)));
+  const d = DATA[l];
+  $('#lane-meta').textContent = d ? `${l} · ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+  // A stale lane the operator is not looking at is the one that misleads, so
+  // the staleness lives on the tab, not only on the open lane.
+  LANES.forEach(x => {
+    const tab = $$('.tab').find(t => t.dataset.lane === x);
+    const dx = DATA[x];
+    if (tab) tab.classList.toggle('tab-stale', !!(dx && dx.stale));
+  });
+}
+$$('.tab').forEach(t => t.onclick = () => showLane(t.dataset.lane));
+
+async function loadLane(l) {
+  const r = await fetch('/api/dashboard/trends/' + l);
+  const d = await r.json();
+  DATA[l] = d;
+  if (l === 'hl') renderHL(d);
+  if (l === 'recorders') renderRecorders(d);
+  renderPlaybook(l, d.playbook);
+  // Every refresh button carries the age of the data it would replace, so the
+  // freshness question is answered where the fix is, not only in the header.
+  // Say up front that the control is gated: finding out only after a click
+  // that produced no visible change is how "the button does nothing" starts.
+  setRefreshNote(l, (d.generated_at ? 'data ' + age(d.age_s) : 'no cached read')
+    + (token() ? '' : ' · needs the operator token to refresh'),
+    d.stale || !token() ? 'amb' : 'dim');
+  showLane(LANE);
+}
+
+function emptyState(el, d, lane) {
+  el.innerHTML = `<div class="card"><span class="amb mono text-[11.5px]">no cached ${lane} read</span>
+    <div class="dim text-[11px] mt-2">${esc(d.hint || 'run the refresher')}</div></div>`;
+}
+
+// ── the action layer: what to actually do ───────────────────────────────────
+const PB_META = {
+  do:    { label: 'DO',    cls: 'b-up',   dot: 'var(--up)' },
+  dont:  { label: "DON'T", cls: 'b-dn',   dot: 'var(--down)' },
+  watch: { label: 'WATCH', cls: 'b-chop', dot: 'var(--amber)' },
+};
+
+function renderPlaybook(lane, pb) {
+  const el = $('#pb-' + lane);
+  if (!el) return;
+  const acts = (pb && pb.actions) || [];
+  if (!acts.length) {
+    el.innerHTML = `<div class="card"><div class="sec-label">what to do</div>
+      <span class="dim text-[11.5px]">No action call for this lane yet — refresh the data.</span></div>`;
+    return;
+  }
+  // Source order, NOT sorted by kind: playbook.py already emits in reading
+  // order (how to use the tab -> today vs the week -> regime -> named setups),
+  // and re-sorting by DO/DON'T buried the freshest line under the method note.
+  const sorted = acts.slice();
+  const c = pb.counts || {};
+  // The card that says "read this first" must be readable first: HL alone
+  // produces 21 actions, and a 21-item wall is not a briefing. The rules and
+  // the refusals lead; the named-coin WATCH list folds away behind a toggle.
+  const head = sorted.filter(a => a.kind !== 'watch' || !a.trigger);
+  const tail = sorted.filter(a => a.kind === 'watch' && a.trigger);
+  // One line per instruction. The evidence behind it — the measurement, the
+  // trigger, the invalidation — is three more lines per row, and eight rows of
+  // that is a wall rather than a briefing. It moves behind a single card-level
+  // toggle, so the default read is just the instructions.
+  const item = a => {
+    const m = PB_META[a.kind] || PB_META.watch;
+    const why = [
+      a.because ? `<div class="why-line">${esc(a.because)}</div>` : '',
+      a.trigger ? `<div class="why-line"><span class="teal">Go</span> ${esc(a.trigger)}</div>` : '',
+      a.invalidate ? `<div class="why-line"><span class="dn">Stop</span> ${esc(a.invalidate)}</div>` : '',
+    ].join('');
+    return `<div class="act" style="border-left:2px solid ${m.dot}">
+      <div class="act-head">
+        <span class="badge ${m.cls}">${m.label}</span>
+        <span class="act-do">${esc(a.do)}</span>
+        ${a.tag && a.tag !== 'method'
+          ? `<span class="act-tag">${esc(a.tag)}</span>` : ''}
+      </div>
+      ${why ? `<div class="why">${why}</div>` : ''}
+    </div>`;
+  };
+  el.innerHTML = `<div class="card playbook" id="pb-${lane}-card">
+    <div class="act-head-row">
+      <div class="sec-label" style="margin-bottom:0">What to do</div>
+      <button type="button" class="icon-btn" id="pb-${lane}-why">Why</button>
+    </div>
+    ${head.map(item).join('')}
+    ${tail.length ? `<div id="pb-${lane}-tail" class="hidden">${tail.map(item).join('')}</div>
+      <button class="disclose" type="button" id="pb-${lane}-more">
+        <span>${tail.length} named setups</span><span class="chev"></span></button>` : ''}
+  </div>`;
+  const more = $('#pb-' + lane + '-more');
+  if (more) more.onclick = () => {
+    const open = !$('#pb-' + lane + '-tail').classList.toggle('hidden');
+    more.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const why = $('#pb-' + lane + '-why');
+  if (why) why.onclick = () => {
+    const on = $('#pb-' + lane + '-card').classList.toggle('show-why');
+    why.textContent = on ? 'Hide why' : 'Why';
+  };
+}
+
+// ── LANE 1: Hyperliquid ─────────────────────────────────────────────────────
+function regimeStrip(g, extra) {
+  if (!g || g.status !== 'ok') return '';
+  return [
+    // The regime cell's value is prose, not a figure — set at figure size it
+    // wrapped to two lines and dwarfed the numbers beside it.
+    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} ${extra} scanned`, 'vio words'],
+    [`${g.bench} 7d`, pct(g.bench_ret_7d), String(g.bench_label || '').replace(/_/g, ' ').toLowerCase(), sgn(g.bench_ret_7d)],
+    ['breadth', num(g.breadth_pct, 0) + '%', 'green on the week', g.breadth_pct >= 50 ? 'up' : 'dn'],
+    ['trending', num(g.trend_share_pct, 0) + '%', 'rest is chop', 'mut'],
+    ['dispersion', num(g.dispersion_pct, 1) + '%', 'spread of 7d returns', 'mut'],
+    ['rel strength', pct(g.alt_strength_pct), `median residual vs ${g.bench}`, sgn(g.alt_strength_pct)],
+    ['funding', pct(g.mean_funding_apr_pct), 'mean APR', sgn(-(g.mean_funding_apr_pct || 0))],
+    ['consensus', num((g.consensus || {}).pct_up, 0) + '%', 'forecasts pointing up', 'mut'],
+  ].map(([l, v, sub, c]) => `<div class="kpi"><span class="v ${c}">${esc(v)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(sub)}</span></div>`).join('');
+}
+
+function majorCard(r, closes) {
+  const f = r.forecast || {};
+  return `<div class="card" style="padding:11px">
+      <div class="flex items-center justify-between mb-2">
+        <span class="mono" style="font-weight:700;font-size:13px">${esc(r.coin)}</span>
+        ${badge(r.label)}
+      </div>
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <span class="mono text-[14px]">${price(r.px)}</span>
+        <span>${spark(closes)}</span>
+      </div>
+      <div class="mono text-[10.5px] mut">
+        7d <span class="${sgn(r.ret_7d)}">${pct(r.ret_7d)}</span> ·
+        30d <span class="${sgn(r.ret_30d)}">${pct(r.ret_30d)}</span> ·
+        eff ${num(r.efficiency)}
+      </div>
+      <div class="mt-2">${bandHtml(r.px, f)}</div>
+      <div class="mono text-[10px] dim mt-1">p(up) ${num(f.prob_up, 2)} · band ±${num(f.sigma_h_pct, 1)}%
+        ${r.resid_7d ? ` · vs ${esc(r.bench || '')} ${pct(r.resid_7d, 1)}` : ''}</div>
+    </div>`;
+}
+
+function renderHL(d) {
+  $('#n-hl').textContent = d.scanned ? d.scanned : '';
+  $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
+  if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
+  const g = d.regime || {};
+
+  const regs = d.regimes || { crypto: g };
+  $('#hl-strip').innerHTML = regimeStrip(regs.crypto || g, 'coins');
+  const xr = regs.xyz;
+  $('#hl-strip-xyz').innerHTML = regimeStrip(xr, 'markets');
+  $('#hl-strip-xyz').style.display = xr && xr.status === 'ok' ? '' : 'none';
+  $('#hl-xyz-card').style.display = (d.xyz_majors || []).length ? '' : 'none';
+
+  $('#hl-majors').innerHTML = (d.majors || [])
+    .map(r => majorCard(r, d.closes && d.closes[r.coin])).join('');
+  $('#hl-xyz-majors').innerHTML = (d.xyz_majors || [])
+    .map(r => majorCard(r, d.closes && d.closes[r.coin])).join('');
+
+  $('#hl-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
+    || '<li class="dim">no observations</li>';
+
+  const ev = d.eval || null;
+  $('#hl-eval').innerHTML = ev && ev.status === 'ok' ? `
+    <div class="mono text-[11px]">
+      n=${ev.n} anchors · horizon ${ev.horizon_days}d · non-overlapping<br/>
+      directional hit <b class="${ev.beats_coinflip ? 'up' : 'amb'}">${num(ev.dir_hit * 100, 1)}%</b>
+      (${num(ev.dir_edge_sigma, 2)}σ vs coin flip)<br/>
+      p50 error ${num(ev.mae_pct, 2)}% vs random walk ${num(ev.mae_naive_pct, 2)}%
+      → <b class="${ev.beats_randomwalk ? 'up' : 'amb'}">${ev.beats_randomwalk ? 'better' : 'worse'}</b><br/>
+      band coverage ${num(ev.coverage_80 * 100, 1)}% vs 80% nominal<br/>
+      split-half: ${num(ev.split_half.early_hit * 100, 1)}% early / ${num(ev.split_half.late_hit * 100, 1)}% late
+      → <b class="${ev.split_half.sign_stable ? 'up' : 'amb'}">${ev.split_half.sign_stable ? 'sign stable' : 'sign FLIPS'}</b>
+    </div>
+    <div class="text-[11px] mt-3 ${ev.beats_coinflip ? 'mut' : 'amb'}">
+      ${ev.beats_coinflip
+      ? 'Direction clears the coin-flip bar on this sample.'
+      : 'Direction does NOT clear the coin-flip bar. Read the band, not the arrow: the 80% interval is calibrated, the p50 is not a call.'}
+    </div>`
+    : `<div class="dim text-[11px]">No walk-forward in this payload. Run
+       <code>python -m services.trend_engine.run --backtest</code>.</div>`;
+
+  const cats = (d.reads || []).filter(r => (r.flags || []).some(f => f.kind === 'event'));
+  $('#hl-cats').innerHTML = cats.length ? cats.slice(0, 8).map(r =>
+    `<div style="padding:5px 0;border-bottom:1px solid var(--rule)">
+      <span class="mono" style="font-weight:600">${esc(r.coin)}</span>
+      ${(r.flags || []).filter(f => f.kind === 'event').map(f =>
+      `<span class="chip ev">${esc(f.note)}</span>`).join('')}
+    </div>`).join('')
+    : '<span class="dim text-[11px]">no dated unlock or news catalyst on the scanned coins</span>';
+
+  renderHLRows();
+}
+
+function renderHLRows() {
+  const d = DATA.hl; if (!d || d.status !== 'ok') return;
+  let rows = d.reads || [];
+  if (HL_SECTOR !== 'all') rows = rows.filter(r => (r.sector || 'crypto') === HL_SECTOR);
+  if (HL_FILTER === 'trend') rows = rows.filter(r => r.label !== 'CHOP');
+  if (HL_FILTER === 'flagged') rows = rows.filter(r => (r.flags || []).length > 0);
+  // Sixty-four rows is a 6,700px table nobody reads to the bottom. Show the
+  // ranked head; the rest is one click away.
+  const HL_HEAD = 15;
+  const hidden = Math.max(0, rows.length - HL_HEAD);
+  if (!HL_SHOW_ALL) rows = rows.slice(0, HL_HEAD);
+  $('#hl-rows').innerHTML = rows.map(r => {
+    const f = r.forecast || {};
+    return `<tr>
+      <td><span class="mono" style="font-weight:600">${esc(r.coin)}</span></td>
+      <td><span class="badge ${r.sector === 'xyz' ? 'b-teal' : 'b-mut'}">${esc(r.sector || 'crypto')}</span></td>
+      <td class="mono">${price(r.px)}</td>
+      <td class="mono ${sgn(r.ret_1d)}">${pct(r.ret_1d)}</td>
+      <td class="mono ${sgn(r.ret_7d)}">${pct(r.ret_7d)}</td>
+      <td class="mono ${sgn(r.ret_30d)}">${pct(r.ret_30d)}</td>
+      <td class="mono ${sgn(r.slope_pct_day)}">${pct(r.slope_pct_day, 2)}</td>
+      <td class="mono mut">${num(r.r2)}</td>
+      <td class="mono mut">${num(r.efficiency)}</td>
+      <td>${badge(r.label)}</td>
+      <td>${bandHtml(r.px, f)}</td>
+      <td class="mono ${f.prob_up > 0.5 ? 'up' : (f.prob_up < 0.5 ? 'dn' : 'mut')}">${num(f.prob_up, 2)}</td>
+      <td class="mono ${sgn(-(r.funding_apr_pct || 0))}">${pct(r.funding_apr_pct, 1)}</td>
+      <td style="text-align:left;white-space:normal;max-width:280px">
+        ${(r.flags || []).slice(0, 4).map(fl =>
+      `<span class="chip ${KIND_CLASS[fl.kind] || ''}" title="${esc(fl.code)} — ${esc(fl.note)}">${esc(flagLabel(fl.code))}</span>`).join('')}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="14" class="dim">nothing matches this filter</td></tr>';
+
+  const more = $('#hl-more');
+  more.hidden = !hidden && !HL_SHOW_ALL;
+  more.textContent = HL_SHOW_ALL ? 'Show top 15' : `Show all ${hidden + HL_HEAD} tickers`;
+}
+$('#hl-more').onclick = () => { HL_SHOW_ALL = !HL_SHOW_ALL; renderHLRows(); };
+$$('[data-sector]').forEach(b => b.onclick = () => {
+  HL_SECTOR = b.dataset.sector;
+  $$('[data-sector]').forEach(x => x.classList.toggle('go', x === b));
+  renderHLRows();
+});
+$$('[data-filter]').forEach(b => b.onclick = () => {
+  HL_FILTER = b.dataset.filter;
+  $$('[data-filter]').forEach(x => x.classList.toggle('go', x === b));
+  renderHLRows();
+});
+
+// ── LANE 4: recorders / P&L ─────────────────────────────────────────────────
+const VERDICT_CLASS = { VALIDATED: 'b-sup', MARGINAL: 'b-chop', PENDING: 'b-mut', REFUTED: 'b-sdn' };
+
+function renderRecorders(d) {
+  if (d.status !== 'ok') { emptyState($('#rec-rows').parentElement, d, 'recorders'); return; }
+  const s = d.summary || {}, v = s.verdicts || {};
+  $('#n-recorders').textContent = s.n_books || '';
+
+  $('#rec-strip').innerHTML = [
+    ['books', String(s.n_books || 0), `${s.n_graded || 0} with resolved signals`, 'vio'],
+    ['validated', String(v.VALIDATED || 0), 'forward +EV both halves', (v.VALIDATED || 0) ? 'up' : 'mut'],
+    ['marginal', String(v.MARGINAL || 0), 'positive but fragile', 'amb'],
+    ['refuted', String(v.REFUTED || 0), 'no forward edge', (v.REFUTED || 0) ? 'dn' : 'mut'],
+    ['pending', String(v.PENDING || 0), 'under the evidence floor', 'mut'],
+    ['mean ev', s.mean_ev_pct == null ? '–' : pct(s.mean_ev_pct, 3), 'per signal @12bps', sgn(s.mean_ev_pct)],
+    ['signals', String(s.total_signals || 0), `${s.total_resolved || 0} resolved`, 'mut'],
+  ].map(([l, val, sub, c]) => `<div class="kpi"><span class="v ${c}">${esc(val)}</span>
+      <span class="l">${esc(l)}</span><span class="s">${esc(sub)}</span></div>`).join('');
+
+  $('#rec-rows').innerHTML = (d.books || []).map(b => {
+    const decay = b.decaying;
+    return `<tr>
+      <td><span class="mono" style="font-weight:600">${esc(b.book)}</span>
+        ${decay ? '<span class="badge b-chop" title="first half positive, second half negative">decaying</span>' : ''}</td>
+      <td><span class="badge ${VERDICT_CLASS[b.verdict] || 'b-mut'}" title="${esc(b.why)}">${esc(b.verdict)}</span></td>
+      <td class="mono mut">${b.signals}</td>
+      <td class="mono">${b.resolved}</td>
+      <td class="mono dim">${b.pending}${b.ungraded_errors
+        ? `<span class="amb" title="the grader could not price these this run (venue outage or empty candles) — they are SKIPPED, never scored flat"> +${b.ungraded_errors}?</span>`
+        : ''}</td>
+      <td class="mono ${sgn(b.ev_pct)}" style="font-weight:600">${b.ev_pct == null ? '–' : pct(b.ev_pct, 3)}</td>
+      <td class="mono ${sgn(b.ev25_pct)}">${b.ev25_pct == null ? '–' : pct(b.ev25_pct, 3)}</td>
+      <td class="mono ${sgn(b.total_pct)}">${b.total_pct == null ? '–' : pct(b.total_pct, 1)}</td>
+      <td class="mono">${b.win_rate == null ? '–' : num(b.win_rate * 100, 0) + '%'}</td>
+      <td class="mono dim">${b.win_ci ? num(b.win_ci[0] * 100, 0) + '–' + num(b.win_ci[1] * 100, 0) + '%' : '–'}</td>
+      <td class="mono ${sgn(b.ev_first)}">${b.ev_first == null ? '–' : pct(b.ev_first, 2)}</td>
+      <td class="mono ${sgn(b.ev_second)}">${b.ev_second == null ? '–' : pct(b.ev_second, 2)}</td>
+      <td class="mono dim">${b.last_age_h == null ? '–' : (b.last_age_h < 48 ? num(b.last_age_h, 0) + 'h' : num(b.last_age_h / 24, 0) + 'd')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="13" class="dim">No books have recorded a signal yet</td></tr>';
+
+  $('#rec-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
+    || '<li class="dim">nothing graded yet</li>';
+}
+
+// ── AI pass + refresh (operator-gated background jobs) ──────────────────────
+function renderAI(lane, ai) {
+  const el = $('#' + lane + '-ai');
+  if (!ai) { el.innerHTML = '<span class="dim">Not run.</span>'; return; }
+  if (ai.status !== 'ok') {
+    el.innerHTML = `<span class="amb mono">ai pass ${esc(ai.status)}</span>
+      <span class="dim"> ${esc(ai.error || '')}</span>`;
+    return;
+  }
+  el.innerHTML = `<div class="ai-box">
+    <div class="ai-head">${esc(ai.headline)}</div>
+    <div class="ai-nar">${esc(ai.narrative)}</div>
+    ${(ai.setups || []).map(s => `<div class="setup">
+      <b>${esc(s.ticker)}</b> — ${esc(s.read)}
+      <div class="dim mt-1">trigger: ${esc(s.trigger)} · invalidation: ${esc(s.invalidation)}
+        · <span class="badge ${s.confidence === 'high' ? 'b-up' : s.confidence === 'low' ? 'b-chop' : 'b-info'}">${esc(s.confidence)}</span></div>
+    </div>`).join('')}
+    ${(ai.watch || []).length ? `<div class="setup"><b>watch</b><div class="dim mt-1">${(ai.watch || []).map(esc).join(' · ')}</div></div>` : ''}
+    ${(ai.risks || []).length ? `<div class="setup"><b>risks</b><div class="dim mt-1">${(ai.risks || []).map(esc).join(' · ')}</div></div>` : ''}
+    <div class="dim text-[10px] mono mt-3">${esc(ai.model)} · ${ai.web_search ? 'web search on' : 'no web search'}
+      · ${num(ai.elapsed_s, 0)}s${ai.stale_for_this_read ? ' · WRITTEN AGAINST AN OLDER READ' : ''}</div>
+  </div>`;
+}
+
+// ── the FIRE button: sub-$1 pair on BTC ─────────────────────────────────────
+async function pollJob(jobId, onDone) {
+  for (let i = 0; i < 150; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const res = await fetch('/api/dashboard/trends/job/result?job_id=' + jobId, { headers: authHeaders() });
+    if (!res.ok) return onDone({ status: 'error', error: 'job poll failed (' + res.status + ')' });
+    const j = await res.json();
+    if (j.status !== 'running') return onDone(j.result || { status: j.status, error: j.error });
+  }
+  onDone({ status: 'error', error: 'timed out waiting for the job' });
+}
+
+// Returns the JSON, or an object carrying `_error` — never null, so a caller
+// can always say WHY nothing happened where the control is.
+async function post(url) {
+  if (!token()) {
+    openTokenRow('this control needs the operator token');
+    return { _error: 'needs the operator token — paste it above and press save' };
+  }
+  let r;
+  try {
+    r = await fetch(url, { method: 'POST', headers: authHeaders() });
+  } catch (e) {
+    return { _error: 'server unreachable: ' + String(e) };
+  }
+  if (r.status === 401 || r.status === 403) {
+    openTokenRow('the server rejected that token');
+    return { _error: 'operator token rejected (' + r.status + ')' };
+  }
+  if (!r.ok) return { _error: 'request failed: http ' + r.status };
+  return r.json();
+}
+
+$$('[data-ai]').forEach(btn => btn.onclick = async () => {
+  const lane = btn.dataset.ai;
+  const wsEl = lane === 'hl' ? $('#hl-ws') : null;
+  const ws = (wsEl && wsEl.checked) ? '?web_search=true' : '';
+  btn.disabled = true; btn.textContent = 'running…';
+  $('#' + lane + '-ai').innerHTML = '<span class="dim mono">model call running — this takes 20s to a few minutes…</span>';
+  const j = await post('/api/dashboard/trends/' + lane + '/ai' + ws);
+  if (!j || j._error) {
+    $('#' + lane + '-ai').innerHTML = `<span class="dn">${esc((j && j._error) || 'no response')}</span>`;
+    btn.disabled = false; btn.textContent = 'run ai pass'; return;
+  }
+  pollJob(j.job_id, res => {
+    renderAI(lane, res);
+    btn.disabled = false; btn.textContent = 'run ai pass';
+    loadLane(lane);
+  });
+});
+
+// One note per lane, parked next to its own refresh button.
+function setRefreshNote(lane, msg, cls) {
+  const btn = $('#' + REFRESH_BTN[lane]);
+  if (!btn) return;
+  let note = document.getElementById(lane + '-refresh-note');
+  if (!note) {
+    note = document.createElement('span');
+    note.id = lane + '-refresh-note';
+    btn.insertAdjacentElement('afterend', note);
+  }
+  note.className = 'text-[10.5px] mono ml-2 ' + (cls || 'dim');
+  note.textContent = msg || '';
+}
+
+const REFRESH_BTN = {
+  hl: 'hl-refresh',
+  recorders: 'rec-refresh',
+};
+
+Object.entries(REFRESH_BTN).forEach(([lane, id]) => {
+  const el = $('#' + id);
+  if (!el) return;
+  el.onclick = async () => {
+    const label = el.textContent;
+    const started = Date.now();
+    // A refresh runs a full scan in its own process (~60s for HL). Without a
+    // clock on the button a slow job is indistinguishable from a dead one.
+    const tick = setInterval(() => {
+      el.textContent = 'refreshing… ' + Math.round((Date.now() - started) / 1000) + 's';
+    }, 1000);
+    const done = (msg, cls) => {
+      clearInterval(tick);
+      el.disabled = false; el.textContent = label;
+      setRefreshNote(lane, msg, cls);
+    };
+    el.disabled = true; el.textContent = 'refreshing… 0s';
+    setRefreshNote(lane, '', '');
+    const j = await post('/api/dashboard/trends/' + lane + '/refresh');
+    if (!j || j._error) { done(j && j._error ? j._error : 'no response', 'dn'); return; }
+    pollJob(j.job_id, res => {
+      // A job that finished with an error still resolves — say so, or a failed
+      // refresh reads as a successful one.
+      if (res && (res.status === 'error' || res.error)) {
+        done('refresh failed: ' + (res.error || res.status), 'dn');
+      } else {
+        done('refreshed ' + new Date().toLocaleTimeString(), 'teal');
+      }
+      loadLane(lane);
+    });
+  };
+});
+
+// ── boot ────────────────────────────────────────────────────────────────────
+$$('a[data-nav]').forEach(a => { if (a.dataset.nav === location.pathname) a.classList.add('nav-active'); });
+$('#f-all').classList.add('go');
+$('#s-all').classList.add('go');
+
+(async function boot() {
+  await Promise.all(LANES.map(loadLane));
+  LANES.forEach(l => renderAI(l, (DATA[l] || {}).ai));
+  showLane(LANE);
+  setInterval(() => LANES.forEach(loadLane), 60000);
+})();
+</script>
+</body>
+</html>

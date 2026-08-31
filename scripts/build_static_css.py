@@ -22,8 +22,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES = ROOT / "hermes_trader" / "templates"
-OUT = ROOT / "hermes_trader" / "static" / "app.css"
+TEMPLATES = ROOT / "pathia" / "templates"
+OUT = ROOT / "pathia" / "static" / "app.css"
 
 # Minimal preflight — the subset of Tailwind's reset these pages rely on.
 PREFLIGHT = """\

@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_trader.agents import capital_flows as cf
+from pathia.agents import capital_flows as cf
 
 
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path, monkeypatch):
     """Never touch the operator's real .state/capital_flows.jsonl."""
-    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
     return tmp_path
 
 

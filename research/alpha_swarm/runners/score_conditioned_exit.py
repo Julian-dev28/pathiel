@@ -4,7 +4,7 @@ Untested cell: a WIDE trail on ONLY the HIGH-score subset (3x denser tail). Does
 """
 import json, sys, statistics
 from pathlib import Path
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 ds = SCR/"movers_v2.json"
 if not ds.exists() or "MOVERS v2 done" not in (Path("/tmp/movers-v2/progress.log").read_text() if Path("/tmp/movers-v2/progress.log").exists() else ""):
     ds = SCR/"movers_dataset.json"  # fall back to v1 if v2 not done

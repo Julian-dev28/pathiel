@@ -28,9 +28,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from hermes_trader.agents.config import get_config          # noqa: E402
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
-from hermes_trader.indicators import triggers as T           # noqa: E402
+from pathia.agents.config import get_config          # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.indicators import triggers as T           # noqa: E402
 
 CFG = get_config()
 W, TH = CFG["weights"], CFG["thresholds"]
@@ -117,7 +117,7 @@ def run(coins, min_score, stop_pct, horizon_days, draws=2000, seed=7):
 
 
 def main() -> int:
-    from hermes_trader.agents.universe import MAJORS
+    from pathia.agents.universe import MAJORS
     coins = [c for c in ("BTC", "ETH", "SOL", "BNB", "XRP") if c in MAJORS]
     print(f"W-ME1 — main_engine trigger, no AI. Coins: {coins}")
     print(f"Live gate: minCompositeScore={MIN_SCORE}, stop 6%, horizon 1d\n")

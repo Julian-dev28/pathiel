@@ -18,7 +18,7 @@ pytestmark = pytest.mark.online
 
 
 def test_fetch_all_mids_live():
-    from hermes_trader.client.hl_client import fetch_all_mids
+    from pathia.client.hl_client import fetch_all_mids
     mids = fetch_all_mids()
     assert isinstance(mids, dict) and mids
     assert "BTC" in mids
@@ -26,7 +26,7 @@ def test_fetch_all_mids_live():
 
 
 def test_fetch_hl_candles_live():
-    from hermes_trader.client.hl_client import fetch_hl_candles
+    from pathia.client.hl_client import fetch_hl_candles
     candles = fetch_hl_candles("BTC", "1h", 20)
     assert len(candles) > 0
     for c in candles:
@@ -37,7 +37,7 @@ def test_fetch_hl_candles_live():
 
 
 def test_get_universe_live():
-    from hermes_trader.client.universe import get_universe
+    from pathia.client.universe import get_universe
     uni = get_universe()
     assert len(uni) > 50
     btc = next((m for m in uni if m["coin"] == "BTC"), None)
@@ -48,7 +48,7 @@ def test_get_universe_live():
 
 def test_get_max_leverage_live():
     """Per-coin max leverage — used to cap order leverage so it isn't rejected."""
-    from hermes_trader.client.exchange import get_max_leverage
+    from pathia.client.exchange import get_max_leverage
     btc = get_max_leverage("BTC")
     assert isinstance(btc, int) and 1 <= btc <= 100
     # different coins genuinely have different maxes
@@ -60,7 +60,7 @@ def test_ioc_cross_price_crosses_book():
     """The IOC limit price must cross the live book — a buy >= best ask,
     a sell <= best bid — or the order matches nothing ('could not
     immediately match')."""
-    from hermes_trader.client.exchange import _ioc_cross_price, _get_info, get_hl_price
+    from pathia.client.exchange import _ioc_cross_price, _get_info, get_hl_price
     info = _get_info()
     for coin in ("BTC", "ETH"):
         mid = get_hl_price(coin)
@@ -71,14 +71,14 @@ def test_ioc_cross_price_crosses_book():
 
 
 def test_get_hl_atr_live():
-    from hermes_trader.client.exchange import get_hl_atr
+    from pathia.client.exchange import get_hl_atr
     assert get_hl_atr("4h", 14, "BTC") > 0
 
 
 def test_funding_rate_live():
     """Verifies the funding-rate bug fix (_make_info -> fetch_funding_history)."""
-    from hermes_trader.client.hl_client import fetch_funding_history
-    from hermes_trader.agents.research import _fetch_funding_rate
+    from pathia.client.hl_client import fetch_funding_history
+    from pathia.agents.research import _fetch_funding_rate
     hist = fetch_funding_history("BTC", int(time.time() * 1000) - 86_400_000)
     assert isinstance(hist, list) and hist
     assert "fundingRate" in hist[-1]
@@ -88,7 +88,7 @@ def test_funding_rate_live():
 
 
 def test_market_get_funding_regime_live():
-    from hermes_trader.agents.hyperfeed import market_get_funding_regime
+    from pathia.agents.hyperfeed import market_get_funding_regime
     out = market_get_funding_regime()
     assert out["regime"] in ("LONG_CROWDED", "SHORT_CROWDED", "NEUTRAL")
     assert out["assets"]
@@ -96,7 +96,7 @@ def test_market_get_funding_regime_live():
 
 def test_account_state_has_available():
     """fetch_account_state exposes `available` USDC — the base for trade sizing."""
-    from hermes_trader.client.hl_client import fetch_account_state, resolve_user_address
+    from pathia.client.hl_client import fetch_account_state, resolve_user_address
     user = resolve_user_address()
     if not user:
         import pytest as _pt
@@ -110,7 +110,7 @@ def test_account_state_has_available():
 
 def test_ta_filter_gate_live():
     """The TA filter that trading_loop.py uses to gate AI research."""
-    from hermes_trader.agents.ta_filter import analyze_perception
+    from pathia.agents.ta_filter import analyze_perception
     ta = analyze_perception({"coin": "BTC", "composite_score": 50})
     assert ta["signal"] in ("CONFIRMED", "WEAK", "REJECTED")
     assert 0 <= ta["score"] <= 100
@@ -127,7 +127,7 @@ def test_research_pipeline_live_without_llm(monkeypatch):
     """
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.setenv("AI_BRAIN_PROVIDER", "openrouter")
-    from hermes_trader.agents.research import research
+    from pathia.agents.research import research
     perception = {"coin": "BTC", "type": "perp", "mid": 0,
                   "composite_score": 0, "triggers": []}
     analysis = research("BTC", perception)
@@ -138,9 +138,9 @@ def test_research_pipeline_live_without_llm(monkeypatch):
 
 def test_scan_once_live(monkeypatch):
     """A live market scan over a small universe; any results must be well-formed."""
-    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
-    from hermes_trader.agents.perception import scan_once
-    from hermes_trader.client.universe import get_universe
+    monkeypatch.setenv("PATHIA_MAX_MARKETS", "10")
+    from pathia.agents.perception import scan_once
+    from pathia.client.universe import get_universe
     perceptions = scan_once(universe=get_universe(), min_score=0)
     assert isinstance(perceptions, list)
     for p in perceptions:

@@ -38,7 +38,7 @@ because UW's net-volume IS ask-minus-bid — one signal, not two.)
 
 ## VERDICT: **VALIDATED — wired LIVE, bounded.** `uw_flow_xs` book (agents/uw_flow_xs_live.py):
 LONG top-k bullish-flow / SHORT bottom-k bearish-flow, $20/leg, 3x, k=2, 5d hold, 20% stop,
-once/UTC-day, UW data via `hermes_trader/client/uw_client`. KILL: cumulative forward EV25 < 0
+once/UTC-day, UW data via `pathia/client/uw_client`. KILL: cumulative forward EV25 < 0
 over 12 rebalances → shadow_only. Caveats: 42 days = ONE ~2-month tape (UW's 90d lookback cap),
 14 names, survivor-biased liquid set; both-halves + p=0.0005 + multi-signal make it the
 strongest signal of the session, but scale only after it holds forward. Artifacts:

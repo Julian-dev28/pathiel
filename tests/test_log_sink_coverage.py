@@ -6,7 +6,7 @@ Two mechanisms exist and they are mutually exclusive by construction:
   a file a process appends to through a shell `nohup >>` redirection, because
   the process never reopens that fd.
 
-  in-process RotatingFileHandler (hermes_trader.log_setup.configure_logging) —
+  in-process RotatingFileHandler (pathia.log_setup.configure_logging) —
   correct only for a process whose stdout/stderr are NOT already being appended
   to the same path externally.
 
@@ -67,7 +67,7 @@ def test_no_entrypoint_mixes_both_rotation_mechanisms():
         assert "configure_logging(" not in src, (
             f"{name} is shell-redirected by restart.sh but also attaches an "
             f"in-process rotating handler — the two would fight over one file")
-    server = (ROOT / "hermes_trader" / "server.py").read_text()
+    server = (ROOT / "pathia" / "server.py").read_text()
     assert "configure_logging(" not in server
 
 
@@ -75,6 +75,6 @@ def test_configure_logging_documents_why_it_is_unwired():
     """It is deliberately uncalled, not forgotten. If that reason ever stops
     being written down, the next reader wires it into a nohup entrypoint and
     breaks rotation."""
-    doc = (ROOT / "hermes_trader" / "log_setup.py").read_text()
+    doc = (ROOT / "pathia" / "log_setup.py").read_text()
     assert "not called anywhere yet" in doc
     assert "nohup" in doc

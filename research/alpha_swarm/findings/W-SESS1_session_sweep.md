@@ -63,5 +63,5 @@ patterns` graded -EV, and `price entries no edge` covers the family. Session
 levels are another coordinate on a chart, and chart coordinates are the
 saturated part of this space.
 
-Reproduce: `/tmp/hermes-sweep/session_sweep.py` (method), `verify_london.py`
+Reproduce: `/tmp/pathia-sweep/session_sweep.py` (method), `verify_london.py`
 (the correction and fee arithmetic).

@@ -64,7 +64,7 @@ def ledger_reach(book: str) -> Tuple[int, Optional[str]]:
     A book with no history is unmeasurable, not zero — those are different
     facts and the report must not conflate them.
     """
-    from hermes_trader.agents import shadow_ledger as SL
+    from pathia.agents import shadow_ledger as SL
 
     for candidate in (book, f"{book}_runin", book.replace("_short", "_short_runin")):
         path = SL._book_path(candidate)
@@ -87,7 +87,7 @@ def ledger_reach(book: str) -> Tuple[int, Optional[str]]:
 
 def simulate(equity: float, cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Pure: what each book can do at `equity`. No network, no order path."""
-    from hermes_trader.agents.executor import (MIN_TRADABLE_EQUITY_USD,
+    from pathia.agents.executor import (MIN_TRADABLE_EQUITY_USD,
                                                min_tradable_equity)
 
     free_floor = float(cfg.get("min_available_margin_pct", 0.10) or 0.0)
@@ -112,7 +112,7 @@ def simulate(equity: float, cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    from hermes_trader.agents.config_store import read_agent_config
+    from pathia.agents.config_store import read_agent_config
 
     cfg = read_agent_config()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -120,7 +120,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     help="simulate at this equity (default: the derived floor)")
     args = ap.parse_args(argv)
 
-    from hermes_trader.agents.executor import min_tradable_equity
+    from pathia.agents.executor import min_tradable_equity
     equity = args.equity if args.equity is not None else min_tradable_equity(cfg)
     r = simulate(equity, cfg)
 

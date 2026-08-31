@@ -219,4 +219,4 @@ if __name__ == "__main__":
             p(f"\nCROSS-SEC catch-up (long top-8 laggards) thr={thr*100:.1f}% hold=1")
             p(fmt(s))
 
-    open("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/_btc_leadlag_out.txt", "w").write("\n".join(out))
+    open("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/_btc_leadlag_out.txt", "w").write("\n".join(out))

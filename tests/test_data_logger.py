@@ -1,6 +1,6 @@
 import json
 
-from hermes_trader.agents import data_logger
+from pathia.agents import data_logger
 
 
 def test_data_logger_skips_spot_and_zero_rows(monkeypatch, tmp_path):

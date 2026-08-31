@@ -9,8 +9,8 @@ for _l in (_REPO/".env.local").read_text().splitlines():
     _l=_l.strip()
     if _l and not _l.startswith("#") and "=" in _l:
         k,_,v=_l.partition("="); os.environ.setdefault(k.strip(),v.strip())
-from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.universe import get_universe
+from pathia.client.hl_client import fetch_hl_candles
 SCR = Path(__file__).resolve().parent
 LOG = Path("/tmp/htf-build/progress.log"); LOG.parent.mkdir(parents=True, exist_ok=True)
 def log(m):

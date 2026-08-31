@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-import hermes_trader.agents.dsl_exit as dsl
+import pathia.agents.dsl_exit as dsl
 
 
 def _pos(coin, szi, entry):

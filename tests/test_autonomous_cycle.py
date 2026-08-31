@@ -246,5 +246,5 @@ def test_research_fetch_retries_are_reduced_not_aggressive():
     assert AC.__dict__  # module importable
     # the defaults main() installs
     src = (Path(__file__).resolve().parents[1] / "scripts" / "autonomous_cycle.py").read_text()
-    assert 'setdefault("HERMES_CANDLE_RETRIES", "2")' in src
-    assert 'HERMES_CANDLE_BACKOFF_CAP_S' in src
+    assert 'setdefault("PATHIA_CANDLE_RETRIES", "2")' in src
+    assert 'PATHIA_CANDLE_BACKOFF_CAP_S' in src

@@ -4,7 +4,7 @@ funding.json covers 2026-03-29..2026-06-27 (90d). The hourly candle cache
 (W-R_cache_hourly.json) spans 2025-12-13..2026-07-09 (208d). funding_spike_short
 signal reconstruction needs funding across the whole candle span (plus the 30d
 z lookback), so this script fetches the two gap windows per coin via
-hermes_trader.client.hl_client.fetch_funding_history, 2s pace, and writes the
+pathia.client.hl_client.fetch_funding_history, 2s pace, and writes the
 merged per-coin hourly rows to W-L_cache_funding.json in funding_lib shape:
 {meta, funding: {coin: [[time_ms, fundingRate, premium], ...]}}.
 
@@ -20,7 +20,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "..", ".."))
-from hermes_trader.client.hl_client import fetch_funding_history  # noqa: E402
+from pathia.client.hl_client import fetch_funding_history  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOURLY_CACHE = os.path.join(HERE, "W-R_cache_hourly.json")

@@ -24,7 +24,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-BASE = os.environ.get("HERMES_SMOKE_BASE", "http://127.0.0.1:8000")
+BASE = os.environ.get("PATHIA_SMOKE_BASE", "http://127.0.0.1:8000")
 LANES = ("hl", "recorders")
 
 # What the page reads out of each lane payload. A missing key here renders as a
@@ -150,11 +150,11 @@ def read_token() -> Optional[str]:
     for path in (".env.local", ".env"):
         try:
             for line in open(path):
-                if line.startswith("HERMES_OPERATOR_TOKEN"):
+                if line.startswith("PATHIA_OPERATOR_TOKEN"):
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
         except OSError:
             continue
-    return os.environ.get("HERMES_OPERATOR_TOKEN")
+    return os.environ.get("PATHIA_OPERATOR_TOKEN")
 
 
 def main(argv: Optional[List[str]] = None) -> int:

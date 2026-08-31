@@ -9,7 +9,7 @@ All costs in bps of NOTIONAL. Leverage does not change fee $ at fixed notional; 
 
 | component | median | mean | p90 | source |
 |---|---|---|---|---|
-| round-trip taker fee | 5.0 | 4.4 | 5.0 | fee_usd/notional_usd over 369 closes; = 2.5bps/side (HL_TAKER_FEE_PCT=0.025, hermes_trader/dashboard.py:57) |
+| round-trip taker fee | 5.0 | 4.4 | 5.0 | fee_usd/notional_usd over 369 closes; = 2.5bps/side (HL_TAKER_FEE_PCT=0.025, pathia/dashboard.py:57) |
 | round-trip slippage | 7.3 | 11.1 | 24.0 | entry_slip_bps + exit_slip_bps, n=187 |
 | funding, per hour held | +0.121 | +0.176 | +0.796 | funding_cost_usd/notional/hold_h, n=150 (longs typically pay; crowded-long shorts collect) |
 
@@ -92,4 +92,4 @@ Minimum account size, by constraint (min order = $10.50, exchange.py:24 MIN_ORDE
 4. (b) more capital: mandatory to run the validated structure. **$80 minimum, $150 comfortable.** Below that, position minimums ($10.50) force per-stop risk ≥12% of equity and xs_momentum's 8-leg book cannot exist inside the 10×-equity notional cap.
 5. (c) stop: not required by the math, but at $19 the honest expected path even with perfect discipline is ~$4-6/wk with per-trade drawdowns of 12-22% of equity. That is a coin-flip random walk with a positive drift smaller than its noise. Compounding begins at (b).
 
-Sources: hermes_trader/dashboard.py:57, hermes_trader/client/exchange.py:24, hermes_trader/agents/executor.py:601-635, hermes_trader/agents/risk_gates.py:277-284, hermes_trader/agents/extreme_fade_live.py:270-306, .agent-memory.json (369 closes), .agent-config.json, .state/shadow_ledger/*.jsonl, research/alpha_swarm/findings/{extreme_surface.md,W-F2.md,W-G1_meta_alpha.md}, .monitor-journal.md:4814,4879, HANDOFF-CLAUDE.md.
+Sources: pathia/dashboard.py:57, pathia/client/exchange.py:24, pathia/agents/executor.py:601-635, pathia/agents/risk_gates.py:277-284, pathia/agents/extreme_fade_live.py:270-306, .agent-memory.json (369 closes), .agent-config.json, .state/shadow_ledger/*.jsonl, research/alpha_swarm/findings/{extreme_surface.md,W-F2.md,W-G1_meta_alpha.md}, .monitor-journal.md:4814,4879, HANDOFF-CLAUDE.md.

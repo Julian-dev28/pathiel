@@ -86,7 +86,7 @@ def fetch_topup() -> None:
     if CACHE_TOPUP.exists():
         print("topup cache exists, skip")
         return
-    from hermes_trader.client.hl_client import fetch_hl_candles
+    from pathia.client.hl_client import fetch_hl_candles
 
     ev = json.load(open(HYP / "W-P4_results.json"))["events_detail"]
     coins = sorted(

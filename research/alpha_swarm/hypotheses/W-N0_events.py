@@ -49,7 +49,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 HYP = REPO / "research" / "alpha_swarm" / "hypotheses"
 HOURLY_CACHE = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "4b037816-5b27-4d2d-a13e-a6ebd68a2340/scratchpad/hourly_ext.json"
 )
 OUT = HYP / "W-N_events.json"

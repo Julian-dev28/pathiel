@@ -1,8 +1,8 @@
 """Regression: _policy_from_config() must read the nested dsl_exit.atr_stop block so a
 post-blackout synthesized tracker gets the SAME ATR stop a fresh entry does (not the
 fixed-stop fallback). Bug found by the 2026-06-29 config audit (Lane 3)."""
-from hermes_trader.agents import dsl_exit
-from hermes_trader.agents import config_store
+from pathia.agents import dsl_exit
+from pathia.agents import config_store
 
 
 _CFG = {

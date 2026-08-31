@@ -4,8 +4,8 @@ Output: scratchpad/hip3_1h.json  shape:
   {"meta":{"coins":[...], "fetched_at":...}, "candles":{coin:[[t,o,h,l,c,v],...]}}
 """
 import json, time, os
-from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.universe import get_universe
+from pathia.client.hl_client import fetch_hl_candles
 
 OUT = os.path.join(os.path.dirname(__file__), "hip3_1h.json")
 

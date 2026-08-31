@@ -3,7 +3,7 @@
 READ-ONLY audit. Scope: the entire `dsl_exit` block plus the loose exit-related top-level
 keys (`loss_cooldown_min`, `min_ai_close_hold_min`, `sl_atr_mult`, `backup_sl_max_frac_of_liq`).
 Live config snapshot read from `.agent-config.json`. Every key was grepped in
-`hermes_trader/agents/dsl_exit.py` and `hermes_trader/agents/executor.py`
+`pathia/agents/dsl_exit.py` and `pathia/agents/executor.py`
 (plus repo-wide for the loose keys).
 
 **Headline: nothing in this block is dead. Every key is read and load-bearing.**

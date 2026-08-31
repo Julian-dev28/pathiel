@@ -36,8 +36,8 @@ if _ENV.is_file():
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from hermes_trader.agents import shadow_ledger as SL  # noqa: E402
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.agents import shadow_ledger as SL  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 # Books whose signals are (or invert to) SHORTs. news_catalyst is the big
 # attention-fade dataset — its recorded LONGs invert to the validated short.

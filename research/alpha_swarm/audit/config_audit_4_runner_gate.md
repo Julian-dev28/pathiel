@@ -1,7 +1,7 @@
 # Config Audit 4 — runner_entry_gate + atr_risk_sizing
 
 READ-ONLY audit. No config or code was changed. Live config = `.agent-config.json` (hot-read).
-Gate logic = `hermes_trader/agents/executor.py:_runner_entry_block_reason` (lines 1332-1454),
+Gate logic = `pathia/agents/executor.py:_runner_entry_block_reason` (lines 1332-1454),
 plus the sidestep pre-checks at executor.py:109-157 / 322-396 and the loop pre-block at
 `scripts/trading_loop.py:263-282`.
 

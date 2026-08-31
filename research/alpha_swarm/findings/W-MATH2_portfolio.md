@@ -13,7 +13,7 @@ unmeasured, mutually-identical bets. The path to "more deployed" is diversificat
 
 ## 0. Method & honesty flags
 
-- **Grading**: replicated `hermes_trader.agents.shadow_ledger.grade_records` exactly (dedup episodes → simulate
+- **Grading**: replicated `pathia.agents.shadow_ledger.grade_records` exactly (dedup episodes → simulate
   side/stop/horizon exit → net of funding), per-coin candle cache to stay gentle on HL (186 fetches total).
 - **The data is thin.** After de-duplicating re-signalled clusters into independent episodes, only **6 of ~20 books
   have ≥8 resolved episodes**, and the newest live short books have **0** (1-day horizon needs 3 days to resolve;

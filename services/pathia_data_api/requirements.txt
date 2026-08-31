@@ -1,0 +1,23 @@
+# pathia_data_api — runtime + test deps.
+# Minor versions pinned to a compatible range (~=) so patch updates flow in
+# but a minor bump can't silently break the build.
+
+# --- web framework / server ---
+fastapi~=0.115.0
+uvicorn[standard]~=0.34.0
+
+# --- config / validation (pydantic v2) ---
+pydantic~=2.10
+pydantic-settings~=2.7
+
+# --- data / persistence ---
+sqlalchemy~=2.0.36
+psycopg2-binary~=2.9.10  # Postgres driver; optional — sqlite works without it
+
+# --- http clients ---
+httpx~=0.28.0
+requests~=2.32
+
+# --- tests ---
+pytest~=8.3
+# httpx (above) doubles as the ASGI test transport for FastAPI's TestClient

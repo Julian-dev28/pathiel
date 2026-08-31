@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from hermes_trader.data_providers.hydromancer import (
+from pathia.data_providers.hydromancer import (
     HydromancerClient,
     HydromancerConfig,
     HydromancerError,
@@ -14,7 +14,7 @@ from hermes_trader.data_providers.hydromancer import (
     subscribe_message,
     unsubscribe_message,
 )
-from hermes_trader.data_providers.warehouse import JsonlWarehouse
+from pathia.data_providers.warehouse import JsonlWarehouse
 
 
 class _Resp:

@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: hermes-trader
-  namespace: hermes
+  name: pathia
+  namespace: pathia
   labels:
-    app: hermes-trader
+    app: pathia
 spec:
-  serviceName: hermes-trader
+  serviceName: pathia
   # replicas is 1 ON PURPOSE — the `loop` writes .dsl-state.json / .agent-memory
   # / the positions snapshot to the shared volume and is a singleton by design.
   # Running two loops would double-trade and corrupt the ratchet state. This is
@@ -14,11 +14,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: hermes-trader
+      app: pathia
   template:
     metadata:
       labels:
-        app: hermes-trader
+        app: pathia
       annotations:
         # Fallback for annotation-based Prometheus scrape configs. The
         # operator-native path is k8s/servicemonitor.yaml.
@@ -35,12 +35,12 @@ spec:
       containers:
         # ── web: FastAPI dashboard + JSON API + /metrics ──────────────────────
         - name: web
-          image: hermes-trader:local
+          image: pathia:local
           imagePullPolicy: IfNotPresent
           # No `command:` — falls through to the image's ENTRYPOINT
           # (docker-entrypoint.sh), which bootstraps /data/.state then execs
           # `args`. See Dockerfile "Runtime state" for why that step exists.
-          args: ["python3", "-m", "hermes_trader.server"]
+          args: ["python3", "-m", "pathia.server"]
           env:
             # Dashboard shares the account with `loop`; HL rate-limits per
             # source IP-ish identity, not per process, so give the server a
@@ -48,20 +48,20 @@ spec:
             # mode — mirrors scripts/restart.sh's start_server(). `loop`
             # keeps the full code-default budget (300 cap / 15 refill); it's
             # the money path.
-            - name: HERMES_STATE_READONLY
+            - name: PATHIA_STATE_READONLY
               value: "1"
-            - name: HERMES_HL_RATE_REFILL_PER_SEC
+            - name: PATHIA_HL_RATE_REFILL_PER_SEC
               value: "2"
-            - name: HERMES_HL_RATE_CAPACITY
+            - name: PATHIA_HL_RATE_CAPACITY
               value: "60"
           ports:
             - name: http
               containerPort: 8000
           envFrom:
             - configMapRef:
-                name: hermes-config
+                name: pathia-config
             - secretRef:
-                name: hermes-secrets
+                name: pathia-secrets
           volumeMounts:
             - name: data
               mountPath: /data
@@ -95,14 +95,14 @@ spec:
               memory: "512Mi"
         # ── loop: autonomous scan → research → execute → DSL monitor ──────────
         - name: loop
-          image: hermes-trader:local
+          image: pathia:local
           imagePullPolicy: IfNotPresent
           args: ["python3", "scripts/trading_loop.py"]
           envFrom:
             - configMapRef:
-                name: hermes-config
+                name: pathia-config
             - secretRef:
-                name: hermes-secrets
+                name: pathia-secrets
           volumeMounts:
             - name: data
               mountPath: /data
@@ -110,7 +110,7 @@ spec:
           # first positions snapshot (proves it booted AND reached Hyperliquid);
           # after that, a process crash is the failure signal (restartPolicy
           # Always restarts it). No liveness flapping on transient API blips.
-          # HERMES_POSITIONS_SNAPSHOT_FILE is baked to /data/.positions-snapshot.json
+          # PATHIA_POSITIONS_SNAPSHOT_FILE is baked to /data/.positions-snapshot.json
           # in the Dockerfile — this probe path must stay in sync with that.
           startupProbe:
             exec:
@@ -132,14 +132,14 @@ spec:
         # (poly-board hourly, poly-judgment 4h, autonomous-cycle daily,
         # trends-price 30min, trends-recorders 6h — see scripts/scheduler.py:JOBS)
         - name: sched
-          image: hermes-trader:local
+          image: pathia:local
           imagePullPolicy: IfNotPresent
           args: ["python3", "scripts/scheduler.py"]
           envFrom:
             - configMapRef:
-                name: hermes-config
+                name: pathia-config
             - secretRef:
-                name: hermes-secrets
+                name: pathia-secrets
           volumeMounts:
             - name: data
               mountPath: /data
@@ -163,21 +163,21 @@ spec:
         # independent of shell `nohup >>` wrapping, so it happens whether or
         # not restart.sh is involved). This container truncates them in
         # place on an interval so a long-lived pod's logs/ doesn't grow
-        # unbounded; see hermes_trader/log_setup.py for the policy. Logs live
+        # unbounded; see pathia/log_setup.py for the policy. Logs live
         # in the container's own writable layer, deliberately NOT on the
         # shared /data volume — log history isn't state that needs the same
         # backup/rollback guarantees as .state/ or shadow_ledger/, and
         # keeping it off the volume keeps the one singleton-sensitive PVC
         # smaller. No probe: same "process crash is the signal" precedent.
         - name: rotator
-          image: hermes-trader:local
+          image: pathia:local
           imagePullPolicy: IfNotPresent
           args: ["python3", "scripts/log_rotate.py", "--daemon"]
           envFrom:
             - configMapRef:
-                name: hermes-config
+                name: pathia-config
             - secretRef:
-                name: hermes-secrets
+                name: pathia-secrets
           resources:
             requests:
               cpu: "10m"

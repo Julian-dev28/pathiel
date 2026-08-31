@@ -29,7 +29,7 @@ tight profit-floor breakout exit (bank quickly, let the trail clip). Return pct.
 import json, sys, math, random
 import numpy as np
 
-SP = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/movers_5m.json"
+SP = "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/movers_5m.json"
 L = 48          # trailing-mean lookback (4h)
 FWD = 96        # forward window (8h)
 COST = 0.0012   # 12 bps round trip

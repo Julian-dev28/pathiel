@@ -50,7 +50,7 @@ def _print_recorders(p: Dict[str, Any]) -> None:
 
 
 def main(argv: Any = None) -> int:
-    # BEFORE any hermes_trader import: `rebalancer_owned` freezes the state
+    # BEFORE any pathia import: `rebalancer_owned` freezes the state
     # directory at import time, and a CLI run that skips this reads a different
     # shadow ledger than the bot writes (see env.py).
     from services.trend_engine import env

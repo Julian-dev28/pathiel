@@ -18,7 +18,7 @@ records: {component, description, evidence, confidence, can_be_quantified,
 possible_definition, lookahead_risk, implementation_risk}. Initial hypothesis to
 confirm/reject: HTF regime classification + range geometry + deviation-vs-acceptance
 + time-in-structure + scenario pathing + avoiding mid-range entries.
-## Part 3: Inspect Hermes (research.py, system_prompt.py, ta_filter.py, risk_gates.py,
+## Part 3: Inspect Pathia (research.py, system_prompt.py, ta_filter.py, risk_gates.py,
 indicators/, perception.py, memory.py, client/hl_client.py, models/types.py, scripts/,
 tests/, .agent-config.json). Document existing measurements; no duplicate features.
 ## Part 4: Testable features
@@ -37,11 +37,11 @@ E. Entry location buckets: 0-.2/.2-.35/.35-.65/.65-.8/.8-1. Hypothesis: RANGE st
 + mid-location (0.35-0.65) => PASS unless confirmed acceptance. Not hard-coded live.
 ## Part 5: Framework at research/killa_xbt/{calls.json, methodology.json, README.md},
 scripts/research_killa_xbt.py, scripts/backtest_range_structure.py,
-hermes_trader/indicators/range_structure.py (research-only), tests/test_range_structure.py.
+pathia/indicators/range_structure.py (research-only), tests/test_range_structure.py.
 Prevent: lookahead, leakage, survivorship, test-set tuning, future-confirmed
 boundaries, post-close info, ignored fees/slippage/funding, overlapping predictions.
-## Part 6: Backtests: baselines (Hermes, EMA-trend, existing breakout) vs
-range-location-only, deviation-rejection-only, acceptance-only, combined, Hermes+.
+## Part 6: Backtests: baselines (Pathia, EMA-trend, existing breakout) vs
+range-location-only, deviation-rejection-only, acceptance-only, combined, Pathia+.
 Across BTC/ETH/large-caps, trending/sideways, hi/lo vol, bull/bear. Walk-forward:
 train N -> validate N, frozen thresholds, final untouched test period. Realistic
 fees/slippage/funding/spread/delay/missing candles/HL history limits. Net-of-cost only.

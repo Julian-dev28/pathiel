@@ -1,7 +1,7 @@
 # Config Audit 2 — Entry Gates / Thresholds
 
 Scope: top-level entry gate keys in `.agent-config.json` (hot-read via `config_store.read_agent_config`).
-Read-only. No live edits. Audited against `hermes_trader/`, `scripts/`, git log, and `research/alpha_swarm/liquidity/`.
+Read-only. No live edits. Audited against `pathia/`, `scripts/`, git log, and `research/alpha_swarm/liquidity/`.
 
 ## Headline
 
@@ -52,7 +52,7 @@ Do NOT delete `coin_blocklist` or `hip3_dex_allowlist` from the live file — th
 
 4. Volume floors also appear inside each strategy book (min_volume_usd, executor_short_volume_floor_usd at 20M). Those are book-scoped and out of this section's scope, but they track the top-level short floor (20M) consistently.
 
-5. Every key in this section is also exposed through the MCP tool schema (hermes-mcp-server.py ~lines 232-257, 984-999), so they are part of the operator control contract — that is a second reason not to delete the redundant-but-harmless empty lists.
+5. Every key in this section is also exposed through the MCP tool schema (pathia-mcp-server.py ~lines 232-257, 984-999), so they are part of the operator control contract — that is a second reason not to delete the redundant-but-harmless empty lists.
 
 ## Verdict summary
 

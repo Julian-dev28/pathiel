@@ -1,4 +1,4 @@
-# Exact reproducible dependency set for hermes-trader (library + dev extras).
+# Exact reproducible dependency set for pathia (library + dev extras).
 # pyproject.toml keeps loose ranges for the library; this lock pins everything
 # CI and prod actually install, so a build today is the same build in a year.
 # --universal + --python-version 3.11 (the floor in pyproject.toml, and what
@@ -42,7 +42,7 @@ eth-abi==6.0.0
     # via eth-account
 eth-account==0.13.7
     # via
-    #   hermes-trader (pyproject.toml)
+    #   pathia (pyproject.toml)
     #   hyperliquid-python-sdk
 eth-hash==0.8.0
     # via eth-utils
@@ -69,7 +69,7 @@ eth-utils==5.3.1
     #   hyperliquid-python-sdk
     #   rlp
 fastapi==0.141.1
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 h11==0.16.0
     # via
     #   httpcore
@@ -83,9 +83,9 @@ httpcore==1.0.9
 httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 hyperliquid-python-sdk==0.24.0
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 idna==3.19
     # via
     #   anyio
@@ -95,7 +95,7 @@ iniconfig==2.3.0
     # via pytest
 msgpack==1.2.2
     # via
-    #   hermes-trader (pyproject.toml)
+    #   pathia (pyproject.toml)
     #   hyperliquid-python-sdk
 packaging==26.3
     # via pytest
@@ -104,12 +104,12 @@ parsimonious==0.10.0
 pluggy==1.6.0
     # via pytest
 prometheus-client==0.26.0
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 pycryptodome==3.23.0
     # via eth-keyfile
 pydantic==2.13.5
     # via
-    #   hermes-trader (pyproject.toml)
+    #   pathia (pyproject.toml)
     #   eth-account
     #   eth-utils
     #   fastapi
@@ -117,14 +117,14 @@ pydantic==2.13.5
 pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 pygments==2.21.0
     # via pytest
 pytest==9.1.1
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 python-dotenv==1.2.3
     # via
-    #   hermes-trader (pyproject.toml)
+    #   pathia (pyproject.toml)
     #   pydantic-settings
     #   uvicorn
 pyyaml==6.0.3
@@ -138,7 +138,7 @@ rlp==5.0.0
     #   eth-account
     #   eth-rlp
 ruff==0.16.5
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 starlette==1.6.0
     # via fastapi
 toolz==1.1.0 ; implementation_name == 'cpython' or implementation_name == 'pypy'
@@ -162,7 +162,7 @@ typing-inspection==0.4.4
 urllib3==2.7.0
     # via requests
 uvicorn==0.52.4
-    # via hermes-trader (pyproject.toml)
+    # via pathia (pyproject.toml)
 uvloop==0.22.1 ; platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'
     # via uvicorn
 watchfiles==1.2.0

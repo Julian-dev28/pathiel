@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>pathia · activity</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathia.css" />
+<script defer src="/static/pathia.js"></script>
+
+</head>
+<body>
+<script type="speculationrules">
+{"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
+</script>
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathia</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+    </nav>
+    <div class="masthead-right">
+      <span class="mono mut" id="feed-meta"></span>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="page-head">
+    <h1 class="page-title">Activity</h1>
+    <div class="page-sub">Every decision the engine made, newest first.</div>
+  </div>
+
+  <div class="strip" id="session-strip">
+    <div class="kpi"><span class="v">…</span><span class="l">last 6h</span></div>
+  </div>
+
+  <!-- the flight deck: four independent flowing windows. The panes ARE the
+       type separation — no filter chips. -->
+  <div class="deck">
+    <section class="pane" id="pane-trade">
+      <div class="pane-head"><span class="pm pm-trade"></span><span class="sec-label">trade log</span><span class="pmeta mono" id="meta-trade"></span></div>
+      <div class="pane-flow" id="flow-trade"></div>
+    </section>
+    <section class="pane" id="pane-research">
+      <div class="pane-head"><span class="pm pm-research"></span><span class="sec-label">research log</span><span class="pmeta mono" id="meta-research"></span></div>
+      <div class="pane-flow" id="flow-research"></div>
+    </section>
+    <section class="pane" id="pane-books">
+      <div class="pane-head"><span class="pm pm-books"></span><span class="sec-label">books</span>
+        <select id="book-filter" class="fsel" style="margin-left:auto"><option value="">all books</option></select>
+      </div>
+      <div class="pane-flow" id="flow-books"></div>
+    </section>
+    <section class="pane" id="pane-machine">
+      <div class="pane-head"><span class="pm pm-machine"></span><span class="sec-label">machine</span><span class="pmeta mono" id="meta-machine"></span></div>
+      <div class="pane-flow" id="flow-machine"></div>
+    </section>
+  </div>
+
+  <footer class="site-foot">
+    one wallet · live · not financial advice
+  </footer>
+</div>
+
+<script>
+const fmtTime = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 8); };
+const fmtHM = ms => { const d = new Date(ms || Date.now()); return d.toTimeString().slice(0, 5); };
+const fmtDur = ms => {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return m + 'm';
+  return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+};
+const fmtNum = v => {
+  if (v == null || typeof v !== 'number' || !isFinite(v)) return String(v);
+  const a = Math.abs(v);
+  if (a >= 1e9) return (v / 1e9).toFixed(1) + 'B';
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+  if (a >= 100) return v.toFixed(2);
+  if (a >= 1) return v.toFixed(3);
+  return v.toFixed(5);
+};
+
+// Readable scalar for any value — no raw JSON, ever.
+function readable(v, depth) {
+  depth = depth || 0;
+  if (v == null) return '—';
+  if (typeof v === 'number') return fmtNum(v);
+  if (typeof v !== 'object') return String(v);
+  if (depth >= 2) return '…';
+  if (Array.isArray(v)) {
+    if (!v.length) return 'none';
+    return v.map(x => readable(x, depth + 1)).join(', ');
+  }
+  return Object.entries(v).map(([k, x]) => `${k}: ${readable(x, depth + 1)}`).join(' · ');
+}
+
+const tk = c => c ? `<span class="tk">${esc(c)}</span>` : '';
+const GI_HB = '<span class="gi gi-hb"></span>';
+const GI_STOP = '<span class="gi gi-stop"></span>';
+const GI_RESTART = '<span class="gi gi-restart"></span>';
+const sideBadge = s => s === 'long' ? '<span class="badge b-long">LONG</span>'
+                     : s === 'short' ? '<span class="badge b-short">SHORT</span>' : '';
+const T = e => `<span class="ev-ts mono">${fmtTime(e.ts)}</span>`;
+
+// ── citation chips: source pills, not blue underlined links ─────────────────
+const domainOf = u => { const m = String(u || '').match(/^https?:\/\/(?:www\.)?([^/\s?#]+)/); return m ? m[1] : u; };
+function citeChip(c) {
+  // fallback for raw strings: href = LAST url in the string, text = the
+  // part before the trailing " — url" (never hyperlink the whole string)
+  const url = typeof c === 'string' ? ((c.match(/https?:\/\/\S+/g) || []).pop() || '') : (c.url || c.link || '');
+  if (!url) return '';
+  const rawTitle = typeof c === 'object' ? String(c.title || '')
+                  : String(c || '').replace(/\s+—\s+https?:\/\/\S+$/, '').trim();
+  // server already shortens titleless citations to a distinguishing
+  // host+path (_parse_citation/_short_url) — keep that link text as-is.
+  // Only collapse to a bare domain when there is truly nothing to show.
+  const label = (rawTitle && rawTitle !== url) ? rawTitle : domainOf(url);
+  return `<a class="cite" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="${esc(rawTitle || url)}">${esc(label)}</a>`;
+}
+
+// ── PANE ROUTING: the panes are the type separation ─────────────────────────
+// trade  = executes, closes, book opens (the money pane)
+// research = verdict cards + PASS one-liners
+// books  = ONE window for ALL book cycle events
+// machine = scans, gates, heartbeats, system, errors (the noise pane)
+function paneFor(e) {
+  if (e.type === 'execute' || e.type === 'close') return 'trade';
+  if (e.type === 'book') return e.subtype === 'open' ? 'trade' : 'books';
+  if (e.type === 'research') return 'research';
+  return 'machine';
+}
+const FLOWS = {};   // pane name -> flow element, resolved at boot
+
+// ── TIER 1 flight-log cards ──────────────────────────────────────────────────
+const CARD = {
+  execute(e) {
+    if (e.executed) {
+      const size = e.size_usd != null ? ` $${Number(e.size_usd).toFixed(0)}` : '';
+      const px = e.entry_px != null ? ` @ ${fmtNum(e.entry_px)}` : '';
+      const via = [e.book, e.entry_via ? 'via ' + e.entry_via : ''].filter(Boolean).join(' · ');
+      const subs = [];
+      if (e.stop_px) subs.push(`stop ${fmtNum(e.stop_px)}`);
+      if (e.tp_px) subs.push(`tp ${fmtNum(e.tp_px)}`);
+      if (e.regime) subs.push(`regime ${esc(e.regime)}`);
+      return `<div class="ev-head">${T(e)} <b>OPENED ${esc((e.side || '').toUpperCase())}</b> ${tk(e.coin)}<span class="mono">${size}${px}</span>${via ? ' — ' + esc(via) : ''}</div>`
+        + (subs.length ? `<div class="ev-sub mono">${subs.join(' · ')}</div>` : '');
+    }
+    const why = (e.gates_human && e.gates_human.length ? e.gates_human.join('; ')
+                : e.detail_human || e.detail || 'gate refused');
+    return `<div class="ev-head">${T(e)} <b>REFUSED ${esc((e.side || e.ai_verdict || '').toUpperCase())}</b> ${tk(e.coin)} — ${esc(why)}</div>`
+      + (e.entry_via ? `<div class="ev-sub">via ${esc(e.entry_via)}${e.ai_verdict ? ' · ai said ' + esc(e.ai_verdict) : ''}</div>` : '');
+  },
+  close(e) {
+    const pnl = e.pnl_pct != null
+      ? `<span class="pnl mono ${e.pnl_pct >= 0 ? 'pos' : 'neg'}">${fmtPct(e.pnl_pct)}</span>` : '';
+    const why = e.reason_human || e.reason || (e.source === 'ai_close' ? 'AI called the close' : '');
+    const failed = e.executed === false ? ' <span class="badge b-fail">FAILED</span>' : '';
+    const subs = [];
+    if (e.entry_px != null && e.fill_px != null) subs.push(`entry ${fmtNum(e.entry_px)} → fill ${fmtNum(e.fill_px)}`);
+    if (e.spot_pct != null) subs.push(`spot ${fmtPct(e.spot_pct)}`);
+    if (e.leverage) subs.push(`${e.leverage}x`);
+    if (e.source === 'ai_close') subs.push('closed by AI review');
+    return `<div class="ev-head">${T(e)} <b>CLOSED</b> ${tk(e.coin)} ${sideBadge(e.side)} ${pnl}${why ? ' — ' + esc(why) : ''}${failed}</div>`
+      + (subs.length ? `<div class="ev-sub mono">${subs.join(' · ')}</div>` : '');
+  },
+  book(e) {   // book_open → trade pane
+    const size = e.extra && e.extra.notional_usd ? ` $${Number(e.extra.notional_usd).toFixed(0)}` : '';
+    return `<div class="ev-head">${T(e)} <b>OPENED ${esc((e.side || '').toUpperCase())}</b> ${tk(e.coin)}<span class="mono">${size}</span> — ${esc(e.book)}</div>`;
+  },
+  research(e) {
+    const conf = e.confidence != null ? `<span class="ev-ts mono">conf ${Number(e.confidence).toFixed(2)}</span>` : '';
+    const v = e.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
+            : e.verdict === 'SHORT' ? '<span class="badge b-short">SHORT</span>'
+            : '<span class="badge b-fail">CLOSE</span>';
+    const search = e.web_search_used ? '<span class="chip chip-amber">web search</span>' : '';
+    const risk = e.news_risk && e.news_risk !== 'none' ? `<span class="chip chip-red">news risk: ${esc(e.news_risk)}</span>` : '';
+    const triad = (e.entry_px || e.stop_px || e.tp_px)
+      ? `<div class="ev-sub mono">entry ${fmtNum(e.entry_px)} · stop ${fmtNum(e.stop_px)} · tp ${fmtNum(e.tp_px)}</div>` : '';
+    const cites = (e.citations || []).map(citeChip).filter(Boolean).join('');
+    return `<div class="ev-head">${T(e)} ${tk(e.coin)} <b>→</b> ${v} ${conf} ${search} ${risk}</div>`
+      + (e.reasoning ? `<div class="ev-body">${esc(e.reasoning)}</div>` : '')
+      + triad + (cites ? `<div class="cite-row">${cites}</div>` : '');
+  },
+  error(e) {
+    return `<div class="ev-head">${T(e)} <b style="color:var(--down)">${esc(String(e.scope || 'LOOP').toUpperCase())}</b> — <span style="color:var(--down)">${esc(e.error)}</span></div>`;
+  },
+};
+
+function accentClass(e) {
+  if (e.type === 'execute') return e.executed ? 'acc-green' : 'acc-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'acc-green' : 'acc-red';
+  if (e.type === 'error') return 'acc-red';
+  if (e.type === 'research') return 'acc-indigo';
+  if (e.type === 'book') return 'acc-teal';
+  return '';
+}
+function emphasisClass(e) {
+  if (e.type === 'execute') return e.executed ? 'flash-green' : 'flash-red';
+  if (e.type === 'close') return (e.pnl_pct ?? 0) >= 0 ? 'flash-green' : 'flash-red';
+  if (e.type === 'error') return 'flash-red';
+  if (e.type === 'research') return 'flash-indigo';
+  if (e.type === 'book') return 'flash-green';
+  return 'ev-enter';
+}
+function cardNode(e) {
+  const div = document.createElement('div');
+  div.className = `ev ${accentClass(e)}`;
+  div.innerHTML = (CARD[e.type] || CARD.error)(e);
+  return div;
+}
+
+// ── TIER 2 flight-log lines ──────────────────────────────────────────────────
+// books pane: every cycle reads like a log sentence
+function bookCycleText(e) {
+  const badge = e.shadow == null ? '' : (e.shadow ? ' <span class="badge b-shadow">NO CAPITAL</span>' : ' <span class="badge b-live">LIVE</span>');
+  if (e.signals == null && e.extra && (e.extra.longs || e.extra.shorts)) {
+    const longs = (e.extra.longs || []).join(', ');
+    const shorts = (e.extra.shorts || []).join(', ');
+    return `<b>${esc(e.book)}</b>${badge} — rebalance: longs ${esc(longs || '—')} · shorts ${esc(shorts || '—')}`;
+  }
+  if ((e.signals || 0) > 0 || (e.opened || 0) > 0) {
+    const cands = (e.candidates || []).slice(0, 3).map(c =>
+      c && c.coin ? `${c.coin} ${c.side || ''}`.trim() : readable(c)).join(', ');
+    const opened = e.opened ? `, ${e.opened} opened` : ', none opened';
+    return `<b>${esc(e.book)}</b>${badge} — ${e.signals} signal${e.signals === 1 ? '' : 's'}${opened}${cands ? ' (' + esc(cands) + ')' : ''}`;
+  }
+  const scanned = e.extra && e.extra.scanned ? `scanned ${e.extra.scanned}, ` : '';
+  return `<b>${esc(e.book)}</b>${badge} — ${scanned}quiet cycle, nothing met the entry bar`;
+}
+
+function lineNode(e) {
+  const div = document.createElement('div');
+  div.className = 'ev-line';
+  if (e.type === 'research') {          // PASS one-liner in the research pane
+    const reason = String(e.reasoning || '').slice(0, 170);
+    div.innerHTML = `${T(e)} ${tk(e.coin)} passed${reason ? ' — ' + esc(reason) : ''} <span class="ev-ts mono">(conf ${Number(e.confidence ?? 0).toFixed(2)})</span>`;
+  } else if (e.type === 'book') {       // cycle with signals → books pane
+    div.dataset.book = e.book || '';
+    div.innerHTML = `${T(e)} ${bookCycleText(e)}`;
+  } else if (e.type === 'system') {
+    const f = e.fields || {};
+    if (e.name === 'loop_start') {
+      div.innerHTML = `${T(e)} ${GI_RESTART} loop restarted${f.mode ? ' — ' + esc(f.mode) : ''}${f.scan_interval ? ' · scan ' + esc(f.scan_interval) + 's' : ''}`;
+    } else if (e.name === 'loop_stop') {
+      div.innerHTML = `${T(e)} ${GI_STOP} loop stopped`;
+    } else {
+      div.innerHTML = `${T(e)} <b>${esc(e.name)}</b> ${esc(readable(f).slice(0, 160))}`;
+    }
+  } else {
+    div.innerHTML = `${T(e)} <b>${esc(e.name || e.type)}</b> ${esc(readable(e.fields || {}).slice(0, 200))}`;
+  }
+  return div;
+}
+
+// ── TIER 3 fresh rows: individual, human, inside their pane ─────────────────
+let FRESH_MS = 15 * 60 * 1000;
+
+function freshText(e) {
+  if (e.type === 'gate')
+    return `${tk(e.coin)} entry refused — ${esc(e.human || e.reason || 'gate')}`;
+  if (e.type === 'scan') {
+    const tops = (e.coins || []).slice(0, 4).map(c =>
+      typeof c === 'object' ? c.coin : String(c)).join(', ');
+    const n = e.triggers ?? 0;
+    return `scanned the board — ${n ? n + ' trigger' + (n === 1 ? '' : 's') + (tops ? ': ' + esc(tops) : '') : 'no triggers'}`;
+  }
+  if (e.type === 'heartbeat')
+    return `${GI_HB} equity <span class="mono">$${Number(e.equity ?? 0).toFixed(2)}</span> · ${e.open_positions ?? 0} open`;
+  // fresh quiet book cycle → books pane, same sentence as T2
+  return bookCycleText(e);
+}
+function freshNode(e) {
+  const div = document.createElement('div');
+  div.className = 'ev-fresh';
+  div.dataset.ev = JSON.stringify(e);
+  if (e.type === 'book') div.dataset.book = e.book || '';
+  div.innerHTML = `${T(e)} ${freshText(e)}`;
+  if (e.type === 'gate' && e.reason && e.human && e.human !== e.reason) div.title = e.reason;
+  return div;
+}
+
+// ── TIER 3 aged: coalesced groups, human copy ────────────────────────────────
+const coalIndex = new Map();
+
+function coalLabel(kind, st) {
+  if (kind === 'gate')
+    return `${tk(st.coin)} entry refused <span class="cnt mono">×${st.n}</span> — ${esc(st.human || st.reason || 'gate')} · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
+  if (kind === 'quiet')
+    return `<b>${esc(st.book)}</b> — <span class="cnt mono">${st.n}</span> quiet cycle${st.n === 1 ? '' : 's'}, nothing met the entry bar · <span class="mono">${fmtHM(st.t0)}→${fmtHM(st.t1)}</span>`;
+  if (kind === 'scan') {
+    const h = st.hour * 3600000;
+    return `<span class="dv">${fmtHM(h)}–${fmtHM(h + 3600000)} · ${st.n} scans · ${st.triggers} candidates · ${st.researched} researched · ${st.trades} trades</span>`;
+  }
+  if (kind === 'steady')
+    return `<span class="dv">steady · $${Number(st.equity ?? 0).toFixed(2)} · ${st.open ?? 0} open · ${fmtDur(st.t1 - st.t0)}</span>`;
+  return `${st.n} events`;
+}
+function coalState(el) { return JSON.parse(el.dataset.st); }
+function coalRender(el) {
+  const st = coalState(el);
+  el.innerHTML = coalLabel(el.dataset.kind, st);
+  el.title = `${st.n} events between ${fmtTime(st.t0)} and ${fmtTime(st.t1)}`;
+}
+function coalNode(kind, gkey, st) {
+  const el = document.createElement('div');
+  el.className = (kind === 'steady' || kind === 'scan') ? 'ev-div' : 'ev-coal';
+  el.dataset.kind = kind;
+  el.dataset.gkey = gkey;
+  el.dataset.st = JSON.stringify(st);
+  if (kind === 'quiet') el.dataset.book = st.book || '';
+  coalRender(el);
+  coalIndex.set(gkey, el);
+  return el;
+}
+function coalMerge(el, patch, animate, floatTop) {
+  const st = coalState(el);
+  st.n += 1;
+  st.t1 = Math.max(st.t1, patch.t1 || 0);
+  st.t0 = Math.min(st.t0, patch.t0 || st.t0);
+  if (patch.triggers) st.triggers = (st.triggers || 0) + patch.triggers;
+  if (patch.equity !== undefined) st.equity = patch.equity;
+  if (patch.open !== undefined) st.open = patch.open;
+  el.dataset.st = JSON.stringify(st);
+  coalRender(el);
+  if (floatTop && el.parentElement && el.parentElement.firstElementChild !== el) el.parentElement.prepend(el);
+  if (animate) { el.classList.remove('coal-tick'); void el.offsetWidth; el.classList.add('coal-tick'); }
+}
+function bumpHourStats(e, field) {
+  const el = coalIndex.get('scan|' + Math.floor((e.ts || 0) / 3600000));
+  if (!el) return;
+  const st = coalState(el);
+  st[field] = (st[field] || 0) + 1;
+  el.dataset.st = JSON.stringify(st);
+  coalRender(el);
+}
+
+// heartbeat state machine — aged path only (initial history + folds)
+let lastHB = null;
+let steadyRun = 0;
+function routeHeartbeat(e) {
+  const eq = Number(e.equity ?? 0), open = Number(e.open_positions ?? 0);
+  const changed = !lastHB || Math.abs(eq - lastHB.equity) > 0.05 || open !== lastHB.open;
+  lastHB = { equity: eq, open };
+  if (changed) {
+    steadyRun++;
+    const div = document.createElement('div');
+    div.className = 'ev-line';
+    div.innerHTML = `${T(e)} ${GI_HB} equity <b class="mono">$${eq.toFixed(2)}</b> · daily <span class="mono">$${Number(e.daily_pnl ?? 0).toFixed(2)}</span> · ${open} open`;
+    return { node: div };
+  }
+  return { gkey: `hbsteady|${steadyRun}`, kind: 'steady',
+           st: { n: 1, t0: e.ts, t1: e.ts, equity: eq, open } };
+}
+
+function groupPlan(e) {
+  if (e.type === 'gate')
+    return { gkey: e.gkey, kind: 'gate',
+             st: { n: 1, t0: e.ts, t1: e.ts, coin: e.coin, reason: e.reason, human: e.human } };
+  if (e.type === 'scan')
+    return { gkey: e.gkey, kind: 'scan',
+             st: { n: 1, t0: e.ts, t1: e.ts, hour: Math.floor((e.ts || 0) / 3600000),
+                   triggers: Number(e.triggers || 0), researched: 0, trades: 0 } };
+  return { gkey: e.gkey, kind: 'quiet',
+           st: { n: 1, t0: e.ts, t1: e.ts, book: e.book } };
+}
+
+// ── stream state ─────────────────────────────────────────────────────────────
+const seen = new Set();
+const seenOrder = [];
+let newestTs = 0;
+let curBook = '';
+
+const keyOf = e => `${e.ts}|${e.type}|${e.coin || e.book || e.name || ''}|${String(e.reason || e.verdict || e.error || '').slice(0, 24)}`;
+function remember(e) {
+  const k = keyOf(e);
+  if (seen.has(k)) return false;
+  seen.add(k); seenOrder.push(k);
+  while (seenOrder.length > 2500) seen.delete(seenOrder.shift());
+  if ((e.ts || 0) > newestTs) newestTs = e.ts;
+  return true;
+}
+
+function clearEmpty(flow) {
+  const p = flow.querySelector('.pane-empty');
+  if (p) p.remove();
+}
+function applyBookFilter(node) {
+  if (node.dataset.book !== undefined) {
+    node.style.display = (!curBook || node.dataset.book === curBook) ? '' : 'none';
+  }
+}
+function insertTop(flow, node, animate, cls) {
+  clearEmpty(flow);
+  if (animate) node.classList.add(cls || 'ev-enter');
+  flow.prepend(node);
+  applyBookFilter(node);
+  while (flow.children.length > 150) {
+    const last = flow.lastElementChild;
+    if (last.dataset && last.dataset.gkey) coalIndex.delete(last.dataset.gkey);
+    last.remove();
+  }
+}
+
+// One event, chronological order in → one mutation at the top of its pane.
+function ingest(e, animate) {
+  if (!remember(e)) return;
+  if (e.type === 'research') bumpHourStats(e, 'researched');
+  if (e.type === 'execute' && e.executed) bumpHourStats(e, 'trades');
+  const flow = FLOWS[paneFor(e)];
+
+  if (e.tier === 3) {
+    const isFresh = e.fresh && (e.ts || 0) >= Date.now() - FRESH_MS;
+    if (isFresh) {
+      insertTop(flow, freshNode(e), animate);
+      return;
+    }
+    let gkey, kind, st;
+    if (e.type === 'heartbeat') {
+      const r = routeHeartbeat(e);
+      if (r.node) { insertTop(flow, r.node, animate); return; }
+      gkey = r.gkey; kind = r.kind; st = r.st;
+    } else {
+      const plan = groupPlan(e);
+      gkey = plan.gkey; kind = plan.kind; st = plan.st;
+    }
+    const existing = coalIndex.get(gkey);
+    if (existing) {
+      coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: st.triggers,
+                            equity: st.equity, open: st.open }, animate, true);
+    } else {
+      insertTop(flow, coalNode(kind, gkey, st), animate);
+    }
+    return;
+  }
+
+  const node = e.tier === 1 ? cardNode(e) : lineNode(e);
+  insertTop(flow, node, animate, e.tier === 1 ? emphasisClass(e) : 'ev-enter');
+}
+
+// ── time-decay fold: fresh rows that aged out slide into their groups ───────
+const REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function removeFolded(el) {
+  if (REDUCED_MOTION) { el.remove(); return; }
+  el.classList.add('ev-fold');
+  setTimeout(() => el.remove(), 450);
+}
+function foldOne(el, e) {
+  if (e.type === 'heartbeat') {
+    const r = routeHeartbeat(e);
+    if (r.node) { el.replaceWith(r.node); return; }
+    const existing = coalIndex.get(r.gkey);
+    if (existing) {
+      coalMerge(existing, { t0: e.ts, t1: e.ts, equity: r.st.equity, open: r.st.open }, true, false);
+      removeFolded(el);
+    } else {
+      el.replaceWith(coalNode(r.kind, r.gkey, r.st));
+    }
+    return;
+  }
+  const plan = groupPlan(e);
+  const existing = coalIndex.get(plan.gkey);
+  if (existing) {
+    coalMerge(existing, { t0: e.ts, t1: e.ts, triggers: plan.st.triggers }, true, false);
+    removeFolded(el);
+  } else {
+    const g = coalNode(plan.kind, plan.gkey, plan.st);
+    el.replaceWith(g);
+    applyBookFilter(g);
+  }
+}
+function foldAged() {
+  const cutoff = Date.now() - FRESH_MS;
+  const nodes = document.querySelectorAll('.pane-flow .ev-fresh:not(.ev-fold)');
+  for (let i = nodes.length - 1; i >= 0; i--) {   // oldest first, per chronology
+    const el = nodes[i];
+    let e;
+    try { e = JSON.parse(el.dataset.ev); } catch { el.remove(); continue; }
+    if ((e.ts || 0) >= cutoff) continue;
+    foldOne(el, e);
+  }
+}
+
+// ── empty states per pane ────────────────────────────────────────────────────
+function tradeEmptyCopy(session) {
+  const since = session && session.since_ts ? fmtHM(session.since_ts) : '—';
+  const scans = session ? session.scans : 0;
+  const blocks = session ? session.blocks : 0;
+  const open = session && session.open_positions != null ? session.open_positions : 0;
+  // "nothing actionable" is only true with zero open positions — with real
+  // money held, silence in the event feed means "holding quiet", not
+  // "nothing to see" (operator: this line read as wrong with 2 open positions).
+  return open > 0
+    ? `${open} position${open === 1 ? '' : 's'} open, holding quiet — no new opens/closes since ${since} (${scans} scans, ${blocks} blocks)`
+    : `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`;
+}
+function paneEmpties(session) {
+  const copy = {
+    trade: tradeEmptyCopy(session),
+    research: 'no verdicts yet in this window',
+    books: 'no book cycles yet in this window',
+    machine: 'quiet',
+  };
+  for (const [name, flow] of Object.entries(FLOWS)) {
+    if (!flow.children.length) {
+      const d = document.createElement('div');
+      d.className = 'pane-empty';
+      d.textContent = copy[name];
+      flow.appendChild(d);
+    }
+  }
+}
+
+// ── session strip ────────────────────────────────────────────────────────────
+function kpiChip(key, label, value, cls) {
+  return `<div class="kpi"><span class="v${cls ? ' ' + cls : ''}" data-k="${key}">${value}</span><span class="l">${label}</span></div>`;
+}
+const stripLast = {};
+function flashChanged(el) {
+  el.querySelectorAll('.v[data-k]').forEach(v => {
+    const k = v.dataset.k, cur = Number(v.textContent.replace(/[^0-9.-]/g, ''));
+    if (!isNaN(cur) && stripLast[k] != null && cur !== stripLast[k]) {
+      v.classList.remove('tick-up', 'tick-dn');
+      void v.offsetWidth;
+      v.classList.add(cur > stripLast[k] ? 'tick-up' : 'tick-dn');
+    }
+    if (!isNaN(cur)) stripLast[k] = cur;
+  });
+}
+function renderStrip(s) {
+  if (!s) return;
+  const el = document.getElementById('session-strip');
+  const pnl = s.realized_pnl_pct ?? 0;
+  const pnlCls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
+  el.innerHTML =
+    kpiChip('scans', 'scans', s.scans) +
+    kpiChip('candidates', 'candidates', s.candidates) +
+    kpiChip('researched', 'researched', s.researched) +
+    kpiChip('opened', 'opened', s.opened) +
+    kpiChip('closed', 'closed', s.closed) +
+    kpiChip('realized', 'realized', fmtPct(pnl), pnlCls) +
+    kpiChip('equity', 'equity', s.equity != null ? '$' + Number(s.equity).toFixed(2) : '—') +
+    kpiChip('open', 'open', s.open_positions != null ? s.open_positions : '—');
+  flashChanged(el);
+}
+
+// ── load + poll ──────────────────────────────────────────────────────────────
+function setMeta() {
+  document.getElementById('feed-meta').textContent =
+    `flight deck · newest first · updated ${fmtTime(Date.now())}`;
+}
+
+async function fullLoad() {
+  const data = await (await fetch('/api/dashboard/activity?limit=300')).json();
+  if (data.fresh_window_s) FRESH_MS = data.fresh_window_s * 1000;
+  buildBookFilter(data);
+  renderStrip(data.session);
+  for (const flow of Object.values(FLOWS)) flow.innerHTML = '';
+  coalIndex.clear(); seen.clear(); seenOrder.length = 0;
+  newestTs = 0; lastHB = null; steadyRun = 0;
+  const chrono = (data.events || []).slice().reverse();   // oldest → newest
+  for (const e of chrono) ingest(e, false);
+  paneEmpties(data.session);
+  setMeta();
+}
+
+async function pollNew() {
+  if (!newestTs) return fullLoad().catch(e => reportRefreshFailure('fullLoad', e));
+  try {
+    const data = await (await fetch('/api/dashboard/activity?limit=100&since=' + (newestTs - 1))).json();
+    renderStrip(data.session);
+    const chrono = (data.events || []).slice().reverse();
+    for (const e of chrono) ingest(e, true);
+    foldAged();
+    setMeta();
+  } catch (e) { reportRefreshFailure('pollNew', e); }
+}
+
+// book dropdown — scoped to the BOOKS pane only (client-side visibility)
+function buildBookFilter(data) {
+  const sel = document.getElementById('book-filter');
+  if (sel.childElementCount > 1) return;
+  for (const b of (data.books || [])) {
+    const o = document.createElement('option');
+    o.value = b; o.textContent = b;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => {
+    curBook = sel.value;
+    for (const node of FLOWS.books.children) applyBookFilter(node);
+  });
+}
+
+(function () {
+  const here = window.location.pathname.replace(/\/$/, '') || '/';
+  document.querySelectorAll('a[data-nav]').forEach(a => {
+    if (a.dataset.nav === here) a.classList.add('nav-active');
+  });
+})();
+
+FLOWS.trade = document.getElementById('flow-trade');
+FLOWS.research = document.getElementById('flow-research');
+FLOWS.books = document.getElementById('flow-books');
+FLOWS.machine = document.getElementById('flow-machine');
+
+fullLoad().catch(() => {
+  FLOWS.trade.innerHTML = '<div class="pane-empty">feed load failed — is the server up?</div>';
+});
+setInterval(pollNew, 8000);
+setInterval(foldAged, 20000);
+
+
+</script>
+</body>
+</html>

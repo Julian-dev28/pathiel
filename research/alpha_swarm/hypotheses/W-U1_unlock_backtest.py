@@ -33,7 +33,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 IDX_CACHE = os.path.join(HERE, "W-U_cache_emissions_index.json")

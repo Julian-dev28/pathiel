@@ -23,7 +23,7 @@ class TestClaimsRegistryUnit:
     """Low-level ClaimsRegistry API tests."""
 
     def _make(self, tmp_path) -> "ClaimsRegistry":
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
         return ClaimsRegistry(str(tmp_path / "claims.json")).load()
 
     def test_claim_succeeds_on_unclaimed_coin(self, tmp_path):
@@ -99,7 +99,7 @@ class TestClaimsRegistryUnit:
 
     def test_save_and_reload(self, tmp_path):
         path = str(tmp_path / "claims.json")
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
         cr1 = ClaimsRegistry(path).load()
         cr1.claim("BTC", "xs_momentum")
         cr1.claim("ETH", "other_book")
@@ -110,19 +110,19 @@ class TestClaimsRegistryUnit:
         assert cr2.owner_of("ETH") == "other_book"
 
     def test_load_missing_file_starts_empty(self, tmp_path):
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
         cr = ClaimsRegistry(str(tmp_path / "nonexistent.json")).load()
         assert cr.claimed_by_others("any_book") == set()
 
     def test_load_corrupt_file_starts_empty(self, tmp_path):
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
         p = tmp_path / "bad.json"
         p.write_text("NOT JSON {{{")
         cr = ClaimsRegistry(str(p)).load()
         assert cr.claimed_by_others("any_book") == set()
 
     def test_active_book_load_scrubs_stale_owners(self, tmp_path):
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
 
         p = tmp_path / "claims.json"
         p.write_text(json.dumps({
@@ -147,7 +147,7 @@ class TestClaimsRegistryUnit:
         assert saved["claims"] == {"ALT": "rally_exhaustion", "ETH": "xs_momentum"}
 
     def test_active_book_registry_denies_inactive_claim_owner(self, tmp_path):
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
 
         cr = ClaimsRegistry(
             str(tmp_path / "claims.json"),
@@ -158,7 +158,7 @@ class TestClaimsRegistryUnit:
         assert cr.owner_of("BTC") is None
 
     def test_claimed_by_others_self_heals_stale_in_memory_owner(self, tmp_path):
-        from hermes_trader.agents.rebalancer_owned import ClaimsRegistry
+        from pathia.agents.rebalancer_owned import ClaimsRegistry
 
         cr = ClaimsRegistry(
             str(tmp_path / "claims.json"),
@@ -177,7 +177,7 @@ class TestClaimsRegistryUnit:
         assert saved["claims"] == {"ETH": "rally_exhaustion"}
 
     def test_prune_claims_to_live_releases_non_live_claims(self, tmp_path, monkeypatch):
-        import hermes_trader.agents.rebalancer_owned as ro
+        import pathia.agents.rebalancer_owned as ro
 
         path = str(tmp_path / "claims.json")
         cr = ro.ClaimsRegistry(path, active_books=ro.active_claim_books()).load()
@@ -217,8 +217,8 @@ class TestStrategyBookEquityFracSizing:
 
     def _run_execute(self, config_overrides, analysis, monkeypatch):
         """Run maybe_execute with all network calls stubbed, return the result."""
-        import hermes_trader.agents.executor as ex
-        import hermes_trader.agents.config_store as cs
+        import pathia.agents.executor as ex
+        import pathia.agents.config_store as cs
 
         # Build a config
         cfg = dict(cs.DEFAULT_CONFIG)
@@ -281,7 +281,7 @@ class TestStrategyBookEquityFracSizing:
         monkeypatch.setattr(ex, "cancel_open_orders_for_coin", lambda coin: None)
 
         # Stub memory so it doesn't block
-        from hermes_trader.agents.memory import memory
+        from pathia.agents.memory import memory
         monkeypatch.setattr(memory, "get_recent_trades", lambda n: [])
         monkeypatch.setattr(memory, "track_daily_pnl", lambda eq: None)
         monkeypatch.setattr(memory, "get_daily_pnl", lambda: 0.0)
@@ -388,7 +388,7 @@ class TestStrategyBookEquityFracSizing:
         with a strategy_book analysis and confirming the gate blocks it when full.
         This proves the executor's gate path is NOT bypassed for strategy_book.
         """
-        from hermes_trader.agents.risk_gates import max_concurrent_positions_gate, GateContext
+        from pathia.agents.risk_gates import max_concurrent_positions_gate, GateContext
 
         # Simulate 10 open positions (at the limit)
         full_positions = [{"coin": f"COIN{i}", "side": "long", "size_usd": 72.0} for i in range(10)]

@@ -17,7 +17,7 @@ with rows like:
 
 ## Provenance: UNKNOWN — and that is finding #1
 
-Searched exhaustively on this machine (hermes-trader incl. research/,
+Searched exhaustively on this machine (pathia incl. research/,
 scratchpad/, all sibling projects under ~/Documents/code, Downloads):
 **no source code, no data, no config produces or mentions these strategies.**
 The only artifacts are the two saved images. Nothing here can be reproduced,
@@ -87,7 +87,7 @@ this repo):
    high/low ordering optimism (use pessimistic adverse-extreme-first fills —
    see `research/killa_xbt/` engine and `W-U1_unlock_backtest.py::short_trade`).
 3. **Costs.** Re-run at 25bps round trip + funding for holds ≥8h (helpers in
-   `hermes_trader/agents/shadow_ledger.py::funding_return`). Report the
+   `pathia/agents/shadow_ledger.py::funding_return`). Report the
    equity curve before/after. Kill anything whose edge halves.
 4. **Frozen re-test.** Freeze every threshold at their published values, run
    on OUR data (`W-H0` hourly cache, 208d × 40 coins + fresh fetch for the

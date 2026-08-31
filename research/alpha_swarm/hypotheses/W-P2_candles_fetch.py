@@ -75,7 +75,7 @@ def fetch_binance(symbol: str) -> list[dict]:
             try:
                 r = requests.get(BN, params={"symbol": symbol, "interval": "1h",
                                              "startTime": t0, "limit": 1000},
-                                 headers={"User-Agent": "hermes-research"}, timeout=30)
+                                 headers={"User-Agent": "pathia-research"}, timeout=30)
                 if r.ok:
                     raw = r.json()
                     break

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """W-G1 — Lane G meta-alpha: mine the bot's own decision exhaust (PIT by construction).
 
-Three studies on ~/.hermes-trader-session-log.jsonl (2026-05-27 → 2026-07-09):
+Three studies on ~/.pathia-session-log.jsonl (2026-05-27 → 2026-07-09):
   1. AI verdict calibration — does logged confidence predict forward returns at all?
   2. Gate counterfactuals — which gates saved money, which blocked winners?
   3. Execution quality — slippage vs signal price, time-of-day, fee viability by hold time.
@@ -27,8 +27,8 @@ import sys
 import time
 from collections import Counter, defaultdict
 
-LOG = os.path.expanduser("~/.hermes-trader-session-log.jsonl")
-SCRATCH = ("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+LOG = os.path.expanduser("~/.pathia-session-log.jsonl")
+SCRATCH = ("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
            "4b037816-5b27-4d2d-a13e-a6ebd68a2340/scratchpad")
 EPISODES = os.path.join(SCRATCH, "wg1_episodes.json")
 CANDLES = os.path.join(SCRATCH, "wg1_candles_1h.json")

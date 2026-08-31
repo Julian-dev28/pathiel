@@ -1,7 +1,7 @@
 """W-C3 engulf_orthogonality — is C9 additive to the live XS-momentum book, or a fast
 1-day momentum restatement?
 
-Live book (hermes_trader/agents/xs_momentum.py): ranking 'pct_k' (pctk_score, trailing 14d
+Live book (pathia/agents/xs_momentum.py): ranking 'pct_k' (pctk_score, trailing 14d
 high/low channel location), k=8 per leg, market-neutral. (Vol gate ignored here — we compare
 raw factor co-movement on a daily-overlapping cadence.)
 

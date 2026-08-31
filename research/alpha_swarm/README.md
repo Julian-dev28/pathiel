@@ -23,7 +23,7 @@ or imports into the live loop — it's pure offline research.
 
 ```bash
 .venv/bin/python research/alpha_swarm/lib/build_dataset.py
-# or point anywhere: HERMES_ALPHA_DATASET=/path/to/dataset.json
+# or point anywhere: PATHIA_ALPHA_DATASET=/path/to/dataset.json
 ```
 
 It pulls the 40 most-liquid native crypto perps × 1d/1h/5m from Hyperliquid (one fetch,
@@ -44,7 +44,7 @@ factor in disguise or a down-beta artifact of the −44% BTC tape. The matched s
 same-regime / same-time null (`mc_null.py`) is what separates real signal from beta.
 
 - **extreme_surface** — confirmed both live edges; spawned the live shadow book
-  `crash_continue_div_short` (see hermes_trader/agents/).
+  `crash_continue_div_short` (see pathia/agents/).
 - **C9 engulfing_reversal_xs** (ROBUST) — XS long bullish-engulf / short bearish-engulf,
   excess +0.6–0.86%/trade over 3 nulls (p≤0.0006), both halves +, survives 50bps. New, non-overlapping.
 - **A13 relative_strength_drawdown** (ROBUST, but 0.7-corr w/ live momentum) — long nearest-50d-high /
@@ -54,5 +54,5 @@ same-regime / same-time null (`mc_null.py`) is what separates real signal from b
 - **C5 nday_high_breakout** (MARGINAL/SHADOW) — converges with A13's long leg (proximity-to-high).
 
 Promotion path: a validated, non-overlapping edge → forward shadow logger via the unified
-shadow ledger (`hermes_trader/agents/shadow_ledger.py`, surveyed by `scripts/shadow_status.py`)
+shadow ledger (`pathia/agents/shadow_ledger.py`, surveyed by `scripts/shadow_status.py`)
 → operator sign-off before any live flip. Never auto-flip real money.

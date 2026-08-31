@@ -1,4 +1,4 @@
-"""Offline tests for the hermes-trader codebase.
+"""Offline tests for the pathia codebase.
 
 Covers the pure/refactored logic — no network or Hyperliquid credentials
 required. Run from the repo root: ``pytest`` (or ``python3 -m pytest``).
@@ -16,10 +16,10 @@ import sys
 
 import pytest
 
-from hermes_trader.models.types import Candle
+from pathia.models.types import Candle
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MCP_SCRIPT = str(ROOT / "scripts" / "hermes-mcp-server.py")
+MCP_SCRIPT = str(ROOT / "scripts" / "pathia-mcp-server.py")
 
 
 @pytest.fixture(autouse=True)
@@ -28,13 +28,13 @@ def _clear_dsl_trackers():
     maybe_execute now reads dsl_exit._active_positions, so a tracker leaked by an
     earlier test would inject a phantom held-coin and block unrelated trades."""
     try:
-        from hermes_trader.agents import dsl_exit
+        from pathia.agents import dsl_exit
         dsl_exit._active_positions.clear()
     except Exception:
         pass
     yield
     try:
-        from hermes_trader.agents import dsl_exit
+        from pathia.agents import dsl_exit
         dsl_exit._active_positions.clear()
     except Exception:
         pass
@@ -57,14 +57,14 @@ def test_candle_model_and_getitem():
 
 # ── indicators ──────────────────────────────────────────────────────────
 def test_candle_val_dict_and_obj():
-    from hermes_trader.indicators.math import candle_val
+    from pathia.indicators.math import candle_val
     assert candle_val(Candle(t=1, o=1, h=2, l=0.5, c=1.5, v=9), "c") == 1.5
     assert candle_val({"c": 7.0}, "c") == 7.0
     assert candle_val({}, "c") == 0
 
 
 def test_ema_sma():
-    from hermes_trader.indicators.math import ema, sma
+    from pathia.indicators.math import ema, sma
     vals = [float(i) for i in range(50)]
     assert len(ema(vals, 8)) == 50
     assert len(sma(vals, 8)) == 50
@@ -75,8 +75,8 @@ def test_directional_momentum_triggers_are_symmetric():
     """uptrend_momentum fires on a sustained UP move, downtrend_momentum on a
     sustained DOWN move, and each stays silent on the opposite/flat — the
     symmetric surfacing pair that lets the bot short downtrends."""
-    from hermes_trader.indicators.triggers import uptrend_momentum, downtrend_momentum
-    from hermes_trader.models.types import Candle
+    from pathia.indicators.triggers import uptrend_momentum, downtrend_momentum
+    from pathia.models.types import Candle
     up = [Candle(t=i, o=100, h=101, l=99, c=100.0 * (1.0006 ** i), v=10) for i in range(80)]   # ~+5% over 80
     down = [Candle(t=i, o=100, h=101, l=99, c=100.0 * (0.9994 ** i), v=10) for i in range(80)] # ~-5% over 80
     flat = [Candle(t=i, o=100, h=101, l=99, c=100.0, v=10) for i in range(80)]
@@ -87,13 +87,13 @@ def test_directional_momentum_triggers_are_symmetric():
     assert uptrend_momentum(flat, 72, 3.0)["fired"] is False
     assert downtrend_momentum(flat, 72, 3.0)["fired"] is False
     # weight 0 in config → no composite-denominator impact (gate calibration intact)
-    from hermes_trader.agents.config import get_config
+    from pathia.agents.config import get_config
     w = get_config()["weights"]
     assert w["uptrendMomentum"] == 0.0 and w["downtrendMomentum"] == 0.0
 
 
 def test_get_config_returns_isolated_copy():
-    from hermes_trader.agents.config import get_config
+    from pathia.agents.config import get_config
 
     cfg = get_config()
     cfg["weights"]["trendStrength"] = 0.0
@@ -103,7 +103,7 @@ def test_get_config_returns_isolated_copy():
 
 
 def test_config_store_rejects_non_object_json(monkeypatch, tmp_path):
-    from hermes_trader.agents import config_store
+    from pathia.agents import config_store
 
     path = tmp_path / ".agent-config.json"
     path.write_text("[]")
@@ -115,7 +115,7 @@ def test_config_store_rejects_non_object_json(monkeypatch, tmp_path):
 
 
 def test_config_store_normalizes_partial_live_config(monkeypatch, tmp_path):
-    from hermes_trader.agents import config_store
+    from pathia.agents import config_store
 
     path = tmp_path / ".agent-config.json"
     path.write_text('{"mode":"LIVE","dsl_exit":null}')
@@ -133,7 +133,7 @@ def test_config_store_normalizes_partial_live_config(monkeypatch, tmp_path):
 
 
 def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
-    from hermes_trader.agents import config_store
+    from pathia.agents import config_store
 
     path = tmp_path / "nested" / ".agent-config.json"
     monkeypatch.setattr(config_store, "CONFIG_PATH", str(path))
@@ -144,7 +144,7 @@ def test_config_store_writes_parent_directory(monkeypatch, tmp_path):
 
 
 def test_config_store_deep_merge_preserves_nested_safety_keys():
-    from hermes_trader.agents.config_store import merge_agent_config
+    from pathia.agents.config_store import merge_agent_config
 
     base = {
         "mode": "LIVE",
@@ -169,9 +169,9 @@ def test_config_store_deep_merge_preserves_nested_safety_keys():
 
 def test_agent_scan_endpoint_honors_hip3_config(monkeypatch):
     from fastapi.testclient import TestClient
-    from hermes_trader import server
+    from pathia import server
 
-    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "test-token")
+    monkeypatch.setenv("PATHIA_OPERATOR_TOKEN", "test-token")
     seen = {}
     monkeypatch.setattr(server, "read_agent_config",
                         lambda: {"enable_hip3": True, "mode": "OFF"})
@@ -199,9 +199,9 @@ def test_agent_scan_endpoint_honors_hip3_config(monkeypatch):
 
 def test_agent_scan_endpoint_rejects_invalid_json(monkeypatch):
     from fastapi.testclient import TestClient
-    from hermes_trader import server
+    from pathia import server
 
-    monkeypatch.setenv("HERMES_OPERATOR_TOKEN", "test-token")
+    monkeypatch.setenv("PATHIA_OPERATOR_TOKEN", "test-token")
     monkeypatch.setattr(server, "_last_scan_at", 0)
 
     client = TestClient(server.app)
@@ -215,7 +215,7 @@ def test_agent_scan_endpoint_rejects_invalid_json(monkeypatch):
 
 
 def test_ta_volume_confirm_requires_nonzero_history():
-    from hermes_trader.agents.ta_filter import _check_volume_confirm
+    from pathia.agents.ta_filter import _check_volume_confirm
 
     zero_history = [
         Candle(t=i, o=1, h=1, l=1, c=1, v=0)
@@ -231,7 +231,7 @@ def test_ta_volume_confirm_requires_nonzero_history():
 
 
 def test_asset_notional_multiplier_scales_only_configured_bucket():
-    from hermes_trader.agents.executor import _asset_notional_multiplier
+    from pathia.agents.executor import _asset_notional_multiplier
 
     cfg = {"asset_notional_multiplier": {"crypto": 0.35, "hip3": 1.0}}
 
@@ -242,7 +242,7 @@ def test_asset_notional_multiplier_scales_only_configured_bucket():
 
 
 def test_atr_rsi_adx_produce_finite_output():
-    from hermes_trader.indicators.math import atr, rsi, adx
+    from pathia.indicators.math import atr, rsi, adx
     cs = _candles(150)
     for fn in (atr, rsi, adx):
         out = fn(cs, 14)
@@ -254,7 +254,7 @@ def test_rsi_and_adx_stay_in_0_100_bound():
     """RSI and ADX are mathematically bounded 0-100 — every finite output
     value must respect that. A negative RSI means the loss/gain accumulator
     math is broken (regression guard for the avg_l sign bug)."""
-    from hermes_trader.indicators.math import rsi, adx
+    from pathia.indicators.math import rsi, adx
     # exercise rising, falling and choppy series so the smoothing loop runs
     rising = [Candle(t=i, o=100 + i, h=101 + i, l=99 + i, c=100 + i, v=10) for i in range(150)]
     falling = [Candle(t=i, o=250 - i, h=251 - i, l=249 - i, c=250 - i, v=10) for i in range(150)]
@@ -268,7 +268,7 @@ def test_rsi_and_adx_stay_in_0_100_bound():
 
 # ── triggers ────────────────────────────────────────────────────────────
 def test_triggers_return_shape():
-    from hermes_trader.indicators.triggers import (
+    from pathia.indicators.triggers import (
         pct_move_spike, volume_spike, breakout, range_compression, trend_strength,
     )
     cs = _candles(150)
@@ -280,7 +280,7 @@ def test_triggers_return_shape():
 
 
 def test_composite_score_in_range():
-    from hermes_trader.indicators.triggers import pct_move_spike, volume_spike, composite_score
+    from pathia.indicators.triggers import pct_move_spike, volume_spike, composite_score
     cs = _candles(150)
     weights = {"pctMoveSpike": 0.35, "volumeSpike": 0.25}
     s = composite_score([pct_move_spike(cs), volume_spike(cs)], weights)
@@ -289,7 +289,7 @@ def test_composite_score_in_range():
 
 
 def test_momentum_burst_fires_on_large_move():
-    from hermes_trader.indicators.triggers import momentum_burst
+    from pathia.indicators.triggers import momentum_burst
     flat = [Candle(t=i, o=100, h=100, l=100, c=100.0, v=10) for i in range(10)]
     h = momentum_burst(flat, lookback=2, pct_threshold=4.0)
     assert h["name"] == "momentumBurst" and h["fired"] is False
@@ -316,7 +316,7 @@ def test_momentum_burst_fires_on_large_move():
 def test_min_order_size_meets_10_dollar_floor():
     """_min_order_size must yield >= $10 notional at the coin's size precision.
     Regression: MEGA ($0.084, integer sizes) — 100 coins is only ~$8.4."""
-    from hermes_trader.client.exchange import _min_order_size
+    from pathia.client.exchange import _min_order_size
     cases = [(0.084334, 0), (1.56, 0), (76000.0, 5), (3.2, 2), (0.0001, 0)]
     for price, sz_dec in cases:
         ms = _min_order_size(price, sz_dec)
@@ -328,7 +328,7 @@ def test_min_order_size_meets_10_dollar_floor():
 
 
 def test_parse_order_result():
-    from hermes_trader.client.exchange import _parse_order_result
+    from pathia.client.exchange import _parse_order_result
     filled = {"status": "ok", "response": {"data": {"statuses": [{"filled": {"oid": 123}}]}}}
     assert _parse_order_result(filled) == {"ok": True, "order_id": "123"}
     err = {"status": "ok", "response": {"data": {"statuses": [{"error": "bad px"}]}}}
@@ -341,7 +341,7 @@ def test_parse_order_result():
 def test_parse_order_result_extracts_avg_px_and_total_sz():
     """Realized-PnL computation depends on these fields being threaded through
     from the SDK response — regression guard against the parser dropping them."""
-    from hermes_trader.client.exchange import _parse_order_result
+    from pathia.client.exchange import _parse_order_result
     filled = {"status": "ok", "response": {"data": {"statuses": [
         {"filled": {"oid": 99, "avgPx": "0.5435", "totalSz": "100.0"}}
     ]}}}
@@ -359,7 +359,7 @@ def test_parse_order_result_extracts_avg_px_and_total_sz():
 
 # ── research verdict parsing (camelCase fallback kept intentionally) ─────
 def test_parse_verdict_json_camelcase():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     txt = ('reasoning\n{"verdict":"LONG","confidence":0.8,"side":"long",'
            '"entryPx":100,"stopPx":95,"tpPx":110,"reasoning":"x"}')
     v = parse_verdict(txt, "BTC", {"mid": 50})
@@ -368,7 +368,7 @@ def test_parse_verdict_json_camelcase():
 
 
 def test_parse_verdict_empty_defaults_to_pass():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     v = parse_verdict("", "BTC", {"mid": 42})
     assert v["verdict"] == "PASS" and v["entry_px"] == 42
 
@@ -376,14 +376,14 @@ def test_parse_verdict_empty_defaults_to_pass():
 def test_fetch_news_no_key_returns_no_news(monkeypatch):
     """With Google News unavailable AND no Brave key, degrade to 'no news'
     (2026-07-11: Google News RSS is now the keyless primary source)."""
-    from hermes_trader.agents import research, news_catalyst as nc
+    from pathia.agents import research, news_catalyst as nc
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     monkeypatch.setattr(nc, "google_news_search", lambda *a, **kw: [])
     assert research._fetch_news("BTC") == "no news"
 
 
 def test_fetch_news_google_primary_no_key_needed(monkeypatch):
-    from hermes_trader.agents import research, news_catalyst as nc
+    from pathia.agents import research, news_catalyst as nc
     monkeypatch.delenv("BRAVE_API_KEY", raising=False)
     monkeypatch.setattr(nc, "google_news_search",
                         lambda *a, **kw: [nc.Article("Bitcoin ETF approved", "u", "d", None, "s")])
@@ -392,7 +392,7 @@ def test_fetch_news_google_primary_no_key_needed(monkeypatch):
 def test_fetch_news_sends_freshness_window(monkeypatch):
     """The Brave request must carry a freshness range so year-old articles
     (the AIXBT 2025 hack) don't feed the gate. Regression guard."""
-    from hermes_trader.agents import research
+    from pathia.agents import research
     monkeypatch.setenv("BRAVE_API_KEY", "k")
     captured = {}
     class _Resp:
@@ -410,7 +410,7 @@ def test_fetch_news_sends_freshness_window(monkeypatch):
 
 
 def test_parse_verdict_extracts_news_risk():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     v = parse_verdict('{"verdict":"LONG","confidence":0.7,"newsRisk":"positive"}',
                       "BTC", {"mid": 1})
     assert v["news_risk"] == "positive"
@@ -425,7 +425,7 @@ def test_parse_verdict_extracts_news_risk():
 
 # ── kelly sizing ────────────────────────────────────────────────────────
 def _ctx(**kw):
-    from hermes_trader.agents.risk_gates import GateContext
+    from pathia.agents.risk_gates import GateContext
     base = dict(confidence=0.9, current_positions=[], trade_notional_usd=50,
                 daily_pnl=0, market_volume_24h_usd=1e8, coin="BTC",
                 trade_side="long", has_binary_news_risk=False, equity=1000,
@@ -435,7 +435,7 @@ def _ctx(**kw):
 
 
 def test_risk_gates_pass_and_block():
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    from pathia.agents.risk_gates import eval_all_gates
     cfg = {"min_ai_confidence": 0.8, "max_concurrent": 3, "max_trade_notional_usd": 200,
            "max_daily_loss_usd": -100, "min_market_volume_usd": 5e6,
            "max_total_notional_pct": 1.0, "cooldown_min": 60}
@@ -446,7 +446,7 @@ def test_risk_gates_pass_and_block():
 
 
 def test_notional_cap_allows_exchange_precision_dust():
-    from hermes_trader.agents.risk_gates import per_trade_notional_cap_gate
+    from pathia.agents.risk_gates import per_trade_notional_cap_gate
 
     assert per_trade_notional_cap_gate(_ctx(trade_notional_usd=650.05), 650)["pass"] is True
     assert per_trade_notional_cap_gate(_ctx(trade_notional_usd=0.01), 0)["pass"] is True
@@ -460,8 +460,8 @@ def test_aligned_min_conf_lets_aligned_shorts_through(monkeypatch):
     lower aligned_min_conf, while the same confidence on a non-aligned trade is
     still blocked by the default min_ai_confidence. Enables shorting selloffs
     (SOL SHORT 0.72 was being blocked by the 0.78 long-calibrated bar)."""
-    import hermes_trader.agents.market_regime as mr
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    import pathia.agents.market_regime as mr
+    from pathia.agents.risk_gates import eval_all_gates
     monkeypatch.setattr(mr, "detect_regime", lambda coin, **k: "down")
     cfg = {"min_ai_confidence": 0.78, "aligned_min_conf": 0.70, "max_concurrent": 5,
            "max_trade_notional_usd": 500, "max_daily_loss_usd": -300,
@@ -487,7 +487,7 @@ def test_short_liquidity_floor_blocks_thin_shorts_only():
     """Shorts on thin markets squeeze (data: bleeders ~$13M vol, winners ~$223M).
     The floor must block a thin SHORT, allow a thin LONG, allow a liquid short,
     and be a no-op when unset."""
-    from hermes_trader.agents.risk_gates import short_liquidity_floor
+    from pathia.agents.risk_gates import short_liquidity_floor
     FLOOR = 50_000_000
     # thin short → blocked
     r = short_liquidity_floor(_ctx(trade_side="short", coin="XPL", market_volume_24h_usd=16e6), FLOOR)
@@ -501,7 +501,7 @@ def test_short_liquidity_floor_blocks_thin_shorts_only():
 
 
 def test_eval_all_gates_short_volume_floor_integration():
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    from pathia.agents.risk_gates import eval_all_gates
     cfg = {"min_ai_confidence": 0.78, "max_concurrent": 5, "max_trade_notional_usd": 500,
            "max_daily_loss_usd": -300, "min_market_volume_usd": 8e5,
            "max_total_notional_pct": 1.0, "cooldown_min": 60,
@@ -519,7 +519,7 @@ def test_held_coin_blocks_both_pyramid_and_flip():
     """A coin we already hold must block re-entry in BOTH directions: opposite =
     no auto-flip, same side = no uncontrolled pyramid (the held-coin close-check
     can return a fresh LONG/SHORT; only this guard stops it adding)."""
-    from hermes_trader.agents.risk_gates import opposite_direction_guard
+    from pathia.agents.risk_gates import opposite_direction_guard
     held_long = [{"coin": "ETH", "side": "long", "size_usd": 100}]
     # same-direction re-entry → blocked (pyramid)
     r_same = opposite_direction_guard(_ctx(coin="ETH", trade_side="long", current_positions=held_long))
@@ -533,7 +533,7 @@ def test_held_coin_blocks_both_pyramid_and_flip():
 
 def test_cfg_camelcase_tolerance():
     """Gate config keys resolve whether written snake_case or camelCase."""
-    from hermes_trader.agents.risk_gates import _cfg
+    from pathia.agents.risk_gates import _cfg
     assert _cfg({"max_trade_notional_usd": 30}, "max_trade_notional_usd", 200) == 30
     assert _cfg({"maxTradeNotionalUsd": 20}, "max_trade_notional_usd", 200) == 20  # camelCase
     assert _cfg({"minAiConfidence": 0.5}, "min_ai_confidence", 0.8) == 0.5
@@ -542,7 +542,7 @@ def test_cfg_camelcase_tolerance():
 
 # ── DSL exit engine (incl. the ExitVerdict.coin field added by cleanup) ──
 def test_dsl_max_loss_exit_populates_coin(monkeypatch, tmp_path):
-    from hermes_trader.agents.executor import monitor_exits
+    from pathia.agents.executor import monitor_exits
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("ETH", "long", 100.0)
     verdicts = dsl_exit.check_all_positions({"ETH": 96.0})  # 4% loss > 2.5% cap
@@ -560,7 +560,7 @@ def test_dsl_no_exit_when_flat(monkeypatch, tmp_path):
 
 def _isolate_dsl_state(monkeypatch, tmp_path):
     """Point DSL persistence at a tmp file and clear the in-memory + load latches."""
-    from hermes_trader.agents import dsl_exit
+    from pathia.agents import dsl_exit
     state_file = tmp_path / "dsl.json"
     monkeypatch.setattr(dsl_exit, "DSL_STATE_FILE", str(state_file))
     dsl_exit._active_positions.clear()
@@ -627,7 +627,7 @@ def test_dsl_rehydrate_from_exchange(monkeypatch, tmp_path):
 
 def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     """close_position_market deregisters the tracker on a successful close."""
-    from hermes_trader.agents import dsl_exit, executor
+    from pathia.agents import dsl_exit, executor
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("ETH", "long", 100.0)
 
@@ -651,13 +651,13 @@ def test_mcp_close_position_delegates_to_executor(monkeypatch):
     import json
     from pathlib import Path
 
-    script = Path(__file__).resolve().parents[1] / "scripts" / "hermes-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("hermes_mcp_server_test", script)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "pathia-mcp-server.py"
+    spec = importlib.util.spec_from_file_location("pathia_mcp_server_test", script)
     assert spec and spec.loader
     mcp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mcp)
 
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     calls = []
     monkeypatch.setattr(
@@ -678,10 +678,10 @@ def test_mcp_config_allows_ai_brain_provider_update():
     import json
     from pathlib import Path
 
-    from hermes_trader.agents import config_store
+    from pathia.agents import config_store
 
-    script = Path(__file__).resolve().parents[1] / "scripts" / "hermes-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("hermes_mcp_server_config_test", script)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "pathia-mcp-server.py"
+    spec = importlib.util.spec_from_file_location("pathia_mcp_server_config_test", script)
     assert spec and spec.loader
     mcp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mcp)
@@ -702,13 +702,13 @@ def test_mcp_submit_verdict_records_and_executes_agent_analysis(monkeypatch):
     import json
     from pathlib import Path
 
-    script = Path(__file__).resolve().parents[1] / "scripts" / "hermes-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("hermes_mcp_server_submit_test", script)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "pathia-mcp-server.py"
+    spec = importlib.util.spec_from_file_location("pathia_mcp_server_submit_test", script)
     assert spec and spec.loader
     mcp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mcp)
 
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     captured = []
     monkeypatch.setattr(
@@ -744,13 +744,13 @@ def test_mcp_submit_close_routes_to_executor_close(monkeypatch):
     import json
     from pathlib import Path
 
-    script = Path(__file__).resolve().parents[1] / "scripts" / "hermes-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("hermes_mcp_server_submit_close_test", script)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "pathia-mcp-server.py"
+    spec = importlib.util.spec_from_file_location("pathia_mcp_server_submit_close_test", script)
     assert spec and spec.loader
     mcp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mcp)
 
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     calls = []
     monkeypatch.setattr(
@@ -778,7 +778,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     """When place_hl_order returns avg_px, the close result carries an exact
     realized PnL (leveraged × spot move from fill, minus taker fees) — this is
     what the dashboard surfaces to match HL's display."""
-    from hermes_trader.agents import dsl_exit, executor
+    from pathia.agents import dsl_exit, executor
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     # Long ARB 10x, entry 0.11684; close fills at 0.10522 → +9.945% spot,
     # +99.45% gross, − (2 × 0.025 × 10 = 0.5%) fees = +98.95% net realized.
@@ -817,7 +817,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
 
 
 def test_record_external_position_close_captures_liquidation_fill(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     recorded = []
     monkeypatch.setattr(executor.memory, "record_close", lambda c: recorded.append(c))
@@ -844,7 +844,7 @@ def test_record_external_position_close_captures_liquidation_fill(monkeypatch):
             "time": 1_100_000,
         }]
 
-    monkeypatch.setattr("hermes_trader.client.hl_client._http_post", fake_post)
+    monkeypatch.setattr("pathia.client.hl_client._http_post", fake_post)
     out = executor.record_external_position_close({
         "coin": "xyz:BIRD",
         "side": "long",
@@ -861,7 +861,7 @@ def test_record_external_position_close_captures_liquidation_fill(monkeypatch):
 
 # ── market regime + gate ─────────────────────────────────────────────────
 def test_classify_asset():
-    from hermes_trader.agents.market_regime import classify_asset
+    from pathia.agents.market_regime import classify_asset
     # crypto default
     assert classify_asset("BTC") == "crypto"
     assert classify_asset("PEPE") == "crypto"
@@ -878,7 +878,7 @@ def test_classify_asset():
 def test_latest_trade_ts_by_coin_keeps_newest():
     """The pre-research cooldown map must keep the NEWEST trade per coin, not
     the oldest — the NEAR double-trade bug that burned LLM tokens every cycle."""
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     m = AgentMemory()
     # Chronological: NEAR traded 67min ago, then again 5min ago.
     m._trades = [
@@ -895,7 +895,7 @@ def test_latest_trade_ts_by_coin_keeps_newest():
 
 def test_memory_flush_writes_atomically(monkeypatch, tmp_path):
     """A live memory flush must not expose half-written JSON to backtests."""
-    from hermes_trader.agents import memory as memory_mod
+    from pathia.agents import memory as memory_mod
 
     path = tmp_path / "agent-memory.json"
     monkeypatch.setattr(memory_mod, "MEMORY_FILE", str(path))
@@ -912,7 +912,7 @@ def test_memory_flush_writes_atomically(monkeypatch, tmp_path):
 def test_open_position_coins_filters_zero_size():
     """Held-coin set drives the cooldown exemption so the AI can still CLOSE
     open positions; zero-size / malformed entries are excluded."""
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     m = AgentMemory()
     m.update_open_positions([
         {"position": {"coin": "NEAR", "szi": "12.0"}},
@@ -928,7 +928,7 @@ def test_classify_asset_hip3_namespaced(monkeypatch):
     """HIP-3 venues are mixed: unknown tokenized stocks default to equity (not
     the BTC-trend crypto default), but crypto names listed on a HIP-3 dex still
     resolve to crypto via the native-perp ticker set."""
-    from hermes_trader.agents import market_regime as mr
+    from pathia.agents import market_regime as mr
     # Pretend the native HL dex lists these crypto majors.
     monkeypatch.setattr(mr, "_crypto_tickers_cache",
                         frozenset({"BTC", "ETH", "LINK", "FARTCOIN", "XMR"}))
@@ -948,7 +948,7 @@ def test_classify_asset_hip3_namespaced(monkeypatch):
 
 def test_native_crypto_tickers_skips_namespaced_and_caches(monkeypatch):
     """_native_crypto_tickers pulls only main-dex perps (no ':') and caches."""
-    from hermes_trader.agents import market_regime as mr
+    from pathia.agents import market_regime as mr
     mr._crypto_tickers_cache = None
     calls = {"n": 0}
     def fake_universe(**kw):
@@ -959,7 +959,7 @@ def test_native_crypto_tickers_skips_namespaced_and_caches(monkeypatch):
             {"coin": "xyz:NVDA", "type": "perp"},  # namespaced → excluded
             {"coin": "@107", "type": "spot"},      # spot → excluded
         ]
-    monkeypatch.setattr("hermes_trader.client.universe.get_universe", fake_universe)
+    monkeypatch.setattr("pathia.client.universe.get_universe", fake_universe)
     out = mr._native_crypto_tickers()
     assert out == frozenset({"BTC", "ETH"})
     mr._native_crypto_tickers()  # second call served from cache
@@ -968,7 +968,7 @@ def test_native_crypto_tickers_skips_namespaced_and_caches(monkeypatch):
 
 def test_trend_from_closes_up_down_neutral():
     """EMA20>EMA50 + positive fast-slope → up; opposite → down; flat → neutral."""
-    from hermes_trader.agents.market_regime import _trend_from_closes
+    from pathia.agents.market_regime import _trend_from_closes
     # Pure uptrend: prices rising linearly
     assert _trend_from_closes([100 + i for i in range(60)]) == "up"
     # Pure downtrend
@@ -981,7 +981,7 @@ def test_trend_from_closes_up_down_neutral():
 
 def test_detect_regime_caches_and_uses_proxy(monkeypatch):
     """detect_regime should call the proxy (BTC/NVDA/own) and cache the result."""
-    from hermes_trader.agents import market_regime
+    from pathia.agents import market_regime
     market_regime._regime_cache.clear()
     calls: list[str] = []
     monkeypatch.setattr(market_regime, "_detect_for_proxy",
@@ -1004,8 +1004,8 @@ def test_detect_regime_caches_and_uses_proxy(monkeypatch):
 
 
 def test_market_regime_gate_aligned_passes(monkeypatch):
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "assets": []})
@@ -1018,8 +1018,8 @@ def test_market_regime_gate_aligned_passes(monkeypatch):
 def test_market_regime_gate_via_reports_trigger_bypass(monkeypatch):
     """A counter-regime trade that clears only via a slow-burn trigger reports
     via='trigger:slow_burn' and counter context — this is the LINK/FARTCOIN case."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "SHORT_CROWDED",
@@ -1036,8 +1036,8 @@ def test_market_regime_gate_via_reports_trigger_bypass(monkeypatch):
 
 
 def test_market_regime_gate_via_confidence_and_blocked(monkeypatch):
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "SHORT_CROWDED",
@@ -1053,8 +1053,8 @@ def test_market_regime_gate_via_confidence_and_blocked(monkeypatch):
 
 
 def test_market_regime_gate_neutral_passes(monkeypatch):
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "assets": []})
@@ -1063,8 +1063,8 @@ def test_market_regime_gate_neutral_passes(monkeypatch):
 
 
 def test_market_regime_gate_counter_low_conf_blocks(monkeypatch):
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "assets": []})
@@ -1076,8 +1076,8 @@ def test_market_regime_gate_counter_low_conf_blocks(monkeypatch):
 def test_market_regime_gate_counter_high_conf_passes(monkeypatch):
     """A 0.85-confidence counter-trend trade should sneak through the gate —
     high-conviction contrarian trades are the whole point of the bypass."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "assets": []})
@@ -1088,8 +1088,8 @@ def test_market_regime_gate_counter_high_conf_passes(monkeypatch):
 def test_market_regime_gate_wired_into_eval_all(monkeypatch):
     """The new gate is part of the 12-gate evaluation now and blocks at the
     right time — regression guard against forgetting to wire it in."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import eval_all_gates
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "assets": []})
@@ -1114,7 +1114,7 @@ def test_market_regime_gate_wired_into_eval_all(monkeypatch):
 # the crowd never see any extra friction.
 def _patch_funding(monkeypatch, regime: str):
     """Patch the cached funding-regime lookup that market_regime_gate calls."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     monkeypatch.setattr(
         hyperfeed,
         "market_get_funding_regime",
@@ -1126,8 +1126,8 @@ def test_funding_regime_short_crowded_blocks_low_conf_long(monkeypatch):
     """SHORT_CROWDED + long at 0.70 conf should now block — the elevated bar
     is 0.85, even though the old counter_regime_min_conf would have let it
     through. This is the main reason for the patch."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "SHORT_CROWDED")
     r = market_regime_gate(
@@ -1141,8 +1141,8 @@ def test_funding_regime_short_crowded_blocks_low_conf_long(monkeypatch):
 def test_funding_regime_short_crowded_high_conf_long_passes(monkeypatch):
     """A 0.90-confidence long in a SHORT_CROWDED market still passes —
     we never want to hard-block strong individual signals."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "SHORT_CROWDED")
     r = market_regime_gate(
@@ -1156,8 +1156,8 @@ def test_funding_regime_long_crowded_blocks_low_conf_short(monkeypatch):
     """SYMMETRIC: LONG_CROWDED + short at 0.70 conf is blocked the same way
     SHORT_CROWDED + long is blocked. Regression guard against the gate
     becoming long-only-restrictive when the regime flips."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "LONG_CROWDED")
     r = market_regime_gate(
@@ -1172,8 +1172,8 @@ def test_funding_regime_aligned_no_extra_friction(monkeypatch):
     """A short in a SHORT_CROWDED market is aligned with the crowd → the
     elevated bar must NOT apply. A 0.40-conf aligned short should pass
     once we're at trend-regime neutral."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "SHORT_CROWDED")
     r = market_regime_gate(
@@ -1186,8 +1186,8 @@ def test_funding_regime_aligned_no_extra_friction(monkeypatch):
 def test_funding_regime_neutral_doesnt_change_behavior(monkeypatch):
     """When funding regime is NEUTRAL, the gate behaves exactly like the
     pre-patch version — no elevated bar, only the trend-regime check."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "NEUTRAL")
     # Low-conf long in a neutral trend + neutral funding → pass (no friction).
@@ -1202,8 +1202,8 @@ def test_funding_regime_overlay_respects_binary_triggers(monkeypatch):
     """momentum_burst / slow_burn bypasses MUST be preserved
     even against the crowded funding regime — those are explicit overrides
     for stale macro calls, and the user's spec said do not weaken them."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "SHORT_CROWDED")
     # Low-conf, low-score long in SHORT_CROWDED, but momentum_burst fired → pass
@@ -1225,8 +1225,8 @@ def test_funding_regime_overlay_respects_binary_triggers(monkeypatch):
 def test_funding_regime_overlay_score_threshold_elevated(monkeypatch):
     """Elevated bar: counter-funding-regime trades need composite_score >= 60
     (vs the normal 50) to clear via the score bypass."""
-    from hermes_trader.agents import market_regime
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     _patch_funding(monkeypatch, "SHORT_CROWDED")
     # Score 55 was enough pre-patch (>= 50), should now BLOCK against funding regime.
@@ -1247,7 +1247,7 @@ def test_funding_regime_cache_short_circuits_repeated_calls(monkeypatch):
     """The 5-min cache on market_get_funding_regime must avoid refetching the
     universe on every gate call. Without this guard the risk gates would
     hammer the API once per trade attempt."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
 
     # Reset cache so this test is order-independent.
     monkeypatch.setattr(hyperfeed, "_funding_regime_cache", None)
@@ -1277,8 +1277,8 @@ def test_funding_regime_cache_short_circuits_repeated_calls(monkeypatch):
 def test_funding_regime_per_class_crypto_short_crowded_does_not_gate_oil(monkeypatch):
     """xyz:CL (oil, commodity class) long must pass even when the crypto
     funding regime is SHORT_CROWDED — oil has its own funding market."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime", lambda: {
         "regime": "SHORT_CROWDED",
@@ -1301,8 +1301,8 @@ def test_funding_regime_per_class_crypto_short_crowded_does_not_gate_arm(monkeyp
     """xyz:ARM (semis, equity class) long passes when the crypto regime is
     SHORT_CROWDED but the equity regime is NEUTRAL — this is the actual
     bug that snuck xyz:ARM through the gate in production."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime", lambda: {
         "regime": "SHORT_CROWDED",
@@ -1324,8 +1324,8 @@ def test_funding_regime_per_class_equity_short_crowded_gates_equity_long(monkeyp
     """When the EQUITY class itself is SHORT_CROWDED, an equity long is the
     one that faces the elevated bar — proving the per-class lookup applies
     correctly to the matching asset class."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime", lambda: {
         "regime": "NEUTRAL",
@@ -1349,8 +1349,8 @@ def test_funding_regime_per_class_falls_back_to_legacy_when_missing(monkeypatch)
     """Older callers / unit-test stubs may return a dict without
     `regimes_by_class`. The gate must fall back to the legacy `regime` field
     rather than silently disabling the overlay."""
-    from hermes_trader.agents import market_regime, hyperfeed
-    from hermes_trader.agents.risk_gates import market_regime_gate
+    from pathia.agents import market_regime, hyperfeed
+    from pathia.agents.risk_gates import market_regime_gate
     monkeypatch.setattr(market_regime, "detect_regime", lambda c: "neutral")
     # NO regimes_by_class key — legacy shape.
     monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
@@ -1367,7 +1367,7 @@ def test_compute_funding_regime_includes_hip3(monkeypatch):
     """`_compute_funding_regime` must fetch the universe WITH HIP-3 so
     equity / commodity perps are visible. Regression guard for the bug
     where xyz:CL and xyz:ARM weren't in the regime scan at all."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
 
     captured = {}
 
@@ -1398,7 +1398,7 @@ def test_compute_funding_regime_includes_hip3(monkeypatch):
 
 # ── resolve_user_address (DRY-2 helper) ─────────────────────────────────
 def test_resolve_user_address(monkeypatch):
-    from hermes_trader.client.hl_client import resolve_user_address
+    from pathia.client.hl_client import resolve_user_address
     monkeypatch.setenv("HYPERLIQUID_MASTER_ADDRESS", "0xMASTER")
     monkeypatch.setenv("HYPERLIQUID_WALLET_ADDRESS", "0xWALLET")
     assert resolve_user_address() == "0xMASTER"
@@ -1408,7 +1408,7 @@ def test_resolve_user_address(monkeypatch):
 
 # ── memory round-trip ───────────────────────────────────────────────────
 def test_memory_record_and_read():
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     m = AgentMemory()
     m.record_trade({"id": "t1", "coin": "BTC", "size_usd": 10})
     m.record_analysis({"id": "a1", "coin": "BTC"})
@@ -1464,7 +1464,7 @@ def test_mcp_server_stdio_end_to_end():
                           capture_output=True, text=True, timeout=90, cwd=str(ROOT))
     resps = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
     assert len(resps) == 3, proc.stderr
-    assert resps[0]["result"]["serverInfo"]["name"] == "hermes-trader"
+    assert resps[0]["result"]["serverInfo"]["name"] == "pathia"
     assert len(resps[1]["result"]["tools"]) == 99
     call = json.loads(resps[2]["result"]["content"][0]["text"])
     assert call["error"] == "not_implemented"
@@ -1475,7 +1475,7 @@ def test_mcp_server_stdio_end_to_end():
 def test_fetch_account_state_aggregates_hip3_dexes(monkeypatch):
     """include_hip3=True sums equity across main + per-dex clearinghouses,
     concatenates positions, and prefixes bare HIP-3 coins with the dex name."""
-    from hermes_trader.client import hl_client
+    from pathia.client import hl_client
 
     def _fake_http_post(path, payload):
         kind = payload.get("type")
@@ -1505,7 +1505,7 @@ def test_fetch_account_state_aggregates_hip3_dexes(monkeypatch):
         return None
 
     monkeypatch.setattr(hl_client, "_http_post", _fake_http_post)
-    monkeypatch.setattr("hermes_trader.client.universe.list_hip3_dexes", lambda: ["xyz", "vntl"])
+    monkeypatch.setattr("pathia.client.universe.list_hip3_dexes", lambda: ["xyz", "vntl"])
 
     state = hl_client.fetch_account_state("0xUSER", include_hip3=True)
     # Aggregated equity = main 1000 + xyz 250 + vntl 50 = 1300
@@ -1526,7 +1526,7 @@ def test_fetch_account_state_main_only_default(monkeypatch):
     """Default include_hip3=False keeps the behavior the executor relies on
     for trade sizing — equity must reflect only the main clearinghouse so
     free-margin calculations don't bleed in idle HIP-3 USDC."""
-    from hermes_trader.client import hl_client
+    from pathia.client import hl_client
 
     def _fake_http_post(path, payload):
         if payload.get("type") == "clearinghouseState":
@@ -1548,9 +1548,9 @@ def test_fetch_account_state_main_only_default(monkeypatch):
 
 # ── Scan bucket split ─────────────────────────────────────────────────────
 def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
-    """With include_hip3=True the scanner reserves HERMES_MAX_MARKETS_HIP3
+    """With include_hip3=True the scanner reserves PATHIA_MAX_MARKETS_HIP3
     slots for HIP-3 markets so high-volume crypto doesn't crowd them out."""
-    from hermes_trader.agents import perception
+    from pathia.agents import perception
 
     # 100 fake crypto markets (higher volume) + 10 HIP-3 markets.
     # HIP-3 entries get prevDayPx + midPx so the mover sub-bucket has
@@ -1568,15 +1568,15 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
     # mids, not the cached universe midPx) — mirror each coin's midPx here.
     mids = {m["coin"]: str(m.get("midPx", 100)) for m in universe}
 
-    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
-    monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "3")
-    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
-    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS", "10")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS_HIP3", "3")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setenv("PATHIA_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
     monkeypatch.setattr(perception, "_scan_single_market", lambda m, mid, cfg, ms, ws=None, wsb=False, tse=True: (True, None))
     # Force include_hip3=True via the runtime config
-    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+    monkeypatch.setattr("pathia.agents.config_store.read_agent_config",
                         lambda: {"enable_hip3": True})
 
     seen = []
@@ -1595,8 +1595,8 @@ def test_scan_bucket_split_keeps_hip3_slice(monkeypatch):
 
 def test_scan_single_market_skips_1h_when_no_surface_signal(monkeypatch):
     """A flat market should not spend an extra 1h candleSnapshot call."""
-    from hermes_trader.agents import perception
-    from hermes_trader.models.types import Candle
+    from pathia.agents import perception
+    from pathia.models.types import Candle
 
     candles = [
         Candle(t=i, o=100.0, h=100.0, l=100.0, c=100.0, v=1000.0)
@@ -1643,7 +1643,7 @@ def test_fetch_aggregate_contributions_classifies_send_events(monkeypatch):
     """`fetch_aggregate_contributions_since` distinguishes pool-boundary
     transfers (spot↔perp, spot↔HIP-3) from intra-pool transfers (main↔xyz),
     treating only the former as contributions to the aggregated equity."""
-    from hermes_trader.client import hl_client
+    from pathia.client import hl_client
 
     USER = "0xUSER"
     events = [
@@ -1673,7 +1673,7 @@ def test_fetch_aggregate_contributions_classifies_send_events(monkeypatch):
         {"delta": {"type": "withdraw", "usdcValue": "15.0"}},
     ]
     monkeypatch.setattr(hl_client, "_http_post", lambda path, payload: events)
-    monkeypatch.setattr("hermes_trader.client.universe.list_hip3_dexes",
+    monkeypatch.setattr("pathia.client.universe.list_hip3_dexes",
                         lambda: ["xyz", "vntl", "km"])
 
     # Net = 30 + 50 - 20 + 0 + 0 + 200 - 15 = 245
@@ -1684,14 +1684,14 @@ def test_fetch_aggregate_contributions_classifies_send_events(monkeypatch):
 def test_fetch_aggregate_contributions_skips_when_no_user(monkeypatch):
     """Defensive zero-return when user is empty or start_ms is invalid —
     a missing wallet should never crash the heartbeat."""
-    from hermes_trader.client import hl_client
+    from pathia.client import hl_client
     assert hl_client.fetch_aggregate_contributions_since("", start_ms=1) == 0.0
     assert hl_client.fetch_aggregate_contributions_since("0xUSER", start_ms=0) == 0.0
 
 
 def test_track_daily_pnl_subtracts_contributions():
     """A $50 spot→perp transfer must not appear as $50 of trading profit."""
-    from hermes_trader.agents.memory import AgentMemory
+    from pathia.agents.memory import AgentMemory
     import time
     m = AgentMemory()
     # Seed start-of-day so the function takes the "established baseline" branch.
@@ -1712,7 +1712,7 @@ def test_track_daily_pnl_subtracts_contributions():
 def _scan_with_config(monkeypatch, cfg):
     """Scaffolding: run perception.scan_once with a fake universe + config,
     return the list of coins that actually got candle-fetched."""
-    from hermes_trader.agents import perception
+    from pathia.agents import perception
     universe = [
         {"coin": "BTC", "type": "perp", "dex": None, "dayNtlVlm": 9e9},
         {"coin": "ETH", "type": "perp", "dex": None, "dayNtlVlm": 5e9},
@@ -1720,13 +1720,13 @@ def _scan_with_config(monkeypatch, cfg):
         {"coin": "xyz:CRCL", "type": "perp", "dex": "xyz", "dayNtlVlm": 3.4e7},
     ]
     mids = {m["coin"]: "100" for m in universe}
-    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
-    monkeypatch.setenv("HERMES_MAX_MARKETS_HIP3", "5")
-    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "0")  # tested separately
-    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS", "10")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS_HIP3", "5")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS_MOVERS", "0")  # tested separately
+    monkeypatch.setenv("PATHIA_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
-    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+    monkeypatch.setattr("pathia.agents.config_store.read_agent_config",
                         lambda: cfg)
     seen = []
     monkeypatch.setattr(perception, "_scan_single_market",
@@ -1764,7 +1764,7 @@ def test_scan_default_config_runs_crypto_only(monkeypatch):
 
 def test_executor_blocks_hip3_when_disabled(monkeypatch):
     """A stale HIP-3 analysis must not execute when enable_hip3 is False."""
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     monkeypatch.setattr(executor, "read_agent_config",
                         lambda: {"mode": "LIVE", "enable_crypto": True, "enable_hip3": False})
     res = executor.maybe_execute({"id": "a1", "coin": "xyz:MU"})
@@ -1774,7 +1774,7 @@ def test_executor_blocks_hip3_when_disabled(monkeypatch):
 
 def test_executor_blocks_crypto_when_disabled(monkeypatch):
     """A stale crypto analysis must not execute when enable_crypto is False."""
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     monkeypatch.setattr(executor, "read_agent_config",
                         lambda: {"mode": "LIVE", "enable_crypto": False, "enable_hip3": True})
     res = executor.maybe_execute({"id": "a2", "coin": "BTC"})
@@ -1790,7 +1790,7 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
     Setup: 5 quiet high-volume coins (the volume budget happily takes them)
     + 5 low-volume coins with big swings (must end up in the movers slot).
     """
-    from hermes_trader.agents import perception
+    from pathia.agents import perception
 
     universe = (
         # 5 quiet crypto majors, sorted by volume
@@ -1809,13 +1809,13 @@ def test_scan_picks_low_volume_big_movers(monkeypatch):
     # mids, not the cached universe midPx) — mirror each coin's midPx here.
     mids = {m["coin"]: str(m.get("midPx", 100)) for m in universe}
 
-    monkeypatch.setenv("HERMES_MAX_MARKETS", "10")
-    monkeypatch.setenv("HERMES_MAX_MARKETS_MOVERS", "3")
-    monkeypatch.setenv("HERMES_MOVERS_VOL_FLOOR_USD", "1000000")
-    monkeypatch.setenv("HERMES_UNIVERSE_SWEEP", "0")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS", "10")
+    monkeypatch.setenv("PATHIA_MAX_MARKETS_MOVERS", "3")
+    monkeypatch.setenv("PATHIA_MOVERS_VOL_FLOOR_USD", "1000000")
+    monkeypatch.setenv("PATHIA_UNIVERSE_SWEEP", "0")
     monkeypatch.setattr(perception, "fetch_all_mids", lambda include_hip3=False: mids)
     monkeypatch.setattr(perception, "get_universe", lambda include_hip3=False: universe)
-    monkeypatch.setattr("hermes_trader.agents.config_store.read_agent_config",
+    monkeypatch.setattr("pathia.agents.config_store.read_agent_config",
                         lambda: {"enable_crypto": True, "enable_hip3": False})
 
     seen = []
@@ -1880,7 +1880,7 @@ def _candle_1h(t, o, h, l, c, v):
 def test_volume_buildup_1h_fires_on_4h_surge():
     """volumeBuildup1h should fire when the last 4h's avg notional volume
     is >= ratio_threshold × the prior 20h baseline."""
-    from hermes_trader.indicators.triggers import volume_buildup_1h
+    from pathia.indicators.triggers import volume_buildup_1h
     # 20h baseline at vol=1000, last 4h at vol=3000 → 3× surge
     base = [_candle_1h(i, 100, 101, 99, 100, 1000) for i in range(20)]
     surge = [_candle_1h(i + 20, 100, 101, 99, 100, 3000) for i in range(4)]
@@ -1896,7 +1896,7 @@ def test_volume_buildup_1h_fires_on_4h_surge():
 
 def test_trend_flip_1h_detects_recent_ema_cross():
     """trendFlip1h fires when EMA8 crosses above EMA21 within lookback bars."""
-    from hermes_trader.indicators.triggers import trend_flip_1h
+    from pathia.indicators.triggers import trend_flip_1h
     # 25 bars trending down, then 8 bars trending up — fast EMA crosses slow.
     closes = [100 - i for i in range(25)] + [76 + i * 2 for i in range(8)]
     bars = [_candle_1h(i, c, c + 0.5, c - 0.5, c, 1000) for i, c in enumerate(closes)]
@@ -1912,7 +1912,7 @@ def test_trend_flip_1h_detects_recent_ema_cross():
 
 def test_higher_lows_1h_counts_structure():
     """higherLows1h fires when N+ of last 6 1h candles printed higher lows."""
-    from hermes_trader.indicators.triggers import higher_lows_1h
+    from pathia.indicators.triggers import higher_lows_1h
     # 7 candles with strictly rising lows: 6/6 higher lows
     rising = [_candle_1h(i, 100, 101, 99 + i, 100 + i, 1000) for i in range(7)]
     res = higher_lows_1h(rising, required=4)
@@ -1929,8 +1929,8 @@ def test_regime_gate_bypasses_on_slow_burn():
     """A counter-regime LONG with neither high conviction nor momentumBurst
     should still pass if slow_burn_fired is True — the empirical fix for
     WLFI/ICP-style accumulation breakouts."""
-    from hermes_trader.agents.risk_gates import market_regime_gate, GateContext
-    import hermes_trader.agents.market_regime as mr
+    from pathia.agents.risk_gates import market_regime_gate, GateContext
+    import pathia.agents.market_regime as mr
     # Force regime = "down" so the gate engages on a LONG.
     mr._regime_cache.clear()
     mr._regime_cache["BTC"] = ("down", 99999999999)
@@ -1961,7 +1961,7 @@ def test_regime_gate_bypasses_on_slow_burn():
 
 # ── Perf: token-bucket rate limiter ──────────────────────────────────────
 def test_token_bucket_deducts_and_blocks_on_exhaustion():
-    from hermes_trader.client.rate_limit import TokenBucket
+    from pathia.client.rate_limit import TokenBucket
     # Capacity 40, refill 0 (no recovery) → 2× 20-weight acquires then fail.
     b = TokenBucket(capacity=40, refill_per_sec=0.0)
     assert b.acquire(20, max_wait=0.1) is True
@@ -1970,7 +1970,7 @@ def test_token_bucket_deducts_and_blocks_on_exhaustion():
 
 
 def test_token_bucket_refills_over_time():
-    from hermes_trader.client.rate_limit import TokenBucket
+    from pathia.client.rate_limit import TokenBucket
     import time
     b = TokenBucket(capacity=20, refill_per_sec=100.0)  # refills fast
     assert b.acquire(20, max_wait=0.1) is True        # drains to 0
@@ -1980,7 +1980,7 @@ def test_token_bucket_refills_over_time():
 
 
 def test_endpoint_weight_mapping():
-    from hermes_trader.client.rate_limit import endpoint_weight
+    from pathia.client.rate_limit import endpoint_weight
     assert endpoint_weight("candleSnapshot") == 20
     assert endpoint_weight("allMids") == 2
     assert endpoint_weight("clearinghouseState") == 2
@@ -1992,7 +1992,7 @@ def test_endpoint_weight_mapping():
 
 # ── Perf: connection pool singleton ──────────────────────────────────────
 def test_http_session_is_singleton():
-    import hermes_trader.client.hl_client as h
+    import pathia.client.hl_client as h
     s1 = h._get_session()
     s2 = h._get_session()
     assert s1 is s2
@@ -2003,7 +2003,7 @@ def test_http_session_is_singleton():
 
 # ── Perf: dashboard TTL cache ────────────────────────────────────────────
 def test_ttl_cache_serves_within_ttl_and_refreshes_after():
-    import hermes_trader.dashboard as d
+    import pathia.dashboard as d
     import time
     d._TTL_CACHE.clear()
     calls = {"n": 0}
@@ -2023,7 +2023,7 @@ def test_ttl_cache_serves_within_ttl_and_refreshes_after():
 
 
 def test_ttl_cache_keys_are_independent():
-    import hermes_trader.dashboard as d
+    import pathia.dashboard as d
     d._TTL_CACHE.clear()
     assert d._ttl_cached("a", 5.0, lambda: 1) == 1
     assert d._ttl_cached("b", 5.0, lambda: 2) == 2
@@ -2035,7 +2035,7 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
     """If the live account read returns NO positions but the DSL registry still
     tracks the coin (restart/flaky-read window), re-entry must be blocked — else
     the position pyramids. Regression for the xyz:SP500 stacking incident."""
-    from hermes_trader.agents import executor, dsl_exit
+    from pathia.agents import executor, dsl_exit
     dsl_exit._active_positions.clear()
     # DSL knows we hold SP500 long, but the live read "forgot" it.
     dsl_exit.register_position("xyz:SP500", "long", 7500.0, leverage=10)
@@ -2054,15 +2054,15 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
         "total_ntl": 0.0, "asset_positions": [],  # live read dropped the position
     })
     placed = {"n": 0}
-    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+    monkeypatch.setattr("pathia.client.hl_client._http_post",
                         lambda p, pl: {"marginSummary": {"accountValue": "1000"}})
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 7500.0)
     monkeypatch.setattr(executor, "get_hl_atr", lambda *a, **k: 100.0)
     monkeypatch.setattr(executor, "get_max_leverage", lambda c: 10)
     monkeypatch.setattr(executor, "min_entry_notional_usd", lambda c, mid: 10.5)
     monkeypatch.setattr(executor, "entry_size_for_notional", lambda c, n, mid: n / mid)
-    monkeypatch.setattr("hermes_trader.agents.market_regime.detect_regime", lambda c: "neutral")
-    monkeypatch.setattr("hermes_trader.agents.hyperfeed.market_get_funding_regime",
+    monkeypatch.setattr("pathia.agents.market_regime.detect_regime", lambda c: "neutral")
+    monkeypatch.setattr("pathia.agents.hyperfeed.market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "regimes_by_class": {}})
     monkeypatch.setattr(executor, "place_hl_order",
                         lambda *a, **k: placed.update(n=placed["n"] + 1) or {"ok": True})
@@ -2081,7 +2081,7 @@ def test_maybe_execute_reentry_backstop_blocks_when_live_read_drops_position(mon
 def test_parse_verdict_short_derives_side_short():
     """A SHORT verdict with no/null side must yield side='short', NOT fall
     through to the executor's 'long' default (wrong-direction bug)."""
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     txt = '{"verdict":"SHORT","confidence":0.7}'   # no side field
     v = parse_verdict(txt, "BTC", {"mid": 100})
     assert v["verdict"] == "SHORT"
@@ -2093,7 +2093,7 @@ def test_parse_verdict_short_derives_side_short():
 
 
 def test_parse_verdict_long_derives_side_long():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     v = parse_verdict('{"verdict":"LONG","confidence":0.6}', "ETH", {"mid": 50})
     assert v["side"] == "long"
 
@@ -2101,14 +2101,14 @@ def test_parse_verdict_long_derives_side_long():
 def test_parse_verdict_coerces_string_confidence():
     """LLM sometimes returns confidence as a string — must coerce to float
     so the gate comparison doesn't TypeError on a live trade."""
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     v = parse_verdict('{"verdict":"LONG","confidence":"0.82","side":"long"}', "BTC", {"mid": 1})
     assert isinstance(v["confidence"], float)
     assert abs(v["confidence"] - 0.82) < 1e-9
 
 
 def test_parse_verdict_clamps_confidence_range():
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     hi = parse_verdict('{"verdict":"LONG","confidence":1.8,"side":"long"}', "B", {"mid": 1})
     assert hi["confidence"] == 1.0
     lo = parse_verdict('{"verdict":"LONG","confidence":-0.5,"side":"long"}', "B", {"mid": 1})
@@ -2119,7 +2119,7 @@ def test_parse_verdict_clamps_confidence_range():
 
 def test_parse_verdict_unknown_verdict_defaults_pass():
     """HOLD or any non-LONG/SHORT/CLOSE verdict → PASS (no accidental trade)."""
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     for raw in ("HOLD", "WAIT", "MAYBE", ""):
         v = parse_verdict(f'{{"verdict":"{raw}","confidence":0.9}}', "BTC", {"mid": 1})
         assert v["verdict"] == "PASS", raw
@@ -2127,7 +2127,7 @@ def test_parse_verdict_unknown_verdict_defaults_pass():
 
 # ── Shakedown: route_verdict (every verdict path is now testable) ────────
 def test_route_verdict_long_calls_execute():
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     calls = {}
     def exec_fn(a): calls["exec"] = a; return {"executed": True, "order_id": "1"}
     def close_fn(c): calls["close"] = c; return {"ok": True}
@@ -2138,7 +2138,7 @@ def test_route_verdict_long_calls_execute():
 
 
 def test_route_verdict_short_calls_execute():
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     seen = {}
     r = route_verdict({"verdict": "SHORT", "coin": "ETH", "side": "short"},
                       execute_fn=lambda a: seen.setdefault("e", a) or {"executed": True},
@@ -2148,7 +2148,7 @@ def test_route_verdict_short_calls_execute():
 
 def test_route_verdict_close_calls_close():
     """The bug that started the shakedown: CLOSE must call close_fn, not be dropped."""
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     calls = {}
     r = route_verdict({"verdict": "CLOSE", "coin": "DOGE"},
                       execute_fn=lambda a: calls.setdefault("e", a),
@@ -2159,7 +2159,7 @@ def test_route_verdict_close_calls_close():
 
 
 def test_route_verdict_pass_is_noop():
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     calls = {}
     r = route_verdict({"verdict": "PASS", "coin": "BTC"},
                       execute_fn=lambda a: calls.setdefault("e", 1),
@@ -2169,7 +2169,7 @@ def test_route_verdict_pass_is_noop():
 
 
 def test_route_verdict_pass_with_ta_sidestep_composite_routes_to_executor(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
         "runner_entry_gate": {"min_composite": 20},
@@ -2186,7 +2186,7 @@ def test_route_verdict_pass_with_ta_sidestep_composite_routes_to_executor(monkey
 
 
 def test_route_verdict_pass_with_ta_sidestep_burst_routes_to_executor(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
         "runner_entry_gate": {"min_composite": 30},
@@ -2205,7 +2205,7 @@ def test_route_verdict_pass_with_ta_sidestep_burst_routes_to_executor(monkeypatc
 def test_route_verdict_plain_pass_still_noop():
     """A PASS with no fresh setup hint and weak composite stays a no-op —
     we don't want every hedged PASS hitting the executor."""
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     calls = {}
     r = route_verdict({"verdict": "PASS", "coin": "BTC",
                        "composite_score": 20.0, "slow_burn_count": 0},
@@ -2218,7 +2218,7 @@ def test_route_verdict_plain_pass_still_noop():
 def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
     """If a PASS reaches maybe_execute but the override doesn't actually hold,
     it must no-op (reason=pass_no_override) — never default to a long order."""
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     monkeypatch.setattr(executor, "read_agent_config",
                         lambda: {"mode": "LIVE", "enable_crypto": True,
                                  "ta_sidestep_force_execute": True})
@@ -2230,7 +2230,7 @@ def test_maybe_execute_pass_without_override_is_clean_noop(monkeypatch):
 
 
 def test_maybe_execute_ta_sidestep_blocks_parabolic_daily_mover(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "mode": "LIVE",
@@ -2254,7 +2254,7 @@ def test_maybe_execute_ta_sidestep_blocks_parabolic_daily_mover(monkeypatch):
 
 
 def test_backup_sl_capped_inside_liquidation_buffer():
-    from hermes_trader.agents.executor import _backup_sl_price
+    from pathia.agents.executor import _backup_sl_price
 
     entry = 6.38812
     # BIRD-like: raw 1.5x ATR stop would sit ~14% below entry.
@@ -2294,7 +2294,7 @@ def test_backup_sl_override_keeps_the_stop_and_caps_the_leverage(monkeypatch, ca
         lambda is_buy, sz, px, kind, coin: triggers.append(
             {"kind": kind, "px": px}) or {"ok": True},
     )
-    with caplog.at_level("INFO", logger="hermes_trader.agents.executor"):
+    with caplog.at_level("INFO", logger="pathia.agents.executor"):
         r = ex.maybe_execute(_analysis(
             leverage_override=10,
             backup_sl_pct_override=15.0,
@@ -2325,7 +2325,7 @@ def test_a_stop_that_fits_the_buffer_leaves_leverage_alone(monkeypatch, caplog):
         lambda is_buy, sz, px, kind, coin: triggers.append(
             {"kind": kind, "px": px}) or {"ok": True},
     )
-    with caplog.at_level("INFO", logger="hermes_trader.agents.executor"):
+    with caplog.at_level("INFO", logger="pathia.agents.executor"):
         r = ex.maybe_execute(_analysis(
             leverage_override=10,
             backup_sl_pct_override=6.0,
@@ -2337,7 +2337,7 @@ def test_a_stop_that_fits_the_buffer_leaves_leverage_alone(monkeypatch, caplog):
 
 
 def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "mode": "LIVE",
@@ -2373,7 +2373,7 @@ def test_maybe_execute_ta_sidestep_still_runs_runner_gate(monkeypatch):
 
 
 def test_route_verdict_default_ta_sidestep_does_not_route_one_slow_burn(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
@@ -2392,7 +2392,7 @@ def test_route_verdict_default_ta_sidestep_does_not_route_one_slow_burn(monkeypa
 
 
 def test_route_verdict_ta_sidestep_ignores_legacy_signal_hint(monkeypatch):
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     monkeypatch.setattr(executor, "read_agent_config", lambda: {
         "ta_sidestep_force_execute": True,
@@ -2411,7 +2411,7 @@ def test_route_verdict_ta_sidestep_ignores_legacy_signal_hint(monkeypatch):
 
 
 def test_runner_gate_allows_structured_hip3_daily_mover_below_hip3_floor():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "xyz:INTC",
@@ -2436,7 +2436,7 @@ def test_runner_gate_allows_structured_hip3_daily_mover_below_hip3_floor():
 
 
 def test_runner_gate_blocks_zero_composite_hip3_daily_mover_at_mover_floor():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "xyz:INTC",
@@ -2463,7 +2463,7 @@ def test_runner_gate_blocks_zero_composite_hip3_daily_mover_at_mover_floor():
 
 
 def test_runner_gate_blocks_weak_crypto_nonburst_fresh_setup():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "WLD",
@@ -2492,7 +2492,7 @@ def test_runner_gate_blocks_weak_crypto_nonburst_fresh_setup():
 
 
 def test_runner_gate_allows_crypto_fresh_setup_with_composite_support():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "JTO",
@@ -2519,7 +2519,7 @@ def test_runner_gate_allows_crypto_fresh_setup_with_composite_support():
 
 
 def test_runner_gate_requires_daily_mover_longs_when_enabled():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "JTO",
@@ -2550,7 +2550,7 @@ def test_runner_gate_requires_daily_mover_longs_when_enabled():
 
 
 def test_runner_gate_allows_daily_mover_longs_when_required():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "XPL",
@@ -2578,7 +2578,7 @@ def test_runner_gate_allows_daily_mover_longs_when_required():
 
 
 def test_runner_gate_allows_crypto_momentum_burst_without_crypto_floor():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "ARB",
@@ -2604,7 +2604,7 @@ def test_runner_gate_allows_crypto_momentum_burst_without_crypto_floor():
 
 
 def test_runner_gate_allows_quality_downtrend_short():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "SOL",
@@ -2628,7 +2628,7 @@ def test_runner_gate_allows_quality_downtrend_short():
 
 
 def test_runner_gate_blocks_weak_short_even_when_shorts_enabled():
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
 
     analysis = {
         "coin": "SOL",
@@ -2656,7 +2656,7 @@ def test_runner_gate_blocks_weak_short_even_when_shorts_enabled():
 def test_route_verdict_unknown_is_flagged_not_dropped():
     """A novel/garbage verdict must surface as 'unknown', never silently no-op
     like a PASS — that's how the next dropped-verdict bug gets caught."""
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     calls = {}
     r = route_verdict({"verdict": "YOLO", "coin": "BTC"},
                       execute_fn=lambda a: calls.setdefault("e", 1),
@@ -2667,7 +2667,7 @@ def test_route_verdict_unknown_is_flagged_not_dropped():
 
 
 def test_route_verdict_lowercase_verdict_normalized():
-    from hermes_trader.agents.executor import route_verdict
+    from pathia.agents.executor import route_verdict
     r = route_verdict({"verdict": "close", "coin": "X"},
                       execute_fn=lambda a: None, close_fn=lambda c: {"ok": True})
     assert r["action"] == "close"
@@ -2677,7 +2677,7 @@ def test_route_verdict_lowercase_verdict_normalized():
 def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
     """Patch executor's I/O surface with sane defaults; return (executor, captured).
     `captured` records the size/side passed to place_hl_order on the success path."""
-    from hermes_trader.agents import executor
+    from pathia.agents import executor
     cfg = {
         "mode": "LIVE", "enable_crypto": True, "enable_hip3": True,
         "equity_fraction_per_trade": 0.10, "leverage": 10,
@@ -2709,10 +2709,10 @@ def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
     monkeypatch.setattr(executor, "place_hl_trigger_order", lambda *a, **k: {"ok": True})
     # _http_post is imported locally inside maybe_execute (hip3 preflight) —
     # patch at the source module, not on executor.
-    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+    monkeypatch.setattr("pathia.client.hl_client._http_post",
                         lambda p, pl: {"marginSummary": {"accountValue": "500"}})
-    monkeypatch.setattr("hermes_trader.agents.market_regime.detect_regime", lambda c: "neutral")
-    monkeypatch.setattr("hermes_trader.agents.hyperfeed.market_get_funding_regime",
+    monkeypatch.setattr("pathia.agents.market_regime.detect_regime", lambda c: "neutral")
+    monkeypatch.setattr("pathia.agents.hyperfeed.market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "regimes_by_class": {}})
     def _place(is_buy, size, mid, coin):
         captured["is_buy"] = is_buy; captured["size"] = size; captured["coin"] = coin
@@ -2768,7 +2768,7 @@ def test_maybe_execute_insufficient_free_margin(monkeypatch):
 def test_maybe_execute_hip3_underfunded(monkeypatch):
     ex, _, _ = _exec_baseline(monkeypatch)
     # dex check returns near-zero accountValue (patch the source module)
-    monkeypatch.setattr("hermes_trader.client.hl_client._http_post",
+    monkeypatch.setattr("pathia.client.hl_client._http_post",
                         lambda p, pl: {"marginSummary": {"accountValue": "0.0"}})
     r = ex.maybe_execute(_analysis(coin="xyz:MU"))
     assert r["executed"] is False and "hip3_dex_underfunded" in r["reason"]
@@ -2857,14 +2857,14 @@ def test_maybe_execute_order_failed(monkeypatch):
 
 # ── Coverage: hyperfeed market-data lookups ─────────────────────────────
 def test_hyperfeed_safe_float_default():
-    from hermes_trader.agents.hyperfeed import _safe_float
+    from pathia.agents.hyperfeed import _safe_float
     assert _safe_float("not-a-number", 7.0) == 7.0
     assert _safe_float(None) == 0.0
     assert _safe_float("3.5") == 3.5
 
 
 def test_leaderboard_get_markets_ranks_by_volume(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
         {"coin": "SMALL", "type": "perp", "dayNtlVlm": 1e6, "openInterest": 1},
         {"coin": "BIG", "type": "perp", "dayNtlVlm": 1e9, "openInterest": 9},
@@ -2877,7 +2877,7 @@ def test_leaderboard_get_markets_ranks_by_volume(monkeypatch):
 
 def test_leaderboard_get_trader_positions_unwraps_and_coerces(monkeypatch):
     """Nested position unwrap, string-leverage coercion, szi==0 skip."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: {
         "assetPositions": [
             {"position": {"coin": "BTC", "szi": "2.0", "entryPx": "60000",
@@ -2892,13 +2892,13 @@ def test_leaderboard_get_trader_positions_unwraps_and_coerces(monkeypatch):
 
 
 def test_leaderboard_get_trader_positions_empty_when_no_state(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     monkeypatch.setattr(hyperfeed, "_http_post", lambda path, body: None)
     assert hyperfeed.leaderboard_get_trader_positions("0xABC") == {"positions": []}
 
 
 def test_market_get_asset_data_collects_candles_and_context(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     fake_candles = [Candle(t=1, o=1, h=2, l=0.5, c=1.5, v=100)]
     monkeypatch.setattr(hyperfeed, "fetch_hl_candles",
                         lambda asset, interval, n: fake_candles)
@@ -2914,7 +2914,7 @@ def test_market_get_asset_data_collects_candles_and_context(monkeypatch):
 
 
 def test_market_get_asset_data_candle_error_yields_empty(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     def boom(asset, interval, n):
         raise RuntimeError("rate limited")
     monkeypatch.setattr(hyperfeed, "fetch_hl_candles", boom)
@@ -2924,7 +2924,7 @@ def test_market_get_asset_data_candle_error_yields_empty(monkeypatch):
 
 
 def test_market_list_instruments_counts_and_strips(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     monkeypatch.setattr(hyperfeed, "get_universe", lambda: [
         {"coin": "BTC", "type": "perp", "maxLeverage": 40},
         {"coin": "@107", "type": "spot", "maxLeverage": 0},
@@ -2936,7 +2936,7 @@ def test_market_list_instruments_counts_and_strips(monkeypatch):
 
 
 def test_market_get_mids_passthrough(monkeypatch):
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     seen = {}
     def fake_mids(*, include_hip3=False):
         seen["include_hip3"] = include_hip3
@@ -2948,7 +2948,7 @@ def test_market_get_mids_passthrough(monkeypatch):
 
 def test_compute_funding_regime_long_crowded_margin(monkeypatch):
     """A class needs a >5 long-over-short margin to be LONG_CROWDED."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     # 7 crypto longs (funding>0, oi high), 0 shorts → margin 7 > 5.
     universe = [
         {"coin": c, "funding": 0.0002, "openInterest": 5e7, "dayNtlVlm": 1e8}
@@ -2963,7 +2963,7 @@ def test_compute_funding_regime_long_crowded_margin(monkeypatch):
 
 def test_discovery_get_trader_state_win_rate_is_percentage(monkeypatch):
     """win_rate is a 0-100 percentage; positions unwrapped; ROI computed."""
-    from hermes_trader.agents import hyperfeed
+    from pathia.agents import hyperfeed
     calls = {"clearinghouse": {
         "marginSummary": {"accountValue": "8000", "totalNtlPos": "4000"},
         "assetPositions": [
@@ -2988,14 +2988,14 @@ def test_discovery_get_trader_state_win_rate_is_percentage(monkeypatch):
 
 # ── Coverage: research indicator + prompt-builder helpers ───────────────
 def test_compute_indicators_empty_returns_nulls():
-    from hermes_trader.agents.research import _compute_indicators
+    from pathia.agents.research import _compute_indicators
     out = _compute_indicators([])
     assert out["ema8"] is None and out["last_close"] == 0
 
 
 def test_compute_indicators_thin_history_partial():
     """<21 candles → indicators None but last_close/last_time populated."""
-    from hermes_trader.agents.research import _compute_indicators
+    from pathia.agents.research import _compute_indicators
     candles = [Candle(t=i, o=10, h=11, l=9, c=10 + i, v=100) for i in range(5)]
     out = _compute_indicators(candles)
     assert out["ema8"] is None
@@ -3005,7 +3005,7 @@ def test_compute_indicators_thin_history_partial():
 
 def test_compute_indicators_full_history_computes_emas():
     """≥21 candles → EMA/RSI/ATR/ADX numeric, slope detected on rising series."""
-    from hermes_trader.agents.research import _compute_indicators
+    from pathia.agents.research import _compute_indicators
     candles = [Candle(t=i, o=100 + i, h=101 + i, l=99 + i, c=100 + i, v=1000)
                for i in range(40)]
     out = _compute_indicators(candles)
@@ -3016,20 +3016,20 @@ def test_compute_indicators_full_history_computes_emas():
 
 
 def test_fetch_funding_rate_formats_percent(monkeypatch):
-    from hermes_trader.agents import research
+    from pathia.agents import research
     monkeypatch.setattr(research, "fetch_funding_history",
                         lambda coin, start: [{"fundingRate": "0.0001"}])
     assert research._fetch_funding_rate("BTC") == "0.0100%/hr"
 
 
 def test_fetch_funding_rate_na_when_empty(monkeypatch):
-    from hermes_trader.agents import research
+    from pathia.agents import research
     monkeypatch.setattr(research, "fetch_funding_history", lambda coin, start: [])
     assert research._fetch_funding_rate("BTC") == "N/A"
 
 
 def test_build_user_message_includes_structure_block_without_removed_signal_context():
-    from hermes_trader.agents.research import _build_user_message
+    from pathia.agents.research import _build_user_message
     perception = {
         "type": "perp", "mid": 0.000173, "composite_score": 62,
         "triggers": [
@@ -3051,7 +3051,7 @@ def test_build_user_message_omits_account_equity_and_notional():
     """Account equity / notional must NOT reach the LLM — leverage/exposure is
     the gates' job and was causing the model to PASS good setups on 'over-leverage'
     grounds. Only the held coins/sides are surfaced (for dup/CLOSE detection)."""
-    from hermes_trader.agents.research import _build_user_message
+    from pathia.agents.research import _build_user_message
     perception = {"type": "perp", "mid": 100, "composite_score": 10, "triggers": []}
     snap = {"last_close": 100}
     msg = _build_user_message(
@@ -3069,7 +3069,7 @@ def test_build_user_message_omits_account_equity_and_notional():
 
 def test_parse_verdict_regex_fallback_midtext():
     """JSON not on the last line is recovered by the regex fallback."""
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     txt = ('reasoning here\n{"verdict":"LONG","confidence":0.7,"side":"long"}\n'
            'some trailing commentary')
     v = parse_verdict(txt, "BTC", {"mid": 50})
@@ -3078,7 +3078,7 @@ def test_parse_verdict_regex_fallback_midtext():
 
 def test_parse_verdict_malformed_json_uses_first_line_keyword():
     """Unparseable JSON falls back to a keyword scan of the first line."""
-    from hermes_trader.agents.research import parse_verdict
+    from pathia.agents.research import parse_verdict
     txt = 'SHORT setup forming\n{"verdict": broken json,,}'
     v = parse_verdict(txt, "ETH", {"mid": 10})
     assert v["verdict"] == "SHORT" and v["side"] == "short"
@@ -3086,7 +3086,7 @@ def test_parse_verdict_malformed_json_uses_first_line_keyword():
 
 # ── Coverage: dashboard payload helpers ─────────────────────────────────
 def test_ttl_cached_serves_then_refetches(monkeypatch):
-    from hermes_trader import dashboard
+    from pathia import dashboard
     calls = {"n": 0}
     def fn():
         calls["n"] += 1
@@ -3102,7 +3102,7 @@ def test_ttl_cached_serves_then_refetches(monkeypatch):
 
 
 def test_last_event_returns_newest_match():
-    from hermes_trader.dashboard import _last_event
+    from pathia.dashboard import _last_event
     events = [
         {"event": "scan", "id": 1},
         {"event": "execute", "id": 2},
@@ -3114,7 +3114,7 @@ def test_last_event_returns_newest_match():
 
 def test_closed_trades_payload_dsl_realized_fill(monkeypatch):
     """A dsl_exit with realized fill data reports the exact PnL, newest-first."""
-    from hermes_trader import dashboard
+    from pathia import dashboard
     events = [
         {"event": "execute", "coin": "BTC", "side": "long", "ts": 1},
         {"event": "dsl_exit", "coin": "BTC", "ts": 2, "leverage": 10,
@@ -3133,7 +3133,7 @@ def test_closed_trades_payload_dsl_realized_fill(monkeypatch):
 def test_closed_trades_payload_estimates_leverage_and_side(monkeypatch):
     """Old dsl_exit lacking side/leverage walks back to the execute event for
     side and estimates leverage from config × HL cap."""
-    from hermes_trader import dashboard
+    from pathia import dashboard
     events = [
         {"event": "execute", "coin": "ETH", "side": "short", "ts": 1},
         {"event": "dsl_exit", "coin": "ETH", "ts": 2,
@@ -3151,7 +3151,7 @@ def test_closed_trades_payload_estimates_leverage_and_side(monkeypatch):
 
 
 def test_closed_trades_payload_respects_limit(monkeypatch):
-    from hermes_trader import dashboard
+    from pathia import dashboard
     events = []
     for i in range(5):
         events.append({"event": "execute", "coin": "BTC", "side": "long", "ts": i})
@@ -3162,7 +3162,7 @@ def test_closed_trades_payload_respects_limit(monkeypatch):
 
 
 def test_summary_payload_offline_when_no_heartbeat(monkeypatch):
-    from hermes_trader import dashboard
+    from pathia import dashboard
     monkeypatch.setattr(dashboard, "_read_log_lines", lambda: [])
     out = dashboard._summary_payload()
     assert out["status"] == "offline"
@@ -3171,7 +3171,7 @@ def test_summary_payload_offline_when_no_heartbeat(monkeypatch):
 
 def test_summary_payload_scanning_and_pnl_pct(monkeypatch):
     """Recent heartbeat → 'scanning'; daily_pnl_pct = pnl / (equity − pnl)."""
-    from hermes_trader import dashboard
+    from pathia import dashboard
     now_ms = int(dashboard.time.time() * 1000)
     events = [
         {"event": "loop_heartbeat", "ts": now_ms, "equity": 260.0,
@@ -3189,7 +3189,7 @@ def test_summary_payload_scanning_and_pnl_pct(monkeypatch):
 
 
 def test_summary_payload_stale_when_heartbeat_old(monkeypatch):
-    from hermes_trader import dashboard
+    from pathia import dashboard
     old_ms = int(dashboard.time.time() * 1000) - 600_000  # 10 min ago
     events = [{"event": "loop_heartbeat", "ts": old_ms, "equity": 100.0,
                "daily_pnl": 0.0}]
@@ -3198,7 +3198,7 @@ def test_summary_payload_stale_when_heartbeat_old(monkeypatch):
 
 
 def test_equity_curve_payload_filters_by_range_and_zero(monkeypatch):
-    from hermes_trader import dashboard
+    from pathia import dashboard
     now_ms = int(dashboard.time.time() * 1000)
     events = [
         {"event": "loop_heartbeat", "ts": now_ms - 7200_000, "equity": 200.0},  # 2h old
@@ -3213,7 +3213,7 @@ def test_equity_curve_payload_filters_by_range_and_zero(monkeypatch):
 
 def test_positions_snapshot_round_trip(tmp_path, monkeypatch):
     """write_snapshot then read_snapshot returns the same asset_positions."""
-    from hermes_trader import positions_snapshot as ps
+    from pathia import positions_snapshot as ps
     monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(tmp_path / "snap.json"))
     rows = [{"position": {"coin": "BTC", "szi": "1.0"}}]
     ps.write_snapshot(rows)
@@ -3222,14 +3222,14 @@ def test_positions_snapshot_round_trip(tmp_path, monkeypatch):
 
 
 def test_positions_snapshot_missing_returns_none(tmp_path, monkeypatch):
-    from hermes_trader import positions_snapshot as ps
+    from pathia import positions_snapshot as ps
     monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(tmp_path / "absent.json"))
     assert ps.read_snapshot() is None
 
 
 def test_positions_snapshot_stale_returns_none(tmp_path, monkeypatch):
     """A snapshot older than max_age_s is treated as absent → caller refetches."""
-    from hermes_trader import positions_snapshot as ps
+    from pathia import positions_snapshot as ps
     import json as _json
     f = tmp_path / "snap.json"
     f.write_text(_json.dumps({"saved_at": 0, "asset_positions": [{"x": 1}]}))
@@ -3238,7 +3238,7 @@ def test_positions_snapshot_stale_returns_none(tmp_path, monkeypatch):
 
 
 def test_positions_snapshot_rejects_malformed_payload(tmp_path, monkeypatch):
-    from hermes_trader import positions_snapshot as ps
+    from pathia import positions_snapshot as ps
 
     f = tmp_path / "snap.json"
     monkeypatch.setattr(ps, "SNAPSHOT_FILE", str(f))
@@ -3249,7 +3249,7 @@ def test_positions_snapshot_rejects_malformed_payload(tmp_path, monkeypatch):
 
 
 def test_session_log_tail_streams_last_events(tmp_path, monkeypatch):
-    from hermes_trader import session_log
+    from pathia import session_log
 
     path = tmp_path / "nested" / "session.jsonl"
     monkeypatch.setattr(session_log, "SESSION_LOG_FILE", str(path))
@@ -3264,7 +3264,7 @@ def test_session_log_tail_streams_last_events(tmp_path, monkeypatch):
 def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):
     """When a fresh snapshot exists the dashboard transforms it and never calls
     fetch_account_state — this is what removes the cross-process HL load."""
-    from hermes_trader import dashboard
+    from pathia import dashboard
     called = {"hl": False}
     def boom(*a, **k):
         called["hl"] = True
@@ -3287,7 +3287,7 @@ def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):
 
 def test_dashboard_positions_falls_back_to_hl_when_no_snapshot(monkeypatch):
     """No snapshot (loop down) → dashboard does a live fetch so it still works."""
-    from hermes_trader import dashboard
+    from pathia import dashboard
     monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: None)
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "0xUSER")
     monkeypatch.setattr(dashboard.dsl_exit, "load_state", lambda force=False: None)
@@ -3308,7 +3308,7 @@ def test_dashboard_positions_falls_back_to_hl_when_no_snapshot(monkeypatch):
 
 def test_build_user_message_indicator_block_full_snap():
     """A full indicator snapshot renders the bullish/bearish + RSI/ATR/ADX line."""
-    from hermes_trader.agents.research import _build_user_message
+    from pathia.agents.research import _build_user_message
     perception = {"type": "perp", "mid": 100, "composite_score": 50, "triggers": []}
     full = {"ema8": 105.0, "ema21": 100.0, "slope_up": True,
             "rsi14": 62.5, "atr14": 3.2, "adx14": 28.0, "last_close": 104.0}
@@ -3361,7 +3361,7 @@ def test_maybe_execute_no_news_risk_does_not_block(monkeypatch):
 
 
 def test_news_blackout_gate_reason_includes_match():
-    from hermes_trader.agents.risk_gates import news_blackout_gate
+    from pathia.agents.risk_gates import news_blackout_gate
     ok = news_blackout_gate(_ctx(has_binary_news_risk=False))
     assert ok["pass"] is True
     blocked = _ctx(has_binary_news_risk=True)
@@ -3379,7 +3379,7 @@ def test_thin_short_block_records_shadow_counterfactual(monkeypatch):
     })
     monkeypatch.setattr(ex, "_get_market_volume_24h", lambda coin: 6_000_000.0)  # thin
     recorded = []
-    from hermes_trader.agents import shadow_ledger as SL
+    from pathia.agents import shadow_ledger as SL
     monkeypatch.setattr(SL, "record",
                         lambda book, **kw: recorded.append((book, kw)) or {})
     a = _analysis()
@@ -3427,7 +3427,7 @@ def test_book_capital_carveout_bypasses_aggregate_gates():
     """Funnel audit 2026-07-10: one manual 40x BTC position saturated notional then
     tripped the giveback halt, locking every book out of every top mover. Books get
     a carve-out from the three AGGREGATE gates; every safety gate still applies."""
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    from pathia.agents.risk_gates import eval_all_gates
     ctx = _ctx(
         confidence=0.99, current_positions=[{"coin": "BTC", "side": "short"}] * 10,
         total_open_notional=5_000.0, equity=150.0,
@@ -3507,7 +3507,7 @@ def test_thin_short_relax_requires_thin_to_be_only_failure(monkeypatch):
 
 def test_impulse_triggers_expose_direction():
     """2026-07-10: a +12% rally and a -12% crash must no longer be indistinguishable."""
-    from hermes_trader.indicators.triggers import (breakout, momentum_burst,
+    from pathia.indicators.triggers import (breakout, momentum_burst,
                                                    pct_move_spike, shock_day)
     def bars(closes, base=100.0):
         out, prev = [], base
@@ -3534,7 +3534,7 @@ def test_impulse_triggers_expose_direction():
 def test_runner_gate_demotes_down_impulse_longs(monkeypatch):
     """A LONG whose 'structure' is a DOWN impulse must be blocked; the same
     structure pointing UP passes; shorts and legacy events unaffected."""
-    from hermes_trader.agents.executor import _runner_entry_block_reason
+    from pathia.agents.executor import _runner_entry_block_reason
     cfg = {"runner_entry_gate": {"enabled": True, "min_confidence": 0.65,
                                  "min_composite": 30.0, "min_crypto_composite": 20.0}}
     base = {"coin": "ALT", "side": "long", "confidence": 0.9, "composite_score": 48.6,
@@ -3579,7 +3579,7 @@ def test_stale_flat_requires_book_contention(monkeypatch):
     after a flat close). Staleness only fires when >= stale_flat_min_positions
     trackers are active; the position otherwise keeps stop/hard-timeout exits."""
     import time as _t
-    from hermes_trader.agents import dsl_exit as dx
+    from pathia.agents import dsl_exit as dx
     pol = dx.ExitPolicy(max_loss_pct=20.0, max_loss_roe_pct=20.0, protect_pct=1.25,
                         retrace_threshold=0.3, hard_timeout_minutes=10_000.0,
                         stale_flat_timeout_minutes=480.0, stale_flat_min_positions=3)
@@ -3599,7 +3599,7 @@ def test_stale_flat_requires_book_contention(monkeypatch):
 
 # ── xyz-short sector concentration cap (W-MATH2/W-MATH3 refactor piece #1) ──
 def test_xyz_short_concentration_name_cap():
-    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    from pathia.agents.risk_gates import xyz_short_concentration_gate
     held = [{"coin": f"xyz:N{i}", "side": "short", "positionValue": 20} for i in range(3)]
     # 4th DISTINCT xyz-short name at cap 3 -> block
     ctx = _ctx(coin="xyz:DELL", trade_side="short", current_positions=held, trade_notional_usd=20, equity=1000)
@@ -3613,7 +3613,7 @@ def test_xyz_short_concentration_name_cap():
 
 
 def test_xyz_short_concentration_notional_cap():
-    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    from pathia.agents.risk_gates import xyz_short_concentration_gate
     held = [{"coin": "xyz:A", "side": "short", "positionValue": 30},
             {"coin": "xyz:B", "side": "short", "positionValue": 30}]  # $60 held
     # equity 200, 25% cap = $50; +$20 -> $80 > $50 -> block on notional
@@ -3626,7 +3626,7 @@ def test_xyz_short_concentration_notional_cap():
 
 
 def test_xyz_short_concentration_ignores_longs_crypto_and_missing_value():
-    from hermes_trader.agents.risk_gates import xyz_short_concentration_gate
+    from pathia.agents.risk_gates import xyz_short_concentration_gate
     held = [{"coin": f"xyz:N{i}", "side": "short", "positionValue": 20} for i in range(5)]
     # a LONG xyz -> not gated (only shorts)
     assert xyz_short_concentration_gate(_ctx(coin="xyz:X", trade_side="long", current_positions=held), 3, 0.25)["pass"] is True
@@ -3640,7 +3640,7 @@ def test_xyz_short_concentration_ignores_longs_crypto_and_missing_value():
 
 
 def test_xyz_concentration_is_wired_and_not_carveout_exempt():
-    from hermes_trader.agents.risk_gates import eval_all_gates
+    from pathia.agents.risk_gates import eval_all_gates
     cfg = {"min_ai_confidence": 0.0, "max_concurrent": 100, "max_trade_notional_usd": 1000,
            "max_daily_loss_usd": -1000, "min_market_volume_usd": 0, "min_hip3_volume_usd": 0,
            "min_short_volume_usd": 0, "max_total_notional_pct": 100.0, "cooldown_min": 0,

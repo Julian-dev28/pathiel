@@ -7,14 +7,14 @@ import os, json, sys, collections, statistics, time
 from pathlib import Path
 
 ROOT=str(Path(__file__).resolve().parents[3])
-LOG=os.path.expanduser('~/.hermes-trader-session-log.jsonl')
+LOG=os.path.expanduser('~/.pathia-session-log.jsonl')
 os.chdir(ROOT)
 for line in open(os.path.join(ROOT,'.env.local')):
     line=line.strip()
     if not line or line.startswith('#') or '=' not in line: continue
     k,v=line.split('=',1); os.environ[k.strip()]=v.strip().strip('"').strip("'")
 sys.path.insert(0,ROOT)
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.hl_client import fetch_hl_candles
 
 DAY=86400000; HR=3600000
 LAST_TS=1782609337982
@@ -71,7 +71,7 @@ print('by bucket:', dict(bybucket), file=sys.stderr)
 # ---- 2. fetch forward candles per unique coin ----
 coins=sorted(set(e['coin'] for e in events))
 print(f'unique coins to fetch: {len(coins)}', file=sys.stderr)
-CACHE_F='/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/_candle_cache.json'
+CACHE_F='/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/_candle_cache.json'
 candle_cache={}
 if os.path.exists(CACHE_F):
     candle_cache=json.load(open(CACHE_F))
@@ -177,13 +177,13 @@ for e in events:
         misses.append((e['bucket'],e['coin'],e['m']['24h'][0],e['m']['24h'][2]))
 misses.sort(key=lambda x:-x[2])
 out['top_missed']=misses[:25]
-json.dump(out, open('/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/gate_audit_result.json','w'), indent=1)
+json.dump(out, open('/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/gate_audit_result.json','w'), indent=1)
 print('\n=== COIN-LEVEL (each coin counts once per bucket) ===')
 print(f'{"gate(bucket)":<32}{"coins":>6}{"mooned":>7}{"%moon":>7}{"medRet24":>9}')
 for bucket,nc,mooned,pctm,medret in coinlevel:
     print(f'{bucket:<32}{nc:>6}{mooned:>7}{pctm:>6.0f}%{medret:>+8.1f}%')
 out['coinlevel']=[dict(zip(['bucket','coins','mooned','pct_moon','med_ret24'],r)) for r in coinlevel]
-json.dump(out, open('/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/gate_audit_result.json','w'), indent=1)
+json.dump(out, open('/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad/gate_audit_result.json','w'), indent=1)
 
 # top missed deduped by coin (best per coin)
 bestcoin={}

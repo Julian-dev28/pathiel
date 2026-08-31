@@ -11,7 +11,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-import hermes_trader.dashboard as db
+import pathia.dashboard as db
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCTRINE = ROOT / "research" / "EVIDENCE_DOCTRINE.md"

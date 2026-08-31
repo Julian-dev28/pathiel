@@ -23,15 +23,15 @@ each check exists; the script is what actually enforces it.
 
 | Var | Purpose | Reads it | Required | Missing behavior |
 |---|---|---|---|---|
-| `HYPERLIQUID_WALLET_ADDRESS` | Agent/API wallet address — the identity that signs orders | `hermes_trader/client/exchange.py`, `hermes_trader/client/hl_client.py` | **Always** | Silent — defaults to `""`; downstream calls that need a real address fail deep in the SDK, not at startup |
-| `HYPERLIQUID_PRIVATE_KEY` | Agent/API wallet private key — signs every order | `hermes_trader/client/exchange.py`, `hermes_trader/agents/executor.py`, `scripts/trading_loop.py` | **Always** | Loud where it matters: `executor.py` returns `{"executed": False, "reason": "private_key_missing"}` per attempt and `trading_loop.py` blocks LIVE mode outright. `exchange.py` itself just holds `""` — an actual sign attempt would blow up in the SDK, not here |
-| `HYPERLIQUID_MASTER_ADDRESS` | Master account public address — where funds actually live | `hermes_trader/client/exchange.py`, `hermes_trader/client/hl_client.py`, `scripts/treasury.py` | **Always** (for the agent-vs-master safety check — see below) | Silent — `exchange.py`'s `IS_AGENT` flag quietly becomes `False` and the trading identity falls back to the wallet address alone. The app tolerates this; the preflight check does not |
+| `HYPERLIQUID_WALLET_ADDRESS` | Agent/API wallet address — the identity that signs orders | `pathia/client/exchange.py`, `pathia/client/hl_client.py` | **Always** | Silent — defaults to `""`; downstream calls that need a real address fail deep in the SDK, not at startup |
+| `HYPERLIQUID_PRIVATE_KEY` | Agent/API wallet private key — signs every order | `pathia/client/exchange.py`, `pathia/agents/executor.py`, `scripts/trading_loop.py` | **Always** | Loud where it matters: `executor.py` returns `{"executed": False, "reason": "private_key_missing"}` per attempt and `trading_loop.py` blocks LIVE mode outright. `exchange.py` itself just holds `""` — an actual sign attempt would blow up in the SDK, not here |
+| `HYPERLIQUID_MASTER_ADDRESS` | Master account public address — where funds actually live | `pathia/client/exchange.py`, `pathia/client/hl_client.py`, `scripts/treasury.py` | **Always** (for the agent-vs-master safety check — see below) | Silent — `exchange.py`'s `IS_AGENT` flag quietly becomes `False` and the trading identity falls back to the wallet address alone. The app tolerates this; the preflight check does not |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Master account private key — signs treasury transfers/swaps ONLY | `scripts/treasury.py` (nowhere else) | **Local-only** — must never exist in a deployed environment | Loud: `treasury.py` prints an error and `sys.exit(2)` |
-| `HERMES_OPERATOR_TOKEN` | Bearer token gating every write endpoint on the dashboard (`/operator`) | `hermes_trader/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
-| `OPENROUTER_API_KEY` | OpenRouter API key — the default AI research brain | `hermes_trader/agents/ai_brain.py` | **Conditional** — required iff `AI_BRAIN_PROVIDER` resolves to `openrouter` (the default when unset) | Logs a warning and returns `""` from the completion call. `research.py` tags the resulting analysis `ai_down: True` so the executor's structural override cannot upgrade a failure-PASS into a blind LONG (fixed 2026-06-11 after exactly that happened during an OpenRouter 402 window) — but every research call still fails silently at the log level, not at startup |
-| `BRAVE_API_KEY` | Brave Search — news context for research | `hermes_trader/agents/research.py` | Optional | Silent by design — returns `"no news"` and continues |
-| `UW_API_KEY` | Unusual Whales — options-flow alt-data (xyz equities) | `hermes_trader/client/uw_client.py` | Optional | Silent by design — best-effort client, returns `None`/`[]`, never raises |
-| `HYDROMANCER_API_KEY` | Hydromancer data-plane client (research/backfill, not live execution) | `hermes_trader/data_providers/hydromancer.py` | Optional | Silent — empty key string; the first real call fails with an auth error, not checked upfront |
+| `PATHIA_OPERATOR_TOKEN` | Bearer token gating every write endpoint on the dashboard (`/operator`) | `pathia/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
+| `OPENROUTER_API_KEY` | OpenRouter API key — the default AI research brain | `pathia/agents/ai_brain.py` | **Conditional** — required iff `AI_BRAIN_PROVIDER` resolves to `openrouter` (the default when unset) | Logs a warning and returns `""` from the completion call. `research.py` tags the resulting analysis `ai_down: True` so the executor's structural override cannot upgrade a failure-PASS into a blind LONG (fixed 2026-06-11 after exactly that happened during an OpenRouter 402 window) — but every research call still fails silently at the log level, not at startup |
+| `BRAVE_API_KEY` | Brave Search — news context for research | `pathia/agents/research.py` | Optional | Silent by design — returns `"no news"` and continues |
+| `UW_API_KEY` | Unusual Whales — options-flow alt-data (xyz equities) | `pathia/client/uw_client.py` | Optional | Silent by design — best-effort client, returns `None`/`[]`, never raises |
+| `HYDROMANCER_API_KEY` | Hydromancer data-plane client (research/backfill, not live execution) | `pathia/data_providers/hydromancer.py` | Optional | Silent — empty key string; the first real call fails with an auth error, not checked upfront |
 
 Non-secret vars read alongside these (model names, timeouts, CLI binary
 paths, scan-tuning knobs, state-file path overrides) are listed — grouped and
@@ -40,8 +40,8 @@ leaking one costs nothing; the table above is specifically the set that
 `scripts/preflight_secrets.py` treats as sensitive (required-presence check,
 git-index scan, redaction).
 
-**One dead var found during this inventory:** `HERMES_CHAT_MODEL` is set in
-the live `.env.local` but is not read by any module in `hermes_trader/`,
+**One dead var found during this inventory:** `PATHIA_CHAT_MODEL` is set in
+the live `.env.local` but is not read by any module in `pathia/`,
 `services/`, or `scripts/` — grep across all three came up empty. Likely a
 leftover from an earlier iteration. Safe to drop; harmless to leave (it is
 not a secret, just an unused knob).
@@ -61,7 +61,7 @@ flyctl secrets set \
   HYPERLIQUID_PRIVATE_KEY="0x..." \
   HYPERLIQUID_MASTER_ADDRESS="0x..." \
   OPENROUTER_API_KEY="sk-or-..." \
-  HERMES_OPERATOR_TOKEN="$(openssl rand -hex 16)"
+  PATHIA_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 
 # optional
 flyctl secrets set BRAVE_API_KEY="BSA..."
@@ -80,15 +80,15 @@ Create the Secret straight from the operator's gitignored `.env.local` so
 values never touch a tracked file:
 
 ```bash
-kubectl create secret generic hermes-secrets -n hermes \
+kubectl create secret generic pathia-secrets -n pathia \
   --from-literal=HYPERLIQUID_WALLET_ADDRESS="$HYPERLIQUID_WALLET_ADDRESS" \
   --from-literal=HYPERLIQUID_PRIVATE_KEY="$HYPERLIQUID_PRIVATE_KEY" \
   --from-literal=HYPERLIQUID_MASTER_ADDRESS="$HYPERLIQUID_MASTER_ADDRESS" \
   --from-literal=OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
-  --from-literal=HERMES_OPERATOR_TOKEN="$(openssl rand -hex 16)"
+  --from-literal=PATHIA_OPERATOR_TOKEN="$(openssl rand -hex 16)"
 ```
 
-`kubectl get secret hermes-secrets -o yaml` shows base64, not plaintext, but
+`kubectl get secret pathia-secrets -o yaml` shows base64, not plaintext, but
 base64 is encoding, not encryption — treat `kubectl get -o yaml` access on
 that namespace as equivalent to reading the values directly when reasoning
 about who can see secrets.
@@ -161,7 +161,7 @@ revoke the old value at the provider once the new one is confirmed live.
 | `HYPERLIQUID_WALLET_ADDRESS` | Follows the private key above (they're a pair) | Yes | Not a secret by itself (a public address) — rotate alongside the private key |
 | `HYPERLIQUID_MASTER_ADDRESS` | This is your actual account; you don't "rotate" it. If it needs to change, you're moving to a different Hyperliquid account entirely — treat as a full re-provision | Yes | Not a secret (public address) — no action needed on its own, but if leaked *alongside* the master private key, see below |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Hyperliquid does not support rotating a master wallet's key — it's an on-chain wallet, so "rotation" means moving funds to a new wallet | N/A (local-only, never deployed) | **Treat as a full account compromise.** Move all funds to a brand-new wallet immediately via the Hyperliquid UI from a separate trusted device if possible, then stop using the old wallet entirely. This is the one leak this doc cannot make routine — it is the master key, it can empty the account, and speed is the only mitigation. |
-| `HERMES_OPERATOR_TOKEN` | Anywhere: `openssl rand -hex 16`, then `flyctl secrets set HERMES_OPERATOR_TOKEN=...` (or the k8s/systemd equivalent) | Yes | Rotate immediately (see above). Worst case with the old token still valid: someone can flip config knobs and trigger manual closes through `/operator` — no fund transfer is reachable through that surface, but it's still real control of the bot. |
+| `PATHIA_OPERATOR_TOKEN` | Anywhere: `openssl rand -hex 16`, then `flyctl secrets set PATHIA_OPERATOR_TOKEN=...` (or the k8s/systemd equivalent) | Yes | Rotate immediately (see above). Worst case with the old token still valid: someone can flip config knobs and trigger manual closes through `/operator` — no fund transfer is reachable through that surface, but it's still real control of the bot. |
 | `OPENROUTER_API_KEY` | https://openrouter.ai/keys — revoke old, create new | Yes | Revoke at OpenRouter immediately. Worst case: someone burns your quota / sees prompts you sent (market context, not credentials). |
 | `BRAVE_API_KEY` | https://api.search.brave.com/ dashboard | Yes | Revoke at Brave. Low severity — a news-search key. |
 | `UW_API_KEY` | Unusual Whales account dashboard | Yes | Revoke at Unusual Whales. Low-medium severity — paid data quota, not funds. |

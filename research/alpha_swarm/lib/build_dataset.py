@@ -21,8 +21,8 @@ if _env.is_file():
             k, _, v = _line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from hermes_trader.client.universe import get_universe
-from hermes_trader.client.hl_client import fetch_hl_candles
+from pathia.client.universe import get_universe
+from pathia.client.hl_client import fetch_hl_candles
 
 # default output = research/alpha_swarm/dataset.json (gitignored), matching alpha_lib's resolver
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else (Path(__file__).resolve().parent.parent / "dataset.json")

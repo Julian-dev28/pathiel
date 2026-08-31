@@ -1,6 +1,6 @@
 """The regression test for the bug that kept CI red for weeks.
 
-50 tracked files carried `REPO = "/Users/julian_dev/Documents/code/hermes-trader"`.
+50 tracked files carried `REPO = "/Users/julian_dev/Documents/code/pathia"`.
 The suite was green on the one machine where that path existed and red on every
 push. Nothing caught it, so this is the thing that catches it now.
 """
@@ -23,7 +23,7 @@ def test_the_repo_has_no_machine_bound_absolute_paths():
 
 def test_the_pattern_catches_the_exact_bug_that_shipped():
     """The literal that was in W-X2_xs_widening.py:74."""
-    line = 'REPO = "/Users/julian_dev/Documents/code/hermes-trader"'
+    line = 'REPO = "/Users/julian_dev/Documents/code/pathia"'
     assert checker.PATTERN.search(line) is not None
 
 
@@ -34,7 +34,7 @@ def test_the_pattern_catches_a_linux_home_too():
 def test_the_pattern_leaves_machine_independent_paths_alone():
     """/tmp and /usr/local exist on any box — flagging them would make the
     check noisy enough that someone turns it off."""
-    for ok in ('X = "/tmp/hermes/state.json"',
+    for ok in ('X = "/tmp/pathia/state.json"',
                'BIN = "/usr/local/bin/claude"',
                'p = Path(__file__).resolve().parents[1]'):
         assert checker.PATTERN.search(ok) is None, ok
@@ -95,7 +95,7 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
     """
     import re
 
-    gone = ("polymarket_scout", "hermes_trader/v2/", "xs_momentum_live",
+    gone = ("polymarket_scout", "pathia/v2/", "xs_momentum_live",
             "extreme_fade_live", "--sample-daemon")
     # Every operator-facing doc, not just the two at the root. docs/LOGGING.md
     # documented `logs/polymarket_scout.log` and a `restart.sh sampler` action

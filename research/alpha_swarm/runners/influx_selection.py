@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
+SCR = Path("/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/02a15a26-058b-42af-a0f8-8bc0ce9ab5f5/scratchpad")
 DS = SCR / "movers_5m.json"
 O, H, L, C, V = 1, 2, 3, 4, 5
 TR = 6           # trailing window for influx ratio

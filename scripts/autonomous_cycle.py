@@ -56,7 +56,7 @@ if _ENV.is_file():
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from hermes_trader.agents import shadow_ledger as SL  # noqa: E402
+from pathia.agents import shadow_ledger as SL  # noqa: E402
 
 MIN_N = 8
 NULL_DRAWS = 2000
@@ -336,7 +336,7 @@ def apply_action(cfg: Dict[str, Any], book: str, action: str) -> bool:
     return False
 
 
-_DEADLINE_S = int(os.environ.get("HERMES_CYCLE_DEADLINE_S", "1500"))  # 25 min
+_DEADLINE_S = int(os.environ.get("PATHIA_CYCLE_DEADLINE_S", "1500"))  # 25 min
 
 
 def _diagnose_slowness() -> str:
@@ -351,8 +351,8 @@ def _diagnose_slowness() -> str:
     """
     bits = []
     try:
-        # Same PID file hermes_trader.server writes and reads.
-        pid_file = os.path.expanduser("~/.hermes-trader.pid")
+        # Same PID file pathia.server writes and reads.
+        pid_file = os.path.expanduser("~/.pathia.pid")
         running = False
         if os.path.exists(pid_file):
             try:
@@ -366,7 +366,7 @@ def _diagnose_slowness() -> str:
     except Exception:
         bits.append("could not determine whether the live loop is running")
     try:
-        from hermes_trader.agents import perception
+        from pathia.agents import perception
         st = perception.last_scan_integrity()
         if st.get("ts"):
             bits.append(f"last scan feed gap {float(st.get('gap_frac') or 0) * 100:.0f}%"
@@ -425,8 +425,8 @@ def main() -> int:
     # not retry as hard as the live loop (which retries 6x to never miss a
     # setup). Fewer retries = far less contention amplification when the cycle
     # and the loop hit HL at once.
-    os.environ.setdefault("HERMES_CANDLE_RETRIES", "2")
-    os.environ.setdefault("HERMES_CANDLE_BACKOFF_CAP_S", "2")
+    os.environ.setdefault("PATHIA_CANDLE_RETRIES", "2")
+    os.environ.setdefault("PATHIA_CANDLE_BACKOFF_CAP_S", "2")
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true")

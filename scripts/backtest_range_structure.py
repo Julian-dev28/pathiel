@@ -36,7 +36,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from hermes_trader.indicators.range_structure import (  # noqa: E402
+from pathia.indicators.range_structure import (  # noqa: E402
     C,
     H,
     HOUR_MS,
@@ -51,7 +51,7 @@ from hermes_trader.indicators.range_structure import (  # noqa: E402
 )
 
 SCRATCH = Path(
-    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-hermes-trader/"
+    "/private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/"
     "f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad"
 )
 HOURLY_CACHE = SCRATCH / "hourly_ext.json"
@@ -551,7 +551,7 @@ def stage_daily(rng: random.Random) -> dict:
         data = json.loads(DAILY_CACHE.read_text())
     else:
         import time as _time
-        from hermes_trader.client.hl_client import fetch_hl_candles
+        from pathia.client.hl_client import fetch_hl_candles
         data = {}
         for coin in ("BTC", "ETH", "SOL"):
             cs = fetch_hl_candles(coin, "1d", 5000)

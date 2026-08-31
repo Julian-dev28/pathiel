@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "research" / "alpha_swarm" / "lib"))
 import alpha_lib as A  # noqa: E402
-from hermes_trader.client.hl_client import fetch_hl_candles  # noqa: E402
+from pathia.client.hl_client import fetch_hl_candles  # noqa: E402
 
 SEED = 20260723
 O, H_, L_, C, V = 1, 2, 3, 4, 5

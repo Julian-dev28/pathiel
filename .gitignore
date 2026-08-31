@@ -74,7 +74,7 @@ python-service/research_cache.json
 logs/
 python-service/logs/
 
-# Hermes-Trader runtime state (per-strategy timers, position claims, telemetry —
+# Pathia-Trader runtime state (per-strategy timers, position claims, telemetry —
 # generated at runtime, never source). The bot recreates these on start.
 # alpha_swarm candle dataset — 17MB data, rebuild with research/alpha_swarm/lib/build_dataset.py
 research/alpha_swarm/dataset.json
@@ -141,7 +141,7 @@ backtest-trades.csv
 *.bak3-*
 *.bak2
 
-# --- Hermes Python bot: runtime state / research caches / scratch (generated, not source) ---
+# --- Pathia Python bot: runtime state / research caches / scratch (generated, not source) ---
 # self-collected runtime time-series + shadow/tracker state (per-machine, never commit)
 .oi-timeseries.jsonl
 .volstop-shadow.json
@@ -164,7 +164,7 @@ backtest-trades.csv
 .bt_funding_cache.json
 .catalyst_gdelt_cache.json
 
-# consolidated runtime state dir (HERMES_STATE_DIR, 2026-07-09)
+# consolidated runtime state dir (PATHIA_STATE_DIR, 2026-07-09)
 .state/
 
 # W-U re-fetchable data caches (regenerate: W-U1_unlock_backtest.py)

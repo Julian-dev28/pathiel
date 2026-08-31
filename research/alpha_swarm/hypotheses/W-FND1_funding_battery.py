@@ -43,7 +43,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from hermes_trader.client.hl_client import (fetch_funding_history,  # noqa: E402
+from pathia.client.hl_client import (fetch_funding_history,  # noqa: E402
                                             fetch_hl_candles)
 
 COINS = ("BTC", "ETH", "SOL", "BNB", "XRP")

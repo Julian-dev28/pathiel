@@ -1,9 +1,9 @@
 # Audit data sources (read-only — never touch live code/loop)
 
-Python: `/Users/julian_dev/Documents/code/hermes-trader/.venv/bin/python` (needs `.env.local` loaded for API).
-Load env: read `/Users/julian_dev/Documents/code/hermes-trader/.env.local`, set each `K=V` into os.environ.
+Python: `/Users/julian_dev/Documents/code/pathia/.venv/bin/python` (needs `.env.local` loaded for API).
+Load env: read `/Users/julian_dev/Documents/code/pathia/.env.local`, set each `K=V` into os.environ.
 
-## Session log (the "activity feed") — `~/.hermes-trader-session-log.jsonl`
+## Session log (the "activity feed") — `~/.pathia-session-log.jsonl`
 86MB / ~368k JSONL events. PARSE EFFICIENTLY: stream line-by-line, filter by `event`, focus a RECENT
 window (last ~10-14 days by `ts` ms) so the forward-fetch is bounded and the behavior is current. Dedupe coins.
 Event shapes (keys vary; guard with .get):
@@ -19,7 +19,7 @@ Event shapes (keys vary; guard with .get):
 
 ## Fills / realized PnL (HL API)
 ```python
-from hermes_trader.client.hl_client import resolve_user_address, _http_post, fetch_hl_candles
+from pathia.client.hl_client import resolve_user_address, _http_post, fetch_hl_candles
 addr = resolve_user_address()
 fills = _http_post('/info', {'type':'userFillsByTime','user':addr,'startTime': since_ms})
 # each fill: {coin, dir ('Open Long'/'Close Long'/'Open Short'/'Close Short'), px, sz, closedPnl, fee, time, oid}

@@ -6,7 +6,7 @@ Usage: python3 scripts/news.py "Iran peace deal"        # GDELT catalyst scan
        python3 scripts/news.py NVDA --timespan 3h
 """
 import sys
-from hermes_trader.agents.news_catalyst import catalyst_scan, rss_headlines
+from pathia.agents.news_catalyst import catalyst_scan, rss_headlines
 
 
 def main():

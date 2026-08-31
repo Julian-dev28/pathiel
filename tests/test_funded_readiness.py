@@ -17,10 +17,10 @@ import json
 import os
 from pathlib import Path
 
-import hermes_trader.dashboard as db
-from hermes_trader.agents import shadow_ledger as SL
-from hermes_trader.agents.config_store import read_agent_config
-from hermes_trader.agents.universe import in_allowlist
+import pathia.dashboard as db
+from pathia.agents import shadow_ledger as SL
+from pathia.agents.config_store import read_agent_config
+from pathia.agents.universe import in_allowlist
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(
@@ -65,13 +65,13 @@ def test_reachability_is_computed_from_the_ledger(tmp_path, monkeypatch):
     """The mechanism, on synthetic data.
 
     Deliberately NOT asserted against the operator's live ledgers: pytest
-    isolates HERMES_STATE_DIR so the suite cannot read live state, and a test
+    isolates PATHIA_STATE_DIR so the suite cannot read live state, and a test
     reaching for it would assert on the machine rather than the code. Reading
     live state is the preflight's job — it loads .env.local first.
     """
     # rebalancer_owned captures _STATE_DIR at IMPORT time, so setenv here is
     # too late — patch the resolved value, which is what state_file() reads.
-    import hermes_trader.agents.rebalancer_owned as ro
+    import pathia.agents.rebalancer_owned as ro
     monkeypatch.setattr(ro, "_STATE_DIR", str(tmp_path))
     d = tmp_path / "shadow_ledger"
     d.mkdir(parents=True)
@@ -91,7 +91,7 @@ def test_no_allowlist_means_full_reachability():
 def test_a_book_with_no_history_is_unmeasurable_not_zero(tmp_path, monkeypatch):
     """Missing history must read as 'cannot assess', never as 'blocked' — the
     two demand opposite responses."""
-    import hermes_trader.agents.rebalancer_owned as ro
+    import pathia.agents.rebalancer_owned as ro
     monkeypatch.setattr(ro, "_STATE_DIR", str(tmp_path))
     (tmp_path / "shadow_ledger").mkdir(parents=True)
     assert _reachability("nonexistent", ["BTC"]) is None
@@ -117,7 +117,7 @@ def test_margin_headroom_knows_what_all_books_cost():
         c = cfg.get(book) or cfg.get("unlock_short") or {}
         total += float(c.get("notional_usd", 0) or 0) / max(1, int(c.get("leverage", 1) or 1))
     assert total > 0, "no book declares a notional — sizing is unknowable"
-    from hermes_trader.agents.executor import MIN_TRADABLE_EQUITY_USD
+    from pathia.agents.executor import MIN_TRADABLE_EQUITY_USD
     assert total > MIN_TRADABLE_EQUITY_USD, (
         "the dust floor now covers every book simultaneously — if that is "
         "deliberate, this test should be updated to say so")
@@ -132,7 +132,7 @@ def test_the_floor_covers_every_enabled_book():
 
     The floor is now what the enabled book set actually costs.
     """
-    from hermes_trader.agents.executor import (book_margin_requirement,
+    from pathia.agents.executor import (book_margin_requirement,
                                                min_tradable_equity)
     cfg = read_agent_config()
     need = book_margin_requirement(cfg)
@@ -147,7 +147,7 @@ def test_a_gate_relaxation_is_not_counted_as_a_book():
     `notional_usd` alone also matches gate relaxations like thin_short_relax,
     which carries a notional it applies to but opens no position. Counting it
     inflated the requirement from $88.89 to $111.11."""
-    from hermes_trader.agents.executor import book_margin_requirement
+    from pathia.agents.executor import book_margin_requirement
     base = {"min_available_margin_pct": 0.0,
             "a_book": {"enabled": True, "notional_usd": 20.0, "leverage": 1,
                        "shadow_only": False}}
@@ -158,7 +158,7 @@ def test_a_gate_relaxation_is_not_counted_as_a_book():
 
 
 def test_a_disabled_book_costs_nothing():
-    from hermes_trader.agents.executor import book_margin_requirement
+    from pathia.agents.executor import book_margin_requirement
     cfg = {"min_available_margin_pct": 0.0,
            "off": {"enabled": False, "notional_usd": 20.0, "leverage": 1,
                    "shadow_only": False}}
@@ -166,7 +166,7 @@ def test_a_disabled_book_costs_nothing():
 
 
 def test_leverage_reduces_the_requirement():
-    from hermes_trader.agents.executor import book_margin_requirement
+    from pathia.agents.executor import book_margin_requirement
     cfg = {"min_available_margin_pct": 0.0,
            "b": {"enabled": True, "notional_usd": 20.0, "leverage": 4,
                  "shadow_only": False}}
@@ -175,7 +175,7 @@ def test_leverage_reduces_the_requirement():
 
 def test_an_explicit_override_still_wins():
     """Deliberate small-account testing must stay possible."""
-    from hermes_trader.agents.executor import min_tradable_equity
+    from pathia.agents.executor import min_tradable_equity
     cfg = dict(read_agent_config(), min_tradable_equity_usd=5.0)
     assert min_tradable_equity(cfg) == 5.0
 
@@ -183,6 +183,6 @@ def test_an_explicit_override_still_wins():
 def test_the_exchange_minimum_is_the_backstop():
     """With no books configured the floor falls back to the exchange minimum,
     never to zero."""
-    from hermes_trader.agents.executor import (MIN_TRADABLE_EQUITY_USD,
+    from pathia.agents.executor import (MIN_TRADABLE_EQUITY_USD,
                                                min_tradable_equity)
     assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD

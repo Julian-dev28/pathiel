@@ -1,5 +1,5 @@
 """Test isolation: redirect agent state files to a throwaway temp dir BEFORE any
-hermes module imports, so a test can never read or truncate the live
+pathia module imports, so a test can never read or truncate the live
 .agent-memory.json / .agent-config.json (a pytest run wiped live trading state
 on 2026-06-15). This runs at conftest import — before test modules are collected,
 hence before memory.py / config_store.py freeze their module-level paths.
@@ -8,17 +8,17 @@ hence before memory.py / config_store.py freeze their module-level paths.
 import os
 import tempfile
 
-_tmp = tempfile.mkdtemp(prefix="hermes-test-state-")
+_tmp = tempfile.mkdtemp(prefix="pathia-test-state-")
 # Force (not setdefault): even if the dev shell exports these, tests must use
 # disposable paths.
-os.environ["HERMES_AGENT_MEMORY_FILE"] = os.path.join(_tmp, ".agent-memory.json")
-os.environ["HERMES_AGENT_CONFIG_FILE"] = os.path.join(_tmp, ".agent-config.json")
-os.environ["HERMES_DSL_STATE_FILE"] = os.path.join(_tmp, ".dsl-state.json")
+os.environ["PATHIA_AGENT_MEMORY_FILE"] = os.path.join(_tmp, ".agent-memory.json")
+os.environ["PATHIA_AGENT_CONFIG_FILE"] = os.path.join(_tmp, ".agent-config.json")
+os.environ["PATHIA_DSL_STATE_FILE"] = os.path.join(_tmp, ".dsl-state.json")
 # Rebalancer state files (timers, owned-position sets, the claims registry, vol-managed history,
-# pairs state) all route through rebalancer_owned.state_file(), which honors HERMES_STATE_DIR.
+# pairs state) all route through rebalancer_owned.state_file(), which honors PATHIA_STATE_DIR.
 # Point it at the temp dir so the suite never pollutes the live .rebalancer_claims.json /
 # .*_positions.json / *_ts / .xs_volmgd_history (builder tests wrote fake coins to these 2026-06-24).
-os.environ["HERMES_STATE_DIR"] = _tmp
+os.environ["PATHIA_STATE_DIR"] = _tmp
 # Session log too: session_log.py freezes SESSION_LOG_PATH at import. This was the ONE
 # state file not redirected — pytest wrote fabricated C1/C2/C3 book events into the LIVE
 # activity feed, which pnl_by_book attribution reads (audit 2026-07-09).
@@ -35,7 +35,7 @@ def _reset_claims_registry():
     successful open leaves a persisted claim that blocks another book's claim in a later
     file (engulf/premium failed only when run after vol_breakout/neg_funding). Resets the
     in-memory singleton AND the temp claims file before and after every test."""
-    import hermes_trader.agents.rebalancer_owned as ro
+    import pathia.agents.rebalancer_owned as ro
 
     def _clear():
         ro._claims_registry = None

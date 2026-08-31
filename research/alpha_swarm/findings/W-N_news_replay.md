@@ -107,11 +107,11 @@ decision numbers can be regenerated with:
 W-N2 fails the wire gates, so per mandate the deliverable is the recorder.
 GDELT cannot provide the history; live Google News RSS accrues it forward.
 
-- **New file** `hermes_trader/agents/news_catalyst_live.py`, self-contained,
+- **New file** `pathia/agents/news_catalyst_live.py`, self-contained,
   copy the young_listings lane pattern (`young_listings_live.py:236
   maybe_run(config, universe, positions, ...)`).
 - **Hook**: `scripts/trading_loop.py` next to the existing lane import at
-  line 65 (`from hermes_trader.agents.young_listings_live import maybe_run`),
+  line 65 (`from pathia.agents.young_listings_live import maybe_run`),
   same call site cadence, throttled to one pass per 30 min via a
   `state_file(".news_catalyst_live_ts")` timestamp (pattern:
   `young_listings_live.py:38`).

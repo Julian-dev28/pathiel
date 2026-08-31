@@ -1,0 +1,45 @@
+# Local dev stack: FastAPI service + Postgres.
+# Secrets stay out of the image — they're injected as env at run time.
+# Override POSTGRES_PASSWORD via a shell env / .env file for anything real.
+
+services:
+  api:
+    build: .
+    image: pathia-data-api:local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PATHIA_ENV: dev
+      PATHIA_LOG_LEVEL: INFO
+      PATHIA_RATE_LIMIT_PER_MIN: "500"
+      # Point the app at the postgres service on the compose network.
+      PATHIA_DATABASE_URL: "postgresql+psycopg2://pathia:${POSTGRES_PASSWORD:-pathia_dev_pw}@db:5432/pathia"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pathia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pathia_dev_pw}
+      POSTGRES_DB: pathia
+    volumes:
+      - pathia_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pathia -d pathia"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pathia_pgdata:
