@@ -174,6 +174,71 @@ def transition(name: str, holds: bool, for_s: float, pending_since: Optional[flo
     return "pending", since
 
 
+# ── annotation templates ────────────────────────────────────────────────────
+# The rules are written for Prometheus, whose annotations are Go templates.
+# Prometheus substitutes them; nothing did here, so the first alert this
+# evaluator ever delivered read "Max drawdown {{ $value }}% over the risk
+# window" — delivered, logged, notified, and useless. An alert a human cannot
+# read is not much better than one that never fires.
+#
+# The subset below is exactly what the rules use. An unrecognised template is
+# LEFT INTACT and reported, never silently blanked: a summary quietly missing
+# its number reads as a complete sentence and hides the omission.
+
+_DUR_UNITS = ((86400, "d"), (3600, "h"), (60, "m"), (1, "s"))
+
+
+def humanize_duration(seconds: float) -> str:
+    """Prometheus' humanizeDuration, close enough for a notification."""
+    seconds = abs(float(seconds))
+    if seconds < 1:
+        return f"{seconds:.3g}s"
+    parts, left = [], int(seconds)
+    for size, suffix in _DUR_UNITS:
+        if left >= size:
+            parts.append(f"{left // size}{suffix}")
+            left %= size
+        if len(parts) == 2:
+            break
+    return " ".join(parts) or "0s"
+
+
+def humanize_percentage(value: float) -> str:
+    return f"{float(value) * 100:.4g}%"
+
+
+def render(text: str, expr: str, samples: Dict[str, float]) -> Tuple[str, bool]:
+    """Substitute the annotation templates. Returns (text, fully_rendered)."""
+    import re
+
+    metrics = metrics_referenced(expr)
+    value = samples.get(metrics[0]) if metrics else None
+
+    def _fmt(v: float, pipe: str) -> str:
+        if "humanizeDuration" in pipe:
+            return humanize_duration(v)
+        if "humanizePercentage" in pipe:
+            return humanize_percentage(v)
+        return f"{v:.4g}"
+
+    # {{ with query "metric" }}{{ . | first | value | fn }}{{ end }}
+    def _with_query(m):
+        name, inner = m.group(1), m.group(2)
+        if name not in samples:
+            return m.group(0)
+        return _fmt(samples[name], inner)
+
+    text = re.sub(r'\{\{\s*with query "([a-zA-Z_][a-zA-Z0-9_]*)"\s*\}\}'
+                  r'(.*?)\{\{\s*end\s*\}\}', _with_query, text, flags=re.S)
+
+    if value is not None:
+        text = re.sub(r"\{\{\s*\$value\s*(\|[^}]*)?\}\}",
+                      lambda m: _fmt(value, m.group(1) or ""), text)
+
+    text = " ".join(text.split())
+    return text, "{{" not in text
+
+
 def notify(title: str, message: str) -> None:
     """Best effort, never fatal. A failed notification must not stop the other
     alerts from being delivered."""
@@ -231,7 +296,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         entry: Dict[str, Any] = {"firing": st in ("firing", "started_firing"),
                                  "pending_since": since,
                                  "severity": (rule.get("labels") or {}).get("severity", "warning")}
-        summary = (rule.get("annotations") or {}).get("summary", name)
+        raw_summary = (rule.get("annotations") or {}).get("summary", name)
+        summary, rendered = render(raw_summary, rule["expr"], samples)
+        if not rendered:
+            errors.append(f"{name}: summary has a template this evaluator "
+                          f"cannot render: {summary}")
         if st == "started_firing":
             entry["since"] = now
             notify(f"hermes {entry['severity']}: {name}", summary)

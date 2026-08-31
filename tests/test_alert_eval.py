@@ -190,3 +190,70 @@ def test_end_to_end_against_live_rules_writes_state(tmp_path, monkeypatch):
     before = len(sent)
     A.main(["--quiet"])
     assert len(sent) == before, "a standing alert re-notified"
+
+
+# ── annotation rendering ─────────────────────────────────────────────────────
+
+def test_every_shipped_annotation_renders_completely():
+    """The rules are Go templates. Prometheus substitutes them; nothing did
+    here, so the first alert this evaluator ever delivered read "Max drawdown
+    {{ $value }}% over the risk window" — delivered, logged, notified, and
+    useless. An alert a human cannot read is barely better than one that never
+    fires. This fails if a rule is written with a template the evaluator does
+    not handle."""
+    samples = _samples_satisfying_every_rule()
+    unrendered = []
+    for rule in A.load_rules():
+        text, ok = A.render(rule["annotations"]["summary"], rule["expr"], samples)
+        if not ok:
+            unrendered.append(f"{rule['alert']}: {text}")
+    assert not unrendered, "\n".join(unrendered)
+
+
+@pytest.mark.parametrize("seconds,expected", [
+    (5400, "1h 30m"), (900, "15m"), (86400 * 2 + 3600, "2d 1h"), (45, "45s"),
+])
+def test_duration_humanising(seconds, expected):
+    assert A.humanize_duration(seconds) == expected
+
+
+def test_percentage_humanising():
+    assert A.humanize_percentage(0.75) == "75%"
+    assert A.humanize_percentage(0.0) == "0%"
+
+
+def test_the_raw_value_is_substituted():
+    text, ok = A.render("Max drawdown {{ $value }}% over the risk window",
+                        "hermes_max_drawdown_pct < -25",
+                        {"hermes_max_drawdown_pct": -94.78})
+    assert ok and "-94.78%" in text and "{{" not in text
+
+
+def test_a_with_query_block_pulls_a_different_metric():
+    text, ok = A.render(
+        '{{ with query "hermes_feed_gap_fraction" }}'
+        '{{ . | first | value | humanizePercentage }}{{ end }} unreadable',
+        "hermes_feed_trustworthy == 0",
+        {"hermes_feed_trustworthy": 0.0, "hermes_feed_gap_fraction": 0.75})
+    assert ok and text == "75% unreadable"
+
+
+def test_an_unrenderable_template_is_left_intact_and_reported():
+    """Blanking it would produce a complete-looking sentence that quietly lost
+    its number — the omission would be invisible."""
+    text, ok = A.render("saw {{ $labels.instance }} misbehaving",
+                        "hermes_can_trade == 0", {"hermes_can_trade": 0.0})
+    assert ok is False
+    assert "{{ $labels.instance }}" in text
+
+
+def test_an_unrenderable_summary_makes_the_run_report_an_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "STATE", str(tmp_path / "a.json"))
+    monkeypatch.setattr(A, "ALERT_LOG", str(tmp_path / "a.log"))
+    monkeypatch.setattr(A, "notify", lambda *a, **k: None)
+    monkeypatch.setattr(A, "scrape", lambda *a, **k: {"hermes_can_trade": 0.0})
+    monkeypatch.setattr(A, "load_rules", lambda *a, **k: [{
+        "alert": "Bogus", "expr": "hermes_can_trade == 0", "for": "0s",
+        "labels": {"severity": "warning"},
+        "annotations": {"summary": "broken {{ $labels.pod }}"}}])
+    assert A.main(["--quiet"]) == 2, "an unreadable alert must not report clean"
