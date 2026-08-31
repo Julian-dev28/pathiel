@@ -103,6 +103,32 @@ spec:
               The rotator should hold this under its directory cap. If it is
               growing anyway the rotator is not running.
 
+        # Who watches the watchers. Every alert above needs the evaluator to
+        # still be running; every restart needs the supervisor to still be
+        # running. Both are scheduler jobs, and both would stop the same silent
+        # way — by simply not happening.
+        - alert: HermesSupervisionStale
+          expr: hermes_supervisor_age_seconds > 900
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Process supervisor has not run in {{ $value | humanizeDuration }}"
+            description: >-
+              Nothing is restarting dead processes. The trading loop revives the
+              scheduler and the scheduler revives everything else, so both sides
+              of that are down. Check `scripts/restart.sh status`.
+
+        - alert: HermesAlertingStale
+          expr: hermes_alert_eval_age_seconds > 900
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "Alert evaluator has not run in {{ $value | humanizeDuration }}"
+            description: >-
+              Nothing is delivering these alerts. Under Prometheus this rule is
+              redundant; on the local evaluator it is the one alert that cannot
+              page for itself, so it also shows in `scripts/preflight_live.py`.
+
         # Not a system fault — a money fault. Worth a human looking.
         - alert: HermesDeepDrawdown
           expr: hermes_max_drawdown_pct < -25

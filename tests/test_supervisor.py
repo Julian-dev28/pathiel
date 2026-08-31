@@ -311,3 +311,115 @@ def test_concurrent_supervisors_do_not_share_a_state_file(tmp_path, monkeypatch)
     assert (tmp_path / "sup_scheduler.json").exists()
     assert json.loads((tmp_path / "sup.json").read_text())["checked"] == \
         sorted(S.DEFAULT_COMPONENTS)
+
+
+# ── state paths must agree by construction, not by coincidence ───────────────
+
+def test_the_writers_and_the_reader_resolve_the_same_state_dir(monkeypatch, tmp_path):
+    """The supervisor, the alert evaluator, restart.sh's halt marker and the
+    metrics reader all touch the same files. They were briefly hardcoded to
+    <root>/.state, which happened to equal the live HERMES_STATE_DIR and
+    differed everywhere else — the reader looked in one place while the writers
+    used another, and each side looked correct on its own.
+    """
+    import importlib
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    sup = _load()                                    # re-reads the env
+    alerts = importlib.util.spec_from_file_location(
+        "alert_eval2", os.path.join(ROOT, "scripts", "alert_eval.py"))
+    am = importlib.util.module_from_spec(alerts)
+    alerts.loader.exec_module(am)
+
+    import hermes_trader.agents.rebalancer_owned as ro
+    importlib.reload(ro)
+
+    assert sup.STATE == ro.state_file("supervisor.json")
+    assert sup.HALT_FILE == ro.state_file("supervisor_halt.json")
+    assert am.STATE == ro.state_file("alerts.json")
+    importlib.reload(ro)                             # restore for other tests
+
+
+def test_restart_sh_writes_the_halt_marker_where_the_supervisor_looks():
+    """A halt marker written somewhere the supervisor does not read is a kill
+    switch that silently does nothing."""
+    src = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
+    line = next(ln for ln in src.splitlines() if ln.startswith("HALT_FILE="))
+    assert "HERMES_STATE_DIR" in line, (
+        "restart.sh must honour HERMES_STATE_DIR like the supervisor does")
+    assert "/.state/" not in line, "hardcoded .state/ drifts from the reader"
+
+
+def test_watcher_health_is_exported_and_alerted_on():
+    """Supervision and alerting can stop the same silent way as everything else
+    they watch."""
+    import yaml
+
+    from hermes_trader import metrics
+    metrics._refresh()
+    body = metrics.generate_latest(metrics.REGISTRY).decode()
+    for m in ("hermes_supervisor_age_seconds", "hermes_alert_eval_age_seconds",
+              "hermes_alerts_firing"):
+        assert m in body, f"{m} is not exported"
+
+    doc = yaml.safe_load(open(os.path.join(ROOT, "k8s", "prometheusrule.yaml")))
+    names = {r["alert"] for g in doc["spec"]["groups"] for r in g["rules"]}
+    assert {"HermesSupervisionStale", "HermesAlertingStale"} <= names
+
+
+def test_a_missing_watcher_state_file_reads_as_maximally_stale(monkeypatch, tmp_path):
+    """0 would read as 'ran just now' — the exact inversion that let a dead
+    feed report healthy."""
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    import importlib
+
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    importlib.reload(ro)
+    metrics._refresh()
+    assert metrics.SUPERVISOR_AGE._value.get() > 900
+    assert metrics.ALERT_EVAL_AGE._value.get() > 900
+    importlib.reload(ro)
+
+
+def test_preflight_reports_watcher_health():
+    import ast
+    src = open(os.path.join(ROOT, "scripts", "preflight_live.py")).read()
+    tree = ast.parse(src)
+    assert any(isinstance(n, ast.FunctionDef) and n.name == "check_watchers"
+               for n in tree.body)
+    main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
+    assert "check_watchers" in (ast.get_source_segment(src, main) or ""), \
+        "check_watchers is defined but never run"
+
+
+def test_a_fresh_watcher_state_file_reports_a_small_age(monkeypatch, tmp_path):
+    """The happy path, which is the half that broke.
+
+    The staleness block caught every exception and fell back to the sentinel,
+    so an ImportError inside it — `hermes_trader.agents.paths`, a module that
+    does not exist — looked exactly like "the supervisor has never run". Both
+    metrics read 1e6 on a live box whose supervisor had run 74 seconds earlier,
+    and the only test covering them asserted the sentinel. A metric that can
+    only ever report the failure value is not a metric.
+    """
+    import importlib
+    import json as _json
+    import time as _time
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    now = _time.time()
+    (tmp_path / "supervisor.json").write_text(_json.dumps({"ts": now}))
+    (tmp_path / "alerts.json").write_text(
+        _json.dumps({"ts": now, "firing": ["HermesLoopDead"]}))
+
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    importlib.reload(ro)
+    try:
+        metrics._refresh()
+        assert metrics.SUPERVISOR_AGE._value.get() < 60
+        assert metrics.ALERT_EVAL_AGE._value.get() < 60
+        assert metrics.ALERTS_FIRING._value.get() == 1
+    finally:
+        importlib.reload(ro)

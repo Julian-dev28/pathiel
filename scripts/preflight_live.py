@@ -241,6 +241,38 @@ def check_disk(r: Report) -> None:
         r.ok("disk", f"{gb:.1f}GB free, logs {g.log_dir_bytes / 1e6:.0f}MB")
 
 
+def check_watchers(r: Report) -> None:
+    """Are supervision and alerting themselves still running?
+
+    Both are scheduler jobs. HermesSupervisionStale and HermesAlertingStale
+    cover them under Prometheus, but the local evaluator cannot page for its
+    own death — so it is reported here, where a human is already looking.
+    """
+    import time
+
+    from hermes_trader.agents.atomic_io import read_json
+    from hermes_trader.agents.rebalancer_owned import state_file
+
+    for label, name, why in (
+        ("supervision", "supervisor.json", "dead processes stay dead"),
+        ("alerting", "alerts.json", "no alert is being delivered"),
+    ):
+        payload = read_json(state_file(name), default=None)
+        ts = float((payload or {}).get("ts") or 0)
+        if ts <= 0:
+            r.warn(label, f"has never run — {why}. Start with scripts/restart.sh sched")
+            continue
+        age = time.time() - ts
+        if age > 900:
+            r.block(label, f"last ran {age / 60:.0f} min ago — {why}",
+                    "scripts/restart.sh sched")
+        else:
+            r.ok(label, f"ran {age / 60:.0f} min ago")
+    firing = (read_json(state_file("alerts.json"), default=None) or {}).get("firing") or []
+    if firing:
+        r.warn("alerts firing", ", ".join(firing))
+
+
 def check_processes(r: Report) -> None:
     """Is each managed process actually up?
 
@@ -270,7 +302,7 @@ def main(argv=None) -> int:
     r = Report()
     for check in (check_secrets, check_brain, check_capital, check_books,
                   check_book_reachability, check_margin_headroom,
-                  check_feed, check_disk, check_processes):
+                  check_feed, check_disk, check_processes, check_watchers):
         try:
             check(r)
         except Exception as exc:                    # a broken check is a finding

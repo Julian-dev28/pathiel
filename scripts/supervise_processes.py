@@ -42,8 +42,17 @@ import time
 from typing import Any, Dict, List, Tuple
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STATE = os.path.join(ROOT, ".state", "supervisor.json")
-HALT_FILE = os.path.join(ROOT, ".state", "supervisor_halt.json")
+# State lives where every other component's state lives. The canonical rule is
+# hermes_trader.agents.rebalancer_owned.state_file(): HERMES_STATE_DIR, else the
+# project root. Replicated (not imported) so this stays a dependency-free script
+# the scheduler can run without loading the agents package — and pinned by
+# tests/test_supervisor.py so the two can never drift. They were briefly
+# hardcoded to <root>/.state, which agreed with the live value by coincidence
+# and disagreed everywhere else: the metrics reader looked in one place while
+# these wrote to another, and both sides looked fine in isolation.
+STATE_DIR = os.environ.get("HERMES_STATE_DIR") or ROOT
+STATE = os.path.join(STATE_DIR, "supervisor.json")
+HALT_FILE = os.path.join(STATE_DIR, "supervisor_halt.json")
 RESTART_SH = os.path.join(ROOT, "scripts", "restart.sh")
 
 MAX_RESTARTS = 3

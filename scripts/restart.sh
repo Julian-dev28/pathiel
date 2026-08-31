@@ -77,7 +77,10 @@ err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 # `stoploop` as a kill switch — the one control that has to work. So every
 # stop-and-stay-stopped action records its component here, and every start
 # clears it. The marker is the operator's intent; the supervisor obeys it.
-HALT_FILE="$ROOT/.state/supervisor_halt.json"
+# Must match STATE_DIR in scripts/supervise_processes.py — HERMES_STATE_DIR,
+# else the project root. A halt marker written where the supervisor does not
+# look is a kill switch that silently does nothing.
+HALT_FILE="${HERMES_STATE_DIR:-$ROOT}/supervisor_halt.json"
 
 halt_mark() {   # halt_mark <component>
   mkdir -p "$(dirname "$HALT_FILE")"

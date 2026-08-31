@@ -1,0 +1,15 @@
+{
+ "ts": 1788136842.1354408,
+ "checked": [
+  "loop",
+  "rotator",
+  "server"
+ ],
+ "halted": [],
+ "restarts": {},
+ "report": [
+  "[supervisor] trading loop: running",
+  "[supervisor] API server: running",
+  "[supervisor] log rotator: running"
+ ]
+}

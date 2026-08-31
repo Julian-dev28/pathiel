@@ -12,6 +12,7 @@ which is where the ops signal matters).
 from __future__ import annotations
 
 import logging
+import time
 
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Gauge, generate_latest
 
@@ -59,6 +60,20 @@ DRAWDOWN_PCT = Gauge(
     "capital flows are recorded (negative)")
 MAX_DRAWDOWN_PCT = Gauge(
     "hermes_max_drawdown_pct", "Worst drawdown over the risk window (negative)")
+# Who watches the watchers. Every metric above depends on something still
+# running to act on it. If the supervisor stops, dead processes stop being
+# restarted; if the alert evaluator stops, nothing is delivered. Both fail the
+# same silent way everything else here did — by simply not happening.
+SUPERVISOR_AGE = Gauge(
+    "hermes_supervisor_age_seconds",
+    "Seconds since the process supervisor last ran. Grows without bound when "
+    "supervision has stopped, which is when a dead process stays dead")
+ALERT_EVAL_AGE = Gauge(
+    "hermes_alert_eval_age_seconds",
+    "Seconds since the alert evaluator last ran. Nothing is being delivered "
+    "while this grows")
+ALERTS_FIRING = Gauge(
+    "hermes_alerts_firing", "Number of alert rules currently firing")
 
 
 def _to_float(value: object) -> float:
@@ -107,6 +122,32 @@ def _refresh() -> None:
         UNREALIZED_PNL.set(upnl)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] snapshot read failed: {e}")
+
+    # `_never_ran` is a large sentinel, not 0: "no supervisor state file" must
+    # read as maximally stale, never as "ran just now". Same reason the
+    # heartbeat uses one.
+    _never_ran = 10 ** 6
+    for gauge, name in ((SUPERVISOR_AGE, "supervisor.json"),
+                        (ALERT_EVAL_AGE, "alerts.json")):
+        try:
+            from hermes_trader.agents.atomic_io import read_json
+            from hermes_trader.agents.rebalancer_owned import state_file
+
+            payload = read_json(state_file(name), default=None)
+            ts = _to_float((payload or {}).get("ts"))
+            gauge.set(time.time() - ts if ts > 0 else _never_ran)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[metrics] {name} read failed: {e}")
+            gauge.set(_never_ran)
+
+    try:
+        from hermes_trader.agents.atomic_io import read_json
+        from hermes_trader.agents.rebalancer_owned import state_file
+
+        firing = (read_json(state_file("alerts.json"), default=None) or {}).get("firing")
+        ALERTS_FIRING.set(len(firing) if isinstance(firing, list) else 0)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] alerts firing read failed: {e}")
 
     # ── the failure modes ────────────────────────────────────────────────────
     # Each block is independently guarded: one broken source must degrade a

@@ -1,0 +1,52 @@
+{
+ "ts": 1788136842.137171,
+ "firing": [],
+ "errors": [],
+ "alerts": {
+  "HermesLoopDead": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "critical"
+  },
+  "HermesFeedDegraded": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "warning"
+  },
+  "HermesLiveButCannotTrade": {
+   "firing": false,
+   "pending_since": 1788136722.111817,
+   "severity": "warning"
+  },
+  "HermesBrainUnusable": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "critical"
+  },
+  "HermesDiskLow": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "critical"
+  },
+  "HermesLogDirOversized": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "warning"
+  },
+  "HermesSupervisionStale": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "critical"
+  },
+  "HermesAlertingStale": {
+   "firing": false,
+   "pending_since": null,
+   "severity": "critical"
+  },
+  "HermesDeepDrawdown": {
+   "firing": false,
+   "pending_since": 1788136722.111817,
+   "severity": "warning"
+  }
+ }
+}

@@ -27,6 +27,27 @@ def _load(name, path):
 A = _load("alert_eval", "scripts/alert_eval.py")
 
 
+
+def _samples_satisfying_every_rule() -> dict:
+    """Metric values that make every shipped rule fire.
+
+    Derived from the rules rather than hand-written, so adding a rule cannot
+    silently stop being covered here — which is exactly what happened when
+    HermesSupervisionStale and HermesAlertingStale were added.
+    """
+    import re
+    satisfy = {">": lambda n: n + 1, ">=": lambda n: n, "<": lambda n: n - 1,
+               "<=": lambda n: n, "==": lambda n: n, "!=": lambda n: n + 1}
+    out = {}
+    for rule in A.load_rules():
+        for term in rule["expr"].split(" and "):
+            m = re.match(r"^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(>=|<=|==|!=|>|<)\s*"
+                         r"(-?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$", term)
+            assert m, f"cannot satisfy {term!r} — extend this helper with the rule"
+            out[m.group(1)] = satisfy[m.group(2)](float(m.group(3)))
+    return out
+
+
 # ── the rules the operator would evaluate are the rules we evaluate ──────────
 
 def test_every_shipped_rule_is_evaluable():
@@ -152,11 +173,7 @@ def test_end_to_end_against_live_rules_writes_state(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "ALERT_LOG", str(tmp_path / "a.log"))
     sent = []
     monkeypatch.setattr(A, "notify", lambda t, m: sent.append((t, m)))
-    bad = {"hermes_heartbeat_age_seconds": 99999, "hermes_feed_trustworthy": 0.0,
-           "hermes_live_mode": 1.0, "hermes_can_trade": 0.0,
-           "hermes_ai_brain_ready": 0.0, "hermes_disk_free_bytes": 1e9,
-           "hermes_log_dir_bytes": 9e8, "hermes_max_drawdown_pct": -94.0}
-    monkeypatch.setattr(A, "scrape", lambda *a, **k: bad)
+    monkeypatch.setattr(A, "scrape", lambda *a, **k: _samples_satisfying_every_rule())
 
     assert A.main(["--quiet"]) == 0, "first pass: everything pending, nothing fired yet"
     assert sent == []
