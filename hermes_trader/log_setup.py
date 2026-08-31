@@ -5,17 +5,18 @@ rotation thresholds and disk-guard limits, used by both the external rotator
 WHY ROTATION HAS TO LIVE OUTSIDE THE PROCESS
 ---------------------------------------------
 Every long-running hermes-trader process (``scripts/trading_loop.py``,
-``python -m hermes_trader.server``, ``scripts/scheduler.py``, the trend_engine
-sample-daemon) is started by ``scripts/restart.sh`` with shell append
-redirection::
+``python -m hermes_trader.server``, ``scripts/scheduler.py``,
+``scripts/log_rotate.py --daemon``) is started by ``scripts/restart.sh`` with
+shell append redirection::
 
     nohup "$PY" scripts/trading_loop.py >> logs/trading_loop.log 2>&1 &
 
 That ``>>`` opens the log file exactly once, in ``O_APPEND`` mode, and hands
 the resulting file descriptor to the child as fd 1 and fd 2. Everything the
 process ever emits — through the ``logging`` module, through a bare
-``print()`` (the trend_engine sample-daemon uses only ``print()``, no
-``logging`` at all), or an uncaught traceback the interpreter dumps straight
+``print()`` (``scripts/supervise_processes.py`` and
+``scripts/alert_eval.py`` use only ``print()``, no ``logging`` at all), or an
+uncaught traceback the interpreter dumps straight
 to stderr on crash — goes out through *that* fd for the entire life of the
 process.
 

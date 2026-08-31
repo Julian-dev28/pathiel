@@ -21,11 +21,14 @@ outside every process" below for why that fact drives the whole design.
 | `logs/trading_loop.log` | `scripts/trading_loop.py` | `restart.sh loop` / `restart.sh restart` |
 | `logs/server.log` | `python -m hermes_trader.server` | `restart.sh server` / `restart.sh restart` |
 | `logs/scheduler.log` | `scripts/scheduler.py`'s own stdout/stderr | `restart.sh sched` / `restart.sh restart` |
-| `logs/updown_sampler.log` | `services.trend_engine.run --sample-daemon` | `restart.sh sampler` |
 | `logs/log_rotate.log` | the log-rotator daemon itself | `restart.sh rotate` / `restart.sh restart` |
-| `logs/polymarket_scout.log` | `scheduler.py` jobs `poly-board` + `poly-judgment` (share one file — see "concurrent writers" below) | fired by the scheduler, not by restart.sh directly |
 | `logs/autonomous_cycle.log` | `scheduler.py` job `autonomous-cycle` | fired by the scheduler |
 | `logs/trend_engine.log` | `scheduler.py` jobs `trends-price` + `trends-recorders` (share one file) | fired by the scheduler |
+| `logs/capital_flows.log` | `scheduler.py` job `capital-flows` | fired by the scheduler |
+| `logs/supervisor.log` | `scheduler.py` job `supervisor` — restarts dead processes | fired by the scheduler |
+| `logs/alerts_eval.log` | `scheduler.py` job `alerts` — each evaluation pass | fired by the scheduler |
+| `logs/alerts.log` | `scripts/alert_eval.py` — one line per alert that FIRED or resolved, not per pass | written by the `alerts` job |
+| `logs/backup_state.log` | `scheduler.py` job `backup-state` | fired by the scheduler |
 
 `scheduler.py` opens each job's log fresh, in append mode, for the duration
 of that one `subprocess.run()` call (see `scripts/scheduler.py:run_job`) —
@@ -84,9 +87,8 @@ in neither the captured backup (already read) nor the truncated file
 
 ### Concurrent writers
 
-`scheduler.py` runs `poly-board` and `poly-judgment` concurrently, both
-appending to `logs/polymarket_scout.log`; same for `trends-price` /
-`trends-recorders` against `logs/trend_engine.log`. Two independent
+`scheduler.py` runs `trends-price` and `trends-recorders` concurrently, both
+appending to `logs/trend_engine.log`. Two independent
 `O_APPEND` fds both keep writing correctly after an in-place truncation —
 covered by `test_two_concurrent_open_append_fds_both_keep_writing_after_rotation`
 in `tests/test_log_rotation.py`. This is inherent to `O_APPEND` semantics on

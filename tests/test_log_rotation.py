@@ -391,3 +391,40 @@ def test_configure_logging_rotates_and_gzips(tmp_path):
         for h in list(logger.handlers):
             h.close()
             logger.removeHandler(h)
+
+
+# ── the log table must describe the logs that exist ─────────────────────────
+
+def test_every_scheduler_job_log_is_documented():
+    """docs/LOGGING.md is the map an operator reads at 3am. It listed
+    `logs/updown_sampler.log` for a `restart.sh sampler` action that does not
+    exist, and omitted the supervisor, the alert evaluator, the backup and
+    capital-flows logs entirely — four of the six jobs actually running.
+    """
+    import importlib.util
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location(
+        "sched_logs", root / "scripts" / "scheduler.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    doc = (root / "docs" / "LOGGING.md").read_text()
+    missing = [log for log in {j["log"] for j in m.JOBS.values()}
+               if f"`{log}`" not in doc]
+    assert not missing, f"docs/LOGGING.md does not mention: {missing}"
+
+
+def test_the_log_table_does_not_document_deleted_processes():
+    """A row for something that no longer exists sends the operator looking for
+    a file that will never appear."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    doc = (root / "docs" / "LOGGING.md").read_text()
+    restart = (root / "scripts" / "restart.sh").read_text()
+    for gone in ("--sample-daemon", "polymarket_scout", "poly-board",
+                 "poly-judgment"):
+        assert gone not in doc, f"docs/LOGGING.md still documents {gone}"
+    assert "restart.sh sampler" not in doc and "sampler)" not in restart

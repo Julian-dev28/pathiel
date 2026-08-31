@@ -97,7 +97,12 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
 
     gone = ("polymarket_scout", "hermes_trader/v2/", "xs_momentum_live",
             "extreme_fade_live", "--sample-daemon")
-    for doc in ("README.md", "DEPLOY.md"):
+    # Every operator-facing doc, not just the two at the root. docs/LOGGING.md
+    # documented `logs/polymarket_scout.log` and a `restart.sh sampler` action
+    # for months after both were deleted, because this loop did not look at it.
+    docs = ["README.md", "DEPLOY.md"] + sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md"))
+    for doc in docs:
         text = (ROOT / doc).read_text()
         # drop sections headed "What was removed" / "Removed" and the like
         sections = re.split(r"\n(?=#{1,3} )", text)
