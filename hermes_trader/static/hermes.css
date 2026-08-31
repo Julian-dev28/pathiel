@@ -465,6 +465,11 @@ td.num,td[class*="text-right"]{ text-align:right; }
 .strip .v.pos{ color:var(--up); } .strip .v.neg{ color:var(--down); }
 .strip .l{ font-size:11px; font-weight:600; letter-spacing:.08em;
            text-transform:uppercase; color:var(--ink-3); }
+/* An optional third line: what the figure above it means. */
+.strip .s{ font-size:12px; color:var(--ink-2); }
+/* A cell whose "value" is prose rather than a figure. */
+.strip .v.words{ font-size:15px; font-weight:600; letter-spacing:0;
+                 text-transform:capitalize; line-height:1.25; }
 
 /* Four independent log panes, stacked with air between them. */
 .deck{ display:flex; flex-direction:column; gap:20px; }

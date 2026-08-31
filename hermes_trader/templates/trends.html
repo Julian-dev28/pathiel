@@ -435,8 +435,10 @@ function renderPlaybook(lane, pb) {
 function regimeStrip(g, extra) {
   if (!g || g.status !== 'ok') return '';
   return [
-    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} ${extra} scanned`, 'vio'],
-    [`${g.bench} 7d`, pct(g.bench_ret_7d), String(g.bench_label || '').replace(/_/g, ' '), sgn(g.bench_ret_7d)],
+    // The regime cell's value is prose, not a figure — set at figure size it
+    // wrapped to two lines and dwarfed the numbers beside it.
+    ['regime', String(g.label || '').replace(/_/g, ' '), `${g.n} ${extra} scanned`, 'vio words'],
+    [`${g.bench} 7d`, pct(g.bench_ret_7d), String(g.bench_label || '').replace(/_/g, ' ').toLowerCase(), sgn(g.bench_ret_7d)],
     ['breadth', num(g.breadth_pct, 0) + '%', 'green on the week', g.breadth_pct >= 50 ? 'up' : 'dn'],
     ['trending', num(g.trend_share_pct, 0) + '%', 'rest is chop', 'mut'],
     ['dispersion', num(g.dispersion_pct, 1) + '%', 'spread of 7d returns', 'mut'],
