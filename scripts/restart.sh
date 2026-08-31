@@ -377,7 +377,7 @@ case "$action" in
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
-    halt_clear loop; halt_clear server; halt_clear rotator
+    halt_clear loop; halt_clear server; halt_clear rotator; halt_clear scheduler
     start_server
     start_loop
     start_sched
@@ -405,6 +405,7 @@ case "$action" in
     ;;
   sched|scheduler)
     stop_proc "scheduler" "$SCHED_PATTERN"
+    halt_clear scheduler
     start_sched
     show_status
     ;;
@@ -420,7 +421,7 @@ case "$action" in
     show_status
     ;;
   stop)
-    halt_mark loop; halt_mark server; halt_mark rotator
+    halt_mark loop; halt_mark server; halt_mark rotator; halt_mark scheduler
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"

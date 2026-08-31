@@ -49,12 +49,81 @@ RESTART_SH = os.path.join(ROOT, "scripts", "restart.sh")
 MAX_RESTARTS = 3
 RESTART_WINDOW_S = 3600.0
 
-# component -> (ps pattern, restart.sh action, human name)
-COMPONENTS: Dict[str, Tuple[str, str, str]] = {
-    "loop":    ("scripts/trading_loop.py",   "loop",   "trading loop"),
-    "server":  ("hermes_trader.server",      "server", "API server"),
-    "rotator": ("log_rotate.py --daemon",    "rotate", "log rotator"),
+# What each managed process actually IS, not a string that appears near it.
+#   kind "script": python running <root>/<target>
+#   kind "module": python -m <target>
+# `args` are extra flags the real process must carry (the rotator's --daemon).
+COMPONENTS: Dict[str, Dict[str, Any]] = {
+    "loop": {"kind": "script", "target": "scripts/trading_loop.py",
+             "action": "loop", "label": "trading loop"},
+    "server": {"kind": "module", "target": "hermes_trader.server",
+               "action": "server", "label": "API server"},
+    "rotator": {"kind": "script", "target": "scripts/log_rotate.py",
+                "args": ["--daemon"], "action": "rotate", "label": "log rotator"},
+    "scheduler": {"kind": "script", "target": "scripts/scheduler.py",
+                  "action": "sched", "label": "scheduler"},
 }
+
+# What a default run supervises. The scheduler is excluded because this script
+# normally runs AS the scheduler's child: restarting it would kill the process
+# doing the restarting.
+#
+# But leaving it unsupervised put the whole watch on one process — the
+# scheduler runs both this and the alert evaluator, so its death would silently
+# end supervision AND alerting at once. The trading loop is the other
+# long-lived process and it is independent, so it calls this with
+# `--components scheduler`. Scheduler watches loop, loop watches scheduler.
+DEFAULT_COMPONENTS = ("loop", "server", "rotator")
+
+
+def _command_lines() -> List[str]:
+    try:
+        r = subprocess.run(["ps", "-Ao", "command="], capture_output=True,
+                           text=True, timeout=20)
+        return [ln for ln in r.stdout.splitlines() if ln.strip()]
+    except Exception:
+        return []
+
+
+def is_the_process(cmd: str, spec: Dict[str, Any]) -> bool:
+    """Is this command line the managed process ITSELF?
+
+    Not "does the pattern appear in it". The substring version reported the log
+    rotator running one second after SIGKILL, because the invoking shell's argv
+    contained the pattern. Excluding our own process tree fixed that case and
+    introduced a worse one: when the trading loop starts the scheduler, the loop
+    is transiently the scheduler's ancestor, so the scheduler's first supervisor
+    pass subtracted the loop's pid, concluded the loop was DOWN, and restarted a
+    perfectly healthy trading loop mid-scan (2026-08-31 08:22:56, on record in
+    logs/supervisor.log).
+
+    Both bugs came from matching text near a process instead of identifying it.
+    A python daemon has an exact shape: interpreter, then either the script path
+    or `-m module`. Nothing that merely mentions the name can forge that.
+    """
+    tokens = cmd.split()
+    if len(tokens) < 2:
+        return False
+    exe = os.path.basename(tokens[0]).lower()
+    if not exe.startswith("python"):
+        return False
+    if spec["kind"] == "module":
+        return len(tokens) >= 3 and tokens[1] == "-m" and tokens[2] == spec["target"]
+    if tokens[1].startswith("-"):
+        return False                       # `-m`, `-c`, flags: not our script
+    if not tokens[1].endswith(spec["target"]):
+        return False
+    return all(a in tokens[2:] for a in spec.get("args", []))
+
+
+def alive(spec: Dict[str, Any], commands: Optional[List[str]] = None) -> bool:
+    """Is the managed process running? Unknown reads as alive: if we cannot
+    tell, restarting is the dangerous guess — it can start a SECOND trading
+    loop."""
+    lines = commands if commands is not None else _command_lines()
+    if not lines:
+        return True
+    return any(is_the_process(ln, spec) for ln in lines)
 
 
 def _read(path: str, default: Any) -> Any:
@@ -81,45 +150,6 @@ def halted() -> List[str]:
     return [str(x) for x in val] if isinstance(val, list) else []
 
 
-def _ancestors() -> set:
-    """Our own pid plus every ancestor, so we never mistake ourselves for the
-    thing we are supervising."""
-    out = set()
-    pid = os.getpid()
-    for _ in range(20):                      # bounded: no cycle can hang us
-        if pid <= 1:
-            break
-        out.add(pid)
-        try:
-            r = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
-                               capture_output=True, text=True, timeout=10)
-            pid = int(r.stdout.strip())
-        except Exception:
-            break
-    return out
-
-
-def alive(pattern: str, exclude: set | None = None) -> bool:
-    """Is a process matching `pattern` running, not counting ourselves?
-
-    A plain substring test against `ps ax` looked right and was wrong: it
-    matches ANY process whose command line merely mentions the pattern —
-    including the shell that invoked this script, and including restart.sh
-    while it is starting the very thing being checked. Caught 2026-08-31 when
-    the supervisor reported the log rotator "running" one second after it had
-    been SIGKILLed, because the test shell's own argv contained the pattern.
-
-    `pgrep -f` gives pids instead of text, so the caller's process tree can be
-    subtracted. restart.sh guards the same way for the same reason.
-    """
-    exclude = exclude if exclude is not None else _ancestors()
-    try:
-        r = subprocess.run(["pgrep", "-f", pattern], capture_output=True,
-                           text=True, timeout=15)
-    except Exception:
-        return True          # cannot tell: assume alive, never restart blind
-    pids = {int(x) for x in r.stdout.split() if x.strip().isdigit()}
-    return bool(pids - exclude)
 
 
 def _recent(history: List[float], now: float) -> List[float]:
@@ -145,11 +175,31 @@ def decide(component: str, is_alive: bool, is_halted: bool,
     return "restart", f"down, restart {len(recent) + 1} of {MAX_RESTARTS}"
 
 
+def selected(argv: List[str]) -> List[str]:
+    """Which components this invocation supervises. Unknown names are an error,
+    not a silent empty run — a typo'd `--components schedular` that supervised
+    nothing would look exactly like a healthy pass."""
+    if "--components" not in argv:
+        return list(DEFAULT_COMPONENTS)
+    names = [n for n in argv[argv.index("--components") + 1].split(",") if n]
+    unknown = [n for n in names if n not in COMPONENTS]
+    if unknown or not names:
+        raise SystemExit(
+            f"unknown component(s) {unknown or '<none given>'}; "
+            f"known: {', '.join(sorted(COMPONENTS))}")
+    return names
+
+
 def main(argv: List[str] | None = None) -> int:
-    dry = "--dry-run" in (argv if argv is not None else sys.argv[1:])
-    mine = _ancestors()
+    argv = list(argv if argv is not None else sys.argv[1:])
+    dry = "--dry-run" in argv
+    want = selected(argv)
+    commands = _command_lines()
     now = time.time()
-    state = _read(STATE, {})
+
+    state_path = (STATE if want == list(DEFAULT_COMPONENTS)
+                  else STATE.replace(".json", f"_{'-'.join(sorted(want))}.json"))
+    state = _read(state_path, {})
     hist_all: Dict[str, List[float]] = {
         k: [float(t) for t in v]
         for k, v in (state.get("restarts") or {}).items() if isinstance(v, list)
@@ -158,15 +208,17 @@ def main(argv: List[str] | None = None) -> int:
     report = []
     rc = 0
 
-    for comp, (pattern, action, label) in COMPONENTS.items():
+    for comp in want:
+        spec = COMPONENTS[comp]
+        label = spec["label"]
         history = hist_all.get(comp, [])
-        what, why = decide(comp, alive(pattern, mine), comp in down, history, now)
+        what, why = decide(comp, alive(spec, commands), comp in down, history, now)
         line = f"[supervisor] {label}: {why}"
         if what == "restart":
             if dry:
                 line += " (dry-run, not restarting)"
             else:
-                r = subprocess.run(["bash", RESTART_SH, action], cwd=ROOT,
+                r = subprocess.run(["bash", RESTART_SH, spec["action"]], cwd=ROOT,
                                    capture_output=True, text=True, timeout=180)
                 ok = r.returncode == 0
                 line += " — restarted" if ok else f" — RESTART FAILED rc={r.returncode}"
@@ -179,9 +231,9 @@ def main(argv: List[str] | None = None) -> int:
         print(line, flush=True)
 
     if not dry:
-        _write(STATE, {"ts": now, "checked": sorted(COMPONENTS),
-                       "halted": down, "restarts": hist_all,
-                       "report": report})
+        _write(state_path, {"ts": now, "checked": sorted(want),
+                            "halted": down, "restarts": hist_all,
+                            "report": report})
     return rc
 
 

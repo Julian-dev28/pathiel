@@ -17,6 +17,7 @@ Flags (tolerant — unknown flags are ignored so legacy callers keep working):
 import argparse
 import math
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -189,6 +190,43 @@ def _watchdog() -> None:
 
 threading.Thread(target=_watchdog, name="hermes-watchdog", daemon=True).start()
 logger.info(f"[watchdog] armed pre-startup: re-exec if no progress for {_watchdog_timeout_s}s")
+
+
+# ── mutual supervision: the loop watches the scheduler ──────────────────────
+# The scheduler restarts this process when it dies (scripts/supervise_processes
+# .py, run as a scheduler job). It cannot restart ITSELF — the supervisor runs
+# as its child. That put the entire watch on one process: the scheduler also
+# runs the alert evaluator, so its death would silently end supervision AND
+# alerting together, with nothing left to say so.
+#
+# This closes the circle from the other side. `supervise_processes.py` holds
+# all the logic — the halt marker so `restart.sh stop` still wins, the
+# crash-loop cap, the pgrep detector — so this is a subprocess call, not a
+# second implementation. Failure here is logged and never touches trading.
+_SUPERVISE_SCHED_S = int(os.environ.get("HERMES_SUPERVISE_SCHEDULER_S", "120"))
+
+
+def _supervise_scheduler() -> None:
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "supervise_processes.py")
+    while True:
+        time.sleep(_SUPERVISE_SCHED_S)
+        if _SUPERVISE_SCHED_S <= 0:
+            continue
+        try:
+            r = subprocess.run([sys.executable, script, "--components", "scheduler"],
+                               capture_output=True, text=True, timeout=240)
+            out = (r.stdout or "").strip()
+            if "restarted" in out or r.returncode != 0:
+                logger.warning(f"[supervise] {out or r.stderr.strip()[:200]}")
+        except Exception as exc:
+            logger.warning(f"[supervise] scheduler check failed: {exc}")
+
+
+if _SUPERVISE_SCHED_S > 0:
+    threading.Thread(target=_supervise_scheduler, name="hermes-supervise-sched",
+                     daemon=True).start()
+    logger.info(f"[supervise] watching the scheduler every {_SUPERVISE_SCHED_S}s")
 
 logger.info("=== HERMES TRADER - Starting Continuous Trading Loop ===")
 

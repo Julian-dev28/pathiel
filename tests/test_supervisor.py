@@ -119,11 +119,13 @@ def test_the_scheduler_actually_runs_the_supervisor():
     assert job["interval_min"] <= 5, "a dead loop should cost minutes, not hours"
 
 
-def test_the_scheduler_is_not_supervised():
-    """The supervisor runs as the scheduler's child. Restarting the scheduler
-    would kill the process doing the restarting."""
-    assert "scheduler" not in S.COMPONENTS
-    assert not any("scheduler.py" in pat for pat, _, _ in S.COMPONENTS.values())
+def test_a_default_run_never_restarts_its_own_parent():
+    """The supervisor runs as the scheduler's child. A default run restarting
+    the scheduler would kill the process doing the restarting. (Supervising it
+    explicitly, from the trading loop, is safe — see below.)"""
+    assert "scheduler" not in S.DEFAULT_COMPONENTS
+    assert not any("scheduler.py" in S.COMPONENTS[c]["target"]
+                   for c in S.DEFAULT_COMPONENTS)
 
 
 def test_every_component_maps_to_a_real_restart_action():
@@ -131,8 +133,9 @@ def test_every_component_maps_to_a_real_restart_action():
     usage = subprocess.run(["bash", os.path.join(ROOT, "scripts", "restart.sh"),
                             "--bogus-action"], capture_output=True, text=True,
                            cwd=ROOT).stderr
-    for _, action, label in S.COMPONENTS.values():
-        assert action in usage, f"{label}: restart.sh has no '{action}' action"
+    for spec in S.COMPONENTS.values():
+        assert spec["action"] in usage, (
+            f"{spec['label']}: restart.sh has no '{spec['action']}' action")
 
 
 # ── restart.sh's half of the contract ────────────────────────────────────────
@@ -167,55 +170,144 @@ def test_dry_run_changes_nothing(tmp_path, monkeypatch):
     assert not os.path.exists(str(tmp_path / "sup.json"))
 
 
-# ── process detection ────────────────────────────────────────────────────────
+# ── process detection ───────────────────────────────────────────────────────
 
-def test_our_own_command_line_does_not_count_as_a_running_process():
-    """A substring test against `ps ax` reported the log rotator "running" one
-    second after SIGKILL, because the invoking shell's argv contained the
-    pattern. Any check that matches its own caller can never report a process
-    down — the supervisor would have been decorative."""
-    marker = "hermes-supervisor-selftest-pattern"
-    # A shell whose argv contains the pattern, and nothing else that matches.
-    # marker as a real argv element — `bash -c "one command"` execs through and
-    # would drop it from the command line entirely.
-    proc = subprocess.Popen([sys.executable, "-c",
-                             "import time; time.sleep(30)", marker])
-    try:
-        time.sleep(0.3)
-        # Seen from a caller that is NOT the sleeper: genuinely running.
-        assert S.alive(marker, exclude={os.getpid()}) is True
-        # Seen from the sleeper's own tree: must not count itself.
-        assert S.alive(marker, exclude={os.getpid(), proc.pid}) is False
-    finally:
-        proc.kill()
-        proc.wait(timeout=10)
+PY_BIN = ("/Library/Frameworks/Python.framework/Versions/3.13/Resources/"
+          "Python.app/Contents/MacOS/Python")
+# Deliberately not this machine's path: these are command-line SHAPES, and
+# the absolute-path guard is right to reject a real-looking home directory.
+ROOT_ABS = "/opt/hermes-trader"
 
 
-def test_ancestors_includes_this_process():
-    a = S._ancestors()
-    assert os.getpid() in a
-    assert len(a) < 25, "ancestor walk must stay bounded"
+@pytest.mark.parametrize("comp,cmd", [
+    ("loop",      f"{PY_BIN} {ROOT_ABS}/scripts/trading_loop.py"),
+    ("server",    f"{PY_BIN} -m hermes_trader.server"),
+    ("rotator",   f"{PY_BIN} {ROOT_ABS}/scripts/log_rotate.py --daemon"),
+    ("scheduler", f"{PY_BIN} {ROOT_ABS}/scripts/scheduler.py"),
+])
+def test_the_real_daemon_command_lines_are_recognised(comp, cmd):
+    """Taken verbatim from `ps -Ao command=` on the live box. If restart.sh
+    ever changes how it launches something, this fails instead of the
+    supervisor quietly deciding a running process is dead."""
+    assert S.is_the_process(cmd, S.COMPONENTS[comp]) is True
 
 
-def test_an_unusable_pgrep_never_triggers_a_blind_restart(monkeypatch):
-    """If we cannot tell whether a process is alive, restarting is the
-    dangerous guess: it can start a SECOND trading loop."""
-    def boom(*a, **k):
-        raise OSError("pgrep missing")
-    monkeypatch.setattr(subprocess, "run", boom)
-    assert S.alive("anything", exclude=set()) is True
+@pytest.mark.parametrize("cmd", [
+    # a shell whose argv merely mentions the script
+    'bash -c pgrep -f scripts/trading_loop.py',
+    # the supervisor itself, which names the component
+    f"{PY_BIN} {ROOT_ABS}/scripts/supervise_processes.py --components scheduler",
+    # restart.sh, which starts the thing being checked
+    f"bash {ROOT_ABS}/scripts/restart.sh sched",
+    # an editor with the file open
+    f"vim {ROOT_ABS}/scripts/trading_loop.py",
+    # a different interpreter running an unrelated file
+    f"node {ROOT_ABS}/scripts/trading_loop.py",
+])
+def test_merely_mentioning_a_daemon_is_not_running_it(cmd):
+    """The substring detector reported the log rotator "running" one second
+    after SIGKILL because the invoking shell's argv contained the pattern."""
+    assert not any(S.is_the_process(cmd, spec) for spec in S.COMPONENTS.values())
 
 
-def test_preflight_uses_the_same_detector():
-    """Two process detectors means one of them rots. The substring version
-    lived in both files and was wrong in both."""
-    import ast
-    src = open(os.path.join(ROOT, "scripts", "preflight_live.py")).read()
-    fn = next(n for n in ast.walk(ast.parse(src))
-              if isinstance(n, ast.FunctionDef) and n.name == "check_processes")
-    code = [ast.get_source_segment(src, st) or "" for st in fn.body
-            if not (isinstance(st, ast.Expr) and isinstance(st.value, ast.Constant))]
-    code = "\n".join(code)
-    assert "sup.alive(" in code, "preflight must use the shared detector"
-    assert '"ps"' not in code and "'ps'" not in code, (
-        "a second `ps` substring detector has grown back")
+def test_a_process_that_started_the_daemon_is_not_the_daemon():
+    """The regression that cost a healthy trading loop.
+
+    Excluding our own ancestors fixed the substring false-positive and created
+    a worse false-NEGATIVE: when the loop starts the scheduler, the loop is
+    transiently the new scheduler's ancestor, so the scheduler's first
+    supervisor pass subtracted the loop's pid, concluded the loop was down, and
+    restarted it mid-scan. Recorded in logs/supervisor.log at 08:22:56 on
+    2026-08-31. Identity must not depend on who our parent is.
+    """
+    chain = [f"bash {ROOT_ABS}/scripts/restart.sh sched",
+             f"{PY_BIN} {ROOT_ABS}/scripts/supervise_processes.py --components scheduler",
+             f"{PY_BIN} {ROOT_ABS}/scripts/trading_loop.py"]
+    assert S.alive(S.COMPONENTS["loop"], chain) is True
+    assert S.alive(S.COMPONENTS["scheduler"], chain) is False
+
+
+def test_the_rotator_needs_its_daemon_flag():
+    """A one-shot `log_rotate.py --guard` is not the rotator daemon."""
+    assert S.is_the_process(f"{PY_BIN} {ROOT_ABS}/scripts/log_rotate.py --guard",
+                            S.COMPONENTS["rotator"]) is False
+
+
+def test_a_module_daemon_is_not_matched_by_a_script_of_the_same_name():
+    assert S.is_the_process(f"{PY_BIN} {ROOT_ABS}/hermes_trader/server.py",
+                            S.COMPONENTS["server"]) is False
+
+
+def test_an_unreadable_process_table_never_triggers_a_blind_restart():
+    """If we cannot tell, restarting is the dangerous guess: it can start a
+    SECOND trading loop against the same account."""
+    assert S.alive(S.COMPONENTS["loop"], []) is True
+
+
+# ── mutual supervision ───────────────────────────────────────────────────────
+
+def test_the_scheduler_is_supervisable_but_not_by_default():
+    """The supervisor runs as the scheduler's child, so a DEFAULT run must not
+    restart it — that would kill the process doing the restarting. It still has
+    to be supervisable by someone else."""
+    assert "scheduler" in S.COMPONENTS
+    assert "scheduler" not in S.DEFAULT_COMPONENTS
+    assert S.selected([]) == list(S.DEFAULT_COMPONENTS)
+    assert S.selected(["--components", "scheduler"]) == ["scheduler"]
+
+
+def test_an_unknown_component_is_an_error_not_an_empty_run():
+    """`--components schedular` supervising nothing would look exactly like a
+    healthy pass."""
+    with pytest.raises(SystemExit):
+        S.selected(["--components", "schedular"])
+    with pytest.raises(SystemExit):
+        S.selected(["--components", ""])
+
+
+def test_the_trading_loop_watches_the_scheduler():
+    """Without this the whole watch rests on one process: the scheduler runs
+    both the supervisor and the alert evaluator, so its death would end
+    supervision and alerting at once, silently."""
+    src = open(os.path.join(ROOT, "scripts", "trading_loop.py")).read()
+    assert "supervise_processes.py" in src
+    assert '"--components", "scheduler"' in src
+    assert "hermes-supervise-sched" in src, "the thread must actually be started"
+
+
+def test_the_loop_reuses_the_supervisor_rather_than_reimplementing_it():
+    """A second implementation would not honour the halt marker, and would
+    revive a scheduler the operator deliberately stopped."""
+    src = open(os.path.join(ROOT, "scripts", "trading_loop.py")).read()
+    block = src.split("_supervise_scheduler", 1)[1].split("\nif _SUPERVISE", 1)[0]
+    assert "restart.sh" not in block, "the loop must not shell out to restart.sh itself"
+    assert "pgrep" not in block, "the loop must not grow its own process detector"
+
+
+def test_stopping_everything_halts_the_scheduler_too():
+    """`restart.sh stop` must stay stopped. If only the scheduler lacked a halt
+    mark, the loop would revive it and it would revive everything else."""
+    src = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
+    block = _case_block(src, "stop")
+    assert "halt_mark scheduler" in block
+
+
+def test_restarting_the_scheduler_clears_its_halt():
+    src = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
+    block = _case_block(src, "sched")
+    assert "halt_clear scheduler" in block
+
+
+def test_concurrent_supervisors_do_not_share_a_state_file(tmp_path, monkeypatch):
+    """Two invocations now run at once — the scheduler's own, and the loop's
+    scheduler check. Sharing one file lets one drop the other's restart
+    record, which quietly weakens the crash-loop cap."""
+    monkeypatch.setattr(S, "STATE", str(tmp_path / "sup.json"))
+    monkeypatch.setattr(S, "HALT_FILE", str(tmp_path / "halt.json"))
+    monkeypatch.setattr(S, "alive", lambda *a, **k: True)
+    S.main([])
+    S.main(["--components", "scheduler"])
+    assert (tmp_path / "sup.json").exists()
+    assert (tmp_path / "sup_scheduler.json").exists()
+    assert json.loads((tmp_path / "sup.json").read_text())["checked"] == \
+        sorted(S.DEFAULT_COMPONENTS)

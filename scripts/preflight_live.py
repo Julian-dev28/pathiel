@@ -244,25 +244,24 @@ def check_disk(r: Report) -> None:
 def check_processes(r: Report) -> None:
     """Is each managed process actually up?
 
-    Uses the supervisor's detector, not a substring test against `ps ax`. The
-    substring version matches any command line that merely MENTIONS the
-    pattern — including the shell that ran this check — so it can report a
-    process "running" that is not. Found in the supervisor 2026-08-31; the same
-    code lived here.
+    Uses the supervisor's detector, which identifies the process by its exact
+    shape (python running the script, or python -m the module) rather than by a
+    substring of `ps` output. The substring version matched any command line
+    that merely MENTIONED the name — including the shell running this check —
+    so it could report a dead process "running". The same code lived here.
     """
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import supervise_processes as sup
 
-    mine = sup._ancestors()
-    for name, pattern, why in (
-        ("trading loop", "scripts/trading_loop.py", "scripts/restart.sh"),
-        ("scheduler", "scripts/scheduler.py", "scripts/restart.sh sched"),
-        ("log rotator", "log_rotate[.]py --daemon", "scripts/restart.sh rotate"),
-    ):
-        if sup.alive(pattern, mine):
-            r.ok(name, "running")
+    commands = sup._command_lines()
+    for comp, why in (("loop", "scripts/restart.sh"),
+                      ("scheduler", "scripts/restart.sh sched"),
+                      ("rotator", "scripts/restart.sh rotate")):
+        spec = sup.COMPONENTS[comp]
+        if sup.alive(spec, commands):
+            r.ok(spec["label"], "running")
         else:
-            r.warn(name, f"not running — start with {why}")
+            r.warn(spec["label"], f"not running — start with {why}")
 
 
 def main(argv=None) -> int:
