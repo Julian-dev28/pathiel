@@ -80,7 +80,8 @@ scripts/restart.sh status
 
 # 3. Monitor
 tail -f logs/trading_loop.log
-python3 scripts/status.py
+python3 scripts/preflight_live.py    # secrets, capital, books, feed, processes
+python3 scripts/book_status.py       # where each live book stands
 ```
 
 Dashboard served at `http://localhost:8000` (port from `HERMES_PORT`).
@@ -627,11 +628,19 @@ server are picked up.
 the same scan -> TA-filter -> research -> execute loop on its own every
 `HERMES_SCAN_INTERVAL` seconds, independent of the Hermes session.
 
-For **hands-off monitoring**, resume the hourly status cron job (zero AI cost — it
-just runs `status.py`; see [`references/cron-jobs.md`](skills/hermes-trader-agent/references/cron-jobs.md)):
+For **hands-off monitoring**, nothing needs resuming: `scripts/scheduler.py`
+already runs the watch on its own clock, started by `scripts/restart.sh`. It
+supervises the processes, evaluates `k8s/prometheusrule.yaml` every two minutes
+and delivers what fires, and snapshots state nightly.
+
+cron and launchd are NOT options on this machine and never were: macOS TCC
+denies both access to `~/Documents`, so a job defined there never runs and
+never says why. That is why the scheduler exists.
+
 ```bash
-hermes cron list            # find the "Hermes Trader Hourly Report" job id
-hermes cron resume <job-id> # start hourly status delivery
+python3 scripts/preflight_live.py    # one-shot readiness, anything blocking a trade
+tail -f logs/alerts.log              # every alert that fired or resolved
+tail -f logs/supervisor.log          # every process restart
 ```
 
 ---

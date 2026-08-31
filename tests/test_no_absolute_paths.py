@@ -112,3 +112,61 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
         for name in gone:
             assert name not in live, (
                 f"{doc} describes deleted {name} as if it still exists")
+
+
+def test_every_script_an_operator_doc_tells_you_to_run_exists():
+    """README's quickstart said `python3 scripts/status.py` for months after
+    that script was deleted, and DEPLOY.md documented an env var whose only
+    consumer (scripts/v2_shadow_loop.py) was gone too. A command in a runbook
+    that cannot run is worse than no runbook: it is followed.
+
+    Covers inline code AND fenced blocks — the README one was in a fenced
+    block, which an inline-backtick check missed.
+    """
+    import re
+
+    docs = ["README.md", "DEPLOY.md", "HANDOFF-CLAUDE.md"] + sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md"))
+    missing = []
+    for doc in docs:
+        path = ROOT / doc
+        if not path.exists():
+            continue
+        text = path.read_text()
+        code = "\n".join(re.findall(r"```[a-z]*\n(.*?)```", text, re.S))
+        code += "\n" + "\n".join(re.findall(r"`([^`\n]+)`", text))
+        for ref in set(re.findall(r"(?:^|[\s(])((?:scripts|skills)/[\w./-]+\.(?:py|sh))",
+                                  code, re.M)):
+            if not (ROOT / ref).exists():
+                missing.append(f"{doc}: {ref}")
+    assert not missing, ("operator docs point at scripts that do not exist:\n"
+                         + "\n".join(sorted(missing)))
+
+
+def test_every_restart_action_an_operator_doc_names_is_real():
+    """`restart.sh sampler` was documented in docs/LOGGING.md long after the
+    action was removed."""
+    import re
+    import subprocess
+
+    usage = subprocess.run(["bash", str(ROOT / "scripts" / "restart.sh"), "--bogus"],
+                           capture_output=True, text=True, cwd=ROOT).stderr
+    inner = re.search(r"\[([\w|]+)\]", usage)
+    assert inner, "restart.sh no longer prints a usage line to parse"
+    actions = set(inner.group(1).split("|"))
+
+    docs = ["README.md", "DEPLOY.md"] + sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md"))
+    bad = []
+    for doc in docs:
+        path = ROOT / doc
+        if not path.exists():
+            continue
+        text = path.read_text()
+        code = "\n".join(re.findall(r"```[a-z]*\n(.*?)```", text, re.S))
+        code += "\n" + "\n".join(re.findall(r"`([^`\n]+)`", text))
+        for act in set(re.findall(r"restart\.sh[ \t]+(\w+)", code)):
+            if act not in actions:
+                bad.append(f"{doc}: restart.sh {act}")
+    assert not bad, ("docs name restart.sh actions that do not exist:\n"
+                     + "\n".join(sorted(bad)))

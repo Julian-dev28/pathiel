@@ -398,7 +398,6 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
 | `NO_SSL_FIX` | unset | Skip the macOS `certifi` cert-bundle workaround (`hermes_trader/__init__.py`) — irrelevant on Linux, harmless either way |
 | `HERMES_MCP_DISABLE_SAMPLING`, `HERMES_MCP_SAMPLING_MAX_TOKENS` | unset / 2048 | `scripts/hermes-mcp-server.py` only — see "Not containerized" below |
 | `HERMES_SMOKE_BASE` | `http://127.0.0.1:8000` | `scripts/smoke_trends.py` test target, dev-only |
-| `HERMES_V2_LIVE` | unset | `scripts/v2_shadow_loop.py` only — not one of the five managed processes, not run in this deploy |
 
 ## Not containerized
 
@@ -412,6 +411,6 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
   needs is an interactively-authenticated desktop session, not a bakeable
   secret, so installing the binary alone would not make the feature work.
   Left out rather than shipped half-working.
-- **`scripts/v2_shadow_loop.py`** and other one-off scripts under `scripts/`
-  not named in `scripts/restart.sh` — these are run by hand (`flyctl ssh
-  console`) when needed, not continuously supervised processes.
+- **One-off scripts under `scripts/`** not named in `scripts/restart.sh` or
+  `scripts/scheduler.py` — run by hand (`flyctl ssh console`) when needed, not
+  continuously supervised processes.

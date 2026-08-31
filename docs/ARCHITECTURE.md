@@ -346,7 +346,7 @@ and `fly.toml`). On Fly they live under `/data/` on a mounted volume so they
 survive rolling deploys.
 
 The session log is the **single source of truth** for everything the dashboard
-and `status.py` report. Components write to it; readers tail it. No event bus,
+and `preflight_live.py` report. Components write to it; readers tail it. No event bus,
 no pubsub, no database — JSONL on disk has been entirely sufficient at one-
 user scale.
 
