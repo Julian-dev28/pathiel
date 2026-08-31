@@ -292,3 +292,65 @@ def test_pruning_keeps_every_real_job():
 
     state = {name: {"last_run": 1.0} for name in m.JOBS}
     assert m.prune_ghosts(state) == state
+
+
+def test_the_cycle_records_its_own_completion(tmp_path, monkeypatch):
+    """The scheduler's last_ok only knows about runs the SCHEDULER started, so
+    a hand-run grade would still read as eight days stale. What matters is
+    whether the books were graded, not who ran it."""
+    import importlib as il
+    import json as _json
+    import time as _time
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    (tmp_path / "grading.json").write_text(
+        _json.dumps({"ts": _time.time(), "books_graded": 4}))
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    il.reload(ro)
+    try:
+        metrics._refresh()
+        assert metrics.GRADING_AGE._value.get() < 60
+    finally:
+        il.reload(ro)
+
+
+def test_the_scheduler_stamp_is_the_fallback(tmp_path, monkeypatch):
+    """No receipt yet (an older install) must still read the scheduler's
+    record rather than jumping straight to 'never graded'."""
+    import importlib as il
+    import json as _json
+    import time as _time
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    (tmp_path / "scheduler.json").write_text(
+        _json.dumps({"autonomous-cycle": {"last_ok": _time.time() - 120}}))
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    il.reload(ro)
+    try:
+        metrics._refresh()
+        age = metrics.GRADING_AGE._value.get()
+        assert 60 < age < 600
+    finally:
+        il.reload(ro)
+
+
+def test_the_completion_receipt_is_written_last():
+    """A run that aborts on the 1500s deadline must leave the OLD timestamp
+    standing. Recording completion before the work would make an abort look
+    exactly like a success — the bug this whole metric exists to catch."""
+    import ast
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = open(_os.path.join(root, "scripts", "autonomous_cycle.py")).read()
+    main = next(n for n in ast.parse(src).body
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    body = ast.get_source_segment(src, main) or ""
+    lines = [i for i, ln in enumerate(body.splitlines())
+             if "_record_completion(" in ln]
+    assert lines, "main never records completion"
+    grade = [i for i, ln in enumerate(body.splitlines()) if "grade_book(" in ln]
+    assert grade and min(lines) > max(grade), (
+        "completion is recorded before the grading finishes")

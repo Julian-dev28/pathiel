@@ -393,6 +393,32 @@ def _install_deadline() -> None:
         pass  # non-POSIX / no-signal env: run without the guard
 
 
+def _record_completion(graded: int) -> None:
+    """Say that grading finished, from the cycle itself.
+
+    The scheduler's `last_ok` only knows about runs the SCHEDULER started, so
+    an operator running the cycle by hand would still read as eight days stale.
+    What matters is whether the books have been graded, not who ran it. Written
+    last, so a run that aborts on the deadline leaves the old timestamp
+    standing — an abort must not look like a success.
+    """
+    import sys as _sys
+    _sys.path.insert(0, str(_REPO / "scripts"))
+    import _state_env
+
+    path = _state_env.state_file("grading.json", str(_REPO))
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump({"ts": time.time(), "books_graded": graded}, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception as exc:
+        print(f"[autonomous-cycle] could not record completion: {exc}")
+
+
 def main() -> int:
     _install_deadline()
     # This is research, not trading: a candle data gap is harmless here, so do
@@ -532,6 +558,8 @@ def main() -> int:
             print("\ncommitted + pushed")
         except Exception as exc:
             print(f"\ncommit/push failed (config change still applied): {exc}")
+
+    _record_completion(len(rows))
     return 0
 
 
