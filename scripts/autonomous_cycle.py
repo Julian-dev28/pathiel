@@ -153,19 +153,48 @@ def _is_live(cfg: Dict[str, Any], book: str) -> Optional[bool]:
     return not bool(b.get("shadow_only", False))
 
 
-def grade_book(book: str, now_ms: int) -> Dict[str, Any]:
-    """Forward-grade one book, with a matched same-coin random-time null."""
+def _load_sis():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "sis", str(_REPO / "scripts" / "shadow_inverse_status.py"))
     sis = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sis)
+    return sis
+
+
+def shared_fetchers(books: List[str], now_ms: int):
+    """One candle/funding cache for EVERY book in this run.
+
+    `_make_fetchers` caches per coin, but it was built fresh inside each
+    `grade_book`, so every book refetched coins the previous book had already
+    pulled — and the two news books trade the same underlying signal, so their
+    coin sets overlap almost entirely. 392 fetches became 229 by taking the
+    union first: a 42% cut against an endpoint that intermittently 500s and is
+    shared with the live loop's rate budget.
+    """
+    sis = _load_sis()
+    every: List[Dict[str, Any]] = []
+    for book in books:
+        recs = SL.load(book)
+        if recs:
+            kept, _ = SL.dedup_episodes(recs)
+            every.extend(kept)
+    return sis._make_fetchers(every, now_ms)
+
+
+def grade_book(book: str, now_ms: int, fetchers=None) -> Dict[str, Any]:
+    """Forward-grade one book, with a matched same-coin random-time null.
+
+    `fetchers` is the run-wide cache from `shared_fetchers`. Passing None
+    builds a private one, which is correct but refetches every coin.
+    """
+    sis = _load_sis()
 
     recs = SL.load(book)
     if not recs:
         return {"book": book, "n": 0}
     kept, _ = SL.dedup_episodes(recs)
-    fetch_fwd, fetch_funding, cache = sis._make_fetchers(kept, now_ms)
+    fetch_fwd, fetch_funding, cache = fetchers or sis._make_fetchers(kept, now_ms)
     g = SL.grade_records(kept, fetch_fwd, now_ms=now_ms,
                          fetch_funding=fetch_funding, dedup=False)
     n = int(g.get("n", 0))
@@ -193,11 +222,7 @@ def grade_inverse(book: str, now_ms: int) -> Optional[Dict[str, Any]]:
     bars the direct side would have to clear. It never wires capital by
     itself: it banks a candidate for the next build cycle, because a
     counterfactual on a dead ledger is a hypothesis, not a forward verdict."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "sis", str(_REPO / "scripts" / "shadow_inverse_status.py"))
-    sis = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(sis)
+    sis = _load_sis()
     recs = SL.load(book)
     if not recs:
         return None
@@ -380,13 +405,36 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-commit", action="store_true")
+    ap.add_argument("--all-books", action="store_true",
+                    help="also re-grade books that no longer exist in the "
+                         "config (history; nothing can act on the result)")
     args = ap.parse_args()
 
     now_ms = int(time.time() * 1000)
     cfg = _read_cfg()
+
+    # Grade what the config can still ACT on. `_is_live` returns None for a book
+    # with no config block — a deleted book whose ledger is kept as evidence.
+    # Re-grading those cost the run its deadline: 28 books and 11,536 rows when
+    # 4 books and 4,181 rows are all that can be promoted or demoted. The cycle
+    # had not COMPLETED since 2026-08-23 — every run hit the 1500s alarm and
+    # exited having changed nothing, so no book was graded for over a week and
+    # nothing said so.
+    all_books = SL.list_books()
+    if args.all_books:
+        gradeable, skipped = all_books, []
+    else:
+        gradeable = [b for b in all_books if _is_live(cfg, b) is not None]
+        skipped = [b for b in all_books if _is_live(cfg, b) is None]
+    if skipped:
+        print(f"[autonomous-cycle] grading {len(gradeable)} configured book(s); "
+              f"{len(skipped)} deleted book(s) keep their ledgers as evidence "
+              f"but are not re-graded (--all-books to include them)")
+
+    fetchers = shared_fetchers(gradeable, now_ms)
     rows: List[Dict[str, Any]] = []
-    for book in SL.list_books():
-        g = grade_book(book, now_ms)
+    for book in gradeable:
+        g = grade_book(book, now_ms, fetchers)
         live = _is_live(cfg, book)
         d = decide(g, live)
         rows.append({**g, "live": live, **d})

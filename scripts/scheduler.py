@@ -226,6 +226,15 @@ def _stamp(name: str, now: float, res: Optional[Dict[str, Any]],
         if res is not None:
             entry["last_rc"] = res["rc"]
             entry["last_elapsed_s"] = res["elapsed_s"]
+            # `last_run` moves on every dispatch, success or not, so a job that
+            # runs daily and FAILS daily looks perfectly fresh by that field
+            # alone. autonomous-cycle hit its deadline on every run from
+            # 2026-08-23 to 08-31 — eight days with no book graded, and every
+            # surface reported it as having "run today". Track the last time it
+            # actually succeeded, separately.
+            if res["rc"] == 0:
+                entry["last_ok"] = now
+                entry["last_ok_iso"] = entry["last_run_iso"]
         state[name] = entry
         save_state(state, state_path)
 

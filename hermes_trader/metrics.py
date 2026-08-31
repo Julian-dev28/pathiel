@@ -78,6 +78,10 @@ BACKUP_AGE = Gauge(
     "hermes_backup_age_seconds",
     "Seconds since the last VERIFIED state backup. The evidence base under "
     "every book verdict is gitignored and lives on one disk")
+GRADING_AGE = Gauge(
+    "hermes_grading_age_seconds",
+    "Seconds since autonomous-cycle last COMPLETED. A job that fails daily "
+    "still looks like it ran daily; this only moves on success")
 
 
 def _to_float(value: object) -> float:
@@ -152,6 +156,17 @@ def _refresh() -> None:
         ALERTS_FIRING.set(len(firing) if isinstance(firing, list) else 0)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] alerts firing read failed: {e}")
+
+    try:
+        from hermes_trader.agents.atomic_io import read_json
+        from hermes_trader.agents.rebalancer_owned import state_file
+
+        sched = read_json(state_file("scheduler.json"), default=None) or {}
+        ok_ts = _to_float((sched.get("autonomous-cycle") or {}).get("last_ok"))
+        GRADING_AGE.set(time.time() - ok_ts if ok_ts > 0 else _never_ran)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] scheduler state read failed: {e}")
+        GRADING_AGE.set(_never_ran)
 
     try:
         from hermes_trader.agents.atomic_io import read_json

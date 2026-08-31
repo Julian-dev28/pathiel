@@ -142,6 +142,21 @@ spec:
               capital_flows.jsonl have no current copy. An UNVERIFIED archive
               counts as no backup here. Run `python scripts/backup_state.py`.
 
+        # A job that fails every day still looks like it ran every day. The
+        # grader hit its deadline on every run for eight days; no book was
+        # graded, no demotion could fire, and every surface said "ran today".
+        # 48h, so one missed daily run is not a page.
+        - alert: HermesGradingStale
+          expr: hermes_grading_age_seconds > 172800
+          for: 1h
+          labels: {severity: critical}
+          annotations:
+            summary: "No book has been graded in {{ $value | humanizeDuration }}"
+            description: >-
+              autonomous-cycle has not COMPLETED. Nothing is demoting a book
+              that stopped working, so a refuted book keeps trading. Check
+              logs/autonomous_cycle.log for a deadline abort.
+
         # Not a system fault — a money fault. Worth a human looking.
         - alert: HermesDeepDrawdown
           expr: hermes_max_drawdown_pct < -25

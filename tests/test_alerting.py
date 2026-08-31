@@ -126,3 +126,135 @@ def test_no_heartbeat_at_all_is_not_reported_as_age_zero(monkeypatch):
     monkeypatch.setattr(db, "_summary_payload", lambda: {"last_tick_age_s": None})
     M._refresh()
     assert M.HEARTBEAT_AGE._value.get() > 1e6
+
+
+# ── a job that fails daily still looks like it ran daily ────────────────────
+
+def test_success_is_tracked_separately_from_dispatch(tmp_path):
+    """`last_run` moves on every dispatch, success or not. autonomous-cycle hit
+    its 1500s deadline on every run from 2026-08-23 to 08-31 — eight days with
+    no book graded, no demotion possible, and every surface reporting it as
+    having "run today"."""
+    import importlib.util
+    import json as _json
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "sched_ok", _os.path.join(root, "scripts", "scheduler.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    state_path = str(tmp_path / "sched.json")
+    m._stamp("job", 1000.0, {"rc": 1, "elapsed_s": 1500.0}, state_path)
+    st = _json.loads(open(state_path).read())["job"]
+    assert st["last_run"] == 1000.0
+    assert "last_ok" not in st, "a failed run must not count as a success"
+
+    m._stamp("job", 2000.0, {"rc": 0, "elapsed_s": 12.0}, state_path)
+    st = _json.loads(open(state_path).read())["job"]
+    assert st["last_ok"] == 2000.0
+
+    m._stamp("job", 3000.0, {"rc": 1, "elapsed_s": 1500.0}, state_path)
+    st = _json.loads(open(state_path).read())["job"]
+    assert st["last_run"] == 3000.0
+    assert st["last_ok"] == 2000.0, "a later failure erased the last success"
+
+
+def test_grading_staleness_is_exported_and_alerted(monkeypatch, tmp_path):
+    import importlib as il
+    import json as _json
+    import os as _os
+    import time as _time
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    (tmp_path / "scheduler.json").write_text(
+        _json.dumps({"autonomous-cycle": {"last_run": _time.time(),
+                                          "last_ok": _time.time() - 9 * 86400}}))
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    il.reload(ro)
+    try:
+        metrics._refresh()
+        assert metrics.GRADING_AGE._value.get() > 172800, (
+            "eight days of failed runs read as fresh")
+    finally:
+        il.reload(ro)
+
+    import yaml
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    doc = yaml.safe_load(open(_os.path.join(root, "k8s", "prometheusrule.yaml")))
+    names = {r["alert"] for g in doc["spec"]["groups"] for r in g["rules"]}
+    assert "HermesGradingStale" in names
+
+
+def test_a_job_that_has_never_succeeded_reads_as_maximally_stale(monkeypatch, tmp_path):
+    import importlib as il
+    import json as _json
+
+    monkeypatch.setenv("HERMES_STATE_DIR", str(tmp_path))
+    (tmp_path / "scheduler.json").write_text(
+        _json.dumps({"autonomous-cycle": {"last_run": 1.0, "last_rc": 1}}))
+    import hermes_trader.agents.rebalancer_owned as ro
+    from hermes_trader import metrics
+    il.reload(ro)
+    try:
+        metrics._refresh()
+        assert metrics.GRADING_AGE._value.get() > 172800
+    finally:
+        il.reload(ro)
+
+
+def test_the_cycle_grades_only_what_the_config_can_act_on(monkeypatch):
+    """28 books and 11,536 rows were graded daily when 4 books and 4,181 rows
+    are all that can be promoted or demoted. The run hit its 1500s deadline
+    every time from 2026-08-23 to 08-31 and exited having changed nothing."""
+    import importlib.util
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "ac", _os.path.join(root, "scripts", "autonomous_cycle.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    # `_SWITCHES` maps a book to its config switch. A book absent from it has
+    # no switch to flip, so nothing the cycle decides could ever be applied.
+    live = "news_surge_short"
+    assert live in m._SWITCHES
+    sw = m._SWITCHES[live]
+    cfg = ({sw[1]: {"enabled": True, "shadow_only": False}} if sw[0] in ("top", "entries")
+           else {sw[1]: {sw[2]: {"enabled": True, "shadow_only": False}}})
+    assert m._is_live(cfg, live) is True
+    assert m._is_live(cfg, "a_book_that_was_deleted") is None, (
+        "a book with no config switch must be identifiable as an orphan")
+
+    # and main() must actually use that to skip them
+    import ast
+    src = open(_os.path.join(root, "scripts", "autonomous_cycle.py")).read()
+    main = next(n for n in ast.parse(src).body
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    body = ast.get_source_segment(src, main) or ""
+    assert "_is_live(cfg, b) is not None" in body, (
+        "main still grades every ledger on disk")
+    assert "--all-books" in src, "the historical re-grade is no longer possible"
+
+
+def test_the_fetch_cache_is_shared_across_books():
+    """Built per book, every book refetched coins the previous one pulled — and
+    the two news books trade the same signal, so their coin sets overlap almost
+    entirely. 392 fetches, 229 unique."""
+    import ast
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    src = open(_os.path.join(root, "scripts", "autonomous_cycle.py")).read()
+    tree = ast.parse(src)
+    assert any(isinstance(n, ast.FunctionDef) and n.name == "shared_fetchers"
+               for n in tree.body)
+    main = next(n for n in tree.body
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    body = ast.get_source_segment(src, main) or ""
+    assert "shared_fetchers(" in body, "main builds no shared cache"
+    assert "grade_book(book, now_ms, fetchers)" in body, (
+        "grade_book is not given the shared cache")
