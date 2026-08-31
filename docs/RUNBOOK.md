@@ -34,3 +34,23 @@ python scripts/preflight_live.py        # reports age, size and verification
 An archive that fails verification is renamed `.tar.gz.corrupt` and the receipt
 records `verified: false`, which reports as *no backup* to both the metric and
 `HermesBackupStale` — a broken backup must never read as a working one.
+
+
+## Before funding the account
+
+The executor refuses every order under the structural floor, so at the current
+balance the books have never actually run. `scripts/funded_dry_run.py` answers
+what happens the moment money lands, derived from the same config the executor
+reads and the books' own forward ledgers. It never invokes the order path —
+mode is LIVE, so "simulating" through `executor.maybe_execute` would place real
+orders.
+
+```sh
+python scripts/funded_dry_run.py              # at the derived floor
+python scripts/funded_dry_run.py --equity 50  # at a partial deposit
+```
+
+At partial funding the report says which books can hold a position and which
+wait. Read that carefully: concurrency is first-come, so the account trades
+whatever signals soonest, not whatever signals best. Funding to the derived
+floor is what makes the book set behave as configured rather than as a race.
