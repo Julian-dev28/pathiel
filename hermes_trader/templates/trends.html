@@ -5,141 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · trends</title>
 <link rel="stylesheet" href="/static/app.css" />
-<style>
-  /* ── same design system as the other tabs: sans for words, mono for every
-     number, indigo→violet brand, green/red for direction only. One extra
-     colour role here: AMBER = "the evidence does not support this", used on
-     every honesty badge (coin-flip verdicts, stale caches, chop labels). ── */
-  :root{
-    --card:#14161b; --card2:#181b21;
-    --line:#23262e; --line2:#2c313c;
-    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370; --faint:#3d434e;
-    --up:#22c55e; --dn:#ef4444; --ind:#818cf8; --amb:#f59e0b; --teal:#2dd4bf;
-    --vio:#8b5cf6;
-    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
-  }
-  body{
-    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-    color:var(--txt);
-    background:#0a0b0d;
-    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
-    background-repeat:no-repeat;background-attachment:fixed;
-  }
-  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
-  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
-  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
-  .brand small{color:var(--dim);font-weight:600;letter-spacing:.18em;font-size:10px}
-  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
-  .nav-link:hover{color:var(--txt);background:var(--card)}
-  .nav-link:active{transform:translateY(1px)}
-  .nav-link.nav-active{color:var(--txt);background:linear-gradient(135deg,rgba(99,102,241,.16),rgba(168,85,247,.16));border-color:rgba(139,92,246,.45)}
-
-  .note{font-size:11.5px;line-height:1.65;color:var(--mut);background:var(--card);
-        border:1px solid var(--line);border-left:2px solid var(--vio);border-radius:3px;
-        padding:11px 14px;margin-bottom:16px}
-  .note b{color:var(--txt);font-weight:600}
-
-  .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:14px}
-  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:700;
-             letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:10px}
-
-  /* KPI strip */
-  .strip{display:flex;gap:2px;flex-wrap:wrap;align-items:stretch;background:rgba(14,16,20,.82);
-         border:1px solid var(--line);border-radius:4px;padding:10px 8px;margin-bottom:16px}
-  .kpi{flex:1 1 118px;min-width:106px;padding:4px 10px;border-right:1px solid var(--line);
-       display:flex;flex-direction:column;gap:3px}
-  .kpi:last-child{border-right:0}
-  .kpi .v{font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:700;letter-spacing:-.01em}
-  .kpi .l{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
-  .kpi .s{font-size:10px;color:var(--mut)}
-
-  /* lane tabs */
-  .tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-  .tab{padding:8px 16px;font-size:11.5px;font-weight:600;letter-spacing:.08em;color:var(--mut);
-       border-bottom:2px solid transparent;background:transparent}
-  .tab[aria-selected="true"]{color:var(--txt);border-bottom-color:var(--vio)}
-  .tab .n{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--dim);margin-left:6px}
-  /* a lane whose cache went stale while you were on another tab */
-  .tab-stale::after{content:"·";color:var(--amb);font-size:16px;line-height:0;margin-left:5px}
-
-  .badge{display:inline-block;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.06em;
-         border-radius:3px;border:1px solid transparent;white-space:nowrap;
-         font-family:ui-monospace,Menlo,monospace}
-  .b-up{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
-  .b-sup{color:#4ade80;background:rgba(34,197,94,.22);border-color:rgba(34,197,94,.6)}
-  .b-dn{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
-  .b-sdn{color:#f87171;background:rgba(239,68,68,.22);border-color:rgba(239,68,68,.6)}
-  .b-chop{color:#fcd34d;background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.4)}
-  .b-info{color:#c4b5fd;background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4)}
-  .b-teal{color:#5eead4;background:rgba(45,212,191,.12);border-color:rgba(45,212,191,.4)}
-  .b-mut{color:var(--mut);background:#171a20;border-color:var(--line2)}
-
-  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;font-size:10px;border-radius:3px;
-        border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap;
-        font-family:ui-monospace,Menlo,monospace;margin:2px 3px 0 0}
-  .chip.ev{color:#fcd34d;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08)}
-  .chip.st{color:#c4b5fd;border-color:rgba(139,92,246,.35);background:rgba(139,92,246,.08)}
-  .chip.po{color:#5eead4;border-color:rgba(45,212,191,.35);background:rgba(45,212,191,.08)}
-  .chip.rk{color:#fca5a5;border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.08)}
-
-  table{width:100%;font-size:11.5px}
-  th{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
-     font-weight:600;padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
-  th:first-child,td:first-child{text-align:left}
-  td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
-  tr:last-child td{border-bottom:0}
-  tbody tr:hover{background:rgba(139,92,246,.05)}
-  .up{color:var(--up)} .dn{color:var(--dn)} .mut{color:var(--mut)} .dim{color:var(--dim)}
-  .amb{color:var(--amb)} .teal{color:var(--teal)} .vio{color:#c4b5fd}
-
-  .obs{list-style:none;padding:0;margin:0}
-  .obs li{font-size:12px;line-height:1.6;color:var(--mut);padding:7px 0 7px 16px;position:relative;
-          border-bottom:1px solid var(--line)}
-  .obs li:last-child{border-bottom:0}
-  .obs li::before{content:'';position:absolute;left:2px;top:14px;width:5px;height:5px;border-radius:1px;
-                  background:var(--grad)}
-  .obs li b{color:var(--txt)}
-
-  .btn{padding:6px 12px;font-size:10.5px;font-weight:600;letter-spacing:.08em;color:var(--mut);
-       background:var(--card2);border:1px solid var(--line2);border-radius:3px;
-       font-family:ui-monospace,Menlo,monospace}
-  .btn:hover{color:var(--txt);border-color:var(--vio)}
-  .btn:disabled{opacity:.45}
-  .btn.go{color:#c4b5fd;border-color:rgba(139,92,246,.45);background:rgba(139,92,246,.1)}
-
-  /* forecast band: p10 ── p50 ── p90 on one rail */
-  .band{position:relative;height:16px;background:#101319;border:1px solid var(--line2);border-radius:2px}
-  .band .fill{position:absolute;top:0;bottom:0;background:rgba(139,92,246,.18)}
-  .band .mid{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--vio)}
-  .band .now{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--mut)}
-
-  /* probability meter for the binary lanes */
-  .meter{position:relative;height:20px;background:#101319;border:1px solid var(--line2);border-radius:2px;overflow:hidden}
-  .meter .bar{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(99,102,241,.5),rgba(168,85,247,.5))}
-  .meter .tick{position:absolute;top:0;bottom:0;width:2px;background:var(--teal);box-shadow:0 0 6px rgba(45,212,191,.8)}
-  .meter .lab{position:absolute;left:7px;top:2px;font-size:11px;font-family:ui-monospace,Menlo,monospace;color:var(--txt)}
-  .meter .lab2{position:absolute;right:7px;top:2px;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:var(--mut)}
-
-  .grid2{display:grid;grid-template-columns:1fr;gap:12px}
-  @media (min-width:60rem){.grid2{grid-template-columns:1fr 1fr}}
-  .grid3{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
-
-  .skeleton{color:var(--faint)}
-  .ai-box{border:1px solid rgba(139,92,246,.3);background:linear-gradient(180deg,rgba(139,92,246,.06),transparent);
-          border-radius:4px;padding:14px;margin-top:12px}
-  .ai-head{font-size:13px;font-weight:600;color:var(--txt);line-height:1.5;margin-bottom:6px}
-  .ai-nar{font-size:12px;line-height:1.7;color:var(--mut)}
-  .setup{border-top:1px solid var(--line);padding:8px 0;font-size:11.5px;color:var(--mut)}
-  .setup b{color:var(--txt)}
-  .act{padding:9px 0 9px 11px;border-bottom:1px solid var(--line)}
-  .act:last-child{border-bottom:0}
-  .hidden{display:none}
-  ::selection{background:rgba(139,92,246,.32)}
-  html{scrollbar-color:#2c313c #0a0b0d;scrollbar-width:thin}
-  @view-transition{navigation:auto}
-</style>
+<link rel="stylesheet" href="/static/hermes.css" />
 </head>
-<body class="min-h-screen">
+<body>
 <script>
 // g-then-key tab hops, same map as the other pages (t = trends)
 (function () {
@@ -154,36 +22,49 @@
 })();
 </script>
 
-<div class="max-w-[1240px] mx-auto px-6 py-6">
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Hermes</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+    </nav>
+    <div class="masthead-right">
+      <span class="mono mut" id="token-clear
+token-input
+token-row
+token-save
+token-why"></span>
+      <button id="op-token-btn" class="icon-btn" type="button" title="Refreshes and research passes spend network and model calls, so they are operator-gated">Operator token</button>
+      <span class="mono mut" id="lane-meta"></span>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
 
-  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand flex items-center">
-      <span class="dot"></span>HERMES-TRADER&nbsp;<small>/ TRENDS</small>
-    </span>
-    <span class="flex items-center gap-2">
-      <button id="op-token-btn" class="btn" type="button"
-              title="refresh and AI passes spend network / model calls, so they are operator-gated">set token</button>
-      <span class="text-[10px] mono" style="color:var(--dim)" id="lane-meta"></span>
-    </span>
-  </header>
+<div class="shell">
 
-  <div id="token-row" class="hidden flex flex-wrap gap-2 items-center mb-4">
-    <input id="token-input" type="password" placeholder="operator token"
-           autocomplete="off" spellcheck="false"
-           style="flex:1;min-width:180px;max-width:320px;padding:7px 10px;font-size:12px;
-                  font-family:ui-monospace,Menlo,monospace;color:var(--txt);background:var(--card2);
-                  border:1px solid var(--line2);border-radius:3px;outline:none" />
-    <button id="token-save" class="btn" type="button" style="color:var(--up);border-color:rgba(34,197,94,.4)">save</button>
-    <button id="token-clear" class="btn" type="button" style="color:var(--dn);border-color:rgba(239,68,68,.4)">clear</button>
-    <span class="text-[10px] mono" style="color:var(--dim)">stored in this browser only · same token as the dashboard footer</span>
-    <span class="text-[10.5px] mono amb" id="token-why"></span>
+  <div class="page-head">
+    <h1 class="page-title">Trends</h1>
+    <div class="page-sub">Standing research lanes. Each card states a trigger and a stop.</div>
   </div>
 
-  <nav class="flex items-center gap-1 mb-5 flex-wrap">
-    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
-    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
-    <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
-  </nav>
+  <!-- Refreshes and AI passes spend network and model calls, so they are
+       operator-gated. Token is held in this browser only. -->
+  <div id="token-row" class="hidden" style="margin-bottom:24px">
+    <div class="flex flex-wrap gap-2 items-center">
+      <input id="token-input" type="password" placeholder="Operator token"
+             autocomplete="off" spellcheck="false"
+             style="flex:1;min-width:200px;max-width:340px;padding:6px 9px;font-size:13px;
+                    color:var(--ink);background:var(--surface);
+                    border:1px solid var(--rule-2);border-radius:3px;outline:none" />
+      <button id="token-save" class="icon-btn" type="button">Save</button>
+      <button id="token-clear" class="icon-btn" type="button">Clear</button>
+      <span class="note">Stored in this browser only &middot; same token as the dashboard footer</span>
+      <span class="note amb" id="token-why"></span>
+    </div>
+  </div>
 
   <div class="note">
     <b>Start with the WHAT TO DO card</b> on each tab — it turns everything below into
@@ -378,7 +259,7 @@ function bandHtml(px, f) {
     <div class="band">
       <div class="fill" style="left:${x(f.p10)}%;width:${Math.max(1, x(f.p90) - x(f.p10))}%"></div>
       <div class="now" style="left:${x(px)}%"></div>
-      <div class="mid" style="left:${x(f.p50)}%;background:${f.p50 >= px ? 'var(--up)' : 'var(--dn)'}"></div>
+      <div class="mid" style="left:${x(f.p50)}%;background:${f.p50 >= px ? 'var(--up)' : 'var(--down)'}"></div>
     </div>
     <div class="mono text-[9.5px] dim mt-1">${price(f.p10)} · <span class="${sgn(f.drift_pct)}">${price(f.p50)}</span> · ${price(f.p90)}</div>
   </div>`;
@@ -474,8 +355,8 @@ function emptyState(el, d, lane) {
 // ── the action layer: what to actually do ───────────────────────────────────
 const PB_META = {
   do:    { label: 'DO',    cls: 'b-up',   dot: 'var(--up)' },
-  dont:  { label: "DON'T", cls: 'b-dn',   dot: 'var(--dn)' },
-  watch: { label: 'WATCH', cls: 'b-chop', dot: 'var(--amb)' },
+  dont:  { label: "DON'T", cls: 'b-dn',   dot: 'var(--down)' },
+  watch: { label: 'WATCH', cls: 'b-chop', dot: 'var(--amber)' },
 };
 
 function renderPlaybook(lane, pb) {
@@ -503,7 +384,7 @@ function renderPlaybook(lane, pb) {
       <div class="flex items-baseline gap-2 flex-wrap">
         <span class="badge ${m.cls}">${m.label}</span>
         ${a.tag && a.tag !== 'method' ? `<span class="badge b-mut">${esc(a.tag)}</span>` : ''}
-        <span style="font-size:12.5px;font-weight:600;color:var(--txt)">${esc(a.do)}</span>
+        <span style="font-size:12.5px;font-weight:600;color:var(--ink)">${esc(a.do)}</span>
       </div>
       <div class="text-[11px] mut mt-1">${esc(a.because)}</div>
       ${a.trigger ? `<div class="text-[10.5px] mt-1"><span class="teal">go:</span>
@@ -611,7 +492,7 @@ function renderHL(d) {
 
   const cats = (d.reads || []).filter(r => (r.flags || []).some(f => f.kind === 'event'));
   $('#hl-cats').innerHTML = cats.length ? cats.slice(0, 8).map(r =>
-    `<div style="padding:5px 0;border-bottom:1px solid var(--line)">
+    `<div style="padding:5px 0;border-bottom:1px solid var(--rule)">
       <span class="mono" style="font-weight:600">${esc(r.coin)}</span>
       ${(r.flags || []).filter(f => f.kind === 'event').map(f =>
       `<span class="chip ev">${esc(f.note)}</span>`).join('')}

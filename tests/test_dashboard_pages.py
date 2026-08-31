@@ -10,6 +10,7 @@ is the expected behavior).
 
 import json
 import os
+import pathlib
 import re
 import shutil
 import subprocess
@@ -447,14 +448,19 @@ def test_news_payload_title_urls_passthrough(monkeypatch):
 # ── pages + endpoints ────────────────────────────────────────────────────────
 
 HOW_IT_WORKS = (
-    "Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, "
-    "commodities. Every minute the engine scans 60+ markets for statistical "
-    "triggers (volume spikes, breakouts, momentum bursts), runs a free TA "
-    "filter, and only spends AI tokens on confirmed setups. Trades clear 11 "
-    "risk gates, size by half-Kelly, and exit through a two-phase dynamic "
-    "stop-loss (loss protection → profit locking with one-way trailing "
-    "floor). Live on one wallet. Not financial advice."
+    "Hermes trades Hyperliquid perpetuals across crypto, equities and commodities"
 )
+
+# The design system lives in a linked stylesheet now, not in five inline
+# <style> blocks. Anything asserting on CSS has to read the sheet, or it is
+# asserting that a rule is DUPLICATED into the page rather than that it exists.
+CSS = (pathlib.Path(__file__).resolve().parent.parent
+       / "hermes_trader" / "static" / "hermes.css").read_text()
+
+
+def styled(client, path="/"):
+    """Page markup plus the stylesheet that dresses it."""
+    return client.get(path).text + CSS
 
 
 def test_landing_page_copy_and_removed_chrome(client):
@@ -483,6 +489,10 @@ def test_landing_page_copy_and_removed_chrome(client):
     # footer (operator order 2026-07-12)
     assert r.text.index('id="books-wrap"') < r.text.index(HOW_IT_WORKS)
     assert r.text.index(HOW_IT_WORKS) < r.text.index("<footer")
+    # the mascot, the shader and the 8-bit chrome are gone for good
+    for gone in ("pixel-cat", "gl-bg", "cat-sleep", "__setGlState",
+                 "repeating-linear-gradient", "scroll-progress"):
+        assert gone not in r.text, f"landing still ships {gone}"
 
 
 def test_config_and_operator_pages_are_gone(client):
@@ -541,15 +551,15 @@ def test_landing_has_equity_curve(client):
 
 
 def test_landing_books_dropdown_wraps_flow(client):
-    """Operator reversal 2026-07-12: live books is a dropdown again — round-7
-    collapse behavior wrapped around the current flowing book-row styling."""
+    """Live books stays a disclosure: header and counts always visible, rows
+    behind a toggle whose state is remembered."""
     r = client.get("/").text
     assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
     assert "hermes-books-open" in r                  # state remembered in localStorage
     assert 'class="books-wrap"' in r                 # static HTML ships collapsed
-    assert "books-open .books-wrap" in r             # CSS max-height/opacity transition
-    assert ".books-head .chev" in r                  # chevron toggle affordance
-    assert "live books" in r                         # header + counts always visible
+    assert "books-open .books-wrap" in CSS           # the collapsed/open rule
+    assert ".chev" in CSS                            # chevron toggle affordance
+    assert "Live books" in r                         # header + counts always visible
     # the flowing rows live INSIDE the collapsed container
     assert 'id="books-flow"' in r and "book-row" in r
     assert r.index('id="books-wrap"') < r.index('id="books-flow"')
@@ -564,37 +574,6 @@ def test_no_emoji_glyphs_anywhere(client):
         page = client.get(path).text
         for ch in banned:
             assert ch not in page, f"{path} still renders glyph {ch!r}"
-
-
-def test_pixel_cat_on_every_tab(client):
-    """The cat is on every tab (operator order 2026-07-15), not just the
-    dashboard — crafted 16x16 SVG pixel art with status-driven states, not
-    an emoji, on all four pages, each independently polling for its state."""
-    for path in ("/", "/activity", "/news", "/analytics"):
-        r = client.get(path).text
-        assert 'id="pixel-cat"' in r, f"{path}: missing the cat"
-        assert "<rect" in r and "crispEdges" in r, f"{path}: not real pixel art"
-        for state in ("cat-sleep", "cat-sad", "cat-alert", "cat-bounce"):
-            assert state in r, f"{path}: missing cat state {state}"
-        assert "c-tail-a" in r and "c-tail-b" in r, f"{path}: no tail flick"
-        assert "c-zzz" in r, f"{path}: no sleep pixels"
-        assert "c-ears-p" in r and "c-ears-f" in r, f"{path}: no ear states"
-        assert "updateCat" in r, f"{path}: cat not driven by summary data"
-        assert "prefers-reduced-motion" in r, f"{path}: no static-cat fallback"
-        # every non-landing tab fetches its own /api/dashboard/summary poll
-        # to drive the cat rather than sharing state across pages
-        if path != "/":
-            assert "refreshCat" in r and "/api/dashboard/summary" in r, path
-
-
-def test_skeleton_shimmer_replaces_loading_text(client):
-    """Modern loading state (operator: 'best design principles, modernity') —
-    analytics' initial panel placeholders are shimmer bars, not bare
-    'loading…' text, matching how Robinhood/Stripe/Linear-class apps signal
-    an in-flight fetch."""
-    r = client.get("/analytics").text
-    assert "skeleton" in r and "shimmer" in r
-    assert r.count('class="skeleton"') >= 5
 
 
 def test_kpi_tick_flash_on_value_change(client):
@@ -752,13 +731,6 @@ def test_trade_empty_copy_does_not_claim_nothing_actionable_with_open_positions(
     assert "1 position open" in singular and "1 positions" not in singular, singular
 
 
-def test_eight_bit_texture_everywhere(client):
-    for path in ("/", "/activity", "/news", "/analytics"):
-        page = client.get(path).text
-        assert "4px 4px 0" in page, f"{path}: missing hard pixel offset shadow"
-        assert "repeating-linear-gradient" in page, f"{path}: missing scanline texture"
-
-
 def test_activity_has_time_decay_flow(client):
     act = client.get("/activity").text
     assert "ev-fresh" in act                 # fresh T3 events render individually
@@ -790,11 +762,11 @@ def test_positions_rows_expose_liq_px():
 def test_landing_has_open_positions_section(client):
     r = client.get("/").text
     assert 'id="positions-body"' in r
-    assert "open positions" in r
+    assert "Open positions" in r
     assert "refreshPositions" in r
     # placed between the KPI row and the equity curve
     assert r.index('id="positions-body"') < r.index('id="equity-chart"')
-    assert r.index("last tick") < r.index('id="positions-body"')
+    assert r.index("Last scan") < r.index('id="positions-body"')
     # liq proximity danger treatment + origin badges + PnL tick animation
     assert "liq-danger" in r
     assert "MANUAL" in r and "originBadge" in r
@@ -804,9 +776,9 @@ def test_landing_has_open_positions_section(client):
 def test_stream_pages_flow_and_respect_reduced_motion(client):
     act = client.get("/activity").text
     news = client.get("/news").text
+    assert "prefers-reduced-motion" in CSS        # motion opt-out honoured globally
     for page in (act, news):
-        assert "prefers-reduced-motion" in page   # CSS-only animations, opt-out honored
-        assert "ev-enter" in page                 # arrival animation class
+        assert "ev-enter" in page                 # arrival class still applied
     assert "function ingest" in act               # polls merge/prepend, no full re-render
     assert "flash-green" in act and "flash-red" in act   # trade emphasis
     assert "session-strip" in act                 # pinned last-6h answer
@@ -815,7 +787,10 @@ def test_stream_pages_flow_and_respect_reduced_motion(client):
     assert "nothing actionable since" in act      # empty-tape copy (trade pane)
     assert "entry refused" in act                 # gate groups read as flight-log
     assert "quiet stream" in news                 # sparse-ledger empty state copy
-    assert "breaking-pulse" in news               # stronger pulse on breaking items
+    # Breaking items are marked by a LABEL, not a pulsing animation. A page
+    # that throbs at the reader is the thing this redesign removed.
+    assert 'class="badge b-breaking"' in news
+    assert "breaking-pulse" not in news and "breaking-pulse" not in CSS
     assert "coverage checked" in news             # quiet reads in flight-log copy
     assert "nothing new" in news                  # no side/surge fragments on quiet rows
     assert "control group" in news                # one-line explainer under the header
@@ -1231,40 +1206,6 @@ def test_analytics_page_markers(client):
 
 # ── landing v3 (2026-07-17): living ambient layer + informational one-pager ──
 
-def test_landing_v3_webgl_ambient_layer(client):
-    """The background is a hand-written WebGL2 fragment shader driven by the
-    live summary payload (mood/energy/positions uniforms) — not a library,
-    not a video. Must carry every budget-discipline marker: low-power GPU
-    hint, hidden-tab pause, reduced-motion static frame, and a clean removal
-    path (CSS gradient fallback) when webgl2 is unavailable."""
-    r = client.get("/").text
-    assert 'id="gl-bg"' in r
-    assert "webgl2" in r and "#version 300 es" in r
-    assert "u_mood" in r and "u_energy" in r and "u_pos" in r
-    assert "low-power" in r                          # powerPreference set
-    assert "visibilitychange" in r                   # pauses when tab hidden
-    assert "cv.remove()" in r                        # no-WebGL2 fallback path
-    assert "__setGlState" in r                       # summary payload drives uniforms
-    assert "reduceMotion" in r and "prefers-reduced-motion" in r
-
-
-def test_landing_v3_modern_css_stack(client):
-    """July-2026 CSS, each feature gated so older engines degrade cleanly:
-    scroll-driven animations behind @supports, registered @property for the
-    animatable border beam, :has() status theming, OKLCH + color-mix accents,
-    container-query KPI sizing, text-wrap, tabular numerals."""
-    r = client.get("/").text
-    assert "animation-timeline" in r and "@supports" in r
-    assert "@property" in r and "--beam" in r
-    assert "body:has(" in r                          # page reacts to its own pill
-    assert "oklch(" in r and "color-mix(" in r
-    assert "container-type" in r and "cqi" in r
-    assert "text-wrap" in r
-    assert "tabular-nums" in r
-    assert "@starting-style" in r                    # popover entry animation
-    assert "interpolate-size" in r                   # books dropdown height:auto
-
-
 def test_landing_v3_new_sections_wired_and_ordered(client):
     """The one-pager grew the decision funnel, recent-closes tape, and the
     evidence league — all fed by existing local-file endpoints (zero added
@@ -1291,7 +1232,7 @@ def test_landing_v3_token_popover_replaces_prompt(client):
     Same localStorage key, so existing tooling reads it unchanged."""
     r = client.get("/").text
     assert "popover" in r and "popovertarget" in r
-    assert "::backdrop" in r
+    assert "::backdrop" in CSS
     assert "prompt(" not in r and "confirm(" not in r
     assert "hermes-op-token" in r
     assert "op-token-btn" in r
@@ -1319,29 +1260,6 @@ def test_landing_v3_kpi_tweens_and_spark(client):
     assert "drawSpark(data)" in r[fetch_at:fetch_at + 400]
 
 
-def test_v3_ambient_layer_on_every_tab(client):
-    """The living shader background ships on all four tabs (operator order
-    2026-07-17: 'update all pages'), each with the full budget-discipline
-    marker set. Non-landing tabs have no status pill, so the CAT is the
-    status source — body:has() watches its sleep state to shift the OKLCH
-    accent pair, and refreshCat feeds the same summary payload to the shader
-    uniforms via __setGlState."""
-    for path in ("/", "/activity", "/news", "/analytics"):
-        r = client.get(path).text
-        assert 'id="gl-bg"' in r and "#version 300 es" in r, path
-        assert "u_mood" in r and "u_energy" in r and "u_pos" in r, path
-        assert "low-power" in r and "visibilitychange" in r, path
-        assert "cv.remove()" in r, path                   # no-WebGL2 fallback
-        assert "__setGlState" in r, path
-        assert 'id="scroll-progress"' in r and "animation-timeline" in r, path
-        assert "oklch(" in r and "color-mix(" in r and "body:has(" in r, path
-        if path != "/":
-            assert "body:has(#pixel-cat.cat-sleep)" in r, path
-            assert "window.__setGlState(s)" in r, path    # wired into refreshCat
-
-
-# ── v4 app-shell (2026-07-17): compiled CSS, MPA transitions, the wire ──────
-
 def test_v4_compiled_css_replaces_tailwind_runtime(client):
     """The in-browser Tailwind JIT runtime is gone — every page links the
     compiled /static/app.css instead (no runtime JS, no flash-of-unstyled).
@@ -1360,16 +1278,6 @@ def test_v4_compiled_css_replaces_tailwind_runtime(client):
         r = client.get(path).text
         assert '"/static/app.css"' in r, path
         assert "tailwind.js" not in r, path
-
-
-def test_v4_mpa_view_transitions_cat_morphs(client):
-    """Cross-document view transitions: all four tabs opt in, and the cat
-    carries the same view-transition-name so it MORPHS between pages when
-    you navigate — the mascot persists across the whole app."""
-    for path in ("/", "/activity", "/news", "/analytics"):
-        r = client.get(path).text
-        assert "@view-transition{navigation:auto}" in r, path
-        assert "view-transition-name:cat" in r, path
 
 
 def test_v4_speculation_rules_and_hotkeys(client):
@@ -1464,3 +1372,106 @@ def test_no_page_pulls_a_third_party_asset(client):
             'xmlns="http://www.w3.org/2000/svg"', "")
         external = re.findall(r'https?://[^\s"\'<>)]+', body)
         assert not external, f"{path} pulls {sorted(set(external))}"
+
+
+# ── the redesign, as a contract ──────────────────────────────────────────────
+#
+# The brief was "less childish, more professional — boring, simple,
+# straightforward; something a person with a million dollars would use". Those
+# words are not testable, but the specific things that made it read as a toy
+# are, and each one below was really on the page before this redesign.
+
+PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
+
+
+def test_no_page_ships_decorative_chrome(client):
+    """The mascot, the WebGL aurora, the scanline texture and the scroll-
+    progress beam are gone from every page, not just the dashboard."""
+    banned = {
+        "pixel-cat": "the mascot",
+        "cat-sleep": "mascot state",
+        "gl-bg": "the shader canvas",
+        "__setGlState": "the shader's data feed",
+        "#version 300 es": "a fragment shader",
+        "scroll-progress": "the scroll beam",
+        "repeating-linear-gradient": "scanline texture",
+    }
+    for path in PAGES:
+        page = client.get(path).text
+        for token, what in banned.items():
+            assert token not in page, f"{path} still ships {what} ({token})"
+
+
+def test_the_palette_carries_information_only(client):
+    """One accent, plus green/red for money and amber for attention. The old
+    sheet ran an indigo→violet→purple gradient family through the wordmark,
+    the nav pill, the badges and the equity fill."""
+    for gone in ("#6366f1", "#8b5cf6", "#a855f7", "linear-gradient(135deg"):
+        assert gone not in CSS, f"brand gradient survives in the stylesheet: {gone}"
+    for path in PAGES:
+        page = client.get(path).text
+        for gone in ("#6366f1", "#8b5cf6", "#a855f7"):
+            assert gone not in page, f"{path} hard-codes {gone}"
+
+
+def test_every_page_uses_the_one_stylesheet(client):
+    """Five pages previously carried five ~250-line <style> blocks, so a
+    colour changed in four places and drifted in the fifth."""
+    for path in PAGES:
+        page = client.get(path).text
+        assert "/static/hermes.css" in page, f"{path} does not load the design system"
+
+
+def test_no_page_carries_a_second_design_system(client):
+    """A page-level <style> block is allowed for genuinely page-specific
+    geometry (chart heights), but not for a whole palette."""
+    for name in ("landing", "activity", "analytics", "news", "trends"):
+        src = (pathlib.Path(__file__).resolve().parent.parent
+               / "hermes_trader" / "templates" / f"{name}.html").read_text()
+        blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
+        for b in blocks:
+            assert b.count("\n") < 40, (
+                f"{name}.html has a {b.count(chr(10))}-line <style> block — "
+                f"shared rules belong in static/hermes.css")
+            assert "--ink" not in b and "--accent" not in b, (
+                f"{name}.html redefines design tokens locally")
+
+
+def test_money_is_set_in_tabular_figures():
+    """Proportional digits make a column of numbers jitter as it updates,
+    which is the single clearest tell that a money screen was not built by
+    someone who reads money screens."""
+    assert "font-variant-numeric:tabular-nums" in CSS.replace(" ", "")
+    assert ".kv" in CSS
+
+
+def test_the_type_is_not_a_toy(client):
+    """The old pages set body copy at 10-12px with 9.5px table headers. The
+    reader is not twenty-five and is not on a laptop."""
+    body = re.search(r"\nbody\{[^}]*\}", CSS, re.S).group(0)
+    size = int(re.search(r"font-size:(\d+)px", body).group(1))
+    assert size >= 14, f"body copy is {size}px"
+    assert "font-size:9" not in CSS.replace(" ", ""), "9px type survives"
+
+
+def test_the_page_still_works_in_both_themes():
+    """Light is the default. Dark ships as a second skin — same structure,
+    only tokens differ, so no rule below the token block branches on theme."""
+    assert "prefers-color-scheme: dark" in CSS
+    assert ':root[data-theme="dark"]' in CSS
+    for token in ("--ink", "--paper", "--rule", "--up", "--down", "--accent"):
+        assert CSS.count(f"{token}:") >= 3, f"{token} is not defined for every theme"
+
+
+def test_it_prints():
+    """Someone with this much money hands a page to an accountant."""
+    assert "@media print" in CSS
+
+
+def test_no_page_animates_for_decoration(client):
+    """Every animation that survived has to earn it. The bounce, the breathe,
+    the shimmer and the pulse did not."""
+    for gone in ("cat-bounce", "cat-breathe", "shimmer", "breaking-pulse",
+                 "@keyframes growX"):
+        assert gone not in CSS, f"decorative animation survives: {gone}"
+    assert "prefers-reduced-motion" in CSS, "no motion opt-out"

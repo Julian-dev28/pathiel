@@ -5,272 +5,19 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>hermes-trader · live</title>
 <link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/hermes.css" />
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
-  /* ── design system v3: sans for words, mono/pixel identity in wordmark +
-     section labels. One signature gradient family (indigo→violet) reserved
-     for: wordmark mark, active nav pill, LIVE badges, equity line/fill.
-     Green/red = money + direction, nothing else.
-     v3 adds a LIVING AMBIENT LAYER: a hand-written WebGL2 shader (#gl-bg)
-     whose mood/energy uniforms are driven by the same summary payload that
-     drives the cat — the page itself breathes with the bot. Everything
-     degrades: no WebGL2 → the CSS radial gradient below stays; reduced
-     motion → one static shader frame, zero animation loops. ── */
-  :root{
-    --card:#14161b; --card2:#181b21;
-    --line:#23262e; --line2:#2c313c;
-    --txt:#e8eaf0; --mut:#9aa1ad; --dim:#5c6370;
-    --up:#22c55e; --dn:#ef4444; --amb:#f59e0b;
-    --vio:#8b5cf6;
-    --grad:linear-gradient(135deg,#6366f1 0%,#8b5cf6 55%,#a855f7 100%);
-    /* status-reactive accent pair — :has() overrides below shift the whole
-       page's accent when the pill goes stale/offline. OKLCH so the hue
-       swaps stay perceptually matched in lightness. */
-    --accA:oklch(0.585 0.233 277.1);   /* indigo #6366f1 */
-    --accB:oklch(0.627 0.265 303.9);   /* purple #a855f7 */
-  }
-  /* the page notices its own status pill: amber accents when the feed is
-     stale, red when offline — pure CSS, no JS branching */
-  body:has(#status-pill.stale){ --accA:oklch(0.769 0.188 70.1); --accB:oklch(0.666 0.179 58.3); }
-  body:has(#status-pill.offline){ --accA:oklch(0.637 0.237 25.3); --accB:oklch(0.505 0.213 27.5); }
-  body{
-    font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-    color:var(--txt);
-    background:#0a0b0d;
-    background-image:radial-gradient(1100px 520px at 50% -160px,#16141f 0%,#0e1014 50%,#0a0b0d 100%);
-    background-repeat:no-repeat;background-attachment:fixed;
-  }
-  /* ambient shader canvas — fixed behind everything; content stacks above.
-     If WebGL2 init fails the canvas is removed and the gradient above shows. */
-  #gl-bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:-1;pointer-events:none}
-  /* scroll progress hairline — CSS scroll-driven animation, zero JS. In
-     browsers without scroll timelines it simply never grows (scaleX(0)). */
-  #scroll-progress{position:fixed;top:0;left:0;height:2px;width:100%;z-index:50;
-    transform-origin:0 50%;transform:scaleX(0);
-    background:linear-gradient(90deg,var(--accA),var(--accB));}
-  @supports (animation-timeline: scroll()){
-    @media (prefers-reduced-motion: no-preference){
-      #scroll-progress{animation:growX linear both;animation-timeline:scroll(root)}
-    }
-  }
-  @keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-  /* scroll-driven section reveals — below-the-fold cards rise as they enter
-     the viewport. Gated twice: feature support AND motion preference. */
-  @supports (animation-timeline: view()){
-    @media (prefers-reduced-motion: no-preference){
-      .rise{animation:rise linear both;animation-timeline:view();animation-range:entry 0% entry 55%}
-    }
-  }
-  @keyframes rise{from{opacity:.15;transform:translateY(14px)}to{opacity:1;transform:none}}
-  .mono,.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  .brand{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;font-size:15px;letter-spacing:.16em;color:var(--txt)}
-  .brand .dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--grad);margin-right:10px;box-shadow:0 0 12px rgba(139,92,246,.65)}
-  .nav-link{display:inline-block;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:.1em;color:var(--mut);border-radius:3px;text-decoration:none;border:1px solid transparent}
-  .nav-link:hover{color:var(--txt);background:var(--card)}
-  .nav-link:active{transform:translateY(1px)}
-  .nav-link.nav-active{color:var(--txt);
-    background:linear-gradient(135deg,color-mix(in oklab,var(--accA) 16%,transparent),color-mix(in oklab,var(--accB) 16%,transparent));
-    border-color:color-mix(in oklab,var(--vio) 45%,transparent)}
-  /* cards: 8-bit x premium — near-square corners, hard pixel offset shadow,
-     faint inner top border, chunky lift on hover */
-  .card{background:var(--card);border:1px solid var(--line);border-radius:3px;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45);
-        transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
-  .card:hover{transform:translate(-1px,-1px);border-color:var(--line2);box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5)}
-  .glow{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),4px 4px 0 rgba(0,0,0,.45),0 0 70px -25px rgba(139,92,246,.4)}
-  .glow:hover{box-shadow:inset 0 1px 0 rgba(255,255,255,.03),5px 5px 0 rgba(0,0,0,.5),0 0 70px -25px rgba(139,92,246,.4)}
-  .sec-label{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
-  /* KPI cards are size containers: the number scales with its own card via
-     cqi units, so the band stays balanced at every viewport without media
-     queries. Numbers are tabular so tweens don't jitter horizontally. */
-  .kpi{container-type:inline-size}
-  .kv{font-size:clamp(19px,9.5cqi,30px);font-weight:800;letter-spacing:.02em;line-height:1.2;
-      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--txt);
-      font-variant-numeric:tabular-nums}
-  .kv.pos{color:var(--up)}.kv.neg{color:var(--dn)}
-  .ksub{font-size:10.5px;color:var(--dim)}
-  /* conic border beam on KPI hover — @property makes the angle animatable */
-  @property --beam{syntax:'<angle>';inherits:false;initial-value:0deg}
-  .kpi{position:relative}
-  .kpi::after{content:'';position:absolute;inset:-1px;border-radius:3px;pointer-events:none;
-    padding:1px;opacity:0;transition:opacity .25s ease;
-    background:conic-gradient(from var(--beam),transparent 0 70%,var(--accB) 85%,transparent 100%);
-    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;mask-composite:exclude}
-  @media (prefers-reduced-motion: no-preference){
-    .kpi:hover::after{opacity:.9;animation:beam 2.4s linear infinite}
-  }
-  @keyframes beam{to{--beam:360deg}}
-  .pill{display:inline-flex;align-items:center;gap:7px;padding:3px 12px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:3px;border:1px solid transparent;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .pill::before{content:'';width:6px;height:6px;border-radius:1px;background:currentColor;animation:pulse 2.2s ease-in-out infinite}
-  .pill.scanning{color:#86efac;background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3)}
-  .pill.stale{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
-  .pill.offline{color:#fca5a5;background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3)}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .badge{display:inline-block;padding:1px 9px;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid transparent}
-  .badge.b-live{color:#e4defc;background:linear-gradient(135deg,rgba(99,102,241,.28),rgba(168,85,247,.28));border-color:rgba(139,92,246,.5)}
-  .badge.b-shadow{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
-  .badge.b-off{color:var(--dim);background:#171a20;border-color:var(--line2)}
-  .badge.b-rec{color:#a5b4fc;background:rgba(99,102,241,.10);border-color:rgba(99,102,241,.3)}
-  .badge.b-long{color:#86efac;background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.35)}
-  .badge.b-short{color:#fca5a5;background:rgba(239,68,68,.14);border-color:rgba(239,68,68,.35)}
-  .tk{display:inline-block;padding:1px 9px;border-radius:3px;background:#1d212b;border:1px solid var(--line2);color:#f4f6fa;font-weight:700;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;white-space:nowrap}
-  .tk.off{opacity:.45}
-  .dollar-mask{display:none}
-  body.discreet .dollar-value{display:none}
-  body.discreet .dollar-mask{display:inline;color:var(--dim)}
-  .scroll-x{overflow-x:auto}
-  .seg{display:inline-flex;gap:2px;background:#12141a;border:1px solid var(--line);border-radius:3px;padding:2px}
-  .range-btn{padding:3px 11px;font-size:10.5px;font-weight:600;background:transparent;border:0;border-radius:2px;color:var(--dim);cursor:pointer}
-  .range-btn:hover{color:var(--txt)}
-  .range-btn:active{transform:translateY(1px)}
-  .range-btn.on{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line2)}
-  .icon-btn{background:#12141a;border:1px solid var(--line);border-radius:3px;color:var(--mut);padding:4px 10px;cursor:pointer;font-size:10.5px;font-weight:700;letter-spacing:.06em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .icon-btn:hover{color:var(--txt);border-color:var(--line2)}
-  .icon-btn:active{transform:translateY(1px)}
-  .pnl-cell{font-weight:750}
-  .pnl-cell.pos{color:var(--up)}.pnl-cell.neg{color:var(--dn)}
-  .liq-danger{color:#fca5a5;font-weight:700;text-shadow:0 0 8px rgba(239,68,68,.35)}
-  .o-badge{display:inline-block;padding:1px 8px;font-size:9.5px;font-weight:700;letter-spacing:.08em;border-radius:3px;border:1px solid var(--line2);background:#171a20;color:var(--mut);white-space:nowrap}
-  .o-badge.o-manual{color:#fcd34d;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
-  .tick-up{animation:tick-g .9s ease-out}
-  @keyframes tick-g{0%{background:rgba(34,197,94,.18)}100%{background:transparent}}
-  .tick-dn{animation:tick-r .9s ease-out}
-  @keyframes tick-r{0%{background:rgba(239,68,68,.18)}100%{background:transparent}}
-  /* decision funnel: one violet hue, light→dark opacity steps (sequential =
-     magnitude of the same metric through the pipeline). Counts are direct
-     ink labels beside the bars, never text-on-mark. */
-  .fn-row{display:grid;grid-template-columns:96px 1fr 64px;gap:10px;align-items:center;padding:3px 0}
-  .fn-bar{height:10px;border-radius:2px;background:var(--vio);min-width:3px;
-          transition:width .6s cubic-bezier(.22,1,.36,1)}
-  .fn-lbl{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut)}
-  .fn-n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--txt);text-align:right;font-variant-numeric:tabular-nums}
-  .rs{display:inline-flex;align-items:center;gap:6px;margin:3px 6px 0 0;padding:2px 9px;font-size:10.5px;border-radius:3px;background:#171a20;border:1px solid var(--line2);color:var(--mut)}
-  .rs b{color:var(--txt);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  /* closed-trades tape: edge-masked horizontal strip, native scroll */
-  .tape{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;overscroll-behavior-x:contain;
-        mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)}
-  .tape::-webkit-scrollbar{height:6px}
-  .tape::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
-  .tp{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:8px;padding:5px 11px;border-radius:3px;
-      background:var(--card2);border:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
-  .tp .c{color:#f4f6fa;font-weight:700}
-  .tp .p.pos{color:var(--up)}.tp .p.neg{color:var(--dn)}
-  .tp .a{color:var(--dim);font-size:10px}
-  /* evidence league table */
-  .lg-status{white-space:nowrap}
-  #league td,#league th{font-variant-numeric:tabular-nums}
-  /* pipeline diagram: six pixel nodes joined by dashed connectors (the dash
-     is a repeating-linear-gradient, same texture family as the scanlines) */
-  .pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;margin-bottom:16px}
-  .pn{position:relative;background:var(--card2);border:1px solid var(--line);border-radius:3px;padding:10px 12px;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
-  .pn::after{content:'';position:absolute;top:50%;right:-14px;width:14px;height:1px;
-      background:repeating-linear-gradient(90deg,var(--dim) 0 3px,transparent 3px 6px)}
-  .pipe .pn:last-child::after{display:none}
-  .pn .s{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px;color:color-mix(in oklab,var(--vio) 80%,#fff 20%);letter-spacing:.18em}
-  .pn .n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:800;letter-spacing:.08em;margin:2px 0}
-  .pn .d{font-size:10.5px;color:var(--dim);line-height:1.45;text-wrap:pretty}
-  .hiw{text-wrap:pretty}
-  /* live books dropdown — header row always visible, flow collapses beneath */
-  .books-head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;cursor:pointer;padding:16px 20px}
-  .books-head:active{transform:translateY(1px)}
-  .books-head .chev{margin-left:auto;width:4px;height:4px;background:var(--dim);
-        box-shadow:-5px -4px 0 var(--dim),5px -4px 0 var(--dim);transition:transform .3s ease}
-  .books-head:hover .chev{background:var(--mut);box-shadow:-5px -4px 0 var(--mut),5px -4px 0 var(--mut)}
-  .books-open .books-head .chev{transform:rotate(180deg)}
-  .books-wrap{max-height:0;opacity:0;overflow:hidden;transition:max-height .4s ease,opacity .3s ease}
-  .books-open .books-wrap{max-height:1400px;opacity:1}
-  /* 2026 upgrade: where interpolate-size ships, transition to intrinsic
-     height instead of the max-height guess — no clipped list, no dead air */
-  @supports (interpolate-size: allow-keywords){
-    .books-wrap{interpolate-size:allow-keywords;height:0;max-height:none;transition:height .35s ease,opacity .3s ease}
-    .books-open .books-wrap{height:auto;max-height:none}
-  }
-  .books-flow{max-height:460px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:0 20px 18px;margin-right:4px}
-  .books-flow::-webkit-scrollbar{width:8px}
-  .books-flow::-webkit-scrollbar-track{background:#101216}
-  .books-flow::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
-  .book-row{border:1px solid var(--line);border-radius:3px;background:var(--card2);padding:9px 12px;
-            box-shadow:inset 0 1px 0 rgba(255,255,255,.02)}
-  .book-row.off{opacity:.5}
-  .book-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-  .book-thesis{font-size:12px;color:var(--mut);line-height:1.55;margin-top:4px;text-wrap:pretty}
-  header{position:relative}
-  header::after{content:'';position:absolute;inset:-14px -20px;pointer-events:none;z-index:-1;
-        background:repeating-linear-gradient(0deg,rgba(139,92,246,.05) 0 1px,transparent 1px 4px)}
-  /* operator-token popover: native top layer, ::backdrop blur, entry
-     animation via @starting-style + allow-discrete (no JS animation code) */
-  .pop{position:fixed;inset:0;margin:auto;width:min(92vw,390px);height:fit-content;
-       background:var(--card);border:1px solid var(--line2);border-radius:4px;padding:18px;color:var(--txt);
-       box-shadow:4px 4px 0 rgba(0,0,0,.45),0 0 90px -30px rgba(139,92,246,.5)}
-  .pop::backdrop{background:rgba(6,7,9,.55);backdrop-filter:blur(3px)}
-  .pop input{width:100%;background:#101216;border:1px solid var(--line2);border-radius:3px;color:var(--txt);
-       padding:7px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;field-sizing:content}
-  @supports (transition-behavior: allow-discrete){
-    .pop{opacity:0;transform:translateY(10px) scale(.985);
-         transition:opacity .22s ease,transform .22s cubic-bezier(.22,1,.36,1),
-                    overlay .22s ease allow-discrete,display .22s ease allow-discrete}
-    .pop:popover-open{opacity:1;transform:none}
-    @starting-style{.pop:popover-open{opacity:0;transform:translateY(10px) scale(.985)}}
-  }
-  /* range switches run inside a view transition (guarded in JS) — keep the
-     default root cross-fade snappy so live numbers never look laggy */
-  ::view-transition-old(root),::view-transition-new(root){animation-duration:.18s}
-  /* ── the pixel cat: 16x16 SVG rect grid, states driven by summary data ──
-     scanning = tail flick · alert (position open) = perked ears, wide eyes ·
-     sad (red day) = flat ears · sleep (stale/offline) = closed eyes + zzz ·
-     win tick = bounce. Reduced motion: static cat. */
-  .cat{width:40px;height:40px;display:inline-block;margin-right:10px}
-  .cat svg{width:100%;height:100%;display:block;shape-rendering:crispEdges}
-  .cat .c-ears-p,.cat .c-ears-f,.cat .c-eyes-w,.cat .c-eyes-c,.cat .c-zzz{display:none}
-  .cat.cat-alert .c-ears-n,.cat.cat-alert .c-eyes-n{display:none}
-  .cat.cat-alert .c-ears-p,.cat.cat-alert .c-eyes-w{display:block}
-  .cat.cat-sad .c-ears-n{display:none}
-  .cat.cat-sad .c-ears-f{display:block}
-  .cat.cat-sleep .c-eyes-n,.cat.cat-sleep .c-eyes-w{display:none}
-  .cat.cat-sleep .c-eyes-c,.cat.cat-sleep .c-zzz{display:block}
-  .cat .c-tail-a{animation:tail-a 1.4s steps(1) infinite}
-  .cat .c-tail-b{animation:tail-b 1.4s steps(1) infinite}
-  @keyframes tail-a{0%,49%{opacity:1}50%,100%{opacity:0}}
-  @keyframes tail-b{0%,49%{opacity:0}50%,100%{opacity:1}}
-  .cat.cat-sleep .c-tail-a{animation:none;opacity:1}
-  .cat.cat-sleep .c-tail-b{animation:none;opacity:0}
-  .cat.cat-sleep svg{animation:cat-breathe 3.2s ease-in-out infinite;transform-origin:50% 100%}
-  @keyframes cat-breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.93)}}
-  .cat .c-zzz rect{animation:zzz 2.4s steps(1) infinite}
-  .cat .c-zzz rect:nth-child(2){animation-delay:.8s}
-  .cat .c-zzz rect:nth-child(3){animation-delay:1.6s}
-  @keyframes zzz{0%,60%{opacity:1}61%,100%{opacity:.15}}
-  .cat.cat-bounce{animation:cat-bounce .7s cubic-bezier(.3,1.8,.4,1)}
-  @keyframes cat-bounce{0%{transform:translateY(0)}35%{transform:translateY(-6px)}70%{transform:translateY(1px)}100%{transform:none}}
-  @media (prefers-reduced-motion: reduce){
-    .card,.books-wrap,.books-head .chev,.fn-bar{transition:none}
-    .tick-up,.tick-dn,.pill::before,.kpi:hover::after{animation:none}
-    .cat .c-tail-a,.cat .c-tail-b,.cat.cat-sleep svg,.cat .c-zzz rect,.cat.cat-bounce{animation:none}
-  }
-  #wire{margin:-6px 0 20px;font-size:10.5px;color:var(--dim);letter-spacing:.04em;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  #wire b{color:var(--mut);font-weight:600}
-  #wire.tick{animation:wire-in .5s ease-out}
-  @keyframes wire-in{0%{opacity:.25}100%{opacity:1}}
-  /* ── v4 app-shell (2026-07-17): cross-document view transitions — every
-     tab opts in, so navigation cross-fades and the CAT MORPHS between pages
-     (it carries view-transition-name:cat on all four). Speculation-rules
-     prerender (in the body) makes the hop feel instant. text-box trims
-     cap-height dead space so labels and numerals sit optically flush. ── */
-  @view-transition{navigation:auto}
-  #pixel-cat{view-transition-name:cat}
-  ::view-transition-group(cat){animation-duration:.28s}
-  @supports (text-box: trim-both cap alphabetic){
-    .sec-label,.kv{text-box:trim-both cap alphabetic}
-  }
+  /* Page-specific only. Everything shared lives in /static/hermes.css.
+     Chart.js needs an explicit box or it grows without bound. */
+  #equity-chart{ max-height:180px; }
+  #kpi-spark{ max-height:30px; margin-top:10px; }
+  .nav-figure{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+  .nav-figure .kv{ margin:0; }
 </style>
 </head>
-<body class="min-h-screen">
-<canvas id="gl-bg" aria-hidden="true"></canvas>
-<div id="scroll-progress" aria-hidden="true"></div>
+<body>
 <script type="speculationrules">
 {"prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}}]},"eagerness":"moderate"}]}
 </script>
@@ -288,256 +35,237 @@
   });
 })();
 </script>
-<div class="max-w-[1100px] mx-auto px-6 py-6">
 
-  <header class="flex items-center justify-between mb-5 gap-3 flex-wrap">
-    <span class="brand flex items-center">
-      <!-- the cat: hand-placed 16x16 pixel grid — white coat, heterochromia
-           (green left / blue right), violet collar tying it to the brand -->
-      <span id="pixel-cat" class="cat" title="the cat watches the tape">
-        <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <g class="c-ears-n">
-            <rect x="3" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="3" width="3" height="1" fill="#f4f6fa"/>
-            <rect x="12" y="1" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="2" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="3" height="1" fill="#f4f6fa"/>
-            <rect x="4" y="3" width="1" height="1" fill="#f0abfc"/><rect x="11" y="3" width="1" height="1" fill="#f0abfc"/>
-          </g>
-          <g class="c-ears-p">
-            <rect x="3" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="3" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="3" y="2" width="3" height="2" fill="#f4f6fa"/>
-            <rect x="12" y="0" width="1" height="1" fill="#f4f6fa"/><rect x="11" y="1" width="2" height="1" fill="#f4f6fa"/><rect x="10" y="2" width="3" height="2" fill="#f4f6fa"/>
-            <rect x="4" y="2" width="1" height="1" fill="#f0abfc"/><rect x="11" y="2" width="1" height="1" fill="#f0abfc"/>
-          </g>
-          <g class="c-ears-f">
-            <rect x="2" y="3" width="4" height="1" fill="#f4f6fa"/><rect x="10" y="3" width="4" height="1" fill="#f4f6fa"/>
-          </g>
-          <rect x="2" y="4" width="12" height="9" fill="#f4f6fa"/>
-          <g class="c-eyes-n">
-            <rect x="4" y="7" width="2" height="2" fill="#22c55e"/><rect x="10" y="7" width="2" height="2" fill="#60a5fa"/>
-          </g>
-          <g class="c-eyes-w">
-            <rect x="4" y="6" width="2" height="3" fill="#22c55e"/><rect x="10" y="6" width="2" height="3" fill="#60a5fa"/>
-          </g>
-          <g class="c-eyes-c">
-            <rect x="4" y="8" width="2" height="1" fill="#5c6370"/><rect x="10" y="8" width="2" height="1" fill="#5c6370"/>
-          </g>
-          <rect x="7" y="10" width="2" height="1" fill="#f0abfc"/>
-          <rect x="0" y="10" width="2" height="1" fill="#5c6370"/><rect x="14" y="10" width="2" height="1" fill="#5c6370"/>
-          <rect x="2" y="12" width="12" height="1" fill="#8b5cf6"/>
-          <rect x="3" y="14" width="2" height="1" fill="#c9ced8"/><rect x="11" y="14" width="2" height="1" fill="#c9ced8"/>
-          <g class="c-tail-a"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="11" width="1" height="1" fill="#f4f6fa"/></g>
-          <g class="c-tail-b"><rect x="14" y="12" width="1" height="1" fill="#f4f6fa"/><rect x="15" y="13" width="1" height="1" fill="#f4f6fa"/></g>
-          <g class="c-zzz">
-            <rect x="12" y="2" width="1" height="1" fill="#8b5cf6"/><rect x="13" y="1" width="1" height="1" fill="#a78bfa"/><rect x="14" y="0" width="1" height="1" fill="#c4b5fd"/>
-          </g>
-        </svg>
-      </span>
-      <span class="dot"></span>HERMES-TRADER
-    </span>
-    <div class="flex items-center gap-2 text-xs">
-      <button id="discreet-toggle" type="button" class="icon-btn" title="hide all $ amounts (keep percentages)">HIDE $</button>
-      <span id="status-pill" class="pill offline">offline</span>
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Hermes</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+    </nav>
+    <div class="masthead-right">
+      <button id="discreet-toggle" type="button" class="icon-btn"
+              title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
+      <span id="status-pill" class="pill offline">Offline</span>
     </div>
-  </header>
+  </div>
+</div>
 
-  <nav class="flex items-center gap-2 mb-6 flex-wrap">
-    <a href="/" data-nav="/" class="nav-link">DASHBOARD</a>
-    <a href="/activity" data-nav="/activity" class="nav-link">ACTIVITY</a>
-    <a href="/trends" data-nav="/trends" class="nav-link">TRENDS</a>
-  </nav>
+<div class="shell">
+
+  <div class="page-head">
+    <h1 class="page-title">Account</h1>
+    <div class="page-sub">Autonomous execution on Hyperliquid. One wallet, live.</div>
+  </div>
 
   <!-- the wire: live session-log tail over SSE — the newest engine event,
-       one line, straight from /api/feed/stream (replays recent past on
-       connect, so it is never blank while the loop runs) -->
+       one line, straight from /api/feed/stream -->
   <div id="wire" class="mono" aria-live="polite" hidden></div>
 
-  <!-- RISK BAND. Deliberately above the fold and above the pretty things:
-       this page showed upside and activity for months and never once showed
-       what the account could lose. Drawdown first, cost of trading second,
-       distance to the kill switch third. -->
-  <section class="card p-4 mb-6" id="risk-band" aria-label="risk">
-    <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-      <div class="sec-label" style="margin-bottom:0">risk</div>
-      <div class="flex items-center gap-2">
-        <span class="badge b-off mono" id="risk-mode">—</span>
-        <button type="button" id="kill-btn"
-                style="font-family:ui-monospace,monospace;font-size:10px;font-weight:800;
-                       letter-spacing:.12em;padding:3px 10px;border-radius:3px;cursor:pointer;
-                       color:#fca5a5;background:rgba(239,68,68,.10);
-                       border:1px solid rgba(239,68,68,.45)">STOP TRADING</button>
+  <!-- Net asset value leads, and the drawdown sits directly under it rather
+       than in a separate panel further down. The number you have and the
+       number you are down are one thought. -->
+  <section class="section">
+    <div class="stat-row">
+      <div class="kpi">
+        <div class="sec-label">Net asset value</div>
+        <div class="kv hero" id="kpi-equity">$0.00</div>
+        <div class="ksub mono" id="kpi-equity-breakdown"></div>
+        <canvas id="kpi-spark" height="30" aria-hidden="true"></canvas>
+      </div>
+      <div class="kpi">
+        <div class="sec-label">Today</div>
+        <div class="kv" id="kpi-pnl">$0.00</div>
+        <div class="ksub mono" id="kpi-pnl-pct">&mdash;</div>
+      </div>
+      <div class="kpi">
+        <div class="sec-label">Open positions</div>
+        <div class="kv" id="kpi-open">0</div>
+      </div>
+      <div class="kpi">
+        <div class="sec-label">Last scan</div>
+        <div class="kv" id="kpi-tick">&mdash;</div>
+        <div class="ksub" id="kpi-tick-detail">No scan yet</div>
       </div>
     </div>
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+  </section>
+
+  <!-- RISK. Deliberately above the activity and the charts: this page showed
+       upside for months and never once showed what the account could lose. -->
+  <section class="section" id="risk-band" aria-label="Risk">
+    <div class="section-head">
+      <h2 class="sec-label">Risk</h2>
+      <span class="badge" id="risk-mode">&mdash;</span>
+      <div class="section-meta">
+        <button type="button" id="kill-btn" class="btn btn-danger">Stop trading</button>
+      </div>
+    </div>
+    <div class="stat-row">
       <div>
-        <div class="sec-label mb-1">drawdown from peak</div>
-        <div class="kv" id="risk-dd">—</div>
+        <div class="sec-label">Drawdown from peak</div>
+        <div class="kv" id="risk-dd">&mdash;</div>
         <div class="ksub mono" id="risk-peak"></div>
       </div>
       <div>
-        <div class="sec-label mb-1">max drawdown</div>
-        <div class="kv" id="risk-maxdd">—</div>
+        <div class="sec-label">Maximum drawdown</div>
+        <div class="kv" id="risk-maxdd">&mdash;</div>
         <div class="ksub mono" id="risk-window"></div>
       </div>
       <div>
-        <div class="sec-label mb-1">win rate</div>
-        <div class="kv" id="risk-win">—</div>
+        <div class="sec-label">Win rate</div>
+        <div class="kv" id="risk-win">&mdash;</div>
         <div class="ksub mono" id="risk-n"></div>
       </div>
       <div>
-        <div class="sec-label mb-1">fee drag</div>
-        <div class="kv" id="risk-fees">—</div>
-        <div class="ksub mono">of gross p&amp;l</div>
+        <div class="sec-label">Fee drag</div>
+        <div class="kv" id="risk-fees">&mdash;</div>
+        <div class="ksub mono">of gross P&amp;L</div>
       </div>
       <div>
-        <div class="sec-label mb-1">to kill switch</div>
-        <div class="kv" id="risk-kill">—</div>
+        <div class="sec-label">To kill switch</div>
+        <div class="kv" id="risk-kill">&mdash;</div>
         <div class="ksub mono" id="risk-kill-sub"></div>
       </div>
     </div>
-    <div class="ksub mt-3" id="risk-feed"></div>
-    <div class="ksub mt-3" id="risk-caveat"></div>
-    <div class="ksub mono mt-1" id="kill-out"></div>
+    <div class="ksub" id="risk-feed"></div>
+    <div class="ksub" id="risk-caveat"></div>
+    <div class="ksub mono" id="kill-out"></div>
   </section>
 
-  <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <div class="card glow kpi p-4">
-      <div class="sec-label mb-1">equity</div>
-      <div class="kv" id="kpi-equity">$0.00</div>
-      <div class="ksub mono mt-1" id="kpi-equity-breakdown"></div>
-      <canvas id="kpi-spark" height="26" class="w-full mt-2" aria-hidden="true"></canvas>
-    </div>
-    <div class="card glow kpi p-4">
-      <div class="sec-label mb-1">today</div>
-      <div class="kv" id="kpi-pnl">$0.00</div>
-      <div class="ksub mono" id="kpi-pnl-pct">&mdash;</div>
-    </div>
-    <div class="card kpi p-4">
-      <div class="sec-label mb-1">open positions</div>
-      <div class="kv" id="kpi-open">0</div>
-    </div>
-    <div class="card kpi p-4">
-      <div class="sec-label mb-1">last tick</div>
-      <div class="kv" id="kpi-tick">&mdash;</div>
-      <div class="ksub" id="kpi-tick-detail">no scan yet</div>
-    </div>
-  </section>
-
-  <section id="funnel-strip" class="card p-5 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">decision funnel — last 24h</div>
-      <div class="text-[10px] mono" style="color:var(--dim)" id="funnel-meta"></div>
-    </div>
-    <div id="funnel-bars"><div class="text-xs" style="color:var(--dim)">loading&hellip;</div></div>
-    <div id="funnel-reasons"></div>
-  </section>
-
-  <section class="card p-5 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">open positions</div>
-      <div class="text-[10px] mono" style="color:var(--dim)" id="positions-count"></div>
+  <section class="section">
+    <div class="section-head">
+      <h2 class="sec-label">Open positions</h2>
+      <div class="section-meta mono" id="positions-count"></div>
     </div>
     <div class="scroll-x">
-      <table class="w-full text-xs">
+      <table>
         <thead>
-          <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">coin</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">side</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">notional</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">lev</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">entry</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">mark</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">liq</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">uPnL</th>
-            <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">origin</th>
+          <tr>
+            <th>Coin</th>
+            <th>Side</th>
+            <th class="num">Notional</th>
+            <th class="num">Leverage</th>
+            <th class="num">Entry</th>
+            <th class="num">Mark</th>
+            <th class="num">Liquidation</th>
+            <th class="num">Unrealised</th>
+            <th class="num">Origin</th>
           </tr>
         </thead>
         <tbody id="positions-body">
-          <tr><td colspan="9" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+          <tr><td colspan="9" class="mut">Loading&hellip;</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <section class="card glow p-5 mb-6">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">equity curve</div>
-      <div class="seg">
-        <button data-range="86400" class="range-btn on">24h</button>
-        <button data-range="604800" class="range-btn">7d</button>
-        <button data-range="2592000" class="range-btn">30d</button>
+  <section class="section">
+    <div class="section-head">
+      <h2 class="sec-label">Equity</h2>
+      <div class="section-meta">
+        <span class="seg">
+          <button data-range="86400" class="range-btn on">24h</button>
+          <button data-range="604800" class="range-btn">7d</button>
+          <button data-range="2592000" class="range-btn">30d</button>
+        </span>
       </div>
     </div>
-    <div class="relative">
-      <canvas id="equity-chart" height="110"></canvas>
-      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs" style="color:var(--dim)">
-        no heartbeats yet in this window
-      </div>
-    </div>
-  </section>
-
-  <section id="trade-tape" class="card p-5 mb-6 rise">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">recent closes</div>
-      <div class="text-[10px] mono" style="color:var(--dim)" id="tape-meta"></div>
-    </div>
-    <div id="tape-flow" class="tape"><span class="text-xs" style="color:var(--dim)">loading&hellip;</span></div>
-  </section>
-
-  <section class="card p-0 mb-6 rise" id="books-section">
-    <button id="books-toggle" class="books-head" type="button" aria-expanded="false">
-      <span class="sec-label">live books</span>
-      <span class="text-[10px] mono" style="color:var(--dim)" id="books-count"></span>
-      <span class="chev"></span>
-    </button>
-    <div class="books-wrap" id="books-wrap">
-      <div id="books-flow" class="books-flow">
-        <div class="text-xs" style="color:var(--dim)">loading&hellip;</div>
+    <div class="chart-wrap">
+      <canvas id="equity-chart" height="180"></canvas>
+      <div id="equity-empty" class="hidden absolute inset-0 flex items-center justify-center mut">
+        No heartbeats recorded in this window
       </div>
     </div>
   </section>
 
-  <section id="league" class="card p-5 mb-6 rise">
-    <div class="flex items-center justify-between mb-3">
-      <div class="sec-label">evidence league — every book, graded forward</div>
-      <div class="text-[10px] mono" style="color:var(--dim)" id="league-meta"></div>
+  <section class="section" id="funnel-strip">
+    <div class="section-head">
+      <h2 class="sec-label">Decision funnel</h2>
+      <div class="section-meta mono" id="funnel-meta">Last 24 hours</div>
+    </div>
+    <div id="funnel-bars"><div class="mut">Loading&hellip;</div></div>
+    <div id="funnel-reasons"></div>
+  </section>
+
+  <section class="section" id="trade-tape">
+    <div class="section-head">
+      <h2 class="sec-label">Recent closes</h2>
+      <div class="section-meta mono" id="tape-meta"></div>
+    </div>
+    <div id="tape-flow" class="tape"><span class="mut">Loading&hellip;</span></div>
+  </section>
+
+  <section class="section" id="books-section">
+    <div class="panel">
+      <button id="books-toggle" class="books-head" type="button" aria-expanded="false">
+        <span class="sec-label">Live books</span>
+        <span class="mono mut" id="books-count"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="books-wrap" id="books-wrap">
+        <div id="books-flow" class="books-flow">
+          <div class="mut">Loading&hellip;</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="league">
+    <div class="section-head">
+      <h2 class="sec-label">Evidence</h2>
+      <div class="section-meta mono" id="league-meta"></div>
     </div>
     <div class="scroll-x">
-      <table class="w-full text-xs">
+      <table>
         <thead>
-          <tr class="text-left border-b" style="color:var(--dim);border-color:var(--line)">
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">book</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">status</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px]">size</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">signals</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">resolved</th>
-            <th class="py-2 pr-3 font-semibold uppercase tracking-wider text-[9.5px] text-right">pending</th>
-            <th class="py-2 font-semibold uppercase tracking-wider text-[9.5px] text-right">last signal</th>
+          <tr>
+            <th>Book</th>
+            <th>Status</th>
+            <th>Size</th>
+            <th class="num">Signals</th>
+            <th class="num">Resolved</th>
+            <th class="num">Pending</th>
+            <th class="num">Last signal</th>
           </tr>
         </thead>
         <tbody id="league-body">
-          <tr><td colspan="7" class="py-3" style="color:var(--dim)">loading&hellip;</td></tr>
+          <tr><td colspan="7" class="mut">Loading&hellip;</td></tr>
         </tbody>
       </table>
     </div>
-    <div class="text-[10.5px] mt-3" style="color:var(--dim)">
-      every strategy records to a shadow ledger before it touches capital — evidence promotes, refuted books die. no exceptions.
-    </div>
+    <p class="note" style="margin-top:12px">
+      Every strategy records to a forward ledger before it is given capital.
+      Evidence promotes a book; a refuted book is removed.
+    </p>
   </section>
 
-  <section id="pipeline" class="card p-5 mb-6 rise text-[14px] leading-relaxed" style="color:#cfd4dd">
-    <div class="sec-label mb-3">how it works</div>
-    <div class="pipe" aria-label="trade pipeline">
-      <div class="pn"><span class="s">01</span><div class="n">SCAN</div><div class="d">60+ markets/min: volume spikes, breakouts, momentum bursts</div></div>
-      <div class="pn"><span class="s">02</span><div class="n">TA GATE</div><div class="d">free technical filter — AI tokens only on confirmed setups</div></div>
-      <div class="pn"><span class="s">03</span><div class="n">AI RESEARCH</div><div class="d">verdict + confidence, live web search on movers and holds</div></div>
-      <div class="pn"><span class="s">04</span><div class="n">RISK GATES</div><div class="d">11 gates: notional caps, liquidity floors, regime, correlation</div></div>
-      <div class="pn"><span class="s">05</span><div class="n">SIZE</div><div class="d">half-Kelly against live dex equity, hard per-book clips</div></div>
-      <div class="pn"><span class="s">06</span><div class="n">DSL EXIT</div><div class="d">two-phase stop: loss protection, then a one-way trailing floor</div></div>
+  <section class="section" id="pipeline">
+    <div class="section-head">
+      <h2 class="sec-label">Method</h2>
     </div>
-    <p class="hiw">Autonomous trading agent on Hyperliquid perpetuals — crypto, equities, commodities. Every minute the engine scans 60+ markets for statistical triggers (volume spikes, breakouts, momentum bursts), runs a free TA filter, and only spends AI tokens on confirmed setups. Trades clear 11 risk gates, size by half-Kelly, and exit through a two-phase dynamic stop-loss (loss protection → profit locking with one-way trailing floor). Live on one wallet. Not financial advice.</p>
+    <div class="pipe" aria-label="Trade pipeline">
+      <div class="pn"><span class="s">01</span><div class="n">Scan</div><div class="d">60+ markets each minute: volume spikes, breakouts, momentum bursts</div></div>
+      <div class="pn"><span class="s">02</span><div class="n">Technical filter</div><div class="d">A free gate, so model spend goes only to confirmed setups</div></div>
+      <div class="pn"><span class="s">03</span><div class="n">Research</div><div class="d">Verdict and confidence, with live search on movers and holds</div></div>
+      <div class="pn"><span class="s">04</span><div class="n">Risk gates</div><div class="d">Eleven checks: notional caps, liquidity floors, regime, correlation</div></div>
+      <div class="pn"><span class="s">05</span><div class="n">Sizing</div><div class="d">Half-Kelly against live equity, with a hard per-book limit</div></div>
+      <div class="pn"><span class="s">06</span><div class="n">Exit</div><div class="d">Two-phase stop: loss protection, then a one-way trailing floor</div></div>
+    </div>
+    <p class="hiw">
+      Hermes trades Hyperliquid perpetuals across crypto, equities and commodities
+      without human input. Each minute it scans for statistical triggers, filters
+      them technically before spending anything on research, and sizes what
+      survives against live account equity. Positions exit through a two-phase
+      dynamic stop rather than a fixed target. Past results are not indicative of
+      future performance, and nothing here is financial advice.
+    </p>
   </section>
 
-  <footer class="text-[10px] mt-6 text-center" style="color:var(--dim)">
-    one wallet · live · not financial advice ·
-    <button id="op-token-btn" type="button" popovertarget="token-pop" class="underline bg-transparent border-0 cursor-pointer text-[10px] p-0" style="color:var(--dim)">set token</button>
+  <footer class="site-foot">
+    <span>One wallet &middot; live</span>
+    <span>Not financial advice</span>
+    <button id="op-token-btn" type="button" popovertarget="token-pop" class="icon-btn ml-auto">Operator token</button>
   </footer>
 </div>
 
@@ -545,13 +273,13 @@
      in localStorage ONLY and is sent as X-Operator-Token by tooling that
      calls the token-gated /api/agent + /api/hl endpoints. -->
 <div id="token-pop" popover class="pop">
-  <div class="sec-label mb-2">operator token</div>
+  <div class="sec-label mb-2">Operator token</div>
   <input id="token-input" type="password" autocomplete="off" spellcheck="false" placeholder="HERMES_OPERATOR_TOKEN" />
-  <div class="text-[10px] mt-2" style="color:var(--dim)">stored only in this browser (localStorage) — never sent anywhere by this page</div>
+  <p class="note" style="margin-top:8px">Stored only in this browser. This page never transmits it.</p>
   <div class="flex gap-2 mt-3">
-    <button id="token-save" type="button" class="icon-btn">SAVE</button>
-    <button id="token-clear" type="button" class="icon-btn">CLEAR</button>
-    <button type="button" class="icon-btn ml-auto" popovertarget="token-pop" popovertargetaction="hide">CLOSE</button>
+    <button id="token-save" type="button" class="icon-btn">Save</button>
+    <button id="token-clear" type="button" class="icon-btn">Clear</button>
+    <button type="button" class="icon-btn ml-auto" popovertarget="token-pop" popovertargetaction="hide">Close</button>
   </div>
 </div>
 
@@ -561,6 +289,7 @@ const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
 const fmtPct = n => (n >= 0 ? '+' : '') + (n ?? 0).toFixed(2) + '%';
 const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s / 60) + 'm ago');
 const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class="dollar-mask">•••</span>`;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -572,116 +301,6 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   });
 })();
 
-// ── ambient WebGL2 layer ─────────────────────────────────────────────────────
-// Hand-written fragment shader, no library: domain-warped fbm aurora in the
-// brand indigo→violet ramp. Three uniforms come from the live summary —
-// u_mood (daily pnl, green↔red horizon tint), u_energy (scanning/stale/
-// offline → drift speed + brightness), u_pos (open-position load). Ordered
-// 4x4 Bayer dither kills gradient banding and nods to the 8-bit brand.
-// Budget discipline: low-power GPU hint, DPR capped at 1.5, ~30fps, paused
-// on hidden tabs; prefers-reduced-motion renders exactly ONE static frame.
-(function () {
-  const cv = document.getElementById('gl-bg');
-  const gl = cv.getContext('webgl2', { antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
-  if (!gl) { cv.remove(); return; }   // CSS radial gradient beneath remains
-
-  const VS = `#version 300 es
-void main(){vec2 v=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(v*2.-1.,0.,1.);}`;
-  const FS = `#version 300 es
-precision highp float;
-uniform vec2 u_res;uniform float u_t;
-uniform float u_mood;uniform float u_energy;uniform float u_pos;
-out vec4 o;
-float hash(vec2 p){p=fract(p*vec2(127.1,311.7));p+=dot(p,p+19.19);return fract(p.x*p.y);}
-float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
- return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
-float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*noise(p);p=p*2.03+17.3;a*=.5;}return s;}
-const float B[16]=float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.);
-void main(){
- vec2 uv=gl_FragCoord.xy/u_res;
- vec2 p=vec2(uv.x*u_res.x/u_res.y,uv.y);
- float t=u_t*(.015+.05*u_energy);
- vec2 q=vec2(fbm(p*1.3+vec2(0.,t)),fbm(p*1.3+vec2(5.2,-t*.7)));
- float v=fbm(p*2.1+2.2*q+vec2(0.,t*.4));
- float sky=smoothstep(.15,.85,uv.y);
- float glow=sky*(.10+.22*v)*(.45+.55*u_energy)*(1.+.35*u_pos);
- vec3 aur=mix(vec3(.388,.400,.945),vec3(.659,.333,.969),v);
- aur=mix(aur,u_mood>=0.?vec3(.13,.72,.36):vec3(.92,.26,.26),abs(u_mood)*.38);
- vec3 col=vec3(.039,.043,.051)+aur*glow;
- col+=aur*exp(-abs(uv.y-.72)*6.)*.06*(.5+.5*u_energy);
- col*=1.-.28*length(uv-vec2(.5,.55));
- int bi=int(mod(gl_FragCoord.y,4.))*4+int(mod(gl_FragCoord.x,4.));
- col+=(B[bi]/16.-.5)/255.*3.;
- o=vec4(col,1.);}`;
-
-  function shader(type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s);
-    return s;
-  }
-  let prog;
-  try {
-    prog = gl.createProgram();
-    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
-    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog);
-  } catch (e) { cv.remove(); return; }
-  gl.useProgram(prog);
-  const U = n => gl.getUniformLocation(prog, n);
-  const uRes = U('u_res'), uT = U('u_t'), uMood = U('u_mood'), uEnergy = U('u_energy'), uPos = U('u_pos');
-
-  // live state, eased toward targets so status flips glide instead of snap
-  const tgt = { mood: 0, energy: 0.45, pos: 0 };
-  const cur = { mood: 0, energy: 0.45, pos: 0 };
-  window.__setGlState = s => {
-    tgt.mood = Math.max(-1, Math.min(1, (s.daily_pnl_pct ?? 0) / 2));
-    tgt.energy = s.status === 'scanning' ? 1 : s.status === 'stale' ? 0.45 : 0.12;
-    tgt.pos = Math.min(1, (s.open_positions ?? 0) / 5);
-    if (reduceMotion.matches) draw(t0 + 1);   // static mode: redraw the single frame on state change
-  };
-
-  function resize() {
-    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
-    cv.width = Math.round(innerWidth * dpr);
-    cv.height = Math.round(innerHeight * dpr);
-    gl.viewport(0, 0, cv.width, cv.height);
-    if (reduceMotion.matches) draw(t0 + 1);
-  }
-  const t0 = performance.now();
-  let last = 0, rafId = 0;
-  function draw(now) {
-    const k = reduceMotion.matches ? 1 : 0.04;
-    cur.mood += (tgt.mood - cur.mood) * k;
-    cur.energy += (tgt.energy - cur.energy) * k;
-    cur.pos += (tgt.pos - cur.pos) * k;
-    gl.uniform2f(uRes, cv.width, cv.height);
-    gl.uniform1f(uT, (now - t0) / 1000);
-    gl.uniform1f(uMood, cur.mood);
-    gl.uniform1f(uEnergy, cur.energy);
-    gl.uniform1f(uPos, cur.pos);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-  function loop(now) {
-    rafId = requestAnimationFrame(loop);
-    if (now - last < 33) return;      // ~30fps is plenty for ambience
-    last = now;
-    draw(now);
-  }
-  function setMode() {
-    cancelAnimationFrame(rafId);
-    if (reduceMotion.matches) draw(t0 + 1);
-    else rafId = requestAnimationFrame(loop);
-  }
-  addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => {
-    cancelAnimationFrame(rafId);
-    if (!document.hidden && !reduceMotion.matches) rafId = requestAnimationFrame(loop);
-  });
-  reduceMotion.addEventListener('change', setMode);
-  resize(); setMode();
-})();
 
 // operator token entry — popover form, same localStorage key as ever so
 // existing tooling reads it unchanged.
@@ -691,7 +310,7 @@ void main(){
   const input = document.getElementById('token-input');
   if (!btn || !pop) return;
   const sync = () => {
-    btn.textContent = localStorage.getItem('hermes-op-token') ? 'clear token' : 'set token';
+    btn.textContent = localStorage.getItem('hermes-op-token') ? 'Clear token' : 'Operator token';
   };
   sync();
   pop.addEventListener('toggle', e => {
@@ -711,7 +330,7 @@ void main(){
 // discreet toggle — mask $ values, keep percentages. Text label, no glyphs.
 (function () {
   const btn = document.getElementById('discreet-toggle');
-  const sync = () => { btn.textContent = document.body.classList.contains('discreet') ? 'SHOW $' : 'HIDE $'; };
+  const sync = () => { btn.textContent = document.body.classList.contains('discreet') ? 'Show amounts' : 'Hide amounts'; };
   if (localStorage.getItem('hermes-discreet') === '1') document.body.classList.add('discreet');
   sync();
   btn.addEventListener('click', () => {
@@ -765,10 +384,12 @@ let currentRange = 86400;
 const RANGE_UNIT = { 86400: 'hour', 604800: 'day', 2592000: 'day' };
 
 function lineGradient(ctx, area) {
+  // Read the accent off the stylesheet rather than hard-coding it, so the
+  // chart follows the theme instead of drifting from it.
   const g = ctx.createLinearGradient(area.left, 0, area.right, 0);
-  g.addColorStop(0, '#6366f1');
-  g.addColorStop(0.55, '#8b5cf6');
-  g.addColorStop(1, '#a855f7');
+  const accent = tok('--accent');
+  g.addColorStop(0, accent);
+  g.addColorStop(1, accent);
   return g;
 }
 function fillGradient(ctx, area) {
@@ -798,7 +419,7 @@ function drawSpark(data) {
     const y = h - 3 - (p.y - lo) / span * (h - 6);
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
-  ctx.strokeStyle = '#8b5cf6';
+  ctx.strokeStyle = tok('--accent');
   ctx.lineWidth = 1.5;
   ctx.stroke();
 }
@@ -818,14 +439,14 @@ async function refreshChart(rangeSec) {
           data,
           borderColor: (c) => {
             const { ctx, chartArea } = c.chart;
-            return chartArea ? lineGradient(ctx, chartArea) : '#8b5cf6';
+            return chartArea ? lineGradient(ctx, chartArea) : tok('--accent');
           },
           borderWidth: 1.75,
           cubicInterpolationMode: 'monotone',
           tension: 0.35,
           pointRadius: 0,
           pointHoverRadius: 4,
-          pointHoverBackgroundColor: '#a855f7',
+          pointHoverBackgroundColor: tok('--accent'),
           pointHoverBorderColor: '#0a0b0d',
           pointHoverBorderWidth: 2,
           fill: true,
@@ -841,7 +462,8 @@ async function refreshChart(rangeSec) {
             legend: { display: false },
             decimation: { enabled: true, algorithm: 'lttb', samples: 80, threshold: 100 },
             tooltip: {
-              backgroundColor: '#14161b', borderColor: '#2c313c', borderWidth: 1,
+              backgroundColor: tok('--surface'), borderColor: tok('--rule-2'),
+              titleColor: tok('--ink'), bodyColor: tok('--ink-2'), borderWidth: 1,
               titleColor: '#9aa1ad', bodyColor: '#e8eaf0', padding: 8, displayColors: false,
               callbacks: {
                 title: (items) => new Date(items[0].parsed.x).toLocaleString(),
@@ -908,8 +530,6 @@ async function refreshSummary() {
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
-    updateCat(s);
-    if (window.__setGlState) window.__setGlState(s);   // shader breathes with the same payload
   } catch (e) {}
 }
 
@@ -926,7 +546,7 @@ let killArmed = false;
   btn.addEventListener('click', async () => {
     const token = localStorage.getItem('hermes-op-token');
     if (!token) {
-      out.innerHTML = '<span style="color:var(--amb)">set an operator token first ' +
+      out.innerHTML = '<span style="color:var(--amber)">set an operator token first ' +
                       '(the link under the header)</span>';
       return;
     }
@@ -1016,7 +636,7 @@ async function refreshRisk() {
     const feedEl = $id('risk-feed');
     if (feedEl) {
       if (feed.trustworthy === false) {
-        feedEl.innerHTML = '<span style="color:var(--dn)">degraded feed — ' +
+        feedEl.innerHTML = '<span style="color:var(--down)">degraded feed — ' +
           feed.gaps + '/' + feed.markets + ' markets unreadable (' +
           Math.round((feed.gap_frac || 0) * 100) + '%). Entries are blocked; ' +
           'a data outage is not a quiet market.</span>';
@@ -1040,29 +660,12 @@ async function refreshRisk() {
         (net >= 0 ? '+' : '') + '$' + net.toFixed(2) +
         ' — a deposit or withdrawal does not move this number</span>';
     } else {
-      cav.innerHTML = '<span style="color:var(--amb)">' +
+      cav.innerHTML = '<span style="color:var(--amber)">' +
         (r.drawdown_caveat || '') + '</span>';
     }
   } catch (e) {}
 }
 
-// ── the cat reacts to the tape: sleep > red-day flat ears > position-open
-// alert > idle tail flick; equity uptick = bounce ─────────────────────────────
-let catLastEquity = null;
-function updateCat(s) {
-  const cat = document.getElementById('pixel-cat');
-  if (!cat) return;
-  cat.classList.remove('cat-sleep', 'cat-sad', 'cat-alert');
-  if (s.status !== 'scanning') cat.classList.add('cat-sleep');
-  else if ((s.daily_pnl ?? 0) < 0) cat.classList.add('cat-sad');
-  else if ((s.open_positions ?? 0) > 0) cat.classList.add('cat-alert');
-  if (catLastEquity != null && (s.equity ?? 0) > catLastEquity + 0.004) {
-    cat.classList.remove('cat-bounce');
-    void cat.offsetWidth;
-    cat.classList.add('cat-bounce');
-  }
-  catLastEquity = s.equity ?? catLastEquity;
-}
 
 // ── open positions ──────────────────────────────────────────────────────────
 const fmtPx = v => { if (v == null || !isFinite(v)) return '—'; return v < 1 ? Number(v).toFixed(5) : v < 100 ? Number(v).toFixed(3) : Number(v).toFixed(2); };
@@ -1082,7 +685,7 @@ async function refreshPositions() {
     const body = document.getElementById('positions-body');
     const count = document.getElementById('positions-count');
     if (!Array.isArray(ps) || !ps.length) {
-      body.innerHTML = '<tr><td colspan="9" class="py-3" style="color:var(--dim)">flat — no open positions</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="py-3" style="color:var(--ink-3)">flat — no open positions</td></tr>';
       count.textContent = '';
       posPnl.clear();
       return;
@@ -1103,14 +706,14 @@ async function refreshPositions() {
       const liqNear = p.liq_px && p.mark_px && Math.abs(p.mark_px - p.liq_px) / p.mark_px <= 0.10;
       const liqCell = p.liq_px
         ? `<span class="${liqNear ? 'liq-danger' : ''}" ${liqNear ? 'title="liquidation within 10% of mark"' : ''}>${fmtPx(p.liq_px)}</span>`
-        : '<span style="color:var(--dim)">—</span>';
-      return `<tr class="border-b last:border-0 align-middle" style="border-color:var(--line)">
+        : '<span style="color:var(--ink-3)">—</span>';
+      return `<tr class="border-b last:border-0 align-middle" style="border-color:var(--rule)">
         <td class="py-2.5 pr-3 whitespace-nowrap"><span class="tk">${esc(p.coin)}</span></td>
         <td class="py-2.5 pr-3">${side}</td>
-        <td class="py-2.5 pr-3 mono text-right whitespace-nowrap" style="color:var(--mut)">${dollarHTML(fmtMoney(notional))}</td>
-        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${p.leverage}x</td>
-        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${fmtPx(p.entry_px)}</td>
-        <td class="py-2.5 pr-3 mono text-right" style="color:var(--mut)">${fmtPx(p.mark_px)}</td>
+        <td class="py-2.5 pr-3 mono text-right whitespace-nowrap" style="color:var(--ink-2)">${dollarHTML(fmtMoney(notional))}</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--ink-2)">${p.leverage}x</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--ink-2)">${fmtPx(p.entry_px)}</td>
+        <td class="py-2.5 pr-3 mono text-right" style="color:var(--ink-2)">${fmtPx(p.mark_px)}</td>
         <td class="py-2.5 pr-3 mono text-right">${liqCell}</td>
         <td class="py-2.5 pr-3 mono text-right whitespace-nowrap pnl-cell ${pnlCls}${tick}">${dollarHTML(fmtMoney(pnlUsd))} <span class="text-[10px]">(${fmtPct(p.unrealized_pct ?? 0)})</span></td>
         <td class="py-2.5 text-right">${originBadge(p)}</td>
@@ -1131,7 +734,7 @@ async function refreshBooks() {
     const books = await (await fetch('/api/dashboard/books')).json();
     const flow = document.getElementById('books-flow');
     if (!Array.isArray(books) || !books.length) {
-      flow.innerHTML = '<div class="text-xs" style="color:var(--dim)">no books configured</div>';
+      flow.innerHTML = '<div class="text-xs" style="color:var(--ink-3)">no books configured</div>';
       return;
     }
     // one flowing strip: every book always visible, badges + sizes at a glance
@@ -1139,7 +742,7 @@ async function refreshBooks() {
       <div class="book-row${b.status === 'off' ? ' off' : ''}">
         <div class="book-head">
           <span class="tk">${esc(b.name)}</span>
-          <span class="mono text-[11px]" style="color:var(--mut)">${esc(b.size)}</span>
+          <span class="mono text-[11px]" style="color:var(--ink-2)">${esc(b.size)}</span>
           <span class="ml-auto">${BADGE[b.status] || esc(b.status)}</span>
         </div>
         <div class="book-thesis">${esc(b.thesis)}</div>
@@ -1186,7 +789,7 @@ async function refreshTape() {
     const ts = await (await fetch('/api/dashboard/closed-trades?limit=20')).json();
     const flow = document.getElementById('tape-flow');
     if (!Array.isArray(ts) || !ts.length) {
-      flow.innerHTML = '<span class="text-xs" style="color:var(--dim)">no closes yet in the session log</span>';
+      flow.innerHTML = '<span class="text-xs" style="color:var(--ink-3)">no closes yet in the session log</span>';
       return;
     }
     flow.innerHTML = ts.map(t => {
@@ -1214,20 +817,20 @@ async function refreshLeague() {
     const rows = await (await fetch('/api/dashboard/book_league')).json();
     const body = document.getElementById('league-body');
     if (!Array.isArray(rows) || !rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--dim)">no ledgers yet</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--ink-3)">no ledgers yet</td></tr>';
       return;
     }
     const rank = { live: 0, shadow: 1, recorder: 2, off: 3 };
     rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
     body.innerHTML = rows.map(r => `
-      <tr class="border-b last:border-0" style="border-color:var(--line)">
+      <tr class="border-b last:border-0" style="border-color:var(--rule)">
         <td class="py-2 pr-3 whitespace-nowrap"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
         <td class="py-2 pr-3 lg-status">${BADGE[r.status] || esc(r.status)}</td>
-        <td class="py-2 pr-3 mono" style="color:var(--mut)">${esc(r.size)}</td>
+        <td class="py-2 pr-3 mono" style="color:var(--ink-2)">${esc(r.size)}</td>
         <td class="py-2 pr-3 mono text-right">${r.n}</td>
-        <td class="py-2 pr-3 mono text-right" style="color:var(--mut)">${r.resolved}</td>
-        <td class="py-2 pr-3 mono text-right" style="color:var(--mut)">${r.pending}</td>
-        <td class="py-2 mono text-right" style="color:var(--dim)">${fmtLastAge(r.last_age_h)}</td>
+        <td class="py-2 pr-3 mono text-right" style="color:var(--ink-2)">${r.resolved}</td>
+        <td class="py-2 pr-3 mono text-right" style="color:var(--ink-2)">${r.pending}</td>
+        <td class="py-2 mono text-right" style="color:var(--ink-3)">${fmtLastAge(r.last_age_h)}</td>
       </tr>`).join('');
     const live = rows.filter(r => r.status === 'live').length;
     document.getElementById('league-meta').textContent =

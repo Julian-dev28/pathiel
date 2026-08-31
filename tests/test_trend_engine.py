@@ -789,7 +789,7 @@ def test_trends_page_renders_self_contained(client):
     r = client.get("/trends")
     assert r.status_code == 200
     body = r.text
-    assert "TRENDS" in body and "HYPERLIQUID" in body
+    assert "Trends" in body and "HYPERLIQUID" in body
     assert "BTC 5M UP/DOWN" in body and "POLITICS" in body
     assert "RECORDERS" in body
     # no third-party asset may be pulled at render time
@@ -1012,8 +1012,14 @@ def test_the_action_card_shows_which_sector_each_line_belongs_to(client):
 
 
 def test_a_stale_lane_is_visible_from_another_tab(client):
+    """The marker rule lives in the shared stylesheet now; the page still has
+    to be the thing that applies it."""
+    import pathlib as _p
+    css = (_p.Path(__file__).resolve().parent.parent
+           / "hermes_trader" / "static" / "hermes.css").read_text()
     body = client.get("/trends").text
-    assert ".tab-stale::after" in body and "tab-stale" in body
+    assert ".tab-stale::after" in css
+    assert "tab-stale" in body
 
 
 def test_every_element_the_page_scripts_reach_for_exists(client):

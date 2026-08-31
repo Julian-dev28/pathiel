@@ -1,0 +1,556 @@
+/* ============================================================================
+   hermes — design system
+   ----------------------------------------------------------------------------
+   One stylesheet for all five pages. Previously each template carried its own
+   ~250-line <style> block, so a colour changed in four places and drifted in
+   the fifth.
+
+   The register is a private-bank statement, not a consumer app: paper white,
+   ink black, hairline rules, one navy accent. There are no gradients, no
+   glows, no shadows on content, no decorative motion, and no colour that is
+   not carrying information. Green and red mean money moved; amber means
+   attention; everything else is ink.
+
+   Numbers are the product. Every figure sits on tabular-nums so columns align
+   and a digit changing does not reflow the row.
+
+   Type scale is deliberately larger than a trading terminal's. The reader is
+   40-something with money, reading on a 27-inch display, and 10px type reads
+   as a toy rather than a document.
+   ========================================================================= */
+
+:root{
+  /* paper + ink */
+  --paper:#fbfbfa;
+  --surface:#ffffff;
+  --surface-2:#f6f6f4;
+  --ink:#17191d;
+  --ink-2:#5a5f6b;
+  --ink-3:#8b909b;
+  --rule:#e7e6e3;
+  --rule-2:#d6d5d1;
+
+  /* one accent, used for: active nav, links, focus. Nothing else. */
+  --accent:#1e3a5f;
+  --accent-ink:#12263f;
+  --accent-wash:#eef1f5;
+
+  /* money + status. Print-weight, not neon. */
+  --up:#0f6b43;
+  --up-wash:#edf5f0;
+  --down:#a02b25;
+  --down-wash:#faeeed;
+  --amber:#8a6410;
+  --amber-wash:#faf3e6;
+
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,
+         "Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+
+  --radius:3px;
+  --gutter:28px;
+  --measure:1160px;
+}
+
+/* Dark is a supported second skin, not the default. Same structure, same
+   restraint — the paper goes to graphite and the ink inverts. Only tokens are
+   redefined; no rule below branches on theme. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f1113; --surface:#15171a; --surface-2:#1a1d21;
+    --ink:#e9eaec; --ink-2:#a3a7af; --ink-3:#767b85;
+    --rule:#25282d; --rule-2:#33373d;
+    --accent:#9db8d8; --accent-ink:#c3d4e8; --accent-wash:#1b232d;
+    --up:#4ba97a; --up-wash:#16241d;
+    --down:#d1706a; --down-wash:#26191a;
+    --amber:#c79a4a; --amber-wash:#241e14;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0f1113; --surface:#15171a; --surface-2:#1a1d21;
+  --ink:#e9eaec; --ink-2:#a3a7af; --ink-3:#767b85;
+  --rule:#25282d; --rule-2:#33373d;
+  --accent:#9db8d8; --accent-ink:#c3d4e8; --accent-wash:#1b232d;
+  --up:#4ba97a; --up-wash:#16241d;
+  --down:#d1706a; --down-wash:#26191a;
+  --amber:#c79a4a; --amber-wash:#241e14;
+}
+
+/* ── base ─────────────────────────────────────────────────────────────── */
+
+html{ -webkit-text-size-adjust:100%; }
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.shell{ max-width:var(--measure); margin:0 auto; padding:0 var(--gutter) 72px; }
+
+a{ color:var(--accent); text-decoration:none; }
+a:hover{ text-decoration:underline; text-underline-offset:2px; }
+
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:2px; }
+
+.mono{ font-family:var(--mono); font-size:.92em; }
+
+/* Every number in the product. Tabular figures keep columns from dancing when
+   a digit changes, which is the difference between a table you can read down
+   and one you have to re-scan. */
+.kv,.ksub,.mono,table,.tk,.v,.n,.pnl,.dv,.cnt{ font-variant-numeric:tabular-nums; }
+
+/* ── masthead ─────────────────────────────────────────────────────────── */
+
+.masthead{
+  border-bottom:1px solid var(--rule);
+  background:var(--surface);
+  margin-bottom:32px;
+}
+.masthead-inner{
+  max-width:var(--measure); margin:0 auto;
+  padding:0 var(--gutter);
+  display:flex; align-items:center; gap:24px;
+  min-height:56px;
+}
+.brand{
+  font-weight:600; font-size:14px; letter-spacing:.14em;
+  color:var(--ink); text-transform:uppercase; white-space:nowrap;
+}
+.brand:hover{ text-decoration:none; }
+
+nav.tabs-main{ display:flex; align-items:center; gap:2px; margin-left:8px; }
+.nav-link{
+  display:inline-block; padding:6px 12px;
+  font-size:13px; color:var(--ink-2);
+  border-radius:var(--radius); white-space:nowrap;
+}
+.nav-link:hover{ color:var(--ink); background:var(--surface-2); text-decoration:none; }
+.nav-link.on,.nav-link.nav-active{
+  color:var(--accent-ink); background:var(--accent-wash); font-weight:500;
+}
+
+.masthead-right{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+
+/* status: a dot and a word. Not a glowing capsule. */
+.pill{
+  display:inline-flex; align-items:center; gap:6px; text-transform:capitalize;
+  font-size:12px; color:var(--ink-2); white-space:nowrap;
+}
+.pill::before{
+  content:""; width:6px; height:6px; border-radius:50%;
+  background:var(--up); flex:none;
+}
+.pill.stale::before{ background:var(--amber); }
+.pill.offline::before{ background:var(--ink-3); }
+.pill.offline{ color:var(--ink-3); }
+
+/* ── page title ───────────────────────────────────────────────────────── */
+
+.page-head{ margin-bottom:28px; }
+.page-title{ font-size:22px; font-weight:600; letter-spacing:-.01em; margin:0; }
+.page-sub{ font-size:13px; color:var(--ink-2); margin-top:4px; }
+
+/* ── sections ─────────────────────────────────────────────────────────── */
+
+/* A section is a rule and a label, not a box. Boxes everywhere make a page
+   look like a dashboard demo; rules make it look like a document. */
+.section{ margin-bottom:36px; }
+.section-head{
+  display:flex; align-items:baseline; gap:12px;
+  padding-bottom:8px; margin-bottom:14px;
+  border-bottom:1px solid var(--rule);
+}
+.sec-label{
+  font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink-2); margin:0;
+}
+.section-meta{ margin-left:auto; font-size:12px; color:var(--ink-3); }
+
+/* `.card` survives because five templates use it, but it is now a quiet
+   panel: hairline, no fill, no shadow, small radius. `.glow` is kept as a
+   no-op alias so old markup does not break — nothing glows. */
+.card{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:var(--radius);
+  padding:20px;
+}
+.card.glow,.glow{ box-shadow:none; }
+.panel,.pane,.panel-wrap{
+  background:var(--surface); border:1px solid var(--rule);
+  border-radius:var(--radius);
+}
+.panel-head,.pane-head{
+  padding:12px 16px; border-bottom:1px solid var(--rule);
+  display:flex; align-items:baseline; gap:10px;
+}
+.panel-body,.pane-flow{ padding:16px; }
+.pane-empty,.empty{ padding:20px 16px; color:var(--ink-3); font-size:13px; }
+.pane-flow > *{ padding:7px 0; font-size:13px; }
+.pane-flow > * + *{ border-top:1px solid var(--rule); }
+
+/* the little colour key beside each pane's name */
+.pm{ width:6px; height:6px; border-radius:1px; background:var(--ink-3); flex:none; }
+.pm-trade{ background:var(--accent); }
+.pm-research{ background:var(--amber); }
+.pm-books{ background:var(--up); }
+.pm-machine,.pm-watcher,.pm-catalysts{ background:var(--ink-3); }
+
+/* ── figures ──────────────────────────────────────────────────────────── */
+
+/* The headline number. One per screen region; large, plain, unmissable. */
+.kv{ font-size:26px; font-weight:500; letter-spacing:-.02em; line-height:1.15; }
+.kv.hero{ font-size:40px; font-weight:450; }
+.ksub{ font-size:12px; color:var(--ink-2); margin-top:3px; }
+.kpi{ min-width:0; }
+.kpi .sec-label{ margin-bottom:6px; }
+
+.stat-row{
+  display:grid; gap:24px 32px;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+}
+
+.up,.pos{ color:var(--up); }
+.dn,.neg{ color:var(--down); }
+.amb{ color:var(--amber); }
+.mut,.dim{ color:var(--ink-3); }
+
+/* ── tables ───────────────────────────────────────────────────────────── */
+
+table{ width:100%; border-collapse:collapse; }
+thead th{
+  font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--ink-3); text-align:left;
+  padding:0 14px 8px 0; border-bottom:1px solid var(--rule-2);
+  white-space:nowrap;
+}
+thead th.num,thead th[class*="text-right"]{ text-align:right; }
+tbody td{
+  padding:10px 14px 10px 0; font-size:13px;
+  border-bottom:1px solid var(--rule); vertical-align:top;
+}
+tbody tr:last-child td{ border-bottom:0; }
+tbody tr:hover{ background:var(--surface-2); }
+td.num,td[class*="text-right"]{ text-align:right; }
+.scroll-x{ overflow-x:auto; }
+
+.sortable{ cursor:pointer; user-select:none; }
+.sortable:hover{ color:var(--ink); }
+
+/* ── badges ───────────────────────────────────────────────────────────── */
+
+/* Word-shaped, not pill-shaped. A badge names a state; it should read as a
+   label in a ledger, not a notification. */
+.badge{
+  display:inline-block; padding:2px 7px;
+  font-size:11px; font-weight:500; letter-spacing:.02em;
+  border-radius:2px; border:1px solid var(--rule-2);
+  color:var(--ink-2); background:var(--surface-2);
+  white-space:nowrap;
+}
+.badge.b-live,.badge.b-long,.badge.b-pass{
+  color:var(--up); background:var(--up-wash); border-color:transparent;
+}
+.badge.b-short,.badge.b-fail,.badge.b-breaking{
+  color:var(--down); background:var(--down-wash); border-color:transparent;
+}
+.badge.b-shadow,.badge.b-rec,.badge.b-recorder,.badge.b-off,.badge.b-mut{
+  color:var(--ink-3); background:var(--surface-2);
+}
+.badge.b-chop{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
+
+.chip{
+  display:inline-block; padding:1px 6px; margin:0 4px 4px 0;
+  font-size:11px; border-radius:2px;
+  background:var(--surface-2); border:1px solid var(--rule);
+  color:var(--ink-2);
+}
+.chip-red{ color:var(--down); background:var(--down-wash); border-color:transparent; }
+.chip-amber{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
+
+.kind-tag{
+  font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+
+/* ── controls ─────────────────────────────────────────────────────────── */
+
+.btn,.icon-btn{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 11px; font-size:12px; font-weight:500;
+  color:var(--ink-2); background:var(--surface);
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+  cursor:pointer;
+}
+.btn:hover,.icon-btn:hover{ color:var(--ink); border-color:var(--ink-3); }
+.btn:disabled,.icon-btn:disabled{ opacity:.5; cursor:default; }
+
+/* The one destructive control on the site. It reads as serious by being
+   plainly labelled and red-outlined — not by shouting in all caps. */
+.btn-danger{
+  color:var(--down); background:var(--surface);
+  border-color:color-mix(in srgb,var(--down) 40%,transparent);
+}
+.btn-danger:hover{ color:#fff; background:var(--down); border-color:var(--down); }
+
+.seg{
+  display:inline-flex; border:1px solid var(--rule-2);
+  border-radius:var(--radius); overflow:hidden;
+}
+.seg > *{ border-right:1px solid var(--rule-2); }
+.seg > *:last-child{ border-right:0; }
+.range-btn,.tab,.fsel{
+  padding:4px 11px; font-size:12px; color:var(--ink-2);
+  background:var(--surface); border:0; cursor:pointer;
+}
+.range-btn:hover,.tab:hover,.fsel:hover{ background:var(--surface-2); color:var(--ink); }
+.range-btn.on,.tab.on,.fsel.on{
+  background:var(--accent-wash); color:var(--accent-ink); font-weight:500;
+}
+
+.tabs{ display:flex; gap:2px; flex-wrap:wrap; }
+
+/* A lane whose data is stale is marked on its own tab, so it is visible from
+   whichever lane you happen to be reading. An amber dot, not a colour change:
+   the tab still has to read as a tab. */
+.tab-stale{ position:relative; }
+.tab-stale::after{
+  content:""; position:absolute; top:5px; right:5px;
+  width:5px; height:5px; border-radius:50%; background:var(--amber);
+}
+
+/* ── disclosure ───────────────────────────────────────────────────────── */
+
+.books-head{
+  display:flex; align-items:center; gap:10px; width:100%;
+  padding:14px 20px; background:transparent; border:0;
+  cursor:pointer; text-align:left; color:inherit;
+}
+.books-head:hover{ background:var(--surface-2); }
+.chev{
+  margin-left:auto; width:8px; height:8px; flex:none;
+  border-right:1.5px solid var(--ink-3); border-bottom:1.5px solid var(--ink-3);
+  transform:rotate(45deg); transition:transform .12s ease;
+}
+[aria-expanded="true"] .chev{ transform:rotate(-135deg); }
+/* `books-open` on the SECTION is what the existing JS toggles (and what it
+   persists to localStorage) — the selector matches the script, not the other
+   way round. */
+.books-wrap{ display:none; border-top:1px solid var(--rule); }
+.books-open .books-wrap{ display:block; }
+.books-flow{ padding:16px 20px; }
+
+/* ── book cards ───────────────────────────────────────────────────────── */
+
+.book-head{
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:4px;
+}
+.book-thesis{ font-size:13px; color:var(--ink-2); margin-bottom:14px; }
+.lg-status{ font-size:12px; color:var(--ink-2); }
+
+/* ── bars + meters ────────────────────────────────────────────────────── */
+
+/* A bar is a measurement, so it is flat and one colour. Rounded, gradient-
+   filled bars read as a game's progress meter. */
+.fn-row,.funnel-row,.heat-row,.tape-row,.reason-row{
+  display:grid; grid-template-columns:150px 1fr auto;
+  align-items:center; gap:12px; padding:5px 0; font-size:13px;
+}
+.fn-lbl,.funnel-label,.reason-n{ color:var(--ink-2); }
+.fn-n,.funnel-n,.cnt{ color:var(--ink); font-variant-numeric:tabular-nums; }
+/* The row's middle cell is the track; whatever sits inside it is the fill.
+   `.fn-bar` carries an inline width% from the script, so it is a FILL — making
+   it the track drew a full-width bar on every row. */
+.fn-row > div,.funnel-bar-wrap,.heat-bar-wrap,.tape-bar-wrap,.bar,.meter{
+  height:6px; background:var(--surface-2); border-radius:1px; overflow:hidden;
+}
+.fn-bar,.funnel-bar,.heat-bar,.fill{
+  height:100%; background:var(--accent); border-radius:1px;
+}
+.tape-bar-buy{ height:100%; background:var(--up); }
+.tape-bar-sell{ height:100%; background:var(--down); }
+.heat-oi{ color:var(--ink-2); }
+.heat-pctile{ color:var(--ink-3); font-size:12px; }
+.tape-net{ font-variant-numeric:tabular-nums; }
+
+.legend{ display:flex; gap:16px; font-size:12px; color:var(--ink-2); flex-wrap:wrap; }
+.leg-dot{ display:inline-block; width:8px; height:8px; border-radius:1px; margin-right:5px; }
+
+/* ── tape / feed ──────────────────────────────────────────────────────── */
+
+/* Recent closes: one row per trade, fields spaced. Rendered as inline spans
+   by the script, so the gap has to come from the row. */
+.tape{ display:flex; flex-direction:column; gap:0; }
+
+/* The session strip is a ROW of figures, not a stack. Each `.kpi` inside it
+   is a value over a label — as a column stack the two ran together and read
+   as "154scans". */
+.strip{
+  display:grid; gap:20px 32px;
+  grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+  padding:20px 0 24px; margin-bottom:28px;
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+}
+.strip .kpi{ display:flex; flex-direction:column; gap:2px; }
+.strip .v{ font-size:20px; font-weight:500; letter-spacing:-.01em;
+           font-variant-numeric:tabular-nums; }
+.strip .v.pos{ color:var(--up); } .strip .v.neg{ color:var(--down); }
+.strip .l{ font-size:11px; font-weight:600; letter-spacing:.08em;
+           text-transform:uppercase; color:var(--ink-3); }
+
+/* Four independent log panes, stacked with air between them. */
+.deck{ display:flex; flex-direction:column; gap:20px; }
+.tp{
+  display:flex; align-items:baseline; gap:14px;
+  padding:9px 0; border-bottom:1px solid var(--rule); font-size:13px;
+}
+.tp:last-child{ border-bottom:0; }
+.tp .c{ font-weight:500; min-width:9ch; }
+.tp .a{ color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.tp .p{ margin-left:auto; font-variant-numeric:tabular-nums; }
+.tp .p.pos{ color:var(--up); }
+.tp .p.neg{ color:var(--down); }
+
+/* refused-by-gate reasons, under the funnel */
+.rs{
+  display:inline-block; margin:8px 8px 0 0; padding:3px 8px;
+  font-size:12px; color:var(--ink-2);
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:2px;
+}
+.rs b{ font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+
+.ev-head{ font-size:13px; font-weight:500; }
+.ev-sub{ font-size:12px; color:var(--ink-2); margin-top:2px; }
+.ev-ts,.pmeta{ font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.ev-body{ font-size:13px; color:var(--ink-2); }
+
+/* The live wire: one line of engine output. Quiet by default — it is
+   ambient, not an alert. */
+#wire{
+  font-family:var(--mono); font-size:12px; color:var(--ink-3);
+  padding:8px 0 14px; border-bottom:1px solid var(--rule); margin-bottom:24px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* ── citations ────────────────────────────────────────────────────────── */
+
+.cite-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+.cite,.src-link{
+  font-size:12px; color:var(--ink-2);
+  border-bottom:1px solid var(--rule-2); padding-bottom:1px;
+}
+.cite:hover,.src-link:hover{ color:var(--accent); border-color:var(--accent); text-decoration:none; }
+.titles{ font-size:13px; }
+
+/* ── pipeline ─────────────────────────────────────────────────────────── */
+
+/* Numbered steps as a plain ordered list. The old version was six glowing
+   chips; this is a table of contents. */
+.pipe{
+  display:grid; gap:0;
+  grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+  border-top:1px solid var(--rule);
+}
+.pn{ padding:14px 20px 14px 0; border-bottom:1px solid var(--rule); }
+.pn .s{
+  font-size:11px; font-weight:600; color:var(--ink-3);
+  font-variant-numeric:tabular-nums; letter-spacing:.06em;
+}
+.pn .n{ font-size:13px; font-weight:600; margin-top:2px; }
+.pn .d{ font-size:13px; color:var(--ink-2); margin-top:3px; }
+.hiw{ font-size:13px; color:var(--ink-2); margin-top:20px; max-width:70ch; }
+
+/* ── popover ──────────────────────────────────────────────────────────── */
+
+.pop{
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+  background:var(--surface); color:var(--ink);
+  padding:18px; min-width:320px;
+  box-shadow:0 8px 28px rgba(0,0,0,.10);
+}
+.pop::backdrop{ background:rgba(0,0,0,.18); }
+.pop input{
+  width:100%; padding:7px 9px; font-size:13px;
+  background:var(--paper); color:var(--ink);
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+}
+
+/* ── discreet mode ────────────────────────────────────────────────────── */
+
+/* Every money figure ships as a value span plus a mask span; exactly one is
+   ever visible. The mask must be hidden by DEFAULT — shipping it visible put
+   "$12.94•••" on the page for everyone. */
+.dollar-mask{ display:none; letter-spacing:.1em; color:var(--ink-3); }
+body.discreet .dollar-value{ display:none; }
+body.discreet .dollar-mask{ display:inline; }
+
+/* A value that just changed. One brief wash, no bounce — enough to catch the
+   eye on a moving table, not enough to be a toy. */
+.tick{ animation:tick-wash .9s ease-out; }
+@keyframes tick-wash{ from{ background:var(--accent-wash); } to{ background:transparent; } }
+
+/* ── charts ───────────────────────────────────────────────────────────── */
+
+.chart-wrap{ position:relative; }
+.chart-readout{ font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+
+/* ── loading ──────────────────────────────────────────────────────────── */
+
+/* A flat grey block. A loading placeholder that sweeps a highlight across
+   itself is the single most consumer-app tell on a page like this. */
+.skeleton{
+  background:var(--surface-2); border-radius:2px;
+  color:transparent; min-height:1em;
+}
+
+/* ── misc holdovers ───────────────────────────────────────────────────── */
+
+.grid2{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); }
+.grid3{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+.span2{ grid-column:span 2; }
+.note{ font-size:12px; color:var(--ink-3); }
+.band{ padding:10px 0; border-bottom:1px solid var(--rule); }
+.ai-box{ border:1px solid var(--rule); border-radius:var(--radius); padding:16px; }
+.ai-head{ font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-2); }
+.ai-nar{ font-size:13px; color:var(--ink-2); margin-top:8px; }
+.setup,.obs,.act{ font-size:13px; }
+.o-badge{ font-size:11px; color:var(--ink-3); }
+.o-manual{ font-size:11px; color:var(--amber); }
+.pnl-cell{ font-variant-numeric:tabular-nums; }
+
+footer.site-foot{
+  margin-top:56px; padding-top:20px; border-top:1px solid var(--rule);
+  font-size:12px; color:var(--ink-3);
+  display:flex; gap:14px; flex-wrap:wrap; align-items:center;
+}
+
+/* ── responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width:720px){
+  :root{ --gutter:18px; }
+  .kv{ font-size:22px; }
+  .kv.hero{ font-size:32px; }
+  .masthead-inner{ flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
+  nav.tabs-main{ order:3; width:100%; margin-left:0; overflow-x:auto; }
+  .fn-row,.funnel-row,.heat-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
+}
+
+/* ── print ────────────────────────────────────────────────────────────── */
+
+/* Someone with this much money will hand a page to an accountant. */
+@media print{
+  .masthead,nav.tabs-main,.btn,.icon-btn,.seg,#wire,footer.site-foot{ display:none !important; }
+  body{ background:#fff; font-size:11pt; }
+  .card,.panel,.pane{ border-color:#ccc; break-inside:avoid; }
+}
+
+/* ── motion ───────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
