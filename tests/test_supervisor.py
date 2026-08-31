@@ -438,3 +438,35 @@ def test_every_state_script_uses_the_one_state_env_module():
         assert "load_env_local" in src, f"{name} does not load .env.local"
         assert 'os.environ.get("HERMES_STATE_DIR")' not in src, (
             f"{name} still has its own copy of the rule")
+
+
+def test_restart_sh_and_the_supervisor_resolve_the_SAME_halt_file(tmp_path):
+    """Not just the same rule — the same path.
+
+    The earlier test asserted restart.sh's HALT_FILE mentions
+    HERMES_STATE_DIR, which it did. But .env.local is where that variable
+    lives and restart.sh never read it, so `stoploop` wrote the marker to the
+    repo root while the supervisor — run by the scheduler, which does load the
+    env — looked in .state/ and restarted the loop two minutes later. The kill
+    switch silently did nothing. Compare resolved paths, not source text.
+    """
+    import subprocess
+
+    env_local = tmp_path / ".env.local"
+    env_local.write_text(f"HERMES_STATE_DIR={tmp_path}/.state\n")
+    script = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
+
+    # Run just the resolution block restart.sh uses, with ROOT pointed at the
+    # fixture, and print what it lands on.
+    block = script.split("# Must match STATE_DIR")[1].split("halt_mark()")[0]
+    block = "ROOT=" + str(tmp_path) + "\n" + block.split("\n", 1)[1] + '\necho "$HALT_FILE"\n'
+    got = subprocess.run(["bash", "-c", block], capture_output=True, text=True,
+                         env={"PATH": os.environ["PATH"]}).stdout.strip()
+
+    os.environ["HERMES_STATE_DIR"] = f"{tmp_path}/.state"
+    try:
+        sup = _load()
+        assert got == sup.HALT_FILE, (
+            f"restart.sh writes {got}\nsupervisor reads {sup.HALT_FILE}")
+    finally:
+        os.environ.pop("HERMES_STATE_DIR", None)

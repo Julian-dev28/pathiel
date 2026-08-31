@@ -79,7 +79,15 @@ err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 # clears it. The marker is the operator's intent; the supervisor obeys it.
 # Must match STATE_DIR in scripts/supervise_processes.py — HERMES_STATE_DIR,
 # else the project root. A halt marker written where the supervisor does not
-# look is a kill switch that silently does nothing.
+# look is a kill switch that silently does nothing, which is exactly what
+# happened: .env.local carries HERMES_STATE_DIR and this script never read it,
+# so `stoploop` wrote the marker to the repo root while the supervisor — run by
+# the scheduler, which does load the env — looked in .state/ and restarted the
+# loop two minutes later.
+if [[ -z "${HERMES_STATE_DIR:-}" && -f "$ROOT/.env.local" ]]; then
+  HERMES_STATE_DIR="$(grep -E '^HERMES_STATE_DIR=' "$ROOT/.env.local" | tail -1 | cut -d= -f2-)"
+  export HERMES_STATE_DIR
+fi
 HALT_FILE="${HERMES_STATE_DIR:-$ROOT}/supervisor_halt.json"
 
 halt_mark() {   # halt_mark <component>

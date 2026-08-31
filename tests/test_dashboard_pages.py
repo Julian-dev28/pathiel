@@ -1516,12 +1516,14 @@ def test_a_book_with_no_module_is_retired_not_a_recorder(monkeypatch):
     assert "no longer graded" in rows[0]["thesis"]
 
 
-def test_retired_ledgers_are_folded_away_but_reachable(client):
-    """History is evidence, so it is not deleted — it is one click down."""
+def test_the_evidence_table_lists_only_what_trades(client):
+    """Sixteen dead books is not something anyone acts on. The table lists the
+    books that spend capital; the retired ledgers stay on disk and in git as
+    the evidence behind each refutation, but they are not dashboard furniture."""
     r = client.get("/").text
-    assert 'id="league-retired"' in r
-    assert "show-retired" in r, "no way to reveal the retired ledgers"
-    assert "retired" in r and "RECORDER" not in r
+    assert "league-retired" not in r, "the retired roll-up is back on the page"
+    assert "r.status !== 'retired'" in r, "retired rows are not filtered out"
+    assert "RECORDER" not in r
 
 
 def test_a_scanned_coin_no_book_claimed_is_not_a_refusal():

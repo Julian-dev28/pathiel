@@ -221,13 +221,6 @@
         </tbody>
       </table>
     </div>
-    <button type="button" id="league-retired" class="disclose" aria-expanded="false" hidden>
-      <span></span><span class="chev"></span>
-    </button>
-    <p class="note" style="margin-top:12px">
-      Every strategy records to a forward ledger before it is given capital.
-      Evidence promotes a book; a refuted book is removed.
-    </p>
   </section>
 
   <section class="section" id="pipeline">
@@ -815,23 +808,12 @@ async function refreshLeague() {
       body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--ink-3)">no ledgers yet</td></tr>';
       return;
     }
-    // Books that still exist lead. Retired ledgers are history — kept as the
-    // evidence behind a verdict, but nothing grades them any more, so listing
-    // sixteen of them above the four that trade buried the live table.
-    const rank = { live: 0, shadow: 1, retired: 2, off: 3 };
-    rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
-    const active = rows.filter(r => r.status !== 'retired');
-    const retired = rows.filter(r => r.status === 'retired');
-    const shown = document.getElementById('league').classList.contains('show-retired')
-      ? rows : active;
-    const rt = document.getElementById('league-retired');
-    if (retired.length) {
-      const sigs = retired.reduce((a, r) => a + (r.n || 0), 0);
-      rt.hidden = false;
-      rt.querySelector('span').textContent =
-        `${retired.length} retired ${retired.length === 1 ? 'book' : 'books'} · ` +
-        `${sigs.toLocaleString()} recorded signals`;
-    } else { rt.hidden = true; }
+    // The table lists what trades. Retired ledgers are history — nothing
+    // grades them any more, and their files stay on disk as the evidence
+    // behind each refutation.
+    const rank = { live: 0, shadow: 1, off: 2 };
+    const shown = rows.filter(r => r.status !== 'retired')
+                      .sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
     body.innerHTML = shown.map(r => `
       <tr class="border-b last:border-0" style="border-color:var(--rule)">
         <td class="py-2 pr-3 whitespace-nowrap"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
@@ -847,19 +829,6 @@ async function refreshLeague() {
       `${live} ${live === 1 ? 'book' : 'books'} spending capital`;
   } catch (e) { reportRefreshFailure('refreshLeague', e); }
 }
-
-// Retired ledgers stay one click away rather than gone: they are the evidence
-// behind every refuted verdict.
-(function () {
-  const btn = document.getElementById('league-retired');
-  if (!btn) return;
-  btn.addEventListener('click', () => {
-    const sec = document.getElementById('league');
-    const on = sec.classList.toggle('show-retired');
-    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
-    refreshLeague();
-  });
-})();
 
 refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();

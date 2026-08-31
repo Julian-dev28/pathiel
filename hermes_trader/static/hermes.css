@@ -583,6 +583,31 @@ td.num,td[class*="text-right"]{ text-align:right; }
 }
 .explainer p:last-child{ margin-bottom:16px; }
 
+/* The playbook card. Its default read is one line per instruction: badge,
+   sentence, nothing else. The evidence under each — the measurement, the
+   trigger, the invalidation — is three more lines per row, and eight rows of
+   that is a wall rather than a briefing, so it sits behind one "Why". */
+.playbook{ padding:18px 20px; }
+.act-head-row{
+  display:flex; align-items:center; gap:12px;
+  padding-bottom:10px; margin-bottom:6px; border-bottom:1px solid var(--rule);
+}
+.act-head-row .icon-btn{ margin-left:auto; }
+.act{ padding:9px 0 9px 12px; border-bottom:1px solid var(--rule); }
+.act:last-child{ border-bottom:0; }
+.act-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.act-do{ font-size:13.5px; font-weight:500; color:var(--ink); }
+/* Which market the instruction applies to. Two rows carry the same sentence
+   for crypto and for xyz, so this is what tells them apart. Set at the end of
+   the line rather than in front of it: the instruction reads first. */
+.act-tag{ margin-left:auto; font-size:11px; color:var(--ink-3);
+          font-variant-numeric:tabular-nums; }
+.why{ display:none; margin-top:6px; }
+.playbook.show-why .why{ display:block; }
+.why-line{ font-size:12px; color:var(--ink-3); margin-top:3px; }
+.why-line .teal{ color:var(--accent); font-weight:600; margin-right:4px; }
+.why-line .dn{ color:var(--down); font-weight:600; margin-right:4px; }
+
 /* ── popover ──────────────────────────────────────────────────────────── */
 
 .pop{

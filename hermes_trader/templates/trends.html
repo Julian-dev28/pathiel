@@ -387,36 +387,46 @@ function renderPlaybook(lane, pb) {
   // the refusals lead; the named-coin WATCH list folds away behind a toggle.
   const head = sorted.filter(a => a.kind !== 'watch' || !a.trigger);
   const tail = sorted.filter(a => a.kind === 'watch' && a.trigger);
+  // One line per instruction. The evidence behind it — the measurement, the
+  // trigger, the invalidation — is three more lines per row, and eight rows of
+  // that is a wall rather than a briefing. It moves behind a single card-level
+  // toggle, so the default read is just the instructions.
   const item = a => {
     const m = PB_META[a.kind] || PB_META.watch;
+    const why = [
+      a.because ? `<div class="why-line">${esc(a.because)}</div>` : '',
+      a.trigger ? `<div class="why-line"><span class="teal">Go</span> ${esc(a.trigger)}</div>` : '',
+      a.invalidate ? `<div class="why-line"><span class="dn">Stop</span> ${esc(a.invalidate)}</div>` : '',
+    ].join('');
     return `<div class="act" style="border-left:2px solid ${m.dot}">
-      <div class="flex items-baseline gap-2 flex-wrap">
+      <div class="act-head">
         <span class="badge ${m.cls}">${m.label}</span>
-        ${a.tag && a.tag !== 'method' ? `<span class="badge b-mut">${esc(a.tag)}</span>` : ''}
-        <span style="font-size:12.5px;font-weight:600;color:var(--ink)">${esc(a.do)}</span>
+        <span class="act-do">${esc(a.do)}</span>
+        ${a.tag && a.tag !== 'method'
+          ? `<span class="act-tag">${esc(a.tag)}</span>` : ''}
       </div>
-      <div class="text-[11px] mut mt-1">${esc(a.because)}</div>
-      ${a.trigger ? `<div class="text-[10.5px] mt-1"><span class="teal">go:</span>
-        <span class="dim">${esc(a.trigger)}</span></div>` : ''}
-      ${a.invalidate ? `<div class="text-[10.5px] mt-1"><span class="dn">stop:</span>
-        <span class="dim">${esc(a.invalidate)}</span></div>` : ''}
+      ${why ? `<div class="why">${why}</div>` : ''}
     </div>`;
   };
-  el.innerHTML = `<div class="card" style="border-color:rgba(139,92,246,.35)">
-    <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-      <div class="sec-label" style="margin-bottom:0">what to do · read this first</div>
-      <span class="text-[10px] mono dim">${c.do || 0} do · ${c.dont || 0} don't · ${c.watch || 0} watch</span>
+  el.innerHTML = `<div class="card playbook" id="pb-${lane}-card">
+    <div class="act-head-row">
+      <div class="sec-label" style="margin-bottom:0">What to do</div>
+      <button type="button" class="icon-btn" id="pb-${lane}-why">Why</button>
     </div>
     ${head.map(item).join('')}
     ${tail.length ? `<div id="pb-${lane}-tail" class="hidden">${tail.map(item).join('')}</div>
-      <button class="btn mt-2" type="button" id="pb-${lane}-more">
-        show the ${tail.length} named setups</button>` : ''}
+      <button class="disclose" type="button" id="pb-${lane}-more">
+        <span>${tail.length} named setups</span><span class="chev"></span></button>` : ''}
   </div>`;
   const more = $('#pb-' + lane + '-more');
   if (more) more.onclick = () => {
-    const box = $('#pb-' + lane + '-tail');
-    const open = box.classList.toggle('hidden');
-    more.textContent = open ? `show the ${tail.length} named setups` : 'hide the named setups';
+    const open = !$('#pb-' + lane + '-tail').classList.toggle('hidden');
+    more.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  const why = $('#pb-' + lane + '-why');
+  if (why) why.onclick = () => {
+    const on = $('#pb-' + lane + '-card').classList.toggle('show-why');
+    why.textContent = on ? 'Hide why' : 'Why';
   };
 }
 

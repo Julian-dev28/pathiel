@@ -999,7 +999,7 @@ def test_the_action_card_folds_the_named_setups(client):
     'read this first' is not a briefing — the rules and the refusals stay
     open, the per-coin WATCH list folds behind a count."""
     body = client.get("/trends").text
-    assert "named setups</button>" in body
+    assert "named setups</span>" in body
     assert "const sorted = acts.slice();" in body        # source order, not by kind
     assert "PB_ORDER" not in body                        # the sort is gone, not bypassed
 
