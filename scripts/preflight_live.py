@@ -242,13 +242,24 @@ def check_disk(r: Report) -> None:
 
 
 def check_processes(r: Report) -> None:
-    ps = subprocess.run(["ps", "ax"], capture_output=True, text=True).stdout
+    """Is each managed process actually up?
+
+    Uses the supervisor's detector, not a substring test against `ps ax`. The
+    substring version matches any command line that merely MENTIONS the
+    pattern — including the shell that ran this check — so it can report a
+    process "running" that is not. Found in the supervisor 2026-08-31; the same
+    code lived here.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import supervise_processes as sup
+
+    mine = sup._ancestors()
     for name, pattern, why in (
-        ("trading loop", "trading_loop.py", "scripts/restart.sh"),
-        ("scheduler", "scheduler.py", "scripts/restart.sh sched"),
-        ("log rotator", "log_rotate.py --daemon", "scripts/restart.sh rotate"),
+        ("trading loop", "scripts/trading_loop.py", "scripts/restart.sh"),
+        ("scheduler", "scripts/scheduler.py", "scripts/restart.sh sched"),
+        ("log rotator", "log_rotate[.]py --daemon", "scripts/restart.sh rotate"),
     ):
-        if pattern in ps:
+        if sup.alive(pattern, mine):
             r.ok(name, "running")
         else:
             r.warn(name, f"not running — start with {why}")

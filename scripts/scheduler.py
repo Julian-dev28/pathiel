@@ -77,6 +77,15 @@ JOBS: Dict[str, Dict[str, Any]] = {
         "why": "/trends price lane — HL 7d scan. No LLM, no capital; the tab "
                "reads this cache and never fetches itself",
     },
+    "supervisor": {
+        "args": [PY, os.path.join(ROOT, "scripts", "supervise_processes.py")],
+        "interval_min": 2,            # a dead loop should cost minutes, not days
+        "log": "logs/supervisor.log",
+        "why": "restart the loop/server/rotator if they die. The loop self-heals "
+               "when HUNG; nothing covered GONE, and a sleeping Mac once cost a "
+               "full week of no trading. launchd cannot do this — TCC blocks it "
+               "from ~/Documents — but the scheduler already has the access",
+    },
     "trends-recorders": {
         "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
                  "--lanes", "recorders"],

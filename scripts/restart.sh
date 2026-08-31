@@ -71,6 +71,50 @@ ok()    { printf "%s✓%s %s\n" "$C_GRN" "$C_OFF" "$*"; }
 warn()  { printf "%s!%s %s\n" "$C_YEL" "$C_OFF" "$*"; }
 err()   { printf "%s✗%s %s\n" "$C_RED" "$C_OFF" "$*" >&2; }
 
+# ── deliberate-halt marker ───────────────────────────────────────────────────
+# A supervisor restarts anything it finds dead. Without this marker it would
+# also restart what the OPERATOR just stopped, which would quietly break
+# `stoploop` as a kill switch — the one control that has to work. So every
+# stop-and-stay-stopped action records its component here, and every start
+# clears it. The marker is the operator's intent; the supervisor obeys it.
+HALT_FILE="$ROOT/.state/supervisor_halt.json"
+
+halt_mark() {   # halt_mark <component>
+  mkdir -p "$(dirname "$HALT_FILE")"
+  "$PY" - "$HALT_FILE" "$1" mark <<'PYEOF'
+import json, os, sys
+path, comp, op = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    cur = set(json.load(open(path)).get("halted", []))
+except Exception:
+    cur = set()
+cur.add(comp) if op == "mark" else cur.discard(comp)
+tmp = path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump({"halted": sorted(cur)}, fh)
+    fh.flush(); os.fsync(fh.fileno())
+os.replace(tmp, path)
+PYEOF
+}
+
+halt_clear() {  # halt_clear <component>
+  mkdir -p "$(dirname "$HALT_FILE")"
+  "$PY" - "$HALT_FILE" "$1" clear <<'PYEOF'
+import json, os, sys
+path, comp, op = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    cur = set(json.load(open(path)).get("halted", []))
+except Exception:
+    cur = set()
+cur.add(comp) if op == "mark" else cur.discard(comp)
+tmp = path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump({"halted": sorted(cur)}, fh)
+    fh.flush(); os.fsync(fh.fileno())
+os.replace(tmp, path)
+PYEOF
+}
+
 # Find PIDs matching a pattern, excluding our own shell + grep.
 pids_for() {
   local pattern="$1"
@@ -333,6 +377,7 @@ case "$action" in
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
+    halt_clear loop; halt_clear server; halt_clear rotator
     start_server
     start_loop
     start_sched
@@ -341,17 +386,20 @@ case "$action" in
     ;;
   loop)
     stop_proc "trading loop" "$LOOP_PATTERN"
+    halt_clear loop
     start_loop
     show_status
     ;;
   stoploop)
     # stop ONLY the trading loop (no scans/trades); leave the dashboard +
     # scheduler running so the /trends cache refresh stays up.
+    halt_mark loop
     stop_proc "trading loop" "$LOOP_PATTERN"
     show_status
     ;;
   server)
     stop_proc "server" "$SERVER_PATTERN"
+    halt_clear server
     start_server
     show_status
     ;;
@@ -362,14 +410,17 @@ case "$action" in
     ;;
   rotate|rotator)
     stop_proc "log rotator" "$ROTATOR_PATTERN"
+    halt_clear rotator
     start_rotator
     show_status
     ;;
   stoprotate|stoprotator)
+    halt_mark rotator
     stop_proc "log rotator" "$ROTATOR_PATTERN"
     show_status
     ;;
   stop)
+    halt_mark loop; halt_mark server; halt_mark rotator
     stop_proc "trading loop" "$LOOP_PATTERN"
     stop_proc "server" "$SERVER_PATTERN"
     stop_proc "scheduler" "$SCHED_PATTERN"
