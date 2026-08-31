@@ -1372,9 +1372,12 @@ def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
     """Every shadow-ledger book's signal inventory (shadow_ledger.summary —
     pure local-file read, no network) merged with live/shadow/off status and
     sizing from the live-books config. A book NOT in the live-books table is
-    a RECORDER (a genuine zero-capital lane still accruing toward a
-    decision); ripped-and-refuted books (_REMOVED_BOOKS) are skipped
-    entirely. Full EV grading needs forward candle fetches
+    RETIRED: its module is gone and nothing grades it any more, so its
+    ledger is history rather than a lane accruing toward a decision. It was
+    labelled RECORDER until 2026-08-31, which claimed a measurement was still
+    running — `autonomous_cycle` stopped grading these entirely, and the
+    operator doctrine is that a book either trades or does not exist.
+    Ripped-and-refuted books (_REMOVED_BOOKS) are skipped entirely. Full EV grading needs forward candle fetches
     (scripts/shadow_status.py, too slow for a page load) — this table
     reports honest signal/resolved/pending counts only."""
     from hermes_trader.agents import shadow_ledger
@@ -1390,7 +1393,8 @@ def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
         if info:
             status, size, thesis = info["status"], info["size"], info["thesis"]
         else:
-            status, size, thesis = "recorder", "—", "zero-capital forward measurement"
+            status, size, thesis = ("retired", "—",
+                                    "ledger kept as evidence; no longer graded")
         rows.append({
             "book": name, "n": stat.get("n", 0),
             "coins": stat.get("coins", 0),

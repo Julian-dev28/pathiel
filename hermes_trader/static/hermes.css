@@ -20,20 +20,25 @@
    ========================================================================= */
 
 :root{
-  /* paper + ink */
-  --paper:#fbfbfa;
+  /* paper + ink. White page, near-black masthead: the register is an asset
+     manager's site, not an app shell. */
+  --paper:#ffffff;
   --surface:#ffffff;
-  --surface-2:#f6f6f4;
-  --ink:#17191d;
-  --ink-2:#5a5f6b;
-  --ink-3:#8b909b;
-  --rule:#e7e6e3;
-  --rule-2:#d6d5d1;
+  --surface-2:#f5f6f7;
+  --ink:#0d0f13;
+  --ink-2:#4e5560;
+  --ink-3:#858c97;
+  --rule:#e3e5e8;
+  --rule-2:#c9ccd1;
 
-  /* one accent, used for: active nav, links, focus. Nothing else. */
-  --accent:#1e3a5f;
-  --accent-ink:#12263f;
-  --accent-wash:#eef1f5;
+  --bar:#0d0f13;          /* masthead */
+  --bar-ink:#ffffff;
+  --bar-ink-2:#9ba3ae;
+
+  /* one accent, used for: active state, links, focus. Nothing else. */
+  --accent:#11406e;
+  --accent-ink:#0c3054;
+  --accent-wash:#eef2f7;
 
   /* money + status. Print-weight, not neon. */
   --up:#0f6b43;
@@ -48,8 +53,8 @@
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
 
   --radius:3px;
-  --gutter:28px;
-  --measure:1160px;
+  --gutter:32px;
+  --measure:1220px;
 }
 
 /* Dark is a supported second skin, not the default. Same structure, same
@@ -57,20 +62,22 @@
    redefined; no rule below branches on theme. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#0f1113; --surface:#15171a; --surface-2:#1a1d21;
-    --ink:#e9eaec; --ink-2:#a3a7af; --ink-3:#767b85;
-    --rule:#25282d; --rule-2:#33373d;
-    --accent:#9db8d8; --accent-ink:#c3d4e8; --accent-wash:#1b232d;
+    --paper:#0d0f13; --surface:#14171c; --surface-2:#1a1e24;
+    --ink:#eceef1; --ink-2:#a2aab5; --ink-3:#767d88;
+    --rule:#232830; --rule-2:#333a44;
+    --bar:#08090c; --bar-ink:#ffffff; --bar-ink-2:#9ba3ae;
+    --accent:#8fb4dc; --accent-ink:#bcd3ea; --accent-wash:#161f2a;
     --up:#4ba97a; --up-wash:#16241d;
     --down:#d1706a; --down-wash:#26191a;
     --amber:#c79a4a; --amber-wash:#241e14;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#0f1113; --surface:#15171a; --surface-2:#1a1d21;
-  --ink:#e9eaec; --ink-2:#a3a7af; --ink-3:#767b85;
-  --rule:#25282d; --rule-2:#33373d;
-  --accent:#9db8d8; --accent-ink:#c3d4e8; --accent-wash:#1b232d;
+  --paper:#0d0f13; --surface:#14171c; --surface-2:#1a1e24;
+  --ink:#eceef1; --ink-2:#a2aab5; --ink-3:#767d88;
+  --rule:#232830; --rule-2:#333a44;
+  --bar:#08090c; --bar-ink:#ffffff; --bar-ink-2:#9ba3ae;
+  --accent:#8fb4dc; --accent-ink:#bcd3ea; --accent-wash:#161f2a;
   --up:#4ba97a; --up-wash:#16241d;
   --down:#d1706a; --down-wash:#26191a;
   --amber:#c79a4a; --amber-wash:#241e14;
@@ -105,35 +112,44 @@ a:hover{ text-decoration:underline; text-underline-offset:2px; }
 
 /* ── masthead ─────────────────────────────────────────────────────────── */
 
-.masthead{
-  border-bottom:1px solid var(--rule);
-  background:var(--surface);
-  margin-bottom:32px;
-}
+.masthead{ background:var(--bar); color:var(--bar-ink); margin-bottom:40px; }
 .masthead-inner{
   max-width:var(--measure); margin:0 auto;
   padding:0 var(--gutter);
-  display:flex; align-items:center; gap:24px;
-  min-height:56px;
+  display:flex; align-items:stretch; gap:32px;
+  min-height:60px;
 }
 .brand{
-  font-weight:600; font-size:14px; letter-spacing:.14em;
-  color:var(--ink); text-transform:uppercase; white-space:nowrap;
+  display:flex; align-items:center;
+  font-weight:600; font-size:15px; letter-spacing:.2em;
+  color:var(--bar-ink); text-transform:uppercase; white-space:nowrap;
 }
-.brand:hover{ text-decoration:none; }
+.brand:hover{ text-decoration:none; color:var(--bar-ink); }
 
-nav.tabs-main{ display:flex; align-items:center; gap:2px; margin-left:8px; }
+/* Nav marks the current page with a rule under it, not a filled pill. A pill
+   is an app control; a rule is a masthead. */
+nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 .nav-link{
-  display:inline-block; padding:6px 12px;
-  font-size:13px; color:var(--ink-2);
-  border-radius:var(--radius); white-space:nowrap;
+  display:flex; align-items:center; padding:0;
+  font-size:13.5px; color:var(--bar-ink-2);
+  border-bottom:2px solid transparent; white-space:nowrap;
 }
-.nav-link:hover{ color:var(--ink); background:var(--surface-2); text-decoration:none; }
+.nav-link:hover{ color:var(--bar-ink); text-decoration:none; }
 .nav-link.on,.nav-link.nav-active{
-  color:var(--accent-ink); background:var(--accent-wash); font-weight:500;
+  color:var(--bar-ink); border-bottom-color:var(--bar-ink); font-weight:500;
 }
 
-.masthead-right{ margin-left:auto; display:flex; align-items:center; gap:10px; }
+.masthead-right{
+  margin-left:auto; display:flex; align-items:center; gap:16px;
+  color:var(--bar-ink-2); font-size:12.5px;
+}
+.masthead-right .icon-btn{
+  color:var(--bar-ink-2); background:transparent;
+  border-color:rgba(255,255,255,.22);
+}
+.masthead-right .icon-btn:hover{ color:var(--bar-ink); border-color:rgba(255,255,255,.5); }
+.masthead-right .pill{ color:var(--bar-ink-2); }
+.masthead-right .mut{ color:var(--bar-ink-2); }
 
 /* status: a dot and a word. Not a glowing capsule. */
 .pill{
@@ -150,23 +166,28 @@ nav.tabs-main{ display:flex; align-items:center; gap:2px; margin-left:8px; }
 
 /* ── page title ───────────────────────────────────────────────────────── */
 
-.page-head{ margin-bottom:28px; }
-.page-title{ font-size:22px; font-weight:600; letter-spacing:-.01em; margin:0; }
-.page-sub{ font-size:13px; color:var(--ink-2); margin-top:4px; }
+.page-head{ margin-bottom:36px; }
+.page-title{ font-size:30px; font-weight:600; letter-spacing:-.022em; margin:0; }
+.page-sub{ font-size:14.5px; color:var(--ink-2); margin-top:6px; max-width:70ch; }
 
 /* ── sections ─────────────────────────────────────────────────────────── */
 
 /* A section is a rule and a label, not a box. Boxes everywhere make a page
    look like a dashboard demo; rules make it look like a document. */
-.section{ margin-bottom:36px; }
+.section{ margin-bottom:44px; }
 .section-head{
-  display:flex; align-items:baseline; gap:12px;
-  padding-bottom:8px; margin-bottom:14px;
-  border-bottom:1px solid var(--rule);
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-bottom:10px; margin-bottom:18px;
+  border-bottom:1px solid var(--ink);
 }
+/* A table brings its own header rule. Two stacked rules read as a mistake, so
+   the section rule steps back to a hairline when a table follows it. */
+.section-head:has(+ .scroll-x),
+.section-head:has(+ table),
+.section-head:has(+ .pipe){ border-bottom-color:var(--rule); }
 .sec-label{
-  font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
-  color:var(--ink-2); margin:0;
+  font-size:10.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); margin:0;
 }
 .section-meta{ margin-left:auto; font-size:12px; color:var(--ink-3); }
 
@@ -203,15 +224,15 @@ nav.tabs-main{ display:flex; align-items:center; gap:2px; margin-left:8px; }
 /* ── figures ──────────────────────────────────────────────────────────── */
 
 /* The headline number. One per screen region; large, plain, unmissable. */
-.kv{ font-size:26px; font-weight:500; letter-spacing:-.02em; line-height:1.15; }
-.kv.hero{ font-size:40px; font-weight:450; }
-.ksub{ font-size:12px; color:var(--ink-2); margin-top:3px; }
+.kv{ font-size:28px; font-weight:450; letter-spacing:-.024em; line-height:1.1; }
+.kv.hero{ font-size:46px; font-weight:400; letter-spacing:-.03em; }
+.ksub{ font-size:12.5px; color:var(--ink-3); margin-top:5px; }
 .kpi{ min-width:0; }
 .kpi .sec-label{ margin-bottom:6px; }
 
 .stat-row{
-  display:grid; gap:24px 32px;
-  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  display:grid; gap:28px 40px;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
 }
 
 .up,.pos{ color:var(--up); }
@@ -223,14 +244,14 @@ nav.tabs-main{ display:flex; align-items:center; gap:2px; margin-left:8px; }
 
 table{ width:100%; border-collapse:collapse; }
 thead th{
-  font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase;
+  font-size:10.5px; font-weight:700; letter-spacing:.11em; text-transform:uppercase;
   color:var(--ink-3); text-align:left;
-  padding:0 14px 8px 0; border-bottom:1px solid var(--rule-2);
+  padding:0 18px 10px 0; border-bottom:1px solid var(--rule-2);
   white-space:nowrap;
 }
 thead th.num,thead th[class*="text-right"]{ text-align:right; }
 tbody td{
-  padding:10px 14px 10px 0; font-size:13px;
+  padding:12px 18px 12px 0; font-size:13.5px;
   border-bottom:1px solid var(--rule); vertical-align:top;
 }
 tbody tr:last-child td{ border-bottom:0; }
@@ -341,6 +362,17 @@ td.num,td[class*="text-right"]{ text-align:right; }
 /* `books-open` on the SECTION is what the existing JS toggles (and what it
    persists to localStorage) — the selector matches the script, not the other
    way round. */
+/* A quiet "show the rest" control: retired ledgers, folded sections. Reads as
+   a footnote, not a button. */
+.disclose{
+  display:flex; align-items:center; gap:8px; width:100%;
+  margin-top:14px; padding:10px 0;
+  background:transparent; border:0; border-top:1px solid var(--rule);
+  color:var(--ink-3); font-size:12.5px; cursor:pointer; text-align:left;
+}
+.disclose:hover{ color:var(--ink); }
+.disclose .chev{ margin-left:auto; }
+
 .books-wrap{ display:none; border-top:1px solid var(--rule); }
 .books-open .books-wrap{ display:block; }
 .books-flow{ padding:16px 20px; }

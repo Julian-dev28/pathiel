@@ -9,6 +9,7 @@
 </head>
 <body>
 <script>
+const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 // g-then-key tab hops, same map as the other pages (t = trends)
 (function () {
   const map = { d: '/', a: '/activity', n: '/news', y: '/analytics', t: '/trends' };
@@ -245,7 +246,7 @@ function spark(vals, w = 74, h = 20) {
   const lo = Math.min(...vals), hi = Math.max(...vals), rng = (hi - lo) || 1;
   const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * w},${h - ((v - lo) / rng) * (h - 2) - 1}`).join(' ');
   const rising = vals[vals.length - 1] >= vals[0];
-  const col = rising ? '#22c55e' : '#ef4444';
+  const col = rising ? tok('--up') : tok('--down');
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
     <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
 }

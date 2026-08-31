@@ -160,7 +160,7 @@ function researchCard(c) {
       ${tk(c.coin)} ${verdict} ${conf} ${risk}
       <span class="ev-ts mono" style="margin-left:auto">${fmtAgo(c.ts)}</span>
     </div>
-    ${c.reasoning ? `<div class="text-[12.5px] mt-1 leading-relaxed" style="color:#cfd4dd">${esc(c.reasoning)}</div>` : ''}
+    ${c.reasoning ? `<div class="text-[12.5px] mt-1 leading-relaxed" style="color:var(--ink-2)">${esc(c.reasoning)}</div>` : ''}
     ${cites ? `<div class="cite-row">${cites}</div>` : ''}`;
 }
 function catalystNode(row) {

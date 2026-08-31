@@ -801,6 +801,8 @@ while True:
         held_coins = memory.open_position_coins()
         now_ms = int(time.time() * 1000)
 
+        _main_engine_skipped = 0
+
         for perception in results:
             coin = perception['coin']
             score = perception.get('composite_score', 0)
@@ -876,10 +878,13 @@ while True:
                 # NEW positions from an AI verdict are gone — which also means
                 # the loop no longer pays for research on coins it will not
                 # trade.
-                log_event({"event": "ta_skip", "coin": coin,
-                           "signal": "MAIN_ENGINE_DELETED",
-                           "score": round(float(score), 1),
-                           "trigger_score": round(float(score), 1)})
+                # Counted, not logged per coin. main_engine entries are
+                # DELETED, so every unheld candidate lands here — that was
+                # ~3,800 identical session-log events a day, which flooded the
+                # decision funnel's top-reasons list with the name of a feature
+                # that no longer exists and buried the refusals that matter.
+                # One summary event per scan says the same thing.
+                _main_engine_skipped += 1
                 continue
 
             # TA filter — cheap statistical gate before the paid AI call.
@@ -990,6 +995,12 @@ while True:
                 logger.error(f"Error processing {coin}: {type(e).__name__}: {detail}")
                 log_event({"event": "error", "coin": coin,
                            "error": f"{type(e).__name__}: {detail}"})
+
+        if _main_engine_skipped:
+            logger.info(f"[scan] {_main_engine_skipped} unheld candidate(s) skipped — "
+                        f"main_engine entries are deleted (W-ME1)")
+            log_event({"event": "ta_skip", "signal": "MAIN_ENGINE_DELETED",
+                       "n": _main_engine_skipped})
 
         # Second DSL pass with fresh mids (audit 2026-07-10): the scan+books
         # phase takes 20-100s, so a breach right after the first pass waited a

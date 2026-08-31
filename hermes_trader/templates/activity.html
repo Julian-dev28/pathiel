@@ -203,7 +203,7 @@ const CARD = {
       + triad + (cites ? `<div class="cite-row">${cites}</div>` : '');
   },
   error(e) {
-    return `<div class="ev-head">${T(e)} <b style="color:#fca5a5">${esc(String(e.scope || 'LOOP').toUpperCase())}</b> — <span style="color:#fca5a5">${esc(e.error)}</span></div>`;
+    return `<div class="ev-head">${T(e)} <b style="color:var(--down)">${esc(String(e.scope || 'LOOP').toUpperCase())}</b> — <span style="color:var(--down)">${esc(e.error)}</span></div>`;
   },
 };
 

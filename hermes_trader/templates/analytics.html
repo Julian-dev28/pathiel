@@ -122,12 +122,12 @@
         </div>
         <div class="chart-readout mono" id="chart-readout">hover the chart for OHLC</div>
         <div class="legend">
-          <span><span class="leg-dot" style="background:#22c55e"></span>bullish candle</span>
-          <span><span class="leg-dot" style="background:#ef4444"></span>bearish candle</span>
-          <span><span class="leg-dot" style="background:#22c55e;border-radius:50%"></span>entry (long)</span>
-          <span><span class="leg-dot" style="background:#ef4444;border-radius:50%"></span>entry (short)</span>
-          <span><span class="leg-dot" style="background:#fcd34d;transform:rotate(45deg)"></span>close</span>
-          <span><span class="leg-dot" style="background:#818cf8;border-radius:50%"></span>verdict</span>
+          <span><span class="leg-dot" style="background:var(--up)"></span>bullish candle</span>
+          <span><span class="leg-dot" style="background:var(--down)"></span>bearish candle</span>
+          <span><span class="leg-dot" style="background:var(--up);border-radius:50%"></span>entry (long)</span>
+          <span><span class="leg-dot" style="background:var(--down);border-radius:50%"></span>entry (short)</span>
+          <span><span class="leg-dot" style="background:var(--amber);transform:rotate(45deg)"></span>close</span>
+          <span><span class="leg-dot" style="background:var(--accent);border-radius:50%"></span>verdict</span>
         </div>
       </div>
     </div>
@@ -254,7 +254,7 @@ document.querySelectorAll('[data-window]').forEach(b => {
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
                 off: '<span class="badge b-off">OFF</span>',
-                recorder: '<span class="badge b-recorder">RECORDER</span>' };
+                retired: '<span class="badge b-recorder">RETIRED</span>' };
 let leagueRows = [];
 let leagueSort = { key: 'n', desc: true };
 
@@ -322,17 +322,17 @@ function drawChart() {
   const yOf = p => 12 + (yMax - p) / (yMax - yMin) * (H - 40);
   const bw = Math.max(2, (W - 95) / cs.length * 0.62);
 
-  ctx.strokeStyle = '#1d212b'; ctx.lineWidth = 1;
+  ctx.strokeStyle = tok('--rule'); ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = 12 + (H - 40) * i / 4;
     ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 15, y); ctx.stroke();
     const p = yMax - (yMax - yMin) * i / 4;
-    ctx.fillStyle = '#5c6370'; ctx.font = '9px ui-monospace,monospace';
+    ctx.fillStyle = tok('--ink-3'); ctx.font = '9px ui-monospace,monospace';
     ctx.fillText(fmtNum(p), W - 50, y - 2);
   }
   cs.forEach(c => {
     const x = xOf(c.t), up = c.c >= c.o;
-    ctx.strokeStyle = ctx.fillStyle = up ? '#22c55e' : '#ef4444';
+    ctx.strokeStyle = ctx.fillStyle = up ? tok('--up') : tok('--down');
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x, yOf(c.h)); ctx.lineTo(x, yOf(c.l)); ctx.stroke();
     const oy = yOf(c.o), cy = yOf(c.c);
@@ -342,15 +342,15 @@ function drawChart() {
     const x = xOf(m.t);
     if (x < 38 || x > W - 15) return;
     if (m.kind === 'entry') {
-      ctx.fillStyle = m.side === 'short' ? '#ef4444' : '#22c55e';
+      ctx.fillStyle = m.side === 'short' ? tok('--down') : tok('--up');
       const y = m.side === 'short' ? 18 : H - 26;
       ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
     } else if (m.kind === 'close') {
-      ctx.fillStyle = (m.pnl_pct ?? 0) >= 0 ? '#fcd34d' : '#fcd34d';
+      ctx.fillStyle = (m.pnl_pct ?? 0) >= 0 ? tok('--amber') : tok('--amber');
       ctx.save(); ctx.translate(x, 16); ctx.rotate(Math.PI / 4);
       ctx.fillRect(-3.5, -3.5, 7, 7); ctx.restore();
     } else if (m.kind === 'verdict') {
-      ctx.fillStyle = '#818cf8';
+      ctx.fillStyle = tok('--accent');
       ctx.beginPath(); ctx.arc(x, H - 12, 2.5, 0, Math.PI * 2); ctx.fill();
     }
   });
@@ -394,8 +394,8 @@ function populateCoinSelect(coins) {
 
 // ── FUNDING / OI HEAT ────────────────────────────────────────────────────────
 function heatColor(pctile) {
-  if (pctile >= 80) return '#f59e0b';
-  if (pctile <= 20) return '#2dd4bf';
+  if (pctile >= 80) return tok('--amber');
+  if (pctile <= 20) return tok('--accent');
   return tok('--accent');
 }
 async function loadHeat() {

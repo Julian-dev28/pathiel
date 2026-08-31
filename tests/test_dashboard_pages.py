@@ -1022,7 +1022,7 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
     rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
     # extreme_fade's module was deleted 2026-08-29 but its ledger survives, so
     # the league renders it as a graded recorder, not as something that can trade
-    assert rows["extreme_fade"]["status"] == "recorder"
+    assert rows["extreme_fade"]["status"] == "retired"
     assert rows["extreme_fade"]["resolved"] == 1        # far past its 3d horizon
     # whale_flow REFUTED + removed 2026-07-22 -> in _REMOVED_BOOKS, never renders
     assert "whale_flow" not in rows
@@ -1033,7 +1033,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     graded and REFUTED, and — operator order 2026-07-17 — removed from the
     UI entirely. Their ledger files stay on disk as evidence, but the league
     payload must skip them; a genuinely still-accruing lane like whale_flow
-    keeps its 'recorder' status."""
+    keeps its 'retired' status."""
     from hermes_trader.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
@@ -1053,7 +1053,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     assert "premium_fade_short" not in rows
     assert "neg_funding_fade" not in rows
     assert "whale_flow" not in rows                       # REFUTED + removed 2026-07-22
-    assert rows["news_ta_quadrant"]["status"] == "recorder"
+    assert rows["news_ta_quadrant"]["status"] == "retired"
     # no row can ever carry the retired 'dead' status again
     assert all(r["status"] != "dead" for r in rows.values())
 
@@ -1475,3 +1475,65 @@ def test_no_page_animates_for_decoration(client):
                  "@keyframes growX"):
         assert gone not in CSS, f"decorative animation survives: {gone}"
     assert "prefers-reduced-motion" in CSS, "no motion opt-out"
+
+
+# ── nothing on screen may describe something that no longer exists ──────────
+
+def test_a_book_with_no_module_is_retired_not_a_recorder(monkeypatch):
+    """A ledger whose book was deleted was labelled RECORDER — "a zero-capital
+    lane still accruing toward a decision". Nothing accrues: autonomous_cycle
+    stopped grading them entirely, and the doctrine is that a book either
+    trades or does not exist. Sixteen of them sat above the four that trade."""
+    import hermes_trader.dashboard as db
+    from hermes_trader.agents import shadow_ledger
+
+    # imported inside the function, so patch the module it is pulled from
+    monkeypatch.setattr(db, "_books_payload", lambda *a, **k: [])
+    monkeypatch.setattr(shadow_ledger, "summary",
+                        lambda *a, **k: [{"book": "long_gone", "n": 5}])
+    rows = db._book_league_payload(now_ms=0)
+    assert rows[0]["status"] == "retired"
+    assert "no longer graded" in rows[0]["thesis"]
+
+
+def test_retired_ledgers_are_folded_away_but_reachable(client):
+    """History is evidence, so it is not deleted — it is one click down."""
+    r = client.get("/").text
+    assert 'id="league-retired"' in r
+    assert "show-retired" in r, "no way to reveal the retired ledgers"
+    assert "retired" in r and "RECORDER" not in r
+
+
+def test_the_deleted_engine_does_not_log_once_per_candidate():
+    """main_engine entries are deleted, so every unheld candidate hit that
+    branch — ~3,800 identical session-log events a day, which made a removed
+    feature the top entry in the decision funnel's reasons and buried the
+    refusals that matter. One summary event per scan says the same thing."""
+    src = (pathlib.Path(__file__).resolve().parent.parent
+           / "scripts" / "trading_loop.py").read_text()
+    body = src[src.index("main_engine ENTRIES DELETED"):]
+    body = body[:body.index("# TA filter")]
+    assert "_main_engine_skipped += 1" in body
+    assert '"coin": coin' not in body, "still logs a per-coin event"
+    assert '"n": _main_engine_skipped' in src, "no per-scan summary event"
+
+
+def test_structurally_impossible_counts_are_not_printed(client):
+    """`0 shadow · 0 off` were two counts that can never be anything else
+    under the no-shadow doctrine."""
+    r = client.get("/").text
+    assert "shadow · ${" not in r
+    assert "shadow ? " in r, "the shadow count is printed unconditionally"
+
+
+def test_no_template_hard_codes_a_colour():
+    """Charts and inline styles kept a neon crypto palette the stylesheet could
+    not reach, so a theme change fixed the page and missed the chart."""
+    import re as _re
+    tpl = pathlib.Path(__file__).resolve().parent.parent / "hermes_trader" / "templates"
+    offenders = []
+    for f in sorted(tpl.glob("*.html")):
+        for m in _re.finditer(r"#[0-9a-fA-F]{6}\b", f.read_text()):
+            offenders.append(f"{f.name}: {m.group(0)}")
+    assert not offenders, (
+        "hard-coded colours bypass the design tokens:\n" + "\n".join(offenders))

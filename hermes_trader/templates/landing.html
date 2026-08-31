@@ -234,6 +234,9 @@
         </tbody>
       </table>
     </div>
+    <button type="button" id="league-retired" class="disclose" aria-expanded="false" hidden>
+      <span></span><span class="chev"></span>
+    </button>
     <p class="note" style="margin-top:12px">
       Every strategy records to a forward ledger before it is given capital.
       Evidence promotes a book; a refuted book is removed.
@@ -392,13 +395,6 @@ function lineGradient(ctx, area) {
   g.addColorStop(1, accent);
   return g;
 }
-function fillGradient(ctx, area) {
-  const g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
-  g.addColorStop(0,   'rgba(139, 92, 246, 0.26)');
-  g.addColorStop(0.6, 'rgba(139, 92, 246, 0.06)');
-  g.addColorStop(1,   'rgba(139, 92, 246, 0)');
-  return g;
-}
 
 // tiny sparkline in the equity KPI — reuses the series the big chart already
 // fetched (zero extra API calls); shape only, no axes, single brand hue
@@ -411,16 +407,21 @@ function drawSpark(data) {
   const ctx = cv.getContext('2d');
   ctx.scale(dpr, dpr);
   const ys = data.map(p => p.y);
-  const lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+  const lo = Math.min(...ys), hi = Math.max(...ys);
   ctx.clearRect(0, 0, w, h);
+  // A flat series draws a straight line the full width of the card, which
+  // reads as a stray rule rather than a chart. Draw nothing.
+  if (hi - lo <= Math.max(1e-9, Math.abs(hi) * 1e-4)) { cv.style.display = 'none'; return; }
+  cv.style.display = '';
+  const span = hi - lo;
   ctx.beginPath();
   data.forEach((p, i) => {
     const x = i / (data.length - 1) * w;
     const y = h - 3 - (p.y - lo) / span * (h - 6);
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
-  ctx.strokeStyle = tok('--accent');
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = tok('--ink-3');
+  ctx.lineWidth = 1;
   ctx.stroke();
 }
 
@@ -447,13 +448,9 @@ async function refreshChart(rangeSec) {
           pointRadius: 0,
           pointHoverRadius: 4,
           pointHoverBackgroundColor: tok('--accent'),
-          pointHoverBorderColor: '#0a0b0d',
+          pointHoverBorderColor: tok('--surface'),
           pointHoverBorderWidth: 2,
-          fill: true,
-          backgroundColor: (c) => {
-            const { ctx, chartArea } = c.chart;
-            return chartArea ? fillGradient(ctx, chartArea) : 'rgba(139,92,246,0.1)';
-          },
+          fill: false,
         }] },
         options: {
           responsive: true, animation: false, parsing: false,
@@ -464,7 +461,7 @@ async function refreshChart(rangeSec) {
             tooltip: {
               backgroundColor: tok('--surface'), borderColor: tok('--rule-2'),
               titleColor: tok('--ink'), bodyColor: tok('--ink-2'), borderWidth: 1,
-              titleColor: '#9aa1ad', bodyColor: '#e8eaf0', padding: 8, displayColors: false,
+              padding: 10, displayColors: false,
               callbacks: {
                 title: (items) => new Date(items[0].parsed.x).toLocaleString(),
                 label: (item) => maskMoney(item.parsed.y),
@@ -474,12 +471,12 @@ async function refreshChart(rangeSec) {
           scales: {
             x: {
               type: 'time', time: { unit: RANGE_UNIT[rangeSec] || 'hour' },
-              ticks: { color: '#5c6370', maxTicksLimit: 6, font: { size: 10 } },
+              ticks: { color: tok('--ink-3'), maxTicksLimit: 6, font: { size: 11 } },
               grid: { display: false }, border: { display: false },
             },
             y: {
-              ticks: { color: '#5c6370', callback: v => maskMoney(v), font: { size: 10 }, maxTicksLimit: 6 },
-              grid: { color: '#14161b', drawTicks: false }, border: { display: false },
+              ticks: { color: tok('--ink-3'), callback: v => maskMoney(v), font: { size: 11 }, maxTicksLimit: 6 },
+              grid: { color: tok('--rule'), drawTicks: false }, border: { display: false },
             },
           },
         },
@@ -727,7 +724,7 @@ async function refreshPositions() {
 const BADGE = { live: '<span class="badge b-live">LIVE</span>',
                 shadow: '<span class="badge b-shadow">SHADOW</span>',
                 off: '<span class="badge b-off">OFF</span>',
-                recorder: '<span class="badge b-rec">RECORDER</span>' };
+                retired: '<span class="badge b-rec">RETIRED</span>' };
 
 async function refreshBooks() {
   try {
@@ -749,7 +746,13 @@ async function refreshBooks() {
       </div>`).join('');
     const live = books.filter(b => b.status === 'live').length;
     const shadow = books.filter(b => b.status === 'shadow').length;
-    document.getElementById('books-count').textContent = `${live} live · ${shadow} shadow · ${books.length - live - shadow} off`;
+    // Under the no-shadow doctrine a book either trades or does not exist, so
+    // "0 shadow · 0 off" was two counts that are structurally always zero.
+    // Name them only when they are not.
+    const off = books.length - live - shadow;
+    document.getElementById('books-count').textContent =
+      [`${live} live`, shadow ? `${shadow} shadow` : '', off ? `${off} off` : '']
+        .filter(Boolean).join(' · ');
   } catch (e) {}
 }
 
@@ -820,9 +823,24 @@ async function refreshLeague() {
       body.innerHTML = '<tr><td colspan="7" class="py-3" style="color:var(--ink-3)">no ledgers yet</td></tr>';
       return;
     }
-    const rank = { live: 0, shadow: 1, recorder: 2, off: 3 };
+    // Books that still exist lead. Retired ledgers are history — kept as the
+    // evidence behind a verdict, but nothing grades them any more, so listing
+    // sixteen of them above the four that trade buried the live table.
+    const rank = { live: 0, shadow: 1, retired: 2, off: 3 };
     rows.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || b.n - a.n);
-    body.innerHTML = rows.map(r => `
+    const active = rows.filter(r => r.status !== 'retired');
+    const retired = rows.filter(r => r.status === 'retired');
+    const shown = document.getElementById('league').classList.contains('show-retired')
+      ? rows : active;
+    const rt = document.getElementById('league-retired');
+    if (retired.length) {
+      const sigs = retired.reduce((a, r) => a + (r.n || 0), 0);
+      rt.hidden = false;
+      rt.querySelector('span').textContent =
+        `${retired.length} retired ${retired.length === 1 ? 'book' : 'books'} · ` +
+        `${sigs.toLocaleString()} recorded signals`;
+    } else { rt.hidden = true; }
+    body.innerHTML = shown.map(r => `
       <tr class="border-b last:border-0" style="border-color:var(--rule)">
         <td class="py-2 pr-3 whitespace-nowrap"><span class="tk" title="${esc(r.thesis)}">${esc(r.book)}</span></td>
         <td class="py-2 pr-3 lg-status">${BADGE[r.status] || esc(r.status)}</td>
@@ -834,9 +852,22 @@ async function refreshLeague() {
       </tr>`).join('');
     const live = rows.filter(r => r.status === 'live').length;
     document.getElementById('league-meta').textContent =
-      `${rows.length} ledgers · ${live} spending capital`;
+      `${live} ${live === 1 ? 'book' : 'books'} spending capital`;
   } catch (e) {}
 }
+
+// Retired ledgers stay one click away rather than gone: they are the evidence
+// behind every refuted verdict.
+(function () {
+  const btn = document.getElementById('league-retired');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const sec = document.getElementById('league');
+    const on = sec.classList.toggle('show-retired');
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    refreshLeague();
+  });
+})();
 
 refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();
