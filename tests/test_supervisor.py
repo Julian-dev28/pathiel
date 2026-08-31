@@ -423,3 +423,18 @@ def test_a_fresh_watcher_state_file_reports_a_small_age(monkeypatch, tmp_path):
         assert metrics.ALERTS_FIRING._value.get() == 1
     finally:
         importlib.reload(ro)
+
+
+def test_every_state_script_uses_the_one_state_env_module():
+    """Three scripts got state-path resolution wrong three different ways in one
+    session. The last was backup_state.py resolving HERMES_STATE_DIR without
+    loading .env.local, so a hand-run wrote its receipt to the repo root while
+    preflight — which does load it — reported "backup never run" thirty seconds
+    after a successful backup. One implementation, or it happens again."""
+    for name in ("supervise_processes.py", "alert_eval.py", "backup_state.py",
+                 "preflight_live.py"):
+        src = open(os.path.join(ROOT, "scripts", name)).read()
+        assert "_state_env" in src, f"{name} resolves state paths on its own"
+        assert "load_env_local" in src, f"{name} does not load .env.local"
+        assert 'os.environ.get("HERMES_STATE_DIR")' not in src, (
+            f"{name} still has its own copy of the rule")

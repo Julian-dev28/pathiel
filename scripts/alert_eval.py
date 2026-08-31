@@ -45,15 +45,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RULES = os.path.join(ROOT, "k8s", "prometheusrule.yaml")
-# State lives where every other component's state lives. The canonical rule is
-# hermes_trader.agents.rebalancer_owned.state_file(): HERMES_STATE_DIR, else the
-# project root. Replicated (not imported) so this stays a dependency-free script
-# the scheduler can run without loading the agents package — and pinned by
-# tests/test_supervisor.py so the two can never drift. They were briefly
-# hardcoded to <root>/.state, which agreed with the live value by coincidence
-# and disagreed everywhere else: the metrics reader looked in one place while
-# these wrote to another, and both sides looked fine in isolation.
-STATE_DIR = os.environ.get("HERMES_STATE_DIR") or ROOT
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# One definition of where state lives — see scripts/_state_env.py
+# for the reason it is not inlined here.
+import _state_env
+_state_env.load_env_local(ROOT)
+STATE_DIR = _state_env.state_dir(ROOT)
 STATE = os.path.join(STATE_DIR, "alerts.json")
 ALERT_LOG = os.path.join(ROOT, "logs", "alerts.log")
 METRICS_URL = os.environ.get("HERMES_METRICS_URL", "http://localhost:8000/metrics")

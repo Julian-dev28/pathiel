@@ -129,6 +129,19 @@ spec:
               redundant; on the local evaluator it is the one alert that cannot
               page for itself, so it also shows in `scripts/preflight_live.py`.
 
+        # The evidence base under every book verdict is gitignored and sits on
+        # one disk. 36h, not 24h, so one skipped daily run is not a page.
+        - alert: HermesBackupStale
+          expr: hermes_backup_age_seconds > 129600
+          for: 1h
+          labels: {severity: warning}
+          annotations:
+            summary: "No verified state backup in {{ $value | humanizeDuration }}"
+            description: >-
+              .agent-memory.json, the shadow-ledger evidence base and
+              capital_flows.jsonl have no current copy. An UNVERIFIED archive
+              counts as no backup here. Run `python scripts/backup_state.py`.
+
         # Not a system fault — a money fault. Worth a human looking.
         - alert: HermesDeepDrawdown
           expr: hermes_max_drawdown_pct < -25

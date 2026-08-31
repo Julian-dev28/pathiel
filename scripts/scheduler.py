@@ -86,6 +86,14 @@ JOBS: Dict[str, Dict[str, Any]] = {
                "Kubernetes, so until this job existed all seven alerts were "
                "documentation and every silent failure stayed silent",
     },
+    "backup-state": {
+        "args": [PY, os.path.join(ROOT, "scripts", "backup_state.py")],
+        "hour": 4, "minute": 30,       # daily, off the trading path
+        "log": "logs/backup_state.log",
+        "why": "snapshot the state that cannot be recreated — trade memory, the "
+               "shadow-ledger evidence base, capital flows. All gitignored, all "
+               "on one laptop, and until this job none had a copy",
+    },
     "supervisor": {
         "args": [PY, os.path.join(ROOT, "scripts", "supervise_processes.py")],
         "interval_min": 2,            # a dead loop should cost minutes, not days

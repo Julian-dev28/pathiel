@@ -23,13 +23,10 @@ sys.path.insert(0, str(ROOT))
 
 # .env.local carries HERMES_STATE_DIR. Load it BEFORE importing anything that
 # resolves a state path, or every book reads as empty from the wrong directory.
-_env = ROOT / ".env.local"
-if _env.exists():
-    for _line in _env.read_text().splitlines():
-        _line = _line.strip()
-        if _line and not _line.startswith("#") and "=" in _line:
-            _k, _, _v = _line.partition("=")
-            os.environ.setdefault(_k.strip(), _v.strip())
+sys.path.insert(0, str(ROOT / "scripts"))
+import _state_env  # noqa: E402
+
+_state_env.load_env_local(str(ROOT))
 
 GREEN, RED, AMBER, DIM, OFF = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -268,6 +265,18 @@ def check_watchers(r: Report) -> None:
                     "scripts/restart.sh sched")
         else:
             r.ok(label, f"ran {age / 60:.0f} min ago")
+    receipt = read_json(state_file("backup.json"), default=None) or {}
+    bts = float(receipt.get("ts") or 0)
+    if bts <= 0:
+        r.warn("state backup", "never run — the evidence base has no copy. "
+                               "python scripts/backup_state.py")
+    elif not receipt.get("verified"):
+        r.warn("state backup", f"last archive did not verify: {receipt.get('detail')}")
+    else:
+        hrs = (time.time() - bts) / 3600
+        msg = f"{receipt.get('files')} files, {receipt.get('bytes', 0) / 1e6:.1f}MB, {hrs:.0f}h ago"
+        (r.ok if hrs < 36 else r.warn)("state backup", msg)
+
     firing = (read_json(state_file("alerts.json"), default=None) or {}).get("firing") or []
     if firing:
         r.warn("alerts firing", ", ".join(firing))

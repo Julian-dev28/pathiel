@@ -1,7 +1,9 @@
 {
- "ts": 1788136962.170491,
+ "ts": 1788137322.193059,
  "firing": [],
- "errors": [],
+ "errors": [
+  "HermesBackupStale: hermes_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+ ],
  "alerts": {
   "HermesLoopDead": {
    "firing": false,
@@ -42,6 +44,9 @@
    "firing": false,
    "pending_since": null,
    "severity": "critical"
+  },
+  "HermesBackupStale": {
+   "error": "hermes_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
   "HermesDeepDrawdown": {
    "firing": false,

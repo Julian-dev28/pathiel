@@ -74,6 +74,10 @@ ALERT_EVAL_AGE = Gauge(
     "while this grows")
 ALERTS_FIRING = Gauge(
     "hermes_alerts_firing", "Number of alert rules currently firing")
+BACKUP_AGE = Gauge(
+    "hermes_backup_age_seconds",
+    "Seconds since the last VERIFIED state backup. The evidence base under "
+    "every book verdict is gitignored and lives on one disk")
 
 
 def _to_float(value: object) -> float:
@@ -148,6 +152,20 @@ def _refresh() -> None:
         ALERTS_FIRING.set(len(firing) if isinstance(firing, list) else 0)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"[metrics] alerts firing read failed: {e}")
+
+    try:
+        from hermes_trader.agents.atomic_io import read_json
+        from hermes_trader.agents.rebalancer_owned import state_file
+
+        receipt = read_json(state_file("backup.json"), default=None) or {}
+        ts = _to_float(receipt.get("ts"))
+        # An UNVERIFIED backup is not a backup. Report it as stale so the alert
+        # fires on a corrupt archive exactly as it does on a missing one.
+        BACKUP_AGE.set(time.time() - ts if ts > 0 and receipt.get("verified")
+                       else _never_ran)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[metrics] backup receipt read failed: {e}")
+        BACKUP_AGE.set(_never_ran)
 
     # ── the failure modes ────────────────────────────────────────────────────
     # Each block is independently guarded: one broken source must degrade a
