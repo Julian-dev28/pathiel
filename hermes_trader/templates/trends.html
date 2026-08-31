@@ -243,6 +243,23 @@ const LABEL_CLASS = {
 const badge = l => `<span class="badge ${LABEL_CLASS[l] || 'b-mut'}">${esc(String(l).replace(/_/g, ' '))}</span>`;
 const KIND_CLASS = { event: 'ev', structure: 'st', positioning: 'po', risk: 'rk' };
 
+// Flag codes are machine constants. Shown raw they read as log output —
+// EMA_STACK_BULL, BREAKOUT_7D, FUNDING_CROWDED_SHORT — and, set as adjacent
+// chips, they run together when the page is copied. The full code stays in the
+// title attribute alongside its note, so nothing is lost.
+const FLAG_LABEL = {
+  EMA_STACK_BULL: 'EMAs stacked up',   EMA_STACK_BEAR: 'EMAs stacked down',
+  BREAKOUT_7D: '7-day breakout',       BREAKDOWN_7D: '7-day breakdown',
+  HIGH_30D: '30-day high',             LOW_30D: '30-day low',
+  LEADER: 'sector leader',             LAGGARD: 'sector laggard',
+  DECOUPLED: 'decoupled from sector',  STREAK_4D: '4-day streak',
+  VOLUME_SURGE: 'volume surge',        VOLUME_DRY: 'volume dry',
+  OVEREXTENDED_UP: 'overextended',     OVEREXTENDED_DOWN: 'overextended down',
+  VOL_EXPANSION: 'volatility expanding',
+  FUNDING_CROWDED_LONG: 'crowded long', FUNDING_CROWDED_SHORT: 'crowded short',
+};
+const flagLabel = c => FLAG_LABEL[c] || String(c || '').replace(/_/g, ' ').toLowerCase();
+
 function spark(vals, w = 74, h = 20) {
   if (!vals || vals.length < 2) return '';
   const lo = Math.min(...vals), hi = Math.max(...vals), rng = (hi - lo) || 1;
@@ -529,7 +546,7 @@ function renderHLRows() {
       <td class="mono ${sgn(-(r.funding_apr_pct || 0))}">${pct(r.funding_apr_pct, 1)}</td>
       <td style="text-align:left;white-space:normal;max-width:280px">
         ${(r.flags || []).slice(0, 4).map(fl =>
-      `<span class="chip ${KIND_CLASS[fl.kind] || ''}" title="${esc(fl.note)}">${esc(fl.code)}</span>`).join('')}
+      `<span class="chip ${KIND_CLASS[fl.kind] || ''}" title="${esc(fl.code)} — ${esc(fl.note)}">${esc(flagLabel(fl.code))}</span>`).join('')}
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="14" class="dim">nothing matches this filter</td></tr>';

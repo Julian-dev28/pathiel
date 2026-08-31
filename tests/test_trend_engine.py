@@ -1135,3 +1135,55 @@ def test_no_module_imports_the_deleted_polymarket_package():
             if "polymarket_scout" in f.read_text():
                 offenders.append(str(f.relative_to(root)))
     assert not offenders, f"still reference the deleted package: {offenders}"
+
+
+# ── machine constants must not reach the reader ─────────────────────────────
+
+def test_trend_labels_are_spelled_out_in_the_narrative():
+    """STRONG_UP inside a sentence reads as log output. The playbook writes
+    prose, so the label has to be a word."""
+    from services.trend_engine.playbook import label_words
+
+    assert label_words("STRONG_UP") == "strongly up"
+    assert label_words("STRONG_DOWN") == "strongly down"
+    assert label_words("CHOP") == "chopping"
+    # an unmapped constant still degrades to something readable
+    assert label_words("SOME_NEW_LABEL") == "some new label"
+    assert label_words(None) == ""
+
+
+def test_no_playbook_line_interpolates_a_raw_label():
+    import pathlib as _p
+    import re as _re
+
+    src = (_p.Path(__file__).resolve().parent.parent
+           / "services" / "trend_engine" / "playbook.py").read_text()
+    assert not _re.search(r"\{r\.get\(['\"]label['\"]\)\}", src), (
+        "a raw trend constant is interpolated into narrative copy")
+
+
+def test_the_trends_table_labels_its_flags(client):
+    """Flag chips shipped their raw codes — EMA_STACK_BULL, BREAKOUT_7D — and
+    as adjacent chips they ran together when the page was copied."""
+    page = client.get("/trends").text
+    assert "FLAG_LABEL" in page and "flagLabel(fl.code)" in page
+    assert "esc(fl.code)}</span>" not in page, "still renders the raw code"
+
+
+def test_no_module_interpolates_a_raw_trend_label_into_prose():
+    """A SCREAMING_CONSTANT inside a sentence reads as log output. Every place
+    that writes narrative copy has to spell the label."""
+    import pathlib as _p
+    import re as _re
+
+    root = _p.Path(__file__).resolve().parent.parent / "services" / "trend_engine"
+    offenders = []
+    for f in sorted(root.glob("*.py")):
+        if f.name == "ai.py":          # prompt text, read by a model not a person
+            continue
+        src = f.read_text()
+        for m in _re.finditer(r"f\"[^\"]*\{[a-z]\W*\[?['\"]?label['\"]?\]?\.?g?e?t?\([^)]*\)?\}[^\"]*\"",
+                              src):
+            if "label_words" not in m.group(0):
+                offenders.append(f"{f.name}: {m.group(0)[:70]}")
+    assert not offenders, "raw trend constants in narrative copy:\n" + "\n".join(offenders)

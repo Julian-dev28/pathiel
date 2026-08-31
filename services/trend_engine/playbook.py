@@ -137,7 +137,7 @@ def hl_actions(payload: Dict[str, Any], max_names: int = 4) -> List[Dict[str, An
             out.append(_a(WATCH,
                           f"{r['coin']} — long candidate on a pullback, not at the highs.",
                           f"{float(r.get('ret_7d') or 0):+.1f}% on the week, efficiency "
-                          f"{r.get('efficiency'):.2f} (clean path), {r.get('label')}"
+                          f"{r.get('efficiency'):.2f} (clean path), {label_words(r.get('label'))}"
                           + _today_note(r, "long"),
                           trigger=f"holds the 7d EMA around {_fmt(r.get('ema7'))}",
                           invalidate=f"closes below {_fmt(r.get('low_7d'))} (7d low) or "
@@ -148,7 +148,7 @@ def hl_actions(payload: Dict[str, Any], max_names: int = 4) -> List[Dict[str, An
             out.append(_a(WATCH,
                           f"{r['coin']} — short candidate on a bounce.",
                           f"{float(r.get('ret_7d') or 0):+.1f}% on the week, efficiency "
-                          f"{r.get('efficiency'):.2f}, {r.get('label')}"
+                          f"{r.get('efficiency'):.2f}, {label_words(r.get('label'))}"
                           + _today_note(r, "short"),
                           trigger=f"fails at the 7d EMA around {_fmt(r.get('ema7'))}",
                           invalidate=f"closes above {_fmt(r.get('high_7d'))} (7d high) or "
@@ -217,6 +217,20 @@ def _today_note(read: Dict[str, Any], side: str) -> str:
         if px is not None and ema7 is not None and float(px) > float(ema7):
             note += "; already over the 7d EMA, so the trigger below is not live"
     return note
+
+
+# Trend labels are machine constants (STRONG_UP, EMA_STACK_BULL). They read as
+# log output inside a sentence, so the narrative spells them.
+_LABEL_WORDS = {
+    "STRONG_UP": "strongly up", "UP": "up", "CHOP": "chopping",
+    "DOWN": "down", "STRONG_DOWN": "strongly down", "STABLE": "stable",
+    "CHURN": "churning",
+}
+
+
+def label_words(label: object) -> str:
+    raw = str(label or "").strip()
+    return _LABEL_WORDS.get(raw, raw.replace("_", " ").lower())
 
 
 def _fmt(v: Optional[float]) -> str:

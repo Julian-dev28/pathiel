@@ -45,6 +45,15 @@ MAX_WORKERS = 4            # HL info endpoint is rate-limited — do not raise b
 MIN_VOL_USD = 2_000_000.0
 
 
+def label_words(label: object) -> str:
+    """Spell a trend constant for prose. Shares the playbook's mapping, defined
+    here too so this module keeps no import on it (playbook already reads from
+    this one, and a cycle would be worse than eight lines)."""
+    from services.trend_engine.playbook import _LABEL_WORDS
+    raw = str(label or "").strip()
+    return _LABEL_WORDS.get(raw, raw.replace("_", " ").lower())
+
+
 def _c(bar: Any, k: str) -> float:
     return float(bar[k] if isinstance(bar, dict) else getattr(bar, k))
 
@@ -303,13 +312,13 @@ def observations(reads: List[Dict[str, Any]], reg: Dict[str, Any]) -> List[str]:
     if ups:
         t = ups[0]
         out.append(f"Strongest uptrend: {t['coin']} {float(t['ret_7d'] or 0):+.1f}% 7d, "
-                   f"efficiency {t['efficiency']:.2f}, {t['label']}.")
+                   f"efficiency {t['efficiency']:.2f}, {label_words(t['label'])}.")
     else:
         out.append("No coin in the scan holds a clean uptrend — every green name is chop.")
     if downs:
         b = downs[-1]
         out.append(f"Strongest downtrend: {b['coin']} {float(b['ret_7d'] or 0):+.1f}% 7d, "
-                   f"efficiency {b['efficiency']:.2f}, {b['label']}.")
+                   f"efficiency {b['efficiency']:.2f}, {label_words(b['label'])}.")
     chops = [r for r in reads if r["label"] == "CHOP" and abs(float(r.get("ret_7d") or 0)) >= 8]
     if chops:
         out.append("Round-trip traps (big weekly move, no trend): "
