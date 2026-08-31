@@ -471,7 +471,7 @@ def test_recorders_observations_call_out_decay_and_staleness():
     obs = rec.observations(books)
     joined = " ".join(obs)
     assert "Decaying" in joined and "b " in joined
-    assert "not written in over a week" in joined
+    assert "idle over a week" in joined
 
 
 # ── playbook (the action layer) ──────────────────────────────────────────────

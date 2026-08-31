@@ -207,9 +207,10 @@ def observations(books: Sequence[Dict[str, Any]]) -> List[str]:
     stale = [b for b in books if isinstance(b.get("last_age_h"), (int, float))
              and b["last_age_h"] > 168]
     if stale:
-        out.append(f"{len(stale)} recorder(s) have not written in over a week: "
-                   + ", ".join(b["book"] for b in stale[:5])
-                   + " — either the lane is off or its trigger has stopped firing.")
+        names = ", ".join(b["book"] for b in stale[:3])
+        more = f" +{len(stale) - 3} more" if len(stale) > 3 else ""
+        out.append(f"{len(stale)} lanes idle over a week ({names}{more}) — "
+                   f"switched off, or the trigger stopped firing.")
 
     return out
 

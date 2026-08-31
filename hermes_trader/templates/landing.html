@@ -243,13 +243,8 @@
       <div class="pn"><span class="s">06</span><div class="n">Review</div><div class="d">Open positions are re-read for an early close; books own their own exits</div></div>
     </div>
     <p class="hiw">
-      Hermes trades Hyperliquid perpetuals across crypto, equities and commodities
-      without human input. Every position originates from a book — a named
-      strategy with a forward record published in the table above — and each book
-      is graded against a matched random-entry null before it is given capital.
-      There is no discretionary trading and no manual override. Positions exit on
-      a two-phase dynamic stop rather than a fixed target. Past results are not
-      indicative of future performance, and nothing here is financial advice.
+      No discretionary trading and no manual override. Past results are not
+      indicative of future performance; nothing here is financial advice.
     </p>
   </section>
 
@@ -509,8 +504,12 @@ async function refreshSummary() {
       parts.push(`${d === '' ? 'main' : d} ${fmtMoney(v)}`);
       total += v;
     }
+    // "main $12.91 = $12.91 free" restated one number as an equation. Say the
+    // free balance; the per-dex split is the tooltip, and only matters when
+    // capital is actually spread across more than one.
     brk.innerHTML = parts.length
-      ? dollarHTML(`${parts.join(' + ')} = ${fmtMoney(total)} free`) : '';
+      ? `<span title="${esc(parts.join(' + '))}">${dollarHTML(fmtMoney(total))} free</span>`
+      : '';
     const pnl = document.getElementById('kpi-pnl');
     pnl.className = 'kv ' + (s.daily_pnl >= 0 ? 'pos' : 'neg');   // money gets the color
     setMoney(pnl, s.daily_pnl, true);
@@ -632,8 +631,7 @@ async function refreshRisk() {
           Math.round((feed.gap_frac || 0) * 100) + '%). Entries are blocked; ' +
           'a data outage is not a quiet market.</span>';
       } else if (feed.markets) {
-        feedEl.innerHTML = '<span class="dim">feed ok · ' + feed.gaps + '/' +
-          feed.markets + ' unreadable on the last scan</span>';
+        feedEl.innerHTML = '<span class="dim">Feed healthy</span>';
       } else {
         feedEl.textContent = '';
       }
@@ -646,10 +644,10 @@ async function refreshRisk() {
     const cav = $id('risk-caveat');
     if (r.capital_flows_tracked) {
       const net = Number(r.net_capital_in || 0);
-      cav.innerHTML = '<span class="dim">flow-neutral (NAV basis) · ' +
-        (r.flow_events || 0) + ' capital flows recorded, net ' +
-        (net >= 0 ? '+' : '') + '$' + net.toFixed(2) +
-        ' — a deposit or withdrawal does not move this number</span>';
+      cav.innerHTML = '<span class="dim" title="Net ' +
+        (net >= 0 ? '+' : '') + '$' + net.toFixed(2) + ' across ' +
+        (r.flow_events || 0) + ' recorded flows. Deposits and withdrawals do ' +
+        'not move this number.">Flow-neutral</span>';
     } else {
       cav.innerHTML = '<span style="color:var(--amber)">' +
         (r.drawdown_caveat || '') + '</span>';

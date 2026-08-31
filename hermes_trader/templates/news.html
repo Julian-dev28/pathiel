@@ -37,10 +37,12 @@
     <div class="page-sub">Catalysts the engine read, and what it did about them.</div>
   </div>
 
-  <div class="text-[12px] mb-4" style="color:var(--ink-2);line-height:1.6">
-    Every 5 min the watcher reads each candidate's headlines. Quiet reads are the
-    control group; BREAKING = coverage surging vs the coin's own baseline.
-  </div>
+  <details class="explainer">
+    <summary>How to read this page</summary>
+    <p>The watcher reads each candidate's headlines every five minutes. Quiet
+    reads are the control group; <b>BREAKING</b> means coverage is surging
+    against that coin's own baseline.</p>
+  </details>
 
   <div class="strip" id="news-strip">
     <div class="kpi"><span class="v">…</span><span class="l">reads today</span></div>
@@ -148,7 +150,10 @@ function researchCard(c) {
       ${tk(c.coin)} ${verdict} ${conf} ${risk}
       <span class="ev-ts mono" style="margin-left:auto">${fmtAgo(c.ts)}</span>
     </div>
-    ${c.reasoning ? `<div class="text-[12.5px] mt-1 leading-relaxed" style="color:var(--ink-2)">${esc(c.reasoning)}</div>` : ''}
+    ${c.reasoning ? `<div class="prose text-[12.5px] mt-1 leading-relaxed" style="color:var(--ink-2)">
+         <div class="prose-clamp">${esc(c.reasoning)}</div>
+         <button type="button" class="prose-more">More</button>
+       </div>` : ''}
     ${cites ? `<div class="cite-row">${cites}</div>` : ''}`;
 }
 function catalystNode(row) {
@@ -160,6 +165,7 @@ function catalystNode(row) {
     div.className = 'item k-research';
     div.innerHTML = researchCard(row);
   }
+  clampProse(div);
   return div;
 }
 

@@ -54,3 +54,29 @@ function reportRefreshFailure(what, err, el) {
   const node = typeof el === 'string' ? document.getElementById(el) : el;
   if (node) node.closest('.section, .panel, .card')?.classList.add('is-stale');
 }
+
+
+/** Clamp long prose to two lines, and only offer "more" where there is more
+ *  to show. Called after any render that writes `.prose` blocks.
+ *
+ *  Length, not layout: with `-webkit-line-clamp` applied, scrollHeight equals
+ *  clientHeight, so the overflow cannot be measured while the clamp is on, and
+ *  lifting it mid-frame does not reliably reflow. Two lines at this column is
+ *  roughly 180 characters — an approximation, but a stable one that costs no
+ *  layout pass.
+ */
+const PROSE_TWO_LINES = 180;
+
+function clampProse(root) {
+  (root || document).querySelectorAll('.prose:not([data-clamped])').forEach(el => {
+    el.dataset.clamped = '1';
+    const body = el.querySelector('.prose-clamp');
+    const btn = el.querySelector('.prose-more');
+    if (!body || !btn) return;
+    if (body.textContent.trim().length > PROSE_TWO_LINES) el.classList.add('is-long');
+    btn.addEventListener('click', () => {
+      const open = el.classList.toggle('is-open');
+      btn.textContent = open ? 'Less' : 'More';
+    });
+  });
+}

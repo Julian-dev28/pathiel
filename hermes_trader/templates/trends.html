@@ -56,16 +56,17 @@ token-why"></span>
     </div>
   </div>
 
-  <div class="note">
-    <b>Start with the WHAT TO DO card</b> on each tab — it turns everything below into
-    instructions with a trigger and a stop. The rest is the evidence behind it:
-    <b>what the market has actually done</b>, measured, then extrapolated with its own error bars.
-    Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up 20% on a round
-    trip is labelled CHOP, and the label is what ranks it. Forecasts are a
-    <b>shrunken-drift baseline</b> and every lane ships the backtest that says what it is worth;
-    where that backtest says "coin flip", the tab says so in amber instead of hiding it.
-    The <b>AI pass is optional and additive</b>: it reads these numbers, it never produces one.
-  </div>
+  <details class="explainer">
+    <summary>How to read this page</summary>
+    <p>The <b>What to do</b> card turns everything below into instructions with a
+    trigger and a stop. The rest is the evidence behind it.</p>
+    <p>Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up
+    20% on a round trip is labelled CHOP, and the label is what ranks it.</p>
+    <p>Forecasts are a <b>shrunken-drift baseline</b>, and every lane ships the
+    backtest that says what it is worth. Where that backtest says "coin flip",
+    the tab says so in amber rather than hiding it.</p>
+    <p>The <b>AI pass is optional</b>: it reads these numbers, it never produces one.</p>
+  </details>
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-lane="hl" aria-selected="true">HYPERLIQUID <span class="n" id="n-hl"></span></button>
@@ -131,6 +132,7 @@ token-why"></span>
           </tr></thead>
           <tbody id="hl-rows"><tr><td colspan="14" class="dim">loading…</td></tr></tbody>
         </table>
+      <button type="button" id="hl-more" class="disclose" hidden></button>
       </div>
     </div>
 
@@ -157,13 +159,14 @@ token-why"></span>
       <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
     </div>
 
-    <div class="note">
-      This is the scoreboard the other three lanes get judged against. Every book here trades
-      <b>zero capital</b>; <b>EV%</b> is mean forward return per signal net of funding at 12bps
-      slippage, graded on real candles after the signal — the same grader
-      <code>scripts/shadow_status.py</code> uses. <b>1st / 2nd</b> split the book's own history:
-      a positive average built on a negative second half is a decaying edge, and it is flagged.
-    </div>
+    <details class="explainer">
+      <summary>What these numbers mean</summary>
+      <p><b>EV%</b> is mean forward return per signal, net of funding, at 12bps
+      slippage — graded on real candles after the signal by the same grader
+      <code>scripts/shadow_status.py</code> uses.</p>
+      <p><b>1st / 2nd</b> split each book's own history. A positive average built
+      on a negative second half is a decaying edge, and it is flagged.</p>
+    </details>
 
     <div class="card mb-4">
       <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -316,6 +319,7 @@ const DATA = { hl: null, recorders: null };
 let LANE = (location.hash || '#hl').slice(1);
 if (!LANES.includes(LANE)) LANE = 'hl';
 let HL_FILTER = 'all';
+let HL_SHOW_ALL = false;
 let HL_SECTOR = 'all';
 
 function showLane(l) {
@@ -515,6 +519,11 @@ function renderHLRows() {
   if (HL_SECTOR !== 'all') rows = rows.filter(r => (r.sector || 'crypto') === HL_SECTOR);
   if (HL_FILTER === 'trend') rows = rows.filter(r => r.label !== 'CHOP');
   if (HL_FILTER === 'flagged') rows = rows.filter(r => (r.flags || []).length > 0);
+  // Sixty-four rows is a 6,700px table nobody reads to the bottom. Show the
+  // ranked head; the rest is one click away.
+  const HL_HEAD = 15;
+  const hidden = Math.max(0, rows.length - HL_HEAD);
+  if (!HL_SHOW_ALL) rows = rows.slice(0, HL_HEAD);
   $('#hl-rows').innerHTML = rows.map(r => {
     const f = r.forecast || {};
     return `<tr>
@@ -537,7 +546,12 @@ function renderHLRows() {
       </td>
     </tr>`;
   }).join('') || '<tr><td colspan="14" class="dim">nothing matches this filter</td></tr>';
+
+  const more = $('#hl-more');
+  more.hidden = !hidden && !HL_SHOW_ALL;
+  more.textContent = HL_SHOW_ALL ? 'Show top 15' : `Show all ${hidden + HL_HEAD} tickers`;
 }
+$('#hl-more').onclick = () => { HL_SHOW_ALL = !HL_SHOW_ALL; renderHLRows(); };
 $$('[data-sector]').forEach(b => b.onclick = () => {
   HL_SECTOR = b.dataset.sector;
   $$('[data-sector]').forEach(x => x.classList.toggle('go', x === b));

@@ -447,9 +447,7 @@ def test_news_payload_title_urls_passthrough(monkeypatch):
 
 # ── pages + endpoints ────────────────────────────────────────────────────────
 
-HOW_IT_WORKS = (
-    "Hermes trades Hyperliquid perpetuals across crypto, equities and commodities"
-)
+HOW_IT_WORKS = "No discretionary trading and no manual override."
 
 # The design system lives in a linked stylesheet now, not in five inline
 # <style> blocks. Anything asserting on CSS has to read the sheet, or it is
@@ -1473,7 +1471,13 @@ def test_the_type_is_not_a_toy(client):
 def test_the_page_still_works_in_both_themes():
     """Light is the default. Dark ships as a second skin — same structure,
     only tokens differ, so no rule below the token block branches on theme."""
-    assert "prefers-color-scheme: dark" in CSS
+    # Dark is unconditional, not a prefers-color-scheme default: the OS
+    # preference is about documents and this is an instrument.
+    import re as _re
+    # the phrase survives in a comment; what matters is that no RULE uses it
+    assert not _re.search(r"@media[^{]*prefers-color-scheme", CSS), (
+        "the theme still defers to the OS")
+    assert ':root[data-theme="light"]' in CSS, "light is not reachable"
     assert ':root[data-theme="dark"]' in CSS
     for token in ("--ink", "--paper", "--rule", "--up", "--down", "--accent"):
         assert CSS.count(f"{token}:") >= 3, f"{token} is not defined for every theme"
@@ -1610,3 +1614,46 @@ def test_the_hotkeys_are_defined_once(client):
                / "hermes_trader" / "templates" / f"{name}.html").read_text()
         assert "addEventListener('keydown'" not in src, (
             f"{name}.html re-declares the hotkey handler")
+
+
+# ── density: the page must not open with a wall of text ─────────────────────
+
+def test_no_page_opens_with_a_paragraph_of_theory(client):
+    """A page that opens with an essay makes the reader work before it tells
+    them anything. Explanations stay — folded into a <details>, one click down
+    for the first visit that needs them."""
+    import re as _re
+
+    for path in ("/", "/news", "/trends"):
+        page = client.get(path).text
+        body = page.split("</header>")[-1]
+        for m in _re.finditer(r'<div class="note">\s*([^<]{200,})', body):
+            raise AssertionError(
+                f"{path} ships a {len(m.group(1))}-char paragraph unfolded: "
+                f"{' '.join(m.group(1).split())[:80]}")
+
+
+def test_long_explanations_are_folded_not_deleted(client):
+    """Folding is not the same as removing: a first-time reader still needs the
+    explanation."""
+    for path in ("/news", "/trends"):
+        page = client.get(path).text
+        assert 'class="explainer"' in page, f"{path} lost its explanation entirely"
+        assert "<summary>" in page
+
+
+def test_long_model_reasoning_is_clamped_with_a_way_to_read_it(client):
+    """Twenty research cards each opening with a five-line paragraph is a page
+    nobody scans. Two lines, then More — the text was previously cut with no
+    affordance at all."""
+    page = client.get("/news").text
+    assert "prose-clamp" in page and "prose-more" in page
+    assert "clampProse" in page
+    assert "PROSE_TWO_LINES" in SHARED_JS
+
+
+def test_the_ticker_table_shows_a_head_not_every_row(client):
+    """Sixty-four rows was a 6,700px table nobody reads to the bottom."""
+    page = client.get("/trends").text
+    assert "HL_HEAD" in page and "HL_SHOW_ALL" in page
+    assert 'id="hl-more"' in page, "no way to see the rest"

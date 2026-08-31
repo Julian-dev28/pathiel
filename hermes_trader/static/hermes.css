@@ -20,36 +20,39 @@
    ========================================================================= */
 
 :root{
-  /* Paper and ink, with the venue's colour underneath it. Hyperliquid is a
-     green-cast near-black and a mint accent; taken literally on a white page
-     that reads as a crypto app, so the mint is darkened to a deep teal for
-     light mode and the masthead carries the green cast. Dark mode is the
-     venue's palette as-is. */
-  --paper:#ffffff;
-  --surface:#ffffff;
-  --surface-2:#f4f7f6;
-  --ink:#0a1211;
-  --ink-2:#4c5956;
-  --ink-3:#838f8b;
-  --rule:#e2e8e6;
-  --rule-2:#c6d0cd;
+  /* Hyperliquid's palette: a green-cast near-black with a mint accent. Dark is
+     the default — this is a trading desk, read at night, and the venue it
+     trades on is dark. Light is the second skin; taken literally on white the
+     mint reads as a crypto app, so it darkens to a deep teal there.
 
-  --bar:#0a1211;          /* masthead — Hyperliquid's near-black */
+     Dark is unconditional, not a `prefers-color-scheme` default: the OS
+     preference is about documents, and this is an instrument. Light is opt-in
+     via data-theme="light".
+
+     Only tokens are redefined per theme. No rule below this block branches. */
+  --paper:#0a1211;
+  --surface:#0f1a18;
+  --surface-2:#14211f;
+  --ink:#e8efec;
+  --ink-2:#9aaaa5;
+  --ink-3:#6e807b;
+  --rule:#1c2a27;
+  --rule-2:#2b3c38;
+
+  --bar:#060d0c;          /* masthead — a shade under the page */
   --bar-ink:#ffffff;
   --bar-ink-2:#93a29d;
 
-  /* One accent: active state, links, focus. Nothing else. */
-  --accent:#0d6b5c;
-  --accent-ink:#085146;
-  --accent-wash:#eaf5f2;
+  --accent:#4fd1b8;
+  --accent-ink:#7fe6d4;
+  --accent-wash:#0f2622;
 
-  /* Money and status. Print-weight, not neon. */
-  --up:#0d6b52;
-  --up-wash:#eaf5f1;
-  --down:#a02b25;
-  --down-wash:#faeeed;
-  --amber:#8a6410;
-  --amber-wash:#faf3e6;
+  --up:#4fd1b8;
+  --up-wash:#0f2622;
+  --down:#e8756d;
+  --down-wash:#2a1614;
+  --amber:#d0a45c;
+  --amber-wash:#26200f;
 
   --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,
          "Helvetica Neue",Arial,sans-serif;
@@ -60,30 +63,40 @@
   --measure:1220px;
 }
 
-/* Dark is a supported second skin, not the default. Same structure, same
-   restraint — the paper goes to graphite and the ink inverts. Only tokens are
-   redefined; no rule below branches on theme. */
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --paper:#0a1211; --surface:#0f1a18; --surface-2:#14211f;
-    --ink:#e8efec; --ink-2:#9aaaa5; --ink-3:#6e807b;
-    --rule:#1c2a27; --rule-2:#2b3c38;
-    --bar:#060d0c; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
-    --accent:#4fd1b8; --accent-ink:#7fe6d4; --accent-wash:#0f2622;
-    --up:#4fd1b8; --up-wash:#0f2622;
-    --down:#e8756d; --down-wash:#2a1614;
-    --amber:#d0a45c; --amber-wash:#26200f;
-  }
+:root[data-theme="light"]{
+  --paper:#ffffff; --surface:#ffffff; --surface-2:#f4f7f6;
+  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#838f8b;
+  --rule:#e2e8e6; --rule-2:#c6d0cd;
+  --bar:#0a1211; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
+  --accent:#0d6b5c; --accent-ink:#085146; --accent-wash:#eaf5f2;
+  --up:#0d6b52; --up-wash:#eaf5f1;
+  --down:#a02b25; --down-wash:#faeeed;
+  --amber:#8a6410; --amber-wash:#faf3e6;
 }
 :root[data-theme="dark"]{
-  --paper:#0a1211; --surface:#0f1a18; --surface-2:#14211f;
-  --ink:#e8efec; --ink-2:#9aaaa5; --ink-3:#6e807b;
-  --rule:#1c2a27; --rule-2:#2b3c38;
-  --bar:#060d0c; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
-  --accent:#4fd1b8; --accent-ink:#7fe6d4; --accent-wash:#0f2622;
-  --up:#4fd1b8; --up-wash:#0f2622;
-  --down:#e8756d; --down-wash:#2a1614;
-  --amber:#d0a45c; --amber-wash:#26200f;
+  --paper:#0a1211;
+  --surface:#0f1a18;
+  --surface-2:#14211f;
+  --ink:#e8efec;
+  --ink-2:#9aaaa5;
+  --ink-3:#6e807b;
+  --rule:#1c2a27;
+  --rule-2:#2b3c38;
+
+  --bar:#060d0c;          /* masthead — a shade under the page */
+  --bar-ink:#ffffff;
+  --bar-ink-2:#93a29d;
+
+  --accent:#4fd1b8;
+  --accent-ink:#7fe6d4;
+  --accent-wash:#0f2622;
+
+  --up:#4fd1b8;
+  --up-wash:#0f2622;
+  --down:#e8756d;
+  --down-wash:#2a1614;
+  --amber:#d0a45c;
+  --amber-wash:#26200f;
 }
 
 /* ── base ─────────────────────────────────────────────────────────────── */
@@ -502,6 +515,22 @@ td.num,td[class*="text-right"]{ text-align:right; }
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
+/* Long model reasoning, clamped to two lines. The full text is one click
+   away; twenty cards each opening with a five-line paragraph is a page nobody
+   scans. `clamp` is set by JS only when the text actually overflows, so short
+   reasoning keeps no affordance. */
+.prose-clamp{
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden;
+}
+.prose-more{
+  display:none; margin-top:1px; padding:0; background:none; border:0;
+  font-size:11.5px; line-height:1.4; color:var(--ink-3); cursor:pointer;
+}
+.prose-more:hover{ color:var(--accent); }
+.prose.is-long .prose-more{ display:inline; }
+.prose.is-open .prose-clamp{ -webkit-line-clamp:unset; }
+
 /* ── citations ────────────────────────────────────────────────────────── */
 
 .cite-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
@@ -528,6 +557,31 @@ td.num,td[class*="text-right"]{ text-align:right; }
 .pn .n{ font-size:13px; font-weight:600; margin-top:2px; }
 .pn .d{ font-size:13px; color:var(--ink-2); margin-top:3px; }
 .hiw{ font-size:13px; color:var(--ink-2); margin-top:20px; max-width:70ch; }
+
+/* Explanatory copy, folded. A page that opens with a paragraph of theory
+   makes the reader work before it tells them anything; the explanation is
+   still there, one click down, for the first visit that needs it. */
+.explainer{
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  margin:0 0 28px; padding:0;
+}
+.explainer > summary{
+  list-style:none; cursor:pointer; padding:11px 0;
+  font-size:12.5px; color:var(--ink-3);
+  display:flex; align-items:center; gap:8px;
+}
+.explainer > summary::-webkit-details-marker{ display:none; }
+.explainer > summary::after{
+  content:""; width:7px; height:7px; margin-left:auto;
+  border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg); transition:transform .12s ease;
+}
+.explainer[open] > summary::after{ transform:rotate(-135deg); }
+.explainer > summary:hover{ color:var(--ink); }
+.explainer p{
+  font-size:13.5px; color:var(--ink-2); margin:0 0 10px; max-width:78ch;
+}
+.explainer p:last-child{ margin-bottom:16px; }
 
 /* ── popover ──────────────────────────────────────────────────────────── */
 
