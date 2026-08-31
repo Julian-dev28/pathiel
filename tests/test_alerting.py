@@ -258,3 +258,37 @@ def test_the_fetch_cache_is_shared_across_books():
     assert "shared_fetchers(" in body, "main builds no shared cache"
     assert "grade_book(book, now_ms, fetchers)" in body, (
         "grade_book is not given the shared cache")
+
+
+def test_a_deleted_jobs_state_entry_is_pruned():
+    """A deleted job's last_run stays forever, so `scheduler.py status` lists
+    poly-board with a timestamp — a job that will never run again looking like
+    one that just did."""
+    import importlib.util
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "sched_prune", _os.path.join(root, "scripts", "scheduler.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    state = {"alerts": {"last_run": 1.0}, "poly-board": {"last_run": 2.0}}
+    kept = m.prune_ghosts(state, {"alerts": {}})
+    assert kept == {"alerts": {"last_run": 1.0}}
+
+
+def test_pruning_keeps_every_real_job():
+    """Over-pruning would silently reset every job's clock and re-run
+    everything at once."""
+    import importlib.util
+    import os as _os
+
+    root = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        "sched_prune2", _os.path.join(root, "scripts", "scheduler.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+
+    state = {name: {"last_run": 1.0} for name in m.JOBS}
+    assert m.prune_ghosts(state) == state

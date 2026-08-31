@@ -213,12 +213,31 @@ def running_jobs() -> List[str]:
         return sorted(n for n, t in _RUNNING.items() if t.is_alive())
 
 
+def prune_ghosts(state: Dict[str, Any],
+                 jobs: Optional[Dict[str, Dict[str, Any]]] = None
+                 ) -> Dict[str, Any]:
+    """Drop entries for jobs that no longer exist.
+
+    A deleted job leaves its last_run behind forever. `scheduler.py status`
+    then lists poly-board as a job with a timestamp, which is a job that will
+    never run again wearing the appearance of one that just did.
+    """
+    known = jobs if jobs is not None else JOBS
+    return {k: v for k, v in state.items() if k in known}
+
+
 def _stamp(name: str, now: float, res: Optional[Dict[str, Any]],
-           state_path: str) -> None:
+           state_path: str,
+           jobs: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
     """Write one job's outcome, re-reading state so concurrent jobs do not
     clobber each other's entries."""
     with _RUN_LOCK:
-        state = load_state(state_path)
+        # Prune against the job set THIS tick is running, not the module
+        # global: `tick` accepts a custom `jobs` dict, and pruning against
+        # JOBS there would delete the entries of every job in that run. The
+        # job being stamped is by definition real, so it is always kept.
+        known = {**(jobs if jobs is not None else JOBS), name: {}}
+        state = prune_ghosts(load_state(state_path), known)
         entry = dict(state.get(name) or {})
         entry["last_run"] = now
         entry["last_run_iso"] = time.strftime("%Y-%m-%d %H:%M:%S",
@@ -275,12 +294,12 @@ def tick(now: Optional[float] = None, state: Optional[Dict[str, Any]] = None,
                         f"running — next tick")
                 continue
         printer(f"[scheduler] firing {name} — {job['why']}")
-        _stamp(name, now, None, state_path)      # claim the slot before running
+        _stamp(name, now, None, state_path, jobs)  # claim the slot before running
         state.setdefault(name, {})["last_run"] = now
 
         def _work(name: str = name, job: Dict[str, Any] = job) -> None:
             res = run_job(name, job, runner=runner)
-            _stamp(name, now, res, state_path)
+            _stamp(name, now, res, state_path, jobs)
             printer(f"[scheduler] {name} rc={res['rc']} in {res['elapsed_s']}s"
                     + ("  <<< FAILED" if res["rc"] != 0 else ""))
             started.append(res)
