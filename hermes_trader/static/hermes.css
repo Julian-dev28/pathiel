@@ -96,7 +96,21 @@ body{
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-.shell{ max-width:var(--measure); margin:0 auto; padding:0 var(--gutter) 72px; }
+.shell{ max-width:var(--measure); margin:0 auto; padding:0 var(--gutter) 80px; }
+
+/* Composition. A single full-width column for eight sections reads as a
+   scroll of unrelated facts; pairing what is read together — the chart with
+   the risk that frames it, the funnel with what came out of it — gives the
+   page a shape and cuts its length by a third. Collapses to one column under
+   1040px, where side-by-side stops being legible. */
+.row{ display:grid; gap:40px; align-items:start; margin-bottom:44px; }
+.row-2{ grid-template-columns:1fr 1fr; }
+.row-wide{ grid-template-columns:minmax(0,1.7fr) minmax(0,1fr); }
+.row > .section{ margin-bottom:0; }
+@media (max-width:1040px){
+  .row-2,.row-wide{ grid-template-columns:1fr; }
+  .row{ gap:36px; }
+}
 
 a{ color:var(--accent); text-decoration:none; }
 a:hover{ text-decoration:underline; text-underline-offset:2px; }
@@ -112,7 +126,12 @@ a:hover{ text-decoration:underline; text-underline-offset:2px; }
 
 /* ── masthead ─────────────────────────────────────────────────────────── */
 
-.masthead{ background:var(--bar); color:var(--bar-ink); margin-bottom:40px; }
+/* Sticky: this page is long, and the nav plus the live status pill are the two
+   things you reach for from the bottom of it. */
+.masthead{
+  background:var(--bar); color:var(--bar-ink); margin-bottom:34px;
+  position:sticky; top:0; z-index:40;
+}
 .masthead-inner{
   max-width:var(--measure); margin:0 auto;
   padding:0 var(--gutter);
@@ -166,7 +185,7 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 
 /* ── page title ───────────────────────────────────────────────────────── */
 
-.page-head{ margin-bottom:36px; }
+.page-head{ margin-bottom:26px; }
 .page-title{ font-size:30px; font-weight:600; letter-spacing:-.022em; margin:0; }
 .page-sub{ font-size:14.5px; color:var(--ink-2); margin-top:6px; max-width:70ch; }
 
@@ -211,6 +230,10 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 }
 .panel-body,.pane-flow{ padding:16px; }
 .pane-empty,.empty{ padding:20px 16px; color:var(--ink-3); font-size:13px; }
+.blank{
+  padding:26px 0; color:var(--ink-3); font-size:13.5px;
+  border-bottom:1px solid var(--rule);
+}
 .pane-flow > *{ padding:7px 0; font-size:13px; }
 .pane-flow > * + *{ border-top:1px solid var(--rule); }
 
@@ -225,7 +248,15 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
 
 /* The headline number. One per screen region; large, plain, unmissable. */
 .kv{ font-size:28px; font-weight:450; letter-spacing:-.024em; line-height:1.1; }
-.kv.hero{ font-size:46px; font-weight:400; letter-spacing:-.03em; }
+.kv.hero{ font-size:52px; font-weight:400; letter-spacing:-.032em; }
+
+/* Units, not information. The currency symbol and the cents are set lighter
+   and smaller so the eye lands on the magnitude — the convention that
+   separates a finance screen from a generic dashboard. */
+.kv .cur{ color:var(--ink-3); font-size:.62em; font-weight:500;
+          vertical-align:baseline; margin-right:.06em; }
+.kv .dec{ color:var(--ink-3); font-size:.62em; }
+.kv.hero .cur{ margin-right:.08em; }
 .ksub{ font-size:12.5px; color:var(--ink-3); margin-top:5px; }
 .kpi{ min-width:0; }
 .kpi .sec-label{ margin-bottom:6px; }
@@ -466,7 +497,7 @@ td.num,td[class*="text-right"]{ text-align:right; }
    ambient, not an alert. */
 #wire{
   font-family:var(--mono); font-size:12px; color:var(--ink-3);
-  padding:8px 0 14px; border-bottom:1px solid var(--rule); margin-bottom:24px;
+  margin:10px 0 0; padding:0;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 

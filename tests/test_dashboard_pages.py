@@ -473,11 +473,12 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert "matrix-feed" not in r.text            # old sidebar feed removed
     assert 'data-nav="/activity"' in r.text and 'data-nav="/trends"' in r.text
     assert 'data-nav="/trends"' in r.text
-    # NEWS and ANALYTICS are MUTED (operator, 2026-08-02): dropped from the nav
-    # to cut the bar down, but the routes and templates are intentionally kept
-    # — /news and /analytics still render if you navigate to them directly.
-    assert 'data-nav="/news"' not in r.text
-    assert 'data-nav="/analytics"' not in r.text
+    # /news and /analytics were dropped from the nav on 2026-08-02 to shorten
+    # the bar. That left two working pages nobody could reach without typing
+    # the URL, which is a worse cost than a five-item nav: an unreachable page
+    # is the UX problem, not the nav width. Both are linked again 2026-08-31.
+    assert 'data-nav="/news"' in r.text
+    assert 'data-nav="/analytics"' in r.text
     assert client.get("/news").status_code == 200
     assert client.get("/analytics").status_code == 200
     # nav is DASHBOARD · ACTIVITY · PREDICTIONS · TRENDS — config/operator deleted
@@ -935,8 +936,15 @@ def test_humanize_reason_translates_real_vocabulary():
         "long against the daily downtrend (200MA)"
     assert h("floor_breach (1x consec, floor=0.42)") == "profit floor"
     assert h("max_loss (2.82% spot / 28.2% ROE >= 2.50% spot cap)") == "stop — max loss"
-    # unknown reasons pass through untouched
-    assert h("some_new_gate (whatever)") == "some_new_gate (whatever)"
+    # An untranslated reason must still read as a sentence. The old fallback
+    # returned it verbatim, which is how MAIN_ENGINE_DELETED and a
+    # parenthetical naming the config key `min_tradable_equity_usd` became
+    # headline copy on the dashboard.
+    assert h("some_new_gate (whatever)") == "Some new gate"
+    assert h("MAIN_ENGINE_DELETED") == "Main engine deleted"
+    assert h("below_min_tradable_equity ($12.91 < $88.89 floor — fund the "
+             "account or lower min_tradable_equity_usd)") == \
+        "account below the trading minimum ($12.91 of $88.89)"
     assert h(None) == ""
 
 
@@ -974,7 +982,7 @@ def test_funnel_payload_counts_and_reasons(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: events)
     d = db._funnel_payload(window_s=86400, now_ms=now)
     stages = {s["stage"]: s["n"] for s in d["funnel"]}
-    assert stages == {"scans": 2, "candidates": 5, "researched": 1, "executed": 1}
+    assert stages == {"Scan cycles": 2, "Triggers": 5, "Position reviews": 1, "Positions opened": 1}
     assert d["blocked_executions"] == 2
     # the two daily_loss_gate blocks collapse into ONE humanized reason, counted twice
     top = {r["reason"]: r["n"] for r in d["top_reasons"]}
@@ -998,7 +1006,7 @@ def test_funnel_payload_counts_book_opens_as_executed(monkeypatch):
     monkeypatch.setattr(db, "_read_log_lines", lambda: events)
     d = db._funnel_payload(window_s=86400, now_ms=now)
     stages = {s["stage"]: s["n"] for s in d["funnel"]}
-    assert stages["executed"] == 2                 # book_open + execute(True)
+    assert stages["Positions opened"] == 2         # book_open + execute(True)
     assert set(d["coins"]) == {"BTC", "ETH", "SOL"}
 
 
@@ -1193,7 +1201,7 @@ def test_analytics_page_markers(client):
                   "heat-body", "whale-body", "news-body", "hermes-an-"):
         assert marker in r, f"missing {marker}"
     # muted from the nav, still served — the page must keep working
-    assert 'data-nav="/analytics"' not in r
+    assert 'data-nav="/analytics"' in r
     # whale $ runs into the millions — must render abbreviated ($1.31M), not
     # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
     assert "fmtMoneyCompact" in r
@@ -1504,18 +1512,19 @@ def test_retired_ledgers_are_folded_away_but_reachable(client):
     assert "retired" in r and "RECORDER" not in r
 
 
-def test_the_deleted_engine_does_not_log_once_per_candidate():
-    """main_engine entries are deleted, so every unheld candidate hit that
-    branch — ~3,800 identical session-log events a day, which made a removed
-    feature the top entry in the decision funnel's reasons and buried the
-    refusals that matter. One summary event per scan says the same thing."""
+def test_a_scanned_coin_no_book_claimed_is_not_a_refusal():
+    """There is no discretionary entry path: entries come from books, so a
+    scanned coin that no book claimed is normal operation. Logging it as a
+    refusal put a deleted feature's name at the top of the decision funnel
+    ~3,900 times a day and buried the gates that actually stopped a trade."""
     src = (pathlib.Path(__file__).resolve().parent.parent
            / "scripts" / "trading_loop.py").read_text()
     body = src[src.index("main_engine ENTRIES DELETED"):]
     body = body[:body.index("# TA filter")]
-    assert "_main_engine_skipped += 1" in body
-    assert '"coin": coin' not in body, "still logs a per-coin event"
-    assert '"n": _main_engine_skipped' in src, "no per-scan summary event"
+    assert "_unclaimed += 1" in body
+    assert "log_event" not in body, "still emits an event per scanned coin"
+    assert "MAIN_ENGINE_DELETED" not in src, (
+        "a deleted feature's name is still emitted into the session log")
 
 
 def test_structurally_impossible_counts_are_not_printed(client):
@@ -1537,3 +1546,45 @@ def test_no_template_hard_codes_a_colour():
             offenders.append(f"{f.name}: {m.group(0)}")
     assert not offenders, (
         "hard-coded colours bypass the design tokens:\n" + "\n".join(offenders))
+
+
+def test_every_page_reaches_every_other_page(client):
+    """A route that renders but is linked from nowhere is dead UI. Whatever
+    ships must be reachable by clicking."""
+    routes = {"/", "/activity", "/news", "/analytics", "/trends"}
+    for path in routes:
+        page = client.get(path).text
+        linked = {r for r in routes if f'data-nav="{r}"' in page}
+        assert linked == routes, f"{path} cannot reach {sorted(routes - linked)}"
+
+
+def test_the_nav_marks_the_page_you_are_on(client):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+        page = client.get(path).text
+        assert "nav-active" in page, f"{path} never marks the current tab"
+
+
+def test_a_removed_subsystem_is_not_reported_as_a_refusal(monkeypatch):
+    """The loop stopped emitting MAIN_ENGINE_DELETED, but the funnel walks a
+    24h window — historical rows kept a deleted feature at the top of the
+    reasons list, naming something that does not exist and burying the gates
+    that actually stopped a trade."""
+    import hermes_trader.dashboard as db
+
+    now = 100_000_000_000
+    events = [
+        {"ts": now - 200, "event": "ta_skip", "signal": "MAIN_ENGINE_DELETED"},
+        {"ts": now - 190, "event": "ta_skip", "signal": "MAIN_ENGINE_DELETED"},
+        {"ts": now - 180, "event": "entry_preflight",
+         "reason": "history_floor_preflight (2d < 60d history)"},
+    ]
+    monkeypatch.setattr(db, "_read_log_lines", lambda: events)
+    top = {r["reason"]: r["n"] for r in db._funnel_payload(now_ms=now)["top_reasons"]}
+    assert not any("ain engine" in r for r in top), top
+    assert "too young to trade (2d listed, needs 60d)" in top
+
+
+def test_a_zero_stage_draws_no_bar(client):
+    """A 2% stub next to the number 0 says something happened."""
+    r = client.get("/").text
+    assert "s.n ? Math.max(2," in r, "zero-count stages still draw a minimum bar"

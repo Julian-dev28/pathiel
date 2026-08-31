@@ -42,6 +42,8 @@
     <nav class="tabs-main">
       <a href="/" data-nav="/" class="nav-link">Dashboard</a>
       <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
       <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
     </nav>
     <div class="masthead-right">
@@ -57,11 +59,10 @@
   <div class="page-head">
     <h1 class="page-title">Account</h1>
     <div class="page-sub">Autonomous execution on Hyperliquid. One wallet, live.</div>
+    <!-- the wire: live session-log tail over SSE — the newest engine event,
+         one line, straight from /api/feed/stream -->
+    <div id="wire" class="mono" aria-live="polite" hidden></div>
   </div>
-
-  <!-- the wire: live session-log tail over SSE — the newest engine event,
-       one line, straight from /api/feed/stream -->
-  <div id="wire" class="mono" aria-live="polite" hidden></div>
 
   <!-- Net asset value leads, and the drawdown sits directly under it rather
        than in a separate panel further down. The number you have and the
@@ -91,8 +92,6 @@
     </div>
   </section>
 
-  <!-- RISK. Deliberately above the activity and the charts: this page showed
-       upside for months and never once showed what the account could lose. -->
   <section class="section" id="risk-band" aria-label="Risk">
     <div class="section-head">
       <h2 class="sec-label">Risk</h2>
@@ -160,6 +159,7 @@
     </div>
   </section>
 
+  <div class="row row-wide">
   <section class="section">
     <div class="section-head">
       <h2 class="sec-label">Equity</h2>
@@ -178,7 +178,6 @@
       </div>
     </div>
   </section>
-
   <section class="section" id="funnel-strip">
     <div class="section-head">
       <h2 class="sec-label">Decision funnel</h2>
@@ -187,6 +186,7 @@
     <div id="funnel-bars"><div class="mut">Loading&hellip;</div></div>
     <div id="funnel-reasons"></div>
   </section>
+  </div>
 
   <section class="section" id="trade-tape">
     <div class="section-head">
@@ -248,20 +248,21 @@
       <h2 class="sec-label">Method</h2>
     </div>
     <div class="pipe" aria-label="Trade pipeline">
-      <div class="pn"><span class="s">01</span><div class="n">Scan</div><div class="d">60+ markets each minute: volume spikes, breakouts, momentum bursts</div></div>
-      <div class="pn"><span class="s">02</span><div class="n">Technical filter</div><div class="d">A free gate, so model spend goes only to confirmed setups</div></div>
-      <div class="pn"><span class="s">03</span><div class="n">Research</div><div class="d">Verdict and confidence, with live search on movers and holds</div></div>
-      <div class="pn"><span class="s">04</span><div class="n">Risk gates</div><div class="d">Eleven checks: notional caps, liquidity floors, regime, correlation</div></div>
-      <div class="pn"><span class="s">05</span><div class="n">Sizing</div><div class="d">Half-Kelly against live equity, with a hard per-book limit</div></div>
-      <div class="pn"><span class="s">06</span><div class="n">Exit</div><div class="d">Two-phase stop: loss protection, then a one-way trailing floor</div></div>
+      <div class="pn"><span class="s">01</span><div class="n">Scan</div><div class="d">60+ markets each minute — volume spikes, breakouts, momentum bursts, funding and unlock calendars</div></div>
+      <div class="pn"><span class="s">02</span><div class="n">Books</div><div class="d">Every entry comes from a named book with a published forward record. No discretionary trades</div></div>
+      <div class="pn"><span class="s">03</span><div class="n">Risk gates</div><div class="d">Notional caps, liquidity floors, market regime, and one book per coin</div></div>
+      <div class="pn"><span class="s">04</span><div class="n">Sizing</div><div class="d">A fixed notional per book against live equity, with a free-margin reserve held back</div></div>
+      <div class="pn"><span class="s">05</span><div class="n">Exit</div><div class="d">Two-phase stop: loss protection first, then a one-way trailing floor</div></div>
+      <div class="pn"><span class="s">06</span><div class="n">Review</div><div class="d">Open positions are re-read for an early close; books own their own exits</div></div>
     </div>
     <p class="hiw">
       Hermes trades Hyperliquid perpetuals across crypto, equities and commodities
-      without human input. Each minute it scans for statistical triggers, filters
-      them technically before spending anything on research, and sizes what
-      survives against live account equity. Positions exit through a two-phase
-      dynamic stop rather than a fixed target. Past results are not indicative of
-      future performance, and nothing here is financial advice.
+      without human input. Every position originates from a book — a named
+      strategy with a forward record published in the table above — and each book
+      is graded against a matched random-entry null before it is given capital.
+      There is no discretionary trading and no manual override. Positions exit on
+      a two-phase dynamic stop rather than a fixed target. Past results are not
+      indicative of future performance, and nothing here is financial advice.
     </p>
   </section>
 
@@ -362,6 +363,17 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 // ── tweened KPI numbers — tabular-nums so widths don't jitter; reduced
 // motion (or a first paint) writes the value directly ──────────────────────
+// Currency symbol and cents set lighter than the figure — the convention that
+// separates a finance screen from a generic dashboard. The magnitude is what
+// the eye should land on; "$" and ".94" are units, not information. Headline
+// KPIs only; table cells stay plain text so columns keep aligning.
+function moneyHTML(v) {
+  const n = Number(v ?? 0);
+  const [whole, cents] = Math.abs(n).toFixed(2).split('.');
+  return `${n < 0 ? '<span class="cur">-</span>' : ''}<span class="cur">$</span>` +
+         `${Number(whole).toLocaleString('en-US')}<span class="dec">.${cents}</span>`;
+}
+
 function tween(el, to, fmt) {
   const from = Number(el.dataset.v);
   el.dataset.v = to;
@@ -373,10 +385,15 @@ function tween(el, to, fmt) {
     if (k < 1 && el.isConnected) requestAnimationFrame(step);
   })(t0);
 }
-function setMoney(el, v) {
+function setMoney(el, v, rich) {
   if (!el.querySelector('.dollar-value'))
     el.innerHTML = '<span class="dollar-value"></span><span class="dollar-mask">•••</span>';
-  tween(el.querySelector('.dollar-value'), Number(v ?? 0), fmtMoney);
+  const target = el.querySelector('.dollar-value');
+  if (!rich) { tween(target, Number(v ?? 0), fmtMoney); return; }
+  // Rich figures carry markup, so they are set rather than tweened: animating
+  // innerHTML sixty times a second to move two decimals is not worth it.
+  target.dataset.v = Number(v ?? 0);
+  target.innerHTML = moneyHTML(v);
 }
 
 // ── equity curve — signature indigo→violet line + fill ──
@@ -504,7 +521,7 @@ document.querySelectorAll('.range-btn').forEach(b => {
 async function refreshSummary() {
   try {
     const s = await (await fetch('/api/dashboard/summary')).json();
-    setMoney(document.getElementById('kpi-equity'), s.equity);
+    setMoney(document.getElementById('kpi-equity'), s.equity, true);
     const brk = document.getElementById('kpi-equity-breakdown');
     const dexAvail = s.dex_available || {};
     const parts = [];
@@ -519,7 +536,7 @@ async function refreshSummary() {
       ? dollarHTML(`${parts.join(' + ')} = ${fmtMoney(total)} free`) : '';
     const pnl = document.getElementById('kpi-pnl');
     pnl.className = 'kv ' + (s.daily_pnl >= 0 ? 'pos' : 'neg');   // money gets the color
-    setMoney(pnl, s.daily_pnl);
+    setMoney(pnl, s.daily_pnl, true);
     document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
     tween(document.getElementById('kpi-open'), s.open_positions ?? 0, v => String(Math.round(v)));
     document.getElementById('kpi-tick').textContent = fmtAge(s.last_tick_age_s);
@@ -768,7 +785,7 @@ async function refreshFunnel() {
     document.getElementById('funnel-bars').innerHTML = stages.map((s, i) => `
       <div class="fn-row">
         <span class="fn-lbl">${esc(s.stage)}</span>
-        <div><div class="fn-bar" style="width:${Math.max(2, 100 * Math.sqrt(s.n / max)).toFixed(1)}%;opacity:${OP[i] ?? 1}"></div></div>
+        <div><div class="fn-bar" style="width:${s.n ? Math.max(2, 100 * Math.sqrt(s.n / max)).toFixed(1) : 0}%;opacity:${OP[i] ?? 1}"></div></div>
         <span class="fn-n">${fmtK(s.n)}</span>
       </div>`).join('');
     document.getElementById('funnel-meta').textContent =

@@ -156,7 +156,13 @@ def test_main_engine_entries_are_gone():
     import pathlib
     src = (pathlib.Path(__file__).resolve().parents[1]
            / "scripts" / "trading_loop.py").read_text()
-    assert "MAIN_ENGINE_DELETED" in src
+    # The marker string is gone deliberately: it was emitted as a session-log
+    # event per scanned coin, which made a deleted feature the top reason in
+    # the decision funnel. The DELETION is what this test pins, not the label.
+    assert "MAIN_ENGINE_DELETED" not in src, (
+        "a deleted feature's name is being emitted again")
+    assert "main_engine ENTRIES DELETED" in src, "the deletion comment is gone"
+    assert "_unclaimed += 1" in src, "the unheld-candidate branch changed shape"
     assert "_fresh_entry_preblock_reason" not in src
 
 

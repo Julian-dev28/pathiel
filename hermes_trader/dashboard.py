@@ -918,6 +918,10 @@ _REASON_TRANSLATIONS: List[Tuple[re.Pattern, str]] = [
      "long against the daily downtrend ({0}MA)"),
     (re.compile(r"sidestep_extension_blocked.*?([\d.+-]+)% >= ([\d.]+)%"),
      "already extended ({0}% day, ceiling {1}%)"),
+    (re.compile(r"below_min_tradable_equity \(\$([\d.]+) < \$([\d.]+)"),
+     "account below the trading minimum (${0} of ${1})"),
+    (re.compile(r"below_min_order_notional|min_order_notional"),
+     "order below the exchange minimum"),
     (re.compile(r"short_liquidity"), "volume below the short floor"),
     (re.compile(r"counter_regime|market_regime"), "against the market regime"),
     (re.compile(r"cooldown"), "in cooldown after a recent trade"),
@@ -952,7 +956,25 @@ def humanize_reason(reason: object) -> str:
                 return tmpl.format(*m.groups())
             except (IndexError, KeyError):
                 return tmpl
-    return raw
+    return _readable_fallback(raw)
+
+
+# Machine text must never reach a page verbatim. The old fallback returned the
+# raw string, which is how MAIN_ENGINE_DELETED and a parenthetical naming the
+# config key `min_tradable_equity_usd` ended up as headline copy on the
+# dashboard. Untranslated identifiers still have to say something useful, so
+# they are turned into a sentence rather than replaced with "blocked".
+_MACHINE_TAIL = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _readable_fallback(raw: str) -> str:
+    text = _MACHINE_TAIL.sub("", raw).strip()          # drop internal detail
+    text = text.split(" — ")[0].strip()
+    if not text:
+        return ""
+    if re.fullmatch(r"[A-Za-z0-9_]+", text):           # a bare identifier
+        text = text.replace("_", " ").strip().lower()
+    return text[:1].upper() + text[1:] if text else ""
 
 
 # ── citation parsing ─────────────────────────────────────────────────────────
@@ -1276,16 +1298,22 @@ _DAY_MS = 86_400_000
 _FUNDING_OI_LOG = state_file(".data_funding_oi.jsonl")
 
 
+# Reason codes that name something no longer in the system. They are dropped
+# from the funnel rather than translated: there is no discretionary entry path,
+# so "no book claimed this coin" is normal operation, not a refusal.
+_DEAD_SUBSYSTEM_REASONS = ("MAIN_ENGINE_DELETED",)
+
+
 def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict[str, Any]:
     """scans -> candidates -> researched -> executed, plus the top-5 humanized
     reasons trades didn't happen (blocked executes + pre-research skips).
     Also harvests a recent-coins list for the coin-chart selector — free,
     it's the same walk. Pure log walk, no network.
 
-    'executed' counts real opens from BOTH paths: the main engine's
-    `execute` event (executed=True) AND every book's `book_open` event — the
-    two are disjoint (a book trade never emits `execute`). An execute-only
-    count silently zeroed out every book fill."""
+    Opens are counted from BOTH paths: the legacy `execute` event
+    (executed=True) and every book's `book_open` event — the two are disjoint
+    (a book trade never emits `execute`). An execute-only count silently
+    zeroed out every book fill."""
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     cutoff = now - window_s * 1000
     events = _read_log_lines()
@@ -1337,7 +1365,15 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
             for h in hits:
                 reason_counts[h] = reason_counts.get(h, 0) + 1
         elif ev in ("ta_skip", "entry_preflight"):
-            h = humanize_reason(e.get("reason") or e.get("signal"))
+            code = str(e.get("reason") or e.get("signal") or "")
+            # A removed subsystem is not a reason a trade did not happen. The
+            # loop stopped emitting these 2026-08-31, but the funnel walks a
+            # 24h window, so historical rows kept "Main engine deleted" at the
+            # top of the list — naming a feature that does not exist and
+            # burying the gates that actually stopped something.
+            if any(dead in code for dead in _DEAD_SUBSYSTEM_REASONS):
+                continue
+            h = humanize_reason(code)
             if h:
                 reason_counts[h] = reason_counts.get(h, 0) + 1
 
@@ -1346,11 +1382,15 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
 
     return {
         "window_s": window_s, "since_ts": cutoff,
+        # Truthful stage names. "researched" implied a research-then-enter
+        # pipeline that no longer exists: discretionary entries were removed
+        # (W-ME1), so an AI pass now only reviews a position that is already
+        # open. Entries come from the books.
         "funnel": [
-            {"stage": "scans", "n": scans},
-            {"stage": "candidates", "n": candidates},
-            {"stage": "researched", "n": researched},
-            {"stage": "executed", "n": executed},
+            {"stage": "Scan cycles", "n": scans},
+            {"stage": "Triggers", "n": candidates},
+            {"stage": "Position reviews", "n": researched},
+            {"stage": "Positions opened", "n": executed},
         ],
         "blocked_executions": blocked_exec,
         "top_reasons": [{"reason": r, "n": n} for r, n in top_reasons],

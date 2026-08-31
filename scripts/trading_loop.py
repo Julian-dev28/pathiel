@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Continuous trading loop for hermes-trader.
 
-Per cycle: scan -> TA filter -> AI research -> execute. The TA filter
-(`analyze_perception`, zero AI cost) gates the paid LLM call — only CONFIRMED
-perceptions reach research. A perception whose `momentumBurst` trigger fired
-bypasses the gate: a large fast move is always worth researching.
+Per cycle: scan the universe, run every live book, review open positions, and
+manage exits. ENTRIES COME FROM BOOKS ONLY — the discretionary
+scan -> TA filter -> research -> execute path was deleted (W-ME1, 2026-08-30)
+after it graded +2.15% against a +1.61% random-entry null and fired zero times
+in 17 days at the live gate. A scanned coin that no book claims is normal, not
+a refusal.
 
-Every cycle and decision is appended to the session log (`session_log`), so
-`status.py` and the hourly cron report show a live activity feed.
+The TA filter and the AI research call still run, but only for coins the
+account ALREADY HOLDS: they decide whether to close early. Book-owned
+positions are exempt — each book owns its own exit.
+
+Every cycle and decision is appended to the session log (`session_log`), which
+backs the /activity feed and the decision funnel.
 
 Flags (tolerant — unknown flags are ignored so legacy callers keep working):
   --env {prod,dev}  Currently informational; loaded from .env.local in CWD.
@@ -801,7 +807,7 @@ while True:
         held_coins = memory.open_position_coins()
         now_ms = int(time.time() * 1000)
 
-        _main_engine_skipped = 0
+        _unclaimed = 0
 
         for perception in results:
             coin = perception['coin']
@@ -878,13 +884,14 @@ while True:
                 # NEW positions from an AI verdict are gone — which also means
                 # the loop no longer pays for research on coins it will not
                 # trade.
-                # Counted, not logged per coin. main_engine entries are
-                # DELETED, so every unheld candidate lands here — that was
-                # ~3,800 identical session-log events a day, which flooded the
-                # decision funnel's top-reasons list with the name of a feature
-                # that no longer exists and buried the refusals that matter.
-                # One summary event per scan says the same thing.
-                _main_engine_skipped += 1
+                # There is no discretionary entry path any more. Entries come
+                # from the books; this loop scans, reviews open positions, and
+                # manages exits. A scanned coin that no book claimed is normal
+                # operation, not a refusal — logging it as one put a deleted
+                # feature's name at the top of the decision funnel ~3,900 times
+                # a day and buried the gates that actually stopped a trade.
+                # Counted for the scan summary, never emitted as an event.
+                _unclaimed += 1
                 continue
 
             # TA filter — cheap statistical gate before the paid AI call.
@@ -996,11 +1003,9 @@ while True:
                 log_event({"event": "error", "coin": coin,
                            "error": f"{type(e).__name__}: {detail}"})
 
-        if _main_engine_skipped:
-            logger.info(f"[scan] {_main_engine_skipped} unheld candidate(s) skipped — "
-                        f"main_engine entries are deleted (W-ME1)")
-            log_event({"event": "ta_skip", "signal": "MAIN_ENGINE_DELETED",
-                       "n": _main_engine_skipped})
+        if _unclaimed:
+            logger.info(f"[scan] {_unclaimed} scanned coin(s) claimed by no book — "
+                        f"entries come from books only (W-ME1)")
 
         # Second DSL pass with fresh mids (audit 2026-07-10): the scan+books
         # phase takes 20-100s, so a breach right after the first pass waited a
