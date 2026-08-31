@@ -270,6 +270,7 @@ td.num,td[class*="text-right"]{ text-align:right; }
   color:var(--ink-2);
 }
 .chip-red{ color:var(--down); background:var(--down-wash); border-color:transparent; }
+.chip-green{ color:var(--up); background:var(--up-wash); border-color:transparent; }
 .chip-amber{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
 
 .kind-tag{
