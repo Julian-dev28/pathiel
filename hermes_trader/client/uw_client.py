@@ -11,12 +11,15 @@ returns None/[] on failure. Optional on-disk cache so backtests don't re-hit the
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 BASE = "https://api.unusualwhales.com"
 _CACHE_DIR = os.environ.get("UW_CACHE_DIR", "")
@@ -56,16 +59,23 @@ def _get(path: str, params: Optional[Dict[str, Any]] = None,
                 time.sleep(2.0 * (attempt + 1))
                 continue
             if resp.status_code != 200:
+                logger.warning(f"[uw] {path} returned HTTP {resp.status_code} — "
+                               f"no data for this call")
                 return None
             data = resp.json()
             if cache_key and _CACHE_DIR:
                 Path(_CACHE_DIR).mkdir(parents=True, exist_ok=True)
                 (Path(_CACHE_DIR) / f"{cache_key}.json").write_text(json.dumps(data))
             return data
-        except Exception:
+        except Exception as exc:
             if attempt < 2:
                 time.sleep(1.0)
                 continue
+            # After three failures, None is indistinguishable from "the API
+            # legitimately had nothing" — which is how a dead upstream becomes a
+            # backtest that quietly measures no signal at all.
+            logger.warning(f"[uw] {path} failed after 3 attempts "
+                           f"({type(exc).__name__}: {exc}) — returning no data")
             return None
     return None
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List
 
@@ -26,9 +27,17 @@ _TS_FILE = state_file(".data_logger_ts")
 
 
 def _last_ts() -> float:
+    """When this logger last wrote. Missing is a cold start; unreadable is a
+    fault worth naming, because 0.0 means "never ran" and makes the logger
+    write on every single call instead of on its interval."""
+    if not os.path.exists(_TS_FILE):
+        return 0.0
     try:
         return float(open(_TS_FILE).read().strip())
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[data_logger] {_TS_FILE} unreadable "
+                       f"({type(exc).__name__}: {exc}) — the write interval is "
+                       f"ignored until it is rewritten")
         return 0.0
 
 

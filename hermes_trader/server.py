@@ -175,7 +175,11 @@ def _hip3_on() -> bool:
     """
     try:
         return bool(read_agent_config().get("enable_hip3", False))
-    except Exception:
+    except Exception as exc:                       # noqa: BLE001
+        # False silently narrows the universe to main-dex only, so HIP-3
+        # positions vanish from every view that consults this.
+        logger.warning(f"[server] cannot read enable_hip3 "
+                       f"({type(exc).__name__}: {exc}) — assuming HIP-3 off")
         return False
 
 

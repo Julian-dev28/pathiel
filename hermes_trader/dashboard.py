@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import collections
 import hmac
 import os
@@ -218,6 +219,8 @@ def _summary_payload() -> Dict[str, Any]:
 
 
 _POSITIONS_CACHE: Dict[str, Any] = {"ts": 0.0, "data": []}
+logger = logging.getLogger(__name__)
+
 _POSITIONS_CACHE_TTL_S = 5.0  # acceptable staleness for a display endpoint
 
 
@@ -232,7 +235,18 @@ def _positions_payload() -> List[Dict[str, Any]]:
     now = time.time()
     if now - _POSITIONS_CACHE["ts"] < _POSITIONS_CACHE_TTL_S:
         return _POSITIONS_CACHE["data"]
-    data = _positions_payload_uncached()
+    try:
+        data = _positions_payload_uncached()
+    except Exception as exc:                       # noqa: BLE001
+        # An empty list means FLAT to everyone reading it — the operator view,
+        # the public view, /api/positions. Returning [] because the fetch threw
+        # tells the operator they have no positions while they may have several
+        # open and unmanaged. Serve the last known good read instead, say so in
+        # the log, and let the short TTL retry immediately.
+        logger.warning(f"[positions] HL fetch failed ({type(exc).__name__}: "
+                       f"{exc}) — serving the last good read rather than "
+                       f"reporting flat")
+        return _POSITIONS_CACHE["data"]
     _POSITIONS_CACHE["ts"] = now
     _POSITIONS_CACHE["data"] = data
     return data
@@ -261,13 +275,14 @@ def _positions_payload_uncached() -> List[Dict[str, Any]]:
     user = resolve_user_address()
     if not user:
         return []
-    try:
-        # include_hip3=True so xyz:MU / vntl:* positions appear in the
-        # dashboard list alongside main-dex positions; HIP-3 dexes are
-        # separate clearinghouses that the default fetch ignores.
-        state = fetch_account_state(user, include_hip3=True)
-    except Exception:
-        return []
+    # include_hip3=True so xyz:MU / vntl:* positions appear in the dashboard
+    # list alongside main-dex positions; HIP-3 dexes are separate
+    # clearinghouses that the default fetch ignores.
+    #
+    # Deliberately NOT guarded here: a fetch failure must not become an empty
+    # position list, which reads as "flat". _positions_payload() catches it and
+    # serves the last known good read instead.
+    state = fetch_account_state(user, include_hip3=True)
     return _rows_from_state(state)
 
 

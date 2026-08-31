@@ -8,9 +8,12 @@ already fetches — no extra API calls.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict, List
+
+logger = logging.getLogger(__name__)
 
 from hermes_trader.agents.rebalancer_owned import state_file
 
@@ -46,6 +49,12 @@ def append_oi(universe: List[Dict[str, Any]], min_oi_usd: float = 5e6) -> int:
             lines = open(_FILE).readlines()[-_MAX_LINES:]
             with open(_FILE, "w") as f:
                 f.writelines(lines)
-    except Exception:
+    except Exception as exc:
+        # 0 means "logged nothing", which is also what a genuinely empty
+        # snapshot returns. A disk-full or permission failure here would stop
+        # open-interest history accruing and read as a quiet market forever.
+        logger.warning(f"[oi_logger] could not append to {_FILE} "
+                       f"({type(exc).__name__}: {exc}) — OI history is not "
+                       f"accruing")
         return 0
     return len(snap)

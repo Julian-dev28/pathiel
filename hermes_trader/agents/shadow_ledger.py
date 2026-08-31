@@ -101,9 +101,16 @@ def _book_path(book: str) -> str:
 
 
 def _f(bar: Any, key: str) -> float:
+    """Coerce one field of a candle to float. 0.0 when it is absent or
+    unparseable — and said out loud, because a 0.0 price recorded as an entry
+    reference does not grade as a bad trade, it grades as an impossible one.
+    """
     try:
         return float(bar.get(key) if isinstance(bar, dict) else getattr(bar, key))
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[shadow_ledger] candle field {key!r} unusable "
+                       f"({type(exc).__name__}: {exc}) — recording 0.0, which "
+                       f"will not grade meaningfully")
         return 0.0
 
 
@@ -147,10 +154,22 @@ def record_many(book: str, rows: List[Dict[str, Any]]) -> int:
 
 
 def list_books() -> List[str]:
+    """Every book with a ledger on disk.
+
+    A missing directory is a cold start. An unreadable one is a fault worth
+    shouting about: the grader iterates this list, so [] means it grades
+    nothing and reports every book as having no evidence — which looks exactly
+    like a quiet week.
+    """
     d = _ledger_dir()
+    if not os.path.isdir(d):
+        return []
     try:
         return sorted(f[:-6] for f in os.listdir(d) if f.endswith(".jsonl"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[shadow_ledger] cannot list {d} "
+                       f"({type(exc).__name__}: {exc}) — the grader will see "
+                       f"no books at all")
         return []
 
 

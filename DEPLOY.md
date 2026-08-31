@@ -44,7 +44,7 @@ them with `flyctl secrets set` / a `kubectl create secret` (see
 | `HYPERLIQUID_PRIVATE_KEY` | **Required** | Signs orders — the money key |
 | `HERMES_OPERATOR_TOKEN` | **Required** | Gates every mutating dashboard endpoint (`?token=` / `X-Operator-Token`). Missing = the operator console 503s closed, which is safe but means you can't start/stop/configure the bot from the dashboard |
 | `BRAVE_API_KEY` | Optional | News search inside `hermes_trader/agents/research.py`. Unset = that source is skipped, not an error |
-| `UW_API_KEY` | Optional | Unusual Whales options-flow client (`hermes_trader/client/uw_client.py`) — feeds the `uw_flow_xs` book. Unset = that book's signal source returns nothing, book stays inert |
+| `UW_API_KEY` | Optional | Unusual Whales options-flow client (`hermes_trader/client/uw_client.py`). RESEARCH ONLY since the book cull — `uw_flow_xs` no longer exists; the client is used by `research/alpha_swarm/hypotheses/W-UW2_signal_battery.py` and `W-UW3_gex.py` to re-run those verdicts. Unset = those scripts report NO UW_API_KEY and exit. Nothing live reads it |
 | `HYDROMANCER_API_KEY` | Optional | Hydromancer market-data provider (`hermes_trader/data_providers/hydromancer.py`). Unset = provider raises `HydromancerError`, caught by its caller |
 | `HYPERLIQUID_MASTER_ADDRESS` | Optional | Agent-wallet setup — the funding account behind the trading wallet |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Optional | Only used by `scripts/treasury.py` (manual transfers between master/agent wallets) — never read by any of the five deployed processes. Set it only if you plan to `flyctl ssh console` and run treasury commands by hand |

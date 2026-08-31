@@ -33,9 +33,14 @@ book cannot create an import cycle.
 from __future__ import annotations
 
 import json
+import logging
+import os
+import time
 from typing import Any, Dict
 
 from hermes_trader.models.types import DslExitOverride
+
+logger = logging.getLogger(__name__)
 
 
 def execute_opened(result: Any) -> bool:
@@ -69,15 +74,54 @@ def execute_block_detail(result: Any) -> Any:
             or result.get("blocked_by") or result.get("gate_results") or result)
 
 
+
+def _quarantine(path: str, why: str) -> None:
+    """Move a damaged state file aside and say so.
+
+    Three of the readers below turn a corrupt file into an empty result, and an
+    empty result switches a rate limiter OFF: no dedup keys means every coin
+    reads as never-traded, and a zero timestamp means every interval gate is
+    already expired. The book then churns, and the only evidence — the damaged
+    file — gets overwritten by the next save. Renaming keeps the evidence and
+    lets the next write start clean.
+    """
+    logger.warning(f"[book_helpers] {path} {why} — quarantining it. This file "
+                   f"throttles a book; while it is missing the book's rate "
+                   f"limiting is degraded for one cycle")
+    try:
+        os.replace(path, path + ".corrupt")
+    except OSError as exc:
+        logger.warning(f"[book_helpers] could not quarantine {path}: {exc}")
+
+
 def load_seen(path: str) -> Dict[str, int]:
-    """Read a book's per-key-per-day dedup timestamp file. `{}` on any
-    failure (missing file, torn write, wrong shape) — a book must never raise
-    into the scan loop over its own dedup bookkeeping."""
+    """Read a book's per-key-per-day dedup timestamp file.
+
+    A missing file is a cold start and is silent. Anything else is a fault and
+    is logged and quarantined: an empty dedup map makes every coin read as
+    never-opened, so the book re-enters what it already traded today. The
+    claims registry and the DSL-registry backstop still prevent actual
+    stacking, which bounds the damage to wasted attempts — but silently is the
+    wrong way to find that out.
+    """
+    if not os.path.exists(path):
+        return {}
     try:
         raw = json.load(open(path))
-        return {str(k): int(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
-    except Exception:
+    except Exception as exc:
+        _quarantine(path, f"is unreadable ({type(exc).__name__}: {exc})")
         return {}
+    if not isinstance(raw, dict):
+        _quarantine(path, f"is a {type(raw).__name__}, expected an object")
+        return {}
+    out: Dict[str, int] = {}
+    for k, v in raw.items():
+        try:
+            out[str(k)] = int(v)
+        except (TypeError, ValueError):
+            logger.warning(f"[book_helpers] {path}: dropping unparseable dedup "
+                           f"entry {k!r}={v!r}")
+    return out
 
 
 def save_seen(path: str, seen: Dict[str, int]) -> None:
@@ -93,13 +137,32 @@ def save_seen(path: str, seen: Dict[str, int]) -> None:
 
 
 def last_pass_ms(path: str) -> int:
-    """Read a book's scan-interval throttle timestamp. 0 on any failure,
-    which is the safe default (the book's interval check then always fires)."""
+    """Read a book's scan-interval throttle timestamp.
+
+    A missing file returns 0 — a book that has never run should run now.
+
+    A CORRUPT file returns `now`, which is the opposite of what this used to do.
+    Returning 0 was documented as "the safe default (the book's interval check
+    then always fires)", and firing is precisely the unsafe direction: a damaged
+    throttle file switched the throttle off. Waiting one interval costs one
+    delayed pass; the file is rewritten by the next `mark_pass`, so it heals
+    either way.
+    """
+    if not os.path.exists(path):
+        return 0
     try:
         raw = json.load(open(path))
-        return int(raw.get("ts", 0)) if isinstance(raw, dict) else 0
-    except Exception:
-        return 0
+    except Exception as exc:
+        _quarantine(path, f"is unreadable ({type(exc).__name__}: {exc})")
+        return int(time.time() * 1000)
+    if not isinstance(raw, dict):
+        _quarantine(path, f"is a {type(raw).__name__}, expected an object")
+        return int(time.time() * 1000)
+    try:
+        return int(raw.get("ts", 0))
+    except (TypeError, ValueError):
+        _quarantine(path, f"has a non-numeric ts {raw.get('ts')!r}")
+        return int(time.time() * 1000)
 
 
 def mark_pass(path: str, now_ms: int) -> None:
@@ -114,12 +177,23 @@ def mark_pass(path: str, now_ms: int) -> None:
 
 def load_state(path: str) -> Dict[str, Any]:
     """Read a book's small untyped state blob (poll clock, dedup map, ...).
-    `{}` on any failure."""
+
+    Missing is a cold start. Corrupt is logged and quarantined: callers gate on
+    timestamps inside this blob, so an empty one opens their poll clock for one
+    cycle. Bounded, because the next `save_state` writes a fresh file — but not
+    something to discover from a churn bill.
+    """
+    if not os.path.exists(path):
+        return {}
     try:
         raw = json.load(open(path))
-        return raw if isinstance(raw, dict) else {}
-    except Exception:
+    except Exception as exc:
+        _quarantine(path, f"is unreadable ({type(exc).__name__}: {exc})")
         return {}
+    if not isinstance(raw, dict):
+        _quarantine(path, f"is a {type(raw).__name__}, expected an object")
+        return {}
+    return raw
 
 
 def save_state(path: str, state: Dict[str, Any]) -> None:
