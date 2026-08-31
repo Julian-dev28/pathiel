@@ -24,6 +24,7 @@ DIRECT firehoses; Google-proxied entries are dropped — we already read those).
 from __future__ import annotations
 
 import json
+import os
 import logging
 import time
 import uuid
@@ -90,11 +91,32 @@ def _mark_pass(now_ms: int) -> None:
 
 
 def _load_baseline() -> Dict[str, List[float]]:
+    """Rolling per-coin article counts. A missing file is a cold start; an
+    unreadable one is a fault, and the two must not look the same.
+
+    Returning {} on corruption is silently expensive: every `prior` comes back
+    empty, so `_surge` returns 1.0 for every coin, nothing is ever `breaking`,
+    and the book cannot fire — while looking exactly like a quiet news day.
+    _save_baseline then overwrites the damaged file with fresh single-entry
+    lists, so the history is gone and the book stays unable to fire until
+    _BASELINE_KEEP cycles have re-accrued. All of that with no log line.
+    """
+    if not os.path.exists(_BASELINE_FILE):
+        return {}                                   # cold start, not a fault
     try:
         raw = json.load(open(_BASELINE_FILE))
-        return {str(k): [float(x) for x in v] for k, v in raw.items()} if isinstance(raw, dict) else {}
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            f"[news_surge_multi] baseline at {_BASELINE_FILE} is unreadable "
+            f"({type(exc).__name__}: {exc}) — every surge reads neutral, so this "
+            f"book cannot fire until the baseline re-accrues")
         return {}
+    if not isinstance(raw, dict):
+        logger.warning(
+            f"[news_surge_multi] baseline at {_BASELINE_FILE} is a "
+            f"{type(raw).__name__}, expected an object — discarding it")
+        return {}
+    return {str(k): [float(x) for x in v] for k, v in raw.items()}
 
 
 def _save_baseline(b: Dict[str, List[float]]) -> None:

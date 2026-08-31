@@ -94,7 +94,13 @@ def _macro_regime(coin: str) -> Optional[str]:
         )
         proxy = EQUITY_PROXY if classify_asset(coin) == "equity" else CRYPTO_PROXY
         return str(detect_regime(proxy))
-    except Exception:
+    except Exception as exc:
+        # Recorded in `meta`, not gated on — so a failure here does not change
+        # the trade, it corrupts the record used to judge the book later.
+        # Analysis that splits by macro_regime would silently drop these rows
+        # into a "None" bucket and read it as a regime.
+        logger.warning(f"[news_surge_short] macro regime unavailable for {coin} "
+                       f"({type(exc).__name__}: {exc}) — recorded as None")
         return None
 
 
