@@ -135,6 +135,14 @@ a:hover{ text-decoration:underline; text-underline-offset:2px; }
 
 .mono{ font-family:var(--mono); font-size:.92em; }
 
+/* A canvas with no CSS width takes its LAYOUT width from its bitmap width.
+   Every hand-drawn chart here sets `canvas.width = rect.width * dpr` on each
+   draw, so without this the element grows by the pixel ratio on every redraw —
+   the coin chart reached 2,540px inside a 1,440px page and put a horizontal
+   scrollbar on the whole document. The bitmap is free to be any size; the box
+   it occupies is not. */
+canvas{ max-width:100%; display:block; }
+
 /* Every number in the product. Tabular figures keep columns from dancing when
    a digit changes, which is the difference between a table you can read down
    and one you have to re-scan. */

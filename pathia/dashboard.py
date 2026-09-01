@@ -1412,12 +1412,10 @@ def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
     """Every shadow-ledger book's signal inventory (shadow_ledger.summary —
     pure local-file read, no network) merged with live/shadow/off status and
     sizing from the live-books config. A book NOT in the live-books table is
-    RETIRED: its module is gone and nothing grades it any more, so its
-    ledger is history rather than a lane accruing toward a decision. It was
-    labelled RECORDER until 2026-08-31, which claimed a measurement was still
-    running — `autonomous_cycle` stopped grading these entirely, and the
-    operator doctrine is that a book either trades or does not exist.
-    Ripped-and-refuted books (_REMOVED_BOOKS) are skipped entirely. Full EV grading needs forward candle fetches
+    OMITTED entirely: nothing grades it any more, the doctrine is that a book
+    either trades or does not exist, and its ledger file is the evidence
+    behind the refutation. Ripped-and-refuted books (_REMOVED_BOOKS) are
+    skipped for the same reason. Full EV grading needs forward candle fetches
     (scripts/shadow_status.py, too slow for a page load) — this table
     reports honest signal/resolved/pending counts only."""
     from pathia.agents import shadow_ledger
@@ -1430,11 +1428,15 @@ def _book_league_payload(now_ms: Optional[int] = None) -> List[Dict[str, Any]]:
         if name in _REMOVED_BOOKS:
             continue
         info = known.get(name)
-        if info:
-            status, size, thesis = info["status"], info["size"], info["thesis"]
-        else:
-            status, size, thesis = ("retired", "—",
-                                    "ledger kept as evidence; no longer graded")
+        if not info:
+            # A book with no config block no longer exists. Its ledger stays on
+            # disk as the evidence behind the refutation, but it is not a row:
+            # sixteen dead names above the four that trade is the table's whole
+            # length and none of it is actionable. Filtered HERE rather than in
+            # a template, because this payload has two consumers and fixing one
+            # of them left the other showing every retired book.
+            continue
+        status, size, thesis = info["status"], info["size"], info["thesis"]
         rows.append({
             "book": name, "n": stat.get("n", 0),
             "coins": stat.get("coins", 0),

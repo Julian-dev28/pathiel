@@ -12,8 +12,8 @@
 <style>
   /* Page-specific only. Everything shared lives in /static/pathia.css.
      Chart.js needs an explicit box or it grows without bound. */
-  #equity-chart{ max-height:180px; }
-  #kpi-spark{ max-height:30px; margin-top:10px; }
+  #equity-chart{ width:100%; max-height:180px; }
+  #kpi-spark{ width:100%; max-height:30px; margin-top:10px; }
   .nav-figure{ display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
   .nav-figure .kv{ margin:0; }
 </style>
@@ -384,7 +384,8 @@ function drawSpark(data) {
   const cv = document.getElementById('kpi-spark');
   if (!cv || data.length < 2) return;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = cv.clientWidth, h = 26;
+  const w = cv.parentElement.clientWidth, h = 26;
+  cv.style.width = w + 'px';
   cv.width = w * dpr; cv.height = h * dpr;
   const ctx = cv.getContext('2d');
   ctx.scale(dpr, dpr);

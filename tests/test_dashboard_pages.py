@@ -1033,10 +1033,14 @@ def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
                              "entry_ref_px": 50.0, "horizon_days": 1.0}) + "\n")
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["book"]: r for r in db._book_league_payload(now_ms=2_000_000_000)}
-    # extreme_fade's module was deleted 2026-08-29 but its ledger survives, so
-    # the league renders it as a graded recorder, not as something that can trade
-    assert rows["extreme_fade"]["status"] == "retired"
-    assert rows["extreme_fade"]["resolved"] == 1        # far past its 3d horizon
+    # extreme_fade's module was deleted 2026-08-29. Its ledger survives as the
+    # evidence behind the refutation, but it is not a row: the table lists what
+    # can trade.
+    assert "extreme_fade" not in rows
+    # the resolve maths still has to be right — assert it on the summary, which
+    # is what the league reads, rather than on a row that no longer renders
+    summary = {r["book"]: r for r in shadow_ledger.summary(2_000_000_000)}
+    assert summary["extreme_fade"]["resolved"] == 1     # far past its 3d horizon
     # whale_flow REFUTED + removed 2026-07-22 -> in _REMOVED_BOOKS, never renders
     assert "whale_flow" not in rows
 
@@ -1066,7 +1070,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     assert "premium_fade_short" not in rows
     assert "neg_funding_fade" not in rows
     assert "whale_flow" not in rows                       # REFUTED + removed 2026-07-22
-    assert rows["news_ta_quadrant"]["status"] == "retired"
+    assert "news_ta_quadrant" not in rows          # deleted module, ledger kept
     # no row can ever carry the retired 'dead' status again
     assert all(r["status"] != "dead" for r in rows.values())
 
@@ -1499,11 +1503,12 @@ def test_no_page_animates_for_decoration(client):
 
 # ── nothing on screen may describe something that no longer exists ──────────
 
-def test_a_book_with_no_module_is_retired_not_a_recorder(monkeypatch):
-    """A ledger whose book was deleted was labelled RECORDER — "a zero-capital
-    lane still accruing toward a decision". Nothing accrues: autonomous_cycle
-    stopped grading them entirely, and the doctrine is that a book either
-    trades or does not exist. Sixteen of them sat above the four that trade."""
+def test_a_book_with_no_module_is_not_a_row_at_all(monkeypatch):
+    """A ledger whose book was deleted is not a row. It was first labelled
+    RECORDER ("still accruing toward a decision" — nothing accrues), then
+    RETIRED and folded on the dashboard. But the payload has TWO consumers,
+    so folding it in one template left /analytics listing all sixteen. The
+    filter belongs here, once."""
     import pathia.dashboard as db
     from pathia.agents import shadow_ledger
 
@@ -1511,9 +1516,8 @@ def test_a_book_with_no_module_is_retired_not_a_recorder(monkeypatch):
     monkeypatch.setattr(db, "_books_payload", lambda *a, **k: [])
     monkeypatch.setattr(shadow_ledger, "summary",
                         lambda *a, **k: [{"book": "long_gone", "n": 5}])
-    rows = db._book_league_payload(now_ms=0)
-    assert rows[0]["status"] == "retired"
-    assert "no longer graded" in rows[0]["thesis"]
+    assert db._book_league_payload(now_ms=0) == [], (
+        "a book with no config block is still rendered")
 
 
 def test_the_evidence_table_lists_only_what_trades(client):

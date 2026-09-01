@@ -106,7 +106,7 @@
     <div class="panel-wrap" id="wrap-chart">
       <div class="panel-body">
         <div class="chart-wrap">
-          <canvas id="coin-canvas" width="1180" height="280"></canvas>
+          <canvas id="coin-canvas" height="280"></canvas>
           <div id="chart-empty" class="hidden absolute inset-0 flex items-center justify-center text-xs" style="color:var(--ink-3);top:0">no candle data for this coin</div>
         </div>
         <div class="chart-readout mono" id="chart-readout">hover the chart for OHLC</div>
@@ -289,9 +289,13 @@ async function loadLeague() {
 let chartData = null;
 function drawChart() {
   const canvas = document.getElementById('coin-canvas');
-  const rect = canvas.getBoundingClientRect();
+  // Measure the CONTAINER. Measuring the canvas feeds its own bitmap width
+  // back into the next size, and it grows by the pixel ratio every draw.
+  const box = Math.max(300, canvas.parentElement.clientWidth);
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.max(300, rect.width) * dpr;
+  canvas.style.width = box + 'px';
+  canvas.style.height = '280px';
+  canvas.width = box * dpr;
   canvas.height = 280 * dpr;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
