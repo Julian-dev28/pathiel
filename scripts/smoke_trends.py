@@ -25,14 +25,13 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE = os.environ.get("PATHIA_SMOKE_BASE", "http://127.0.0.1:8000")
-LANES = ("hl", "recorders")
+LANES = ("hl",)
 
 # What the page reads out of each lane payload. A missing key here renders as a
-# blank cell or `undefined` on the tab, which is indistinguishable from "the
+# blank cell or `undefined` on the page, which is indistinguishable from "the
 # market is quiet" — the exact failure this file exists to catch.
 LANE_CONTRACT: Dict[str, Tuple[str, ...]] = {
     "hl": ("status", "generated_at", "scanned", "reads", "regimes", "eval", "playbook"),
-    "recorders": ("status", "generated_at", "summary", "books", "playbook"),
 }
 
 class Smoke:
@@ -77,8 +76,8 @@ class Smoke:
         self.check(code == 200, "/trends renders", f"http {code}")
         if not isinstance(body, str):
             return
-        for marker in ('id="lane-hl"', 'id="lane-recorders"',
-                       'id="hl-refresh"', 'href="/static/app.css"'):
+        for marker in ('id="lane-hl"', 'id="hl-refresh"',
+                       'href="/static/app.css"'):
             self.check(marker in body, f"page carries {marker}")
         self.check("http://" not in body and "https://" not in body,
                    "page pulls no third-party asset")

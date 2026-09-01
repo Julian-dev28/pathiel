@@ -23,7 +23,7 @@ outside every process" below for why that fact drives the whole design.
 | `logs/scheduler.log` | `scripts/scheduler.py`'s own stdout/stderr | `restart.sh sched` / `restart.sh restart` |
 | `logs/log_rotate.log` | the log-rotator daemon itself | `restart.sh rotate` / `restart.sh restart` |
 | `logs/autonomous_cycle.log` | `scheduler.py` job `autonomous-cycle` | fired by the scheduler |
-| `logs/trend_engine.log` | `scheduler.py` jobs `trends-price` + `trends-recorders` (share one file) | fired by the scheduler |
+| `logs/trend_engine.log` | `scheduler.py` job `trends-price` | fired by the scheduler |
 | `logs/capital_flows.log` | `scheduler.py` job `capital-flows` | fired by the scheduler |
 | `logs/supervisor.log` | `scheduler.py` job `supervisor` — restarts dead processes | fired by the scheduler |
 | `logs/alerts_eval.log` | `scheduler.py` job `alerts` — each evaluation pass | fired by the scheduler |
@@ -87,13 +87,13 @@ in neither the captured backup (already read) nor the truncated file
 
 ### Concurrent writers
 
-`scheduler.py` runs `trends-price` and `trends-recorders` concurrently, both
-appending to `logs/trend_engine.log`. Two independent
-`O_APPEND` fds both keep writing correctly after an in-place truncation —
-covered by `test_two_concurrent_open_append_fds_both_keep_writing_after_rotation`
-in `tests/test_log_rotation.py`. This is inherent to `O_APPEND` semantics on
-a local filesystem, not something the rotator has to do anything special
-for.
+The rotator truncates a log in place while the process that owns it still
+holds an open `O_APPEND` fd — it never reopens on rotation. Writes after the
+truncation still land correctly, and they do so even when several fds are
+open on the same file, covered by
+`test_two_concurrent_open_append_fds_both_keep_writing_after_rotation` in
+`tests/test_log_rotation.py`. This is inherent to `O_APPEND` semantics on a
+local filesystem, not something the rotator has to do anything special for.
 
 ## Rotation policy
 

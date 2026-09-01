@@ -37,7 +37,6 @@ from services.trend_engine import forecast as tfc
 from services.trend_engine import hl_trends as hl
 from services.trend_engine import metrics as M
 from services.trend_engine import playbook as pb
-from services.trend_engine import recorders as rec
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -419,61 +418,6 @@ def test_eval_cache_roundtrip_and_expiry(tmp_path):
     assert hl.load_eval(str(tmp_path / "missing.json")) is None
 
 
-# ── recorders ────────────────────────────────────────────────────────────────
-
-
-def test_grade_books_flags_a_decaying_edge():
-    """A book whose average is positive only because of its first half must be
-    flagged — that is the failure mode a single mean hides."""
-    class FakeSL:
-        @staticmethod
-        def summary(now):
-            return [{"book": "decayer", "n": 20, "coins": 3, "last_age_h": 2.0,
-                     "pending": 0}]
-
-        @staticmethod
-        def list_books():
-            return ["decayer", "neg_funding_fade"]        # second one is REMOVED
-
-        @staticmethod
-        def load(book):
-            return [{"coin": "X"}]
-
-        @staticmethod
-        def grade_records(recs, fetch_fwd, now_ms=None, fetch_funding=None):
-            return {"n": 20, "pending": 0,
-                    "slip12": {"mean_pct": 0.5, "win": 0.55, "total_pct": 10.0},
-                    "slip25": {"mean_pct": 0.2},
-                    "oos_12bps": {"first": 1.4, "second": -0.4,
-                                  "n_first": 10, "n_second": 10},
-                    "funding_included": True,
-                    "verdict": {"label": "MARGINAL", "why": "second half flipped"}}
-
-        @staticmethod
-        def classify(grade, min_n=8):
-            return {"label": "PENDING", "why": ""}
-
-    rows = rec.grade_books(fetch_fwd=lambda *a, **k: [], fetch_funding=None, sl=FakeSL)
-    assert [r["book"] for r in rows] == ["decayer"]       # removed book skipped
-    r = rows[0]
-    assert r["decaying"] is True
-    assert r["verdict"] == "MARGINAL"
-    assert r["win_ci"][0] < 0.55 < r["win_ci"][1]
-
-
-def test_recorders_observations_call_out_decay_and_staleness():
-    books = [{"book": "a", "verdict": "VALIDATED", "resolved": 20, "ev_pct": 0.8,
-              "win_rate": 0.6, "ev_first": 0.9, "ev_second": 0.7, "decaying": False,
-              "last_age_h": 3.0, "signals": 20},
-             {"book": "b", "verdict": "MARGINAL", "resolved": 20, "ev_pct": 0.1,
-              "win_rate": 0.5, "ev_first": 1.0, "ev_second": -0.8, "decaying": True,
-              "last_age_h": 400.0, "signals": 20}]
-    obs = rec.observations(books)
-    joined = " ".join(obs)
-    assert "Decaying" in joined and "b " in joined
-    assert "idle over a week" in joined
-
-
 # ── playbook (the action layer) ──────────────────────────────────────────────
 
 
@@ -630,24 +574,6 @@ def test_playbook_flags_the_round_trip_trap():
     assert "efficiency" in trap[0]["because"]
 
 
-def test_playbook_recorders_promotes_validated_and_pulls_decaying():
-    acts = pb.recorders_actions({"books": [
-        {"book": "good", "verdict": "VALIDATED", "ev_pct": 3.9, "ev25_pct": 3.7,
-         "resolved": 14, "ev_first": 0.7, "ev_second": 7.1, "decaying": False,
-         "last_age_h": 2},
-        {"book": "fading", "verdict": "MARGINAL", "ev_pct": 1.1, "ev25_pct": 0.9,
-         "resolved": 42, "ev_first": 4.2, "ev_second": -2.1, "decaying": True,
-         "last_age_h": 2},
-        {"book": "dead", "verdict": "REFUTED", "ev_pct": -2.0, "ev25_pct": -2.2,
-         "resolved": 30, "ev_first": -1, "ev_second": -3, "decaying": False,
-         "last_age_h": 2},
-    ], "scout": {}})
-    kinds = _kinds(acts)
-    assert any(k == pb.DO and "Fund good" in d for k, d in kinds)
-    assert any(k == pb.DONT and "Pull capital from fading" in d for k, d in kinds)
-    assert any(k == pb.DONT and "dead" in d for k, d in kinds)
-
-
 def test_playbook_build_groups_and_survives_a_broken_payload():
     out = pb.build("hl", {"status": "ok", "eval": {}, "regimes": {}, "reads": []})
     assert out["status"] == "ok" and set(out["counts"]) == {"do", "dont", "watch"}
@@ -669,9 +595,9 @@ def test_cache_roundtrip_marks_staleness(tmp_path, monkeypatch):
 
 def test_cache_miss_returns_the_command_that_fills_it(tmp_path, monkeypatch):
     monkeypatch.setattr(tcache, "DIR", str(tmp_path))
-    got = tcache.load("recorders")
+    got = tcache.load("hl")
     assert got["status"] == "empty"
-    assert "--lane recorders" in got["hint"]
+    assert "--lane hl" in got["hint"]
 
 
 def test_cache_refresh_carries_the_ai_block_forward(tmp_path, monkeypatch):
@@ -687,9 +613,9 @@ def test_cache_refresh_carries_the_ai_block_forward(tmp_path, monkeypatch):
 
 def test_cache_attach_ai_does_not_recompute(tmp_path, monkeypatch):
     monkeypatch.setattr(tcache, "DIR", str(tmp_path))
-    tcache.save("recorders", {"status": "ok", "generated_at": int(time.time())})
-    tcache.attach_ai("recorders", {"status": "ok", "headline": "hi"})
-    assert tcache.load("recorders")["ai"]["headline"] == "hi"
+    tcache.save("hl", {"status": "ok", "generated_at": int(time.time())})
+    tcache.attach_ai("hl", {"status": "ok", "headline": "hi"})
+    assert tcache.load("hl")["ai"]["headline"] == "hi"
 
 
 def test_cache_refresh_all_isolates_a_failing_lane(tmp_path, monkeypatch):
@@ -697,28 +623,27 @@ def test_cache_refresh_all_isolates_a_failing_lane(tmp_path, monkeypatch):
     monkeypatch.setattr(tcache, "refresh_eval", lambda **kw: {"status": "fresh"})
 
     def compute(lane, **kw):
-        if lane == "recorders":
-            raise RuntimeError("grader down")
-        return {"status": "ok", "generated_at": int(time.time())}
+        raise RuntimeError("scan down")
 
     monkeypatch.setattr(tcache, "compute", compute)
     out = tcache.refresh_all()
-    assert out["hl"]["status"] == "ok"
-    assert out["recorders"]["status"] == "error"
+    assert out["hl"]["status"] == "error"
+    assert "scan down" in out["hl"]["error"]
 
 
-def test_cache_refresh_all_can_run_one_clock_at_a_time(tmp_path, monkeypatch):
-    """The scheduler runs the price lanes every 30 min and the recorders lane
-    every 6 hours — `only` is what keeps the slow grade off the fast clock."""
+def test_refresh_all_runs_nothing_for_a_lane_name_that_does_not_exist(tmp_path, monkeypatch):
+    """The scheduler names the lane on the command line (`--lanes hl`). A typo
+    there must refresh nothing, not fall back to refreshing everything —
+    including the walk-forward eval — on the fast clock."""
     monkeypatch.setattr(tcache, "DIR", str(tmp_path))
     seen = []
     monkeypatch.setattr(tcache, "refresh_eval", lambda **kw: seen.append("eval") or {"status": "fresh"})
     monkeypatch.setattr(tcache, "compute",
                         lambda lane, **kw: seen.append(lane) or {"status": "ok",
                                                                  "generated_at": int(time.time())})
-    out = tcache.refresh_all(only=["recorders"])
-    assert set(out) == {"recorders"}
-    assert seen == ["recorders"]                 # no eval, no price lanes
+    out = tcache.refresh_all(only=["hl-typo"])
+    assert out == {}
+    assert seen == []                            # no eval, no scan
 
 
 # ── ai pass ──────────────────────────────────────────────────────────────────
@@ -799,7 +724,7 @@ def test_trends_page_renders_self_contained(client):
 
 
 def test_lane_apis_are_pure_cache_reads(client):
-    for lane in ("hl", "recorders"):
+    for lane in ("hl",):
         r = client.get(f"/api/dashboard/trends/{lane}")
         assert r.status_code == 200
         body = r.json()
@@ -893,106 +818,6 @@ def test_the_refresh_button_surfaces_a_failed_job(client):
     body = client.get("/trends").text
     assert "refresh failed: " in body
     assert "setRefreshNote" in body and "refreshing… ' +" in body
-
-
-class _Bar:
-    def __init__(self, t):
-        self.t = t
-
-
-def test_a_signal_the_grader_could_not_price_shrinks_the_sample_not_the_ev():
-    """A venue outage returns empty forward candles. `simulate_exit` refuses
-    those (None, not 0%), so the signal is skipped — but a smaller sample then
-    looks exactly like a quieter book unless the count is carried out."""
-    class _SL:
-        @staticmethod
-        def summary(now):
-            return [{"book": "b1", "n": 3, "coins": 1, "pending": 0, "gradeable": 3}]
-
-        @staticmethod
-        def list_books():
-            return ["b1"]
-
-        @staticmethod
-        def load(book):
-            return [{"coin": "BTC"}]
-
-        @staticmethod
-        def grade_records(recs, fwd, now_ms=None, fetch_funding=None):
-            return {"n": 1, "pending": 0, "errors": 2, "slip12": {"mean_pct": 1.0}}
-
-        @staticmethod
-        def classify(grade, min_n=8):
-            return {"label": "PENDING", "why": ""}
-
-    row = rec.grade_books(fetch_fwd=lambda *a, **k: [], sl=_SL())[0]
-    assert row["resolved"] == 1 and row["ungraded_errors"] == 2
-
-
-def test_forward_candles_are_fetched_once_per_coin_not_once_per_signal(monkeypatch):
-    """Every signal on a book asks for forward bars on the same coin, and each
-    miss is a rate-limited HL info call at weight 20. Measured 2026-08-04 the
-    recorders lane ran 2h13m for 4.8s of CPU — pure waiting — and the /trends
-    P&L lane was permanently stale behind it."""
-    calls = []
-    day = 86_400_000
-    now = int(time.time() * 1000)
-    bars = [_Bar(now - i * day) for i in range(60)][::-1]
-
-    import pathia.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles",
-                        lambda coin, interval, n: calls.append((coin, n)) or bars)
-    monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
-
-    fwd, _ = rec._live_fetchers()
-    first = fwd("BTC", now - 10 * day, 5)
-    for i in range(1, 8):                       # seven more signals, same coin
-        fwd("BTC", now - (10 - i) * day, 5)
-    fwd("ETH", now - 10 * day, 5)               # a different coin does fetch
-    assert [c[0] for c in calls] == ["BTC", "ETH"]
-    # and the answer is unchanged: still only bars strictly after the signal
-    assert first == [b for b in bars if b.t > now - 10 * day]
-
-
-def test_a_deeper_lookback_refetches_instead_of_serving_a_short_cache(monkeypatch):
-    """A cached 10-bar pull cannot answer a 400-bar ask. Serving it would
-    silently grade an old signal on a window that never covered it."""
-    calls = []
-    day = 86_400_000
-    now = int(time.time() * 1000)
-    import pathia.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles",
-                        lambda coin, interval, n: calls.append(n) or [])
-    monkeypatch.setattr(hl_client, "fetch_funding_history", lambda *a: [])
-
-    fwd, _ = rec._live_fetchers()
-    fwd("BTC", now - day, 5)                    # shallow
-    fwd("BTC", now - 200 * day, 5)              # much older signal -> deeper need
-    fwd("BTC", now - day, 5)                    # covered by the deep pull now
-    assert len(calls) == 2 and calls[1] > calls[0]
-
-
-def test_funding_is_widened_and_sliced_rather_than_refetched(monkeypatch):
-    calls = []
-    rows = [{"time": t} for t in range(0, 10_000, 1_000)]
-    import pathia.client.hl_client as hl_client
-    monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a: [])
-    monkeypatch.setattr(hl_client, "fetch_funding_history",
-                        lambda coin, lo, hi: calls.append((lo, hi)) or rows)
-
-    _, funding = rec._live_fetchers()
-    inner = funding("BTC", 2_000, 5_000)
-    assert [r["time"] for r in inner] == [2_000, 3_000, 4_000, 5_000]
-    funding("BTC", 3_000, 4_000)                # inside the cached range
-    assert len(calls) == 1
-    # a window outside the cache refetches ONCE, widened to the union — never
-    # widened to now, which made the API pull months of history per coin and
-    # turned 85s of funding into 449s on a single book (measured 2026-08-04)
-    funding("BTC", 1_000, 9_000)
-    assert len(calls) == 2 and calls[1] == (1_000, 9_000)
-    funding("BTC", 1_500, 8_000)
-    funding("BTC", 2_500, 6_000)
-    assert len(calls) == 2, "a nested window refetched"
 
 
 def test_the_action_card_folds_the_named_setups(client):

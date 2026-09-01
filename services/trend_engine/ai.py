@@ -173,30 +173,7 @@ def hl_prompt(payload: Dict[str, Any], top_n: int = 15) -> str:
     return "\n".join(lines)
 
 
-def recorders_prompt(payload: Dict[str, Any]) -> str:
-    s = payload.get("summary") or {}
-    lines = [
-        "LANE: zero-capital recorders, forward-graded.",
-        f"SUMMARY: {s.get('n_books')} books, {s.get('n_graded')} with resolved signals, "
-        f"verdicts {s.get('verdicts')}, mean EV {s.get('mean_ev_pct')}%/signal @12bps, "
-        f"{s.get('total_resolved')} of {s.get('total_signals')} signals resolved.",
-        "",
-        "BOOKS (verdict | resolved | ev% @12bps | @25bps | win | 1st half | 2nd half):",
-    ]
-    for b in (payload.get("books") or [])[:25]:
-        lines.append(f"{b['book']}: {b['verdict']} | n={b['resolved']} | {b.get('ev_pct')} | "
-                     f"{b.get('ev25_pct')} | {b.get('win_rate')} | {b.get('ev_first')} | "
-                     f"{b.get('ev_second')}{' | DECAYING' if b.get('decaying') else ''}")
-    lines += ["", "DETERMINISTIC OBSERVATIONS:"] + \
-             [f"- {o}" for o in (payload.get("observations") or [])]
-    lines += ["", "In `setups`, use the BOOK NAME as `ticker` and say whether the evidence "
-                  "supports promoting it, leaving it, or killing it. Never recommend "
-                  "promoting a book whose verdict is PENDING or REFUTED."]
-    return "\n".join(lines)
-
-
-BUILDERS = {"hl": hl_prompt,
-            "recorders": recorders_prompt}
+BUILDERS = {"hl": hl_prompt}
 
 
 def analyze(lane: str, payload: Dict[str, Any], web_search: bool = False,

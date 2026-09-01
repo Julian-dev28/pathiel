@@ -103,14 +103,6 @@ JOBS: Dict[str, Dict[str, Any]] = {
                "full week of no trading. launchd cannot do this — TCC blocks it "
                "from ~/Documents — but the scheduler already has the access",
     },
-    "trends-recorders": {
-        "args": [PY, "-m", "services.trend_engine.run", "--refresh-all",
-                 "--lanes", "recorders"],
-        "interval_min": 360,          # every 6h — forward-grading is minutes of candles
-        "log": "logs/trend_engine.log",
-        "why": "/trends P&L lane — forward-grade every shadow book. Slow on "
-               "purpose, so it runs on its own clock",
-    },
 }
 # A job that hangs must not wedge the scheduler. Generous, because
 # makes several multi-minute web-search LLM calls.

@@ -164,10 +164,10 @@ def test_open_append_fd_keeps_writing_to_the_right_place_after_rotation(tmp_path
 
 
 def test_two_concurrent_open_append_fds_both_keep_writing_after_rotation(tmp_path):
-    """pathia's scheduler runs multiple jobs against the SAME log file
-    concurrently (poly-board and poly-judgment both target
-    logs/polymarket_scout.log). Two independent O_APPEND fds must both land
-    correctly after an in-place truncation."""
+    """The rotator truncates in place while writers keep their fds open, and it
+    never asks them to reopen. Independent O_APPEND fds must therefore all land
+    correctly after a truncation — the stronger case of the guarantee every
+    logging process depends on."""
     p = tmp_path / "shared.log"
     p.write_bytes(b"")
     fd_a = os.open(str(p), os.O_WRONLY | os.O_APPEND | os.O_CREAT)

@@ -13,7 +13,6 @@ services/trend_engine/
   forecast.py           7-day price projection + the walk-forward that grades it
   flags.py              catalyst / structure / positioning flags
   hl_trends.py          LANE HL        — Hyperliquid 7d trend + regime
-  recorders.py          LANE RECORDERS — forward-graded P&L of every shadow book
   ai.py                 optional LLM pass (local Claude Code CLI, never an API)
   cache.py              disk cache + background refresh contract
   env.py                .env.local loader (state-dir correctness)
@@ -72,7 +71,6 @@ python -m services.trend_engine.run --lane hl     # prints the same actions in t
 
 ```bash
 python -m services.trend_engine.run --lane hl              # regime + per-coin table
-python -m services.trend_engine.run --lane recorders       # what the books earned
 python -m services.trend_engine.run --refresh-all          # what the scheduler runs
 python -m services.trend_engine.run --backtest --save      # re-grade the forecaster
 python -m services.trend_engine.run --lane hl --ai         # + optional AI read

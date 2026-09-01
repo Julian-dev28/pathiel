@@ -9,7 +9,7 @@ and supervises it:
 |-----------|---------------------------------------------------------|------------|
 | `web`     | `python3 -m pathia.server`                        | Dashboard + JSON API + SSE feed + `/metrics`, public |
 | `loop`    | `python3 scripts/trading_loop.py`                        | Autonomous scan → research → execute → DSL monitor, private |
-| `sched`   | `python3 scripts/scheduler.py`                           | Cron replacement — fires `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min), `trends-recorders` (6h) |
+| `sched`   | `python3 scripts/scheduler.py`                           | Cron replacement — fires `capital-flows` (6h), `autonomous-cycle` (daily), `trends-price` (30min) |
 | `rotator` | `python3 scripts/log_rotate.py --daemon`                 | Bounds `logs/` growth — `sched`'s fired jobs write real log files regardless of how `sched` itself was launched |
 
 All four run from one image. `web`, `loop`, and `sched` share the

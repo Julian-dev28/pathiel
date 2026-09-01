@@ -239,62 +239,7 @@ def _fmt(v: Optional[float]) -> str:
     return f"{v:,.0f}" if v >= 1000 else (f"{v:.2f}" if v >= 1 else f"{v:.4g}")
 
 
-# ── BTC 5m ───────────────────────────────────────────────────────────────────
-
-
-# ── recorders ────────────────────────────────────────────────────────────────
-
-
-def recorders_actions(payload: Dict[str, Any], max_names: int = 5) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    books = payload.get("books") or []
-
-    validated = [b for b in books if b.get("verdict") == "VALIDATED"]
-    refuted = [b for b in books if b.get("verdict") == "REFUTED"]
-    decaying = [b for b in books if b.get("decaying")]
-    stale = [b for b in books
-             if isinstance(b.get("last_age_h"), (int, float)) and b["last_age_h"] > 336]
-
-    for b in validated[:max_names]:
-        out.append(_a(DO, f"Fund {b['book']} — it earned it.",
-                      f"{b['ev_pct']:+.2f}%/signal at 12bps over {b['resolved']} resolved, "
-                      f"still {b['ev25_pct']:+.2f}% at 25bps, both halves positive "
-                      f"({b['ev_first']:+.2f}/{b['ev_second']:+.2f})",
-                      trigger="the standing rule: VALIDATED goes live same day at $20/1x with a kill",
-                      invalidate="second-half EV turning negative on the next grade",
-                      confidence="high", tag="promote"))
-    for b in decaying[:max_names]:
-        out.append(_a(DONT, f"Pull capital from {b['book']} — the edge is decaying.",
-                      f"first half {b['ev_first']:+.2f}%, second half {b['ev_second']:+.2f}% — "
-                      f"the {b['ev_pct']:+.2f}% average is hiding it",
-                      confidence="high", tag="demote"))
-    if refuted:
-        out.append(_a(DONT,
-                      "Kill or leave dead: " + ", ".join(b["book"] for b in refuted[:6])
-                      + (f" (+{len(refuted)-6} more)" if len(refuted) > 6 else ""),
-                      f"{len(refuted)} book(s) with no forward edge at 12bps",
-                      confidence="high", tag="demote"))
-    if stale:
-        out.append(_a(WATCH,
-                      "These recorders have gone quiet — check the lane is still armed: "
-                      + ", ".join(b["book"] for b in stale[:5]),
-                      "no signal written in over two weeks",
-                      trigger="grep the loop logs for the book name", tag="health"))
-
-    scout = (payload.get("scout") or {}).get("lanes") or {}
-    for lane, g in scout.items():
-        if not g.get("n"):
-            continue
-        if g.get("llm_beats_market") is False and g["n"] >= 50:
-            out.append(_a(DONT,
-                          f"Stop treating the {lane} forecast as an edge over the price.",
-                          f"our Brier {g.get('brier_llm')} vs the market's {g.get('brier_mkt')} "
-                          f"over {g['n']} resolved",
-                          confidence="high", tag="calibration"))
-    return out
-
-
-BUILDERS = {"hl": hl_actions, "recorders": recorders_actions}
+BUILDERS = {"hl": hl_actions}
 
 
 def build(lane: str, payload: Dict[str, Any]) -> Dict[str, Any]:

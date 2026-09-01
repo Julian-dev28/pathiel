@@ -3,7 +3,7 @@
 `pathia.agents.rebalancer_owned` freezes `_STATE_DIR` at import time
 from `PATHIA_STATE_DIR`, and that variable lives in `.env.local`. A CLI entry
 point that skips this file silently reads a DIFFERENT shadow-ledger directory
-than the running bot writes — which is exactly how the recorders lane first
+than the running bot writes — which is exactly how the trend lanes first
 reported "2 books, 4 signals" against a live tree holding 28 books. Wrong
 directory, right code, no error anywhere.
 

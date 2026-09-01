@@ -1704,7 +1704,7 @@ def _prune_analyze_jobs(now: float) -> None:
 
 # The lanes the tab serves. Module level because it is a contract: the page,
 # the refresh/AI routes and scripts/smoke_trends.py all have to agree on it.
-_TREND_LANES = ("hl", "recorders")
+_TREND_LANES = ("hl",)
 _REFRESH_TIMEOUT_S = 600.0
 
 
@@ -1871,9 +1871,8 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/trends", response_class=HTMLResponse)
     async def trends_page() -> HTMLResponse:
         """Trend analysis: 7d Hyperliquid regime + per-coin trend + next-week
-        forecast, plus the recorders lane's forward-graded P&L. Every number is
-        computed in services/trend_engine; the AI pass is optional and
-        additive."""
+        forecast. Every number is computed in services/trend_engine; the AI
+        pass is optional and additive."""
         return HTMLResponse(content=_TRENDS_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/analytics", response_class=HTMLResponse)
