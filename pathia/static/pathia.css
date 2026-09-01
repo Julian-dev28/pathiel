@@ -376,24 +376,13 @@ td.num,td[class*="text-right"]{ text-align:right; }
 }
 .seg > *{ border-right:1px solid var(--rule-2); }
 .seg > *:last-child{ border-right:0; }
-.range-btn,.tab,.fsel{
+.range-btn,.fsel{
   padding:4px 11px; font-size:12px; color:var(--ink-2);
   background:var(--surface); border:0; cursor:pointer;
 }
-.range-btn:hover,.tab:hover,.fsel:hover{ background:var(--surface-2); color:var(--ink); }
-.range-btn.on,.tab.on,.fsel.on{
+.range-btn:hover,.fsel:hover{ background:var(--surface-2); color:var(--ink); }
+.range-btn.on,.fsel.on{
   background:var(--accent-wash); color:var(--accent-ink); font-weight:500;
-}
-
-.tabs{ display:flex; gap:2px; flex-wrap:wrap; }
-
-/* A lane whose data is stale is marked on its own tab, so it is visible from
-   whichever lane you happen to be reading. An amber dot, not a colour change:
-   the tab still has to read as a tab. */
-.tab-stale{ position:relative; }
-.tab-stale::after{
-  content:""; position:absolute; top:5px; right:5px;
-  width:5px; height:5px; border-radius:50%; background:var(--amber);
 }
 
 /* ── disclosure ───────────────────────────────────────────────────────── */

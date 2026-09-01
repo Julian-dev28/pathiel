@@ -790,8 +790,9 @@ def test_trends_page_renders_self_contained(client):
     assert r.status_code == 200
     body = r.text
     assert "Trends" in body and "HYPERLIQUID" in body
-    assert "BTC 5M UP/DOWN" in body and "POLITICS" in body
-    assert "RECORDERS" in body
+    assert 'id="lane-hl"' in body
+    # The lanes that are gone must not creep back as markup or dead script.
+    assert "recorders" not in body.lower()
     # no third-party asset may be pulled at render time
     assert "http://" not in body and "https://" not in body
     assert 'href="/static/app.css"' in body
@@ -1011,15 +1012,13 @@ def test_the_action_card_shows_which_sector_each_line_belongs_to(client):
     assert "a.tag && a.tag !== 'method'" in body
 
 
-def test_a_stale_lane_is_visible_from_another_tab(client):
-    """The marker rule lives in the shared stylesheet now; the page still has
-    to be the thing that applies it."""
-    import pathlib as _p
-    css = (_p.Path(__file__).resolve().parent.parent
-           / "pathia" / "static" / "pathia.css").read_text()
+def test_stale_data_says_so_on_the_page(client):
+    """Stale numbers that look fresh are the ones that mislead. With a single
+    lane there is no other tab to carry an amber dot, so the masthead meta is
+    the only place left that can say it — it must actually say it."""
     body = client.get("/trends").text
-    assert ".tab-stale::after" in css
-    assert "tab-stale" in body
+    assert 'id="lane-meta"' in body
+    assert "STALE" in body
 
 
 def test_every_element_the_page_scripts_reach_for_exists(client):

@@ -37,7 +37,7 @@ token-why"></span>
 
   <div class="page-head">
     <h1 class="page-title">Trends</h1>
-    <div class="page-sub">Standing research lanes. Each card states a trigger and a stop.</div>
+    <div class="page-sub">Standing research on the Hyperliquid tape. Each card states a trigger and a stop.</div>
   </div>
 
   <!-- Refreshes and AI passes spend network and model calls, so they are
@@ -62,16 +62,12 @@ token-why"></span>
     trigger and a stop. The rest is the evidence behind it.</p>
     <p>Trend shape is <b>slope + R² + efficiency</b>, not just a return — a coin up
     20% on a round trip is labelled CHOP, and the label is what ranks it.</p>
-    <p>Forecasts are a <b>shrunken-drift baseline</b>, and every lane ships the
+    <p>Forecasts are a <b>shrunken-drift baseline</b>, and the page ships the
     backtest that says what it is worth. Where that backtest says "coin flip",
-    the tab says so in amber rather than hiding it.</p>
+    it says so in amber rather than hiding it.</p>
     <p>The <b>AI pass is optional</b>: it reads these numbers, it never produces one.</p>
   </details>
 
-  <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-lane="hl" aria-selected="true">HYPERLIQUID <span class="n" id="n-hl"></span></button>
-    <button class="tab" role="tab" data-lane="recorders" aria-selected="false">EVIDENCE · P&amp;L <span class="n" id="n-recorders"></span></button>
-  </div>
 
   <!-- ── LANE: HYPERLIQUID ─────────────────────────────────────────────── -->
   <div id="lane-hl">
@@ -150,56 +146,6 @@ token-why"></span>
     </div>
   </div>
 
-  <!-- ── LANE: BTC 5M UP/DOWN ──────────────────────────────────────────── -->
-  <!-- ── LANE: POLITICS ────────────────────────────────────────────────── -->
-  <!-- ── LANE: RECORDERS / P&L ─────────────────────────────────────────── -->
-  <div id="lane-recorders" class="hidden">
-    <div id="pb-recorders" class="mb-4"></div>
-        <div class="strip" id="rec-strip">
-      <div class="kpi"><span class="v skeleton">…</span><span class="l">loading</span></div>
-    </div>
-
-    <details class="explainer">
-      <summary>What these numbers mean</summary>
-      <p><b>EV%</b> is mean forward return per signal, net of funding, at 12bps
-      slippage — graded on real candles after the signal by the same grader
-      <code>scripts/shadow_status.py</code> uses.</p>
-      <p><b>1st / 2nd</b> split each book's own history. A positive average built
-      on a negative second half is a decaying edge, and it is flagged.</p>
-    </details>
-
-    <div class="card mb-4">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">Forward EV per signal</div>
-        <button class="btn go" id="rec-refresh">re-grade (slow)</button>
-      </div>
-      <div class="overflow-x-auto">
-        <table>
-          <thead><tr>
-            <th style="text-align:left">book</th><th>verdict</th><th>signals</th><th>resolved</th>
-            <th>pending</th><th>ev% @12bps</th><th>@25bps</th><th>total%</th>
-            <th>win</th><th>95% ci</th><th>1st half</th><th>2nd half</th><th>last signal</th>
-          </tr></thead>
-          <tbody id="rec-rows"><tr><td colspan="13" class="dim">loading…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="mb-4">
-      <div class="card">
-        <div class="sec-label">What the evidence shows</div>
-        <ul class="obs" id="rec-obs"></ul>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div class="sec-label" style="margin-bottom:0">ai read · optional</div>
-        <button class="btn go" data-ai="recorders">run ai pass</button>
-      </div>
-      <div id="recorders-ai" class="text-[11.5px] dim">Not run.</div>
-    </div>
-  </div>
 
   <div class="text-[10px] mono dim mt-8 leading-relaxed">
     computed by <b>services/trend_engine</b> · refresh with
@@ -314,8 +260,8 @@ $('#token-save').onclick = () => {
 $('#token-clear').onclick = () => { localStorage.removeItem(TOKEN_KEY); $('#token-input').value = ''; };
 
 // ── lane state ──────────────────────────────────────────────────────────────
-const LANES = ['hl', 'recorders'];
-const DATA = { hl: null, recorders: null };
+const LANES = ['hl'];
+const DATA = { hl: null };
 let LANE = (location.hash || '#hl').slice(1);
 if (!LANES.includes(LANE)) LANE = 'hl';
 let HL_FILTER = 'all';
@@ -326,25 +272,15 @@ function showLane(l) {
   LANE = l;
   location.hash = l;
   LANES.forEach(x => $('#lane-' + x).classList.toggle('hidden', x !== l));
-  $$('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.lane === l)));
   const d = DATA[l];
-  $('#lane-meta').textContent = d ? `${l} · ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
-  // A stale lane the operator is not looking at is the one that misleads, so
-  // the staleness lives on the tab, not only on the open lane.
-  LANES.forEach(x => {
-    const tab = $$('.tab').find(t => t.dataset.lane === x);
-    const dx = DATA[x];
-    if (tab) tab.classList.toggle('tab-stale', !!(dx && dx.stale));
-  });
+  $('#lane-meta').textContent = d ? `${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
 }
-$$('.tab').forEach(t => t.onclick = () => showLane(t.dataset.lane));
 
 async function loadLane(l) {
   const r = await fetch('/api/dashboard/trends/' + l);
   const d = await r.json();
   DATA[l] = d;
   if (l === 'hl') renderHL(d);
-  if (l === 'recorders') renderRecorders(d);
   renderPlaybook(l, d.playbook);
   // Every refresh button carries the age of the data it would replace, so the
   // freshness question is answered where the fix is, not only in the header.
@@ -469,7 +405,6 @@ function majorCard(r, closes) {
 }
 
 function renderHL(d) {
-  $('#n-hl').textContent = d.scanned ? d.scanned : '';
   $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
   if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
   const g = d.regime || {};
@@ -571,50 +506,6 @@ $$('[data-filter]').forEach(b => b.onclick = () => {
   renderHLRows();
 });
 
-// ── LANE 4: recorders / P&L ─────────────────────────────────────────────────
-const VERDICT_CLASS = { VALIDATED: 'b-sup', MARGINAL: 'b-chop', PENDING: 'b-mut', REFUTED: 'b-sdn' };
-
-function renderRecorders(d) {
-  if (d.status !== 'ok') { emptyState($('#rec-rows').parentElement, d, 'recorders'); return; }
-  const s = d.summary || {}, v = s.verdicts || {};
-  $('#n-recorders').textContent = s.n_books || '';
-
-  $('#rec-strip').innerHTML = [
-    ['books', String(s.n_books || 0), `${s.n_graded || 0} with resolved signals`, 'vio'],
-    ['validated', String(v.VALIDATED || 0), 'forward +EV both halves', (v.VALIDATED || 0) ? 'up' : 'mut'],
-    ['marginal', String(v.MARGINAL || 0), 'positive but fragile', 'amb'],
-    ['refuted', String(v.REFUTED || 0), 'no forward edge', (v.REFUTED || 0) ? 'dn' : 'mut'],
-    ['pending', String(v.PENDING || 0), 'under the evidence floor', 'mut'],
-    ['mean ev', s.mean_ev_pct == null ? '–' : pct(s.mean_ev_pct, 3), 'per signal @12bps', sgn(s.mean_ev_pct)],
-    ['signals', String(s.total_signals || 0), `${s.total_resolved || 0} resolved`, 'mut'],
-  ].map(([l, val, sub, c]) => `<div class="kpi"><span class="v ${c}">${esc(val)}</span>
-      <span class="l">${esc(l)}</span><span class="s">${esc(sub)}</span></div>`).join('');
-
-  $('#rec-rows').innerHTML = (d.books || []).map(b => {
-    const decay = b.decaying;
-    return `<tr>
-      <td><span class="mono" style="font-weight:600">${esc(b.book)}</span>
-        ${decay ? '<span class="badge b-chop" title="first half positive, second half negative">decaying</span>' : ''}</td>
-      <td><span class="badge ${VERDICT_CLASS[b.verdict] || 'b-mut'}" title="${esc(b.why)}">${esc(b.verdict)}</span></td>
-      <td class="mono mut">${b.signals}</td>
-      <td class="mono">${b.resolved}</td>
-      <td class="mono dim">${b.pending}${b.ungraded_errors
-        ? `<span class="amb" title="the grader could not price these this run (venue outage or empty candles) — they are SKIPPED, never scored flat"> +${b.ungraded_errors}?</span>`
-        : ''}</td>
-      <td class="mono ${sgn(b.ev_pct)}" style="font-weight:600">${b.ev_pct == null ? '–' : pct(b.ev_pct, 3)}</td>
-      <td class="mono ${sgn(b.ev25_pct)}">${b.ev25_pct == null ? '–' : pct(b.ev25_pct, 3)}</td>
-      <td class="mono ${sgn(b.total_pct)}">${b.total_pct == null ? '–' : pct(b.total_pct, 1)}</td>
-      <td class="mono">${b.win_rate == null ? '–' : num(b.win_rate * 100, 0) + '%'}</td>
-      <td class="mono dim">${b.win_ci ? num(b.win_ci[0] * 100, 0) + '–' + num(b.win_ci[1] * 100, 0) + '%' : '–'}</td>
-      <td class="mono ${sgn(b.ev_first)}">${b.ev_first == null ? '–' : pct(b.ev_first, 2)}</td>
-      <td class="mono ${sgn(b.ev_second)}">${b.ev_second == null ? '–' : pct(b.ev_second, 2)}</td>
-      <td class="mono dim">${b.last_age_h == null ? '–' : (b.last_age_h < 48 ? num(b.last_age_h, 0) + 'h' : num(b.last_age_h / 24, 0) + 'd')}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="13" class="dim">No books have recorded a signal yet</td></tr>';
-
-  $('#rec-obs').innerHTML = (d.observations || []).map(o => `<li>${esc(o)}</li>`).join('')
-    || '<li class="dim">nothing graded yet</li>';
-}
 
 // ── AI pass + refresh (operator-gated background jobs) ──────────────────────
 function renderAI(lane, ai) {
@@ -707,7 +598,6 @@ function setRefreshNote(lane, msg, cls) {
 
 const REFRESH_BTN = {
   hl: 'hl-refresh',
-  recorders: 'rec-refresh',
 };
 
 Object.entries(REFRESH_BTN).forEach(([lane, id]) => {
