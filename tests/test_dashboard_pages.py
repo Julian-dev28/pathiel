@@ -352,9 +352,24 @@ def test_books_payload_missing_config_is_off(monkeypatch):
 
 # ── news payload ─────────────────────────────────────────────────────────────
 
-def _write_news_ledger(rows):
+# news_surge_short, not news_catalyst: the feed reads the books that can trade
+# today, and news_surge_short is the live one that records headlines. These
+# fixtures wrote to news_catalyst for six weeks after that book was demolished,
+# which is exactly why the /news tab could serve July rows with every test green.
+@pytest.fixture
+def isolated_ledger(tmp_path, monkeypatch):
+    """The news payload merges every live book, so a test that writes one
+    fixture book into the real ledger directory gets the operator's actual
+    news_surge_multi history mixed in and its rows pushed past `limit`. These
+    tests only passed before because the payload read a single hardcoded book."""
     from pathia.agents import shadow_ledger
-    path = shadow_ledger._book_path("news_catalyst")
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    return tmp_path
+
+
+def _write_news_ledger(rows, book="news_surge_short"):
+    from pathia.agents import shadow_ledger
+    path = shadow_ledger._book_path(book)
     if os.path.exists(path):
         os.remove(path)
     with open(path, "w") as fh:
@@ -362,13 +377,13 @@ def _write_news_ledger(rows):
             fh.write(json.dumps(r) + "\n")
 
 
-def test_news_payload_newest_first_breaking_flagged(monkeypatch):
+def test_news_payload_newest_first_breaking_flagged(monkeypatch, isolated_ledger):
     _write_news_ledger([
-        {"ts": 1000, "book": "news_catalyst", "coin": "VIRTUAL", "side": "long",
+        {"ts": 1000, "book": "news_surge_short", "coin": "VIRTUAL", "side": "long",
          "entry_ref_px": 0.63671,
          "meta": {"breaking": False, "n_recent": 1, "surge_x": 0.51,
                   "shadow": True, "top3_titles": ["Robinhood AI agent - Cryptonews"]}},
-        {"ts": 2000, "book": "news_catalyst", "coin": "GRASS", "side": "long",
+        {"ts": 2000, "book": "news_surge_short", "coin": "GRASS", "side": "long",
          "entry_ref_px": 0.39463,
          "meta": {"breaking": True, "n_recent": 3, "surge_x": 2.4,
                   "shadow": True, "top3_titles": ["Big headline", "Second headline"]}},
@@ -388,7 +403,7 @@ def test_news_payload_newest_first_breaking_flagged(monkeypatch):
     assert ctx[0]["news_risk"] == "elevated"
 
 
-def test_news_payload_empty_ledger(monkeypatch):
+def test_news_payload_empty_ledger(monkeypatch, isolated_ledger):
     _write_news_ledger([])
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     payload = db._news_payload()
@@ -397,7 +412,7 @@ def test_news_payload_empty_ledger(monkeypatch):
                                 "last_read_ts": None}
 
 
-def test_news_payload_stats_fresh_and_title_ages(monkeypatch):
+def test_news_payload_stats_fresh_and_title_ages(monkeypatch, isolated_ledger):
     """Flight-deck payload: header-strip stats (since local midnight), the
     watcher fresh flag, and per-headline article-age passthrough."""
     noon = int(time.mktime((2026, 1, 15, 12, 0, 0, 0, 0, -1)) * 1000)
@@ -422,7 +437,29 @@ def test_news_payload_stats_fresh_and_title_ages(monkeypatch):
                           "last_read_ts": noon - 60_000}
 
 
-def test_news_payload_title_urls_passthrough(monkeypatch):
+def test_the_news_feed_ignores_a_book_that_can_no_longer_trade(monkeypatch, isolated_ledger):
+    """/news read shadow_ledger.load("news_catalyst") by name. That book was
+    demolished 2026-07-18 and is in _REMOVED_BOOKS, so on 2026-09-01 the tab was
+    serving 46-day-old July rows under a "reads today: 0" header while
+    news_surge_short wrote every day. Sources now derive from
+    _KNOWN_BOOK_NAMES; a fresh record in the removed ledger must not come back."""
+    _write_news_ledger([
+        {"ts": 9_000_000_000, "coin": "GHOST", "side": "long", "entry_ref_px": 1.0,
+         "meta": {"breaking": True, "n_recent": 9, "surge_x": 9.9,
+                  "top3_titles": ["should never render"]}},
+    ], book="news_catalyst")
+    _write_news_ledger([
+        {"ts": 9_000_000_001, "coin": "REAL", "side": "short", "entry_ref_px": 2.0,
+         "meta": {"breaking": True, "n_recent": 2, "surge_x": 3.0,
+                  "top3_titles": ["a live headline"]}},
+    ])
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    items = db._news_payload(limit=10)["items"]
+    assert [i["coin"] for i in items] == ["REAL"]
+    assert items[0]["book"] == "news_surge_short"
+
+
+def test_news_payload_title_urls_passthrough(monkeypatch, isolated_ledger):
     """Breaking-coverage headlines carry a source URL (title_urls, parallel
     to titles) when the recorder persisted one (news_catalyst_live.py's
     top3_urls) — older rows recorded before that field existed fall back to

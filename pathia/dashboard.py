@@ -1659,7 +1659,23 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
         (lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0,
          lt.tm_wday, lt.tm_yday, -1)) * 1000)
 
-    rows = shadow_ledger.load("news_catalyst")
+    # Sourced from the books that can trade today, never a name written inline.
+    # This read `shadow_ledger.load("news_catalyst")` until 2026-09-01. That book
+    # was demolished 2026-07-18 and sits in _REMOVED_BOOKS, so the whole /news
+    # tab had been serving 46-day-old July rows under a "reads today: 0" header
+    # while news_surge_short and news_surge_multi wrote every day.
+    rows = []
+    for book in sorted(_KNOWN_BOOK_NAMES):
+        try:
+            loaded = shadow_ledger.load(book)
+        except Exception:
+            continue
+        for r in loaded:
+            # A news read is any record carrying news fields. Keying on surge_x
+            # alone dropped rows that recorded headlines without it.
+            meta = r.get("meta") or {}
+            if any(k in meta for k in ("surge_x", "n_recent", "top3_titles")):
+                rows.append({**r, "book": book})
     rows.sort(key=lambda r: int(r.get("ts") or 0))
 
     reads_today = breaking_today = 0
@@ -1681,6 +1697,9 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
         urls = meta.get("top3_urls")
         items.append({
             "ts": ts, "coin": r.get("coin"), "side": r.get("side"),
+            # Which live book saw it — two books now feed this feed, and a row
+            # with no headlines is a different thing depending on which.
+            "book": r.get("book"),
             "entry_ref_px": r.get("entry_ref_px"),
             "n_recent": meta.get("n_recent"), "surge_x": meta.get("surge_x"),
             "breaking": bool(meta.get("breaking")),

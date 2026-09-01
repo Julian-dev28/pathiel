@@ -116,6 +116,16 @@ function titlesBlock(it) {
   }).join('');
   return lines ? `<div class="titles">${lines}</div>` : '';
 }
+// A card with no headlines has three different causes and they are not
+// interchangeable: the pooled-feed book never stores titles at all, a read with
+// no recent articles found nothing to store, and anything else really is a read
+// whose titles were dropped. Saying "the relevance filter may have dropped
+// them" for all three blamed a filter for the ordinary case of quiet coverage.
+function noHeadlinesWhy(it) {
+  if (it.book === 'news_surge_multi') return 'pooled-feed read — this book counts coverage across feeds and does not store headlines';
+  if (!it.n_recent) return 'no recent coverage found for this coin';
+  return 'headlines not recorded on this read';
+}
 function readCard(it) {
   const stats = [];
   if (it.n_recent != null) stats.push(`${it.n_recent} recent headline${it.n_recent === 1 ? '' : 's'}`);
@@ -130,7 +140,7 @@ function readCard(it) {
       <span class="text-[11px] mono" style="color:var(--ink-3)">${stats.join(' · ')}</span>
       <span class="ev-ts mono" style="margin-left:auto">read ${fmtAgo(it.ts)}</span>
     </div>
-    ${titlesBlock(it) || '<div class="titles"><div>no headlines captured (relevance filter may have dropped them)</div></div>'}`;
+    ${titlesBlock(it) || `<div class="titles"><div>${noHeadlinesWhy(it)}</div></div>`}`;
 }
 function researchCard(c) {
   const verdict = c.verdict === 'LONG' ? '<span class="badge b-long">LONG</span>'
