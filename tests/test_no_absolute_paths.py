@@ -125,7 +125,7 @@ def test_every_script_an_operator_doc_tells_you_to_run_exists():
     """
     import re
 
-    docs = ["README.md", "DEPLOY.md", "HANDOFF-CLAUDE.md"] + sorted(
+    docs = ["README.md", "DEPLOY.md"] + sorted(
         str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md"))
     missing = []
     for doc in docs:
