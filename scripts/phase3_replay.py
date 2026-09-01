@@ -264,7 +264,7 @@ def main():
         print(f"  >>> EXIT @ bar+{e['bars_after_entry']} ({time.strftime('%m-%d %H:%M', time.gmtime(e['ts']/1000))}) "
               f"px~{e['px']:.6g}  reason: {e['reason']}  (unrl {e['unrl_pct']}%)")
     else:
-        print(f"  >>> NO EXIT in window — rode to peak (or still open at data end)")
+        print("  >>> NO EXIT in window — rode to peak (or still open at data end)")
 
 
 if __name__ == "__main__":

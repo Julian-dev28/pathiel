@@ -102,7 +102,7 @@ def cmd_status(_args) -> int:
         payload = {"type": "clearinghouseState", "user": user}
         if dex:
             payload["dex"] = dex
-        cs = _http_post("/info", payload) or {}
+        _http_post("/info", payload)
         # marginSummary.accountValue is USD-equivalent; for native token amount
         # check balances list inside `marginSummary` or the raw response.
         print(f"  {label:<22} {'(USD)':<8} {eq:>14.2f}")
@@ -207,7 +207,7 @@ def cmd_fund_dex(args, *, target_token: str, target_dex: str, spot_pair: str) ->
     print(f"\n=== Fund {target_dex} ({target_token}) with ${amount:.2f} ===\n")
 
     # 1. Move USDC main perp → spot
-    print(f"[1/3] USDC main perp → spot")
+    print("[1/3] USDC main perp → spot")
     r1 = ex.usd_class_transfer(amount, to_perp=False)
     print(f"      response: {r1}")
     if not (isinstance(r1, dict) and r1.get("status") == "ok"):

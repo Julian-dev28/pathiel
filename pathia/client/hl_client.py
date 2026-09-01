@@ -478,16 +478,6 @@ def fetch_all_mids(include_hip3: bool = False) -> Dict[str, str]:
 
 
 
-def stop_ws_mids() -> None:
-    """Stop the persistent WebSocket. Call when exiting the scanning loop."""
-    global _ws_mids_instance
-    with _ws_mids_lock:
-        if _ws_mids_instance is not None:
-            _ws_mids_instance.stop(timeout=2.0)
-            _ws_mids_instance = None
-            logger.info("[hl] WebSocket stopped")
-
-
 def fetch_funding_history(
     coin: str, start_time: int, end_time: Optional[int] = None,
 ) -> List[Dict[str, Any]]:

@@ -627,7 +627,7 @@ def test_dsl_rehydrate_from_exchange(monkeypatch, tmp_path):
 
 def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     """close_position_market deregisters the tracker on a successful close."""
-    from pathia.agents import dsl_exit, executor
+    from pathia.agents import executor
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("ETH", "long", 100.0)
 
@@ -778,7 +778,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     """When place_hl_order returns avg_px, the close result carries an exact
     realized PnL (leveraged × spot move from fill, minus taker fees) — this is
     what the dashboard surfaces to match HL's display."""
-    from pathia.agents import dsl_exit, executor
+    from pathia.agents import executor
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     # Long ARB 10x, entry 0.11684; close fills at 0.10522 → +9.945% spot,
     # +99.45% gross, − (2 × 0.025 × 10 = 0.5%) fees = +98.95% net realized.

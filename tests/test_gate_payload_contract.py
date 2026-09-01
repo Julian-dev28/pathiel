@@ -22,7 +22,6 @@ import ast
 import inspect
 from pathlib import Path
 
-import pytest
 
 from pathia.agents import risk_gates
 from pathia.agents.executor import _position_notional

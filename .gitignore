@@ -178,3 +178,14 @@ research/alpha_swarm/**/*_cache_*.json
 research/alpha_swarm/**/*_cache_texts/
 research/alpha_swarm/**/*_events.json
 research/alpha_swarm/**/*_dataset.json
+
+# Per-IDE agent skill copies, written by the installed caveman plugin. All three
+# are byte-for-byte the same 22 files as each other and as the plugin's own
+# cache, so tracking them vendored an installed plugin into a trading repo three
+# times over. Worse, the plugin rewrites them on session events: on 2026-09-01
+# .forge/ and .qwen/ vanished mid-session and showed up as 44 phantom deletions
+# in `git status` that nobody had made. They stay on disk, the plugin owns them,
+# git does not.
+.agents/
+.forge/
+.qwen/

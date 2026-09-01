@@ -52,7 +52,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s:%(name)s:%(message)s'
 )
 
-from pathia.agents.perception import (scan_once, _fetch_candles_sync,
+from pathia.agents.perception import (scan_once,
                                              last_scan_integrity as _last_scan_integrity,
                                              scan_is_trustworthy as _scan_is_trustworthy)
 from pathia.agents.risk_gates import book_block_event as _book_block_event
@@ -68,7 +68,6 @@ from pathia.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_
 from pathia.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from pathia.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from pathia.agents.executor import (
-    min_tradable_equity as _min_tradable_equity,
     _runner_entry_block_reason,
     close_position_market,
     maybe_execute,
@@ -77,7 +76,6 @@ from pathia.agents.executor import (
     route_verdict,
 )
 from pathia.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
-from pathia.agents import universe as _universe
 from pathia.agents.config import get_config
 
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 import importlib.util
 import os
 
-import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

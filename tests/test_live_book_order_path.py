@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 
 import pathia.dashboard as db
-from pathia.agents import risk_gates
 from pathia.agents.rebalancer_owned import ClaimsRegistry, active_claim_books
 
 ROOT = Path(__file__).resolve().parents[1]

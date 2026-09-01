@@ -140,8 +140,6 @@ def check_book_reachability(r: Report) -> None:
     and structurally unable to fire is the shadow state wearing a live badge —
     and it is invisible until someone funds the account and waits.
     """
-    import json
-
     import pathia.dashboard as db
     from pathia.agents import shadow_ledger as SL
     from pathia.agents.config_store import read_agent_config

@@ -39,7 +39,17 @@ if [ -n "$STAGED_PY" ]; then
   ok "staged Python parses"
 fi
 
-# 4. The gate suite. Offline and deterministic by construction — pytest's
+# 4. Pyflakes. Cheap (<1s) and finds the class of defect that reads as working
+#    code: a name that does not exist, an import that does nothing, a dict
+#    literal with the same key twice. Configured in pyproject to select F only,
+#    so it never fires on this codebase's deliberate style. See that config for
+#    what a first run turned up.
+if ! "$PY" -m ruff check . 2>&1 | tail -20; then
+  fail "ruff found undefined names or dead imports (run: .venv/bin/python -m ruff check .)"
+fi
+ok "no undefined names or dead imports"
+
+# 5. The gate suite. Offline and deterministic by construction — pytest's
 #    addopts deselect the `online` and `live` markers, so this places no orders
 #    and makes no network calls.
 #

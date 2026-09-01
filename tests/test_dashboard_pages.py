@@ -107,8 +107,6 @@ FIXTURE_CONFIG = {
                      "equity_fraction": 0.25, "leverage": 25},
     "young_listings": {"enabled": True, "shadow_only": True,
                        "notional_usd": 15.0, "leverage": 1},
-    "unlock_short": {"enabled": True, "shadow_only": False,
-                     "notional_usd": 20.0, "leverage": 1},
     "news_catalyst": {"enabled": False, "notional_usd": 20.0, "leverage": 1},
     "mover_recorders": {"pass_live": {"enabled": True, "shadow_only": False,
                                       "notional_usd": 20.0, "leverage": 1}},

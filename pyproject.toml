@@ -35,6 +35,27 @@ path = "pathia/__init__.py"
 [tool.hatch.build.targets.wheel]
 packages = ["pathia"]
 
+[tool.ruff]
+# The vendored per-IDE agent skill copies are an installed plugin's code, not
+# ours, and research/ is exploratory scratch by design.
+exclude = [".agents", ".forge", ".qwen", "research", ".venv"]
+line-length = 100
+
+[tool.ruff.lint]
+# Gate on pyflakes only, and mean it. F is the rule class that finds bugs rather
+# than opinions: undefined names, unused imports, duplicate dict keys. It earned
+# the slot on 2026-09-02, when a first run found `stop_ws_mids()` in the
+# exchange client using a lock that is defined nowhere — an exported function
+# that could only ever raise NameError — plus a test fixture whose duplicate
+# "unlock_short" key silently dropped a live book's stop_pct.
+#
+# The E (pycodestyle) rules are deliberately NOT gated. Every one of them fires
+# on a convention this codebase uses on purpose: E402 on the import-order
+# comments that exist because `rebalancer_owned` freezes the state directory at
+# import time, and E741 on `h, l, c` — which is OHLC, not an ambiguous name.
+# A gate that cries wolf gets bypassed, and --no-verify is banned here.
+select = ["F"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

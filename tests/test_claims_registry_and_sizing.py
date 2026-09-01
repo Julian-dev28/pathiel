@@ -3,6 +3,7 @@
 2. strategy_book_equity_frac sizing in executor.maybe_execute (Task 2)
 """
 from __future__ import annotations
+from typing import TYPE_CHECKING
 
 import json
 
@@ -18,6 +19,10 @@ def _pos(coin: str, szi: float):
 # ═══════════════════════════════════════════════════════════════════════════════
 # TASK 1: ClaimsRegistry unit tests
 # ═══════════════════════════════════════════════════════════════════════════════
+
+if TYPE_CHECKING:                      # the annotation below needs the name
+    from pathia.agents.rebalancer_owned import ClaimsRegistry
+
 
 class TestClaimsRegistryUnit:
     """Low-level ClaimsRegistry API tests."""
