@@ -1689,6 +1689,22 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
             if (r.get("meta") or {}).get("breaking"):
                 breaking_today += 1
 
+    def _is_event(meta: Dict[str, Any]) -> bool:
+        """Did this read actually find something?
+
+        A read that saw a coverage spike, or captured headlines, is an event
+        even when `breaking` is False — `breaking` is a threshold on top of the
+        surge, not the whole of it. The page routed on `breaking` alone, so a
+        4.2x surge with headlines was filed under "coverage checked, nothing
+        new" beside the routine polls.
+        """
+        try:
+            surge = float(meta.get("surge_x") or 0.0)
+        except (TypeError, ValueError):
+            surge = 0.0
+        return bool(meta.get("breaking") or (meta.get("top3_titles") or [])
+                    or surge > 1.0)
+
     items: List[Dict[str, Any]] = []
     for r in reversed(rows):
         meta = r.get("meta") or {}
@@ -1708,9 +1724,26 @@ def _news_payload(limit: int = 50, now_ms: Optional[int] = None) -> Dict[str, An
             "title_urls": urls if isinstance(urls, list) else None,
             "shadow": meta.get("shadow"),
             "fresh": int(ts or 0) >= fresh_cutoff,
+            "event": _is_event(meta),
         })
-        if len(items) >= limit:
-            break
+
+    # Budget events and routine polls separately, then re-merge newest-first.
+    #
+    # A flat `limit` over one chronological list let volume decide what the
+    # operator sees. The books write ~200 routine polls a day against a handful
+    # of catalysts, so the newest 50 rows could hold no event at all: measured
+    # 2026-09-01, 48 of 50 were polls that found nothing and the catalysts pane
+    # rendered empty while real surges sat just below the cut.
+    #
+    # Each pane gets its own floor rather than one shared budget. Quiet reads
+    # still need a floor of their own — the watcher pane is how an operator sees
+    # the poller is alive at all, and a page with an empty watcher looks like a
+    # stopped recorder. They coalesce per coin per hour on the client, so a
+    # short tail is enough to show the heartbeat.
+    quiet_cap = max(10, limit // 4)
+    hits = [i for i in items if i["event"]][:limit]
+    quiet = [i for i in items if not i["event"]][:quiet_cap]
+    items = sorted(hits + quiet, key=lambda i: -(i["ts"] or 0))
 
     ctx: List[Dict[str, Any]] = []
     events = _read_log_lines()

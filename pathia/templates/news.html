@@ -135,7 +135,9 @@ function readCard(it) {
     <div class="flex items-baseline gap-2 flex-wrap">
       <span class="kind-tag k-read">coverage</span>
       ${tk(it.coin)} ${sideBadge(it.side)}
-      <span class="badge b-breaking">BREAKING</span>
+      ${it.breaking
+        ? '<span class="badge b-breaking">BREAKING</span>'
+        : '<span class="badge b-chop">SURGE</span>'}
       ${it.shadow ? '<span class="badge b-shadow">NO CAPITAL</span>' : ''}
       <span class="text-[11px] mono" style="color:var(--ink-3)">${stats.join(' · ')}</span>
       <span class="ev-ts mono" style="margin-left:auto">read ${fmtAgo(it.ts)}</span>
@@ -259,7 +261,10 @@ function insertTop(flow, node, animate, cls) {
 // one row, chronological order in → one mutation at the top of its pane
 function ingestRow(r, animate) {
   if (!remember(r)) return;
-  if (r.kind === 'research' || (r.kind === 'read' && r.breaking)) {
+  // `event` is set server-side: breaking, or a surge above baseline, or
+  // headlines captured. Routing on `breaking` alone filed a 4.2x surge with a
+  // headline under "coverage checked, nothing new" beside the routine polls.
+  if (r.kind === 'research' || (r.kind === 'read' && r.event)) {
     catalystCount++;
     insertTop(FLOWS.catalysts, catalystNode(r), animate,
               r.breaking ? 'flash-amber' : 'ev-enter');

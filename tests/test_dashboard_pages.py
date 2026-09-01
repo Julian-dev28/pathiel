@@ -457,6 +457,54 @@ def test_the_news_feed_ignores_a_book_that_can_no_longer_trade(monkeypatch, isol
     assert items[0]["book"] == "news_surge_short"
 
 
+def test_a_surge_with_headlines_is_an_event_even_when_not_breaking(monkeypatch, isolated_ledger):
+    """`breaking` is a threshold applied on top of the surge, not the whole of
+    it. The page routed to its catalysts pane on `breaking` alone, so a 4.0x
+    surge that captured a headline was filed under "coverage checked, nothing
+    new" beside polls that found nothing at all."""
+    _write_news_ledger([
+        {"ts": 3000, "coin": "SURGE", "side": "short",
+         "meta": {"breaking": False, "n_recent": 4, "surge_x": 4.0,
+                  "top3_titles": ["a real headline"]}},
+        {"ts": 2000, "coin": "TITLED", "side": "short",
+         "meta": {"breaking": False, "n_recent": 1, "surge_x": 1.0,
+                  "top3_titles": ["captured a headline"]}},
+        {"ts": 1000, "coin": "POLL", "side": "short",
+         "meta": {"breaking": False, "n_recent": 0, "surge_x": 1.0,
+                  "top3_titles": []}},
+    ])
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    by_coin = {i["coin"]: i for i in db._news_payload(limit=50)["items"]}
+    assert by_coin["SURGE"]["event"] is True      # above baseline
+    assert by_coin["TITLED"]["event"] is True     # captured headlines
+    assert by_coin["POLL"]["event"] is False      # found nothing
+
+
+def test_routine_polls_cannot_crowd_the_catalysts_off_the_page(monkeypatch, isolated_ledger):
+    """The books write ~200 polls a day against a handful of catalysts. Under
+    one flat limit over one chronological list, volume decided what the operator
+    saw: measured 2026-09-01, 48 of the newest 50 rows found nothing and the
+    catalysts pane was empty while real surges sat just below the cut.
+
+    The single oldest row here is the only event, buried under 200 newer polls.
+    It must still arrive."""
+    rows = [{"ts": 1000, "coin": "BURIED", "side": "short",
+             "meta": {"breaking": True, "n_recent": 9, "surge_x": 9.0,
+                      "top3_titles": ["the one that matters"]}}]
+    rows += [{"ts": 2000 + i, "coin": f"POLL{i}", "side": "short",
+              "meta": {"breaking": False, "n_recent": 0, "surge_x": 1.0}}
+             for i in range(200)]
+    _write_news_ledger(rows)
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [])
+    items = db._news_payload(limit=50)["items"]
+    coins = [i["coin"] for i in items]
+    assert "BURIED" in coins, "the only catalyst was crowded out by routine polls"
+    # and the watcher still gets a heartbeat, or a live poller looks stopped
+    quiet = [i for i in items if not i["event"]]
+    assert 10 <= len(quiet) <= 50, len(quiet)
+    assert items == sorted(items, key=lambda i: -(i["ts"] or 0)), "still newest-first"
+
+
 def test_news_payload_title_urls_passthrough(monkeypatch, isolated_ledger):
     """Breaking-coverage headlines carry a source URL (title_urls, parallel
     to titles) when the recorder persisted one (news_catalyst_live.py's
