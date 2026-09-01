@@ -448,6 +448,11 @@ td.num,td[class*="text-right"]{ text-align:right; }
 .tape-bar-sell{ height:100%; background:var(--down); }
 .heat-oi{ color:var(--ink-2); }
 .heat-pctile{ color:var(--ink-3); font-size:12px; }
+.heat-rate{ color:var(--ink-2); font-size:12px; }
+/* Five cells, one more than the shared row shape: coin, track, rank, the rate
+   that rank describes, OI. Stated rather than left to implicit columns, so the
+   rate cannot land in a column the shared rule never sized. */
+.heat-row{ grid-template-columns:64px 1fr auto auto auto; }
 .tape-net{ font-variant-numeric:tabular-nums; }
 
 .legend{ display:flex; gap:16px; font-size:12px; color:var(--ink-2); flex-wrap:wrap; }
@@ -690,7 +695,8 @@ footer.site-foot{
   .kv.hero{ font-size:32px; }
   .masthead-inner{ flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
   nav.tabs-main{ order:3; width:100%; margin-left:0; overflow-x:auto; }
-  .fn-row,.funnel-row,.heat-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
+  .fn-row,.funnel-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
+  .heat-row{ grid-template-columns:52px 1fr auto auto auto; gap:8px; }
 }
 
 /* ── print ────────────────────────────────────────────────────────────── */

@@ -1379,6 +1379,13 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
 
     top_reasons = sorted(reason_counts.items(), key=lambda kv: -kv[1])[:5]
     coins = sorted(coins_seen, key=lambda c: -coins_seen[c])[:40]
+    # Four zero bars and "nothing blocked" read exactly like a quiet market,
+    # which is the one thing they must never be confused with: they are also
+    # what a dead trading loop looks like. The age of the last scan is the
+    # difference, and it is free — the walk already has every event.
+    last_scan = _last_event(events, "scan")
+    last_scan_age_s = (int((now - int(last_scan.get("ts") or 0)) / 1000)
+                       if last_scan else None)
 
     return {
         "window_s": window_s, "since_ts": cutoff,
@@ -1395,6 +1402,8 @@ def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict
         "blocked_executions": blocked_exec,
         "top_reasons": [{"reason": r, "n": n} for r, n in top_reasons],
         "coins": coins,
+        # None = the loop has never scanned in the log we can see.
+        "last_scan_age_s": last_scan_age_s,
     }
 
 
@@ -1499,7 +1508,16 @@ def _funding_heat_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
         except (TypeError, ValueError):
             continue
         fs = sorted(f for _, f, _ in rows)
-        pctile = round(sum(1 for x in fs if x <= cur_f) / len(fs) * 100, 1)
+        # Midrank, not "how many readings are <= this one". Hyperliquid funding
+        # sits pinned at its 1.25e-05 baseline for long stretches, so counting
+        # ties as below put EVERY coin at the 100th percentile whenever its
+        # series was flat there — measured 2026-09-01, BTC/ETH/SOL/XRP/TRUMP all
+        # read exactly 100%ile at once, which is noise dressed as a signal.
+        # Splitting ties gives a coin sitting where it usually sits a 50, and the
+        # same five spread to 67/65/78/84/91.
+        below = sum(1 for x in fs if x < cur_f)
+        tied = sum(1 for x in fs if x == cur_f)
+        pctile = round((below + tied / 2) / len(fs) * 100, 1)
         prior = min(rows, key=lambda r: abs(r[0] - day_ago))
         oi_chg = round((oi_now / prior[2] - 1) * 100, 2) if prior[2] > 0 else None
         out.append({"coin": coin, "funding_now": cur_f, "funding_pctile": pctile,

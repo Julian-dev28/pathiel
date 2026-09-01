@@ -1020,6 +1020,24 @@ def test_funnel_payload_empty_log(monkeypatch):
     d = db._funnel_payload(window_s=86400)
     assert all(s["n"] == 0 for s in d["funnel"])
     assert d["top_reasons"] == [] and d["coins"] == []
+    assert d["last_scan_age_s"] is None
+
+
+def test_an_all_zero_funnel_carries_the_age_of_the_last_scan(monkeypatch):
+    """Four zero bars and "nothing blocked" is what a quiet market looks like.
+    It is also what a dead trading loop looks like, and the operator cannot tell
+    them apart from the bars. The age of the last scan is the only thing that
+    separates them, and it has to survive falling outside the window — that is
+    precisely the case where the loop has been down the whole time."""
+    hour = 3_600_000
+    now = 100 * hour
+    # One scan, eight hours before a 1h window: the window is empty, the loop is
+    # not merely quiet, and the payload has to say so.
+    monkeypatch.setattr(db, "_read_log_lines",
+                        lambda: [{"ts": now - 8 * hour, "event": "scan", "triggers": 3}])
+    d = db._funnel_payload(window_s=3600, now_ms=now)
+    assert all(s["n"] == 0 for s in d["funnel"])
+    assert d["last_scan_age_s"] == 8 * 3600
 
 
 def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
@@ -1111,10 +1129,38 @@ def test_funding_heat_ranks_by_extremity(monkeypatch, tmp_path):
     d = db._funding_heat_payload(now_ms=25 * hour)
     assert d["status"] == "ok"
     by_coin = {r["coin"]: r for r in d["rows"]}
-    assert by_coin["BTC"]["funding_pctile"] == 100.0
+    # 24 readings below, 1 tied (itself): (24 + 0.5) / 25 -> 98.
+    assert by_coin["BTC"]["funding_pctile"] == 98.0
     assert by_coin["BTC"]["oi_change_24h_pct"] is not None
-    # BTC (extreme) ranks ahead of ETH (flat, ~mid percentile) in the top list
+    # ETH never moves, so it is exactly where it always is: the midpoint. Under
+    # the old count-ties-as-below percentile it scored 100.0 — the same as a
+    # genuine new high — and this ranking assertion passed on a coin flip.
+    assert by_coin["ETH"]["funding_pctile"] == 50.0
+    # BTC (extreme) ranks ahead of ETH (flat, mid percentile) in the top list
     assert d["rows"][0]["coin"] == "BTC"
+
+
+def test_a_flat_funding_series_reads_normal_not_extreme(monkeypatch, tmp_path):
+    """Hyperliquid funding sits pinned at its 1.25e-05 baseline for long
+    stretches. Counting ties as "below" then scores every such coin at the 100th
+    percentile at once — measured on the live log 2026-09-01, BTC, ETH, SOL, XRP
+    and TRUMP all read exactly 100%ile in the same snapshot, and the panel was
+    ten rows of maximum alarm meaning nothing. A coin sitting where it always
+    sits is the definition of normal."""
+    log = tmp_path / "funding.jsonl"
+    hour = 3_600_000
+    baseline = 1.25e-05
+    rows = [{"ts": i * hour, "n": 1,
+             "rows": [{"c": c, "f": baseline, "oi": 1000.0, "px": 100.0}
+                      for c in ("BTC", "ETH", "SOL")]}
+            for i in range(25)]
+    _write_funding_log(log, rows)
+    monkeypatch.setattr(db, "_FUNDING_OI_LOG", str(log))
+    d = db._funding_heat_payload(now_ms=25 * hour)
+    assert d["status"] == "ok"
+    assert [r["funding_pctile"] for r in d["rows"]] == [50.0, 50.0, 50.0]
+    # and the rate itself is carried, because a rank alone cannot be sized
+    assert all(r["funding_now"] == baseline for r in d["rows"])
 
 
 def test_funding_heat_missing_file(monkeypatch, tmp_path):
@@ -1333,6 +1379,49 @@ def test_summary_equity_is_true_account_equity(monkeypatch):
     s = db._summary_payload()
     assert s["equity"] == 20.42          # 20.40 perps + 0.02 spot
     assert s["spot_usdc"] == 0.02
+
+
+# ── the Markets panels have to be readable, not just correct ────────────────
+
+
+def _analytics_source():
+    return dict(_template_files())["analytics.html"]
+
+
+def test_both_funding_extremes_are_marked_not_only_the_high_one():
+    """Crowded positioning is the read, and it is crowded at both ends. The old
+    heatColor returned the same token for `<= 20` as for the middle, so a coin in
+    the bottom fifth of its own funding range was painted exactly like one
+    sitting at its median — the panel hid the half of the signal it exists for."""
+    src = _analytics_source()
+    fn = src[src.index("function heatColor("):src.index("function fundingRate(")]
+    assert "pctile >= 80 || pctile <= 20" in fn, "the low extreme must be marked too"
+    assert fn.count("--amber") == 1 and "--ink-3" in fn, "middle must be the muted token"
+
+
+def test_the_heat_row_shows_the_funding_rate_and_not_only_its_rank():
+    """"100%ile" says where funding sits in its own history. It never says what
+    the carry costs, and a trader cannot size a position off a rank."""
+    src = _analytics_source()
+    assert "function fundingRate(" in src
+    assert "r.funding_now" in src, "the rate itself must reach the row"
+    assert ".heat-rate" in _css(), "and it needs a column to land in"
+
+
+def test_an_empty_funnel_says_whether_the_loop_is_down():
+    """Zeros in every stage are ambiguous — quiet market, or dead loop. The page
+    has to resolve that, because the two demand opposite responses."""
+    src = _analytics_source()
+    assert 'id="funnel-dead"' in src
+    assert "d.last_scan_age_s" in src
+    assert "not a quiet market" in src
+    # fmtAge is in HOURS; the payload field is seconds.
+    assert "fmtAge(age / 3600)" in src, "age must be converted before formatting"
+
+
+def _css():
+    return open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                             "pathia", "static", "pathia.css")).read()
 
 
 # ── wiring audit: every page, not just the one being worked on ───────────────

@@ -52,6 +52,7 @@
       <div class="panel-body">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
+            <div id="funnel-dead" class="hidden empty" style="color:var(--amber);margin-bottom:10px"></div>
             <div id="funnel-bars"><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div><div class="skeleton" style="width:100%;height:24px;margin-bottom:9px"></div></div>
           </div>
           <div>
@@ -213,6 +214,17 @@ let funnelWindow = 86400;
 async function loadFunnel() {
   try {
     const d = await (await fetch('/api/dashboard/funnel?window_s=' + funnelWindow)).json();
+    // An all-zero funnel is ambiguous: quiet market, or dead loop. Say which.
+    const dead = document.getElementById('funnel-dead');
+    const age = d.last_scan_age_s;
+    if (d.funnel.every(s => s.n === 0)) {
+      dead.textContent = age == null
+        ? 'The loop has never scanned in the visible log — these zeros are missing data, not a quiet market.'
+        : `The loop has not scanned in ${fmtAge(age / 3600)} — these zeros are the loop being down, not a quiet market.`;
+      dead.classList.remove('hidden');
+    } else {
+      dead.classList.add('hidden');
+    }
     const max = Math.max(1, ...d.funnel.map(s => s.n));
     document.getElementById('funnel-bars').innerHTML = d.funnel.map(s => `
       <div class="funnel-row">
@@ -222,7 +234,9 @@ async function loadFunnel() {
     const reasons = d.top_reasons || [];
     document.getElementById('funnel-reasons').innerHTML = reasons.length
       ? reasons.map(r => `<div class="reason-row"><span>${esc(r.reason)}</span><span class="reason-n">×${r.n}</span></div>`).join('')
-      : '<div class="empty">nothing blocked in this window</div>';
+      : `<div class="empty">${d.funnel.every(s => s.n === 0)
+            ? 'nothing ran in this window, so nothing could be blocked'
+            : 'nothing blocked in this window'}</div>`;
     document.getElementById('funnel-meta').textContent = `${d.blocked_executions} blocked executions`;
     return d;
   } catch (e) { return null; }
@@ -382,10 +396,21 @@ function populateCoinSelect(coins) {
 }
 
 // ── FUNDING / OI HEAT ────────────────────────────────────────────────────────
+// Crowded positioning is the signal, and it is crowded at BOTH ends: a coin in
+// the bottom fifth of its own funding range is as far from normal as one in the
+// top fifth. The old version returned the same token for `<= 20` as for the
+// middle, so a crowded short was painted identically to a coin sitting at its
+// median — the one read the panel exists to surface was the one it hid.
 function heatColor(pctile) {
-  if (pctile >= 80) return tok('--amber');
-  if (pctile <= 20) return tok('--accent');
-  return tok('--accent');
+  if (pctile >= 80 || pctile <= 20) return tok('--amber');
+  return tok('--ink-3');
+}
+// The percentile says where funding sits in its own history; it never says what
+// funding actually costs. Both, or the trader cannot size the carry.
+function fundingRate(f) {
+  if (f == null) return '—';
+  const pct = f * 100;
+  return (pct >= 0 ? '+' : '') + pct.toFixed(5) + '%/h';
 }
 async function loadHeat() {
   try {
@@ -403,7 +428,8 @@ async function loadHeat() {
       <div class="heat-row">
         <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
         <span class="heat-bar-wrap"><span class="heat-bar" style="width:${Math.min(100, Math.abs(r.funding_pctile - 50) * 2)}%;background:${heatColor(r.funding_pctile)}"></span></span>
-        <span class="heat-pctile mono" style="color:${heatColor(r.funding_pctile)}">${r.funding_pctile.toFixed(0)}%ile</span>
+        <span class="heat-pctile mono" style="color:${heatColor(r.funding_pctile)}" title="where this coin's funding sits in its own 30d range — 50 is exactly normal for it">${r.funding_pctile.toFixed(0)}%ile</span>
+        <span class="heat-rate mono" title="the funding rate being paid right now, per hour">${esc(fundingRate(r.funding_now))}</span>
         <span class="heat-oi mono">OI ${r.oi_change_24h_pct == null ? '—' : fmtPct(r.oi_change_24h_pct)}</span>
       </div>`).join('') || '<div class="empty">no coins with enough history yet</div>';
   } catch (e) { reportRefreshFailure('loadHeat', e); }
