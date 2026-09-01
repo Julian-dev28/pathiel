@@ -241,10 +241,13 @@ nav.tabs-main{ display:flex; align-items:stretch; gap:26px; }
   border-radius:var(--radius);
   padding:20px;
 }
-.panel,.pane,.panel-wrap{
+.panel,.pane{
   background:var(--surface); border:1px solid var(--rule);
   border-radius:var(--radius);
 }
+/* A wrapper, not a surface. Giving it the panel border drew a second box
+   inside every panel on /analytics. */
+.panel-wrap{ background:transparent; border:0; }
 .panel-head,.pane-head{
   padding:12px 16px; border-bottom:1px solid var(--rule);
   display:flex; align-items:baseline; gap:10px;

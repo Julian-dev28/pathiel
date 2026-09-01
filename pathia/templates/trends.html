@@ -269,7 +269,7 @@ function bandHtml(px, f) {
       <div class="now" style="left:${x(px)}%"></div>
       <div class="mid" style="left:${x(f.p50)}%;background:${f.p50 >= px ? 'var(--up)' : 'var(--down)'}"></div>
     </div>
-    <div class="mono text-[9.5px] dim mt-1">${price(f.p10)} · <span class="${sgn(f.drift_pct)}">${price(f.p50)}</span> · ${price(f.p90)}</div>
+    <div class="mono text-[9.5px] dim mt-1" title="10th percentile · median · 90th percentile">low ${price(f.p10)} · <span class="${sgn(f.drift_pct)}">mid ${price(f.p50)}</span> · high ${price(f.p90)}</div>
   </div>`;
 }
 
@@ -461,12 +461,10 @@ function majorCard(r, closes) {
       </div>
       <div class="mono text-[10.5px] mut">
         7d <span class="${sgn(r.ret_7d)}">${pct(r.ret_7d)}</span> ·
-        30d <span class="${sgn(r.ret_30d)}">${pct(r.ret_30d)}</span> ·
-        eff ${num(r.efficiency)}
+        30d <span class="${sgn(r.ret_30d)}">${pct(r.ret_30d)}</span>
       </div>
       <div class="mt-2">${bandHtml(r.px, f)}</div>
-      <div class="mono text-[10px] dim mt-1">p(up) ${num(f.prob_up, 2)} · band ±${num(f.sigma_h_pct, 1)}%
-        ${r.resid_7d ? ` · vs ${esc(r.bench || '')} ${pct(r.resid_7d, 1)}` : ''}</div>
+      <div class="mono text-[10px] dim mt-1">next week ±${num(f.sigma_h_pct, 1)}%</div>
     </div>`;
 }
 

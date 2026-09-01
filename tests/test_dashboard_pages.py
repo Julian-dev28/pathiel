@@ -1663,3 +1663,24 @@ def test_the_ticker_table_shows_a_head_not_every_row(client):
     page = client.get("/trends").text
     assert "HL_HEAD" in page and "HL_SHOW_ALL" in page
     assert 'id="hl-more"' in page, "no way to see the rest"
+
+
+def test_no_chart_can_grow_past_its_container():
+    """A canvas with no CSS width takes its LAYOUT width from its bitmap
+    width, and every chart here sets `canvas.width = width * dpr` on each
+    draw — so each redraw multiplied the element's box by the pixel ratio.
+    The coin chart reached 2,540px inside a 1,440px page and put a scrollbar
+    on the document."""
+    assert "canvas{ max-width:100%" in CSS.replace(" ", " "), (
+        "no global cap on canvas width")
+    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathia" / "templates"
+    for name in ("landing", "analytics"):
+        src = (tpl / f"{name}.html").read_text()
+        if "canvas.width" in src:
+            assert "parentElement.clientWidth" in src, (
+                f"{name}.html sizes a canvas from its own rect, which feeds "
+                f"its own growth back into the next draw")
+
+
+def test_a_wrapper_does_not_draw_a_second_panel_border():
+    assert ".panel-wrap{ background:transparent; border:0; }" in CSS
