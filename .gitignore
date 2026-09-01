@@ -167,7 +167,14 @@ backtest-trades.csv
 # consolidated runtime state dir (PATHIA_STATE_DIR, 2026-07-09)
 .state/
 
-# W-U re-fetchable data caches (regenerate: W-U1_unlock_backtest.py)
-research/alpha_swarm/hypotheses/W-U_cache_daily.json
-research/alpha_swarm/hypotheses/W-U_cache_emissions_index.json
-research/alpha_swarm/hypotheses/W-R_cache_hourly.json
+# alpha_swarm re-fetchable data caches. These are downloaded candles, funding,
+# filings and event tables — regenerate by rerunning the hypothesis script that
+# built them (W-U1_unlock_backtest.py for the W-U set, and so on). They were
+# tracked until 2026-09-01, which put 83MB of throwaway JSON in every clone; the
+# three W-U/W-R entries that used to be listed here by name are covered by the
+# patterns below. Findings, specs, hypothesis code and *_results.json stay
+# tracked — those are the evidence, and test_evidence_doctrine reads them.
+research/alpha_swarm/**/*_cache_*.json
+research/alpha_swarm/**/*_cache_texts/
+research/alpha_swarm/**/*_events.json
+research/alpha_swarm/**/*_dataset.json
