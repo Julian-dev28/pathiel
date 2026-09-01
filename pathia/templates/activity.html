@@ -498,16 +498,25 @@ function tradeEmptyCopy(session) {
   // "nothing actionable" is only true with zero open positions — with real
   // money held, silence in the event feed means "holding quiet", not
   // "nothing to see" (operator: this line read as wrong with 2 open positions).
+  // Zero scans is not "scanning normally". That sentence asserted the engine
+  // was healthy using numbers that say the opposite, at exactly the moment an
+  // operator is looking at an empty feed and asking whether the loop is alive.
+  const tally = `${scans} scans, ${blocks} blocks`;
+  if (!scans) {
+    return open > 0
+      ? `${open} position${open === 1 ? '' : 's'} open, but the engine has not completed a scan since ${since} — check the loop is running`
+      : `the engine has not completed a scan since ${since} — this is a stopped loop, not a quiet market`;
+  }
   return open > 0
-    ? `${open} position${open === 1 ? '' : 's'} open, holding quiet — no new opens/closes since ${since} (${scans} scans, ${blocks} blocks)`
-    : `nothing actionable since ${since} — engine scanning normally (${scans} scans, ${blocks} blocks)`;
+    ? `${open} position${open === 1 ? '' : 's'} open, holding quiet — no new opens/closes since ${since} (${tally})`
+    : `nothing actionable since ${since} — engine scanning normally (${tally})`;
 }
 function paneEmpties(session) {
   const copy = {
     trade: tradeEmptyCopy(session),
     research: 'no verdicts yet in this window',
     books: 'no book cycles yet in this window',
-    machine: 'quiet',
+    machine: 'no restarts, halts or errors in this window',
   };
   for (const [name, flow] of Object.entries(FLOWS)) {
     if (!flow.children.length) {

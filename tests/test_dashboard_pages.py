@@ -1504,6 +1504,60 @@ def test_summary_equity_is_true_account_equity(monkeypatch):
     assert s["spot_usdc"] == 0.02
 
 
+# ── a page must not assert health it cannot verify ──────────────────────────
+
+
+def _page(name):
+    return dict(_template_files())[name]
+
+
+def test_no_page_reports_an_empty_funnel_without_saying_why():
+    """Four zero bars are what a quiet market looks like and what a stopped loop
+    looks like. Both pages that draw the funnel have to resolve that, or the one
+    reading an empty deck cannot tell which situation they are in."""
+    for name in ("analytics.html", "landing.html"):
+        src = _page(name)
+        assert "last_scan_age_s" in src, f"{name} ignores the liveness field"
+        assert "not a quiet market" in src or "the loop being down" in src, name
+
+
+def test_the_activity_feed_does_not_call_a_stopped_loop_normal():
+    """tradeEmptyCopy said "engine scanning normally (0 scans, 0 blocks)" — an
+    assertion of health built from the numbers that disprove it, shown exactly
+    when an operator is staring at an empty feed asking if the loop is alive."""
+    src = _page("activity.html")
+    assert "not a quiet market" in src
+    i = src.index("function tradeEmptyCopy")
+    body = src[i:src.index("function paneEmpties")]
+    assert "if (!scans)" in body, "the zero-scan case must be handled first"
+    # rindex: the phrase also appears in the comment above the guard.
+    assert body.index("if (!scans)") < body.rindex("scanning normally"), (
+        "the health claim must sit behind the zero-scan guard")
+
+
+def test_the_dashboard_does_not_claim_a_scan_that_never_happened():
+    """last_tick_age_s is null before the loop ever checks in. The strip printed
+    "0 triggers on last scan", which describes a scan that did not occur."""
+    src = _page("landing.html")
+    assert "s.last_tick_age_s == null ? 'No scan yet'" in src
+
+
+def test_the_dashboard_age_format_scales_past_minutes():
+    """fmtAge stopped at minutes, so a loop down eight hours read "480m ago" —
+    the one reading where the number most needs to land."""
+    src = _page("landing.html")
+    fn = src[src.index("const fmtAge = s =>"):src.index("const fmtAgeMs")]
+    assert "'h'" in fn and "'d'" in fn, "must scale to hours and days"
+
+
+def test_the_off_switch_label_never_shouts():
+    """The kill button is served as "Stop trading" and the script reset it to
+    "STOP TRADING", so it changed shape after the first press."""
+    src = _page("landing.html")
+    assert "STOP TRADING" not in src and "CONFIRM STOP" not in src
+    assert "Stop trading" in src and "Confirm stop" in src
+
+
 # ── the Markets panels have to be readable, not just correct ────────────────
 
 

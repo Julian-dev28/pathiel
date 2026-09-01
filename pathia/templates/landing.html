@@ -264,7 +264,17 @@
 
 <script>
 const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
-const fmtAge = s => s == null ? '—' : (s < 60 ? s + 's' : Math.floor(s / 60) + 'm ago');
+// Scales past minutes. It stopped at minutes, so a loop that had been down
+// eight hours read "480m ago" — technically true, and the one case where the
+// number most needs to land. The unit is the age only; callers add "ago" if
+// their sentence wants it.
+const fmtAge = s => {
+  if (s == null) return '—';
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 172800) return Math.floor(s / 3600) + 'h';
+  return Math.floor(s / 86400) + 'd';
+};
 const fmtK = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
 const dollarHTML = v => `<span class="dollar-value">${esc(v)}</span><span class="dollar-mask">•••</span>`;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -509,8 +519,13 @@ async function refreshSummary() {
     setMoney(pnl, s.daily_pnl, true);
     document.getElementById('kpi-pnl-pct').textContent = fmtPct(s.daily_pnl_pct);
     tween(document.getElementById('kpi-open'), s.open_positions ?? 0, v => String(Math.round(v)));
-    document.getElementById('kpi-tick').textContent = fmtAge(s.last_tick_age_s);
-    document.getElementById('kpi-tick-detail').textContent = (s.last_scan_triggers ?? 0) + ' triggers on last scan';
+    document.getElementById('kpi-tick').textContent =
+      s.last_tick_age_s == null ? '—' : fmtAge(s.last_tick_age_s) + ' ago';
+    // last_tick_age_s is null when the loop has never checked in. Saying
+    // "0 triggers on last scan" then claims a scan that never happened.
+    document.getElementById('kpi-tick-detail').textContent =
+      s.last_tick_age_s == null ? 'No scan yet'
+                                : (s.last_scan_triggers ?? 0) + ' triggers on last scan';
     const pill = document.getElementById('status-pill');
     pill.textContent = s.status;
     pill.className = 'pill ' + s.status;
@@ -536,12 +551,12 @@ let killArmed = false;
     }
     if (!killArmed) {
       killArmed = true;
-      btn.textContent = 'CONFIRM STOP';
+      btn.textContent = 'Confirm stop';
       out.textContent = 'stops the trading loop. Open positions stay open and ' +
                         'keep running their DSL exits — this does not flatten.';
       setTimeout(() => {
         if (!killArmed) return;
-        killArmed = false; btn.textContent = 'STOP TRADING'; out.textContent = '';
+        killArmed = false; btn.textContent = 'Stop trading'; out.textContent = '';
       }, 8000);
       return;
     }
@@ -557,7 +572,7 @@ let killArmed = false;
     } catch (e) {
       out.textContent = 'stop failed: ' + String(e);
     }
-    btn.disabled = false; btn.textContent = 'STOP TRADING';
+    btn.disabled = false; btn.textContent = 'Stop trading';
     refreshRisk();
   });
 })();
@@ -757,8 +772,16 @@ async function refreshFunnel() {
         <div><div class="fn-bar" style="width:${s.n ? Math.max(2, 100 * Math.sqrt(s.n / max)).toFixed(1) : 0}%;opacity:${OP[i] ?? 1}"></div></div>
         <span class="fn-n">${fmtK(s.n)}</span>
       </div>`).join('');
-    document.getElementById('funnel-meta').textContent =
-      f.blocked_executions ? `${f.blocked_executions} entries refused by gates` : '';
+    // Keep the window in the meta. Overwriting it with '' when nothing was
+    // blocked left the reader with bars and no idea what period they cover.
+    const age = f.last_scan_age_s;
+    const dead = stages.length && stages.every(s => !s.n);
+    document.getElementById('funnel-meta').innerHTML = dead
+      ? `<span style="color:var(--amber)">${age == null
+            ? 'Last 24 hours — the loop has never scanned, so these zeros are missing data'
+            : `Last 24 hours — the loop has not scanned in ${esc(fmtAge(age))}, so these zeros are the loop being down`}</span>`
+      : 'Last 24 hours' + (f.blocked_executions
+            ? ` · ${f.blocked_executions} entries refused by gates` : '');
     const rs = f.top_reasons || [];
     document.getElementById('funnel-reasons').innerHTML = rs.length
       ? rs.map(r => `<span class="rs">${esc(r.reason)} <b>${r.n}</b></span>`).join('')

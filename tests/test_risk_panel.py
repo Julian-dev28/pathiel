@@ -180,7 +180,12 @@ def test_the_landing_page_actually_renders_the_risk_numbers(client):
 def test_the_page_carries_an_off_switch_that_says_what_it_does(client):
     body = client.get("/").text
     assert "kill-btn" in body and "/api/agent/stop" in body
-    assert "CONFIRM STOP" in body, "a live kill needs a confirm step"
+    # Asserted on the exact string "CONFIRM STOP" until 2026-09-02, which pinned
+    # the shouting rather than the safeguard. The button is sentence case like
+    # every other control on the page; what must not change is that a live kill
+    # takes two presses.
+    assert "Confirm stop" in body, "a live kill needs a confirm step"
+    assert "CONFIRM STOP" not in body, "controls are sentence case, not shouted"
     assert "does not flatten" in body, (
         "the button must say it leaves positions open — an off switch people "
         "misread is worse than no off switch")
