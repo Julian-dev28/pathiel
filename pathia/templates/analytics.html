@@ -140,15 +140,13 @@
     <!-- WHALE + NEWS TAPES -->
     <section class="card p-0 panel" id="panel-tapes">
       <button class="panel-head" data-panel="tapes" type="button" aria-expanded="true">
-        <span class="sec-label">whale + news tapes</span>
+        <span class="sec-label">news surge tape</span>
         <span class="pmeta mono" id="tapes-meta"></span>
         <span class="chev"></span>
       </button>
       <div class="panel-wrap" id="wrap-tapes">
         <div class="panel-body">
-          <div class="sec-label mb-2" style="font-size:9px">whale flow · last 24h</div>
-          <div id="whale-body" class="mb-4"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
-          <div class="sec-label mb-2" style="font-size:9px">news coverage · last 24h</div>
+          <div class="text-[11px] mb-3" style="color:var(--ink-3)">Coins the live news books saw a coverage surge on in the last 24h. The line is each read's surge multiple against that coin's own baseline.</div>
           <div id="news-body"><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div><div class="skeleton" style="width:100%;height:14px;margin-bottom:7px"></div></div>
         </div>
       </div>
@@ -161,16 +159,6 @@
 </div>
 
 <script>
-const fmtMoney = v => (v < 0 ? '-$' : '$') + Math.abs(v ?? 0).toFixed(2);
-// Whale flow runs into the millions — fmtMoney's fixed 2dp reads as
-// "-$1310471.00". Abbreviate past $10k, keep small values exact.
-const fmtMoneyCompact = v => {
-  const n = Number(v ?? 0), a = Math.abs(n), sign = n < 0 ? '-$' : '$';
-  if (a >= 1e9) return sign + (a / 1e9).toFixed(2) + 'B';
-  if (a >= 1e6) return sign + (a / 1e6).toFixed(2) + 'M';
-  if (a >= 1e4) return sign + (a / 1e3).toFixed(1) + 'k';
-  return sign + a.toFixed(2);
-};
 const fmtAge = h => h == null ? '—' : (h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(1) + 'h' : (h / 24).toFixed(1) + 'd');
 const fmtNum = v => {
   if (v == null || typeof v !== 'number' || !isFinite(v)) return '—';
@@ -446,36 +434,22 @@ function sparkline(points) {
 async function loadTapes() {
   try {
     const d = await (await fetch('/api/dashboard/tapes')).json();
-    const whale = d.whale || {}, news = d.news || {};
-    const wbody = document.getElementById('whale-body');
-    if (whale.status === 'accruing' || !(whale.rows || []).length) {
-      wbody.innerHTML = '<div class="empty">accruing — no whale reads in the last 24h yet</div>';
-    } else {
-      const maxAbs = Math.max(1, ...whale.rows.map(r => Math.abs(r.net_usd)));
-      wbody.innerHTML = whale.rows.map(r => {
-        const buyPct = Math.min(100, Math.abs(r.buy_usd) / maxAbs * 100);
-        const sellPct = Math.min(100, Math.abs(r.sell_usd) / maxAbs * 100);
-        return `<div class="tape-row">
-          <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
-          <span class="tape-bar-wrap"><span class="tape-bar-buy" style="width:${buyPct}%"></span><span class="tape-bar-sell" style="width:${sellPct}%"></span></span>
-          <span class="tape-net mono" style="color:${r.net_usd >= 0 ? 'var(--up)' : 'var(--down)'}" title="${fmtMoney(r.net_usd)}">${fmtMoneyCompact(r.net_usd)}</span>
-        </div>`;
-      }).join('');
-    }
+    const news = d.news || {};
     const nbody = document.getElementById('news-body');
-    if (news.status === 'accruing' || !(news.rows || []).length) {
-      nbody.innerHTML = '<div class="empty">accruing — no news reads in the last 24h yet</div>';
+    if (!(news.rows || []).length) {
+      nbody.innerHTML = '<div class="empty">no coverage surge on any live book in the last 24h</div>';
     } else {
       nbody.innerHTML = news.rows.map(r => `
         <div class="tape-row">
           <span class="tk" style="width:56px;text-align:center">${esc(r.coin)}</span>
           ${sparkline(r.surge_series)}
-          <span class="mono text-[10.5px]" style="color:var(--ink-3)">${r.reads} read${r.reads === 1 ? '' : 's'}</span>
+          <span class="mono text-[10.5px]" style="color:${r.peak_surge >= 2 ? 'var(--amber)' : 'var(--ink-3)'}" title="highest surge multiple seen on this coin in the window">${(r.peak_surge ?? 0).toFixed(1)}x</span>
+          <span class="mono text-[10.5px]" style="color:var(--ink-3)" title="${esc((r.books || []).join(', '))}">${r.reads} read${r.reads === 1 ? '' : 's'}</span>
           ${r.breaking ? '<span class="badge b-breaking" style="margin-left:auto">BREAKING</span>' : ''}
         </div>`).join('');
     }
     document.getElementById('tapes-meta').textContent =
-      `${(whale.rows || []).length} whale · ${(news.rows || []).length} news`;
+      `${(news.rows || []).length} coin${(news.rows || []).length === 1 ? '' : 's'}`;
   } catch (e) { reportRefreshFailure('loadTapes', e); }
 }
 

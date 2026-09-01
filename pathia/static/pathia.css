@@ -444,8 +444,6 @@ td.num,td[class*="text-right"]{ text-align:right; }
 .fn-bar,.funnel-bar,.heat-bar,.fill{
   height:100%; background:var(--accent); border-radius:1px;
 }
-.tape-bar-buy{ height:100%; background:var(--up); }
-.tape-bar-sell{ height:100%; background:var(--down); }
 .heat-oi{ color:var(--ink-2); }
 .heat-pctile{ color:var(--ink-3); font-size:12px; }
 .heat-rate{ color:var(--ink-2); font-size:12px; }

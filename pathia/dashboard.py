@@ -1527,37 +1527,64 @@ def _funding_heat_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
 
 
 def _tapes_payload(now_ms: Optional[int] = None) -> Dict[str, Any]:
-    """Last 24h of news_catalyst reads (surge sparkline per coin, breaking
-    flagged). Local shadow-ledger only. (whale tape removed 2026-07-22 —
-    whale_flow REFUTED.)"""
+    """Last 24h of news-surge reads, per coin, from the books that can trade
+    today.
+
+    The sources are derived from `_KNOWN_BOOK_NAMES`, never named inline. This
+    payload spent six weeks reading `news_catalyst`, a book demolished
+    2026-07-18 and listed in `_REMOVED_BOOKS` seventy lines above — so the panel
+    rendered "accruing, no reads yet" about a ledger nothing had written since
+    July, while `news_surge_multi` and `news_surge_short` were writing all day.
+    Deriving the list means a book that is removed stops being read the moment
+    it leaves `_BOOKS`, instead of the next time somebody notices.
+
+    A book joins the tape by recording `meta.surge_x`; nothing else has to be
+    registered. Local shadow-ledger reads only, no network.
+
+    The whale tape is gone rather than empty: `whale_flow` was REFUTED and
+    removed 2026-07-22, so its half of the panel could never fill, and the page
+    described a permanently dead lane as "accruing".
+    """
     from pathia.agents import shadow_ledger
 
     now = int(now_ms if now_ms is not None else time.time() * 1000)
     cutoff = now - _DAY_MS
 
-    whale = []  # whale_flow recorder REFUTED + removed 2026-07-22
-
     news_by_coin: Dict[str, Dict[str, Any]] = {}
-    news_rows = sorted(
-        (r for r in shadow_ledger.load("news_catalyst") if int(r.get("ts") or 0) >= cutoff),
-        key=lambda r: int(r.get("ts") or 0))
-    for r in news_rows:
-        meta = r.get("meta") or {}
-        coin = r.get("coin")
-        if not coin:
+    for book in sorted(_KNOWN_BOOK_NAMES):
+        try:
+            records = shadow_ledger.load(book)
+        except Exception:
             continue
-        agg = news_by_coin.setdefault(coin, {"points": [], "breaking": False})
-        agg["points"].append(round(float(meta.get("surge_x") or 0.0), 2))
-        if meta.get("breaking"):
-            agg["breaking"] = True
+        for r in sorted(records, key=lambda r: int(r.get("ts") or 0)):
+            if int(r.get("ts") or 0) < cutoff:
+                continue
+            meta = r.get("meta") or {}
+            coin = r.get("coin")
+            if not coin or "surge_x" not in meta:
+                continue
+            agg = news_by_coin.setdefault(coin, {"points": [], "breaking": False,
+                                                 "books": set()})
+            agg["points"].append(round(float(meta.get("surge_x") or 0.0), 2))
+            agg["books"].add(book)
+            if meta.get("breaking"):
+                agg["breaking"] = True
+
+    # Ranked by the biggest surge seen, NOT by how many times a coin was read.
+    # Read count measures how often the poller looked at a coin, so ranking on
+    # it put SKR (80 reads, every one of them surge 0.0) above coins with a
+    # genuine spike — the panel led with the most-polled coin instead of the
+    # most newsworthy one. Peak surge is the number the tape exists to show, so
+    # it also rides along on the row rather than hiding inside the sparkline.
     news = sorted(
         ({"coin": c, "surge_series": v["points"][-20:], "breaking": v["breaking"],
-          "reads": len(v["points"])} for c, v in news_by_coin.items()),
-        key=lambda r: (not r["breaking"], -r["reads"]))[:15]
+          "reads": len(v["points"]), "books": sorted(v["books"]),
+          "peak_surge": round(max(v["points"]), 2) if v["points"] else 0.0}
+         for c, v in news_by_coin.items()),
+        key=lambda r: (not r["breaking"], -r["peak_surge"], -r["reads"]))[:15]
 
-    return {"whale": {"rows": whale, "since": cutoff, "status": "removed"},
-            "news": {"rows": news, "since": cutoff,
-                     "status": "ok" if news_rows else "accruing"}}
+    return {"news": {"rows": news, "since": cutoff,
+                     "status": "ok" if news else "quiet"}}
 
 
 def _coin_chart_payload(coin: str, interval: str = "1h") -> Dict[str, Any]:

@@ -1169,30 +1169,68 @@ def test_funding_heat_missing_file(monkeypatch, tmp_path):
     assert d["status"] == "accruing" and d["count"] == 0 and d["since"] is None
 
 
-def test_tapes_payload_whale_and_news(monkeypatch, tmp_path):
+def test_the_news_tape_reads_live_books_and_ignores_removed_ones(monkeypatch, tmp_path):
+    """_tapes_payload read `news_catalyst` by name for six weeks after that book
+    was demolished (2026-07-18) and added to _REMOVED_BOOKS, so /analytics said
+    "accruing — no news reads in the last 24h yet" while news_surge_multi and
+    news_surge_short wrote all day. The sources are now derived from
+    _KNOWN_BOOK_NAMES, so a removed book stops being read the moment it leaves
+    _BOOKS. This test is the proof: the removed ledger is on disk with a fresh,
+    breaking record and must still not reach the tape."""
     from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     now = 10_000_000_000
-    with open(tmp_path / "whale_flow.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": now - 1000, "coin": "BTC", "side": "long",
-                             "meta": {"buy_usd": 500000, "sell_usd": 100000, "net_usd": 400000}}) + "\n")
-        fh.write(json.dumps({"ts": now - 30 * 3_600_000, "coin": "OLD", "side": "long",
-                             "meta": {"buy_usd": 1, "sell_usd": 1, "net_usd": 0}}) + "\n")  # >24h, excluded
-    with open(tmp_path / "news_catalyst.jsonl", "w") as fh:
-        fh.write(json.dumps({"ts": now - 500, "coin": "ARB", "side": "long",
+    with open(tmp_path / "news_catalyst.jsonl", "w") as fh:      # REMOVED book
+        fh.write(json.dumps({"ts": now - 500, "coin": "GHOST", "side": "long",
+                             "meta": {"surge_x": 9.9, "breaking": True}}) + "\n")
+    with open(tmp_path / "whale_flow.jsonl", "w") as fh:         # REMOVED book
+        fh.write(json.dumps({"ts": now - 500, "coin": "GHOST2", "side": "long",
+                             "meta": {"surge_x": 8.8}}) + "\n")
+    with open(tmp_path / "news_surge_multi.jsonl", "w") as fh:   # LIVE book
+        fh.write(json.dumps({"ts": now - 500, "coin": "ARB", "side": "short",
                              "meta": {"surge_x": 4.2, "breaking": True}}) + "\n")
+        fh.write(json.dumps({"ts": now - 30 * 3_600_000, "coin": "OLD", "side": "short",
+                             "meta": {"surge_x": 1.0}}) + "\n")   # >24h, excluded
     d = db._tapes_payload(now_ms=now)
-    # whale_flow REFUTED + removed 2026-07-22 -> whale tape is always empty now
-    assert d["whale"]["status"] == "removed" and d["whale"]["rows"] == []
-    assert d["news"]["rows"][0]["coin"] == "ARB" and d["news"]["rows"][0]["breaking"] is True
+    coins = [r["coin"] for r in d["news"]["rows"]]
+    assert coins == ["ARB"], coins
+    assert d["news"]["rows"][0]["breaking"] is True
+    assert d["news"]["rows"][0]["books"] == ["news_surge_multi"]
+    # the removed whale lane is gone from the payload, not merely empty
+    assert "whale" not in d
 
 
-def test_tapes_payload_empty_is_accruing(monkeypatch, tmp_path):
+def test_every_book_the_tape_reads_can_still_trade_today():
+    """The structural half of the fix above: no name the tape draws from may be
+    a book the dashboard already knows is gone."""
+    assert db._KNOWN_BOOK_NAMES.isdisjoint(db._REMOVED_BOOKS)
+
+
+def test_the_news_tape_ranks_by_surge_not_by_how_often_a_coin_was_polled(monkeypatch, tmp_path):
+    """Read count measures how often the poller looked at a coin, not whether
+    anything happened to it. Ranking on it led the panel with SKR — 80 reads, no
+    spike — above coins with real coverage surges."""
+    from pathia.agents import shadow_ledger
+    monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
+    now = 10_000_000_000
+    with open(tmp_path / "news_surge_multi.jsonl", "w") as fh:
+        for _ in range(40):                       # polled constantly, never spikes
+            fh.write(json.dumps({"ts": now - 500, "coin": "POLLED", "side": "short",
+                                 "meta": {"surge_x": 0.0}}) + "\n")
+        fh.write(json.dumps({"ts": now - 500, "coin": "SPIKE", "side": "short",
+                             "meta": {"surge_x": 9.0}}) + "\n")
+    d = db._tapes_payload(now_ms=now)
+    rows = d["news"]["rows"]
+    assert [r["coin"] for r in rows] == ["SPIKE", "POLLED"]
+    assert rows[0]["peak_surge"] == 9.0 and rows[1]["peak_surge"] == 0.0
+    assert rows[1]["reads"] == 40          # still reported, just not what ranks
+
+
+def test_tapes_payload_with_nothing_recorded_is_quiet(monkeypatch, tmp_path):
     from pathia.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     d = db._tapes_payload()
-    assert d["whale"]["status"] == "removed" and d["whale"]["rows"] == []
-    assert d["news"]["status"] == "accruing" and d["news"]["rows"] == []
+    assert d["news"]["status"] == "quiet" and d["news"]["rows"] == []
 
 
 def test_coin_chart_payload_no_coin():
@@ -1253,14 +1291,16 @@ def test_analytics_page_markers(client):
     r = client.get("/analytics").text
     for marker in ("panel-funnel", "panel-league", "panel-chart", "panel-heat",
                   "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
-                  "heat-body", "whale-body", "news-body", "pathia-an-"):
+                  "heat-body", "news-body", "pathia-an-"):
         assert marker in r, f"missing {marker}"
     # muted from the nav, still served — the page must keep working
     assert 'data-nav="/analytics"' in r
-    # whale $ runs into the millions — must render abbreviated ($1.31M), not
-    # the raw fixed-2dp form ($1310471.00) (operator screenshot 2026-07-15)
-    assert "fmtMoneyCompact" in r
-    assert "tape-net" in r and "fmtMoneyCompact(r.net_usd)" in r
+    # The whale tape is gone, not hidden: whale_flow was REFUTED and removed
+    # 2026-07-22, and the page kept rendering a section for it that said
+    # "accruing" — a permanently dead lane described as one still filling up.
+    # Its money formatters went with it; nothing else used them.
+    assert "whale" not in r
+    assert "fmtMoneyCompact" not in r and "tape-bar-buy" not in r
     # the dead-book branch is GONE (operator order 2026-07-17: refuted books
     # are removed from the UI, not rendered with a special badge)
     assert "b-dead" not in r and "row-dead" not in r
