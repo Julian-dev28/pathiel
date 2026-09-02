@@ -527,7 +527,19 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
     # so moving money in or out does not move the number.
     flows = capital_flows.load_flows()
     cover = capital_flows.coverage(curve, flows)
-    if cover.get("covered"):
+    # A drawdown needs a peak and a trough. With fewer than two samples there is
+    # no path to measure, and every formula below returns exactly 0.0 — which
+    # the panel then renders as a green "+0.00%". Measured 2026-09-02: the curve
+    # held ONE point ($12.93) and the panel reported 0.00% drawdown and 0.00%
+    # max drawdown on an account holding $12.94 against $117.38 of net
+    # deposits, down 89%. Zero-because-unmeasured must not be presented as
+    # zero-because-flat; that is the flattering misreport this panel exists to
+    # stop, arriving through the one door nothing was watching.
+    too_few = len(equities) < 2
+    if too_few:
+        dd_now_pct = max_dd_pct = None
+        dd_basis = "insufficient_history"
+    elif cover.get("covered"):
         nav = capital_flows.nav_series(curve, flows)
         dd = capital_flows.drawdown_from_nav(nav)
         dd_now_pct, max_dd_pct = dd["drawdown_pct"], dd["max_drawdown_pct"]
@@ -563,9 +575,10 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
 
     return {
         "equity": summary.get("equity"),
-        "peak_equity": round(peak, 2),
-        "drawdown_pct": round(dd_now_pct, 2),
-        "max_drawdown_pct": round(max_dd_pct, 2),
+        "peak_equity": round(peak, 2) if equities else None,
+        # None, never 0.0, when there is not enough history to measure.
+        "drawdown_pct": round(dd_now_pct, 2) if dd_now_pct is not None else None,
+        "max_drawdown_pct": round(max_dd_pct, 2) if max_dd_pct is not None else None,
         "win_rate": round(win_rate, 4) if win_rate is not None else None,
         "trades_graded": len(graded),
         "fee_drag_pct": round(fee_drag_pct, 2) if fee_drag_pct is not None else None,
@@ -592,10 +605,17 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
                                     if not str(f.get("kind", "")).startswith("_")), 2),
         "flow_events": sum(1 for f in flows
                            if not str(f.get("kind", "")).startswith("_")),
-        "drawdown_caveat": ("" if cover.get("covered") else
-                            "equity decline, not necessarily a trading loss: "
-                            f"{cover.get('reason')} — run "
-                            "scripts/record_capital_flows.py"),
+        # Precedence matters: "we cannot measure this" outranks "we measured it
+        # on a basis that cannot tell a withdrawal from a loss".
+        "drawdown_caveat": (
+            (f"not enough equity history to measure a drawdown "
+             f"({len(equities)} point{'' if len(equities) == 1 else 's'} in "
+             f"{round(range_s / 86400)}d) — this is not a flat account, it is an "
+             f"unmeasured one") if too_few
+            else "" if cover.get("covered") else
+            "equity decline, not necessarily a trading loss: "
+            f"{cover.get('reason')} — run "
+            "scripts/record_capital_flows.py"),
     }
 
 

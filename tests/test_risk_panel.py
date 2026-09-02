@@ -97,11 +97,34 @@ def test_kill_switch_distance_is_zero_when_green_and_one_at_the_floor(monkeypatc
 
 
 def test_empty_history_does_not_divide_by_zero(monkeypatch):
+    """The original point of this test was that no history must not raise. It
+    also asserted drawdown_pct == 0.0, which pinned the defect: an account with
+    nothing measured reported the same number as an account measured and found
+    flat. Unknown is None, the way win_rate has always been."""
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     r = db._risk_payload()
-    assert r["drawdown_pct"] == 0.0 and r["win_rate"] is None
+    assert r["drawdown_pct"] is None and r["win_rate"] is None
+    assert r["max_drawdown_pct"] is None
+    assert r["drawdown_basis"] == "insufficient_history"
+
+
+def test_one_equity_sample_is_not_a_flat_account(monkeypatch):
+    """Measured 2026-09-02 on the live state: the curve held ONE point ($12.93)
+    and the panel reported 0.00% drawdown and 0.00% max drawdown while the
+    account held $12.94 against $117.38 of net deposits, down 89%. Every
+    drawdown formula returns exactly 0.0 over a single sample, and the page
+    rendered that as a green +0.00%."""
+    hb = {"ts": 1_788_218_321_057, "event": "loop_heartbeat", "equity": 12.93}
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [hb])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {})
+    r = db._risk_payload()
+    assert r["points"] == 1
+    assert r["drawdown_pct"] is None and r["max_drawdown_pct"] is None
+    assert "not enough equity history" in r["drawdown_caveat"]
+    assert "unmeasured" in r["drawdown_caveat"]
 
 
 # ── the honesty caveat ───────────────────────────────────────────────────────

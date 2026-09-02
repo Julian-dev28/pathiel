@@ -585,14 +585,17 @@ async function refreshRisk() {
 
     // Drawdown is negative-or-zero. Red when the account is off its high; the
     // colour is the point, so it is never neutral-styled.
+    // null means unmeasured, and `(null || 0)` scored it green like a flat
+    // account. Unknown gets neutral styling, never the colour of good news.
+    const ddClass = v => v == null ? '' : (v < -0.01 ? ' neg' : ' pos');
     const dd = $id('risk-dd');
     dd.textContent = pct(r.drawdown_pct);
-    dd.className = 'kv ' + ((r.drawdown_pct || 0) < -0.01 ? 'neg' : 'pos');
+    dd.className = 'kv' + ddClass(r.drawdown_pct);
     $id('risk-peak').textContent = r.peak_equity != null ? 'peak $' + r.peak_equity : '';
 
     const mdd = $id('risk-maxdd');
     mdd.textContent = pct(r.max_drawdown_pct);
-    mdd.className = 'kv ' + ((r.max_drawdown_pct || 0) < -0.01 ? 'neg' : 'pos');
+    mdd.className = 'kv' + ddClass(r.max_drawdown_pct);
     $id('risk-window').textContent = (r.window_days || 0) + 'd window · ' + (r.points || 0) + ' pts';
 
     $id('risk-win').textContent =
