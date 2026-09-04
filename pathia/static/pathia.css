@@ -711,3 +711,23 @@ footer.site-foot{
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
 }
+
+/* ── sign-in gate ─────────────────────────────────────────────────────────
+   Shown when a gated fetch returns 401. Covers the page rather than sitting
+   inline: the panels behind it are empty by definition, and an inline prompt
+   next to eight "loading…" skeletons reads as one more broken widget. */
+#auth-gate{
+  position:fixed; inset:0; z-index:60; display:flex;
+  align-items:center; justify-content:center; padding:24px;
+  background:color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter:blur(3px);
+}
+.auth-card{
+  max-width:420px; width:100%; padding:28px;
+  background:var(--surface); border:1px solid var(--rule-2);
+  border-radius:var(--radius);
+}
+.auth-card p{ margin:10px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; }
+.auth-card .auth-fine{ font-size:11.5px; color:var(--ink-3); }
+.auth-card .btn{ margin-top:18px; }
+.auth-note{ margin-top:12px; font-size:11.5px; color:var(--amber); font-family:var(--mono); }

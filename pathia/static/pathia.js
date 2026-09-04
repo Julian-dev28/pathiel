@@ -80,3 +80,141 @@ function clampProse(root) {
     });
   });
 }
+
+/* ── Sign in with your wallet ────────────────────────────────────────────────
+ *
+ * Lives here, not in each page, because all five load this file and all five
+ * read the same gated APIs. One copy also means one place where the 401 -> sign
+ * in behaviour can drift out of sync, which is the defect that put five
+ * near-identical `fmtPct` definitions in this codebase in the first place.
+ *
+ * The flow is EIP-4361: ask the server for a nonce and the exact text to sign,
+ * hand that text to the wallet, post the signature back. The server never
+ * accepts a message the client composed — see services/auth/api.py.
+ *
+ * There is no password anywhere in this product, so there is nothing here to
+ * remember, reset, or leak.
+ */
+const PathiaAuth = (function () {
+  let me = null;                      // the signed-in user, or null
+
+  const short = a => a ? a.slice(0, 6) + '…' + a.slice(-4) : '';
+
+  async function refresh() {
+    try {
+      const r = await fetch('/auth/me');
+      me = r.ok ? (await r.json()).user : null;
+    } catch { me = null; }
+    render();
+    return me;
+  }
+
+  async function signIn() {
+    const eth = window.ethereum;
+    if (!eth) {
+      note('No wallet found. Install MetaMask or Rabby, then reload.');
+      return null;
+    }
+    try {
+      const [address] = await eth.request({ method: 'eth_requestAccounts' });
+      const prep = await (await fetch('/auth/nonce?address=' + encodeURIComponent(address))).json();
+      if (!prep.message) throw new Error(prep.detail || 'could not start sign-in');
+      // personal_sign takes (message, address) in that order. Reversed, the
+      // wallet either errors or signs the address as the payload.
+      const signature = await eth.request({ method: 'personal_sign', params: [prep.message, address] });
+      const r = await fetch('/auth/verify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: prep.message, signature }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail || 'signature rejected');
+      me = (await r.json()).user;
+      render();
+      hideGate();
+      // Repaint with data the page could not fetch while signed out.
+      window.location.reload();
+      return me;
+    } catch (e) {
+      // 4001 is the EIP-1193 code for "user rejected". Not an error worth a
+      // scary banner; they simply changed their mind.
+      if (e && e.code === 4001) return null;
+      note(String(e && e.message || e));
+      return null;
+    }
+  }
+
+  async function signOut() {
+    try { await fetch('/auth/logout', { method: 'POST' }); } catch {}
+    me = null;
+    window.location.reload();
+  }
+
+  function note(msg) {
+    const el = document.getElementById('auth-note');
+    if (el) { el.textContent = msg; el.hidden = !msg; }
+  }
+
+  /* The masthead chip: who you are, and the way out. */
+  function render() {
+    const slot = document.querySelector('.masthead-right');
+    if (!slot) return;
+    let chip = document.getElementById('auth-chip');
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.id = 'auth-chip';
+      chip.type = 'button';
+      chip.className = 'icon-btn';
+      slot.insertBefore(chip, slot.firstChild);
+    }
+    if (me) {
+      chip.textContent = me.display_name || short(me.address);
+      chip.title = me.address + (me.role === 'operator' ? ' · operator' : '') + ' — click to sign out';
+      chip.onclick = signOut;
+    } else {
+      chip.textContent = 'Connect wallet';
+      chip.title = 'Sign a message to prove you control your wallet. No transaction is sent.';
+      chip.onclick = signIn;
+    }
+  }
+
+  /* The full-page prompt, shown when a gated fetch comes back 401. */
+  function showGate() {
+    if (document.getElementById('auth-gate')) return;
+    const d = document.createElement('div');
+    d.id = 'auth-gate';
+    d.innerHTML =
+      '<div class="auth-card">' +
+        '<div class="sec-label">Sign in</div>' +
+        '<p>This account’s positions, balances and history are private. ' +
+        'Prove you control your wallet to see them.</p>' +
+        '<p class="auth-fine">You will sign a plain-text message. It sends no ' +
+        'transaction and approves no trade.</p>' +
+        '<button type="button" class="btn go" id="auth-gate-btn">Connect wallet</button>' +
+        '<div id="auth-note" class="auth-note" hidden></div>' +
+      '</div>';
+    document.body.appendChild(d);
+    document.getElementById('auth-gate-btn').onclick = signIn;
+  }
+  function hideGate() {
+    const d = document.getElementById('auth-gate');
+    if (d) d.remove();
+  }
+
+  /* Every page fetches its own data, so the 401 handling belongs at the
+   * transport, not in each of the ~20 loaders. A page that forgot to handle it
+   * would otherwise show empty panels and no explanation — the exact "looks
+   * quiet, is actually broken" failure the rest of this UI works to avoid. */
+  const _fetch = window.fetch;
+  window.fetch = async function (...args) {
+    const res = await _fetch.apply(this, args);
+    if (res.status === 401) {
+      try {
+        const body = await res.clone().json();
+        if (body && body.auth_required) showGate();
+      } catch {}
+    }
+    return res;
+  };
+
+  document.addEventListener('DOMContentLoaded', refresh);
+  return { refresh, signIn, signOut, user: () => me };
+})();

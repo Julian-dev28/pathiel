@@ -1998,3 +1998,32 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
     from fastapi.testclient import TestClient
     from pathia.server import app
     assert TestClient(app).get("/api/dashboard/summary").status_code == 200
+
+
+def test_every_page_can_offer_sign_in(client):
+    """The sign-in flow lives in the one shared script, so all five pages get
+    it from a single copy. Five near-identical fmtPct definitions is how this
+    codebase learned what per-page copies cost."""
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathia", "static", "pathia.js")).read()
+    assert "PathiaAuth" in js and "personal_sign" in js
+    assert "/auth/nonce" in js and "/auth/verify" in js
+    # personal_sign takes (message, address). Reversed, the wallet signs the
+    # address as the payload and the signature never recovers.
+    assert "params: [prep.message, address]" in js
+    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+        body = client.get(path).text
+        assert "pathia.js" in body, f"{path} does not load the shared script"
+        assert "masthead-right" in body, f"{path} has nowhere to put the account chip"
+
+
+def test_the_sign_in_gate_uses_tokens_that_exist():
+    """`--bg` is not a token this stylesheet defines; body paints with
+    `--paper`. A color-mix over an undefined token renders transparent, so the
+    overlay would have been invisible over a page of empty panels."""
+    import re
+    css = _css()
+    gate = css[css.index("#auth-gate{"):]
+    used = set(re.findall(r"var\((--[a-z0-9-]+)\)", gate[:1200]))
+    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
+    assert not (used - defined), f"gate uses undefined tokens: {sorted(used - defined)}"
