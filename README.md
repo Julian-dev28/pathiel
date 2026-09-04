@@ -1,4 +1,4 @@
-# Pathia-Trader
+# Pathia
 > Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathia Agent](https://github.com/NousResearch/pathia-agent) through an MCP server.
 
 **What it does:** Scans the majors universe, fires statistical triggers on
