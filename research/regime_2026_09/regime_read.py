@@ -139,7 +139,7 @@ def main(argv=None) -> int:
     q = sorted(rets)
     print(f"  decile spread   {q[int(len(q)*0.9)]:+.1f}% top / {q[int(len(q)*0.1)]:+.1f}% bottom")
 
-    print(f"\nPOSITIONING")
+    print("\nPOSITIONING")
     print(f"  median OI change    {st.median(ois):+.2f}%" if ois else "  no OI")
     pos = sum(1 for f in fund if f > 0)
     print(f"  funding > 0         {pos}/{len(fund)} coins ({100*pos/len(fund):.0f}%)")
@@ -149,7 +149,7 @@ def main(argv=None) -> int:
     print(f"  pinned at baseline  {base}/{len(fund)} coins ({100*base/len(fund):.0f}%)")
 
     # ── what a strategy would have to survive ───────────────────────────────
-    print(f"\nWHAT THIS MEANS FOR A NEW BOOK")
+    print("\nWHAT THIS MEANS FOR A NEW BOOK")
     med = st.median(rets)
     disp = st.pstdev(rets)
     if abs(med) < 1.0 and disp > 8:
