@@ -30,8 +30,6 @@ each check exists; the script is what actually enforces it.
 | `PATHIA_OPERATOR_TOKEN` | Bearer token gating every write endpoint on the dashboard (`/operator`) | `pathia/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
 | `OPENROUTER_API_KEY` | OpenRouter API key — the default AI research brain | `pathia/agents/ai_brain.py` | **Conditional** — required iff `AI_BRAIN_PROVIDER` resolves to `openrouter` (the default when unset) | Logs a warning and returns `""` from the completion call. `research.py` tags the resulting analysis `ai_down: True` so the executor's structural override cannot upgrade a failure-PASS into a blind LONG (fixed 2026-06-11 after exactly that happened during an OpenRouter 402 window) — but every research call still fails silently at the log level, not at startup |
 | `BRAVE_API_KEY` | Brave Search — news context for research | `pathia/agents/research.py` | Optional | Silent by design — returns `"no news"` and continues |
-| `UW_API_KEY` | Unusual Whales — options-flow alt-data (xyz equities) | `pathia/client/uw_client.py` | Optional | Silent by design — best-effort client, returns `None`/`[]`, never raises |
-| `HYDROMANCER_API_KEY` | Hydromancer data-plane client (research/backfill, not live execution) | `pathia/data_providers/hydromancer.py` | Optional | Silent — empty key string; the first real call fails with an auth error, not checked upfront |
 
 Non-secret vars read alongside these (model names, timeouts, CLI binary
 paths, scan-tuning knobs, state-file path overrides) are listed — grouped and
@@ -65,7 +63,6 @@ flyctl secrets set \
 
 # optional
 flyctl secrets set BRAVE_API_KEY="BSA..."
-flyctl secrets set UW_API_KEY="..."
 
 # NEVER: flyctl secrets set HYPERLIQUID_MASTER_PRIVATE_KEY=...
 # Treasury transfers are a manual, local-only operation — see below.
@@ -164,8 +161,6 @@ revoke the old value at the provider once the new one is confirmed live.
 | `PATHIA_OPERATOR_TOKEN` | Anywhere: `openssl rand -hex 16`, then `flyctl secrets set PATHIA_OPERATOR_TOKEN=...` (or the k8s/systemd equivalent) | Yes | Rotate immediately (see above). Worst case with the old token still valid: someone can flip config knobs and trigger manual closes through `/operator` — no fund transfer is reachable through that surface, but it's still real control of the bot. |
 | `OPENROUTER_API_KEY` | https://openrouter.ai/keys — revoke old, create new | Yes | Revoke at OpenRouter immediately. Worst case: someone burns your quota / sees prompts you sent (market context, not credentials). |
 | `BRAVE_API_KEY` | https://api.search.brave.com/ dashboard | Yes | Revoke at Brave. Low severity — a news-search key. |
-| `UW_API_KEY` | Unusual Whales account dashboard | Yes | Revoke at Unusual Whales. Low-medium severity — paid data quota, not funds. |
-| `HYDROMANCER_API_KEY` | Hydromancer account dashboard | Yes | Revoke at Hydromancer. Low severity — read-only data plane. |
 
 After rotating anything that touched a tracked file (it shouldn't have, but
 if `scripts/preflight_secrets.py`'s git-index scan ever fires): rotating the

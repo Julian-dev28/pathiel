@@ -21,8 +21,8 @@ RUN pip install -e .
 
 # Copy every top-level source package a managed process actually imports at
 # runtime. `scripts/restart.sh` is the source of truth for what runs:
-#   pathia/              core package — server, dashboard, agents, v2,
-#                                client, data_providers (imported by every process below)
+#   pathia/              core package — server, dashboard, agents, client
+#                                (imported by every process below)
 #   scripts/                    trading_loop.py, scheduler.py, log_rotate.py,
 #                                autonomous_cycle.py, and CLI tooling
 #   services/trend_engine/      /trends lanes (services.trend_engine.run —
