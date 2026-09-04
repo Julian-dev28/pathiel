@@ -215,3 +215,68 @@ def test_the_signed_statement_promises_no_transaction(client):
     approve things they should not. The text has to say what it is not."""
     msg = client.get("/auth/nonce", params={"address": ACCT.address}).json()["message"]
     assert "does not approve any transaction" in msg
+
+
+def test_sign_in_over_plain_http_localhost_actually_sets_a_cookie(tmp_path, monkeypatch):
+    """Browsers silently DROP a Secure cookie sent over http://. On the local
+    server that made sign-in fail in the worst way: signature verified, response
+    200, user still logged out, nothing anywhere saying why. Reported
+    2026-09-04 as "the connect button does nothing".
+
+    Decided from the request, so the default is right in both places and there
+    is no flag to forget to unset in production.
+    """
+    from services.auth.deps import cookie_kwargs
+
+    class _URL:
+        def __init__(self, scheme, host): self.scheme, self.hostname = scheme, host
+
+    class _Req:
+        def __init__(self, scheme, host): self.url = _URL(scheme, host)
+
+    monkeypatch.delenv("PATHIA_INSECURE_COOKIES", raising=False)
+    assert cookie_kwargs(_Req("http", "localhost"))["secure"] is False
+    assert cookie_kwargs(_Req("http", "127.0.0.1"))["secure"] is False
+    # Everything else keeps the flag, including https on localhost and, above
+    # all, plain http to a real host — which is the case that must never relax.
+    assert cookie_kwargs(_Req("https", "localhost"))["secure"] is True
+    assert cookie_kwargs(_Req("http", "pathia.fly.dev"))["secure"] is True
+    assert cookie_kwargs(_Req("https", "pathia.fly.dev"))["secure"] is True
+    assert cookie_kwargs(None)["secure"] is True
+
+
+def test_the_signed_message_names_hyperliquids_own_chain(client):
+    """This product trades on Hyperliquid, so a wallet already pointed at
+    HyperEVM should not have to switch networks to log in, and the message
+    should name the chain the account actually lives on rather than an
+    unrelated L2. Chain ID is informational in EIP-4361 — personal_sign is not
+    chain-bound — so this is about the wallet showing something coherent."""
+    from services.auth.api import HYPEREVM_CHAIN_ID
+    msg = client.get("/auth/nonce", params={"address": ACCT.address}).json()["message"]
+    assert f"Chain ID: {HYPEREVM_CHAIN_ID}" in msg
+    assert HYPEREVM_CHAIN_ID == "999"
+
+
+def test_the_operator_role_is_recoverable_without_deleting_the_database(tmp_path, monkeypatch):
+    """The first wallet to sign in claims operator. If anything else gets there
+    first — a smoke check, a test wallet, a curious visitor — the real operator
+    is locked out of the house account. Happened during this session's own live
+    checks, so there is a way back."""
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    import importlib, sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "scripts"))
+    grant = importlib.import_module("grant_operator")
+    from services.auth.store import AuthStore
+    store = AuthStore(str(tmp_path / "auth.db"))
+    store.upsert_user(SECOND.address)          # somebody else got there first
+    assert store.get_user_by_address(SECOND.address).is_operator is True
+    store.close()
+
+    assert grant.main([ACCT.address]) == 0     # grant before ACCT ever signs in
+    store = AuthStore(str(tmp_path / "auth.db"))
+    assert store.get_user_by_address(ACCT.address).is_operator is True
+    assert grant.main([SECOND.address, "--revoke"]) == 0
+    store.close()
+    store = AuthStore(str(tmp_path / "auth.db"))
+    assert store.get_user_by_address(SECOND.address).is_operator is False
+    store.close()

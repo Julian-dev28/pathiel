@@ -37,6 +37,16 @@ STATEMENT = ("Sign in to Pathia. This proves you control this wallet. "
 # Mirrored into the message as `Expiration Time` and enforced by siwe.verify.
 MESSAGE_TTL_S = 600
 
+# HyperEVM mainnet. This product trades on Hyperliquid, so the chain a user
+# signs on should be Hyperliquid's own — a wallet already pointed there does not
+# have to switch networks to log in, and the signed message names the chain the
+# account actually lives on rather than an unrelated L2.
+#
+# Chain ID is informational in EIP-4361: the signature is over the message text
+# and personal_sign is not chain-bound, so this does not weaken or strengthen
+# verification. It is about the wallet showing the user something coherent.
+HYPEREVM_CHAIN_ID = "999"
+
 # Login is unauthenticated by definition, so it is the one surface an anonymous
 # caller can hammer. Signature recovery is CPU work (~1ms of secp256k1), which
 # makes an unbounded verify endpoint a cheap way to burn the box.
@@ -98,7 +108,7 @@ def nonce(request: Request, address: str) -> Dict[str, Any]:
         f"\n{STATEMENT}\n\n"
         f"URI: {os.environ.get('PATHIA_AUTH_URI', 'https://' + expected_domain())}\n"
         f"Version: 1\n"
-        f"Chain ID: {os.environ.get('PATHIA_AUTH_CHAIN_ID', '42161')}\n"
+        f"Chain ID: {os.environ.get('PATHIA_AUTH_CHAIN_ID', HYPEREVM_CHAIN_ID)}\n"
         f"Nonce: {value}\n"
         f"Issued At: {now.isoformat().replace('+00:00', 'Z')}\n"
         f"Expiration Time: "
@@ -130,7 +140,8 @@ def verify(request: Request, response: Response, body: VerifyBody) -> Dict[str, 
         raise HTTPException(status_code=403, detail="account disabled")
 
     token = store.create_session(user.id, user_agent=request.headers.get("user-agent", ""))
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL_S, **cookie_kwargs())
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL_S,
+                        **cookie_kwargs(request))
     # Returned as well as set, so a CLI that cannot hold cookies can use Bearer.
     return {"user": user.public(), "session_token": token}
 
