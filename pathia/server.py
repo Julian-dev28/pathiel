@@ -137,6 +137,50 @@ async def _readonly_guard(request: Request, call_next):
     return await call_next(request)
 
 
+# ── who may read the account ─────────────────────────────────────────────────
+#
+# Every /api/dashboard/* route was open. Audit 2026-09-04, against a public
+# Fly host with force_https and allow_origins=["*"]: an unauthenticated GET to
+# /api/dashboard/summary returned equity, free balance, daily P&L and open
+# position count, /risk added net capital in and peak equity, and
+# /closed-trades the whole trade history. Anyone holding the URL held the
+# account's books. For one operator that is a privacy leak; the moment a second
+# user exists it is a cross-tenant breach by construction.
+#
+# Default is now CLOSED. `PATHIA_PUBLIC_DASHBOARD=1` restores the old open-read
+# behaviour for a genuinely single-operator box behind a private network, and
+# is named so it is obvious in a diff and in `fly secrets list`.
+#
+# Read paths that must stay open, and why:
+#   /api/health*   the Fly and k8s probes call these with no credential, and a
+#                  health check that needs a session cannot report a broken
+#                  session.
+#   /auth/*        login is unauthenticated by definition.
+#   /static, /     the pages themselves; they render a sign-in prompt and fetch
+#                  their data over these gated APIs.
+_GATED_PREFIXES = ("/api/dashboard", "/api/feed", "/api/hl")
+_OPEN_PREFIXES = ("/api/health", "/auth/", "/static", "/docs", "/openapi.json")
+
+
+@app.middleware("http")
+async def _require_session_for_account_data(request: Request, call_next):
+    path = request.url.path
+    if (path.startswith(_GATED_PREFIXES) and not path.startswith(_OPEN_PREFIXES)
+            and not os.environ.get("PATHIA_PUBLIC_DASHBOARD")):
+        from services.auth.deps import current_user
+        if current_user(request) is None:
+            # 401 with a machine-readable marker so the pages can tell "sign in"
+            # apart from a genuine failure and show the login prompt instead of
+            # an error banner.
+            return JSONResponse(
+                {"detail": "sign in required", "auth_required": True},
+                status_code=401)
+    return await call_next(request)
+
+
+from services.auth.api import router as _auth_router            # noqa: E402
+app.include_router(_auth_router)
+
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 

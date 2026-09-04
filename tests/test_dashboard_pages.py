@@ -1950,3 +1950,51 @@ def test_no_chart_can_grow_past_its_container():
 
 def test_a_wrapper_does_not_draw_a_second_panel_border():
     assert ".panel-wrap{ background:transparent; border:0; }" in CSS
+
+
+# ── the account's books are not public ──────────────────────────────────────
+
+
+def test_account_data_is_not_readable_without_signing_in(monkeypatch):
+    """Audit 2026-09-04: every /api/dashboard route was open, on a public Fly
+    host with force_https and allow_origins=["*"]. An unauthenticated GET to
+    /summary returned equity, free balance and daily P&L; /risk added net
+    capital in and peak equity; /closed-trades the whole history. Anyone with
+    the URL had the books.
+
+    This is the regression test. It asserts on the SHAPE of the response, not
+    just the code, so a future refactor that returns 401 while still leaking a
+    body fails here.
+    """
+    monkeypatch.delenv("PATHIA_PUBLIC_DASHBOARD", raising=False)
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    c = TestClient(app)
+    for path in ("/api/dashboard/summary", "/api/dashboard/risk",
+                 "/api/dashboard/positions", "/api/dashboard/closed-trades",
+                 "/api/dashboard/equity-curve", "/api/dashboard/book_league"):
+        r = c.get(path)
+        assert r.status_code == 401, f"{path} answered {r.status_code} to a stranger"
+        body = r.json()
+        assert body.get("auth_required") is True
+        for leak in ("equity", "daily_pnl", "net_capital_in", "peak_equity"):
+            assert leak not in body, f"{path} leaked {leak} inside its 401"
+
+
+def test_health_checks_still_answer_without_a_session():
+    """Fly and k8s probes carry no credential, and a health check that needs a
+    session cannot report a broken session."""
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    c = TestClient(app)
+    assert c.get("/api/health").status_code == 200
+
+
+def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
+    """A private box behind a VPN can keep the old open reads, but only by
+    saying so out loud — the flag is named to be obvious in a diff and in
+    `fly secrets list`."""
+    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    assert TestClient(app).get("/api/dashboard/summary").status_code == 200
