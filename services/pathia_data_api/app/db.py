@@ -91,6 +91,12 @@ class ApiKey(Base):
     scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     rate_per_min: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # The wallet that minted this key. Nullable because the demo seed key
+    # predates ownership and belongs to the deployment rather than a person;
+    # every key a customer mints carries one. See services/auth/api_keys.py.
+    owner_address: Mapped[Optional[str]] = mapped_column(
+        String(64), index=True, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )

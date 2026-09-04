@@ -162,3 +162,59 @@ def logout_all(response: Response, user: User = Depends(require_user)) -> Dict[s
     n = get_store().revoke_all_for_user(user.id)
     response.delete_cookie(SESSION_COOKIE, path="/")
     return {"ok": True, "revoked": n}
+
+
+# ── API keys ────────────────────────────────────────────────────────────────
+#
+# This is the join between a wallet and the data API. `services/pathia_data_api`
+# already authenticated requests against an `api_keys` table; it just had no
+# notion of who a key belonged to. These four routes give a signed-in wallet the
+# only three operations that matter: see mine, make one, kill one.
+
+class MintKeyBody(BaseModel):
+    label: Optional[str] = Field(default=None, max_length=48)
+
+
+@router.get("/keys")
+def list_keys(user: User = Depends(require_user)) -> Dict[str, Any]:
+    from services.auth import api_keys
+    api_keys.ensure_schema()
+    return {"keys": api_keys.list_for(user.address),
+            "max": api_keys.MAX_KEYS_PER_OWNER}
+
+
+@router.post("/keys")
+def mint_key(body: MintKeyBody, user: User = Depends(require_user)) -> Dict[str, Any]:
+    """Mint a key. The raw token is in this response and nowhere else, ever.
+
+    Only its SHA-256 is stored, so a database leak yields no usable credential —
+    and so "show it to me again" is not a feature that can exist. The caller has
+    to say that at the moment of minting, not leave it to be discovered.
+    """
+    from services.auth import api_keys
+    api_keys.ensure_schema()
+    try:
+        minted = api_keys.mint(user.address, label=body.label)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {
+        "key_id": minted.key_id,
+        "token": minted.token,
+        "shown_once": True,
+        "note": "Copy this now. Only its hash is stored, so it cannot be shown again.",
+    }
+
+
+@router.delete("/keys/{key_id}")
+def revoke_key(key_id: str, user: User = Depends(require_user)) -> Dict[str, Any]:
+    """Revoke one of your own keys.
+
+    404, not 403, when the key belongs to someone else: telling a caller that a
+    key_id exists but is not theirs confirms the id is real, which is an
+    enumeration oracle for free.
+    """
+    from services.auth import api_keys
+    api_keys.ensure_schema()
+    if not api_keys.revoke(user.address, key_id):
+        raise HTTPException(status_code=404, detail="no such key")
+    return {"ok": True, "key_id": key_id}
