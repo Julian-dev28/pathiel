@@ -212,9 +212,45 @@ const PathiaAuth = (function () {
         if (body && body.auth_required) showGate();
       } catch {}
     }
+    // 403 on a house-account route is not an error to report. It is the normal
+    // answer for a signed-in customer: those routes describe the deployment's
+    // own trading, and the customer's account is /api/dashboard/account. Left
+    // unhandled, every page painted a rack of red "refresh failed" banners at
+    // exactly the people we most want to keep.
+    if (res.status === 403) document.body.classList.add('not-operator');
     return res;
   };
 
-  document.addEventListener('DOMContentLoaded', refresh);
-  return { refresh, signIn, signOut, user: () => me };
+  /* The signed-in wallet's own balance. Reads that wallet's address on
+   * Hyperliquid, which needs no stored key — so the page can show a customer
+   * their account without the product ever being able to trade it. */
+  async function loadMyAccount() {
+    const slot = document.getElementById('my-account');
+    if (!slot) return;
+    try {
+      const r = await fetch('/api/dashboard/account');
+      if (!r.ok) { slot.hidden = true; return; }
+      const a = await r.json();
+      slot.hidden = false;
+      if (a.status === 'unavailable') {
+        slot.innerHTML = '<span class="l">Your account</span>' +
+          '<span class="v amb">unavailable</span>' +
+          '<span class="s">could not reach Hyperliquid just now</span>';
+        return;
+      }
+      if (!a.funded) {
+        slot.innerHTML = '<span class="l">Your account</span>' +
+          '<span class="v">not funded</span>' +
+          '<span class="s">deposit to Hyperliquid with this wallet to see it here</span>';
+        return;
+      }
+      const n = (a.positions || []).length;
+      slot.innerHTML = '<span class="l">Your account</span>' +
+        '<span class="v">$' + Number(a.equity).toFixed(2) + '</span>' +
+        '<span class="s">' + n + ' open position' + (n === 1 ? '' : 's') + '</span>';
+    } catch { slot.hidden = true; }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => { refresh().then(loadMyAccount); });
+  return { refresh, signIn, signOut, loadMyAccount, user: () => me };
 })();

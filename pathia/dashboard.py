@@ -766,6 +766,37 @@ def _audit(event: str, request: Request, **fields: Any) -> None:
         pass
 
 
+def _require_operator_role(request: Request) -> None:
+    """403 unless the caller is a signed-in operator.
+
+    Distinct from `_require_operator` above, which checks the shared
+    PATHIA_OPERATOR_TOKEN and is for machine callers — the scheduler, the
+    supervisor, smoke checks. That token cannot say WHO acted, so it is the
+    wrong instrument for "is this human allowed to see the house book".
+
+    The token still works here, so an operator's own tooling keeps functioning
+    without a browser session.
+    """
+    # The single-operator escape hatch means exactly that: one operator, one
+    # account, a private network. There are no other tenants to protect from
+    # each other, so the role check has nothing to decide.
+    if os.environ.get("PATHIA_PUBLIC_DASHBOARD"):
+        return
+    from services.auth.deps import current_user
+    user = current_user(request)
+    if user is not None and user.is_operator:
+        return
+    if user is not None:
+        raise HTTPException(status_code=403,
+                            detail="this is the house trading account; "
+                                   "your own is at /api/dashboard/account")
+    try:
+        _require_operator(request)            # machine callers, shared token
+    except HTTPException:
+        raise HTTPException(status_code=401,
+                            detail="sign in required", headers={})
+
+
 def _require_operator(request: Request) -> None:
     """401 unless `?token=` or `X-Operator-Token` matches `PATHIA_OPERATOR_TOKEN`.
 
@@ -1322,6 +1353,84 @@ _FUNDING_OI_LOG = state_file(".data_funding_oi.jsonl")
 # from the funnel rather than translated: there is no discretionary entry path,
 # so "no book claimed this coin" is normal operation, not a refusal.
 _DEAD_SUBSYSTEM_REASONS = ("MAIN_ENGINE_DELETED",)
+
+
+# ── the viewer's own account ─────────────────────────────────────────────────
+#
+# Every payload below this point except this one describes the DEPLOYMENT's
+# trading account: the wallet the loop signs with, its equity, its positions,
+# its P&L. That is exactly one account, and _summary_payload reads it from the
+# loop's own heartbeat.
+#
+# Gating those routes behind a session (2026-09-04) stopped strangers reading
+# them and did nothing about the real problem: every signed-in user saw the same
+# numbers, which are the operator's. Sign in as anyone and the dashboard showed
+# $12.94 — someone else's balance, presented as yours.
+#
+# This reads the account of whoever is looking, and it needs no key to do it.
+# Hyperliquid's /info clearinghouseState takes a plain address, so a SIWE login
+# already carries everything required: the user proved they control the wallet,
+# and we read it read-only. Nothing is stored, nothing is signed, and the
+# product cannot trade on their behalf even by accident. Non-custodial is a
+# property of the architecture here, not a promise in a policy.
+
+_ACCOUNT_TTL_S = 20.0
+_ACCOUNT_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
+def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[str, Any]:
+    """Read-only Hyperliquid state for one address, whoever is signed in.
+
+    An address with no Hyperliquid account is not an error and must not read as
+    one: it is the ordinary state of somebody who has just connected a wallet.
+    It returns funded=False so the page can say "deposit to get started" rather
+    than rendering a row of zeros that look like losses.
+    """
+    now = now if now is not None else time.time()
+    addr = (address or "").lower()
+    hit = _ACCOUNT_CACHE.get(addr)
+    if hit and now - hit[0] < _ACCOUNT_TTL_S:
+        return hit[1]
+
+    out: Dict[str, Any] = {"address": addr, "funded": False, "equity": 0.0,
+                           "available": 0.0, "positions": [], "status": "ok"}
+    try:
+        from pathia.client.hl_client import fetch_account_state
+        state = fetch_account_state(addr, include_hip3=False) or {}
+        equity = float(state.get("equity") or 0.0)
+        positions = []
+        for entry in (state.get("asset_positions") or []):
+            pos = (entry or {}).get("position") or {}
+            try:
+                szi = float(pos.get("szi") or 0)
+            except (TypeError, ValueError):
+                continue
+            if szi == 0:
+                continue
+            positions.append({
+                "coin": pos.get("coin"),
+                "side": "long" if szi > 0 else "short",
+                "size": abs(szi),
+                "entry_px": float(pos.get("entryPx") or 0) or None,
+                "notional": abs(float(pos.get("positionValue") or 0)),
+                "unrealized_pnl": float(pos.get("unrealizedPnl") or 0),
+            })
+        out.update({
+            "equity": round(equity, 2),
+            "available": round(float(state.get("available") or 0.0), 2),
+            "positions": positions,
+            # Funded means "this wallet has a Hyperliquid account with something
+            # in it". An empty wallet is a normal starting state, not a failure.
+            "funded": equity > 0 or bool(positions),
+        })
+    except Exception as exc:
+        # A rate-limited or failing venue read must say so rather than render as
+        # a zero balance. Zero is a number a user will believe.
+        out["status"] = "unavailable"
+        out["error"] = str(exc)[:200]
+
+    _ACCOUNT_CACHE[addr] = (now, out)
+    return out
 
 
 def _funnel_payload(window_s: int = 86400, now_ms: Optional[int] = None) -> Dict[str, Any]:
@@ -2077,20 +2186,49 @@ def register_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="unknown or expired job")
         return JSONResponse(job)
 
-    @app.get("/api/dashboard/summary")
+    @app.get("/api/dashboard/account")
+    async def dashboard_account(request: Request) -> JSONResponse:
+        """The signed-in wallet's OWN Hyperliquid account, read-only.
+
+        This is the only account route that is not the house's. It needs no
+        stored key: /info clearinghouseState takes a plain address, and SIWE
+        already proved the caller controls it.
+        """
+        from services.auth.deps import current_user
+        user = current_user(request)
+        if user is None:
+            return JSONResponse({"detail": "sign in required", "auth_required": True},
+                                status_code=401)
+        return JSONResponse(_viewer_account_payload(user.address))
+
+    # ── the house account ────────────────────────────────────────────────────
+    #
+    # Everything from here to book_league describes the DEPLOYMENT's own
+    # trading: its equity, its positions, its P&L, its decision funnel. A
+    # session was never the right gate for these. Any signed-in wallet saw the
+    # operator's $12.94 and read it as their own balance, which is both a
+    # privacy leak and, worse, a number a user will act on.
+    #
+    # Operator role, not merely authenticated. A customer's own account is
+    # /api/dashboard/account above.
+    @app.get("/api/dashboard/summary",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_summary() -> JSONResponse:
         return JSONResponse(_ttl_cached("summary", 6.0, _summary_payload))
 
-    @app.get("/api/dashboard/positions")
+    @app.get("/api/dashboard/positions",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_positions() -> JSONResponse:
         return JSONResponse(_positions_payload())  # already 5s-cached internally
 
-    @app.get("/api/dashboard/equity-curve")
+    @app.get("/api/dashboard/equity-curve",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
         return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 65.0,
                                         lambda: _equity_curve_payload(range_s)))
 
-    @app.get("/api/dashboard/risk")
+    @app.get("/api/dashboard/risk",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_risk(range_s: int = Query(7_776_000, ge=86_400,
                                                   le=31_536_000)) -> JSONResponse:
         """Drawdown, fee drag, win rate, and distance to the hard kill.
@@ -2100,17 +2238,20 @@ def register_routes(app: FastAPI) -> None:
         return JSONResponse(_ttl_cached(f"risk:{range_s}", 60.0,
                                         lambda: _risk_payload(range_s)))
 
-    @app.get("/api/dashboard/closed-trades")
+    @app.get("/api/dashboard/closed-trades",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
         return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 25.0,
                                         lambda: _closed_trades_payload(limit)))
 
-    @app.get("/api/dashboard/funnel")
+    @app.get("/api/dashboard/funnel",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_funnel(window_s: int = Query(86400, ge=3600, le=2_592_000)) -> JSONResponse:
         return JSONResponse(_ttl_cached(f"funnel:{window_s}", 30.0,
                                         lambda: _funnel_payload(window_s)))
 
-    @app.get("/api/dashboard/book_league")
+    @app.get("/api/dashboard/book_league",
+             dependencies=[Depends(_require_operator_role)])
     async def dashboard_book_league() -> JSONResponse:
         return JSONResponse(_ttl_cached("book_league", 30.0, _book_league_payload))
 

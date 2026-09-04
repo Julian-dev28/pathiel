@@ -189,3 +189,84 @@ def test_the_owner_column_is_added_to_a_table_that_predates_it(app_db):
     with sqlite3.connect(app_db) as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(api_keys)")}
     assert "owner_address" in cols
+
+
+# ── the house account is not your account ───────────────────────────────────
+
+def test_a_signed_in_customer_never_sees_the_house_balance(client, monkeypatch, tmp_path):
+    """Reported by the operator 2026-09-04: sign in with any wallet and the
+    dashboard showed $12.94 — the deployment's balance, presented as yours.
+
+    Gating these routes behind a session (4c14aba) stopped strangers reading
+    them and did nothing about this: every authenticated user still read the one
+    house account. A number a user believes is theirs is worse than a number
+    they cannot see.
+    """
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+
+    monkeypatch.delenv("PATHIA_PUBLIC_DASHBOARD", raising=False)
+    monkeypatch.setenv("PATHIA_INSECURE_COOKIES", "1")
+    c = TestClient(app)
+
+    # BOB signs in second, so he is a plain user, not the operator.
+    for acct in (ALICE, BOB):
+        msg = c.get("/auth/nonce", params={"address": acct.address}).json()["message"]
+        sig = acct.sign_message(encode_defunct(text=msg)).signature.hex()
+        c.post("/auth/verify", json={"message": msg, "signature": sig})
+
+    for house in ("/api/dashboard/summary", "/api/dashboard/risk",
+                  "/api/dashboard/positions", "/api/dashboard/closed-trades",
+                  "/api/dashboard/equity-curve", "/api/dashboard/funnel",
+                  "/api/dashboard/book_league"):
+        r = c.get(house)
+        assert r.status_code == 403, f"{house} showed the house book to a customer"
+        assert "equity" not in r.json(), f"{house} leaked a balance inside its 403"
+
+
+def test_the_account_route_reads_the_caller_not_the_deployment(client, monkeypatch):
+    """A wallet's own balance comes from its own address. No key is stored and
+    none is needed: /info clearinghouseState takes a plain address, so the
+    product cannot trade on a customer's behalf even by accident."""
+    import pathia.dashboard as db
+    seen = {}
+
+    def fake_state(user, include_hip3=False):
+        seen["addr"] = user
+        return {"equity": 4321.0, "available": 1234.0, "asset_positions": []}
+
+    import pathia.client.hl_client as hl
+    monkeypatch.setattr(hl, "fetch_account_state", fake_state)
+    db._ACCOUNT_CACHE.clear()
+    out = db._viewer_account_payload(BOB.address)
+    assert seen["addr"] == BOB.address.lower(), "read somebody else's address"
+    assert out["equity"] == 4321.0 and out["funded"] is True
+
+
+def test_an_empty_wallet_reads_as_unfunded_not_as_a_loss(monkeypatch):
+    """Somebody who just connected a wallet has no Hyperliquid account. That is
+    the ordinary starting state, and rendering it as a row of zeros looks like
+    a drawdown rather than an empty account."""
+    import pathia.dashboard as db
+    import pathia.client.hl_client as hl
+    monkeypatch.setattr(hl, "fetch_account_state",
+                        lambda user, include_hip3=False: {"equity": 0.0, "asset_positions": []})
+    db._ACCOUNT_CACHE.clear()
+    out = db._viewer_account_payload("0x" + "9" * 40)
+    assert out["funded"] is False and out["equity"] == 0.0
+    assert out["status"] == "ok"
+
+
+def test_a_failing_venue_read_does_not_render_as_a_zero_balance(monkeypatch):
+    """Zero is a number a user will believe. A rate-limited read has to say it
+    could not answer."""
+    import pathia.dashboard as db
+    import pathia.client.hl_client as hl
+
+    def boom(user, include_hip3=False):
+        raise RuntimeError("429 rate limited")
+
+    monkeypatch.setattr(hl, "fetch_account_state", boom)
+    db._ACCOUNT_CACHE.clear()
+    out = db._viewer_account_payload("0x" + "8" * 40)
+    assert out["status"] == "unavailable" and out["funded"] is False

@@ -184,7 +184,11 @@ def client():
     return TestClient(app)
 
 
-def test_risk_endpoint_serves(client, curve):
+def test_risk_endpoint_serves(client, curve, monkeypatch):
+    # House-account routes became operator surface on 2026-09-04. This test is
+    # about payload shape, so it opts into single-operator mode rather than
+    # standing up a signed-in operator session.
+    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
     body = client.get("/api/dashboard/risk").json()
     assert body["peak_equity"] == 200.0
     assert set(body) >= {"drawdown_pct", "max_drawdown_pct", "win_rate",

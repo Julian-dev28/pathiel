@@ -1356,6 +1356,10 @@ def test_coin_chart_payload_fetch_failure(monkeypatch):
 
 
 def test_analytics_endpoints_route(client, monkeypatch):
+    # House-account routes became operator surface on 2026-09-04. This test is
+    # about payload shape, so it opts into single-operator mode rather than
+    # standing up a signed-in operator session.
+    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     for ep in ("/api/dashboard/funnel", "/api/dashboard/book_league",
