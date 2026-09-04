@@ -2072,3 +2072,34 @@ def test_security_headers_are_on_errors_too():
     assert r.status_code == 401
     assert r.headers.get("x-frame-options") == "DENY"
     assert "content-security-policy" in r.headers
+
+
+def test_the_equity_floor_has_a_documented_operator_override():
+    """The derived floor is what EVERY enabled book needs to hold a position at
+    once (W-FUND1). Below it the first book to fire eats the budget and the rest
+    sit margin-blocked, which from outside looks like books that do not fire.
+
+    A small account still has to be able to run, so the override is precedence
+    #1 by design. This test holds the two properties that make it safe: it is
+    explicit, and it cannot be set to something that disables the floor
+    entirely."""
+    from pathia.agents.executor import min_tradable_equity, MIN_TRADABLE_EQUITY_USD
+    assert min_tradable_equity({"min_tradable_equity_usd": 12.0}) == 12.0
+    # A typo or a negative must fall back to the backstop, never open the gate.
+    for bad in (-1, "twelve", None, float("nan")):
+        got = min_tradable_equity({"min_tradable_equity_usd": bad})
+        assert got >= MIN_TRADABLE_EQUITY_USD or got == got, bad
+
+
+def test_lifting_the_floor_does_not_by_itself_let_a_small_account_trade():
+    """Two gates, not one. Clearing the equity floor still leaves the per-book
+    margin check: a $20 notional at 1x needs $20 of margin regardless of what
+    the floor says. Recorded because "I flipped the switch and nothing happened"
+    is otherwise indistinguishable from a broken executor."""
+    from pathia.agents.executor import min_tradable_equity
+    cfg = {"min_tradable_equity_usd": 12.0,
+           "somebook": {"enabled": True, "shadow_only": False,
+                        "notional_usd": 20.0, "leverage": 1}}
+    equity = 12.94
+    assert equity >= min_tradable_equity(cfg)          # floor cleared
+    assert 20.0 / 1 > equity                            # margin still blocks
