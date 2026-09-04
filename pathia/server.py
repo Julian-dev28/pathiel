@@ -178,6 +178,66 @@ async def _require_session_for_account_data(request: Request, call_next):
     return await call_next(request)
 
 
+# Registered AFTER the session gate on purpose. Starlette wraps in registration
+# order, so the last middleware registered is the outermost — and only the
+# outermost one sees a response the gate short-circuited. Declared first, this
+# pass never ran on a 401 and every rejected request shipped bare: no CSP, no
+# frame-ancestors, on exactly the responses an attacker probing the app sees
+# most. Caught by test_security_headers_are_on_errors_too.
+# ── security headers ─────────────────────────────────────────────────────────
+#
+# None of these were set. Each one below is here for a specific reach this app
+# hands an attacker, not because a scanner asked for it:
+#
+#   frame-ancestors  The dashboard has a STOP TRADING button and an operator
+#                    token field. Framed on a hostile page, both are one
+#                    transparent overlay away from being clicked by someone who
+#                    thought they were dismissing a cookie banner.
+#   connect-src      The pages hold a live session cookie and, once signed in,
+#                    the account's whole book. Restricting them to our own
+#                    origin means injected script cannot post any of it out.
+#   script-src       'self' blocks a remote script tag outright. 'unsafe-inline'
+#                    is present because every page carries its own inline
+#                    <script>; it weakens this rule and not the others, and
+#                    removing it means moving five page scripts to files, which
+#                    is worth doing and is not this commit.
+#   HSTS             Fly already sets force_https, which redirects. HSTS stops
+#                    the first plaintext request from happening at all.
+#
+# Applied to every response, including errors: a 500 page is still a page.
+_CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+])
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    # No page here needs a camera, a microphone, or a location.
+    response.headers.setdefault(
+        "Permissions-Policy", "geolocation=(), microphone=(), camera=(), payment=()")
+    # Only over TLS. Sending HSTS on a plaintext dev server would pin localhost
+    # to https in the developer's browser and is a genuinely annoying thing to
+    # undo.
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+
 from services.auth.api import router as _auth_router            # noqa: E402
 app.include_router(_auth_router)
 

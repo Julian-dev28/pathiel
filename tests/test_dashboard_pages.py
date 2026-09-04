@@ -2027,3 +2027,44 @@ def test_the_sign_in_gate_uses_tokens_that_exist():
     used = set(re.findall(r"var\((--[a-z0-9-]+)\)", gate[:1200]))
     defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
     assert not (used - defined), f"gate uses undefined tokens: {sorted(used - defined)}"
+
+
+def _served():
+    """The real app, not the bare router the `client` fixture builds.
+
+    That fixture mounts dashboard routes into a plain FastAPI() with no
+    middleware, which is right for testing payload shapes and useless for
+    testing anything the middleware stack does. A header test run against it
+    would pass while the served app shipped no headers at all.
+    """
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    return TestClient(app)
+
+
+def test_the_dashboard_cannot_be_framed():
+    """The page carries a STOP TRADING button and an operator token field.
+    Framed on a hostile page, both are one transparent overlay away from being
+    clicked by someone who thought they were dismissing a cookie banner. Both
+    headers, because older browsers honour only X-Frame-Options."""
+    h = _served().get("/").headers
+    assert "frame-ancestors 'none'" in h["content-security-policy"]
+    assert h["x-frame-options"] == "DENY"
+
+
+def test_a_signed_in_page_cannot_post_the_account_anywhere_else():
+    """Once signed in the page holds the whole book. connect-src 'self' is what
+    stops injected script from shipping it to another origin."""
+    csp = _served().get("/").headers["content-security-policy"]
+    assert "connect-src 'self'" in csp
+    assert "default-src 'self'" in csp
+    assert "object-src 'none'" in csp
+
+
+def test_security_headers_are_on_errors_too():
+    """A 401 is still a response, and an unframeable app with a frameable error
+    page is a framing bug with extra steps."""
+    r = _served().get("/api/dashboard/summary")      # gated -> 401
+    assert r.status_code == 401
+    assert r.headers.get("x-frame-options") == "DENY"
+    assert "content-security-policy" in r.headers
