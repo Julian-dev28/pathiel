@@ -93,6 +93,16 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
         "hold_days": 1.0, "max_new_per_cycle": 1,
     },
+    # W-XSR1. Sized at $11 like every other book on this account: the only
+    # notional that clears HL MIN_ORDER_USD and fits usable margin at $12.94.
+    "xs_reversal": {
+        "enabled": True, "shadow_only": False,
+        "notional_usd": 11.0, "leverage": 1, "stop_pct": 15.0,
+        "hold_hours": 24.0, "lookback_d": 3.0,
+        "awake_lookback_d": 7.0, "awake_min_frac": 0.67,
+        "top_pct": 90.0, "min_volume_usd": 1_000_000.0,
+        "min_universe": 20, "max_new_per_cycle": 1,
+    },
     "social_trending": {
         "enabled": True, "shadow_only": False,
         "poll_hours": 1.0, "dedup_hours": 24.0, "horizon_days": 1.0,

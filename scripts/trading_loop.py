@@ -65,6 +65,7 @@ from pathia.agents.social_trending_recorder import maybe_record as _social_trend
 from pathia.agents.unlock_short_live import maybe_run as _unlock_short_maybe_run
 from pathia.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from pathia.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
+from pathia.agents.xs_reversal_live import maybe_run as _xs_reversal_maybe_run
 from pathia.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from pathia.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from pathia.agents.executor import (
@@ -739,6 +740,18 @@ while True:
                                         _book_execute)
         except Exception as _nsme:
             logger.warning(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
+
+        # xs_reversal (VALIDATED n=1995, EV25 +2.474%, all four time quartiles
+        # positive, bootstrap p=0.0000 clustered on snapshot): short the top
+        # decile of 3d cross-sectional return, but only where funding has been
+        # off the venue baseline. Runs AFTER data_logger has had cycles to fill
+        # the panel it reads; on a cold state directory it simply declines to
+        # rank and takes nothing. See findings/W-XSR1_cross_sectional_reversal.md
+        try:
+            _xs_reversal_maybe_run(read_agent_config(), universe, positions,
+                                   _book_execute)
+        except Exception as _xsr:
+            logger.warning(f"[xs-reversal] pass failed (non-fatal): {_xsr}")
 
         # Data-collection logger — appends a throttled funding/OI snapshot of the universe (ZERO added
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /

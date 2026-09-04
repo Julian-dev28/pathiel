@@ -333,10 +333,11 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: dict(FIXTURE_CONFIG))
     rows = {r["name"]: r for r in db._books_payload()}
     # 2026-08-30, second pass: "if it's shadow, nuke it". The two MARGINAL
-    # mover books were shadow, so they are gone. What remains is the four that
-    # graded VALIDATED, and all four are LIVE — there is no shadow tier left to
-    # sit in.
-    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 4
+    # mover books were shadow, so they are gone. What remains graded VALIDATED
+    # and is LIVE — there is no shadow tier left to sit in. xs_reversal joined
+    # 2026-09-04 and went live from its first bar: its evidence (W-XSR1) was
+    # gathered before the book existed, so there was nothing to graduate from.
+    assert set(rows) == db._KNOWN_BOOK_NAMES and len(rows) == 5
     assert rows["news_surge_short"]["status"] == "live"
     assert "VALIDATED" in rows["news_surge_short"]["thesis"]
     assert all(r["thesis"] for r in rows.values())
@@ -345,7 +346,7 @@ def test_books_payload_statuses_and_sizes(monkeypatch):
 def test_books_payload_missing_config_is_off(monkeypatch):
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     rows = db._books_payload()
-    assert len(rows) == 4 and all(r["status"] == "off" for r in rows)
+    assert len(rows) == 5 and all(r["status"] == "off" for r in rows)
 
 
 # ── news payload ─────────────────────────────────────────────────────────────
@@ -989,7 +990,7 @@ def test_books_endpoint(client, monkeypatch):
     r = client.get("/api/dashboard/books")
     assert r.status_code == 200
     rows = r.json()
-    assert len(rows) == 4
+    assert len(rows) == 5          # xs_reversal joined 2026-09-04 (W-XSR1)
     assert {"name", "status", "size", "thesis"} <= set(rows[0])
 
 

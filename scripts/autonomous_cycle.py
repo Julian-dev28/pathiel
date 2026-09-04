@@ -80,6 +80,10 @@ _SWITCHES: Dict[str, tuple] = {
     # deletion was made while the exchange was down and nothing could be graded.
     "news_surge_short": ("top", "news_surge_short"),
     "news_surge_multi": ("top", "news_surge_multi"),
+    # Live from its first bar (W-XSR1, 2026-09-04): the evidence was gathered
+    # before the book existed rather than after, so there was no shadow tier to
+    # graduate from. It is demotable on the same terms as everything else.
+    "xs_reversal": ("top", "xs_reversal"),
     "social_trending": ("top", "social_trending"),
     "unlock_short_runin": ("top", "unlock_short"),
 }

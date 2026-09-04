@@ -193,5 +193,20 @@
   },
   "min_tradable_equity_usd": 12.0,
   "_min_tradable_equity_usd_note": "Operator override of the derived floor, set 2026-09-04 for a $12.94 account. The derived floor ($88.89) is what all five enabled books need to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which from outside looks like books that simply do not fire (W-FUND1, 2026-08-30). That is the cost of this switch, not a bug. Delete this key to restore the derived floor.",
-  "_sizing_note": "Sized 2026-09-04 for a $12.94 account. $11 notional is the only value that clears HL MIN_ORDER_USD ($10.50) and fits usable margin ($11.65 = equity less the 10% min_available_margin_pct). One position at a time. Risk per trade is $1.65 at the 15% stop, 13% of the account \u2014 that is inherent to the account size, not a tuning choice. Restore $20 notional, max_concurrent 20 and the -$100 kill when the account is funded above $88.89."
+  "_sizing_note": "Sized 2026-09-04 for a $12.94 account. $11 notional is the only value that clears HL MIN_ORDER_USD ($10.50) and fits usable margin ($11.65 = equity less the 10% min_available_margin_pct). One position at a time. Risk per trade is $1.65 at the 15% stop, 13% of the account \u2014 that is inherent to the account size, not a tuning choice. Restore $20 notional, max_concurrent 20 and the -$100 kill when the account is funded above $88.89.",
+  "xs_reversal": {
+    "enabled": true,
+    "shadow_only": false,
+    "notional_usd": 11.0,
+    "leverage": 1,
+    "stop_pct": 15.0,
+    "hold_hours": 24.0,
+    "lookback_d": 3.0,
+    "awake_lookback_d": 7.0,
+    "awake_min_frac": 0.67,
+    "top_pct": 90.0,
+    "min_volume_usd": 1000000.0,
+    "min_universe": 20,
+    "max_new_per_cycle": 1
+  }
 }

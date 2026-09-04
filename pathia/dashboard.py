@@ -862,6 +862,10 @@ _BOOKS: List[Tuple[str, str, str]] = [
     ("social_trending", "social_trending",
      "Long a coin entering CoinGecko's trending list — an attention spike. "
      "VALIDATED n=185: +0.89%/sig net25, halves +0.54/+1.50, mc_p=0.0005."),
+    ("xs_reversal", "xs_reversal",
+     "Short the top decile of 3d cross-sectional return, but only where funding "
+     "has been off the venue baseline — no positioning, nothing to unwind. "
+     "VALIDATED n=1995: +2.474%/sig net25, all four quartiles positive, p=0.0000."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
