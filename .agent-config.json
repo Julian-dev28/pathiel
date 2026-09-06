@@ -21,7 +21,7 @@
   "enable_crypto": false,
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.35,
-  "leverage": 12,
+  "leverage": 3,
   "max_trade_notional_usd": 5000,
   "asset_notional_multiplier": {
     "crypto": 1.0,
@@ -134,8 +134,8 @@
   "thin_short_relax": {
     "enabled": true,
     "min_confidence": 0.72,
-    "notional_usd": 12.0,
-    "leverage": 1
+    "notional_usd": 24.0,
+    "leverage": 3
   },
   "data_logger": {
     "enabled": true,
@@ -158,8 +158,8 @@
     "shadow_only": false,
     "equity_live": true,
     "crypto_live": true,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 24.0,
+    "leverage": 3,
     "stop_pct": 15.0,
     "hold_days": 1.0,
     "max_new_per_cycle": 1
@@ -167,8 +167,8 @@
   "news_surge_multi": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 24.0,
+    "leverage": 3,
     "stop_pct": 15.0,
     "hold_days": 1.0,
     "max_new_per_cycle": 1
@@ -179,26 +179,26 @@
     "poll_hours": 1.0,
     "dedup_hours": 24.0,
     "horizon_days": 1.0,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 24.0,
+    "leverage": 3,
     "stop_pct": 15.0,
     "max_new_per_cycle": 1
   },
   "unlock_short": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 24.0,
+    "leverage": 3,
     "stop_pct": 15.0
   },
   "min_tradable_equity_usd": 26.0,
   "_min_tradable_equity_usd_note": "Operator override of the derived floor, set 2026-09-04 for a $12.94 account. The derived floor ($88.89) is what all five enabled books need to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which from outside looks like books that simply do not fire (W-FUND1, 2026-08-30). That is the cost of this switch, not a bug. Delete this key to restore the derived floor.",
-  "_sizing_note": "Sized 2026-09-06 for $34.68 on the xyz HIP-3 dex, HIP-3 ONLY (enable_hip3 true, enable_crypto false). equity_fraction_per_trade 0.35 x 1x leverage = ~$12.14 per trade, clipped to $12 by each book's strategy_book_notional ceiling. max_concurrent 2 -> $24 deployed of $31.21 usable. $1.80 risk per trade at the 15% stop. WHY 0.35 AND NOT 0.1: the books override leverage to 1x, so the old 0.1 sized every trade at $3.47 \u2014 under HL MIN_ORDER_USD ($10.50) \u2014 and nothing could fill. strategy_book_notional is a ceiling, not a target. min_tradable_equity_usd 26 doubles as a drawdown brake. social_trending and unlock_short_runin produce ZERO xyz signals and will not trade while enable_crypto is false; their recorders keep writing the forward ledger, so their evidence still accrues.",
+  "_sizing_note": "3x, 2026-09-06, on $34.70. $24 notional per position = $8 margin at 3x; 2 concurrent = $16 of $31.21 usable. Risk $3.60 per trade at the 15% stop, $7.20 if both stop together \u2014 inside the -$10 kill with room. WHY 3x AND NOT MORE: the executor caps leverage to fit the STOP rather than shrinking the stop (backup_sl_max_frac_of_liq 0.60), so a 15% stop supports up to 4x. Past that the book silently gets a tighter stop than the one it was validated on, which is a different strategy \u2014 measured on 51 xyz equities, the clamped variant forced 33% of legs out vs 3.3% and lost money in every sampling scheme. NOTIONAL DOUBLED TOO: leverage alone would have changed nothing, because strategy_book_notional is a ceiling \u2014 3x would only have freed margin while exposure stayed at $12.",
   "xs_reversal": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 12.0,
-    "leverage": 1,
+    "notional_usd": 24.0,
+    "leverage": 3,
     "stop_pct": 15.0,
     "hold_hours": 24.0,
     "lookback_d": 3.0,
