@@ -1,11 +1,20 @@
 # MCP Server Structure
 
-`scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 99 tools
-(58 implemented + 41 honest `not_implemented` stubs for unwired Hyperliquid SDK
-calls). Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
+`scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 86 tools, every one of them implemented. Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
 
-Before adding a stub, check whether `pathia.client` already does it. An audit on
-2026-09-06 promoted six that never needed to be stubs.
+**There are no stubs left.** All 47 were audited against the live `/info` API on
+2026-09-06: 34 had a working endpoint and were implemented, 13 had none and were
+deleted rather than advertising a promise the venue cannot keep. 99 tools became
+86, and every one returns real data.
+
+The stub mechanism below is kept on purpose — it is the right shape for a tool
+whose endpoint genuinely does not exist yet, and a clean `not_implemented` beats
+fake zeros. Two rules before you use it:
+
+1. **Check `pathia.client` first.** Six stubs sat on top of working code for
+   months. An agent reads "not implemented" as "this data does not exist here".
+2. **If the venue has no endpoint at all, delete the tool.** A permanently
+   unimplementable tool costs a call to discover and teaches nothing.
 
 Counted from source, not from memory: `TOOLS` holds 99 entries and
 `_STUB_TOOL_NAMES` holds 47 of those names, so 52 are genuinely implemented. If

@@ -195,8 +195,16 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
     import ast
     server = ROOT / "scripts" / "pathia-mcp-server.py"
     tree = ast.parse(server.read_text())
-    g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
-         for t in n.targets if hasattr(t, "id")}
+    # AnnAssign as well as Assign: _STUB_TOOL_NAMES carries a type annotation
+    # now that it is empty, and an Assign-only walk silently misses it.
+    g = {}
+    for n in tree.body:
+        if isinstance(n, ast.Assign):
+            for tgt in n.targets:
+                if hasattr(tgt, "id"):
+                    g[tgt.id] = n.value
+        elif isinstance(n, ast.AnnAssign) and hasattr(n.target, "id"):
+            g[n.target.id] = n.value
     tools = {v.value for e in g["TOOLS"].elts for k, v in zip(e.keys, e.values)
              if getattr(k, "value", None) == "name"}
     stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
@@ -231,12 +239,22 @@ def test_no_stub_shadows_a_capability_the_client_already_has():
     check to run when adding a new one."""
     import ast
     tree = ast.parse((ROOT / "scripts" / "pathia-mcp-server.py").read_text())
-    g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
-         for t in n.targets if hasattr(t, "id")}
+    g = {}
+    for n in tree.body:
+        if isinstance(n, ast.Assign):
+            for tgt in n.targets:
+                # AnnAssign for the annotated empty list; Assign for TOOLS.
+                if hasattr(tgt, "id"):
+                    g[tgt.id] = n.value
+        elif isinstance(n, ast.AnnAssign) and hasattr(n.target, "id"):
+            g[n.target.id] = n.value
     stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
     handlers = {n.name[7:] for n in ast.walk(tree)
                 if isinstance(n, ast.FunctionDef) and n.name.startswith("handle_")}
+    assert stubs == set(), f"stubs are back: {sorted(stubs)}"
     for name in ("get_coin_price", "get_leverage", "get_funding_history",
-                 "get_asset_context", "get_open_interest", "get_predicted_funding"):
+                 "get_asset_context", "get_open_interest", "get_predicted_funding",
+                 "get_price_impact", "get_max_trade_size", "get_portfolio_status",
+                 "get_trade_history", "get_user_orders", "get_api_rate_limits"):
         assert name not in stubs, f"{name} regressed to a stub"
         assert name in handlers, f"{name} advertises no real handler"

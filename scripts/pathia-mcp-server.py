@@ -20,7 +20,7 @@ import sys
 import os
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 # Auto-load .env.local from project root
 _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env.local')
@@ -85,21 +85,14 @@ def _norm_coin(raw: str) -> str:
 # numbers), the handler returns an explicit `not_implemented` error. This
 # keeps tool discovery honest: an LLM that gets this response knows to skip
 # the value rather than fold a placeholder into its reasoning.
-_STUB_TOOL_NAMES = [
-    'get_trade_history', 'get_sub_accounts',
-    'get_user_twist', 'get_withdrawals', 'get_user_defined_types', 'get_api_keys',
-    'get_user_verify', 'get_liquidations', 'get_order_status',
-    'get_user_orders', 'get_assets', 'get_market_stats',
-    'get_deposits', 'get_transfers', 'get_rewards',
-    'get_staking_info', 'get_user_roles', 'get_max_trade_size', 'get_portfolio_status', 'get_trading_permissions', 'get_recent_trades', 'get_funding_rate',
-    'get_liquidation_events', 'get_exchange_status', 'get_user_preferences',
-    'get_historical_funding', 'get_market_sentiment',
-    'get_leaderboard_rank', 'get_vaults', 'get_vault_details',
-    'get_api_rate_limits', 'get_user_orders_history', 'get_price_impact',
-    'get_slippage_estimate', 'get_withdrawal_status', 'get_deposit_address',
-    'get_transfer_history', 'get_governance_proposals', 'get_validator_info',
-    'get_network_stats', 'get_sub_account_balances',
-]
+# Empty since 2026-09-06: every advertised tool now has a real handler. The
+# mechanism below is kept deliberately — it is the right shape for a tool whose
+# endpoint genuinely does not exist yet, and returning a clean not_implemented
+# beats fake zeros. What is NOT acceptable is leaving a name here when
+# pathia.client can already answer it, which is how six of these hid working
+# capability for months.
+_STUB_TOOL_NAMES: List[str] = [
+    ]
 
 
 def _make_stub_handler(tool_name: str):
@@ -465,11 +458,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_sub_accounts",
-        "description": "Get sub-account list and balances.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
         "name": "get_user_twist",
         "description": "Get user staking (twist) information.",
         "inputSchema": {"type": "object", "properties": {}}
@@ -513,23 +501,6 @@ TOOLS = [
             "interval": {"type": "string", "description": "Interval (1m, 5m, 15m, 1h, 4h, 1d)"},
             "count": {"type": "number", "description": "Number of candles (default 100)"}
         }, "required": ["coin"]}
-    },
-    {
-        "name": "get_api_keys",
-        "description": "Get API key list for the account.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_user_verify",
-        "description": "Get user verification status.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_liquidations",
-        "description": "Get recent liquidation events.",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max events (default 100)"}
-        }}
     },
     {
         "name": "get_price_history",
@@ -645,13 +616,6 @@ TOOLS = [
         }, "required": ["user", "oid"]}
     },
     {
-        "name": "get_sub_account_balances",
-        "description": "Get sub-account balances.",
-        "inputSchema": {"type": "object", "properties": {
-            "name": {"type": "string", "description": "Sub-account name"}
-        }, "required": ["name"]}
-    },
-    {
         "name": "get_user_fees_detailed",
         "description": "Get detailed fee structure.",
         "inputSchema": {"type": "object", "properties": {}}
@@ -696,14 +660,6 @@ TOOLS = [
         }, "required": ["coin"]}
     },
     {
-        "name": "get_liquidation_events",
-        "description": "Get liquidation events for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "limit": {"type": "number", "description": "Max events (default 100)"}
-        }, "required": ["coin"]}
-    },
-    {
         "name": "get_portfolio_pnl",
         "description": "Get portfolio PnL summary.",
         "inputSchema": {"type": "object", "properties": {}}
@@ -714,18 +670,8 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_exchange_status",
-        "description": "Get exchange status (maintenance, etc.).",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
         "name": "get_markets_info",
         "description": "Get detailed info for all markets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_user_preferences",
-        "description": "Get user preferences/settings.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
@@ -759,23 +705,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
-    },
-    {
-        "name": "get_market_sentiment",
-        "description": "Get market sentiment indicators.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_leaderboard_rank",
-        "description": "Get leaderboard ranking for a user.",
-        "inputSchema": {"type": "object", "properties": {
-            "user": {"type": "string", "description": "User address"}
-        }, "required": ["user"]}
-    },
-    {
-        "name": "get_vaults",
-        "description": "Get all vaults on Hyperliquid.",
-        "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_vault_details",
@@ -831,23 +760,11 @@ TOOLS = [
         }, "required": ["withdrawal_id"]}
     },
     {
-        "name": "get_deposit_address",
-        "description": "Get deposit address for a token.",
-        "inputSchema": {"type": "object", "properties": {
-            "token": {"type": "string", "description": "Token symbol"}
-        }, "required": ["token"]}
-    },
-    {
         "name": "get_transfer_history",
         "description": "Get transfer history for user.",
         "inputSchema": {"type": "object", "properties": {
             "limit": {"type": "number", "description": "Max entries (default 100)"}
         }}
-    },
-    {
-        "name": "get_governance_proposals",
-        "description": "Get active governance proposals.",
-        "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_validator_info",
@@ -1301,6 +1218,34 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
 def run() -> None:
     # Initialize tool handlers
     tool_handlers = {
+        "get_assets": handle_get_assets,
+        "get_user_defined_types": handle_get_user_defined_types,
+        "get_market_stats": handle_get_market_stats,
+        "get_funding_rate": handle_get_funding_rate,
+        "get_historical_funding": handle_get_historical_funding,
+        "get_trade_history": handle_get_trade_history,
+        "get_recent_trades": handle_get_recent_trades,
+        "get_user_orders": handle_get_user_orders,
+        "get_user_orders_history": handle_get_user_orders_history,
+        "get_order_status": handle_get_order_status,
+        "get_deposits": handle_get_deposits,
+        "get_withdrawals": handle_get_withdrawals,
+        "get_transfers": handle_get_transfers,
+        "get_transfer_history": handle_get_transfer_history,
+        "get_withdrawal_status": handle_get_withdrawal_status,
+        "get_staking_info": handle_get_staking_info,
+        "get_user_twist": handle_get_user_twist,
+        "get_rewards": handle_get_rewards,
+        "get_user_roles": handle_get_user_roles,
+        "get_trading_permissions": handle_get_trading_permissions,
+        "get_portfolio_status": handle_get_portfolio_status,
+        "get_api_rate_limits": handle_get_api_rate_limits,
+        "get_validator_info": handle_get_validator_info,
+        "get_network_stats": handle_get_network_stats,
+        "get_price_impact": handle_get_price_impact,
+        "get_slippage_estimate": handle_get_slippage_estimate,
+        "get_max_trade_size": handle_get_max_trade_size,
+        "get_vault_details": handle_get_vault_details,
         "get_funding_history": handle_get_funding_history,
         "get_predicted_funding": handle_get_predicted_funding,
         "get_asset_context": handle_get_asset_context,
@@ -1648,6 +1593,413 @@ def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
                     return json.dumps({"coin": coin, "venues": entry[1]}, default=str)
             return json.dumps({"error": f"no predicted funding for {coin}"})
         return json.dumps({"count": len(raw), "rows": raw}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+# ── formerly stubs, batch two (2026-09-06) ───────────────────────────────────
+# Every /info request type below was probed against the live venue before the
+# handler was written. The ones with no endpoint were DELETED rather than left
+# stubbed: a permanently unimplementable tool is a promise the venue cannot
+# keep, and it costs an agent a call to find that out.
+
+
+def _user() -> str:
+    from pathia.client.hl_client import resolve_user_address
+    return resolve_user_address()
+
+
+def _info(typ: str, **kw) -> Any:
+    from pathia.client.hl_client import _http_post
+    return _http_post("/info", {"type": typ, **kw})
+
+
+def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
+    """userNonFundingLedgerUpdates, filtered by delta type.
+
+    Deposits, withdrawals and transfers are one endpoint distinguished only by
+    `delta.type`, so they share this rather than three near-identical handlers
+    drifting apart.
+    """
+    try:
+        start = int(params.get("startTime") or 0)
+        rows = _info("userNonFundingLedgerUpdates", user=_user(), startTime=start) or []
+        hits = [r for r in rows
+                if str(((r or {}).get("delta") or {}).get("type", "")) in kinds]
+        return json.dumps({"kinds": list(kinds), "count": len(hits),
+                           "rows": hits[-200:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _walk_book(coin: str, usd: float, is_buy: bool) -> Dict[str, Any]:
+    """Walk the L2 book for `usd` of notional and report what it really costs.
+
+    The mid is what a quote screen shows; this is what the fill looks like. On a
+    thin alt the difference is the whole trade, which is why sizing that assumes
+    the mid silently over-sizes exactly the coins it should not.
+    """
+    book = _info("l2Book", coin=coin) or {}
+    levels = book.get("levels") or []
+    if len(levels) != 2:
+        raise ValueError(f"no book for {coin}")
+    # levels[0] is bids, levels[1] asks. A buy lifts asks; a sell hits bids.
+    side = levels[1] if is_buy else levels[0]
+    if not side:
+        raise ValueError(f"empty {'ask' if is_buy else 'bid'} side for {coin}")
+    best = float(side[0]["px"])
+    remaining, spend, filled = usd, 0.0, 0.0
+    worst = best
+    for lvl in side:
+        px, sz = float(lvl["px"]), float(lvl["sz"])
+        avail = px * sz
+        take = min(avail, remaining)
+        if take <= 0:
+            break
+        spend += take
+        filled += take / px
+        worst = px
+        remaining -= take
+        if remaining <= 0:
+            break
+    avg = spend / filled if filled else best
+    return {
+        "coin": coin, "side": "buy" if is_buy else "sell",
+        "notional_usd": usd,
+        "best_px": best, "avg_fill_px": round(avg, 8), "worst_px": worst,
+        "slippage_pct": round((avg / best - 1) * 100 * (1 if is_buy else -1), 4),
+        "filled_usd": round(spend, 2),
+        # Unfilled notional is the honest part: the book ran out before the
+        # size did, and a caller that ignores this thinks it got a price.
+        "unfilled_usd": round(max(0.0, remaining), 2),
+        "book_exhausted": remaining > 0,
+    }
+
+
+def handle_get_assets(params: Dict[str, Any]) -> str:
+    """Every tradeable perp with its size decimals and max leverage."""
+    try:
+        meta = _info("meta") or {}
+        uni = meta.get("universe") or []
+        return json.dumps({"count": len(uni), "assets": uni}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_defined_types(params: Dict[str, Any]) -> str:
+    """HIP-3 user-defined perp dexes — the `xyz:` style venues."""
+    try:
+        dexes = _info("perpDexs") or []
+        return json.dumps({"count": len(dexes), "dexes": dexes}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_market_stats(params: Dict[str, Any]) -> str:
+    """Mark, oracle, day volume, open interest and funding for one coin."""
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        ctx = _asset_contexts()
+        if coin not in ctx:
+            return json.dumps({"error": f"unknown coin: {coin}"})
+        return json.dumps({"coin": coin, **ctx[coin]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_funding_rate(params: Dict[str, Any]) -> str:
+    """Current hourly funding for one coin, or the whole board sorted by it."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts()
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin, "funding": ctx[coin].get("funding")},
+                              default=str)
+        rows = []
+        for c, v in ctx.items():
+            try:
+                rows.append({"coin": c, "funding": float(v.get("funding") or 0)})
+            except (TypeError, ValueError):
+                continue
+        rows.sort(key=lambda r: -r["funding"])
+        return json.dumps({"count": len(rows), "rows": rows}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_historical_funding(params: Dict[str, Any]) -> str:
+    """Funding this ACCOUNT actually paid or received. Distinct from
+    get_funding_history, which is the venue rate for a coin."""
+    try:
+        start = int(params.get("startTime") or 0)
+        rows = _info("userFunding", user=_user(), startTime=start) or []
+        return json.dumps({"count": len(rows), "rows": rows[-300:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_trade_history(params: Dict[str, Any]) -> str:
+    """This account's fills, newest last."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        rows = _info("userFills", user=_user()) or []
+        if coin:
+            rows = [r for r in rows if r.get("coin") == coin]
+        limit = int(params.get("limit") or 200)
+        return json.dumps({"coin": coin or "all", "count": len(rows),
+                           "fills": rows[-limit:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_recent_trades(params: Dict[str, Any]) -> str:
+    """This account's most recent fills on a coin.
+
+    Named `recent_trades`, which on most venues means the public tape.
+    Hyperliquid's /info exposes no public trade feed, so this is scoped to the
+    account and says so rather than returning something that looks like the tape.
+    """
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        rows = _info("userFills", user=_user()) or []
+        if coin:
+            rows = [r for r in rows if r.get("coin") == coin]
+        return json.dumps({"scope": "this account only — HL /info has no public trade feed",
+                           "coin": coin or "all", "count": len(rows),
+                           "fills": rows[-50:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_orders(params: Dict[str, Any]) -> str:
+    """Open orders, with the frontend's extra fields (trigger type, tp/sl)."""
+    try:
+        rows = _info("frontendOpenOrders", user=_user()) or []
+        return json.dumps({"count": len(rows), "orders": rows}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
+    """Historical orders, reconstructed from fills.
+
+    HL exposes no order-history endpoint; fills are the durable record. Grouped
+    by oid so partial fills read as one order rather than several.
+    """
+    try:
+        rows = _info("userFills", user=_user()) or []
+        by_oid: Dict[Any, Dict[str, Any]] = {}
+        for f in rows:
+            oid = f.get("oid")
+            g = by_oid.setdefault(oid, {"oid": oid, "coin": f.get("coin"),
+                                        "side": f.get("side"), "fills": 0,
+                                        "sz": 0.0, "first_ts": f.get("time")})
+            g["fills"] += 1
+            try:
+                g["sz"] += float(f.get("sz") or 0)
+            except (TypeError, ValueError):
+                pass
+            g["last_ts"] = f.get("time")
+        out = sorted(by_oid.values(), key=lambda g: g.get("last_ts") or 0)
+        return json.dumps({"count": len(out), "orders": out[-200:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_order_status(params: Dict[str, Any]) -> str:
+    """Status of one order by oid."""
+    oid = params.get("oid") or params.get("orderId")
+    if oid is None:
+        return json.dumps({"error": "oid is required"})
+    try:
+        return json.dumps(_info("orderStatus", user=_user(), oid=int(oid)), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_deposits(params: Dict[str, Any]) -> str:
+    return _ledger(("deposit",), params)
+
+
+def handle_get_withdrawals(params: Dict[str, Any]) -> str:
+    return _ledger(("withdraw",), params)
+
+
+def handle_get_transfers(params: Dict[str, Any]) -> str:
+    return _ledger(("internalTransfer", "accountClassTransfer", "spotTransfer",
+                    "subAccountTransfer", "vaultTransfer"), params)
+
+
+def handle_get_transfer_history(params: Dict[str, Any]) -> str:
+    """Same ledger as get_transfers. Kept because both names are advertised and
+    silently returning different data for synonyms is worse than duplication."""
+    return handle_get_transfers(params)
+
+
+def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
+    """The most recent withdrawals. HL settles these on-chain, so there is no
+    per-request status endpoint — presence in the ledger IS the confirmation."""
+    try:
+        rows = _info("userNonFundingLedgerUpdates", user=_user(), startTime=0) or []
+        w = [r for r in rows
+             if str(((r or {}).get("delta") or {}).get("type", "")) == "withdraw"]
+        return json.dumps({"note": "presence in the ledger is the confirmation; "
+                                   "HL has no per-withdrawal status endpoint",
+                           "count": len(w), "recent": w[-20:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_staking_info(params: Dict[str, Any]) -> str:
+    """Delegated stake and its summary."""
+    try:
+        return json.dumps({"summary": _info("delegatorSummary", user=_user()),
+                           "delegations": _info("delegations", user=_user())},
+                          default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_twist(params: Dict[str, Any]) -> str:
+    """Per-validator delegations."""
+    try:
+        rows = _info("delegations", user=_user()) or []
+        return json.dumps({"count": len(rows), "delegations": rows}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_rewards(params: Dict[str, Any]) -> str:
+    """Staking rewards, from the delegator summary. HL has no trading-rewards
+    endpoint, so this is staking only and says so."""
+    try:
+        s = _info("delegatorSummary", user=_user()) or {}
+        return json.dumps({"scope": "staking rewards only — HL exposes no "
+                                    "trading-rewards endpoint", **s}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_user_roles(params: Dict[str, Any]) -> str:
+    try:
+        return json.dumps(_info("userRole", user=_user()), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_trading_permissions(params: Dict[str, Any]) -> str:
+    """Role plus fee tier — what this account is actually allowed and charged."""
+    try:
+        return json.dumps({"role": _info("userRole", user=_user()),
+                           "fees": _info("userFees", user=_user())}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_portfolio_status(params: Dict[str, Any]) -> str:
+    """Account value and PnL history across HL's own windows."""
+    try:
+        return json.dumps(_info("portfolio", user=_user()), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_api_rate_limits(params: Dict[str, Any]) -> str:
+    """Request budget left. Worth reading before a wide scan — this repo has a
+    history of scans dying on 429s that looked like a quiet market."""
+    try:
+        return json.dumps(_info("userRateLimit", user=_user()), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_validator_info(params: Dict[str, Any]) -> str:
+    try:
+        rows = _info("validatorSummaries") or []
+        return json.dumps({"count": len(rows), "validators": rows}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_network_stats(params: Dict[str, Any]) -> str:
+    """Aggregate validator picture — the closest thing /info offers to a
+    network view."""
+    try:
+        rows = _info("validatorSummaries") or []
+        total = 0.0
+        active = 0
+        for v in rows:
+            try:
+                total += float(v.get("stake") or 0)
+            except (TypeError, ValueError):
+                pass
+            if v.get("isActive"):
+                active += 1
+        return json.dumps({"validators": len(rows), "active": active,
+                           "total_stake": total,
+                           "perp_dexes": len(_info("perpDexs") or [])}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_price_impact(params: Dict[str, Any]) -> str:
+    """What a given notional actually costs against the current book."""
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        usd = float(params.get("notionalUsd") or params.get("size") or 1000)
+        is_buy = str(params.get("side", "buy")).lower() != "sell"
+        return json.dumps(_walk_book(coin, usd, is_buy), default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
+    """Same book walk as get_price_impact, reported as slippage."""
+    return handle_get_price_impact(params)
+
+
+def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
+    """How much this account could put on, bounded by BOTH margin and the book.
+
+    Equity alone is the wrong answer on a thin alt: the size that fits the
+    margin can be several percent of slippage away from the mid.
+    """
+    from pathia.agents.config_store import read_agent_config
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        cfg = read_agent_config() or {}
+        state = _info("clearinghouseState", user=_user()) or {}
+        equity = float((state.get("marginSummary") or {}).get("accountValue") or 0)
+        free_pct = float(cfg.get("min_available_margin_pct", 0.10) or 0.0)
+        lev = int(cfg.get("leverage", 1) or 1)
+        by_margin = max(0.0, equity * (1 - free_pct)) * lev
+        depth = _walk_book(coin, by_margin, True) if by_margin > 0 else {}
+        return json.dumps({
+            "coin": coin, "equity": round(equity, 2),
+            "max_notional_by_margin": round(by_margin, 2),
+            "leverage_ceiling": lev,
+            "book_check": depth,
+        }, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_vault_details(params: Dict[str, Any]) -> str:
+    """One vault by address. HL has no list-all-vaults endpoint, which is why
+    get_vaults was removed rather than left stubbed."""
+    addr = params.get("vaultAddress") or params.get("address")
+    if not addr:
+        return json.dumps({"error": "vaultAddress is required"})
+    try:
+        got = _info("vaultDetails", vaultAddress=str(addr))
+        if got is None:
+            # HL answers a valid request for an unknown vault with a bare null.
+            # Returning that verbatim makes "no such vault" indistinguishable
+            # from "the call failed" to anything reading the response.
+            return json.dumps({"error": "no such vault", "vaultAddress": str(addr)})
+        return json.dumps(got, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 

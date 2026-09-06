@@ -30,7 +30,7 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 Two entry processes:
   scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
   pathia/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/pathia-mcp-server.py — MCP stdio server: exposes 99 tools to Pathia Agent
+  scripts/pathia-mcp-server.py — MCP stdio server: exposes 86 tools to Pathia Agent
 ```
 
 All three share the same on-disk state and the same Python modules under
@@ -70,7 +70,7 @@ pathia:
 |---|---|
 | **DSL (Dynamic Stop Loss) two-phase exit** | `pathia/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
 | **Skill-shaped trading strategies** | The `skills/pathia-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Pathia Agent skill is portable in shape, if not in runtime. |
-| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathia does the same with `scripts/pathia-mcp-server.py` (99 tools). Same pattern, open implementation. |
+| **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathia does the same with `scripts/pathia-mcp-server.py` (86 tools). Same pattern, open implementation. |
 
 The crucial difference: **Senpi's runtime and MCP server are closed.** Their
 open skills can't execute trades without their proprietary infrastructure.
@@ -354,7 +354,7 @@ user scale.
 
 ## The MCP server
 
-`scripts/pathia-mcp-server.py` — 99 tools over MCP stdio. The contract that
+`scripts/pathia-mcp-server.py` — 86 tools over MCP stdio. The contract that
 lets Pathia Agent (and any MCP client) operate the engine.
 
 Tool categories:
@@ -519,7 +519,7 @@ pathia/
 │   └── pathia_data_api/         # market-data product (own deploy unit)
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
-│   ├── pathia-mcp-server.py     # MCP stdio server, 99 tools
+│   ├── pathia-mcp-server.py     # MCP stdio server, 86 tools
 │   ├── grant_operator.py        # grant/revoke the operator role for a wallet
 │   └── backtest.py              # historical-candle backtest
 ├── skills/pathia-agent/  # Pathia Agent skill (operator's manual + helper scripts)

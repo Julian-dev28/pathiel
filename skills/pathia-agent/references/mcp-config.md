@@ -44,8 +44,7 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 99 tools (58 implemented + 41 honest `not_implemented`
-stubs for Hyperliquid SDK calls not yet wired). The 7 trading-core tools below
+The server exposes 86 tools, every one of them implemented. The 7 trading-core tools below
 are the ones you call directly.
 
 Six of those stubs were promoted on 2026-09-06 after an audit found the

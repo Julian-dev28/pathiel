@@ -1443,14 +1443,19 @@ def test_mcp_stub_table_and_tool_coverage():
     # The stub list is now a list of tool names (not a dict of fake payloads).
     # Each stubbed tool returns an explicit `not_implemented` error so LLM
     # callers don't silently consume placeholder data.
-    # 41, down from 47 on 2026-09-06: six stubs shadowed capabilities that
-    # already existed in pathia.client. The total is unchanged because they were
-    # promoted in place, not added.
-    assert len(mod._STUB_TOOL_NAMES) == 41
-    assert len({t["name"] for t in mod.TOOLS}) == 99
+    # ZERO since 2026-09-06. All 47 stubs were audited against the live /info
+    # API: 28 had a working endpoint and were implemented, 13 had none and were
+    # deleted rather than left advertising a promise the venue cannot keep.
+    # 99 tools became 86, every one of which returns real data.
+    assert len(mod._STUB_TOOL_NAMES) == 0
+    assert len({t["name"] for t in mod.TOOLS}) == 86
     assert set(mod._STUB_TOOL_NAMES) <= {t["name"] for t in mod.TOOLS}, (
         "a stub name is not registered in TOOLS, so clients get 'tool not "
         "found' instead of a clean not_implemented")
+    # The mechanism stays even with the list empty: it is the right shape for a
+    # tool whose endpoint does not exist YET, and a clean not_implemented beats
+    # fake zeros. What is unacceptable is a name sitting here that
+    # pathia.client can already answer.
     handler = mod._make_stub_handler("get_rewards")
     res = json.loads(handler({}))
     assert res["error"] == "not_implemented"
@@ -1471,10 +1476,14 @@ def test_mcp_server_stdio_end_to_end():
     resps = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
     assert len(resps) == 3, proc.stderr
     assert resps[0]["result"]["serverInfo"]["name"] == "pathia"
-    assert len(resps[1]["result"]["tools"]) == 99
+    assert len(resps[1]["result"]["tools"]) == 86
+    # get_rewards was a stub until 2026-09-06 and this asserted it said so.
+    # It now returns real delegator data, so the end-to-end check is that a
+    # tools/call round-trips into JSON at all — not that it refuses.
     call = json.loads(resps[2]["result"]["content"][0]["text"])
-    assert call["error"] == "not_implemented"
-    assert call["tool"] == "get_rewards"
+    assert isinstance(call, dict)
+    assert "not_implemented" not in json.dumps(call), (
+        "get_rewards regressed to a stub")
 
 
 # ── HIP-3 aggregation in fetch_account_state ────────────────────────────
