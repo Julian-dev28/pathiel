@@ -22,17 +22,17 @@
   "enable_hip3": true,
   "equity_fraction_per_trade": 0.35,
   "leverage": 3,
-  "max_trade_notional_usd": 5000,
+  "max_trade_notional_usd": 22.0,
   "asset_notional_multiplier": {
     "crypto": 1.0,
     "hip3": 1.0
   },
   "tp_scale_fraction": 0.5,
   "max_concurrent": 2,
-  "max_total_notional_pct": 10.0,
+  "max_total_notional_pct": 1.05,
   "max_daily_loss_usd": -10.0,
   "daily_giveback_halt_pct": 0.45,
-  "daily_giveback_min_peak_usd": 25.0,
+  "daily_giveback_min_peak_usd": 2.08,
   "crowded_with_min_conf": 0.8,
   "min_available_margin_pct": 0.1,
   "cooldown_min": 30,
@@ -40,11 +40,11 @@
   "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
   "max_crypto_long_correlated": 100,
-  "max_xyz_short_names": 3,
-  "max_xyz_short_notional_pct": 0.25,
+  "max_xyz_short_names": 2,
+  "max_xyz_short_notional_pct": 1.05,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
-  "min_short_volume_usd": 20000000,
+  "min_short_volume_usd": 1000000,
   "min_history_bars": 0,
   "coin_allowlist": [],
   "coin_blocklist": [],
@@ -127,14 +127,14 @@
     "max_per_coin": 2,
     "window_hours": 24.0
   },
-  "strategy_book_notional_usd": 120,
+  "strategy_book_notional_usd": 22.0,
   "strategy_book_equity_frac": 0.1,
-  "short_notional_usd": 100,
-  "ai_long_notional_usd": 25,
+  "short_notional_usd": 22.0,
+  "ai_long_notional_usd": 11.0,
   "thin_short_relax": {
     "enabled": true,
     "min_confidence": 0.72,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3
   },
   "data_logger": {
@@ -150,7 +150,7 @@
     "enabled": true,
     "poll_minutes": 30
   },
-  "max_daily_loss_pct": 0.15,
+  "max_daily_loss_pct": 0.2,
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,
   "news_surge_short": {
@@ -158,7 +158,7 @@
     "shadow_only": false,
     "equity_live": true,
     "crypto_live": true,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3,
     "stop_pct": 15.0,
     "hold_days": 1.0,
@@ -167,7 +167,7 @@
   "news_surge_multi": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3,
     "stop_pct": 15.0,
     "hold_days": 1.0,
@@ -179,7 +179,7 @@
     "poll_hours": 1.0,
     "dedup_hours": 24.0,
     "horizon_days": 1.0,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3,
     "stop_pct": 15.0,
     "max_new_per_cycle": 1
@@ -187,17 +187,17 @@
   "unlock_short": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3,
     "stop_pct": 15.0
   },
   "min_tradable_equity_usd": 26.0,
-  "_min_tradable_equity_usd_note": "Operator override of the derived floor, set 2026-09-04 for a $12.94 account. The derived floor ($88.89) is what all five enabled books need to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which from outside looks like books that simply do not fire (W-FUND1, 2026-08-30). That is the cost of this switch, not a bug. Delete this key to restore the derived floor.",
-  "_sizing_note": "3x, 2026-09-06, on $34.70. $24 notional per position = $8 margin at 3x; 2 concurrent = $16 of $31.21 usable. Risk $3.60 per trade at the 15% stop, $7.20 if both stop together \u2014 inside the -$10 kill with room. WHY 3x AND NOT MORE: the executor caps leverage to fit the STOP rather than shrinking the stop (backup_sl_max_frac_of_liq 0.60), so a 15% stop supports up to 4x. Past that the book silently gets a tighter stop than the one it was validated on, which is a different strategy \u2014 measured on 51 xyz equities, the clamped variant forced 33% of legs out vs 3.3% and lost money in every sampling scheme. NOTIONAL DOUBLED TOO: leverage alone would have changed nothing, because strategy_book_notional is a ceiling \u2014 3x would only have freed margin while exposure stayed at $12.",
+  "_min_tradable_equity_usd_note": "Operator override of the derived floor. The derived value is what every enabled book needs to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which looks from outside like books that do not fire (W-FUND1). $26.0 also acts as a drawdown brake: the system stops rather than grinding down.",
+  "_sizing_note": "TESTING SIZE, 2026-09-06, operator's call: keep margin small while the books prove themselves. $11 notional at 3x = $3.67 margin per position, deliberately just above HL's $10.5 MIN_ORDER_USD rather than anywhere near what the account could carry.\n  2 concurrent   = $22 notional, $7.33 margin\n  risk per trade  = $1.65 at the 15% stop\n  worst case      = $3.30 if both stop together, 63% of the $5.20 kill AT THE FLOOR ($26) \u2014 and smaller at any higher balance.\nSized from the FLOOR, not today's balance: the config has to stay coherent all the way down to where trading stops, or gates start refusing exactly as the account shrinks.\nThe kill is a PERCENT. max_daily_loss_pct wins over max_daily_loss_usd in effective_daily_loss_limit, and the two disagreed in this config \u2014 the -$10 was dead text while the real floor was -$5.21.\nCeilings replaced, every one sized for a much larger account and inert or harmful here: max_trade_notional_usd 5000, max_total_notional_pct 10.0, short_notional_usd 100, strategy_book_notional_usd 120, daily_giveback_min_peak_usd 25 (a 72% up day, could never arm), min_short_volume_usd $20M (only 6 of 280 xyz markets clear it).\nTO SCALE UP: raise notional_usd on the books; every ceiling here is derived from it and the coherence test will tell you what else must move.",
   "xs_reversal": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 24.0,
+    "notional_usd": 11.0,
     "leverage": 3,
     "stop_pct": 15.0,
     "hold_hours": 24.0,
@@ -208,5 +208,6 @@
     "min_volume_usd": 1000000.0,
     "min_universe": 20,
     "max_new_per_cycle": 1
-  }
+  },
+  "_xyz_concentration_note": "max_xyz_short_notional_pct 1.2. xyz shorts are ~1.28 effective bets at 0.83 mean pairwise correlation (W-MATH2/3) \u2014 7 stopped together on 07-21 for -$8.59 \u2014 so the binding constraint is total_notional * stop <= kill. Set just above the configured book ($34) so it admits the intended size and nothing more. The 0.25 default capped the whole book at $8.68, less than one position, and refused every xyz short. The gate measures NOTIONAL and is right to: a correlated 15% move costs 15% of notional whatever the leverage."
 }

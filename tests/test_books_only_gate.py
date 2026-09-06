@@ -216,3 +216,57 @@ def test_turning_a_market_back_on_does_not_need_a_restart():
         "the universe refresh reuses startup toggles — flipping a market on "
         "would not take effect until the loop restarts")
     assert "enable_crypto" in refresh and "enable_hip3" in refresh
+
+
+def test_every_sizing_gate_admits_the_book_the_config_asks_for():
+    """A small account is not a big account with smaller numbers: it is an
+    account where a dozen independently-set ceilings, each sane on its own, can
+    conspire to refuse every trade. Three did in one session — the equity-fraction
+    sizing put trades under HL's minimum, the xyz concentration cap was smaller
+    than one position, and max_daily_loss_pct silently overrode the USD kill the
+    book had been sized against.
+
+    So this asserts COHERENCE rather than any single value: every gate must
+    admit the book the config asks for, and the worst case must still fit the
+    kill. Change any number and this says whether the set still agrees.
+    """
+    import json
+    import pathlib
+    from pathia.client.exchange import MIN_ORDER_USD
+    root = pathlib.Path(__file__).resolve().parents[1]
+    cfg = json.loads((root / ".agent-config.json").read_text())
+
+    equity = float(cfg["min_tradable_equity_usd"])   # the floor it must work at
+    lev = int(cfg["leverage"])
+    conc = int(cfg["max_concurrent"])
+    n = float(cfg["xs_reversal"]["notional_usd"])
+    stop = float(cfg["xs_reversal"]["stop_pct"]) / 100.0
+    book = conc * n
+
+    # max_daily_loss_pct WINS over max_daily_loss_usd (effective_daily_loss_limit).
+    # Sizing against the USD value while a pct is set is how the book ends up
+    # larger than the kill it was supposed to respect.
+    assert float(cfg.get("max_daily_loss_pct", 0)) > 0, (
+        "no percentage kill — a static USD floor does not scale with the account")
+    kill = equity * float(cfg["max_daily_loss_pct"])
+
+    assert n >= MIN_ORDER_USD, f"${n} is under the exchange minimum ${MIN_ORDER_USD}"
+    assert conc * n / lev <= equity * (1 - float(cfg["min_available_margin_pct"])), \
+        "the book cannot fit in usable margin"
+    assert stop * 100 <= 100 * float(cfg["backup_sl_max_frac_of_liq"]) / lev, \
+        "the stop is unreachable at this leverage and would be silently tightened"
+    assert book * stop < kill, (
+        f"a full correlated stop-out costs ${book*stop:.2f} against a ${kill:.2f} "
+        f"kill — the book is bigger than its own risk limit")
+
+    for key, cap in (("max_xyz_short_notional_pct", equity * float(cfg["max_xyz_short_notional_pct"])),
+                     ("max_total_notional_pct", equity * float(cfg["max_total_notional_pct"])),
+                     ("short_notional_usd", float(cfg["short_notional_usd"]))):
+        assert book <= cap, f"{key} caps the book at ${cap:.2f}, under its ${book:.2f}"
+    for key in ("strategy_book_notional_usd", "max_trade_notional_usd"):
+        assert n <= float(cfg[key]), f"{key} is under one position"
+
+    # A gate that can never fire is not protection, it is decoration.
+    assert float(cfg["daily_giveback_min_peak_usd"]) < kill, (
+        "the give-back gate arms above a daily peak this account cannot reach")
+    assert int(cfg["max_xyz_short_names"]) <= conc
