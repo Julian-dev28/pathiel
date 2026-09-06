@@ -86,17 +86,14 @@ def _norm_coin(raw: str) -> str:
 # keeps tool discovery honest: an LLM that gets this response knows to skip
 # the value rather than fold a placeholder into its reasoning.
 _STUB_TOOL_NAMES = [
-    'get_trade_history', 'get_funding_history', 'get_sub_accounts',
-    'get_user_twist', 'get_withdrawals', 'get_predicted_funding',
-    'get_asset_context', 'get_user_defined_types', 'get_api_keys',
+    'get_trade_history', 'get_sub_accounts',
+    'get_user_twist', 'get_withdrawals', 'get_user_defined_types', 'get_api_keys',
     'get_user_verify', 'get_liquidations', 'get_order_status',
     'get_user_orders', 'get_assets', 'get_market_stats',
     'get_deposits', 'get_transfers', 'get_rewards',
-    'get_staking_info', 'get_user_roles', 'get_leverage',
-    'get_max_trade_size', 'get_portfolio_status', 'get_coin_price',
-    'get_trading_permissions', 'get_recent_trades', 'get_funding_rate',
+    'get_staking_info', 'get_user_roles', 'get_max_trade_size', 'get_portfolio_status', 'get_trading_permissions', 'get_recent_trades', 'get_funding_rate',
     'get_liquidation_events', 'get_exchange_status', 'get_user_preferences',
-    'get_historical_funding', 'get_open_interest', 'get_market_sentiment',
+    'get_historical_funding', 'get_market_sentiment',
     'get_leaderboard_rank', 'get_vaults', 'get_vault_details',
     'get_api_rate_limits', 'get_user_orders_history', 'get_price_impact',
     'get_slippage_estimate', 'get_withdrawal_status', 'get_deposit_address',
@@ -1304,6 +1301,12 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
 def run() -> None:
     # Initialize tool handlers
     tool_handlers = {
+        "get_funding_history": handle_get_funding_history,
+        "get_predicted_funding": handle_get_predicted_funding,
+        "get_asset_context": handle_get_asset_context,
+        "get_coin_price": handle_get_coin_price,
+        "get_leverage": handle_get_leverage,
+        "get_open_interest": handle_get_open_interest,
         "scan": handle_scan,
         "research": handle_research,
         "submit_verdict": handle_submit_verdict,
@@ -1532,6 +1535,121 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
         return json.dumps(referral, indent=2, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
+
+
+# ── formerly stubs ───────────────────────────────────────────────────────────
+# Each of the six below advertised `not_implemented` while the capability sat
+# one call away in pathia.client. That is worse than a missing tool: an agent
+# reads "not implemented" as "this data does not exist here" and goes without
+# it, or invents a workaround. Audited 2026-09-06 by checking every stub name
+# against what hl_client and exchange already expose.
+
+
+def handle_get_coin_price(params: Dict[str, Any]) -> str:
+    """Mid price for one coin."""
+    from pathia.client.exchange import get_hl_price
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        return json.dumps({"coin": coin, "price": get_hl_price(coin)}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_leverage(params: Dict[str, Any]) -> str:
+    """The venue's max leverage for a coin. Coin maxes differ (BTC 40x, BOME 3x),
+    and sizing that assumes a global ceiling silently over-levers the small
+    ones."""
+    from pathia.client.exchange import get_max_leverage
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        return json.dumps({"coin": coin, "max_leverage": get_max_leverage(coin)},
+                          default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_funding_history(params: Dict[str, Any]) -> str:
+    """Historical funding for a coin over a window, default the last 7 days."""
+    from pathia.client.hl_client import fetch_funding_history
+    coin = _norm_coin(params.get("coin", "BTC"))
+    try:
+        end = int(params.get("endTime") or time.time() * 1000)
+        start = int(params.get("startTime") or end - 7 * 86_400_000)
+        rows = fetch_funding_history(coin, start, end) or []
+        return json.dumps({"coin": coin, "start": start, "end": end,
+                           "count": len(rows), "rows": rows[-500:]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def _asset_contexts() -> Dict[str, Dict[str, Any]]:
+    """coin -> its asset context (funding, open interest, mark, day volume).
+
+    One `metaAndAssetCtxs` POST. The response is a two-element array whose
+    halves are positionally aligned — universe[i] describes ctxs[i] — so they
+    are zipped rather than indexed independently.
+    """
+    from pathia.client.hl_client import _http_post
+    raw = _http_post("/info", {"type": "metaAndAssetCtxs"})
+    if not isinstance(raw, list) or len(raw) != 2:
+        return {}
+    universe = (raw[0] or {}).get("universe") or []
+    ctxs = raw[1] or []
+    return {a.get("name"): c for a, c in zip(universe, ctxs) if a.get("name")}
+
+
+def handle_get_asset_context(params: Dict[str, Any]) -> str:
+    """Funding, open interest, mark and day volume for one coin, or all."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts()
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin, **ctx[coin]}, default=str)
+        return json.dumps({"count": len(ctx), "contexts": ctx}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_open_interest(params: Dict[str, Any]) -> str:
+    """Open interest, from the same asset contexts. Sorted so the crowded names
+    are at the top rather than buried in an alphabetical list."""
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        ctx = _asset_contexts()
+        if coin:
+            if coin not in ctx:
+                return json.dumps({"error": f"unknown coin: {coin}"})
+            return json.dumps({"coin": coin,
+                               "open_interest": ctx[coin].get("openInterest")},
+                              default=str)
+        rows = []
+        for c, v in ctx.items():
+            try:
+                rows.append({"coin": c, "open_interest": float(v.get("openInterest") or 0)})
+            except (TypeError, ValueError):
+                continue
+        rows.sort(key=lambda r: -r["open_interest"])
+        return json.dumps({"count": len(rows), "rows": rows[:100]}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
+
+
+def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
+    """Predicted next funding per venue, straight from /info."""
+    from pathia.client.hl_client import _http_post
+    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+    try:
+        raw = _http_post("/info", {"type": "predictedFundings"}) or []
+        if coin:
+            for entry in raw:
+                if isinstance(entry, list) and entry and entry[0] == coin:
+                    return json.dumps({"coin": coin, "venues": entry[1]}, default=str)
+            return json.dumps({"error": f"no predicted funding for {coin}"})
+        return json.dumps({"count": len(raw), "rows": raw}, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)}, default=str)
 
 
 def handle_get_l2_book(params: Dict[str, Any]) -> str:

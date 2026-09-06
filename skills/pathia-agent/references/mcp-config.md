@@ -44,9 +44,17 @@ mcp_servers:
 
 ## Primary Tools
 
-The server exposes 99 tools (52 implemented + 47 honest `not_implemented` stubs
-for Hyperliquid SDK calls not yet wired). The 7 trading-core tools below are the
-ones you call directly.
+The server exposes 99 tools (58 implemented + 41 honest `not_implemented`
+stubs for Hyperliquid SDK calls not yet wired). The 7 trading-core tools below
+are the ones you call directly.
+
+Six of those stubs were promoted on 2026-09-06 after an audit found the
+capability already sat in `pathia.client`: `get_coin_price`, `get_leverage`,
+`get_funding_history`, `get_asset_context`, `get_open_interest` and
+`get_predicted_funding`. A stub is worse than a missing tool — an agent reads
+"not implemented" as "this data does not exist here" and goes without it.
+`get_predicted_funding` returns rates across venues, so it is a basis read as
+well as a funding one.
 
 | Tool | Args | Returns |
 |------|------|---------|

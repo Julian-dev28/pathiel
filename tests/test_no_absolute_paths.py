@@ -213,3 +213,30 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
         assert f"{advertised} tools" in text, (
             f"{doc} does not say '{advertised} tools' — the server advertises "
             f"{advertised} ({implemented} implemented + {len(stubs)} stubs)")
+        # The split matters more than the total: it is what tells a reader how
+        # much of the surface actually returns data. Only checked where a doc
+        # actually quotes it — ARCHITECTURE describes the stub mechanism without
+        # giving a count, which is fine.
+        if "implemented + " in text:
+            assert f"{implemented} implemented" in text, (
+                f"{doc} misstates the implemented count; it is {implemented}")
+
+
+def test_no_stub_shadows_a_capability_the_client_already_has():
+    """A stub is worse than a missing tool: an agent reads "not implemented" as
+    "this data does not exist here" and goes without it. Six stubs sat on top of
+    working pathia.client code until 2026-09-06.
+
+    This pins the six so they cannot silently regress to stubs, and names the
+    check to run when adding a new one."""
+    import ast
+    tree = ast.parse((ROOT / "scripts" / "pathia-mcp-server.py").read_text())
+    g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
+         for t in n.targets if hasattr(t, "id")}
+    stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
+    handlers = {n.name[7:] for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef) and n.name.startswith("handle_")}
+    for name in ("get_coin_price", "get_leverage", "get_funding_history",
+                 "get_asset_context", "get_open_interest", "get_predicted_funding"):
+        assert name not in stubs, f"{name} regressed to a stub"
+        assert name in handlers, f"{name} advertises no real handler"

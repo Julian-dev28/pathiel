@@ -1443,8 +1443,14 @@ def test_mcp_stub_table_and_tool_coverage():
     # The stub list is now a list of tool names (not a dict of fake payloads).
     # Each stubbed tool returns an explicit `not_implemented` error so LLM
     # callers don't silently consume placeholder data.
-    assert len(mod._STUB_TOOL_NAMES) == 47
+    # 41, down from 47 on 2026-09-06: six stubs shadowed capabilities that
+    # already existed in pathia.client. The total is unchanged because they were
+    # promoted in place, not added.
+    assert len(mod._STUB_TOOL_NAMES) == 41
     assert len({t["name"] for t in mod.TOOLS}) == 99
+    assert set(mod._STUB_TOOL_NAMES) <= {t["name"] for t in mod.TOOLS}, (
+        "a stub name is not registered in TOOLS, so clients get 'tool not "
+        "found' instead of a clean not_implemented")
     handler = mod._make_stub_handler("get_rewards")
     res = json.loads(handler({}))
     assert res["error"] == "not_implemented"

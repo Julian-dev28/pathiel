@@ -1,8 +1,11 @@
 # MCP Server Structure
 
 `scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 99 tools
-(52 implemented + 47 honest `not_implemented` stubs for unwired Hyperliquid SDK
+(58 implemented + 41 honest `not_implemented` stubs for unwired Hyperliquid SDK
 calls). Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
+
+Before adding a stub, check whether `pathia.client` already does it. An audit on
+2026-09-06 promoted six that never needed to be stubs.
 
 Counted from source, not from memory: `TOOLS` holds 99 entries and
 `_STUB_TOOL_NAMES` holds 47 of those names, so 52 are genuinely implemented. If
