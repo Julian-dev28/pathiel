@@ -43,6 +43,7 @@ _HOUR_MS = 3_600_000
 _SEEN_FILE = state_file(".unlock_short_live_seen.json")
 
 from pathia.session_log import append as log_event
+from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params
 
 
 def _load_seen() -> Dict[str, int]:
@@ -55,8 +56,8 @@ def _save_seen(seen: Dict[str, int]) -> None:
 
 def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
               cfg: Dict[str, Any]) -> BookAnalysis:
-    stop_pct = float(cfg.get("stop_pct", 15.0))
-    leverage = max(1, int(cfg.get("leverage", 1)))
+    stop_pct = float(cfg.get("stop_pct", FLOOR_STOP_PCT))
+    leverage = max(1, int(cfg.get("leverage", FLOOR_LEVERAGE)))
     return {
         "id": str(uuid.uuid4()), "coin": coin,
         "verdict": "SHORT", "side": "short",
@@ -66,7 +67,7 @@ def _analysis(coin: str, ev: Dict[str, Any], hours_to_unlock: float,
                       "W-U1 run-in drift short, exits at the event"),
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
         "composite_score": 0.0, "strategy_book": _BOOK_NAME,
-        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "strategy_book_notional": float(cfg.get("notional_usd", FLOOR_NOTIONAL_USD)),
         "leverage_override": leverage,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
@@ -92,6 +93,16 @@ def maybe_run(config: Dict[str, Any],
     scan); this module only handles capital, so there is no double-recording.
     """
     cfg = config.get("unlock_short") or {}
+    # Sizing resolved through ONE precedence (book value > top-level default >
+    # conservative floor) and written back, so every `cfg.get(...)` below finds
+    # an explicit value and the inline fallbacks underneath can never fire.
+    # Those fallbacks disagreed across books - 10x here, 1x there, $20 vs $11 -
+    # and were only invisible because the config repeated every value. See
+    # pathia/agents/book_params.py.
+    _p = book_params(config, "unlock_short")
+    cfg = dict(cfg)
+    cfg["notional_usd"], cfg["leverage"], cfg["stop_pct"] = (
+        _p.notional_usd, _p.leverage, _p.stop_pct)
     if not bool(cfg.get("enabled", False)) or bool(cfg.get("shadow_only", False)):
         return None
 

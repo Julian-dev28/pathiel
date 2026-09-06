@@ -56,6 +56,7 @@ from pathia.agents import shadow_ledger
 from pathia.agents.book_helpers import bounded_exit_override
 from pathia.agents.rebalancer_owned import get_claims_registry
 from pathia.models.types import BookAnalysis
+from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, book_params
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +163,7 @@ def _momentum(rows: List[Dict[str, Any]], now_ms: int, days: float) -> Optional[
 
 def _analysis(coin: str, mom: float, awake: float, cfg: Dict[str, Any]) -> BookAnalysis:
     stop_pct = float(cfg.get("stop_pct", _D["stop_pct"]))
-    leverage = max(1, int(cfg.get("leverage", 1)))
+    leverage = max(1, int(cfg.get("leverage", FLOOR_LEVERAGE)))
     hold_h = float(cfg.get("hold_hours", _D["hold_hours"]))
     return {
         "id": str(uuid.uuid4()), "coin": coin,
@@ -174,7 +175,7 @@ def _analysis(coin: str, mom: float, awake: float, cfg: Dict[str, Any]) -> BookA
                       f"cross-sectional reversal, {hold_h:.0f}h hold"),
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
         "composite_score": 0.0, "strategy_book": _BOOK_NAME,
-        "strategy_book_notional": float(cfg.get("notional_usd", 11.0)),
+        "strategy_book_notional": float(cfg.get("notional_usd", FLOOR_NOTIONAL_USD)),
         "leverage_override": leverage,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
@@ -199,6 +200,16 @@ def maybe_run(config: Dict[str, Any],
     a sample selected by margin.
     """
     cfg = config.get(_BOOK_NAME) or {}
+    # Sizing resolved through ONE precedence (book value > top-level default >
+    # conservative floor) and written back, so every `cfg.get(...)` below finds
+    # an explicit value and the inline fallbacks underneath can never fire.
+    # Those fallbacks disagreed across books - 10x here, 1x there, $20 vs $11 -
+    # and were only invisible because the config repeated every value. See
+    # pathia/agents/book_params.py.
+    _p = book_params(config, _BOOK_NAME)
+    cfg = dict(cfg)
+    cfg["notional_usd"], cfg["leverage"], cfg["stop_pct"] = (
+        _p.notional_usd, _p.leverage, _p.stop_pct)
     if not bool(cfg.get("enabled", False)) or bool(cfg.get("shadow_only", False)):
         return None
 

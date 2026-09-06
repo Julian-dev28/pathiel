@@ -43,6 +43,7 @@ from pathia.agents.rebalancer_owned import get_claims_registry, state_file
 from pathia.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from pathia.models.types import BookAnalysis
 from pathia.session_log import append as log_event
+from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +154,8 @@ def _live_analysis(coin: str, surge_x: float, n_recent: int, cfg: Dict[str, Any]
     exact validated geometry of news_surge_short. Rides the VALIDATED
     attention-fade DIRECTION (short a coverage spike); the multi-source firehose
     TRIGGER is itself unvalidated, so this carries the standard n=8 kill."""
-    stop_pct = float(cfg.get("stop_pct", 6.0))
-    leverage = max(1, int(cfg.get("leverage", 10)))
+    stop_pct = float(cfg.get("stop_pct", FLOOR_STOP_PCT))
+    leverage = max(1, int(cfg.get("leverage", FLOOR_LEVERAGE)))
     hold_days = float(cfg.get("hold_days", 1.0))
     return {
         "id": str(uuid.uuid4()), "coin": coin,
@@ -164,7 +165,7 @@ def _live_analysis(coin: str, surge_x: float, n_recent: int, cfg: Dict[str, Any]
                       f"(n={n_recent}) — fading attention spike"),
         "news_risk": "none", "ai_down": False, "created_at": int(time.time() * 1000),
         "composite_score": 0.0, "strategy_book": _BOOK_NAME,
-        "strategy_book_notional": float(cfg.get("notional_usd", 20.0)),
+        "strategy_book_notional": float(cfg.get("notional_usd", FLOOR_NOTIONAL_USD)),
         "leverage_override": leverage,
         "backup_sl_pct_override": stop_pct,
         "tp_scale_fraction_override": 0.0,
@@ -199,6 +200,16 @@ def maybe_run(config: Dict[str, Any],
     with the other recorders but is only used if a future operator flip sets
     shadow_only=false (kept record-only here). Returns rows recorded."""
     cfg = (config.get("news_surge_multi") or {})
+    # Sizing resolved through ONE precedence (book value > top-level default >
+    # conservative floor) and written back, so every `cfg.get(...)` below finds
+    # an explicit value and the inline fallbacks underneath can never fire.
+    # Those fallbacks disagreed across books - 10x here, 1x there, $20 vs $11 -
+    # and were only invisible because the config repeated every value. See
+    # pathia/agents/book_params.py.
+    _p = book_params(config, "news_surge_multi")
+    cfg = dict(cfg)
+    cfg["notional_usd"], cfg["leverage"], cfg["stop_pct"] = (
+        _p.notional_usd, _p.leverage, _p.stop_pct)
     if not bool(cfg.get("enabled", True)):
         return 0
     now_ms = int(time.time() * 1000)

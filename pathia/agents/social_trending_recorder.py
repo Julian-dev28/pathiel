@@ -43,6 +43,7 @@ from pathia.agents.rebalancer_owned import get_claims_registry, state_file
 from pathia.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from pathia.models.types import BookAnalysis
 from pathia.session_log import append as log_event
+from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +114,9 @@ def _analysis(coin: str, row: Dict[str, Any], cfg: Dict[str, Any]) -> BookAnalys
     differs from the graded policy is an ungraded book wearing a validated
     book's verdict.
     """
-    stop_pct = float(cfg.get("stop_pct", 15.0))
-    leverage = max(1, int(cfg.get("leverage", 1)))
-    notional = float(cfg.get("notional_usd", 20.0))
+    stop_pct = float(cfg.get("stop_pct", FLOOR_STOP_PCT))
+    leverage = max(1, int(cfg.get("leverage", FLOOR_LEVERAGE)))
+    notional = float(cfg.get("notional_usd", FLOOR_NOTIONAL_USD))
     hold_days = float(cfg.get("horizon_days", 1.0))
     return {
         "id": str(uuid.uuid4()), "coin": coin,
@@ -145,6 +146,12 @@ def maybe_record(universe: Optional[List[Dict[str, Any]]],
     supplied, so the forward ledger keeps accruing under the same policy whether
     or not capital is attached — which is what keeps the grade honest."""
     cfg = (config.get(_BOOK) or {})
+    # Same resolver the trading books use, so this recorder's shadow sizing
+    # cannot drift away from live sizing when the config is edited.
+    _p = book_params(config, _BOOK)
+    cfg = dict(cfg)
+    cfg["notional_usd"], cfg["leverage"], cfg["stop_pct"] = (
+        _p.notional_usd, _p.leverage, _p.stop_pct)
     if not bool(cfg.get("enabled", True)):
         return 0
     now_ms = int(time.time() * 1000)

@@ -51,6 +51,7 @@ from pathia.agents.rebalancer_owned import get_claims_registry, state_file
 from pathia.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from pathia.models.types import BookAnalysis
 from pathia.session_log import append as log_event
+from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +120,9 @@ def _analysis(coin: str, rep: CatalystReport, cfg: Dict[str, Any]) -> BookAnalys
     # p=0.0005, n=219 — clears the module's own "n>=8 forward" crypto-promotion bar.
     # Sized $20/1x (deliberately conservative: the n=219 is one 6-day pump-dump tape).
     if _is_xyz_equity(coin):
-        stop_pct = float(cfg.get("stop_pct", 15.0))
-        leverage = max(1, int(cfg.get("leverage", 10)))
-        notional = float(cfg.get("notional_usd", 20.0))
+        stop_pct = float(cfg.get("stop_pct", FLOOR_STOP_PCT))
+        leverage = max(1, int(cfg.get("leverage", FLOOR_LEVERAGE)))
+        notional = float(cfg.get("notional_usd", FLOOR_NOTIONAL_USD))
     else:
         stop_pct = float(cfg.get("crypto_stop_pct", 15.0))
         leverage = max(1, int(cfg.get("crypto_leverage", 1)))
@@ -156,6 +157,16 @@ def maybe_run(config: Dict[str, Any],
     equity reads when shadow_only=false and an execute_fn is provided.
     Returns rows recorded."""
     cfg = (config.get("news_surge_short") or {})
+    # Sizing resolved through ONE precedence (book value > top-level default >
+    # conservative floor) and written back, so every `cfg.get(...)` below finds
+    # an explicit value and the inline fallbacks underneath can never fire.
+    # Those fallbacks disagreed across books - 10x here, 1x there, $20 vs $11 -
+    # and were only invisible because the config repeated every value. See
+    # pathia/agents/book_params.py.
+    _p = book_params(config, "news_surge_short")
+    cfg = dict(cfg)
+    cfg["notional_usd"], cfg["leverage"], cfg["stop_pct"] = (
+        _p.notional_usd, _p.leverage, _p.stop_pct)
     if not bool(cfg.get("enabled", True)):
         return 0
     now_ms = int(time.time() * 1000)
@@ -192,7 +203,7 @@ def maybe_run(config: Dict[str, Any],
             "coin": coin, "side": "short",
             "signal_bar_t": (now_ms // _HOUR_MS) * _HOUR_MS,
             "entry_ref_px": mid, "horizon_days": float(cfg.get("hold_days", 1.0)),
-            "stop_pct": float(cfg.get("stop_pct", 15.0)),
+            "stop_pct": float(cfg.get("stop_pct", FLOOR_STOP_PCT)),
             "meta": {
                 "n_recent": rep.n_recent,
                 "surge_x": rep.surge_x,

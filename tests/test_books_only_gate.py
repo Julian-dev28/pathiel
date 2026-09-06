@@ -239,8 +239,15 @@ def test_every_sizing_gate_admits_the_book_the_config_asks_for():
     equity = float(cfg["min_tradable_equity_usd"])   # the floor it must work at
     lev = int(cfg["leverage"])
     conc = int(cfg["max_concurrent"])
-    n = float(cfg["xs_reversal"]["notional_usd"])
-    stop = float(cfg["xs_reversal"]["stop_pct"]) / 100.0
+    from pathia.agents.book_params import book_params
+    _bp = book_params(cfg, "xs_reversal")
+    stop = float(_bp.stop_pct) / 100.0
+    # notional_usd 0 means equity-FRACTION sizing (strategy_book_equity_frac),
+    # so the per-position size is derived from equity rather than fixed. Sized
+    # at the floor, where the fraction produces its smallest order.
+    n = float(_bp.notional_usd)
+    if n <= 0:
+        n = equity * float(cfg["strategy_book_equity_frac"]) * lev
     book = conc * n
 
     # max_daily_loss_pct WINS over max_daily_loss_usd (effective_daily_loss_limit).
@@ -255,16 +262,47 @@ def test_every_sizing_gate_admits_the_book_the_config_asks_for():
         "the book cannot fit in usable margin"
     assert stop * 100 <= 100 * float(cfg["backup_sl_max_frac_of_liq"]) / lev, \
         "the stop is unreachable at this leverage and would be silently tightened"
-    assert book * stop < kill, (
-        f"a full correlated stop-out costs ${book*stop:.2f} against a ${kill:.2f} "
-        f"kill — the book is bigger than its own risk limit")
+    # The kill must sit BETWEEN one position stopping and the whole book
+    # stopping. Both ends are failure modes, in opposite directions:
+    #
+    #   kill <= one stop-out   the bot halts for the day on its FIRST loser.
+    #                          At 92% deployment one position is 13.8% of
+    #                          equity, so a 20% kill trips after 1.4 losses and
+    #                          the book never gets to run.
+    #   kill >  full stop-out  the kill can never fire before every slot has
+    #                          already stopped, i.e. it is decoration.
+    #
+    # This replaced a strict `book * stop < kill` on 2026-09-06, when the
+    # operator moved from a $11-per-slot book to deploying the portfolio. That
+    # assertion encoded a book small enough for the daily kill to bound its
+    # worst case; once the account is fully deployed nothing can be both fully
+    # deployed AND bounded by a daily kill, because the kill halts new entries
+    # and does not close open ones. The bound on the worst case is the STOP, and
+    # it is declared and tested as max_correlated_drawdown_pct in
+    # tests/test_live_config_coherence.py.
+    one_stop = book * stop / conc
+    assert one_stop < kill, (
+        f"one position stopping costs ${one_stop:.2f} against a ${kill:.2f} kill — "
+        f"the bot halts for the day on its first loser")
+    assert kill <= book * stop, (
+        f"a full stop-out costs ${book*stop:.2f} but the kill is ${kill:.2f} — "
+        f"the kill can never fire, which makes it decoration")
 
+    # 0 means INACTIVE for the absolute USD ceilings, not "a cap of zero". Under
+    # equity-fraction sizing a fixed-dollar ceiling silently clips the position
+    # as equity grows, and does it with no log line, so these are switched off
+    # deliberately and the percentage caps (which scale) do the bounding.
     for key, cap in (("max_xyz_short_notional_pct", equity * float(cfg["max_xyz_short_notional_pct"])),
                      ("max_total_notional_pct", equity * float(cfg["max_total_notional_pct"])),
                      ("short_notional_usd", float(cfg["short_notional_usd"]))):
+        if cap <= 0:
+            continue
         assert book <= cap, f"{key} caps the book at ${cap:.2f}, under its ${book:.2f}"
     for key in ("strategy_book_notional_usd", "max_trade_notional_usd"):
-        assert n <= float(cfg[key]), f"{key} is under one position"
+        v = float(cfg.get(key, 0) or 0)
+        if v <= 0:
+            continue
+        assert n <= v, f"{key} is under one position"
 
     # A gate that can never fire is not protection, it is decoration.
     assert float(cfg["daily_giveback_min_peak_usd"]) < kill, (

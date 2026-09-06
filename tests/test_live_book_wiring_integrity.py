@@ -86,10 +86,14 @@ def test_reverse_refuted_books_configure_a_reachable_stop(path):
     import json
     from pathlib import Path
 
+    from pathia.agents.book_params import book_params
+
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
-    for key in path:
-        cfg = cfg[key]
-    stop, lev = float(cfg["stop_pct"]), float(cfg["leverage"])
+    # Resolved, not indexed: sizing lives at the top level unless a book
+    # overrides it, so reading the book dict directly would miss the default
+    # and KeyError on exactly the books that take the shared value.
+    p_ = book_params(cfg, path[0])
+    stop, lev = float(p_.stop_pct), float(p_.leverage)
     assert _effective_stop_pct(stop, lev) == pytest.approx(stop), (
         f"{'.'.join(path)}: configured stop {stop}% is clamped to "
         f"{_effective_stop_pct(stop, lev):.1f}% at {lev:g}x — the book would "
