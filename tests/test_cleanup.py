@@ -3706,3 +3706,36 @@ def test_a_mid_day_restart_after_a_deposit_does_not_invent_a_loss(tmp_path, monk
     # And money arriving AFTER the baseline is still excluded from PnL.
     m.track_daily_pnl(50.00, net_contributions=41.77)
     assert abs(m.get_daily_pnl() - (50.00 - 34.70 - 20.0)) < 0.01
+
+
+def test_dsl_reconciles_a_manually_reopened_position(monkeypatch, tmp_path):
+    """Operator closed xyz:BE and reopened it at 3x by hand on 2026-09-06. The
+    tracker kept saying leverage 1 and the old entry price, because
+    rehydrate_from_exchange reconciled size and entry-on-add but never leverage.
+
+    That is not cosmetic: the tracker's leverage is what every ROE stop divides
+    by, so max_loss_roe_pct 15 held against a stale 1x fires at a 15% PRICE
+    move — 45% of margin on a position actually running 3x.
+    """
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    from pathia.agents import dsl_exit
+
+    dsl_exit._active_positions.clear()
+    live = [{"position": {"coin": "xyz:BE", "szi": "-0.04", "entryPx": "268.15",
+                          "leverage": {"value": 1}}}]
+    dsl_exit.rehydrate_from_exchange(live)
+    t = dsl_exit._active_positions["xyz:BE_short"]
+    assert t.leverage == 1 and abs(t.entry_px - 268.15) < 1e-6
+
+    # Same coin, same size, but re-opened by hand: new basis, new leverage.
+    live[0]["position"].update({"entryPx": "267.87", "leverage": {"value": 3}})
+    dsl_exit.rehydrate_from_exchange(live)
+    t = dsl_exit._active_positions["xyz:BE_short"]
+    assert t.leverage == 3, "stale leverage — every ROE stop is off by 3x"
+    assert abs(t.entry_px - 267.87) < 1e-6, "stale entry basis — floors are wrong"
+
+    # A position that did NOT change must not be disturbed: refreshing the
+    # basis every tick would reset peak tracking and never let a trail arm.
+    t.peak_px = 250.0
+    dsl_exit.rehydrate_from_exchange(live)
+    assert dsl_exit._active_positions["xyz:BE_short"].peak_px == 250.0

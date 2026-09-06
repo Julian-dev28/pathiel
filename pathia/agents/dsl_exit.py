@@ -655,6 +655,40 @@ def rehydrate_from_exchange(asset_positions: Iterable[Dict[str, Any]],
         if key in _active_positions:
             t = _active_positions[key]
             live_sz = abs(szi)
+            # Leverage drift. The tracker's leverage is what every ROE-based
+            # stop divides by, so a stale value silently rescales the exit:
+            # max_loss_roe_pct 15 held against leverage 1 fires at a 15% PRICE
+            # move, which on a position actually running 3x is 45% of margin.
+            # Observed 2026-09-06 — the operator closed and reopened xyz:BE at
+            # 3x by hand and the tracker kept saying 1x, because this function
+            # reconciles size and entry basis and never touched leverage.
+            if lev and int(getattr(t, "leverage", 0) or 0) != int(lev):
+                old_lev = getattr(t, "leverage", None)
+                t.leverage = int(lev)
+                added += 1
+                logger.warning(
+                    f"[dsl] {key} LEVERAGE changed {old_lev}x -> {lev}x "
+                    f"(manual adjust or re-open); ROE stops rescaled to match")
+            # Entry basis drift on an unchanged size: a close-and-reopen at the
+            # same size leaves size equal but the basis wrong, and every floor
+            # runs off that basis. Tolerance is 0.1%, well above float noise and
+            # well below a real re-entry.
+            #
+            # Skipped when t.size <= 0, which marks a state file written before
+            # size tracking existed. There, size is unknown, so a basis
+            # difference cannot be told apart from a legacy record that simply
+            # never stored one — and refreshing on that guess would move a live
+            # stop on no evidence. That case adopts the size below and leaves
+            # the basis alone, which is what test_legacy_unknown_size_adopted_
+            # without_entry_refresh exists to hold.
+            if (t.size > 0 and entry > 0 and t.entry_px > 0
+                    and abs(entry / t.entry_px - 1) > 0.001):
+                old_entry = t.entry_px
+                t.refresh_entry_basis(entry, live_sz)
+                added += 1
+                logger.warning(
+                    f"[dsl] {key} entry basis moved {old_entry} -> {entry} at "
+                    f"unchanged size (re-open?); floors refreshed")
             if t.size <= 0:
                 # legacy tracker predating size tracking — adopt silently;
                 # entry_px came from this same exchange field at registration
