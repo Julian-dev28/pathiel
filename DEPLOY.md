@@ -46,7 +46,6 @@ them with `flyctl secrets set` / a `kubectl create secret` (see
 | `PATHIA_AUTH_DOMAIN` | **Required** | The host that must appear inside every signed sign-in message. Set it to the real deployed host — if it does not match what the browser is on, every signature is rejected for a domain mismatch and nobody can log in. Never derived from the request's own Host header, which an attacker controls |
 | `PATHIA_PUBLIC_DASHBOARD` | Optional | `1` restores pre-2026-09-04 open reads on the account routes. Only for a genuinely private single-operator box |
 | `BRAVE_API_KEY` | Optional | News search inside `pathia/agents/research.py`. Unset = that source is skipped, not an error |
-| `UW_API_KEY` | Optional | Unusual Whales options-flow client (`pathia/client/uw_client.py`). RESEARCH ONLY since the book cull — `uw_flow_xs` no longer exists; the client is used by `research/alpha_swarm/hypotheses/W-UW2_signal_battery.py` and `W-UW3_gex.py` to re-run those verdicts. Unset = those scripts report NO UW_API_KEY and exit. Nothing live reads it |
 | `HYPERLIQUID_MASTER_ADDRESS` | Optional | Agent-wallet setup — the funding account behind the trading wallet |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Optional | Only used by `scripts/treasury.py` (manual transfers between master/agent wallets) — never read by any of the five deployed processes. Set it only if you plan to `flyctl ssh console` and run treasury commands by hand |
 
@@ -59,7 +58,6 @@ flyctl secrets set \
 
 # Optional
 flyctl secrets set BRAVE_API_KEY="BSA..."
-flyctl secrets set UW_API_KEY="..."
 flyctl secrets set HYPERLIQUID_MASTER_ADDRESS="0x..." HYPERLIQUID_MASTER_PRIVATE_KEY="0x..."
 ```
 
@@ -393,7 +391,6 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
 | `POLY_SCOUT_MODEL` | `claude-opus-4-8` | Forecaster model (via the AI brain, so effectively an openrouter model in this deploy) |
 | `TREND_AI_MODEL`, `TREND_AI_TIMEOUT_S` | `claude-opus-4-8` / 180 | Only relevant to the `/trends` narrative pass, which is not reachable in this deploy — see "AI provider" |
 | `HYDROMANCER_TESTNET`, `HYDROMANCER_TIMEOUT_S` | unset / 10 | Hydromancer provider tuning |
-| `UW_CACHE_DIR` | unset (disabled) | On-disk cache for Unusual Whales responses — opt-in, off by default |
 | `NO_SSL_FIX` | unset | Skip the macOS `certifi` cert-bundle workaround (`pathia/__init__.py`) — irrelevant on Linux, harmless either way |
 | `PATHIA_MCP_DISABLE_SAMPLING`, `PATHIA_MCP_SAMPLING_MAX_TOKENS` | unset / 2048 | `scripts/pathia-mcp-server.py` only — see "Not containerized" below |
 | `PATHIA_SMOKE_BASE` | `http://127.0.0.1:8000` | `scripts/smoke_trends.py` test target, dev-only |

@@ -4,6 +4,28 @@
 (52 implemented + 47 honest `not_implemented` stubs for unwired Hyperliquid SDK
 calls). Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
 
+Counted from source, not from memory: `TOOLS` holds 99 entries and
+`_STUB_TOOL_NAMES` holds 47 of those names, so 52 are genuinely implemented. If
+you change either list, recount rather than adjusting this sentence by hand:
+
+```sh
+python - <<'EOF'
+import ast, pathlib
+tree = ast.parse(pathlib.Path("scripts/pathia-mcp-server.py").read_text())
+g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
+     for t in n.targets if hasattr(t, "id")}
+tools = {v.value for e in g["TOOLS"].elts for k, v in zip(e.keys, e.values)
+         if getattr(k, "value", None) == "name"}
+stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
+print(f"{len(tools)} advertised, {len(tools - stubs)} implemented, {len(stubs)} stubs")
+EOF
+```
+
+**This process never touches the web auth.** It imports `pathia` in-process
+rather than calling `pathia.server` over HTTP, so wallet sign-in, sessions, the
+operator role and the CSP are all irrelevant here — and the filesystem is what
+gates it. See `mcp-config.md` for why that matters.
+
 ## Layout
 
 | Piece | Role |

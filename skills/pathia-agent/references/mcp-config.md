@@ -3,6 +3,24 @@
 The MCP server is a Python stdio process. It imports `pathia` directly —
 there is no separate HTTP server to keep running.
 
+## It does not go through the dashboard's auth
+
+Worth stating plainly, because the answer is not obvious and the security
+consequence is real: **the MCP server calls `pathia` in-process**. It does not
+make HTTP requests to `pathia.server`, so none of the 2026-09-04 web auth
+applies to it — no wallet sign-in, no session cookie, no operator role, no
+`PATHIA_OPERATOR_TOKEN`, no CSP.
+
+What gates it instead is the filesystem. It reads `.env.local` for the trading
+key and `.agent-config.json` for the risk caps, so **anyone who can run this
+process can already sign orders with your wallet**. Treat the ability to launch
+it as equivalent to holding the key, because it is.
+
+That is the correct design for a local operator tool and would be the wrong one
+for anything reachable over a network. If the MCP server is ever exposed
+remotely, it needs its own authentication — reusing the dashboard's session gate
+would not help, because this process never touches those routes.
+
 ## Starting the MCP Server
 
 ```bash
@@ -54,6 +72,10 @@ OPENROUTER_API_KEY=sk-or-...
 # CLAUDE_CLI_COMMAND=claude
 # CODEX_CLI_COMMAND=codex
 ```
+
+The web auth vars (`PATHIA_AUTH_DOMAIN`, `PATHIA_PUBLIC_DASHBOARD`,
+`PATHIA_OPERATOR_TOKEN`) are **not** read by this process. They belong to
+`pathia.server`; see `services/auth/README.md`.
 
 ## Testing Tools
 

@@ -102,12 +102,12 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
             # gone, and an operator reading it would have gone looking for
             # config that does not exist.
             #
-            # uw_client is deliberately NOT in this list: it survives because
-            # research/alpha_swarm/hypotheses/W-UW2 and W-UW3 import it. The
-            # first pass at the module cull missed that, because the
-            # reachability roots did not include research/ — deleting it broke
-            # two working scripts silently.
-            "rally_exhaustion", "hail_mary_short",
+            # uw_client and its three W-UW hypothesis scripts went 2026-09-06,
+            # by operator instruction. They re-ran verdicts for uw_flow_xs, a
+            # book deleted 2026-08-29, against a paid API. The finding stays on
+            # disk — the doctrine keeps refutations findable so they are not
+            # rediscovered — but the code and the key it needed are gone.
+            "rally_exhaustion", "hail_mary_short", "uw_client",
             "data_providers", "hydromancer")
     # Every operator-facing doc, not just the two at the root. docs/LOGGING.md
     # documented `logs/polymarket_scout.log` and a `restart.sh sampler` action
@@ -186,3 +186,30 @@ def test_every_restart_action_an_operator_doc_names_is_real():
                 bad.append(f"{doc}: restart.sh {act}")
     assert not bad, ("docs name restart.sh actions that do not exist:\n"
                      + "\n".join(sorted(bad)))
+
+
+def test_the_mcp_tool_count_in_the_docs_matches_the_server():
+    """The skill quotes "99 tools (52 implemented + 47 stubs)" in three places.
+    A count that drifts from the source is the kind of claim a reader trusts and
+    then debugs, and nothing was checking it."""
+    import ast
+    server = ROOT / "scripts" / "pathia-mcp-server.py"
+    tree = ast.parse(server.read_text())
+    g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
+         for t in n.targets if hasattr(t, "id")}
+    tools = {v.value for e in g["TOOLS"].elts for k, v in zip(e.keys, e.values)
+             if getattr(k, "value", None) == "name"}
+    stubs = {e.value for e in g["_STUB_TOOL_NAMES"].elts}
+    advertised, implemented = len(tools), len(tools - stubs)
+    assert stubs <= tools, "a stub name is not registered in TOOLS"
+
+    for doc in ("skills/pathia-agent/SKILL.md",
+                "skills/pathia-agent/references/mcp-config.md",
+                "skills/pathia-agent/references/mcp-server.md",
+                "docs/ARCHITECTURE.md"):
+        text = (ROOT / doc).read_text()
+        if "tools" not in text:
+            continue
+        assert f"{advertised} tools" in text, (
+            f"{doc} does not say '{advertised} tools' — the server advertises "
+            f"{advertised} ({implemented} implemented + {len(stubs)} stubs)")

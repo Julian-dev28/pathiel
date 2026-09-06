@@ -95,7 +95,6 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("OPENROUTER_API_KEY", "OpenRouter API key for the default AI brain provider", "openrouter"),
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
     SecretSpec("BRAVE_API_KEY", "Brave Search API key — news context for research (optional)", "optional"),
-    SecretSpec("UW_API_KEY", "Unusual Whales API key — options-flow alt-data (optional)", "optional"),
     SecretSpec("HYDROMANCER_API_KEY", "Hydromancer data-plane API key (research/backfill only)", "optional"),
 )
 
