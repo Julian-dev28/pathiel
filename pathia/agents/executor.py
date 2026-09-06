@@ -633,6 +633,30 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     coin_for_dex_check = analysis["coin"]
     if ":" in coin_for_dex_check:
         dex_name = coin_for_dex_check.split(":", 1)[0]
+
+        # Dex allowlist, enforced at the ORDER, not only at the scan. The
+        # allowlist is a cost control in perception and get_universe; here it is
+        # a safety one, and the two need different guarantees. A muted dex that
+        # reaches this point means something upstream produced a candidate the
+        # operator excluded, and the only reason `io:SNDK` did not trade on
+        # 2026-09-06 with the allowlist set to ["xyz"] is that io happened to
+        # hold $0.00 and the balance preflight below caught it. Funding io would
+        # have turned a silent scan leak into a real position on a venue the
+        # operator had switched off. Checked BEFORE the balance lookup so a muted
+        # dex costs no network call and reports the actual reason.
+        _dex_cfg = read_agent_config() or {}
+        _allow = {d for d in (_dex_cfg.get("hip3_dex_allowlist") or []) if d}
+        _block = {d for d in (_dex_cfg.get("hip3_dex_blocklist") or []) if d}
+        if (_allow and dex_name not in _allow) or (dex_name in _block):
+            return {
+                "executed": False, "mode": mode,
+                "analysis_id": analysis["id"],
+                "reason": (
+                    f"hip3_dex_not_allowlisted ({dex_name}). "
+                    f"hip3_dex_allowlist={sorted(_allow) or 'unset'}"
+                ),
+            }
+
         from pathia.client.hl_client import _http_post
 
         def _read_dex_value() -> tuple[bool, float]:

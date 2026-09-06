@@ -28,8 +28,8 @@
     "hip3": 1.0
   },
   "tp_scale_fraction": 0.5,
-  "max_concurrent": 2,
-  "max_total_notional_pct": 1.05,
+  "max_concurrent": 3,
+  "max_total_notional_pct": 1.3,
   "max_daily_loss_usd": -10.0,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 2.08,
@@ -40,8 +40,8 @@
   "min_ai_confidence": 0.62,
   "counter_regime_min_conf": 0.8,
   "max_crypto_long_correlated": 100,
-  "max_xyz_short_names": 2,
-  "max_xyz_short_notional_pct": 1.05,
+  "max_xyz_short_names": 3,
+  "max_xyz_short_notional_pct": 1.3,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 1000000,
@@ -129,7 +129,7 @@
   },
   "strategy_book_notional_usd": 22.0,
   "strategy_book_equity_frac": 0.1,
-  "short_notional_usd": 22.0,
+  "short_notional_usd": 33.0,
   "ai_long_notional_usd": 11.0,
   "thin_short_relax": {
     "enabled": true,
@@ -209,5 +209,5 @@
     "min_universe": 20,
     "max_new_per_cycle": 1
   },
-  "_xyz_concentration_note": "max_xyz_short_notional_pct 1.2. xyz shorts are ~1.28 effective bets at 0.83 mean pairwise correlation (W-MATH2/3) \u2014 7 stopped together on 07-21 for -$8.59 \u2014 so the binding constraint is total_notional * stop <= kill. Set just above the configured book ($34) so it admits the intended size and nothing more. The 0.25 default capped the whole book at $8.68, less than one position, and refused every xyz short. The gate measures NOTIONAL and is right to: a correlated 15% move costs 15% of notional whatever the leverage."
+  "_xyz_concentration_note": "2026-09-06: raised from 2 names / 1.05 to 3 names / 1.30 because the 2-name cap was refusing xyz shorts while slots were free (observed: REFUSED SHORT xyz:SNDK, xyz-short name cap reached 2/2). 3 is a CEILING derived from the kill switch, not a preference: xyz shorts are ~1.28 effective bets at 0.83 mean pairwise correlation (W-MATH2/3, 7 stopped together on 07-21 for -$8.59), so size the book as if all of it stops at once. At $11 notional and a 15% stop that is $1.65 per position against a kill of 0.20 x equity = $5.20 at the $26 floor: 2 names = $3.30 (63%), 3 = $4.95 (95%), 4 = $6.60 (127%, i.e. the account loses MORE than the kill switch exists to prevent, before it can fire). 4 is not a tuning choice, it is broken. notional_pct 1.30 admits 3 x $11 = $33 against 1.30 x $26 = $33.80 at the floor and refuses 4 ($44), so both controls agree at the WORST equity rather than only at today's. Past 3 needs smaller positions and $11 is already at MIN_ORDER_USD ($10.5), so 3 concurrent is this account's hard maximum: more THROUGHPUT must come from shorter holds, not more slots."
 }

@@ -210,6 +210,40 @@ def _fetch_spot_meta(force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[
     return cache[0], cache[1]
 
 
+def _allowed_hip3_dexes(force_refresh: bool = False) -> List[str]:
+    """Registered HIP-3 dexes, narrowed by `hip3_dex_allowlist`/`hip3_dex_blocklist`.
+
+    Applied HERE, at the fetch, and not only in perception's scan filter.
+    Perception is one of many callers: hyperfeed, the executor's size lookup,
+    the trend engine and the dashboard all call `get_universe(include_hip3=True)`
+    directly and none of them consulted the allowlist. That is how a book
+    produced a SHORT on `io:SNDK` while the allowlist read `["xyz"]` — the
+    order was only stopped downstream, by the dex-balance preflight noticing
+    io held $0.00. A funded dex would have been traded.
+
+    Filtering at the source also removes the per-dex `/info` round trip for
+    every muted dex, so a narrow allowlist costs less to scan, not the same.
+
+    Config is read fresh on each call (hot-reload) and a read failure is
+    non-fatal: an unreadable config must not silently widen the universe back
+    out to every dex, so a failure returns the registered list unchanged and
+    the caller's own gates still apply.
+    """
+    dexes = list_hip3_dexes(force_refresh)
+    try:
+        from pathia.agents.config_store import read_agent_config
+        cfg = read_agent_config() or {}
+    except Exception:   # noqa: BLE001 - config is advisory here, never a hard dep
+        return dexes
+    allow = {d for d in (cfg.get("hip3_dex_allowlist") or []) if d}
+    block = {d for d in (cfg.get("hip3_dex_blocklist") or []) if d}
+    if allow:
+        dexes = [d for d in dexes if d in allow]
+    if block:
+        dexes = [d for d in dexes if d not in block]
+    return dexes
+
+
 def get_universe(force_refresh: bool = False, include_hip3: bool = False,
                  include_crypto: bool = True) -> List[Dict[str, Any]]:
     """Fetch the full market universe (perp + spot, optionally + HIP-3) with volume data.
@@ -254,7 +288,7 @@ def get_universe(force_refresh: bool = False, include_hip3: bool = False,
     hip3_meta: Dict[str, Any] = {}
     hip3_ctx: Dict[str, Any] = {}
     if include_hip3:
-        for dex in list_hip3_dexes(force_refresh):
+        for dex in _allowed_hip3_dexes(force_refresh):
             m, c = _fetch_hip3_meta(dex, force_refresh)
             hip3_meta.update(m)
             hip3_ctx.update(c)
