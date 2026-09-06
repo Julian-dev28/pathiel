@@ -27,9 +27,32 @@ each check exists; the script is what actually enforces it.
 | `HYPERLIQUID_PRIVATE_KEY` | Agent/API wallet private key — signs every order | `pathia/client/exchange.py`, `pathia/agents/executor.py`, `scripts/trading_loop.py` | **Always** | Loud where it matters: `executor.py` returns `{"executed": False, "reason": "private_key_missing"}` per attempt and `trading_loop.py` blocks LIVE mode outright. `exchange.py` itself just holds `""` — an actual sign attempt would blow up in the SDK, not here |
 | `HYPERLIQUID_MASTER_ADDRESS` | Master account public address — where funds actually live | `pathia/client/exchange.py`, `pathia/client/hl_client.py`, `scripts/treasury.py` | **Always** (for the agent-vs-master safety check — see below) | Silent — `exchange.py`'s `IS_AGENT` flag quietly becomes `False` and the trading identity falls back to the wallet address alone. The app tolerates this; the preflight check does not |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Master account private key — signs treasury transfers/swaps ONLY | `scripts/treasury.py` (nowhere else) | **Local-only** — must never exist in a deployed environment | Loud: `treasury.py` prints an error and `sys.exit(2)` |
-| `PATHIA_OPERATOR_TOKEN` | Bearer token gating every write endpoint on the dashboard (`/operator`) | `pathia/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
+| `PATHIA_OPERATOR_TOKEN` | Bearer token for **machine callers only** since 2026-09-04 — the scheduler, the supervisor, smoke checks. It is one static string for the whole deployment: it cannot say who acted, cannot be revoked for one person, and cannot rotate without restarting everything that uses it. Humans sign in with a wallet instead | `pathia/dashboard.py`, `scripts/smoke_trends.py` | **Always** | Loud and fail-*closed*: `_require_operator()` 503s "operator surface disabled" rather than opening the surface with no auth |
 | `OPENROUTER_API_KEY` | OpenRouter API key — the default AI research brain | `pathia/agents/ai_brain.py` | **Conditional** — required iff `AI_BRAIN_PROVIDER` resolves to `openrouter` (the default when unset) | Logs a warning and returns `""` from the completion call. `research.py` tags the resulting analysis `ai_down: True` so the executor's structural override cannot upgrade a failure-PASS into a blind LONG (fixed 2026-06-11 after exactly that happened during an OpenRouter 402 window) — but every research call still fails silently at the log level, not at startup |
 | `BRAVE_API_KEY` | Brave Search — news context for research | `pathia/agents/research.py` | Optional | Silent by design — returns `"no news"` and continues |
+
+### Sign-in (`services/auth`)
+
+Wallet sign-in (EIP-4361) holds **no secret at all**, which is the point. There
+is no password, no API key and no third-party vendor: `eth-account` is already a
+dependency because it signs the Hyperliquid orders, and recovering a signer is
+the same primitive.
+
+| var | Purpose | Required |
+|---|---|---|
+| `PATHIA_AUTH_DOMAIN` | The host that must appear inside the signed message. Never taken from the request's Host header, which an attacker controls | **Yes in production** |
+| `PATHIA_AUTH_URI` / `PATHIA_AUTH_CHAIN_ID` | Cosmetic fields the wallet shows. Chain defaults to HyperEVM (999) | No |
+| `PATHIA_AUTH_DB` | Where users and sessions live. Defaults to `$PATHIA_STATE_DIR/auth.db` | No |
+| `PATHIA_PUBLIC_DASHBOARD` | `1` reopens the account routes for a private single-operator box | No |
+
+What is stored, and what deliberately is not: session tokens and login nonces
+are persisted as **SHA-256 only**, never the value the client holds. A leaked
+database file — a backup on a laptop, a snapshot in object storage — is not a
+set of live sessions. Customer API keys for `services/pathia_data_api` follow
+the same rule, which is why "show me my key again" cannot be built.
+
+If the wrong wallet claims the operator role (the first to sign in wins on a
+fresh box), `scripts/grant_operator.py` is the way back — no database surgery.
 
 Non-secret vars read alongside these (model names, timeouts, CLI binary
 paths, scan-tuning knobs, state-file path overrides) are listed — grouped and

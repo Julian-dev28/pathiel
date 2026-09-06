@@ -168,6 +168,39 @@ ApiKeyStore.seed_demo_key("slow-key", rate_per_min=1)
 `seed_demo_key` hashes the raw token exactly the way `auth.hash_token` does, so
 lookups line up. It is idempotent.
 
+### Where customer keys come from (2026-09-04)
+
+`seed_demo_key` is for local and test use. **Real keys are minted by a
+signed-in wallet**, not seeded here:
+
+```
+GET    /auth/keys          list mine
+POST   /auth/keys          mint one — the raw token is in this response and nowhere else
+DELETE /auth/keys/{key_id} revoke mine
+```
+
+That flow lives in `services/auth` (see its README). The table gained one
+column, `owner_address`, because without it a key belonged to the deployment
+rather than a person and nothing could answer "which keys are mine", "revoke
+that one", or "this customer stopped paying".
+
+Two properties worth knowing when reading this service's code:
+
+- **The two services do not import each other.** `services/auth` reaches this
+  table in plain SQL. This service is a separate deploy unit with its own
+  Dockerfile and requirements, none of which are installed in the trading
+  image, so an import would fail at runtime —
+  `test_dockerfile_does_not_bundle_pathia_data_api` enforces that. The contract
+  is the table, its columns, and `sha256(raw)`, and a test asserts both sides
+  still hash alike. If they ever drift, a customer mints a key that opens
+  nothing and neither service logs a thing.
+- **A customer key never carries `*`.** The demo seed key does; a key inheriting
+  it would hold every scope this API ever grows, including ones added years from
+  now. Fresh keys get `signals:read`, `candles:read`, `track_record:read`.
+
+`owner_address` is nullable because the demo seed key predates ownership and
+belongs to the deployment rather than a person.
+
 ---
 
 ## 6. Validation

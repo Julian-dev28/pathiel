@@ -489,6 +489,9 @@ pathia/
 │   │   ├── market_regime.py     # per-asset-class regime detection (new)
 │   │   ├── memory.py            # disk-backed singleton state
 │   │   ├── config.py / config_store.py  # config read/write
+│   │   ├── xs_reversal_live.py   # W-XSR1 cross-sectional reversal (live 2026-09-04)
+│   │   ├── data_logger.py       # the funding/OI panel xs_reversal reads
+│   │   ├── shadow_ledger.py     # forward evidence record every book writes to
 │   │   ├── hyperfeed.py         # leaderboard + whale-flow + OI anomaly (Hyperfeed clone)
 │   │   ├── whale_index.py       # whale tracking on top of public HL endpoints
 │   │   └── system_prompt.py     # the LLM's operating instructions
@@ -502,15 +505,26 @@ pathia/
 │   │   ├── math.py              # EMA, SMA, ATR, RSI, ADX
 │   │   └── triggers.py          # trigger detection + composite scoring
 │   ├── models/types.py     # Candle (OHLCV)
-│   ├── server.py           # FastAPI: JSON API + dashboard routes
-│   ├── dashboard.py        # public + operator HTML + SSE feed
+│   ├── server.py           # FastAPI: JSON API + routes, session gate, CSP
+│   ├── dashboard.py        # HTML + SSE feed; house routes are operator-only
 │   └── session_log.py      # JSONL append-only event log
+├── services/               # independent units, contracts at the boundary
+│   ├── auth/                    # wallet sign-in (EIP-4361) + sessions + API keys
+│   │   ├── siwe.py              # stateless message parse + verify
+│   │   ├── store.py             # users/sessions/nonces, SHA-256 only, SQLite
+│   │   ├── api_keys.py          # customer keys, owned by the minting wallet
+│   │   ├── deps.py / api.py     # cookie-or-Bearer dependency, routes
+│   │   └── tests/               # 50 tests, each named for the attack it stops
+│   ├── trend_engine/            # the /trends lane
+│   └── pathia_data_api/         # market-data product (own deploy unit)
 ├── scripts/
 │   ├── trading_loop.py          # the autonomous loop (long-running)
 │   ├── pathia-mcp-server.py     # MCP stdio server, 99 tools
+│   ├── grant_operator.py        # grant/revoke the operator role for a wallet
 │   └── backtest.py              # historical-candle backtest
 ├── skills/pathia-agent/  # Pathia Agent skill (operator's manual + helper scripts)
 ├── tests/                       # offline unit + online + live-e2e
+├── research/                    # regime reads + pre-registered hypotheses
 ├── docs/                        # this file + journal-schema
 ├── Dockerfile / fly.toml / DEPLOY.md   # one-machine Fly deploy
 └── .env.local / .agent-config.json / .agent-memory.json / .dsl-state.json

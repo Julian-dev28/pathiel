@@ -8,15 +8,49 @@ it's a transient stdio process respawned by Pathia Agent on each tool
 call.
 
 ```bash
-cd /Users/julian_dev/Documents/code/pathia
+cd <repo root>
 scripts/restart.sh              # restart loop + server
 scripts/restart.sh loop         # loop only
 scripts/restart.sh server       # server only
-scripts/restart.sh stop         # stop both
-scripts/restart.sh status       # show PIDs
+scripts/restart.sh sched        # scheduler only
+scripts/restart.sh stoploop     # KILL SWITCH — stop the loop, stay stopped
+scripts/restart.sh stop         # stop ALL four: loop, server, scheduler, rotator
+scripts/restart.sh status       # show PIDs and what is halted
 ```
 
 Logs: `logs/trading_loop.log`, `logs/server.log`.
+
+## The halt marker — read before wondering why a restart did nothing
+
+`stoploop` and `stop` are kill switches, so they must stay stopped. Each writes
+its component into `.state/supervisor_halt.json`, and `supervise_processes.py`
+refuses to restart anything listed there. Every explicit start clears its own
+marker.
+
+So a loop that will not come up is usually not broken:
+
+```bash
+cat "${PATHIA_STATE_DIR:-.}/supervisor_halt.json"   # {"halted": ["loop"]} means deliberate
+```
+
+A supervisor that restarted the loop two minutes after the operator stopped it
+would have silently deleted the kill switch, which is why this exists.
+
+## After a long stop
+
+`data_logger` writes the funding/OI panel from inside the loop, so that panel
+stops growing while the loop is down. `xs_reversal` needs ~7 days of trailing
+funding history to judge a coin's market awake and will decline to rank until it
+refills — taking no trade rather than trading on partial data. Expect it to sit
+out for a while after a pause longer than a week; that is correct, not a fault.
+
+## Restarting after a code change
+
+The server does **not** hot-reload. On 2026-09-04 a three-day-old server process
+kept serving pre-auth routes: the sign-in button called `/auth/nonce`, got a
+404, and did nothing, while the dashboard still served the house balance
+ungated. It looked exactly like broken auth. `restart.sh loop` restarts only the
+loop — if you changed anything under `pathia/`, restart the server too.
 
 **Loop vs server restart:** `restart.sh server` restarts ONLY the dashboard — it
 does not touch open positions or DSL trackers, so it's safe any time. `restart.sh

@@ -100,7 +100,12 @@ def _active_claim_books(repo_root: Path) -> set[str]:
         from pathia.agents.rebalancer_owned import active_claim_books
         return active_claim_books()
     except Exception:
-        return {"xs_momentum", "rally_exhaustion"}
+        # Fallback only. It named xs_momentum and rally_exhaustion long after
+        # both books were deleted, so an import failure audited claims against
+        # a book set that no longer existed and reported every real claim as
+        # stale. Empty is the honest fallback: no claim is assertable when the
+        # authoritative list cannot be read.
+        return set()
 
 
 def _print_claims_audit(repo_root: Path, live_positions=None) -> None:

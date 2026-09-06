@@ -205,48 +205,62 @@ through the existing gates and close helper.
 Project state — not Pathia memory (all gitignored):
 - `.agent-config.json` — mode (OFF/LIVE), AI brain provider, risk caps, thresholds
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
-- `.data_funding_oi.jsonl` / `.data_logger_ts` — live funding/OI data logger
-- `.extreme_fade_state.json` / `.extreme_fade_live_ts` — crash-bar dedup and
-  cadence throttle for the live fade book
-- `.hail_mary_short_ts` / `.hail_mary_short_seen.json` — shadow/live cadence and
-  dedup for the AI/semis HIP-3 short basket
-- `.rally_exhaustion_live_ts` / `.rally_exhaustion_live_seen.json` — live
-  rally-exhaustion cadence and dedup
+- `.data_funding_oi.jsonl` / `.data_logger_ts` — the funding/OI panel. Written
+  by `data_logger` from inside the loop, and read by `xs_reversal` — which is
+  why it stops growing whenever the loop is stopped
 - `.rebalancer_claims.json` — cross-book claim registry
-- `.xs_momentum_positions.json`, `.xs_rebalance_ts`, `.xs_volmgd_history` —
-  live cross-sectional momentum state
+- `auth.db` — users, sessions, login nonces (`services/auth`)
+- `supervisor_halt.json` — components deliberately stopped. `supervise_processes`
+  refuses to restart anything listed here; every explicit start clears its own
+  entry. Check this first when a restart appears to do nothing
 - `logs/trading_loop.log` and `logs/server.log` — process logs
 
 Claim registry invariant: only active claim books may own `.rebalancer_claims.json`
-entries. Current owners are `xs_momentum`, `rally_exhaustion`, and
-`hail_mary_short`; stale owners from deleted books are auto-scrubbed by the
-registry and surfaced by `status.py`.
+entries. The owners are whatever `rebalancer_owned._ACTIVE_CLAIM_BOOKS` says —
+read it rather than trusting a list in this file. Stale owners from deleted books
+are auto-scrubbed by the registry and surfaced by `status.py`.
 If a new live book uses `get_claims_registry()`, add its book name to
 `rebalancer_owned.active_claim_books()` coverage before enabling it live.
 
 ## Live EV+ Books
 
-Only validated EV+ methods should be enabled live. Current live books:
+Only validated EV+ methods should be enabled live. **There is no shadow tier**:
+a book trades or it does not exist. `shadow_only` survives solely as the switch
+`scripts/autonomous_cycle.py` flips to demote a book whose forward ledger turns
+negative — it is the brake, not a staging area.
 
-- `xs_momentum` — cross-sectional momentum rebalance, live, claim-scoped.
-- `extreme_fade` — long-only crash fade, live, crash-bar deduped and cadence
-  throttled.
-- `rally_exhaustion` — short-only rally exhaustion, live, cadence/dedup gated.
+Current live books (all five, none shadow). `dashboard._BOOKS` is the canonical
+list; if this section and that list disagree, that list is right.
 
-Shadow / research book:
+| book | thesis | forward grade |
+|---|---|---|
+| `news_surge_short` | short a breaking Google News coverage surge | +1.24%/sig, n=255 |
+| `news_surge_multi` | the same surge across 15 pooled firehoses | +1.87%/sig, n=230 |
+| `social_trending` | long a coin entering CoinGecko's trending list | +0.89%/sig, n=185 |
+| `unlock_short_runin` | short the 48-72h run-in before a large unlock | +3.75%/sig, n=14 |
+| `xs_reversal` | short the top decile of 3d cross-sectional return, **only** where funding has been off the venue baseline >= 67% of 7d | +2.47%/sig, n=1995 |
 
-- `hail_mary_short` — AI/semis HIP-3 short basket (`NVDA`, `AMD`, `MSFT`,
-  `GOOGL`, `MU`, etc.). It is watchlist-driven but trigger-gated by basket
-  breadth, proxy trend, and fresh daily breakdowns. Current live config keeps it
-  `shadow_only=true`; do not promote it to live capital until its shadow/backtest
-  sample is EV+.
+`xs_reversal` (live 2026-09-04, findings/W-XSR1) is the one to understand before
+touching it: the funding gate is the edge, not a nicety. Coins pinned at the
+1.25e-05 baseline have no positioning to unwind and LOSE 0.443%/trade. Its own
+docs record the honest discount — that gate was found, not pre-registered.
 
 `gex_signal` is not standalone alpha. It is a HIP-3 option gamma guardrail that
 vetoes longs under nearby call-wall risk.
 
-Removed/refuted/shadow methods should stay gone from config, docs, tests, and
-MCP tools. Do not reintroduce shadow logging or disabled alpha paths without a
-fresh EV+ audit and explicit user request.
+Removed/refuted methods stay gone from config, docs, tests, and MCP tools. Do
+not reintroduce a disabled alpha path without a fresh EV+ audit and an explicit
+user request.
+
+**Adding a live book — the registrations the tests will catch you on:**
+
+1. `dashboard._BOOKS` (canonical list; `_KNOWN_BOOK_NAMES` derives from it)
+2. `autonomous_cycle._SWITCHES` — or nothing can ever demote it
+3. `rebalancer_owned._ACTIVE_CLAIM_BOOKS` — or two books can open the same coin
+4. `config_store.DEFAULT_CONFIG` **and** `.agent-config.json`
+5. a finding in `research/alpha_swarm/findings/` naming the book, or
+   `test_every_live_book_has_a_written_verdict` fails
+6. the call site in `scripts/trading_loop.py`
 
 ## Risk Gates (independent, no short-circuiting)
 

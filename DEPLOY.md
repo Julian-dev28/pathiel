@@ -43,9 +43,10 @@ them with `flyctl secrets set` / a `kubectl create secret` (see
 | `HYPERLIQUID_WALLET_ADDRESS` | **Required** | The trading account |
 | `HYPERLIQUID_PRIVATE_KEY` | **Required** | Signs orders — the money key |
 | `PATHIA_OPERATOR_TOKEN` | **Required** | Gates every mutating dashboard endpoint (`?token=` / `X-Operator-Token`). Missing = the operator console 503s closed, which is safe but means you can't start/stop/configure the bot from the dashboard |
+| `PATHIA_AUTH_DOMAIN` | **Required** | The host that must appear inside every signed sign-in message. Set it to the real deployed host — if it does not match what the browser is on, every signature is rejected for a domain mismatch and nobody can log in. Never derived from the request's own Host header, which an attacker controls |
+| `PATHIA_PUBLIC_DASHBOARD` | Optional | `1` restores pre-2026-09-04 open reads on the account routes. Only for a genuinely private single-operator box |
 | `BRAVE_API_KEY` | Optional | News search inside `pathia/agents/research.py`. Unset = that source is skipped, not an error |
 | `UW_API_KEY` | Optional | Unusual Whales options-flow client (`pathia/client/uw_client.py`). RESEARCH ONLY since the book cull — `uw_flow_xs` no longer exists; the client is used by `research/alpha_swarm/hypotheses/W-UW2_signal_battery.py` and `W-UW3_gex.py` to re-run those verdicts. Unset = those scripts report NO UW_API_KEY and exit. Nothing live reads it |
-| `HYDROMANCER_API_KEY` | Optional | Hydromancer market-data provider (`pathia/data_providers/hydromancer.py`). Unset = provider raises `HydromancerError`, caught by its caller |
 | `HYPERLIQUID_MASTER_ADDRESS` | Optional | Agent-wallet setup — the funding account behind the trading wallet |
 | `HYPERLIQUID_MASTER_PRIVATE_KEY` | Optional | Only used by `scripts/treasury.py` (manual transfers between master/agent wallets) — never read by any of the five deployed processes. Set it only if you plan to `flyctl ssh console` and run treasury commands by hand |
 
@@ -59,7 +60,6 @@ flyctl secrets set \
 # Optional
 flyctl secrets set BRAVE_API_KEY="BSA..."
 flyctl secrets set UW_API_KEY="..."
-flyctl secrets set HYDROMANCER_API_KEY="..."
 flyctl secrets set HYPERLIQUID_MASTER_ADDRESS="0x..." HYPERLIQUID_MASTER_PRIVATE_KEY="0x..."
 ```
 
@@ -334,7 +334,6 @@ documented somewhere, per this repo's deploy-config gate test
 ### Secrets — see "Secrets" above
 
 `OPENROUTER_API_KEY`, `HYPERLIQUID_WALLET_ADDRESS`, `HYPERLIQUID_PRIVATE_KEY`,
-`PATHIA_OPERATOR_TOKEN`, `BRAVE_API_KEY`, `UW_API_KEY`, `HYDROMANCER_API_KEY`,
 `HYPERLIQUID_MASTER_ADDRESS`, `HYPERLIQUID_MASTER_PRIVATE_KEY`
 
 ### Baked into the image — see the Dockerfile, don't override casually

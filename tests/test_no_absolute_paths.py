@@ -96,12 +96,28 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
     import re
 
     gone = ("polymarket_scout", "pathia/v2/", "xs_momentum_live",
-            "extreme_fade_live", "--sample-daemon")
+            "extreme_fade_live", "--sample-daemon",
+            # Deleted 2026-09-04. The pathia-agent SKILL listed rally_exhaustion
+            # and hail_mary_short as current live books days after both were
+            # gone, and an operator reading it would have gone looking for
+            # config that does not exist.
+            #
+            # uw_client is deliberately NOT in this list: it survives because
+            # research/alpha_swarm/hypotheses/W-UW2 and W-UW3 import it. The
+            # first pass at the module cull missed that, because the
+            # reachability roots did not include research/ — deleting it broke
+            # two working scripts silently.
+            "rally_exhaustion", "hail_mary_short",
+            "data_providers", "hydromancer")
     # Every operator-facing doc, not just the two at the root. docs/LOGGING.md
     # documented `logs/polymarket_scout.log` and a `restart.sh sampler` action
     # for months after both were deleted, because this loop did not look at it.
+    # skills/ is included for the same reason: the SKILL.md book list went stale
+    # precisely because nothing checked it.
     docs = ["README.md", "DEPLOY.md"] + sorted(
-        str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md"))
+        str(p.relative_to(ROOT)) for p in (ROOT / "docs").glob("*.md")) + sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / "skills").rglob("*.md")) + sorted(
+        str(p.relative_to(ROOT)) for p in (ROOT / "services").rglob("README.md"))
     for doc in docs:
         text = (ROOT / doc).read_text()
         # drop sections headed "What was removed" / "Removed" and the like

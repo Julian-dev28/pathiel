@@ -18,10 +18,12 @@ part of this system that reliably works, and it is worth more than the trading.
 - **Max drawdown -94.78%** over the last 90 days, flow-neutral (deposits and
   withdrawals are recorded and netted out, so that is a trading loss, not a
   withdrawal). Peak equity was $225.93.
-- **Four books, all LIVE.** There is no shadow tier: a book trades or it does
-  not exist. What stops them today is the structural dust floor, not a flag.
-- The account is below the structural minimum, so the executor refuses every
-  order regardless of what `mode` says. That is deliberate.
+- **Five books, all LIVE.** There is no shadow tier: a book trades or it does
+  not exist. `shadow_only` exists only as the switch
+  `scripts/autonomous_cycle.py` flips to demote a book whose forward ledger
+  turns negative.
+- The account is sized for $12.94 (2026-09-04): $11 notional at 1x,
+  `max_concurrent` 1, daily kill at -$4. See **Sizing a small account** below.
 
 | book | n | EV@25bps | OOS halves | null p |
 |---|---|---|---|---|
@@ -29,9 +31,17 @@ part of this system that reliably works, and it is worth more than the trading.
 | `news_surge_multi` | 230 | +1.87% | +1.50 / +2.50 | 0.0005 |
 | `social_trending` | 185 | +0.89% | +0.54 / +1.50 | 0.0005 |
 | `unlock_short_runin` | 14 | +3.75% | +0.71 / +7.06 | 0.0375 |
+| `xs_reversal` | 1995 | +2.47% | quartiles +4.94/+0.70/+0.89/+3.05 | 0.0000 |
 
-These are SHADOW-ledger grades, not realized P&L. This repo has a documented
+These are FORWARD-ledger grades, not realized P&L. This repo has a documented
 history of books whose comments claimed +EV while they ran live and lost.
+
+`xs_reversal` (2026-09-04, findings/W-XSR1) shorts the top decile of 3-day
+cross-sectional return, but only where funding has spent >= 67% of the last 7
+days off Hyperliquid's 1.25e-05 baseline — no positioning means nothing to
+unwind, and the pinned bucket loses 0.443%. It carries one honest discount the
+others do not: that gate was **found, not pre-registered**. It fell out of a
+different test that was failing.
 
 ### No recorders, no shadow
 
@@ -39,10 +49,30 @@ Every book trades and has a switch `scripts/autonomous_cycle.py` can flip, or it
 does not exist. There is no third state, and tests enforce that in the defaults
 and in the live config.
 
-**Fund this account above $25 and start the loop, and four books place real
-orders unattended.** What holds them right now is the dust floor in
-`executor.maybe_execute`, the majors allowlist, the daily-loss kill switch, and
-the nightly grader that demotes any book whose forward ledger turns negative.
+**Start the loop and five books place real orders unattended.** What bounds
+them is the equity floor in `executor.maybe_execute`, the per-book margin check,
+the majors allowlist, the daily-loss kill switch, and the nightly grader that
+demotes any book whose forward ledger turns negative.
+
+### Sizing a small account
+
+Two gates stand between an account and a fill, and clearing one does nothing:
+
+| gate | where | at $12.94 |
+|---|---|---|
+| equity floor | `executor.min_tradable_equity` | derived $88.89, overridden to $12 |
+| per-position margin | `executor.maybe_execute` | $11 notional at 1x needs $11 |
+| exchange minimum | `client.exchange.MIN_ORDER_USD` | $10.50 |
+| free-margin floor | `min_available_margin_pct` | 10%, leaving $11.65 usable |
+
+$11 is the only notional that clears the exchange minimum and fits usable
+margin. `max_concurrent` is 1 because exactly one position fits.
+
+The derived $88.89 floor is what all five books need to hold a position *at
+once*; below it the first book to fire consumes the budget and the rest sit
+margin-blocked, which from outside looks like books that simply do not fire
+(W-FUND1). `min_tradable_equity_usd` overrides it deliberately, and
+`.agent-config.json` carries a note on what to restore when funded.
 
 The exemption list that used to hold ten capital-less books is empty and a test
 keeps it empty. It produced exactly the failure it sounds like: on 2026-08-29
@@ -239,10 +269,54 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, live books |
 | `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
 | `/news` | News-catalyst reads + research events with news context |
-| `/trends` | Trend analysis + forecasts + recorder P&L (see `services/trend_engine/README.md`) |
+| `/trends` | Trend analysis + forecasts (see `services/trend_engine/README.md`) |
 | `/analytics` | Funnel, book league, coin chart with our trade markers, funding heat |
 
 Keyboard: `g` then `d` / `a` / `n` / `p` / `t` / `y`.
+
+### Who can see this
+
+Every `/api/dashboard` route was open until 2026-09-04. Verified against the
+running app, an anonymous GET returned equity, free balance, daily P&L, open
+positions, net capital in, and the full trade history. Anyone with the URL had
+the books.
+
+Reads are closed by default now, and there are two tiers:
+
+| surface | who | route |
+|---|---|---|
+| the **house** account | operator role only | `/api/dashboard/summary`, `/risk`, `/positions`, `/closed-trades`, `/equity-curve`, `/funnel`, `/book_league` |
+| **your own** account | any signed-in wallet | `/api/dashboard/account` |
+| health probes | anyone | `/api/health*` — a check that needs a session cannot report a broken session |
+
+Sign-in is **Sign-In With Ethereum** (EIP-4361), no vendor. `eth-account` is
+already a hard dependency because it signs the Hyperliquid orders, so this cost
+zero new dependencies and no third party learns anyone's wallet. There are no
+passwords in the system.
+
+`/api/dashboard/account` reads the caller's own Hyperliquid account **with no
+stored key**: `/info clearinghouseState` takes a plain address, and the
+signature already proved the caller controls it. The product can show a
+customer their balance while remaining structurally unable to trade it.
+
+- The **first wallet to sign in claims operator**, which closes the
+  open-kill-switch window on a fresh box without a bootstrap password to leak.
+  If something else gets there first, `scripts/grant_operator.py` is the way
+  back.
+- Set `PATHIA_AUTH_DOMAIN` to the real host before deploying, or every
+  signature is rejected for a domain mismatch.
+- `PATHIA_PUBLIC_DASHBOARD=1` restores the old open reads for a genuinely
+  private single-operator box. Named to be obvious in a diff and in
+  `fly secrets list`.
+- `PATHIA_OPERATOR_TOKEN` still exists and is now scoped to **machine callers
+  only** — the scheduler, the supervisor, smoke checks. It is one static string
+  for the whole deployment: it cannot say who acted, cannot be revoked for one
+  person, and cannot rotate without restarting everything. It is not a login.
+
+API keys for `services/pathia_data_api` are minted by a signed-in wallet at
+`/auth/keys` and belong to it. Only the SHA-256 is stored, so a leaked database
+yields no usable credential and "show it to me again" is not a feature that can
+exist.
 
 ---
 
@@ -393,7 +467,9 @@ values are optimal in future market regimes. Missing keys are filled from
 | `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `350` |
 | `asset_notional_multiplier` | Optional asset-bucket sizing scale applied after risk sizing. Defaults neutral; use it only for controlled risk experiments, not as the primary alpha fix. | `{"crypto": 1.0, "hip3": 1.0}` |
 | `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
-| `max_daily_loss_usd` | Daily-loss kill switch (negative number) | `-100` |
+| `max_daily_loss_usd` | Daily-loss kill switch (negative number). **Size it to the account**: a -$100 kill on a $12.94 account can never fire, so the switch is decorative. | `-100` |
+| `min_tradable_equity_usd` | Operator override of the derived equity floor. Precedence #1, ahead of the per-book requirement and the $25 exchange backstop. A negative or non-numeric value falls back rather than disabling the floor — a typo must not unlock trading on a dust account. | *(unset)* |
+| `notional_usd` (per book) | Fixed notional per position. Must clear `MIN_ORDER_USD` ($10.50) and fit equity less `min_available_margin_pct`. | `20.0` |
 | `daily_giveback_halt_pct` | **Give-back breaker**: once the day peaks ≥ `daily_giveback_min_peak_usd`, halt NEW entries if it retraces more than this from peak (existing positions ride their stops; resets at UTC roll). Locks green days from round-tripping | `0` (off) |
 | `daily_giveback_min_peak_usd` | Arm threshold for the give-back breaker — stays disarmed until the day's peak PnL reaches this | `20` |
 | `tp_scale_fraction` | Fraction auto-banked at the TP target (server-side reduce-only trigger at ~1 ATR); rest rides the trail. Captures profit instead of round-tripping | `0.5` |
