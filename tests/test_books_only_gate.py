@@ -149,3 +149,50 @@ def test_book_owned_holds_skip_ai_close_check():
     assert block.index("owner_of(coin)") < block.index("(now_ms - last_research)")
 
 
+
+
+def test_disabled_markets_are_dropped_before_anything_can_spend_on_them():
+    """enable_crypto=false was enforced only at executor.maybe_execute — the very
+    end, after the books had already paid for the candidate.
+
+    Measured 2026-09-06 with crypto disabled: 559 of 839 markets were unusable
+    and still scanned every cycle, and news_surge_short calls coin_catalyst()
+    per coin, which is one Google News fetch each. The refusal was correct and
+    far too late.
+
+    Filtering in get_universe means no caller can forget: a book cannot spend on
+    a market it was never handed.
+    """
+    from pathia.client import universe as U
+
+    meta = {"BTC": {"type": "perp", "dex": None, "maxLeverage": 40, "szDecimals": 5},
+            "xyz:BE": {"type": "perp", "dex": "xyz", "maxLeverage": 10, "szDecimals": 2}}
+    ctx = {"BTC": {"dayNtlVlm": "1e9"}, "xyz:BE": {"dayNtlVlm": "1e7"}}
+
+    import unittest.mock as mock
+    with mock.patch.object(U, "_fetch_perp_meta", return_value=({}, {})), \
+         mock.patch.object(U, "_fetch_spot_meta", return_value=({}, {})), \
+         mock.patch.object(U, "_fetch_hip3_meta", return_value=(meta, ctx)), \
+         mock.patch.object(U, "list_hip3_dexes", return_value=["xyz"]):
+        both = {m["coin"] for m in U.get_universe(include_hip3=True, include_crypto=True)}
+        assert {"BTC", "xyz:BE"} <= both
+
+        hip3_only = {m["coin"] for m in
+                     U.get_universe(include_hip3=True, include_crypto=False)}
+        assert "xyz:BE" in hip3_only, "HIP-3 markets must survive"
+        assert "BTC" not in hip3_only, "a disabled native market reached the books"
+
+
+def test_the_loop_passes_the_crypto_toggle_to_every_universe_build():
+    """Two call sites build the universe — startup and the periodic refresh. A
+    filter applied to only one of them silently reintroduces the spend on the
+    refresh path, hours later, where nobody is looking."""
+    import pathlib
+    import re
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    calls = re.findall(r"get_universe\((?:[^()]|\([^()]*\))*\)", src)
+    builds = [c for c in calls if "include_hip3" in c]
+    assert builds, "no universe build found — did the call shape change?"
+    for c in builds:
+        assert "include_crypto" in c, f"universe built without the crypto toggle: {c}"

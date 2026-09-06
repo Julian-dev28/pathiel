@@ -210,7 +210,8 @@ def _fetch_spot_meta(force_refresh: bool = False) -> Tuple[Dict[str, Any], Dict[
     return cache[0], cache[1]
 
 
-def get_universe(force_refresh: bool = False, include_hip3: bool = False) -> List[Dict[str, Any]]:
+def get_universe(force_refresh: bool = False, include_hip3: bool = False,
+                 include_crypto: bool = True) -> List[Dict[str, Any]]:
     """Fetch the full market universe (perp + spot, optionally + HIP-3) with volume data.
 
     Args:
@@ -218,6 +219,17 @@ def get_universe(force_refresh: bool = False, include_hip3: bool = False) -> Lis
         include_hip3: when True, also fetches each registered HIP-3 perpDex
             (xyz/km/vntl/...) and merges its markets in. Each HIP-3 market dict
             gets `"dex": "<dex_name>"`; native crypto markets have `dex: None`.
+        include_crypto: when False, drop native HL markets (`dex is None`) from
+            the result. Mirrors `enable_crypto` in .agent-config.json.
+
+            This is a COST control, not a safety one — `executor.maybe_execute`
+            already refuses a crypto trade when enable_crypto is false. The
+            problem is where that refusal happens: at the very end, after the
+            books have already spent on the candidate. Measured 2026-09-06 with
+            crypto disabled, 559 of 839 markets were unusable and still scanned
+            every cycle, and news_surge_short calls coin_catalyst() per coin —
+            one Google News fetch each. Filtering at the source means no caller
+            can forget.
 
     Returns list of dicts sorted by 24h volume (highest first):
     [
@@ -253,6 +265,8 @@ def get_universe(force_refresh: bool = False, include_hip3: bool = False) -> Lis
 
     for coin in all_coins:
         m = perp_meta.get(coin) or hip3_meta.get(coin) or spot_meta.get(coin, {})
+        if not include_crypto and not m.get("dex"):
+            continue          # native HL market with crypto disabled
         c = perp_ctx.get(coin) or hip3_ctx.get(coin) or spot_ctx.get(coin, {})
         
         def _f(v, d=0):

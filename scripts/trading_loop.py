@@ -246,9 +246,11 @@ logger.info(f"Mode: {startup_mode}  env={_args.env}  daemon={_args.daemon}")
 # enable_hip3 mid-run requires a loop restart to pick up new markets.
 try:
     _enable_hip3 = bool(startup_agent_config.get("enable_hip3", False))
+    _enable_crypto = bool(startup_agent_config.get("enable_crypto", True))
 except Exception:
     _enable_hip3 = False
-universe = get_universe(include_hip3=_enable_hip3)
+    _enable_crypto = True
+universe = get_universe(include_hip3=_enable_hip3, include_crypto=_enable_crypto)
 logger.info(
     f"Universe loaded: {len(universe)} markets"
     + (f" (HIP-3 enabled — {sum(1 for m in universe if m.get('dex'))} tokenized markets)" if _enable_hip3 else "")
@@ -687,7 +689,8 @@ while True:
         # the scanner rank yesterday's movers — see PATHIA_UNIVERSE_REFRESH_S).
         if universe_refresh_s > 0 and (time.time() - _last_universe_refresh) >= universe_refresh_s:
             try:
-                universe = get_universe(force_refresh=True, include_hip3=_enable_hip3)
+                universe = get_universe(force_refresh=True, include_hip3=_enable_hip3,
+                                        include_crypto=_enable_crypto)
                 _last_universe_refresh = time.time()
                 logger.info(f"Universe refreshed: {len(universe)} markets")
             except Exception as e:
