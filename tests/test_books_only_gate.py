@@ -196,3 +196,23 @@ def test_the_loop_passes_the_crypto_toggle_to_every_universe_build():
     assert builds, "no universe build found — did the call shape change?"
     for c in builds:
         assert "include_crypto" in c, f"universe built without the crypto toggle: {c}"
+
+
+def test_turning_a_market_back_on_does_not_need_a_restart():
+    """The toggles gate SPEND now, not just execution: a disabled market is
+    never scanned and never news-fetched. So an operator flipping crypto back on
+    expects the scanner to follow, and reading the toggle once at startup would
+    mean it silently did not until the next restart.
+
+    Pinned structurally: the refresh path must re-read the config rather than
+    reuse the startup values.
+    """
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "scripts" / "trading_loop.py").read_text()
+    refresh = src[src.index("if universe_refresh_s > 0"):]
+    refresh = refresh[:refresh.index("get_universe(force_refresh=True")]
+    assert "read_agent_config()" in refresh, (
+        "the universe refresh reuses startup toggles — flipping a market on "
+        "would not take effect until the loop restarts")
+    assert "enable_crypto" in refresh and "enable_hip3" in refresh

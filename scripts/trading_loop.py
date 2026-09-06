@@ -242,8 +242,12 @@ logger.info(f"Mode: {startup_mode}  env={_args.env}  daemon={_args.daemon}")
 # HIP-3 toggle: read once at startup so the prefetched universe includes
 # tokenized-equity / commodity perps if enabled. The agent config is
 # hot-reloaded per cycle inside the executor / perception layer for other
-# fields; the universe itself is fetched once at startup, so flipping
-# enable_hip3 mid-run requires a loop restart to pick up new markets.
+# fields. The universe is fetched at startup AND on the refresh TTL, and both
+# asset-class toggles are re-read from the live config on every refresh — so
+# turning crypto or HIP-3 back on takes effect within one refresh interval
+# rather than requiring a restart. That matters because the toggles now gate
+# spend, not just execution: a market that is off is never scanned and never
+# news-fetched, and an operator who flips one on expects the scanner to follow.
 try:
     _enable_hip3 = bool(startup_agent_config.get("enable_hip3", False))
     _enable_crypto = bool(startup_agent_config.get("enable_crypto", True))
@@ -689,6 +693,23 @@ while True:
         # the scanner rank yesterday's movers — see PATHIA_UNIVERSE_REFRESH_S).
         if universe_refresh_s > 0 and (time.time() - _last_universe_refresh) >= universe_refresh_s:
             try:
+                # Re-read the toggles, do not reuse the startup values.
+                # Whichever markets are enabled RIGHT NOW is what the next
+                # cycle scans and spends on.
+                try:
+                    _live_cfg = read_agent_config() or {}
+                    _now_hip3 = bool(_live_cfg.get("enable_hip3", False))
+                    _now_crypto = bool(_live_cfg.get("enable_crypto", True))
+                except Exception as _tcfg:
+                    logger.warning(f"[universe] toggle re-read failed, keeping "
+                                   f"previous asset classes: {_tcfg}")
+                    _now_hip3, _now_crypto = _enable_hip3, _enable_crypto
+                if (_now_hip3, _now_crypto) != (_enable_hip3, _enable_crypto):
+                    logger.warning(
+                        f"[universe] asset classes changed mid-run: "
+                        f"hip3 {_enable_hip3}->{_now_hip3}, "
+                        f"crypto {_enable_crypto}->{_now_crypto}")
+                    _enable_hip3, _enable_crypto = _now_hip3, _now_crypto
                 universe = get_universe(force_refresh=True, include_hip3=_enable_hip3,
                                         include_crypto=_enable_crypto)
                 _last_universe_refresh = time.time()
