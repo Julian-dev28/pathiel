@@ -44,6 +44,9 @@ class AgentMemory:
         self._daily_pnl: float = 0
         self._peak_daily_pnl: float = 0  # high-water mark of daily_pnl (intraday, resets at UTC roll)
         self._start_of_day_equity: float = 0
+        # Contributions already counted at the moment SOD equity was
+        # stamped. See track_daily_pnl for why this has to exist.
+        self._sod_contrib_baseline: float = 0.0
         self._day_start_ts: int = 0
         self._open_positions: List[Dict[str, Any]] = []
         self._initialized = False
@@ -82,6 +85,7 @@ class AgentMemory:
             self._peak_daily_pnl = data.get("peakDailyPnl", self._daily_pnl)
             self._start_of_day_equity = data.get("startOfDayEquity", 0)
             self._day_start_ts = data.get("dayStartTs", 0)
+            self._sod_contrib_baseline = data.get("sodContribBaseline", 0.0)
             self._open_positions = data.get("openPositions", [])
 
             logger.info(
@@ -122,6 +126,7 @@ class AgentMemory:
                 "peakDailyPnl": self._peak_daily_pnl,
                 "startOfDayEquity": self._start_of_day_equity,
                 "dayStartTs": self._day_start_ts,
+                "sodContribBaseline": self._sod_contrib_baseline,
                 "openPositions": self._open_positions,
             }
             tmp = MEMORY_FILE + ".tmp"
@@ -247,6 +252,23 @@ class AgentMemory:
         if self._day_start_ts < today_utc or self._start_of_day_equity == 0:
             self._start_of_day_equity = current_equity
             self._day_start_ts = today_utc
+            # Stamp the contribution level AT THE SAME MOMENT as the equity.
+            #
+            # Without this, a loop that starts mid-day double-counts every
+            # transfer that already landed: SOD equity is set to the CURRENT
+            # balance (which includes them) while contributions are still
+            # measured from the UTC boundary (which also includes them), so the
+            # deposit is subtracted from an equity figure that already contains
+            # it. Observed 2026-09-06: $21.77 moved to the xyz dex before the
+            # loop restarted, and daily PnL read -$21.77 on an account that had
+            # not placed a single trade — jamming the kill switch shut and
+            # refusing every entry.
+            #
+            # Re-baselining alone is NOT the fix and must not be attempted: it
+            # launders a real drawdown out of the kill switch, which is the
+            # 2026-07-09 incident the flush below exists for. Both are handled
+            # by keeping the equity baseline and offsetting the contributions.
+            self._sod_contrib_baseline = float(net_contributions or 0.0)  # noqa: E501
             self._daily_pnl = 0
             self._peak_daily_pnl = 0  # reset high-water mark at the UTC day roll
             # Flush the fresh baseline IMMEDIATELY: on days with no bot trades
@@ -266,7 +288,16 @@ class AgentMemory:
                 logger.error(f"[memory] failed to persist SOD baseline reset: {e}")
         else:
             prev_daily = self._daily_pnl
-            self._daily_pnl = current_equity - self._start_of_day_equity - net_contributions
+            # getattr, not attribute access: this runs on every heartbeat, and
+            # an object restored from a state file written before this field
+            # existed — or built via __new__ — must degrade to the old
+            # behaviour rather than raise inside the kill-switch path. A crash
+            # here stops the loop; a missing baseline only costs one day of
+            # deposit-neutrality.
+            contrib_since_baseline = (float(net_contributions or 0.0)
+                                      - getattr(self, "_sod_contrib_baseline", 0.0))
+            self._daily_pnl = (current_equity - self._start_of_day_equity
+                               - contrib_since_baseline)
             # Deposit-race guard (2026-07-18): the tick where a deposit lands
             # can compute daily_pnl BEFORE the contributions fetch reflects the
             # transfer (observed: +$132 deposit -> peakDailyPnl 128.28 on a

@@ -3667,3 +3667,42 @@ def test_xyz_concentration_is_wired_and_not_carveout_exempt():
     out = eval_all_gates(ctx, cfg, is_book=True)   # even as a BOOK with carveout ON
     assert out["blocked"] is True
     assert any("xyz-short name cap" in r for r in out["block_reasons"])
+
+
+def test_a_mid_day_restart_after_a_deposit_does_not_invent_a_loss(tmp_path, monkeypatch):
+    """Observed 2026-09-06 on the live account. $21.77 was moved onto the xyz
+    dex, then the loop restarted. It stamped start-of-day equity at the CURRENT
+    balance (which already contained the transfer) while contributions were
+    still measured from the UTC boundary (which also contained it), so the
+    deposit was subtracted from an equity figure that already included it.
+
+    Result: daily PnL read -$21.77 on an account that had never traded, the
+    kill switch read "100% to floor", and every entry was refused.
+    """
+    # A fresh instance, NOT importlib.reload: reloading swaps the module object
+    # out from under every other test holding a reference to it, which broke
+    # test_open_reason in the full run while passing in isolation.
+    from pathia.agents.memory import AgentMemory
+    m = AgentMemory()
+    m._start_of_day_equity = 0.0        # never initialised -> takes the new-day branch
+    m._day_start_ts = 0
+    m.flush = lambda: None              # no state file for a unit test
+
+    # Day rolls with the loop DOWN. It comes back mid-day, after the transfer:
+    # equity already reflects it, and the ledger reports it as a contribution.
+    m.track_daily_pnl(34.70, net_contributions=21.77)
+    assert m.get_daily_pnl() == 0, "first tick of a new day is always flat"
+
+    # Next tick, nothing traded, no new money.
+    m.track_daily_pnl(34.71, net_contributions=21.77)
+    assert abs(m.get_daily_pnl() - 0.01) < 0.02, (
+        f"a transfer was counted as a trading loss: {m.get_daily_pnl()}")
+
+    # A REAL loss after the baseline still registers — the guard must not
+    # launder a drawdown, which is the 2026-07-09 failure in the other direction.
+    m.track_daily_pnl(30.00, net_contributions=21.77)
+    assert m.get_daily_pnl() < -4.0, "a genuine drawdown stopped being visible"
+
+    # And money arriving AFTER the baseline is still excluded from PnL.
+    m.track_daily_pnl(50.00, net_contributions=41.77)
+    assert abs(m.get_daily_pnl() - (50.00 - 34.70 - 20.0)) < 0.01
