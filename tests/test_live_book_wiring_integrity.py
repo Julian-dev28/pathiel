@@ -121,8 +121,35 @@ def test_margin_floor_preserves_a_real_liquidation_buffer():
     from pathlib import Path
     cfg = json.loads((Path(__file__).resolve().parents[1] / ".agent-config.json").read_text())
     floor = float(cfg["min_available_margin_pct"])
-    assert floor >= 0.08, f"margin floor {floor} too low — invites the utilization cascade"
-    assert floor > 0.06
+    # 2026-09-06: relaxed 0.08 -> 0.02 on the operator's explicit instruction to
+    # deploy 98%, after being shown the incident above. The flat 0.08 is replaced
+    # by the RULE it was standing in for, because what actually caused the
+    # cascade was not thin free margin - it was a stop sitting BEYOND
+    # liquidation, so positions died before the stop could act.
+    #
+    # The docstring above anticipated exactly this: "the floor can relax to a
+    # capital-efficient level once the cap is in place - but it must stay above
+    # the 1% that caused the cascade."
+    #
+    # A thin utilization buffer is therefore admissible only while the
+    # per-position liquidation defense is comfortable. xyz charges ~5%
+    # maintenance and is isolated-only, so at the configured 3x:
+    #
+    #     liq buffer = 1/3 - 0.05 = 28.3%   vs a 15% stop = 13.3pp of room
+    #
+    # If leverage rises or the stop widens until the stop crowds liquidation,
+    # this fails and the floor has to go back up.
+    lev = int(cfg["leverage"])
+    stop = float(cfg["default_stop_pct"]) / 100.0
+    liq_buffer = 1.0 / lev - 0.05          # xyz maintenance margin
+    assert floor > 0.01, (
+        f"margin floor {floor} is at or under the 1% that caused the "
+        f"2026-07-22 utilization cascade")
+    assert liq_buffer > stop * 1.5, (
+        f"a {floor:.0%} margin floor is only safe while the stop clears "
+        f"liquidation comfortably: {lev}x gives a {liq_buffer:.1%} buffer "
+        f"against a {stop:.0%} stop. Raise min_available_margin_pct back to "
+        f"0.08, or lower leverage/stop.")
 
 
 # --------------------------------------------------------------- hip3 leverage cap

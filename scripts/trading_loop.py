@@ -727,9 +727,43 @@ while True:
         except Exception as _oie:
             logger.debug(f"[oi-logger] append failed (non-fatal): {_oie}")
 
-        logger.info("Scanning markets...")
-        results = scan_once(universe=universe, min_score=min_score, config=config)
-        logger.info(f"Scan found {len(results)} triggers")
+        # ---------------------------------------------------------------- #
+        # SLOTS-FULL GATE: stop paying to look when nothing can be bought.
+        #
+        # Every slot occupied means max_concurrent refuses whatever the scan
+        # finds — but the refusal happens at the END, after the candle fetches,
+        # after news_surge_short has called coin_catalyst() (one Google News
+        # fetch PER COIN), and after research() has spent a Claude call on each
+        # survivor. The system paid full price for a verdict it could not act on.
+        #
+        # With a 24h hold and 3 slots that is most of the day: the book fills in
+        # the morning and every later cycle re-derives candidates it must refuse.
+        #
+        # What still runs, deliberately:
+        #   - monitor_exits, ABOVE this line, so open positions are still managed
+        #     and still close on their stop or timeout. Gating exits would strand
+        #     capital in a position nothing was watching.
+        #   - the recorders below (data_logger, unlock, social_trending), which
+        #     append the funding/OI panel every research script reads. Skipping
+        #     those would leave a hole in the history for exactly the periods the
+        #     book was fully deployed - a silent survivorship bias in every
+        #     future backtest, and the most expensive kind of saving.
+        # ---------------------------------------------------------------- #
+        _slots = int(read_agent_config().get("max_concurrent", 0) or 0)
+        _entry_budget_open = _slots <= 0 or len(positions) < _slots
+        if _entry_budget_open:
+            logger.info("Scanning markets...")
+            results = scan_once(universe=universe, min_score=min_score, config=config)
+            logger.info(f"Scan found {len(results)} triggers")
+        else:
+            results = []
+            logger.info(
+                f"[slots-full] {len(positions)}/{_slots} positions open — skipping "
+                f"scan, books and AI research until a slot frees. Exits and the "
+                f"data panel still run.")
+            log_event({"event": "slots_full_skip",
+                       "open_positions": len(positions), "max_concurrent": _slots,
+                       "coins": [str(p_.get("coin")) for p_ in positions]})
 
         # neg_funding_fade RIPPED 2026-07-12 (operator refuted-rule): fixed
         # grader read it -2.0%/ep net of funding forward; the original +EV
@@ -744,24 +778,27 @@ while True:
         # mc_p=0.0375): short inside the 48-72h pre-unlock window, exit AT the
         # event.
         try:
-            _unlock_short_maybe_run(read_agent_config(), universe, positions,
-                                    _book_execute)
+            if _entry_budget_open:
+                _unlock_short_maybe_run(read_agent_config(), universe, positions,
+                                        _book_execute)
         except Exception as _use:
             logger.warning(f"[unlock-short-live] cycle failed (non-fatal): {_use}")
 
         # news_surge_short (VALIDATED n=255, EV25 +1.24%, halves +0.58/+2.16,
         # mc_p=0.0005): short a breaking Google News coverage surge.
         try:
-            _news_surge_short_maybe_run(read_agent_config(), results,
-                                        positions, _book_execute)
+            if _entry_budget_open:
+                _news_surge_short_maybe_run(read_agent_config(), results,
+                                            positions, _book_execute)
         except Exception as _nsse:
             logger.warning(f"[news-surge-short] pass failed (non-fatal): {_nsse}")
 
         # news_surge_multi (VALIDATED n=230, EV25 +1.87%, halves +1.50/+2.50,
         # mc_p=0.0005): the same surge measured across 15 pooled firehoses.
         try:
-            _news_surge_multi_maybe_run(read_agent_config(), results, positions,
-                                        _book_execute)
+            if _entry_budget_open:
+                _news_surge_multi_maybe_run(read_agent_config(), results, positions,
+                                            _book_execute)
         except Exception as _nsme:
             logger.warning(f"[news-surge-multi] pass failed (non-fatal): {_nsme}")
 
@@ -772,8 +809,9 @@ while True:
         # the panel it reads; on a cold state directory it simply declines to
         # rank and takes nothing. See findings/W-XSR1_cross_sectional_reversal.md
         try:
-            _xs_reversal_maybe_run(read_agent_config(), universe, positions,
-                                   _book_execute)
+            if _entry_budget_open:
+                _xs_reversal_maybe_run(read_agent_config(), universe, positions,
+                                       _book_execute)
         except Exception as _xsr:
             logger.warning(f"[xs-reversal] pass failed (non-fatal): {_xsr}")
 
