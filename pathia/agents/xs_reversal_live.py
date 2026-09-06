@@ -290,8 +290,13 @@ def maybe_run(config: Dict[str, Any],
                         _BOOK_NAME, coin, c["mom"], c["awake"] * 100)
         else:
             claims.release(coin, _BOOK_NAME)
-            reason = (result or {}).get("blocked_by") if isinstance(result, dict) else None
-            logger.info("[%s] %s not opened: %s", _BOOK_NAME, coin, reason)
+            # `reason` first, `blocked_by` second. Reading only blocked_by
+            # printed "not opened: None" for every refusal that was not a risk
+            # gate — which is most of them — and a refusal that says nothing is
+            # indistinguishable from a crash.
+            res = result if isinstance(result, dict) else {}
+            why = res.get("reason") or res.get("blocked_by") or "no reason given"
+            logger.info("[%s] %s not opened: %s", _BOOK_NAME, coin, why)
     claims.save()
     return {"book": _BOOK_NAME, "candidates": len(candidates),
             "universe": n, "opened": opened}

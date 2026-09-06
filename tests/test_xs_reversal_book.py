@@ -216,3 +216,28 @@ def test_the_order_carries_the_tested_geometry(panel, monkeypatch):
     assert a["strategy_book"] == "xs_reversal"
     assert a["strategy_book_notional"] == 11.0
     assert a["tp_scale_fraction_override"] == 0.0      # no partial take-profit
+
+
+def test_a_refusal_is_logged_with_its_reason(panel, monkeypatch, caplog):
+    """The book logged result["blocked_by"], which only exists on risk-gate
+    refusals. Every other refusal — and most are — printed "not opened: None".
+    On 2026-09-06 that hid `private_key_missing` and then a sizing block behind
+    a null for two days."""
+    import logging
+    now = int(time.time() * 1000)
+    write_panel(panel, {"A": (100, 150), "B": (100, 90), "C": (100, 100)}, now)
+
+    class _Claims:
+        def prune_to(self, *a): pass
+        def claimed_by_others(self, *a): return set()
+        def claim(self, *a): return True
+        def release(self, *a): pass
+        def save(self): pass
+
+    monkeypatch.setattr(XSR, "get_claims_registry", lambda: _Claims())
+    monkeypatch.setattr(XSR.shadow_ledger, "record", lambda book, **kw: {})
+    with caplog.at_level(logging.INFO):
+        XSR.maybe_run(cfg(), universe(["A", "B", "C"]), [],
+                      lambda a: {"executed": False, "reason": "private_key_missing"})
+    assert "private_key_missing" in caplog.text
+    assert "not opened: None" not in caplog.text
