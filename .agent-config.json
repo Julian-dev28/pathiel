@@ -18,9 +18,9 @@
       "held": true
     }
   },
-  "enable_crypto": true,
+  "enable_crypto": false,
   "enable_hip3": true,
-  "equity_fraction_per_trade": 0.1,
+  "equity_fraction_per_trade": 0.35,
   "leverage": 12,
   "max_trade_notional_usd": 5000,
   "asset_notional_multiplier": {
@@ -28,9 +28,9 @@
     "hip3": 1.0
   },
   "tp_scale_fraction": 0.5,
-  "max_concurrent": 1,
+  "max_concurrent": 2,
   "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -4.0,
+  "max_daily_loss_usd": -10.0,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 25.0,
   "crowded_with_min_conf": 0.8,
@@ -134,7 +134,7 @@
   "thin_short_relax": {
     "enabled": true,
     "min_confidence": 0.72,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1
   },
   "data_logger": {
@@ -158,7 +158,7 @@
     "shadow_only": false,
     "equity_live": true,
     "crypto_live": true,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1,
     "stop_pct": 15.0,
     "hold_days": 1.0,
@@ -167,7 +167,7 @@
   "news_surge_multi": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1,
     "stop_pct": 15.0,
     "hold_days": 1.0,
@@ -179,7 +179,7 @@
     "poll_hours": 1.0,
     "dedup_hours": 24.0,
     "horizon_days": 1.0,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1,
     "stop_pct": 15.0,
     "max_new_per_cycle": 1
@@ -187,17 +187,17 @@
   "unlock_short": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1,
     "stop_pct": 15.0
   },
-  "min_tradable_equity_usd": 12.0,
+  "min_tradable_equity_usd": 26.0,
   "_min_tradable_equity_usd_note": "Operator override of the derived floor, set 2026-09-04 for a $12.94 account. The derived floor ($88.89) is what all five enabled books need to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which from outside looks like books that simply do not fire (W-FUND1, 2026-08-30). That is the cost of this switch, not a bug. Delete this key to restore the derived floor.",
-  "_sizing_note": "Sized 2026-09-04 for a $12.94 account. $11 notional is the only value that clears HL MIN_ORDER_USD ($10.50) and fits usable margin ($11.65 = equity less the 10% min_available_margin_pct). One position at a time. Risk per trade is $1.65 at the 15% stop, 13% of the account \u2014 that is inherent to the account size, not a tuning choice. Restore $20 notional, max_concurrent 20 and the -$100 kill when the account is funded above $88.89.",
+  "_sizing_note": "Sized 2026-09-06 for $34.68 on the xyz HIP-3 dex, HIP-3 ONLY (enable_hip3 true, enable_crypto false). equity_fraction_per_trade 0.35 x 1x leverage = ~$12.14 per trade, clipped to $12 by each book's strategy_book_notional ceiling. max_concurrent 2 -> $24 deployed of $31.21 usable. $1.80 risk per trade at the 15% stop. WHY 0.35 AND NOT 0.1: the books override leverage to 1x, so the old 0.1 sized every trade at $3.47 \u2014 under HL MIN_ORDER_USD ($10.50) \u2014 and nothing could fill. strategy_book_notional is a ceiling, not a target. min_tradable_equity_usd 26 doubles as a drawdown brake. social_trending and unlock_short_runin produce ZERO xyz signals and will not trade while enable_crypto is false; their recorders keep writing the forward ledger, so their evidence still accrues.",
   "xs_reversal": {
     "enabled": true,
     "shadow_only": false,
-    "notional_usd": 11.0,
+    "notional_usd": 12.0,
     "leverage": 1,
     "stop_pct": 15.0,
     "hold_hours": 24.0,

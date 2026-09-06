@@ -241,3 +241,37 @@ def test_a_genuinely_flat_account_still_reads_flat(monkeypatch):
     monkeypatch.setitem(db._POSITIONS_CACHE, "data", [{"coin": "ETH"}])
     monkeypatch.setattr(db, "_positions_payload_uncached", lambda: [])
     assert db._positions_payload() == []
+
+
+def test_a_gate_blocked_trade_says_why():
+    """Every refusal path in maybe_execute sets `reason` except one: the risk-gate
+    block returned only `blocked_by`, so a book logging result["reason"] printed
+    "not opened: None". A refusal that says nothing is indistinguishable from a
+    crash, and on 2026-09-06 that cost an hour working out why xs_reversal would
+    not open xyz:HOOD — the explanation was already in the response, under a key
+    nobody read.
+
+    Asserted structurally rather than by executing: every `return {...}` in
+    maybe_execute carrying "executed" must also carry "reason".
+    """
+    import ast
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "pathia" / "agents" / "executor.py"
+    tree = ast.parse(src.read_text())
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "maybe_execute")
+    missing = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+            keys = {getattr(k, "value", None) for k in node.value.keys}
+            if "executed" in keys and "reason" not in keys:
+                # A successful execution needs no reason; a refusal does.
+                executed_true = any(
+                    getattr(k, "value", None) == "executed"
+                    and getattr(v, "value", None) is True
+                    for k, v in zip(node.value.keys, node.value.values))
+                if not executed_true:
+                    missing.append(node.lineno)
+    assert not missing, (
+        f"maybe_execute refuses without a reason at line(s) {missing} — "
+        "callers log result['reason'] and will print None")

@@ -1108,6 +1108,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
                 "executed": False, "mode": mode,
                 "analysis_id": analysis["id"],
                 "blocked_by": gate_output["block_reasons"],
+                # Also as `reason`, because every OTHER refusal path in this
+                # function sets that key and callers log it. Without it a
+                # gate-blocked trade logged "not opened: None" — a refusal that
+                # says nothing, on the one path where the explanation already
+                # exists. Cost real debugging time on 2026-09-06.
+                "reason": "; ".join(gate_output["block_reasons"] or []) or "blocked by risk gates",
                 "gate_results": gate_output["results"],
             }
 
