@@ -185,7 +185,10 @@ def test_every_book_the_loop_calls_can_reach_capital():
              "data_logger", "oi_logger", "universe", "shadow_ledger", "ai_brain",
              "market_regime", "hyperfeed", "sizing", "system_prompt",
              "unlock_recorder", "main_engine_recorder", "mover_recorders",
-             "capital_flows", "atomic_io"}
+             "capital_flows", "atomic_io",
+             # not a book: a wall-clock guard so a stalled recorder cannot stop
+             # the loop's exit path (see pathia/agents/deadline.py, 2026-09-07)
+             "deadline"}
     book_modules = called - infra
     for mod in book_modules:
         assert any(mod.startswith(b.split("_live")[0][:12]) or b in mod

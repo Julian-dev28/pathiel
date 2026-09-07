@@ -44,6 +44,7 @@ from pathia.agents.rebalancer_owned import held_coins_with_dsl as _held_coins
 from pathia.models.types import BookAnalysis
 from pathia.session_log import append as log_event
 from pathia.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params
+from pathia.agents.deadline import with_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +65,20 @@ def _save_state(state: Dict[str, Any]) -> None:
 def fetch_trending(timeout: float = 15.0) -> List[Dict[str, Any]]:
     """Return CoinGecko trending coins as [{symbol,name,rank,score,price_btc}]. []
     on any failure (never raises)."""
-    try:
+    def _fetch():
         req = urllib.request.Request(_TRENDING_URL, headers={"User-Agent": "pathia"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
+            return json.loads(resp.read().decode())
+
+    try:
+        # urllib's `timeout` is per socket operation, not a total deadline: a
+        # server that dribbles bytes resets it on every recv and holds this open
+        # forever. That wedged the trading loop for 8 minutes on 2026-09-07 with
+        # three positions live and their stops therefore unreachable. The hard
+        # deadline is the caller's, not urllib's.
+        data = with_deadline(_fetch, timeout * 2, None, "coingecko-trending")
+        if data is None:
+            return []
     except Exception as exc:  # noqa: BLE001
         # This book now trades (2026-08-30, see module docstring) — a
         # persistent fetch failure means every pass silently records

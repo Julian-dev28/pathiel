@@ -78,6 +78,7 @@ from pathia.agents.executor import (
 )
 from pathia.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from pathia.agents.config import get_config
+from pathia.agents.deadline import with_deadline as _with_deadline
 
 
 
@@ -819,7 +820,7 @@ while True:
         # API — reuses the already-fetched `universe`) for the forward data frontier (funding-carry /
         # OI-divergence backtests once ~1-2 weeks of history accrue).
         try:
-            _data_logger_maybe_log(read_agent_config(), universe)
+            _with_deadline(lambda: _data_logger_maybe_log(read_agent_config(), universe), 60, None, "data-logger")
         except Exception as _dle:
             logger.warning(f"[data-logger] failed (non-fatal): {_dle}")
 
@@ -827,7 +828,7 @@ while True:
         # removed 2026-08-30 (validated but no capital path); what remains feeds
         # unlock_short_runin below, which trades it.
         try:
-            _unlock_maybe_record(universe, read_agent_config())
+            _with_deadline(lambda: _unlock_maybe_record(universe, read_agent_config()), 60, None, "unlock-recorder")
         except Exception as _ure:
             # This feeds the calendar the LIVE unlock_short_live book reads —
             # its siblings on this pass (unlock-short-live, news-surge-*,
@@ -838,9 +839,11 @@ while True:
         # social_trending (VALIDATED n=185, EV25 +0.89%, halves +0.54/+1.50,
         # mc_p=0.0005). Records always; trades when its own shadow_only is off.
         try:
-            _social_trending_maybe_record(read_agent_config() and universe,
-                                          read_agent_config(), positions,
-                                          _book_execute)
+            _with_deadline(
+                lambda: _social_trending_maybe_record(
+                    read_agent_config() and universe, read_agent_config(),
+                    positions, _book_execute),
+                90, None, "social-trending")
         except Exception as _stre:
             logger.warning(f"[social-trending] pass failed (non-fatal): {_stre}")
 
