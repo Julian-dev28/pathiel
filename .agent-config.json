@@ -150,7 +150,7 @@
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,
   "news_surge_short": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": false,
     "equity_live": true,
     "crypto_live": true,
@@ -158,7 +158,7 @@
     "max_new_per_cycle": 1
   },
   "news_surge_multi": {
-    "enabled": true,
+    "enabled": false,
     "shadow_only": false,
     "hold_days": 1.0,
     "max_new_per_cycle": 1
@@ -191,5 +191,6 @@
     "max_new_per_cycle": 1
   },
   "_xyz_concentration_note": "max_xyz_short_names 3 = max_concurrent, so the name cap never refuses a slot the concurrency budget already approved. It used to sit at 2 with max_concurrent 2 and produced 'REFUSED SHORT xyz:SNDK - xyz-short name cap reached (2/2)' while slots were free.\nmax_xyz_short_notional_pct 2.815 is the deployment expressed as notional: 92% of equity as margin x 3x = 2.76x equity, plus 2% slack. It is a PERCENT and has to be - it scales with the account, where a dollar cap would go stale in both directions.\nWhy it is not smaller: xyz shorts are ~1.28 effective bets at 0.83 mean pairwise correlation (W-MATH2/3; seven stopped together on 07-21 for -$8.59). The gate measures NOTIONAL and is right to - a correlated 15% move costs 15% of notional whatever the leverage. Sizing the book therefore means accepting a 41.4% correlated drawdown, which is why that number is declared explicitly in max_correlated_drawdown_pct rather than left implied.",
-  "max_correlated_drawdown_pct": 0.441
+  "max_correlated_drawdown_pct": 0.441,
+  "_disabled_books_note": "2026-09-07: news_surge_short and news_surge_multi DISABLED on their own live forward record, graded by scripts/grade_forward_ledger.py against the panel. news_surge_short: 385 distinct bets (270 clusters, 145 coins), NET EV -2.093% after funding, halves +0.62 -> -4.71, P(true edge >= 0) = 0.046. news_surge_multi: 365 bets (233 clusters, 142 coins), NET -1.748%, halves +1.54 -> -4.52, P(true edge >= 0) = 0.084. Both were positive in their first half and fell off a cliff in the second - edge decay, not a bad week, and the samples are large enough to say so. They also competed for the 3 concurrent slots, so a losing book was directly displacing xs_reversal. Re-enable only on a fresh forward sample that is positive in BOTH halves; the loop's inline 'VALIDATED n=255 EV25 +1.24%' comments are the ORIGINAL in-sample claims and are what the live record has now contradicted."
 }
