@@ -31,8 +31,8 @@
   },
   "tp_scale_fraction": 0.5,
   "max_concurrent": 3,
-  "max_total_notional_pct": 2.999,
-  "max_daily_loss_usd": -7.64,
+  "max_total_notional_pct": 1.236,
+  "max_daily_loss_usd": -3.15,
   "daily_giveback_halt_pct": 0.45,
   "daily_giveback_min_peak_usd": 2.08,
   "crowded_with_min_conf": 0.8,
@@ -43,7 +43,7 @@
   "counter_regime_min_conf": 0.8,
   "max_crypto_long_correlated": 100,
   "max_xyz_short_names": 3,
-  "max_xyz_short_notional_pct": 2.999,
+  "max_xyz_short_notional_pct": 1.236,
   "min_market_volume_usd": 700000,
   "min_hip3_volume_usd": 700000,
   "min_short_volume_usd": 1000000,
@@ -129,7 +129,7 @@
     "window_hours": 24.0
   },
   "strategy_book_notional_usd": 0.0,
-  "strategy_book_equity_frac": 0.32666,
+  "strategy_book_equity_frac": 0.13462,
   "short_notional_usd": 0.0,
   "ai_long_notional_usd": 11.0,
   "thin_short_relax": {
@@ -146,7 +146,7 @@
     "min_pct_circ": 1.0,
     "refresh_hours": 12.0
   },
-  "max_daily_loss_pct": 0.294,
+  "max_daily_loss_pct": 0.121,
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,
   "news_surge_short": {
@@ -177,7 +177,7 @@
   },
   "min_tradable_equity_usd": 26.0,
   "_min_tradable_equity_usd_note": "Operator override of the derived floor. The derived value is what every enabled book needs to hold a position AT ONCE; below it the first book to fire consumes the budget and the rest sit margin-blocked, which looks from outside like books that do not fire (W-FUND1). $26.0 also acts as a drawdown brake: the system stops rather than grinding down.",
-  "_sizing_note": "2026-09-06, operator's call: DEPLOY THE PORTFOLIO. Sizing is equity-FRACTION, not fixed dollars - default_notional_usd is 0, which routes the books through strategy_book_equity_frac in executor.py (~L885). Each position is 0.30666 x equity x 3x leverage, so 3 slots commit 92% of equity as margin and the deployment holds at ANY balance instead of drifting as a fixed dollar figure would.\nWHY 92% AND NOT THE 98% ASKED FOR: min_available_margin_pct is 8% because of the 2026-07-22 equity bleed - at a 1% floor the xyz dex ran to 97% utilization and every adverse tick FORCE-LIQUIDATED positions at ~5%, BEFORE the backup stop could fire, each liquidation draining the shared margin into the next. 98% deployment sits at that same utilization on that same dex. 92% is the most the account takes without reproducing it; the difference is $2.08 at a $34.67 balance, and it buys back the stop being the thing that closes a losing trade.\nTHE RISK IS THE STOP, NOT THE KILL. A fully deployed book cannot be bounded by a daily kill: the kill halts NEW entries, it does not close open ones. Numbers at any equity E:\n  one position stops    13.8% of E\n  daily kill            27.6% of E   (trips after ~2 stop-outs)\n  all 3 stop together   41.4% of E   <- the real worst case, declared in max_correlated_drawdown_pct\nxyz shorts run ~0.83 mean pairwise correlation (W-MATH2/3), so treat the 3-way stop as the LIKELY bad day, not a tail.\nThe kill was moved 20% -> 27.6% because at this deployment one position stopping is 13.8% of equity: a 20% kill would have halted the bot on its FIRST loser. A kill below one stop-out is hair-trigger; a kill above a full stop-out is decoration. It has to sit between, and test_books_only_gate asserts both ends.\nABSOLUTE USD CEILINGS ARE OFF (0 = inactive): max_trade_notional_usd, strategy_book_notional_usd, short_notional_usd. Under fraction sizing a fixed dollar ceiling silently clips the position as equity grows, with no log line. The percentage caps scale and do the bounding instead.\nSIZING IS CHECKED AT THE FLOOR ($26), where the fraction produces its SMALLEST order: $23.92 notional, still clear of HL's $10.5 minimum. A config that only works at today's balance starts refusing orders exactly as the account shrinks.\nTO CHANGE DEPLOYMENT: move min_available_margin_pct and strategy_book_equity_frac together - they must sum to 100% across the slots. tests/test_live_config_coherence.py will tell you everything else that has to move.",
+  "_sizing_note": "2026-09-07: DE-RISKED TO VALIDATE. Deployment cut 98% -> 40.4% because the operator is capital-constrained and the book is UNVALIDATED (live forward record 0/6; backtest +1.408% n=2562 has not been confirmed forward).\nTHE KEY FACT THAT MAKES THIS FREE: evidence accrues at the SAME RATE at any deployment. xs_reversal_live.py:268 records every candidate to the shadow ledger BEFORE any position, claim or execute logic - the gates above it are data gates (no universe, no panel, universe too small, no candidates), never capital gates. So cutting size costs zero learning. Being 98% deployed on 6 resolved bets was maximum risk against minimum evidence.\nNOT shadow_only, deliberately: line 213 returns BEFORE the ledger write, so shadow_only records NOTHING and would stop the validation entirely. Small live size also keeps real fills, real slippage and real funding in the record, which a paper run cannot produce.\nSIZED FROM THE EXCHANGE MINIMUM UP, not from equity down: frac = 10.5/(26 x 3) = 0.13462, the smallest fraction whose position still clears HL's $10.5 minimum AT THE $26 FLOOR. Any smaller and orders start being refused exactly as the account shrinks.\n  one position stops   6.1% of equity\n  daily kill           12.1%  (between one stop-out and a full one)\n  all 3 stop together  18.2%  -- was 44.1%\nTO SCALE BACK UP once the ledger has ~37 resolved bets: raise strategy_book_equity_frac and min_available_margin_pct together, and let tests/test_live_config_coherence.py tell you what else must move.",
   "xs_reversal": {
     "enabled": true,
     "shadow_only": false,
@@ -191,7 +191,7 @@
     "max_new_per_cycle": 1
   },
   "_xyz_concentration_note": "max_xyz_short_names 3 = max_concurrent, so the name cap never refuses a slot the concurrency budget already approved. It used to sit at 2 with max_concurrent 2 and produced 'REFUSED SHORT xyz:SNDK - xyz-short name cap reached (2/2)' while slots were free.\nmax_xyz_short_notional_pct 2.815 is the deployment expressed as notional: 92% of equity as margin x 3x = 2.76x equity, plus 2% slack. It is a PERCENT and has to be - it scales with the account, where a dollar cap would go stale in both directions.\nWhy it is not smaller: xyz shorts are ~1.28 effective bets at 0.83 mean pairwise correlation (W-MATH2/3; seven stopped together on 07-21 for -$8.59). The gate measures NOTIONAL and is right to - a correlated 15% move costs 15% of notional whatever the leverage. Sizing the book therefore means accepting a 41.4% correlated drawdown, which is why that number is declared explicitly in max_correlated_drawdown_pct rather than left implied.",
-  "max_correlated_drawdown_pct": 0.441,
+  "max_correlated_drawdown_pct": 0.1817,
   "_disabled_books_note": "2026-09-07: news_surge_short and news_surge_multi DISABLED on their own live forward record, graded by scripts/grade_forward_ledger.py against the panel. news_surge_short: 385 distinct bets (270 clusters, 145 coins), NET EV -2.093% after funding, halves +0.62 -> -4.71, P(true edge >= 0) = 0.046. news_surge_multi: 365 bets (233 clusters, 142 coins), NET -1.748%, halves +1.54 -> -4.52, P(true edge >= 0) = 0.084. Both were positive in their first half and fell off a cliff in the second - edge decay, not a bad week, and the samples are large enough to say so. They also competed for the 3 concurrent slots, so a losing book was directly displacing xs_reversal. Re-enable only on a fresh forward sample that is positive in BOTH halves; the loop's inline 'VALIDATED n=255 EV25 +1.24%' comments are the ORIGINAL in-sample claims and are what the live record has now contradicted.",
   "_xs_reversal_tuning_note": "2026-09-07, C10 wide search (108 cells, panel split into THIRDS, a cell must be positive in all three). The previous live cell - momentum 3d / 24h hold / top 10% - was NOT one of them: its thirds run +0.56 / -0.88 / +2.93. A negative third on the config that is actually trading real money.\nMoved to 3d / 72h / top 2%, thirds +2.22 / +1.91 / +2.86 - positive in all three and the most consistent cell in the search by worst-third.\nDollars, at $33.66 notional and 3 slots, are the reason and not the EV per trade:\n  cell                  mean    worst third   trades/day   $/mo mean   $/mo worst\n  3d/24h/top10% (old)  +0.87%     -0.88%          3.0        +26.36      -26.66\n  3d/72h/top2%  (new)  +2.33%     +1.91%          1.0        +23.53      +19.29\nNearly identical at the mean; the old cell LOSES $27/mo in a period like its own middle third, the new one makes $19. Same signal, same code path - only hold_hours and top_pct move.\nWIRING: the book overrides the DSL per position via bounded_exit_override, setting hard_timeout_minutes = hold_hours*60 (4320) and stale_flat_timeout_minutes = 0 (disabled, dsl_exit.py:258 gates on > 0). The GLOBAL dsl_exit hard_timeout of 30h and stale_flat of 8h therefore do NOT truncate the 72h hold. Checked, because both are shorter than the hold and would have cut it short if the override did not exist.\nCOST: turnover falls 3.0 -> 1.0 trades/day, so the forward ledger now needs ~37 days to reach the ~37 resolved bets that pin the true EV to +/-1%, against ~12 before. That is the real price of this change and it is worth paying: the old cell's evidence would have accumulated faster around a config with a losing third.\nSTILL A BACKTEST. 33 of 108 cells pass the all-thirds filter and picking among them is selection. What is NOT selection is the comparison that drove this: the live cell failed a stability criterion declared before looking, and a same-signal alternative passed it."
 }

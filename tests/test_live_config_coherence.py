@@ -63,26 +63,33 @@ def _notional_at(equity: float) -> float:
 
 
 # ----------------------------------------------------------------- deployment
-def test_slots_and_fraction_deploy_everything_the_margin_floor_allows():
-    """The operator asked for 98% deployed. 92% is what the account can take.
+def test_deployment_sits_inside_its_two_hard_bounds():
+    """Deployment is bracketed from BOTH sides, and the bounds have different
+    reasons.
 
-    `min_available_margin_pct` is 8% because of the 2026-07-22 equity bleed:
-    at a 1% floor the xyz dex ran to 97% utilization and every adverse tick
-    FORCE-LIQUIDATED positions at ~5%, BEFORE the backup stop could fire - the
-    book's own stop never got to act, and each liquidation drained the shared
-    margin into the next one. 98% deployment sits at that same utilization, on
-    that same dex.
+    ABOVE: deployment + min_available_margin_pct cannot exceed 100%, or the
+    margin gate refuses a position the sizing insisted on taking.
 
-    So deployment is pinned to exactly what the floor leaves, no more and no
-    less. Idle margin is wasted capital; margin past the floor is the cascade.
-    The gap between the 98% asked for and the 92% taken is $2.08 at a $34.67
-    balance - the price of the stop still being the thing that closes a losing
-    position."""
+    BELOW: a position must still clear HL's MIN_ORDER_USD at the FLOOR equity,
+    not at today's. Size below that and orders start being refused exactly as
+    the account shrinks — the failure arrives precisely when it hurts.
+
+    This replaced an assertion that deployment must EQUAL everything the margin
+    floor allows. That encoded "always maximise", which was right while the goal
+    was return and wrong on 2026-09-07, when the book was cut to 40% because it
+    is unvalidated (0/6 live) and the operator is capital-constrained. Evidence
+    accrues at the same rate at any size — xs_reversal_live.py:268 records every
+    candidate before any capital gate — so deployment is a pure risk dial while
+    the ledger fills, and a test that forces it to the maximum is a test that
+    forbids de-risking."""
+    from pathia.client.exchange import MIN_ORDER_USD
     deployed = _slots() * _frac()
     free = float(CFG["min_available_margin_pct"])
-    assert deployed == pytest.approx(1.0 - free, abs=1e-4), (
-        f"{_slots()} slots x {_frac()} = {deployed:.2%} deployed against a "
-        f"{free:.0%} margin floor; the two must sum to 100%.")
+    assert deployed + free <= 1.0 + 1e-9, (
+        f"deployment {deployed:.1%} + required free margin {free:.1%} exceeds 100%")
+    assert _notional_at(_floor()) >= MIN_ORDER_USD, (
+        f"at the ${_floor():.0f} floor a position is "
+        f"${_notional_at(_floor()):.2f}, under the ${MIN_ORDER_USD} minimum")
 
 
 def test_margin_headroom_agrees_with_the_deployment():
