@@ -833,7 +833,17 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         requested_leverage = max(1, int(requested_leverage))
     except (TypeError, ValueError):
         requested_leverage = int(config.get("leverage", HL_LEVERAGE))
-    leverage = min(requested_leverage, get_max_leverage(coin))
+    try:
+        _max_lev = get_max_leverage(coin)
+    except Exception as _mle:
+        # Refuse rather than guess. get_max_leverage raises when the meta is
+        # unusable; defaulting to 1x here would open a position at a third of
+        # the intended leverage, silently, with no error anywhere.
+        return {
+            "executed": False, "mode": mode, "analysis_id": analysis["id"],
+            "reason": f"leverage_unresolved ({coin}: {_mle})",
+        }
+    leverage = min(requested_leverage, _max_lev)
     # HIP-3 (xyz) leverage cap (2026-07-22): the tokenized-equity dex charges
     # ~5% maintenance margin, so a 10x isolated position liquidates at ~5%
     # adverse — BELOW the 6% backup stop, meaning the stop can NEVER fire and

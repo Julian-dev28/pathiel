@@ -139,17 +139,23 @@ _META_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 _META_TTL_S = float(os.environ.get("PATHIA_META_TTL_S", "3600"))
 
 
-def _cached_universe(dex: Optional[str] = None) -> List[Dict[str, Any]]:
+def _cached_universe(dex: Optional[str] = None,
+                     force_refresh: bool = False) -> List[Dict[str, Any]]:
     """Return the meta `universe` for a dex (None = main), cached for _META_TTL_S.
 
     On a fetch failure we serve a stale cached copy if we have one, rather than
     raising — a transient API blip must not break coin resolution mid-execute.
+
+    `force_refresh` bypasses a live cache entry. It exists for the case where the
+    cached copy is present but INCOMPLETE — a partial warm after a restart, where
+    an entry is missing `maxLeverage`. Serving that quietly is how a 3x book
+    opened at 1x on 2026-09-08; see get_max_leverage.
     """
     import time as _time
     key = dex or ""
     hit = _META_CACHE.get(key)
     now = _time.time()
-    if hit and (now - hit[0]) < _META_TTL_S:
+    if hit and not force_refresh and (now - hit[0]) < _META_TTL_S:
         return hit[1]
     info = _get_info()
     try:
@@ -223,20 +229,50 @@ def get_max_leverage(coin: str) -> int:
     HIP-3 namespaced coins (e.g. `xyz:NVDA`) are looked up in the parent dex's
     metadata when not found in the main perp universe.
     """
-    # Main perp dex
+    # `maxLeverage` missing must NEVER quietly become 1. Callers do
+    # `min(requested, get_max_leverage(coin))`, so a 1 here silently opens a 1x
+    # position where the book asked for 3x — same risk per trade (loss is on
+    # NOTIONAL, not margin) but triple the margin, so the account fits a third
+    # of the intended book and the sizing model is wrong without erroring.
+    #
+    # 2026-09-08: exactly that happened. The watchdog re-exec'd, startup logged
+    # "meta prewarm exceeded 3s — metadata will warm lazily", and the two
+    # positions opened in that cold window went on at 1x while the config said
+    # 3x. Every xyz market allows at least 3x, so 1 was never a real answer.
+    def _lev(entry: dict) -> Optional[int]:
+        try:
+            v = int(entry.get("maxLeverage") or 0)
+        except (TypeError, ValueError):
+            return None
+        return v if v >= 1 else None
+
     for u in _cached_universe():
         if u["name"] == coin:
-            return int(u.get("maxLeverage", 1))
-    # HIP-3: derive dex name from the namespace prefix and consult that dex's meta
+            v = _lev(u)
+            if v:
+                return v
     if ":" in coin:
         dex = coin.split(":", 1)[0]
-        try:
-            for u in _cached_universe(dex=dex):
-                if u["name"] == coin:
-                    return int(u.get("maxLeverage", 1))
-        except Exception as e:
-            logger.warning(f"[get_max_leverage] HIP-3 meta lookup failed for dex={dex}: {e}")
-    raise ValueError(f"Unknown coin: {coin}")
+        for attempt, refresh in enumerate((False, True)):
+            try:
+                for u in _cached_universe(dex=dex, force_refresh=refresh):
+                    if u["name"] == coin:
+                        v = _lev(u)
+                        if v:
+                            return v
+                        if refresh:
+                            break
+                        # found but unusable: the cache is warm-but-partial, so
+                        # force one refresh before giving up
+                        logger.warning(
+                            f"[get_max_leverage] {coin} has no usable maxLeverage "
+                            f"in cached meta — forcing a dex refresh")
+            except Exception as e:
+                logger.warning(f"[get_max_leverage] HIP-3 meta lookup failed for "
+                               f"dex={dex} (refresh={refresh}): {e}")
+    raise ValueError(
+        f"Unknown or unusable maxLeverage for {coin} — refusing rather than "
+        f"defaulting to 1x, which would silently mis-size the position")
 
 
 # ── Market data ────────────────────────────────────────────────────────────────
