@@ -204,7 +204,13 @@ start_loop() {
     # caffeinate (non-macOS) just means no keep-awake. Tip: stay on AC power, as
     # battery + closed lid can still clamshell-sleep despite this.
     if command -v caffeinate >/dev/null 2>&1; then
-      nohup caffeinate -i -m -w "$pid" >/dev/null 2>&1 &
+      # `-s` is the one that matters and was missing until 2026-09-08. `-i`
+      # blocks only IDLE sleep; macOS still ran "Maintenance Sleep" on AC at
+      # 100% charge, freezing the loop for 4-20 minutes at a time (observed
+      # repeatedly on 09-07/09-08 — every "watchdog HUNG, no progress for
+      # NNNNs" that day was the machine being off, not code). `-s` asserts
+      # system-sleep prevention and is honoured while on AC power.
+      nohup caffeinate -i -m -s -w "$pid" >/dev/null 2>&1 &
       disown 2>/dev/null || true
       info "caffeinate: holding system awake while loop $pid runs"
     fi
