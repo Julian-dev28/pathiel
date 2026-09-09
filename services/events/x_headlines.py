@@ -146,12 +146,58 @@ def fetch(query: str, max_results: int = MIN_RESULTS,
                 for p in posts]}
 
 
+def diagnose() -> int:
+    """Separate "bad token" from "valid token, app not in a Project".
+
+    These fail identically at the call site and have completely different fixes,
+    and the portal can show an app under a Project while the API disagrees. v1.1
+    accepts any valid app token; v2 additionally requires the Project binding,
+    which bearer tokens carry from GENERATION time. So v1.1=200 with v2=403 is
+    the signature of an app that was enrolled AFTER this token was minted — or
+    one the portal only appears to have enrolled.
+    """
+    token = os.environ.get("X_BEARER_TOKEN", "").strip()
+    if not token:
+        print("  X_BEARER_TOKEN not set (.env.local)")
+        return 1
+    h = {"Authorization": f"Bearer {token}", "User-Agent": "pathia-headlines/1.0"}
+    try:
+        v1 = requests.get("https://api.twitter.com/1.1/application/rate_limit_status.json",
+                          headers=h, timeout=15).status_code
+        r2 = requests.get(API, headers=h, timeout=20,
+                          params={"query": "test", "max_results": MIN_RESULTS})
+        v2, reason = r2.status_code, (r2.json() or {}).get("reason", "")
+    except Exception as e:
+        print(f"  network: {type(e).__name__}: {e}")
+        return 1
+    print(f"  v1.1 auth : HTTP {v1}  ({'token is valid' if v1 == 200 else 'token rejected'})")
+    print(f"  v2 access : HTTP {v2}  {reason}")
+    if v1 == 200 and v2 == 403:
+        print("\n  The token AUTHENTICATES but its app is not bound to a Project.")
+        print("  Fix, in order:")
+        print("    1. developer.x.com -> Projects & Apps: confirm the app is nested")
+        print("       UNDER the project, not sitting standalone above it.")
+        print("    2. If standalone, attach it to the project.")
+        print("    3. Regenerate the bearer AFTER attaching — the Project binding is")
+        print("       baked in at generation, so a token minted before step 2 stays")
+        print("       forbidden no matter how many times it is copied.")
+        print("    4. Confirm the Basic subscription is active under Billing.")
+    elif v2 == 200:
+        print("\n  v2 is open. Headline intake is ready.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--diagnose", action="store_true",
+                    help="separate a bad token from an unenrolled app")
     ap.add_argument("--query")
     ap.add_argument("--max-results", type=int, default=MIN_RESULTS)
     ap.add_argument("--budget-status", action="store_true")
     a = ap.parse_args()
+
+    if a.diagnose:
+        return diagnose()
 
     d = _load()
     print(f"  month {d['month']}: {d['posts']}/{_budget()} posts used, "
