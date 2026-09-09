@@ -32,6 +32,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env.local
+# any hand- or tool-made copy of a secrets file. A .bak of .env.local
+# carries the same live keys and was NOT covered by the line above.
+.env*.bak
+.env*.bak.*
+.env.local.*
 .env
 .env.old
 .env.local.old
