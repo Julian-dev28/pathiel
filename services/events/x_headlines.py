@@ -172,6 +172,28 @@ def diagnose() -> int:
         return 1
     print(f"  v1.1 auth : HTTP {v1}  ({'token is valid' if v1 == 200 else 'token rejected'})")
     print(f"  v2 access : HTTP {v2}  {reason}")
+    # A v1.1 SEARCH probe is the only thing that separates "app not in a
+    # project" from "account has no search entitlement at all". Both return
+    # 403 client-not-enrolled on v2, and only one of them is fixable in the
+    # portal without paying.
+    try:
+        sr = requests.get("https://api.twitter.com/1.1/search/tweets.json",
+                          headers=h, timeout=15,
+                          params={"q": "test", "count": 5}).json()
+        codes = {e.get("code") for e in (sr.get("errors") or [])}
+    except Exception:
+        codes = set()
+    if 453 in codes:
+        print("  v1.1 search: code 453 — NOT ENTITLED\n")
+        print("  The account is on the FREE tier. Free grants posting and OAuth")
+        print("  only; SEARCH is excluded at BOTH v1.1 and v2, so no app, token or")
+        print("  project change can open it. The portal's 'Standard Basic' label is")
+        print("  the project's name, not an active subscription — and the 450 shown")
+        print("  by rate_limit_status is a default advertisement, not entitlement.")
+        print("  Search costs $200/month (Basic) at developer.x.com/en/portal/product.")
+        print("  Until then use GDELT: free, keyless, unlimited, and C12 measured it")
+        print("  as the better source anyway (news lags price either way).")
+        return 0
     if v1 == 200 and v2 == 403:
         print("\n  The token AUTHENTICATES but its app is not bound to a Project.")
         print("  Fix, in order:")
