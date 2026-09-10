@@ -71,3 +71,21 @@ python -m pytest services/demo/tests/ -q
 (the regression that made every boot read "stale"), internal agreement between
 the panels — open-position count on the heartbeat versus rows in the snapshot,
 `leveraged_pct` versus `unrealized_pct × leverage` — and the bounds above.
+
+## Deploying
+
+```
+vercel deploy --prod
+```
+
+`vercel.json` pins `builds` + `routes` rather than the newer `functions` +
+`rewrites`, and sets `"framework": null`. This is deliberate. Vercel detects
+FastAPI in this repo and applies its own preset, which builds a function it
+names `fastapi` and routes to an entrypoint of its choosing — that overrode
+`api/index.py` and served 404 on every path. The legacy keys disable zero-config
+detection outright, which is the only way to be sure the deployed function is
+the one in this repo.
+
+Set no environment variables on the Vercel project. The entrypoint refuses to
+boot if it finds an exchange credential, which is the intended behaviour: this
+deployment must never be able to reach the live account.
