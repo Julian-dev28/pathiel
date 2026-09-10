@@ -43,7 +43,11 @@ RESTART_SH = ROOT / "scripts" / "restart.sh"
 # be bundled into the main image, so it is excluded from the import scan on
 # purpose: nothing under it should ever be "required" by this Dockerfile.
 SCAN_DIRS = ("pathia", "scripts", "services")
-EXCLUDE_PREFIXES = ("services/pathia_data_api",)
+# Own deploy unit, own Dockerfile or host — never bundled into the Fly image,
+# so their imports must not force a COPY line into it.
+#   pathia_data_api  own Dockerfile + Postgres deps
+#   demo             Vercel-only; generates synthetic data for the public demo
+EXCLUDE_PREFIXES = ("services/pathia_data_api", "services/demo")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -180,6 +184,20 @@ def test_dockerfile_copies_every_imported_top_level_package():
             f"Dockerfile has no `COPY {expected_dir}...` line — the built image "
             f"would ship a partial app that fails on first import of {pkg}."
         )
+
+
+def test_dockerfile_does_not_bundle_demo():
+    """services/demo exists to feed a public Vercel deployment synthetic data.
+
+    It has no business in the image that runs the real account: the trading
+    loop must never have a code path that can substitute invented equity and
+    positions for the real ones.
+    """
+    copies = _dockerfile_copy_sources()
+    assert not any(c.startswith("services/demo") for c in copies), (
+        "the Fly image copies services/demo — the live trading image should "
+        "carry no synthetic-data generator"
+    )
 
 
 def test_dockerfile_does_not_bundle_pathia_data_api():

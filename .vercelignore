@@ -1,6 +1,58 @@
+# What must never reach the demo deployment.
+#
+# `vercel deploy` from the CLI uploads the working directory, not the git tree,
+# so untracked and gitignored files ship unless they are named here. This file
+# is the only thing standing between a local dev box and a public host, and the
+# first section is the part that would actually hurt.
+
+# ── credentials and live account state ───────────────────────────────────────
+.env
+.env.*
+!.env.local.example
+*.pem
+*.key
+secrets/
+
+# The real account's open positions, written by the trading loop every cycle.
+# The demo generates its own into /tmp; this is the live one.
+.state/
+.positions-snapshot.json
+.agent-config.json
+.agent-memory.json
+.dsl-state.json
+shadow_ledger/
+
+# Session log, trade history, and the operator journal: the account's whole book.
+*.jsonl
+pathia_data.db
+logs/
+.monitor-journal.md
+alerts.json
+
+# ── weight the function does not need ────────────────────────────────────────
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.git/
+tests/
+research/
+k8s/
+contracts/
+docs/
+.backups/
+.agents/
+.forge/
+.qwen/
+.claude/
+.github/
+
 python-service/
 data/
-*.pem
 *.csv
 analysis.json
 forecast.json
+socket_full.txt
