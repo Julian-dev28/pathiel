@@ -22,8 +22,10 @@ hurt if they were wrong:
   2. **Read-only.** `PATHIA_DASHBOARD_READONLY=1` makes every POST a 403, so
      the STOP TRADING button and the operator token field are inert.
   3. **Env before import.** `pathia.dashboard` resolves the session-log,
-     snapshot and config paths at module scope, so the environment has to be
-     set before the import below. This is why the imports are not at the top.
+     snapshot and config paths at module scope, and `pathia.client.universe`
+     mkdirs a cache under `Path.home()` at import — a hard crash on a
+     read-only filesystem. Everything has to be set before the import at the
+     bottom, which is why the imports are not at the top.
 """
 
 from __future__ import annotations
@@ -65,7 +67,22 @@ if _present:
         "environment and redeploy."
     )
 
-# ── 2. generate the demo data ────────────────────────────────────────────────
+# ── 2. give the process a writable home ──────────────────────────────────────
+#
+# `pathia/client/universe.py` calls `Path.home() / ".pathia" / "universe_cache"`
+# and mkdirs it AT IMPORT, which is a hard crash on Vercel: everything outside
+# /tmp is read-only, and the traceback is `OSError: [Errno 30] Read-only file
+# system: '/home/sbx_user1051'` before a single route is registered.
+#
+# Two other modules read the same home — `server.py`'s PID file and
+# `session_log.py`'s default path — so pointing HOME at /tmp fixes all three at
+# once and needs no change to the trading code. Set before any pathia import,
+# because `Path.home()` is resolved at module scope.
+_HOME = os.path.join(tempfile.gettempdir(), "pathia-home")
+os.makedirs(_HOME, exist_ok=True)
+os.environ["HOME"] = _HOME
+
+# ── 3. generate the demo data ────────────────────────────────────────────────
 #
 # /tmp is the only writable path on Vercel, and the data has to be minted at
 # boot regardless: the dashboard calls a heartbeat older than 300s "offline"
@@ -77,7 +94,7 @@ _DATA_DIR = os.path.join(tempfile.gettempdir(), "pathia-demo")
 for _key, _path in materialize(_DATA_DIR).items():
     os.environ[_key] = _path
 
-# ── 3. open the read APIs, close every write ─────────────────────────────────
+# ── 4. open the read APIs, close every write ─────────────────────────────────
 os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"
 os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
 # The loop is not running here and never will be; say so rather than letting a

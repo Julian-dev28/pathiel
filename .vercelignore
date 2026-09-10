@@ -56,3 +56,4 @@ data/
 analysis.json
 forecast.json
 socket_full.txt
+.vercel/
