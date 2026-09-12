@@ -42,18 +42,33 @@ const MOUNT_ID = 'wallet-connect-root';
  * does — the observable end state, not a proxy for it. Bounded, because a spin
  * that never succeeds has to stop.
  */
-const OPEN_DEADLINE_MS = 8_000;
+const OPEN_RETRY_MS = 600;
+const OPEN_MAX_ATTEMPTS = 8;
 
-function openModal(node: HTMLElement, deadline = Date.now() + OPEN_DEADLINE_MS): void {
+/**
+ * Clicking the island's button until the modal is actually open.
+ *
+ * Two bugs live in this seven-line function, both found in production, and both
+ * are about timing rather than logic.
+ *
+ * The first: `createRoot().render()` returns before React commits, so the
+ * button can be in the DOM a frame or two before its onClick is attached. A
+ * click in that window silently does nothing and the user has to click again.
+ * So this retries rather than clicking once.
+ *
+ * The second, caused by fixing the first: RainbowKit animates its modal in, so
+ * `[role="dialog"]` is not queryable on the very next frame. A
+ * requestAnimationFrame retry therefore did not see the dialog it had just
+ * opened, clicked again, and toggled it shut — about 480 times over 8 seconds,
+ * landing closed. Retries are spaced well past the animation, and there are
+ * eight of them rather than a frame count.
+ */
+function openModal(node: HTMLElement, attemptsLeft = OPEN_MAX_ATTEMPTS): void {
   if (document.querySelector('[role="dialog"]')) return;
   const button = node.querySelector('button');
   if (button) button.click();
-  if (Date.now() < deadline) {
-    // requestAnimationFrame rather than a timer: this waits on React to paint,
-    // which is what rAF is scheduled against. A deadline rather than a frame
-    // count, because frame rate varies and what is being bounded is the user's
-    // patience, not the renderer's.
-    requestAnimationFrame(() => openModal(node, deadline));
+  if (attemptsLeft > 1) {
+    window.setTimeout(() => openModal(node, attemptsLeft - 1), OPEN_RETRY_MS);
   }
 }
 
