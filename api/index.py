@@ -97,6 +97,14 @@ for _key, _path in materialize(_DATA_DIR).items():
 # ── 4. open the read APIs, close every write ─────────────────────────────────
 os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"
 os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
+# services/auth hands the operator role to the first account that signs in,
+# which is the right bootstrap for a private box with a durable database. Here
+# the database is SQLite in /tmp on an ephemeral instance, so the users table is
+# empty again after every cold start and every visitor is "the first". Nothing
+# follows from it while the read-only flag above holds, and that is exactly why
+# it should not be the only thing standing between a stranger and the kill
+# switch.
+os.environ["PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
 
 # The domain inside the SIWE message, which services/auth deliberately takes
 # from config rather than the Host header (an attacker controls Host, so a

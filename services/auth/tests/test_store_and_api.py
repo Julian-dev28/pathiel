@@ -280,3 +280,40 @@ def test_the_operator_role_is_recoverable_without_deleting_the_database(tmp_path
     store = AuthStore(str(tmp_path / "auth.db"))
     assert store.get_user_by_address(SECOND.address).is_operator is False
     store.close()
+
+
+# ── the operator bootstrap, and turning it off ──────────────────────────────
+
+def test_first_account_still_owns_a_fresh_private_box(tmp_path, monkeypatch):
+    """The default is unchanged: an installer's own login seeds the operator
+    role, so a fresh box has no open operator seat and no bootstrap password
+    to leak."""
+    monkeypatch.delenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
+    store = AuthStore(str(tmp_path / "auth.db"))
+    first = store.upsert_user("0x" + "a" * 40)
+    second = store.upsert_user("0x" + "b" * 40)
+    assert first.is_operator
+    assert not second.is_operator
+
+
+def test_the_bootstrap_can_be_switched_off_entirely(tmp_path, monkeypatch):
+    """The public demo keeps its auth database in /tmp on an ephemeral
+    instance, so the users table is empty again after every cold start and
+    every visitor who signs in is "the first". Read-only mode means an operator
+    there can do nothing a visitor cannot — which is precisely why it must not
+    be the only thing standing between a stranger and the kill switch.
+    """
+    monkeypatch.setenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
+    store = AuthStore(str(tmp_path / "auth.db"))
+    for addr in ("0x" + "c" * 40, "0x" + "d" * 40):
+        assert not store.upsert_user(addr).is_operator
+
+
+def test_switching_it_off_does_not_demote_an_existing_operator(tmp_path, monkeypatch):
+    """The flag governs who is CREATED as operator, not who already is. A real
+    deployment that sets it must not lose its own operator."""
+    monkeypatch.delenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
+    db = str(tmp_path / "auth.db")
+    assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator
+    monkeypatch.setenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
+    assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator

@@ -181,7 +181,19 @@ class AuthStore:
         # open operator role would let whoever finds the URL first claim the
         # kill switch; seeding it from the installer's own login closes that
         # window without a bootstrap password to leak.
-        first = self._db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 0
+        # ...unless the deployment says nobody owns it. The bootstrap assumes a
+        # private box with durable storage, where "first to sign in" means the
+        # person who installed it. On the public demo both halves are false: the
+        # database lives in /tmp on an ephemeral serverless instance, so the
+        # table is empty again after every cold start and EVERY visitor who
+        # signs in is the first one. Read-only mode means an operator there can
+        # do nothing a visitor cannot, but that is one env var away from being
+        # the kill switch, so the demo turns the bootstrap off outright.
+        if os.environ.get("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"):
+            first = False
+        else:
+            first = self._db.execute(
+                "SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 0
         self._db.execute(
             "INSERT INTO users (address, role, created_at, last_seen_at) "
             "VALUES (?, ?, ?, ?) "
