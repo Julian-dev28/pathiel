@@ -1396,8 +1396,25 @@ def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[s
     if hit and now - hit[0] < _ACCOUNT_TTL_S:
         return hit[1]
 
+    # Whether this viewer IS the account pathia trades.
+    #
+    # The distinction the page has to get right. A visitor's wallet and the
+    # house book are two different accounts: the loop and the MCP server sign
+    # with the deployment's key and have never touched a visitor's, so showing
+    # "trades pathia made" under a visitor's profile would be attributing the
+    # operator's record to a stranger — which is the 2026-09-04 leak in a
+    # friendlier shape.
+    #
+    # Computed here rather than by handing the house address to the browser:
+    # the answer the page needs is a yes or no, and a non-operator has no reason
+    # to be told which address the deployment trades.
+    try:
+        house = (resolve_user_address() or "").lower()
+    except Exception:
+        house = ""
     out: Dict[str, Any] = {"address": addr, "funded": False, "equity": 0.0,
-                           "available": 0.0, "positions": [], "status": "ok"}
+                           "available": 0.0, "positions": [], "status": "ok",
+                           "is_house": bool(house) and addr == house}
     try:
         from pathia.client.hl_client import fetch_account_state
         state = fetch_account_state(addr, include_hip3=False) or {}

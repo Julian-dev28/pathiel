@@ -342,9 +342,17 @@ const PathiaAuth = (function () {
         return;
       }
       const n = (a.positions || []).length;
+      // Whose work this account reflects. pathia trades one account: the
+      // deployment's own. A visitor signing in is looking at their Hyperliquid
+      // balance, which this system has never traded and cannot — saying so is
+      // the difference between a profile and an implied track record.
+      const whose = a.is_house
+        ? '<div class="ksub">traded by this deployment — the history below is its work</div>'
+        : '<div class="ksub">your own account. pathia has never traded it, and holds no key for it.</div>';
       slot.innerHTML = accountTile(
         '<div class="kv">$' + Number(a.equity).toFixed(2) + '</div>' +
-        '<div class="ksub">' + n + ' open position' + (n === 1 ? '' : 's') + '</div>' + addr);
+        '<div class="ksub">' + n + ' open position' + (n === 1 ? '' : 's') + '</div>' +
+        whose + addr);
     } catch { slot.hidden = true; }
   }
 

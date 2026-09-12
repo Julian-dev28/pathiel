@@ -2153,3 +2153,52 @@ def test_readonly_mode_still_blocks_everything_that_moves_money(monkeypatch):
     for path in ("/api/agent/stop", "/api/agent/start", "/api/agent/config",
                  "/api/hl/place-order", "/api/hl/close-position"):
         assert client.post(path).status_code in (401, 403), f"{path} is not refused"
+
+
+# ── whose account is this ───────────────────────────────────────────────────
+
+def test_the_viewer_payload_says_whether_it_is_the_house_account(monkeypatch):
+    """A visitor's wallet and the book pathia trades are different accounts.
+
+    The loop and the MCP server sign with the deployment's key and have never
+    touched a visitor's, so presenting pathia's record under a visitor's
+    profile would attribute the operator's track record to a stranger — the
+    2026-09-04 leak wearing a friendlier hat.
+    """
+    from pathia import dashboard
+    house = "0x" + "1" * 40
+    monkeypatch.setattr(dashboard, "resolve_user_address", lambda: house)
+    monkeypatch.setattr(dashboard, "fetch_account_state",
+                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []},
+                        raising=False)
+    dashboard._ACCOUNT_CACHE.clear()
+    assert dashboard._viewer_account_payload(house)["is_house"] is True
+    dashboard._ACCOUNT_CACHE.clear()
+    assert dashboard._viewer_account_payload("0x" + "2" * 40)["is_house"] is False
+
+
+def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
+    """With no house address set, `is_house` must be False for everyone.
+
+    An empty string compared loosely would make the first visitor look like the
+    operator on any deployment that has not configured a wallet — which is
+    every fresh install and the public demo.
+    """
+    from pathia import dashboard
+    monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "")
+    monkeypatch.setattr(dashboard, "fetch_account_state",
+                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []},
+                        raising=False)
+    dashboard._ACCOUNT_CACHE.clear()
+    assert dashboard._viewer_account_payload("0x" + "3" * 40)["is_house"] is False
+    dashboard._ACCOUNT_CACHE.clear()
+    assert dashboard._viewer_account_payload("")["is_house"] is False
+
+
+def test_the_page_says_pathia_has_not_traded_a_visitors_wallet():
+    """The copy is the point. A balance with no attribution reads as a track
+    record, and this system's whole posture is that it never holds your key."""
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathia", "static", "pathia.js")).read()
+    assert "is_house" in js
+    assert "has never traded it" in js
