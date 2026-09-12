@@ -104,12 +104,20 @@ class TestEnvironmentOrder:
         assert "gettempdir()" in source
         assert 'os.environ["HOME"]' in source
 
-    def test_demo_data_is_materialized_before_the_import(self, tree: ast.Module):
-        call_lines = [n.lineno for n in ast.walk(tree)
-                      if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                      and n.func.id == "materialize"]
-        assert call_lines, "api/index.py never calls materialize()"
-        assert min(call_lines) < _lineno_of_pathia_import(tree)
+    def test_the_demo_is_mounted_behind_a_prefix(self, source: str):
+        """The demo used to BE the deployment: the entrypoint materialized
+        synthetic data into the environment and the whole app served it. Live is
+        the landing page now, and the demo is a sub-application under /demo with
+        its own dashboard instance — so the front-end toggle is a path, and no
+        request can put the live view into a state where it serves generated
+        numbers. See services/demo/router.py.
+        """
+        assert "build_demo_app" in source
+        assert 'app.mount("/demo"' in source
+
+    def test_the_entrypoint_no_longer_makes_the_whole_app_demo(self, source: str):
+        """The regression that matters in the other direction."""
+        assert "for _key, _path in materialize" not in source
 
 
 class TestReadOnly:

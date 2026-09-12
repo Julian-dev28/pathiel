@@ -82,17 +82,13 @@ _HOME = os.path.join(tempfile.gettempdir(), "pathia-home")
 os.makedirs(_HOME, exist_ok=True)
 os.environ["HOME"] = _HOME
 
-# ── 3. generate the demo data ────────────────────────────────────────────────
+# ── 3. the live app is the landing page ──────────────────────────────────────
 #
-# /tmp is the only writable path on Vercel, and the data has to be minted at
-# boot regardless: the dashboard calls a heartbeat older than 300s "offline"
-# and a snapshot older than 120s missing, so committed fixtures would show a
-# dead bot. Regenerated on every cold start, deterministic within one.
-from services.demo.generator import materialize  # noqa: E402
-
-_DATA_DIR = os.path.join(tempfile.gettempdir(), "pathia-demo")
-for _key, _path in materialize(_DATA_DIR).items():
-    os.environ[_key] = _path
+# This deployment has no trading state — no session log, no positions snapshot,
+# nothing written by a loop — so the live dashboard renders empty, which is the
+# honest thing for it to do and exactly what a fresh install looks like. The
+# demo lives behind a toggle at /demo, mounted below, and is the only thing in
+# this process that serves invented numbers.
 
 # ── 4. open the read APIs, close every write ─────────────────────────────────
 os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"
@@ -125,4 +121,15 @@ if _host:
 # background task get scheduled by the server's lifespan hook.
 os.environ.setdefault("PATHIA_DISABLE_TRADING_LOOP", "1")
 
-from pathia.server import app  # noqa: E402,F401
+from pathia.server import app  # noqa: E402
+
+# ── 5. the demo, behind a prefix ─────────────────────────────────────────────
+#
+# A separate sub-application with its own dashboard instance and its own data,
+# so `/demo/api/dashboard/summary` and `/api/dashboard/summary` are served by
+# different module objects reading different files. The front-end toggle is a
+# path prefix rather than a mode, which means no request can put the live view
+# into a state where it renders generated numbers.
+from services.demo.router import build_demo_app  # noqa: E402
+
+app.mount("/demo", build_demo_app(os.path.join(tempfile.gettempdir(), "pathia-demo")))

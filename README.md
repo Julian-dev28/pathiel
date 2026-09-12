@@ -1,6 +1,14 @@
 # Pathia
 > Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathia Agent](https://github.com/NousResearch/pathia-agent) through an MCP server.
 
+**How you drive it: MCP.** The whole control surface is an MCP server —
+`scripts/pathia-mcp-server.py`, 88 tools over stdio. Scanning, research,
+execution, config, risk state, Hyperliquid market data and the wallets signed in
+to the dashboard are all tools an agent calls. There is no second API to learn
+and no framework dependency in the engine: point Claude Desktop, Pathia Agent or
+any MCP client at it and you are operating the system. Full table under
+[MCP Integration](#mcp-integration).
+
 **What it does:** Scans the majors universe, fires statistical triggers on
 price/volume/breakout signals, runs a cheap pre-AI technical analysis filter,
 and only calls AI on CONFIRMED setups. Executes with DSL-managed dynamic exits.
@@ -96,6 +104,62 @@ route is worse than either end state:
 What survives is the engine: ingestion, the TA filter, the risk gates, the
 executor, the DSL exit engine, the shadow ledger and its grader, and the three
 mover-recorder live arms. Roughly 26,000 lines came out.
+
+---
+
+## MCP Integration
+
+pathia is a standalone Python application; **Pathia Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathia-framework dependency.
+
+The MCP server (`scripts/pathia-mcp-server.py`) exposes 88 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
+
+**The wallet boundary, because an agent will ask.** `connected_wallets` and
+`wallet_account` report on wallets that signed in to the dashboard, and they are
+read-only by construction rather than by policy. A SIWE sign-in grants a
+session, not a key; this server signs with the deployment's own key and holds no
+other. So there is no path — through these tools or any other — by which an
+agent places, closes or resizes an order on a visitor's account. `connected_wallets`
+says so in its own response payload (`can_this_server_trade_them: false`), because
+the alternative is an agent inferring otherwise and telling a user it can trade
+for them.
+
+| Tool | Description |
+|------|-------------|
+| **Trading Core** | |
+| `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
+| `research` | Deep AI analysis on a coin with the configured AI brain provider |
+| `submit_verdict` | Store an agent-authored verdict as an analysis for MCP-native brain mode |
+| `execute` | Execute trade through risk gates + DSL registration |
+| `close_position` | Close a coin through the same reduce-only executor close helper used by loop exits |
+| `state` | Get full agent state (mode, equity, positions, trades) |
+| `config` | Get/set agent configuration (mode, risk caps, thresholds, `ai_brain`) |
+| **Connected wallets** (read-only) | |
+| `connected_wallets` | Wallets that signed in to the dashboard over SIWE, newest first |
+| `wallet_account` | Read-only Hyperliquid equity + positions for any address |
+| **Hyperfeed Discovery** | |
+| `leaderboard_get_markets` | Top markets by OI + volume |
+| `leaderboard_get_top_traders` | Trader rankings with win rates |
+| `leaderboard_get_trader_positions` | Positions for a specific trader |
+| `discovery_get_top_traders` | Discovery top traders (alias) |
+| `discovery_get_trader_state` | Full trader state from discovery |
+| **Market Data** | |
+| `market_get_asset_data` | Candles + funding + OI for any coin |
+| `market_get_funding_regime` | LONG_CROWDED / SHORT_CROWDED / NEUTRAL |
+| `market_list_instruments` | All tradeable instruments |
+| `market_get_mids` | Real-time mid prices |
+
+Configure in Pathia Agent's `config.yaml`:
+```yaml
+mcp_servers:
+  pathia:
+    command: python3
+    args:
+      - /path/to/pathia/scripts/pathia-mcp-server.py
+    cwd: /path/to/pathia
+    timeout: 60
+    env:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+```
 
 ---
 
@@ -639,49 +703,6 @@ sample is large enough.
 
 ---
 
-## MCP Integration
-
-pathia is a standalone Python application; **Pathia Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathia-framework dependency.
-
-The MCP server (`scripts/pathia-mcp-server.py`) exposes 99 tools over stdio transport. The 16 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
-
-| Tool | Description |
-|------|-------------|
-| **Trading Core** | |
-| `scan` | Scan all HL markets (volume-filtered), return triggered candidates |
-| `research` | Deep AI analysis on a coin with the configured AI brain provider |
-| `submit_verdict` | Store an agent-authored verdict as an analysis for MCP-native brain mode |
-| `execute` | Execute trade through risk gates + DSL registration |
-| `close_position` | Close a coin through the same reduce-only executor close helper used by loop exits |
-| `state` | Get full agent state (mode, equity, positions, trades) |
-| `config` | Get/set agent configuration (mode, risk caps, thresholds, `ai_brain`) |
-| **Hyperfeed Discovery** | |
-| `leaderboard_get_markets` | Top markets by OI + volume |
-| `leaderboard_get_top_traders` | Trader rankings with win rates |
-| `leaderboard_get_trader_positions` | Positions for a specific trader |
-| `discovery_get_top_traders` | Discovery top traders (alias) |
-| `discovery_get_trader_state` | Full trader state from discovery |
-| **Market Data** | |
-| `market_get_asset_data` | Candles + funding + OI for any coin |
-| `market_get_funding_regime` | LONG_CROWDED / SHORT_CROWDED / NEUTRAL |
-| `market_list_instruments` | All tradeable instruments |
-| `market_get_mids` | Real-time mid prices |
-
-Configure in Pathia Agent's `config.yaml`:
-```yaml
-mcp_servers:
-  pathia:
-    command: python3
-    args:
-      - /path/to/pathia/scripts/pathia-mcp-server.py
-    cwd: /path/to/pathia
-    timeout: 60
-    env:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-```
-
----
-
 ## Operating via Pathia Agent
 
 With the skill loaded and the MCP server registered (see [MCP Integration](#mcp-integration)),
@@ -838,7 +859,7 @@ pathia/
 │   └── models/                    # Shared data types
 │       └── types.py               # Candle (OHLCV)
 ├── scripts/
-│   ├── pathia-mcp-server.py       # MCP server (stdio, 99 tools)
+│   ├── pathia-mcp-server.py       # MCP server (stdio, 88 tools)
 │   └── trading_loop.py            # Continuous trading loop
 ├── skills/pathia-agent/    # Pathia Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e

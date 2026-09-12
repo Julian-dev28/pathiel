@@ -1,6 +1,6 @@
 # MCP Server Structure
 
-`scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 86 tools, every one of them implemented. Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
+`scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 88 tools, every one of them implemented. Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
 
 **There are no stubs left.** All 47 were audited against the live `/info` API on
 2026-09-06: 34 had a working endpoint and were implemented, 13 had none and were

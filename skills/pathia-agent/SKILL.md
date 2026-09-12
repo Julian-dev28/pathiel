@@ -169,7 +169,7 @@ non-interactively in the loop's actual environment before switching live.
 
 ## MCP Integration
 
-The server (`scripts/pathia-mcp-server.py`, stdio, 86 tools) is registered in
+The server (`scripts/pathia-mcp-server.py`, stdio, 88 tools) is registered in
 `~/.pathia/config.yaml`:
 
 ```yaml

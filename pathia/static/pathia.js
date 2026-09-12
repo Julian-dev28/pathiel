@@ -81,6 +81,63 @@ function clampProse(root) {
   });
 }
 
+/* ── Live / Demo ─────────────────────────────────────────────────────────────
+ *
+ * The demo is a separate sub-application mounted at /demo, with its own
+ * dashboard instance reading its own generated files (services/demo/router.py).
+ * So switching is NAVIGATION, not client state: no fetch rewriting, no mode
+ * flag to leak, and no way for a live page to end up rendering invented
+ * numbers — the code that serves them is not mounted under the live prefix.
+ *
+ * It also means the toggle is bookmarkable and survives a reload, and "which am
+ * I looking at" is answered by the address bar rather than by a badge someone
+ * has to notice.
+ */
+const PathiaMode = (function () {
+  const DEMO_PREFIX = '/demo';
+
+  const isDemo = () => location.pathname === DEMO_PREFIX
+    || location.pathname.startsWith(DEMO_PREFIX + '/');
+
+  /* The same page on the other side. /activity <-> /demo/activity. */
+  function counterpart() {
+    const path = location.pathname;
+    if (isDemo()) return (path.slice(DEMO_PREFIX.length) || '/') + location.search;
+    return DEMO_PREFIX + (path === '/' ? '/' : path) + location.search;
+  }
+
+  function render() {
+    const slot = document.querySelector('.masthead-right');
+    if (!slot || document.getElementById('mode-toggle')) return;
+    const demo = isDemo();
+
+    const wrap = document.createElement('div');
+    wrap.id = 'mode-toggle';
+    wrap.className = 'mode-toggle';
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Data source');
+
+    const here = document.createElement('span');
+    here.className = 'mode-opt on';
+    here.textContent = demo ? 'Demo' : 'Live';
+    here.setAttribute('aria-current', 'true');
+
+    const there = document.createElement('a');
+    there.className = 'mode-opt';
+    there.href = counterpart();
+    there.textContent = demo ? 'Live' : 'Demo';
+    there.title = demo
+      ? 'Back to this deployment\u2019s own trading. Empty until the loop has run.'
+      : 'A worked example: seven days of generated trading history. No account, no exchange connection.';
+
+    wrap.append(demo ? there : here, demo ? here : there);
+    slot.insertBefore(wrap, slot.firstChild);
+    if (demo) document.body.classList.add('is-demo');
+  }
+
+  return { render, isDemo };
+})();
+
 /* ── Sign in with your wallet ────────────────────────────────────────────────
  *
  * Lives here, not in each page, because all five load this file and all five
@@ -244,9 +301,24 @@ const PathiaAuth = (function () {
     return res;
   };
 
-  /* The signed-in wallet's own balance. Reads that wallet's address on
-   * Hyperliquid, which needs no stored key — so the page can show a customer
-   * their account without the product ever being able to trade it. */
+  /* The connected wallet, reflected.
+   *
+   * Reads that wallet's own Hyperliquid state through /api/dashboard/account,
+   * which needs no stored key: /info clearinghouseState takes a plain address
+   * and SIWE already proved the caller controls it. So the page can show
+   * somebody their account while the product remains unable to trade it.
+   *
+   * This matters most on a fresh deployment, where the house book is empty and
+   * this tile is the only thing on the page with a number in it.
+   *
+   * Classes match the KPI tiles around it (`sec-label` / `kv` / `ksub`). They
+   * used to be `l` / `v` / `s`, which this stylesheet does not define, so the
+   * tile rendered as three unstyled lines wedged between two proper cards.
+   */
+  function accountTile(inner) {
+    return '<div class="sec-label">Your wallet</div>' + inner;
+  }
+
   async function loadMyAccount() {
     const slot = document.getElementById('my-account');
     if (!slot) return;
@@ -255,25 +327,30 @@ const PathiaAuth = (function () {
       if (!r.ok) { slot.hidden = true; return; }
       const a = await r.json();
       slot.hidden = false;
+      const addr = '<div class="ksub mono">' + esc(short(a.address || (me && me.address) || '')) + '</div>';
+
       if (a.status === 'unavailable') {
-        slot.innerHTML = '<span class="l">Your account</span>' +
-          '<span class="v amb">unavailable</span>' +
-          '<span class="s">could not reach Hyperliquid just now</span>';
+        slot.innerHTML = accountTile(
+          '<div class="kv amb">unavailable</div>' +
+          '<div class="ksub">could not reach Hyperliquid just now</div>' + addr);
         return;
       }
       if (!a.funded) {
-        slot.innerHTML = '<span class="l">Your account</span>' +
-          '<span class="v">not funded</span>' +
-          '<span class="s">deposit to Hyperliquid with this wallet to see it here</span>';
+        slot.innerHTML = accountTile(
+          '<div class="kv">not funded</div>' +
+          '<div class="ksub">deposit to Hyperliquid with this wallet to see it here</div>' + addr);
         return;
       }
       const n = (a.positions || []).length;
-      slot.innerHTML = '<span class="l">Your account</span>' +
-        '<span class="v">$' + Number(a.equity).toFixed(2) + '</span>' +
-        '<span class="s">' + n + ' open position' + (n === 1 ? '' : 's') + '</span>';
+      slot.innerHTML = accountTile(
+        '<div class="kv">$' + Number(a.equity).toFixed(2) + '</div>' +
+        '<div class="ksub">' + n + ' open position' + (n === 1 ? '' : 's') + '</div>' + addr);
     } catch { slot.hidden = true; }
   }
 
-  document.addEventListener('DOMContentLoaded', () => { refresh().then(loadMyAccount); });
+  document.addEventListener('DOMContentLoaded', () => {
+    PathiaMode.render();
+    refresh().then(loadMyAccount);
+  });
   return { refresh, signIn, signOut, loadMyAccount, user: () => me };
 })();

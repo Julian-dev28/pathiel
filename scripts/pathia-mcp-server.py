@@ -188,6 +188,40 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "connected_wallets",
+        "description": (
+            "Wallets that have signed in to the dashboard with Sign-In With Ethereum, "
+            "newest first. READ-ONLY and informational: this server signs with the "
+            "deployment's own key, so it can never place, close or size an order on "
+            "any wallet listed here. Use it to answer 'whose account am I looking at' "
+            "and to feed an address to wallet_account below."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer",
+                          "description": "Max wallets to return (default 10, max 100)."},
+            },
+        },
+    },
+    {
+        "name": "wallet_account",
+        "description": (
+            "Read-only Hyperliquid state for any address: equity, withdrawable, and "
+            "open positions. Needs no key, because /info clearinghouseState takes a "
+            "plain address. Omit `address` to read the wallet most recently signed in "
+            "to the dashboard; pass one to read a specific account. An unfunded "
+            "address is not an error — it returns funded=false."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "address": {"type": "string",
+                            "description": "0x address. Defaults to the most recent dashboard sign-in."},
+            },
+        },
+    },
+    {
         "name": "config",
         "description": (
             "Get or set agent configuration. Call with no params to read the full "
@@ -874,6 +908,78 @@ def handle_state(params: Dict[str, Any]) -> str:
     })
 
 
+def _auth_store():
+    """The dashboard's auth database, or None where there is not one.
+
+    MCP often runs beside a deployment rather than inside it, so a missing or
+    unreadable store is an ordinary state and not a failure to report upward.
+    """
+    try:
+        from services.auth.store import AuthStore
+        return AuthStore()
+    except Exception:
+        return None
+
+
+def handle_connected_wallets(params: Dict[str, Any]) -> str:
+    """Who has signed in to the dashboard.
+
+    Deliberately read-only, and deliberately not wired into any tool that
+    signs. This server holds the deployment's own key and no other, so a
+    connected wallet is something it can LOOK AT and nothing it can trade —
+    which is the security model, not a gap in it. An agent that wants to act on
+    one of these accounts cannot, and should say so rather than reaching for
+    the house key on the user's behalf.
+    """
+    limit = max(1, min(100, int(params.get("limit") or 10)))
+    store = _auth_store()
+    if store is None:
+        return json.dumps({"wallets": [], "status": "no auth database reachable"})
+    try:
+        users = store.list_users()
+    except Exception as e:
+        return json.dumps({"wallets": [], "status": f"auth database unreadable: {e}"})
+    users.sort(key=lambda u: (u.last_seen_at or 0), reverse=True)
+    return json.dumps({
+        "wallets": [{"address": u.address, "role": u.role,
+                     "last_seen_at": u.last_seen_at, "disabled": bool(u.disabled)}
+                    for u in users[:limit]],
+        "can_this_server_trade_them": False,
+        "why_not": ("this server signs with the deployment's own key; a wallet "
+                    "that signed in to the dashboard granted a session, not a key"),
+    })
+
+
+def handle_wallet_account(params: Dict[str, Any]) -> str:
+    """Read-only Hyperliquid state for one address."""
+    address = str(params.get("address") or "").strip()
+    if not address:
+        store = _auth_store()
+        try:
+            users = sorted(store.list_users(), key=lambda u: (u.last_seen_at or 0),
+                           reverse=True) if store else []
+        except Exception:
+            users = []
+        if not users:
+            return json.dumps({"error": "no address given and no wallet has signed in"})
+        address = users[0].address
+    if not address.startswith("0x") or len(address) != 42:
+        return json.dumps({"error": f"malformed address: {address!r}"})
+    try:
+        state = fetch_account_state(address, include_hip3=False) or {}
+    except Exception as e:
+        return json.dumps({"address": address, "status": "unavailable", "error": str(e)})
+    equity = float(state.get("equity") or 0.0)
+    return json.dumps({
+        "address": address,
+        "funded": equity > 0,
+        "equity": equity,
+        "withdrawable": state.get("withdrawable"),
+        "positions": state.get("asset_positions", []),
+        "read_only": True,
+    })
+
+
 def handle_config(params: Dict[str, Any]) -> str:
     from pathia.agents.config_store import (
         merge_agent_config,
@@ -1257,6 +1363,8 @@ def run() -> None:
         "submit_verdict": handle_submit_verdict,
         "execute": handle_execute,
         "state": handle_state,
+        "connected_wallets": handle_connected_wallets,
+        "wallet_account": handle_wallet_account,
         "config": handle_config,
         "leaderboard_get_markets": handle_leaderboard_get_markets,
         "leaderboard_get_top_traders": handle_leaderboard_get_top_traders,

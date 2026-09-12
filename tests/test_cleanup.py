@@ -1448,7 +1448,9 @@ def test_mcp_stub_table_and_tool_coverage():
     # deleted rather than left advertising a promise the venue cannot keep.
     # 99 tools became 86, every one of which returns real data.
     assert len(mod._STUB_TOOL_NAMES) == 0
-    assert len({t["name"] for t in mod.TOOLS}) == 86
+    # Names are unique; the total is pinned against the docs in
+    # test_no_absolute_paths.py rather than duplicated as a literal here.
+    assert len({t["name"] for t in mod.TOOLS}) == len(mod.TOOLS)
     assert set(mod._STUB_TOOL_NAMES) <= {t["name"] for t in mod.TOOLS}, (
         "a stub name is not registered in TOOLS, so clients get 'tool not "
         "found' instead of a clean not_implemented")
@@ -1476,7 +1478,15 @@ def test_mcp_server_stdio_end_to_end():
     resps = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
     assert len(resps) == 3, proc.stderr
     assert resps[0]["result"]["serverInfo"]["name"] == "pathia"
-    assert len(resps[1]["result"]["tools"]) == 86
+    # Derived, not written down. A literal here means every tool added or
+    # removed breaks an end-to-end transport test for a reason that has nothing
+    # to do with the transport — and the count is already pinned against the
+    # docs in test_no_absolute_paths.py, which is where a drift should surface.
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location("_mcp_count", MCP_SCRIPT)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    assert len(resps[1]["result"]["tools"]) == len(_mod.TOOLS)
     # get_rewards was a stub until 2026-09-06 and this asserted it said so.
     # It now returns real delegator data, so the end-to-end check is that a
     # tools/call round-trips into JSON at all — not that it refuses.

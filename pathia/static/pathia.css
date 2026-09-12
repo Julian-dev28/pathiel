@@ -742,3 +742,25 @@ body.not-operator #risk-band{ display:none; }
 #my-account .v{ font-size:26px; font-weight:600; display:block; margin-top:2px; }
 #my-account .s{ font-size:11.5px; color:var(--ink-3); display:block; margin-top:2px; }
 #my-account .amb{ color:var(--amber); }
+
+/* ── Live / Demo toggle ──────────────────────────────────────────────────────
+   Two words in the masthead, the current one filled. Deliberately quiet: it is
+   a statement of which dataset you are reading, not a call to action. */
+.mode-toggle {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--rule-2); border-radius: var(--radius);
+  overflow: hidden; margin-right: 10px;
+}
+.mode-opt {
+  padding: 3px 10px; font-size: 12px; line-height: 18px;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap;
+}
+a.mode-opt:hover { background: var(--surface-2); color: var(--ink); }
+.mode-opt.on { background: var(--accent-wash); color: var(--accent-ink); font-weight: 600; }
+
+/* A demo page says so in its own right, not only in the toggle: a reader who
+   arrived on a deep link never saw the switch. */
+body.is-demo .page-sub::after {
+  content: " · sample data, generated";
+  color: var(--amber);
+}
