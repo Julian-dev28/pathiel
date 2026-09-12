@@ -2008,18 +2008,26 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
 def test_every_page_can_offer_sign_in(client):
     """The sign-in flow lives in the one shared script, so all five pages get
     it from a single copy. Five near-identical fmtPct definitions is how this
-    codebase learned what per-page copies cost."""
+    codebase learned what per-page copies cost.
+
+    The mechanics moved: `personal_sign` and the nonce/verify round trip used to
+    be inline here against `window.ethereum`, and now live in the RainbowKit
+    island at services/wallet_ui (asserted by its own suite). What this file
+    still owns, and what this test still checks, is that every page loads the
+    shared script, has somewhere to put the chip, and can reach the picker.
+    """
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
                            "pathia", "static", "pathia.js")).read()
-    assert "PathiaAuth" in js and "personal_sign" in js
-    assert "/auth/nonce" in js and "/auth/verify" in js
-    # personal_sign takes (message, address). Reversed, the wallet signs the
-    # address as the payload and the signature never recovers.
-    assert "params: [prep.message, address]" in js
+    assert "PathiaAuth" in js
+    assert "signIn" in js and "signOut" in js
+    # The picker is fetched on demand; see loadWalletUI in pathia.js.
+    assert "/static/wallet.js" in js
     for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         body = client.get(path).text
         assert "pathia.js" in body, f"{path} does not load the shared script"
         assert "masthead-right" in body, f"{path} has nowhere to put the account chip"
+        assert 'id="wallet-connect-root"' in body, (
+            f"{path} has nowhere for the wallet picker to mount")
 
 
 def test_the_sign_in_gate_uses_tokens_that_exist():

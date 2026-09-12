@@ -34,6 +34,9 @@
       <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
     </nav>
     <div class="masthead-right">
+      <!-- The RainbowKit island mounts here on demand; pathia.js renders a
+           plain chip into the masthead until then. See services/wallet_ui. -->
+      <div id="wallet-connect-root"></div>
       <button id="discreet-toggle" type="button" class="icon-btn"
               title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
       <span id="status-pill" class="pill offline">Offline</span>

@@ -61,8 +61,9 @@ pythonpath = ["."]
 # services/*/tests too: a service whose suite is not collected is a service
 # whose suite does not exist. services/auth is on every request path.
 testpaths = ["tests", "services"]
-addopts = "-m 'not online and not live'"
+addopts = "-m 'not online and not live and not browser'"
 markers = [
+    "browser: drives a real Chromium via Playwright and boots a server; too slow for the commit gate, deselected by default (run with: pytest -m browser)",
     "online: exercises the live Hyperliquid public API (read-only); deselected by default (run with: pytest -m online)",
     "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires PATHIA_E2E=1 (run with: PATHIA_E2E=1 pytest -m live)",
 ]

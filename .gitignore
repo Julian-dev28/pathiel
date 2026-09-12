@@ -1,7 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+# Unanchored: services/wallet_ui has its own, 644 MB of it.
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*

@@ -109,37 +109,57 @@ const PathiaAuth = (function () {
     return me;
   }
 
+  /* ── Loading the wallet picker ──────────────────────────────────────────
+   *
+   * The picker is RainbowKit, bundled at services/wallet_ui into
+   * /static/wallet.js. It is ~380 KB over the wire against ~30 KB for this
+   * whole file, so it is fetched on demand rather than on page load: a
+   * signed-in operator reloading the dashboard never pays for it.
+   *
+   * This replaced a direct `window.ethereum` call. With two extensions
+   * installed that is whichever one won a race at page load, with no way to
+   * choose — and it told people who already had a wallet to "install MetaMask
+   * or Rabby". RainbowKit resolves wallets over EIP-6963, so each announces
+   * itself by name and the user picks the one they meant.
+   */
+  let walletLoading = null;
+
+  function loadWalletUI() {
+    if (walletLoading) return walletLoading;
+    walletLoading = new Promise((resolve, reject) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = '/static/wallet.css';
+      document.head.appendChild(css);
+
+      const js = document.createElement('script');
+      js.src = '/static/wallet.js';
+      js.defer = true;
+      js.onload = () => resolve();
+      // Reset the latch so a second click retries rather than hanging forever
+      // on a request that failed once.
+      js.onerror = () => { walletLoading = null; reject(new Error('could not load the wallet picker')); };
+      document.head.appendChild(js);
+    });
+    return walletLoading;
+  }
+
   async function signIn() {
-    const eth = window.ethereum;
-    if (!eth) {
-      note('No wallet found. Install MetaMask or Rabby, then reload.');
-      return null;
-    }
+    // The island renders its own button into #wallet-connect-root, so the
+    // placeholder chip has to go before it mounts or the masthead shows two.
+    const chip = document.getElementById('auth-chip');
+    if (chip) chip.hidden = true;
+    // Read by index.tsx once React commits: the user already clicked, and
+    // nobody clicks a second time to open the modal they asked for.
+    window.__pathiaWalletAutoOpen = true;
     try {
-      const [address] = await eth.request({ method: 'eth_requestAccounts' });
-      const prep = await (await fetch('/auth/nonce?address=' + encodeURIComponent(address))).json();
-      if (!prep.message) throw new Error(prep.detail || 'could not start sign-in');
-      // personal_sign takes (message, address) in that order. Reversed, the
-      // wallet either errors or signs the address as the payload.
-      const signature = await eth.request({ method: 'personal_sign', params: [prep.message, address] });
-      const r = await fetch('/auth/verify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: prep.message, signature }),
-      });
-      if (!r.ok) throw new Error((await r.json()).detail || 'signature rejected');
-      me = (await r.json()).user;
-      render();
-      hideGate();
-      // Repaint with data the page could not fetch while signed out.
-      window.location.reload();
-      return me;
+      await loadWalletUI();
+      if (window.PathiaWallet) window.PathiaWallet.openConnectModal();
     } catch (e) {
-      // 4001 is the EIP-1193 code for "user rejected". Not an error worth a
-      // scary banner; they simply changed their mind.
-      if (e && e.code === 4001) return null;
-      note(String(e && e.message || e));
-      return null;
+      if (chip) chip.hidden = false;
+      note(String((e && e.message) || e));
     }
+    return null;
   }
 
   async function signOut() {
@@ -166,6 +186,9 @@ const PathiaAuth = (function () {
       slot.insertBefore(chip, slot.firstChild);
     }
     if (me) {
+      // Deliberately still vanilla. A signed-in operator needs an identity and
+      // a way out, not a wallet picker, so this path never loads the bundle.
+      chip.hidden = false;
       chip.textContent = me.display_name || short(me.address);
       chip.title = me.address + (me.role === 'operator' ? ' · operator' : '') + ' — click to sign out';
       chip.onclick = signOut;

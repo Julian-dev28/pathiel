@@ -47,7 +47,10 @@ SCAN_DIRS = ("pathia", "scripts", "services")
 # so their imports must not force a COPY line into it.
 #   pathia_data_api  own Dockerfile + Postgres deps
 #   demo             Vercel-only; generates synthetic data for the public demo
-EXCLUDE_PREFIXES = ("services/pathia_data_api", "services/demo")
+#   wallet_ui        an npm package built to a static asset; its Python tests
+#                    import services.demo to boot a server, and neither belongs
+#                    in the image that trades the real account
+EXCLUDE_PREFIXES = ("services/pathia_data_api", "services/demo", "services/wallet_ui")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -184,6 +187,19 @@ def test_dockerfile_copies_every_imported_top_level_package():
             f"Dockerfile has no `COPY {expected_dir}...` line — the built image "
             f"would ship a partial app that fails on first import of {pkg}."
         )
+
+
+def test_dockerfile_does_not_bundle_wallet_ui():
+    """services/wallet_ui is an npm package, not part of the running app.
+
+    Its only output is pathia/static/wallet.js, which ships inside pathia/. The
+    sources and its 644 MB of node_modules have no business in the image.
+    """
+    copies = _dockerfile_copy_sources()
+    assert not any(c.startswith("services/wallet_ui") for c in copies), (
+        "the Fly image copies services/wallet_ui — only its built asset, "
+        "pathia/static/wallet.js, belongs in the image"
+    )
 
 
 def test_dockerfile_does_not_bundle_demo():
