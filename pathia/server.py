@@ -129,9 +129,21 @@ app = FastAPI(title="Pathia-Trader", version=__version__, lifespan=lifespan)
 # Optional hard read-only mode: PATHIA_DASHBOARD_READONLY=1 refuses every
 # mutating request (all mutators here are POSTs) regardless of token — for
 # exposing the dashboard anywhere you don't fully trust (audit 2026-07-10).
+# Signing in is a POST and is not a mutation of anything this flag protects.
+# Without this exemption the read-only demo 403s /auth/verify, RainbowKit
+# renders "Error verifying signature, please retry!", and the operator retries
+# forever against a guard that was never aimed at them. The flag exists to
+# freeze TRADING and configuration, so it stops at the session boundary:
+# /auth/nonce, /auth/verify, /auth/logout open and close sessions and touch no
+# position, no order and no book.
+_READONLY_EXEMPT_PREFIXES = ("/auth/",)
+
+
 @app.middleware("http")
 async def _readonly_guard(request: Request, call_next):
-    if request.method == "POST" and os.environ.get("PATHIA_DASHBOARD_READONLY"):
+    if (request.method == "POST"
+            and os.environ.get("PATHIA_DASHBOARD_READONLY")
+            and not request.url.path.startswith(_READONLY_EXEMPT_PREFIXES)):
         return JSONResponse({"detail": "dashboard is read-only (PATHIA_DASHBOARD_READONLY)"},
                             status_code=403)
     return await call_next(request)

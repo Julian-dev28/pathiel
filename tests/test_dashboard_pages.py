@@ -2112,3 +2112,44 @@ def test_lifting_the_floor_does_not_by_itself_let_a_small_account_trade():
     equity = 12.94
     assert equity >= min_tradable_equity(cfg)          # floor cleared
     assert 20.0 / 1 > equity                            # margin still blocks
+
+
+# ── the read-only flag stops at the session boundary ────────────────────────
+
+def test_readonly_mode_still_lets_a_person_sign_in(monkeypatch):
+    """PATHIA_DASHBOARD_READONLY must not block /auth/*.
+
+    Found by an operator hitting the deployed demo with a real wallet: the
+    picker reached "Verify your account", the POST to /auth/verify came back
+    403, and RainbowKit surfaced it as "Error verifying signature, please
+    retry!" — an error about the signature, which was fine, pointing at a guard
+    that was never aimed at sign-in.
+
+    The flag exists to freeze trading and configuration. A session opens no
+    position, sends no order and edits no book.
+    """
+    monkeypatch.setenv("PATHIA_DASHBOARD_READONLY", "1")
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    client = TestClient(app)
+    # A bad signature must be REJECTED ON ITS MERITS (401), never refused by
+    # the read-only guard (403).
+    r = client.post("/auth/verify", json={"message": "nope", "signature": "0x00"})
+    assert r.status_code != 403, r.text
+    r = client.post("/auth/logout")
+    assert r.status_code != 403, r.text
+
+
+def test_readonly_mode_still_blocks_everything_that_moves_money(monkeypatch):
+    """The other half of the exemption: it is a session-shaped hole, not a
+    general one. Widening it to /api/ would make the flag decorative."""
+    monkeypatch.setenv("PATHIA_DASHBOARD_READONLY", "1")
+    from fastapi.testclient import TestClient
+    from pathia.server import app
+    client = TestClient(app)
+    # 403 from the read-only guard, or 401 from the operator gate that runs
+    # before it — which refusal arrives first depends on middleware order and
+    # does not matter. What matters is that none of them is allowed through.
+    for path in ("/api/agent/stop", "/api/agent/start", "/api/agent/config",
+                 "/api/hl/place-order", "/api/hl/close-position"):
+        assert client.post(path).status_code in (401, 403), f"{path} is not refused"

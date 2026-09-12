@@ -97,6 +97,22 @@ for _key, _path in materialize(_DATA_DIR).items():
 # ── 4. open the read APIs, close every write ─────────────────────────────────
 os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"
 os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
+
+# The domain inside the SIWE message, which services/auth deliberately takes
+# from config rather than the Host header (an attacker controls Host, so a
+# domain derived from it asserts nothing). Its default is "localhost:8000", so
+# an unset value here made the wallet display
+#
+#     localhost:8000 wants you to sign in with your Ethereum account
+#
+# on a page served from vercel.app. That is precisely the shape of a phishing
+# prompt, and a user who signs it anyway has been taught to ignore the one
+# field that makes SIWE worth anything. Vercel supplies the real host.
+_host = (os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
+         or os.environ.get("VERCEL_URL"))
+if _host:
+    os.environ.setdefault("PATHIA_AUTH_DOMAIN", _host)
+    os.environ.setdefault("PATHIA_AUTH_URI", f"https://{_host}")
 # The loop is not running here and never will be; say so rather than letting a
 # background task get scheduled by the server's lifespan hook.
 os.environ.setdefault("PATHIA_DISABLE_TRADING_LOOP", "1")

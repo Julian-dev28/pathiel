@@ -119,3 +119,35 @@ class TestReadOnly:
     def test_public_read_is_open(self, source: str):
         """Without this the demo renders a sign-in prompt and no data."""
         assert 'os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"' in source
+
+
+class TestSiweDomain:
+    """The domain inside the signed message has to be the domain being served.
+
+    services/auth takes it from config, never from the Host header, because an
+    attacker controls Host and a domain derived from it asserts nothing. The
+    default is "localhost:8000", so an entrypoint that does not set it makes
+    the wallet show "localhost:8000 wants you to sign in" on a vercel.app page
+    — the exact shape of a phishing prompt, teaching the user to ignore the one
+    field that makes SIWE worth anything.
+    """
+
+    def test_the_entrypoint_sets_the_auth_domain(self, source: str):
+        assert "PATHIA_AUTH_DOMAIN" in source
+
+    def test_it_takes_the_domain_from_the_platform(self, source: str):
+        """Not a literal anyone has to remember to update."""
+        assert "VERCEL_PROJECT_PRODUCTION_URL" in source or "VERCEL_URL" in source
+
+    def test_the_domain_is_set_before_pathia_is_imported(self, tree: ast.Module):
+        """services/auth/api.py reads it per request, but the URI default is
+        built from it, so ordering stays part of this file's contract."""
+        setdefault_lines = [
+            n.lineno for n in ast.walk(tree)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "setdefault"
+            and any(isinstance(a, ast.Constant) and a.value == "PATHIA_AUTH_DOMAIN"
+                    for a in n.args)
+        ]
+        assert setdefault_lines, "PATHIA_AUTH_DOMAIN is never set"
+        assert min(setdefault_lines) < _lineno_of_pathia_import(tree)
