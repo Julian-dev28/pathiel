@@ -13,6 +13,8 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from pathia.agents.book_params import (
+    BACKUP_SL_MAX_FRAC_OF_LIQ, LIQ_SAFETY_FRAC, max_stop_pct_at_leverage)
 from pathia.agents.config_store import read_agent_config
 from pathia.agents.dsl_exit import (
     ExitPolicy,
@@ -207,9 +209,9 @@ def _backup_sl_price(
 
 
 def stop_honoring_leverage(leverage: int, stop_pct: float,
-                           max_frac_of_liq: float = 0.60,
+                           max_frac_of_liq: float = BACKUP_SL_MAX_FRAC_OF_LIQ,
                            coin_max_leverage: int = 0,
-                           liq_safety_frac: float = 0.85) -> int:
+                           liq_safety_frac: float = LIQ_SAFETY_FRAC) -> int:
     """The highest leverage at which `stop_pct` fires strictly before liquidation.
 
     `_backup_sl_price` (and the pct-override branch in `maybe_execute`) bound the
@@ -246,7 +248,6 @@ def stop_honoring_leverage(leverage: int, stop_pct: float,
     lev = int(leverage)
     if stop <= 0 or frac <= 0:
         return lev
-    maint = (1.0 / (2.0 * int(coin_max_leverage))) if coin_max_leverage else 0.0
     safety = float(liq_safety_frac or 0.0)
     # TWO bounds, both necessary. The clamp bound keeps the stop at its
     # requested WIDTH (stop <= frac/lev). The liq bound keeps it REACHABLE at
@@ -255,9 +256,15 @@ def stop_honoring_leverage(leverage: int, stop_pct: float,
     # Walk down from the request; both constraints are monotonic in leverage.
     # +1e-9 absorbs binary-float dust on exact fits (0.60/0.20).
     while lev > 1:
-        fits_width = stop <= frac / lev + 1e-9
-        fits_liq = (safety <= 0) or (stop <= safety * (1.0 / lev - maint) + 1e-9)
-        if fits_width and fits_liq:
+        # One source for both directions. `max_stop_pct_at_leverage` answers
+        # "widest stop at this leverage"; this walks leverage down until the
+        # requested stop fits under it. Recomputing the bounds here is exactly
+        # how the promotion constant drifted from the clamp it was meant to
+        # sit on.
+        widest = max_stop_pct_at_leverage(
+            lev, max_frac_of_liq=frac, coin_max_leverage=coin_max_leverage,
+            liq_safety_frac=safety) / 100.0
+        if stop <= widest + 1e-9:
             return lev
         lev -= 1
     return 1
@@ -872,14 +879,14 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             _want_stop = 0.0
         _capped = stop_honoring_leverage(
             leverage, _want_stop,
-            float(config.get("backup_sl_max_frac_of_liq", 0.60) or 0.0),
+            float(config.get("backup_sl_max_frac_of_liq", BACKUP_SL_MAX_FRAC_OF_LIQ) or 0.0),
             coin_max_leverage=get_max_leverage(coin),
-            liq_safety_frac=float(config.get("liq_safety_frac", 0.85) or 0.0))
+            liq_safety_frac=float(config.get("liq_safety_frac", LIQ_SAFETY_FRAC) or 0.0))
         if _capped < leverage:
             logger.warning(
                 f"[executor] {coin}: leverage {leverage}x would shrink the "
                 f"{_want_stop:.1f}% stop to "
-                f"{100*float(config.get('backup_sl_max_frac_of_liq', 0.60))/leverage:.1f}%"
+                f"{100*float(config.get('backup_sl_max_frac_of_liq', BACKUP_SL_MAX_FRAC_OF_LIQ))/leverage:.1f}%"
                 f" — capping leverage to {_capped}x to honor the stop "
                 f"(book={analysis.get('strategy_book') or 'main'})"
             )
@@ -1299,7 +1306,7 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
     # primary/normal exit; this is the fast safety net.
     sl_atr_mult = float(analysis.get("sl_atr_mult_override",
                                      config.get("sl_atr_mult", _DEFAULT_SL_ATR_MULT)))
-    backup_sl_max_frac = float(config.get("backup_sl_max_frac_of_liq", 0.60) or 0.0)
+    backup_sl_max_frac = float(config.get("backup_sl_max_frac_of_liq", BACKUP_SL_MAX_FRAC_OF_LIQ) or 0.0)
     try:
         backup_sl_pct_override = float(analysis.get("backup_sl_pct_override", 0) or 0.0)
     except (TypeError, ValueError):

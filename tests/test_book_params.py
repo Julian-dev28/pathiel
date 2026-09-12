@@ -46,7 +46,8 @@ from pathlib import Path
 import pytest
 
 from pathia.agents.book_params import (
-    FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, FLOOR_STOP_PCT, book_params)
+    BACKUP_SL_MAX_FRAC_OF_LIQ, FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD,
+    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, book_params, max_stop_pct_at_leverage)
 
 BOOKS = ("xs_reversal", "news_surge_short", "news_surge_multi",
          "unlock_short", "social_trending")
@@ -150,6 +151,81 @@ def test_promoted_books_carry_exactly_the_loops_geometry():
     for book in PROMOTED_BOOKS:
         p = book_params(CFG, book)
         assert (p.notional_usd, p.leverage, p.stop_pct) == PROMOTED, book
+
+
+# ------------------------------------------------- the clamp, in one place
+class TestClampIsOneSourceOfTruth:
+    """`max_stop_pct_at_leverage` and `executor.stop_honoring_leverage` answer
+    the same question from opposite ends. PROMOTE_STOP_PCT is derived from the
+    first, and the executor enforces the second. If they ever disagree, a
+    promoted book trades a stop the executor silently narrows — which is the
+    2026-07-20 bug, a different strategy rather than a smaller one.
+    """
+
+    @pytest.mark.parametrize("leverage", [1, 2, 3, 4, 5, 6, 8, 10, 12, 20])
+    def test_the_widest_stop_round_trips_through_the_executor(self, leverage):
+        """The property that makes "derived" mean something.
+
+        Take the widest stop this leverage allows, hand it to the executor's
+        cap, and the executor must leave the leverage alone. Off by a hair in
+        either direction and this fails: too wide and the cap walks leverage
+        down, too narrow and the derivation is leaving size on the table.
+        """
+        from pathia.agents.executor import stop_honoring_leverage
+        widest = max_stop_pct_at_leverage(leverage)
+        assert stop_honoring_leverage(leverage, widest) == leverage
+
+    @pytest.mark.parametrize("leverage", [2, 3, 4, 6, 10, 20])
+    def test_a_hair_wider_is_rejected(self, leverage):
+        """The other half: the boundary is a boundary, not a suggestion."""
+        from pathia.agents.executor import stop_honoring_leverage
+        too_wide = max_stop_pct_at_leverage(leverage) * 1.02
+        assert stop_honoring_leverage(leverage, too_wide) < leverage
+
+    def test_the_promotion_constant_is_derived_not_written(self):
+        """PROMOTE_STOP_PCT must equal the clamp at PROMOTE_LEVERAGE.
+
+        It was the literal 6.0 with a comment reading "== 60/10, exactly at the
+        clamp boundary" — true until someone edited either number.
+        """
+        assert _AC.PROMOTE_STOP_PCT == max_stop_pct_at_leverage(_AC.PROMOTE_LEVERAGE)
+
+    def test_the_derivation_tracks_a_change_to_either_input(self):
+        """Change the leverage or the clamp and the stop follows.
+
+        The whole point: two numbers that have to agree by hand eventually do
+        not, so this asserts the dependency rather than the current values.
+        """
+        assert max_stop_pct_at_leverage(20) == max_stop_pct_at_leverage(10) / 2
+        looser = max_stop_pct_at_leverage(10, max_frac_of_liq=0.80)
+        assert looser > max_stop_pct_at_leverage(10, max_frac_of_liq=0.60)
+
+    def test_the_liq_bound_binds_on_a_low_max_leverage_coin(self):
+        """`1/lev` overstates the liquidation distance because maintenance
+        margin eats into it. On a 3x-max coin the naive width bound would
+        authorize a stop the position dies before reaching."""
+        naive = max_stop_pct_at_leverage(3)
+        with_maint = max_stop_pct_at_leverage(3, coin_max_leverage=3)
+        assert with_maint < naive
+
+    def test_no_bound_is_not_read_as_a_safe_stop(self):
+        """Disabling both bounds means nothing constrains the stop here, which
+        is not the same as any stop being fine. `inf` cannot be mistaken for a
+        usable default the way a large float could."""
+        import math
+        assert math.isinf(
+            max_stop_pct_at_leverage(10, max_frac_of_liq=0, liq_safety_frac=0))
+
+    def test_the_shared_defaults_are_what_the_executor_uses(self):
+        """The constants moved to book_params so the evidence loop could read
+        them without importing a signing stack. The executor must still be
+        reading the same ones."""
+        import inspect
+
+        from pathia.agents import executor
+        sig = inspect.signature(executor.stop_honoring_leverage)
+        assert sig.parameters["max_frac_of_liq"].default == BACKUP_SL_MAX_FRAC_OF_LIQ
+        assert sig.parameters["liq_safety_frac"].default == LIQ_SAFETY_FRAC
 
 
 def test_a_promoted_stop_stays_reachable_and_inside_liquidation():

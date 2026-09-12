@@ -57,6 +57,7 @@ if _ENV.is_file():
             os.environ.setdefault(_k.strip(), _v.strip())
 
 from pathia.agents import shadow_ledger as SL  # noqa: E402
+from pathia.agents.book_params import max_stop_pct_at_leverage  # noqa: E402
 
 MIN_N = 8
 NULL_DRAWS = 2000
@@ -108,9 +109,16 @@ _NEVER_PROMOTE: frozenset = frozenset()
 
 # Promotion sizing — bounded, and the stop must be REACHABLE: the executor
 # clamps the backup SL to entry*(backup_sl_max_frac_of_liq/leverage).
+#
+# The stop is DERIVED from that clamp, not written next to it. It used to be the
+# literal 6.0 with a comment saying "== 60/10, exactly at the clamp boundary",
+# which is true right up until someone changes PROMOTE_LEVERAGE or
+# backup_sl_max_frac_of_liq — then a promoted book silently trades a stop the
+# executor shrinks, which is the 2026-07-20 bug: a different strategy, not a
+# smaller one. Two numbers that have to agree by hand eventually do not.
 PROMOTE_NOTIONAL_USD = 20.0
 PROMOTE_LEVERAGE = 10
-PROMOTE_STOP_PCT = 6.0       # == 60/10, exactly at the clamp boundary
+PROMOTE_STOP_PCT = max_stop_pct_at_leverage(PROMOTE_LEVERAGE)   # 6.0 at 0.60/10
 
 # Inverse theses already ACTED ON — wired live, or considered and declined for
 # a reason the numbers cannot see. Without this the cycle re-proposes the same
