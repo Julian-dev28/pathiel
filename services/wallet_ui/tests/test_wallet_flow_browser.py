@@ -139,10 +139,19 @@ def flow(server):
         page.wait_for_timeout(2000)
         seen["eager"] = any("wallet.js" in u for _, u in seen["requests"])
 
+        # ONE click, and then wait for the modal to appear on its own. Do not
+        # add a second click here: the production bug this guards was that the
+        # auto-open fired before React attached RainbowKit's onClick, so the
+        # first click did nothing and only a second one worked.
         page.locator("#auth-gate-btn").click()
-        page.wait_for_timeout(6000)
-        seen["picker"] = page.evaluate(
-            "document.querySelector('[role=dialog]')?.innerText || ''")
+        try:
+            page.wait_for_selector("[role=dialog]", timeout=20000)
+        except Exception:
+            seen["picker"] = ""
+        else:
+            page.wait_for_timeout(1500)
+            seen["picker"] = page.evaluate(
+                "document.querySelector('[role=dialog]')?.innerText || ''")
 
         okx = page.locator("[role=dialog] button", has_text="OKX")
         seen["okx_listed"] = okx.count() > 0
@@ -173,8 +182,16 @@ def test_bundle_is_fetched_once_the_user_asks(flow):
     assert any("wallet.css" in u for _, u in flow["requests"])
 
 
-def test_picker_opens(flow):
-    assert "Connect a Wallet" in flow["picker"]
+def test_picker_opens_on_a_single_click(flow):
+    """Shipped broken once: `createRoot().render()` returns before React
+    commits, so the auto-open click could land on a button whose onClick was not
+    attached yet. It silently did nothing and the user had to click twice.
+
+    The fixture clicks exactly once and waits for the dialog, so a regression
+    here fails rather than being papered over by a second click.
+    """
+    assert "Connect a Wallet" in flow["picker"], (
+        "the modal did not open from one click")
 
 
 def test_picker_lists_a_wallet_discovered_over_eip6963(flow):

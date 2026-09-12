@@ -29,21 +29,31 @@ const MOUNT_ID = 'wallet-connect-root';
 /**
  * RainbowKit owns its modal state internally and hands out no imperative handle
  * from outside the React tree, so "open the modal" means clicking the button the
- * island rendered. Crude, and the only approach that keeps working when
- * RainbowKit reorganises its internals.
+ * island rendered.
  *
- * The button does not exist the instant `createRoot().render()` returns — React
- * commits asynchronously — so this polls briefly rather than assuming it is
- * there. Bounded, because a spin that never finds its target must end.
+ * Clicking once is not enough, and this is the bug that shipped to production
+ * before it was caught: `createRoot().render()` returns before React commits, so
+ * the button can be in the DOM a frame or two before its onClick is attached.
+ * A click in that window lands on a button with no handler, silently does
+ * nothing, and the user has to click a second time to get the modal they
+ * already asked for.
+ *
+ * So this retries until the modal actually exists rather than until the button
+ * does — the observable end state, not a proxy for it. Bounded, because a spin
+ * that never succeeds has to stop.
  */
-function clickWhenPresent(node: HTMLElement, attemptsLeft = 40): void {
+const OPEN_DEADLINE_MS = 8_000;
+
+function openModal(node: HTMLElement, deadline = Date.now() + OPEN_DEADLINE_MS): void {
+  if (document.querySelector('[role="dialog"]')) return;
   const button = node.querySelector('button');
-  if (button) {
-    button.click();
-    return;
-  }
-  if (attemptsLeft > 0) {
-    requestAnimationFrame(() => clickWhenPresent(node, attemptsLeft - 1));
+  if (button) button.click();
+  if (Date.now() < deadline) {
+    // requestAnimationFrame rather than a timer: this waits on React to paint,
+    // which is what rAF is scheduled against. A deadline rather than a frame
+    // count, because frame rate varies and what is being bounded is the user's
+    // patience, not the renderer's.
+    requestAnimationFrame(() => openModal(node, deadline));
   }
 }
 
@@ -60,12 +70,12 @@ function mount(): void {
   );
 
   window.PathiaWallet = {
-    openConnectModal: () => clickWhenPresent(node),
+    openConnectModal: () => openModal(node),
   };
 
   if (window.__pathiaWalletAutoOpen) {
     window.__pathiaWalletAutoOpen = false;
-    clickWhenPresent(node);
+    openModal(node);
   }
 }
 
