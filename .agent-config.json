@@ -150,18 +150,24 @@
   "min_order_bump_max_mult": 2.0,
   "hip3_max_leverage": 6,
   "news_surge_short": {
-    "enabled": false,
+    "enabled": true,
     "shadow_only": false,
     "equity_live": true,
     "crypto_live": true,
     "hold_days": 1.0,
-    "max_new_per_cycle": 1
+    "max_new_per_cycle": 1,
+    "notional_usd": 20.0,
+    "leverage": 10,
+    "stop_pct": 6.0
   },
   "news_surge_multi": {
-    "enabled": false,
+    "enabled": true,
     "shadow_only": false,
     "hold_days": 1.0,
-    "max_new_per_cycle": 1
+    "max_new_per_cycle": 1,
+    "notional_usd": 20.0,
+    "leverage": 10,
+    "stop_pct": 6.0
   },
   "social_trending": {
     "enabled": true,
