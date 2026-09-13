@@ -97,7 +97,7 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
 
     gone = ("polymarket_scout", "pathiel/v2/", "xs_momentum_live",
             "extreme_fade_live", "--sample-daemon",
-            # Deleted 2026-09-04. The pathia-agent SKILL listed rally_exhaustion
+            # Deleted 2026-09-04. The pathiel-agent SKILL listed rally_exhaustion
             # and hail_mary_short as current live books days after both were
             # gone, and an operator reading it would have gone looking for
             # config that does not exist.
@@ -211,9 +211,9 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
     advertised, implemented = len(tools), len(tools - stubs)
     assert stubs <= tools, "a stub name is not registered in TOOLS"
 
-    for doc in ("skills/pathia-agent/SKILL.md",
-                "skills/pathia-agent/references/mcp-config.md",
-                "skills/pathia-agent/references/mcp-server.md",
+    for doc in ("skills/pathiel-agent/SKILL.md",
+                "skills/pathiel-agent/references/mcp-config.md",
+                "skills/pathiel-agent/references/mcp-server.md",
                 "docs/ARCHITECTURE.md"):
         text = (ROOT / doc).read_text()
         if "tools" not in text:

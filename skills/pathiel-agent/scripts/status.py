@@ -3,7 +3,7 @@
 
 Run from anywhere:
 
-    python3 skills/pathia-agent/scripts/status.py
+    python3 skills/pathiel-agent/scripts/status.py
 
 Shows BOTH local cached state (.agent-memory.json — what the loop last
 persisted) and LIVE state pulled directly from Hyperliquid. The live read

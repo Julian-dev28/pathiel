@@ -55,7 +55,7 @@ test sandbox. The live host must be able to run it non-interactively.
 
 ## Mode 2: Agent As MCP Brain And Operator
 
-Use this when Codex / Claude Code / Pathia Agent / OpenClaw owns orchestration:
+Use this when Codex / Claude Code / Pathiel Agent / OpenClaw owns orchestration:
 which coins to inspect, when to submit a verdict, when to execute, and when to
 close.
 
@@ -129,9 +129,9 @@ Set loop OFF through MCP or config:
 `mode=OFF` skips scan/research/entry execution in the loop, but the loop still
 monitors exits and can close positions from the DSL engine.
 
-## Pathia Agent
+## Pathiel Agent
 
-Register the stdio MCP server in Pathia Agent config:
+Register the stdio MCP server in Pathiel Agent config:
 
 ```yaml
 mcp_servers:
@@ -276,7 +276,7 @@ Safe focused tests:
 MCP wiring audit:
 
 ```bash
-python3 skills/pathia-agent/scripts/audit_mcp_server.py
+python3 skills/pathiel-agent/scripts/audit_mcp_server.py
 ```
 
 Codex provider smoke:

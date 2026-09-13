@@ -57,7 +57,7 @@ from typing import Any, Dict, List, Optional, Tuple
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from pathia.agents import shadow_ledger as SL          # noqa: E402
+from pathiel.agents import shadow_ledger as SL          # noqa: E402
 
 CACHE_DIR = Path(__file__).parent / "_cache"
 SLIP_BPS = 25          # matches how every _BOOKS verdict is quoted
@@ -97,7 +97,7 @@ def _cached_candles(coin: str, interval: str, want: int, use_disk: bool) -> List
                 return bars
         except Exception:
             pass
-    from pathia.client.hl_client import fetch_hl_candles
+    from pathiel.client.hl_client import fetch_hl_candles
     bars = fetch_hl_candles(coin, interval, want)
     _MEM[key] = bars
     if use_disk:
@@ -175,7 +175,7 @@ def grade_book(book: str, use_disk: bool, limit: Optional[int] = None
     if limit:
         records = records[-limit:]
     fetch_fwd = make_fetch_fwd(use_disk)
-    from pathia.client.hl_client import fetch_funding_history
+    from pathiel.client.hl_client import fetch_funding_history
 
     out: List[Dict[str, Any]] = []
     for i, r in enumerate(records, 1):
@@ -236,7 +236,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     books = a.book or (list(FEATURES) if a.all else ["news_surge_multi"])
-    os.environ.setdefault("PATHIA_STATE_DIR", str(ROOT / ".state"))
+    os.environ.setdefault("PATHIEL_STATE_DIR", str(ROOT / ".state"))
 
     print("Signal ranking study — net of funding and 25bps slippage")
     print("Question: with 32 signals a day and 10 slots, does anything we already"

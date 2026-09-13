@@ -1,7 +1,7 @@
 """pathiel — autonomous quant trading agent for Hyperliquid."""
 
 # FIRST, before any module below reads the environment: the project was
-# renamed from pathia, and 65 PATHIA_* variables are still set in .env.local,
+# renamed from pathiel, and 65 PATHIEL_* variables are still set in .env.local,
 # in `fly secrets` and on Vercel. compat mirrors both spellings so none of
 # them quietly stops being read. See pathiel/compat.py.
 from pathiel import compat as _compat  # noqa: F401

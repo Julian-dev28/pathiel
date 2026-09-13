@@ -1,6 +1,6 @@
 # Cron Jobs
 
-How pathiel is wired into Pathia Agent's cron scheduler
+How pathiel is wired into Pathiel Agent's cron scheduler
 (`~/.pathiel/cron/jobs.json`, managed by `pathiel cron`).
 
 ## Hourly status report
@@ -21,9 +21,9 @@ public wallet address from `.env.local` — no private key involved.
   #!/usr/bin/env bash
   set -uo pipefail
   REPO=/Users/julian_dev/Documents/code/pathiel
-  python3 "$REPO/skills/pathia-agent/scripts/status.py"
+  python3 "$REPO/skills/pathiel-agent/scripts/status.py"
   echo; echo "--- activity (last 60m) ---"
-  python3 "$REPO/skills/pathia-agent/scripts/feed.py" --since 60m
+  python3 "$REPO/skills/pathiel-agent/scripts/feed.py" --since 60m
   ```
 
 It ships **paused** (`enabled: false`). Enable it when ready:

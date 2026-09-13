@@ -32,11 +32,11 @@ except FileNotFoundError:
     pass
 
 # Keep retry/backoff SHORT so a bad/illiquid coin can't stall the whole run.
-os.environ.setdefault("PATHIA_CANDLE_RETRIES", "2")
-os.environ.setdefault("PATHIA_CANDLE_BACKOFF_CAP_S", "2")
-os.environ["PATHIA_CANDLE_CACHE_TTL_S"] = "0"   # no dedup cache for a bulk pull
+os.environ.setdefault("PATHIEL_CANDLE_RETRIES", "2")
+os.environ.setdefault("PATHIEL_CANDLE_BACKOFF_CAP_S", "2")
+os.environ["PATHIEL_CANDLE_CACHE_TTL_S"] = "0"   # no dedup cache for a bulk pull
 
-from pathia.client.hl_client import _http_post, fetch_hl_candles  # noqa: E402
+from pathiel.client.hl_client import _http_post, fetch_hl_candles  # noqa: E402
 
 COUNT = 5000  # 1h bars -> up to ~208 days (coins return fewer if younger)
 

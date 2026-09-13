@@ -1,8 +1,8 @@
 ---
-name: pathia-agent
-description: Use when operating, maintaining, or debugging pathiel — the standalone autonomous Hyperliquid trading system that Pathia Agent drives through its MCP server. Covers the scan/research/execute pipeline, pluggable AI-brain providers, live EV+ strategy books, risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
+name: pathiel-agent
+description: Use when operating, maintaining, or debugging pathiel — the standalone autonomous Hyperliquid trading system that Pathiel Agent drives through its MCP server. Covers the scan/research/execute pipeline, pluggable AI-brain providers, live EV+ strategy books, risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
 version: 1.0.0
-author: Pathia Agent
+author: Pathiel Agent
 license: MIT
 metadata:
   pathiel:
@@ -16,10 +16,10 @@ metadata:
 `pathiel` is a **standalone Python trading system** for Hyperliquid
 perpetual markets — both native crypto perps (BTC, ETH, etc.) **and HIP-3
 tokenized-equity / commodity / index perps** (`xyz:NVDA`, `xyz:GOLD`,
-`km:US500`, `xyz:CL`, etc.) when the `enable_hip3` flag is on. Pathia Agent
+`km:US500`, `xyz:CL`, etc.) when the `enable_hip3` flag is on. Pathiel Agent
 operates it through the **MCP server** registered in `~/.pathiel/config.yaml`
 (`mcp_servers.pathiel`) — that MCP boundary is the integration. The
-trading engine itself has no Pathia-framework dependency; it is
+trading engine itself has no Pathiel-framework dependency; it is
 Pathiel-*operated*, not Pathiel-*built*.
 
 Repo: `/Users/julian_dev/Documents/code/pathiel`. The user may work on
@@ -81,7 +81,7 @@ scripts/restart.sh status       # show what's running
 
 Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server
 (`scripts/pathiel-mcp-server.py`) is intentionally NOT managed — it's a transient
-stdio process respawned by Pathia Agent on each tool call. If MCP code is stale:
+stdio process respawned by Pathiel Agent on each tool call. If MCP code is stale:
 `pkill -f pathiel-mcp-server.py` and the next tool call respawns fresh.
 
 When `restart.sh` is run from Codex and background children are reaped by the
@@ -196,7 +196,7 @@ orders, DSL tracker cleanup, stale trigger-order cancellation, realized PnL
 capture, and loss-cooldown arming.
 
 `submit_verdict` is the MCP-native verdict-authority seam: external operators
-such as Codex, Claude Code, Pathia Agent, or OpenClaw submit their own
+such as Codex, Claude Code, Pathiel Agent, or OpenClaw submit their own
 PASS/LONG/SHORT/CLOSE analysis, then call `execute(analysisId)` to route it
 through the existing gates and close helper.
 

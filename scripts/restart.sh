@@ -22,7 +22,7 @@
 #                       box is up — not just at restart.sh invocation time)
 #
 # The MCP server (scripts/pathiel-mcp-server.py) is intentionally NOT managed
-# here — it's a transient stdio process respawned by Pathia Agent on each
+# here — it's a transient stdio process respawned by Pathiel Agent on each
 # tool call.
 
 set -euo pipefail

@@ -85,7 +85,7 @@ def main(argv=None) -> int:
     stamps, panel = load_panel()
     t0, t1 = window(stamps, a.days)
     span_d = (t1 - t0) / DAY_MS
-    print(f"PATHIA REGIME READ — last {span_d:.1f} days "
+    print(f"PATHIEL REGIME READ — last {span_d:.1f} days "
           f"({time.strftime('%Y-%m-%d', time.localtime(t0/1000))} → "
           f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(t1/1000))})")
     print(f"{len(panel)} coins in the panel, {len([s for s in stamps if s >= t0])} snapshots\n")

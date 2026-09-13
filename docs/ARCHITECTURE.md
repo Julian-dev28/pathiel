@@ -30,31 +30,31 @@ Persistent state on disk:  .agent-memory.json  .agent-config.json  .dsl-state.js
 Two entry processes:
   scripts/trading_loop.py     — autonomous: scans, decides, executes, exits, repeats
   pathiel/server.py     — FastAPI: public dashboard + token-gated operator + JSON API + SSE feed
-  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 88 tools to Pathia Agent
+  scripts/pathiel-mcp-server.py — MCP stdio server: exposes 88 tools to Pathiel Agent
 ```
 
 All three share the same on-disk state and the same Python modules under
 `pathiel/`. The trading loop owns the trade decisions; the server owns
-the human-visible surface; the MCP server owns the Pathia Agent integration.
+the human-visible surface; the MCP server owns the Pathiel Agent integration.
 
 ---
 
 ## Where the name "Pathiel" comes from
 
-The agent layer is [Pathia Agent](https://github.com/NousResearch/pathia-agent)
+The agent layer is [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent)
 by Nous Research — a Python-native agentic framework that operates external
 systems through MCP (Model Context Protocol) tools. "pathiel" is the
-**MCP server** + **trading engine** that Pathia Agent operates as one of its
+**MCP server** + **trading engine** that Pathiel Agent operates as one of its
 skills. Pathiel is the driver; pathiel is the car.
 
 Two things follow from this design choice:
 
-1. **The trading engine has zero Pathia-framework dependency.** It runs as a
+1. **The trading engine has zero Pathiel-framework dependency.** It runs as a
    plain Python process. The MCP boundary is the only contact surface — that's
    what lets you also operate it through Claude Desktop, Cursor, or any
    MCP-aware client without changing a line of trading code.
-2. **Pathia Agent is operational; the engine is autonomous.** The trading loop
-   in `scripts/trading_loop.py` runs on its own forever. Pathia Agent is what
+2. **Pathiel Agent is operational; the engine is autonomous.** The trading loop
+   in `scripts/trading_loop.py` runs on its own forever. Pathiel Agent is what
    you (a human) use to inspect, configure, and direct the engine — start it,
    stop it, ask "what did you just do," set the mode, etc.
 
@@ -69,7 +69,7 @@ pathiel:
 | From Senpi | What pathiel took |
 |---|---|
 | **DSL (Dynamic Stop Loss) two-phase exit** | `pathiel/agents/dsl_exit.py` is a re-implementation of the same idea: hard stop in phase 1, ratcheting trailing floor with tiered retrace in phase 2, hard timeout as a backstop. |
-| **Skill-shaped trading strategies** | The `skills/pathia-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Pathia Agent skill is portable in shape, if not in runtime. |
+| **Skill-shaped trading strategies** | The `skills/pathiel-agent/` directory mirrors Senpi's per-strategy folder layout (SKILL.md + scripts/ + references/) so a Pathiel Agent skill is portable in shape, if not in runtime. |
 | **MCP as the integration boundary** | Senpi exposes its proprietary backend through an MCP server; pathiel does the same with `scripts/pathiel-mcp-server.py` (88 tools). Same pattern, open implementation. |
 
 The crucial difference: **Senpi's runtime and MCP server are closed.** Their
@@ -327,7 +327,7 @@ hours volume drops to ~zero, so the scanner naturally skips them
 (filtered by `min_hip3_volume_usd`). No explicit hours-gate is
 implemented — the volume floor handles it.
 
-See `skills/pathia-agent/references/hip3-tokenized-equity-handoff.md`
+See `skills/pathiel-agent/references/hip3-tokenized-equity-handoff.md`
 for the original task brief and the post-implementation audit findings.
 
 ---
@@ -355,7 +355,7 @@ user scale.
 ## The MCP server
 
 `scripts/pathiel-mcp-server.py` — 88 tools over MCP stdio. The contract that
-lets Pathia Agent (and any MCP client) operate the engine.
+lets Pathiel Agent (and any MCP client) operate the engine.
 
 Tool categories:
 
@@ -522,7 +522,7 @@ pathiel/
 │   ├── pathiel-mcp-server.py     # MCP stdio server, 88 tools
 │   ├── grant_operator.py        # grant/revoke the operator role for a wallet
 │   └── backtest.py              # historical-candle backtest
-├── skills/pathia-agent/  # Pathia Agent skill (operator's manual + helper scripts)
+├── skills/pathiel-agent/  # Pathiel Agent skill (operator's manual + helper scripts)
 ├── tests/                       # offline unit + online + live-e2e
 ├── research/                    # regime reads + pre-registered hypotheses
 ├── docs/                        # this file + journal-schema
@@ -606,7 +606,7 @@ python3 scripts/trading_loop.py
 # 2. The web dashboard + JSON API (port 8000)
 python3 -m pathiel.server
 
-# 3. The MCP stdio server (driven by Pathia Agent / Claude Desktop / Cursor)
+# 3. The MCP stdio server (driven by Pathiel Agent / Claude Desktop / Cursor)
 python3 scripts/pathiel-mcp-server.py
 ```
 
@@ -618,10 +618,10 @@ Tail what the engine is doing:
 
 ```bash
 # Live feed in terminal
-python3 skills/pathia-agent/scripts/feed.py --follow
+python3 skills/pathiel-agent/scripts/feed.py --follow
 
 # Last 50 events with stats
-python3 skills/pathia-agent/scripts/status.py
+python3 skills/pathiel-agent/scripts/status.py
 
 # Browser dashboard
 open http://localhost:8000
@@ -652,11 +652,11 @@ the engine writes to. There's one source of truth for each thing.
 
 ## Using pathiel — the operator's manual
 
-Three audiences, three workflows: you-the-human via Pathia Agent for ad-hoc
+Three audiences, three workflows: you-the-human via Pathiel Agent for ad-hoc
 operation, you-the-human via the dashboard for live monitoring, and the
 trading loop running headless for autonomous execution.
 
-### General use (no Pathia Agent)
+### General use (no Pathiel Agent)
 
 The minimum to get from "I cloned this" to "the bot is trading":
 
@@ -689,9 +689,9 @@ open http://localhost:8000
 The config is read **fresh on every trade** — no restart needed for changes.
 Same for risk caps, leverage, allowlists.
 
-### Hands-off operating via Pathia Agent (the MCP path)
+### Hands-off operating via Pathiel Agent (the MCP path)
 
-If you have Pathia Agent installed and the MCP server registered, you operate
+If you have Pathiel Agent installed and the MCP server registered, you operate
 the engine in plain English:
 
 ```yaml
@@ -716,8 +716,8 @@ Then in a Pathiel session:
 | **Status (in-session)** | *Check pathiel status. Highlight anything that changed since the last report.* |
 | **Manual close** | *Close my pathiel position in TSLA. Show me the realized PnL.* |
 
-The skill at `skills/pathia-agent/` carries the system prompt, the
-`feed.py` / `status.py` helper scripts, and reference docs that Pathia Agent
+The skill at `skills/pathiel-agent/` carries the system prompt, the
+`feed.py` / `status.py` helper scripts, and reference docs that Pathiel Agent
 loads as context for every session. So the agent knows the conventions —
 session-log glyphs, gate names, restart ritual — without you having to
 re-explain.
@@ -746,26 +746,26 @@ on every request; missing env var → 503, wrong token → 401.
 
 ```bash
 # Live feed, same format as the dashboard
-python3 skills/pathia-agent/scripts/feed.py --follow
+python3 skills/pathiel-agent/scripts/feed.py --follow
 
 # Last hour of activity (one-shot, for cron / piping to Slack)
-python3 skills/pathia-agent/scripts/feed.py --since 1h
+python3 skills/pathiel-agent/scripts/feed.py --since 1h
 
 # Compact status block — equity, positions, recent closes, win rate
-python3 skills/pathia-agent/scripts/status.py
+python3 skills/pathiel-agent/scripts/status.py
 ```
 
 ---
 
 ## The skill scaffolding + cron for hands-off monitoring
 
-`skills/pathia-agent/` is a self-contained Pathiel-Agent skill: a
+`skills/pathiel-agent/` is a self-contained Pathiel-Agent skill: a
 folder that Pathiel loads as a *capability* for an agent session. The
 layout intentionally mirrors Senpi's skill format so the directory pattern is
 portable, even though the runtime semantics differ.
 
 ```
-skills/pathia-agent/
+skills/pathiel-agent/
 ├── SKILL.md                       # the system prompt — what this agent IS,
 │                                    what tools it has, how to phrase
 │                                    decisions, what to ask the user before
@@ -787,7 +787,7 @@ skills/pathia-agent/
 
 ### Hands-off monitoring via Pathiel cron
 
-Pathia Agent supports scheduled jobs (`pathiel cron list/create/resume/pause`).
+Pathiel Agent supports scheduled jobs (`pathiel cron list/create/resume/pause`).
 The skill includes a recommended **hourly status report** job that runs
 `status.py` and posts the output to whichever channel you have configured
 (Telegram, Slack, email, or just stdout in your terminal).
@@ -796,7 +796,7 @@ The skill includes a recommended **hourly status report** job that runs
 # One-time setup
 pathiel cron create pathiel-hourly \
   --interval "0 * * * *" \
-  --command "python3 /path/to/pathiel/skills/pathia-agent/scripts/status.py"
+  --command "python3 /path/to/pathiel/skills/pathiel-agent/scripts/status.py"
 
 # Status of all jobs
 pathiel cron list

@@ -90,7 +90,7 @@ async def _append_session_log(entry: Dict[str, Any]) -> None:
 # Falls back to the pre-rename name so a server started before the rename is
 # still found by `pathiel stop`.
 PID_FILE = compat.legacy_path(os.path.expanduser("~/.pathiel.pid"),
-                              os.path.expanduser("~/.pathia.pid"))
+                              os.path.expanduser("~/.pathiel.pid"))
 
 
 def _is_alive(pid: int) -> bool:

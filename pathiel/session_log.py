@@ -21,7 +21,7 @@ from typing import Any, Dict, List
 SESSION_LOG_FILE = compat.resolve_state_file(
     "SESSION_LOG_PATH",
     os.path.expanduser("~/.pathiel-session-log.jsonl"),
-    os.path.expanduser("~/.pathia-session-log.jsonl"),
+    os.path.expanduser("~/.pathiel-session-log.jsonl"),
 )
 
 

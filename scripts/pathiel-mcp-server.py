@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Pathiel-Trader MCP server — stdio transport for Pathia Agent.
+"""Pathiel-Trader MCP server — stdio transport for Pathiel Agent.
 
-Exposes trading tools to Pathia Agent:
+Exposes trading tools to Pathiel Agent:
   - scan(minScore, maxMarkets)
   - research(coin)
   - submit_verdict(coin, verdict, ...)

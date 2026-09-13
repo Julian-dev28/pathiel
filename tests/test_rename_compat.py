@@ -130,10 +130,29 @@ class TestTheRenameIsComplete:
                 offenders.append(str(path.relative_to(ROOT)))
         assert not offenders, f"still importing the old package: {offenders}"
 
-    def test_the_external_framework_was_not_renamed(self):
-        """`Pathia Agent` is NousResearch's product. Renaming it in our docs
-        would point readers at a URL that does not exist and credit the wrong
-        project."""
+    def test_the_agent_was_renamed_too(self):
+        """Pathiel Agent is the same author's project, not a third party.
+
+        The first pass preserved `Pathia Agent` and the
+        `NousResearch/pathia-agent` link on the assumption it was somebody
+        else's framework. It is not, and that URL resolves to nothing — so the
+        preservation was protecting a dead link and an out-of-date name.
+        """
         readme = (ROOT / "README.md").read_text()
-        assert "NousResearch/pathia-agent" in readme
-        assert "Pathiel Agent" not in readme
+        assert "pathia-agent" not in readme
+        assert "Pathia Agent" not in readme
+        assert "Pathiel Agent" in readme
+
+    def test_no_file_or_directory_still_carries_the_old_name(self):
+        """Excludes compat.py and this file, which name the old spelling on
+        purpose so the fallbacks can be explained and tested."""
+        skip_dirs = {".git", "node_modules", ".venv", "__pycache__", ".next",
+                     "logs", ".state", ".backups", ".mypy_cache", ".pytest_cache",
+                     ".ruff_cache", "research", ".agents", ".forge", ".qwen"}
+        offenders = []
+        for path in ROOT.rglob("*"):
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            if "pathia" in path.name.lower() and "pathiel" not in path.name.lower():
+                offenders.append(str(path.relative_to(ROOT)))
+        assert not offenders, f"still named for the old project: {offenders}"

@@ -8,8 +8,8 @@ intentional gate decisions.
 
 1. Read the activity feed:
    ```bash
-   python3 skills/pathia-agent/scripts/feed.py -n 80
-   python3 skills/pathia-agent/scripts/feed.py --filter entry_preflight,ta_skip,research,execute --since 30m
+   python3 skills/pathiel-agent/scripts/feed.py -n 80
+   python3 skills/pathiel-agent/scripts/feed.py --filter entry_preflight,ta_skip,research,execute --since 30m
    ```
 2. Bucket the latest candidates by event:
    - `entry_preflight` = deterministic live gate proved the entry cannot execute, so paid AI was skipped.
@@ -51,4 +51,4 @@ Bad examples:
 - `scripts/trading_loop.py` — feed event emission and pre-research gates.
 - `pathiel/agents/executor.py` — verdict routing, runner gate, trend filter.
 - `pathiel/agents/risk_gates.py` — risk-gate block reasons.
-- `skills/pathia-agent/scripts/feed.py` — human-readable feed rendering.
+- `skills/pathiel-agent/scripts/feed.py` — human-readable feed rendering.

@@ -1,11 +1,11 @@
 # Pathiel
-> Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathia Agent](https://github.com/NousResearch/pathia-agent) through an MCP server.
+> Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent) through an MCP server.
 
 **How you drive it: MCP.** The whole control surface is an MCP server —
 `scripts/pathiel-mcp-server.py`, 88 tools over stdio. Scanning, research,
 execution, config, risk state, Hyperliquid market data and the wallets signed in
 to the dashboard are all tools an agent calls. There is no second API to learn
-and no framework dependency in the engine: point Claude Desktop, Pathia Agent or
+and no framework dependency in the engine: point Claude Desktop, Pathiel Agent or
 any MCP client at it and you are operating the system. Full table under
 [MCP Integration](#mcp-integration).
 
@@ -109,7 +109,7 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 ## MCP Integration
 
-pathiel is a standalone Python application; **Pathia Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathia-framework dependency.
+pathiel is a standalone Python application; **Pathiel Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathiel-framework dependency.
 
 The MCP server (`scripts/pathiel-mcp-server.py`) exposes 88 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
 
@@ -148,7 +148,7 @@ for them.
 | `market_list_instruments` | All tradeable instruments |
 | `market_get_mids` | Real-time mid prices |
 
-Configure in Pathia Agent's `config.yaml`:
+Configure in Pathiel Agent's `config.yaml`:
 ```yaml
 mcp_servers:
   pathiel:
@@ -645,7 +645,7 @@ The API is available at `http://localhost:8000`. Health check: `GET /` returns `
 
 `scripts/restart.sh` manages the autonomous trading loop and the FastAPI server,
 including stop/verify/start and log files under `logs/`. The MCP stdio server is
-not managed by this script; Pathia Agent respawns it on tool calls.
+not managed by this script; Pathiel Agent respawns it on tool calls.
 
 ### Manual Process Launch
 ```bash
@@ -703,10 +703,10 @@ sample is large enough.
 
 ---
 
-## Operating via Pathia Agent
+## Operating via Pathiel Agent
 
 With the skill loaded and the MCP server registered (see [MCP Integration](#mcp-integration)),
-you operate pathiel by prompting your Pathia Agent in plain language — the agent
+you operate pathiel by prompting your Pathiel Agent in plain language — the agent
 calls the MCP tools for you. Restart your Pathiel session first so the skill and MCP
 server are picked up.
 
@@ -801,7 +801,7 @@ gates, kill switch, close helper, and DSL exit engine.
 The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
 
 ### Why pure Python?
-Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration with Pathia Agent, and native testability without a headless browser.
+Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration with Pathiel Agent, and native testability without a headless browser.
 
 ---
 
@@ -861,7 +861,7 @@ pathiel/
 ├── scripts/
 │   ├── pathiel-mcp-server.py       # MCP server (stdio, 88 tools)
 │   └── trading_loop.py            # Continuous trading loop
-├── skills/pathia-agent/    # Pathia Agent skill
+├── skills/pathiel-agent/    # Pathiel Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e
 └── docs/
     ├── AI_BRAIN_OPERATOR_WIRING.md # Codex/Claude/Pathiel/OpenClaw brain wiring
@@ -879,8 +879,8 @@ pathiel/
 - Prometheus (`prometheus-client`) — `/metrics` instrumentation + observability
 - Kubernetes (kind + kube-prometheus-stack) — local deployment & Grafana dashboards (see [`k8s/`](k8s/README.md))
 
-It is **operated by** [Pathia Agent](https://github.com/NousResearch/pathia-agent)
-through the MCP server — Pathia Agent is not a build dependency; the trading
+It is **operated by** [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent)
+through the MCP server — Pathiel Agent is not a build dependency; the trading
 engine is plain Python.
 
 ---

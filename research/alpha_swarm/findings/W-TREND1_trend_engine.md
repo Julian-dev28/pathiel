@@ -103,12 +103,12 @@ robust across a liquidity split AND measured on gapped windows AND n ≥ 25.
 
 ## 6. INFRA — a CLI entry point that skips `.env.local` reads the wrong ledger
 
-`pathia.agents.rebalancer_owned` freezes `_STATE_DIR` from
-`PATHIA_STATE_DIR` at import time, and that variable lives in `.env.local`.
+`pathiel.agents.rebalancer_owned` freezes `_STATE_DIR` from
+`PATHIEL_STATE_DIR` at import time, and that variable lives in `.env.local`.
 The recorders lane first reported "2 books, 4 signals" against a tree holding
 28 books, with no error anywhere — it was reading `<repo>/shadow_ledger`
 instead of `<repo>/.state/shadow_ledger`. Fixed by
-`services/trend_engine/env.py`, called before any `pathia` import in
+`services/trend_engine/env.py`, called before any `pathiel` import in
 every entry point. Worth checking in any future service with a CLI.
 
 ---

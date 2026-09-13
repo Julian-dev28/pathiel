@@ -3,7 +3,7 @@
 
 Run from anywhere:
 
-    python3 skills/pathia-agent/scripts/audit_mcp_server.py [path-to-server]
+    python3 skills/pathiel-agent/scripts/audit_mcp_server.py [path-to-server]
 
 Parses the server with the `ast` module (no import, no execution) and checks
 the invariant from references/mcp-server.md:
@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 def _default_server_path() -> Path:
-    # <repo>/skills/pathia-agent/scripts/audit_mcp_server.py -> <repo>/scripts/...
+    # <repo>/skills/pathiel-agent/scripts/audit_mcp_server.py -> <repo>/scripts/...
     return Path(__file__).resolve().parents[3] / "scripts" / "pathiel-mcp-server.py"
 
 

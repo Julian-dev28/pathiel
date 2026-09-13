@@ -30,7 +30,7 @@ python scripts/pathiel-mcp-server.py
 It auto-loads `.env.local` from the project root, so credentials must be set
 there (see Environment Variables below).
 
-## Pathia Agent config.yaml
+## Pathiel Agent config.yaml
 
 ```yaml
 mcp_servers:
@@ -86,7 +86,7 @@ The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`,
 
 ## Testing Tools
 
-In Pathia Agent, after the MCP server connects:
+In Pathiel Agent, after the MCP server connects:
 
 ```
 mcp pathiel scan { minScore: 80 }

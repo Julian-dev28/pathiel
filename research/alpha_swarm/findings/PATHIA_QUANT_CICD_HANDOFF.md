@@ -1,4 +1,4 @@
-# Pathia Quant Integrity and CI/CD Handoff
+# Pathiel Quant Integrity and CI/CD Handoff
 
 **Audience:** Fable 5, as downstream verifier and implementer
 
@@ -8,7 +8,7 @@
 
 ## 1. Executive decision
 
-Pathia has a healthy offline unit-test baseline, several useful point-in-time and portfolio simulation primitives, exact-first book-open logging for newer trades, and basic operational health endpoints. It does **not** yet have one reconciled accounting source of truth or a CI/CD path capable of proving that a strategy, release artifact, and deployed local-Mac process are the same verified system.
+Pathiel has a healthy offline unit-test baseline, several useful point-in-time and portfolio simulation primitives, exact-first book-open logging for newer trades, and basic operational health endpoints. It does **not** yet have one reconciled accounting source of truth or a CI/CD path capable of proving that a strategy, release artifact, and deployed local-Mac process are the same verified system.
 
 Fable 5 should implement this in four dependency-ordered layers:
 
@@ -70,7 +70,7 @@ rg -n 'ruff|mypy|pyright|build|docker|upload-artifact|deploy|rollback|backtest|r
 
 `pnl_by_book.py` fetches exchange fills, deduplicates them by `tid`, sorts them, reconstructs per-coin flat-to-flat episodes, accumulates exchange `closedPnl` and `fee`, and reports `net = closedPnl - fee`. Sources: [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L114), [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L139), and [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L297).
 
-The local outcome store is instead a capped list of at most 500 close records in a process-local singleton persisted to `.agent-memory.json`. Bot-routed closes estimate gross PnL from entry price, returned average fill price, and stored size; assume a fixed 2.5 bps taker fee per side; and optionally estimate all funding by holding the **entry** hourly rate constant. External/vanished closes inspect at most 100 recent fills, select one close-like fill, and may fall back to an estimated price/notional. Sources: [`pathia/agents/memory.py`](../../../pathia/agents/memory.py#L23), [`pathia/agents/memory.py`](../../../pathia/agents/memory.py#L181), [`pathia/agents/executor.py`](../../../pathia/agents/executor.py#L1470), and [`pathia/agents/executor.py`](../../../pathia/agents/executor.py#L1546).
+The local outcome store is instead a capped list of at most 500 close records in a process-local singleton persisted to `.agent-memory.json`. Bot-routed closes estimate gross PnL from entry price, returned average fill price, and stored size; assume a fixed 2.5 bps taker fee per side; and optionally estimate all funding by holding the **entry** hourly rate constant. External/vanished closes inspect at most 100 recent fills, select one close-like fill, and may fall back to an estimated price/notional. Sources: [`pathiel/agents/memory.py`](../../../pathiel/agents/memory.py#L23), [`pathiel/agents/memory.py`](../../../pathiel/agents/memory.py#L181), [`pathiel/agents/executor.py`](../../../pathiel/agents/executor.py#L1470), and [`pathiel/agents/executor.py`](../../../pathiel/agents/executor.py#L1546).
 
 `pnl_attribution.py` consumes only those local close rows and sums `realized_pnl_usd`; it does not reconcile them to exchange fill IDs. Source: [`scripts/pnl_attribution.py`](../../../scripts/pnl_attribution.py#L48).
 
@@ -78,22 +78,22 @@ Reproduce statically and with existing offline regression fixtures:
 
 ```bash
 nl -ba scripts/pnl_by_book.py | sed -n '114,189p;297,340p'
-nl -ba pathia/agents/executor.py | sed -n '1470,1652p'
+nl -ba pathiel/agents/executor.py | sed -n '1470,1652p'
 nl -ba scripts/pnl_attribution.py | sed -n '48,69p'
 .venv/bin/python -m pytest -q tests/test_pnl_by_book.py tests/test_outcome_store.py
 ```
 
 ### F3 — Strategy attribution is exact-first only for the newer event history
 
-Exchange fills do not contain the Pathia strategy book. Current attribution first joins a flat-to-flat episode to `book_open` session events or parsed `LIVE opened` loop-log lines, using coin, side, and a ±15-minute window. It then falls back to legacy intent/candidate events, which the script itself marks as over-attributing, and defaults unmatched episodes to `main-engine`. Sources: [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L18), [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L71), [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L198), and [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L273).
+Exchange fills do not contain the Pathiel strategy book. Current attribution first joins a flat-to-flat episode to `book_open` session events or parsed `LIVE opened` loop-log lines, using coin, side, and a ±15-minute window. It then falls back to legacy intent/candidate events, which the script itself marks as over-attributing, and defaults unmatched episodes to `main-engine`. Sources: [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L18), [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L71), [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L198), and [`scripts/pnl_by_book.py`](../../../scripts/pnl_by_book.py#L273).
 
-Newer live books emit `book_open` after successful execution—for example [`pathia/agents/engulf_short_live.py`](../../../pathia/agents/engulf_short_live.py#L353)—and the regression test proves exact records outrank fuzzy records. The same test documents a historical misattribution that changed a sizing decision: [`tests/test_pnl_by_book.py`](../../../tests/test_pnl_by_book.py#L1).
+Newer live books emit `book_open` after successful execution—for example [`pathiel/agents/engulf_short_live.py`](../../../pathiel/agents/engulf_short_live.py#L353)—and the regression test proves exact records outrank fuzzy records. The same test documents a historical misattribution that changed a sizing decision: [`tests/test_pnl_by_book.py`](../../../tests/test_pnl_by_book.py#L1).
 
 Reproduce:
 
 ```bash
 .venv/bin/python -m pytest -q tests/test_pnl_by_book.py
-rg -n 'event.*book_open' pathia/agents tests
+rg -n 'event.*book_open' pathiel/agents tests
 nl -ba scripts/pnl_by_book.py | sed -n '18,99p;198,294p'
 ```
 
@@ -104,7 +104,7 @@ There are useful pieces:
 - `backtest.py` evaluates signals on data through bar *t* and enters at the next bar's open, but holds a fixed input equity independently per coin, charges only a fixed 5 bps round trip, omits funding, and does not model portfolio contention. See [`scripts/backtest.py`](../../../scripts/backtest.py#L180) and its own caveats in [`scripts/backtest.py`](../../../scripts/backtest.py#L278).
 - `backtest_logged.py` enters on the first forward bar's open and removes that bar before exit simulation, with configurable taker fee and per-side slippage. It sizes every isolated trade from the same starting equity. See [`scripts/backtest_logged.py`](../../../scripts/backtest_logged.py#L415) and [`scripts/backtest_logged.py`](../../../scripts/backtest_logged.py#L539).
 - `backtest_portfolio.py` walks a shared clock, updates realized equity, and enforces concurrency, notional, and margin gates. Its stale dependency on the retired capital-rotation feature was removed in this worktree. Its drawdown calculation still uses realized equity only, so open-position mark-to-market drawdown is absent. See [`scripts/backtest_portfolio.py`](../../../scripts/backtest_portfolio.py#L185) and [`scripts/backtest_portfolio.py`](../../../scripts/backtest_portfolio.py#L275).
-- `shadow_ledger.py` has lookahead-safe forward bars, funding, de-duplication, chronological halves, and 0/6/12/25/50 bps stress tiers, but it grades independent signals rather than a shared live portfolio. See [`pathia/agents/shadow_ledger.py`](../../../pathia/agents/shadow_ledger.py#L31), [`pathia/agents/shadow_ledger.py`](../../../pathia/agents/shadow_ledger.py#L167), and [`pathia/agents/shadow_ledger.py`](../../../pathia/agents/shadow_ledger.py#L240).
+- `shadow_ledger.py` has lookahead-safe forward bars, funding, de-duplication, chronological halves, and 0/6/12/25/50 bps stress tiers, but it grades independent signals rather than a shared live portfolio. See [`pathiel/agents/shadow_ledger.py`](../../../pathiel/agents/shadow_ledger.py#L31), [`pathiel/agents/shadow_ledger.py`](../../../pathiel/agents/shadow_ledger.py#L167), and [`pathiel/agents/shadow_ledger.py`](../../../pathiel/agents/shadow_ledger.py#L240).
 
 No checked-in component combines all of: next-bar execution, shared equity, mark-to-market drawdown, real portfolio gates, actual funding, deterministic fixtures, the full cost sweep, and the required promotion thresholds.
 
@@ -113,47 +113,47 @@ Reproduce:
 ```bash
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/backtest_portfolio.py --help
 .venv/bin/python -m pytest -q tests/test_shadow_ledger.py
-rg -n 'ROUND_TRIP|funding|slip|next_bar|entry_px|peak_eq|max_dd|max_concurrent' scripts/backtest*.py pathia/agents/shadow_ledger.py
+rg -n 'ROUND_TRIP|funding|slip|next_bar|entry_px|peak_eq|max_dd|max_concurrent' scripts/backtest*.py pathiel/agents/shadow_ledger.py
 ```
 
 ### F5 — Runtime correctness depends on a single state-owning loop, with partial mitigations rather than an atomic singleton guarantee
 
-Agent memory is a mutable, process-local singleton backed by a shared JSON file. Flush uses a fixed `.tmp` path plus `os.replace`, without a cross-process writer lock; comments document prior truncation by an unhydrated process. The server is now started with `PATHIA_STATE_READONLY=1`, and its lifespan deliberately avoids shutdown flush because its in-memory copy becomes stale while the loop writes. Sources: [`pathia/agents/memory.py`](../../../pathia/agents/memory.py#L29), [`pathia/agents/memory.py`](../../../pathia/agents/memory.py#L98), [`pathia/server.py`](../../../pathia/server.py#L104), and [`scripts/restart.sh`](../../../scripts/restart.sh#L150).
+Agent memory is a mutable, process-local singleton backed by a shared JSON file. Flush uses a fixed `.tmp` path plus `os.replace`, without a cross-process writer lock; comments document prior truncation by an unhydrated process. The server is now started with `PATHIEL_STATE_READONLY=1`, and its lifespan deliberately avoids shutdown flush because its in-memory copy becomes stale while the loop writes. Sources: [`pathiel/agents/memory.py`](../../../pathiel/agents/memory.py#L29), [`pathiel/agents/memory.py`](../../../pathiel/agents/memory.py#L98), [`pathiel/server.py`](../../../pathiel/server.py#L104), and [`scripts/restart.sh`](../../../scripts/restart.sh#L150).
 
 `restart.sh` detects loop processes by command-line pattern and avoids starting when it sees one, but check-then-spawn is not an atomic host lock. Concurrent invocations can therefore race. The loop also keeps mutable module globals and a watchdog thread, reinforcing the one-loop ownership model. Sources: [`scripts/restart.sh`](../../../scripts/restart.sh#L61), [`scripts/restart.sh`](../../../scripts/restart.sh#L115), and [`scripts/trading_loop.py`](../../../scripts/trading_loop.py#L123).
 
 Reproduce without changing process state:
 
 ```bash
-nl -ba pathia/agents/memory.py | sed -n '29,132p'
-nl -ba pathia/server.py | sed -n '104,117p'
+nl -ba pathiel/agents/memory.py | sed -n '29,132p'
+nl -ba pathiel/server.py | sed -n '104,117p'
 nl -ba scripts/restart.sh | sed -n '61,148p;150,177p'
-rg -n '^_[A-Za-z].*=|global ' scripts/trading_loop.py pathia/server.py
+rg -n '^_[A-Za-z].*=|global ' scripts/trading_loop.py pathiel/server.py
 ```
 
 Do **not** race two restart commands merely to prove this risk on a live host. Prove the future lock with isolated subprocess tests and temporary state.
 
 ### F6 — Cached/local account state can drift from live state, and existing guards demonstrate the operational sensitivity
 
-The server notes that its memory copy becomes stale after boot. `reload_entry_ctx()` exists because one-shot `load()` otherwise freezes entry context in another process. The trading loop explicitly rejects zero-equity and missing-dex reads to avoid poisoning memory or falsely tripping the kill switch, while keeping the last known value. These are valuable mitigations, but they also establish that local state, snapshots, and partial API reads are not automatically authoritative. Sources: [`pathia/server.py`](../../../pathia/server.py#L104), [`pathia/agents/memory.py`](../../../pathia/agents/memory.py#L169), and [`scripts/trading_loop.py`](../../../scripts/trading_loop.py#L436).
+The server notes that its memory copy becomes stale after boot. `reload_entry_ctx()` exists because one-shot `load()` otherwise freezes entry context in another process. The trading loop explicitly rejects zero-equity and missing-dex reads to avoid poisoning memory or falsely tripping the kill switch, while keeping the last known value. These are valuable mitigations, but they also establish that local state, snapshots, and partial API reads are not automatically authoritative. Sources: [`pathiel/server.py`](../../../pathiel/server.py#L104), [`pathiel/agents/memory.py`](../../../pathiel/agents/memory.py#L169), and [`scripts/trading_loop.py`](../../../scripts/trading_loop.py#L436).
 
 Reproduce:
 
 ```bash
-nl -ba pathia/agents/memory.py | sed -n '169,179p;199,265p'
+nl -ba pathiel/agents/memory.py | sed -n '169,179p;199,265p'
 nl -ba scripts/trading_loop.py | sed -n '436,525p'
 .venv/bin/python -m pytest -q tests/test_dashboard_perf.py tests/test_open_reason.py
 ```
 
 ### F7 — Production metrics are account/process-level, not strategy/accounting-level
 
-The `/metrics` implementation exports equity, open-position count, open notional, unrealized PnL, recorded-trade count, and live-mode status. It does not expose realized net PnL after all costs, expectancy by book, drawdown, turnover, fee/PnL ratio, rejection rates, heartbeat age, process duplication, reconciliation drift, or sample sizes. Sources: [`pathia/metrics.py`](../../../pathia/metrics.py#L20) and the endpoint in [`pathia/server.py`](../../../pathia/server.py#L695).
+The `/metrics` implementation exports equity, open-position count, open notional, unrealized PnL, recorded-trade count, and live-mode status. It does not expose realized net PnL after all costs, expectancy by book, drawdown, turnover, fee/PnL ratio, rejection rates, heartbeat age, process duplication, reconciliation drift, or sample sizes. Sources: [`pathiel/metrics.py`](../../../pathiel/metrics.py#L20) and the endpoint in [`pathiel/server.py`](../../../pathiel/server.py#L695).
 
 Reproduce:
 
 ```bash
-nl -ba pathia/metrics.py
-rg -n 'Gauge|Counter|Histogram' pathia/metrics.py
+nl -ba pathiel/metrics.py
+rg -n 'Gauge|Counter|Histogram' pathiel/metrics.py
 .venv/bin/python -m pytest -q tests/test_metrics.py
 ```
 
@@ -177,7 +177,7 @@ rg -n 'release|artifact|backup|rollback|health|heartbeat|mode' scripts/restart.s
 |---|---|---|---|
 | H1 | Current exchange-fill totals and `.agent-memory.json` close totals differ materially for at least some time windows/books. | F2 proves different event coverage, fee/funding assumptions, caps, and close models; it does not quantify current drift. | On a read-only account snapshot, compare gross, fees, funding, and net by UTC day and full retained window. Report unmatched IDs and amounts. Do not accept aggregate cancellation as reconciliation. |
 | H2 | Legacy fuzzy attribution still changes at least one book's sign or ranking. | F3 proves fuzzy/default paths remain for old history and records a prior material error. | Run `pnl_by_book.py` on a copied session/loop log and export exact/legacy/default counts plus a sensitivity table that excludes legacy rows. This command contacts Hyperliquid and should be run only in an approved read-only audit environment. |
-| H3 | Two loop writers can lose or roll back state despite atomic rename. | F5 proves no cross-process writer lock; a race is plausible, not observed in this audit. | Spawn two isolated writers against a temporary `PATHIA_AGENT_MEMORY_FILE`; assert the future singleton lock rejects the second writer and that concurrent reconciliation cannot lose rows. Never test on live state. |
+| H3 | Two loop writers can lose or roll back state despite atomic rename. | F5 proves no cross-process writer lock; a race is plausible, not observed in this audit. | Spawn two isolated writers against a temporary `PATHIEL_AGENT_MEMORY_FILE`; assert the future singleton lock rejects the second writer and that concurrent reconciliation cannot lose rows. Never test on live state. |
 | H4 | Realized-only backtest drawdown understates portfolio drawdown. | F4 shows max drawdown is updated from realized equity without marking open positions. | Use a fixture where open positions suffer a large interim loss and later recover. The current metric should miss it; the new mark-to-market metric must capture it. |
 | H5 | The proposed promotion thresholds reduce false positives but cannot establish future profitability. | They enforce sample size, chronological stability, high-cost survival, and bounded simulated drawdown; none removes regime or model risk. | Track shadow/live forward results separately after eligibility. Never rewrite the backtest gate using future live outcomes without a versioned research decision. |
 
@@ -274,7 +274,7 @@ ruff format --check .
 2. **Lint:** whole-tree Ruff, after Phase A only.
 3. **Offline tests:** retain the existing Python 3.11/3.12 matrix and run `pytest -m 'not online and not live'` explicitly. Treat unexpected deselection-count changes and warnings deliberately rather than hiding them.
 4. **Type check:** add a chosen checker with a reviewed baseline and ratchet. Do not claim a whole-tree type gate until the configured scope actually passes.
-5. **Package:** build wheel and sdist, install the wheel into a clean environment, import `pathia`, run the console command help/smoke path, and confirm package data/static assets exist.
+5. **Package:** build wheel and sdist, install the wheel into a clean environment, import `pathiel`, run the console command help/smoke path, and confirm package data/static assets exist.
 6. **Container:** build from `Dockerfile`, start with temporary mounted state, no credentials, and `OFF`; poll `/api/health`; verify no loop/order process starts unexpectedly; then stop cleanly.
 7. **Quant regression:** run golden ledger reconciliation and deterministic portfolio fixtures at every cost tier. Run twice and compare canonical JSON/hashes.
 8. **Artifact:** upload the wheel/sdist, image digest or build manifest, SBOM/dependency lock output, test/lint/type summaries, reconciliation report, quant JSON/Markdown, dataset/config hashes, and checksums. Retention must cover at least the rollback horizon.

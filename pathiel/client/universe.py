@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # A warm cache under the old name is still a warm cache.
 _CACHE_DIR = Path(compat.legacy_path(
     str(Path.home() / ".pathiel" / "universe_cache"),
-    str(Path.home() / ".pathia" / "universe_cache")))
+    str(Path.home() / ".pathiel" / "universe_cache")))
 _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 _UNIVERSE_CACHE_PATH = _CACHE_DIR / "meta.json"
 _SPOT_CACHE_PATH = _CACHE_DIR / "spot_meta.json"

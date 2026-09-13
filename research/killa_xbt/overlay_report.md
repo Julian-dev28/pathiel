@@ -7,7 +7,7 @@ RANGE family, price_location 0.35-0.65) improves the books."
 
 Data: `research/killa_xbt/overlay_results.json`.
 Code: `scratchpad/overlay_run.py` (session scratchpad; imports K1's frozen
-`pathia/indicators/range_structure.py` and
+`pathiel/indicators/range_structure.py` and
 `scripts/backtest_range_structure.py` unmodified).
 
 ## Method
@@ -128,7 +128,7 @@ the overlay as well: no recorder, no shadow fields.
 ## Repro
 
 ```
-.venv/bin/python /private/tmp/claude-501/-Users-julian-dev-Documents-code-pathia/f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad/overlay_run.py
+.venv/bin/python /private/tmp/claude-501/-Users-julian-dev-Documents-code-pathiel/f77b77de-96c2-4bf2-a574-1fd5aeebb7f2/scratchpad/overlay_run.py
 # writes research/killa_xbt/overlay_results.json
 ```
 (The runner lives in the session scratchpad per lane write scope. /tmp is

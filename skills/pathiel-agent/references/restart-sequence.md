@@ -4,7 +4,7 @@ Use `scripts/restart.sh` — it handles stop (SIGTERM → SIGKILL fallback),
 verify, background start with logs, and a status readout. It manages the
 trading loop AND the FastAPI server (which serves the dashboard at
 `http://localhost:8000`). The MCP server is intentionally NOT managed —
-it's a transient stdio process respawned by Pathia Agent on each tool
+it's a transient stdio process respawned by Pathiel Agent on each tool
 call.
 
 ```bash
