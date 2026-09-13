@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from services.auth import nonce as stateless_nonce
+from services.auth import stateless as stateless_auth
 from services.auth import siwe
 from services.auth.deps import (SESSION_COOKIE, cookie_kwargs, get_store,
                                 require_user)
@@ -105,7 +105,7 @@ def nonce(request: Request, address: str) -> Dict[str, Any]:
     # which is the whole failure mode on a host with no durable disk. It is off
     # unless asked for by name, because it gives up single-use — see
     # services/auth/nonce.py for what that costs and why the demo pays it.
-    value = stateless_nonce.issue() if stateless_nonce.enabled() else store.issue_nonce()
+    value = stateless_auth.issue() if stateless_auth.enabled() else store.issue_nonce()
     now = datetime.now(timezone.utc).replace(microsecond=0)
     message = (
         f"{expected_domain()} wants you to sign in with your Ethereum account:\n"
@@ -141,8 +141,8 @@ def verify(request: Request, response: Response, body: VerifyBody) -> Dict[str, 
     # In stateless mode there is nothing to burn: the nonce carries its own
     # expiry and a MAC this deployment can check without having stored
     # anything. Same rejection, same single message for every cause.
-    if stateless_nonce.enabled():
-        nonce_ok = stateless_nonce.verify(parsed.nonce)
+    if stateless_auth.enabled():
+        nonce_ok = stateless_auth.verify(parsed.nonce)
     else:
         nonce_ok = store.consume_nonce(parsed.nonce)
     if not nonce_ok:
@@ -152,8 +152,17 @@ def verify(request: Request, response: Response, body: VerifyBody) -> Dict[str, 
     if user.disabled:
         raise HTTPException(status_code=403, detail="account disabled")
 
-    token = store.create_session(user.id, user_agent=request.headers.get("user-agent", ""))
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL_S,
+    # A stored session is a row on a disk this host may not have next request —
+    # /auth/verify returns 200, the cookie is set, and the next /auth/me is 401.
+    # The page prompts again, the user signs again, and it loops. Where the disk
+    # is ephemeral the token carries its own proof instead.
+    if stateless_auth.sessions_enabled():
+        token = stateless_auth.issue_session(user.address)
+        max_age = stateless_auth.STATELESS_SESSION_TTL_S
+    else:
+        token = store.create_session(user.id, user_agent=request.headers.get("user-agent", ""))
+        max_age = SESSION_TTL_S
+    response.set_cookie(SESSION_COOKIE, token, max_age=max_age,
                         **cookie_kwargs(request))
     # Returned as well as set, so a CLI that cannot hold cookies can use Bearer.
     return {"user": user.public(), "session_token": token}

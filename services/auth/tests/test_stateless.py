@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from services.auth import nonce as N
+from services.auth import stateless as N
 
 SECRET = "k" * 48
 
@@ -109,3 +109,85 @@ class TestSecretHandling:
         minted = N.issue()
         monkeypatch.delenv("PATHIA_AUTH_NONCE_SECRET", raising=False)
         assert N.verify(minted) is False
+
+
+class TestSessions:
+    """The loop this fixes: verify returns 200, sets the cookie, and the next
+    /auth/me answers 401 because the row was written to another instance's
+    disk. The page prompts again, the user signs again, forever. An outright
+    failure would have been kinder."""
+
+    ADDR = "0x" + "ab" * 20
+
+    @pytest.fixture(autouse=True)
+    def on(self, monkeypatch):
+        monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
+
+    def test_it_is_off_unless_asked_for(self, monkeypatch):
+        monkeypatch.delenv("PATHIA_AUTH_STATELESS_SESSION", raising=False)
+        assert N.sessions_enabled() is False
+
+    def test_nonces_and_sessions_switch_independently(self, monkeypatch):
+        """Different trades — a nonce gives up single-use, a session gives up
+        revocation — so a deployment may want one and not the other."""
+        monkeypatch.delenv("PATHIA_AUTH_STATELESS_NONCE", raising=False)
+        assert N.sessions_enabled() is True
+        assert N.enabled() is False
+
+    def test_a_token_round_trips_to_its_address(self):
+        assert N.read_session(N.issue_session(self.ADDR)) == self.ADDR
+
+    def test_it_reads_on_an_instance_that_never_minted_it(self):
+        """The entire point. No store, no memory, just the secret."""
+        minted = N.issue_session(self.ADDR)
+        assert N.read_session(minted) == self.ADDR
+
+    def test_the_address_is_lowercased(self):
+        """EIP-55 and all-lowercase are the same account; storing both would
+        let one wallet hold two identities."""
+        assert N.read_session(N.issue_session(self.ADDR.upper().replace("0X", "0x"))) == self.ADDR
+
+    def test_an_expired_session_is_refused(self):
+        minted = N.issue_session(self.ADDR)
+        assert N.read_session(minted, now=time.time() + N.STATELESS_SESSION_TTL_S + 1) is None
+
+    def test_the_ttl_is_far_shorter_than_a_stored_session(self):
+        """A stored session can be revoked; this one cannot, so it must not
+        live for two weeks."""
+        from services.auth.store import SESSION_TTL_S
+        assert N.STATELESS_SESSION_TTL_S < SESSION_TTL_S / 10
+
+    def test_a_tampered_address_is_refused(self):
+        """The forgery that matters: swap the address, keep the MAC, become
+        somebody else."""
+        _, _, expiry, mac = N.issue_session(self.ADDR).split(".")
+        forged = f"v1.{'0x' + 'cd' * 20}.{expiry}.{mac}"
+        assert N.read_session(forged) is None
+
+    def test_a_tampered_expiry_is_refused(self):
+        _, addr, expiry, mac = N.issue_session(self.ADDR).split(".")
+        assert N.read_session(f"v1.{addr}.{int(expiry) + 86_400}.{mac}") is None
+
+    def test_a_token_from_another_deployment_is_refused(self, monkeypatch):
+        minted = N.issue_session(self.ADDR)
+        monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "elsewhere" * 8)
+        assert N.read_session(minted) is None
+
+    @pytest.mark.parametrize("junk", ["", "nope", "v1.a.b", "v2." + "x" * 40 + ".1.2", None])
+    def test_malformed_tokens_are_refused_not_raised(self, junk):
+        assert N.read_session(junk) is None
+
+    def test_a_stored_nonce_is_not_a_valid_session(self):
+        """Different shapes under the same secret. Confusing one for the other
+        would let a nonce open a session."""
+        assert N.read_session(N.issue()) is None
+
+    def test_it_refuses_to_mint_for_a_non_address(self):
+        for bad in ("", "nope", "0x123", "ab" * 20):
+            with pytest.raises(N.NonceError):
+                N.issue_session(bad)
+
+    def test_verification_fails_closed_without_the_secret(self, monkeypatch):
+        minted = N.issue_session(self.ADDR)
+        monkeypatch.delenv("PATHIA_AUTH_NONCE_SECRET", raising=False)
+        assert N.read_session(minted) is None

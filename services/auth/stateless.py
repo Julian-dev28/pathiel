@@ -1,4 +1,4 @@
-"""Stateless login nonces, for deployments with no durable disk.
+"""Stateless login nonces and sessions, for deployments with no durable disk.
 
 WHAT THIS IS FOR, AND WHAT IT COSTS
 
@@ -34,6 +34,21 @@ It is still a downgrade, so it is OFF by default and must be asked for by name:
 box, any real install — keeps burned nonces and should never set it. The public
 demo sets it because its alternative is not "stronger replay protection", it is
 "sign-in works at random".
+
+SESSIONS HAVE THE SAME DISEASE
+
+`create_session` writes a row too, so a session opened on one instance is
+unknown to the next: /auth/verify returns 200, sets the cookie, and the very
+next /auth/me answers 401. The page shows the sign-in prompt again, the user
+signs again, and it loops — which is what this looked like in the field, and
+what makes it worse than an outright failure. Fixing the nonce alone moved the
+loop one step later.
+
+A stateless session token carries the address and an expiry under the same MAC.
+What it gives up is SERVER-SIDE REVOCATION: `revoke_session` and
+`revoke_all_for_user` cannot reach a token nobody stored, so a leaked one is
+valid until it expires. That is why the stateless TTL is 12 hours against the
+stored 14 days, and why this too is opt-in by name.
 """
 
 from __future__ import annotations
@@ -57,8 +72,21 @@ class NonceError(Exception):
     already refuses to make."""
 
 
+# Sessions cannot be revoked once minted, so they expire far sooner than stored
+# ones. 14 days is defensible when `revoke_all_for_user` can end it early; it is
+# not when nothing can.
+STATELESS_SESSION_TTL_S = 12 * 3600
+
+
 def enabled() -> bool:
+    """Stateless nonces."""
     return bool(os.environ.get("PATHIA_AUTH_STATELESS_NONCE"))
+
+
+def sessions_enabled() -> bool:
+    """Stateless sessions. Separate switch, because the trades differ: a nonce
+    gives up single-use, a session gives up revocation."""
+    return bool(os.environ.get("PATHIA_AUTH_STATELESS_SESSION"))
 
 
 def _secret() -> bytes:
@@ -113,3 +141,46 @@ def verify(nonce: str, now: Optional[float] = None) -> bool:
         return now <= int(expiry_raw)
     except ValueError:
         return False
+
+
+# ── sessions ────────────────────────────────────────────────────────────────
+
+def issue_session(address: str, now: Optional[float] = None) -> str:
+    """A session token that any instance with the secret can validate.
+
+    Shape is `v1.<address>.<expiry>.<mac>`. The address is in the clear on
+    purpose: it is public, the browser already knows it, and an opaque token
+    would need a lookup table — which is the thing that does not exist here.
+    """
+    now = time.time() if now is None else now
+    addr = (address or "").lower()
+    if not addr.startswith("0x") or len(addr) != 42:
+        raise NonceError(f"refusing to mint a session for {address!r}")
+    body = f"v1.{addr}.{int(now + STATELESS_SESSION_TTL_S)}"
+    return f"{body}.{_mac(body)}"
+
+
+def read_session(token: str, now: Optional[float] = None) -> Optional[str]:
+    """The address this token proves, or None.
+
+    None for every failure — forged, expired, malformed, wrong deployment. A
+    caller that distinguishes them tells an attacker which half to keep working
+    on, and no caller here needs to.
+    """
+    now = time.time() if now is None else now
+    parts = (token or "").split(".")
+    if len(parts) != 4 or parts[0] != "v1":
+        return None
+    _, addr, expiry_raw, mac = parts
+    body = f"v1.{addr}.{expiry_raw}"
+    try:
+        if not hmac.compare_digest(mac, _mac(body)):
+            return None
+    except NonceError:
+        return None
+    try:
+        if now > int(expiry_raw):
+            return None
+    except ValueError:
+        return None
+    return addr if addr.startswith("0x") and len(addr) == 42 else None

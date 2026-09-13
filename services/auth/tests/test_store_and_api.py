@@ -357,3 +357,56 @@ def test_an_unwritable_state_dir_fails_loudly(tmp_path, monkeypatch):
             AuthStore()
     finally:
         os.chmod(readonly, 0o700)
+
+
+# ── a session must survive the next request landing elsewhere ───────────────
+
+def test_a_stateless_session_authenticates_with_no_database(monkeypatch, tmp_path):
+    """End to end, and the regression for the sign-in loop.
+
+    A stored session is a row on a disk the next request may not share. The
+    symptom was not a failure: /auth/verify returned 200 and set the cookie,
+    /auth/me answered 401, the page prompted again, and the user signed over
+    and over.
+
+    Here the store is pointed at a path that is deliberately NOT the one that
+    minted anything, standing in for a second serverless instance.
+    """
+    monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "s" * 48)
+    monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
+    monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "cold-instance.db"))
+
+    from services.auth import deps, stateless
+    deps.reset_store_for_tests(None)
+
+    address = "0x" + "9" * 40
+    token = stateless.issue_session(address)
+
+    class _Req:
+        cookies = {deps.SESSION_COOKIE: token}
+        headers: dict = {}
+
+    user = deps.current_user(_Req())
+    assert user is not None, "a valid token must authenticate on a cold instance"
+    assert user.address == address
+    assert user.is_operator is False, "a token must never mint an operator"
+
+
+def test_a_stored_session_still_works_when_stateless_is_switched_on(monkeypatch, tmp_path):
+    """Turning the flag on must not log out everyone already signed in."""
+    monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "s" * 48)
+    monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+    from services.auth import deps
+    store = AuthStore(str(tmp_path / "auth.db"))
+    deps.reset_store_for_tests(store)
+    user = store.upsert_user("0x" + "7" * 40)
+    token = store.create_session(user.id)
+
+    monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
+
+    class _Req:
+        cookies = {deps.SESSION_COOKIE: token}
+        headers: dict = {}
+
+    assert deps.current_user(_Req()) is not None
+    deps.reset_store_for_tests(None)

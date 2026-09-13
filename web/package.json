@@ -1,0 +1,30 @@
+{
+  "name": "pathia-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Next.js front end for the pathia dashboard. Same origin as the FastAPI API.",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.0",
+    "@tanstack/react-query": "^5.90.0",
+    "chart.js": "^4.4.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "viem": "^2.37.0",
+    "wagmi": "^2.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.0"
+  }
+}

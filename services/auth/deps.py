@@ -16,10 +16,12 @@ one human, because it cannot say who acted. It is retained for the machine paths
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
 
+from services.auth import stateless
 from services.auth.store import AuthStore, User
 
 SESSION_COOKIE = "pathia_session"
@@ -51,11 +53,37 @@ def _token_from(request: Request) -> Optional[str]:
     return None
 
 
+def _user_from_stateless(token: str) -> Optional[User]:
+    """Rebuild the caller from a signed token, with no database read at all.
+
+    On a host with no durable disk the users table is as ephemeral as the
+    sessions table, so looking the address up would fail for exactly the same
+    reason the session lookup did. Everything here comes out of the token.
+
+    Role is always "user". The operator bootstrap is off wherever this is on
+    (see PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR), and a token that could mint an
+    operator would be a much worse thing to leak.
+    """
+    address = stateless.read_session(token)
+    if address is None:
+        return None
+    now = time.time()
+    return User(id=0, address=address, display_name=None, email=None,
+                role="user", created_at=now, last_seen_at=now, disabled=False)
+
+
 def current_user(request: Request) -> Optional[User]:
     """Who is calling, or None. Never raises — for routes that serve both."""
     token = _token_from(request)
     if not token:
         return None
+    if stateless.sessions_enabled():
+        user = _user_from_stateless(token)
+        if user is not None:
+            return user
+        # Fall through: a deployment that just turned this on still has stored
+        # sessions in flight, and logging those users out for the switch would
+        # be a worse first impression than one extra lookup.
     try:
         return get_store().session_user(token)
     except Exception:

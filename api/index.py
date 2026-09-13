@@ -135,6 +135,7 @@ os.environ["PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
 # the current behaviour rather than a new failure.
 if os.environ.get("PATHIA_AUTH_NONCE_SECRET"):
     os.environ["PATHIA_AUTH_STATELESS_NONCE"] = "1"
+    os.environ["PATHIA_AUTH_STATELESS_SESSION"] = "1"
 
 # The domain inside the SIWE message, which services/auth deliberately takes
 # from config rather than the Host header (an attacker controls Host, so a
