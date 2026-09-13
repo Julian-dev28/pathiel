@@ -135,7 +135,7 @@ const PathiaMode = (function () {
     if (demo) document.body.classList.add('is-demo');
   }
 
-  return { render, isDemo };
+  return { render, isDemo, prefix: () => (isDemo() ? DEMO_PREFIX : '') };
 })();
 
 /* ── Sign in with your wallet ────────────────────────────────────────────────
@@ -285,6 +285,24 @@ const PathiaAuth = (function () {
    * quiet, is actually broken" failure the rest of this UI works to avoid. */
   const _fetch = window.fetch;
   window.fetch = async function (...args) {
+    // Keep a demo page talking to the demo app.
+    //
+    // Every dashboard call in the templates is written absolute — the pages
+    // were the whole site before /demo existed. From /demo/ an absolute
+    // `/api/dashboard/summary` resolves to the LIVE app, so the demo rendered
+    // the live account's numbers: on this deployment a page of zeros, and on a
+    // real one somebody else's book behind a button labelled Demo.
+    //
+    // Rewritten here rather than at ~30 call sites across five templates,
+    // because this wrapper already exists and a call site added tomorrow is
+    // covered by it without anyone remembering.
+    //
+    // /auth/* is deliberately NOT rewritten: sessions belong to the live app,
+    // and the demo has no business minting its own.
+    if (PathiaMode.isDemo() && typeof args[0] === 'string'
+        && args[0].startsWith('/api/')) {
+      args = [PathiaMode.prefix() + args[0], ...args.slice(1)];
+    }
     const res = await _fetch.apply(this, args);
     if (res.status === 401) {
       try {

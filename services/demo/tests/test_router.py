@@ -114,10 +114,68 @@ class TestToggleIsNavigationNotState:
         js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
         assert "PathiaMode" in js
         assert "/demo" in js
-        # No fetch rewriting: every dashboard call stays relative, and the page
-        # it was served from decides which app answers.
-        assert "fetch(DEMO_PREFIX" not in js
-        assert "apiBase" not in js
+
+    def test_a_demo_page_calls_the_demo_api(self):
+        """The bug this replaced a useless test with.
+
+        Every dashboard call in the templates is written absolute — the pages
+        were the whole site before /demo existed — so from /demo/ they resolved
+        to the LIVE app and the demo rendered the live account: zeros here, and
+        somebody else's book on a real deployment, behind a button labelled
+        Demo.
+
+        The test that was here asserted `"fetch(DEMO_PREFIX" not in js` and
+        `"apiBase" not in js` — the ABSENCE of two mechanisms — and passed
+        while the page was broken. Check for the behaviour instead.
+        """
+        from pathlib import Path
+        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
+        # Bounded by the wrapper body, not a character count: the comment
+        # explaining the bug is longer than the fix, and a fixed slice silently
+        # stopped covering the line it was meant to check.
+        wrapper = js[js.index("window.fetch = async function"):js.index("return res;")]
+        assert "PathiaMode.isDemo()" in wrapper
+        assert "PathiaMode.prefix()" in wrapper
+        assert "startsWith('/api/')" in wrapper
+
+    def test_auth_calls_are_not_rewritten(self):
+        """Sessions belong to the live app. A demo minting its own would be a
+        second source of truth for who is signed in."""
+        from pathlib import Path
+        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
+        wrapper = js[js.index("window.fetch = async function"):js.index("return res;")]
+        assert "startsWith('/auth/')" not in wrapper
+
+    def test_the_shared_script_is_not_deferred(self):
+        """Load order, and the subtlest of the demo bugs.
+
+        `pathia.js` installs the fetch wrapper that keeps a /demo page talking
+        to the demo API. With `defer` it ran AFTER the document was parsed —
+        which is after the inline <script> blocks in the body, and those call
+        the dashboard immediately. So the wrapper was installed after the calls
+        it exists to rewrite, and the demo rendered live data.
+
+        Everything looked right from inside the page: PathiaMode was defined,
+        isDemo() was true, window.fetch was wrapped. It was wrapped too late.
+        """
+        from pathlib import Path
+        templates = (Path(__file__).resolve().parents[3] / "pathia" / "templates")
+        for path in templates.glob("*.html"):
+            markup = path.read_text()
+            if "/static/pathia.js" not in markup:
+                continue
+            assert 'defer src="/static/pathia.js"' not in markup, (
+                f"{path.name} defers pathia.js; the inline scripts below it will "
+                f"fetch before the wrapper exists")
+
+    def test_the_event_stream_is_prefixed_too(self):
+        """EventSource is not fetch, so the wrapper cannot reach it. An
+        absolute path here tails the live feed from a demo page."""
+        from pathlib import Path
+        html = (Path(__file__).resolve().parents[3] / "pathia" / "templates"
+                / "landing.html").read_text()
+        assert "new EventSource('/api/feed/stream')" not in html
+        assert "PathiaMode.prefix() + '/api/feed/stream'" in html
 
     def test_the_toggle_renders_on_load(self):
         from pathlib import Path

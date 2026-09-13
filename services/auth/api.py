@@ -22,6 +22,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from services.auth import nonce as stateless_nonce
 from services.auth import siwe
 from services.auth.deps import (SESSION_COOKIE, cookie_kwargs, get_store,
                                 require_user)
@@ -100,7 +101,11 @@ def nonce(request: Request, address: str) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail="malformed address")
     store = get_store()
     store.purge_expired()
-    value = store.issue_nonce()
+    # A stateless nonce survives the request landing on a different instance,
+    # which is the whole failure mode on a host with no durable disk. It is off
+    # unless asked for by name, because it gives up single-use — see
+    # services/auth/nonce.py for what that costs and why the demo pays it.
+    value = stateless_nonce.issue() if stateless_nonce.enabled() else store.issue_nonce()
     now = datetime.now(timezone.utc).replace(microsecond=0)
     message = (
         f"{expected_domain()} wants you to sign in with your Ethereum account:\n"
@@ -132,7 +137,15 @@ def verify(request: Request, response: Response, body: VerifyBody) -> Dict[str, 
 
     # Burned only after the signature checks out, so a valid-looking replay
     # cannot be used to exhaust a legitimate user's pending nonce.
-    if not store.consume_nonce(parsed.nonce):
+    #
+    # In stateless mode there is nothing to burn: the nonce carries its own
+    # expiry and a MAC this deployment can check without having stored
+    # anything. Same rejection, same single message for every cause.
+    if stateless_nonce.enabled():
+        nonce_ok = stateless_nonce.verify(parsed.nonce)
+    else:
+        nonce_ok = store.consume_nonce(parsed.nonce)
+    if not nonce_ok:
         raise HTTPException(status_code=401, detail="signature rejected")
 
     user = store.upsert_user(parsed.address)

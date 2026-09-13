@@ -6,7 +6,12 @@
 <title>pathia · live</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/pathia.css" />
-<script defer src="/static/pathia.js"></script>
+<!-- NOT deferred. A deferred script runs after the document is parsed,
+     which is after the inline <script> blocks in the body below — and
+     those call the dashboard immediately. pathia.js installs the fetch
+     wrapper that keeps a /demo page talking to the demo API, so loading
+     it late meant the demo fetched live data and rendered zeros. -->
+<script src="/static/pathia.js"></script>
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/chartjs-adapter-date-fns.min.js"></script>
 <style>
@@ -885,7 +890,9 @@ setInterval(refreshLeague, 90000);      // local ledger files only
     return `<b>${esc(t)}</b> · ${bits.map(x => esc(String(x))).join(' · ')}`;
   };
   try {
-    const es = new EventSource('/api/feed/stream');
+    // EventSource is not fetch, so the wrapper in pathia.js cannot reach it.
+    // On a demo page an absolute path here would tail the LIVE feed.
+    const es = new EventSource(PathiaMode.prefix() + '/api/feed/stream');
     es.onmessage = m => {
       try {
         el.innerHTML = fmt(JSON.parse(m.data));

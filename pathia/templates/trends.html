@@ -6,7 +6,12 @@
 <title>pathia · trends</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/pathia.css" />
-<script defer src="/static/pathia.js"></script>
+<!-- NOT deferred. A deferred script runs after the document is parsed,
+     which is after the inline <script> blocks in the body below — and
+     those call the dashboard immediately. pathia.js installs the fetch
+     wrapper that keeps a /demo page talking to the demo API, so loading
+     it late meant the demo fetched live data and rendered zeros. -->
+<script src="/static/pathia.js"></script>
 </head>
 <body>
 

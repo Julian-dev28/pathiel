@@ -119,6 +119,23 @@ os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
 # switch.
 os.environ["PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
 
+# Nonces that survive the request landing on a different instance.
+#
+# The auth database is SQLite under PATHIA_STATE_DIR, which is /tmp here and
+# therefore per-instance: /auth/nonce mints on one Lambda and /auth/verify looks
+# for it on another, finds nothing, and rejects a signature that was never
+# wrong. It fails closed, which is safe and indistinguishable from broken.
+#
+# Stateless nonces trade single-use for portability, so they are opt-in and this
+# is the deployment that should opt in — see services/auth/nonce.py for what the
+# trade costs. A real install with a durable volume must NOT set this.
+#
+# The secret has to be identical across instances, so it comes from the project
+# environment. Without it the auth API falls back to the stored nonce, which is
+# the current behaviour rather than a new failure.
+if os.environ.get("PATHIA_AUTH_NONCE_SECRET"):
+    os.environ["PATHIA_AUTH_STATELESS_NONCE"] = "1"
+
 # The domain inside the SIWE message, which services/auth deliberately takes
 # from config rather than the Host header (an attacker controls Host, so a
 # domain derived from it asserts nothing). Its default is "localhost:8000", so
