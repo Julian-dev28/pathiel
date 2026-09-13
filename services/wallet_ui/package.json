@@ -1,9 +1,9 @@
 {
-  "name": "@pathia/wallet-ui",
+  "name": "@pathiel/wallet-ui",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "RainbowKit connect button for the pathia dashboard, bundled to a vendored static asset.",
+  "description": "RainbowKit connect button for the pathiel dashboard, bundled to a vendored static asset.",
   "scripts": {
     "build": "node build.mjs",
     "check": "node build.mjs --check"

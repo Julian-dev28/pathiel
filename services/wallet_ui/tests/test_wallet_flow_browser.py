@@ -90,18 +90,18 @@ def server():
     env = {k: v for k, v in os.environ.items()
            if k not in {"HYPERLIQUID_PRIVATE_KEY", "PRIVATE_KEY_HEX",
                         "HYPERLIQUID_ACCOUNT_ADDRESS", "HL_ACCOUNT_ADDRESS",
-                        "PATHIA_OPERATOR_TOKEN"}}
+                        "PATHIEL_OPERATOR_TOKEN"}}
     env.update(materialize(data_dir))
     env["HOME"] = home
-    env["PATHIA_DASHBOARD_READONLY"] = "1"
+    env["PATHIEL_DASHBOARD_READONLY"] = "1"
     # Left CLOSED on purpose: the gated 401 is what raises the sign-in prompt
     # this test clicks. Opening the dashboard would remove the thing under test.
-    env.pop("PATHIA_PUBLIC_DASHBOARD", None)
+    env.pop("PATHIEL_PUBLIC_DASHBOARD", None)
 
     port = _free_port()
     proc = subprocess.Popen(
         [sys.executable, "-c",
-         "import uvicorn; from pathia.server import app;"
+         "import uvicorn; from pathiel.server import app;"
          f"uvicorn.run(app, host='127.0.0.1', port={port}, log_level='warning')"],
         cwd=ROOT, env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

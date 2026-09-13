@@ -137,7 +137,7 @@ numbers so it cannot narrate a confident call over a coin flip.
 ## Lane RECORDERS — the scoreboard
 
 Forward-grades every shadow book through
-`pathia.agents.shadow_ledger.grade_records` (real candles, net of
+`pathiel.agents.shadow_ledger.grade_records` (real candles, net of
 funding) — the same path `scripts/shadow_status.py` uses, so the numbers agree.
 
 Per book: signals, resolved, pending, EV%/signal at 12bps and 25bps, win rate
@@ -173,8 +173,8 @@ callables throughout.
 
 ## Gotchas worth keeping
 
-- **State directory.** `pathia.agents.rebalancer_owned` freezes
-  `PATHIA_STATE_DIR` at import time and that variable lives in `.env.local`.
+- **State directory.** `pathiel.agents.rebalancer_owned` freezes
+  `PATHIEL_STATE_DIR` at import time and that variable lives in `.env.local`.
   A CLI entry point that skips `env.load()` silently reads a *different*
   shadow-ledger directory than the bot writes (first symptom: "2 books, 4
   signals" against a tree holding 28 books). Every entry point calls it first.

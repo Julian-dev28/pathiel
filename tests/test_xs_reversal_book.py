@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from pathia.agents import xs_reversal_live as XSR
+from pathiel.agents import xs_reversal_live as XSR
 
 DAY_MS = 86_400_000
 BASELINE = 1.25e-05

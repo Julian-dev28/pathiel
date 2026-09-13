@@ -6,7 +6,7 @@ const nextConfig = {
   // the FastAPI server runs separately, so proxy those prefixes to it — the
   // point is that the front-end code never knows the difference.
   async rewrites() {
-    const api = process.env.PATHIA_API_ORIGIN;
+    const api = process.env.PATHIEL_API_ORIGIN;
     if (!api) return [];
     return [
       { source: '/api/:path*', destination: `${api}/api/:path*` },

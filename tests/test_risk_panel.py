@@ -15,7 +15,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import pathia.dashboard as db
+import pathiel.dashboard as db
 
 
 def _hb(ts, equity):
@@ -133,7 +133,7 @@ def test_an_uncovered_window_still_admits_it_cannot_tell_the_difference(
         curve, monkeypatch, tmp_path):
     """When flows are not recorded across the window the panel must fall back to
     raw equity AND say so, rather than quietly upgrading its own confidence."""
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     r = db._risk_payload()
     assert r["capital_flows_tracked"] is False
     assert r["drawdown_basis"] == "equity"
@@ -143,8 +143,8 @@ def test_an_uncovered_window_still_admits_it_cannot_tell_the_difference(
 def test_a_covered_window_reports_a_flow_neutral_drawdown(curve, monkeypatch, tmp_path):
     """With flows recorded across the whole window the drawdown is computed on
     the NAV index, and the caveat goes away because it no longer applies."""
-    from pathia.agents import capital_flows as cf
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    from pathiel.agents import capital_flows as cf
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     cf.mark_recording_started(1)          # before the fixture's first point
     cf.append_flows([{"ts": 2, "usd": 0.0, "kind": "deposit", "key": "k"}])
     r = db._risk_payload()
@@ -156,8 +156,8 @@ def test_a_covered_window_reports_a_flow_neutral_drawdown(curve, monkeypatch, tm
 def test_a_withdrawal_no_longer_reads_as_a_loss_on_the_panel(monkeypatch, tmp_path):
     """End to end through the real payload: the exact case that was
     mislabelled."""
-    from pathia.agents import capital_flows as cf
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    from pathiel.agents import capital_flows as cf
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     now = int(time.time() * 1000)
     day = 86_400_000
     vals = [(now - 5 * day, 200.0), (now - 4 * day, 190.0), (now - 3 * day, 180.0),
@@ -188,7 +188,7 @@ def test_risk_endpoint_serves(client, curve, monkeypatch):
     # House-account routes became operator surface on 2026-09-04. This test is
     # about payload shape, so it opts into single-operator mode rather than
     # standing up a signed-in operator session.
-    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
+    monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")
     body = client.get("/api/dashboard/risk").json()
     assert body["peak_equity"] == 200.0
     assert set(body) >= {"drawdown_pct", "max_drawdown_pct", "win_rate",
@@ -223,7 +223,7 @@ def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
     states, and the two states are different code paths:
 
       - token configured, none or a wrong one supplied -> 401
-      - no PATHIA_OPERATOR_TOKEN at all                 -> 503, surface disabled
+      - no PATHIEL_OPERATOR_TOKEN at all                 -> 503, surface disabled
 
     The second is the one that matters on a fresh box. It fails CLOSED, and this
     test exists to keep it that way: a future refactor that made a missing token
@@ -233,15 +233,15 @@ def test_the_stop_endpoint_is_closed_in_both_configurations(monkeypatch):
     usually present here and absent on CI. Both are pinned explicitly rather
     than left to the environment.
     """
-    from pathia.server import app as real_app
+    from pathiel.server import app as real_app
     client = TestClient(real_app)
 
-    monkeypatch.setenv("PATHIA_OPERATOR_TOKEN", "a-token-that-is-set")
+    monkeypatch.setenv("PATHIEL_OPERATOR_TOKEN", "a-token-that-is-set")
     assert client.post("/api/agent/stop").status_code == 401
     assert client.post("/api/agent/stop",
                        headers={"X-Operator-Token": "wrong"}).status_code == 401
 
-    monkeypatch.delenv("PATHIA_OPERATOR_TOKEN", raising=False)
+    monkeypatch.delenv("PATHIEL_OPERATOR_TOKEN", raising=False)
     r = client.post("/api/agent/stop")
     assert r.status_code == 503, "a missing token must close the surface, not open it"
     assert client.post("/api/agent/stop",
@@ -272,7 +272,7 @@ def test_the_executor_refuses_to_trade_a_dust_account():
     happened to be stopped — a restart would have fired orders HL rejects under
     its ~$10 minimum. The floor is enforced in the executor, the single choke
     point every order passes through, so no book can route around it."""
-    from pathia.agents.executor import (MIN_TRADABLE_EQUITY_USD,
+    from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD,
                                                min_tradable_equity)
     assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD
     assert MIN_TRADABLE_EQUITY_USD >= 10.0, (
@@ -281,7 +281,7 @@ def test_the_executor_refuses_to_trade_a_dust_account():
 
 def test_a_bad_floor_value_falls_back_instead_of_unlocking_trading():
     """A typo in a config file must never silently disable the guard."""
-    from pathia.agents.executor import (MIN_TRADABLE_EQUITY_USD as M,
+    from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD as M,
                                                min_tradable_equity)
     assert min_tradable_equity({"min_tradable_equity_usd": "oops"}) == M
     assert min_tradable_equity({"min_tradable_equity_usd": None}) == M
@@ -324,7 +324,7 @@ def test_a_blind_scan_is_not_trustworthy(monkeypatch):
     list and reads downstream as 'no signal' — indistinguishable from a market
     we looked at and passed on. Entering on that is entering on an absence of
     evidence."""
-    from pathia.agents import perception as P
+    from pathiel.agents import perception as P
     monkeypatch.setattr(P, "_last_scan_integrity",
                         {"ts": 1, "markets": 100, "gaps": 80, "gap_frac": 0.8,
                          "errors": 0})
@@ -332,7 +332,7 @@ def test_a_blind_scan_is_not_trustworthy(monkeypatch):
 
 
 def test_a_healthy_scan_is_trustworthy(monkeypatch):
-    from pathia.agents import perception as P
+    from pathiel.agents import perception as P
     monkeypatch.setattr(P, "_last_scan_integrity",
                         {"ts": 1, "markets": 100, "gaps": 3, "gap_frac": 0.03,
                          "errors": 0})
@@ -342,7 +342,7 @@ def test_a_healthy_scan_is_trustworthy(monkeypatch):
 def test_a_cold_start_is_not_treated_as_degraded(monkeypatch):
     """The gate catches a DEGRADED feed. It must not block the first scan of a
     fresh process, which has no integrity record yet."""
-    from pathia.agents import perception as P
+    from pathiel.agents import perception as P
     monkeypatch.setattr(P, "_last_scan_integrity",
                         {"ts": 0, "markets": 0, "gaps": 0, "gap_frac": 0.0,
                          "errors": 0})
@@ -350,12 +350,12 @@ def test_a_cold_start_is_not_treated_as_degraded(monkeypatch):
 
 
 def test_the_threshold_is_the_one_that_was_already_worth_warning_about():
-    from pathia.agents.perception import MAX_SCAN_GAP_FRAC
+    from pathiel.agents.perception import MAX_SCAN_GAP_FRAC
     assert MAX_SCAN_GAP_FRAC == 0.25
 
 
 def test_feed_health_reaches_the_risk_payload(monkeypatch, curve):
-    from pathia.agents import perception as P
+    from pathiel.agents import perception as P
     monkeypatch.setattr(P, "_last_scan_integrity",
                         {"ts": 1, "markets": 40, "gaps": 30, "gap_frac": 0.75,
                          "errors": 0})

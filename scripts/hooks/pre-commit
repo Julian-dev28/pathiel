@@ -53,12 +53,12 @@ ok "no undefined names or dead imports"
 #    addopts deselect the `online` and `live` markers, so this places no orders
 #    and makes no network calls.
 #
-#    PATHIA_STATE_DIR points at a throwaway directory: the root conftest loads
+#    PATHIEL_STATE_DIR points at a throwaway directory: the root conftest loads
 #    the real .env.local, and a test that writes state must never touch the live
 #    ledger the running system reads.
 TMP_STATE="$(mktemp -d)"
 trap 'rm -rf "$TMP_STATE"' EXIT
-if ! PATHIA_STATE_DIR="$TMP_STATE" "$PY" -m pytest -q -x --no-header \
+if ! PATHIEL_STATE_DIR="$TMP_STATE" "$PY" -m pytest -q -x --no-header \
      -p no:cacheprovider 2>&1 | tail -15; then
   fail "gate tests failed — fix them, do not use --no-verify"
 fi

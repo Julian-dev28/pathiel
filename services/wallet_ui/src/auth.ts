@@ -1,5 +1,5 @@
 /**
- * RainbowKit's authentication adapter, wired to pathia's own SIWE endpoints.
+ * RainbowKit's authentication adapter, wired to pathiel's own SIWE endpoints.
  *
  * The server (services/auth/api.py) composes the EIP-4361 message itself and
  * verifies domain, nonce and expiry out of the message it is handed back. That
@@ -9,7 +9,7 @@
  *
  * Which creates one wrinkle worth spelling out, because it looks wrong at a
  * glance. RainbowKit's flow is `getNonce()` then `createMessage({ nonce,
- * address, chainId })`, and `getNonce` is not told the address. pathia's
+ * address, chainId })`, and `getNonce` is not told the address. pathiel's
  * `/auth/nonce` requires one — the message it returns is bound to the account
  * that will sign it. So:
  *

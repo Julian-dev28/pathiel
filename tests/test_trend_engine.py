@@ -398,7 +398,7 @@ def test_universe_quota_keeps_one_sector_from_crowding_out_the_other(monkeypatch
            + [{"coin": "xyz:SP500", "type": "perp", "dayNtlVlm": 7e7},
               {"coin": "xyz:NVDA", "type": "perp", "dayNtlVlm": 7e6},
               {"coin": "xyz:TINY", "type": "perp", "dayNtlVlm": 100.0}])
-    import pathia.client.universe as U
+    import pathiel.client.universe as U
     monkeypatch.setattr(U, "get_universe", lambda **kw: uni)
     rows = hl._universe_rows(top_n=5, min_vol=1e6, top_n_xyz=5)
     coins = [r["coin"] for r in rows]
@@ -702,7 +702,7 @@ def test_ai_rejects_an_unknown_lane():
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
-    from pathia import dashboard as db
+    from pathiel import dashboard as db
     monkeypatch.setattr(tcache, "DIR", str(tmp_path))
     db._TTL_CACHE.clear()
     app = FastAPI()
@@ -754,24 +754,24 @@ def test_refresh_runs_in_its_own_process_without_the_servers_hl_throttle(monkeyp
     `candleSnapshot` at weight 20: inside that budget every request waits its
     30s ceiling and skips, and the refresh never returns. Measured on the live
     server: still running after 601s, while the UI gives up at 300s."""
-    import pathia.dashboard as dash
+    import pathiel.dashboard as dash
     seen = {}
 
     def runner(cmd, **kw):
         seen["cmd"], seen["env"] = cmd, kw["env"]
         return _Proc()
 
-    monkeypatch.setenv("PATHIA_HL_RATE_REFILL_PER_SEC", "2")
-    monkeypatch.setenv("PATHIA_HL_RATE_CAPACITY", "60")
-    monkeypatch.setenv("PATHIA_STATE_READONLY", "1")
+    monkeypatch.setenv("PATHIEL_HL_RATE_REFILL_PER_SEC", "2")
+    monkeypatch.setenv("PATHIEL_HL_RATE_CAPACITY", "60")
+    monkeypatch.setenv("PATHIEL_STATE_READONLY", "1")
     out = dash._refresh_lane_subprocess(
         "hl", runner=runner, loader=lambda ln: {"status": "ok", "generated_at": 7})
     assert out == {"status": "ok", "generated_at": 7}
     assert cmd_has(seen["cmd"], "--refresh-all", "--lanes", "hl")
-    assert not [k for k in seen["env"] if k.startswith("PATHIA_HL_RATE_")]
+    assert not [k for k in seen["env"] if k.startswith("PATHIEL_HL_RATE_")]
     # the readonly guard covers agent memory and DSL exits — a lane refresh has
     # no business writing either, so it is NOT stripped
-    assert seen["env"]["PATHIA_STATE_READONLY"] == "1"
+    assert seen["env"]["PATHIEL_STATE_READONLY"] == "1"
 
 
 def cmd_has(cmd, *parts):
@@ -779,7 +779,7 @@ def cmd_has(cmd, *parts):
 
 
 def test_refresh_reports_a_failed_child_instead_of_claiming_success(monkeypatch):
-    import pathia.dashboard as dash
+    import pathiel.dashboard as dash
     out = dash._refresh_lane_subprocess(
         "hl", runner=lambda cmd, **kw: _Proc(returncode=1, stderr="boom\nRuntimeError: hl down"),
         loader=lambda ln: {"status": "ok"})
@@ -789,7 +789,7 @@ def test_refresh_reports_a_failed_child_instead_of_claiming_success(monkeypatch)
 def test_refresh_reports_a_timeout_instead_of_hanging_the_job(monkeypatch):
     import subprocess
 
-    import pathia.dashboard as dash
+    import pathiel.dashboard as dash
 
     def runner(cmd, **kw):
         raise subprocess.TimeoutExpired(cmd, kw["timeout"])
@@ -888,7 +888,7 @@ def test_the_smoke_script_contract_matches_the_lanes_the_tab_serves():
                                      "scripts", "smoke_trends.py"))
     smoke = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smoke)
-    from pathia import dashboard as dash
+    from pathiel import dashboard as dash
     assert set(smoke.LANE_CONTRACT) == set(dash._TREND_LANES)
     assert set(smoke.LANES) == set(dash._TREND_LANES)
     for lane, keys in smoke.LANE_CONTRACT.items():
@@ -954,7 +954,7 @@ def test_no_module_imports_the_deleted_polymarket_package():
     the request that first reaches it."""
     root = pathlib.Path(__file__).resolve().parents[1]
     offenders = []
-    for sub in ("pathia", "scripts", "services"):
+    for sub in ("pathiel", "scripts", "services"):
         for f in (root / sub).rglob("*.py"):
             if "polymarket_scout" in f.read_text():
                 offenders.append(str(f.relative_to(root)))

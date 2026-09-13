@@ -45,7 +45,7 @@ from pathlib import Path
 
 import pytest
 
-from pathia.agents.book_params import (
+from pathiel.agents.book_params import (
     BACKUP_SL_MAX_FRAC_OF_LIQ, FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD,
     FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, book_params, max_stop_pct_at_leverage)
 
@@ -171,14 +171,14 @@ class TestClampIsOneSourceOfTruth:
         either direction and this fails: too wide and the cap walks leverage
         down, too narrow and the derivation is leaving size on the table.
         """
-        from pathia.agents.executor import stop_honoring_leverage
+        from pathiel.agents.executor import stop_honoring_leverage
         widest = max_stop_pct_at_leverage(leverage)
         assert stop_honoring_leverage(leverage, widest) == leverage
 
     @pytest.mark.parametrize("leverage", [2, 3, 4, 6, 10, 20])
     def test_a_hair_wider_is_rejected(self, leverage):
         """The other half: the boundary is a boundary, not a suggestion."""
-        from pathia.agents.executor import stop_honoring_leverage
+        from pathiel.agents.executor import stop_honoring_leverage
         too_wide = max_stop_pct_at_leverage(leverage) * 1.02
         assert stop_honoring_leverage(leverage, too_wide) < leverage
 
@@ -222,7 +222,7 @@ class TestClampIsOneSourceOfTruth:
         reading the same ones."""
         import inspect
 
-        from pathia.agents import executor
+        from pathiel.agents import executor
         sig = inspect.signature(executor.stop_honoring_leverage)
         assert sig.parameters["max_frac_of_liq"].default == BACKUP_SL_MAX_FRAC_OF_LIQ
         assert sig.parameters["liq_safety_frac"].default == LIQ_SAFETY_FRAC

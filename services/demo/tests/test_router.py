@@ -3,14 +3,14 @@
 The property under test is isolation, and it is the only thing standing between
 a public dashboard and a page of invented equity presented as real trading.
 
-`pathia/dashboard.py` freezes its dataset paths at import, so serving two
+`pathiel/dashboard.py` freezes its dataset paths at import, so serving two
 datasets from one process means importing it twice. Two earlier attempts at that
 looked like they worked and did not:
 
   1. Loading dashboard.py a second time — both copies resolved `session_log`
      from `sys.modules` and read the same log.
   2. Popping the path-frozen modules from `sys.modules` — `dashboard.py` reaches
-     them as `from pathia import session_log`, an attribute lookup on the
+     them as `from pathiel import session_log`, an attribute lookup on the
      already-imported package, so the re-import resolved straight back.
 
 Both produced a "demo" instance pointed at live paths. Neither raised. The tests
@@ -35,13 +35,13 @@ def demo_app():
 
 @pytest.fixture(scope="module")
 def live_dashboard(demo_app):
-    import pathia.dashboard
-    return pathia.dashboard
+    import pathiel.dashboard
+    return pathiel.dashboard
 
 
 @pytest.fixture(scope="module")
 def demo_dashboard(demo_app):
-    return sys.modules["pathia_dashboard_demo"]
+    return sys.modules["pathiel_dashboard_demo"]
 
 
 class TestIsolation:
@@ -53,21 +53,21 @@ class TestIsolation:
         assert str(live_dashboard._LOG_PATH) != str(demo_dashboard._LOG_PATH)
 
     def test_the_live_modules_are_put_back(self):
-        """The demo import shadows `pathia.session_log` and friends. If the
+        """The demo import shadows `pathiel.session_log` and friends. If the
         restore is skipped or partial, the LIVE dashboard starts reading
         generated data — the exact failure this whole design exists to prevent,
         arriving silently and in the wrong direction.
         """
-        import pathia.session_log
-        import pathia.positions_snapshot
-        from pathia.agents import config_store, memory
-        for module in (pathia.session_log, pathia.positions_snapshot,
+        import pathiel.session_log
+        import pathiel.positions_snapshot
+        from pathiel.agents import config_store, memory
+        for module in (pathiel.session_log, pathiel.positions_snapshot,
                        config_store, memory):
             assert module is sys.modules[module.__name__]
 
     def test_the_live_session_log_is_not_the_demo_one(self, live_dashboard):
-        import pathia.session_log
-        assert pathia.session_log.SESSION_LOG_FILE == str(live_dashboard._LOG_PATH)
+        import pathiel.session_log
+        assert pathiel.session_log.SESSION_LOG_FILE == str(live_dashboard._LOG_PATH)
 
     def test_they_do_not_share_caches(self, live_dashboard, demo_dashboard):
         """Separate module objects mean separate cache dicts. Sharing one would
@@ -111,8 +111,8 @@ class TestToggleIsNavigationNotState:
 
     def test_the_front_end_switches_by_navigating(self):
         from pathlib import Path
-        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
-        assert "PathiaMode" in js
+        js = (Path(__file__).resolve().parents[3] / "pathiel" / "static" / "pathiel.js").read_text()
+        assert "PathielMode" in js
         assert "/demo" in js
 
     def test_a_demo_page_calls_the_demo_api(self):
@@ -129,55 +129,55 @@ class TestToggleIsNavigationNotState:
         while the page was broken. Check for the behaviour instead.
         """
         from pathlib import Path
-        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
+        js = (Path(__file__).resolve().parents[3] / "pathiel" / "static" / "pathiel.js").read_text()
         # Bounded by the wrapper body, not a character count: the comment
         # explaining the bug is longer than the fix, and a fixed slice silently
         # stopped covering the line it was meant to check.
         wrapper = js[js.index("window.fetch = async function"):js.index("return res;")]
-        assert "PathiaMode.isDemo()" in wrapper
-        assert "PathiaMode.prefix()" in wrapper
+        assert "PathielMode.isDemo()" in wrapper
+        assert "PathielMode.prefix()" in wrapper
         assert "startsWith('/api/')" in wrapper
 
     def test_auth_calls_are_not_rewritten(self):
         """Sessions belong to the live app. A demo minting its own would be a
         second source of truth for who is signed in."""
         from pathlib import Path
-        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
+        js = (Path(__file__).resolve().parents[3] / "pathiel" / "static" / "pathiel.js").read_text()
         wrapper = js[js.index("window.fetch = async function"):js.index("return res;")]
         assert "startsWith('/auth/')" not in wrapper
 
     def test_the_shared_script_is_not_deferred(self):
         """Load order, and the subtlest of the demo bugs.
 
-        `pathia.js` installs the fetch wrapper that keeps a /demo page talking
+        `pathiel.js` installs the fetch wrapper that keeps a /demo page talking
         to the demo API. With `defer` it ran AFTER the document was parsed —
         which is after the inline <script> blocks in the body, and those call
         the dashboard immediately. So the wrapper was installed after the calls
         it exists to rewrite, and the demo rendered live data.
 
-        Everything looked right from inside the page: PathiaMode was defined,
+        Everything looked right from inside the page: PathielMode was defined,
         isDemo() was true, window.fetch was wrapped. It was wrapped too late.
         """
         from pathlib import Path
-        templates = (Path(__file__).resolve().parents[3] / "pathia" / "templates")
+        templates = (Path(__file__).resolve().parents[3] / "pathiel" / "templates")
         for path in templates.glob("*.html"):
             markup = path.read_text()
-            if "/static/pathia.js" not in markup:
+            if "/static/pathiel.js" not in markup:
                 continue
-            assert 'defer src="/static/pathia.js"' not in markup, (
-                f"{path.name} defers pathia.js; the inline scripts below it will "
+            assert 'defer src="/static/pathiel.js"' not in markup, (
+                f"{path.name} defers pathiel.js; the inline scripts below it will "
                 f"fetch before the wrapper exists")
 
     def test_the_event_stream_is_prefixed_too(self):
         """EventSource is not fetch, so the wrapper cannot reach it. An
         absolute path here tails the live feed from a demo page."""
         from pathlib import Path
-        html = (Path(__file__).resolve().parents[3] / "pathia" / "templates"
+        html = (Path(__file__).resolve().parents[3] / "pathiel" / "templates"
                 / "landing.html").read_text()
         assert "new EventSource('/api/feed/stream')" not in html
-        assert "PathiaMode.prefix() + '/api/feed/stream'" in html
+        assert "PathielMode.prefix() + '/api/feed/stream'" in html
 
     def test_the_toggle_renders_on_load(self):
         from pathlib import Path
-        js = (Path(__file__).resolve().parents[3] / "pathia" / "static" / "pathia.js").read_text()
-        assert "PathiaMode.render()" in js
+        js = (Path(__file__).resolve().parents[3] / "pathiel" / "static" / "pathiel.js").read_text()
+        assert "PathielMode.render()" in js

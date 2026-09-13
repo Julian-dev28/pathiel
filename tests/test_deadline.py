@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from pathia.agents.deadline import with_deadline
+from pathiel.agents.deadline import with_deadline
 
 LOOP = Path(__file__).resolve().parents[1] / "scripts" / "trading_loop.py"
 RECORDERS = ("_data_logger_maybe_log", "_unlock_maybe_record",

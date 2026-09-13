@@ -86,7 +86,7 @@ def test_leverage_lowers_the_margin_not_the_notional():
 def test_a_book_with_no_ledger_is_unmeasurable_not_zero(monkeypatch, tmp_path):
     """"No history" and "no signals" are different facts. Reporting 0 for a
     book that has never been graded would read as a dead book."""
-    from pathia.agents import shadow_ledger as SL
+    from pathiel.agents import shadow_ledger as SL
 
     monkeypatch.setattr(SL, "_book_path", lambda b: str(tmp_path / f"{b}.jsonl"))
     count, last = F.ledger_reach("never_ran")
@@ -94,7 +94,7 @@ def test_a_book_with_no_ledger_is_unmeasurable_not_zero(monkeypatch, tmp_path):
 
 
 def test_ledger_reach_reads_a_real_book(monkeypatch, tmp_path):
-    from pathia.agents import shadow_ledger as SL
+    from pathiel.agents import shadow_ledger as SL
 
     f = tmp_path / "bk.jsonl"
     f.write_text('{"coin": "ETH"}\n{"coin": "SOL"}\n')
@@ -108,7 +108,7 @@ def test_a_torn_ledger_line_does_not_hide_the_rest():
     import json
     import tempfile
 
-    from pathia.agents import shadow_ledger as SL
+    from pathiel.agents import shadow_ledger as SL
     d = tempfile.mkdtemp()
     p = os.path.join(d, "bk.jsonl")
     with open(p, "w") as fh:

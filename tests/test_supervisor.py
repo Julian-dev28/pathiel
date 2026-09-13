@@ -175,12 +175,12 @@ PY_BIN = ("/Library/Frameworks/Python.framework/Versions/3.13/Resources/"
           "Python.app/Contents/MacOS/Python")
 # Deliberately not this machine's path: these are command-line SHAPES, and
 # the absolute-path guard is right to reject a real-looking home directory.
-ROOT_ABS = "/opt/pathia"
+ROOT_ABS = "/opt/pathiel"
 
 
 @pytest.mark.parametrize("comp,cmd", [
     ("loop",      f"{PY_BIN} {ROOT_ABS}/scripts/trading_loop.py"),
-    ("server",    f"{PY_BIN} -m pathia.server"),
+    ("server",    f"{PY_BIN} -m pathiel.server"),
     ("rotator",   f"{PY_BIN} {ROOT_ABS}/scripts/log_rotate.py --daemon"),
     ("scheduler", f"{PY_BIN} {ROOT_ABS}/scripts/scheduler.py"),
 ])
@@ -233,7 +233,7 @@ def test_the_rotator_needs_its_daemon_flag():
 
 
 def test_a_module_daemon_is_not_matched_by_a_script_of_the_same_name():
-    assert S.is_the_process(f"{PY_BIN} {ROOT_ABS}/pathia/server.py",
+    assert S.is_the_process(f"{PY_BIN} {ROOT_ABS}/pathiel/server.py",
                             S.COMPONENTS["server"]) is False
 
 
@@ -271,7 +271,7 @@ def test_the_trading_loop_watches_the_scheduler():
     src = open(os.path.join(ROOT, "scripts", "trading_loop.py")).read()
     assert "supervise_processes.py" in src
     assert '"--components", "scheduler"' in src
-    assert "pathia-supervise-sched" in src, "the thread must actually be started"
+    assert "pathiel-supervise-sched" in src, "the thread must actually be started"
 
 
 def test_the_loop_reuses_the_supervisor_rather_than_reimplementing_it():
@@ -317,20 +317,20 @@ def test_concurrent_supervisors_do_not_share_a_state_file(tmp_path, monkeypatch)
 def test_the_writers_and_the_reader_resolve_the_same_state_dir(monkeypatch, tmp_path):
     """The supervisor, the alert evaluator, restart.sh's halt marker and the
     metrics reader all touch the same files. They were briefly hardcoded to
-    <root>/.state, which happened to equal the live PATHIA_STATE_DIR and
+    <root>/.state, which happened to equal the live PATHIEL_STATE_DIR and
     differed everywhere else — the reader looked in one place while the writers
     used another, and each side looked correct on its own.
     """
     import importlib
 
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     sup = _load()                                    # re-reads the env
     alerts = importlib.util.spec_from_file_location(
         "alert_eval2", os.path.join(ROOT, "scripts", "alert_eval.py"))
     am = importlib.util.module_from_spec(alerts)
     alerts.loader.exec_module(am)
 
-    import pathia.agents.rebalancer_owned as ro
+    import pathiel.agents.rebalancer_owned as ro
     importlib.reload(ro)
 
     assert sup.STATE == ro.state_file("supervisor.json")
@@ -344,8 +344,8 @@ def test_restart_sh_writes_the_halt_marker_where_the_supervisor_looks():
     switch that silently does nothing."""
     src = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
     line = next(ln for ln in src.splitlines() if ln.startswith("HALT_FILE="))
-    assert "PATHIA_STATE_DIR" in line, (
-        "restart.sh must honour PATHIA_STATE_DIR like the supervisor does")
+    assert "PATHIEL_STATE_DIR" in line, (
+        "restart.sh must honour PATHIEL_STATE_DIR like the supervisor does")
     assert "/.state/" not in line, "hardcoded .state/ drifts from the reader"
 
 
@@ -354,26 +354,26 @@ def test_watcher_health_is_exported_and_alerted_on():
     they watch."""
     import yaml
 
-    from pathia import metrics
+    from pathiel import metrics
     metrics._refresh()
     body = metrics.generate_latest(metrics.REGISTRY).decode()
-    for m in ("pathia_supervisor_age_seconds", "pathia_alert_eval_age_seconds",
-              "pathia_alerts_firing"):
+    for m in ("pathiel_supervisor_age_seconds", "pathiel_alert_eval_age_seconds",
+              "pathiel_alerts_firing"):
         assert m in body, f"{m} is not exported"
 
     doc = yaml.safe_load(open(os.path.join(ROOT, "k8s", "prometheusrule.yaml")))
     names = {r["alert"] for g in doc["spec"]["groups"] for r in g["rules"]}
-    assert {"PathiaSupervisionStale", "PathiaAlertingStale"} <= names
+    assert {"PathielSupervisionStale", "PathielAlertingStale"} <= names
 
 
 def test_a_missing_watcher_state_file_reads_as_maximally_stale(monkeypatch, tmp_path):
     """0 would read as 'ran just now' — the exact inversion that let a dead
     feed report healthy."""
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     import importlib
 
-    import pathia.agents.rebalancer_owned as ro
-    from pathia import metrics
+    import pathiel.agents.rebalancer_owned as ro
+    from pathiel import metrics
     importlib.reload(ro)
     metrics._refresh()
     assert metrics.SUPERVISOR_AGE._value.get() > 900
@@ -396,7 +396,7 @@ def test_a_fresh_watcher_state_file_reports_a_small_age(monkeypatch, tmp_path):
     """The happy path, which is the half that broke.
 
     The staleness block caught every exception and fell back to the sentinel,
-    so an ImportError inside it — `pathia.agents.paths`, a module that
+    so an ImportError inside it — `pathiel.agents.paths`, a module that
     does not exist — looked exactly like "the supervisor has never run". Both
     metrics read 1e6 on a live box whose supervisor had run 74 seconds earlier,
     and the only test covering them asserted the sentinel. A metric that can
@@ -406,14 +406,14 @@ def test_a_fresh_watcher_state_file_reports_a_small_age(monkeypatch, tmp_path):
     import json as _json
     import time as _time
 
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     now = _time.time()
     (tmp_path / "supervisor.json").write_text(_json.dumps({"ts": now}))
     (tmp_path / "alerts.json").write_text(
-        _json.dumps({"ts": now, "firing": ["PathiaLoopDead"]}))
+        _json.dumps({"ts": now, "firing": ["PathielLoopDead"]}))
 
-    import pathia.agents.rebalancer_owned as ro
-    from pathia import metrics
+    import pathiel.agents.rebalancer_owned as ro
+    from pathiel import metrics
     importlib.reload(ro)
     try:
         metrics._refresh()
@@ -426,7 +426,7 @@ def test_a_fresh_watcher_state_file_reports_a_small_age(monkeypatch, tmp_path):
 
 def test_every_state_script_uses_the_one_state_env_module():
     """Three scripts got state-path resolution wrong three different ways in one
-    session. The last was backup_state.py resolving PATHIA_STATE_DIR without
+    session. The last was backup_state.py resolving PATHIEL_STATE_DIR without
     loading .env.local, so a hand-run wrote its receipt to the repo root while
     preflight — which does load it — reported "backup never run" thirty seconds
     after a successful backup. One implementation, or it happens again."""
@@ -435,7 +435,7 @@ def test_every_state_script_uses_the_one_state_env_module():
         src = open(os.path.join(ROOT, "scripts", name)).read()
         assert "_state_env" in src, f"{name} resolves state paths on its own"
         assert "load_env_local" in src, f"{name} does not load .env.local"
-        assert 'os.environ.get("PATHIA_STATE_DIR")' not in src, (
+        assert 'os.environ.get("PATHIEL_STATE_DIR")' not in src, (
             f"{name} still has its own copy of the rule")
 
 
@@ -443,7 +443,7 @@ def test_restart_sh_and_the_supervisor_resolve_the_SAME_halt_file(tmp_path):
     """Not just the same rule — the same path.
 
     The earlier test asserted restart.sh's HALT_FILE mentions
-    PATHIA_STATE_DIR, which it did. But .env.local is where that variable
+    PATHIEL_STATE_DIR, which it did. But .env.local is where that variable
     lives and restart.sh never read it, so `stoploop` wrote the marker to the
     repo root while the supervisor — run by the scheduler, which does load the
     env — looked in .state/ and restarted the loop two minutes later. The kill
@@ -452,7 +452,7 @@ def test_restart_sh_and_the_supervisor_resolve_the_SAME_halt_file(tmp_path):
     import subprocess
 
     env_local = tmp_path / ".env.local"
-    env_local.write_text(f"PATHIA_STATE_DIR={tmp_path}/.state\n")
+    env_local.write_text(f"PATHIEL_STATE_DIR={tmp_path}/.state\n")
     script = open(os.path.join(ROOT, "scripts", "restart.sh")).read()
 
     # Run just the resolution block restart.sh uses, with ROOT pointed at the
@@ -462,10 +462,10 @@ def test_restart_sh_and_the_supervisor_resolve_the_SAME_halt_file(tmp_path):
     got = subprocess.run(["bash", "-c", block], capture_output=True, text=True,
                          env={"PATH": os.environ["PATH"]}).stdout.strip()
 
-    os.environ["PATHIA_STATE_DIR"] = f"{tmp_path}/.state"
+    os.environ["PATHIEL_STATE_DIR"] = f"{tmp_path}/.state"
     try:
         sup = _load()
         assert got == sup.HALT_FILE, (
             f"restart.sh writes {got}\nsupervisor reads {sup.HALT_FILE}")
     finally:
-        os.environ.pop("PATHIA_STATE_DIR", None)
+        os.environ.pop("PATHIEL_STATE_DIR", None)

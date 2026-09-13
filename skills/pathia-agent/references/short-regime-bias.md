@@ -23,11 +23,11 @@ by globally raising `min_ai_confidence` — it just kills volume.
 ## Implementation location
 
 The funding-regime overlay lives inside
-`pathia/agents/risk_gates.py::market_regime_gate`. It:
+`pathiel/agents/risk_gates.py::market_regime_gate`. It:
 
 1. Calls `detect_regime(ctx.coin)` for the trend regime (BTC / SP500 / own).
 2. Calls `market_get_funding_regime()` (cached 5 min in
-   `pathia/agents/hyperfeed.py`) for the funding regime.
+   `pathiel/agents/hyperfeed.py`) for the funding regime.
 3. Computes `against_funding` symmetrically:
    ```python
    against_funding = (
@@ -99,9 +99,9 @@ Suggested changes:
 - Restart the trading loop to pick up code + config changes.
 
 Files to review:
-- pathia/agents/risk_gates.py (market_regime_gate)
-- pathia/agents/market_regime.py
-- pathia/agents/hyperfeed.py (market_get_funding_regime)
+- pathiel/agents/risk_gates.py (market_regime_gate)
+- pathiel/agents/market_regime.py
+- pathiel/agents/hyperfeed.py (market_get_funding_regime)
 - .agent-config.json (live config)
 ```
 
@@ -111,7 +111,7 @@ Files to review:
   "short-crowded → easy shorts, hard longs" as a special case. When the
   regime flips, that logic doesn't migrate. The symmetric `against_funding`
   check covers both states from one code path.
-- **Stale MCP server after a config-tool fix** — kill `pathia-mcp-server.py`
+- **Stale MCP server after a config-tool fix** — kill `pathiel-mcp-server.py`
   so the next MCP call respawns the updated handler.
 - **Do not reintroduce broad slow-burn execution.** The live cleanup removed
   that path because it admitted too many weak PASS upgrades.
@@ -133,7 +133,7 @@ Files to review:
   pytest runs — making tests order-dependent and randomly failing when
   the regime flips on the live market. Pattern:
   ```python
-  from pathia.agents import market_regime, hyperfeed
+  from pathiel.agents import market_regime, hyperfeed
   monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
   monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                       lambda: {"regime": "NEUTRAL", "assets": []})

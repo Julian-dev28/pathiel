@@ -1,11 +1,11 @@
 /**
  * The connect button, as a React island inside a server-rendered page.
  *
- * The pathia dashboard is Jinja templates plus vendored vanilla JS, and stays
+ * The pathiel dashboard is Jinja templates plus vendored vanilla JS, and stays
  * that way. This mounts into one `<div>` in the masthead and owns exactly one
  * thing: connecting a wallet and proving control of it. Every other panel on
  * every page is untouched vanilla, and talks to this island through the small
- * `window.PathiaWallet` bridge in index.tsx.
+ * `window.PathielWallet` bridge in index.tsx.
  *
  * Why RainbowKit rather than the `window.ethereum` call this replaces: with two
  * extensions installed, `window.ethereum` is whichever one won a race at page
@@ -117,7 +117,7 @@ export function App() {
               overlayBlur: 'small',
             })}
             modalSize="compact"
-            appInfo={{ appName: 'pathia' }}
+            appInfo={{ appName: 'pathiel' }}
           >
             <ConnectButton
               // The masthead is a single narrow row. A balance and a chain

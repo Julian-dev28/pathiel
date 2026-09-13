@@ -1,11 +1,11 @@
 # services/wallet_ui — the wallet picker
 
 RainbowKit, bundled to a single vendored asset that the Jinja dashboard loads on
-demand. Source here, output at `pathia/static/wallet.js`.
+demand. Source here, output at `pathiel/static/wallet.js`.
 
 ## What it replaced, and why
 
-`pathia/static/pathia.js` used to call `window.ethereum` directly. With two
+`pathiel/static/pathiel.js` used to call `window.ethereum` directly. With two
 extensions installed that object is whichever one won a race at page load, there
 was no way to choose between them, and the failure text told people who already
 had a wallet to "install MetaMask or Rabby".
@@ -31,14 +31,14 @@ signer — on an operator console opened from a desktop browser, for a product
 whose whole posture is that it holds no key.
 
 **The bundle is loaded on demand, not on page load.** It is ~380 KB brotli
-against ~30 KB for the dashboard's entire vanilla JS. `pathia.js` injects it on
+against ~30 KB for the dashboard's entire vanilla JS. `pathiel.js` injects it on
 the first click that needs a wallet, and a signed-in operator reloading the
 dashboard never fetches it at all. `test_wallet_bundle.py` fails if a template
 starts loading it eagerly.
 
 ## The committed artifact
 
-`pathia/static/wallet.js` and `wallet.css` are build outputs committed to the
+`pathiel/static/wallet.js` and `wallet.css` are build outputs committed to the
 repo, which this project otherwise refuses to do. The reason: `api/index.py` is
 a Python function on Vercel and the deploy has no Node step, so adding one to
 produce a single static file would put a second toolchain in the deploy path for
@@ -53,11 +53,11 @@ bundle breaks the commit gate rather than breaking sign-in in production.
 
 ```
 npm install
-npm run build        # writes ../../pathia/static/wallet.{js,css} + the manifest
+npm run build        # writes ../../pathiel/static/wallet.{js,css} + the manifest
 npm run check        # what the gate test runs
 ```
 
-Commit `pathia/static/wallet.js`, `pathia/static/wallet.css` and
+Commit `pathiel/static/wallet.js`, `pathiel/static/wallet.css` and
 `bundle.manifest.json` together. `node_modules/` is 644 MB and gitignored.
 
 ## Tests

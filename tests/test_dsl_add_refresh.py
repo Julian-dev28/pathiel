@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-import pathia.agents.dsl_exit as dsl
+import pathiel.agents.dsl_exit as dsl
 
 
 def _pos(coin, szi, entry):

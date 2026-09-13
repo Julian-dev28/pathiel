@@ -1,6 +1,6 @@
 """The regression test for the bug that kept CI red for weeks.
 
-50 tracked files carried `REPO = "/Users/julian_dev/Documents/code/pathia"`.
+50 tracked files carried `REPO = "/Users/julian_dev/Documents/code/pathiel"`.
 The suite was green on the one machine where that path existed and red on every
 push. Nothing caught it, so this is the thing that catches it now.
 """
@@ -23,7 +23,7 @@ def test_the_repo_has_no_machine_bound_absolute_paths():
 
 def test_the_pattern_catches_the_exact_bug_that_shipped():
     """The literal that was in W-X2_xs_widening.py:74."""
-    line = 'REPO = "/Users/julian_dev/Documents/code/pathia"'
+    line = 'REPO = "/Users/julian_dev/Documents/code/pathiel"'
     assert checker.PATTERN.search(line) is not None
 
 
@@ -34,7 +34,7 @@ def test_the_pattern_catches_a_linux_home_too():
 def test_the_pattern_leaves_machine_independent_paths_alone():
     """/tmp and /usr/local exist on any box — flagging them would make the
     check noisy enough that someone turns it off."""
-    for ok in ('X = "/tmp/pathia/state.json"',
+    for ok in ('X = "/tmp/pathiel/state.json"',
                'BIN = "/usr/local/bin/claude"',
                'p = Path(__file__).resolve().parents[1]'):
         assert checker.PATTERN.search(ok) is None, ok
@@ -95,7 +95,7 @@ def test_the_docs_do_not_describe_deleted_subsystems_as_existing():
     """
     import re
 
-    gone = ("polymarket_scout", "pathia/v2/", "xs_momentum_live",
+    gone = ("polymarket_scout", "pathiel/v2/", "xs_momentum_live",
             "extreme_fade_live", "--sample-daemon",
             # Deleted 2026-09-04. The pathia-agent SKILL listed rally_exhaustion
             # and hail_mary_short as current live books days after both were
@@ -193,7 +193,7 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
     A count that drifts from the source is the kind of claim a reader trusts and
     then debugs, and nothing was checking it."""
     import ast
-    server = ROOT / "scripts" / "pathia-mcp-server.py"
+    server = ROOT / "scripts" / "pathiel-mcp-server.py"
     tree = ast.parse(server.read_text())
     # AnnAssign as well as Assign: _STUB_TOOL_NAMES carries a type annotation
     # now that it is empty, and an Assign-only walk silently misses it.
@@ -233,12 +233,12 @@ def test_the_mcp_tool_count_in_the_docs_matches_the_server():
 def test_no_stub_shadows_a_capability_the_client_already_has():
     """A stub is worse than a missing tool: an agent reads "not implemented" as
     "this data does not exist here" and goes without it. Six stubs sat on top of
-    working pathia.client code until 2026-09-06.
+    working pathiel.client code until 2026-09-06.
 
     This pins the six so they cannot silently regress to stubs, and names the
     check to run when adding a new one."""
     import ast
-    tree = ast.parse((ROOT / "scripts" / "pathia-mcp-server.py").read_text())
+    tree = ast.parse((ROOT / "scripts" / "pathiel-mcp-server.py").read_text())
     g = {}
     for n in tree.body:
         if isinstance(n, ast.Assign):

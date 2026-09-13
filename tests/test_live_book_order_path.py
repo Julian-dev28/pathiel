@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-import pathia.dashboard as db
-from pathia.agents.rebalancer_owned import ClaimsRegistry, active_claim_books
+import pathiel.dashboard as db
+from pathiel.agents.rebalancer_owned import ClaimsRegistry, active_claim_books
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -93,10 +93,10 @@ def _analysis_for(book: str):
     cfg = {"notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
            "hold_days": 1.0, "horizon_days": 1.0}
     if book == "social_trending":
-        from pathia.agents.social_trending_recorder import _analysis
+        from pathiel.agents.social_trending_recorder import _analysis
         return _analysis("BTC", {"rank": 1, "score": 0}, cfg)
     if book == "unlock_short_runin":
-        from pathia.agents import unlock_short_live as m
+        from pathiel.agents import unlock_short_live as m
         return m._analysis("ARB", {"pct": 2.0, "t_ms": 0}, 1.0, cfg) \
             if hasattr(m, "_analysis") else None
     return None
@@ -131,7 +131,7 @@ def test_the_graded_and_live_geometry_agree_for_social_trending():
 def test_the_books_can_reach_coins_the_majors_allowlist_permits():
     """A live book restricted to an allowlist that excludes everything it
     trades is a book that silently never fires."""
-    from pathia.agents import universe as U
+    from pathiel.agents import universe as U
     cfg = json.loads((ROOT / ".agent-config.json").read_text())
     allow = cfg.get("coin_allowlist") or []
     tradable = [c for c in ("BTC", "ETH", "xyz:NVDA", "xyz:GOLD") if U.in_allowlist(c, allow)]

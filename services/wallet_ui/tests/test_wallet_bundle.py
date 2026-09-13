@@ -1,6 +1,6 @@
 """Gate tests for the vendored wallet bundle.
 
-`pathia/static/wallet.js` is a compiled artifact committed to the repository,
+`pathiel/static/wallet.js` is a compiled artifact committed to the repository,
 which is normally a thing this project refuses to do. It is committed because
 the deploy has no Node step — `api/index.py` is a Python function on Vercel, and
 adding a second toolchain to that pipeline to produce one static file buys
@@ -25,13 +25,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 WALLET_UI = ROOT / "services" / "wallet_ui"
-STATIC = ROOT / "pathia" / "static"
+STATIC = ROOT / "pathiel" / "static"
 MANIFEST = WALLET_UI / "bundle.manifest.json"
 
 
 def test_bundle_is_committed():
     assert (STATIC / "wallet.js").is_file(), (
-        "pathia/static/wallet.js is missing — run `npm run build` in "
+        "pathiel/static/wallet.js is missing — run `npm run build` in "
         "services/wallet_ui and commit the result"
     )
     assert (STATIC / "wallet.css").is_file()
@@ -74,7 +74,7 @@ def test_bundle_does_not_embed_a_walletconnect_project_id():
 
 def test_templates_carry_the_mount_point():
     """Every page with a masthead needs somewhere for the island to mount."""
-    templates = sorted((ROOT / "pathia" / "templates").glob("*.html"))
+    templates = sorted((ROOT / "pathiel" / "templates").glob("*.html"))
     assert templates, "no templates found"
     for path in templates:
         markup = path.read_text()
@@ -90,13 +90,13 @@ def test_bundle_is_not_loaded_on_page_load():
 
     Loading it from a <script> tag in the templates would put that on every
     page view, including the signed-in operator who never opens the picker. It
-    must only ever be injected by pathia.js on demand.
+    must only ever be injected by pathiel.js on demand.
     """
-    for path in (ROOT / "pathia" / "templates").glob("*.html"):
+    for path in (ROOT / "pathiel" / "templates").glob("*.html"):
         markup = path.read_text()
         assert "/static/wallet.js" not in markup, (
             f"{path.name} loads wallet.js eagerly; it is injected on demand by "
-            f"pathia.js instead"
+            f"pathiel.js instead"
         )
 
 
@@ -107,7 +107,7 @@ def test_loader_resets_its_latch_on_failure():
     cache is kept after an error, every later click resolves against the failed
     promise and the picker can never open again without a reload.
     """
-    source = (STATIC / "pathia.js").read_text()
+    source = (STATIC / "pathiel.js").read_text()
     start = source.index("function loadWalletUI()")
     end = source.index("async function signIn()")
     loader = source[start:end]

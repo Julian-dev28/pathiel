@@ -2,7 +2,7 @@
 
 WHY SQLITE AND NO ORM
 ---------------------
-The rest of the system already keeps state in SQLite (`pathia_data.db`) and
+The rest of the system already keeps state in SQLite (`pathiel_data.db`) and
 JSONL. Adding SQLAlchemy or Postgres for three small tables buys migrations and
 connection pooling this does not need yet, at the cost of a dependency on the
 authentication path. When a second process needs concurrent writes, or the row
@@ -105,8 +105,8 @@ class AuthStore:
 
     def __init__(self, path: Optional[str] = None) -> None:
         self.path = path or os.environ.get(
-            "PATHIA_AUTH_DB",
-            os.path.join(os.environ.get("PATHIA_STATE_DIR", "."), "auth.db"))
+            "PATHIEL_AUTH_DB",
+            os.path.join(os.environ.get("PATHIEL_STATE_DIR", "."), "auth.db"))
         parent = os.path.dirname(os.path.abspath(self.path))
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -189,7 +189,7 @@ class AuthStore:
         # signs in is the first one. Read-only mode means an operator there can
         # do nothing a visitor cannot, but that is one env var away from being
         # the kill switch, so the demo turns the bootstrap off outright.
-        if os.environ.get("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"):
+        if os.environ.get("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR"):
             first = False
         else:
             first = self._db.execute(

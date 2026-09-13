@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pathia"
+name = "pathiel"
 dynamic = ["version"]
 description = "Autonomous quant trading agent for Hyperliquid perpetual markets"
 requires-python = ">=3.11"
@@ -27,13 +27,13 @@ dev = [
 ]
 
 [project.scripts]
-pathia = "pathia.__main__:main"
+pathiel = "pathiel.__main__:main"
 
 [tool.hatch.version]
-path = "pathia/__init__.py"
+path = "pathiel/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["pathia"]
+packages = ["pathiel"]
 
 [tool.ruff]
 # The vendored per-IDE agent skill copies are an installed plugin's code, not
@@ -65,5 +65,5 @@ addopts = "-m 'not online and not live and not browser'"
 markers = [
     "browser: drives a real Chromium via Playwright and boots a server; too slow for the commit gate, deselected by default (run with: pytest -m browser)",
     "online: exercises the live Hyperliquid public API (read-only); deselected by default (run with: pytest -m online)",
-    "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires PATHIA_E2E=1 (run with: PATHIA_E2E=1 pytest -m live)",
+    "live: real-money e2e — places orders and calls the billable LLM; deselected by default and additionally requires PATHIEL_E2E=1 (run with: PATHIEL_E2E=1 pytest -m live)",
 ]

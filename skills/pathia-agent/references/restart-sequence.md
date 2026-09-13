@@ -30,7 +30,7 @@ marker.
 So a loop that will not come up is usually not broken:
 
 ```bash
-cat "${PATHIA_STATE_DIR:-.}/supervisor_halt.json"   # {"halted": ["loop"]} means deliberate
+cat "${PATHIEL_STATE_DIR:-.}/supervisor_halt.json"   # {"halted": ["loop"]} means deliberate
 ```
 
 A supervisor that restarted the loop two minutes after the operator stopped it
@@ -50,19 +50,19 @@ The server does **not** hot-reload. On 2026-09-04 a three-day-old server process
 kept serving pre-auth routes: the sign-in button called `/auth/nonce`, got a
 404, and did nothing, while the dashboard still served the house balance
 ungated. It looked exactly like broken auth. `restart.sh loop` restarts only the
-loop — if you changed anything under `pathia/`, restart the server too.
+loop — if you changed anything under `pathiel/`, restart the server too.
 
 **Loop vs server restart:** `restart.sh server` restarts ONLY the dashboard — it
 does not touch open positions or DSL trackers, so it's safe any time. `restart.sh
 loop` restarts the trading loop; it rehydrates DSL trackers from `.dsl-state.json`
 (positions survive), but prefer doing it when the book is flat. `start_server` now
 launches the dashboard with a hard-throttled HL rate bucket
-(`PATHIA_HL_RATE_REFILL_PER_SEC`/`_CAPACITY`, ~¼ budget) so a server restart can't
+(`PATHIEL_HL_RATE_REFILL_PER_SEC`/`_CAPACITY`, ~¼ budget) so a server restart can't
 burst the shared per-IP rate budget the loop relies on.
 
 ## When to restart
 
-- After code changes to `trading_loop.py`, anything under `pathia/`,
+- After code changes to `trading_loop.py`, anything under `pathiel/`,
   or `.env.local`. Most config changes (`.agent-config.json`) are
   hot-reloaded per-trade and don't need a restart, but the asset-class
   flags (`enable_hip3`, `enable_crypto`) need a restart because the
@@ -99,16 +99,16 @@ that called HL's `/info portfolio` endpoint in the session log.
 If an MCP tool runs old code after a fix:
 
 ```bash
-pkill -f pathia-mcp-server.py
+pkill -f pathiel-mcp-server.py
 ```
 
-The next Pathia tool call respawns it fresh from `~/.pathia/config.yaml`.
+The next Pathiel tool call respawns it fresh from `~/.pathiel/config.yaml`.
 
 ## Verifying clean state
 
 ```bash
 scripts/restart.sh status
-ps ax | rg "(scripts/trading_loop.py|pathia-mcp-server.py|pathia.server)"
+ps ax | rg "(scripts/trading_loop.py|pathiel-mcp-server.py|pathiel.server)"
 ```
 
 `status` may show the process group that owns the loop (`screen`, shell,
@@ -122,8 +122,8 @@ If Codex launches `restart.sh` and the execution wrapper reaps detached
 background children, use persistent `screen` sessions:
 
 ```bash
-screen -dmS pathia-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathia && PATHIA_HL_RATE_REFILL_PER_SEC=5 PATHIA_HL_RATE_CAPACITY=200 .venv/bin/python -m pathia.server >> logs/server.log 2>&1'
-screen -dmS pathia-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathia && PATHIA_STARTUP_GRACE_S=0 PATHIA_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
+screen -dmS pathiel-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathiel && PATHIEL_HL_RATE_REFILL_PER_SEC=5 PATHIEL_HL_RATE_CAPACITY=200 .venv/bin/python -m pathiel.server >> logs/server.log 2>&1'
+screen -dmS pathiel-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathiel && PATHIEL_STARTUP_GRACE_S=0 PATHIEL_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
 screen -ls
-curl -s -o /tmp/pathia-dashboard.html -w "%{http_code}\n" http://localhost:8000/
+curl -s -o /tmp/pathiel-dashboard.html -w "%{http_code}\n" http://localhost:8000/
 ```

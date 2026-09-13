@@ -1,4 +1,4 @@
-from pathia.agents.risk_gates import book_block_event
+from pathiel.agents.risk_gates import book_block_event
 
 
 def test_block_surfaces_blocked_by_list():

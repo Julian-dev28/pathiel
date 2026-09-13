@@ -1,57 +1,52 @@
 {
- "ts": 1788137322.193059,
+ "ts": 1789286048.972895,
  "firing": [],
  "errors": [
-  "PathiaBackupStale: pathia_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+  "PathielLoopDead: pathiel_heartbeat_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielFeedDegraded: pathiel_feed_trustworthy is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielLiveButCannotTrade: pathiel_live_mode is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielBrainUnusable: pathiel_ai_brain_ready is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielDiskLow: pathiel_disk_free_bytes is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielLogDirOversized: pathiel_log_dir_bytes is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielSupervisionStale: pathiel_supervisor_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielAlertingStale: pathiel_alert_eval_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielBackupStale: pathiel_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielGradingStale: pathiel_grading_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire",
+  "PathielDeepDrawdown: pathiel_max_drawdown_pct is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
  ],
  "alerts": {
-  "PathiaLoopDead": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "critical"
+  "PathielLoopDead": {
+   "error": "pathiel_heartbeat_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaFeedDegraded": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "warning"
+  "PathielFeedDegraded": {
+   "error": "pathiel_feed_trustworthy is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaLiveButCannotTrade": {
-   "firing": false,
-   "pending_since": 1788136722.111817,
-   "severity": "warning"
+  "PathielLiveButCannotTrade": {
+   "error": "pathiel_live_mode is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaBrainUnusable": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "critical"
+  "PathielBrainUnusable": {
+   "error": "pathiel_ai_brain_ready is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaDiskLow": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "critical"
+  "PathielDiskLow": {
+   "error": "pathiel_disk_free_bytes is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaLogDirOversized": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "warning"
+  "PathielLogDirOversized": {
+   "error": "pathiel_log_dir_bytes is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaSupervisionStale": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "critical"
+  "PathielSupervisionStale": {
+   "error": "pathiel_supervisor_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaAlertingStale": {
-   "firing": false,
-   "pending_since": null,
-   "severity": "critical"
+  "PathielAlertingStale": {
+   "error": "pathiel_alert_eval_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaBackupStale": {
-   "error": "pathia_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+  "PathielBackupStale": {
+   "error": "pathiel_backup_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   },
-  "PathiaDeepDrawdown": {
-   "firing": false,
-   "pending_since": 1788136722.111817,
-   "severity": "warning"
+  "PathielGradingStale": {
+   "error": "pathiel_grading_age_seconds is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
+  },
+  "PathielDeepDrawdown": {
+   "error": "pathiel_max_drawdown_pct is not exported by http://localhost:8000/metrics \u2014 an alert on a metric nobody emits can never fire"
   }
  }
 }

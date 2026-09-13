@@ -5,7 +5,7 @@ fix set for the **"we had it all and gave it back"** round-trips; materially
 re-tuned 2026-06-16 (see "Scalp vs trend-ride" below) and tightened again in the
 2026-06-18 PnL audit.
 
-## 1. DSL trailing stop (`pathia/agents/dsl_exit.py`) — primary, 60s tick
+## 1. DSL trailing stop (`pathiel/agents/dsl_exit.py`) — primary, 60s tick
 
 - **Phase 1 (loss):** exit at `min(max_loss_pct, max_loss_roe_pct / lev)`, optionally
   widened to a volatility-scaled `atr_stop` (`atr_mult`×ATR clamped floor/ceiling).

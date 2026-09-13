@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit scripts/pathia-mcp-server.py for tool/handler wiring consistency.
+"""Audit scripts/pathiel-mcp-server.py for tool/handler wiring consistency.
 
 Run from anywhere:
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 def _default_server_path() -> Path:
     # <repo>/skills/pathia-agent/scripts/audit_mcp_server.py -> <repo>/scripts/...
-    return Path(__file__).resolve().parents[3] / "scripts" / "pathia-mcp-server.py"
+    return Path(__file__).resolve().parents[3] / "scripts" / "pathiel-mcp-server.py"
 
 
 def audit(path: Path) -> int:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plain-text status snapshot of the pathia system.
+"""Plain-text status snapshot of the pathiel system.
 
 Run from anywhere:
 
@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-SESSION_LOG = Path.home() / ".pathia-session-log.jsonl"
+SESSION_LOG = Path.home() / ".pathiel-session-log.jsonl"
 
 
 def _load_json(path: Path):
@@ -80,7 +80,7 @@ def _fetch_live_state(repo_root: Path):
     # Lazy import so the script still works (cache-only) outside the repo.
     sys.path.insert(0, str(repo_root))
     try:
-        from pathia.client.hl_client import (
+        from pathiel.client.hl_client import (
             fetch_account_state, resolve_user_address,
         )
     except Exception as e:
@@ -97,7 +97,7 @@ def _fetch_live_state(repo_root: Path):
 def _active_claim_books(repo_root: Path) -> set[str]:
     sys.path.insert(0, str(repo_root))
     try:
-        from pathia.agents.rebalancer_owned import active_claim_books
+        from pathiel.agents.rebalancer_owned import active_claim_books
         return active_claim_books()
     except Exception:
         # Fallback only. It named xs_momentum and rally_exhaustion long after
@@ -230,7 +230,7 @@ def _print_session_tail(n: int = 8) -> None:
 
 
 def main() -> int:
-    print("=== pathia status ===")
+    print("=== pathiel status ===")
     print(f"repo: {ROOT}")
     live_positions_for_claim_audit = None
 
@@ -322,9 +322,9 @@ def main() -> int:
     _print_claims_audit(ROOT, live_positions_for_claim_audit)
 
     loop = _process_running("trading_loop.py")
-    mcp = _process_running("pathia-mcp-server.py")
+    mcp = _process_running("pathiel-mcp-server.py")
     loop_label = "RUNNING" if loop is True else "stopped" if loop is False else "unknown (process list unavailable)"
-    mcp_label = "RUNNING" if mcp is True else "stopped (Pathia spawns it on demand)" if mcp is False else "unknown (process list unavailable)"
+    mcp_label = "RUNNING" if mcp is True else "stopped (Pathiel spawns it on demand)" if mcp is False else "unknown (process list unavailable)"
     print(f"trading loop : {loop_label}")
     print(f"MCP server   : {mcp_label}")
 

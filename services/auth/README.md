@@ -1,7 +1,7 @@
 # services/auth
 
 Wallet sign-in, sessions, and the API keys customers use against
-`services/pathia_data_api`.
+`services/pathiel_data_api`.
 
 ## Why Sign-In With Ethereum, and not a vendor
 
@@ -80,10 +80,10 @@ P&L, funnel). Any signed-in wallet sees **its own** account at
 ## API keys
 
 `api_keys.py` talks to the `api_keys` table in **plain SQL**, and does not
-import `services/pathia_data_api`. That service is a separate deploy unit with
+import `services/pathiel_data_api`. That service is a separate deploy unit with
 its own Dockerfile and its own requirements, none of which are installed in the
 trading image, so importing its models would fail at runtime even with the
-source copied in. `test_dockerfile_does_not_bundle_pathia_data_api` enforces
+source copied in. `test_dockerfile_does_not_bundle_pathiel_data_api` enforces
 that boundary and caught exactly this mistake on the first attempt.
 
 The contract between the two services is therefore the thing they genuinely
@@ -102,11 +102,11 @@ key inheriting it would hold every scope this API ever grows.
 
 | var | default | notes |
 |---|---|---|
-| `PATHIA_AUTH_DOMAIN` | `localhost:8000` | **set this in production.** Must match the host the browser is on, or every signature is rejected. Never read from the request's `Host` header, which an attacker controls |
-| `PATHIA_AUTH_CHAIN_ID` | `999` (HyperEVM) | cosmetic; EIP-4361 chain id is informational and `personal_sign` is not chain-bound |
-| `PATHIA_AUTH_URI` | `https://<domain>` | cosmetic |
-| `PATHIA_AUTH_DB` | `$PATHIA_STATE_DIR/auth.db` | users, sessions, nonces |
-| `PATHIA_INSECURE_COOKIES` | unset | forces `Secure` off. Rarely needed: plain HTTP to localhost is detected from the request |
+| `PATHIEL_AUTH_DOMAIN` | `localhost:8000` | **set this in production.** Must match the host the browser is on, or every signature is rejected. Never read from the request's `Host` header, which an attacker controls |
+| `PATHIEL_AUTH_CHAIN_ID` | `999` (HyperEVM) | cosmetic; EIP-4361 chain id is informational and `personal_sign` is not chain-bound |
+| `PATHIEL_AUTH_URI` | `https://<domain>` | cosmetic |
+| `PATHIEL_AUTH_DB` | `$PATHIEL_STATE_DIR/auth.db` | users, sessions, nonces |
+| `PATHIEL_INSECURE_COOKIES` | unset | forces `Secure` off. Rarely needed: plain HTTP to localhost is detected from the request |
 
 Cookies are `httpOnly`, `SameSite=Lax`, and `Secure` everywhere except plain
 HTTP to localhost — where a `Secure` cookie is silently dropped by the browser

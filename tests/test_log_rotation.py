@@ -1,4 +1,4 @@
-"""Gate tests for the log-rotation stack: pathia/log_setup.py (policy +
+"""Gate tests for the log-rotation stack: pathiel/log_setup.py (policy +
 disk guard) and scripts/log_rotate.py (the copytruncate rotator).
 
 Offline and deterministic: every test runs against a real tmp_path directory
@@ -9,9 +9,9 @@ here depends on, or touches, the actual machine's free space or the repo's
 real logs/ directory.
 
 WHY THIS HAS TO BE COPYTRUNCATE, NOT AN IN-PROCESS RotatingFileHandler:
-every pathia process is started by scripts/restart.sh via
+every pathiel process is started by scripts/restart.sh via
 `nohup ... >> file 2>&1 &` — a shell-owned, O_APPEND fd that the process
-never reopens. See pathia/log_setup.py's module docstring and
+never reopens. See pathiel/log_setup.py's module docstring and
 scripts/log_rotate.py's for the full argument. The
 "writer holding an open fd keeps writing to the right place" test below is
 the direct proof: it opens a file exactly the way the shell does
@@ -26,10 +26,10 @@ import time
 from pathlib import Path
 
 
-from pathia import log_setup
+from pathiel import log_setup
 
 _SPEC = importlib.util.spec_from_file_location(
-    "pathia_log_rotate",
+    "pathiel_log_rotate",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "log_rotate.py"),
 )
 log_rotate = importlib.util.module_from_spec(_SPEC)
@@ -272,8 +272,8 @@ def test_disk_guard_ok_when_plenty_of_free_space(tmp_path):
 
 
 def test_disk_guard_warns_below_warn_threshold_but_above_critical(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATHIA_DISK_FREE_WARN_MB", "2000")
-    monkeypatch.setenv("PATHIA_DISK_FREE_CRITICAL_MB", "500")
+    monkeypatch.setenv("PATHIEL_DISK_FREE_WARN_MB", "2000")
+    monkeypatch.setenv("PATHIEL_DISK_FREE_CRITICAL_MB", "500")
     result = log_setup.check_disk_guard(
         disk_usage_fn=lambda _root: _FakeUsage(free=1000 * 1024 * 1024),  # between 500 and 2000 MB
         log_dir=tmp_path,
@@ -284,7 +284,7 @@ def test_disk_guard_warns_below_warn_threshold_but_above_critical(tmp_path, monk
 
 
 def test_disk_guard_trips_critical_below_threshold(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATHIA_DISK_FREE_CRITICAL_MB", "500")
+    monkeypatch.setenv("PATHIEL_DISK_FREE_CRITICAL_MB", "500")
     result = log_setup.check_disk_guard(
         disk_usage_fn=lambda _root: _FakeUsage(free=100 * 1024 * 1024),  # below 500 MB
         log_dir=tmp_path,
@@ -295,7 +295,7 @@ def test_disk_guard_trips_critical_below_threshold(tmp_path, monkeypatch):
 
 
 def test_disk_guard_warns_when_log_dir_over_its_own_cap_even_with_free_disk(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATHIA_LOG_DIR_MAX_BYTES", "1000")
+    monkeypatch.setenv("PATHIEL_LOG_DIR_MAX_BYTES", "1000")
     _write(tmp_path / "big.log", 5000)
     result = log_setup.check_disk_guard(
         disk_usage_fn=lambda _root: _FakeUsage(free=10 * 1024 ** 3),  # disk itself is fine
@@ -307,7 +307,7 @@ def test_disk_guard_warns_when_log_dir_over_its_own_cap_even_with_free_disk(tmp_
 
 
 def test_run_guard_cli_exits_nonzero_on_critical(tmp_path, monkeypatch):
-    monkeypatch.setenv("PATHIA_DISK_FREE_CRITICAL_MB", "999999999")  # nothing has this much free
+    monkeypatch.setenv("PATHIEL_DISK_FREE_CRITICAL_MB", "999999999")  # nothing has this much free
     rc = log_rotate.main(["--dir", str(tmp_path), "--guard", "--quiet"])
     assert rc == 1
 
@@ -317,18 +317,18 @@ def test_run_guard_cli_exits_zero_when_ok(tmp_path, monkeypatch):
     # check_disk_guard's own tests above, which do), so this exercises the
     # real machine's free space. Thresholds pinned tiny so the assertion
     # stays deterministic on any runner that isn't itself out of disk.
-    monkeypatch.setenv("PATHIA_DISK_FREE_CRITICAL_MB", "1")
-    monkeypatch.setenv("PATHIA_DISK_FREE_WARN_MB", "1")
+    monkeypatch.setenv("PATHIEL_DISK_FREE_CRITICAL_MB", "1")
+    monkeypatch.setenv("PATHIEL_DISK_FREE_WARN_MB", "1")
     rc = log_rotate.main(["--dir", str(tmp_path), "--guard", "--quiet"])
     assert rc == 0
 
 
-# ── policy knobs read from env (pathia/log_setup.py) ────────────────
+# ── policy knobs read from env (pathiel/log_setup.py) ────────────────
 
 def test_policy_defaults_when_no_env_set(monkeypatch):
     for var in (
-        "PATHIA_LOG_MAX_BYTES", "PATHIA_LOG_BACKUP_COUNT", "PATHIA_LOG_DIR_MAX_BYTES",
-        "PATHIA_DISK_FREE_WARN_MB", "PATHIA_DISK_FREE_CRITICAL_MB", "PATHIA_LOG_ROTATE_INTERVAL_SEC",
+        "PATHIEL_LOG_MAX_BYTES", "PATHIEL_LOG_BACKUP_COUNT", "PATHIEL_LOG_DIR_MAX_BYTES",
+        "PATHIEL_DISK_FREE_WARN_MB", "PATHIEL_DISK_FREE_CRITICAL_MB", "PATHIEL_LOG_ROTATE_INTERVAL_SEC",
     ):
         monkeypatch.delenv(var, raising=False)
     assert log_setup.max_bytes() == log_setup.DEFAULT_MAX_BYTES
@@ -340,16 +340,16 @@ def test_policy_defaults_when_no_env_set(monkeypatch):
 
 
 def test_policy_env_overrides(monkeypatch):
-    monkeypatch.setenv("PATHIA_LOG_MAX_BYTES", "123")
-    monkeypatch.setenv("PATHIA_LOG_BACKUP_COUNT", "9")
-    monkeypatch.setenv("PATHIA_LOG_DIR_MAX_BYTES", "456")
+    monkeypatch.setenv("PATHIEL_LOG_MAX_BYTES", "123")
+    monkeypatch.setenv("PATHIEL_LOG_BACKUP_COUNT", "9")
+    monkeypatch.setenv("PATHIEL_LOG_DIR_MAX_BYTES", "456")
     assert log_setup.max_bytes() == 123
     assert log_setup.backup_count() == 9
     assert log_setup.log_dir_max_bytes() == 456
 
 
 def test_policy_env_override_ignores_garbage(monkeypatch):
-    monkeypatch.setenv("PATHIA_LOG_MAX_BYTES", "not-a-number")
+    monkeypatch.setenv("PATHIEL_LOG_MAX_BYTES", "not-a-number")
     assert log_setup.max_bytes() == log_setup.DEFAULT_MAX_BYTES
 
 
@@ -364,7 +364,7 @@ def test_total_log_bytes_missing_dir_is_zero(tmp_path):
 
 
 def test_resolve_log_dir_env_override(monkeypatch, tmp_path):
-    monkeypatch.setenv("PATHIA_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_LOG_DIR", str(tmp_path))
     assert log_setup.resolve_log_dir() == tmp_path
 
 
@@ -374,7 +374,7 @@ def test_configure_logging_rotates_and_gzips(tmp_path):
 
     target = str(tmp_path / "inprocess.log")
     logger = log_setup.configure_logging(
-        "pathia_test_log_setup",
+        "pathiel_test_log_setup",
         filename=target,
         max_bytes_override=200,
         backup_count_override=2,

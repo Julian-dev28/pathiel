@@ -1,4 +1,4 @@
-"""Gate tests for pathia.indicators.range_structure (research-only).
+"""Gate tests for pathiel.indicators.range_structure (research-only).
 
 Deterministic, local, no network. Covers: aggregation, geometry, state
 classification, deviation vs acceptance, lookahead-safety, fail-safe on short
@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from pathia.indicators.range_structure import (
+from pathiel.indicators.range_structure import (
     ACCUMULATION_CANDIDATE,
     BREAKOUT_DOWN_CANDIDATE,
     BREAKOUT_UP_CANDIDATE,
@@ -310,10 +310,10 @@ class TestLookaheadAndHygiene:
     def test_not_imported_by_live_modules(self):
         """range_structure is research-only: importing the live agent modules
         must not pull it in."""
-        banned = "pathia.indicators.range_structure"
+        banned = "pathiel.indicators.range_structure"
         sys.modules.pop(banned, None)
-        import pathia.indicators.triggers  # noqa: F401
-        import pathia.indicators.math  # noqa: F401
+        import pathiel.indicators.triggers  # noqa: F401
+        import pathiel.indicators.math  # noqa: F401
         assert banned not in sys.modules
 
     def test_config_frozen(self):

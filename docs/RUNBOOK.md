@@ -6,7 +6,7 @@ already gone wrong.
 ## Restoring state from a backup
 
 `scripts/backup_state.py` runs daily at 04:30 from the scheduler and keeps 14
-archives in `~/pathia-backups` (override with `PATHIA_BACKUP_DIR`). It captures
+archives in `~/pathiel-backups` (override with `PATHIEL_BACKUP_DIR`). It captures
 the three things that cannot be recreated — `.agent-memory.json`, the
 `shadow_ledger` evidence base, and `capital_flows.jsonl` — and never captures
 `.env.local` or any key material.
@@ -15,8 +15,8 @@ To restore, with the loop stopped:
 
 ```sh
 scripts/restart.sh stoploop
-tar tzf ~/pathia-backups/pathia-state-YYYYMMDD-HHMMSS.tar.gz   # look first
-tar xzf ~/pathia-backups/pathia-state-YYYYMMDD-HHMMSS.tar.gz -C .
+tar tzf ~/pathiel-backups/pathiel-state-YYYYMMDD-HHMMSS.tar.gz   # look first
+tar xzf ~/pathiel-backups/pathiel-state-YYYYMMDD-HHMMSS.tar.gz -C .
 scripts/restart.sh loop
 ```
 
@@ -33,7 +33,7 @@ python scripts/preflight_live.py        # reports age, size and verification
 
 An archive that fails verification is renamed `.tar.gz.corrupt` and the receipt
 records `verified: false`, which reports as *no backup* to both the metric and
-`PathiaBackupStale` — a broken backup must never read as a working one.
+`PathielBackupStale` — a broken backup must never read as a working one.
 
 
 ## Before funding the account
@@ -77,7 +77,7 @@ python scripts/grant_operator.py 0xOther --revoke
 
 `--list` is safe to run any time and reads the same database the server uses.
 
-**Set `PATHIA_AUTH_DOMAIN` to the deployed host before anyone tries to log in.**
+**Set `PATHIEL_AUTH_DOMAIN` to the deployed host before anyone tries to log in.**
 The domain is inside the signed bytes and is checked against config, never
 against the request's own `Host` header (an attacker controls that). If it does
 not match what the browser is on, every signature is rejected for a domain

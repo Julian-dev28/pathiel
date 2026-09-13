@@ -13,7 +13,7 @@ import importlib.util
 from pathlib import Path
 
 
-from pathia.agents import shadow_ledger as SL
+from pathiel.agents import shadow_ledger as SL
 
 ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location(

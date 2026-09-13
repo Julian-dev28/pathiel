@@ -1,6 +1,6 @@
 """Pytest bootstrap — load .env.local before the test session starts.
 
-pathia.client.exchange reads Hyperliquid credentials at import time, so
+pathiel.client.exchange reads Hyperliquid credentials at import time, so
 the environment must be populated before any test imports the package. This is
 a no-op when .env.local is absent (e.g. CI without secrets).
 """

@@ -1,15 +1,15 @@
 # MCP Server Configuration
 
-The MCP server is a Python stdio process. It imports `pathia` directly —
+The MCP server is a Python stdio process. It imports `pathiel` directly —
 there is no separate HTTP server to keep running.
 
 ## It does not go through the dashboard's auth
 
 Worth stating plainly, because the answer is not obvious and the security
-consequence is real: **the MCP server calls `pathia` in-process**. It does not
-make HTTP requests to `pathia.server`, so none of the 2026-09-04 web auth
+consequence is real: **the MCP server calls `pathiel` in-process**. It does not
+make HTTP requests to `pathiel.server`, so none of the 2026-09-04 web auth
 applies to it — no wallet sign-in, no session cookie, no operator role, no
-`PATHIA_OPERATOR_TOKEN`, no CSP.
+`PATHIEL_OPERATOR_TOKEN`, no CSP.
 
 What gates it instead is the filesystem. It reads `.env.local` for the trading
 key and `.agent-config.json` for the risk caps, so **anyone who can run this
@@ -24,7 +24,7 @@ would not help, because this process never touches those routes.
 ## Starting the MCP Server
 
 ```bash
-python scripts/pathia-mcp-server.py
+python scripts/pathiel-mcp-server.py
 ```
 
 It auto-loads `.env.local` from the project root, so credentials must be set
@@ -34,11 +34,11 @@ there (see Environment Variables below).
 
 ```yaml
 mcp_servers:
-  pathia:
+  pathiel:
     command: python
     args:
-      - /absolute/path/to/pathia/scripts/pathia-mcp-server.py
-    cwd: /absolute/path/to/pathia   # so .env.local resolves
+      - /absolute/path/to/pathiel/scripts/pathiel-mcp-server.py
+    cwd: /absolute/path/to/pathiel   # so .env.local resolves
     timeout: 120
 ```
 
@@ -48,7 +48,7 @@ The server exposes 88 tools, every one of them implemented. The 7 trading-core t
 are the ones you call directly.
 
 Six of those stubs were promoted on 2026-09-06 after an audit found the
-capability already sat in `pathia.client`: `get_coin_price`, `get_leverage`,
+capability already sat in `pathiel.client`: `get_coin_price`, `get_leverage`,
 `get_funding_history`, `get_asset_context`, `get_open_interest` and
 `get_predicted_funding`. A stub is worse than a missing tool — an agent reads
 "not implemented" as "this data does not exist here" and goes without it.
@@ -80,16 +80,16 @@ OPENROUTER_API_KEY=sk-or-...
 # CODEX_CLI_COMMAND=codex
 ```
 
-The web auth vars (`PATHIA_AUTH_DOMAIN`, `PATHIA_PUBLIC_DASHBOARD`,
-`PATHIA_OPERATOR_TOKEN`) are **not** read by this process. They belong to
-`pathia.server`; see `services/auth/README.md`.
+The web auth vars (`PATHIEL_AUTH_DOMAIN`, `PATHIEL_PUBLIC_DASHBOARD`,
+`PATHIEL_OPERATOR_TOKEN`) are **not** read by this process. They belong to
+`pathiel.server`; see `services/auth/README.md`.
 
 ## Testing Tools
 
 In Pathia Agent, after the MCP server connects:
 
 ```
-mcp pathia scan { minScore: 80 }
-mcp pathia research { coin: "BTC" }
-mcp pathia state
+mcp pathiel scan { minScore: 80 }
+mcp pathiel research { coin: "BTC" }
+mcp pathiel state
 ```

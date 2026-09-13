@@ -12,7 +12,7 @@
 # generated data; it never opens a websocket or signs an order.
 #
 # eth-account is here despite the demo never signing anything: services/auth
-# imports it at module scope for SIWE verification, and pathia/server.py
+# imports it at module scope for SIWE verification, and pathiel/server.py
 # imports that router unconditionally.
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1

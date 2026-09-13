@@ -5,7 +5,7 @@ the thought-engine were the #1 measured loss source. Strategy books (tagged
 strategy_book) pass; absent config defaults to enabled (old behavior)."""
 import pytest
 
-from pathia.agents import executor as ex
+from pathiel.agents import executor as ex
 
 
 def _analysis(**kw):
@@ -74,7 +74,7 @@ def test_absent_config_defaults_to_enabled(monkeypatch):
 
 # ── kill-switch rescale (rebuild step 4) ─────────────────────────────────────
 
-from pathia.agents.risk_gates import effective_daily_loss_limit
+from pathiel.agents.risk_gates import effective_daily_loss_limit
 
 
 def test_pct_limit_scales_with_sod_equity():
@@ -109,7 +109,7 @@ def test_deposit_race_does_not_poison_peak_daily_pnl(monkeypatch):
     and the give-back gate blocked ALL entries (books included) until UTC
     roll. A single-tick jump > max($10, 30% of equity) must freeze the peak
     high-water for that tick; the corrected next tick proceeds normally."""
-    from pathia.agents.memory import AgentMemory
+    from pathiel.agents.memory import AgentMemory
     m = AgentMemory.__new__(AgentMemory)
     m._start_of_day_equity = 18.0
     m._day_start_ts = 2**63 - 1          # force the "same day" branch
@@ -163,7 +163,7 @@ def test_disabled_markets_are_dropped_before_anything_can_spend_on_them():
     Filtering in get_universe means no caller can forget: a book cannot spend on
     a market it was never handed.
     """
-    from pathia.client import universe as U
+    from pathiel.client import universe as U
 
     meta = {"BTC": {"type": "perp", "dex": None, "maxLeverage": 40, "szDecimals": 5},
             "xyz:BE": {"type": "perp", "dex": "xyz", "maxLeverage": 10, "szDecimals": 2}}
@@ -232,14 +232,14 @@ def test_every_sizing_gate_admits_the_book_the_config_asks_for():
     """
     import json
     import pathlib
-    from pathia.client.exchange import MIN_ORDER_USD
+    from pathiel.client.exchange import MIN_ORDER_USD
     root = pathlib.Path(__file__).resolve().parents[1]
     cfg = json.loads((root / ".agent-config.json").read_text())
 
     equity = float(cfg["min_tradable_equity_usd"])   # the floor it must work at
     lev = int(cfg["leverage"])
     conc = int(cfg["max_concurrent"])
-    from pathia.agents.book_params import book_params
+    from pathiel.agents.book_params import book_params
     _bp = book_params(cfg, "xs_reversal")
     stop = float(_bp.stop_pct) / 100.0
     # notional_usd 0 means equity-FRACTION sizing (strategy_book_equity_frac),

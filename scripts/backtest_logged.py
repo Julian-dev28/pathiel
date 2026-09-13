@@ -31,12 +31,12 @@ if _env.exists():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
-from pathia.agents.config_store import read_agent_config
-from pathia.agents.sizing import atr_equal_risk_notional
-from pathia.client.exchange import get_max_leverage
-from pathia.indicators.math import atr as calc_atr
-from pathia.client.hl_client import _http_post
-from pathia.models.types import Candle
+from pathiel.agents.config_store import read_agent_config
+from pathiel.agents.sizing import atr_equal_risk_notional
+from pathiel.client.exchange import get_max_leverage
+from pathiel.indicators.math import atr as calc_atr
+from pathiel.client.hl_client import _http_post
+from pathiel.models.types import Candle
 from _memory_io import load_memory
 
 _INTERVAL_MS = {"5m": 300_000, "1h": 3_600_000, "4h": 14_400_000}
@@ -123,7 +123,7 @@ def fetch_candles_at(coin: str, interval: str, count: int, end_ms: int) -> Optio
 
 
 def detect_regime_at(end_ms: int, proxy: str = "BTC") -> str:
-    from pathia.indicators.math import ema
+    from pathiel.indicators.math import ema
     candles = fetch_candles_at(proxy, "1h", 100, end_ms)
     if not candles or len(candles) < 50:
         return "neutral"
@@ -329,7 +329,7 @@ def main() -> int:
                     help="Seconds to sleep before uncached Hyperliquid candle requests")
     ap.add_argument("--summary-only", action="store_true",
                     help="Suppress per-trade rows; print only aggregate results")
-    ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "pathia_backtest_logged_candles.json"),
+    ap.add_argument("--cache-file", default=os.path.join(tempfile.gettempdir(), "pathiel_backtest_logged_candles.json"),
                     help="Disk cache for historical candles; set empty string to disable")
     ap.add_argument("--apply-runner-gate", action="store_true",
                     help="Apply executor.runner_entry_gate to admitted trades")
@@ -517,7 +517,7 @@ def main() -> int:
             continue
 
         if args.apply_runner_gate:
-            from pathia.agents.executor import _runner_entry_block_reason
+            from pathiel.agents.executor import _runner_entry_block_reason
             gate_analysis = dict(a)
             gate_analysis["side"] = side
             if forced:

@@ -1,6 +1,6 @@
 """The dashboard open-positions 'why this opened' reason line."""
-from pathia.agents.memory import memory
-from pathia.dashboard import _rows_from_state
+from pathiel.agents.memory import memory
+from pathiel.dashboard import _rows_from_state
 
 
 def test_peek_entry_context_is_nondestructive():
@@ -37,7 +37,7 @@ def test_row_open_reason_empty_when_no_context():
 
 def test_reload_entry_ctx_rereads_disk(tmp_path, monkeypatch):
     import json
-    from pathia.agents import memory as memmod
+    from pathiel.agents import memory as memmod
     # simulate the loop process having flushed an entry ctx to disk
     f = tmp_path / "mem.json"
     f.write_text(json.dumps({"entryCtx": {"RLDT_long": {"book": "main-engine", "reason": "x"}}}))

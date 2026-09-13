@@ -1,5 +1,5 @@
 /**
- * Bundles the wallet island to `pathia/static/wallet.js` + `wallet.css`.
+ * Bundles the wallet island to `pathiel/static/wallet.js` + `wallet.css`.
  *
  * The output is committed. That is a deliberate exception to "no compiled
  * artifacts in the repo" and it is bounded by two things:
@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '..', '..');
-const OUT_DIR = join(REPO, 'pathia', 'static');
+const OUT_DIR = join(REPO, 'pathiel', 'static');
 const MANIFEST = join(HERE, 'bundle.manifest.json');
 
 /** Hash of every input that can change the bundle: sources plus the lockfile. */
@@ -49,7 +49,7 @@ async function run() {
     const recorded = JSON.parse(readFileSync(MANIFEST, 'utf8'));
     if (recorded.sourceHash !== hash) {
       console.error(
-        'pathia/static/wallet.js is stale: the sources in services/wallet_ui/src '
+        'pathiel/static/wallet.js is stale: the sources in services/wallet_ui/src '
         + 'changed since it was built.\nRun `npm run build` in services/wallet_ui '
         + 'and commit the result.',
       );
@@ -57,7 +57,7 @@ async function run() {
     }
     for (const artifact of recorded.artifacts) {
       if (!existsSync(join(OUT_DIR, artifact))) {
-        console.error(`missing built artifact: pathia/static/${artifact}`);
+        console.error(`missing built artifact: pathiel/static/${artifact}`);
         process.exit(1);
       }
     }
@@ -99,7 +99,7 @@ async function run() {
       2,
     ) + '\n',
   );
-  console.log(`built pathia/static/wallet.js (${(bytes / 1024).toFixed(0)} KB total)`);
+  console.log(`built pathiel/static/wallet.js (${(bytes / 1024).toFixed(0)} KB total)`);
 }
 
 run().catch((e) => {

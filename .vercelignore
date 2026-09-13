@@ -24,7 +24,7 @@ shadow_ledger/
 
 # Session log, trade history, and the operator journal: the account's whole book.
 *.jsonl
-pathia_data.db
+pathiel_data.db
 logs/
 .monitor-journal.md
 alerts.json

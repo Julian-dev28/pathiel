@@ -7,8 +7,8 @@ Two audiences, one door:
 
 Both resolve to the same `User`, so no route has to care which it got.
 
-The legacy `PATHIA_OPERATOR_TOKEN` still works and is still checked in
-`pathia.dashboard._require_operator`. It is a shared, static, per-deployment
+The legacy `PATHIEL_OPERATOR_TOKEN` still works and is still checked in
+`pathiel.dashboard._require_operator`. It is a shared, static, per-deployment
 secret: fine for one operator on one box, useless the moment there is more than
 one human, because it cannot say who acted. It is retained for the machine paths
 (the scheduler, the supervisor, smoke checks) and is not a login.
@@ -24,7 +24,7 @@ from fastapi import Depends, HTTPException, Request
 from services.auth import stateless
 from services.auth.store import AuthStore, User
 
-SESSION_COOKIE = "pathia_session"
+SESSION_COOKIE = "pathiel_session"
 
 _STORE: Optional[AuthStore] = None
 
@@ -61,7 +61,7 @@ def _user_from_stateless(token: str) -> Optional[User]:
     reason the session lookup did. Everything here comes out of the token.
 
     Role is always "user". The operator bootstrap is off wherever this is on
-    (see PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR), and a token that could mint an
+    (see PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR), and a token that could mint an
     operator would be a much worse thing to leak.
     """
     address = stateless.read_session(token)
@@ -118,7 +118,7 @@ def _is_local(request: Optional[Request]) -> bool:
     nothing".
 
     Deciding from the request rather than an env var means the default is right
-    in both places and there is no PATHIA_INSECURE_COOKIES to forget to unset in
+    in both places and there is no PATHIEL_INSECURE_COOKIES to forget to unset in
     production. The test is deliberately narrow: http only, and only for a host
     that is unambiguously this machine.
     """
@@ -135,14 +135,14 @@ def cookie_kwargs(request: Optional[Request] = None) -> dict:
 
     `secure` is on everywhere except plain HTTP to localhost, where a Secure
     cookie would be dropped by the browser and sign-in would fail silently.
-    PATHIA_INSECURE_COOKIES still forces it off for a test client, which speaks
+    PATHIEL_INSECURE_COOKIES still forces it off for a test client, which speaks
     http to a non-local host.
 
     SameSite=Lax, not None: the session is only ever used by our own pages, and
     Lax means a cross-site POST cannot ride the cookie. That, plus the fact that
     every mutating route is a POST, is what stands in for CSRF tokens here.
     """
-    insecure = bool(os.environ.get("PATHIA_INSECURE_COOKIES")) or _is_local(request)
+    insecure = bool(os.environ.get("PATHIEL_INSECURE_COOKIES")) or _is_local(request)
     return {
         "httponly": True,
         "secure": not insecure,

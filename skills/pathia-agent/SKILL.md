@@ -1,28 +1,28 @@
 ---
 name: pathia-agent
-description: Use when operating, maintaining, or debugging pathia — the standalone autonomous Hyperliquid trading system that Pathia Agent drives through its MCP server. Covers the scan/research/execute pipeline, pluggable AI-brain providers, live EV+ strategy books, risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
+description: Use when operating, maintaining, or debugging pathiel — the standalone autonomous Hyperliquid trading system that Pathia Agent drives through its MCP server. Covers the scan/research/execute pipeline, pluggable AI-brain providers, live EV+ strategy books, risk gates, MCP tool wiring, and Hyperliquid order-placement gotchas.
 version: 1.0.0
 author: Pathia Agent
 license: MIT
 metadata:
-  pathia:
+  pathiel:
     tags: [trading, hyperliquid, mcp, autonomous, quant]
     related_skills: [hyperliquid-agent-wallets]
-    homepage: https://github.com/Julian-dev28/pathia
+    homepage: https://github.com/Julian-dev28/pathiel
 ---
 
-# Pathia-Trader Agent
+# Pathiel-Trader Agent
 
-`pathia` is a **standalone Python trading system** for Hyperliquid
+`pathiel` is a **standalone Python trading system** for Hyperliquid
 perpetual markets — both native crypto perps (BTC, ETH, etc.) **and HIP-3
 tokenized-equity / commodity / index perps** (`xyz:NVDA`, `xyz:GOLD`,
 `km:US500`, `xyz:CL`, etc.) when the `enable_hip3` flag is on. Pathia Agent
-operates it through the **MCP server** registered in `~/.pathia/config.yaml`
-(`mcp_servers.pathia`) — that MCP boundary is the integration. The
+operates it through the **MCP server** registered in `~/.pathiel/config.yaml`
+(`mcp_servers.pathiel`) — that MCP boundary is the integration. The
 trading engine itself has no Pathia-framework dependency; it is
-Pathia-*operated*, not Pathia-*built*.
+Pathiel-*operated*, not Pathiel-*built*.
 
-Repo: `/Users/julian_dev/Documents/code/pathia`. The user may work on
+Repo: `/Users/julian_dev/Documents/code/pathiel`. The user may work on
 dirty local branches and switch deploy branches between sessions. **Commit/push
 only when the user asks, and never push directly to another branch without
 explicit confirmation.**
@@ -41,10 +41,10 @@ A pipeline designed to keep AI token cost proportional to real opportunity:
    the composite-score gate so explosive moves always surface. Every
    perception is persisted via `memory.record_perception`.
 
-   Env knobs: `PATHIA_MAX_MARKETS`, `PATHIA_MAX_MARKETS_HIP3`,
-   `PATHIA_MAX_MARKETS_MOVERS`, `PATHIA_UNIVERSE_SWEEP`,
-   `PATHIA_SCAN_WORKERS`, `PATHIA_BATCH_SIZE`, `PATHIA_BATCH_SLEEP`,
-   `PATHIA_MOVERS_VOL_FLOOR_USD`, `PATHIA_HIP3_MOVERS_FLOOR_USD`.
+   Env knobs: `PATHIEL_MAX_MARKETS`, `PATHIEL_MAX_MARKETS_HIP3`,
+   `PATHIEL_MAX_MARKETS_MOVERS`, `PATHIEL_UNIVERSE_SWEEP`,
+   `PATHIEL_SCAN_WORKERS`, `PATHIEL_BATCH_SIZE`, `PATHIEL_BATCH_SLEEP`,
+   `PATHIEL_MOVERS_VOL_FLOOR_USD`, `PATHIEL_HIP3_MOVERS_FLOOR_USD`.
 2. **Pre-research cooldown** — `trading_loop.py` checks the most recent
    trade per coin and skips paid AI research if the coin is still inside its
    `cooldown_min` window. The execute-time `cooldown_gate` remains as the
@@ -80,25 +80,25 @@ scripts/restart.sh status       # show what's running
 ```
 
 Logs land in `logs/trading_loop.log` and `logs/server.log`. The MCP server
-(`scripts/pathia-mcp-server.py`) is intentionally NOT managed — it's a transient
+(`scripts/pathiel-mcp-server.py`) is intentionally NOT managed — it's a transient
 stdio process respawned by Pathia Agent on each tool call. If MCP code is stale:
-`pkill -f pathia-mcp-server.py` and the next tool call respawns fresh.
+`pkill -f pathiel-mcp-server.py` and the next tool call respawns fresh.
 
 When `restart.sh` is run from Codex and background children are reaped by the
 execution wrapper, launch the long-lived processes in `screen` instead:
 
 ```bash
-screen -dmS pathia-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathia && PATHIA_HL_RATE_REFILL_PER_SEC=5 PATHIA_HL_RATE_CAPACITY=200 .venv/bin/python -m pathia.server >> logs/server.log 2>&1'
-screen -dmS pathia-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathia && PATHIA_STARTUP_GRACE_S=0 PATHIA_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
+screen -dmS pathiel-server /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathiel && PATHIEL_HL_RATE_REFILL_PER_SEC=5 PATHIEL_HL_RATE_CAPACITY=200 .venv/bin/python -m pathiel.server >> logs/server.log 2>&1'
+screen -dmS pathiel-loop /bin/zsh -lc 'cd /Users/julian_dev/Documents/code/pathiel && PATHIEL_STARTUP_GRACE_S=0 PATHIEL_META_PREWARM_TIMEOUT_S=3 .venv/bin/python scripts/trading_loop.py >> logs/trading_loop.log 2>&1'
 screen -ls
-curl -s -o /tmp/pathia-dashboard.html -w "%{http_code}\n" http://localhost:8000/
+curl -s -o /tmp/pathiel-dashboard.html -w "%{http_code}\n" http://localhost:8000/
 ```
 
 Manual foreground launch is only for debugging:
 
 ```bash
 python scripts/trading_loop.py        # continuous scan -> research -> execute
-python -m pathia.server        # API server only
+python -m pathiel.server        # API server only
 ```
 
 The `--env prod --daemon` flags are parsed but **informational only** — the
@@ -106,7 +106,7 @@ script does NOT actually fork or daemonize itself. The loop already has its own
 `while True` with periodic sleeps; use `scripts/restart.sh` when it needs to
 survive the terminal session.
 
-Cadence is `PATHIA_SCAN_INTERVAL` (default 60s). Or drive the steps individually
+Cadence is `PATHIEL_SCAN_INTERVAL` (default 60s). Or drive the steps individually
 through the MCP `scan` / `research` / `execute` tools.
 
 ### Restarting the Trading Loop + Server
@@ -141,7 +141,7 @@ Research has one provider seam:
 
 ```
 research._call_ai(system_prompt, user_message)
-  -> pathia.agents.ai_brain.get_brain(provider).complete(...)
+  -> pathiel.agents.ai_brain.get_brain(provider).complete(...)
   -> parse_verdict(...)
 ```
 
@@ -164,21 +164,21 @@ Failure contract is load-bearing: provider failure, timeout, non-zero exit,
 empty stdout, or output without verdict JSON returns `""`. That becomes
 `ai_down=True` PASS and the TA sidestep override must not upgrade it.
 
-CLI provider auth is outside Pathia. Verify `claude -p` / `codex exec` works
+CLI provider auth is outside Pathiel. Verify `claude -p` / `codex exec` works
 non-interactively in the loop's actual environment before switching live.
 
 ## MCP Integration
 
-The server (`scripts/pathia-mcp-server.py`, stdio, 88 tools) is registered in
-`~/.pathia/config.yaml`:
+The server (`scripts/pathiel-mcp-server.py`, stdio, 88 tools) is registered in
+`~/.pathiel/config.yaml`:
 
 ```yaml
 mcp_servers:
-  pathia:
+  pathiel:
     command: python3
     args:
-      - /Users/julian_dev/Documents/code/pathia/scripts/pathia-mcp-server.py
-    cwd: /Users/julian_dev/Documents/code/pathia   # recommended
+      - /Users/julian_dev/Documents/code/pathiel/scripts/pathiel-mcp-server.py
+    cwd: /Users/julian_dev/Documents/code/pathiel   # recommended
     timeout: 60
     connect_timeout: 30
     env:
@@ -188,7 +188,7 @@ mcp_servers:
 Primary tools: `scan`, `research`, `submit_verdict`, `execute`,
 `close_position`, `state`, `config`. Adding tools and the audit invariant: see
 `references/mcp-server.md`. After editing the server, restart it:
-`pkill -f pathia-mcp-server.py` (the next call respawns it fresh).
+`pkill -f pathiel-mcp-server.py` (the next call respawns it fresh).
 
 `close_position` delegates to `executor.close_position_market()`. Do not
 re-implement close logic in MCP handlers; that helper owns reduce-only close
@@ -202,7 +202,7 @@ through the existing gates and close helper.
 
 ## State Files
 
-Project state — not Pathia memory (all gitignored):
+Project state — not Pathiel memory (all gitignored):
 - `.agent-config.json` — mode (OFF/LIVE), AI brain provider, risk caps, thresholds
 - `.agent-memory.json` — perceptions, analyses, trades, cooldowns
 - `.data_funding_oi.jsonl` / `.data_logger_ts` — the funding/OI panel. Written
@@ -401,9 +401,9 @@ For agent-wallet setup and the `approveAgent` flow, see the
 ## Market Coverage & Scan Scope
 
 Scanner uses a **bucketed budget** (default 45 core candle fetches per scan):
-- `PATHIA_MAX_MARKETS_HIP3` (18) HIP-3 markets by 24h volume
-- `PATHIA_MAX_MARKETS_MOVERS` (10) crypto markets by `|24h%|` above a
-  `PATHIA_MOVERS_VOL_FLOOR_USD` ($300k) floor
+- `PATHIEL_MAX_MARKETS_HIP3` (18) HIP-3 markets by 24h volume
+- `PATHIEL_MAX_MARKETS_MOVERS` (10) crypto markets by `|24h%|` above a
+  `PATHIEL_MOVERS_VOL_FLOOR_USD` ($300k) floor
 - Remainder (17) crypto markets by 24h volume
 
 This catches three regimes: high-volume majors, tokenized equities, and
@@ -414,7 +414,7 @@ rally goes unscanned.
 To force coverage of a specific coin not in the buckets:
 - Call `research` directly on the symbol via MCP (confirm it's in
   `get_perp_markets` first), or
-- Bump `PATHIA_MAX_MARKETS_MOVERS` if it's a momentum candidate.
+- Bump `PATHIEL_MAX_MARKETS_MOVERS` if it's a momentum candidate.
 
 ## HIP-3 Tokenized Equity / Commodity Perps
 
@@ -453,7 +453,7 @@ funding regime**, or the live API call from inside the gate will hit
 production and randomize the result:
 
 ```python
-from pathia.agents import market_regime, hyperfeed
+from pathiel.agents import market_regime, hyperfeed
 monkeypatch.setattr(market_regime, "detect_regime", lambda c: "up")
 monkeypatch.setattr(hyperfeed, "market_get_funding_regime",
                     lambda: {"regime": "NEUTRAL", "assets": []})
@@ -472,7 +472,7 @@ itself — that's the cache wrapper).
 | Executor blocks LONG with "insufficient_free_margin" while HL UI shows plenty | `available` is `accountValue - totalMarginUsed` (matches HL UI). If they differ, the loop is on stale code — restart. |
 | Logs show overlapping scan cycles or doubled cadence | There is likely an orphan loop. Run `scripts/restart.sh status` and `ps ax \| rg "scripts/trading_loop.py"`; keep exactly one Python loop process. |
 | Most blocked LONGs are "counter-regime" | Regime proxy is slow; raise `counter_regime_min_conf` floor or rely on the own-coin-momentum bypass (composite_score≥50 or momentumBurst). |
-| MCP `config` tool dropping a key | FIXED 2026-06-05 and pruned later — the tool exposes the current risk-knob set in snake_case. Removed experiment knobs are intentionally absent. Older builds took a narrow camelCase schema, silently dropped keys, and wrote dup keys; if you see that, the MCP is on stale code → `pkill -f pathia-mcp-server.py`. |
+| MCP `config` tool dropping a key | FIXED 2026-06-05 and pruned later — the tool exposes the current risk-knob set in snake_case. Removed experiment knobs are intentionally absent. Older builds took a narrow camelCase schema, silently dropped keys, and wrote dup keys; if you see that, the MCP is on stale code → `pkill -f pathiel-mcp-server.py`. |
 | CLI brain returns PASS for every coin | Check whether the research event has `ai_down`/empty reasoning or logs show CLI timeout/non-zero exit. Provider failures intentionally return `""`; fix CLI auth/env or switch `AI_BRAIN_PROVIDER=openrouter`. Do not loosen TA sidestep to compensate. |
 | `[watchdog] no progress for N s — HUNG` re-execs (N = minutes/hours) | NOT a code hang — the host (MacBook) idle/maintenance-slept and froze the process; the watchdog re-execs correctly on wake. Confirm with `pmset -g log \| grep -iE "Sleep\|Wake"`. Fix: `caffeinate` (now auto-launched by `restart.sh`); keep on AC for closed-lid. Positions are held by server-side brackets during sleep. |
 | `reduce only order would increase position` reject | Stranded SL/TP trigger orders from a prior closed position. `close_position_market` now auto-cancels them (`cancel_open_orders_for_coin`); if on old code, cancel manually or restart. |
@@ -482,7 +482,7 @@ itself — that's the cache wrapper).
 | `@` coins as noise in scan results | Spot pairs are filtered in `perception.py`; if they appear, the filter regressed. |
 | "perception not found" on research | Send the full perception object inline, not just a `perceptionId`. |
 | Order rejected on price/size | Hyperliquid `szDecimals` ≠ `pxDecimals` — see `references/hyperliquid-gotchas.md`. |
-| MCP tool runs stale code after a fix | The server is a separate process — `pkill -f pathia-mcp-server.py` to respawn. |
+| MCP tool runs stale code after a fix | The server is a separate process — `pkill -f pathiel-mcp-server.py` to respawn. |
 | Scan returns 0 triggers | Often correct (quiet market). Lower minScore only to widen deliberately. |
 | Scanner fires triggers but zero executes | See `references/signal-vs-action-gap.md`. First bucket the feed by `entry_preflight`, `ta_skip`, `research`, and `execute.detail`; do not lower thresholds or re-enable removed methods without fresh EV evidence. |
 
@@ -528,12 +528,12 @@ The right way to watch the trading system is:
 
 1. **Tail the feed:** `python3 scripts/feed.py --follow` in a terminal.
 2. **One-off snapshot:** `python3 scripts/status.py` for cached + live state.
-3. **Hourly auto-report:** Pathia cron job `8a82eaa567fe` (`pathia-status.sh`)
+3. **Hourly auto-report:** Pathiel cron job `8a82eaa567fe` (`pathiel-status.sh`)
    runs `status.py` + `feed.py --since 60m` every hour and delivers the
    combined report to the originating chat (no LLM cost — `no_agent=true`).
-   - Pause:  `pathia cron pause 8a82eaa567fe`
-   - Resume: `pathia cron resume 8a82eaa567fe`
-   - Run now: `pathia cron run 8a82eaa567fe`
+   - Pause:  `pathiel cron pause 8a82eaa567fe`
+   - Resume: `pathiel cron resume 8a82eaa567fe`
+   - Run now: `pathiel cron run 8a82eaa567fe`
 
 ## Loop Heartbeat (live equity sync)
 
@@ -559,17 +559,17 @@ heartbeat is broken or the loop hasn't completed one cycle yet.
 
 ## Scheduled Operation
 
-An hourly Pathia cron job (`no_agent`, zero LLM cost) runs `status.py` and
-delivers the snapshot. It ships paused — `pathia cron resume 8a82eaa567fe` to
+An hourly Pathiel cron job (`no_agent`, zero LLM cost) runs `status.py` and
+delivers the snapshot. It ships paused — `pathiel cron resume 8a82eaa567fe` to
 start it. See `references/cron-jobs.md`.
 
 ## References
 
 - `references/mcp-config.md` — MCP server config and tool list.
 - `references/mcp-server.md` — server structure, adding tools, the audit invariant.
-- `../../docs/AI_BRAIN_OPERATOR_WIRING.md` — Codex/Claude/Pathia/OpenClaw brain-provider and MCP-operator wiring.
+- `../../docs/AI_BRAIN_OPERATOR_WIRING.md` — Codex/Claude/Pathiel/OpenClaw brain-provider and MCP-operator wiring.
 - `references/hyperliquid-gotchas.md` — order-placement gotchas (decimals, tick size, $10 min, singletons).
-- `references/cron-jobs.md` — Pathia cron wiring for the hourly status report.
+- `references/cron-jobs.md` — Pathiel cron wiring for the hourly status report.
 - `references/signal-vs-action-gap.md` — current gate-first diagnostic flow for "scanner fires, trader stays silent".
 - `references/restart-sequence.md` — `scripts/restart.sh` usage + baseline-reset snippet.
 - `references/trading-mode.md` — execute-first reporting contract when the user is in active trading mode.

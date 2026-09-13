@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Live activity feed for pathia.
+"""Live activity feed for pathiel.
 
 The trading loop appends every scan / TA filter / research / execute / error
-to `~/.pathia-session-log.jsonl`. This script prints the last N events
+to `~/.pathiel-session-log.jsonl`. This script prints the last N events
 in human-readable form, or follows the file in real time with --follow.
 
 Usage:
@@ -28,7 +28,7 @@ from typing import Optional
 
 SESSION_LOG = Path(os.environ.get(
     "SESSION_LOG_PATH",
-    os.path.expanduser("~/.pathia-session-log.jsonl"),
+    os.path.expanduser("~/.pathiel-session-log.jsonl"),
 ))
 
 
@@ -153,7 +153,7 @@ def main() -> int:
     if not args.follow and not args.since:
         events = events[-args.limit:]
 
-    header = f"=== pathia activity feed ({SESSION_LOG.name}) ==="
+    header = f"=== pathiel activity feed ({SESSION_LOG.name}) ==="
     print(header)
     shown = _print_events(events, filt)
     if shown == 0:

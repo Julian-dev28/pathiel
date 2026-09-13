@@ -30,7 +30,7 @@ be replayed to open a second session. Three things bound that:
     is not the worst thing happening.
 
 It is still a downgrade, so it is OFF by default and must be asked for by name:
-`PATHIA_AUTH_STATELESS_NONCE=1`. A deployment with a durable volume — the Fly
+`PATHIEL_AUTH_STATELESS_NONCE=1`. A deployment with a durable volume — the Fly
 box, any real install — keeps burned nonces and should never set it. The public
 demo sets it because its alternative is not "stronger replay protection", it is
 "sign-in works at random".
@@ -80,13 +80,13 @@ STATELESS_SESSION_TTL_S = 12 * 3600
 
 def enabled() -> bool:
     """Stateless nonces."""
-    return bool(os.environ.get("PATHIA_AUTH_STATELESS_NONCE"))
+    return bool(os.environ.get("PATHIEL_AUTH_STATELESS_NONCE"))
 
 
 def sessions_enabled() -> bool:
     """Stateless sessions. Separate switch, because the trades differ: a nonce
     gives up single-use, a session gives up revocation."""
-    return bool(os.environ.get("PATHIA_AUTH_STATELESS_SESSION"))
+    return bool(os.environ.get("PATHIEL_AUTH_STATELESS_SESSION"))
 
 
 def _secret() -> bytes:
@@ -97,11 +97,11 @@ def _secret() -> bytes:
     reintroduced silently — and a hardcoded one would let anyone holding this
     source mint nonces for any deployment running it.
     """
-    raw = os.environ.get("PATHIA_AUTH_NONCE_SECRET", "")
+    raw = os.environ.get("PATHIEL_AUTH_NONCE_SECRET", "")
     if len(raw) < 32:
         raise NonceError(
-            "PATHIA_AUTH_NONCE_SECRET must be set to at least 32 characters when "
-            "PATHIA_AUTH_STATELESS_NONCE is on; it is the only thing making a "
+            "PATHIEL_AUTH_NONCE_SECRET must be set to at least 32 characters when "
+            "PATHIEL_AUTH_STATELESS_NONCE is on; it is the only thing making a "
             "nonce unforgeable"
         )
     return raw.encode()

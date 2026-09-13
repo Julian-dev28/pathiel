@@ -1,7 +1,7 @@
-"""Vercel entrypoint: the pathia dashboard, serving synthetic data.
+"""Vercel entrypoint: the pathiel dashboard, serving synthetic data.
 
 This is a demo deployment. It runs the real dashboard code — the same
-`pathia/dashboard.py` the live system serves — against a generated session log,
+`pathiel/dashboard.py` the live system serves — against a generated session log,
 positions snapshot and agent config. No exchange connection, no credentials, no
 trading loop.
 
@@ -13,16 +13,16 @@ renderers shows the actual product.
 Three things this file exists to guarantee, in order of how badly they would
 hurt if they were wrong:
 
-  1. **No credentials, ever.** `PATHIA_PUBLIC_DASHBOARD=1` deliberately opens
+  1. **No credentials, ever.** `PATHIEL_PUBLIC_DASHBOARD=1` deliberately opens
      every account endpoint to anonymous readers — that is what makes the demo
      viewable. It is also exactly the flag the 2026-09-04 audit called a
      privacy leak when there is a real account behind it. So this module
      refuses to boot if any exchange credential is present in the environment.
      A demo that can reach the live account is not a demo.
-  2. **Read-only.** `PATHIA_DASHBOARD_READONLY=1` makes every POST a 403, so
+  2. **Read-only.** `PATHIEL_DASHBOARD_READONLY=1` makes every POST a 403, so
      the STOP TRADING button and the operator token field are inert.
-  3. **Env before import.** `pathia.dashboard` resolves the session-log,
-     snapshot and config paths at module scope, and `pathia.client.universe`
+  3. **Env before import.** `pathiel.dashboard` resolves the session-log,
+     snapshot and config paths at module scope, and `pathiel.client.universe`
      mkdirs a cache under `Path.home()` at import — a hard crash on a
      read-only filesystem. Everything has to be set before the import at the
      bottom, which is why the imports are not at the top.
@@ -40,18 +40,18 @@ if _REPO_ROOT not in sys.path:
 
 # ── 1. refuse to run anywhere near a real account ────────────────────────────
 #
-# Names taken from pathia/client/exchange.py and .env.local.example. Presence
+# Names taken from pathiel/client/exchange.py and .env.local.example. Presence
 # is enough to abort: this process must have no path to signing anything.
 _FORBIDDEN = (
     "HYPERLIQUID_PRIVATE_KEY",
     "PRIVATE_KEY_HEX",
     "HYPERLIQUID_ACCOUNT_ADDRESS",
     "HL_ACCOUNT_ADDRESS",
-    "PATHIA_OPERATOR_TOKEN",
+    "PATHIEL_OPERATOR_TOKEN",
 )
 _present = [k for k in _FORBIDDEN if os.environ.get(k)]
 
-# `pathia/server.py` loads `.env.local` into the environment on import, before
+# `pathiel/server.py` loads `.env.local` into the environment on import, before
 # anything here gets a second look. Checking os.environ alone would therefore
 # pass on a developer box and then boot the demo against real keys, so the file
 # itself counts as a credential.
@@ -69,21 +69,21 @@ if _present:
 
 # ── 2. give the process a writable home ──────────────────────────────────────
 #
-# `pathia/client/universe.py` calls `Path.home() / ".pathia" / "universe_cache"`
+# `pathiel/client/universe.py` calls `Path.home() / ".pathiel" / "universe_cache"`
 # and mkdirs it AT IMPORT, which is a hard crash on Vercel: everything outside
 # /tmp is read-only, and the traceback is `OSError: [Errno 30] Read-only file
 # system: '/home/sbx_user1051'` before a single route is registered.
 #
 # Two other modules read the same home — `server.py`'s PID file and
 # `session_log.py`'s default path — so pointing HOME at /tmp fixes all three at
-# once and needs no change to the trading code. Set before any pathia import,
+# once and needs no change to the trading code. Set before any pathiel import,
 # because `Path.home()` is resolved at module scope.
-_HOME = os.path.join(tempfile.gettempdir(), "pathia-home")
+_HOME = os.path.join(tempfile.gettempdir(), "pathiel-home")
 os.makedirs(_HOME, exist_ok=True)
 os.environ["HOME"] = _HOME
 
 # The same problem one level up: services/auth keeps its SQLite database at
-# `<PATHIA_STATE_DIR>/auth.db`, and that variable defaults to ".", which is
+# `<PATHIEL_STATE_DIR>/auth.db`, and that variable defaults to ".", which is
 # /var/task here and read-only. Every sign-in then died at
 #
 #     sqlite3.OperationalError: unable to open database file
@@ -95,9 +95,9 @@ os.environ["HOME"] = _HOME
 # This used to be set as a side effect of generating the demo data into the
 # global environment. Moving the demo behind its own sub-application took the
 # side effect with it and left the live app with nowhere to write.
-_STATE_DIR = os.path.join(tempfile.gettempdir(), "pathia-state")
+_STATE_DIR = os.path.join(tempfile.gettempdir(), "pathiel-state")
 os.makedirs(_STATE_DIR, exist_ok=True)
-os.environ.setdefault("PATHIA_STATE_DIR", _STATE_DIR)
+os.environ.setdefault("PATHIEL_STATE_DIR", _STATE_DIR)
 
 # ── 3. the live app is the landing page ──────────────────────────────────────
 #
@@ -108,8 +108,8 @@ os.environ.setdefault("PATHIA_STATE_DIR", _STATE_DIR)
 # this process that serves invented numbers.
 
 # ── 4. open the read APIs, close every write ─────────────────────────────────
-os.environ["PATHIA_PUBLIC_DASHBOARD"] = "1"
-os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
+os.environ["PATHIEL_PUBLIC_DASHBOARD"] = "1"
+os.environ["PATHIEL_DASHBOARD_READONLY"] = "1"
 # services/auth hands the operator role to the first account that signs in,
 # which is the right bootstrap for a private box with a durable database. Here
 # the database is SQLite in /tmp on an ephemeral instance, so the users table is
@@ -117,11 +117,11 @@ os.environ["PATHIA_DASHBOARD_READONLY"] = "1"
 # follows from it while the read-only flag above holds, and that is exactly why
 # it should not be the only thing standing between a stranger and the kill
 # switch.
-os.environ["PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
+os.environ["PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
 
 # Nonces that survive the request landing on a different instance.
 #
-# The auth database is SQLite under PATHIA_STATE_DIR, which is /tmp here and
+# The auth database is SQLite under PATHIEL_STATE_DIR, which is /tmp here and
 # therefore per-instance: /auth/nonce mints on one Lambda and /auth/verify looks
 # for it on another, finds nothing, and rejects a signature that was never
 # wrong. It fails closed, which is safe and indistinguishable from broken.
@@ -133,9 +133,9 @@ os.environ["PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR"] = "1"
 # The secret has to be identical across instances, so it comes from the project
 # environment. Without it the auth API falls back to the stored nonce, which is
 # the current behaviour rather than a new failure.
-if os.environ.get("PATHIA_AUTH_NONCE_SECRET"):
-    os.environ["PATHIA_AUTH_STATELESS_NONCE"] = "1"
-    os.environ["PATHIA_AUTH_STATELESS_SESSION"] = "1"
+if os.environ.get("PATHIEL_AUTH_NONCE_SECRET"):
+    os.environ["PATHIEL_AUTH_STATELESS_NONCE"] = "1"
+    os.environ["PATHIEL_AUTH_STATELESS_SESSION"] = "1"
 
 # The domain inside the SIWE message, which services/auth deliberately takes
 # from config rather than the Host header (an attacker controls Host, so a
@@ -150,13 +150,13 @@ if os.environ.get("PATHIA_AUTH_NONCE_SECRET"):
 _host = (os.environ.get("VERCEL_PROJECT_PRODUCTION_URL")
          or os.environ.get("VERCEL_URL"))
 if _host:
-    os.environ.setdefault("PATHIA_AUTH_DOMAIN", _host)
-    os.environ.setdefault("PATHIA_AUTH_URI", f"https://{_host}")
+    os.environ.setdefault("PATHIEL_AUTH_DOMAIN", _host)
+    os.environ.setdefault("PATHIEL_AUTH_URI", f"https://{_host}")
 # The loop is not running here and never will be; say so rather than letting a
 # background task get scheduled by the server's lifespan hook.
-os.environ.setdefault("PATHIA_DISABLE_TRADING_LOOP", "1")
+os.environ.setdefault("PATHIEL_DISABLE_TRADING_LOOP", "1")
 
-from pathia.server import app  # noqa: E402
+from pathiel.server import app  # noqa: E402
 
 # ── 5. the demo, behind a prefix ─────────────────────────────────────────────
 #
@@ -167,4 +167,4 @@ from pathia.server import app  # noqa: E402
 # into a state where it renders generated numbers.
 from services.demo.router import build_demo_app  # noqa: E402
 
-app.mount("/demo", build_demo_app(os.path.join(tempfile.gettempdir(), "pathia-demo")))
+app.mount("/demo", build_demo_app(os.path.join(tempfile.gettempdir(), "pathiel-demo")))

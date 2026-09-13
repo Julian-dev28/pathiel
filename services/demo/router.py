@@ -6,7 +6,7 @@ one prefix in front. The front-end toggle is therefore a string, not a mode.
 
 WHY A SECOND MODULE INSTANCE RATHER THAN A FLAG
 
-`pathia/dashboard.py` resolves the session-log path, and several caches, at
+`pathiel/dashboard.py` resolves the session-log path, and several caches, at
 import time:
 
     _LOG_PATH = Path(session_log.SESSION_LOG_FILE)
@@ -45,8 +45,8 @@ from fastapi.staticfiles import StaticFiles
 from services.demo.generator import materialize
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DASHBOARD_SRC = _REPO_ROOT / "pathia" / "dashboard.py"
-_MODULE_NAME = "pathia_dashboard_demo"
+_DASHBOARD_SRC = _REPO_ROOT / "pathiel" / "dashboard.py"
+_MODULE_NAME = "pathiel_dashboard_demo"
 
 
 @contextmanager
@@ -74,15 +74,15 @@ def _environment(overrides: Dict[str, str]) -> Iterator[None]:
 # loaded dashboard.py twice, both copies resolved `session_log` to the one
 # already in sys.modules, and the "isolated" demo served the live log.
 _PATH_FROZEN_MODULES = (
-    "pathia.session_log",
-    "pathia.positions_snapshot",
-    "pathia.agents.config_store",
-    "pathia.agents.memory",
+    "pathiel.session_log",
+    "pathiel.positions_snapshot",
+    "pathiel.agents.config_store",
+    "pathiel.agents.memory",
 )
 
 
 def _load_demo_dashboard(data_dir: str) -> Any:
-    """Import pathia/dashboard.py a second time, pointed at synthetic data.
+    """Import pathiel/dashboard.py a second time, pointed at synthetic data.
 
     The live dashboard is imported FIRST and deliberately: it must bind the real
     paths before anything here touches the environment. Then the path-frozen
@@ -94,12 +94,12 @@ def _load_demo_dashboard(data_dir: str) -> Any:
     at its own import, so restoring `sys.modules` does not reach back into the
     demo instance. Two dashboards, two sets of paths, no shared mutable state.
     """
-    import pathia.dashboard  # noqa: F401  — bind live paths before we shadow them
+    import pathiel.dashboard  # noqa: F401  — bind live paths before we shadow them
 
     overrides = materialize(data_dir)
 
     # Popping from sys.modules is only half of it. `dashboard.py` reaches these
-    # as `from pathia import session_log`, which is an attribute lookup on the
+    # as `from pathiel import session_log`, which is an attribute lookup on the
     # already-imported package object — so the parent's attribute has to go too,
     # or the re-import resolves straight back to the live module. That was the
     # second failed attempt at this.
@@ -113,7 +113,7 @@ def _load_demo_dashboard(data_dir: str) -> Any:
             shadowed_attrs[name] = (parent, attr, getattr(parent, attr))
             delattr(parent, attr)
     # dashboard.py itself must not be resolved from cache either.
-    shadowed_dashboard = sys.modules.pop("pathia.dashboard", None)
+    shadowed_dashboard = sys.modules.pop("pathiel.dashboard", None)
     try:
         with _environment(overrides):
             spec = importlib.util.spec_from_file_location(_MODULE_NAME, _DASHBOARD_SRC)
@@ -133,7 +133,7 @@ def _load_demo_dashboard(data_dir: str) -> Any:
         for parent, attr, was in shadowed_attrs.values():
             setattr(parent, attr, was)
         if shadowed_dashboard is not None:
-            sys.modules["pathia.dashboard"] = shadowed_dashboard
+            sys.modules["pathiel.dashboard"] = shadowed_dashboard
     return module
 
 
@@ -145,18 +145,18 @@ def build_demo_app(data_dir: str | None = None) -> FastAPI:
     the site root — which the parent already serves, so the mount here exists
     only for the case where this app is run on its own.
     """
-    data_dir = data_dir or os.path.join(tempfile.gettempdir(), "pathia-demo")
+    data_dir = data_dir or os.path.join(tempfile.gettempdir(), "pathiel-demo")
     module = _load_demo_dashboard(data_dir)
 
     app = FastAPI(
-        title="pathia — demo",
+        title="pathiel — demo",
         description="Synthetic trading history. No exchange connection, no credentials.",
         docs_url=None, redoc_url=None, openapi_url=None,
     )
     module.register_routes(app)
 
     # The house-account routes are operator-gated, and that gate reads the
-    # environment per REQUEST — so setting PATHIA_PUBLIC_DASHBOARD during the
+    # environment per REQUEST — so setting PATHIEL_PUBLIC_DASHBOARD during the
     # import above bought nothing, and the demo answered 401 to its own data.
     #
     # Overriding the dependency on THIS app is the scoped version of the same
@@ -165,7 +165,7 @@ def build_demo_app(data_dir: str | None = None) -> FastAPI:
     # which an environment variable could.
     app.dependency_overrides[module._require_operator_role] = lambda: None
 
-    static_dir = _REPO_ROOT / "pathia" / "static"
+    static_dir = _REPO_ROOT / "pathiel" / "static"
     if static_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 

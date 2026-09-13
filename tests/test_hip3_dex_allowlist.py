@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-import pathia.client.universe as U
+import pathiel.client.universe as U
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def _dexes(monkeypatch):
 
 
 def _cfg(monkeypatch, **over):
-    import pathia.agents.config_store as CS
+    import pathiel.agents.config_store as CS
     base = {"hip3_dex_allowlist": [], "hip3_dex_blocklist": []}
     base.update(over)
     monkeypatch.setattr(CS, "read_agent_config", lambda: base)
@@ -84,7 +84,7 @@ def test_unreadable_config_does_not_silently_widen_or_empty(_dexes, monkeypatch)
     the executor gate below still refuses. The failure mode that MUST NOT
     happen is an exception escaping into the scan loop.
     """
-    import pathia.agents.config_store as CS
+    import pathiel.agents.config_store as CS
 
     def _boom():
         raise RuntimeError("config unreadable")
@@ -100,7 +100,7 @@ def test_executor_refuses_muted_dex_before_any_balance_lookup(monkeypatch):
     'hip3_dex_underfunded' the order was stopped by io's empty balance, which
     is luck, not a control - a deposit would remove it.
     """
-    import pathia.agents.executor as E
+    import pathiel.agents.executor as E
 
     monkeypatch.setattr(E, "read_agent_config",
                         lambda: {"hip3_dex_allowlist": ["xyz"], "enable_hip3": True,
@@ -110,7 +110,7 @@ def test_executor_refuses_muted_dex_before_any_balance_lookup(monkeypatch):
     def _no_network(*a, **k):
         raise AssertionError("balance lookup ran for a muted dex")
 
-    import pathia.client.hl_client as HL
+    import pathiel.client.hl_client as HL
     monkeypatch.setattr(HL, "_http_post", _no_network)
 
     res = E.maybe_execute({"id": "t1", "coin": "io:SNDK", "side": "short"})

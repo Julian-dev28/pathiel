@@ -1,8 +1,8 @@
-# Pathia
+# Pathiel
 > Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathia Agent](https://github.com/NousResearch/pathia-agent) through an MCP server.
 
 **How you drive it: MCP.** The whole control surface is an MCP server —
-`scripts/pathia-mcp-server.py`, 88 tools over stdio. Scanning, research,
+`scripts/pathiel-mcp-server.py`, 88 tools over stdio. Scanning, research,
 execution, config, risk state, Hyperliquid market data and the wallets signed in
 to the dashboard are all tools an agent calls. There is no second API to learn
 and no framework dependency in the engine: point Claude Desktop, Pathia Agent or
@@ -96,7 +96,7 @@ The candle-strategy space is saturated and the perp fee math is fatal, not
 fixable. Deleted rather than disabled, because a half-removal that leaves a live
 route is worse than either end state:
 
-- **17 strategy books** and every order-placing call site, plus `pathia/v2/`
+- **17 strategy books** and every order-placing call site, plus `pathiel/v2/`
   (a parallel engine whose only three signal generators were among them)
 - **The entire prediction-market side** — the arb crossed 2 of 276 sampled
   windows and the forecasts lost to the market's own calibration
@@ -109,9 +109,9 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 ## MCP Integration
 
-pathia is a standalone Python application; **Pathia Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathia-framework dependency.
+pathiel is a standalone Python application; **Pathia Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathia-framework dependency.
 
-The MCP server (`scripts/pathia-mcp-server.py`) exposes 88 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
+The MCP server (`scripts/pathiel-mcp-server.py`) exposes 88 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
 
 **The wallet boundary, because an agent will ask.** `connected_wallets` and
 `wallet_account` report on wallets that signed in to the dashboard, and they are
@@ -151,11 +151,11 @@ for them.
 Configure in Pathia Agent's `config.yaml`:
 ```yaml
 mcp_servers:
-  pathia:
+  pathiel:
     command: python3
     args:
-      - /path/to/pathia/scripts/pathia-mcp-server.py
-    cwd: /path/to/pathia
+      - /path/to/pathiel/scripts/pathiel-mcp-server.py
+    cwd: /path/to/pathiel
     timeout: 60
     env:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
@@ -178,13 +178,13 @@ python3 scripts/preflight_live.py    # secrets, capital, books, feed, processes
 python3 scripts/book_status.py       # where each live book stands
 ```
 
-Dashboard served at `http://localhost:8000` (port from `PATHIA_PORT`).
+Dashboard served at `http://localhost:8000` (port from `PATHIEL_PORT`).
 
 ---
 
 ## The problem it solves
 
-Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Pathia-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
+Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Pathiel-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
 
 1. **Scan** — the majors universe in parallel with volume pre-filtering and rate-limit-aware batching. The allowlist is applied at scan time, not just at the entry gate, so the tail costs nothing in candles or AI calls
 2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
@@ -204,7 +204,7 @@ loudly, blocks, or pages:
 
 | was silent | now |
 |---|---|
-| A dead trading loop read as healthy | `/api/health/system` returns 503; `PathiaLoopDead` alerts |
+| A dead trading loop read as healthy | `/api/health/system` returns 503; `PathielLoopDead` alerts |
 | An exchange outage read as a quiet market | Entries blocked while the scan feed is degraded |
 | A withdrawal read as a trading loss | Drawdown is flow-neutral; capital flows are recorded |
 | An unusable AI brain read as a PASS verdict | `provider_readiness()` gates the deploy and the healthcheck |
@@ -219,7 +219,7 @@ loudly, blocks, or pages:
 
 ```
 +---------------------------------------------------------------+
-|          pathia — autonomous trading pipeline          |
+|          pathiel — autonomous trading pipeline          |
 |                                                               |
 |  Scan ➜ TA Filter ➜ AI Brain ➜ Risk Gates ➜ Execute ➜ DSL Monitor ──▶ Auto-Close
 |        (cheap)          (expensive)     (11 gates)            (per-tick, 2-phase)
@@ -256,10 +256,10 @@ loudly, blocks, or pages:
 - **Volume pre-filtering**: Top-N markets by 24h notional volume plus mover and rotating-sweep slots
 - **Parallel batch scanning**: Workers fan out within batches, sleep between
 - **TTL caching**: 5m candles are cached inside the scan interval; 1h enrichment is cached longer and only fetched for surfaced markets
-- **Configurable**: `PATHIA_SCAN_INTERVAL`, `PATHIA_MAX_MARKETS`, `PATHIA_SCAN_WORKERS`, `PATHIA_BATCH_SIZE`, `PATHIA_BATCH_SLEEP`
+- **Configurable**: `PATHIEL_SCAN_INTERVAL`, `PATHIEL_MAX_MARKETS`, `PATHIEL_SCAN_WORKERS`, `PATHIEL_BATCH_SIZE`, `PATHIEL_BATCH_SLEEP`
 
 ### Pluggable AI Brain
-- **Single seam**: `research._call_ai()` delegates to `pathia/agents/ai_brain.py`; every provider returns verdict text for the same `parse_verdict()` contract.
+- **Single seam**: `research._call_ai()` delegates to `pathiel/agents/ai_brain.py`; every provider returns verdict text for the same `parse_verdict()` contract.
 - **Providers**: `openrouter` (default), `claude_cli`, and `codex_cli`.
 - **Hot switch**: set `AI_BRAIN_PROVIDER` or `.agent-config.json` → `ai_brain.provider` to switch without code changes. Config is read on each research call.
 - **Failure-safe**: provider failure, timeout, empty output, or CLI JSON-less output returns `""`, which becomes `ai_down=True` and a PASS that cannot be upgraded by the TA sidestep path.
@@ -298,33 +298,33 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 
 | Module | Purpose |
 |--------|---------|
-| `pathia/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
-| `pathia/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
-| `pathia/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
-| `pathia/agents/research.py` | AI research pipeline — fetches candles, builds context, dispatches to the configured AI brain |
-| `pathia/agents/ai_brain.py` | Pluggable verdict providers: OpenRouter HTTP, Claude CLI, Codex CLI |
-| `pathia/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
-| `pathia/agents/executor.py` | ATR/fallback sizing + Hyperliquid precision normalization + EIP-712 order signing + DSL exit registration |
-| `pathia/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
-| `pathia/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, OI/funding context |
-| `pathia/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
-| `pathia/agents/config_store.py` | Config persistence layer |
-| `pathia/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
-| `pathia/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
-| `pathia/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
-| `pathia/client/universe.py` | Volume-ranked market loader with 24h caching |
-| `pathia/client/cache.py` | LRU + TTL memoization with in-flight dedup |
-| `pathia/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
-| `pathia/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
-| `pathia/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
-| `pathia/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
-| `pathia/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
-| `pathia/models/types.py` | Shared data type: `Candle` (OHLCV) |
-| `pathia/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
+| `pathiel/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
+| `pathiel/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
+| `pathiel/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
+| `pathiel/agents/research.py` | AI research pipeline — fetches candles, builds context, dispatches to the configured AI brain |
+| `pathiel/agents/ai_brain.py` | Pluggable verdict providers: OpenRouter HTTP, Claude CLI, Codex CLI |
+| `pathiel/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
+| `pathiel/agents/executor.py` | ATR/fallback sizing + Hyperliquid precision normalization + EIP-712 order signing + DSL exit registration |
+| `pathiel/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
+| `pathiel/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, OI/funding context |
+| `pathiel/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
+| `pathiel/agents/config_store.py` | Config persistence layer |
+| `pathiel/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
+| `pathiel/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
+| `pathiel/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
+| `pathiel/client/universe.py` | Volume-ranked market loader with 24h caching |
+| `pathiel/client/cache.py` | LRU + TTL memoization with in-flight dedup |
+| `pathiel/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
+| `pathiel/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
+| `pathiel/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
+| `pathiel/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
+| `pathiel/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
+| `pathiel/models/types.py` | Shared data type: `Candle` (OHLCV) |
+| `pathiel/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
 | `services/trend_engine/` | `/trends` tab: 7d HL regime + recorder P&L (own README) |
-| `pathia/agents/universe.py` | The majors allowlist, applied at scan time as well as at the gate |
-| `pathia/agents/capital_flows.py` | Deposits/withdrawals + the flow-neutral NAV index the drawdown uses |
-| `pathia/agents/atomic_io.py` | Crash-safe state writes (temp + fsync + rename + dir fsync) |
+| `pathiel/agents/universe.py` | The majors allowlist, applied at scan time as well as at the gate |
+| `pathiel/agents/capital_flows.py` | Deposits/withdrawals + the flow-neutral NAV index the drawdown uses |
+| `pathiel/agents/atomic_io.py` | Crash-safe state writes (temp + fsync + rename + dir fsync) |
 
 ### Dashboard tabs
 
@@ -367,17 +367,17 @@ customer their balance while remaining structurally unable to trade it.
   open-kill-switch window on a fresh box without a bootstrap password to leak.
   If something else gets there first, `scripts/grant_operator.py` is the way
   back.
-- Set `PATHIA_AUTH_DOMAIN` to the real host before deploying, or every
+- Set `PATHIEL_AUTH_DOMAIN` to the real host before deploying, or every
   signature is rejected for a domain mismatch.
-- `PATHIA_PUBLIC_DASHBOARD=1` restores the old open reads for a genuinely
+- `PATHIEL_PUBLIC_DASHBOARD=1` restores the old open reads for a genuinely
   private single-operator box. Named to be obvious in a diff and in
   `fly secrets list`.
-- `PATHIA_OPERATOR_TOKEN` still exists and is now scoped to **machine callers
+- `PATHIEL_OPERATOR_TOKEN` still exists and is now scoped to **machine callers
   only** — the scheduler, the supervisor, smoke checks. It is one static string
   for the whole deployment: it cannot say who acted, cannot be revoked for one
   person, and cannot rotate without restarting everything. It is not a login.
 
-API keys for `services/pathia_data_api` are minted by a signed-in wallet at
+API keys for `services/pathiel_data_api` are minted by a signed-in wallet at
 `/auth/keys` and belong to it. Only the SHA-256 is stored, so a leaked database
 yields no usable credential and "show it to me again" is not a feature that can
 exist.
@@ -422,26 +422,26 @@ HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
 #   with news_context = "no news" and that gate is inert.
 
 # ── Scan tuning (optional — defaults shown) ──────────────────
-PATHIA_SCAN_INTERVAL=60        # seconds between scan cycles
-PATHIA_MAX_MARKETS=45          # top-vol+movers candle-fetch budget per scan
-PATHIA_MAX_MARKETS_HIP3=18     # of that budget, slots reserved for HIP-3
-PATHIA_UNIVERSE_SWEEP=0        # >0 = ALSO rotate N extra tail markets/cycle so the
+PATHIEL_SCAN_INTERVAL=60        # seconds between scan cycles
+PATHIEL_MAX_MARKETS=45          # top-vol+movers candle-fetch budget per scan
+PATHIEL_MAX_MARKETS_HIP3=18     # of that budget, slots reserved for HIP-3
+PATHIEL_UNIVERSE_SWEEP=0        # >0 = ALSO rotate N extra tail markets/cycle so the
 #                                FULL universe is covered over ceil(N_universe/N)
 #                                cycles (top-vol+movers still scanned every cycle).
 #                                Keep total (MAX_MARKETS+SWEEP) within the rate budget.
-PATHIA_SCAN_WORKERS=8          # max concurrent market scans per batch
-PATHIA_BATCH_SIZE=10           # markets per parallel batch
-PATHIA_BATCH_SLEEP=1.0         # seconds between batches (raise to pace a wider scan)
-PATHIA_WATCHDOG_TIMEOUT_S=600  # re-exec the loop if a scan/cycle makes no progress
+PATHIEL_SCAN_WORKERS=8          # max concurrent market scans per batch
+PATHIEL_BATCH_SIZE=10           # markets per parallel batch
+PATHIEL_BATCH_SLEEP=1.0         # seconds between batches (raise to pace a wider scan)
+PATHIEL_WATCHDOG_TIMEOUT_S=600  # re-exec the loop if a scan/cycle makes no progress
 #                                for this long. A scan slower than this (too many
 #                                markets / too much batch_sleep) trips it — keep
 #                                MAX_MARKETS+SWEEP fast enough that a cycle stays well under.
-# PATHIA_PORT=8000             # FastAPI server port
+# PATHIEL_PORT=8000             # FastAPI server port
 ```
 
 Keep `MAX_MARKETS + UNIVERSE_SWEEP` within HL's ~1200 weight/min budget — a wider per-cycle scan must be paced (`BATCH_SLEEP`) or it 429-storms AND trips the watchdog. For full-universe coverage prefer the **rotating sweep** (fast cycles, full coverage over time) over one giant slow scan. See [Rate Limit Math](#rate-limit-math).
 
-When `enable_hip3=true`, the budget splits into `(PATHIA_MAX_MARKETS - PATHIA_MAX_MARKETS_HIP3)` crypto slots + `PATHIA_MAX_MARKETS_HIP3` HIP-3 slots, each sorted by 24h volume independently. Without this split, BTC/ETH/SOL/etc. dominate the single sorted list and tokenized-equity perps (e.g. `xyz:CRCL` $34M, `xyz:DRAM` $22M) never get candles fetched — so their +20% / −8% swings never surface a signal.
+When `enable_hip3=true`, the budget splits into `(PATHIEL_MAX_MARKETS - PATHIEL_MAX_MARKETS_HIP3)` crypto slots + `PATHIEL_MAX_MARKETS_HIP3` HIP-3 slots, each sorted by 24h volume independently. Without this split, BTC/ETH/SOL/etc. dominate the single sorted list and tokenized-equity perps (e.g. `xyz:CRCL` $34M, `xyz:DRAM` $22M) never get candles fetched — so their +20% / −8% swings never surface a signal.
 
 ### `.agent-config.json` — trading behaviour & risk
 
@@ -518,7 +518,7 @@ both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
 
 The snippet above is the current live strategy shape, not a guarantee that those
 values are optimal in future market regimes. Missing keys are filled from
-`pathia.agents.config_store.DEFAULT_CONFIG`; keep the tracked
+`pathiel.agents.config_store.DEFAULT_CONFIG`; keep the tracked
 `.agent-config.json` explicit so reviews show intentional strategy changes.
 
 | Key | What it does | Fallback/default |
@@ -566,7 +566,7 @@ values are optimal in future market regimes. Missing keys are filled from
   profit-scaled give-back ladder (loosens the trail on proven runners: +8%→0.35,
   +15%→0.40). `stale_flat_timeout_minutes` (480) exits positions that never reach
   the profit-lock phase. Tracker state → `.dsl-state.json` (override
-  `PATHIA_DSL_STATE_FILE`). Existing open positions keep the policy captured at
+  `PATHIEL_DSL_STATE_FILE`). Existing open positions keep the policy captured at
   entry; config edits affect new entries and synthesized trackers.
 - **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
   equal-risk position sizing: target risk = `risk_per_trade_pct × equity`, converted
@@ -595,11 +595,11 @@ values are optimal in future market regimes. Missing keys are filled from
   `scripts/book_status.py` shows where each stands without needing the exchange.
 
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
-`pathia/agents/config.py` — edit there to tune the scan itself.
+`pathiel/agents/config.py` — edit there to tune the scan itself.
 
 **TL;DR — where to set what:** strategy/risk knobs → `.agent-config.json` (live,
 no restart); credentials + scan/infra env → `.env.local` (restart to apply); scan
-trigger internals → `pathia/agents/config.py` (restart).
+trigger internals → `pathiel/agents/config.py` (restart).
 
 ---
 
@@ -613,8 +613,8 @@ trigger internals → `pathia/agents/config.py` (restart).
 
 ### Setup
 ```bash
-git clone https://github.com/Julian-dev28/pathia
-cd pathia
+git clone https://github.com/Julian-dev28/pathiel
+cd pathiel
 
 # Create and activate virtual environment
 python3 -m venv .venv
@@ -641,7 +641,7 @@ scripts/restart.sh status
 # Follow logs
 tail -f logs/trading_loop.log
 ```
-The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Pathia-Trader", "version": "0.3.0", "status": "running"}`.
+The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Pathiel-Trader", "version": "0.3.0", "status": "running"}`.
 
 `scripts/restart.sh` manages the autonomous trading loop and the FastAPI server,
 including stop/verify/start and log files under `logs/`. The MCP stdio server is
@@ -653,8 +653,8 @@ not managed by this script; Pathia Agent respawns it on tool calls.
 python scripts/trading_loop.py
 
 # API server only
-python -m pathia.server
-# or: uvicorn pathia.server:app --host 0.0.0.0 --port 8000
+python -m pathiel.server
+# or: uvicorn pathiel.server:app --host 0.0.0.0 --port 8000
 ```
 
 The `--env prod --daemon` flags are informational only; they do not fork the
@@ -675,12 +675,12 @@ process. Use `scripts/restart.sh` for normal operation.
 ```bash
 pytest                          # offline unit tests — fast, no network, CI-safe
 pytest -m online                # read-only tests against the live Hyperliquid public API
-PATHIA_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
+PATHIEL_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
 ```
 
 `online` and `live` tests are deselected by default. The `live` suite spends
 real funds (a ~$14 round-trip order plus a billable AI-brain call) and is
-additionally gated behind `PATHIA_E2E=1` so it can never run by accident.
+additionally gated behind `PATHIEL_E2E=1` so it can never run by accident.
 
 ### Backtests and Grid Sweeps
 
@@ -706,24 +706,24 @@ sample is large enough.
 ## Operating via Pathia Agent
 
 With the skill loaded and the MCP server registered (see [MCP Integration](#mcp-integration)),
-you operate pathia by prompting your Pathia Agent in plain language — the agent
-calls the MCP tools for you. Restart your Pathia session first so the skill and MCP
+you operate pathiel by prompting your Pathia Agent in plain language — the agent
+calls the MCP tools for you. Restart your Pathiel session first so the skill and MCP
 server are picked up.
 
-| Goal | Prompt to give Pathia |
+| Goal | Prompt to give Pathiel |
 |------|-----------------------|
-| **Check state** | *Load the pathia skill and show me its current state — mode, equity, open positions, recent trades.* |
-| **Configure** (`OFF` analyzes only, `LIVE` places real orders) | *Set pathia to LIVE mode with a max trade size of $20.* |
-| **Scan** | *Scan the markets with pathia and list what triggered, with composite scores.* |
+| **Check state** | *Load the pathiel skill and show me its current state — mode, equity, open positions, recent trades.* |
+| **Configure** (`OFF` analyzes only, `LIVE` places real orders) | *Set pathiel to LIVE mode with a max trade size of $20.* |
+| **Scan** | *Scan the markets with pathiel and list what triggered, with composite scores.* |
 | **Research** | *Research the top candidate and tell me the verdict, side, and confidence.* |
-| **Run one full cycle** | *Run a pathia cycle: scan, run the TA filter, research the best candidate, and execute it if the verdict is LONG or SHORT. Tell me what happened.* |
-| **Start continuous trading** | *Start the pathia trading loop in the background, then confirm it is running.* |
-| **Stop continuous trading** | *Stop the pathia trading loop.* |
-| **Monitor (in session)** | *Check pathia's status and tell me if anything changed since the last report.* |
+| **Run one full cycle** | *Run a pathiel cycle: scan, run the TA filter, research the best candidate, and execute it if the verdict is LONG or SHORT. Tell me what happened.* |
+| **Start continuous trading** | *Start the pathiel trading loop in the background, then confirm it is running.* |
+| **Stop continuous trading** | *Stop the pathiel trading loop.* |
+| **Monitor (in session)** | *Check pathiel's status and tell me if anything changed since the last report.* |
 
 "Start continuous trading" should use `scripts/restart.sh loop`, which starts
 the same scan -> TA-filter -> research -> execute loop on its own every
-`PATHIA_SCAN_INTERVAL` seconds, independent of the Pathia session.
+`PATHIEL_SCAN_INTERVAL` seconds, independent of the Pathiel session.
 
 For **hands-off monitoring**, nothing needs resuming: `scripts/scheduler.py`
 already runs the watch on its own clock, started by `scripts/restart.sh`. It
@@ -815,9 +815,9 @@ Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration 
 | `candleSnapshot` (per coin) | 20 | Plus per-item weight |
 | **Total per scan cycle** | ~900-1,100 | Top 45 markets plus a small sweep, one 5m candle fetch each |
 
-With `PATHIA_MAX_MARKETS=45`, a small `PATHIA_UNIVERSE_SWEEP`, and a 50s candle-cache TTL, each 60s scan fetches fresh 5m candles while keeping room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
+With `PATHIEL_MAX_MARKETS=45`, a small `PATHIEL_UNIVERSE_SWEEP`, and a 50s candle-cache TTL, each 60s scan fetches fresh 5m candles while keeping room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
 
-The crypto/HIP-3 budget split (`PATHIA_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `PATHIA_UNIVERSE_SWEEP` or increase `PATHIA_BATCH_SLEEP` before tightening strategy gates.
+The crypto/HIP-3 budget split (`PATHIEL_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `PATHIEL_UNIVERSE_SWEEP` or increase `PATHIEL_BATCH_SLEEP` before tightening strategy gates.
 
 When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio` handlers. MCP `close_position` delegates to `executor.close_position_market()`, so closes share the same reduce-only order path, DSL cleanup, trigger-order cancellation, and loss-cooldown behavior as loop exits.
 
@@ -826,8 +826,8 @@ When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one
 ## Project Structure
 
 ```
-pathia/
-├── pathia/                  # Pure Python agent
+pathiel/
+├── pathiel/                  # Pure Python agent
 │   ├── __init__.py
 │   ├── __main__.py                # Entry point
 │   ├── server.py                  # FastAPI server — 22 routes
@@ -859,12 +859,12 @@ pathia/
 │   └── models/                    # Shared data types
 │       └── types.py               # Candle (OHLCV)
 ├── scripts/
-│   ├── pathia-mcp-server.py       # MCP server (stdio, 88 tools)
+│   ├── pathiel-mcp-server.py       # MCP server (stdio, 88 tools)
 │   └── trading_loop.py            # Continuous trading loop
 ├── skills/pathia-agent/    # Pathia Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e
 └── docs/
-    ├── AI_BRAIN_OPERATOR_WIRING.md # Codex/Claude/Pathia/OpenClaw brain wiring
+    ├── AI_BRAIN_OPERATOR_WIRING.md # Codex/Claude/Pathiel/OpenClaw brain wiring
     └── journal-schema.md          # Trade journal schema
 ```
 

@@ -33,7 +33,7 @@ def _samples_satisfying_every_rule() -> dict:
 
     Derived from the rules rather than hand-written, so adding a rule cannot
     silently stop being covered here — which is exactly what happened when
-    PathiaSupervisionStale and PathiaAlertingStale were added.
+    PathielSupervisionStale and PathielAlertingStale were added.
     """
     import re
     satisfy = {">": lambda n: n + 1, ">=": lambda n: n, "<": lambda n: n - 1,
@@ -63,10 +63,10 @@ def test_every_shipped_rule_is_evaluable():
 def test_every_rule_metric_is_actually_exported():
     """Same check the k8s test makes, made against the live evaluator's parser
     so the two cannot drift."""
-    import pathia.dashboard  # noqa: F401  (metrics registered on import)
+    import pathiel.dashboard  # noqa: F401  (metrics registered on import)
     from fastapi.testclient import TestClient
 
-    from pathia.server import app
+    from pathiel.server import app
     body = TestClient(app).get("/metrics").text
     exported = set(A.parse_metrics(body))
     for rule in A.load_rules():
@@ -78,14 +78,14 @@ def test_every_rule_metric_is_actually_exported():
 
 def test_an_unsupported_expression_raises_rather_than_reading_as_healthy():
     with pytest.raises(A.UnsupportedExpr):
-        A.evaluate("rate(pathia_trades_total[5m]) > 0", {"pathia_trades_total": 1})
+        A.evaluate("rate(pathiel_trades_total[5m]) > 0", {"pathiel_trades_total": 1})
 
 
 def test_a_missing_metric_raises_rather_than_reading_as_healthy():
     """The single most important behaviour here. `metric == 0` against an
     absent metric must not evaluate false and report all-clear."""
     with pytest.raises(A.UnsupportedExpr):
-        A.evaluate("pathia_typo_metric == 0", {"pathia_feed_trustworthy": 1.0})
+        A.evaluate("pathiel_typo_metric == 0", {"pathiel_feed_trustworthy": 1.0})
 
 
 def test_an_unreachable_metrics_endpoint_is_reported_not_swallowed(tmp_path, monkeypatch):
@@ -101,24 +101,24 @@ def test_an_unreachable_metrics_endpoint_is_reported_not_swallowed(tmp_path, mon
 # ── expression semantics ─────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("expr,samples,expected", [
-    ("pathia_heartbeat_age_seconds > 900", {"pathia_heartbeat_age_seconds": 901}, True),
-    ("pathia_heartbeat_age_seconds > 900", {"pathia_heartbeat_age_seconds": 900}, False),
-    ("pathia_feed_trustworthy == 0", {"pathia_feed_trustworthy": 0.0}, True),
-    ("pathia_feed_trustworthy == 0", {"pathia_feed_trustworthy": 1.0}, False),
-    ("pathia_disk_free_bytes < 2e9", {"pathia_disk_free_bytes": 1.9e9}, True),
-    ("pathia_disk_free_bytes < 2e9", {"pathia_disk_free_bytes": 2.1e9}, False),
-    ("pathia_max_drawdown_pct < -25", {"pathia_max_drawdown_pct": -94.78}, True),
-    ("pathia_max_drawdown_pct < -25", {"pathia_max_drawdown_pct": -10.0}, False),
+    ("pathiel_heartbeat_age_seconds > 900", {"pathiel_heartbeat_age_seconds": 901}, True),
+    ("pathiel_heartbeat_age_seconds > 900", {"pathiel_heartbeat_age_seconds": 900}, False),
+    ("pathiel_feed_trustworthy == 0", {"pathiel_feed_trustworthy": 0.0}, True),
+    ("pathiel_feed_trustworthy == 0", {"pathiel_feed_trustworthy": 1.0}, False),
+    ("pathiel_disk_free_bytes < 2e9", {"pathiel_disk_free_bytes": 1.9e9}, True),
+    ("pathiel_disk_free_bytes < 2e9", {"pathiel_disk_free_bytes": 2.1e9}, False),
+    ("pathiel_max_drawdown_pct < -25", {"pathiel_max_drawdown_pct": -94.78}, True),
+    ("pathiel_max_drawdown_pct < -25", {"pathiel_max_drawdown_pct": -10.0}, False),
 ])
 def test_comparison_semantics(expr, samples, expected):
     assert A.evaluate(expr, samples) is expected
 
 
 def test_and_requires_both_sides():
-    expr = "pathia_live_mode == 1 and pathia_can_trade == 0"
-    assert A.evaluate(expr, {"pathia_live_mode": 1.0, "pathia_can_trade": 0.0}) is True
-    assert A.evaluate(expr, {"pathia_live_mode": 1.0, "pathia_can_trade": 1.0}) is False
-    assert A.evaluate(expr, {"pathia_live_mode": 0.0, "pathia_can_trade": 0.0}) is False
+    expr = "pathiel_live_mode == 1 and pathiel_can_trade == 0"
+    assert A.evaluate(expr, {"pathiel_live_mode": 1.0, "pathiel_can_trade": 0.0}) is True
+    assert A.evaluate(expr, {"pathiel_live_mode": 1.0, "pathiel_can_trade": 1.0}) is False
+    assert A.evaluate(expr, {"pathiel_live_mode": 0.0, "pathiel_can_trade": 0.0}) is False
 
 
 @pytest.mark.parametrize("text,secs", [("5m", 300), ("1h", 3600), ("30s", 30), ("2d", 172800)])
@@ -224,17 +224,17 @@ def test_percentage_humanising():
 
 def test_the_raw_value_is_substituted():
     text, ok = A.render("Max drawdown {{ $value }}% over the risk window",
-                        "pathia_max_drawdown_pct < -25",
-                        {"pathia_max_drawdown_pct": -94.78})
+                        "pathiel_max_drawdown_pct < -25",
+                        {"pathiel_max_drawdown_pct": -94.78})
     assert ok and "-94.78%" in text and "{{" not in text
 
 
 def test_a_with_query_block_pulls_a_different_metric():
     text, ok = A.render(
-        '{{ with query "pathia_feed_gap_fraction" }}'
+        '{{ with query "pathiel_feed_gap_fraction" }}'
         '{{ . | first | value | humanizePercentage }}{{ end }} unreadable',
-        "pathia_feed_trustworthy == 0",
-        {"pathia_feed_trustworthy": 0.0, "pathia_feed_gap_fraction": 0.75})
+        "pathiel_feed_trustworthy == 0",
+        {"pathiel_feed_trustworthy": 0.0, "pathiel_feed_gap_fraction": 0.75})
     assert ok and text == "75% unreadable"
 
 
@@ -242,7 +242,7 @@ def test_an_unrenderable_template_is_left_intact_and_reported():
     """Blanking it would produce a complete-looking sentence that quietly lost
     its number — the omission would be invisible."""
     text, ok = A.render("saw {{ $labels.instance }} misbehaving",
-                        "pathia_can_trade == 0", {"pathia_can_trade": 0.0})
+                        "pathiel_can_trade == 0", {"pathiel_can_trade": 0.0})
     assert ok is False
     assert "{{ $labels.instance }}" in text
 
@@ -251,9 +251,9 @@ def test_an_unrenderable_summary_makes_the_run_report_an_error(tmp_path, monkeyp
     monkeypatch.setattr(A, "STATE", str(tmp_path / "a.json"))
     monkeypatch.setattr(A, "ALERT_LOG", str(tmp_path / "a.log"))
     monkeypatch.setattr(A, "notify", lambda *a, **k: None)
-    monkeypatch.setattr(A, "scrape", lambda *a, **k: {"pathia_can_trade": 0.0})
+    monkeypatch.setattr(A, "scrape", lambda *a, **k: {"pathiel_can_trade": 0.0})
     monkeypatch.setattr(A, "load_rules", lambda *a, **k: [{
-        "alert": "Bogus", "expr": "pathia_can_trade == 0", "for": "0s",
+        "alert": "Bogus", "expr": "pathiel_can_trade == 0", "for": "0s",
         "labels": {"severity": "warning"},
         "annotations": {"summary": "broken {{ $labels.pod }}"}}])
     assert A.main(["--quiet"]) == 2, "an unreadable alert must not report clean"

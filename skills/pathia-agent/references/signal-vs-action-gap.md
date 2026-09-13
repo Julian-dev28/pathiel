@@ -49,6 +49,6 @@ Bad examples:
 ## File pointers
 
 - `scripts/trading_loop.py` — feed event emission and pre-research gates.
-- `pathia/agents/executor.py` — verdict routing, runner gate, trend filter.
-- `pathia/agents/risk_gates.py` — risk-gate block reasons.
+- `pathiel/agents/executor.py` — verdict routing, runner gate, trend filter.
+- `pathiel/agents/risk_gates.py` — risk-gate block reasons.
 - `skills/pathia-agent/scripts/feed.py` — human-readable feed rendering.

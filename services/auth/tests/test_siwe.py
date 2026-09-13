@@ -13,13 +13,13 @@ from eth_account.messages import encode_defunct
 
 from services.auth import siwe
 
-DOMAIN = "pathia.example"
+DOMAIN = "pathiel.example"
 ACCT = Account.from_key("0x" + "11" * 32)
 OTHER = Account.from_key("0x" + "22" * 32)
 
 
 def build(address=None, *, domain=DOMAIN, nonce="abc123", issued=None,
-          expires=None, statement="Sign in to Pathia.", version="1", extra=""):
+          expires=None, statement="Sign in to Pathiel.", version="1", extra=""):
     now = issued or datetime.now(timezone.utc).replace(microsecond=0)
     exp = expires if expires is not None else now + timedelta(minutes=10)
     msg = (f"{domain} wants you to sign in with your Ethereum account:\n"

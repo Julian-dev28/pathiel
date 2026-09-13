@@ -1,6 +1,6 @@
 # MCP Server Structure
 
-`scripts/pathia-mcp-server.py` — a stdio JSON-RPC MCP server exposing 88 tools, every one of them implemented. Registered in `~/.pathia/config.yaml` under `mcp_servers.pathia`.
+`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 88 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`.
 
 **There are no stubs left.** All 47 were audited against the live `/info` API on
 2026-09-06: 34 had a working endpoint and were implemented, 13 had none and were
@@ -11,7 +11,7 @@ The stub mechanism below is kept on purpose — it is the right shape for a tool
 whose endpoint genuinely does not exist yet, and a clean `not_implemented` beats
 fake zeros. Two rules before you use it:
 
-1. **Check `pathia.client` first.** Six stubs sat on top of working code for
+1. **Check `pathiel.client` first.** Six stubs sat on top of working code for
    months. An agent reads "not implemented" as "this data does not exist here".
 2. **If the venue has no endpoint at all, delete the tool.** A permanently
    unimplementable tool costs a call to discover and teaches nothing.
@@ -23,7 +23,7 @@ you change either list, recount rather than adjusting this sentence by hand:
 ```sh
 python - <<'EOF'
 import ast, pathlib
-tree = ast.parse(pathlib.Path("scripts/pathia-mcp-server.py").read_text())
+tree = ast.parse(pathlib.Path("scripts/pathiel-mcp-server.py").read_text())
 g = {t.id: n.value for n in tree.body if isinstance(n, ast.Assign)
      for t in n.targets if hasattr(t, "id")}
 tools = {v.value for e in g["TOOLS"].elts for k, v in zip(e.keys, e.values)
@@ -33,8 +33,8 @@ print(f"{len(tools)} advertised, {len(tools - stubs)} implemented, {len(stubs)} 
 EOF
 ```
 
-**This process never touches the web auth.** It imports `pathia` in-process
-rather than calling `pathia.server` over HTTP, so wallet sign-in, sessions, the
+**This process never touches the web auth.** It imports `pathiel` in-process
+rather than calling `pathiel.server` over HTTP, so wallet sign-in, sessions, the
 operator role and the CSP are all irrelevant here — and the filesystem is what
 gates it. See `mcp-config.md` for why that matters.
 
@@ -66,8 +66,8 @@ Use the existing helpers — do not invent new ones:
 ```python
 def handle_get_xxx(params: Dict[str, Any]) -> str:
     try:
-        from pathia.client.exchange import _get_info
-        from pathia.client.hl_client import resolve_user_address
+        from pathiel.client.exchange import _get_info
+        from pathiel.client.hl_client import resolve_user_address
         user = resolve_user_address()
         if not user:
             return json.dumps({"error": "no configured user address"}, default=str)
@@ -79,11 +79,11 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
 - `_get_info()` — shared read-side `Info` client.
 - `_make_exchange()` — shared write-side `Exchange` client (needs `HYPERLIQUID_PRIVATE_KEY`).
 - `resolve_user_address()` (in `hl_client`) — master address, else wallet, else `""`.
-- A bad import from `pathia.client.exchange` fails at *handler-call* time,
+- A bad import from `pathiel.client.exchange` fails at *handler-call* time,
   not file load — a `python -c 'import ...'` smoke test will not catch it. Check
   the import against the actual module.
 - `close_position` is a thin adapter over
-  `pathia.agents.executor.close_position_market(coin)`. Do not call
+  `pathiel.agents.executor.close_position_market(coin)`. Do not call
   `place_hl_order` inline from the MCP server; the executor helper owns
   reduce-only handling, DSL deregistration, trigger-order cleanup, realized PnL
   capture, and loss-cooldown arming.
@@ -111,6 +111,6 @@ execution) and exits non-zero on drift.
 
 ## Restart
 
-The server is a separate process; after editing it run `pkill -f pathia-mcp-server.py`
+The server is a separate process; after editing it run `pkill -f pathiel-mcp-server.py`
 — the next tool call respawns it with fresh code. A committed fix that "doesn't
 take" almost always means a stale server process.

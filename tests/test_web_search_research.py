@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from pathia.agents import research
-from pathia.models.types import Candle
+from pathiel.agents import research
+from pathiel.models.types import Candle
 
 
 def _cfg(enabled=True, min_move=8.0, held=True):

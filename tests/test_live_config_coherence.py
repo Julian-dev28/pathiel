@@ -42,9 +42,9 @@ def _floor() -> float:
 
 def _params():
     """Resolved, not indexed. Sizing lives at the top level unless a book
-    overrides it (pathia/agents/book_params.py), so indexing the book dict
+    overrides it (pathiel/agents/book_params.py), so indexing the book dict
     would read a key that is deliberately absent."""
-    from pathia.agents.book_params import book_params
+    from pathiel.agents.book_params import book_params
     return book_params(CFG, BOOK)
 
 
@@ -82,7 +82,7 @@ def test_deployment_sits_inside_its_two_hard_bounds():
     candidate before any capital gate — so deployment is a pure risk dial while
     the ledger fills, and a test that forces it to the maximum is a test that
     forbids de-risking."""
-    from pathia.client.exchange import MIN_ORDER_USD
+    from pathiel.client.exchange import MIN_ORDER_USD
     deployed = _slots() * _frac()
     free = float(CFG["min_available_margin_pct"])
     assert deployed + free <= 1.0 + 1e-9, (
@@ -165,7 +165,7 @@ def test_name_cap_does_not_refuse_trades_the_slots_allow():
 def test_position_size_clears_the_exchange_minimum_at_the_floor():
     """Checked at the floor, where the fraction produces its SMALLEST order.
     Passing at today's balance proves nothing about the balance that matters."""
-    from pathia.client.exchange import MIN_ORDER_USD
+    from pathiel.client.exchange import MIN_ORDER_USD
     smallest = _notional_at(_floor())
     assert smallest >= MIN_ORDER_USD, (
         f"at the ${_floor():.0f} floor a position is ${smallest:.2f}, under the "

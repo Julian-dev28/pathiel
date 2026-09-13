@@ -1,7 +1,7 @@
 """Ownership and claim-registry tests for live strategy books."""
 
 
-from pathia.agents.rebalancer_owned import OwnedPositions, _live_coin_set
+from pathiel.agents.rebalancer_owned import OwnedPositions, _live_coin_set
 
 
 def _pos(coin: str, szi: float):

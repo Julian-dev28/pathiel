@@ -108,7 +108,7 @@ def fetch(query: str, max_results: int = MIN_RESULTS,
         r = requests.get(
             API, timeout=timeout,
             headers={"Authorization": f"Bearer {token}",
-                     "User-Agent": "pathia-headlines/1.0"},
+                     "User-Agent": "pathiel-headlines/1.0"},
             params={"query": query, "max_results": want,
                     "tweet.fields": "created_at,public_metrics"})
     except Exception as e:
@@ -160,7 +160,7 @@ def diagnose() -> int:
     if not token:
         print("  X_BEARER_TOKEN not set (.env.local)")
         return 1
-    h = {"Authorization": f"Bearer {token}", "User-Agent": "pathia-headlines/1.0"}
+    h = {"Authorization": f"Bearer {token}", "User-Agent": "pathiel-headlines/1.0"}
     try:
         v1 = requests.get("https://api.twitter.com/1.1/application/rate_limit_status.json",
                           headers=h, timeout=15).status_code

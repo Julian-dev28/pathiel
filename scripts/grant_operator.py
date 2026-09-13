@@ -13,7 +13,7 @@ with no way back except deleting the database.
     python scripts/grant_operator.py 0xYourWallet
     python scripts/grant_operator.py 0xSomeoneElse --revoke
 
-Reads PATHIA_STATE_DIR the same way the server does, so it edits the database
+Reads PATHIEL_STATE_DIR the same way the server does, so it edits the database
 the running server is actually using.
 """
 from __future__ import annotations

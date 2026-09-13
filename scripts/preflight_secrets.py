@@ -91,7 +91,7 @@ REGISTRY: Tuple[SecretSpec, ...] = (
     SecretSpec("HYPERLIQUID_WALLET_ADDRESS", "agent/API wallet address that signs orders", "always"),
     SecretSpec("HYPERLIQUID_PRIVATE_KEY", "agent/API wallet private key — signs orders", "always"),
     SecretSpec("HYPERLIQUID_MASTER_ADDRESS", "master account public address (funds live here)", "always"),
-    SecretSpec("PATHIA_OPERATOR_TOKEN", "bearer token gating the dashboard operator surface", "always"),
+    SecretSpec("PATHIEL_OPERATOR_TOKEN", "bearer token gating the dashboard operator surface", "always"),
     SecretSpec("OPENROUTER_API_KEY", "OpenRouter API key for the default AI brain provider", "openrouter"),
     SecretSpec("HYPERLIQUID_MASTER_PRIVATE_KEY", "master account private key — treasury transfers only", "local_only"),
     SecretSpec("BRAVE_API_KEY", "Brave Search API key — news context for research (optional)", "optional"),
@@ -129,7 +129,7 @@ def parse_env_file(path: Path) -> Dict[str, str]:
 def effective_env(env_file: Path, process_env: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     """What the app will actually see: the file provides values, a real
     process env var of the same name wins (matches every `.setdefault`
-    loader in this repo — pathia/server.py, services/trend_engine/env.py,
+    loader in this repo — pathiel/server.py, services/trend_engine/env.py,
     scripts/*.py all load the file first, then `setdefault`)."""
     merged = parse_env_file(env_file)
     merged.update(dict(process_env if process_env is not None else os.environ))
@@ -210,7 +210,7 @@ def check_required_present(env: Mapping[str, str]) -> List[Finding]:
 
 
 def _effective_ai_brain_provider(env: Mapping[str, str]) -> str:
-    """Mirrors pathia/agents/ai_brain.py's _normalise_provider() +
+    """Mirrors pathiel/agents/ai_brain.py's _normalise_provider() +
     DEFAULT_AI_BRAIN_PROVIDER. Kept standalone (no project import) so this
     script has zero dependency on the app's import graph — it must still run
     when the app itself is broken."""
@@ -224,7 +224,7 @@ def _effective_ai_brain_provider(env: Mapping[str, str]) -> str:
 
 def check_master_not_agent(env: Mapping[str, str]) -> List[Finding]:
     """The highest-value check: the trading key must be an agent/API wallet,
-    never the master. Mirrors pathia/client/exchange.py's own
+    never the master. Mirrors pathiel/client/exchange.py's own
     IS_AGENT computation, but preflight treats an unproven relationship as a
     failure rather than a silent single-wallet fallback."""
     wallet = (env.get("HYPERLIQUID_WALLET_ADDRESS") or "").strip()
@@ -396,7 +396,7 @@ def check_ai_brain_usable(env: Mapping[str, str], deploy_mode: bool) -> List[Fin
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         for k, v in env.items():                 # readiness reads os.environ
             os.environ.setdefault(k, v)
-        from pathia.agents.ai_brain import provider_readiness
+        from pathiel.agents.ai_brain import provider_readiness
         r = provider_readiness()
     except Exception as exc:
         return [Finding("ai_brain_usable", "WARN", "-",

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from pathia.agents.book_helpers import bounded_exit_override
+from pathiel.agents.book_helpers import bounded_exit_override
 
 ROOT = Path(__file__).resolve().parents[1]
 CFG = json.loads((ROOT / ".agent-config.json").read_text())

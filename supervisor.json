@@ -1,15 +1,26 @@
 {
- "ts": 1788137322.192023,
+ "ts": 1789286048.973461,
  "checked": [
   "loop",
   "rotator",
   "server"
  ],
  "halted": [],
- "restarts": {},
+ "restarts": {
+  "loop": [
+   1789285688.9990468,
+   1789285808.936077,
+   1789285928.959339
+  ],
+  "server": [
+   1789285688.9990468,
+   1789285808.936077,
+   1789285928.959339
+  ]
+ },
  "report": [
-  "[supervisor] trading loop: running",
-  "[supervisor] API server: running",
+  "[supervisor] trading loop: down, but restarted 3x in the last 1h \u2014 crash loop, not a blip; leaving it down so the failure stays visible",
+  "[supervisor] API server: down, but restarted 3x in the last 1h \u2014 crash loop, not a blip; leaving it down so the failure stays visible",
   "[supervisor] log rotator: running"
  ]
 }

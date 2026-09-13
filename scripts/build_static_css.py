@@ -22,8 +22,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES = ROOT / "pathia" / "templates"
-OUT = ROOT / "pathia" / "static" / "app.css"
+TEMPLATES = ROOT / "pathiel" / "templates"
+OUT = ROOT / "pathiel" / "static" / "app.css"
 
 # Minimal preflight — the subset of Tailwind's reset these pages rely on.
 PREFLIGHT = """\

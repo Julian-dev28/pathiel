@@ -1,6 +1,6 @@
 """PTJ 200-day-MA trend-regime filter — gate-logic unit tests (no network)."""
 
-import pathia.agents.executor as ex
+import pathiel.agents.executor as ex
 
 
 def _patch_direction(monkeypatch, direction):

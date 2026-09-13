@@ -2,7 +2,7 @@
 
 The dashboard reads three files: a session log, a positions snapshot, and the
 agent config. Every one of them is env-overridable, which means a demo needs no
-changes to `pathia/dashboard.py` at all — point the three env vars at generated
+changes to `pathiel/dashboard.py` at all — point the three env vars at generated
 files and the real rendering code runs against invented data. That is the whole
 design. The demo exercises the production code path; only the inputs are fake.
 
@@ -34,7 +34,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 # The five books the dashboard knows about, mirroring `_BOOKS` in
-# pathia/dashboard.py. Kept as plain names here rather than imported: this
+# pathiel/dashboard.py. Kept as plain names here rather than imported: this
 # service must not pull the trading stack in just to name a string.
 BOOKS: Tuple[str, ...] = (
     "unlock_short_runin",
@@ -424,7 +424,7 @@ def materialize(dest_dir: str, now_ms: int | None = None,
     with open(cfg_path, "w") as f:
         json.dump(_agent_config(), f)
 
-    # `shadow_ledger` resolves its directory as <PATHIA_STATE_DIR>/shadow_ledger,
+    # `shadow_ledger` resolves its directory as <PATHIEL_STATE_DIR>/shadow_ledger,
     # so the state dir is what gets exported, not the ledger dir itself.
     ledger_dir = os.path.join(dest_dir, "state", "shadow_ledger")
     os.makedirs(ledger_dir, exist_ok=True)
@@ -435,8 +435,8 @@ def materialize(dest_dir: str, now_ms: int | None = None,
 
     return {
         "SESSION_LOG_PATH": log_path,
-        "PATHIA_POSITIONS_SNAPSHOT_FILE": snap_path,
-        "PATHIA_AGENT_CONFIG_FILE": cfg_path,
-        "PATHIA_AGENT_MEMORY_FILE": mem_path,
-        "PATHIA_STATE_DIR": os.path.join(dest_dir, "state"),
+        "PATHIEL_POSITIONS_SNAPSHOT_FILE": snap_path,
+        "PATHIEL_AGENT_CONFIG_FILE": cfg_path,
+        "PATHIEL_AGENT_MEMORY_FILE": mem_path,
+        "PATHIEL_STATE_DIR": os.path.join(dest_dir, "state"),
     }

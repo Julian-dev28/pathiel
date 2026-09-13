@@ -20,7 +20,7 @@ from services.auth.store import AuthStore
 
 ALICE = Account.from_key("0x" + "a1" * 32)
 BOB = Account.from_key("0x" + "b2" * 32)
-DOMAIN = "pathia.test"
+DOMAIN = "pathiel.test"
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def app_db(tmp_path, monkeypatch):
     API reads, which is the whole coupling: one file, one schema, no imports.
     """
     path = tmp_path / "data.db"
-    monkeypatch.setenv("PATHIA_DATABASE_URL", f"sqlite:///{path}")
+    monkeypatch.setenv("PATHIEL_DATABASE_URL", f"sqlite:///{path}")
     from services.auth import api_keys
     api_keys.ensure_schema()
     return path
@@ -39,8 +39,8 @@ def app_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch, app_db):
-    monkeypatch.setenv("PATHIA_AUTH_DOMAIN", DOMAIN)
-    monkeypatch.setenv("PATHIA_INSECURE_COOKIES", "1")
+    monkeypatch.setenv("PATHIEL_AUTH_DOMAIN", DOMAIN)
+    monkeypatch.setenv("PATHIEL_INSECURE_COOKIES", "1")
     store = AuthStore(str(tmp_path / "auth.db"))
     deps.reset_store_for_tests(store)
     auth_api._ATTEMPTS.clear()
@@ -100,7 +100,7 @@ def test_the_two_services_still_hash_a_token_the_same_way(client):
     import pathlib
     from services.auth import api_keys
     src = (pathlib.Path(__file__).resolve().parents[2]
-           / "pathia_data_api" / "app" / "auth.py").read_text()
+           / "pathiel_data_api" / "app" / "auth.py").read_text()
     body = src[src.index("def hash_token("):]
     assert "sha256" in body and ".hexdigest()" in body, body[:200]
     assert api_keys.hash_token("abc") == __import__("hashlib").sha256(b"abc").hexdigest()
@@ -174,7 +174,7 @@ def test_anonymous_callers_get_nothing(client):
 
 def test_the_owner_column_is_added_to_a_table_that_predates_it(app_db):
     """create_all builds missing tables and never alters an existing one, so a
-    deployment already holding pathia_data.db would keep a table with no owner
+    deployment already holding pathiel_data.db would keep a table with no owner
     column and raise on every ownership query. Idempotent, because it runs on
     every request path."""
     import sqlite3
@@ -203,10 +203,10 @@ def test_a_signed_in_customer_never_sees_the_house_balance(client, monkeypatch, 
     they cannot see.
     """
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
 
-    monkeypatch.delenv("PATHIA_PUBLIC_DASHBOARD", raising=False)
-    monkeypatch.setenv("PATHIA_INSECURE_COOKIES", "1")
+    monkeypatch.delenv("PATHIEL_PUBLIC_DASHBOARD", raising=False)
+    monkeypatch.setenv("PATHIEL_INSECURE_COOKIES", "1")
     c = TestClient(app)
 
     # BOB signs in second, so he is a plain user, not the operator.
@@ -228,14 +228,14 @@ def test_the_account_route_reads_the_caller_not_the_deployment(client, monkeypat
     """A wallet's own balance comes from its own address. No key is stored and
     none is needed: /info clearinghouseState takes a plain address, so the
     product cannot trade on a customer's behalf even by accident."""
-    import pathia.dashboard as db
+    import pathiel.dashboard as db
     seen = {}
 
     def fake_state(user, include_hip3=False):
         seen["addr"] = user
         return {"equity": 4321.0, "available": 1234.0, "asset_positions": []}
 
-    import pathia.client.hl_client as hl
+    import pathiel.client.hl_client as hl
     monkeypatch.setattr(hl, "fetch_account_state", fake_state)
     db._ACCOUNT_CACHE.clear()
     out = db._viewer_account_payload(BOB.address)
@@ -247,8 +247,8 @@ def test_an_empty_wallet_reads_as_unfunded_not_as_a_loss(monkeypatch):
     """Somebody who just connected a wallet has no Hyperliquid account. That is
     the ordinary starting state, and rendering it as a row of zeros looks like
     a drawdown rather than an empty account."""
-    import pathia.dashboard as db
-    import pathia.client.hl_client as hl
+    import pathiel.dashboard as db
+    import pathiel.client.hl_client as hl
     monkeypatch.setattr(hl, "fetch_account_state",
                         lambda user, include_hip3=False: {"equity": 0.0, "asset_positions": []})
     db._ACCOUNT_CACHE.clear()
@@ -260,8 +260,8 @@ def test_an_empty_wallet_reads_as_unfunded_not_as_a_loss(monkeypatch):
 def test_a_failing_venue_read_does_not_render_as_a_zero_balance(monkeypatch):
     """Zero is a number a user will believe. A rate-limited read has to say it
     could not answer."""
-    import pathia.dashboard as db
-    import pathia.client.hl_client as hl
+    import pathiel.dashboard as db
+    import pathiel.client.hl_client as hl
 
     def boom(user, include_hip3=False):
         raise RuntimeError("429 rate limited")

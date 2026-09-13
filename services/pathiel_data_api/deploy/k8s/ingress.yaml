@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pathiel-data-api
+  namespace: pathiel
+  labels:
+    app.kubernetes.io/name: pathiel-data-api
+    app.kubernetes.io/part-of: pathiel-data-api
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # cert-manager issues/renews the TLS cert referenced below.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pathiel-data.example.com
+      secretName: pathiel-data-api-tls
+  rules:
+    - host: pathiel-data.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pathiel-data-api
+                port:
+                  number: 80

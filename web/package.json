@@ -1,8 +1,8 @@
 {
-  "name": "pathia-web",
+  "name": "pathiel-web",
   "private": true,
   "version": "1.0.0",
-  "description": "Next.js front end for the pathia dashboard. Same origin as the FastAPI API.",
+  "description": "Next.js front end for the pathiel dashboard. Same origin as the FastAPI API.",
   "scripts": {
     "dev": "next dev -p 3100",
     "build": "next build",

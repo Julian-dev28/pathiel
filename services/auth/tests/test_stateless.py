@@ -19,18 +19,18 @@ SECRET = "k" * 48
 
 @pytest.fixture(autouse=True)
 def secret(monkeypatch):
-    monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", SECRET)
+    monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", SECRET)
 
 
 class TestOffByDefault:
     def test_it_is_disabled_unless_asked_for(self, monkeypatch):
         """A deployment with a durable volume keeps burned nonces and must not
         silently lose replay protection to an import."""
-        monkeypatch.delenv("PATHIA_AUTH_STATELESS_NONCE", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_STATELESS_NONCE", raising=False)
         assert N.enabled() is False
 
     def test_the_flag_turns_it_on(self, monkeypatch):
-        monkeypatch.setenv("PATHIA_AUTH_STATELESS_NONCE", "1")
+        monkeypatch.setenv("PATHIEL_AUTH_STATELESS_NONCE", "1")
         assert N.enabled() is True
 
 
@@ -85,7 +85,7 @@ class TestRejection:
         """The secret is what separates deployments. Without this, anyone
         running this source could mint nonces for any other install."""
         minted = N.issue()
-        monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "different" * 8)
+        monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", "different" * 8)
         assert N.verify(minted) is False
 
 
@@ -94,12 +94,12 @@ class TestSecretHandling:
         """Never a default, never derived. A per-instance fallback would verify
         nothing across a cold start — the exact bug this module fixes, back
         again and silent."""
-        monkeypatch.delenv("PATHIA_AUTH_NONCE_SECRET", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_NONCE_SECRET", raising=False)
         with pytest.raises(N.NonceError):
             N.issue()
 
     def test_a_short_secret_is_refused(self, monkeypatch):
-        monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "tooshort")
+        monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", "tooshort")
         with pytest.raises(N.NonceError):
             N.issue()
 
@@ -107,7 +107,7 @@ class TestSecretHandling:
         """Verification must fail CLOSED when it cannot check. An exception
         escaping here would be a 500; returning True would be an open door."""
         minted = N.issue()
-        monkeypatch.delenv("PATHIA_AUTH_NONCE_SECRET", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_NONCE_SECRET", raising=False)
         assert N.verify(minted) is False
 
 
@@ -121,16 +121,16 @@ class TestSessions:
 
     @pytest.fixture(autouse=True)
     def on(self, monkeypatch):
-        monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
+        monkeypatch.setenv("PATHIEL_AUTH_STATELESS_SESSION", "1")
 
     def test_it_is_off_unless_asked_for(self, monkeypatch):
-        monkeypatch.delenv("PATHIA_AUTH_STATELESS_SESSION", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_STATELESS_SESSION", raising=False)
         assert N.sessions_enabled() is False
 
     def test_nonces_and_sessions_switch_independently(self, monkeypatch):
         """Different trades — a nonce gives up single-use, a session gives up
         revocation — so a deployment may want one and not the other."""
-        monkeypatch.delenv("PATHIA_AUTH_STATELESS_NONCE", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_STATELESS_NONCE", raising=False)
         assert N.sessions_enabled() is True
         assert N.enabled() is False
 
@@ -170,7 +170,7 @@ class TestSessions:
 
     def test_a_token_from_another_deployment_is_refused(self, monkeypatch):
         minted = N.issue_session(self.ADDR)
-        monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "elsewhere" * 8)
+        monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", "elsewhere" * 8)
         assert N.read_session(minted) is None
 
     @pytest.mark.parametrize("junk", ["", "nope", "v1.a.b", "v2." + "x" * 40 + ".1.2", None])
@@ -189,5 +189,5 @@ class TestSessions:
 
     def test_verification_fails_closed_without_the_secret(self, monkeypatch):
         minted = N.issue_session(self.ADDR)
-        monkeypatch.delenv("PATHIA_AUTH_NONCE_SECRET", raising=False)
+        monkeypatch.delenv("PATHIEL_AUTH_NONCE_SECRET", raising=False)
         assert N.read_session(minted) is None

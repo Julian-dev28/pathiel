@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from pathia.agents import unlock_recorder as ur
+from pathiel.agents import unlock_recorder as ur
 
 _NOW = int(time.time() * 1000)
 _H = ur._HOUR_MS

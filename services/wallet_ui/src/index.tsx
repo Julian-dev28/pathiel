@@ -2,13 +2,13 @@
  * Mount point, and the bridge back to the vanilla page.
  *
  * This bundle is ~380 KB over the wire and the dashboard's own JS is ~30 KB, so
- * it is NOT loaded on page load. `pathia/static/pathia.js` injects it the first
+ * it is NOT loaded on page load. `pathiel/static/pathiel.js` injects it the first
  * time someone actually needs a wallet — a click on the masthead chip, or the
  * sign-in gate appearing after a 401 — and the common case for a signed-in
  * operator never fetches it at all.
  *
  * Because the load is user-initiated, the modal has to open by itself once
- * React is up; nobody clicks twice. The loader sets `__pathiaWalletAutoOpen`
+ * React is up; nobody clicks twice. The loader sets `__pathielWalletAutoOpen`
  * before injecting and this file honours it after mount.
  */
 
@@ -19,8 +19,8 @@ import { App } from './App';
 
 declare global {
   interface Window {
-    PathiaWallet?: { openConnectModal: () => void };
-    __pathiaWalletAutoOpen?: boolean;
+    PathielWallet?: { openConnectModal: () => void };
+    __pathielWalletAutoOpen?: boolean;
   }
 }
 
@@ -84,12 +84,12 @@ function mount(): void {
     </StrictMode>,
   );
 
-  window.PathiaWallet = {
+  window.PathielWallet = {
     openConnectModal: () => openModal(node),
   };
 
-  if (window.__pathiaWalletAutoOpen) {
-    window.__pathiaWalletAutoOpen = false;
+  if (window.__pathielWalletAutoOpen) {
+    window.__pathielWalletAutoOpen = false;
     openModal(node);
   }
 }

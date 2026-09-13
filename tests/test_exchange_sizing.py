@@ -2,7 +2,7 @@
 
 import math
 
-from pathia.client import exchange as ex
+from pathiel.client import exchange as ex
 
 
 def test_min_entry_notional_honors_integer_size_precision(monkeypatch):

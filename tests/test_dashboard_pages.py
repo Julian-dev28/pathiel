@@ -20,7 +20,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from pathia import dashboard as db
+from pathiel import dashboard as db
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
@@ -361,13 +361,13 @@ def isolated_ledger(tmp_path, monkeypatch):
     fixture book into the real ledger directory gets the operator's actual
     news_surge_multi history mixed in and its rows pushed past `limit`. These
     tests only passed before because the payload read a single hardcoded book."""
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     return tmp_path
 
 
 def _write_news_ledger(rows, book="news_surge_short"):
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     path = shadow_ledger._book_path(book)
     if os.path.exists(path):
         os.remove(path)
@@ -537,7 +537,7 @@ HOW_IT_WORKS = "No discretionary trading and no manual override."
 # <style> blocks. Anything asserting on CSS has to read the sheet, or it is
 # asserting that a rule is DUPLICATED into the page rather than that it exists.
 CSS = (pathlib.Path(__file__).resolve().parent.parent
-       / "pathia" / "static" / "pathia.css").read_text()
+       / "pathiel" / "static" / "pathiel.css").read_text()
 
 
 def styled(client, path="/"):
@@ -550,7 +550,7 @@ def test_landing_page_copy_and_removed_chrome(client):
     assert r.status_code == 200
     assert HOW_IT_WORKS in r.text                 # exact operator copy
     assert "live books" in r.text
-    assert "pathia-modal" not in r.text           # terminal window removed
+    assert "pathiel-modal" not in r.text           # terminal window removed
     assert "operator-toggle" not in r.text        # operator chrome removed
     assert "matrix-feed" not in r.text            # old sidebar feed removed
     assert 'data-nav="/activity"' in r.text and 'data-nav="/trends"' in r.text
@@ -638,7 +638,7 @@ def test_landing_books_dropdown_wraps_flow(client):
     behind a toggle whose state is remembered."""
     r = client.get("/").text
     assert 'id="books-toggle"' in r and 'id="books-wrap"' in r
-    assert "pathia-books-open" in r                  # state remembered in localStorage
+    assert "pathiel-books-open" in r                  # state remembered in localStorage
     assert 'class="books-wrap"' in r                 # static HTML ships collapsed
     assert "books-open .books-wrap" in CSS           # the collapsed/open rule
     assert ".chev" in CSS                            # chevron toggle affordance
@@ -684,10 +684,10 @@ def test_citations_are_chips_not_blue_links(client):
         assert 'target="_blank"' in r and 'rel="noopener noreferrer"' in r, path
 
 
-# Helpers shared by every page live in static/pathia.js now, so the extractor
+# Helpers shared by every page live in static/pathiel.js now, so the extractor
 # searches there too rather than only in the served markup.
 SHARED_JS = (pathlib.Path(__file__).resolve().parent.parent
-             / "pathia" / "static" / "pathia.js").read_text()
+             / "pathiel" / "static" / "pathiel.js").read_text()
 
 
 def _extract_js_block(html: str, kind: str, name: str) -> str:
@@ -1125,7 +1125,7 @@ def test_an_all_zero_funnel_carries_the_age_of_the_last_scan(monkeypatch):
 
 
 def test_book_league_merges_summary_with_config(monkeypatch, tmp_path):
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "extreme_fade.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
@@ -1153,7 +1153,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
     UI entirely. Their ledger files stay on disk as evidence, but the league
     payload must skip them; a genuinely still-accruing lane like whale_flow
     keeps its 'retired' status."""
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     with open(tmp_path / "premium_fade_short.jsonl", "w") as fh:
         fh.write(json.dumps({"ts": 1000, "coin": "BTC", "signal_bar_t": 1000,
@@ -1178,7 +1178,7 @@ def test_book_league_removed_books_never_render(monkeypatch, tmp_path):
 
 
 def test_book_league_empty_ledger_dir(monkeypatch, tmp_path):
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     assert db._book_league_payload() == []
@@ -1261,7 +1261,7 @@ def test_the_news_tape_reads_live_books_and_ignores_removed_ones(monkeypatch, tm
     _KNOWN_BOOK_NAMES, so a removed book stops being read the moment it leaves
     _BOOKS. This test is the proof: the removed ledger is on disk with a fresh,
     breaking record and must still not reach the tape."""
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     now = 10_000_000_000
     with open(tmp_path / "news_catalyst.jsonl", "w") as fh:      # REMOVED book
@@ -1294,7 +1294,7 @@ def test_the_news_tape_ranks_by_surge_not_by_how_often_a_coin_was_polled(monkeyp
     """Read count measures how often the poller looked at a coin, not whether
     anything happened to it. Ranking on it led the panel with SKR — 80 reads, no
     spike — above coins with real coverage surges."""
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     now = 10_000_000_000
     with open(tmp_path / "news_surge_multi.jsonl", "w") as fh:
@@ -1311,7 +1311,7 @@ def test_the_news_tape_ranks_by_surge_not_by_how_often_a_coin_was_polled(monkeyp
 
 
 def test_tapes_payload_with_nothing_recorded_is_quiet(monkeypatch, tmp_path):
-    from pathia.agents import shadow_ledger
+    from pathiel.agents import shadow_ledger
     monkeypatch.setattr(shadow_ledger, "_ledger_dir", lambda: str(tmp_path))
     d = db._tapes_payload()
     assert d["news"]["status"] == "quiet" and d["news"]["rows"] == []
@@ -1329,7 +1329,7 @@ def test_coin_chart_payload_markers_and_candles(monkeypatch):
 
     candles = [FakeCandle(1000 + i * 3_600_000, 100 + i, 101 + i, 99 + i, 100.5 + i, 10)
               for i in range(5)]
-    import pathia.client.hl_client as hl_client
+    import pathiel.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda coin, interval, count: candles)
     events = [
         {"ts": 1000 + 3_600_000, "event": "execute", "coin": "ARB", "executed": True,
@@ -1350,7 +1350,7 @@ def test_coin_chart_payload_markers_and_candles(monkeypatch):
 
 
 def test_coin_chart_payload_fetch_failure(monkeypatch):
-    import pathia.client.hl_client as hl_client
+    import pathiel.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
     d = db._coin_chart_payload("NOPE")
     assert d["status"] == "no_data" and d["candles"] == []
@@ -1360,7 +1360,7 @@ def test_analytics_endpoints_route(client, monkeypatch):
     # House-account routes became operator surface on 2026-09-04. This test is
     # about payload shape, so it opts into single-operator mode rather than
     # standing up a signed-in operator session.
-    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
+    monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")
     monkeypatch.setattr(db, "_read_log_lines", lambda: [])
     monkeypatch.setattr(db, "read_agent_config", lambda: {})
     for ep in ("/api/dashboard/funnel", "/api/dashboard/book_league",
@@ -1368,7 +1368,7 @@ def test_analytics_endpoints_route(client, monkeypatch):
         r = client.get(ep)
         assert r.status_code == 200, ep
 
-    import pathia.client.hl_client as hl_client
+    import pathiel.client.hl_client as hl_client
     monkeypatch.setattr(hl_client, "fetch_hl_candles", lambda *a, **kw: [])
     r = client.get("/api/dashboard/coin_chart?coin=BTC")
     assert r.status_code == 200 and r.json()["status"] == "no_data"
@@ -1379,7 +1379,7 @@ def test_analytics_page_markers(client):
     r = client.get("/analytics").text
     for marker in ("panel-funnel", "panel-league", "panel-chart", "panel-heat",
                   "panel-tapes", "funnel-bars", "league-body", "coin-canvas",
-                  "heat-body", "news-body", "pathia-an-"):
+                  "heat-body", "news-body", "pathiel-an-"):
         assert marker in r, f"missing {marker}"
     # muted from the nav, still served — the page must keep working
     assert 'data-nav="/analytics"' in r
@@ -1425,7 +1425,7 @@ def test_landing_v3_token_popover_replaces_prompt(client):
     assert "popover" in r and "popovertarget" in r
     assert "::backdrop" in CSS
     assert "prompt(" not in r and "confirm(" not in r
-    assert "pathia-op-token" in r
+    assert "pathiel-op-token" in r
     assert "op-token-btn" in r
 
 
@@ -1479,8 +1479,8 @@ def test_v4_speculation_rules_and_hotkeys(client):
         r = client.get(path).text
         assert 'type="speculationrules"' in r, path
         assert '"eagerness":"moderate"' in r, path
-        # hotkeys live in static/pathia.js; every page has to load it
-        assert "/static/pathia.js" in r, path
+        # hotkeys live in static/pathiel.js; every page has to load it
+        assert "/static/pathiel.js" in r, path
 
 
 def test_v4_landing_wire_sse(client):
@@ -1603,7 +1603,7 @@ def test_an_empty_funnel_says_whether_the_loop_is_down():
 
 def _css():
     return open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                             "pathia", "static", "pathia.css")).read()
+                             "pathiel", "static", "pathiel.css")).read()
 
 
 # ── wiring audit: every page, not just the one being worked on ───────────────
@@ -1611,7 +1611,7 @@ def _css():
 
 def _template_files():
     tdir = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                        "pathia", "templates")
+                        "pathiel", "templates")
     return [(f, open(os.path.join(tdir, f)).read()) for f in sorted(os.listdir(tdir))
             if f.endswith(".html")]
 
@@ -1631,10 +1631,10 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
     """Every page is a static shell over the JSON API. A route renamed on the
     server and not in the template is a control that 404s in production."""
     # Routes come from the REAL app, not the bare dashboard test app: in
-    # production pathia.server mounts the dashboard AND the agent
+    # production pathiel.server mounts the dashboard AND the agent
     # endpoints, and a page control may legitimately call either. Checking only
     # the dashboard's own routes would fail a control that works in production.
-    from pathia.server import app as real_app
+    from pathiel.server import app as real_app
     routes = {r.path for r in client.app.routes if hasattr(r, "path")}
     routes |= {r.path for r in real_app.routes if hasattr(r, "path")}
     for name, html in _template_files():
@@ -1708,7 +1708,7 @@ def test_every_page_uses_the_one_stylesheet(client):
     colour changed in four places and drifted in the fifth."""
     for path in PAGES:
         page = client.get(path).text
-        assert "/static/pathia.css" in page, f"{path} does not load the design system"
+        assert "/static/pathiel.css" in page, f"{path} does not load the design system"
 
 
 def test_no_page_carries_a_second_design_system(client):
@@ -1716,12 +1716,12 @@ def test_no_page_carries_a_second_design_system(client):
     geometry (chart heights), but not for a whole palette."""
     for name in ("landing", "activity", "analytics", "news", "trends"):
         src = (pathlib.Path(__file__).resolve().parent.parent
-               / "pathia" / "templates" / f"{name}.html").read_text()
+               / "pathiel" / "templates" / f"{name}.html").read_text()
         blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
         for b in blocks:
             assert b.count("\n") < 40, (
                 f"{name}.html has a {b.count(chr(10))}-line <style> block — "
-                f"shared rules belong in static/pathia.css")
+                f"shared rules belong in static/pathiel.css")
             assert "--ink" not in b and "--accent" not in b, (
                 f"{name}.html redefines design tokens locally")
 
@@ -1780,8 +1780,8 @@ def test_a_book_with_no_module_is_not_a_row_at_all(monkeypatch):
     RETIRED and folded on the dashboard. But the payload has TWO consumers,
     so folding it in one template left /analytics listing all sixteen. The
     filter belongs here, once."""
-    import pathia.dashboard as db
-    from pathia.agents import shadow_ledger
+    import pathiel.dashboard as db
+    from pathiel.agents import shadow_ledger
 
     # imported inside the function, so patch the module it is pulled from
     monkeypatch.setattr(db, "_books_payload", lambda *a, **k: [])
@@ -1828,7 +1828,7 @@ def test_no_template_hard_codes_a_colour():
     """Charts and inline styles kept a neon crypto palette the stylesheet could
     not reach, so a theme change fixed the page and missed the chart."""
     import re as _re
-    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathia" / "templates"
+    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathiel" / "templates"
     offenders = []
     for f in sorted(tpl.glob("*.html")):
         for m in _re.finditer(r"#[0-9a-fA-F]{6}\b", f.read_text()):
@@ -1848,12 +1848,12 @@ def test_every_page_reaches_every_other_page(client):
 
 
 def test_the_nav_marks_the_page_you_are_on(client):
-    """The marking runs from static/pathia.js — every page has to load it and
+    """The marking runs from static/pathiel.js — every page has to load it and
     give the nav something to match on."""
     assert "nav-active" in SHARED_JS
     for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         page = client.get(path).text
-        assert "/static/pathia.js" in page, f"{path} does not load the shared script"
+        assert "/static/pathiel.js" in page, f"{path} does not load the shared script"
         assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
 
 
@@ -1862,7 +1862,7 @@ def test_a_removed_subsystem_is_not_reported_as_a_refusal(monkeypatch):
     24h window — historical rows kept a deleted feature at the top of the
     reasons list, naming something that does not exist and burying the gates
     that actually stopped a trade."""
-    import pathia.dashboard as db
+    import pathiel.dashboard as db
 
     now = 100_000_000_000
     events = [
@@ -1888,7 +1888,7 @@ def test_the_hotkeys_are_defined_once(client):
     assert "e.target.closest('input,textarea,select')" in SHARED_JS
     for name in ("landing", "activity", "analytics", "news", "trends"):
         src = (pathlib.Path(__file__).resolve().parent.parent
-               / "pathia" / "templates" / f"{name}.html").read_text()
+               / "pathiel" / "templates" / f"{name}.html").read_text()
         assert "addEventListener('keydown'" not in src, (
             f"{name}.html re-declares the hotkey handler")
 
@@ -1944,7 +1944,7 @@ def test_no_chart_can_grow_past_its_container():
     on the document."""
     assert "canvas{ max-width:100%" in CSS.replace(" ", " "), (
         "no global cap on canvas width")
-    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathia" / "templates"
+    tpl = pathlib.Path(__file__).resolve().parent.parent / "pathiel" / "templates"
     for name in ("landing", "analytics"):
         src = (tpl / f"{name}.html").read_text()
         if "canvas.width" in src:
@@ -1971,9 +1971,9 @@ def test_account_data_is_not_readable_without_signing_in(monkeypatch):
     just the code, so a future refactor that returns 401 while still leaking a
     body fails here.
     """
-    monkeypatch.delenv("PATHIA_PUBLIC_DASHBOARD", raising=False)
+    monkeypatch.delenv("PATHIEL_PUBLIC_DASHBOARD", raising=False)
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     c = TestClient(app)
     for path in ("/api/dashboard/summary", "/api/dashboard/risk",
                  "/api/dashboard/positions", "/api/dashboard/closed-trades",
@@ -1990,7 +1990,7 @@ def test_health_checks_still_answer_without_a_session():
     """Fly and k8s probes carry no credential, and a health check that needs a
     session cannot report a broken session."""
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     c = TestClient(app)
     assert c.get("/api/health").status_code == 200
 
@@ -1999,9 +1999,9 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
     """A private box behind a VPN can keep the old open reads, but only by
     saying so out loud — the flag is named to be obvious in a diff and in
     `fly secrets list`."""
-    monkeypatch.setenv("PATHIA_PUBLIC_DASHBOARD", "1")
+    monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     assert TestClient(app).get("/api/dashboard/summary").status_code == 200
 
 
@@ -2017,14 +2017,14 @@ def test_every_page_can_offer_sign_in(client):
     shared script, has somewhere to put the chip, and can reach the picker.
     """
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                           "pathia", "static", "pathia.js")).read()
-    assert "PathiaAuth" in js
+                           "pathiel", "static", "pathiel.js")).read()
+    assert "PathielAuth" in js
     assert "signIn" in js and "signOut" in js
-    # The picker is fetched on demand; see loadWalletUI in pathia.js.
+    # The picker is fetched on demand; see loadWalletUI in pathiel.js.
     assert "/static/wallet.js" in js
     for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         body = client.get(path).text
-        assert "pathia.js" in body, f"{path} does not load the shared script"
+        assert "pathiel.js" in body, f"{path} does not load the shared script"
         assert "masthead-right" in body, f"{path} has nowhere to put the account chip"
         assert 'id="wallet-connect-root"' in body, (
             f"{path} has nowhere for the wallet picker to mount")
@@ -2051,7 +2051,7 @@ def _served():
     would pass while the served app shipped no headers at all.
     """
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     return TestClient(app)
 
 
@@ -2092,7 +2092,7 @@ def test_the_equity_floor_has_a_documented_operator_override():
     #1 by design. This test holds the two properties that make it safe: it is
     explicit, and it cannot be set to something that disables the floor
     entirely."""
-    from pathia.agents.executor import min_tradable_equity, MIN_TRADABLE_EQUITY_USD
+    from pathiel.agents.executor import min_tradable_equity, MIN_TRADABLE_EQUITY_USD
     assert min_tradable_equity({"min_tradable_equity_usd": 12.0}) == 12.0
     # A typo or a negative must fall back to the backstop, never open the gate.
     for bad in (-1, "twelve", None, float("nan")):
@@ -2105,7 +2105,7 @@ def test_lifting_the_floor_does_not_by_itself_let_a_small_account_trade():
     margin check: a $20 notional at 1x needs $20 of margin regardless of what
     the floor says. Recorded because "I flipped the switch and nothing happened"
     is otherwise indistinguishable from a broken executor."""
-    from pathia.agents.executor import min_tradable_equity
+    from pathiel.agents.executor import min_tradable_equity
     cfg = {"min_tradable_equity_usd": 12.0,
            "somebook": {"enabled": True, "shadow_only": False,
                         "notional_usd": 20.0, "leverage": 1}}
@@ -2117,7 +2117,7 @@ def test_lifting_the_floor_does_not_by_itself_let_a_small_account_trade():
 # ── the read-only flag stops at the session boundary ────────────────────────
 
 def test_readonly_mode_still_lets_a_person_sign_in(monkeypatch):
-    """PATHIA_DASHBOARD_READONLY must not block /auth/*.
+    """PATHIEL_DASHBOARD_READONLY must not block /auth/*.
 
     Found by an operator hitting the deployed demo with a real wallet: the
     picker reached "Verify your account", the POST to /auth/verify came back
@@ -2128,9 +2128,9 @@ def test_readonly_mode_still_lets_a_person_sign_in(monkeypatch):
     The flag exists to freeze trading and configuration. A session opens no
     position, sends no order and edits no book.
     """
-    monkeypatch.setenv("PATHIA_DASHBOARD_READONLY", "1")
+    monkeypatch.setenv("PATHIEL_DASHBOARD_READONLY", "1")
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     client = TestClient(app)
     # A bad signature must be REJECTED ON ITS MERITS (401), never refused by
     # the read-only guard (403).
@@ -2143,9 +2143,9 @@ def test_readonly_mode_still_lets_a_person_sign_in(monkeypatch):
 def test_readonly_mode_still_blocks_everything_that_moves_money(monkeypatch):
     """The other half of the exemption: it is a session-shaped hole, not a
     general one. Widening it to /api/ would make the flag decorative."""
-    monkeypatch.setenv("PATHIA_DASHBOARD_READONLY", "1")
+    monkeypatch.setenv("PATHIEL_DASHBOARD_READONLY", "1")
     from fastapi.testclient import TestClient
-    from pathia.server import app
+    from pathiel.server import app
     client = TestClient(app)
     # 403 from the read-only guard, or 401 from the operator gate that runs
     # before it — which refusal arrives first depends on middleware order and
@@ -2158,14 +2158,14 @@ def test_readonly_mode_still_blocks_everything_that_moves_money(monkeypatch):
 # ── whose account is this ───────────────────────────────────────────────────
 
 def test_the_viewer_payload_says_whether_it_is_the_house_account(monkeypatch):
-    """A visitor's wallet and the book pathia trades are different accounts.
+    """A visitor's wallet and the book pathiel trades are different accounts.
 
     The loop and the MCP server sign with the deployment's key and have never
-    touched a visitor's, so presenting pathia's record under a visitor's
+    touched a visitor's, so presenting pathiel's record under a visitor's
     profile would attribute the operator's track record to a stranger — the
     2026-09-04 leak wearing a friendlier hat.
     """
-    from pathia import dashboard
+    from pathiel import dashboard
     house = "0x" + "1" * 40
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: house)
     monkeypatch.setattr(dashboard, "fetch_account_state",
@@ -2184,7 +2184,7 @@ def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
     operator on any deployment that has not configured a wallet — which is
     every fresh install and the public demo.
     """
-    from pathia import dashboard
+    from pathiel import dashboard
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "")
     monkeypatch.setattr(dashboard, "fetch_account_state",
                         lambda *a, **kw: {"equity": 0.0, "asset_positions": []},
@@ -2195,10 +2195,10 @@ def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
     assert dashboard._viewer_account_payload("")["is_house"] is False
 
 
-def test_the_page_says_pathia_has_not_traded_a_visitors_wallet():
+def test_the_page_says_pathiel_has_not_traded_a_visitors_wallet():
     """The copy is the point. A balance with no attribution reads as a track
     record, and this system's whole posture is that it never holds your key."""
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                           "pathia", "static", "pathia.js")).read()
+                           "pathiel", "static", "pathiel.js")).read()
     assert "is_house" in js
     assert "has never traded it" in js

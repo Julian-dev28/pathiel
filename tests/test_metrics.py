@@ -7,7 +7,7 @@ endpoint must still serve valid Prometheus text without any network call.
 
 from fastapi.testclient import TestClient
 
-from pathia.server import app
+from pathiel.server import app
 
 client = TestClient(app)
 
@@ -19,12 +19,12 @@ def test_metrics_endpoint_serves_prometheus_text():
 
     body = resp.text
     for name in (
-        "pathia_equity_usd",
-        "pathia_open_positions",
-        "pathia_open_notional_usd",
-        "pathia_unrealized_pnl_usd",
-        "pathia_trades_total",
-        "pathia_live_mode",
+        "pathiel_equity_usd",
+        "pathiel_open_positions",
+        "pathiel_open_notional_usd",
+        "pathiel_unrealized_pnl_usd",
+        "pathiel_trades_total",
+        "pathiel_live_mode",
     ):
         assert name in body
 

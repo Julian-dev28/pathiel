@@ -17,7 +17,7 @@ _args, _unknown = _parser.parse_known_args()
 # ... but --daemon is never actually used for any process management
 ```
 
-The script loads `.env.local` manually (via direct file reading, not the argparse `--env` value) and respects `PATHIA_SCAN_INTERVAL` env var. The loop itself is a simple `while True` with try/except + sleep.
+The script loads `.env.local` manually (via direct file reading, not the argparse `--env` value) and respects `PATHIEL_SCAN_INTERVAL` env var. The loop itself is a simple `while True` with try/except + sleep.
 
 ## Correct Pattern
 The trading loop has its own `while True` loop with `time.sleep(scan_interval)`

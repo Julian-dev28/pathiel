@@ -30,7 +30,7 @@ from services.auth.store import SESSION_TTL_S, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-STATEMENT = ("Sign in to Pathia. This proves you control this wallet. "
+STATEMENT = ("Sign in to Pathiel. This proves you control this wallet. "
              "It does not approve any transaction, transfer or trade.")
 
 # How long a minted message stays signable. Long enough to find the wallet
@@ -62,7 +62,7 @@ def expected_domain() -> str:
     attacker controls Host, so deriving it from the request would make the
     domain check assert nothing at all.
     """
-    return os.environ.get("PATHIA_AUTH_DOMAIN", "localhost:8000")
+    return os.environ.get("PATHIEL_AUTH_DOMAIN", "localhost:8000")
 
 
 def _client(request: Request) -> str:
@@ -111,9 +111,9 @@ def nonce(request: Request, address: str) -> Dict[str, Any]:
         f"{expected_domain()} wants you to sign in with your Ethereum account:\n"
         f"{address}\n"
         f"\n{STATEMENT}\n\n"
-        f"URI: {os.environ.get('PATHIA_AUTH_URI', 'https://' + expected_domain())}\n"
+        f"URI: {os.environ.get('PATHIEL_AUTH_URI', 'https://' + expected_domain())}\n"
         f"Version: 1\n"
-        f"Chain ID: {os.environ.get('PATHIA_AUTH_CHAIN_ID', HYPEREVM_CHAIN_ID)}\n"
+        f"Chain ID: {os.environ.get('PATHIEL_AUTH_CHAIN_ID', HYPEREVM_CHAIN_ID)}\n"
         f"Nonce: {value}\n"
         f"Issued At: {now.isoformat().replace('+00:00', 'Z')}\n"
         f"Expiration Time: "
@@ -199,7 +199,7 @@ def logout_all(response: Response, user: User = Depends(require_user)) -> Dict[s
 
 # ── API keys ────────────────────────────────────────────────────────────────
 #
-# This is the join between a wallet and the data API. `services/pathia_data_api`
+# This is the join between a wallet and the data API. `services/pathiel_data_api`
 # already authenticated requests against an `api_keys` table; it just had no
 # notion of who a key belonged to. These four routes give a signed-in wallet the
 # only three operations that matter: see mine, make one, kill one.

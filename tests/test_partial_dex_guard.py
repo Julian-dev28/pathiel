@@ -10,8 +10,8 @@ dashboard equity KPI includes spot so it matches HL's own Account Equity.
 """
 import json
 
-from pathia.client.hl_client import missing_material_dexes
-from pathia.client import universe as uni
+from pathiel.client.hl_client import missing_material_dexes
+from pathiel.client import universe as uni
 
 
 # ── missing_material_dexes ───────────────────────────────────────────────────

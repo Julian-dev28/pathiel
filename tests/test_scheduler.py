@@ -20,7 +20,7 @@ import time
 import pytest
 
 _SPEC = importlib.util.spec_from_file_location(
-    "pathia_scheduler",
+    "pathiel_scheduler",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "scheduler.py"))
 sched = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(sched)

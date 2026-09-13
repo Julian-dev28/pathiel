@@ -228,14 +228,14 @@ class TestShadowLedgers:
 class TestMaterialize:
     def test_writes_every_file_and_exports_every_path(self, tmp_path):
         env = materialize(str(tmp_path), now_ms=NOW)
-        assert set(env) == {"SESSION_LOG_PATH", "PATHIA_POSITIONS_SNAPSHOT_FILE",
-                            "PATHIA_AGENT_CONFIG_FILE", "PATHIA_AGENT_MEMORY_FILE",
-                            "PATHIA_STATE_DIR"}
+        assert set(env) == {"SESSION_LOG_PATH", "PATHIEL_POSITIONS_SNAPSHOT_FILE",
+                            "PATHIEL_AGENT_CONFIG_FILE", "PATHIEL_AGENT_MEMORY_FILE",
+                            "PATHIEL_STATE_DIR"}
         assert os.path.isfile(env["SESSION_LOG_PATH"])
-        assert os.path.isfile(env["PATHIA_POSITIONS_SNAPSHOT_FILE"])
-        assert os.path.isfile(env["PATHIA_AGENT_CONFIG_FILE"])
-        assert os.path.isfile(env["PATHIA_AGENT_MEMORY_FILE"])
-        ledgers = os.path.join(env["PATHIA_STATE_DIR"], "shadow_ledger")
+        assert os.path.isfile(env["PATHIEL_POSITIONS_SNAPSHOT_FILE"])
+        assert os.path.isfile(env["PATHIEL_AGENT_CONFIG_FILE"])
+        assert os.path.isfile(env["PATHIEL_AGENT_MEMORY_FILE"])
+        ledgers = os.path.join(env["PATHIEL_STATE_DIR"], "shadow_ledger")
         assert sorted(os.listdir(ledgers)) == sorted(f"{b}.jsonl" for b in BOOKS)
 
     def test_session_log_is_valid_jsonl(self, tmp_path):
@@ -247,7 +247,7 @@ class TestMaterialize:
     def test_agent_config_turns_the_books_on(self, tmp_path):
         """All five 'off' is a demo that shows nothing running."""
         env = materialize(str(tmp_path), now_ms=NOW)
-        with open(env["PATHIA_AGENT_CONFIG_FILE"]) as f:
+        with open(env["PATHIEL_AGENT_CONFIG_FILE"]) as f:
             cfg = json.load(f)
         keys = ["unlock_short", "news_surge_short", "news_surge_multi",
                 "social_trending", "xs_reversal"]
@@ -255,6 +255,6 @@ class TestMaterialize:
 
     def test_defaults_to_the_wall_clock(self, tmp_path):
         env = materialize(str(tmp_path))
-        with open(env["PATHIA_POSITIONS_SNAPSHOT_FILE"]) as f:
+        with open(env["PATHIEL_POSITIONS_SNAPSHOT_FILE"]) as f:
             saved_at = json.load(f)["saved_at"]
         assert abs(saved_at - time.time() * 1000) < 10_000

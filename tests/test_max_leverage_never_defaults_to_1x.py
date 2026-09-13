@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-import pathia.client.exchange as EX
+import pathiel.client.exchange as EX
 
 
 @pytest.fixture(autouse=True)

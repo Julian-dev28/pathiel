@@ -1,6 +1,6 @@
 import json
 
-from pathia.agents import data_logger
+from pathiel.agents import data_logger
 
 
 def test_data_logger_skips_spot_and_zero_rows(monkeypatch, tmp_path):

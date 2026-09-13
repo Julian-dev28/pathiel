@@ -17,7 +17,7 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SPEC = importlib.util.spec_from_file_location(
-    "pathia_mcp_server", _ROOT / "scripts" / "pathia-mcp-server.py")
+    "pathiel_mcp_server", _ROOT / "scripts" / "pathiel-mcp-server.py")
 MCP = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(MCP)
 
@@ -32,7 +32,7 @@ class TestToolsAreRegistered:
     @pytest.mark.parametrize("name", ["connected_wallets", "wallet_account"])
     def test_the_tool_is_dispatchable(self, name):
         """A schema with no handler is a tool that fails only when called."""
-        source = (_ROOT / "scripts" / "pathia-mcp-server.py").read_text()
+        source = (_ROOT / "scripts" / "pathiel-mcp-server.py").read_text()
         assert f'"{name}": handle_{name}' in source
 
     def test_the_description_states_the_read_only_boundary(self):
@@ -46,18 +46,18 @@ class TestToolsAreRegistered:
 class TestConnectedWallets:
     def test_it_survives_having_no_auth_database(self, monkeypatch, tmp_path):
         """MCP often runs beside a deployment rather than inside one."""
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "nothing" / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "nothing" / "auth.db"))
         body = json.loads(MCP.handle_connected_wallets({}))
         assert body["wallets"] == [] or isinstance(body["wallets"], list)
 
     def test_it_reports_that_it_cannot_trade_them(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
         body = json.loads(MCP.handle_connected_wallets({}))
         assert body["can_this_server_trade_them"] is False
         assert body["why_not"]
 
     def test_it_lists_a_wallet_that_signed_in(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
         from services.auth.store import AuthStore
         AuthStore(str(tmp_path / "auth.db")).upsert_user("0x" + "a" * 40)
         body = json.loads(MCP.handle_connected_wallets({}))
@@ -66,7 +66,7 @@ class TestConnectedWallets:
     def test_newest_sign_in_comes_first(self, monkeypatch, tmp_path):
         """`wallet_account` with no address reads the first entry, so the order
         is the contract, not a presentation detail."""
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
         from services.auth.store import AuthStore
         store = AuthStore(str(tmp_path / "auth.db"))
         store.upsert_user("0x" + "b" * 40, now=1000.0)
@@ -75,7 +75,7 @@ class TestConnectedWallets:
         assert body["wallets"][0]["address"] == "0x" + "c" * 40
 
     def test_the_limit_is_bounded(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
         from services.auth.store import AuthStore
         store = AuthStore(str(tmp_path / "auth.db"))
         for i in range(5):
@@ -92,7 +92,7 @@ class TestWalletAccount:
         assert "error" in body
 
     def test_it_says_so_when_nothing_has_signed_in(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+        monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
         body = json.loads(MCP.handle_wallet_account({}))
         assert "error" in body
 

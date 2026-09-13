@@ -29,6 +29,6 @@ scripts/restart.sh stop      # stop both
 
 Do NOT hand-roll `pkill … && python3 scripts/trading_loop.py` — that old pattern
 skips the startup grace and the server. The **MCP server
-(`scripts/pathia-mcp-server.py`) is intentionally NOT managed by restart.sh** —
+(`scripts/pathiel-mcp-server.py`) is intentionally NOT managed by restart.sh** —
 it's transient (stdio), spawned on demand by an MCP client, and shares
 `.agent-memory.json` with the loop. See `references/restart-sequence.md`.

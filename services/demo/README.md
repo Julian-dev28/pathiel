@@ -17,12 +17,12 @@ that for its mounted volume:
 
 | Env var | What reads it |
 |---|---|
-| `SESSION_LOG_PATH` | `pathia/session_log.py` — equity, PnL, activity, closed trades |
-| `PATHIA_POSITIONS_SNAPSHOT_FILE` | `pathia/positions_snapshot.py` — the positions table |
-| `PATHIA_AGENT_CONFIG_FILE` | `pathia/agents/config_store.py` — the live-books table |
-| `PATHIA_STATE_DIR` | `pathia/agents/shadow_ledger.py` — the book league table |
+| `SESSION_LOG_PATH` | `pathiel/session_log.py` — equity, PnL, activity, closed trades |
+| `PATHIEL_POSITIONS_SNAPSHOT_FILE` | `pathiel/positions_snapshot.py` — the positions table |
+| `PATHIEL_AGENT_CONFIG_FILE` | `pathiel/agents/config_store.py` — the live-books table |
+| `PATHIEL_STATE_DIR` | `pathiel/agents/shadow_ledger.py` — the book league table |
 
-Point those four at generated files and `pathia/dashboard.py` runs unmodified.
+Point those four at generated files and `pathiel/dashboard.py` runs unmodified.
 The demo therefore exercises the production renderers — the funnel, the drawdown
 walk, the fee-drag maths — rather than a parallel implementation that would rot.
 
@@ -55,8 +55,8 @@ them would poison the honest numbers too.
 ```python
 from services.demo.generator import materialize
 
-for key, path in materialize("/tmp/pathia-demo").items():
-    os.environ[key] = path      # must happen BEFORE importing pathia.dashboard
+for key, path in materialize("/tmp/pathiel-demo").items():
+    os.environ[key] = path      # must happen BEFORE importing pathiel.dashboard
 ```
 
 Deterministic for a given `seed` and `now_ms`. `api/index.py` is the only caller.

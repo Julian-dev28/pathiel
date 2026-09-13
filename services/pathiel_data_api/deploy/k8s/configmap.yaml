@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pathiel-data-api-config
+  namespace: pathiel
+  labels:
+    app.kubernetes.io/name: pathiel-data-api
+    app.kubernetes.io/part-of: pathiel-data-api
+# Non-secret env only. PATHIEL_DATABASE_URL lives in a Secret, not here.
+data:
+  PATHIEL_ENV: "prod"
+  PATHIEL_LOG_LEVEL: "INFO"
+  PATHIEL_LOG_JSON: "true"
+  PATHIEL_SERVICE_NAME: "pathiel-data-api"
+  PATHIEL_RATE_LIMIT_PER_MIN: "500"
+  PATHIEL_RATE_LIMIT_BURST: "60"
+  PATHIEL_HL_BASE_URL: "https://api.hyperliquid.xyz"

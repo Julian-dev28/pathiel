@@ -18,7 +18,7 @@ from services.auth.store import AuthStore
 
 ACCT = Account.from_key("0x" + "33" * 32)
 SECOND = Account.from_key("0x" + "44" * 32)
-DOMAIN = "pathia.test"
+DOMAIN = "pathiel.test"
 
 
 @pytest.fixture
@@ -30,8 +30,8 @@ def store(tmp_path):
 
 @pytest.fixture
 def client(store, monkeypatch):
-    monkeypatch.setenv("PATHIA_AUTH_DOMAIN", DOMAIN)
-    monkeypatch.setenv("PATHIA_INSECURE_COOKIES", "1")   # TestClient speaks http
+    monkeypatch.setenv("PATHIEL_AUTH_DOMAIN", DOMAIN)
+    monkeypatch.setenv("PATHIEL_INSECURE_COOKIES", "1")   # TestClient speaks http
     deps.reset_store_for_tests(store)
     auth_api._ATTEMPTS.clear()
     app = FastAPI()
@@ -234,14 +234,14 @@ def test_sign_in_over_plain_http_localhost_actually_sets_a_cookie(tmp_path, monk
     class _Req:
         def __init__(self, scheme, host): self.url = _URL(scheme, host)
 
-    monkeypatch.delenv("PATHIA_INSECURE_COOKIES", raising=False)
+    monkeypatch.delenv("PATHIEL_INSECURE_COOKIES", raising=False)
     assert cookie_kwargs(_Req("http", "localhost"))["secure"] is False
     assert cookie_kwargs(_Req("http", "127.0.0.1"))["secure"] is False
     # Everything else keeps the flag, including https on localhost and, above
     # all, plain http to a real host — which is the case that must never relax.
     assert cookie_kwargs(_Req("https", "localhost"))["secure"] is True
-    assert cookie_kwargs(_Req("http", "pathia.fly.dev"))["secure"] is True
-    assert cookie_kwargs(_Req("https", "pathia.fly.dev"))["secure"] is True
+    assert cookie_kwargs(_Req("http", "pathiel.fly.dev"))["secure"] is True
+    assert cookie_kwargs(_Req("https", "pathiel.fly.dev"))["secure"] is True
     assert cookie_kwargs(None)["secure"] is True
 
 
@@ -262,7 +262,7 @@ def test_the_operator_role_is_recoverable_without_deleting_the_database(tmp_path
     first — a smoke check, a test wallet, a curious visitor — the real operator
     is locked out of the house account. Happened during this session's own live
     checks, so there is a way back."""
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     import importlib, sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "scripts"))
     grant = importlib.import_module("grant_operator")
@@ -288,7 +288,7 @@ def test_first_account_still_owns_a_fresh_private_box(tmp_path, monkeypatch):
     """The default is unchanged: an installer's own login seeds the operator
     role, so a fresh box has no open operator seat and no bootstrap password
     to leak."""
-    monkeypatch.delenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
+    monkeypatch.delenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
     store = AuthStore(str(tmp_path / "auth.db"))
     first = store.upsert_user("0x" + "a" * 40)
     second = store.upsert_user("0x" + "b" * 40)
@@ -303,7 +303,7 @@ def test_the_bootstrap_can_be_switched_off_entirely(tmp_path, monkeypatch):
     there can do nothing a visitor cannot — which is precisely why it must not
     be the only thing standing between a stranger and the kill switch.
     """
-    monkeypatch.setenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
+    monkeypatch.setenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
     store = AuthStore(str(tmp_path / "auth.db"))
     for addr in ("0x" + "c" * 40, "0x" + "d" * 40):
         assert not store.upsert_user(addr).is_operator
@@ -312,26 +312,26 @@ def test_the_bootstrap_can_be_switched_off_entirely(tmp_path, monkeypatch):
 def test_switching_it_off_does_not_demote_an_existing_operator(tmp_path, monkeypatch):
     """The flag governs who is CREATED as operator, not who already is. A real
     deployment that sets it must not lose its own operator."""
-    monkeypatch.delenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
+    monkeypatch.delenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
     db = str(tmp_path / "auth.db")
     assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator
-    monkeypatch.setenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
+    monkeypatch.setenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
     assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator
 
 
 # ── the store needs somewhere to write ──────────────────────────────────────
 
-def test_the_store_follows_pathia_state_dir(tmp_path, monkeypatch):
+def test_the_store_follows_pathiel_state_dir(tmp_path, monkeypatch):
     """Where auth.db lands, and the variable a deployment has to set.
 
-    Broke the public demo: PATHIA_STATE_DIR defaults to ".", which on Vercel is
+    Broke the public demo: PATHIEL_STATE_DIR defaults to ".", which on Vercel is
     /var/task and read-only, so every sign-in died at
     `sqlite3.OperationalError: unable to open database file`. The wallet showed
     "Error preparing message, please retry!" — an error about a message that
     was never built, pointing nowhere near the filesystem.
     """
-    monkeypatch.delenv("PATHIA_AUTH_DB", raising=False)
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("PATHIEL_AUTH_DB", raising=False)
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path / "state"))
     store = AuthStore()
     assert str(tmp_path / "state") in store.path
     # And it works, rather than merely resolving to the right string.
@@ -350,8 +350,8 @@ def test_an_unwritable_state_dir_fails_loudly(tmp_path, monkeypatch):
     readonly = tmp_path / "readonly"
     readonly.mkdir()
     os.chmod(readonly, 0o500)
-    monkeypatch.delenv("PATHIA_AUTH_DB", raising=False)
-    monkeypatch.setenv("PATHIA_STATE_DIR", str(readonly / "nested"))
+    monkeypatch.delenv("PATHIEL_AUTH_DB", raising=False)
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(readonly / "nested"))
     try:
         with pytest.raises((sqlite3.OperationalError, OSError, PermissionError)):
             AuthStore()
@@ -372,9 +372,9 @@ def test_a_stateless_session_authenticates_with_no_database(monkeypatch, tmp_pat
     Here the store is pointed at a path that is deliberately NOT the one that
     minted anything, standing in for a second serverless instance.
     """
-    monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "s" * 48)
-    monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
-    monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "cold-instance.db"))
+    monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", "s" * 48)
+    monkeypatch.setenv("PATHIEL_AUTH_STATELESS_SESSION", "1")
+    monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "cold-instance.db"))
 
     from services.auth import deps, stateless
     deps.reset_store_for_tests(None)
@@ -394,15 +394,15 @@ def test_a_stateless_session_authenticates_with_no_database(monkeypatch, tmp_pat
 
 def test_a_stored_session_still_works_when_stateless_is_switched_on(monkeypatch, tmp_path):
     """Turning the flag on must not log out everyone already signed in."""
-    monkeypatch.setenv("PATHIA_AUTH_NONCE_SECRET", "s" * 48)
-    monkeypatch.setenv("PATHIA_AUTH_DB", str(tmp_path / "auth.db"))
+    monkeypatch.setenv("PATHIEL_AUTH_NONCE_SECRET", "s" * 48)
+    monkeypatch.setenv("PATHIEL_AUTH_DB", str(tmp_path / "auth.db"))
     from services.auth import deps
     store = AuthStore(str(tmp_path / "auth.db"))
     deps.reset_store_for_tests(store)
     user = store.upsert_user("0x" + "7" * 40)
     token = store.create_session(user.id)
 
-    monkeypatch.setenv("PATHIA_AUTH_STATELESS_SESSION", "1")
+    monkeypatch.setenv("PATHIEL_AUTH_STATELESS_SESSION", "1")
 
     class _Req:
         cookies = {deps.SESSION_COOKIE: token}

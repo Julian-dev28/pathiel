@@ -18,9 +18,9 @@ logs/
 shadow_ledger/
 
 # Research artifacts / notebooks — 159MB, dev-only. Nothing under
-# pathia/, scripts/, or services/ imports from this at runtime
+# pathiel/, scripts/, or services/ imports from this at runtime
 # (verified 2026-08-29: the only hits are doc-comment references to spec
-# files, e.g. pathia/agents/wallet_follow_recorder.py's docstring).
+# files, e.g. pathiel/agents/wallet_follow_recorder.py's docstring).
 research/
 
 # Build / runtime junk
@@ -59,8 +59,8 @@ tests/
 scratchpad/
 socket_full.txt
 
-# services/pathia_data_api is its own deploy unit with its own Dockerfile,
-# its own build context (services/pathia_data_api/.dockerignore), and its own
+# services/pathiel_data_api is its own deploy unit with its own Dockerfile,
+# its own build context (services/pathiel_data_api/.dockerignore), and its own
 # Postgres-backed dependency set — never bundled into this image, so it does
 # not need to be part of this build context either.
-services/pathia_data_api/
+services/pathiel_data_api/

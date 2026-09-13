@@ -45,7 +45,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / ".state" / "events_calendar.json"
-UA = {"User-Agent": "pathia-research/1.0 (team.recoin@gmail.com)"}
+UA = {"User-Agent": "pathiel-research/1.0 (team.recoin@gmail.com)"}
 SEC_RATE_S = 0.12          # SEC asks for <= 10 req/s
 
 

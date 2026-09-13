@@ -2,11 +2,11 @@
 
 THE CONTRACT, AND WHY IT IS SQL AND NOT AN IMPORT
 --------------------------------------------------
-`services/pathia_data_api` authenticates every request against an `api_keys`
+`services/pathiel_data_api` authenticates every request against an `api_keys`
 table. It is its own deploy unit with its own Dockerfile and its own
 requirements, none of which are installed in the trading image — so importing
 its SQLAlchemy models from here would fail at runtime even if the source were
-copied in. `test_dockerfile_does_not_bundle_pathia_data_api` exists to keep that
+copied in. `test_dockerfile_does_not_bundle_pathiel_data_api` exists to keep that
 boundary, and it caught exactly this mistake on the first attempt.
 
 So the contract between the two services is the thing they genuinely share: the
@@ -55,7 +55,7 @@ DEFAULT_SCOPES = ("signals:read", "candles:read", "track_record:read")
 DEFAULT_RATE_PER_MIN = 120
 MAX_KEYS_PER_OWNER = 10
 
-# Mirrors services/pathia_data_api/app/db.py:ApiKey. Written out rather than
+# Mirrors services/pathiel_data_api/app/db.py:ApiKey. Written out rather than
 # imported for the reason in the module docstring. CREATE TABLE IF NOT EXISTS,
 # so whichever service starts first wins and the other is a no-op.
 _SCHEMA = """
@@ -81,10 +81,10 @@ _OWNER_INDEX = "CREATE INDEX IF NOT EXISTS ix_api_keys_owner ON api_keys(owner_a
 def db_path() -> str:
     """Where the data API keeps its SQLite file.
 
-    Defaults to the same `./pathia_data.db` its settings default to, so a
+    Defaults to the same `./pathiel_data.db` its settings default to, so a
     single-box deployment needs no configuration to line the two up.
     """
-    url = os.environ.get("PATHIA_DATABASE_URL", "sqlite:///./pathia_data.db")
+    url = os.environ.get("PATHIEL_DATABASE_URL", "sqlite:///./pathiel_data.db")
     return url.split("sqlite:///", 1)[-1] if url.startswith("sqlite:///") else url
 
 
@@ -95,7 +95,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def hash_token(raw: str) -> str:
-    """Must match services/pathia_data_api/app/auth.hash_token, or a minted key
+    """Must match services/pathiel_data_api/app/auth.hash_token, or a minted key
     authenticates against nothing."""
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -105,7 +105,7 @@ def ensure_schema() -> None:
 
     The ALTER is the honest minimum, not a migration story: SQLAlchemy's
     create_all builds missing tables and never alters an existing one, so a
-    deployment already holding pathia_data.db would keep a table with no owner
+    deployment already holding pathiel_data.db would keep a table with no owner
     column and every ownership query would raise. Additive and idempotent, so
     running it on each request path is free. A real migration tool is still owed
     and is still a P1 on the readiness review.

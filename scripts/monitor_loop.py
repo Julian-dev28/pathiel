@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG = ROOT / "logs" / "trading_loop.log"
 DSL = ROOT / ".dsl-state.json"
 CFG = ROOT / ".agent-config.json"
-JOB = Path("/tmp/pathia-loop")
+JOB = Path("/tmp/pathiel-loop")
 PROGRESS = JOB / "progress.log"
 
 # Lines worth waking someone for. Ordered most-severe first.
