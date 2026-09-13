@@ -17,6 +17,7 @@ of breaking sign-in in production.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -44,14 +45,42 @@ def test_manifest_is_committed():
     assert set(recorded["artifacts"]) == {"wallet.js", "wallet.css"}
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def _toolchain_missing() -> str:
+    """Why the staleness check cannot run here, or "" if it can.
+
+    Two separate things are needed and only one of them used to be checked.
+    node being on PATH says nothing about esbuild being installed, so on CI —
+    which has node and had never run `npm ci` — the test ran, failed with
+    ERR_MODULE_NOT_FOUND, and reported a stale bundle when the bundle was fine.
+    """
+    if shutil.which("node") is None:
+        return "node is not installed"
+    if not (WALLET_UI / "node_modules" / "esbuild").is_dir():
+        return "esbuild is not installed (run `npm ci` in services/wallet_ui)"
+    return ""
+
+
 def test_bundle_is_not_stale():
     """The whole reason a build artifact is allowed in the tree.
 
     `build.mjs --check` hashes every file under src/ plus package.json and
     build.mjs, and compares that to the hash recorded when the bundle was
     written. Editing a source without rebuilding fails here.
+
+    Skipped where the toolchain is absent — a fresh clone before `npm ci` —
+    but NEVER on CI. A guard on a committed artifact that quietly skips itself
+    is not a guard: a failed install would let a stale bundle through green.
     """
+    missing = _toolchain_missing()
+    if missing:
+        if os.environ.get("CI"):
+            pytest.fail(
+                f"the wallet-bundle staleness check cannot run on CI: {missing}. "
+                f"This guard is the only thing keeping a stale pathiel/static/"
+                f"wallet.js out of a deploy, so it must not be skipped here — "
+                f"fix the install step rather than the skip."
+            )
+        pytest.skip(missing)
     result = subprocess.run(
         ["node", "build.mjs", "--check"],
         cwd=WALLET_UI, capture_output=True, text=True, timeout=120,

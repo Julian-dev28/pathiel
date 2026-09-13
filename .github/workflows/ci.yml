@@ -36,6 +36,22 @@ jobs:
       - name: No machine-bound absolute paths
         run: python scripts/check_no_absolute_paths.py
 
+      # pathiel/static/wallet.js is a build artifact committed to the repo,
+      # which is safe only because `build.mjs --check` fails when it is stale.
+      # That check needs esbuild, so CI has to install it — without this the
+      # test ran, could not find the package, and failed for a reason that had
+      # nothing to do with whether the bundle was current.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/wallet_ui/package-lock.json
+
+      - name: Install wallet-bundle toolchain
+        working-directory: services/wallet_ui
+        run: npm ci
+
       # pytest's addopts deselects the `online` and `live` markers, so this runs
       # only the offline suite — no network, no real-money orders, CI-safe.
       - name: Run offline test suite
