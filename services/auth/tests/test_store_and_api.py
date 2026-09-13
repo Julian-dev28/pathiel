@@ -317,3 +317,43 @@ def test_switching_it_off_does_not_demote_an_existing_operator(tmp_path, monkeyp
     assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator
     monkeypatch.setenv("PATHIA_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
     assert AuthStore(db).upsert_user("0x" + "e" * 40).is_operator
+
+
+# ── the store needs somewhere to write ──────────────────────────────────────
+
+def test_the_store_follows_pathia_state_dir(tmp_path, monkeypatch):
+    """Where auth.db lands, and the variable a deployment has to set.
+
+    Broke the public demo: PATHIA_STATE_DIR defaults to ".", which on Vercel is
+    /var/task and read-only, so every sign-in died at
+    `sqlite3.OperationalError: unable to open database file`. The wallet showed
+    "Error preparing message, please retry!" — an error about a message that
+    was never built, pointing nowhere near the filesystem.
+    """
+    monkeypatch.delenv("PATHIA_AUTH_DB", raising=False)
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(tmp_path / "state"))
+    store = AuthStore()
+    assert str(tmp_path / "state") in store.path
+    # And it works, rather than merely resolving to the right string.
+    assert store.upsert_user("0x" + "a" * 40).address == "0x" + "a" * 40
+
+
+def test_an_unwritable_state_dir_fails_loudly(tmp_path, monkeypatch):
+    """It must raise rather than silently fall back to a path that vanishes.
+
+    A store that quietly relocated would lose every nonce and session on the
+    next request, which is a much harder failure to read than this one.
+    """
+    import os
+    import sqlite3
+
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    os.chmod(readonly, 0o500)
+    monkeypatch.delenv("PATHIA_AUTH_DB", raising=False)
+    monkeypatch.setenv("PATHIA_STATE_DIR", str(readonly / "nested"))
+    try:
+        with pytest.raises((sqlite3.OperationalError, OSError, PermissionError)):
+            AuthStore()
+    finally:
+        os.chmod(readonly, 0o700)

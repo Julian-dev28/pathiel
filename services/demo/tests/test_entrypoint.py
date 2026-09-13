@@ -159,3 +159,35 @@ class TestSiweDomain:
         ]
         assert setdefault_lines, "PATHIA_AUTH_DOMAIN is never set"
         assert min(setdefault_lines) < _lineno_of_pathia_import(tree)
+
+
+class TestWritableState:
+    """Everything this process writes has to go somewhere writable.
+
+    /var/task is read-only on Vercel and the defaults point at it: HOME for the
+    universe cache, PATHIA_STATE_DIR for the auth database. Both have now broken
+    a deploy, and neither failed anywhere near the thing the user was doing —
+    the second surfaced in the wallet as "Error preparing message, please
+    retry!" while the actual exception was
+    `sqlite3.OperationalError: unable to open database file`.
+    """
+
+    def test_a_writable_state_dir_is_set(self, source: str):
+        """services/auth builds `<PATHIA_STATE_DIR>/auth.db`, defaulting to "."."""
+        assert "PATHIA_STATE_DIR" in source
+        assert "gettempdir()" in source
+
+    def test_it_is_set_before_pathia_is_imported(self, tree: ast.Module):
+        """deps.get_store() constructs AuthStore lazily, but nothing guarantees
+        the first call happens after import, so ordering is the contract."""
+        lines = [n.lineno for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "setdefault"
+                 and any(isinstance(a, ast.Constant) and a.value == "PATHIA_STATE_DIR"
+                         for a in n.args)]
+        assert lines, "PATHIA_STATE_DIR is never set"
+        assert min(lines) < _lineno_of_pathia_import(tree)
+
+    def test_every_directory_it_names_is_created(self, source: str):
+        """Setting the variable is not enough; sqlite will not mkdir for you."""
+        assert source.count("os.makedirs(") >= 2

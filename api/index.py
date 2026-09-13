@@ -82,6 +82,23 @@ _HOME = os.path.join(tempfile.gettempdir(), "pathia-home")
 os.makedirs(_HOME, exist_ok=True)
 os.environ["HOME"] = _HOME
 
+# The same problem one level up: services/auth keeps its SQLite database at
+# `<PATHIA_STATE_DIR>/auth.db`, and that variable defaults to ".", which is
+# /var/task here and read-only. Every sign-in then died at
+#
+#     sqlite3.OperationalError: unable to open database file
+#
+# surfacing in the wallet as "Error preparing message, please retry!" — an
+# error about the message, which was never built, pointing nowhere near the
+# filesystem.
+#
+# This used to be set as a side effect of generating the demo data into the
+# global environment. Moving the demo behind its own sub-application took the
+# side effect with it and left the live app with nowhere to write.
+_STATE_DIR = os.path.join(tempfile.gettempdir(), "pathia-state")
+os.makedirs(_STATE_DIR, exist_ok=True)
+os.environ.setdefault("PATHIA_STATE_DIR", _STATE_DIR)
+
 # ── 3. the live app is the landing page ──────────────────────────────────────
 #
 # This deployment has no trading state — no session log, no positions snapshot,
