@@ -54,5 +54,8 @@ jobs:
 
       # pytest's addopts deselects the `online` and `live` markers, so this runs
       # only the offline suite — no network, no real-money orders, CI-safe.
+      # -rs prints the reason for every skip. Without it the summary says
+      # "18 skipped" and nothing else, so a guard that quietly stopped running
+      # in this environment looks exactly like a green build.
       - name: Run offline test suite
-        run: pytest
+        run: pytest -rs
