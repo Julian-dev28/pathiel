@@ -23,9 +23,6 @@ part of this system that reliably works, and it is worth more than the trading.
 
 ### Read this before funding it
 
-- **Max drawdown -94.78%** over the last 90 days, flow-neutral (deposits and
-  withdrawals are recorded and netted out, so that is a trading loss, not a
-  withdrawal). Peak equity was $225.93.
 - **Five books, all LIVE.** There is no shadow tier: a book trades or it does
   not exist. `shadow_only` exists only as the switch
   `scripts/autonomous_cycle.py` flips to demote a book whose forward ledger
