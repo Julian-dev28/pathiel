@@ -95,10 +95,6 @@ _SWITCHES: Dict[str, tuple] = {
     # Operator override of its own refutation, 2026-09-21 (W-CP1). Graded like
     # drawdown_ladder, on mark-to-market book equity.
     "copy_trade": ("top", "copy_trade"),
-    # UNTESTED, no backtest (operator build). Graded like copy_trade/
-    # drawdown_ladder, on mark-to-market book equity — 10 leaders with no
-    # stop of their own, so a per-trade ledger grade does not apply.
-    "copycat": ("top", "copycat"),
 }
 
 # Books graded on their daily mark-to-market equity log instead of per-trade
@@ -106,11 +102,9 @@ _SWITCHES: Dict[str, tuple] = {
 # module, so the rule the grader enforces is the one the book documents.
 def _mtm_books() -> Dict[str, tuple]:
     from pathiel.agents import copy_trade_live as copy
-    from pathiel.agents import copycat_live as copycat
     from pathiel.agents import drawdown_ladder_live as ladder
     return {"drawdown_ladder": (ladder.load_equity_log, ladder.mtm_decision),
-            "copy_trade": (copy.load_equity_log, copy.mtm_decision),
-            "copycat": (copycat.load_equity_log, copycat.mtm_decision)}
+            "copy_trade": (copy.load_equity_log, copy.mtm_decision)}
 
 # EMPTY, and it stays empty. Operator directive 2026-08-30: "nothing should be a
 # recorder".

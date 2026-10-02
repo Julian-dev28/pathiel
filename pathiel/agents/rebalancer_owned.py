@@ -82,7 +82,7 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 _ACTIVE_CLAIM_BOOKS = frozenset({"news_surge_short", "news_surge_multi",
                                  "social_trending", "unlock_short_runin",
                                  "xs_reversal", "drawdown_ladder",
-                                 "copy_trade", "copycat"})
+                                 "copy_trade"})
 
 
 def active_claim_books() -> Set[str]:
