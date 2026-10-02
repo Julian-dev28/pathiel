@@ -1,0 +1,1025 @@
+{
+ "params": {
+  "trigger_dd": -0.211,
+  "k": 5,
+  "gap": -0.0717,
+  "tp": 0.0514
+ },
+ "leave_one_out": {
+  "BTC": {
+   "terminal": 3.499746787160397,
+   "max_dd": -0.4439477732240782,
+   "liquidated": null,
+   "ladders": 272,
+   "null_median": 2.0894217423113766,
+   "p": 0.003
+  },
+  "ETH": {
+   "terminal": 3.010138946976184,
+   "max_dd": -0.4101060531258144,
+   "liquidated": null,
+   "ladders": 254,
+   "null_median": 1.9536780099841005,
+   "p": 0.012
+  },
+  "SOL": {
+   "terminal": 2.6809317120992433,
+   "max_dd": -0.4066362694857051,
+   "liquidated": null,
+   "ladders": 208,
+   "null_median": 1.5779845671071164,
+   "p": 0.0
+  },
+  "BNB": {
+   "terminal": 3.35311589980487,
+   "max_dd": -0.5653320019576754,
+   "liquidated": null,
+   "ladders": 248,
+   "null_median": 1.9683446819969612,
+   "p": 0.002
+  },
+  "XRP": {
+   "terminal": 2.3021302537708905,
+   "max_dd": -0.4263256568128392,
+   "liquidated": null,
+   "ladders": 202,
+   "null_median": 1.8487735338469333,
+   "p": 0.071
+  },
+  "only_BTC": {
+   "terminal": 1.3988379270143847,
+   "max_dd": -0.5427396261150814,
+   "liquidated": null,
+   "ladders": 24,
+   "null_median": 1.2358114287999664,
+   "p": 0.25
+  },
+  "only_ETH": {
+   "terminal": 2.572089051993766,
+   "max_dd": -0.5882218612675497,
+   "liquidated": null,
+   "ladders": 42,
+   "null_median": 1.6461024552027712,
+   "p": 0.038
+  },
+  "only_SOL": {
+   "terminal": 4.234819896718234,
+   "max_dd": -0.9782405138861024,
+   "liquidated": null,
+   "ladders": 88,
+   "null_median": 3.3502193885991023,
+   "p": 0.337
+  },
+  "only_BNB": {
+   "terminal": 1.846741003717626,
+   "max_dd": -0.4677293667045459,
+   "liquidated": null,
+   "ladders": 48,
+   "null_median": 1.6140174774625455,
+   "p": 0.328
+  },
+  "only_XRP": {
+   "terminal": 8.01469939888141,
+   "max_dd": -0.5771685615662272,
+   "liquidated": null,
+   "ladders": 94,
+   "null_median": 1.8680644695462494,
+   "p": 0.002
+  }
+ },
+ "grid": [
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.03,
+   "terminal": 2.8625450987625216,
+   "max_dd": -0.55692562366965,
+   "liquidated": null,
+   "ladders": 514,
+   "null_median": 2.09276796557785,
+   "p": 0.044
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.0514,
+   "terminal": 3.3747119428550088,
+   "max_dd": -0.6350420507375635,
+   "liquidated": null,
+   "ladders": 356,
+   "null_median": 2.310001293405125,
+   "p": 0.023
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.08,
+   "terminal": 3.1332193213579447,
+   "max_dd": -0.6770613979009192,
+   "liquidated": null,
+   "ladders": 210,
+   "null_median": 2.3567836195366256,
+   "p": 0.046
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.03,
+   "terminal": 3.4648857405796987,
+   "max_dd": -0.4612355607803249,
+   "liquidated": null,
+   "ladders": 587,
+   "null_median": 2.460170593466557,
+   "p": 0.008
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.0514,
+   "terminal": 3.294859763629625,
+   "max_dd": -0.5379983583505861,
+   "liquidated": null,
+   "ladders": 396,
+   "null_median": 2.286094555996878,
+   "p": 0.007
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.08,
+   "terminal": 2.9377397713690705,
+   "max_dd": -0.622262570977914,
+   "liquidated": null,
+   "ladders": 244,
+   "null_median": 2.332008630563122,
+   "p": 0.092
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.03,
+   "terminal": 2.4642582908114035,
+   "max_dd": -0.44743525357472336,
+   "liquidated": null,
+   "ladders": 563,
+   "null_median": 2.2544348363613,
+   "p": 0.236
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.0514,
+   "terminal": 2.6770650720799036,
+   "max_dd": -0.585451480064267,
+   "liquidated": null,
+   "ladders": 364,
+   "null_median": 2.378122588558369,
+   "p": 0.205
+  },
+  {
+   "trigger_dd": -0.15,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.08,
+   "terminal": 2.995268614550241,
+   "max_dd": -0.5416900799284032,
+   "liquidated": null,
+   "ladders": 258,
+   "null_median": 2.381527684902943,
+   "p": 0.069
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.03,
+   "terminal": 2.8686411767183384,
+   "max_dd": -0.4334405715369487,
+   "liquidated": null,
+   "ladders": 400,
+   "null_median": 1.710117400669603,
+   "p": 0.002
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.0514,
+   "terminal": 3.2936883132744623,
+   "max_dd": -0.44215109576514455,
+   "liquidated": null,
+   "ladders": 297,
+   "null_median": 1.8764965284440114,
+   "p": 0.003
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.08,
+   "terminal": 4.156001597684276,
+   "max_dd": -0.44336887580723305,
+   "liquidated": null,
+   "ladders": 211,
+   "null_median": 1.9066934251491774,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.03,
+   "terminal": 3.124666760160576,
+   "max_dd": -0.37216777237210663,
+   "liquidated": null,
+   "ladders": 452,
+   "null_median": 1.8832673903944523,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.0514,
+   "terminal": 2.9333602138268424,
+   "max_dd": -0.4349873544962516,
+   "liquidated": null,
+   "ladders": 296,
+   "null_median": 1.8931292686834604,
+   "p": 0.004
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.08,
+   "terminal": 3.4856045972881233,
+   "max_dd": -0.4369939239631633,
+   "liquidated": null,
+   "ladders": 212,
+   "null_median": 1.9676920713895893,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.03,
+   "terminal": 2.642690726145383,
+   "max_dd": -0.33650268147081874,
+   "liquidated": null,
+   "ladders": 463,
+   "null_median": 1.7740880577454947,
+   "p": 0.002
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.0514,
+   "terminal": 2.708128853295407,
+   "max_dd": -0.41777551712421224,
+   "liquidated": null,
+   "ladders": 313,
+   "null_median": 1.8714645519534938,
+   "p": 0.003
+  },
+  {
+   "trigger_dd": -0.211,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.08,
+   "terminal": 3.359228164617059,
+   "max_dd": -0.4194149127686053,
+   "liquidated": null,
+   "ladders": 227,
+   "null_median": 1.9918877674895479,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.03,
+   "terminal": 2.6291572775700187,
+   "max_dd": -0.19560574407543685,
+   "liquidated": null,
+   "ladders": 266,
+   "null_median": 1.405968671919533,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.0514,
+   "terminal": 3.201279829697348,
+   "max_dd": -0.20546360822669574,
+   "liquidated": null,
+   "ladders": 216,
+   "null_median": 1.541836534417321,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.05,
+   "tp": 0.08,
+   "terminal": 3.4533267673791768,
+   "max_dd": -0.24031401569913957,
+   "liquidated": null,
+   "ladders": 146,
+   "null_median": 1.5717024585500223,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.03,
+   "terminal": 2.1682358627200546,
+   "max_dd": -0.18726865152813976,
+   "liquidated": null,
+   "ladders": 264,
+   "null_median": 1.4660381259169908,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.0514,
+   "terminal": 2.468497628915377,
+   "max_dd": -0.20230384100688414,
+   "liquidated": null,
+   "ladders": 206,
+   "null_median": 1.514602158054265,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.0717,
+   "tp": 0.08,
+   "terminal": 2.6538445933832957,
+   "max_dd": -0.1970701184256678,
+   "liquidated": null,
+   "ladders": 151,
+   "null_median": 1.5880067720248736,
+   "p": 0.001
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.03,
+   "terminal": 2.0299882139300376,
+   "max_dd": -0.16299229791436598,
+   "liquidated": null,
+   "ladders": 275,
+   "null_median": 1.4211025758670988,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.0514,
+   "terminal": 2.364238546879388,
+   "max_dd": -0.18193342629557618,
+   "liquidated": null,
+   "ladders": 218,
+   "null_median": 1.5206188502643077,
+   "p": 0.0
+  },
+  {
+   "trigger_dd": -0.3,
+   "k": 5,
+   "gap": -0.1,
+   "tp": 0.08,
+   "terminal": 2.3928270883225373,
+   "max_dd": -0.2617457245181116,
+   "liquidated": null,
+   "ladders": 146,
+   "null_median": 1.61235686404839,
+   "p": 0.0
+  }
+ ],
+ "leverage": {
+  "1": {
+   "terminal": 2.9333602138268424,
+   "max_dd": -0.4349873544962516,
+   "liquidated": null
+  },
+  "1.5": {
+   "terminal": 4.777376928867315,
+   "max_dd": -0.6307474144978327,
+   "liquidated": null
+  },
+  "2": {
+   "terminal": 7.539063892715404,
+   "max_dd": -0.813575545838405,
+   "liquidated": null
+  },
+  "2.5": {
+   "terminal": 0.0,
+   "max_dd": -1.0,
+   "liquidated": "2022-06-15"
+  },
+  "3": {
+   "terminal": 0.0,
+   "max_dd": -1.0,
+   "liquidated": "2022-06-13"
+  }
+ },
+ "backup_stop": {
+  "None": {
+   "terminal": 2.9333602138268424,
+   "max_dd": -0.4349873544962516,
+   "stopped": 0,
+   "ladders": 296,
+   "stopped_detail": []
+  },
+  "0.6": {
+   "terminal": 1.8740819476600346,
+   "max_dd": -0.5213992145552142,
+   "stopped": 6,
+   "ladders": 354,
+   "stopped_detail": [
+    {
+     "coin": "XRP",
+     "open": "2020-12-18",
+     "equity_start": 1.0906253365595981,
+     "close": "2020-12-29",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.13098410292080773
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-12-29",
+     "equity_start": 1.8357469295106401,
+     "close": "2022-05-10",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.2204732062342279
+    },
+    {
+     "coin": "ETH",
+     "open": "2022-05-06",
+     "equity_start": 1.780530866169955,
+     "close": "2022-06-18",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.2138417570270116
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-05-11",
+     "equity_start": 1.6495698517693735,
+     "close": "2022-11-08",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.19811333919750176
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-11-09",
+     "equity_start": 1.1196235805884354,
+     "close": "2022-12-29",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.1344667920286711
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-10-31",
+     "equity_start": 2.1210150681993953,
+     "close": "2026-06-05",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.2547339096907474
+    }
+   ]
+  },
+  "0.4": {
+   "terminal": 1.467881615444191,
+   "max_dd": -0.4173262607103325,
+   "stopped": 17,
+   "ladders": 425,
+   "stopped_detail": [
+    {
+     "coin": "XRP",
+     "open": "2020-12-18",
+     "equity_start": 1.0906253365595981,
+     "close": "2020-12-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.08741362072525177
+    },
+    {
+     "coin": "ETH",
+     "open": "2021-05-18",
+     "equity_start": 1.4183908050426584,
+     "close": "2021-05-19",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11368402302416908
+    },
+    {
+     "coin": "BNB",
+     "open": "2021-05-18",
+     "equity_start": 1.4183908050426584,
+     "close": "2021-05-19",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11368402302416908
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-05-22",
+     "equity_start": 1.2723855383150946,
+     "close": "2021-05-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.10198170089595485
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-06-16",
+     "equity_start": 1.3368774856964503,
+     "close": "2021-06-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.10715073047857046
+    },
+    {
+     "coin": "XRP",
+     "open": "2021-06-01",
+     "equity_start": 1.2815134660328964,
+     "close": "2021-06-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.10271330430253661
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-12-29",
+     "equity_start": 1.3961561125528223,
+     "close": "2022-01-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11190191242110874
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-04-20",
+     "equity_start": 1.4393961919947598,
+     "close": "2022-05-11",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11536760478838
+    },
+    {
+     "coin": "XRP",
+     "open": "2022-04-23",
+     "equity_start": 1.4348483292184369,
+     "close": "2022-05-11",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11500309358685772
+    },
+    {
+     "coin": "ETH",
+     "open": "2022-05-06",
+     "equity_start": 1.3988350046367555,
+     "close": "2022-06-13",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11211662562163596
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-05-16",
+     "equity_start": 1.2349565723977491,
+     "close": "2022-06-13",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.09898176927767957
+    },
+    {
+     "coin": "BTC",
+     "open": "2022-05-06",
+     "equity_start": 1.3988350046367555,
+     "close": "2022-06-18",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.11211662562163596
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-11-08",
+     "equity_start": 1.0741789372627697,
+     "close": "2022-11-09",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.086095441821611
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-02-05",
+     "equity_start": 1.7078441744513548,
+     "close": "2025-04-06",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.13688371058227605
+    },
+    {
+     "coin": "ETH",
+     "open": "2025-02-13",
+     "equity_start": 1.7174148312077504,
+     "close": "2025-04-09",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.13765079872130115
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-10-31",
+     "equity_start": 1.627151194362014,
+     "close": "2026-01-31",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.13041616822811541
+    },
+    {
+     "coin": "BNB",
+     "open": "2025-10-31",
+     "equity_start": 1.627151194362014,
+     "close": "2026-06-24",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.13041616822811544
+    }
+   ]
+  },
+  "0.25": {
+   "terminal": 1.2231496306965053,
+   "max_dd": -0.3889448170455245,
+   "stopped": 35,
+   "ladders": 505,
+   "stopped_detail": [
+    {
+     "coin": "SOL",
+     "open": "2020-10-15",
+     "equity_start": 1.0142217170742642,
+     "close": "2020-10-28",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05090125242566462
+    },
+    {
+     "coin": "SOL",
+     "open": "2020-12-20",
+     "equity_start": 1.0381785365124006,
+     "close": "2020-12-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05210358530121609
+    },
+    {
+     "coin": "XRP",
+     "open": "2020-12-18",
+     "equity_start": 1.0362866842646352,
+     "close": "2020-12-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05200863796653137
+    },
+    {
+     "coin": "XRP",
+     "open": "2020-12-26",
+     "equity_start": 0.9653785528336909,
+     "close": "2020-12-29",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.04844993612034085
+    },
+    {
+     "coin": "XRP",
+     "open": "2021-02-23",
+     "equity_start": 1.0829660644890113,
+     "close": "2021-02-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05435135936154224
+    },
+    {
+     "coin": "BTC",
+     "open": "2021-05-15",
+     "equity_start": 1.2171068829884304,
+     "close": "2021-05-19",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06108355168998187
+    },
+    {
+     "coin": "ETH",
+     "open": "2021-05-18",
+     "equity_start": 1.2115534433628639,
+     "close": "2021-05-19",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06080483843877373
+    },
+    {
+     "coin": "BNB",
+     "open": "2021-05-18",
+     "equity_start": 1.2115534433628639,
+     "close": "2021-05-19",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06080483843877373
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-05-22",
+     "equity_start": 1.1385844877721571,
+     "close": "2021-05-23",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05714270898006515
+    },
+    {
+     "coin": "XRP",
+     "open": "2021-06-01",
+     "equity_start": 1.1954745256014123,
+     "close": "2021-06-21",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05999787775362087
+    },
+    {
+     "coin": "ETH",
+     "open": "2021-06-04",
+     "equity_start": 1.2215065192183754,
+     "close": "2021-06-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06130435843327222
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-06-16",
+     "equity_start": 1.2480619047632273,
+     "close": "2021-06-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06263710684530445
+    },
+    {
+     "coin": "BNB",
+     "open": "2021-06-05",
+     "equity_start": 1.2124443128013267,
+     "close": "2021-06-22",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06084954894871659
+    },
+    {
+     "coin": "XRP",
+     "open": "2021-11-22",
+     "equity_start": 1.2114348900993135,
+     "close": "2021-12-04",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06079888854685928
+    },
+    {
+     "coin": "SOL",
+     "open": "2021-12-29",
+     "equity_start": 1.1994603217251985,
+     "close": "2022-01-21",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06019791489658338
+    },
+    {
+     "coin": "ETH",
+     "open": "2022-01-06",
+     "equity_start": 1.186013511924717,
+     "close": "2022-01-24",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05952305312972172
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-02-08",
+     "equity_start": 1.1612459104814703,
+     "close": "2022-02-24",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.058280029132288795
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-04-20",
+     "equity_start": 1.1533008037988928,
+     "close": "2022-05-09",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05788128409065694
+    },
+    {
+     "coin": "XRP",
+     "open": "2022-04-23",
+     "equity_start": 1.149656877390951,
+     "close": "2022-05-11",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.057698404534058355
+    },
+    {
+     "coin": "ETH",
+     "open": "2022-05-06",
+     "equity_start": 1.120801586249764,
+     "close": "2022-05-26",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.056250229609910024
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-05-16",
+     "equity_start": 1.0645132640923023,
+     "close": "2022-06-03",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.053425259441632414
+    },
+    {
+     "coin": "BTC",
+     "open": "2022-05-06",
+     "equity_start": 1.120801586249764,
+     "close": "2022-06-13",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.056250229609910024
+    },
+    {
+     "coin": "ETH",
+     "open": "2022-05-31",
+     "equity_start": 1.02766163961798,
+     "close": "2022-06-13",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05157576853832737
+    },
+    {
+     "coin": "BNB",
+     "open": "2022-05-26",
+     "equity_start": 1.0181720767024167,
+     "close": "2022-06-14",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05109951109950253
+    },
+    {
+     "coin": "XRP",
+     "open": "2022-05-16",
+     "equity_start": 1.0645132640923023,
+     "close": "2022-06-18",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.053425259441632414
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-11-08",
+     "equity_start": 0.9187300457043865,
+     "close": "2022-11-08",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.04610876416878891
+    },
+    {
+     "coin": "SOL",
+     "open": "2022-11-09",
+     "equity_start": 0.8723915990241714,
+     "close": "2022-11-09",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.04378315337602558
+    },
+    {
+     "coin": "XRP",
+     "open": "2023-07-23",
+     "equity_start": 1.0303392459345422,
+     "close": "2023-08-17",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.05171015090533984
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-02-05",
+     "equity_start": 1.3596160373146182,
+     "close": "2025-02-25",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06823572987272737
+    },
+    {
+     "coin": "ETH",
+     "open": "2025-02-13",
+     "equity_start": 1.3672352443876568,
+     "close": "2025-03-11",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06861811882770555
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-03-03",
+     "equity_start": 1.3330470605462925,
+     "close": "2025-03-11",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06690229935116705
+    },
+    {
+     "coin": "SOL",
+     "open": "2025-10-31",
+     "equity_start": 1.3356733199043593,
+     "close": "2025-12-18",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06703410474270005
+    },
+    {
+     "coin": "BNB",
+     "open": "2025-10-31",
+     "equity_start": 1.3356733199043593,
+     "close": "2026-02-04",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06703410474270005
+    },
+    {
+     "coin": "XRP",
+     "open": "2026-01-21",
+     "equity_start": 1.2931293100249832,
+     "close": "2026-02-05",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06489892724687886
+    },
+    {
+     "coin": "SOL",
+     "open": "2026-02-01",
+     "equity_start": 1.2573668426443108,
+     "close": "2026-02-06",
+     "rungs": 5,
+     "result": "stop",
+     "pnl": -0.06310409841521135
+    }
+   ]
+  }
+ },
+ "start_year": {
+  "2021": {
+   "terminal": 2.7969588771448923,
+   "max_dd": -0.4349873544962517,
+   "buy_and_hold": 8.911333798523216
+  },
+  "2022": {
+   "terminal": 1.4893897284606168,
+   "max_dd": -0.43478580425647195,
+   "buy_and_hold": 0.703877986813993
+  },
+  "2023": {
+   "terminal": 1.5485977753996232,
+   "max_dd": -0.25797911722612343,
+   "buy_and_hold": 2.889940244565646
+  },
+  "2024": {
+   "terminal": 1.4092025905624253,
+   "max_dd": -0.2579791172261223,
+   "buy_and_hold": 1.1508971968468746
+  },
+  "2025": {
+   "terminal": 1.13841647560574,
+   "max_dd": -0.25797911722612366,
+   "buy_and_hold": 0.592488746793391
+  }
+ }
+}

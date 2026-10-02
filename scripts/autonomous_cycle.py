@@ -87,7 +87,30 @@ _SWITCHES: Dict[str, tuple] = {
     "xs_reversal": ("top", "xs_reversal"),
     "social_trending": ("top", "social_trending"),
     "unlock_short_runin": ("top", "unlock_short"),
+    # Live 2026-09-14 (W-WH2). Graded on mark-to-market book equity by
+    # `_MTM_BOOKS` below, never through the shadow ledger: a no-stop ladder only
+    # closes at its target, so its closed trades are ~99% wins by construction
+    # and a per-trade grade would keep it live forever.
+    "drawdown_ladder": ("top", "drawdown_ladder"),
+    # Operator override of its own refutation, 2026-09-21 (W-CP1). Graded like
+    # drawdown_ladder, on mark-to-market book equity.
+    "copy_trade": ("top", "copy_trade"),
+    # UNTESTED, no backtest (operator build). Graded like copy_trade/
+    # drawdown_ladder, on mark-to-market book equity — 10 leaders with no
+    # stop of their own, so a per-trade ledger grade does not apply.
+    "copycat": ("top", "copycat"),
 }
+
+# Books graded on their daily mark-to-market equity log instead of per-trade
+# ledger rows. Each maps to (loader, decision): both pure, both in the book's own
+# module, so the rule the grader enforces is the one the book documents.
+def _mtm_books() -> Dict[str, tuple]:
+    from pathiel.agents import copy_trade_live as copy
+    from pathiel.agents import copycat_live as copycat
+    from pathiel.agents import drawdown_ladder_live as ladder
+    return {"drawdown_ladder": (ladder.load_equity_log, ladder.mtm_decision),
+            "copy_trade": (copy.load_equity_log, copy.mtm_decision),
+            "copycat": (copycat.load_equity_log, copycat.mtm_decision)}
 
 # EMPTY, and it stays empty. Operator directive 2026-08-30: "nothing should be a
 # recorder".
@@ -469,6 +492,8 @@ def main() -> int:
               f"{len(skipped)} deleted book(s) keep their ledgers as evidence "
               f"but are not re-graded (--all-books to include them)")
 
+    mtm = _mtm_books()
+    gradeable = [b for b in gradeable if b not in mtm]
     fetchers = shared_fetchers(gradeable, now_ms)
     rows: List[Dict[str, Any]] = []
     for book in gradeable:
@@ -476,6 +501,11 @@ def main() -> int:
         live = _is_live(cfg, book)
         d = decide(g, live)
         rows.append({**g, "live": live, **d})
+    for book, (load_log, decision) in mtm.items():
+        live = _is_live(cfg, book)
+        if live is None:
+            continue
+        rows.append({**decision(load_log(), live), "live": live})
 
     # EVOLUTION: every refutation this run gets its inverse tested.
     theses: List[Dict[str, Any]] = []

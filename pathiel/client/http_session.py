@@ -27,7 +27,12 @@ def _set_session_timeout(client, timeout_s: float = 10.0):
         _orig = sess.request
 
         def _req(method, url, **kw):
-            kw.setdefault("timeout", timeout_s)
+            # NOT setdefault: hyperliquid.api.API.post passes timeout=self.timeout
+            # explicitly, and that is None, so the key is always present and a
+            # setdefault never fired. The guard did nothing from 2026-07-10 until
+            # the copycat dry run hit "read timeout=None" on 2026-10-02.
+            if kw.get("timeout") is None:
+                kw["timeout"] = timeout_s
             return _orig(method, url, **kw)
 
         sess.request = _req

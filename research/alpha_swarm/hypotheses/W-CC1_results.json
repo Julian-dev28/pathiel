@@ -1,0 +1,1300 @@
+{
+  "generated_ms": 1790886591574,
+  "leaders": [
+    "0x95da8596c44dd09f4b8becce87ad3b7894fb2328",
+    "0xac142fee46f8dacbfef23e1e41d79f1f7233487e",
+    "0xe2823659be02e0f48a4660e4da008b5e1abfdf29",
+    "0x0b38c01118342098d6f108cc3741349089cd9590",
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1",
+    "0x04a97ae7f350a22cd0cdb6b1875e8905b76495aa",
+    "0xe09726ff25f5001f37b15049f54116cb83d7d0fe",
+    "0xf5079c84c34051d7c4cd87494fda534fe7ecdf6d",
+    "0xd260b2216b735277da6771564a01c04856e78321",
+    "0xbe10fd36393c8b677281d0bc2cf1bb8c98ad4b34"
+  ],
+  "our_account": {
+    "address": "0x2c2e4efF574B3Fd9879AdeF9c5CAC6fD7C916985",
+    "equity_main_usd": 1.28,
+    "equity_xyz_usd": 0.01,
+    "equity_usd": 1.29
+  },
+  "sleeve_frac": 0.25,
+  "n_leaders": 10,
+  "min_order_usd": 10.5,
+  "min_order_bump_floor_usd": 2.625,
+  "leader_profiles": [
+    {
+      "address": "0x95da8596c44dd09f4b8becce87ad3b7894fb2328",
+      "role": "user",
+      "equity_main_usd": 480452.36,
+      "equity_xyz_usd": 0.0,
+      "spot_usdc": 1573510.22,
+      "spot_other": [
+        {
+          "coin": "KNTQ",
+          "amount": 478741.34878195,
+          "usd": 17210751.49,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        },
+        {
+          "coin": "UXPL",
+          "amount": 1499858.492486,
+          "usd": 2572257.31,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        },
+        {
+          "coin": "GOOGL",
+          "amount": 0.00991601,
+          "usd": 0.65
+        },
+        {
+          "coin": "MAX",
+          "amount": 18022.160881,
+          "usd": 197558.93
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 2053962.58,
+      "total_notional_usd": 0.0,
+      "effective_leverage": 0.0,
+      "positions": [],
+      "liquidation_distance_at_max_leverage": [],
+      "fills_30d": {
+        "count_30d": 6320,
+        "distinct_coins_30d": 23,
+        "opens_per_day": 76.733,
+        "n_opens_30d": 2302,
+        "median_open_notional_usd": 500.13,
+        "frac_fills_on_xyz": 0.0112,
+        "median_hold_hours": 2.8,
+        "n_complete_trips_30d": 57
+      },
+      "pnl": {
+        "pnl_30d_usd": 234007.198112,
+        "pnl_all_time_usd": 1094484.836724,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.000243,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 1724880.1
+      }
+    },
+    {
+      "address": "0xac142fee46f8dacbfef23e1e41d79f1f7233487e",
+      "role": "user",
+      "equity_main_usd": 312052.32,
+      "equity_xyz_usd": 97673.04,
+      "spot_usdc": 513747.29,
+      "spot_other": [
+        {
+          "coin": "HYPE",
+          "amount": 0.00853194,
+          "usd": 0.0
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 100.29128872,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 8776.34
+      },
+      "equity_for_sizing_usd": 923472.65,
+      "total_notional_usd": 246233.5,
+      "effective_leverage": 0.267,
+      "positions": [
+        {
+          "coin": "XRP",
+          "side": "long",
+          "szi": 15000.0,
+          "entry_px": 1.475,
+          "notional_usd": 22572.0,
+          "leverage_type": "cross",
+          "leverage_value": 20,
+          "max_leverage": 20,
+          "liquidation_px": null,
+          "unrealized_pnl": 447.0
+        },
+        {
+          "coin": "HYPE",
+          "side": "long",
+          "szi": 2250.0,
+          "entry_px": 88.4898,
+          "notional_usd": 196933.5,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -2168.61759
+        },
+        {
+          "coin": "ZEC",
+          "side": "long",
+          "szi": 20.0,
+          "entry_px": 1351.0,
+          "notional_usd": 26728.0,
+          "leverage_type": "cross",
+          "leverage_value": 3,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -292.0
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "XRP",
+          "max_isolated_leverage": 20,
+          "distance_to_liq_pct_at_max_lev": 2.5
+        },
+        {
+          "coin": "HYPE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "ZEC",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 3587,
+        "distinct_coins_30d": 18,
+        "opens_per_day": 44.0,
+        "n_opens_30d": 1320,
+        "median_open_notional_usd": 981.45,
+        "frac_fills_on_xyz": 0.2788,
+        "median_hold_hours": 9.52,
+        "n_complete_trips_30d": 95
+      },
+      "pnl": {
+        "pnl_30d_usd": 73757.729747,
+        "pnl_all_time_usd": 305013.608357,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.001063,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 395189.27
+      }
+    },
+    {
+      "address": "0xe2823659be02e0f48a4660e4da008b5e1abfdf29",
+      "role": "user",
+      "equity_main_usd": 420655.0,
+      "equity_xyz_usd": 32347.29,
+      "spot_usdc": 904511.5,
+      "spot_other": [
+        {
+          "coin": "HYPE",
+          "amount": 0.12985371,
+          "usd": 0.01
+        },
+        {
+          "coin": "MAX",
+          "amount": 10195345.2979,
+          "usd": 111761375.16,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 32831.11
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 1026.29724485,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 89809.73
+      },
+      "equity_for_sizing_usd": 1357513.79,
+      "total_notional_usd": 3246405.27,
+      "effective_leverage": 2.391,
+      "positions": [
+        {
+          "coin": "LINK",
+          "side": "long",
+          "szi": 10000.2,
+          "entry_px": 8.07273,
+          "notional_usd": 144342.8868,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 63613.964927
+        },
+        {
+          "coin": "GMX",
+          "side": "long",
+          "szi": 20000.0,
+          "entry_px": 5.9394,
+          "notional_usd": 158330.0,
+          "leverage_type": "cross",
+          "leverage_value": 3,
+          "max_leverage": 3,
+          "liquidation_px": null,
+          "unrealized_pnl": 39540.254025
+        },
+        {
+          "coin": "AAVE",
+          "side": "long",
+          "szi": 2000.38,
+          "entry_px": 111.3805,
+          "notional_usd": 340244.6342,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 117441.257901
+        },
+        {
+          "coin": "UNI",
+          "side": "long",
+          "szi": 25000.6,
+          "entry_px": 2.92996,
+          "notional_usd": 227812.717374,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 154561.798833
+        },
+        {
+          "coin": "NEAR",
+          "side": "long",
+          "szi": 40000.0,
+          "entry_px": 1.9016,
+          "notional_usd": 194600.0,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 118535.937728
+        },
+        {
+          "coin": "ONDO",
+          "side": "long",
+          "szi": 100000.0,
+          "entry_px": 0.319,
+          "notional_usd": 49580.0,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 17680.0
+        },
+        {
+          "coin": "HYPE",
+          "side": "long",
+          "szi": 2000.88,
+          "entry_px": 58.4431,
+          "notional_usd": 175145.02992,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 58207.272048
+        },
+        {
+          "coin": "VVV",
+          "side": "long",
+          "szi": 10000.0,
+          "entry_px": 13.9955,
+          "notional_usd": 265230.0,
+          "leverage_type": "cross",
+          "leverage_value": 3,
+          "max_leverage": 3,
+          "liquidation_px": null,
+          "unrealized_pnl": 125274.31158
+        },
+        {
+          "coin": "ZEC",
+          "side": "long",
+          "szi": 1000.0,
+          "entry_px": 420.9868,
+          "notional_usd": 1336200.0,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": 622.3319955947,
+          "unrealized_pnl": 915213.136636
+        },
+        {
+          "coin": "xyz:TSLA",
+          "side": "long",
+          "szi": 1000.0,
+          "entry_px": 358.5,
+          "notional_usd": 354920.0,
+          "leverage_type": "isolated",
+          "leverage_value": 20,
+          "max_leverage": 20,
+          "liquidation_px": 330.8438002359,
+          "unrealized_pnl": -3580.0
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "LINK",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "GMX",
+          "max_isolated_leverage": 3,
+          "distance_to_liq_pct_at_max_lev": 16.667
+        },
+        {
+          "coin": "AAVE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "UNI",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "NEAR",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "ONDO",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "HYPE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "VVV",
+          "max_isolated_leverage": 3,
+          "distance_to_liq_pct_at_max_lev": 16.667
+        },
+        {
+          "coin": "ZEC",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "xyz:TSLA",
+          "max_isolated_leverage": 20,
+          "distance_to_liq_pct_at_max_lev": 2.5
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 772,
+        "distinct_coins_30d": 7,
+        "opens_per_day": 9.667,
+        "n_opens_30d": 290,
+        "median_open_notional_usd": 1504.27,
+        "frac_fills_on_xyz": 0.1658,
+        "median_hold_hours": 24.36,
+        "n_complete_trips_30d": 9
+      },
+      "pnl": {
+        "pnl_30d_usd": 2339082.561894,
+        "pnl_all_time_usd": 6392096.684914,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.001108,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 379024.9
+      }
+    },
+    {
+      "address": "0x0b38c01118342098d6f108cc3741349089cd9590",
+      "role": "user",
+      "equity_main_usd": 0.0,
+      "equity_xyz_usd": 0.0,
+      "spot_usdc": 400000.79,
+      "spot_other": [],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 400000.79,
+      "total_notional_usd": 0.0,
+      "effective_leverage": 0.0,
+      "positions": [],
+      "liquidation_distance_at_max_leverage": [],
+      "fills_30d": {
+        "count_30d": 11865,
+        "distinct_coins_30d": 3,
+        "opens_per_day": 187.8,
+        "n_opens_30d": 5634,
+        "median_open_notional_usd": 999.56,
+        "frac_fills_on_xyz": 1.0,
+        "median_hold_hours": 11.2,
+        "n_complete_trips_30d": 19
+      },
+      "pnl": {
+        "pnl_30d_usd": 191642.180863,
+        "pnl_all_time_usd": 441896.649947,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.002499,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 168074.28
+      }
+    },
+    {
+      "address": "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1",
+      "role": "user",
+      "equity_main_usd": 281340.49,
+      "equity_xyz_usd": 107869.36,
+      "spot_usdc": 611982.89,
+      "spot_other": [
+        {
+          "coin": "PIP",
+          "amount": 5011.43327061,
+          "usd": 838.36,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        },
+        {
+          "coin": "HYPE",
+          "amount": 0.00138536,
+          "usd": 0.0
+        },
+        {
+          "coin": "HAR",
+          "amount": 3833.72543648,
+          "usd": 10.51,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 100.73758333,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 8815.39
+      },
+      "equity_for_sizing_usd": 1001192.74,
+      "total_notional_usd": 127604.0,
+      "effective_leverage": 0.127,
+      "positions": [
+        {
+          "coin": "HYPE",
+          "side": "long",
+          "szi": 1000.0,
+          "entry_px": 88.2531,
+          "notional_usd": 87503.0,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -750.133331
+        },
+        {
+          "coin": "ZEC",
+          "side": "long",
+          "szi": 30.0,
+          "entry_px": 1350.3333,
+          "notional_usd": 40101.0,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -409.0
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "HYPE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "ZEC",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 3518,
+        "distinct_coins_30d": 24,
+        "opens_per_day": 41.967,
+        "n_opens_30d": 1259,
+        "median_open_notional_usd": 1485.06,
+        "frac_fills_on_xyz": 0.1893,
+        "median_hold_hours": 6.13,
+        "n_complete_trips_30d": 119
+      },
+      "pnl": {
+        "pnl_30d_usd": 78457.830358,
+        "pnl_all_time_usd": 3579559.350608,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.001483,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 283154.18
+      }
+    },
+    {
+      "address": "0x04a97ae7f350a22cd0cdb6b1875e8905b76495aa",
+      "role": "user",
+      "equity_main_usd": 214770.17,
+      "equity_xyz_usd": 70958.3,
+      "spot_usdc": 656941.72,
+      "spot_other": [],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 942670.19,
+      "total_notional_usd": 1387994.82,
+      "effective_leverage": 1.472,
+      "positions": [
+        {
+          "coin": "ETH",
+          "side": "long",
+          "szi": 400.0795,
+          "entry_px": 2695.97,
+          "notional_usd": 1081094.8249,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 25,
+          "liquidation_px": 1100.8923509335,
+          "unrealized_pnl": 2489.605381
+        },
+        {
+          "coin": "xyz:BRENTOIL",
+          "side": "short",
+          "szi": -3000.0,
+          "entry_px": 98.7599,
+          "notional_usd": 306900.0,
+          "leverage_type": "cross",
+          "leverage_value": 4,
+          "max_leverage": 20,
+          "liquidation_px": 306.4747500205,
+          "unrealized_pnl": -10620.04223
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "ETH",
+          "max_isolated_leverage": 25,
+          "distance_to_liq_pct_at_max_lev": 2.0
+        },
+        {
+          "coin": "xyz:BRENTOIL",
+          "max_isolated_leverage": 20,
+          "distance_to_liq_pct_at_max_lev": 2.5
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 1490,
+        "distinct_coins_30d": 4,
+        "opens_per_day": 26.8,
+        "n_opens_30d": 804,
+        "median_open_notional_usd": 3746.11,
+        "frac_fills_on_xyz": 0.1289,
+        "median_hold_hours": 19.61,
+        "n_complete_trips_30d": 14
+      },
+      "pnl": {
+        "pnl_30d_usd": 252958.69969,
+        "pnl_all_time_usd": 580891.271011,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.003974,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 105688.7
+      }
+    },
+    {
+      "address": "0xe09726ff25f5001f37b15049f54116cb83d7d0fe",
+      "role": "user",
+      "equity_main_usd": 1136789.05,
+      "equity_xyz_usd": 0.0,
+      "spot_usdc": 6213933.32,
+      "spot_other": [
+        {
+          "coin": "KNTQ",
+          "amount": 500000.16150486,
+          "usd": 17975005.81,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        },
+        {
+          "coin": "HYPE",
+          "amount": 0.00367446,
+          "usd": 0.0
+        },
+        {
+          "coin": "UETH",
+          "amount": 0.001355004,
+          "usd": 0.0
+        },
+        {
+          "coin": "UPUMP",
+          "amount": 2.680867,
+          "usd": 0.28
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 7350722.37,
+      "total_notional_usd": 10018259.06,
+      "effective_leverage": 1.363,
+      "positions": [
+        {
+          "coin": "ETH",
+          "side": "long",
+          "szi": 741.2348,
+          "entry_px": 2702.93,
+          "notional_usd": 2002668.18264,
+          "leverage_type": "cross",
+          "leverage_value": 20,
+          "max_leverage": 25,
+          "liquidation_px": null,
+          "unrealized_pnl": -840.95459
+        },
+        {
+          "coin": "WLD",
+          "side": "long",
+          "szi": 974696.7,
+          "entry_px": 0.45178,
+          "notional_usd": 488985.840456,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 48635.021682
+        },
+        {
+          "coin": "TIA",
+          "side": "long",
+          "szi": 1668750.8,
+          "entry_px": 0.47465,
+          "notional_usd": 718647.53202,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 5,
+          "liquidation_px": null,
+          "unrealized_pnl": -73440.426232
+        },
+        {
+          "coin": "NEAR",
+          "side": "long",
+          "szi": 200000.0,
+          "entry_px": 5.37968,
+          "notional_usd": 972620.0,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -103316.17041
+        },
+        {
+          "coin": "ENA",
+          "side": "short",
+          "szi": -6031056.0,
+          "entry_px": 0.239776,
+          "notional_usd": 1485304.347456,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": 1.1377654017,
+          "unrealized_pnl": -39195.921829
+        },
+        {
+          "coin": "HYPE",
+          "side": "long",
+          "szi": 22500.0,
+          "entry_px": 87.837,
+          "notional_usd": 1968952.5,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -7380.01904
+        },
+        {
+          "coin": "SYRUP",
+          "side": "long",
+          "szi": 1869697.0,
+          "entry_px": 0.200382,
+          "notional_usd": 450204.34063,
+          "leverage_type": "cross",
+          "leverage_value": 3,
+          "max_leverage": 3,
+          "liquidation_px": null,
+          "unrealized_pnl": 75549.972268
+        },
+        {
+          "coin": "XPL",
+          "side": "long",
+          "szi": 1311211.0,
+          "entry_px": 0.092366,
+          "notional_usd": 126446.632785,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 5334.912911
+        },
+        {
+          "coin": "ZEC",
+          "side": "long",
+          "szi": 1099.02,
+          "entry_px": 1456.049,
+          "notional_usd": 1468510.524,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": -131716.545
+        },
+        {
+          "coin": "PONS",
+          "side": "long",
+          "szi": 657106.0,
+          "entry_px": 0.678465,
+          "notional_usd": 335919.15826,
+          "leverage_type": "cross",
+          "leverage_value": 3,
+          "max_leverage": 3,
+          "liquidation_px": null,
+          "unrealized_pnl": -109904.37707
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "ETH",
+          "max_isolated_leverage": 25,
+          "distance_to_liq_pct_at_max_lev": 2.0
+        },
+        {
+          "coin": "WLD",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "TIA",
+          "max_isolated_leverage": 5,
+          "distance_to_liq_pct_at_max_lev": 10.0
+        },
+        {
+          "coin": "NEAR",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "ENA",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "HYPE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "SYRUP",
+          "max_isolated_leverage": 3,
+          "distance_to_liq_pct_at_max_lev": 16.667
+        },
+        {
+          "coin": "XPL",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "ZEC",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "PONS",
+          "max_isolated_leverage": 3,
+          "distance_to_liq_pct_at_max_lev": 16.667
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 22454,
+        "distinct_coins_30d": 18,
+        "opens_per_day": 449.633,
+        "n_opens_30d": 13489,
+        "median_open_notional_usd": 455.69,
+        "frac_fills_on_xyz": 0.0219,
+        "median_hold_hours": 18.13,
+        "n_complete_trips_30d": 42
+      },
+      "pnl": {
+        "pnl_30d_usd": 1976676.171502,
+        "pnl_all_time_usd": 7016245.607627,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 6.2e-05,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 6775008.0
+      }
+    },
+    {
+      "address": "0xf5079c84c34051d7c4cd87494fda534fe7ecdf6d",
+      "role": "user",
+      "equity_main_usd": 143203.84,
+      "equity_xyz_usd": 988737.39,
+      "spot_usdc": 2122376.17,
+      "spot_other": [],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 3254317.4,
+      "total_notional_usd": 2372694.6,
+      "effective_leverage": 0.729,
+      "positions": [
+        {
+          "coin": "BTC",
+          "side": "long",
+          "szi": 7.91294,
+          "entry_px": 82967.2,
+          "notional_usd": 670605.83912,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 40,
+          "liquidation_px": null,
+          "unrealized_pnl": 14091.05067
+        },
+        {
+          "coin": "xyz:CXMT",
+          "side": "long",
+          "szi": 40400.7,
+          "entry_px": 8.43071,
+          "notional_usd": 340856.66583,
+          "leverage_type": "isolated",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": 6.9177925663,
+          "unrealized_pnl": 249.802226
+        },
+        {
+          "coin": "xyz:UNITREE",
+          "side": "short",
+          "szi": -19999.59,
+          "entry_px": 83.991,
+          "notional_usd": 1361232.09417,
+          "leverage_type": "isolated",
+          "leverage_value": 5,
+          "max_leverage": 10,
+          "liquidation_px": 108.3175680143,
+          "unrealized_pnl": 318554.846134
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "BTC",
+          "max_isolated_leverage": 40,
+          "distance_to_liq_pct_at_max_lev": 1.25
+        },
+        {
+          "coin": "xyz:CXMT",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "xyz:UNITREE",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 3577,
+        "distinct_coins_30d": 13,
+        "opens_per_day": 30.867,
+        "n_opens_30d": 926,
+        "median_open_notional_usd": 405.02,
+        "frac_fills_on_xyz": 0.9631,
+        "median_hold_hours": 28.14,
+        "n_complete_trips_30d": 20
+      },
+      "pnl": {
+        "pnl_30d_usd": 381361.156072,
+        "pnl_all_time_usd": 1330326.373338,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.000124,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 3374681.02
+      }
+    },
+    {
+      "address": "0xd260b2216b735277da6771564a01c04856e78321",
+      "role": "user",
+      "equity_main_usd": 1429272.77,
+      "equity_xyz_usd": 0.0,
+      "spot_usdc": 1429772.77,
+      "spot_other": [
+        {
+          "coin": "LAUNCH",
+          "amount": 50.0,
+          "usd": 0.15
+        },
+        {
+          "coin": "HYPE",
+          "amount": 3e-08,
+          "usd": 0.0
+        },
+        {
+          "coin": "MAX",
+          "amount": 100050813.0937,
+          "usd": 1096757013.13,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 32831.11
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 1000.35874818,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 99133.422818,
+        "usd": 8762557.02
+      },
+      "equity_for_sizing_usd": 2859045.54,
+      "total_notional_usd": 5911000.0,
+      "effective_leverage": 2.067,
+      "positions": [
+        {
+          "coin": "SOL",
+          "side": "short",
+          "szi": -50000.0,
+          "entry_px": 115.5186,
+          "notional_usd": 5911000.0,
+          "leverage_type": "isolated",
+          "leverage_value": 20,
+          "max_leverage": 20,
+          "liquidation_px": 143.2248345234,
+          "unrealized_pnl": -135065.8363
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "SOL",
+          "max_isolated_leverage": 20,
+          "distance_to_liq_pct_at_max_lev": 2.5
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 20908,
+        "distinct_coins_30d": 9,
+        "opens_per_day": 337.767,
+        "n_opens_30d": 10133,
+        "median_open_notional_usd": 561.34,
+        "frac_fills_on_xyz": 0.0,
+        "median_hold_hours": 38.31,
+        "n_complete_trips_30d": 8
+      },
+      "pnl": {
+        "pnl_30d_usd": 1156878.564574,
+        "pnl_all_time_usd": 7758213.830205,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.000196,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 2139165.44
+      }
+    },
+    {
+      "address": "0xbe10fd36393c8b677281d0bc2cf1bb8c98ad4b34",
+      "role": "user",
+      "equity_main_usd": 713206.33,
+      "equity_xyz_usd": 78133.67,
+      "spot_usdc": 2555397.55,
+      "spot_other": [
+        {
+          "coin": "PURR",
+          "amount": 2519084.26273,
+          "usd": 417412.26
+        },
+        {
+          "coin": "LICK",
+          "amount": 238.60139,
+          "usd": 0.02
+        },
+        {
+          "coin": "WAGMI",
+          "amount": 1.67136161,
+          "usd": 0.0
+        },
+        {
+          "coin": "CZ",
+          "amount": 0.0219002,
+          "usd": 0.0
+        },
+        {
+          "coin": "OMNIX",
+          "amount": 13.8013,
+          "usd": 0.83
+        },
+        {
+          "coin": "COZY",
+          "amount": 0.06113841,
+          "usd": 0.0
+        },
+        {
+          "coin": "NFT",
+          "amount": 0.17220662,
+          "usd": 0.0
+        },
+        {
+          "coin": "PEAR",
+          "amount": 1.043663,
+          "usd": 0.0
+        },
+        {
+          "coin": "RICH",
+          "amount": 31510.94125065,
+          "usd": 2896.83,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        },
+        {
+          "coin": "LORA",
+          "amount": 0.17732058,
+          "usd": 0.01
+        },
+        {
+          "coin": "HPUMP",
+          "amount": 0.05114498,
+          "usd": 0.0
+        },
+        {
+          "coin": "LAUNCH",
+          "amount": 12.59163202,
+          "usd": 0.04
+        },
+        {
+          "coin": "VAULT",
+          "amount": 0.84040345,
+          "usd": 0.03
+        },
+        {
+          "coin": "RIP",
+          "amount": 0.2946158,
+          "usd": 0.0
+        },
+        {
+          "coin": "HPL",
+          "amount": 141774.08604,
+          "usd": 399.94
+        },
+        {
+          "coin": "HOPE",
+          "amount": 23.05858,
+          "usd": 0.0
+        },
+        {
+          "coin": "FEIT",
+          "amount": 0.11,
+          "usd": 0.01
+        },
+        {
+          "coin": "MUNCH",
+          "amount": 20.33086,
+          "usd": 0.0
+        },
+        {
+          "coin": "HYPE",
+          "amount": 0.00014427,
+          "usd": 0.0
+        },
+        {
+          "coin": "FLY",
+          "amount": 1.44904599,
+          "usd": 0.0
+        },
+        {
+          "coin": "HWTR",
+          "amount": 0.03312049,
+          "usd": 0.0
+        },
+        {
+          "coin": "NEKO",
+          "amount": 6750.0,
+          "usd": 572238000.0,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 26372720.72
+        },
+        {
+          "coin": "VORTX",
+          "amount": 33.81888515,
+          "usd": 0.07
+        },
+        {
+          "coin": "OTTI",
+          "amount": 0.01741637,
+          "usd": 0.0
+        },
+        {
+          "coin": "BUDDY",
+          "amount": 0.13737681,
+          "usd": 16.25
+        },
+        {
+          "coin": "BRLA",
+          "amount": 1343729.48833882,
+          "usd": 1005.11,
+          "illiquid_mark_price_fiction": true,
+          "day_volume_usd": 0.0
+        }
+      ],
+      "staked_hype": {
+        "delegated_hype": 0.0,
+        "undelegated_hype": 0.0,
+        "pending_withdrawal_hype": 0.0,
+        "usd": 0.0
+      },
+      "equity_for_sizing_usd": 3346737.56,
+      "total_notional_usd": 8368186.16,
+      "effective_leverage": 2.5,
+      "positions": [
+        {
+          "coin": "ETH",
+          "side": "long",
+          "szi": 1600.0,
+          "entry_px": 2520.38,
+          "notional_usd": 4322240.0,
+          "leverage_type": "cross",
+          "leverage_value": 25,
+          "max_leverage": 25,
+          "liquidation_px": 1247.5969747978,
+          "unrealized_pnl": 289619.49979
+        },
+        {
+          "coin": "TAO",
+          "side": "long",
+          "szi": 3250.813,
+          "entry_px": 306.718,
+          "notional_usd": 993676.00971,
+          "leverage_type": "cross",
+          "leverage_value": 5,
+          "max_leverage": 5,
+          "liquidation_px": null,
+          "unrealized_pnl": -3408.9421
+        },
+        {
+          "coin": "XPL",
+          "side": "long",
+          "szi": 10000935.0,
+          "entry_px": 0.086126,
+          "notional_usd": 964220.146155,
+          "leverage_type": "cross",
+          "leverage_value": 10,
+          "max_leverage": 10,
+          "liquidation_px": null,
+          "unrealized_pnl": 102878.247278
+        },
+        {
+          "coin": "xyz:GOLD",
+          "side": "long",
+          "szi": 500.0,
+          "entry_px": 4317.72,
+          "notional_usd": 2088050.0,
+          "leverage_type": "cross",
+          "leverage_value": 25,
+          "max_leverage": 25,
+          "liquidation_px": null,
+          "unrealized_pnl": -70810.87289
+        }
+      ],
+      "liquidation_distance_at_max_leverage": [
+        {
+          "coin": "ETH",
+          "max_isolated_leverage": 25,
+          "distance_to_liq_pct_at_max_lev": 2.0
+        },
+        {
+          "coin": "TAO",
+          "max_isolated_leverage": 5,
+          "distance_to_liq_pct_at_max_lev": 10.0
+        },
+        {
+          "coin": "XPL",
+          "max_isolated_leverage": 10,
+          "distance_to_liq_pct_at_max_lev": 5.0
+        },
+        {
+          "coin": "xyz:GOLD",
+          "max_isolated_leverage": 25,
+          "distance_to_liq_pct_at_max_lev": 2.0
+        }
+      ],
+      "fills_30d": {
+        "count_30d": 7005,
+        "distinct_coins_30d": 11,
+        "opens_per_day": 135.567,
+        "n_opens_30d": 4067,
+        "median_open_notional_usd": 415.6,
+        "frac_fills_on_xyz": 0.0964,
+        "median_hold_hours": 25.96,
+        "n_complete_trips_30d": 7
+      },
+      "pnl": {
+        "pnl_30d_usd": 1502098.774903,
+        "pnl_all_time_usd": 3244976.488064,
+        "note": "'month' is HL's own bucket (calendar-ish, not strictly trailing-30d); 'allTime' is since the account's first recorded activity."
+      },
+      "viability_at_our_equity": {
+        "per_leader_allocation_usd": 0.03,
+        "typical_open_ratio_of_his_equity": 0.000124,
+        "our_copy_notional_usd": 0.0,
+        "below_min_order": true,
+        "below_bump_floor_25pct": true,
+        "min_equity_for_median_copy_usd": 3382169.82
+      }
+    }
+  ]
+}

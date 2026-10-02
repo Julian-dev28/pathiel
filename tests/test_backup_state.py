@@ -199,6 +199,11 @@ def test_an_unverified_backup_reports_as_no_backup(monkeypatch, tmp_path):
         metrics._refresh()
         assert metrics.BACKUP_AGE._value.get() < 60
     finally:
+        # Undo the env first. Reloading while PATHIEL_STATE_DIR still points at
+        # this test's tmp_path left the claims registry aimed at a dead
+        # directory for the rest of the run, so conftest's per-test claims
+        # reset cleared the wrong file and claims leaked between tests.
+        monkeypatch.undo()
         il.reload(ro)
 
 

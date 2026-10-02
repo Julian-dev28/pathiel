@@ -34,7 +34,8 @@ TREE = ast.parse(SRC.read_text())
 GATED = ("_unlock_short_maybe_run", "_news_surge_short_maybe_run",
          "_news_surge_multi_maybe_run", "_xs_reversal_maybe_run", "scan_once")
 UNGATED = ("monitor_exits", "_data_logger_maybe_log", "_unlock_maybe_record",
-           "_social_trending_maybe_record")
+           "_social_trending_maybe_record", "_drawdown_ladder_maybe_run",
+           "_copy_trade_maybe_run", "_copycat_maybe_run")
 FLAG = "_entry_budget_open"
 
 
@@ -92,7 +93,10 @@ def test_the_gate_is_derived_from_max_concurrent():
     src = SRC.read_text()
     i = src.index(f"{FLAG} =")
     line = src[i:src.index("\n", i)]
-    assert "_slots" in line and "len(positions)" in line, line
+    # `_book_positions`, not `positions`: drawdown_ladder holds ladders for
+    # months outside max_concurrent (W-WH2), and counting them would lock every
+    # other book out of its slots for as long as a ladder stays open.
+    assert "_slots" in line and "len(_book_positions)" in line, line
     assert 'get("max_concurrent"' in src[max(0, i - 400):i], (
         "the slot count must come from max_concurrent in the live config")
 

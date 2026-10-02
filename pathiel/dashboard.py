@@ -12,6 +12,9 @@ JSON APIs:
 
   GET /api/dashboard/summary     — hero numbers + status
   GET /api/dashboard/books       — live-books table rows
+  GET /api/dashboard/copycat     — copycat settings (normalized) + mirrored
+                                   coins, read-only (no config-editing UI
+                                   exists yet; see POST /api/agent/config)
   GET /api/dashboard/activity    — classified session-log events (tiered,
                                    filterable, incremental via ?since=)
   GET /api/dashboard/news        — news ledger reads, newest first
@@ -48,7 +51,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pathiel import session_log
 from pathiel.agents import dsl_exit
 from pathiel.agents import capital_flows
-from pathiel.agents.config_store import read_agent_config
+from pathiel.agents.config_store import merge_agent_config, read_agent_config, write_agent_config
 from pathiel.agents.executor import min_tradable_equity as _min_tradable_equity
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
 from pathiel.positions_snapshot import read_snapshot as read_position_snapshot
@@ -866,6 +869,19 @@ _BOOKS: List[Tuple[str, str, str]] = [
      "Short the top decile of 3d cross-sectional return, but only where funding "
      "has been off the venue baseline — no positioning, nothing to unwind. "
      "VALIDATED n=1995: +2.474%/sig net25, all four quartiles positive, p=0.0000."),
+    ("drawdown_ladder", "drawdown_ladder",
+     "Buy a 21% drawdown in BTC/ETH/SOL/BNB/XRP on five rungs 7.17% apart, exit at "
+     "+5.14% over average entry, 1x, no stop. VALIDATED W-WH2: 2.93x over 6y, "
+     "max DD -43.5%, halves 1.52x/1.43x, null p=0.0015. Buy-and-hold did 8.37x."),
+    ("copy_trade", "copy_trade",
+     "Mirror wallet 0xe282...df29's new positions at leverage_mult x his exposure, "
+     "no stop. REFUTED W-CP1 (liquidated in every 2025-03..10 start month, 0.5x-3x; "
+     "survivors lose to random entry, p 0.79-0.85). Operator override."),
+    ("copycat", "copycat",
+     "Mirror 10 Hyperliquid leaderboard wallets' positions, sized to each leader's "
+     "equity on an equal split of the sleeve, at the coin's max (or matched) "
+     "leverage, isolated or cross, no stop. UNTESTED: no backtest; W-CP1 refuted "
+     "copying one of these wallets (0xe282)."),
 ]
 
 _KNOWN_BOOK_NAMES = frozenset(name for name, _, _ in _BOOKS)
@@ -920,6 +936,168 @@ def _books_payload() -> List[Dict[str, Any]]:
                     "size": _book_size_str(cfg if isinstance(cfg, dict) else {}),
                     "thesis": thesis})
     return out
+
+
+def _copycat_payload() -> Dict[str, Any]:
+    """Snapshot of the copycat book for the dashboard panel: normalized
+    settings (including the new sizing/leverage/leader_overrides knobs),
+    live/shadow/off status, each leader's EFFECTIVE settings (book-wide +
+    that leader's override, via `copycat_live.leader_settings`), and
+    (best-effort) mirrored coins. Backs both the GET panel and the POST
+    write path's response (see `dashboard_copycat_update` below), so a
+    write and a read can never disagree about what landed.
+
+    `copycat_live` is imported lazily and every call is best-effort: this
+    module must keep working (and this function must keep rendering
+    something sane) whether or not that module is importable, since every
+    other dashboard test loads this module regardless of that book.
+    """
+    try:
+        config = read_agent_config() or {}
+    except Exception:
+        config = {}
+    cfg = config.get("copycat") or {}
+    if not isinstance(cfg, dict) or not cfg or not cfg.get("enabled", False):
+        status = "off"
+    elif cfg.get("shadow_only"):
+        status = "shadow"
+    else:
+        status = "live"
+
+    settings: Dict[str, Any] = dict(cfg) if isinstance(cfg, dict) else {}
+    try:
+        from pathiel.agents.copycat_live import settings as _normalize
+        settings = _normalize(config)
+    except Exception:
+        pass  # copycat_live not importable (or settings() changed shape) — raw cfg still renders
+
+    leaders_raw = settings.get("leaders") if isinstance(settings, dict) else None
+    leaders = [str(a) for a in leaders_raw] if isinstance(leaders_raw, list) else []
+
+    owned: List[str] = []
+    try:
+        from pathiel.agents.copycat_live import owned_coins as _owned_coins
+        owned = sorted(_owned_coins())
+    except Exception:
+        pass
+
+    _leader_settings = None
+    try:
+        from pathiel.agents.copycat_live import leader_settings as _leader_settings
+    except Exception:
+        pass
+
+    per_leader: Dict[str, Any] = {}
+    for addr in leaders:
+        entry: Dict[str, Any] = {"coins": [], "ignored": [], "effective": None}
+        if _leader_settings is not None:
+            try:
+                entry["effective"] = _leader_settings(config, addr)
+            except Exception:
+                pass
+        per_leader[addr] = entry
+
+    # Overlay per-leader mirrored coins straight off the book's own state
+    # file (.copycat.json via state_file — same mechanism copy_trade and
+    # drawdown_ladder use for theirs). Shape is copycat_live._fresh_state():
+    # {"leaders": {addr: {"last": {coin: szi}, "ignored": [...]}},
+    #  "copies": {...}, "realized_cum": ...} — read it defensively anyway so
+    # a future internal reshape still renders settings + owned_coins instead
+    # of failing.
+    try:
+        from pathiel.agents.atomic_io import read_json
+        from pathiel.agents.rebalancer_owned import state_file
+        state = read_json(state_file(".copycat.json"), default=None)
+        leader_states = state.get("leaders") if isinstance(state, dict) else None
+        if isinstance(leader_states, dict):
+            for addr in leaders:
+                lstate = leader_states.get(addr)
+                if isinstance(lstate, dict):
+                    last = lstate.get("last")
+                    ignored = lstate.get("ignored")
+                    per_leader.setdefault(addr, {"effective": None})["coins"] = (
+                        sorted(last) if isinstance(last, dict) else [])
+                    per_leader[addr]["ignored"] = (
+                        sorted(ignored) if isinstance(ignored, list) else [])
+    except Exception:
+        pass
+
+    return {
+        "status": status,
+        "settings": settings,
+        "leaders": leaders,
+        "owned_coins": owned,
+        "per_leader": per_leader,
+    }
+
+
+_ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def _copycat_settings_update(body: Any) -> Dict[str, Any]:
+    """Apply an operator-submitted partial copycat settings patch and
+    return a fresh `_copycat_payload()` so the write's response can stand
+    in for a GET round-trip.
+
+    SCOPE: the body is wrapped as `{"copycat": body}` before it reaches
+    `merge_agent_config`, so this can only ever touch the single
+    `copycat` top-level key — unlike the generic POST /api/agent/config,
+    a bug or a stray field in the request body can never perturb
+    `leverage`, `max_daily_loss_usd`, or any OTHER book's block. Within
+    `copycat`, the existing recursive deep-merge (proven in
+    tests/test_copycat_wiring.py) means a `leader_overrides` patch for one
+    leader never wipes another leader's override, or another field
+    already set on the same leader — no extra merge logic needed here.
+
+    VALIDATION: raises ValueError (today -> HTTP 400) only when the body
+    is not a JSON object at all. Individual bad field values (an
+    out-of-range leverage, an unknown sizing_mode string, a non-dict
+    leader_overrides) are never rejected — they are clamped or defaulted
+    by copycat_live.settings()/leader_settings(), the one pipeline every
+    reader (this function's own return value, maybe_run, the dashboard
+    GET) runs through, so a write can never persist a value that reads
+    back as something else. This mirrors the house convention already
+    documented on copy_trade's leverage_mult: the stored number can be
+    whatever was typed; the EFFECTIVE number is always computed at read
+    time, never baked into the write.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("JSON body must be an object")
+    body = dict(body)
+    leaders = body.get("leaders")
+    if leaders is not None:
+        if not isinstance(leaders, list):
+            raise ValueError("leaders must be a list of addresses")
+        bad = [a for a in leaders if not (isinstance(a, str) and _ADDR_RE.match(a.strip()))]
+        if bad:
+            raise ValueError(f"not a 0x address: {bad[0]!r}")
+    # leader_overrides are per-leader REPLACE, not deep-merge: the panel sends
+    # one leader's whole override, so a field set back to "inherit" has to
+    # disappear, and null clears that leader's override. Other leaders'
+    # overrides are untouched.
+    overrides_patch = body.pop("leader_overrides", None)
+    if overrides_patch is not None and not isinstance(overrides_patch, dict):
+        raise ValueError("leader_overrides must be an object")
+    existing = read_agent_config()
+    merged = merge_agent_config(existing, {"copycat": body})
+    if overrides_patch:
+        cc = merged.setdefault("copycat", {})
+        current = cc.get("leader_overrides")
+        current = dict(current) if isinstance(current, dict) else {}
+        for addr, ovr in overrides_patch.items():
+            key = str(addr).strip().lower()
+            if ovr is None:
+                current.pop(key, None)
+            elif isinstance(ovr, dict):
+                current[key] = ovr
+            else:
+                raise ValueError(f"override for {key} must be an object or null")
+        cc["leader_overrides"] = current
+    write_agent_config(merged)
+    with _TTL_CACHE_LOCK:
+        _TTL_CACHE.pop("copycat", None)
+        _TTL_CACHE.pop("books", None)   # live/shadow/off status may have just changed
+    return _copycat_payload()
 
 
 # ── activity feed ────────────────────────────────────────────────────────────
@@ -2134,6 +2312,32 @@ def register_routes(app: FastAPI) -> None:
     async def dashboard_books() -> JSONResponse:
         """Live-books table rows: name, live/shadow/off status, size, thesis."""
         return JSONResponse(_ttl_cached("books", 30.0, _books_payload))
+
+    @app.get("/api/dashboard/copycat")
+    async def dashboard_copycat() -> JSONResponse:
+        """Copycat book snapshot: normalized settings, status, leaders
+        (with each one's effective settings), mirrored coins. Public read,
+        same tier as /api/dashboard/books — writes are operator-gated
+        below."""
+        return JSONResponse(_ttl_cached("copycat", 30.0, _copycat_payload))
+
+    @app.post("/api/dashboard/copycat/settings", dependencies=[Depends(_require_operator)])
+    async def dashboard_copycat_update(request: Request) -> JSONResponse:
+        """Operator-only write for the copycat panel. Body is a PARTIAL
+        copycat settings patch (e.g. {"enabled": true} or
+        {"leader_overrides": {"0xabc...": {"leverage": 10}}} or
+        {"leaders": [...]}) — not wrapped under a "copycat" key, the URL
+        already says what it's for. See _copycat_settings_update for the
+        scoping (copycat key only) and validation (clamp-at-read, never
+        reject-at-write) rules."""
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "invalid JSON")
+        try:
+            return JSONResponse(_copycat_settings_update(body))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/api/dashboard/activity")
     async def dashboard_activity(
