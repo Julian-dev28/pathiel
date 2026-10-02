@@ -385,29 +385,218 @@ def _is_isolated_only(coin: str) -> bool:
     return False
 
 
-def set_leverage(coin: str, leverage: int) -> Dict[str, Any]:
+def set_leverage(coin: str, leverage: int, is_cross: Optional[bool] = None,
+                  strict: bool = False) -> Dict[str, Any]:
     """Set leverage for a coin, choosing cross vs isolated based on the market.
 
-    For markets flagged `onlyIsolated: true` (most HIP-3 + ~3% of native HL),
-    we send `is_cross=False`. Without this branch the leverage call no-ops
-    on isolated-only markets and the order that follows is rejected by HL
-    with "Insufficient margin to place order" despite plenty of free margin.
+    `is_cross`:
+      None (default) — auto: isolated on markets flagged `onlyIsolated: true`
+        (most HIP-3 + ~3% of native HL, via `_is_isolated_only`), else cross.
+        This is today's behavior, unchanged — without it the leverage call
+        no-ops on isolated-only markets and the order that follows is
+        rejected by HL with "Insufficient margin to place order" despite
+        plenty of free margin.
+      True on an isolated-only market — HL rejects cross there, so we fall
+        back to isolated and log it. The returned `is_cross` reflects what
+        was actually sent (False), not what was requested.
+      False — isolated, unconditionally (regardless of market type).
 
-    No-op when no private key is set.
+    `strict`:
+      False (default) — `ok` is True whenever the SDK call didn't raise.
+        Matches every existing caller's expectation. NOTE: this preserves a
+        known bug — `exchange.update_leverage` can return HTTP 200 with a
+        body of `{"status": "err", "response": "<message>"}` (same shape
+        `_parse_order_result`/`cancel_orders` check for order/cancel calls),
+        and this path reports that as `ok: True` since the SDK call itself
+        didn't raise.
+      True — `ok` is only True when the HL response body says
+        `status == "ok"`; an `err` body surfaces as `ok: False` with HL's
+        error string, instead of a false success.
+
+    No-op when no private key is set. `leverage < 1` is rejected before any
+    exchange call (and before the `is_cross` meta lookup).
     """
     if not PRIVATE_KEY_HEX:
         return {"ok": False, "error": "no private key"}
+    if leverage < 1:
+        return {"ok": False, "error": f"invalid leverage {leverage} (< 1)"}
 
-    is_cross = not _is_isolated_only(coin)
+    isolated_only = _is_isolated_only(coin)
+    if is_cross is None:
+        use_cross = not isolated_only
+    elif is_cross and isolated_only:
+        logger.info(
+            f"[set_leverage] {coin} is isolated-only; cross requested, "
+            f"falling back to isolated")
+        use_cross = False
+    else:
+        use_cross = bool(is_cross)
+
     try:
         exchange = _make_exchange()
-        # SDK: update_leverage(leverage, coin, is_cross). is_cross=False for
-        # markets where the dex rejects cross-margin (HIP-3 majority).
-        result = exchange.update_leverage(leverage, coin, is_cross=is_cross)
-        return {"ok": True, "result": result, "is_cross": is_cross}
+        # SDK: update_leverage(leverage, coin, is_cross).
+        result = exchange.update_leverage(leverage, coin, is_cross=use_cross)
+        if strict:
+            if isinstance(result, dict) and result.get("status") == "ok":
+                return {"ok": True, "result": result, "is_cross": use_cross}
+            err = result.get("response") if isinstance(result, dict) else result
+            logger.error(
+                f"Failed to set leverage for {coin} (is_cross={use_cross}): {err}")
+            return {"ok": False, "error": str(err), "is_cross": use_cross}
+        return {"ok": True, "result": result, "is_cross": use_cross}
     except Exception as e:
-        logger.error(f"Failed to set leverage for {coin} (is_cross={is_cross}): {e}")
-        return {"ok": False, "error": str(e), "is_cross": is_cross}
+        logger.error(f"Failed to set leverage for {coin} (is_cross={use_cross}): {e}")
+        return {"ok": False, "error": str(e), "is_cross": use_cross}
+
+
+# ── Leader extras (copy-trade accounting) ───────────────────────────────────
+# copy_trade_live sizes its copy against the leader's TOTAL equity, not just
+# his perp margin account — a leader can run material capital in spot
+# balances and HYPE staking that `clearinghouseState` never reports. Under-
+# counting his equity there would make our copy multiplier look smaller
+# relative to his real risk than it actually is.
+
+_SPOT_PRICE_CACHE: Optional[Dict[str, float]] = None
+_SPOT_PRICE_CACHE_TS: float = 0.0
+_SPOT_PRICE_CACHE_TTL_S = 30.0
+
+
+def _spot_usdc_prices(force_refresh: bool = False) -> Optional[Dict[str, float]]:
+    """{token name: USDC mid price} for every spot token with a USDC pair.
+
+    Built from one `spotMetaAndAssetCtxs` call (907+ rows) and cached
+    module-wide for `_SPOT_PRICE_CACHE_TTL_S` — the copy book calls
+    `fetch_leader_extras` for ~10 leaders every cycle and would otherwise
+    refetch the same payload 10x per cycle.
+
+    Falls back to `markPx` when `midPx` is missing. A token with no USDC
+    pair (e.g. synthetic `+71790`-style balances with no listed market) is
+    simply absent from the returned map — callers skip it, they don't get a
+    fabricated 0.0 entry here.
+
+    Returns None on a fetch/parse failure (never a stale map served past its
+    TTL, and never an empty-but-successful-looking {}).
+    """
+    global _SPOT_PRICE_CACHE, _SPOT_PRICE_CACHE_TS
+    import time as _time
+    now = _time.time()
+    if (not force_refresh and _SPOT_PRICE_CACHE is not None
+            and (now - _SPOT_PRICE_CACHE_TS) < _SPOT_PRICE_CACHE_TTL_S):
+        return _SPOT_PRICE_CACHE
+
+    raw = _http_post("/info", {"type": "spotMetaAndAssetCtxs"})
+    if not (isinstance(raw, list) and len(raw) == 2):
+        return None
+    meta, ctxs = raw[0], raw[1]
+    tokens = (meta or {}).get("tokens") if isinstance(meta, dict) else None
+    universe = (meta or {}).get("universe") if isinstance(meta, dict) else None
+    if not isinstance(tokens, list) or not isinstance(universe, list) or not isinstance(ctxs, list):
+        return None
+
+    idx_to_name = {t.get("index"): t.get("name") for t in tokens if isinstance(t, dict)}
+    usdc_idx = next((i for i, n in idx_to_name.items() if n == "USDC"), 0)
+
+    prices: Dict[str, float] = {}
+    for u in universe:
+        pair = u.get("tokens") if isinstance(u, dict) else None
+        if not isinstance(pair, list) or len(pair) != 2 or usdc_idx not in pair:
+            continue
+        base_idx = pair[0] if pair[1] == usdc_idx else pair[1]
+        name = idx_to_name.get(base_idx)
+        if not name:
+            continue
+        ctx_idx = u.get("index")
+        if not isinstance(ctx_idx, int) or ctx_idx < 0 or ctx_idx >= len(ctxs):
+            continue
+        ctx = ctxs[ctx_idx] or {}
+        px = ctx.get("midPx")
+        if px in (None, ""):
+            px = ctx.get("markPx")
+        try:
+            pxf = float(px)
+        except (TypeError, ValueError):
+            continue
+        if pxf > 0 and name not in prices:
+            prices[name] = pxf
+
+    _SPOT_PRICE_CACHE, _SPOT_PRICE_CACHE_TS = prices, now
+    return prices
+
+
+def fetch_leader_extras(user: str) -> Optional[Dict[str, float]]:
+    """Leader's non-perp USD value: spot USDC, other spot tokens at spot
+    mid, and staked HYPE at spot mid.
+
+    Returns {"spot_usdc", "spot_other_usd", "staked_hype_usd"} (all floats),
+    or None if ANY of the underlying reads failed — a partial read must
+    never look like a flat/zero leader, which would make our copy-size
+    multiplier look smaller relative to his real capital than it is.
+
+    staked_hype_usd = (delegated + undelegated + totalPendingWithdrawal)
+    HYPE, valued at HYPE's spot mid. This is a SEPARATE bucket from any HYPE
+    sitting in spot balances (`delegatorSummary` reports what's staked,
+    `spotClearinghouseState` reports what's liquid) — they are summed by the
+    caller, never double counted here.
+    """
+    spot = _http_post("/info", {"type": "spotClearinghouseState", "user": user}, timeout=10)
+    if not isinstance(spot, dict) or not isinstance(spot.get("balances"), list):
+        return None
+
+    prices = _spot_usdc_prices()
+    if prices is None:
+        return None
+
+    deleg = _http_post("/info", {"type": "delegatorSummary", "user": user}, timeout=10)
+    if not isinstance(deleg, dict):
+        return None
+
+    spot_usdc = 0.0
+    spot_other_usd = 0.0
+    for b in spot["balances"]:
+        if not isinstance(b, dict):
+            continue
+        try:
+            total = float(b.get("total") or 0)
+        except (TypeError, ValueError):
+            continue
+        if total == 0:
+            continue
+        coin_name = b.get("coin", "")
+        if coin_name == "USDC":
+            spot_usdc += total
+            continue
+        px = prices.get(coin_name)
+        if px is None:
+            logger.debug(
+                f"[fetch_leader_extras] {user}: no USDC spot price for "
+                f"{coin_name!r} — skipping (valued at 0, not failing the read)")
+            continue
+        spot_other_usd += total * px
+
+    try:
+        delegated = float(deleg.get("delegated") or 0)
+        undelegated = float(deleg.get("undelegated") or 0)
+        pending_withdrawal = float(deleg.get("totalPendingWithdrawal") or 0)
+    except (TypeError, ValueError):
+        logger.warning(f"[fetch_leader_extras] {user}: unparseable delegatorSummary: {deleg}")
+        return None
+    staked_hype = delegated + undelegated + pending_withdrawal
+
+    hype_px = prices.get("HYPE")
+    if hype_px is None:
+        # HYPE always has a USDC spot market — a missing price here means
+        # the spotMetaAndAssetCtxs read was itself degraded, not that HYPE
+        # is genuinely unpriced. Fail the whole read rather than silently
+        # valuing his stake at 0.
+        logger.warning(f"[fetch_leader_extras] {user}: no HYPE spot price available")
+        return None
+    staked_hype_usd = staked_hype * hype_px
+
+    return {
+        "spot_usdc": spot_usdc,
+        "spot_other_usd": spot_other_usd,
+        "staked_hype_usd": staked_hype_usd,
+    }
 
 
 def _round_price_for_hl(price: float, sz_decimals: int, is_perp: bool = True,
@@ -675,6 +864,63 @@ def place_hl_trigger_order(
     except Exception as e:
         logger.error(f"Failed to place trigger order for {coin}: {e}")
         return {"ok": False, "error": str(e)}
+
+
+def place_hl_limit_order(
+    coin: str,
+    is_buy: bool,
+    size: float,
+    limit_px: float,
+    reduce_only: bool = False,
+) -> Dict[str, Any]:
+    """Place a resting GTC limit order: a ladder rung or a take-profit.
+
+    Rounds the price in the PASSIVE direction, the opposite of an IOC: a buy
+    rounds down and a sell rounds up, so the order never rests at a worse price
+    than the one asked for. If the book has already moved through the price, HL
+    fills it on arrival, which is the same fill a resting order would have had.
+
+    Returns {ok, order_id} when it rests, {ok, order_id, avg_px, total_sz} when
+    it fills on arrival, {ok: False, error} otherwise.
+    """
+    if not PRIVATE_KEY_HEX:
+        return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
+    if size <= 0 or limit_px <= 0:
+        return {"ok": False, "error": f"invalid size/price for {coin}"}
+    try:
+        _, sz_dec, _ = get_coin_index(coin)
+        price_str = _round_price_for_hl(limit_px, sz_dec, is_perp=True, is_buy=not is_buy)
+        size_str = f"{size:.{sz_dec}f}"
+        result = _make_exchange().order(
+            coin, is_buy, float(size_str), float(price_str),
+            OrderType(limit={"tif": "Gtc"}), reduce_only=reduce_only)
+        parsed = _parse_order_result(result, accept_resting=True)
+        if not parsed.get("ok"):
+            logger.warning(f"[place_hl_limit_order] {coin} {'BUY' if is_buy else 'SELL'} "
+                           f"size={size_str} px={price_str} REJECTED: {parsed.get('error')}")
+        return parsed
+    except Exception as e:
+        logger.error(f"Failed to place limit order for {coin}: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+def fetch_order_status(oid: int) -> str:
+    """Hyperliquid's status for one order: open, filled, canceled, rejected,
+    marginCanceled, ... Returns "unknown" when HL does not know the oid and
+    "error" when the read itself failed, which callers must not mistake for a
+    cancel."""
+    user = resolve_user_address()
+    if not user:
+        return "error"
+    raw = _http_post("/info", {"type": "orderStatus", "user": user, "oid": int(oid)})
+    if not isinstance(raw, dict):
+        return "error"
+    if raw.get("status") == "unknownOid":
+        return "unknown"
+    try:
+        return str(raw["order"]["status"])
+    except (KeyError, TypeError):
+        return "error"
 
 
 def cancel_open_orders_for_coin(coin: str) -> int:

@@ -207,6 +207,32 @@
     </div>
   </section>
 
+  <section class="section" id="copycat-section">
+    <div class="panel">
+      <button id="copycat-toggle" class="books-head" type="button" aria-expanded="false">
+        <span class="sec-label">Copycat</span>
+        <span class="mono mut" id="copycat-status"></span>
+        <span class="chev"></span>
+      </button>
+      <div class="books-wrap" id="copycat-wrap">
+        <div id="copycat-flow" class="books-flow">
+          <div class="book-head">
+            <span class="tk">copycat</span>
+            <span class="ml-auto" id="copycat-badge"></span>
+          </div>
+          <div class="book-thesis">
+            Mirror up to 10 Hyperliquid wallets with your own leverage and size.
+            No stops: copies follow their leader out. UNTESTED: no backtest;
+            W-CP1 refuted copying 0xe282.
+          </div>
+          <div id="copycat-form" class="cc-form"><div class="mut">Loading&hellip;</div></div>
+          <div class="sec-label" style="margin:18px 0 6px">Currently mirrored</div>
+          <div id="copycat-owned"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="section" id="league">
     <div class="section-head">
       <h2 class="sec-label">Evidence</h2>
@@ -342,6 +368,23 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
     const open = section.classList.toggle('books-open');
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     localStorage.setItem('pathiel-books-open', open ? '1' : '0');
+  });
+})();
+
+// copycat dropdown — same disclosure pattern as live books, own section +
+// storage key so the two panels remember their state independently.
+(function () {
+  const section = document.getElementById('copycat-section');
+  const btn = document.getElementById('copycat-toggle');
+  if (!section || !btn) return;
+  if (localStorage.getItem('pathiel-copycat-open') === '1') {
+    section.classList.add('books-open');
+    btn.setAttribute('aria-expanded', 'true');
+  }
+  btn.addEventListener('click', () => {
+    const open = section.classList.toggle('books-open');
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    localStorage.setItem('pathiel-copycat-open', open ? '1' : '0');
   });
 })();
 
@@ -769,6 +812,230 @@ async function refreshBooks() {
   } catch (e) { reportRefreshFailure('refreshBooks', e); }
 }
 
+// short 0x… address for the leader chips below — full address stays in the
+// title attribute for anyone who needs to verify it against Hyperliquid.
+const shortAddr = a => (typeof a === 'string' && a.length > 10)
+  ? a.slice(0, 6) + '…' + a.slice(-4) : String(a);
+
+// ── copycat: editable settings (Hyperdash-style) ────────────────────────────
+// Writes go to POST /api/dashboard/copycat/settings with the operator token,
+// the same token the off switch uses. The server merges ONLY the copycat key
+// and clamps every value at read time, so the form re-renders from the
+// response: what you see after Save is what the book will actually use.
+// The 30s refresh never overwrites fields you are editing (ccDirty).
+let ccDirty = false;
+let ccLast = null;
+const CC_ADDR = /^0x[0-9a-fA-F]{40}$/;
+
+function ccSeg(key, opts, cur) {
+  return `<div class="seg" data-cc-seg="${key}">` + opts.map(([v, l]) =>
+    `<button type="button" class="fsel${v === cur ? ' on' : ''}" data-v="${v}">${esc(l)}</button>`
+  ).join('') + '</div>';
+}
+function ccRow(title, desc, control) {
+  return `<div class="cc-row"><div><div class="cc-t">${esc(title)}</div>` +
+         `<div class="cc-d">${esc(desc)}</div></div><div class="cc-c">${control}</div></div>`;
+}
+function ccToggle(key, on) {
+  return `<label class="cc-sw"><input type="checkbox" data-cc="${key}"${on ? ' checked' : ''}><span></span></label>`;
+}
+function ccRange(key, v, min, max, step, unit) {
+  return `<input type="range" data-cc="${key}" min="${min}" max="${max}" step="${step}" value="${v}" ` +
+         `oninput="this.nextElementSibling.textContent=this.value+'${unit}'">` +
+         `<span class="mono cc-v">${esc(String(v))}${unit}</span>`;
+}
+function ccNum(key, v, min, step, unit) {
+  return `<input type="number" class="cc-num mono" data-cc="${key}" min="${min}" step="${step}" value="${v}">` +
+         (unit ? `<span class="mono mut">${unit}</span>` : '');
+}
+function ccEffective(e) {
+  if (!e) return '';
+  const lev = e.leverage_mode === 'fixed' ? e.leverage + 'x fixed'
+            : e.leverage_mode === 'match' ? 'match (cap ' + e.max_position_leverage + 'x)'
+            : 'max (cap ' + e.max_position_leverage + 'x)';
+  const size = e.sizing_mode === 'fixed_margin' ? '$' + e.fixed_margin_usd + ' margin'
+             : e.sizing_mode === 'fixed_notional' ? '$' + e.fixed_notional_usd + ' notional'
+             : 'proportional x' + e.size_multiplier;
+  return `${lev} · ${size} · ${e.margin_mode}`;
+}
+
+function ccRenderForm(d) {
+  const s = (d && d.settings) || {};
+  const per = (d && d.per_leader) || {};
+  const ovr = s.leader_overrides || {};
+  const leaders = Array.isArray(d && d.leaders) ? d.leaders : [];
+  const sm = s.sizing_mode || 'fixed_margin';
+  const lm = s.leverage_mode || 'max';
+  document.getElementById('copycat-form').innerHTML = `
+    ${ccRow('Copy trading on', 'Real money. Off = existing copies still follow their leader out; nothing new opens.',
+            ccToggle('enabled', !!s.enabled))}
+    ${ccRow('Sizing', 'Fixed margin: every new copy posts this much margin at the leverage below. Fixed notional: a flat position size. Proportional: the leader’s exposure on your sleeve, times the multiplier.',
+            ccSeg('sizing_mode', [['fixed_margin', 'Fixed margin'], ['fixed_notional', 'Fixed notional'], ['proportional', 'Proportional']], sm))}
+    <div class="cc-sub" data-show="fixed_margin"${sm === 'fixed_margin' ? '' : ' hidden'}>
+      ${ccRow('Margin per copy', 'Notional = margin x exchange leverage. A liquidation loses this.', ccNum('fixed_margin_usd', s.fixed_margin_usd ?? 0.25, 0.01, 0.01, 'USD'))}</div>
+    <div class="cc-sub" data-show="fixed_notional"${sm === 'fixed_notional' ? '' : ' hidden'}>
+      ${ccRow('Notional per copy', 'Hyperliquid minimum is $10.50.', ccNum('fixed_notional_usd', s.fixed_notional_usd ?? 10.5, 10.5, 0.5, 'USD'))}</div>
+    <div class="cc-sub" data-show="proportional"${sm === 'proportional' ? '' : ' hidden'}>
+      ${ccRow('Size multiplier', 'Scales the leader’s exposure on your sleeve. Whales with $1M+ need a big number on a small account.', ccNum('size_multiplier', s.size_multiplier ?? 1, 0, 0.5, 'x'))}
+      ${ccRow('Sleeve', 'Fraction of your equity split equally across leaders.', ccNum('sleeve_frac', s.sleeve_frac ?? 0.25, 0, 0.05, ''))}</div>
+    ${ccRow('Leverage', 'Max: the coin’s max leverage. Match: the leader’s. Fixed: your number. All capped by the slider below.',
+            ccSeg('leverage_mode', [['max', 'Max'], ['match', 'Match leader'], ['fixed', 'Fixed']], lm))}
+    <div class="cc-sub" data-show-lev="fixed"${lm === 'fixed' ? '' : ' hidden'}>
+      ${ccRow('Fixed leverage', 'Used when leverage is Fixed.', ccRange('leverage', s.leverage ?? 20, 1, 50, 1, 'x'))}</div>
+    ${ccRow('Maximum position leverage', 'Caps copied positions even when the target or the coin allows more.',
+            ccRange('max_position_leverage', s.max_position_leverage ?? 50, 1, 50, 1, 'x'))}
+    ${ccRow('Margin mode', 'Isolated-only markets stay isolated whatever this says.',
+            ccSeg('margin_mode', [['isolated', 'Isolated'], ['cross', 'Cross']], s.margin_mode || 'isolated'))}
+    ${ccRow('Include spot & staked assets', 'Includes spot and staked HYPE in the leader’s equity for proportional sizing.',
+            ccToggle('include_spot_staked', !!s.include_spot_staked))}
+    ${ccRow('Only copy newly opened positions', 'Skips positions already open when copying starts.',
+            ccToggle('only_new_positions', !!s.only_new_positions))}
+    ${ccRow('Max worse entry', 'How much worse your entry can be vs the trader. Skipped opens retry while he still holds.',
+            ccRange('max_worse_entry_pct', s.max_worse_entry_pct ?? 10, 0, 50, 0.5, '%'))}
+    ${ccRow('Bump small orders', 'Raise a copy to the $10.50 minimum when it is at least a quarter of it.',
+            ccToggle('min_order_bump', s.min_order_bump !== false))}
+    <div class="sec-label" style="margin:18px 0 6px">Leaders (${leaders.length}/10)</div>
+    <div id="cc-leaders">${leaders.map(a => {
+      const o = ovr[a] || {};
+      const info = per[a] || {};
+      const has = Object.keys(o).length > 0;
+      return `<details class="cc-leader" data-addr="${esc(a)}">
+        <summary><span class="mono" title="${esc(a)}">${esc(shortAddr(a))}</span>
+          <span class="mut cc-eff">${esc(ccEffective(info.effective))}</span>
+          ${has ? '<span class="chip chip-amber">override</span>' : ''}
+          <span class="mono mut">${(info.coins || []).length} pos</span></summary>
+        <div class="cc-ovr">
+          <label>Leverage <select data-o="leverage_mode"><option value="">inherit</option>
+            ${['max', 'match', 'fixed'].map(v => `<option${o.leverage_mode === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+          <label>x <input type="number" class="cc-num mono" data-o="leverage" min="1" max="50" step="1" value="${o.leverage ?? ''}" placeholder="inherit"></label>
+          <label>Sizing <select data-o="sizing_mode"><option value="">inherit</option>
+            ${['fixed_margin', 'fixed_notional', 'proportional'].map(v => `<option${o.sizing_mode === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+          <label>Margin $ <input type="number" class="cc-num mono" data-o="fixed_margin_usd" min="0.01" step="0.01" value="${o.fixed_margin_usd ?? ''}" placeholder="inherit"></label>
+          <label>Notional $ <input type="number" class="cc-num mono" data-o="fixed_notional_usd" min="10.5" step="0.5" value="${o.fixed_notional_usd ?? ''}" placeholder="inherit"></label>
+          <label>Mult <input type="number" class="cc-num mono" data-o="size_multiplier" min="0" step="0.5" value="${o.size_multiplier ?? ''}" placeholder="inherit"></label>
+          <label>Margin <select data-o="margin_mode"><option value="">inherit</option>
+            ${['isolated', 'cross'].map(v => `<option${o.margin_mode === v ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+          <button type="button" class="icon-btn" data-cc-ovr-save>Save override</button>
+          <button type="button" class="icon-btn" data-cc-ovr-clear${has ? '' : ' disabled'}>Clear override</button>
+          <button type="button" class="icon-btn btn-danger" data-cc-remove>Remove leader</button>
+        </div></details>`;
+    }).join('')}</div>
+    <div class="flex gap-2 mt-3">
+      <input id="cc-add" class="cc-addr mono" placeholder="0x… leader address" spellcheck="false" autocomplete="off">
+      <button type="button" class="icon-btn" id="cc-add-btn"${leaders.length >= 10 ? ' disabled' : ''}>Add leader</button>
+    </div>
+    <div class="flex gap-2 mt-3" style="align-items:center">
+      <button type="button" class="btn" id="cc-save">Save settings</button>
+      <span class="mono" id="cc-out"></span>
+    </div>`;
+  ccDirty = false;
+}
+
+function ccCollect() {
+  const form = document.getElementById('copycat-form');
+  const patch = {};
+  form.querySelectorAll('[data-cc]').forEach(el => {
+    const k = el.dataset.cc;
+    if (el.type === 'checkbox') patch[k] = el.checked;
+    else if (el.value !== '') patch[k] = Number(el.value);
+  });
+  form.querySelectorAll('[data-cc-seg]').forEach(seg => {
+    const on = seg.querySelector('.on');
+    if (on) patch[seg.dataset.ccSeg] = on.dataset.v;
+  });
+  return patch;
+}
+
+async function ccPost(patch, okMsg) {
+  const out = document.getElementById('cc-out');
+  const token = localStorage.getItem('pathiel-op-token');
+  if (!token) {
+    out.innerHTML = '<span style="color:var(--amber)">set an operator token first (footer)</span>';
+    return;
+  }
+  out.textContent = 'saving…';
+  try {
+    const r = await fetch('/api/dashboard/copycat/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Operator-Token': token },
+      body: JSON.stringify(patch),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { out.textContent = 'save failed: http ' + r.status + (j.detail ? ' ' + j.detail : ''); return; }
+    ccLast = j;
+    ccRenderForm(j);
+    ccRenderLive(j);
+    document.getElementById('cc-out').textContent = okMsg;
+  } catch (e) {
+    out.textContent = 'save failed: ' + String(e);
+  }
+}
+
+function ccRenderLive(d) {
+  const owned = Array.isArray(d && d.owned_coins) ? d.owned_coins : [];
+  document.getElementById('copycat-status').textContent = d.status || '—';
+  document.getElementById('copycat-badge').innerHTML = BADGE[d.status] || esc(d.status || '');
+  document.getElementById('copycat-owned').innerHTML = owned.length
+    ? owned.map(c => `<span class="chip chip-green">${esc(c)}</span>`).join('')
+    : '<span class="mut">none open</span>';
+}
+
+(function wireCopycat() {
+  const form = document.getElementById('copycat-form');
+  if (!form) return;
+  form.addEventListener('input', () => { ccDirty = true; });
+  form.addEventListener('click', ev => {
+    const t = ev.target;
+    const seg = t.closest('[data-cc-seg]');
+    if (seg && t.dataset.v) {
+      seg.querySelectorAll('.fsel').forEach(b => b.classList.toggle('on', b === t));
+      ccDirty = true;
+      if (seg.dataset.ccSeg === 'sizing_mode')
+        form.querySelectorAll('[data-show]').forEach(el => { el.hidden = el.dataset.show !== t.dataset.v; });
+      if (seg.dataset.ccSeg === 'leverage_mode')
+        form.querySelectorAll('[data-show-lev]').forEach(el => { el.hidden = el.dataset.showLev !== t.dataset.v; });
+      return;
+    }
+    if (t.id === 'cc-save') return ccPost(ccCollect(), 'saved');
+    const leaders = (ccLast && ccLast.leaders) || [];
+    if (t.id === 'cc-add-btn') {
+      const a = document.getElementById('cc-add').value.trim().toLowerCase();
+      const out = document.getElementById('cc-out');
+      if (!CC_ADDR.test(a)) { out.textContent = 'not a 0x address'; return; }
+      if (leaders.includes(a)) { out.textContent = 'already copying ' + shortAddr(a); return; }
+      return ccPost({ leaders: [...leaders, a] }, 'added ' + shortAddr(a));
+    }
+    const row = t.closest('.cc-leader');
+    if (!row) return;
+    const addr = row.dataset.addr;
+    if (t.hasAttribute('data-cc-remove'))
+      return ccPost({ leaders: leaders.filter(x => x !== addr) }, 'removed ' + shortAddr(addr));
+    if (t.hasAttribute('data-cc-ovr-clear'))
+      return ccPost({ leader_overrides: { [addr]: null } }, 'override cleared');
+    if (t.hasAttribute('data-cc-ovr-save')) {
+      // Send this leader's whole override: the server replaces it (never
+      // deep-merges), so a field set back to "inherit" really disappears.
+      const o = {};
+      row.querySelectorAll('[data-o]').forEach(el => {
+        if (el.value === '') return;
+        o[el.dataset.o] = el.tagName === 'SELECT' ? el.value : Number(el.value);
+      });
+      return ccPost({ leader_overrides: { [addr]: Object.keys(o).length ? o : null } },
+                    'override saved');
+    }
+  });
+})();
+
+async function refreshCopycat() {
+  try {
+    const d = await (await fetch('/api/dashboard/copycat')).json();
+    ccLast = d;
+    if (!ccDirty && !document.getElementById('copycat-form').contains(document.activeElement))
+      ccRenderForm(d);
+    ccRenderLive(d);
+  } catch (e) { reportRefreshFailure('refreshCopycat', e); }
+}
+
 // ── decision funnel — scans → candidates → researched → executed, with the
 // top humanized block reasons. Widths are sqrt-scaled so late stages stay
 // visible against thousands of scans. ────────────────────────────────────────
@@ -866,12 +1133,13 @@ async function refreshLeague() {
   } catch (e) { reportRefreshFailure('refreshLeague', e); }
 }
 
-refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
+refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshCopycat(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();
 setInterval(refreshSummary, 6000);
 setInterval(refreshRisk, 61000);   // endpoint TTL is 60s
 setInterval(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
 setInterval(refreshBooks, 30000);
+setInterval(refreshCopycat, 30000);   // endpoint TTL is 30s, same as refreshBooks
 setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
 setInterval(refreshFunnel, 60000);      // pure log walk server-side
 setInterval(refreshTape, 45000);        // pure log walk server-side

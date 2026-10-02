@@ -81,7 +81,8 @@ _CLAIMS_FILE = state_file(".rebalancer_claims.json")
 # is not in this set, so it can never block a surviving book.
 _ACTIVE_CLAIM_BOOKS = frozenset({"news_surge_short", "news_surge_multi",
                                  "social_trending", "unlock_short_runin",
-                                 "xs_reversal"})
+                                 "xs_reversal", "drawdown_ladder",
+                                 "copy_trade", "copycat"})
 
 
 def active_claim_books() -> Set[str]:

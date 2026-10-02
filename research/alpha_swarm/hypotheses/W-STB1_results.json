@@ -1,0 +1,1058 @@
+{
+ "span": {
+  "USDT0": [
+   1771340400000,
+   1789336800000,
+   5000
+  ],
+  "USDE": [
+   1771340400000,
+   1789326000000,
+   4997
+  ],
+  "USDH": [
+   1771340400000,
+   1789333200000,
+   4999
+  ],
+  "FEUSD": [
+   1771340400000,
+   1789297200000,
+   4989
+  ]
+ },
+ "cells": {
+  "USDT0_10bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.06219469469469261,
+     "n": 35,
+     "wins": 0,
+     "by_exit": {
+      "target": 23,
+      "timeout": 12,
+      "open_at_end": 0
+     },
+     "worst": -0.002640140140140188,
+     "mean_hold_h": 64.25714285714285
+    },
+    "half1": {
+     "total": -0.02799549549549431,
+     "n": 17,
+     "wins": 0,
+     "by_exit": {
+      "target": 14,
+      "timeout": 2,
+      "open_at_end": 1
+     },
+     "worst": -0.002570070070070094,
+     "mean_hold_h": 30.0
+    },
+    "half2": {
+     "total": -0.03466966966966885,
+     "n": 18,
+     "wins": 0,
+     "by_exit": {
+      "target": 9,
+      "timeout": 9,
+      "open_at_end": 0
+     },
+     "worst": -0.002640140140140188,
+     "mean_hold_h": 96.72222222222223
+    },
+    "null_median": -0.06394403914513082,
+    "null_p95": -0.05367267913645716,
+    "p": 0.375
+   },
+   "measured": {
+    "full": {
+     "total": 0.01898530530530739,
+     "n": 35,
+     "wins": 28,
+     "by_exit": {
+      "target": 23,
+      "timeout": 12,
+      "open_at_end": 0
+     },
+     "worst": -0.00036014014014018803,
+     "mean_hold_h": 64.25714285714285
+    },
+    "half1": {
+     "total": 0.011604504504505689,
+     "n": 17,
+     "wins": 16,
+     "by_exit": {
+      "target": 14,
+      "timeout": 2,
+      "open_at_end": 1
+     },
+     "worst": -0.000290070070070094,
+     "mean_hold_h": 30.0
+    },
+    "half2": {
+     "total": 0.006910330330331151,
+     "n": 18,
+     "wins": 12,
+     "by_exit": {
+      "target": 9,
+      "timeout": 9,
+      "open_at_end": 0
+     },
+     "worst": -0.00036014014014018803,
+     "mean_hold_h": 96.72222222222223
+    },
+    "null_median": 0.034315472164472845,
+    "null_p95": 0.03969401033973061,
+    "p": 1.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDT0_25bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.0019235588972433162,
+     "n": 5,
+     "wins": 3,
+     "by_exit": {
+      "target": 3,
+      "timeout": 2,
+      "open_at_end": 0
+     },
+     "worst": -0.0010363408521303886,
+     "mean_hold_h": 100.0
+    },
+    "half1": {
+     "total": -0.0007694235588974153,
+     "n": 2,
+     "wins": 1,
+     "by_exit": {
+      "target": 1,
+      "timeout": 0,
+      "open_at_end": 1
+     },
+     "worst": -0.0007756892230577606,
+     "mean_hold_h": 22.5
+    },
+    "half2": {
+     "total": -0.0019298245614036615,
+     "n": 4,
+     "wins": 2,
+     "by_exit": {
+      "target": 2,
+      "timeout": 2,
+      "open_at_end": 0
+     },
+     "worst": -0.0010363408521303886,
+     "mean_hold_h": 112.5
+    },
+    "null_median": -0.00017087077506094082,
+    "null_p95": 3.182771219668347e-05,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": 0.009656441102756683,
+     "n": 5,
+     "wins": 5,
+     "by_exit": {
+      "target": 3,
+      "timeout": 2,
+      "open_at_end": 0
+     },
+     "worst": 0.0012436591478696116,
+     "mean_hold_h": 100.0
+    },
+    "half1": {
+     "total": 0.0038505764411025847,
+     "n": 2,
+     "wins": 2,
+     "by_exit": {
+      "target": 1,
+      "timeout": 0,
+      "open_at_end": 1
+     },
+     "worst": 0.0015043107769422395,
+     "mean_hold_h": 22.5
+    },
+    "half2": {
+     "total": 0.007310175438596338,
+     "n": 4,
+     "wins": 4,
+     "by_exit": {
+      "target": 2,
+      "timeout": 2,
+      "open_at_end": 0
+     },
+     "worst": 0.0012436591478696116,
+     "mean_hold_h": 112.5
+    },
+    "null_median": 0.00837617086282131,
+    "null_p95": 0.010936140668423494,
+    "p": 0.065
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDT0_50bps": {
+   "doctrine": {
+    "full": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 1.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDE_10bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.03631381381381318,
+     "n": 17,
+     "wins": 0,
+     "by_exit": {
+      "target": 2,
+      "timeout": 15,
+      "open_at_end": 0
+     },
+     "worst": -0.0030005005005004338,
+     "mean_hold_h": 152.64705882352942
+    },
+    "half1": {
+     "total": -0.022507507507507386,
+     "n": 10,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 9,
+      "open_at_end": 1
+     },
+     "worst": -0.0027702702702702676,
+     "mean_hold_h": 153.4
+    },
+    "half2": {
+     "total": -0.016316316316315787,
+     "n": 8,
+     "wins": 0,
+     "by_exit": {
+      "target": 2,
+      "timeout": 6,
+      "open_at_end": 0
+     },
+     "worst": -0.0030005005005004338,
+     "mean_hold_h": 135.375
+    },
+    "null_median": -0.006783980254672075,
+    "null_p95": -0.004965618395669828,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": 0.0025661861861868266,
+     "n": 17,
+     "wins": 10,
+     "by_exit": {
+      "target": 2,
+      "timeout": 15,
+      "open_at_end": 0
+     },
+     "worst": -0.0007205005005004336,
+     "mean_hold_h": 152.64705882352942
+    },
+    "half1": {
+     "total": 0.00029249249249261536,
+     "n": 10,
+     "wins": 5,
+     "by_exit": {
+      "target": 0,
+      "timeout": 9,
+      "open_at_end": 1
+     },
+     "worst": -0.0004902702702702674,
+     "mean_hold_h": 153.4
+    },
+    "half2": {
+     "total": 0.0020436836836842135,
+     "n": 8,
+     "wins": 5,
+     "by_exit": {
+      "target": 2,
+      "timeout": 6,
+      "open_at_end": 0
+     },
+     "worst": -0.0007205005005004336,
+     "mean_hold_h": 135.375
+    },
+    "null_median": 0.0027663778025890182,
+    "null_p95": 0.0037676993424332335,
+    "p": 0.6715
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDE_25bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.0004749373433584037,
+     "n": 1,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 1,
+      "open_at_end": 0
+     },
+     "worst": -0.0004749373433584037,
+     "mean_hold_h": 168.0
+    },
+    "half1": {
+     "total": -0.0004749373433584037,
+     "n": 1,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 1,
+      "open_at_end": 0
+     },
+     "worst": -0.0004749373433584037,
+     "mean_hold_h": 168.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": 0.0018050626566415964,
+     "n": 1,
+     "wins": 1,
+     "by_exit": {
+      "target": 0,
+      "timeout": 1,
+      "open_at_end": 0
+     },
+     "worst": 0.0018050626566415964,
+     "mean_hold_h": 168.0
+    },
+    "half1": {
+     "total": 0.0018050626566415964,
+     "n": 1,
+     "wins": 1,
+     "by_exit": {
+      "target": 0,
+      "timeout": 1,
+      "open_at_end": 0
+     },
+     "worst": 0.0018050626566415964,
+     "mean_hold_h": 168.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 0.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDE_50bps": {
+   "doctrine": {
+    "full": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "null_median": 0,
+    "null_p95": 0,
+    "p": 1.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDH_10bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.07282532532532247,
+     "n": 35,
+     "wins": 0,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.009356856856856886,
+     "mean_hold_h": 35.142857142857146
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": -0.07282532532532247,
+     "n": 35,
+     "wins": 0,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.009356856856856886,
+     "mean_hold_h": 35.142857142857146
+    },
+    "null_median": -0.09099070154887681,
+    "null_p95": -0.011869104293698456,
+    "p": 0.232
+   },
+   "measured": {
+    "full": {
+     "total": 0.008774674674677536,
+     "n": 35,
+     "wins": 30,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.007076856856856885,
+     "mean_hold_h": 35.142857142857146
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0.008774674674677536,
+     "n": 35,
+     "wins": 30,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.007076856856856885,
+     "mean_hold_h": 35.142857142857146
+    },
+    "null_median": 0.04090756034659845,
+    "null_p95": 0.06272668742300376,
+    "p": 0.921
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDH_25bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.020171679197996763,
+     "n": 35,
+     "wins": 30,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.007863408521303348,
+     "mean_hold_h": 35.142857142857146
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": -0.020171679197996763,
+     "n": 35,
+     "wins": 30,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.007863408521303348,
+     "mean_hold_h": 35.142857142857146
+    },
+    "null_median": 2.698546004615372e-05,
+    "null_p95": 0.0013952382268566997,
+    "p": 0.957
+   },
+   "measured": {
+    "full": {
+     "total": 0.06142832080200324,
+     "n": 35,
+     "wins": 32,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.0055834085213033475,
+     "mean_hold_h": 35.142857142857146
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0.06142832080200324,
+     "n": 35,
+     "wins": 32,
+     "by_exit": {
+      "target": 30,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.0055834085213033475,
+     "mean_hold_h": 35.142857142857146
+    },
+    "null_median": 0.10425057446228139,
+    "null_p95": 0.14885406415632038,
+    "p": 0.8875
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "USDH_50bps": {
+   "doctrine": {
+    "full": {
+     "total": 0.05783668341708327,
+     "n": 31,
+     "wins": 29,
+     "by_exit": {
+      "target": 26,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.005364321608040177,
+     "mean_hold_h": 39.32258064516129
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0.05783668341708327,
+     "n": 31,
+     "wins": 29,
+     "by_exit": {
+      "target": 26,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.005364321608040177,
+     "mean_hold_h": 39.32258064516129
+    },
+    "null_median": 0.08673530691411027,
+    "null_p95": 0.12275223125330059,
+    "p": 0.84
+   },
+   "measured": {
+    "full": {
+     "total": 0.13007668341708326,
+     "n": 31,
+     "wins": 29,
+     "by_exit": {
+      "target": 26,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.003084321608040177,
+     "mean_hold_h": 39.32258064516129
+    },
+    "half1": {
+     "total": 0,
+     "n": 0,
+     "wins": 0,
+     "by_exit": {
+      "target": 0,
+      "timeout": 0,
+      "open_at_end": 0
+     },
+     "worst": 0.0,
+     "mean_hold_h": 0.0
+    },
+    "half2": {
+     "total": 0.13007668341708326,
+     "n": 31,
+     "wins": 29,
+     "by_exit": {
+      "target": 26,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.003084321608040177,
+     "mean_hold_h": 39.32258064516129
+    },
+    "null_median": 0.16927610656856854,
+    "null_p95": 0.2367478565887697,
+    "p": 0.7875
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "FEUSD_10bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.1644219219219172,
+     "n": 69,
+     "wins": 0,
+     "by_exit": {
+      "target": 52,
+      "timeout": 16,
+      "open_at_end": 1
+     },
+     "worst": -0.008025525525525544,
+     "mean_hold_h": 57.594202898550726
+    },
+    "half1": {
+     "total": -0.06279529529529485,
+     "n": 15,
+     "wins": 0,
+     "by_exit": {
+      "target": 3,
+      "timeout": 11,
+      "open_at_end": 1
+     },
+     "worst": -0.008025525525525544,
+     "mean_hold_h": 155.86666666666667
+    },
+    "half2": {
+     "total": -0.10055555555555118,
+     "n": 54,
+     "wins": 0,
+     "by_exit": {
+      "target": 49,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.007755255255255276,
+     "mean_hold_h": 30.314814814814813
+    },
+    "null_median": -0.11526683205456065,
+    "null_p95": -0.08653824390866205,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": -0.0522219219219172,
+     "n": 69,
+     "wins": 52,
+     "by_exit": {
+      "target": 52,
+      "timeout": 16,
+      "open_at_end": 1
+     },
+     "worst": -0.006625525525525543,
+     "mean_hold_h": 57.594202898550726
+    },
+    "half1": {
+     "total": -0.04089529529529484,
+     "n": 15,
+     "wins": 3,
+     "by_exit": {
+      "target": 3,
+      "timeout": 11,
+      "open_at_end": 1
+     },
+     "worst": -0.006625525525525543,
+     "mean_hold_h": 155.86666666666667
+    },
+    "half2": {
+     "total": -0.010255555555551174,
+     "n": 54,
+     "wins": 49,
+     "by_exit": {
+      "target": 49,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.006355255255255276,
+     "mean_hold_h": 30.314814814814813
+    },
+    "null_median": -0.00993075035756327,
+    "null_p95": 0.003955462819525066,
+    "p": 1.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "FEUSD_25bps": {
+   "doctrine": {
+    "full": {
+     "total": -0.05946992481203171,
+     "n": 35,
+     "wins": 18,
+     "by_exit": {
+      "target": 18,
+      "timeout": 16,
+      "open_at_end": 1
+     },
+     "worst": -0.00653007518796994,
+     "mean_hold_h": 99.45714285714286
+    },
+    "half1": {
+     "total": -0.04078822055137912,
+     "n": 15,
+     "wins": 3,
+     "by_exit": {
+      "target": 3,
+      "timeout": 11,
+      "open_at_end": 1
+     },
+     "worst": -0.00653007518796994,
+     "mean_hold_h": 151.0
+    },
+    "half2": {
+     "total": -0.01760902255639181,
+     "n": 20,
+     "wins": 15,
+     "by_exit": {
+      "target": 15,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.0062593984962406295,
+     "mean_hold_h": 60.85
+    },
+    "null_median": -0.011328339182168985,
+    "null_p95": -0.001930523828712196,
+    "p": 1.0
+   },
+   "measured": {
+    "full": {
+     "total": -0.005069924812031707,
+     "n": 35,
+     "wins": 20,
+     "by_exit": {
+      "target": 18,
+      "timeout": 16,
+      "open_at_end": 1
+     },
+     "worst": -0.0051300751879699395,
+     "mean_hold_h": 99.45714285714286
+    },
+    "half1": {
+     "total": -0.01888822055137912,
+     "n": 15,
+     "wins": 5,
+     "by_exit": {
+      "target": 3,
+      "timeout": 11,
+      "open_at_end": 1
+     },
+     "worst": -0.0051300751879699395,
+     "mean_hold_h": 151.0
+    },
+    "half2": {
+     "total": 0.014890977443608193,
+     "n": 20,
+     "wins": 15,
+     "by_exit": {
+      "target": 15,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.004859398496240629,
+     "mean_hold_h": 60.85
+    },
+    "null_median": 0.05738862973363862,
+    "null_p95": 0.07840982585571975,
+    "p": 1.0
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  },
+  "FEUSD_50bps": {
+   "doctrine": {
+    "full": {
+     "total": 0.014361809045225387,
+     "n": 28,
+     "wins": 20,
+     "by_exit": {
+      "target": 12,
+      "timeout": 15,
+      "open_at_end": 1
+     },
+     "worst": -0.007293969849246183,
+     "mean_hold_h": 100.82142857142857
+    },
+    "half1": {
+     "total": 0.0019422110552765608,
+     "n": 13,
+     "wins": 8,
+     "by_exit": {
+      "target": 2,
+      "timeout": 10,
+      "open_at_end": 1
+     },
+     "worst": -0.0029020100502512003,
+     "mean_hold_h": 150.3846153846154
+    },
+    "half2": {
+     "total": 0.022208542713566846,
+     "n": 15,
+     "wins": 13,
+     "by_exit": {
+      "target": 10,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.0037562814070351536,
+     "mean_hold_h": 57.93333333333333
+    },
+    "null_median": 0.04575113997953577,
+    "null_p95": 0.0635758754455098,
+    "p": 0.9975
+   },
+   "measured": {
+    "full": {
+     "total": 0.05716180904522538,
+     "n": 28,
+     "wins": 20,
+     "by_exit": {
+      "target": 12,
+      "timeout": 15,
+      "open_at_end": 1
+     },
+     "worst": -0.005893969849246183,
+     "mean_hold_h": 100.82142857142857
+    },
+    "half1": {
+     "total": 0.020742211055276558,
+     "n": 13,
+     "wins": 8,
+     "by_exit": {
+      "target": 2,
+      "timeout": 10,
+      "open_at_end": 1
+     },
+     "worst": -0.0015020100502512004,
+     "mean_hold_h": 150.3846153846154
+    },
+    "half2": {
+     "total": 0.04620854271356684,
+     "n": 15,
+     "wins": 13,
+     "by_exit": {
+      "target": 10,
+      "timeout": 4,
+      "open_at_end": 1
+     },
+     "worst": -0.002356281407035154,
+     "mean_hold_h": 57.93333333333333
+    },
+    "null_median": 0.08021346045704798,
+    "null_p95": 0.10795947398905759,
+    "p": 0.902
+   },
+   "verdict": "REFUTED",
+   "passes_at_measured_fees": false
+  }
+ }
+}

@@ -66,6 +66,19 @@ from pathiel.agents.unlock_short_live import maybe_run as _unlock_short_maybe_ru
 from pathiel.agents.news_surge_short_live import maybe_run as _news_surge_short_maybe_run
 from pathiel.agents.news_surge_multi import maybe_run as _news_surge_multi_maybe_run
 from pathiel.agents.xs_reversal_live import maybe_run as _xs_reversal_maybe_run
+from pathiel.agents.drawdown_ladder_live import (
+    book_positions as _ladder_book_positions,
+    maybe_run as _drawdown_ladder_maybe_run,
+    owned_coins as _ladder_owned_coins,
+)
+from pathiel.agents.copy_trade_live import (
+    maybe_run as _copy_trade_maybe_run,
+    owned_coins as _copy_owned_coins,
+)
+from pathiel.agents.copycat_live import (
+    maybe_run as _copycat_maybe_run,
+    owned_coins as _copycat_owned_coins,
+)
 from pathiel.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from pathiel.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from pathiel.agents.executor import (
@@ -593,12 +606,24 @@ while True:
         # flatten. Idempotent: after flattening, the next tick's positions are
         # empty so it won't re-fire.
         _max_daily_loss = _effective_daily_loss_limit(_cfg, equity, daily_pnl)
-        if equity > 0 and positions and daily_pnl <= _max_daily_loss:
+        # drawdown_ladder positions are invisible to the flatten, the DSL tracker
+        # and the slot count below. Each would put a stop on a ladder, and W-WH2
+        # measured the stop as the whole difference between the rule and random
+        # entry. Operator decision 2026-09-14; the daily-loss GATE still blocks
+        # new ladders. copy_trade positions too (operator override 2026-09-21):
+        # the leader has no stop, and a stop of ours would break the mirror.
+        # copycat positions too (same reason, x10 leaders): no stop on any of
+        # them, and ours would break the mirror.
+        _ladder_coins = _ladder_owned_coins() | _copy_owned_coins() | _copycat_owned_coins()
+        _book_positions = _ladder_book_positions(positions, _ladder_coins)
+        if equity > 0 and _book_positions and daily_pnl <= _max_daily_loss:
             logger.warning(
                 f"[killswitch] HARD daily-loss floor breached: PnL ${daily_pnl:.2f} "
-                f"<= ${_max_daily_loss:.0f} — flattening {len(positions)} open "
-                f"position(s) to cap the loss")
-            for _p in positions:
+                f"<= ${_max_daily_loss:.0f} — flattening {len(_book_positions)} open "
+                f"position(s) to cap the loss"
+                + (f" ({len(_ladder_coins)} drawdown_ladder/copy_trade/copycat "
+                   f"position(s) exempt)" if _ladder_coins else ""))
+            for _p in _book_positions:
                 _coin = (_p.get("position") or {}).get("coin")
                 if not _coin:
                     continue
@@ -608,7 +633,8 @@ while True:
                 except Exception as _e:
                     logger.error(f"[killswitch] failed to flatten {_coin}: {_e}")
             log_event({"event": "hard_killswitch", "daily_pnl": round(daily_pnl, 2),
-                       "limit": _max_daily_loss, "flattened": len(positions)})
+                       "limit": _max_daily_loss, "flattened": len(_book_positions),
+                       "exempt": sorted(_ladder_coins)})
 
         # ── DSL exit pass ───────────────────────────────────────────────────
         # Reconcile trackers with live exchange positions (handles restarts,
@@ -616,7 +642,7 @@ while True:
         # whose dynamic floor was breached.
         try:
             stale_trackers = rehydrate_from_exchange(
-                positions,
+                _book_positions,
                 default_leverage=int(_cfg.get("leverage", 1) or 1),
                 queried_dexes=queried_dexes,
             )
@@ -681,6 +707,59 @@ while True:
                     f"[rebalancer_claims] live-position scrub failed (non-fatal): "
                     f"{_claim_prune_exc}"
                 )
+
+        # drawdown_ladder (W-WH2 VALIDATED: 2.933x over 6y at 1x, null p 0.0015):
+        # buy a 21% drawdown in the five crypto majors on five resting rungs,
+        # exit at +5.14% over average entry, no stop. It runs every cycle and
+        # outside the slots gate because it manages ladders already on the
+        # exchange (re-prices the target after a rung fills, cancels rungs when
+        # a ladder closes). In OFF mode it still manages but opens nothing.
+        # See findings/W-WH2_scale_in_ladder.md.
+        if equity > 0:
+            try:
+                _drawdown_ladder_maybe_run(
+                    read_agent_config(), positions, equity,
+                    float((state.get("dex_available") or {}).get("", available) or 0.0),
+                    daily_pnl, _max_daily_loss,
+                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
+                    log_event=log_event)
+            except Exception as _dll:
+                logger.error(f"[drawdown-ladder] pass failed (non-fatal): {_dll}")
+                log_event({"event": "error", "scope": "drawdown_ladder", "error": str(_dll)})
+
+        # copy_trade (W-CP1 REFUTED, live by operator override 2026-09-21):
+        # mirror the configured leader wallet's new positions at leverage_mult x
+        # his exposure. Runs every cycle and outside the slots gate because it
+        # must follow the leader's exits; in OFF mode it mirrors exits only.
+        if equity > 0:
+            try:
+                _copy_trade_maybe_run(
+                    read_agent_config(), positions, equity,
+                    dict(state.get("dex_available") or {"": available}),
+                    daily_pnl, _max_daily_loss,
+                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
+                    log_event=log_event)
+            except Exception as _ctx:
+                logger.error(f"[copy-trade] pass failed (non-fatal): {_ctx}")
+                log_event({"event": "error", "scope": "copy_trade", "error": str(_ctx)})
+
+        # copycat (UNTESTED — no backtest; W-CP1 refuted copying one of these
+        # same wallets, 0xe282): mirror 10 Hyperliquid leaderboard wallets'
+        # positions, sized to each leader's equity on an equal split of the
+        # sleeve. Runs every cycle and outside the slots gate for the same
+        # reason as copy_trade — it must follow each leader's exits regardless
+        # of mode; in OFF mode it mirrors exits only.
+        if equity > 0:
+            try:
+                _copycat_maybe_run(
+                    read_agent_config(), positions, equity,
+                    dict(state.get("dex_available") or {"": available}),
+                    daily_pnl, _max_daily_loss,
+                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
+                    log_event=log_event)
+            except Exception as _cct:
+                logger.error(f"[copycat] pass failed (non-fatal): {_cct}")
+                log_event({"event": "error", "scope": "copycat", "error": str(_cct)})
 
         if str(_cfg.get("mode", "OFF")).upper() == "OFF":
             logger.info("[mode] OFF — skipping scan/research/execution; exits still monitored")
@@ -751,7 +830,7 @@ while True:
         #     future backtest, and the most expensive kind of saving.
         # ---------------------------------------------------------------- #
         _slots = int(read_agent_config().get("max_concurrent", 0) or 0)
-        _entry_budget_open = _slots <= 0 or len(positions) < _slots
+        _entry_budget_open = _slots <= 0 or len(_book_positions) < _slots
         if _entry_budget_open:
             logger.info("Scanning markets...")
             results = scan_once(universe=universe, min_score=min_score, config=config)

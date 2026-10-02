@@ -23,7 +23,7 @@ part of this system that reliably works, and it is worth more than the trading.
 
 ### Read this before funding it
 
-- **Five books, all LIVE.** There is no shadow tier: a book trades or it does
+- **Six books registered.** There is no shadow tier: a book trades or it does
   not exist. `shadow_only` exists only as the switch
   `scripts/autonomous_cycle.py` flips to demote a book whose forward ledger
   turns negative.
@@ -37,6 +37,7 @@ part of this system that reliably works, and it is worth more than the trading.
 | `social_trending` | 185 | +0.89% | +0.54 / +1.50 | 0.0005 |
 | `unlock_short_runin` | 14 | +3.75% | +0.71 / +7.06 | 0.0375 |
 | `xs_reversal` | 1995 | +2.47% | quartiles +4.94/+0.70/+0.89/+3.05 | 0.0000 |
+| `drawdown_ladder` | 296 ladders (6y backtest) | 2.933x equity at 1x | 1.516x / 1.429x | 0.0015 |
 
 These are FORWARD-ledger grades, not realized P&L. This repo has a documented
 history of books whose comments claimed +EV while they ran live and lost.
@@ -48,13 +49,23 @@ unwind, and the pinned bucket loses 0.443%. It carries one honest discount the
 others do not: that gate was **found, not pre-registered**. It fell out of a
 different test that was failing.
 
+`drawdown_ladder` (2026-09-14, findings/W-WH2) is the one book with **no stop**.
+It buys a 21% drawdown in BTC/ETH/SOL/BNB/XRP on five resting rungs and exits
+the whole position at +5.14% over average entry. Its row is a backtest, not a
+forward ledger, and holding the same coins did 8.37x over the same six years.
+It is exempt from the backup stop and the hard daily-loss flatten, and it
+trades the main-dex majors while every other book is HIP-3 only. Those are
+operator decisions, recorded in the finding. It places nothing below $525 of
+equity, and it is demoted when its mark-to-market drawdown passes -43.5% of
+its 50% sleeve.
+
 ### No recorders, no shadow
 
 Every book trades and has a switch `scripts/autonomous_cycle.py` can flip, or it
 does not exist. There is no third state, and tests enforce that in the defaults
 and in the live config.
 
-**Start the loop and five books place real orders unattended.** What bounds
+**Start the loop and every enabled book places real orders unattended.** What bounds
 them is the equity floor in `executor.maybe_execute`, the per-book margin check,
 the majors allowlist, the daily-loss kill switch, and the nightly grader that
 demotes any book whose forward ledger turns negative.

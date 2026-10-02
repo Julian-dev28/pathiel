@@ -80,3 +80,5 @@ may act on.
 | W-FND1 | funding z-score battery — 8 cells, majors, 208d. Zero survivors. Funding on majors is asymmetric: +2σ fires 20x, −2σ fires 219x |
 | W-XS2 | cross-sectional momentum/reversal — 6 cells, 833d. Zero survivors. Momentum-120 shows the edge EXPIRING: h1 +1.37%, h2 −0.90% |
 | W-SEARCH | the 2026-08-30 search in full: 39 pre-registered cells, one survivor, and that one was already live |
+| W-WH2 | the 0xe282 wallet's no-stop drawdown ladder at its own 3x leverage (liquidated 2022-06-13 on the majors), and on its own alts at 1x and 3x (null p 0.156 / 0.089). The 1x majors cell validated and trades as `drawdown_ladder` |
+| W-STB1 | stablecoin peg reversion on HL spot (USDT0, USDE, USDH, FEUSD vs USDC; 12 cells). None beats a bid anchored on a random recent close, at 25 bps or at the measured stable-pair fees. The peg does not pull price back |
