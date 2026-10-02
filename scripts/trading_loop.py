@@ -75,10 +75,6 @@ from pathiel.agents.copy_trade_live import (
     maybe_run as _copy_trade_maybe_run,
     owned_coins as _copy_owned_coins,
 )
-from pathiel.agents.copycat_live import (
-    maybe_run as _copycat_maybe_run,
-    owned_coins as _copycat_owned_coins,
-)
 from pathiel.agents.unlock_recorder import maybe_record as _unlock_maybe_record
 from pathiel.agents.rebalancer_owned import get_claims_registry, prune_claims_to_live
 from pathiel.agents.executor import (
@@ -612,16 +608,14 @@ while True:
         # entry. Operator decision 2026-09-14; the daily-loss GATE still blocks
         # new ladders. copy_trade positions too (operator override 2026-09-21):
         # the leader has no stop, and a stop of ours would break the mirror.
-        # copycat positions too (same reason, x10 leaders): no stop on any of
-        # them, and ours would break the mirror.
-        _ladder_coins = _ladder_owned_coins() | _copy_owned_coins() | _copycat_owned_coins()
+        _ladder_coins = _ladder_owned_coins() | _copy_owned_coins()
         _book_positions = _ladder_book_positions(positions, _ladder_coins)
         if equity > 0 and _book_positions and daily_pnl <= _max_daily_loss:
             logger.warning(
                 f"[killswitch] HARD daily-loss floor breached: PnL ${daily_pnl:.2f} "
                 f"<= ${_max_daily_loss:.0f} — flattening {len(_book_positions)} open "
                 f"position(s) to cap the loss"
-                + (f" ({len(_ladder_coins)} drawdown_ladder/copy_trade/copycat "
+                + (f" ({len(_ladder_coins)} drawdown_ladder/copy_trade "
                    f"position(s) exempt)" if _ladder_coins else ""))
             for _p in _book_positions:
                 _coin = (_p.get("position") or {}).get("coin")
@@ -742,24 +736,6 @@ while True:
             except Exception as _ctx:
                 logger.error(f"[copy-trade] pass failed (non-fatal): {_ctx}")
                 log_event({"event": "error", "scope": "copy_trade", "error": str(_ctx)})
-
-        # copycat (UNTESTED — no backtest; W-CP1 refuted copying one of these
-        # same wallets, 0xe282): mirror 10 Hyperliquid leaderboard wallets'
-        # positions, sized to each leader's equity on an equal split of the
-        # sleeve. Runs every cycle and outside the slots gate for the same
-        # reason as copy_trade — it must follow each leader's exits regardless
-        # of mode; in OFF mode it mirrors exits only.
-        if equity > 0:
-            try:
-                _copycat_maybe_run(
-                    read_agent_config(), positions, equity,
-                    dict(state.get("dex_available") or {"": available}),
-                    daily_pnl, _max_daily_loss,
-                    allow_entries=str(_cfg.get("mode", "OFF")).upper() != "OFF",
-                    log_event=log_event)
-            except Exception as _cct:
-                logger.error(f"[copycat] pass failed (non-fatal): {_cct}")
-                log_event({"event": "error", "scope": "copycat", "error": str(_cct)})
 
         if str(_cfg.get("mode", "OFF")).upper() == "OFF":
             logger.info("[mode] OFF — skipping scan/research/execution; exits still monitored")

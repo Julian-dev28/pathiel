@@ -35,7 +35,7 @@ GATED = ("_unlock_short_maybe_run", "_news_surge_short_maybe_run",
          "_news_surge_multi_maybe_run", "_xs_reversal_maybe_run", "scan_once")
 UNGATED = ("monitor_exits", "_data_logger_maybe_log", "_unlock_maybe_record",
            "_social_trending_maybe_record", "_drawdown_ladder_maybe_run",
-           "_copy_trade_maybe_run", "_copycat_maybe_run")
+           "_copy_trade_maybe_run")
 FLAG = "_entry_budget_open"
 
 
