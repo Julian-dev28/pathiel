@@ -2261,6 +2261,7 @@ _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 _ANALYTICS_HTML = _load_template("analytics.html")
 _TRENDS_HTML = _load_template("trends.html")
+_COPYCAT_HTML = _load_template("copycat.html")
 
 
 # ── route registration ──────────────────────────────────────────────────────
@@ -2268,7 +2269,8 @@ _TRENDS_HTML = _load_template("trends.html")
 
 def register_routes(app: FastAPI) -> None:
     """Mount the dashboard pages, JSON APIs, and SSE feed onto an existing
-    FastAPI app. Pages: / (landing), /activity, /news. The former /config and
+    FastAPI app. Pages: / (landing), /activity, /news, /analytics, /trends,
+    /copycat. The former /config and
     /operator pages were deleted by operator order 2026-07-12 — those paths
     404 by design; token-gated actions live in server.py's /api/agent + /api/hl
     endpoints, with the token entered via the landing footer (localStorage)."""
@@ -2299,6 +2301,13 @@ def register_routes(app: FastAPI) -> None:
         forecast. Every number is computed in services/trend_engine; the AI
         pass is optional and additive."""
         return HTMLResponse(content=_TRENDS_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/copycat", response_class=HTMLResponse)
+    async def copycat_page() -> HTMLResponse:
+        """Copycat settings: leaders, leverage, sizing, per-leader overrides.
+        Reads GET /api/dashboard/copycat, writes the operator-gated
+        POST /api/dashboard/copycat/settings."""
+        return HTMLResponse(content=_COPYCAT_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/analytics", response_class=HTMLResponse)
     async def analytics_page() -> HTMLResponse:

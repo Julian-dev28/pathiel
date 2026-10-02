@@ -465,8 +465,20 @@ def test_leaders_list_write_replaces_the_list(client, monkeypatch, tmp_path):
     assert json.loads(path.read_text())["copycat"]["leaders"] == keep
 
 
-def test_landing_page_has_the_editable_copycat_controls(client):
-    html = client.get("/").text
+def test_copycat_has_its_own_tab_and_the_dashboard_does_not_carry_it(client):
+    assert 'data-nav="/copycat"' in client.get("/").text
+    assert 'id="copycat-form"' not in client.get("/").text
+
+
+def test_copycat_page_never_renders_the_form_from_an_error_body(client):
+    """A 401 body has no settings; rendering it would show defaults the book
+    is not running."""
+    html = client.get("/copycat").text
+    assert "if (!r.ok)" in html and "Sign in to see and edit copycat." in html
+
+
+def test_copycat_page_has_the_editable_controls(client):
+    html = client.get("/copycat").text
     for marker in ('id="copycat-form"', "data-cc-seg=", "sizing_mode", "leverage_mode",
                    "max_position_leverage", "margin_mode", "include_spot_staked",
                    "only_new_positions", "max_worse_entry_pct", "fixed_margin_usd",

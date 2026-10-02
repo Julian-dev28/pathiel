@@ -1655,7 +1655,7 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
 def test_no_page_pulls_a_third_party_asset(client):
     """The dashboard runs on a trading box. Every asset is vendored under
     /static so a CDN outage (or a CDN owner) cannot change what it renders."""
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/copycat"):
         # the SVG namespace is an identifier, not a fetch — everything else is
         body = client.get(path).text.replace(
             'xmlns="http://www.w3.org/2000/svg"', "")
@@ -1670,7 +1670,7 @@ def test_no_page_pulls_a_third_party_asset(client):
 # words are not testable, but the specific things that made it read as a toy
 # are, and each one below was really on the page before this redesign.
 
-PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
+PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/copycat")
 
 
 def test_no_page_ships_decorative_chrome(client):
@@ -1714,7 +1714,7 @@ def test_every_page_uses_the_one_stylesheet(client):
 def test_no_page_carries_a_second_design_system(client):
     """A page-level <style> block is allowed for genuinely page-specific
     geometry (chart heights), but not for a whole palette."""
-    for name in ("landing", "activity", "analytics", "news", "trends"):
+    for name in ("landing", "activity", "analytics", "news", "trends", "copycat"):
         src = (pathlib.Path(__file__).resolve().parent.parent
                / "pathiel" / "templates" / f"{name}.html").read_text()
         blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
@@ -1840,7 +1840,7 @@ def test_no_template_hard_codes_a_colour():
 def test_every_page_reaches_every_other_page(client):
     """A route that renders but is linked from nowhere is dead UI. Whatever
     ships must be reachable by clicking."""
-    routes = {"/", "/activity", "/news", "/analytics", "/trends"}
+    routes = {"/", "/activity", "/news", "/analytics", "/trends", "/copycat"}
     for path in routes:
         page = client.get(path).text
         linked = {r for r in routes if f'data-nav="{r}"' in page}
@@ -1851,7 +1851,7 @@ def test_the_nav_marks_the_page_you_are_on(client):
     """The marking runs from static/pathiel.js — every page has to load it and
     give the nav something to match on."""
     assert "nav-active" in SHARED_JS
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/copycat"):
         page = client.get(path).text
         assert "/static/pathiel.js" in page, f"{path} does not load the shared script"
         assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
@@ -1886,7 +1886,7 @@ def test_a_zero_stage_draws_no_bar(client):
 def test_the_hotkeys_are_defined_once(client):
     assert "keydown" in SHARED_JS
     assert "e.target.closest('input,textarea,select')" in SHARED_JS
-    for name in ("landing", "activity", "analytics", "news", "trends"):
+    for name in ("landing", "activity", "analytics", "news", "trends", "copycat"):
         src = (pathlib.Path(__file__).resolve().parent.parent
                / "pathiel" / "templates" / f"{name}.html").read_text()
         assert "addEventListener('keydown'" not in src, (
@@ -2022,7 +2022,7 @@ def test_every_page_can_offer_sign_in(client):
     assert "signIn" in js and "signOut" in js
     # The picker is fetched on demand; see loadWalletUI in pathiel.js.
     assert "/static/wallet.js" in js
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/copycat"):
         body = client.get(path).text
         assert "pathiel.js" in body, f"{path} does not load the shared script"
         assert "masthead-right" in body, f"{path} has nowhere to put the account chip"
