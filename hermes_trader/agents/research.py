@@ -453,11 +453,20 @@ def _build_user_message(
     rvol_block: str = "",
 ) -> str:
     """Build the user message passed to the LLM."""
+    # rsi_divergence.shadow_mode: the divergence hit must NOT reach the prompt
+    # (shadow accrual is log-only; the trigger still rides in perception for
+    # the counterfactual join). Fail-open: a config-read error keeps the
+    # historical render.
+    try:
+        _rd_shadow = bool(((read_agent_config() or {}).get("rsi_divergence") or {})
+                          .get("shadow_mode"))
+    except Exception:
+        _rd_shadow = False
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
             for t in perception.get("triggers", [])
-            if t.get("fired")
+            if t.get("fired") and not (_rd_shadow and t.get("name") == "rsiDivergence")
         )
         or "no triggers fired"
     )
