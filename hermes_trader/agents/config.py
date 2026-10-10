@@ -32,6 +32,9 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # Band snapback — SURFACING BYPASS (weight 0): a wick poke-out + snapback
         # into a flat MA band (rolling avg of highs/low...[truncated]
         "bandSnapback": 0.0,
+        # RSI divergence — SURFACING BYPASS (weight 0): price prints a new
+        # extreme while RSI refuses to (momentum fading into the push).
+        "rsiDivergence": 0.0,
     },
     "thresholds": {
         "sigmaThreshold": 2.0,

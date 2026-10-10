@@ -331,6 +331,36 @@ def _scan_single_market(
                             f"gate log-only)"
                         )
 
+        # RSI divergence — OFF by default. Price prints a new extreme (lower
+        # low / higher high beyond min_extreme_atr x ATR) while RSI prints the
+        # opposite — momentum fading into the push. The candlestick-pattern
+        # triggers catch the SHAPE of a reversal bar; this catches the
+        # momentum CONFIRMATION behind it. Surfacing bypass (weight 0) — the
+        # AI + risk gates adjudicate. shadow_mode: trigger keeps computing and
+        # accrues a [SHADOW] line, but the surfacing bypass is suppressed and
+        # research.py filters the hit out of the prompt.
+        _rd = config.get("rsi_divergence", {}) or {}
+        _rd_hit = None
+        if _rd.get("enabled"):
+            _rd_hit = trigger_mod.rsi_divergence(
+                candles,
+                rsi_period=int(_rd.get("rsi_period", 14)),
+                lookback=int(_rd.get("lookback", 48)),
+                min_rsi_gap=float(_rd.get("min_rsi_gap", 3.0)),
+                min_extreme_atr=float(_rd.get("min_extreme_atr", 0.25)),
+                bull_rsi_max=float(_rd.get("bull_rsi_max", 45.0)),
+                bear_rsi_min=float(_rd.get("bear_rsi_min", 55.0)),
+            )
+            hits.append(_rd_hit)
+            if _rd.get("shadow_mode") and _rd_hit.get("fired"):
+                # Shadow accrual record — the only visible trace while
+                # shadow_mode suppresses surfacing + prompt.
+                logger.warning(
+                    f"[rsi-divergence][SHADOW] {market['coin']} "
+                    f"{_rd_hit.get('reason', '')} "
+                    f"(shadow: surfacing+prompt suppressed, log-only)"
+                )
+
         # Daily mover surfacing: the scan already reserves slots for top 24h
         # movers, but the trigger gate can still drop an orderly runner once the
         # fresh spike/breakout bar has passed. Surface large liquid movers to AI
@@ -436,9 +466,17 @@ def _scan_single_market(
                            and any(
                                h["name"] == "bandSnapback" and h["fired"] for h in hits))
         daily_mover_bypass = any(h["name"] == "dailyMover" and h["fired"] for h in hits)
+        # RSI-divergence bypass: a fired divergence surfaces the coin for AI
+        # research even below the composite gate (the gate is tuned for momentum
+        # bursts, not fading-momentum reversals). Gated by rsi_divergence.enabled;
+        # rsi_divergence.shadow_mode suppresses the surfacing (the trigger still
+        # computes and accrues the [SHADOW] line).
+        divergence_bypass = (bool(_rd.get("enabled"))
+                             and not bool(_rd.get("shadow_mode"))
+                             and _rd_hit is not None and _rd_hit.get("fired"))
         if (score < min_score and not burst_fired and not whale_bypass
                 and not trend_bypass and not pattern_bypass and not snapback_bypass
-                and not daily_mover_bypass):
+                and not daily_mover_bypass and not divergence_bypass):
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the

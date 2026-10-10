@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional
 
-from hermes_trader.indicators.math import adx, atr, ema, sma, candle_val
+from hermes_trader.indicators.math import adx, atr, ema, rsi, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
 
 
@@ -385,6 +385,96 @@ def bullish_reversal_candle(candles: List[Candle], wick_body_ratio: float = 2.0,
         "reason": f"{pattern} after {ctx:.1f}%" if fired else "flat",
         "fired": fired,
     }
+
+
+def rsi_divergence(candles: List[Candle], rsi_period: int = 14, lookback: int = 48,
+                   min_rsi_gap: float = 3.0, min_extreme_atr: float = 0.25,
+                   bull_rsi_max: float = 45.0, bear_rsi_min: float = 55.0) -> TriggerHit:
+    """RSI divergence — price makes a NEW extreme while RSI refuses to.
+
+    Bullish (LONG): price prints a lower low vs an earlier low in the window but
+    RSI prints a HIGHER low — momentum is fading into the sell-off, the classic
+    entry confirmation a hammer/engulfing bar alone lacks. Bearish (SHORT) is the
+    mirror: higher high in price, lower high in RSI.
+
+    Detector shape: split the `lookback` window in half, take the price extreme
+    (low for bull / high for bear) in each half, and compare the RSI values AT
+    those extremes. Guards so it can't fire on noise:
+      - the new price extreme must exceed the old one by >= `min_extreme_atr` x
+        ATR (scale-free, same convention as band_snapback's poke guard);
+      - the RSI extremes must differ by >= `min_rsi_gap` points in the
+        divergence direction;
+      - zone filter: bullish needs the older RSI low <= `bull_rsi_max` (a real
+        washout), bearish needs the older RSI high >= `bear_rsi_min`;
+      - the new extreme must sit in the RECENT half (it does by construction)
+        and the RSI series must be warm over both extremes.
+
+    Surfacing signal (weight 0 bypass): the AI + risk gates adjudicate.
+    """
+    name = "rsiDivergence"
+    if len(candles) < max(lookback, rsi_period * 2) + 2:
+        return {"name": name, "score": 0, "reason": "insufficient_history", "fired": False}
+
+    rsi_arr = rsi(candles, rsi_period)
+    atr_arr = atr(candles, 14)
+    a = atr_arr[-1]
+    if not math.isfinite(a) or a <= 0:
+        return {"name": name, "score": 0, "reason": "no_atr", "fired": False}
+
+    # Window = last `lookback` bars; split into older/younger halves.
+    start = len(candles) - lookback
+    mid = start + lookback // 2
+
+    def _extreme(lo: int, hi: int, key: str) -> Optional[int]:
+        """Index of the min (key='l') or max (key='h') value in [lo, hi)."""
+        best_i, best_v = None, None
+        for i in range(lo, hi):
+            v = candle_val(candles[i], key)
+            if best_v is None or (v < best_v if key == "l" else v > best_v):
+                best_i, best_v = i, v
+        return best_i
+
+    # Bull side: lowest lows in each half.
+    lo1 = _extreme(start, mid, "l")
+    lo2 = _extreme(mid, len(candles), "l")
+    if lo1 is not None and lo2 is not None:
+        r1, r2 = rsi_arr[lo1], rsi_arr[lo2]
+        if math.isfinite(r1) and math.isfinite(r2):
+            p1, p2 = candle_val(candles[lo1], "l"), candle_val(candles[lo2], "l")
+            if (p2 < p1 - min_extreme_atr * a          # price LOWER low
+                    and r2 > r1 + min_rsi_gap          # RSI HIGHER low
+                    and r1 <= bull_rsi_max):           # older low was a washout
+                gap = r2 - r1
+                return {
+                    "name": name,
+                    "score": min(10.0, gap / min_rsi_gap * 5.0),
+                    "reason": (f"long — bullish RSI divergence: price lower low "
+                               f"{(p2 - p1) / p1 * 100:.1f}% beyond prior, RSI "
+                               f"{r2:.0f} vs {r1:.0f} (+{gap:.1f})"),
+                    "fired": True,
+                }
+
+    # Bear side: highest highs in each half.
+    hi1 = _extreme(start, mid, "h")
+    hi2 = _extreme(mid, len(candles), "h")
+    if hi1 is not None and hi2 is not None:
+        r1, r2 = rsi_arr[hi1], rsi_arr[hi2]
+        if math.isfinite(r1) and math.isfinite(r2):
+            p1, p2 = candle_val(candles[hi1], "h"), candle_val(candles[hi2], "h")
+            if (p2 > p1 + min_extreme_atr * a          # price HIGHER high
+                    and r2 < r1 - min_rsi_gap          # RSI LOWER high
+                    and r1 >= bear_rsi_min):           # older high was euphoric
+                gap = r1 - r2
+                return {
+                    "name": name,
+                    "score": min(10.0, gap / min_rsi_gap * 5.0),
+                    "reason": (f"short — bearish RSI divergence: price higher high "
+                               f"{(p2 - p1) / p1 * 100:.1f}% beyond prior, RSI "
+                               f"{r2:.0f} vs {r1:.0f} (-{gap:.1f})"),
+                    "fired": True,
+                }
+
+    return {"name": name, "score": 0, "reason": "flat", "fired": False}
 
 
 def volume_buildup_1h(candles: List[Candle], ratio_threshold: float = 2.5) -> TriggerHit:
