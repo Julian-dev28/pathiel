@@ -35,6 +35,9 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # RSI divergence — SURFACING BYPASS (weight 0): price prints a new
         # extreme while RSI refuses to (momentum fading into the push).
         "rsiDivergence": 0.0,
+        # MFI extreme — SURFACING BYPASS (weight 0): volume-weighted RSI
+        # pinned in a washout (long) / euphoria (short) zone.
+        "mfiExtreme": 0.0,
     },
     "thresholds": {
         "sigmaThreshold": 2.0,
