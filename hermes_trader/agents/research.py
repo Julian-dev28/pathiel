@@ -466,8 +466,9 @@ def _build_user_message(
         _rd_shadow = bool((_cfg.get("rsi_divergence") or {}).get("shadow_mode"))
         _mf_shadow = bool((_cfg.get("mfi_extreme") or {}).get("shadow_mode"))
         _bs_shadow = bool((_cfg.get("band_snapback") or {}).get("shadow_mode"))
+        _vw_shadow = bool((_cfg.get("vwap_deviation") or {}).get("shadow_mode"))
     except Exception:
-        _rd_shadow = _mf_shadow = _bs_shadow = False
+        _rd_shadow = _mf_shadow = _bs_shadow = _vw_shadow = False
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
@@ -476,6 +477,7 @@ def _build_user_message(
             and not (_rd_shadow and t.get("name") == "rsiDivergence")
             and not (_mf_shadow and t.get("name") == "mfiExtreme")
             and not (_bs_shadow and t.get("name") == "bandSnapback")
+            and not (_vw_shadow and t.get("name") == "vwapDeviation")
         )
         or "no triggers fired"
     )
@@ -700,6 +702,85 @@ def _build_user_message(
             + (f"; band state: {_other_reason}" if _other_reason and _other_reason != "flat" else "")
             + ")"
         )
+
+    # VWAP-deviation block — gated on BOTH flags: renders only when
+    # vwap_deviation.enabled AND NOT vwap_deviation.shadow_mode. Either flag
+    # off/shadowed -> empty section -> prompt byte-identical to pre-feature
+    # (the section is only spliced in when non-empty, so no stray newlines).
+    # Under shadow_mode the fired hit is ALSO already filtered from the
+    # trigger summary above; this block is the second surface the umbrella
+    # must suppress (the band-snapback leak lesson: every render site needs
+    # the flag). Fail-open on config-read error keeps the historical render.
+    try:
+        _vw_cfg = read_agent_config().get("vwap_deviation") or {}
+    except Exception:
+        _vw_cfg = {}
+    _vw_live = bool(_vw_cfg.get("enabled")) and not bool(_vw_cfg.get("shadow_mode"))
+    _vw = next((t for t in perception.get("triggers", [])
+                if t.get("name") == "vwapDeviation"), None)
+    vwap_block = ""
+    if _vw_live and _vw is not None:
+        _vw_reason = _vw.get("reason", "")
+
+        def _vw_tf_dir(snap: Dict[str, Any]) -> str:
+            if not snap or snap.get("ema8") is None or snap.get("ema21") is None:
+                return "unknown"
+            return "bullish" if snap["ema8"] > snap["ema21"] else "bearish"
+
+        if _vw.get("fired"):
+            _vw_side = "SHORT" if _vw_reason.startswith("short") else "LONG"
+            _vw_opp = "LONG" if _vw_side == "SHORT" else "SHORT"
+            _vw_d4, _vw_d1d = _vw_tf_dir(tf4h), _vw_tf_dir(tf1d)
+            if _vw_d4 == "unknown" and _vw_d1d == "unknown":
+                _vw_htf = ("\n  - Higher-TF context: unknown from the indicators above, so "
+                           f"treat {_vw_side} agreement as untested rather than confluence.")
+            else:
+                _vw_agree = [d for d in (_vw_d4, _vw_d1d) if d != "unknown"
+                             and (d == "bullish") == (_vw_side == "LONG")]
+                _vw_known = len([d for d in (_vw_d4, _vw_d1d) if d != "unknown"])
+                if len(_vw_agree) == _vw_known:
+                    _vw_htf = (f"\n  - Higher-TF context: 4h {_vw_d4}, 1d {_vw_d1d} — the "
+                               f"{_vw_side} vwap signal points WITH this trend: confluence.")
+                elif not _vw_agree:
+                    _vw_htf = (f"\n  - Higher-TF context: 4h {_vw_d4}, 1d {_vw_d1d} — the "
+                               f"{_vw_side} vwap signal runs AGAINST the higher-timeframe "
+                               "trend, so it is a local reversion scalp at best, not a "
+                               "trend entry.")
+                else:
+                    _vw_htf = (f"\n  - Higher-TF context: 4h {_vw_d4}, 1d {_vw_d1d} — mixed, "
+                               f"so the {_vw_side} vwap signal agrees with one, not the other.")
+            vwap_block = (
+                "VWAP deviation signal (fired — distance from the volume-weighted COST "
+                "BASIS of the current swing, measured from the VWAP anchored at the last "
+                "confirmed swing extreme):"
+                f"\n  - signal detail: {_vw_reason}"
+                "\n  - What it measures: VWAP = the average price the swing's dollars "
+                "actually traded at (high-volume zones pin the level, thin wicks barely "
+                "move it); σ = that window's volume-weighted dispersion. \"fade\" = price "
+                "is stretched that far from cost basis — the nearest short-term reversion "
+                "is back toward VWAP. \"retest\" = an orderly pullback back TO cost basis "
+                "mid-move — the move's average traders are being re-tested, a "
+                "trend-aligned entry shape."
+                f"{_vw_htf}"
+                f"\n  - How to weight it: an ENTRY-TIMING observation about extension vs "
+                f"cost basis, not a direction call and never itself a reason to PASS. A "
+                f"{_vw_side} thesis at this distance gains from it; the {_vw_opp} side "
+                f"here is entering INTO the stretch — require independent evidence "
+                "(higher-TF trend, structure, funding, news) for that side."
+            )
+        elif _vw_reason.startswith("no setup"):
+            # Silent but INFORMATIVE: the trigger computed and found no shape,
+            # but the CURRENT z is entry context even when the coin surfaced
+            # via another trigger — how extended is price from cost basis?
+            vwap_block = (
+                "VWAP context (no deviation signal this scan — current distance from the "
+                "swing-anchored VWAP):"
+                f"\n  - {_vw_reason}"
+                "\n  - Read it as: how extended price currently is from the swing's "
+                "average cost basis, in volume-weighted σ. Entering on the side that "
+                "ADDS to that stretch means entering into extension; the nearer "
+                "reversion target is back toward that VWAP."
+            )
 
     def _fmt_px(p: float) -> str:
         """Adaptive precision so sub-cent coins (HMSTR at $0.000173 etc.) don't
@@ -969,6 +1050,10 @@ def _build_user_message(
     # the prompt is byte-identical to pre-feature unless the flag is flipped.
     prior_section = f"{prior_block}\n\n" if prior_block else ""
 
+    # Same empty-safe splice for the VWAP block: vwap_block == "" (disabled,
+    # shadowed, or no opinion) -> zero added bytes, no stray newlines.
+    vwap_section = f"{vwap_block}\n\n" if vwap_block else ""
+
     return prior_section + rvol_section + "\n".join([
         f"Candidate: {coin} (HL {perception.get('type', 'perp')}-PERP)",
         f"Current mid: ${_fmt_px(perception.get('mid', 0))}",
@@ -988,7 +1073,7 @@ def _build_user_message(
         "",
         snapback_block,
         "",
-        _signals_block(coin),
+        vwap_section + _signals_block(coin),
         _chronos_block(coin),
         _timesfm_block(coin),
         _tirex_block(coin),

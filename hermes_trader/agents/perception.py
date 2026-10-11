@@ -388,6 +388,52 @@ def _scan_single_market(
                     f"(shadow: surfacing+prompt suppressed, log-only)"
                 )
 
+        # VWAP deviation — OFF by default. Distance from the SWING-ANCHORED
+        # VWAP (average cost basis since the last confirmed swing extreme)
+        # in volume-weighted sigmas. FADE shape: capitulation/distribution
+        # stretched past fade_z from that cost basis. RETEST shape: an
+        # orderly pullback back to the VWAP mid-move. The volume-weighted
+        # counterpart the EMA-band triggers (band_snapback) can't see: the
+        # level is defined by a structural event and weighted by where the
+        # dollars actually traded. Surfacing bypass (weight 0) — the AI +
+        # risk gates adjudicate. shadow_mode: trigger keeps computing and
+        # accrues a [SHADOW] line, but the surfacing bypass is suppressed
+        # and research.py filters the hit out of the prompt.
+        _vw = config.get("vwap_deviation", {}) or {}
+        _vw_hit = None
+        if _vw.get("enabled"):
+            _vw_interval = str(_vw.get("interval", "15m"))
+            _vw_max_age = int(_vw.get("max_anchor_age", 96))
+            # Fetch the anchor interval's candles (TTL-cached). Need
+            # max_anchor_age + wick + slack bars so the oldest allowed
+            # anchor still has its full window. Reuse the 1h fetch when the
+            # interval is 1h (100 bars fetched above covers age <= ~96).
+            _vw_candles = candles_1h if _vw_interval == "1h" else None
+            if _vw_candles is None:
+                _vw_candles = _fetch_candles_sync(
+                    market["coin"], _vw_interval, _vw_max_age + 8,
+                    config["scan"].get("cacheTtlMs1h", 600_000),
+                )
+            if _vw_candles:
+                _vw_hit = trigger_mod.vwap_deviation(
+                    _vw_candles,
+                    swing_wick=int(_vw.get("swing_wick", 2)),
+                    min_anchor_age=int(_vw.get("min_anchor_age", 8)),
+                    max_anchor_age=_vw_max_age,
+                    fade_z=float(_vw.get("fade_z", 2.2)),
+                    touch_z=float(_vw.get("touch_z", 0.4)),
+                    min_trend_pct=float(_vw.get("min_trend_pct", 4.0)),
+                )
+                hits.append(_vw_hit)
+                if _vw.get("shadow_mode") and _vw_hit.get("fired"):
+                    # Shadow accrual record — the only visible trace while
+                    # shadow_mode suppresses surfacing + prompt.
+                    logger.warning(
+                        f"[vwap-deviation][SHADOW] {market['coin']} "
+                        f"{_vw_hit.get('reason', '')} "
+                        f"(shadow: surfacing+prompt suppressed, log-only)"
+                    )
+
         # Daily mover surfacing: the scan already reserves slots for top 24h
         # movers, but the trigger gate can still drop an orderly runner once the
         # fresh spike/breakout bar has passed. Surface large liquid movers to AI
@@ -509,10 +555,19 @@ def _scan_single_market(
         mfi_bypass = (bool(_mf.get("enabled"))
                       and not bool(_mf.get("shadow_mode"))
                       and _mf_hit is not None and _mf_hit.get("fired"))
+        # VWAP-deviation bypass: a fired fade/retest surfaces the coin for
+        # AI research even below the composite gate (the gate is tuned for
+        # momentum bursts, not cost-basis stretches/retests). Gated by
+        # vwap_deviation.enabled; vwap_deviation.shadow_mode suppresses the
+        # surfacing (the trigger still computes and accrues the [SHADOW]
+        # line).
+        vwap_bypass = (bool(_vw.get("enabled"))
+                       and not bool(_vw.get("shadow_mode"))
+                       and _vw_hit is not None and _vw_hit.get("fired"))
         if (score < min_score and not burst_fired and not whale_bypass
                 and not trend_bypass and not pattern_bypass and not snapback_bypass
                 and not daily_mover_bypass and not divergence_bypass
-                and not mfi_bypass):
+                and not mfi_bypass and not vwap_bypass):
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the

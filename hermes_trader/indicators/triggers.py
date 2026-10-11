@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional
 
-from hermes_trader.indicators.math import adx, atr, ema, mfi, rsi, sma, candle_val
+from hermes_trader.indicators.math import adx, anchored_vwap, atr, ema, mfi, rsi, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
 
 
@@ -542,6 +542,169 @@ def mfi_extreme(candles: List[Candle], mfi_period: int = 14,
         }
 
     return {"name": name, "score": 0, "reason": "flat", "fired": False}
+
+
+def _last_swing(candles: List[Candle], key: str, wick: int,
+                min_age: int, max_age: int) -> Optional[int]:
+    """Index of the most recent CONFIRMED swing extreme ('l' = swing low,
+    'h' = swing high), or None.
+
+    A bar i is a swing extreme when its high/low is the extreme of the
+    (2*wick+1)-bar window centred on it. It is only CONFIRMED once `wick`
+    bars have closed after it (no lookahead). The search walks backward
+    from the newest confirmed bar: candidates younger than `min_age` are
+    skipped (a VWAP over a 3-bar window is noise), and the walk stops once
+    older than `max_age` (the anchor must sit inside the reference window).
+    """
+    n = len(candles)
+    for i in range(n - 1 - wick, wick - 1, -1):
+        v = candle_val(candles[i], key)
+        confirmed = True
+        for j in range(i - wick, i + wick + 1):
+            if j == i:
+                continue
+            w = candle_val(candles[j], key)
+            if (key == "l" and w < v) or (key == "h" and w > v):
+                confirmed = False
+                break
+        if not confirmed:
+            continue
+        age = n - 1 - i
+        if age < min_age:
+            continue
+        if age > max_age:
+            break
+        return i
+    return None
+
+
+def vwap_deviation(candles: List[Candle], swing_wick: int = 2,
+                   min_anchor_age: int = 8, max_anchor_age: int = 96,
+                   fade_z: float = 2.2, touch_z: float = 0.4,
+                   min_trend_pct: float = 4.0) -> TriggerHit:
+    """VWAP deviation — distance from the SWING-ANCHORED volume-weighted
+    average price, in volume-weighted sigmas.
+
+    The anchor is the most recent confirmed swing extreme (fractal with
+    `swing_wick` bars each side). VWAP from that anchor to now is the
+    average cost basis of everyone who traded the whole move — a level
+    execution algos actually benchmark against, and unlike an EMA/Bollinger
+    band its window is defined by a structural event, not an arbitrary
+    period. z = (px - vwap) / sigma, sigma = volume-weighted dispersion of
+    typical price over the same window.
+
+    Two entry shapes (fade first, then retest; long before short):
+
+      FADE (mean reversion): price stretched >= `fade_z` sigmas from the
+      anchored VWAP. LONG when px is that far BELOW the VWAP anchored at
+      the swing HIGH that started the decline (capitulation below the
+      distribution's cost basis); SHORT mirror vs the swing-LOW anchor
+      (distribution above the accumulation's cost basis).
+
+      RETEST (trend pullback): price moved >= `min_trend_pct`% from the
+      anchor close and is now back AT the anchored VWAP (|z| <= `touch_z`)
+      — buy the retest of average cost mid-move. LONG from a swing-low
+      anchor after an up-move; SHORT mirror from a swing-high anchor.
+
+    Non-fired hits carry the CURRENT z in the reason (offline threshold
+    calibration needs the near-misses, not just the fires).
+
+    Surfacing signal (weight 0 bypass): the AI + risk gates adjudicate.
+    """
+    name = "vwapDeviation"
+    flat = {"name": name, "score": 0, "reason": "flat", "fired": False}
+    wick = max(1, int(swing_wick))
+    if len(candles) < min_anchor_age + wick + 2:
+        return {**flat, "reason": "insufficient_history"}
+
+    px = candle_val(candles[-1], "c")
+    if px <= 0:
+        return flat
+
+    swing_hi = _last_swing(candles, "h", wick, min_anchor_age, max_anchor_age)
+    swing_lo = _last_swing(candles, "l", wick, min_anchor_age, max_anchor_age)
+
+    def _state(anchor: int, key: str):
+        vwap, sigma, _n = anchored_vwap(candles, anchor)
+        if not math.isfinite(vwap) or not math.isfinite(sigma) or sigma <= 0:
+            return None
+        return vwap, sigma, len(candles) - 1 - anchor, candle_val(candles[anchor], key)
+
+    def _fire(side: str, shape: str, z: float, vwap: float, age: int,
+              anchor_px: float, anchor_word: str, score: float,
+              extra: str = "") -> TriggerHit:
+        return {
+            "name": name,
+            "score": score,
+            "reason": (f"{side} — vwap {shape}: px {z:+.1f}σ from VWAP "
+                       f"{vwap:.6g} anchored at {anchor_word} {age} bars ago "
+                       f"(anchor px {anchor_px:.6g}){extra}"),
+            "fired": True,
+        }
+
+    # 1) Bull fade: stretched BELOW the VWAP anchored at the swing high.
+    if swing_hi is not None:
+        st = _state(swing_hi, "h")
+        if st:
+            vwap, sigma, age, apx = st
+            z = (px - vwap) / sigma
+            if z <= -fade_z:
+                return _fire("long", "fade", z, vwap, age, apx, "swing high",
+                             min(10.0, abs(z) / fade_z * 5.0))
+
+    # 2) Bear fade: stretched ABOVE the VWAP anchored at the swing low.
+    if swing_lo is not None:
+        st = _state(swing_lo, "l")
+        if st:
+            vwap, sigma, age, apx = st
+            z = (px - vwap) / sigma
+            if z >= fade_z:
+                return _fire("short", "fade", z, vwap, age, apx, "swing low",
+                             min(10.0, abs(z) / fade_z * 5.0))
+
+    # 3) Bull retest: up-move from the swing low, price back at its VWAP.
+    if swing_lo is not None:
+        st = _state(swing_lo, "l")
+        if st:
+            vwap, sigma, age, apx = st
+            z = (px - vwap) / sigma
+            base = candle_val(candles[swing_lo], "c")
+            move = (px - base) / base * 100 if base > 0 else 0.0
+            if move >= min_trend_pct and abs(z) <= touch_z:
+                return _fire("long", "retest", z, vwap, age, apx, "swing low",
+                             min(10.0, 5.0 + (1.0 - abs(z) / max(touch_z, 1e-9)) * 3.0),
+                             extra=f", +{move:.1f}% since anchor")
+
+    # 4) Bear retest: down-move from the swing high, price back at its VWAP.
+    if swing_hi is not None:
+        st = _state(swing_hi, "h")
+        if st:
+            vwap, sigma, age, apx = st
+            z = (px - vwap) / sigma
+            base = candle_val(candles[swing_hi], "c")
+            move = (px - base) / base * 100 if base > 0 else 0.0
+            if move <= -min_trend_pct and abs(z) <= touch_z:
+                return _fire("short", "retest", z, vwap, age, apx, "swing high",
+                             min(10.0, 5.0 + (1.0 - abs(z) / max(touch_z, 1e-9)) * 3.0),
+                             extra=f", {move:.1f}% since anchor")
+
+    # No shape: report the current z from whichever anchor exists (the
+    # nearer-extreme one) so offline threshold sweeps see the near-misses.
+    info = None
+    for anchor, key in ((swing_hi, "h"), (swing_lo, "l")):
+        if anchor is None:
+            continue
+        st = _state(anchor, key)
+        if st:
+            vwap, sigma, age, _apx = st
+            z = (px - vwap) / sigma
+            if info is None or abs(z) > abs(info[0]):
+                info = (z, "swing high" if key == "h" else "swing low", age)
+    if info is None:
+        return {**flat, "reason": "no_swing" if (swing_hi is None and swing_lo is None) else "no_vwap"}
+    z, word, age = info
+    return {**flat, "reason": (f"no setup (px {z:+.1f}σ vs VWAP anchored at "
+                               f"{word} {age} bars ago)")}
 
 
 def volume_buildup_1h(candles: List[Candle], ratio_threshold: float = 2.5) -> TriggerHit:
