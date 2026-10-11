@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _fade_doctrine_armed() -> bool:
+    """`fade_counter_trend.enabled` in .agent-config.json (hot-read per call,
+    fail-open: a config-read error keeps the historical doctrine). Code
+    default = key absent = FALSE = byte-identical pre-feature prompt."""
+    try:
+        from hermes_trader.agents.config_store import read_agent_config
+        return bool(((read_agent_config() or {}).get("fade_counter_trend") or {})
+                    .get("enabled"))
+    except Exception:
+        return False
+
 
 def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
     """Build the system prompt for the AI model.
@@ -24,6 +40,39 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         if recent_trades == 0
         else f"Recent track record: {recent_trades} trades, win rate {int(win_rate * 100)}%."
     )
+
+    fade_armed = _fade_doctrine_armed()
+
+    # rule6 renders as multiple parts-list elements (one prompt line each);
+    # the FIRST element is concatenated onto rule 5's tail in `parts` below,
+    # exactly as the original literals were, so the disarmed prompt is
+    # byte-identical.
+    rule6_parts = [
+        "6. 1h structure (volumeBuildup1h / trendFlip1h / higherLows1h) is an ENTRY-TIMING signal, NOT a",
+        "   reason to fight the 4h/1d trend. Use it to time the entry IN the trend's direction:",
+        "   - Uptrend + 1h accumulation → LONG entry (buy the pullback).",
+        "   - Downtrend + 1h bounce     → SHORT entry (sell the rip) — a 1h pop in a downtrend is a",
+        "     SHORTING opportunity, not a long. Never LONG when BOTH 4h AND 1d are bearish.",
+        "   (EXCEPTION: an explicit whale-accumulation / oi_funding_anomaly flag is the ONE sanctioned",
+        "   counter-trend LONG — smart money loading vs crowded shorts. Only that flag overrides.)",
+    ]
+    if fade_armed:
+        rule6_parts.append(
+            "   (SECOND sanctioned exception: a FIRED fade signal — rsiDivergence, mfiExtreme,"
+            "   bandSnapback, or a reversal candle — is a counter-trend CANDIDATE, not an automatic"
+            "   override. When one fires, you MAY take the counter-trend side IF the exhaustion"
+            "   evidence is strong (volume-confirmed washout/euphoria, divergence, structure"
+            "   holding at the extreme). Judge it on merits like any setup; without a fired fade"
+            "   signal the no-dip rule stands unchanged.)"
+        )
+
+    anti_dip = (
+        "- Don't BUY THE DIP in a clean downtrend (no LONG when 4h AND 1d are both bearish) — that is the"
+        "\n  single biggest way this book bleeds. A falling market with a 1h bounce is a SHORT, not a long."
+    )
+    if fade_armed:
+        anti_dip += ("\n  The ONE exception is a fired fade signal with strong exhaustion evidence"
+                     "  (see rule 6) — an unconfirmed dip is still a SHORT.")
 
     parts = [
         "You are a SELECTIVE, high-conviction trader on Hyperliquid perpetual markets.",
@@ -118,13 +167,8 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "   without strong justification, output PASS with confidence < 0.70 instead of fighting the gate.",
         "   Only commit to LONG/SHORT when BOTH higher-TF alignment AND recent breakout/momentum structure are",
         "   present — unless the pullback/retest is structurally compelling enough to warrant the bypass."
-        "6. 1h structure (volumeBuildup1h / trendFlip1h / higherLows1h) is an ENTRY-TIMING signal, NOT a",
-        "   reason to fight the 4h/1d trend. Use it to time the entry IN the trend's direction:",
-        "   - Uptrend + 1h accumulation → LONG entry (buy the pullback).",
-        "   - Downtrend + 1h bounce     → SHORT entry (sell the rip) — a 1h pop in a downtrend is a",
-        "     SHORTING opportunity, not a long. Never LONG when BOTH 4h AND 1d are bearish.",
-        "   (EXCEPTION: an explicit whale-accumulation / oi_funding_anomaly flag is the ONE sanctioned",
-        "   counter-trend LONG — smart money loading vs crowded shorts. Only that flag overrides.)",
+        + rule6_parts[0],
+        *rule6_parts[1:],
         "7. A HIGH composite_score WITH clean multi-TF trend alignment → take the trend side decisively.",
         "   A low/borderline composite or muddled trend → PASS. The score gate is already strict; if a",
         "   setup reached you it cleared scanning, but you still judge whether the alignment is genuinely",
@@ -160,8 +204,7 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "ANTI-PATTERNS TO AVOID:",
         "- Don't force a trade on a marginal setup — PASS is correct when alignment isn't clean (this book",
         "  bleeds from low-conviction trades, not from missed ones).",
-        "- Don't BUY THE DIP in a clean downtrend (no LONG when 4h AND 1d are both bearish) — that is the",
-        "  single biggest way this book bleeds. A falling market with a 1h bounce is a SHORT, not a long.",
+        anti_dip,
         "- Don't under-weight SHORTS — a bearish trend deserves the same conviction as a bullish one.",
         "- Don't let account leverage / notional / position count affect your verdict — see top rule.",
         "- Don't size confidence based on win rate fear — calibrate to setup quality, not psychology",
