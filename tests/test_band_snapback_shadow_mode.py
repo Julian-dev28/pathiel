@@ -103,17 +103,26 @@ def test_prompt_fired_shadow_off_present():
 
 def test_prompt_fired_shadow_on_absent():
     """Shadow ON: a FIRED band renders NOTHING — fired block, the trending
-    context block, and the 'not present' fallback are all gone (no band-snapback
-    text reaches the prompt; only the generic trigger summary line remains)."""
+    context block, and the 'not present' fallback are all gone, AND the
+    trigger-summary line no longer leaks the fired hit's name+reason
+    (FIXED: the P3 umbrella originally left the summary as a side door,
+    contradicting its own accrual-line claim 'prompt+surfacing suppressed'
+    and the code comment 'NO band-snapback text reaches the prompt')."""
     msg = _build_prompt("TEST", _fired_hit("long"), shadow_mode=True)
-    # The snapback_block (all three shapes) must render nothing. Note the
-    # fired trigger's name+reason STILL appears in the generic "Fired
-    # triggers:" summary line — that is a separate pre-existing mechanism
-    # listing every fired trigger; P3 suppresses the DETAILED band-snapback
-    # block only (snapback_block -> ""), not the trigger summary.
     assert FIRED_SIG not in msg
     assert TRENDING_SIG not in msg
     assert NOTPRESENT_SIG not in msg
+    # summary side door closed: neither the trigger name nor its reason text
+    assert "bandSnapback" not in msg
+    assert "lower wick" not in msg
+
+
+def test_prompt_fired_shadow_off_summary_lists_hit():
+    """Shadow OFF: the fired hit appears in the generic trigger summary
+    (pre-existing mechanism listing every fired trigger) alongside its block."""
+    msg = _build_prompt("TEST", _fired_hit("long"), shadow_mode=False)
+    assert "bandSnapback" in msg
+    assert "lower wick" in msg
 
 
 def test_prompt_trending_shadow_off_present():

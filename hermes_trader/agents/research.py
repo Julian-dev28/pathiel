@@ -453,16 +453,21 @@ def _build_user_message(
     rvol_block: str = "",
 ) -> str:
     """Build the user message passed to the LLM."""
-    # rsi_divergence.shadow_mode / mfi_extreme.shadow_mode: the fired hit must
-    # NOT reach the prompt (shadow accrual is log-only; the trigger still
-    # rides in perception for the counterfactual join). Fail-open: a
-    # config-read error keeps the historical render.
+    # rsi_divergence.shadow_mode / mfi_extreme.shadow_mode / band_snapback.shadow_mode:
+    # the fired hit must NOT reach the prompt (shadow accrual is log-only; the
+    # trigger still rides in perception for the counterfactual join). The
+    # band-snapback umbrella's design statement is "NO band-snapback text
+    # reaches the prompt" — the dedicated block below honors that, but the
+    # trigger-summary line used to leak the fired hit's name+reason whenever
+    # ANOTHER trigger surfaced the coin. Same filter closes that side door.
+    # Fail-open: a config-read error keeps the historical render.
     try:
         _cfg = read_agent_config() or {}
         _rd_shadow = bool((_cfg.get("rsi_divergence") or {}).get("shadow_mode"))
         _mf_shadow = bool((_cfg.get("mfi_extreme") or {}).get("shadow_mode"))
+        _bs_shadow = bool((_cfg.get("band_snapback") or {}).get("shadow_mode"))
     except Exception:
-        _rd_shadow = _mf_shadow = False
+        _rd_shadow = _mf_shadow = _bs_shadow = False
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
@@ -470,6 +475,7 @@ def _build_user_message(
             if t.get("fired")
             and not (_rd_shadow and t.get("name") == "rsiDivergence")
             and not (_mf_shadow and t.get("name") == "mfiExtreme")
+            and not (_bs_shadow and t.get("name") == "bandSnapback")
         )
         or "no triggers fired"
     )
