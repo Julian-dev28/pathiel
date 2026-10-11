@@ -142,6 +142,35 @@ def mfi(candles: List[Candle], period: int = 14) -> List[float]:
     return out
 
 
+def anchored_vwap(candles: List[Candle], start: int):
+    """Volume-weighted average price + dispersion of typical price over
+    candles[start:] (inclusive).
+
+    VWAP = sum(tp*vol)/sum(vol) with tp=(h+l+c)/3 — the average price the
+    window's dollars actually traded at, so high-volume zones pin the level
+    and thin wicks barely move it (unlike an EMA/SMA band). `sigma` is the
+    VOLUME-weighted standard deviation of tp around that VWAP, the natural
+    unit for a deviation z-score: z = (px - vwap) / sigma.
+
+    Returns (vwap, sigma, n_bars). (nan, nan, 0) when the window has no
+    volume (dead tape — no opinion, never a fake 0).
+    """
+    num = 0.0
+    den = 0.0
+    pairs = []
+    for c in candles[start:]:
+        tp = (candle_val(c, "h") + candle_val(c, "l") + candle_val(c, "c")) / 3.0
+        v = candle_val(c, "v")
+        pairs.append((tp, v))
+        num += tp * v
+        den += v
+    if den <= 0:
+        return float("nan"), float("nan"), 0
+    vwap = num / den
+    var = sum(v * (tp - vwap) ** 2 for tp, v in pairs) / den
+    return vwap, var ** 0.5, len(pairs)
+
+
 def adx(candles: List[Candle], period: int = 14) -> List[float]:
     """Average directional index."""
     n = len(candles)

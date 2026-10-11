@@ -38,6 +38,10 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         # MFI extreme — SURFACING BYPASS (weight 0): volume-weighted RSI
         # pinned in a washout (long) / euphoria (short) zone.
         "mfiExtreme": 0.0,
+        # VWAP deviation — SURFACING BYPASS (weight 0): px stretched past
+        # fade_z sigmas from the swing-anchored VWAP (fade) or pulled back
+        # to it mid-move (retest). Cost-basis level, volume-weighted.
+        "vwapDeviation": 0.0,
     },
     "thresholds": {
         "sigmaThreshold": 2.0,

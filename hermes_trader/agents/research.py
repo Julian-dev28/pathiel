@@ -466,8 +466,9 @@ def _build_user_message(
         _rd_shadow = bool((_cfg.get("rsi_divergence") or {}).get("shadow_mode"))
         _mf_shadow = bool((_cfg.get("mfi_extreme") or {}).get("shadow_mode"))
         _bs_shadow = bool((_cfg.get("band_snapback") or {}).get("shadow_mode"))
+        _vw_shadow = bool((_cfg.get("vwap_deviation") or {}).get("shadow_mode"))
     except Exception:
-        _rd_shadow = _mf_shadow = _bs_shadow = False
+        _rd_shadow = _mf_shadow = _bs_shadow = _vw_shadow = False
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
@@ -476,6 +477,7 @@ def _build_user_message(
             and not (_rd_shadow and t.get("name") == "rsiDivergence")
             and not (_mf_shadow and t.get("name") == "mfiExtreme")
             and not (_bs_shadow and t.get("name") == "bandSnapback")
+            and not (_vw_shadow and t.get("name") == "vwapDeviation")
         )
         or "no triggers fired"
     )
