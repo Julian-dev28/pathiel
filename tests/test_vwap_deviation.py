@@ -317,3 +317,98 @@ def test_prompt_shadow_on_hides_hit():
     msg = _build_prompt(shadow_mode=True)
     assert "vwapDeviation" not in msg
     assert "vwap fade" not in msg
+
+
+# ---------------------------------------------------------------------------
+# Dedicated prompt block: gated on BOTH flags (enabled AND not shadow_mode)
+# ---------------------------------------------------------------------------
+
+_NOT_FIRED_HIT = {"name": "vwapDeviation", "fired": False, "score": 0,
+                  "reason": ("no setup (px +1.4σ vs VWAP anchored at "
+                             "swing low 42 bars ago)")}
+_NO_OPINION_HIT = {"name": "vwapDeviation", "fired": False, "score": 0,
+                   "reason": "no_swing"}
+
+
+def _build_block_prompt(cfg_block, hit):
+    """Build the user message with an arbitrary vwap_deviation config block
+    and an arbitrary vwapDeviation trigger hit (None = hit absent)."""
+    triggers = [] if hit is None else [dict(hit)]
+    perception_dict = {"type": "perp", "mid": 9.0, "composite_score": 40,
+                       "triggers": triggers}
+    snap = {"ema8": None, "ema21": None, "last_close": 9.0}
+    real_read = research.read_agent_config
+    try:
+        research.read_agent_config = lambda: ({"vwap_deviation": cfg_block}
+                                              if cfg_block is not None else {})
+        return research._build_user_message(
+            "TEST", perception_dict, snap, snap, snap, "0.01%/hr", "no news",
+            250.0, [], "LIVE",
+        )
+    finally:
+        research.read_agent_config = real_read
+
+
+def test_block_absent_config_renders_nothing_even_if_hit_present():
+    """The DEDICATED block's gate is the FLAGS, not hit presence: config
+    block absent -> no block text even with a fired hit riding in
+    perception. (The generic summary line still lists the hit — that is the
+    historical family behavior; the summary filter keys on shadow_mode, and
+    a hit can only exist in perception if the trigger was enabled at scan
+    time anyway.)"""
+    msg = _build_block_prompt(None, _FIRED_HIT)
+    assert "VWAP deviation signal" not in msg
+    assert "VWAP context" not in msg
+    assert "vwapDeviation" in msg  # summary line: enabled unknown -> not filtered
+
+
+def test_block_disabled_flag_renders_nothing():
+    msg = _build_block_prompt({"enabled": False}, _FIRED_HIT)
+    assert "VWAP deviation signal" not in msg
+    assert "VWAP context" not in msg
+
+
+def test_block_shadow_flag_renders_nothing():
+    """shadow_mode ON suppresses BOTH prompt surfaces: the summary line AND
+    the dedicated block (the band-snapback leak lesson)."""
+    msg = _build_block_prompt({"enabled": True, "shadow_mode": True}, _FIRED_HIT)
+    assert "VWAP deviation signal" not in msg
+    assert "vwap fade" not in msg
+    assert "vwapDeviation" not in msg
+
+
+def test_block_live_fired_renders_fired_branch():
+    msg = _build_block_prompt({"enabled": True}, _FIRED_HIT)
+    assert "VWAP deviation signal" in msg
+    assert "swing high 70 bars ago" in msg
+    assert "LONG" in msg  # side named positively from the long-side reason
+    assert "never itself a reason to PASS" in msg
+
+
+def test_block_live_not_fired_renders_context():
+    """A non-fired hit with a current-z reason renders the informative
+    context branch (extension vs cost basis) — entry context even when the
+    coin surfaced via another trigger."""
+    msg = _build_block_prompt({"enabled": True}, _NOT_FIRED_HIT)
+    assert "VWAP context" in msg
+    assert "+1.4σ" in msg
+
+
+def test_block_live_no_opinion_renders_nothing():
+    """no_swing / no_vwap / insufficient_history -> no opinion -> empty."""
+    for reason in ("no_swing", "no_vwap", "insufficient_history", "flat"):
+        msg = _build_block_prompt({"enabled": True},
+                                  {**_NO_OPINION_HIT, "reason": reason})
+        assert "VWAP" not in msg, f"reason={reason} leaked"
+
+
+def test_block_empty_is_byte_identical():
+    """Gated-off states add ZERO bytes (no stray join newlines): a shadowed
+    build WITH a fired hit must be byte-identical to the same build with no
+    hit at all, and likewise for enabled=false + a non-fired hit."""
+    shadowed_hit = _build_block_prompt({"enabled": True, "shadow_mode": True}, _FIRED_HIT)
+    shadowed_none = _build_block_prompt({"enabled": True, "shadow_mode": True}, None)
+    assert shadowed_hit == shadowed_none
+    off_hit = _build_block_prompt({"enabled": False}, _NOT_FIRED_HIT)
+    off_none = _build_block_prompt({"enabled": False}, None)
+    assert off_hit == off_none
