@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Optional
 
-from hermes_trader.indicators.math import adx, atr, ema, rsi, sma, candle_val
+from hermes_trader.indicators.math import adx, atr, ema, mfi, rsi, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
 
 
@@ -473,6 +473,73 @@ def rsi_divergence(candles: List[Candle], rsi_period: int = 14, lookback: int = 
                                f"{r2:.0f} vs {r1:.0f} (-{gap:.1f})"),
                     "fired": True,
                 }
+
+    return {"name": name, "score": 0, "reason": "flat", "fired": False}
+
+
+def mfi_extreme(candles: List[Candle], mfi_period: int = 14,
+                oversold: float = 20.0, overbought: float = 80.0,
+                vol_confirm_ratio: float = 0.0) -> TriggerHit:
+    """MFI extreme — volume-weighted RSI pinned in a washout / euphoria zone.
+
+    Money Flow Index = RSI's formula with each bar weighted by TRADED VOLUME
+    (typical price x volume, Wilder-smoothed). Where RSI only sees closes, MFI
+    sees whether volume is flowing IN or OUT at the extreme: a washout on
+    heavy volume (MFI <= `oversold`) is capitulation/accumulation — a LONG
+    entry shape; a euphoric push (MFI >= `overbought`) is distribution — a
+    SHORT shape. This is the cumulative volume-flow signal the instantaneous
+    volume-z/buildup triggers cannot see.
+
+    Guards:
+      - the LAST warm MFI value must sit in the extreme zone;
+      - optional climax confirmation: when `vol_confirm_ratio` > 0, the last
+        bar's volume must be >= ratio x the mean volume over `mfi_period`
+        bars (a real capitulation prints size; a quiet drift into the zone is
+        weaker — score reflects it either way).
+    Score scales with how deep past the zone edge MFI sits (0..10).
+
+    Surfacing signal (weight 0 bypass): the AI + risk gates adjudicate.
+    """
+    name = "mfiExtreme"
+    if len(candles) < mfi_period * 2 + 2:
+        return {"name": name, "score": 0, "reason": "insufficient_history", "fired": False}
+
+    mfi_arr = mfi(candles, mfi_period)
+    m = next((v for v in reversed(mfi_arr) if math.isfinite(v)), None)
+    if m is None:
+        return {"name": name, "score": 0, "reason": "no_mfi", "fired": False}
+
+    vol_confirmed = True
+    if vol_confirm_ratio > 0:
+        vols = [candle_val(c, "v") for c in candles[-mfi_period:]]
+        mean_v = sum(vols) / len(vols)
+        last_v = candle_val(candles[-1], "v")
+        vol_confirmed = mean_v > 0 and last_v >= vol_confirm_ratio * mean_v
+
+    if m <= oversold:
+        depth = oversold - m
+        score = min(10.0, 5.0 + depth / max(oversold, 1.0) * 10.0)
+        if vol_confirm_ratio > 0 and not vol_confirmed:
+            score = min(score, 5.0)
+        return {
+            "name": name,
+            "score": score,
+            "reason": (f"long — MFI {m:.0f} <= {oversold:.0f} oversold"
+                       f"{' (volume-confirmed)' if vol_confirmed else ' (no volume confirm)'}"),
+            "fired": True,
+        }
+    if m >= overbought:
+        depth = m - overbought
+        score = min(10.0, 5.0 + depth / max(100.0 - overbought, 1.0) * 10.0)
+        if vol_confirm_ratio > 0 and not vol_confirmed:
+            score = min(score, 5.0)
+        return {
+            "name": name,
+            "score": score,
+            "reason": (f"short — MFI {m:.0f} >= {overbought:.0f} overbought"
+                       f"{' (volume-confirmed)' if vol_confirmed else ' (no volume confirm)'}"),
+            "fired": True,
+        }
 
     return {"name": name, "score": 0, "reason": "flat", "fired": False}
 

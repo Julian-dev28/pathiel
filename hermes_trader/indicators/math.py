@@ -1,4 +1,4 @@
-"""Technical indicators (ema, sma, atr, rsi, adx) computed over OHLCV candles."""
+"""Technical indicators (ema, sma, atr, rsi, mfi, adx) computed over OHLCV candles."""
 
 from __future__ import annotations
 
@@ -87,6 +87,57 @@ def rsi(candles: List[Candle], period: int = 14) -> List[float]:
         avg_g = (avg_g * (period - 1) + (d if d > 0 else 0)) / period
         avg_l = (avg_l * (period - 1) + (-d if d < 0 else 0)) / period
         out[i] = 100 if avg_l == 0 else 100 - 100 / (1 + avg_g / avg_l)
+
+    return out
+
+
+def mfi(candles: List[Candle], period: int = 14) -> List[float]:
+    """Money flow index — volume-weighted RSI (Wilder-smoothed).
+
+    Typical price TP=(H+L+C)/3; raw money flow = TP x volume, split positive /
+    negative by whether TP rose vs the previous bar. MFI = 100 - 100/(1 +
+    pos_ratio/neg_ratio) over Wilder-smoothed (Wilder's own EMA-style running
+    sum) flows. Unlike RSI it weights each bar by TRADED VOLUME, so it flags
+    distribution-into-strength / accumulation-into-weakness that a
+    closes-only oscillator misses. Warm values are in [0, 100].
+    """
+    n = len(candles)
+    out = [float("nan")] * n
+    if n <= period:
+        return out
+
+    pos = [0.0] * n
+    neg = [0.0] * n
+    tp_prev = (candle_val(candles[0], "h") + candle_val(candles[0], "l")
+               + candle_val(candles[0], "c")) / 3.0
+    for i in range(1, n):
+        tp = (candle_val(candles[i], "h") + candle_val(candles[i], "l")
+              + candle_val(candles[i], "c")) / 3.0
+        mf = tp * candle_val(candles[i], "v")
+        if tp > tp_prev:
+            pos[i] = mf
+        elif tp < tp_prev:
+            neg[i] = mf
+        tp_prev = tp
+
+    pos_s = sum(pos[1:period + 1])
+    neg_s = sum(neg[1:period + 1])
+
+    def _mfi(p: float, q: float) -> float:
+        if q == 0:
+            # No negative flow at all: pure inflow -> 100, but a totally
+            # dead tape (no flow either way) is NEUTRAL, not euphoric.
+            return 50.0 if p == 0 else 100.0
+        if p == 0:
+            return 0.0
+        return 100.0 - 100.0 / (1.0 + p / q)
+
+    out[period] = _mfi(pos_s, neg_s)
+    for i in range(period + 1, n):
+        # Wilder smoothing (same convention as atr()/rsi() above).
+        pos_s = (pos_s * (period - 1) + pos[i]) / period
+        neg_s = (neg_s * (period - 1) + neg[i]) / period
+        out[i] = _mfi(pos_s, neg_s)
 
     return out
 

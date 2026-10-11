@@ -361,6 +361,33 @@ def _scan_single_market(
                     f"(shadow: surfacing+prompt suppressed, log-only)"
                 )
 
+        # MFI extreme — OFF by default. Volume-weighted RSI pinned in a
+        # washout (long) / euphoria (short) zone: the cumulative volume-flow
+        # signal the instantaneous volume-z/buildup triggers cannot see.
+        # Surfacing bypass (weight 0) — the AI + risk gates adjudicate.
+        # shadow_mode: trigger keeps computing and accrues a [SHADOW] line,
+        # but the surfacing bypass is suppressed and research.py filters the
+        # hit out of the prompt.
+        _mf = config.get("mfi_extreme", {}) or {}
+        _mf_hit = None
+        if _mf.get("enabled"):
+            _mf_hit = trigger_mod.mfi_extreme(
+                candles,
+                mfi_period=int(_mf.get("mfi_period", 14)),
+                oversold=float(_mf.get("oversold", 20.0)),
+                overbought=float(_mf.get("overbought", 80.0)),
+                vol_confirm_ratio=float(_mf.get("vol_confirm_ratio", 0.0)),
+            )
+            hits.append(_mf_hit)
+            if _mf.get("shadow_mode") and _mf_hit.get("fired"):
+                # Shadow accrual record — the only visible trace while
+                # shadow_mode suppresses surfacing + prompt.
+                logger.warning(
+                    f"[mfi-extreme][SHADOW] {market['coin']} "
+                    f"{_mf_hit.get('reason', '')} "
+                    f"(shadow: surfacing+prompt suppressed, log-only)"
+                )
+
         # Daily mover surfacing: the scan already reserves slots for top 24h
         # movers, but the trigger gate can still drop an orderly runner once the
         # fresh spike/breakout bar has passed. Surface large liquid movers to AI
@@ -474,9 +501,18 @@ def _scan_single_market(
         divergence_bypass = (bool(_rd.get("enabled"))
                              and not bool(_rd.get("shadow_mode"))
                              and _rd_hit is not None and _rd_hit.get("fired"))
+        # MFI-extreme bypass: a fired washout/euphoria reading surfaces the
+        # coin for AI research even below the composite gate (the gate is
+        # tuned for momentum bursts, not volume-flow extremes). Gated by
+        # mfi_extreme.enabled; mfi_extreme.shadow_mode suppresses the
+        # surfacing (the trigger still computes and accrues the [SHADOW] line).
+        mfi_bypass = (bool(_mf.get("enabled"))
+                      and not bool(_mf.get("shadow_mode"))
+                      and _mf_hit is not None and _mf_hit.get("fired"))
         if (score < min_score and not burst_fired and not whale_bypass
                 and not trend_bypass and not pattern_bypass and not snapback_bypass
-                and not daily_mover_bypass and not divergence_bypass):
+                and not daily_mover_bypass and not divergence_bypass
+                and not mfi_bypass):
             # Near-miss logging (LEAK #2 observability) — OFF by default. Surfaces
             # coins that scored just below the gate so we can see whether extended
             # movers land just-under (tune threshold) or far-under (need the
