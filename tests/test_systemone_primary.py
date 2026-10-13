@@ -265,6 +265,72 @@ def test_research_systemone_held_close(monkeypatch):
     assert seen["state"]["held_position"]["entry_px"] == 49000.0
 
 
+# ── entry trap veto (seat-level knob) ─────────────────────────────────────
+
+def _arm_veto(monkeypatch, trap, threshold, shadow):
+    _write_cfg({"engine": "systemone", "model": "d2-lux",
+                "base_url": "http://so.test:8080",
+                "trap_veto_threshold": threshold,
+                "trap_veto_shadow_mode": shadow})
+    answers = _answers({"long": 0.8, "short": 0.05, "none": 0.15},
+                       {0: 0.0, 1: 0.0, 2: 0.2, 3: 0.6, 4: 0.2}, trap=trap)
+    monkeypatch.setattr(dv, "call_systemone",
+                        lambda *a, **k: (answers, 42, 30))
+
+
+def test_trap_veto_live_downgrades_to_veto(monkeypatch, caplog):
+    _arm_veto(monkeypatch, trap=0.5, threshold=0.35, shadow=False)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception())
+    assert a["verdict"] == "VETO" and a["side"] is None
+    assert "trap_veto" in a["reasoning"]
+    assert "VETOED (entry blocked)" in caplog.text
+
+
+def test_trap_veto_shadow_proceeds_with_accrual(monkeypatch, caplog):
+    _arm_veto(monkeypatch, trap=0.5, threshold=0.35, shadow=True)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception())
+    assert a["verdict"] == "LONG"  # entry proceeds
+    assert "WOULD BE VETOED (shadow" in caplog.text
+
+
+def test_trap_veto_off_by_default_and_below_threshold(monkeypatch):
+    # threshold absent -> LONG even with trap 0.9 (byte-identical seat)
+    _arm_veto(monkeypatch, trap=0.9, threshold=0.0, shadow=False)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception())
+    assert a["verdict"] == "LONG"
+    # threshold present but trap below it -> LONG
+    _arm_veto(monkeypatch, trap=0.3, threshold=0.35, shadow=False)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception())
+    assert a["verdict"] == "LONG"
+
+
+def test_trap_veto_never_touches_close(monkeypatch):
+    # held + close_now >= 0.5 + trap above threshold -> CLOSE stays CLOSE
+    _write_cfg({"engine": "systemone", "model": "d2-lux",
+                "base_url": "http://so.test:8080",
+                "trap_veto_threshold": 0.35, "trap_veto_shadow_mode": False})
+    answers = _answers({"long": 0.1, "short": 0.1, "none": 0.8},
+                       {0: 0.5, 1: 0.3, 2: 0.2, 3: 0.0, 4: 0.0},
+                       trap=0.9, close=0.7)
+    monkeypatch.setattr(dv, "call_systemone",
+                        lambda *a, **k: (answers, 42, 30))
+    _patch_research_deps(monkeypatch)
+    monkeypatch.setattr(research, "resolve_user_address", lambda: "0xabc")
+    monkeypatch.setattr(research, "fetch_account_state", lambda user, include_hip3=False: {
+        "equity": "1000",
+        "asset_positions": [{"position": {
+            "coin": "BTC", "szi": "0.1", "positionValue": "5000",
+            "entryPx": "49000", "unrealizedPnl": "100",
+        }}],
+    })
+    a = research.research("BTC", _perception())
+    assert a["verdict"] == "CLOSE"
+
+
 # ── research() branch: failure = PASS + ai_down, NO LLM fallback ──────────
 
 def test_research_systemone_failure_pass_ai_down(monkeypatch, caplog):

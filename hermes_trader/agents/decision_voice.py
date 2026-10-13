@@ -279,6 +279,15 @@ def primary_engine_config() -> Dict[str, Any]:
             "api_key": api_key,
             "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
             "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
+            # Entry trap veto (owner call 2026-10-13, nano-tuned book):
+            # threshold 0/absent = OFF (byte-identical seat mapping);
+            # >0 = a LONG/SHORT whose trap noul EXCEEDS the threshold is
+            # rejected. shadow defaults TRUE (house doctrine: new gates
+            # ship log-only); the config flip sets it false to arm live.
+            "trap_veto_threshold": float(slot.get("trap_veto_threshold") or 0.0),
+            "trap_veto_shadow_mode": str(
+                slot.get("trap_veto_shadow_mode", True)
+            ).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
         return dict(_LLM_ENGINE)
@@ -324,6 +333,33 @@ def systemone_primary_verdict(
         return None
     parsed = verdict_from_answers(answers, coin, perception)
     parsed.pop("_answers", None)  # raw probs go to the archive, not the analysis
+
+    # Entry trap veto (seat-level, config `llm.primary_engine.trap_veto_*`):
+    # the nano-tuned optimum (trap<=.35 rung, +$53.48 vs +$38.35 at live
+    # bars on the 15,792-state walk) — a LONG/SHORT the seat calls with a
+    # trap noul ABOVE the threshold is downgraded to VETO, the executor's
+    # categorical rejection (never upgraded by whale/composite/breakout
+    # force paths). Entry-only: CLOSE/PASS/VETO untouched; threshold 0 =
+    # off, byte-identical to the seat without the knob.
+    thr = cfg.get("trap_veto_threshold") or 0.0
+    if thr > 0 and parsed["verdict"] in ("LONG", "SHORT"):
+        trap_p = float((answers.get("trap") or {}).get("noul", 0.0))
+        if trap_p > thr:
+            if cfg.get("trap_veto_shadow_mode", True):
+                logger.warning(
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"— WOULD BE VETOED (shadow; entry proceeds)"
+                )
+            else:
+                parsed["reasoning"] = (
+                    (parsed.get("reasoning") or "")
+                    + f" [trap_veto: trap {trap_p:.2f} > {thr:.2f}]"
+                )
+                parsed["verdict"], parsed["side"] = "VETO", None
+                logger.warning(
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"— VETOED (entry blocked)"
+                )
     return {
         "parsed": parsed,
         "answers": answers,
