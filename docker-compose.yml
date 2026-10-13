@@ -43,6 +43,38 @@ services:
       - llama-net
     restart: unless-stopped
 
+  # systemone PRIMARY seat (2026-10-13): llama.cpp MASTER serving
+  # ggml-org/vllm-d3-nano-GGUF Q8_0 via POST /v1/systemone. lemonade's
+  # bundled llama.cpp predates d3 support (upstream PRs #30383/#30408), so
+  # this runs the sm_89 master build at ~/llama-master/build (built in
+  # nvidia/cuda:12.8.1-devel-ubuntu22.04). Dedicated container + restart
+  # policy = the persistence fix the clef :8080 setsid never had (it died
+  # on every lemonade recreate). Serving flags proven on the 1.16 A/B box:
+  # --embeddings --pooling none is the decision-model mode; -b/-ub 8192
+  # covers the bot's state JSON in one batch (embedding mode 500s when the
+  # state exceeds the physical batch size). VRAM: nano Q8 + KV ~3 GB on top
+  # of the 27B IQ2_XS-mtp (~12.5 GB) — fits with clef evicted.
+  nano-serve:
+    image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+    container_name: nano-serve
+    command: /srv/build/bin/llama-server
+      -m /hf/hub/models--ggml-org--vllm-d3-nano-GGUF/snapshots/67baf946c0042cd74ca7106929ed57db699a5f4b/vllm-d3-nano-Q8_0.gguf
+      --embeddings --pooling none -c 8192 -b 8192 -ub 8192 -np 1
+      --host 0.0.0.0 --port 8080
+    volumes:
+      - /home/oknight/llama-master/build:/srv:ro
+      - /home/oknight/.cache/huggingface:/hf:ro
+    networks:
+      - llama-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 networks:
   llama-net:
     external: true
