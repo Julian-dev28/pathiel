@@ -146,9 +146,9 @@ for them.
 | `wallet_account` | Read-only Hyperliquid equity + positions for any address |
 | **Hyperfeed Discovery** | |
 | `leaderboard_get_markets` | Top markets by OI + volume |
-| `leaderboard_get_top_traders` | Trader rankings with win rates |
+| `leaderboard_get_top_traders` | Top traders from HL's public leaderboard over a window, with live positions |
 | `leaderboard_get_trader_positions` | Positions for a specific trader |
-| `discovery_get_top_traders` | Discovery top traders (alias) |
+| `discovery_get_top_traders` | Leaderboard pnl/roi for every window; ROI ranking floors accounts at $10k |
 | `discovery_get_trader_state` | Full trader state from discovery |
 | **Market Data** | |
 | `market_get_asset_data` | Candles + funding + OI for any coin |
@@ -297,7 +297,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 - `market_get_funding_regime()` — LONG_CROWDED / SHORT_CROWDED / NEUTRAL analysis
 - `whale_concentration()` — identifies assets with whale accumulation
 - `oi_funding_anomaly()` — OI spike + negative funding + flat price = accumulation signal
-- `discovery_get_top_traders(...)` — trader rankings with win rates
+- `discovery_get_top_traders(...)` — leaderboard rankings with pnl/roi per window
 - `market_get_asset_data(asset)` — candles + funding + OI for any coin
 
 ---
@@ -806,7 +806,7 @@ prompt/parse path. LONG/SHORT/CLOSE verdicts still flow through the same risk
 gates, kill switch, close helper, and DSL exit engine.
 
 ### Why Hyperfeed Discovery?
-The HL leaderboard and whale tracking aren't exposed through the public API. This module reconstructs the same data patterns (leaderboard rankings, smart money concentration, OI anomalies) from the raw HL endpoints we already call. No external MCP dependency needed.
+Leaderboard rankings come from the JSON Hyperliquid's own UI renders (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, cached 10 minutes), joined to live `/info` positions. Funding regime and OI context come from the raw HL endpoints we already call. No external MCP dependency needed.
 
 ### Why pure Python?
 Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration with Pathiel Agent, and native testability without a headless browser.

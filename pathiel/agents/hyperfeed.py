@@ -8,15 +8,29 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple
+
+import requests
 
 from pathiel.client.hl_client import _http_post, fetch_all_mids, fetch_hl_candles
 from pathiel.client.universe import get_universe
 
 logger = logging.getLogger(__name__)
 
-# Optional trusted leaderboard wallets. Empty by default.
-TRUSTED_WALLETS: set[str] = set()
+# Hyperliquid's public leaderboard: the JSON its own UI renders. Not part of
+# /info, so it is a plain GET against the stats host.
+_LEADERBOARD_URL = "https://stats-data.hyperliquid.xyz/Mainnet/leaderboard"
+_LEADERBOARD_TTL_S = 600
+_LEADERBOARD_TIMEOUT_S = 60
+_leaderboard_cache: Optional[Tuple[List[Dict[str, Any]], float]] = None
+_WINDOWS = {"DAILY": "day", "WEEKLY": "week", "MONTHLY": "month", "ALL_TIME": "allTime"}
+_SORT_METRICS = {"PROFIT_AND_LOSS_UNREALIZED": "pnl", "PROFIT_AND_LOSS": "pnl",
+                 "RETURN_ON_INVESTMENT": "roi"}
+_ROI_MIN_ACCOUNT_VALUE = 10_000.0
+_MAX_LIMIT = 100
+_MAX_POSITION_LOOKUPS = 200
+_LOOKUP_WORKERS = 8
 
 # Funding-regime cache. Funding rates settle hourly so a 5-min TTL is safe
 # and avoids hitting get_universe() on every risk-gate evaluation.
@@ -70,72 +84,159 @@ def leaderboard_get_markets(limit: int = 100) -> Dict[str, Any]:
     return {"markets": markets}
 
 
+def _fetch_leaderboard_rows() -> List[Dict[str, Any]]:
+    """Every row of Hyperliquid's public leaderboard, normalized.
+
+    HL serves the leaderboard its own UI renders as a static JSON document on
+    stats-data.hyperliquid.xyz (not /info). It is ~40MB and ~47k rows, so it is
+    fetched at most once per _LEADERBOARD_TTL_S and served from memory between.
+    Each window maps to {"pnl", "roi", "vlm"} floats; roi is a fraction.
+    """
+    resp = requests.get(_LEADERBOARD_URL, timeout=_LEADERBOARD_TIMEOUT_S)
+    resp.raise_for_status()
+    rows = (resp.json() or {}).get("leaderboardRows") or []
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        addr = str(r.get("ethAddress") or "").lower()
+        if not addr:
+            continue
+        windows: Dict[str, Dict[str, float]] = {}
+        for pair in r.get("windowPerformances") or []:
+            if isinstance(pair, (list, tuple)) and len(pair) == 2 and isinstance(pair[1], dict):
+                windows[str(pair[0])] = {k: _safe_float(pair[1].get(k)) for k in ("pnl", "roi", "vlm")}
+        out.append({
+            "address": addr,
+            "display_name": r.get("displayName"),
+            "account_value": _safe_float(r.get("accountValue")),
+            "windows": windows,
+        })
+    return out
+
+
+def _leaderboard_rows() -> List[Dict[str, Any]]:
+    """Cached leaderboard. A failed refresh serves the stale copy rather than
+    nothing: rankings move slowly and an empty answer reads as "no traders"."""
+    global _leaderboard_cache
+    now = time.time()
+    if _leaderboard_cache and now - _leaderboard_cache[1] < _LEADERBOARD_TTL_S:
+        return _leaderboard_cache[0]
+    try:
+        rows = _fetch_leaderboard_rows()
+    except Exception as e:
+        if _leaderboard_cache:
+            logger.warning(f"[hyperfeed] leaderboard refresh failed, serving stale: {e}")
+            return _leaderboard_cache[0]
+        raise
+    _leaderboard_cache = (rows, now)
+    return rows
+
+
+def _rank_leaderboard(time_frame: str, sort_by: str,
+                      min_account_value: float) -> List[Dict[str, Any]]:
+    """Leaderboard rows ranked by one window's pnl or roi, best first.
+
+    Raises ValueError on an unknown time_frame or sort_by: silently falling
+    back to a default ranks traders by something the caller did not ask for.
+    """
+    window = _WINDOWS.get(str(time_frame).upper())
+    if window is None:
+        raise ValueError(f"time_frame must be one of {sorted(_WINDOWS)}, got {time_frame!r}")
+    metric = _SORT_METRICS.get(str(sort_by).upper())
+    if metric is None:
+        raise ValueError(f"sort_by must be one of {sorted(_SORT_METRICS)}, got {sort_by!r}")
+    rows = [r for r in _leaderboard_rows()
+            if window in r["windows"] and r["account_value"] >= min_account_value]
+    rows.sort(key=lambda r: r["windows"][window][metric], reverse=True)
+    return rows
+
+
+def _open_positions(addr: str) -> Optional[List[Dict[str, Any]]]:
+    """Open main-dex perp positions for one address, or None if the call failed."""
+    try:
+        state = _http_post("/info", {"type": "clearinghouseState", "user": addr})
+    except Exception as e:
+        logger.debug(f"[hyperfeed] clearinghouseState failed for {addr}: {e}")
+        return None
+    if not state:
+        return None
+    positions = []
+    for p in state.get("assetPositions", []) or []:
+        pos = (p or {}).get("position") or {}
+        szi = _safe_float(pos.get("szi", "0"))
+        if szi == 0:
+            continue
+        lev = pos.get("leverage") or {}
+        positions.append({
+            "coin": pos.get("coin", ""),
+            "side": "long" if szi > 0 else "short",
+            "size": abs(szi),
+            "entry_price": _safe_float(pos.get("entryPx", "0")),
+            "position_value": _safe_float(pos.get("positionValue", "0")),
+            "unrealized_pnl": _safe_float(pos.get("unrealizedPnl", "0")),
+            "leverage": lev.get("value", "0") if isinstance(lev, dict) else lev,
+        })
+    return positions
+
+
+def _top_with_positions(ranked: List[Dict[str, Any]], limit: int,
+                        open_position_filter: bool) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+    """Walk the ranking, attach live positions, keep the first `limit`.
+
+    With the filter on, flat accounts are skipped, so this walks past `limit`.
+    The walk is capped at _MAX_POSITION_LOOKUPS so a ranking full of flat
+    accounts costs a bounded number of /info calls, not one per leaderboard row.
+    """
+    picked: List[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = []
+    budget = ranked[:_MAX_POSITION_LOOKUPS] if open_position_filter else ranked[:limit]
+    batch = max(1, min(_LOOKUP_WORKERS * 2, limit))
+    with ThreadPoolExecutor(max_workers=_LOOKUP_WORKERS, thread_name_prefix="hf-lb") as pool:
+        for i in range(0, len(budget), batch):
+            chunk = budget[i:i + batch]
+            for row, positions in zip(chunk, pool.map(lambda r: _open_positions(r["address"]), chunk)):
+                if positions is None:
+                    positions = []
+                if open_position_filter and not positions:
+                    continue
+                picked.append((row, positions))
+                if len(picked) >= limit:
+                    return picked
+    return picked
+
+
 def leaderboard_get_top(time_frame: str = "DAILY",
                         sort_by: str = "PROFIT_AND_LOSS_UNREALIZED",
                         consistency: Optional[List[str]] = None,
                         limit: int = 10,
-                        open_position_filter: bool = True) -> Dict[str, Any]:
-    """Top traders with their account values and positions.
+                        open_position_filter: bool = True,
+                        min_account_value: float = 0.0) -> Dict[str, Any]:
+    """Top traders from Hyperliquid's public leaderboard, with live positions.
 
-    Returns empty unless TRUSTED_WALLETS is populated (HL's leaderboard
-    endpoint is not publicly exposed).
-
-    `time_frame`, `sort_by`, `consistency` and `open_position_filter` are
-    ACCEPTED AND IGNORED. There is no leaderboard to filter — the function
-    reads the fixed TRUSTED_WALLETS list — so no ranking window can be applied.
-    They are kept because scripts/pathiel-mcp-server.py passes time_frame
-    straight through from a tool call; dropping them would break that caller
-    for no gain. Said out loud here because an MCP client asking for MONTHLY
-    silently gets the same wallets as DAILY, and a signature that advertises
-    filtering it does not do is the same defect as a docstring promising data
-    it does not return.
+    Ranked by `sort_by` over `time_frame` (DAILY/WEEKLY/MONTHLY/ALL_TIME).
+    PROFIT_AND_LOSS_UNREALIZED is kept as the name callers already send; the
+    leaderboard's pnl is HL's window pnl (realized + unrealized change), which
+    is what that name has always meant on the HL UI. `consistency` is accepted
+    for signature compatibility and ignored: the leaderboard has no such field.
     """
-    results: List[Dict[str, Any]] = []
-    for addr in TRUSTED_WALLETS:
-        try:
-            state = _http_post("/info", {
-                "type": "clearinghouseState",
-                "user": addr,
-            })
-            if not state:
-                continue
-
-            margin = state.get("marginSummary", {})
-            account_value = _safe_float(margin.get("accountValue", "0"))
-            total_ntl = _safe_float(margin.get("totalNtlPos", "0"))
-
-            positions = []
-            for p in state.get("assetPositions", []):
-                if not p.get("position"):
-                    continue
-                pos = p["position"]
-                szi = _safe_float(pos.get("szi", "0"))
-                if szi == 0:
-                    continue
-                positions.append({
-                    "coin": pos.get("coin", ""),
-                    "side": "long" if szi > 0 else "short",
-                    "size": abs(szi),
-                    "entry_price": _safe_float(pos.get("entryPx", "0")),
-                    "unrealized_pnl": _safe_float(pos.get("unrealizedPnl", "0")),
-                    "leverage": pos.get("leverage", {}).get("value", "0"),
-                })
-
-            if open_position_filter and not positions:
-                continue
-
-            results.append({
-                "address": addr,
-                "account_value": account_value,
-                "total_ntl_pos": total_ntl,
-                "positions": positions,
-                "position_count": len(positions),
-            })
-        except Exception as e:
-            logger.debug(f"[hyperfeed] leaderboard state failed for {addr}: {e}")
-
-    results = sorted(results, key=lambda x: x["account_value"], reverse=True)[:limit]
-    return {"traders": results}
+    limit = max(1, min(_MAX_LIMIT, int(limit)))
+    ranked = _rank_leaderboard(time_frame, sort_by, float(min_account_value or 0))
+    window = _WINDOWS[str(time_frame).upper()]
+    traders = []
+    for rank, (row, positions) in enumerate(_top_with_positions(ranked, limit, open_position_filter), 1):
+        w = row["windows"][window]
+        traders.append({
+            "rank": rank,
+            "address": row["address"],
+            "display_name": row["display_name"],
+            "account_value": row["account_value"],
+            "window": window,
+            "pnl_usd": w["pnl"],
+            "roi_pct": w["roi"] * 100,
+            "volume_usd": w["vlm"],
+            "positions": positions,
+            "position_count": len(positions),
+        })
+    return {"source": "hyperliquid_leaderboard", "time_frame": str(time_frame).upper(),
+            "sort_by": str(sort_by).upper(), "traders": traders}
 
 
 def leaderboard_get_trader_positions(trader_id: str) -> Dict[str, Any]:
@@ -187,72 +288,36 @@ def discovery_get_top_traders(
     consistency: Optional[List[str]] = None,
     open_position_filter: bool = True,
     limit: int = 60,
+    min_account_value: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Top traders with PnL / ROI / win-rate metrics, sorted by `sort_by`.
+    """Top traders with pnl/roi for every window, ranked by `sort_by` over `time_frame`.
 
-    Returns empty unless TRUSTED_WALLETS is populated.
+    ROI rankings default to a $10k account-value floor (_ROI_MIN_ACCOUNT_VALUE):
+    without it the top of an ROI board is dust accounts that doubled $20.
+    Pass min_account_value=0 to see them anyway.
     """
-    results: List[Dict[str, Any]] = []
-    for addr in TRUSTED_WALLETS:
-        try:
-            state = _http_post("/info", {
-                "type": "clearinghouseState",
-                "user": addr,
-            })
-            if not state:
-                continue
-
-            margin = state.get("marginSummary", {})
-            account_value = _safe_float(margin.get("accountValue", "0"))
-
-            # Estimate win rate from positions + unrealized pnl
-            positions = state.get("assetPositions", [])
-            open_positions = [p for p in positions
-                              if p.get("position", {}).get("szi") != "0"]
-
-            # Get recent fills for more detail
-            fills = _http_post("/info", {
-                "type": "userFills",
-                "user": addr,
-                "limit": 100,
-            }) or []
-
-            winning_trades = sum(1 for f in fills
-                                 if _safe_float(f.get("closedPnl", "0")) > 0)
-            total_trades = len(fills)
-
-            # Fetch spot state for more context
-            spot = _http_post("/info", {
-                "type": "spotClearinghouseState",
-                "user": addr,
-            }) or {}
-            spot_balances = spot.get("balances", [])
-            total_spot_value = sum(
-                _safe_float(b.get("total", "0"))
-                for b in spot_balances
-                if b.get("coin") in ("USDC", "USDT", "USD")
-            )
-
-            entry = {
-                "address": addr,
-                "pnl_usd": account_value,
-                "roi_pct": account_value / max(1, (account_value - _safe_float(margin.get("totalNtlPos", "0")))) * 100 if account_value > 0 else 0,
-                "win_rate": (winning_trades / total_trades * 100) if total_trades > 0 else 0,
-                "total_trades": total_trades,
-                "open_positions": len(open_positions),
-                "total_spot_value": total_spot_value,
-            }
-
-            if open_position_filter and entry["open_positions"] == 0:
-                continue
-
-            results.append(entry)
-        except Exception as e:
-            logger.debug(f"[hyperfeed] trader discovery failed for {addr}: {e}")
-
-    sort_key = "roi_pct" if sort_by == "RETURN_ON_INVESTMENT" else "pnl_usd"
-    results = sorted(results, key=lambda x: x.get(sort_key, 0), reverse=True)[:limit]
-    return {"data": {"traders": results}}
+    if min_account_value is None:
+        min_account_value = _ROI_MIN_ACCOUNT_VALUE if str(sort_by).upper() == "RETURN_ON_INVESTMENT" else 0.0
+    limit = max(1, min(_MAX_LIMIT, int(limit)))
+    ranked = _rank_leaderboard(time_frame, sort_by, float(min_account_value))
+    window = _WINDOWS[str(time_frame).upper()]
+    traders = []
+    for row, positions in _top_with_positions(ranked, limit, open_position_filter):
+        w = row["windows"][window]
+        traders.append({
+            "address": row["address"],
+            "display_name": row["display_name"],
+            "account_value": row["account_value"],
+            "pnl_usd": w["pnl"],
+            "roi_pct": w["roi"] * 100,
+            "volume_usd": w["vlm"],
+            "windows": row["windows"],
+            "open_positions": len(positions),
+            "positions": positions,
+        })
+    return {"data": {"source": "hyperliquid_leaderboard", "time_frame": str(time_frame).upper(),
+                     "sort_by": str(sort_by).upper(),
+                     "min_account_value": min_account_value, "traders": traders}}
 
 
 def discovery_get_trader_state(trader_addresses: List[str]) -> Dict[str, Any]:
@@ -301,11 +366,18 @@ def discovery_get_trader_state(trader_addresses: List[str]) -> Dict[str, Any]:
                           if _safe_float(f.get("closedPnl", "0")) > 0)
             total = len(fills)
 
+            # pnl_usd used to be account_value and roi_pct a ratio of equity to
+            # equity-minus-notional: two numbers with the right names and no
+            # relation to profit. Both are now the open book's unrealized pnl.
+            unrealized = sum(p["unrealized_pnl"] for p in positions)
+            base = account_value - unrealized
             traders.append({
                 "traderAddress": addr,
                 "accountValue": account_value,
-                "pnl_usd": account_value,
-                "roi_pct": (account_value / max(1, account_value - total_ntl)) * 100 if total_ntl > 0 else 0,
+                "total_ntl_pos": total_ntl,
+                "pnl_usd": unrealized,
+                "pnl_scope": "unrealized, open positions only",
+                "roi_pct": (unrealized / base * 100) if base > 0 else 0,
                 "win_rate": (winning / total * 100) if total > 0 else 0,
                 "total_trades": total,
                 "open_positions": len(positions),

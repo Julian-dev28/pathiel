@@ -19,6 +19,7 @@ import json
 import sys
 import os
 import time
+import traceback
 import uuid
 from typing import Any, Dict, List
 
@@ -303,14 +304,41 @@ TOOLS = [
     },
     {
         "name": "leaderboard_get_top_traders",
-        "description": "Get top traders from Hyperliquid leaderboard.",
+        "description": "Top traders from Hyperliquid's public leaderboard, ranked over a window, with their live positions.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "time_frame": {"type": "string", "enum": ["DAILY", "WEEKLY", "MONTHLY"], "default": "DAILY"},
-                "sort_by": {"type": "string", "enum": ["PROFIT_AND_LOSS_UNREALIZED", "RETURN_ON_INVESTMENT"], "default": "PROFIT_AND_LOSS_UNREALIZED"},
-                "limit": {"type": "number", "description": "Max traders to return (default 10)"},
-                "open_position_filter": {"type": "boolean", "default": True}
+                "time_frame": {
+                    "type": "string",
+                    "enum": [
+                        "DAILY",
+                        "WEEKLY",
+                        "MONTHLY",
+                        "ALL_TIME"
+                    ],
+                    "default": "DAILY"
+                },
+                "sort_by": {
+                    "type": "string",
+                    "enum": [
+                        "PROFIT_AND_LOSS_UNREALIZED",
+                        "RETURN_ON_INVESTMENT"
+                    ],
+                    "default": "PROFIT_AND_LOSS_UNREALIZED"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max traders (default 10, max 100)"
+                },
+                "open_position_filter": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Skip flat accounts"
+                },
+                "min_account_value": {
+                    "type": "number",
+                    "description": "Minimum account value in USD (default 0)"
+                }
             }
         }
     },
@@ -327,14 +355,41 @@ TOOLS = [
     },
     {
         "name": "discovery_get_top_traders",
-        "description": "Get top traders sorted by performance metrics.",
+        "description": "Top traders with pnl/roi for every window from Hyperliquid's public leaderboard. ROI ranking defaults to a $10k account floor.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "time_frame": {"type": "string", "enum": ["DAILY", "WEEKLY", "MONTHLY"], "default": "MONTHLY"},
-                "sort_by": {"type": "string", "enum": ["RETURN_ON_INVESTMENT", "PROFIT_AND_LOSS_UNREALIZED"], "default": "RETURN_ON_INVESTMENT"},
-                "limit": {"type": "number", "description": "Max traders to return (default 60)"},
-                "open_position_filter": {"type": "boolean", "default": True}
+                "time_frame": {
+                    "type": "string",
+                    "enum": [
+                        "DAILY",
+                        "WEEKLY",
+                        "MONTHLY",
+                        "ALL_TIME"
+                    ],
+                    "default": "MONTHLY"
+                },
+                "sort_by": {
+                    "type": "string",
+                    "enum": [
+                        "PROFIT_AND_LOSS_UNREALIZED",
+                        "RETURN_ON_INVESTMENT"
+                    ],
+                    "default": "RETURN_ON_INVESTMENT"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max traders (default 60, max 100)"
+                },
+                "open_position_filter": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Skip flat accounts"
+                },
+                "min_account_value": {
+                    "type": "number",
+                    "description": "Minimum account value in USD (default 10000 for ROI, else 0)"
+                }
             }
         }
     },
@@ -473,11 +528,28 @@ TOOLS = [
     },
     {
         "name": "get_funding_history",
-        "description": "Get funding payment history.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Filter by coin (optional)"},
-            "limit": {"type": "number", "description": "Max entries to return (default 100)"}
-        }}
+        "description": "Venue funding rate history for one coin over a window (default last 7 days).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (default BTC)"
+                },
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default end - 7d)"
+                },
+                "endTime": {
+                    "type": "number",
+                    "description": "End time, unix ms (default now)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                }
+            }
+        }
     },
     {
         "name": "get_l2_book",
@@ -505,10 +577,24 @@ TOOLS = [
     },
     {
         "name": "get_withdrawals",
-        "description": "Get withdrawal history.",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max entries (default 100)"}
-        }}
+        "description": "This account's withdrawals, from the non-funding ledger.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_predicted_funding",
@@ -517,10 +603,16 @@ TOOLS = [
     },
     {
         "name": "get_asset_context",
-        "description": "Get detailed context for a specific asset.",
-        "inputSchema": {"type": "object", "properties": {
-            "asset": {"type": "number", "description": "Asset index"}
-        }, "required": ["asset"]}
+        "description": "Funding, open interest, mark and day volume for one coin, or every coin when omitted.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional)"
+                }
+            }
+        }
     },
     {
         "name": "get_user_defined_types",
@@ -538,28 +630,68 @@ TOOLS = [
     },
     {
         "name": "get_price_history",
-        "description": "Get historical price data for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "start_time": {"type": "number", "description": "Start timestamp (unix)"},
-            "end_time": {"type": "number", "description": "End timestamp (unix)"}
-        }, "required": ["coin"]}
+        "description": "Candles for a coin over a time window (default last 100 hours).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "Candle interval (default 1h)"
+                },
+                "start_time": {
+                    "type": "number",
+                    "description": "Start, unix seconds or ms"
+                },
+                "end_time": {
+                    "type": "number",
+                    "description": "End, unix seconds or ms (default now)"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
     },
     {
         "name": "get_order_status",
-        "description": "Get status of a specific order.",
-        "inputSchema": {"type": "object", "properties": {
-            "user": {"type": "string", "description": "User address"},
-            "oid": {"type": "number", "description": "Order ID"}
-        }, "required": ["user", "oid"]}
+        "description": "Status of one order by order ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "oid": {
+                    "type": "number",
+                    "description": "Order ID"
+                }
+            },
+            "required": [
+                "oid"
+            ]
+        }
     },
     {
         "name": "get_user_orders",
-        "description": "Get all user orders (open + filled + cancelled).",
-        "inputSchema": {"type": "object", "properties": {
-            "user": {"type": "string", "description": "User address (optional, uses env)"},
-            "limit": {"type": "number", "description": "Max orders (default 100)"}
-        }}
+        "description": "Open orders with trigger and TP/SL fields.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                }
+            }
+        }
     },
     {
         "name": "get_assets",
@@ -575,17 +707,45 @@ TOOLS = [
     },
     {
         "name": "get_deposits",
-        "description": "Get deposit history.",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max entries (default 100)"}
-        }}
+        "description": "This account's deposits, from the non-funding ledger.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_transfers",
-        "description": "Get transfer history.",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max entries (default 100)"}
-        }}
+        "description": "This account's internal, spot, sub-account and vault transfers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_rewards",
@@ -611,11 +771,23 @@ TOOLS = [
     },
     {
         "name": "get_max_trade_size",
-        "description": "Get maximum trade size for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "is_buy": {"type": "boolean", "description": "True for buy, False for sell"}
-        }, "required": ["coin"]}
+        "description": "Max notional this account can open on a coin, bounded by margin and checked against the book.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "is_buy": {
+                    "type": "boolean",
+                    "description": "True to buy (default), False to sell"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
     },
     {
         "name": "get_portfolio_status",
@@ -643,11 +815,23 @@ TOOLS = [
     },
     {
         "name": "get_order_by_oid",
-        "description": "Get order details by order ID.",
-        "inputSchema": {"type": "object", "properties": {
-            "user": {"type": "string", "description": "User address"},
-            "oid": {"type": "number", "description": "Order ID"}
-        }, "required": ["user", "oid"]}
+        "description": "Order status by order ID.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "oid": {
+                    "type": "number",
+                    "description": "Order ID"
+                }
+            },
+            "required": [
+                "oid"
+            ]
+        }
     },
     {
         "name": "get_user_fees_detailed",
@@ -661,15 +845,33 @@ TOOLS = [
     },
     {
         "name": "get_account_summary",
-        "description": "Get account summary (balance, positions, PnL).",
-        "inputSchema": {"type": "object", "properties": {}}
+        "description": "Equity (main dex + HIP-3), available margin, withdrawable, notional, position count.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_asset_positions",
-        "description": "Get positions for a specific asset.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
+        "description": "Open positions across main dex and HIP-3; pass coin to filter.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional filter)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_24h_stats",
@@ -680,11 +882,20 @@ TOOLS = [
     },
     {
         "name": "get_recent_trades",
-        "description": "Get recent trades for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "limit": {"type": "number", "description": "Max trades (default 100)"}
-        }, "required": ["coin"]}
+        "description": "This account's most recent fills on a coin (HL has no public trade feed).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional filter)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 50)"
+                }
+            }
+        }
     },
     {
         "name": "get_funding_rate",
@@ -695,13 +906,29 @@ TOOLS = [
     },
     {
         "name": "get_portfolio_pnl",
-        "description": "Get portfolio PnL summary.",
-        "inputSchema": {"type": "object", "properties": {}}
+        "description": "Unrealized pnl per open position plus HL's day/week/month/all-time pnl.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_risk_metrics",
-        "description": "Get risk metrics for the account.",
-        "inputSchema": {"type": "object", "properties": {}}
+        "description": "Account leverage, cross margin ratio (1.0 = liquidation) and liquidation distance per main-dex position.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_markets_info",
@@ -727,11 +954,28 @@ TOOLS = [
     },
     {
         "name": "get_historical_funding",
-        "description": "Get historical funding rates for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "limit": {"type": "number", "description": "Max entries (default 100)"}
-        }, "required": ["coin"]}
+        "description": "Funding this ACCOUNT paid or received (not the venue rate; see get_funding_history).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker (optional filter)"
+                },
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_open_interest",
@@ -742,10 +986,19 @@ TOOLS = [
     },
     {
         "name": "get_vault_details",
-        "description": "Get details for a specific vault.",
-        "inputSchema": {"type": "object", "properties": {
-            "vault": {"type": "string", "description": "Vault address"}
-        }, "required": ["vault"]}
+        "description": "Details for one vault by address.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "vaultAddress": {
+                    "type": "string",
+                    "description": "Vault address"
+                }
+            },
+            "required": [
+                "vaultAddress"
+            ]
+        }
     },
     {
         "name": "get_api_rate_limits",
@@ -771,34 +1024,97 @@ TOOLS = [
     },
     {
         "name": "get_price_impact",
-        "description": "Estimate price impact for a trade size.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "size": {"type": "number", "description": "Trade size in coin"}
-        }, "required": ["coin", "size"]}
+        "description": "Walk the live L2 book for a trade and report avg fill, worst price, slippage and unfilled size.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Trade size in COIN units"
+                },
+                "notionalUsd": {
+                    "type": "number",
+                    "description": "Trade size in USD (overrides size)"
+                },
+                "is_buy": {
+                    "type": "boolean",
+                    "description": "True to buy (default), False to sell"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
     },
     {
         "name": "get_slippage_estimate",
-        "description": "Estimate slippage for a trade.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "size": {"type": "number", "description": "Trade size in coin"},
-            "is_buy": {"type": "boolean", "description": "True for buy, False for sell"}
-        }, "required": ["coin", "size", "is_buy"]}
+        "description": "Alias of get_price_impact.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Trade size in COIN units"
+                },
+                "notionalUsd": {
+                    "type": "number",
+                    "description": "Trade size in USD (overrides size)"
+                },
+                "is_buy": {
+                    "type": "boolean",
+                    "description": "True to buy (default), False to sell"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
     },
     {
         "name": "get_withdrawal_status",
-        "description": "Get status of a withdrawal.",
-        "inputSchema": {"type": "object", "properties": {
-            "withdrawal_id": {"type": "string", "description": "Withdrawal ID"}
-        }, "required": ["withdrawal_id"]}
+        "description": "Whether a withdrawal settled (by tx hash), or the 20 most recent withdrawals.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "withdrawal_id": {
+                    "type": "string",
+                    "description": "Withdrawal tx hash (optional)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_transfer_history",
-        "description": "Get transfer history for user.",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max entries (default 100)"}
-        }}
+        "description": "Alias of get_transfers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "startTime": {
+                    "type": "number",
+                    "description": "Start time, unix ms (default: all history)"
+                },
+                "limit": {
+                    "type": "number",
+                    "description": "Max entries to return (default 100)"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            }
+        }
     },
     {
         "name": "get_validator_info",
@@ -812,13 +1128,39 @@ TOOLS = [
     },
     {
         "name": "get_liquidation_price",
-        "description": "Calculate liquidation price for a position.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "size": {"type": "number", "description": "Position size"},
-            "leverage": {"type": "number", "description": "Leverage used"},
-            "is_long": {"type": "boolean", "description": "True for long, False for short"}
-        }, "required": ["coin", "size", "leverage", "is_long"]}
+        "description": "Venue liquidation price for an open position (pass coin only), or HL's isolated-margin estimate for a hypothetical one (pass leverage + is_long).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {
+                    "type": "string",
+                    "description": "Coin ticker"
+                },
+                "leverage": {
+                    "type": "number",
+                    "description": "Leverage (hypothetical position)"
+                },
+                "is_long": {
+                    "type": "boolean",
+                    "description": "Side (hypothetical position)"
+                },
+                "entry_px": {
+                    "type": "number",
+                    "description": "Entry price (default current mid)"
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Position size, echoed back; liquidation price does not depend on it"
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                }
+            },
+            "required": [
+                "coin"
+            ]
+        }
     },
     {
         "name": "get_max_leverage",
@@ -857,11 +1199,23 @@ TOOLS = [
     },
     {
         "name": "query_order_by_cloid",
-        "description": "Query an order by its client order ID (cloid).",
-        "inputSchema": {"type": "object", "properties": {
-            "user": {"type": "string", "description": "User address (optional, uses env)"},
-            "cloid": {"type": "string", "description": "Client order ID"}
-        }, "required": ["cloid"]}
+        "description": "Order status by client order ID (0x-prefixed 16-byte hex).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"
+                },
+                "cloid": {
+                    "type": "string",
+                    "description": "Client order ID"
+                }
+            },
+            "required": [
+                "cloid"
+            ]
+        }
     },
 ]
 
@@ -870,17 +1224,33 @@ def handle_scan(params: Dict[str, Any]) -> str:
     from pathiel.agents.config import get_config
     from pathiel.client.universe import get_universe
 
-    min_score = params.get("minScore", 20)
-    max_markets = params.get("maxMarkets")
-    if max_markets:
-        os.environ["PATHIEL_MAX_MARKETS"] = str(int(max_markets))
+    try:
+        min_score = float(params.get("minScore", 20))
+        max_markets = int(params["maxMarkets"]) if params.get("maxMarkets") else None
+    except (TypeError, ValueError):
+        return json.dumps({"status": "error", "error": "minScore and maxMarkets must be numbers"})
+    if max_markets is not None and max_markets < 1:
+        return json.dumps({"status": "error", "error": "maxMarkets must be >= 1"})
 
-    universe = get_universe()
-    results = scan_once(universe=universe, min_score=min_score, config=get_config())
+    # maxMarkets reaches perception through the environment. It used to be set
+    # and never restored, so one scan(maxMarkets=5) shrank every later scan in
+    # this process to 5 markets.
+    prior = os.environ.get("PATHIEL_MAX_MARKETS")
+    if max_markets is not None:
+        os.environ["PATHIEL_MAX_MARKETS"] = str(max_markets)
+    try:
+        universe = get_universe()
+        results = scan_once(universe=universe, min_score=min_score, config=get_config())
+    finally:
+        if max_markets is not None:
+            if prior is None:
+                os.environ.pop("PATHIEL_MAX_MARKETS", None)
+            else:
+                os.environ["PATHIEL_MAX_MARKETS"] = prior
 
     # Cache perceptions by coin so research can look them up
     for r in results:
-        coin = r.get("coin", "")
+        coin = _norm_coin(r.get("coin", ""))
         if coin:
             _perception_cache[coin] = r
 
@@ -1045,8 +1415,8 @@ def handle_config(params: Dict[str, Any]) -> str:
 
 def handle_research(params: Dict[str, Any]) -> str:
     from pathiel.agents.research import research
-    
-    coin = params.get("coin", "")
+
+    coin = _norm_coin(params.get("coin", ""))
     if not coin:
         return json.dumps({"status": "error", "error": "coin is required"})
     
@@ -1056,6 +1426,9 @@ def handle_research(params: Dict[str, Any]) -> str:
         # Build a minimal perception from the current mid price.
         from pathiel.client.hl_client import fetch_all_mids
         mids = fetch_all_mids()
+        if coin not in mids:
+            return json.dumps({"status": "error", "coin": coin,
+                               "error": f"unknown coin {coin}: no mid price"})
         perception = {
             "id": f"{coin}-{int(time.time()*1000)}",
             "coin": coin,
@@ -1223,13 +1596,9 @@ def handle_execute(params: Dict[str, Any]) -> str:
     if not analysis_id:
         return json.dumps({"status": "error", "error": "analysisId is required"})
 
-    # Find the analysis in memory
-    analyses = memory.get_recent_analyses(20)
-    analysis = None
-    for a in analyses:
-        if a.get("id") == analysis_id:
-            analysis = a
-            break
+    # By id over the whole buffer. This scanned only the newest 20, so after a
+    # wide research pass an analysis could be "not found" while still held.
+    analysis = memory.get_analysis_by_id(analysis_id)
 
     if not analysis:
         return json.dumps({
@@ -1264,17 +1633,20 @@ def handle_execute(params: Dict[str, Any]) -> str:
 
 
 def handle_leaderboard_get_markets(params: Dict[str, Any]) -> str:
-    limit = params.get("limit", 100)
-    return json.dumps(leaderboard_get_markets(limit=limit))
+    return json.dumps(leaderboard_get_markets(limit=_limit(params, 100, cap=500)))
 
 
 def handle_leaderboard_get_top_traders(params: Dict[str, Any]) -> str:
-    return json.dumps(leaderboard_get_top_traders(
-        time_frame=params.get("time_frame", "DAILY"),
-        sort_by=params.get("sort_by", "PROFIT_AND_LOSS_UNREALIZED"),
-        limit=params.get("limit", 10),
-        open_position_filter=params.get("open_position_filter", True)
-    ))
+    try:
+        return json.dumps(leaderboard_get_top_traders(
+            time_frame=params.get("time_frame") or "DAILY",
+            sort_by=params.get("sort_by") or "PROFIT_AND_LOSS_UNREALIZED",
+            limit=_limit(params, 10, cap=100),
+            open_position_filter=params.get("open_position_filter", True) is not False,
+            min_account_value=_fnum(params.get("min_account_value")),
+        ), default=str)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
 
 def handle_leaderboard_get_trader_positions(params: Dict[str, Any]) -> str:
@@ -1285,12 +1657,17 @@ def handle_leaderboard_get_trader_positions(params: Dict[str, Any]) -> str:
 
 
 def handle_discovery_get_top_traders(params: Dict[str, Any]) -> str:
-    return json.dumps(discovery_get_top_traders(
-        time_frame=params.get("time_frame", "MONTHLY"),
-        sort_by=params.get("sort_by", "RETURN_ON_INVESTMENT"),
-        limit=params.get("limit", 60),
-        open_position_filter=params.get("open_position_filter", True)
-    ))
+    try:
+        mav = params.get("min_account_value")
+        return json.dumps(discovery_get_top_traders(
+            time_frame=params.get("time_frame") or "MONTHLY",
+            sort_by=params.get("sort_by") or "RETURN_ON_INVESTMENT",
+            limit=_limit(params, 60, cap=100),
+            open_position_filter=params.get("open_position_filter", True) is not False,
+            min_account_value=None if mav is None else _fnum(mav),
+        ), default=str)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
 
 def handle_discovery_get_trader_state(params: Dict[str, Any]) -> str:
@@ -1320,9 +1697,12 @@ def handle_market_get_mids(params: Dict[str, Any]) -> str:
     return json.dumps(market_get_mids())
 
 
-# MCP server loop
-def run() -> None:
-    # Initialize tool handlers
+def _tool_handlers() -> Dict[str, Any]:
+    """tool name -> handler. Built on first use because the handlers are
+    defined below run() in this file."""
+    global _TOOL_HANDLERS
+    if _TOOL_HANDLERS is not None:
+        return _TOOL_HANDLERS
     tool_handlers = {
         "get_assets": handle_get_assets,
         "get_user_defined_types": handle_get_user_defined_types,
@@ -1416,70 +1796,135 @@ def run() -> None:
 
     for _name in _STUB_TOOL_NAMES:
         tool_handlers[_name] = _make_stub_handler(_name)
+    _TOOL_HANDLERS = tool_handlers
+    return tool_handlers
 
-    # MCP handshake
-    while True:
+
+_TOOL_HANDLERS: "Dict[str, Any] | None" = None
+
+# Protocol versions this server speaks. The tools surface is identical across
+# them, so a client asking for any of these gets its own version echoed back;
+# anything else gets the newest, which the spec lets the client reject.
+_SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+# JSON-RPC 2.0 error codes.
+_PARSE_ERROR = -32700
+_INVALID_REQUEST = -32600
+_METHOD_NOT_FOUND = -32601
+_INVALID_PARAMS = -32602
+
+
+def _payload_is_error(text: str) -> bool:
+    """True when a handler's JSON reports failure.
+
+    Handlers return {"error": ...} or {"status": "error"} instead of raising,
+    so an agent reads the reason. That payload used to ship with
+    isError:false, which told the client the call worked.
+    """
+    try:
+        obj = json.loads(text)
+    except (TypeError, ValueError):
+        return False
+    return isinstance(obj, dict) and (
+        obj.get("error") not in (None, "", False) or obj.get("status") == "error")
+
+
+def _call_tool(name: Any, args: Any) -> Dict[str, Any]:
+    handler = _tool_handlers().get(name) if isinstance(name, str) else None
+    if handler is None:
+        raise KeyError(name)
+    if not isinstance(args, dict):
+        return {"content": [{"type": "text", "text": json.dumps(
+            {"error": "arguments must be an object"})}], "isError": True}
+    try:
+        text = handler(args)
+    except Exception as e:
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        text = json.dumps({"error": f"{type(e).__name__}: {e}", "tool": name})
+    if not isinstance(text, str):
+        text = json.dumps(text, default=str)
+    return {"content": [{"type": "text", "text": text}],
+            "isError": _payload_is_error(text)}
+
+
+def dispatch_message(msg: Any) -> "Dict[str, Any] | None":
+    """One inbound JSON-RPC message -> the response to send, or None.
+
+    Notifications (no "id") never get a response: answering one is a protocol
+    violation some clients treat as fatal. Every request with an id gets
+    exactly one response, success or error, so a client is never left waiting.
+    """
+    global _CLIENT_SUPPORTS_SAMPLING
+    if not isinstance(msg, dict):
+        return _error_msg(None, _INVALID_REQUEST, "message must be a JSON object")
+    method = msg.get("method")
+    is_notification = "id" not in msg
+    msg_id = msg.get("id")
+    params = msg.get("params") or {}
+
+    if is_notification:
+        return None
+    if not isinstance(method, str):
+        return _error_msg(msg_id, _INVALID_REQUEST, "method must be a string")
+    if not isinstance(params, dict):
+        return _error_msg(msg_id, _INVALID_PARAMS, "params must be an object")
+
+    if method == "initialize":
+        _client_caps = params.get("capabilities") or {}
+        _CLIENT_SUPPORTS_SAMPLING = isinstance(_client_caps, dict) and "sampling" in _client_caps
+        sys.stderr.write(f"[mcp] client sampling capability: {_CLIENT_SUPPORTS_SAMPLING}\n")
+        sys.stderr.flush()
+        asked = params.get("protocolVersion")
+        version = asked if asked in _SUPPORTED_PROTOCOL_VERSIONS else _SUPPORTED_PROTOCOL_VERSIONS[0]
+        return _result_msg(msg_id, {
+            "protocolVersion": version,
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "pathiel", "version": __version__},
+        })
+    if method == "ping":
+        return _result_msg(msg_id, {})
+    if method == "tools/list":
+        return _result_msg(msg_id, {"tools": TOOLS})
+    if method == "tools/call":
+        name = params.get("name")
         try:
-            line = sys.stdin.readline()
-            if not line:
-                break
-            
-            msg = json.loads(line)
-            method = msg.get("method")
-            msg_id = msg.get("id")
-            params = msg.get("params")
+            return _result_msg(msg_id, _call_tool(name, params.get("arguments") or {}))
+        except KeyError:
+            return _error_msg(msg_id, _INVALID_PARAMS, f"Unknown tool: {name}")
+    return _error_msg(msg_id, _METHOD_NOT_FOUND, f"Method not found: {method}")
 
-            if method == "initialize":
-                global _CLIENT_SUPPORTS_SAMPLING
-                _client_caps = (params or {}).get("capabilities") or {}
-                _CLIENT_SUPPORTS_SAMPLING = "sampling" in _client_caps
-                sys.stderr.write(
-                    f"[mcp] client sampling capability: {_CLIENT_SUPPORTS_SAMPLING}\n"
-                )
-                sys.stderr.flush()
-                write_response(msg_id, {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {
-                        "tools": {}
-                    },
-                    "serverInfo": {
-                        "name": "pathiel",
-                        "version": __version__,
-                    },
-                })
-            elif method == "tools/list":
-                write_response(msg_id, {"tools": TOOLS})
-            elif method == "tools/call":
-                tool_name = params.get("name")
-                tool_args = params.get("arguments") or {}
-                handler = tool_handlers.get(tool_name)
-                if handler:
-                    try:
-                        result = handler(tool_args)
-                        write_response(msg_id, {
-                            "content": [{"type": "text", "text": result}],
-                            "isError": False,
-                        })
-                    except Exception as e:
-                        write_response(msg_id, {
-                            "content": [{"type": "text", "text": f"Error: {e}"}],
-                            "isError": True,
-                        })
-                else:
-                    write_response(msg_id, {
-                        "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
-                        "isError": True,
-                    })
-            elif method == "notifications/initialized":
-                pass  # Ignore notification
-            else:
-                write_response(msg_id if msg_id else None, {
-                    "content": [{"type": "text", "text": f"Unknown method: {method}"}],
-                    "isError": True,
-                })
+
+# MCP server loop
+def run() -> None:
+    global _PROTO_OUT
+    # stdout IS the protocol channel. Anything else that prints to it (a stray
+    # print() in an engine module, a library banner) splices garbage into the
+    # JSON-RPC stream and the client drops the connection. Keep the real
+    # stdout for frames and point sys.stdout at stderr for everyone else.
+    _PROTO_OUT = sys.stdout
+    sys.stdout = sys.stderr
+    _tool_handlers()
+
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        if not line.strip():
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError as e:
+            _send(_error_msg(None, _PARSE_ERROR, f"Parse error: {e}"))
+            continue
+        try:
+            response = dispatch_message(msg)
         except Exception as e:
-            sys.stderr.write(f"MCP error: {e}\n")
-            sys.stderr.flush()
+            traceback.print_exc(file=sys.stderr)
+            msg_id = msg.get("id") if isinstance(msg, dict) else None
+            response = _error_msg(msg_id, -32603, f"Internal error: {e}")
+        if response is not None:
+            _send(response)
 
 
 def handle_get_portfolio(params: Dict[str, Any]) -> str:
@@ -1556,10 +2001,9 @@ def handle_cancel_order(params: Dict[str, Any]) -> str:
 
 def handle_get_spot_balances(params: Dict[str, Any]) -> str:
     """Handle get_spot_balances tool call."""
-    from pathiel.client.exchange import _get_info
     user = resolve_user_address()
     try:
-        info = _get_info()
+        info = _limited_info()
         spot_state = info.spot_user_state(user)
         return json.dumps(spot_state.get('balances', []), indent=2, default=str)
     except Exception as e:
@@ -1567,10 +2011,9 @@ def handle_get_spot_balances(params: Dict[str, Any]) -> str:
 
 def handle_get_user_fees(params: Dict[str, Any]) -> str:
     """Handle get_user_fees tool call."""
-    from pathiel.client.exchange import _get_info
     user = resolve_user_address()
     try:
-        info = _get_info()
+        info = _limited_info()
         fees = info.user_fees(user)
         return json.dumps(fees, indent=2, default=str)
     except Exception as e:
@@ -1578,10 +2021,9 @@ def handle_get_user_fees(params: Dict[str, Any]) -> str:
 
 def handle_get_referral(params: Dict[str, Any]) -> str:
     """Handle get_referral tool call."""
-    from pathiel.client.exchange import _get_info
     user = resolve_user_address()
     try:
-        info = _get_info()
+        info = _limited_info()
         # `info.referral` does not exist on the SDK's Info class; the real
         # method is query_referral_state. This handler raised on every call.
         referral = info.query_referral_state(user)
@@ -1630,7 +2072,7 @@ def handle_get_funding_history(params: Dict[str, Any]) -> str:
         start = int(params.get("startTime") or end - 7 * 86_400_000)
         rows = fetch_funding_history(coin, start, end) or []
         return json.dumps({"coin": coin, "start": start, "end": end,
-                           "count": len(rows), "rows": rows[-500:]}, default=str)
+                           "count": len(rows), "rows": rows[-_limit(params, 100):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1642,10 +2084,11 @@ def _asset_contexts() -> Dict[str, Dict[str, Any]]:
     halves are positionally aligned — universe[i] describes ctxs[i] — so they
     are zipped rather than indexed independently.
     """
-    from pathiel.client.hl_client import _http_post
-    raw = _http_post("/info", {"type": "metaAndAssetCtxs"})
+    raw = _info("metaAndAssetCtxs")
     if not isinstance(raw, list) or len(raw) != 2:
-        return {}
+        # Raise, not {}: an empty map makes every caller answer
+        # "unknown coin: BTC" for what was a 429 or a timeout.
+        raise RuntimeError("metaAndAssetCtxs unavailable (rate limit or timeout); retry")
     universe = (raw[0] or {}).get("universe") or []
     ctxs = raw[1] or []
     return {a.get("name"): c for a, c in zip(universe, ctxs) if a.get("name")}
@@ -1691,10 +2134,9 @@ def handle_get_open_interest(params: Dict[str, Any]) -> str:
 
 def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
     """Predicted next funding per venue, straight from /info."""
-    from pathiel.client.hl_client import _http_post
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        raw = _http_post("/info", {"type": "predictedFundings"}) or []
+        raw = _info("predictedFundings") or []
         if coin:
             for entry in raw:
                 if isinstance(entry, list) and entry and entry[0] == coin:
@@ -1712,14 +2154,87 @@ def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
 # keep, and it costs an agent a call to find that out.
 
 
-def _user() -> str:
+def _user(params: "Dict[str, Any] | None" = None) -> str:
+    """The address to query: params["user"] when given, else this deployment's."""
     from pathiel.client.hl_client import resolve_user_address
-    return resolve_user_address()
+    given = str((params or {}).get("user") or "").strip()
+    return given or resolve_user_address()
+
+
+class _LimitedInfo:
+    """The slice of hyperliquid-python-sdk's Info these handlers use, routed
+    through `_info`.
+
+    The SDK's Info posts on its own session, outside pathiel's token bucket,
+    so a burst of these tools drew 429s that the rate-limited calls next to
+    them never saw. Same method names and return shapes; the request types
+    are the ones the SDK sends.
+    """
+
+    def all_mids(self):
+        return _info("allMids")
+
+    def meta(self):
+        return _info("meta")
+
+    def spot_meta(self):
+        return _info("spotMeta")
+
+    def l2_snapshot(self, coin: str):
+        return _info("l2Book", coin=coin)
+
+    def user_state(self, user: str):
+        return _info("clearinghouseState", user=user)
+
+    def spot_user_state(self, user: str):
+        return _info("spotClearinghouseState", user=user)
+
+    def user_fees(self, user: str):
+        return _info("userFees", user=user)
+
+    def query_referral_state(self, user: str):
+        return _info("referral", user=user)
+
+    def frontend_open_orders(self, user: str):
+        return _info("frontendOpenOrders", user=user)
+
+    def user_fills(self, user: str):
+        return _info("userFills", user=user)
+
+    def user_fills_by_time(self, user: str, start: int, end: "int | None" = None):
+        kw = {"user": user, "startTime": start}
+        if end is not None:
+            kw["endTime"] = end
+        return _info("userFillsByTime", **kw)
+
+    def user_funding_history(self, user: str, start: int, end: "int | None" = None):
+        kw = {"user": user, "startTime": start}
+        if end is not None:
+            kw["endTime"] = end
+        return _info("userFunding", **kw)
+
+    def historical_orders(self, user: str):
+        return _info("historicalOrders", user=user)
+
+
+def _limited_info() -> _LimitedInfo:
+    return _LimitedInfo()
+
+
+def _limit(params: Dict[str, Any], default: int, cap: int = 2000) -> int:
+    """A positive row limit from params["limit"], clamped to `cap`."""
+    try:
+        n = int(params.get("limit") or default)
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(cap, n))
 
 
 def _info(typ: str, **kw) -> Any:
-    from pathiel.client.hl_client import _http_post
-    return _http_post("/info", {"type": typ, **kw})
+    """POST /info. Raises on a request that never landed (rate budget, 429,
+    timeout) so a handler reports the failure instead of "0 rows"."""
+    from pathiel.client.hl_client import _http_post_strict
+    return _http_post_strict("/info", {"type": typ, **kw})
 
 
 def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
@@ -1731,11 +2246,11 @@ def _ledger(kinds: tuple, params: Dict[str, Any]) -> str:
     """
     try:
         start = int(params.get("startTime") or 0)
-        rows = _info("userNonFundingLedgerUpdates", user=_user(), startTime=start) or []
+        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=start) or []
         hits = [r for r in rows
                 if str(((r or {}).get("delta") or {}).get("type", "")) in kinds]
         return json.dumps({"kinds": list(kinds), "count": len(hits),
-                           "rows": hits[-200:]}, default=str)
+                           "rows": hits[-_limit(params, 100):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1842,8 +2357,13 @@ def handle_get_historical_funding(params: Dict[str, Any]) -> str:
     get_funding_history, which is the venue rate for a coin."""
     try:
         start = int(params.get("startTime") or 0)
-        rows = _info("userFunding", user=_user(), startTime=start) or []
-        return json.dumps({"count": len(rows), "rows": rows[-300:]}, default=str)
+        rows = _info("userFunding", user=_user(params), startTime=start) or []
+        coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
+        if coin:
+            rows = [r for r in rows
+                    if _norm_coin(str(((r or {}).get("delta") or {}).get("coin", ""))) == coin]
+        return json.dumps({"coin": coin or "all", "count": len(rows),
+                           "rows": rows[-_limit(params, 100):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1855,9 +2375,8 @@ def handle_get_trade_history(params: Dict[str, Any]) -> str:
         rows = _info("userFills", user=_user()) or []
         if coin:
             rows = [r for r in rows if r.get("coin") == coin]
-        limit = int(params.get("limit") or 200)
         return json.dumps({"coin": coin or "all", "count": len(rows),
-                           "fills": rows[-limit:]}, default=str)
+                           "fills": rows[-_limit(params, 100):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1876,7 +2395,7 @@ def handle_get_recent_trades(params: Dict[str, Any]) -> str:
             rows = [r for r in rows if r.get("coin") == coin]
         return json.dumps({"scope": "this account only — HL /info has no public trade feed",
                            "coin": coin or "all", "count": len(rows),
-                           "fills": rows[-50:]}, default=str)
+                           "fills": rows[-_limit(params, 50):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1884,8 +2403,8 @@ def handle_get_recent_trades(params: Dict[str, Any]) -> str:
 def handle_get_user_orders(params: Dict[str, Any]) -> str:
     """Open orders, with the frontend's extra fields (trigger type, tp/sl)."""
     try:
-        rows = _info("frontendOpenOrders", user=_user()) or []
-        return json.dumps({"count": len(rows), "orders": rows}, default=str)
+        rows = _info("frontendOpenOrders", user=_user(params)) or []
+        return json.dumps({"count": len(rows), "orders": rows[:_limit(params, 100)]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1911,7 +2430,7 @@ def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
                 pass
             g["last_ts"] = f.get("time")
         out = sorted(by_oid.values(), key=lambda g: g.get("last_ts") or 0)
-        return json.dumps({"count": len(out), "orders": out[-200:]}, default=str)
+        return json.dumps({"count": len(out), "orders": out[-_limit(params, 100):]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1922,7 +2441,7 @@ def handle_get_order_status(params: Dict[str, Any]) -> str:
     if oid is None:
         return json.dumps({"error": "oid is required"})
     try:
-        return json.dumps(_info("orderStatus", user=_user(), oid=int(oid)), default=str)
+        return json.dumps(_info("orderStatus", user=_user(params), oid=int(oid)), default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -1950,9 +2469,17 @@ def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
     """The most recent withdrawals. HL settles these on-chain, so there is no
     per-request status endpoint — presence in the ledger IS the confirmation."""
     try:
-        rows = _info("userNonFundingLedgerUpdates", user=_user(), startTime=0) or []
+        rows = _info("userNonFundingLedgerUpdates", user=_user(params), startTime=0) or []
         w = [r for r in rows
              if str(((r or {}).get("delta") or {}).get("type", "")) == "withdraw"]
+        wid = str(params.get("withdrawal_id") or params.get("hash") or "").strip().lower()
+        if wid:
+            hit = [r for r in w if str((r or {}).get("hash", "")).lower() == wid]
+            return json.dumps({"withdrawal_id": wid, "found": bool(hit),
+                               "status": "settled" if hit else "not in ledger",
+                               "note": "presence in the ledger is the confirmation; "
+                                       "HL has no per-withdrawal status endpoint",
+                               "row": hit[0] if hit else None}, default=str)
         return json.dumps({"note": "presence in the ledger is the confirmation; "
                                    "HL has no per-withdrawal status endpoint",
                            "count": len(w), "recent": w[-20:]}, default=str)
@@ -2056,11 +2583,35 @@ def handle_get_price_impact(params: Dict[str, Any]) -> str:
     """What a given notional actually costs against the current book."""
     coin = _norm_coin(params.get("coin", "BTC"))
     try:
-        usd = float(params.get("notionalUsd") or params.get("size") or 1000)
-        is_buy = str(params.get("side", "buy")).lower() != "sell"
-        return json.dumps(_walk_book(coin, usd, is_buy), default=str)
+        is_buy = _is_buy(params)
+        if params.get("notionalUsd") is not None:
+            usd = float(params["notionalUsd"])
+        elif params.get("size") is not None:
+            # `size` is in COIN units, as the schema says. It used to be read
+            # as USD, so 0.5 BTC was priced as a $0.50 order: zero impact on
+            # every request, on exactly the tool meant to warn about impact.
+            mid = float(_info("allMids").get(coin) or 0)
+            if mid <= 0:
+                return json.dumps({"error": f"no mid for {coin}; cannot convert size to notional"})
+            usd = float(params["size"]) * mid
+        else:
+            usd = 1000.0
+        if usd <= 0:
+            return json.dumps({"error": "size/notionalUsd must be positive"})
+        out = _walk_book(coin, usd, is_buy)
+        if params.get("size") is not None and params.get("notionalUsd") is None:
+            out["size_coin"] = float(params["size"])
+        return json.dumps(out, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
+
+
+def _is_buy(params: Dict[str, Any]) -> bool:
+    """Trade direction from `is_buy` (bool, the schema field) or `side`."""
+    if params.get("is_buy") is not None:
+        v = params["is_buy"]
+        return v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "buy")
+    return str(params.get("side", "buy")).lower() not in ("sell", "short")
 
 
 def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
@@ -2083,7 +2634,7 @@ def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
         free_pct = float(cfg.get("min_available_margin_pct", 0.10) or 0.0)
         lev = int(cfg.get("leverage", 1) or 1)
         by_margin = max(0.0, equity * (1 - free_pct)) * lev
-        depth = _walk_book(coin, by_margin, True) if by_margin > 0 else {}
+        depth = _walk_book(coin, by_margin, _is_buy(params)) if by_margin > 0 else {}
         return json.dumps({
             "coin": coin, "equity": round(equity, 2),
             "max_notional_by_margin": round(by_margin, 2),
@@ -2097,7 +2648,7 @@ def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
 def handle_get_vault_details(params: Dict[str, Any]) -> str:
     """One vault by address. HL has no list-all-vaults endpoint, which is why
     get_vaults was removed rather than left stubbed."""
-    addr = params.get("vaultAddress") or params.get("address")
+    addr = params.get("vaultAddress") or params.get("vault") or params.get("address")
     if not addr:
         return json.dumps({"error": "vaultAddress is required"})
     try:
@@ -2114,10 +2665,9 @@ def handle_get_vault_details(params: Dict[str, Any]) -> str:
 
 def handle_get_l2_book(params: Dict[str, Any]) -> str:
     """Handle get_l2_book tool call."""
-    from pathiel.client.exchange import _get_info
     coin = _norm_coin(params.get('coin', 'BTC'))
     try:
-        info = _get_info()
+        info = _limited_info()
         # L2 book snapshot
         book = info.l2_snapshot(coin)
         return json.dumps(book, indent=2, default=str)
@@ -2126,10 +2676,9 @@ def handle_get_l2_book(params: Dict[str, Any]) -> str:
 
 def handle_get_user_state(params: Dict[str, Any]) -> str:
     """Handle get_user_state tool call."""
-    from pathiel.client.exchange import _get_info
     user = resolve_user_address()
     try:
-        info = _get_info()
+        info = _limited_info()
         # `frontend_user_state` does not exist in ANY hyperliquid-python-sdk
         # version checked back to 0.5.0, so this handler raised on every call
         # and returned an {'error': ...} payload that looked like an API
@@ -2143,11 +2692,10 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
 
 def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
     """Handle get_frontend_open_orders tool call."""
-    from pathiel.client.exchange import _get_info
     user = resolve_user_address()
     coin = _norm_coin(params.get('coin', ''))
     try:
-        info = _get_info()
+        info = _limited_info()
         orders = info.frontend_open_orders(user)
         if coin:
             orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin]
@@ -2168,14 +2716,31 @@ def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
+# The real stdout, captured by run() before it redirects sys.stdout to stderr.
+# None outside run() (tests, imports), where sys.stdout is used as-is.
+_PROTO_OUT = None
+
+
+def _out():
+    return _PROTO_OUT if _PROTO_OUT is not None else sys.stdout
+
+
+def _send(msg: Dict[str, Any]) -> None:
+    out = _out()
+    out.write(json.dumps(msg, default=str) + "\n")
+    out.flush()
+
+
+def _result_msg(msg_id: Any, result: Dict[str, Any]) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+def _error_msg(msg_id: Any, code: int, message: str) -> Dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}
+
+
 def write_response(msg_id: Any, result: Dict[str, Any]) -> None:
-    msg = {
-        "jsonrpc": "2.0",
-        "id": msg_id,
-        "result": result,
-    }
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
+    _send(_result_msg(msg_id, result))
 
 
 def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.0) -> Dict[str, Any]:
@@ -2188,10 +2753,7 @@ def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.
     global _server_request_seq
     _server_request_seq += 1
     req_id = f"srv-{_server_request_seq}"
-    sys.stdout.write(json.dumps({
-        "jsonrpc": "2.0", "id": req_id, "method": method, "params": params,
-    }) + "\n")
-    sys.stdout.flush()
+    _send({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params})
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         line = sys.stdin.readline()
@@ -2205,6 +2767,15 @@ def _server_request(method: str, params: Dict[str, Any], timeout_s: float = 120.
             if "error" in msg:
                 raise RuntimeError(f"client returned error for {method}: {msg['error']}")
             return msg.get("result") or {}
+        if isinstance(msg.get("method"), str) and "id" in msg:
+            # A client request that arrived while this one is parked. It still
+            # needs exactly one reply or the client waits on it forever.
+            if msg["method"] == "ping":
+                _send(_result_msg(msg["id"], {}))
+            else:
+                _send(_error_msg(msg["id"], -32603,
+                                 f"server busy awaiting {method}; retry"))
+            continue
         sys.stderr.write(f"[mcp] skipped non-matching message while awaiting {req_id}\n")
         sys.stderr.flush()
     raise TimeoutError(f"server request {method} timed out after {timeout_s:.0f}s")
@@ -2250,12 +2821,23 @@ def _research_brain():
 
 
 def handle_get_price_history(params: Dict[str, Any]) -> str:
-    """Handle get_price_history tool call."""
-    from pathiel.client.hl_client import fetch_hl_candles
+    """Candles over [start_time, end_time] (unix seconds or ms), default the last 100 hours."""
     coin = _norm_coin(params.get('coin', 'BTC'))
+    interval = str(params.get('interval') or '1h')
     try:
-        candles = fetch_hl_candles(coin, '1h', 100)
-        return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
+        def _ms(v: Any) -> int:
+            n = int(float(v))
+            return n if n > 10**11 else n * 1000
+        end = _ms(params["end_time"]) if params.get("end_time") else int(time.time() * 1000)
+        start = _ms(params["start_time"]) if params.get("start_time") else end - 100 * 3_600_000
+        if start >= end:
+            return json.dumps({'error': 'start_time must be before end_time'})
+        rows = _info("candleSnapshot", req={"coin": coin, "interval": interval,
+                                            "startTime": start, "endTime": end})
+        if not isinstance(rows, list):
+            return json.dumps({'error': f'no candles for {coin}'})
+        return json.dumps({'coin': coin, 'interval': interval, 'start': start, 'end': end,
+                           'count': len(rows), 'candles': rows}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2273,42 +2855,71 @@ def handle_get_coin_info(params: Dict[str, Any]) -> str:
 def handle_get_all_mids(params: Dict[str, Any]) -> str:
     """Handle get_all_mids tool call."""
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         mids = info.all_mids()
         return json.dumps({'mids': mids}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
 
-def handle_get_account_summary(params: Dict[str, Any]) -> str:
-    """Handle get_account_summary tool call."""
+def _clearinghouse(params: Dict[str, Any]) -> Dict[str, Any]:
+    state = _info("clearinghouseState", user=_user(params))
+    if not isinstance(state, dict):
+        raise RuntimeError("clearinghouseState returned no data")
+    return state
+
+
+def _fnum(v: Any) -> float:
     try:
-        from pathiel.client.exchange import _get_info
-        _get_info()
-        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
-        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
-        # always returned empty. Use get_user_fills/get_positions for real data.
-        state: Dict[str, Any] = {}
-        return json.dumps({'summary': state}, default=str)
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _positions(state: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [p.get("position") or {} for p in (state.get("assetPositions") or [])
+            if _fnum((p.get("position") or {}).get("szi")) != 0]
+
+
+def handle_get_account_summary(params: Dict[str, Any]) -> str:
+    """Equity, margin, withdrawable and position count, main dex plus HIP-3.
+
+    These three tools (summary / pnl / risk) returned a hard-coded {} for
+    their whole lives: they called an SDK method that never existed and then
+    had the call deleted instead of replaced. They now read the clearinghouse.
+    """
+    try:
+        user = _user(params)
+        acct = fetch_account_state(user, include_hip3=True) or {}
+        main = _clearinghouse(params)
+        ms = main.get("marginSummary") or {}
+        return json.dumps({"summary": {
+            "user": user,
+            "equity": acct.get("equity", 0),
+            "equity_by_dex": acct.get("dex_equity", {}),
+            "available_margin": acct.get("available", 0),
+            "withdrawable": _fnum(main.get("withdrawable")),
+            "total_notional": acct.get("total_ntl", 0),
+            "total_margin_used": _fnum(ms.get("totalMarginUsed")),
+            "position_count": len(acct.get("asset_positions") or []),
+        }}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
+
 def handle_get_asset_positions(params: Dict[str, Any]) -> str:
-    """Handle get_asset_positions tool call."""
+    """Open positions across main dex and HIP-3, optionally one coin."""
     coin = _norm_coin(params.get('coin', ''))
     try:
-        from pathiel.client.exchange import _get_info
-        _get_info()
-        # frontend_open_positions does not exist on hyperliquid-python-sdk's
-        # Info class (checked 0.5.0 through the pinned >=0.23.0 floor) — this
-        # has always returned empty.
-        positions = []
+        acct = fetch_account_state(_user(params), include_hip3=True) or {}
+        positions = [p.get("position") or {} for p in (acct.get("asset_positions") or [])]
         if coin:
             positions = [p for p in positions if _norm_coin(p.get('coin', '')) == coin]
-        return json.dumps({'coin': coin, 'positions': positions}, default=str)
+        return json.dumps({'coin': coin, 'count': len(positions),
+                           'positions': positions}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
+
 
 def handle_get_24h_stats(params: Dict[str, Any]) -> str:
     """Handle get_24h_stats tool call."""
@@ -2323,28 +2934,61 @@ def handle_get_24h_stats(params: Dict[str, Any]) -> str:
 
 
 def handle_get_portfolio_pnl(params: Dict[str, Any]) -> str:
-    """Handle get_portfolio_pnl tool call."""
+    """Unrealized pnl per open position plus HL's own day/week/month/all-time pnl."""
     try:
-        from pathiel.client.exchange import _get_info
-        _get_info()
-        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
-        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
-        # always returned empty.
-        state: Dict[str, Any] = {}
-        return json.dumps({'pnl': state}, default=str)
+        acct = fetch_account_state(_user(params), include_hip3=True) or {}
+        open_rows = []
+        for p in acct.get("asset_positions") or []:
+            pos = p.get("position") or {}
+            open_rows.append({"coin": pos.get("coin"), "szi": _fnum(pos.get("szi")),
+                              "unrealized_pnl": _fnum(pos.get("unrealizedPnl")),
+                              "return_on_equity": _fnum(pos.get("returnOnEquity"))})
+        windows: Dict[str, Any] = {}
+        hist = _info("portfolio", user=_user(params)) or []
+        for pair in hist:
+            if isinstance(pair, list) and len(pair) == 2 and isinstance(pair[1], dict):
+                series = pair[1].get("pnlHistory") or []
+                # pnlHistory is cumulative within the window; the last point is the window's pnl.
+                windows[pair[0]] = _fnum(series[-1][1]) if series else 0.0
+        return json.dumps({"pnl": {
+            "unrealized_total": round(sum(r["unrealized_pnl"] for r in open_rows), 6),
+            "open_positions": open_rows,
+            "window_pnl": windows,
+        }}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
+
 def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
-    """Handle get_risk_metrics tool call."""
+    """Account leverage, cross maintenance-margin ratio, and liquidation distance
+    per main-dex position. margin_ratio is HL's own liquidation trigger: at 1.0
+    the account is liquidated."""
     try:
-        from pathiel.client.exchange import _get_info
-        _get_info()
-        # frontend_user_state does not exist on hyperliquid-python-sdk's Info
-        # class (checked 0.5.0 through the pinned >=0.23.0 floor) — this has
-        # always returned empty.
-        state: Dict[str, Any] = {}
-        return json.dumps({'risk': state}, default=str)
+        main = _clearinghouse(params)
+        cross = main.get("crossMarginSummary") or {}
+        equity = _fnum(cross.get("accountValue"))
+        mids = _info("allMids") or {}
+        rows = []
+        for pos in _positions(main):
+            coin = pos.get("coin")
+            mark = _fnum(mids.get(coin))
+            liq = _fnum(pos.get("liquidationPx")) if pos.get("liquidationPx") else None
+            rows.append({
+                "coin": coin, "szi": _fnum(pos.get("szi")), "mark": mark,
+                "leverage": (pos.get("leverage") or {}).get("value"),
+                "liquidation_px": liq,
+                "liq_distance_pct": round(abs(mark - liq) / mark * 100, 3) if liq and mark else None,
+            })
+        mm = _fnum(main.get("crossMaintenanceMarginUsed"))
+        return json.dumps({"risk": {
+            "equity": equity,
+            "total_notional": _fnum(cross.get("totalNtlPos")),
+            "account_leverage": round(_fnum(cross.get("totalNtlPos")) / equity, 4) if equity else None,
+            "cross_maintenance_margin_used": mm,
+            "margin_ratio": round(mm / equity, 6) if equity else None,
+            "positions": rows,
+            "scope": "main dex; HIP-3 dexes margin separately",
+        }}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2352,8 +2996,7 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
 def handle_get_markets_info(params: Dict[str, Any]) -> str:
     """Handle get_markets_info tool call."""
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         meta = info.meta()
         return json.dumps({'markets': meta}, default=str)
     except Exception as e:
@@ -2363,8 +3006,7 @@ def handle_get_markets_info(params: Dict[str, Any]) -> str:
 def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     """Handle get_spot_markets tool call."""
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         spot_meta = info.spot_meta()
         return json.dumps({'spot_markets': spot_meta}, default=str)
     except Exception as e:
@@ -2373,8 +3015,7 @@ def handle_get_spot_markets(params: Dict[str, Any]) -> str:
 def handle_get_perp_markets(params: Dict[str, Any]) -> str:
     """Handle get_perp_markets tool call."""
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         meta = info.meta()
         return json.dumps({'perp_markets': meta}, default=str)
     except Exception as e:
@@ -2384,8 +3025,7 @@ def handle_get_market_depth(params: Dict[str, Any]) -> str:
     """Handle get_market_depth tool call."""
     coin = _norm_coin(params.get('coin', ''))
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         l2 = info.l2_snapshot(coin)
         return json.dumps({'coin': coin, 'depth': l2}, default=str)
     except Exception as e:
@@ -2403,8 +3043,7 @@ def handle_get_server_time(params: Dict[str, Any]) -> str:
 def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
     """Handle get_asset_contexts tool call."""
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         meta = info.meta()
         return json.dumps({'contexts': meta}, default=str)
     except Exception as e:
@@ -2412,27 +3051,53 @@ def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
 
 
 def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
-    """Handle get_liquidation_price tool call."""
+    """Liquidation price: the venue's own figure for an open position, else
+    HL's isolated-margin formula for a hypothetical one.
+
+    liq = entry - side * (entry / leverage - mmr * entry) / (1 - mmr * side),
+    HL's documented formula: margin available is initial margin minus
+    maintenance margin, and mmr is 1 / (2 * max_leverage). The old estimate,
+    entry * (1 - 1/leverage), ignored maintenance margin and put liquidation
+    further away than it is, which is the dangerous direction to be wrong.
+    """
     coin = _norm_coin(params.get('coin', ''))
-    size = params.get('size')
-    leverage = params.get('leverage')
-    is_long = params.get('is_long')
+    if not coin:
+        return json.dumps({'error': 'coin is required'})
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
-        mids = info.all_mids()
-        mark = float(mids.get(coin, 0)) if mids else 0.0
-        if not mark or not leverage:
-            return json.dumps({'error': 'unable to compute', 'coin': coin}, default=str)
-        # Simple liq estimate (1/leverage haircut, ignoring fees/maintenance)
-        if is_long:
-            liq = mark * (1 - 1.0/float(leverage))
-        else:
-            liq = mark * (1 + 1.0/float(leverage))
-        return json.dumps({'coin': coin, 'size': size, 'leverage': leverage,
-                           'is_long': is_long, 'mark': mark,
+        if params.get("leverage") is None and params.get("is_long") is None:
+            acct = fetch_account_state(_user(params), include_hip3=True) or {}
+            for p in acct.get("asset_positions") or []:
+                pos = p.get("position") or {}
+                if _norm_coin(pos.get("coin", "")) == coin:
+                    return json.dumps({"coin": coin, "source": "venue",
+                                       "szi": _fnum(pos.get("szi")),
+                                       "entry_px": _fnum(pos.get("entryPx")),
+                                       "liquidation_price": pos.get("liquidationPx")},
+                                      default=str)
+            return json.dumps({"error": f"no open {coin} position; pass leverage and "
+                                        "is_long to estimate a hypothetical one", "coin": coin})
+        leverage = _fnum(params.get("leverage"))
+        if leverage <= 0:
+            return json.dumps({"error": "leverage must be positive", "coin": coin})
+        is_long = params.get("is_long")
+        is_long = is_long if isinstance(is_long, bool) else str(is_long).lower() in ("1", "true", "yes", "long")
+        from pathiel.client.exchange import get_max_leverage
+        max_lev = _fnum(get_max_leverage(coin)) or leverage
+        if leverage > max_lev:
+            return json.dumps({"error": f"leverage {leverage:g}x exceeds {coin} max {max_lev:g}x",
+                               "coin": coin})
+        entry = _fnum(params.get("entry_px")) or _fnum((_info("allMids") or {}).get(coin))
+        if entry <= 0:
+            return json.dumps({"error": f"no price for {coin}", "coin": coin})
+        side = 1.0 if is_long else -1.0
+        mmr = 1.0 / (2.0 * max_lev)
+        liq = entry - side * (entry / leverage - mmr * entry) / (1.0 - mmr * side)
+        return json.dumps({'coin': coin, 'source': 'estimate', 'size': params.get('size'),
+                           'leverage': leverage, 'is_long': bool(is_long), 'entry_px': entry,
+                           'maintenance_margin_rate': mmr,
                            'liquidation_price': liq,
-                           'note': 'simple estimate; ignores maintenance margin & funding'},
+                           'note': 'isolated-margin formula; cross positions liquidate on '
+                                   'account equity, so use get_risk_metrics for those'},
                           default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -2442,8 +3107,7 @@ def handle_get_max_leverage(params: Dict[str, Any]) -> str:
     """Handle get_max_leverage tool call."""
     coin = _norm_coin(params.get('coin', ''))
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
+        info = _limited_info()
         meta = info.meta()
         universe = meta.get('universe', []) if isinstance(meta, dict) else []
         for asset in universe:
@@ -2458,13 +3122,17 @@ def handle_get_max_leverage(params: Dict[str, Any]) -> str:
 
 def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
     """Handle get_order_by_oid tool call."""
-    user = params.get('user', '')
     oid = params.get('oid')
+    if oid is None:
+        return json.dumps({'error': 'oid is required'})
+    user = _user(params)
+    if not user:
+        return json.dumps({'error': 'no user address provided or configured'})
     try:
-        from pathiel.client.exchange import _get_info
-        info = _get_info()
-        res = info.query_order_by_oid(user, int(oid))
-        return json.dumps({'order': res}, default=str)
+        # Was info.query_order_by_oid(params.get('user', ''), ...): an omitted
+        # user went to HL as "" and came back as a 422 deserialization error.
+        res = _info("orderStatus", user=user, oid=int(oid))
+        return json.dumps({'order': res, 'user': user}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2472,8 +3140,8 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
 def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
     """Handle get_user_fees_detailed tool call."""
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
         if HL_ACCOUNT:
             res = info.user_fees(HL_ACCOUNT)
             return json.dumps({'fees': res}, default=str)
@@ -2486,8 +3154,8 @@ def handle_get_user_fills(params: Dict[str, Any]) -> str:
     """Handle get_user_fills tool call."""
     limit = int(params.get('limit', 100))
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
         fills = info.user_fills(HL_ACCOUNT)
@@ -2503,8 +3171,8 @@ def handle_get_user_fills_by_time(params: Dict[str, Any]) -> str:
     start_time = int(params.get('start_time', 0))
     end_time = params.get('end_time')
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
         if end_time is not None:
@@ -2522,8 +3190,8 @@ def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
     start_time = int(params.get('start_time', 0))
     end_time = params.get('end_time')
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
         if end_time is not None:
@@ -2539,8 +3207,8 @@ def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
 def handle_get_historical_orders(params: Dict[str, Any]) -> str:
     """Handle get_historical_orders tool call."""
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
+        from pathiel.client.exchange import HL_ACCOUNT
+        info = _limited_info()
         if not HL_ACCOUNT:
             return json.dumps({'error': 'no configured user address'}, default=str)
         orders = info.historical_orders(HL_ACCOUNT)
@@ -2552,15 +3220,16 @@ def handle_get_historical_orders(params: Dict[str, Any]) -> str:
 
 def handle_query_order_by_cloid(params: Dict[str, Any]) -> str:
     """Handle query_order_by_cloid tool call."""
-    cloid = params.get('cloid', '')
-    user = params.get('user')
+    cloid = str(params.get('cloid') or '').strip()
+    if not cloid:
+        return json.dumps({'error': 'cloid is required'})
+    addr = _user(params)
+    if not addr:
+        return json.dumps({'error': 'no user address provided or configured'}, default=str)
     try:
-        from pathiel.client.exchange import _get_info, HL_ACCOUNT
-        info = _get_info()
-        addr = user or HL_ACCOUNT
-        if not addr:
-            return json.dumps({'error': 'no user address provided or configured'}, default=str)
-        res = info.query_order_by_cloid(addr, cloid)
+        # orderStatus takes a cloid in the oid slot. The SDK wrapper wanted a
+        # Cloid object and crashed on the string every caller passes.
+        res = _info("orderStatus", user=addr, oid=cloid)
         return json.dumps({'order': res, 'cloid': cloid, 'user': addr}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
