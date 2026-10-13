@@ -49,6 +49,26 @@ Endpoint/key are env (like the other slots' endpoint vars, read at CALL
 time): LLM_DV_BASE_URL (llama-server ROOT, e.g. http://192.168.1.16:8080),
 LLM_DV_API_KEY (optional — bare llama-server needs no auth).
 
+PRIMARY-ENGINE seat (2026-10-13): the SAME machinery can drive the entry
+verdict INSTEAD of the chat LLM (research() branches on it — see
+`primary_engine_config` below). Sibling block, deliberately separate from
+the observer seat so the two can name different models/endpoints:
+
+    "llm": {
+        "primary_engine": {
+            "engine": "llm",                # "llm" (default) | "systemone"
+            "model": "",                    # required when systemone
+            "base_url": "",                 # llama-server ROOT; env
+                                            # LLM_SYSTEMONE_BASE_URL wins
+            "timeout_s": 30.0,              # per-call budget (optional)
+            "max_state_chars": 12000        # state JSON budget (optional)
+        }
+    }
+
+Absent block / any fault / unknown engine = "llm" — the current chat path,
+byte-for-byte. Env vars: LLM_SYSTEMONE_BASE_URL (overrides the config
+base_url), LLM_SYSTEMONE_API_KEY (optional).
+
 Persistence: append-only JSONL, path via HERMES_DV_FILE (the duel-store
 pattern — an evaluation artifact, never truncated, corrupt line = one row).
 """
@@ -199,6 +219,121 @@ def _dv_config() -> Optional[Dict[str, Any]]:
 def dv_file() -> str:
     """Current decision-voice log path (read at call time so tests redirect)."""
     return os.environ.get("HERMES_DV_FILE", _DV_FILE)
+
+
+# ── primary-engine seat (2026-10-13) ───────────────────────────────────────
+
+_LLM_ENGINE = {"engine": "llm"}
+
+_SYSTEMONE_URL_VARS = ("LLM_SYSTEMONE_BASE_URL",)
+_SYSTEMONE_KEY_VARS = ("LLM_SYSTEMONE_API_KEY",)
+
+
+def primary_engine_config() -> Dict[str, Any]:
+    """Resolve the PRIMARY verdict engine from config `llm.primary_engine`.
+
+    {"engine": "llm"} (the default when the block is absent) = the chat
+    path in research(), byte-for-byte today's behavior. {"engine":
+    "systemone", ...} = the decision model answers the typed
+    state+questions schema INSTEAD of the LLM generation call.
+
+    Hot read at every research() call (no cache — same pattern as the
+    other llm slots, so arming the seat is a same-inode config flip).
+    Fail-open: any config fault, an unknown engine name, or a systemone
+    engine missing model/base_url degrades to "llm" — the switch can
+    never break the primary path. A missing model/endpoint while asking
+    for systemone logs LOUDLY (an intended flip that silently no-ops is
+    worse than a crash).
+    """
+    try:
+        block = read_agent_config().get("llm")
+        slot = block.get("primary_engine") if isinstance(block, dict) else None
+        if not isinstance(slot, dict):
+            return dict(_LLM_ENGINE)
+        engine = str(slot.get("engine") or "llm").strip().lower()
+        if engine != "systemone":
+            return dict(_LLM_ENGINE)
+        model = str(slot.get("model") or "").strip()
+        base_url = ""
+        for n in _SYSTEMONE_URL_VARS:
+            base_url = os.environ.get(n, "")
+            if base_url:
+                break
+        if not base_url:
+            base_url = str(slot.get("base_url") or "").strip()
+        if not model or not base_url:
+            logger.warning(
+                "[research] primary_engine=systemone but model/base_url "
+                "missing — staying on the LLM engine (flip is INERT)"
+            )
+            return dict(_LLM_ENGINE)
+        api_key = ""
+        for n in _SYSTEMONE_KEY_VARS:
+            api_key = os.environ.get(n, "")
+            if api_key:
+                break
+        return {
+            "engine": "systemone",
+            "model": model,
+            "base_url": base_url,
+            "api_key": api_key,
+            "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
+            "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
+        }
+    except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
+        return dict(_LLM_ENGINE)
+
+
+def systemone_primary_verdict(
+    coin: str,
+    perception: Dict[str, Any],
+    tf1h: Dict[str, Any],
+    tf4h: Dict[str, Any],
+    tf1d: Dict[str, Any],
+    funding_raw: str,
+    news: str,
+    open_positions: List[Dict[str, Any]],
+    win_rate: float,
+    n_closes: int,
+    cfg: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Run the decision model as the PRIMARY verdict engine for one research
+    call (the seat the DV observer shadows). Reuses the exact observer
+    machinery: build_state + build_questions + call_systemone +
+    verdict_from_answers (whose output is parse_verdict-shaped, so every
+    downstream gate/sizing/executor site is engine-agnostic).
+
+    Returns {"parsed", "answers", "request_json", "wall_ms", "server_ms"}
+    on success, None on ANY call failure — the CALLER owns the fallback
+    policy (owner call 2026-10-13: failure-PASS + ai_down, NO LLM
+    fallback, so the 27B stays unloaded). NEVER raises: call_systemone
+    already swallows every transport fault and returns (None, ms, None).
+    """
+    held = any(p.get("coin") == coin for p in (open_positions or []))
+    state = build_state(
+        coin, perception, tf1h, tf4h, tf1d, funding_raw, news,
+        open_positions, win_rate, n_closes,
+        max_state_chars=cfg["max_state_chars"],
+    )
+    questions = build_questions(held)
+    answers, wall_ms, server_ms = call_systemone(
+        cfg["base_url"], cfg["api_key"], cfg["model"], state, questions,
+        timeout_s=cfg["timeout_s"],
+    )
+    if answers is None:
+        return None
+    parsed = verdict_from_answers(answers, coin, perception)
+    parsed.pop("_answers", None)  # raw probs go to the archive, not the analysis
+    return {
+        "parsed": parsed,
+        "answers": answers,
+        # Self-contained rendered request (same shape as the decision_voice
+        # prompt-log rows) — archived as user_message so llm_ab_replay prep
+        # cohorts keep working unchanged.
+        "request_json": json.dumps({"state": state, "questions": questions}),
+        "wall_ms": wall_ms,
+        "server_ms": server_ms,
+    }
 
 
 def record_dv(entry: Dict[str, Any]) -> None:

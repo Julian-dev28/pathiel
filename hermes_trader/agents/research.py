@@ -28,7 +28,11 @@ from hermes_trader.agents.duel_store import (
     slot_get,
 )
 from hermes_trader.agents import prompt_log
-from hermes_trader.agents.decision_voice import decision_voice_verdict
+from hermes_trader.agents.decision_voice import (
+    decision_voice_verdict,
+    primary_engine_config,
+    systemone_primary_verdict,
+)
 from hermes_trader.agents.memory import memory
 from hermes_trader.agents.prior_calls import build_prior_call_block
 from hermes_trader.agents.rvol_context import build_rvol_block
@@ -1825,38 +1829,103 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         rvol_block=rvol_block,
     )
 
-    ai_t0 = time.monotonic()
-    ai_text, primary_server_ms = _call_ai(system_prompt, user_message)
-    primary_ms = int((time.monotonic() - ai_t0) * 1000)
-    # Per-call LLM duration, ALWAYS logged (2026-09-22). Until now wall/server
-    # times only surfaced on the [duel] line — with the duelist off the cycle
-    # budget question ("is research_max_workers worth raising?") had no
-    # per-call numbers in trader.log. Wall = queue + inference; server =
-    # llama.cpp timings (queue-free) — the gap is server-side queue wait,
-    # which is exactly what parallelising the research loop converts into
-    # throughput. Sits adjacent to httpx's "HTTP Request: POST ... 200 OK"
-    # line for the same call (same [COIN] prefix from log_context).
-    _srv_s = f", {primary_server_ms}ms server" if primary_server_ms is not None else ""
-    logger.info(
-        f"[research] LLM call completed in {primary_ms}ms wall{_srv_s} "
-        f"(prompt ~{len(user_message)} chars)"
-    )
     # `held_coins` = the live open book (same `open_positions` fed to the
     # prompt), so a CLOSE on a coin we don't hold is deterministically
     # downgraded to PASS at parse time — the xyz:HOOD 2026-09-04 misread.
     held_coins = {p["coin"] for p in open_positions}
-    parsed = parse_verdict(ai_text, coin, perception, held_coins=held_coins)
 
-    # Prompt/response archive (role=primary): full prompt text + raw response +
-    # parsed verdict, zstd-chunked under /app/log/prompt-log. Disabled by
-    # default; record_call never raises (prompt_log.py contract).
-    prompt_log.record_call(_archive_record(
-        coin=coin, perception=perception, role="primary", model=_primary_model_name,
-        system_prompt=system_prompt, user_message=user_message,
-        raw_response=ai_text, parsed=parsed,
-        wall_ms=primary_ms, server_ms=primary_server_ms,
-        prior_block_injected=bool(prior_block),
-    ))
+    # Primary-engine switch (2026-10-13): the decision model (Clef /
+    # Decision-2.0 / d3 family, llama.cpp `POST /v1/systemone`) can drive
+    # the entry verdict INSTEAD of the chat LLM generation call — the
+    # §B.39 primary-replacement walk (d2 +$49.21 n=195 vs incumbent
+    # +$33.64 n=212, ~0.6s vs 22.5s median). Config `llm.primary_engine`
+    # (hot read, fail-open): absent = "llm" = the chat path below,
+    # byte-for-byte. The systemone branch reuses the DV observer's proven
+    # contract (build_state + build_questions + call_systemone +
+    # verdict_from_answers, whose output is parse_verdict-shaped), so
+    # every gate/sizing/executor site downstream is engine-agnostic.
+    # The thin-history guard, prompt build, duelist, and everything after
+    # `parsed` are untouched.
+    engine_cfg = primary_engine_config()
+    if engine_cfg["engine"] == "systemone":
+        ai_t0 = time.monotonic()
+        so = systemone_primary_verdict(
+            coin, perception, tf1h, tf4h, tf1d,
+            funding_raw, news, open_positions,
+            wr.get("rate", 0), int(wr.get("total", 0)),
+            engine_cfg,
+        )
+        primary_ms = int((time.monotonic() - ai_t0) * 1000)
+        if so is None:
+            # Owner call 2026-10-13: a failed systemone primary is a
+            # failure-PASS tagged ai_down (the executor's override guard
+            # treats it as an error code, not an opinion — same contract
+            # as parse_verdict's ai_text-empty path). NO LLM fallback:
+            # the seat exists so the 27B stays unloaded.
+            logger.warning(
+                f"[research] {coin}: systemone primary ({engine_cfg['model']}) "
+                f"FAILED after {primary_ms}ms — PASS ai_down this cycle "
+                f"(no LLM fallback)"
+            )
+            parsed = {
+                "verdict": "PASS", "confidence": 0.0, "side": None,
+                "entry_px": perception.get("mid", 0), "stop_px": 0.0, "tp_px": 0.0,
+                "news_risk": "none",
+                "reasoning": "systemone primary call failed — PASS is an "
+                             "error code, not a verdict",
+                "ai_down": True, "close_guard_downgraded": False,
+            }
+            ai_text, primary_server_ms, request_json = "", None, None
+        else:
+            parsed = so["parsed"]
+            ai_text = json.dumps(so["answers"])
+            primary_server_ms = so["server_ms"]
+            request_json = so["request_json"]
+            _srv_s = f", {primary_server_ms}ms server" if primary_server_ms is not None else ""
+            logger.info(
+                f"[research] systemone primary ({engine_cfg['model']}) completed "
+                f"in {primary_ms}ms wall{_srv_s} (request ~{len(request_json)} chars)"
+            )
+        # Archive under role="primary" with the rendered {state, questions}
+        # as user_message + the answers JSON as raw_response — the same
+        # self-contained shape as the decision_voice rows, so llm_ab_replay
+        # prep cohorts keep working unchanged.
+        prompt_log.record_call(_archive_record(
+            coin=coin, perception=perception, role="primary", model=engine_cfg["model"],
+            system_prompt=None, user_message=request_json,
+            raw_response=ai_text, parsed=parsed,
+            wall_ms=primary_ms, server_ms=primary_server_ms,
+            prior_block_injected=False,
+        ))
+    else:
+        ai_t0 = time.monotonic()
+        ai_text, primary_server_ms = _call_ai(system_prompt, user_message)
+        primary_ms = int((time.monotonic() - ai_t0) * 1000)
+        # Per-call LLM duration, ALWAYS logged (2026-09-22). Until now wall/server
+        # times only surfaced on the [duel] line — with the duelist off the cycle
+        # budget question ("is research_max_workers worth raising?") had no
+        # per-call numbers in trader.log. Wall = queue + inference; server =
+        # llama.cpp timings (queue-free) — the gap is server-side queue wait,
+        # which is exactly what parallelising the research loop converts into
+        # throughput. Sits adjacent to httpx's "HTTP Request: POST ... 200 OK"
+        # line for the same call (same [COIN] prefix from log_context).
+        _srv_s = f", {primary_server_ms}ms server" if primary_server_ms is not None else ""
+        logger.info(
+            f"[research] LLM call completed in {primary_ms}ms wall{_srv_s} "
+            f"(prompt ~{len(user_message)} chars)"
+        )
+        parsed = parse_verdict(ai_text, coin, perception, held_coins=held_coins)
+
+        # Prompt/response archive (role=primary): full prompt text + raw response +
+        # parsed verdict, zstd-chunked under /app/log/prompt-log. Disabled by
+        # default; record_call never raises (prompt_log.py contract).
+        prompt_log.record_call(_archive_record(
+            coin=coin, perception=perception, role="primary", model=_primary_model_name,
+            system_prompt=system_prompt, user_message=user_message,
+            raw_response=ai_text, parsed=parsed,
+            wall_ms=primary_ms, server_ms=primary_server_ms,
+            prior_block_injected=bool(prior_block),
+        ))
 
     # A/B duelist: the SAME prompt to the second model, recorded but never
     # used. Runs AFTER the primary verdict so a duelist outage (slow 9B server
@@ -1937,7 +2006,12 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
     # `Trade result` row always show the model that actually spoke — the
     # 2026-08-25 model-switch forensics gap (a name read later from env can
     # disagree with the one used when the config has since been flipped).
-    primary_model = effective_primary_model()
+    # Same principle for the systemone seat: the decision model that
+    # answered is the primary_model the ledger join attributes the trade to.
+    primary_model = (
+        engine_cfg["model"] if engine_cfg["engine"] == "systemone"
+        else effective_primary_model()
+    )
 
     analysis = {
         "id": str(uuid.uuid4()),
