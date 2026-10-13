@@ -57,9 +57,14 @@ services:
   nano-serve:
     image: nvidia/cuda:12.8.1-devel-ubuntu22.04
     container_name: nano-serve
-    command: /srv/build/bin/llama-server
+    # The build tree's baked rpath points at the BUILD container's /src/build
+    # (not this mount's /srv) — same fix the 1.16 decision2-serve used.
+    environment:
+      - LD_LIBRARY_PATH=/srv/bin
+    command: /srv/bin/llama-server
       -m /hf/hub/models--ggml-org--vllm-d3-nano-GGUF/snapshots/67baf946c0042cd74ca7106929ed57db699a5f4b/vllm-d3-nano-Q8_0.gguf
-      --embeddings --pooling none -c 8192 -b 8192 -ub 8192 -np 1
+      --embeddings --pooling none -c 4096 -b 2048 -ub 2048 -np 1
+      --cache-type-k q8_0 --cache-type-v q8_0 -ngl 14
       --host 0.0.0.0 --port 8080
     volumes:
       - /home/oknight/llama-master/build:/srv:ro
