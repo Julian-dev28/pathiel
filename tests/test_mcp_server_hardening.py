@@ -486,3 +486,25 @@ def test_audit_script_is_clean():
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout
     assert "RESULT: CLEAN" in r.stdout and "WARN" not in r.stdout
+
+
+def test_wallet_account_counts_hip3_equity(monkeypatch):
+    """A wallet whose margin sits on xyz: read as $0.0086 while `state` said $15.21."""
+    seen = {}
+
+    def fake(addr, include_hip3=False):
+        seen["hip3"] = include_hip3
+        return {"equity": 15.2, "dex_equity": {"": 0.01, "xyz": 15.19, "flx": 0.0},
+                "asset_positions": []}
+    monkeypatch.setattr(M, "fetch_account_state", fake)
+    body = json.loads(M.handle_wallet_account({"address": "0x" + "c" * 40}))
+    assert seen["hip3"] is True and body["equity"] == 15.2
+    assert body["equity_by_dex"] == {"": 0.01, "xyz": 15.19}
+
+
+def test_state_reports_equity_by_dex(monkeypatch):
+    monkeypatch.setattr(M, "resolve_user_address", lambda: "0x" + "a" * 40)
+    monkeypatch.setattr(M, "fetch_account_state", lambda u, include_hip3=False: {
+        "equity": 15.2, "dex_equity": {"": 0.01, "xyz": 15.19, "km": 0.0}, "asset_positions": []})
+    body = json.loads(M.handle_state({}))
+    assert body["equity_by_dex"] == {"": 0.01, "xyz": 15.19}
