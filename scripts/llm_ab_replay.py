@@ -137,6 +137,45 @@ def results_path(tag):
     return SCRATCH / f"_ab_{tag}_results.jsonl"
 
 
+# ---- vwap shadow-episode injection (state-schema A/B, B.43 gauntlet) ----
+VWAP_EPS = SCRATCH / "_vwap_eps.json"
+
+
+def load_vwap_episodes():
+    """Deduped [vwap-deviation][SHADOW] episodes keyed by coin (ts epoch-ms)."""
+    from datetime import datetime, timezone
+    by_coin = {}
+    for e in json.loads(VWAP_EPS.read_text()):
+        ms = int(datetime.strptime(e["ts"], "%Y-%m-%d %H:%M:%S")
+                 .replace(tzinfo=timezone.utc).timestamp() * 1000)
+        by_coin.setdefault(str(e["coin"]).upper(), []).append((ms, e))
+    return by_coin
+
+
+def vwap_join(by_coin, coin, ts_ms, window_s=900):
+    """Nearest episode for this coin within +/- window_s of the decision ts."""
+    best = None
+    for ms, e in by_coin.get(str(coin).upper(), []):
+        dt = abs(ts_ms - ms)
+        if dt <= window_s * 1000 and (best is None or dt < best[0]):
+            best = (dt, ms, e)
+    return best
+
+
+def apply_vwap_inject(state, ep, mode):
+    """Treatment arms: 'name' appends the trigger name to triggers_fired;
+    'full' also adds the numeric vwap_deviation state fields."""
+    if not ep:
+        return
+    if mode in ("name", "full") and "vwapDeviation" not in state.get("triggers_fired", []):
+        state.setdefault("triggers_fired", []).append("vwapDeviation")
+    if mode == "full":
+        state["vwap_deviation"] = {
+            "shape": ep["shape"], "suggested_side": ep["side"],
+            "z_sigma": ep["z"], "anchor_age_bars": ep["age"],
+        }
+
+
 def purge_errors(tag):
     p = results_path(tag)
     if not p.exists():
@@ -173,18 +212,22 @@ def cmd_replay(args):
         ctk = c0 if ctk is None else ctk
         max_toks = max_toks or m0
 
-    done = purge_errors(args.arm)
+    arm_tag = args.arm + (f"__vw-{args.inject_vwap}" if args.inject_vwap else "")
+    done = purge_errors(arm_tag)
     rows = [json.loads(l) for l in COHORT.open(errors="ignore") if l.strip()]
+    if args.only_vwap_episodes or args.inject_vwap:
+        by_coin = load_vwap_episodes()
+        rows = [r for r in rows if vwap_join(by_coin, r["coin"], r["ts"])]
     if args.limit:
         rows = [r for r in rows if r["perception_id"] not in done][: args.limit]
     else:
         rows = [r for r in rows if r["perception_id"] not in done]
-    print(f"arm={args.arm} model={arm['model']} todo={len(rows)} (already done: {len(done)})")
+    print(f"arm={arm_tag} model={arm['model']} todo={len(rows)} (already done: {len(done)})")
 
     # decision-model arm (Clef family): typed state+questions via /v1/systemone,
     # reusing the bot's OWN decision_voice module for state build + verdict map.
     if arm.get("kind") == "systemone":
-        return _replay_systemone(args, arm, api_key, rows, done)
+        return _replay_systemone(args, arm, api_key, rows, done, arm_tag)
 
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -307,7 +350,7 @@ def _state_from_prompt(coin, user_message):
     return state, held
 
 
-def _replay_systemone(args, arm, api_key, rows, done):
+def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
     """Decision-model arm: state+questions -> POST /v1/systemone -> the bot's
     own verdict_from_answers mapping. No generation, no parse_verdict — the
     masked-verdict class cannot occur, so the audit step is a no-op for this arm."""
@@ -317,15 +360,24 @@ def _replay_systemone(args, arm, api_key, rows, done):
     model = arm["model"]
     timeout_s = float(arm.get("timeout_s", 30.0))
     conc = max(1, args.concurrency)
+    inject = args.inject_vwap
+    vwap_by_coin = load_vwap_episodes() if inject or args.only_vwap_episodes else None
     n_ok = n_err = 0
     from concurrent.futures import ThreadPoolExecutor
     import threading
     write_lock = threading.Lock()
 
     def one(r):
-        rec = {"perception_id": r["perception_id"], "arm": args.arm,
+        rec = {"perception_id": r["perception_id"], "arm": arm_tag,
                "coin": r["coin"], "ts": r["ts"], "model": model}
         state, held = _state_from_prompt(r["coin"], r["user_message"])
+        j = vwap_join(vwap_by_coin, r["coin"], r["ts"]) if vwap_by_coin else None
+        if j:
+            rec["vwap"] = {"shape": j[2]["shape"], "side": j[2]["side"],
+                           "z": j[2]["z"], "age": j[2]["age"],
+                           "dt_s": int(j[0] / 1000)}
+            if inject:
+                apply_vwap_inject(state, j[2], inject)
         questions = build_questions(held)
         answers, wall_ms, server_ms = call_systemone(
             url_root, api_key, model, state, questions, timeout_s=timeout_s)
@@ -342,7 +394,7 @@ def _replay_systemone(args, arm, api_key, rows, done):
                          ("verdict", "confidence", "side", "news_risk")}
         return rec
 
-    with results_path(args.arm).open("a") as out, \
+    with results_path(arm_tag).open("a") as out, \
             ThreadPoolExecutor(max_workers=conc) as ex:
         for i, rec in enumerate(ex.map(one, rows), 1):
             if rec.get("error"):
@@ -354,7 +406,7 @@ def _replay_systemone(args, arm, api_key, rows, done):
                 out.flush()
             if i % 100 == 0 or i == len(rows):
                 print(f"  {i}/{len(rows)} ok={n_ok} err={n_err}")
-    print(f"done arm={args.arm} ok={n_ok} err={n_err} -> {results_path(args.arm)}")
+    print(f"done arm={arm_tag} ok={n_ok} err={n_err} -> {results_path(arm_tag)}")
 
 
 # --------------------------------------------------------------- audit ----
@@ -738,6 +790,16 @@ def main():
     rp.add_argument("--concurrency", type=int, default=1,
                     help="parallel in-flight calls (remote llama-server must "
                          "run with --parallel >= this; slots split ctx)")
+    rp.add_argument("--inject-vwap", choices=("none", "name", "full"), default=None,
+                    help="systemone arms only: state-schema A/B against the "
+                         "vwap shadow episodes (scratch/_vwap_eps.json). "
+                         "none=control (join recorded, state untouched), "
+                         "name=append vwapDeviation to triggers_fired, "
+                         "full=+ numeric vwap_deviation fields. Results go to "
+                         "_ab_<arm>__vw-<mode>_results.jsonl")
+    rp.add_argument("--only-vwap-episodes", action="store_true",
+                    help="restrict the cohort to archived calls within "
+                         "+/-15min of a vwap shadow episode")
     au = sub.add_parser("audit")
     au.add_argument("--arm", required=True)
     sc = sub.add_parser("score")
