@@ -14,6 +14,9 @@ the invariant from references/mcp-server.md:
     no duplicate handle_* function definitions
     every explicit tool_handlers value references a defined handle_* function
     no orphan tool_handlers keys without a TOOLS entry
+    every inputSchema property is read by its handler (directly or through a
+        module-level helper it calls); an advertised-but-ignored param is a
+        silent no-op for whatever agent passes it
 
 Exits 0 when CLEAN, 1 on any drift (with an actionable report).
 """
@@ -30,9 +33,35 @@ def _default_server_path() -> Path:
     return Path(__file__).resolve().parents[3] / "scripts" / "pathiel-mcp-server.py"
 
 
+def _schema_props(schema: ast.AST | None) -> set[str]:
+    """Property names of an inputSchema dict literal."""
+    if not isinstance(schema, ast.Dict):
+        return set()
+    for k, v in zip(schema.keys, schema.values):
+        if getattr(k, "value", None) == "properties" and isinstance(v, ast.Dict):
+            return {k2.value for k2 in v.keys if isinstance(k2, ast.Constant)}
+    return set()
+
+
+def _strings_reachable(fn_name: str, fns: dict, seen: set) -> set[str]:
+    """String constants in a function and every module-level function it calls."""
+    if fn_name in seen or fn_name not in fns:
+        return set()
+    seen.add(fn_name)
+    out: set[str] = set()
+    for n in ast.walk(fns[fn_name]):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str):
+            out.add(n.value)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            out |= _strings_reachable(n.func.id, fns, seen)
+    return out
+
+
 def audit(path: Path) -> int:
     tree = ast.parse(path.read_text(), filename=str(path))
 
+    fn_nodes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    tool_props: dict[str, set[str]] = {}
     handler_defs: list[str] = []
     tool_names: list[str] = []
     stub_keys: set[str] = set()
@@ -53,9 +82,11 @@ def audit(path: Path) -> int:
             if name == "TOOLS" and isinstance(node.value, ast.List):
                 for elt in node.value.elts:
                     if isinstance(elt, ast.Dict):
-                        for k, v in zip(elt.keys, elt.values):
-                            if getattr(k, "value", None) == "name" and isinstance(v, ast.Constant):
-                                tool_names.append(v.value)
+                        fields = {getattr(k, "value", None): v for k, v in zip(elt.keys, elt.values)}
+                        name_node = fields.get("name")
+                        if isinstance(name_node, ast.Constant):
+                            tool_names.append(name_node.value)
+                            tool_props[name_node.value] = _schema_props(fields.get("inputSchema"))
             elif name == "_STUB_RESPONSES" and isinstance(node.value, ast.Dict):
                 # legacy structure (dict of name -> response)
                 stub_keys |= {k.value for k in node.value.keys if isinstance(k, ast.Constant)}
@@ -101,6 +132,13 @@ def audit(path: Path) -> int:
         fails.append(f"names in BOTH explicit dict and the stub list: {both}")
     if bad_refs:
         fails.append(f"tool_handlers references undefined functions: {bad_refs}")
+    unread = {}
+    for name, props in tool_props.items():
+        missed = props - _strings_reachable(f"handle_{name}", fn_nodes, set())
+        if missed:
+            unread[name] = sorted(missed)
+    if unread:
+        fails.append(f"schema params never read by their handler: {unread}")
     if unwired:
         warns.append(f"handle_* defs never wired into tool_handlers: {unwired}")
 

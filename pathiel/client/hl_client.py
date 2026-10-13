@@ -125,6 +125,32 @@ def _get_session() -> "requests.Session":
     return _session
 
 
+class HLRequestError(RuntimeError):
+    """An /info or /exchange request that did not produce a response body."""
+
+
+def _http_post_strict(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
+    """`_http_post` that raises HLRequestError instead of returning None.
+
+    For callers that must tell "the venue answered null/[]" apart from "the
+    request never landed" (rate budget, 429, timeout). A legitimate JSON null
+    (e.g. vaultDetails for an unknown vault) is still returned as None.
+    """
+    weight = _endpoint_weight(payload.get("type"))
+    max_wait = float(os.environ.get("PATHIEL_HL_RATE_MAX_WAIT_S", "30"))
+    if not _HL_LIMITER.acquire(weight, max_wait=max_wait):
+        raise HLRequestError(
+            f"rate budget exhausted for {payload.get('type') or 'unknown'} "
+            f"(weight={weight}, waited {max_wait:g}s)"
+        )
+    try:
+        resp = _get_session().post(f"{HL_API}{path}", json=payload, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise HLRequestError(f"HTTP POST {path} {payload.get('type') or ''} failed: {e}") from e
+
+
 def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
     """Direct HTTP POST over the shared keep-alive connection pool.
 
@@ -132,20 +158,13 @@ def _http_post(path: str, payload: Dict[str, Any], timeout: int = 5) -> Any:
     exhaustion, returns None so the caller's existing retry/backoff handles it
     rather than firing into a 429.
     """
-    weight = _endpoint_weight(payload.get("type"))
-    max_wait = float(os.environ.get("PATHIEL_HL_RATE_MAX_WAIT_S", "30"))
-    if not _HL_LIMITER.acquire(weight, max_wait=max_wait):
-        logger.warning(
-            f"[hl] rate budget exhausted for {payload.get('type') or 'unknown'} "
-            f"(weight={weight}, waited {max_wait:g}s) — skipping request this retry"
-        )
-        return None
     try:
-        resp = _get_session().post(f"{HL_API}{path}", json=payload, timeout=timeout)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logger.error(f"[hl] HTTP POST {path} failed: {e}")
+        return _http_post_strict(path, payload, timeout=timeout)
+    except HLRequestError as e:
+        if "rate budget exhausted" in str(e):
+            logger.warning(f"[hl] {e} — skipping request this retry")
+        else:
+            logger.error(f"[hl] {e}")
         return None
 
 
