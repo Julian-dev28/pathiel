@@ -1271,6 +1271,7 @@ def handle_state(params: Dict[str, Any]) -> str:
     return json.dumps({
         "mode": config.get("mode", "OFF"),
         "equity": account.get("equity", 0),
+        "equity_by_dex": {k: v for k, v in (account.get("dex_equity") or {}).items() if v},
         "total_notional": account.get("total_ntl", 0),
         "positions": account.get("asset_positions", []),
         "scan_interval_sec": config.get("scan", {}).get("interval", 180),
@@ -1336,7 +1337,10 @@ def handle_wallet_account(params: Dict[str, Any]) -> str:
     if not address.startswith("0x") or len(address) != 42:
         return json.dumps({"error": f"malformed address: {address!r}"})
     try:
-        state = fetch_account_state(address, include_hip3=False) or {}
+        # include_hip3: a HIP-3 account (all its margin on xyz:) read as
+        # $0.0086 here while `state` said $15.21 for the same wallet, and an
+        # agent reported two balances for one account.
+        state = fetch_account_state(address, include_hip3=True) or {}
     except Exception as e:
         return json.dumps({"address": address, "status": "unavailable", "error": str(e)})
     equity = float(state.get("equity") or 0.0)
@@ -1344,6 +1348,7 @@ def handle_wallet_account(params: Dict[str, Any]) -> str:
         "address": address,
         "funded": equity > 0,
         "equity": equity,
+        "equity_by_dex": {k: v for k, v in (state.get("dex_equity") or {}).items() if v},
         "withdrawable": state.get("withdrawable"),
         "positions": state.get("asset_positions", []),
         "read_only": True,
