@@ -184,6 +184,34 @@ def apply_strip_fields(state, mode):
         state.pop("composite_score", None)
     elif mode == "track":
         state.pop("track_record", None)
+    # NOTE: 'trackadd' is handled in the replay loop (needs the call ts):
+    # the archived prompts never carried track_record, so replay state never
+    # had it; to test whether the LIVE field moves the model we synthesize it
+    # from the ledger as of each call's timestamp.
+
+
+_TRACK_CLOSES = None
+
+
+def _track_at(ts_ms):
+    """Synthesized live-shape track_record: ledger closes strictly before the
+    call ts, as build_state would have computed it at scan time."""
+    global _TRACK_CLOSES
+    if _TRACK_CLOSES is None:
+        rows = []
+        for l in open(REPO / "trader-logs" / "trades.jsonl", errors="ignore"):
+            try:
+                r = json.loads(l)
+            except Exception:
+                continue
+            if r.get("event") == "CLOSE" and r.get("ts"):
+                rows.append((int(r["ts"]), float(r.get("realized_pnl_usd") or 0)))
+        rows.sort()
+        _TRACK_CLOSES = rows
+    import bisect
+    n = bisect.bisect_left([c[0] for c in _TRACK_CLOSES], ts_ms)
+    wins = sum(1 for _, p in _TRACK_CLOSES[:n] if p > 0)
+    return {"n_closes": n, "win_rate": round(wins / n, 3) if n else 0.0}
 
 
 def fade_fired(user_message):
@@ -459,6 +487,8 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
         # Mirror B.45 live build_state: news_recent only rides when live; the
         # archive never had real news, so drop it (news_negative unasked).
         state.pop("news_recent", None)
+        if stripf == "trackadd":
+            state["track_record"] = _track_at(r["ts"])
         if stripf:
             apply_strip_fields(state, stripf)
         if fade:
@@ -908,7 +938,7 @@ def main():
                          "Results go to _ab_<arm>__fade-<mode>_results.jsonl")
     rp.add_argument("--stride", type=int, default=1,
                     help="keep every Nth row after cohort filters (sampling)")
-    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track"), default=None,
+    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track", "trackadd"), default=None,
                     help="systemone arms only: state-field ablation on a stride-sampled "
                          "general cohort. none=control, triggers=empty triggers_fired, "
                          "news=blank news_recent, meta=drop composite_score+track_record. "
