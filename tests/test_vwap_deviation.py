@@ -412,3 +412,80 @@ def test_block_empty_is_byte_identical():
     off_hit = _build_block_prompt({"enabled": False}, _NOT_FIRED_HIT)
     off_none = _build_block_prompt({"enabled": False}, None)
     assert off_hit == off_none
+
+
+# ---------------------------------------------------------------------------
+# B.46 selective promote: shadow_mode + promote: ["fade-short"] — the
+# fade-SHORT cohort is the side priced positive through the d2 seat
+# (gauntlet 2026-10-14); fade-long stays shadow (welds the seat into losers).
+# ---------------------------------------------------------------------------
+
+def test_promote_helper_token_match():
+    from hermes_trader.indicators.triggers import vwap_hit_promoted
+    hit = {"fired": True, "shape": "fade", "side": "short"}
+    assert vwap_hit_promoted({"promote": ["fade-short"]}, hit) is True
+    assert vwap_hit_promoted({"promote": ["fade-long"]}, hit) is False
+    assert vwap_hit_promoted({}, hit) is False, "no promote list = shadow governs all"
+    assert vwap_hit_promoted({"promote": ["fade-short"]},
+                             {"fired": False, "shape": "fade", "side": "short"}) is False
+    assert vwap_hit_promoted({"promote": ["fade-short"]}, None) is False
+    # legacy hits without structured shape/side keys are never promoted
+    assert vwap_hit_promoted({"promote": ["fade-short"]},
+                             {"fired": True}) is False
+    assert vwap_hit_promoted({"promote": [" Fade-Short "]}, hit) is True
+
+
+def test_shadow_on_promote_short_surfaces(monkeypatch):
+    """shadow ON + promote fade-short: the bear fade (short) bypasses the
+    composite gate despite shadow_mode."""
+    ok, res = _scan(monkeypatch,
+                    {**_VW_CFG, "shadow_mode": True, "promote": ["fade-short"]},
+                    min_score=99, series=_bear_fade_series())
+    assert ok and res is not None, "promoted fade-short must surface despite shadow"
+
+
+def test_shadow_on_promote_short_still_suppresses_long(monkeypatch):
+    """per-side granularity: promoting fade-short leaves fade-long shadowed."""
+    ok, res = _scan(monkeypatch,
+                    {**_VW_CFG, "shadow_mode": True, "promote": ["fade-short"]},
+                    min_score=99, series=_bull_fade_series())
+    assert ok and res is None, "fade-long must stay suppressed when only fade-short promotes"
+
+
+def test_promote_logs_surface_not_shadow(monkeypatch, caplog):
+    _scan(monkeypatch,
+          {**_VW_CFG, "shadow_mode": True, "promote": ["fade-short"]},
+          min_score=0, series=_bear_fade_series())
+    surf = [r.getMessage() for r in caplog.records
+            if "[vwap-deviation][SURFACE]" in r.getMessage()]
+    shadow = [r.getMessage() for r in caplog.records
+              if "[vwap-deviation][SHADOW]" in r.getMessage()]
+    assert len(surf) == 1 and shadow == [], "promoted hit logs SURFACE, not SHADOW"
+    assert "fade-short" in surf[0]
+
+
+def test_promote_prompt_shows_short_hides_long():
+    short_hit = {"name": "vwapDeviation", "fired": True, "score": 6.2,
+                 "shape": "fade", "side": "short",
+                 "reason": ("short — vwap fade: px +2.7σ from VWAP 8.9 anchored "
+                            "at swing low 40 bars ago (anchor px 8.2)")}
+    long_hit = dict(_FIRED_HIT, shape="fade", side="long")
+
+    def build(hit):
+        perception_dict = {"type": "perp", "mid": 9.0, "composite_score": 40,
+                           "triggers": [dict(hit)]}
+        snap = {"ema8": None, "ema21": None, "last_close": 9.0}
+        real = research.read_agent_config
+        cfg = {"vwap_deviation": {"enabled": True, "shadow_mode": True,
+                                  "promote": ["fade-short"]}}
+        try:
+            research.read_agent_config = lambda: cfg
+            return research._build_user_message(
+                "TEST", perception_dict, snap, snap, snap, "0.01%/hr",
+                "no news", 250.0, [], "LIVE")
+        finally:
+            research.read_agent_config = real
+
+    assert "vwapDeviation" in build(short_hit)
+    msg_long = build(long_hit)
+    assert "vwapDeviation" not in msg_long and "vwap fade" not in msg_long
