@@ -180,6 +180,10 @@ def apply_strip_fields(state, mode):
     elif mode == "meta":
         state.pop("composite_score", None)
         state.pop("track_record", None)
+    elif mode == "score":
+        state.pop("composite_score", None)
+    elif mode == "track":
+        state.pop("track_record", None)
 
 
 def fade_fired(user_message):
@@ -452,6 +456,9 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
         rec = {"perception_id": r["perception_id"], "arm": arm_tag,
                "coin": r["coin"], "ts": r["ts"], "model": model}
         state, held = _state_from_prompt(r["coin"], r["user_message"])
+        # Mirror B.45 live build_state: news_recent only rides when live; the
+        # archive never had real news, so drop it (news_negative unasked).
+        state.pop("news_recent", None)
         if stripf:
             apply_strip_fields(state, stripf)
         if fade:
@@ -901,7 +908,7 @@ def main():
                          "Results go to _ab_<arm>__fade-<mode>_results.jsonl")
     rp.add_argument("--stride", type=int, default=1,
                     help="keep every Nth row after cohort filters (sampling)")
-    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta"), default=None,
+    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track"), default=None,
                     help="systemone arms only: state-field ablation on a stride-sampled "
                          "general cohort. none=control, triggers=empty triggers_fired, "
                          "news=blank news_recent, meta=drop composite_score+track_record. "
