@@ -251,6 +251,25 @@ def test_state_fade_name_stripped_even_without_structured_keys():
     assert "mfi_extreme" not in st
 
 
+def test_state_fade_shape_names_for_models_that_read_them_directionally():
+    """fade_shape='names' (decision2 profile, fade_fields=false): the names
+    STAY in triggers_fired and no side-aware fields are emitted — the B.44
+    fields price −46.2% on decision2 (WATCHLIST B.44/B.45 re-run), so the
+    shape is a per-model profile knob, not a global constant."""
+    p = _perception(triggers=[
+        {"name": "momentumBurst", "fired": True, "reason": "vol surge"},
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold",
+         "side": "long", "kind": "oversold", "mfi_value": 12, "threshold": 20},
+        {"name": "rsiDivergence", "fired": True, "reason": "short — bearish",
+         "side": "short", "flavour": "bearish", "extreme_pct": 1.8},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10, fade_shape="names")
+    assert st["triggers_fired"] == ["momentumBurst", "mfiExtreme", "rsiDivergence"]
+    assert "mfi_extreme" not in st and "rsi_divergence" not in st
+    json.dumps(st)
+
+
 def test_state_held_pnl_signed_for_short():
     # short at mid ABOVE entry = losing: pnl_pct must be negative
     st = dv.build_state(

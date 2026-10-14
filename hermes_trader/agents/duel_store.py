@@ -68,7 +68,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents.config_store import read_agent_config, resolve_model_slot
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ def slot_get(slot: str, key: str, legacy_key: Optional[str] = None) -> Any:
     Priority: nested slot key > flat legacy key > (caller's) env fallback >
     code default."""
     block = llm_block()
-    s = block.get(slot)
+    s = resolve_model_slot(block.get(slot))
     v = s.get(key) if isinstance(s, dict) else None
     if v is None and legacy_key is not None:
         v = block.get(legacy_key)

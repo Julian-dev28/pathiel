@@ -85,7 +85,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents import config_store
+from hermes_trader.agents.config_store import read_agent_config, resolve_model_slot
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def _dv_config() -> Optional[Dict[str, Any]]:
     Fail-open: any config fault degrades to dormant, never raises."""
     try:
         block = read_agent_config().get("llm")
-        slot = block.get("decision_voice") if isinstance(block, dict) else None
+        slot = resolve_model_slot(block.get("decision_voice") if isinstance(block, dict) else None)
         if not isinstance(slot, dict):
             slot = {}
         if str(slot.get("enabled", True)).lower() in ("false", "0", "off"):
@@ -211,6 +212,7 @@ def _dv_config() -> Optional[Dict[str, Any]]:
             "api_key": api_key,
             "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
             "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
+            "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open (see module docstring)
         return None
@@ -247,18 +249,29 @@ def primary_engine_config() -> Dict[str, Any]:
     """
     try:
         block = read_agent_config().get("llm")
-        slot = block.get("primary_engine") if isinstance(block, dict) else None
+        raw_slot = block.get("primary_engine") if isinstance(block, dict) else None
+        slot = resolve_model_slot(raw_slot)
         if not isinstance(slot, dict):
             return dict(_LLM_ENGINE)
         engine = str(slot.get("engine") or "llm").strip().lower()
         if engine != "systemone":
             return dict(_LLM_ENGINE)
         model = str(slot.get("model") or "").strip()
-        base_url = ""
-        for n in _SYSTEMONE_URL_VARS:
-            base_url = os.environ.get(n, "")
-            if base_url:
-                break
+        # base_url precedence: PROFILE base_url (per-model endpoint — the
+        # env var names one fixed server, so it must never silently
+        # re-point a profile at the wrong model) > env vars (ops override
+        # for inline configs, existing contract) > inline slot key.
+        profile_base_url = ""
+        if isinstance(raw_slot, dict) and raw_slot.get("model_profile"):
+            profile_base_url = str(
+                config_store.read_model_profile(raw_slot["model_profile"]).get("base_url") or ""
+            ).strip()
+        base_url = profile_base_url
+        if not base_url:
+            for n in _SYSTEMONE_URL_VARS:
+                base_url = os.environ.get(n, "")
+                if base_url:
+                    break
         if not base_url:
             base_url = str(slot.get("base_url") or "").strip()
         if not model or not base_url:
@@ -288,6 +301,11 @@ def primary_engine_config() -> Dict[str, Any]:
             "trap_veto_shadow_mode": str(
                 slot.get("trap_veto_shadow_mode", True)
             ).lower() not in ("false", "0", "off"),
+            # Fade-family state shape (B.44 gauntlet, MODEL-DEPENDENT):
+            # true = side-aware fields, names stripped (nano-tuned, the
+            # shipped default); false = names in, no fields (decision2 —
+            # the fields price −46% there, see WATCHLIST B.44/B.45).
+            "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
         return dict(_LLM_ENGINE)
@@ -323,6 +341,7 @@ def systemone_primary_verdict(
         coin, perception, tf1h, tf4h, tf1d, funding_raw, news,
         open_positions, win_rate, n_closes,
         max_state_chars=cfg["max_state_chars"],
+        fade_shape="fields" if cfg.get("fade_fields", True) else "names",
     )
     questions = build_questions(held, news_live=_news_live(news))
     answers, wall_ms, server_ms = call_systemone(
@@ -398,6 +417,7 @@ def build_state(
     win_rate: float,
     n_closes: int,
     max_state_chars: int = DEFAULT_MAX_STATE_CHARS,
+    fade_shape: str = "fields",
 ) -> Dict[str, Any]:
     """The STATE: a compact structured snapshot of what the chat prompt says
     in prose. Deliberately lean (~1-2k tokens): the decision model's edge is
@@ -421,6 +441,10 @@ def build_state(
         if not t.get("fired"):
             continue
         name = t.get("name")
+        if fade_shape != "fields":
+            # decision2 shape (B.44/B.45 re-run): names stay, no fields.
+            triggers.append(name)
+            continue
         if name == "mfiExtreme":
             if t.get("side"):
                 fade_fields["mfi_extreme"] = {
@@ -752,6 +776,7 @@ def decision_voice_verdict(
             coin, perception, tf1h, tf4h, tf1d, funding_raw, news,
             open_positions, win_rate, n_closes,
             max_state_chars=cfg["max_state_chars"],
+            fade_shape="fields" if cfg.get("fade_fields", True) else "names",
         )
         questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(

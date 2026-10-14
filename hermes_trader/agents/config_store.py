@@ -19,6 +19,65 @@ CONFIG_PATH = os.environ.get(
     os.path.join(_CONFIG_DIR, ".agent-config.json"),
 )
 
+# ── Model profiles (config-repo split 2026-10-14) ────────────────────────
+# Model-SPECIFIC tuning (model id, sampling, per-engine trap thresholds,
+# fade-shape choice, per-model endpoint) lives in one file per model under
+# MODEL_CONFIG_DIR, referenced from the main JSON by name:
+#
+#   "llm": { "primary_engine": {"engine": "systemone",
+#                               "model_profile": "decision2-lux-9b", ...} }
+#
+# and config-models/decision2-lux-9b.json holds the tuning. Merge rule:
+# the profile file is the BASE, inline slot keys OVERRIDE it (so an
+# emergency one-off override never requires editing the profile). A slot
+# without "model_profile" is returned untouched — fully back-compat.
+# Fail-open: unreadable/corrupt profile logs LOUD and degrades to the
+# inline keys only (a seat with no model key then behaves per its own
+# absent-config policy, e.g. primary_engine_config stays "llm").
+MODEL_CONFIG_DIR = os.environ.get(
+    "MODEL_CONFIG_DIR",
+    os.path.join(os.path.dirname(CONFIG_PATH) or ".", "config-models"),
+)
+
+
+def read_model_profile(name: str) -> Dict[str, Any]:
+    """Read config-models/<name>.json. Fail-open: {} on any problem, with a
+    LOUD log — callers merge it as the base layer."""
+    name = str(name or "").strip()
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        logger.warning(f"[config] model_profile name {name!r} invalid — ignored")
+        return {}
+    path = os.path.join(MODEL_CONFIG_DIR, f"{name}.json")
+    try:
+        with open(path, "r") as f:
+            profile = json.load(f)
+        if isinstance(profile, dict):
+            return profile
+        logger.warning(f"[config] model profile {path} is not an object — ignored")
+    except FileNotFoundError:
+        logger.warning(
+            f"[config] model_profile '{name}' not found at {path} — using inline "
+            f"slot keys ONLY (a seat needing model/base_url goes to its absent-config policy)"
+        )
+    except Exception as e:  # noqa: BLE001 — fail-open by contract
+        logger.warning(f"[config] model profile {path} unreadable ({e}) — ignored")
+    return {}
+
+
+def resolve_model_slot(slot: Any) -> Any:
+    """Expand a slot's ``model_profile`` reference (hot, no cache).
+
+    Returns the slot unchanged when it isn't a dict or names no profile.
+    Otherwise: {**profile_file, **inline_keys_minus_model_profile}. Never
+    raises — a missing/corrupt profile logs and returns the inline keys.
+    """
+    if not isinstance(slot, dict) or "model_profile" not in slot:
+        return slot
+    inline = {k: v for k, v in slot.items() if k != "model_profile"}
+    merged = dict(read_model_profile(slot.get("model_profile") or ""))
+    merged.update(inline)
+    return merged
+
 DEFAULT_CONFIG: Dict[str, Any] = {"mode": "OFF"}
 
 # Documented block shape for the LLM slots (hot-read at call time by the

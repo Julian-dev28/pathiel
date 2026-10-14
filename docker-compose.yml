@@ -7,6 +7,11 @@ services:
     volumes:
       - .env.local:/app/.env.local:ro
       - .agent-config.json:/app/.agent-config.json:ro
+      # Per-model tuning profiles referenced from the main JSON by
+      # "model_profile": "<name>" (config_store.resolve_model_slot).
+      # Synced by the config repo's scripts/deploy.sh; read hot, no recreate
+      # needed for profile CONTENT changes (the mount itself needs one).
+      - ./config-models:/app/config-models:ro
       - ./trader-logs:/app/log:rw
       # A/B model-duel log (duel_store.py appends; HERMES_DUEL_FILE below).
       # Directory mount per the EBUSY rule; the file is pre-created host-side
