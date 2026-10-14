@@ -95,12 +95,19 @@ def test_bullish_divergence_fires_long():
     assert hit["reason"].startswith("long — bullish RSI divergence")
     assert "RSI" in hit["reason"]
     assert 0 < hit["score"] <= 10
+    # B.44: structured side-aware keys ride the payload for the dv state
+    assert hit.get("side") == "long" and hit.get("flavour") == "bullish"
+    ep = hit.get("extreme_pct")
+    assert isinstance(ep, float) and ep < 0
 
 
 def test_bearish_divergence_fires_short():
     hit = rsi_divergence(_bear_divergence_series())
     assert hit["fired"] is True
     assert hit["reason"].startswith("short — bearish RSI divergence")
+    assert hit.get("side") == "short" and hit.get("flavour") == "bearish"
+    ep2 = hit.get("extreme_pct")
+    assert isinstance(ep2, float) and ep2 > 0
 
 
 def test_flat_series_does_not_fire():

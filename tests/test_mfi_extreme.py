@@ -119,6 +119,9 @@ def test_oversold_washout_fires_long():
     assert hit["reason"].startswith("long — MFI")
     assert "oversold" in hit["reason"]
     assert 0 < hit["score"] <= 10
+    # B.44: structured side-aware keys ride the payload for the dv state
+    assert hit.get("side") == "long" and hit.get("kind") == "oversold"
+    assert isinstance(hit.get("mfi_value"), int) and hit.get("threshold") == 20
 
 
 def test_overbought_euphoria_fires_short():
@@ -126,6 +129,8 @@ def test_overbought_euphoria_fires_short():
     assert hit["fired"] is True
     assert hit["reason"].startswith("short — MFI")
     assert "overbought" in hit["reason"]
+    assert hit.get("side") == "short" and hit.get("kind") == "overbought"
+    assert hit.get("threshold") == 80
 
 
 def test_flat_series_does_not_fire():

@@ -7,6 +7,11 @@ services:
     volumes:
       - .env.local:/app/.env.local:ro
       - .agent-config.json:/app/.agent-config.json:ro
+      # Per-model tuning profiles referenced from the main JSON by
+      # "model_profile": "<name>" (config_store.resolve_model_slot).
+      # Synced by the config repo's scripts/deploy.sh; read hot, no recreate
+      # needed for profile CONTENT changes (the mount itself needs one).
+      - ./config-models:/app/config-models:ro
       - ./trader-logs:/app/log:rw
       # A/B model-duel log (duel_store.py appends; HERMES_DUEL_FILE below).
       # Directory mount per the EBUSY rule; the file is pre-created host-side
@@ -42,6 +47,73 @@ services:
     networks:
       - llama-net
     restart: unless-stopped
+
+  # systemone PRIMARY seat (2026-10-13): llama.cpp MASTER serving
+  # ggml-org/vllm-d3-nano-GGUF Q8_0 via POST /v1/systemone. lemonade's
+  # bundled llama.cpp predates d3 support (upstream PRs #30383/#30408), so
+  # this runs the sm_89 master build at ~/llama-master/build (built in
+  # nvidia/cuda:12.8.1-devel-ubuntu22.04). Dedicated container + restart
+  # policy = the persistence fix the clef :8080 setsid never had (it died
+  # on every lemonade recreate). Serving flags proven on the 1.16 A/B box:
+  # --embeddings --pooling none is the decision-model mode; -b/-ub 8192
+  # covers the bot's state JSON in one batch (embedding mode 500s when the
+  # state exceeds the physical batch size). VRAM: nano Q8 + KV ~3 GB on top
+  # of the 27B IQ2_XS-mtp (~12.5 GB) — fits with clef evicted.
+  nano-serve:
+    image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+    container_name: nano-serve
+    # The build tree's baked rpath points at the BUILD container's /src/build
+    # (not this mount's /srv) — same fix the 1.16 decision2-serve used.
+    environment:
+      - LD_LIBRARY_PATH=/srv/bin
+    command: /srv/bin/llama-server
+      -m /hf/hub/models--ggml-org--vllm-d3-nano-GGUF/snapshots/67baf946c0042cd74ca7106929ed57db699a5f4b/vllm-d3-nano-Q8_0.gguf
+      --embeddings --pooling none -c 4096 -b 2048 -ub 2048 -np 1
+      --cache-type-k q8_0 --cache-type-v q8_0 -ngl 14
+      --host 0.0.0.0 --port 8080
+    volumes:
+      - /home/oknight/llama-master/build:/srv:ro
+      - /home/oknight/.cache/huggingface:/hf:ro
+    networks:
+      - llama-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # decision2-lux-9b — B.46 primary-seat candidate (config profile
+  # decision2-lux-9b points here at http://decision2-serve:8081).
+  # Serves the Xunzhuo/llama.cpp@decision2-gguf FORK build (vanilla llama.cpp
+  # cannot run this arch), compiled sm_89 in-container at
+  # /home/oknight/llama-decision2/build. Flags mirror the gauntleted arm
+  # exactly (f16 KV kept — the priced behavior). VRAM: Q8 ~8.5 GB + KV,
+  # coexists with nano-serve (~3 GB) on the 16 GB card.
+  decision2-serve:
+    image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+    container_name: decision2-serve
+    environment:
+      - LD_LIBRARY_PATH=/srv/bin
+    command: /srv/bin/llama-server
+      -m /models/Decision-2.0-Lux-9B-Q8_0.gguf
+      --embeddings --pooling none -c 8192 -b 8192 -ub 8192 -np 1
+      --host 0.0.0.0 --port 8081
+    volumes:
+      - /home/oknight/llama-decision2/build:/srv:ro
+      - /home/oknight/models/decision2-gguf:/models:ro
+    networks:
+      - llama-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 networks:
   llama-net:

@@ -143,3 +143,4 @@ hf-cache/
 
 # Persistent agent state dir (bind-mounted to /data in the container)
 agent-state/
+config-models/

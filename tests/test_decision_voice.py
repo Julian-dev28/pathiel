@@ -154,6 +154,45 @@ def test_close_question_only_when_held():
         assert q["type"] in ("choice", "score", "noul")
 
 
+# ── B.45: news field + question ride ONLY a live feed ──────────────────────
+
+def test_news_question_only_when_live():
+    assert "news_negative" not in dv.build_questions(held=False)
+    assert "news_negative" not in dv.build_questions(held=True, news_live=False)
+    assert "news_negative" in dv.build_questions(held=False, news_live=True)
+
+
+def test_news_field_dropped_when_feed_dead():
+    for dead in ("no news", "", "  NO NEWS ", "none"):
+        st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                            "0.0100%/hr", dead, [], win_rate=0.5, n_closes=3)
+        assert "news_recent" not in st, dead
+    st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                        "0.0100%/hr", "exchange halts BTC withdrawals", [],
+                        win_rate=0.5, n_closes=3)
+    assert st["news_recent"] == "exchange halts BTC withdrawals"
+
+
+def test_news_live_helper():
+    assert dv._news_live("some headline") is True
+    assert dv._news_live("no news") is False
+    assert dv._news_live("No News") is False
+    assert dv._news_live("") is False
+    assert dv._news_live(None) is False
+
+
+def test_meta_fields_dropped_from_state():
+    # B.45 per-field gauntlet: both meta fields price net-negative for the
+    # decision seat — composite_score strip +1.67%, track_record add −11.96%.
+    st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                        "0.0100%/hr", "no news", [], win_rate=0.63, n_closes=650)
+    assert "composite_score" not in st
+    assert "track_record" not in st
+    # the rest of the schema is untouched
+    assert st["mid"] == 50_000.0 and st["daily_move_pct"] == 3.1
+    assert "tf_1h" in st and "triggers_fired" in st
+
+
 def test_state_shape_and_held_block():
     st = dv.build_state(
         "BTC", _perception(), _tf(), _tf(), _tf(bull=False), "0.0100%/hr",
@@ -172,6 +211,97 @@ def test_state_shape_and_held_block():
     assert st["held_position"]["pnl_pct_vs_entry"] == 4.17  # (50000-48000)/48000
     # JSON-serialisable (the systemone body is JSON)
     json.dumps(st)
+
+
+def test_state_fade_names_stripped_fields_carried():
+    """B.44: side-less fade names are danger-tokens for the decision model —
+    they come OUT of triggers_fired and side-aware fields go IN."""
+    p = _perception(triggers=[
+        {"name": "momentumBurst", "fired": True, "reason": "vol surge"},
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold",
+         "side": "long", "kind": "oversold", "mfi_value": 12, "threshold": 20},
+        {"name": "rsiDivergence", "fired": True, "reason": "short — bearish RSI divergence",
+         "side": "short", "flavour": "bearish", "extreme_pct": 1.8},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10)
+    assert st["triggers_fired"] == ["momentumBurst"]
+    assert st["mfi_extreme"] == {
+        "signal": "mfi_oversold", "trade_side": "long",
+        "expected_move": "price_reverts_from_volume_exhaustion",
+        "mfi_value": 12, "threshold": 20,
+    }
+    assert st["rsi_divergence"] == {
+        "signal": "rsi_divergence_bearish", "trade_side": "short",
+        "expected_move": "momentum_reversal_from_divergence",
+        "price_extreme_pct": 1.8,
+    }
+    json.dumps(st)
+
+
+def test_state_fade_name_stripped_even_without_structured_keys():
+    """Strip is unconditional (strip-only arm measured +40.5%): a fade name
+    never rides triggers_fired even if its payload lacks the new keys."""
+    p = _perception(triggers=[
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold"},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10)
+    assert st["triggers_fired"] == []
+    assert "mfi_extreme" not in st
+
+
+def test_state_fade_shape_names_for_models_that_read_them_directionally():
+    """fade_shape='names' (decision2 profile, fade_fields=false): the names
+    STAY in triggers_fired and no side-aware fields are emitted — the B.44
+    fields price −46.2% on decision2 (WATCHLIST B.44/B.45 re-run), so the
+    shape is a per-model profile knob, not a global constant."""
+    p = _perception(triggers=[
+        {"name": "momentumBurst", "fired": True, "reason": "vol surge"},
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold",
+         "side": "long", "kind": "oversold", "mfi_value": 12, "threshold": 20},
+        {"name": "rsiDivergence", "fired": True, "reason": "short — bearish",
+         "side": "short", "flavour": "bearish", "extreme_pct": 1.8},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10, fade_shape="names")
+    assert st["triggers_fired"] == ["momentumBurst", "mfiExtreme", "rsiDivergence"]
+    assert "mfi_extreme" not in st and "rsi_divergence" not in st
+    json.dumps(st)
+
+
+def test_state_composite_score_is_a_per_model_knob():
+    """composite_score is MODEL-DEPENDENT (B.45 re-run): harmful on nano
+    (strip +1.67%), +12.04% on decision2 (scoreadd, 908 calls) — so it rides
+    the state only when the profile turns emit_composite_score on."""
+    st_off = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                            "0.0100%/hr", "n", [], win_rate=0.5, n_closes=10)
+    assert "composite_score" not in st_off  # default = nano shape, field absent
+    st_on = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                           "0.0100%/hr", "n", [], win_rate=0.5, n_closes=10,
+                           emit_composite_score=True)
+    assert st_on["composite_score"] == 62.0  # decision2 profile shape
+
+
+def test_state_vwap_fields_knob():
+    """vwapDeviation numeric fields (B.46): the NAME always rides
+    triggers_fired on the seat path; the numeric vwap_deviation block is a
+    per-model profile knob (vw-full arm shape), default off."""
+    vw_hit = {"name": "vwapDeviation", "fired": True,
+              "reason": "long — vwap fade: px -2.3σ from VWAP 741.4 anchored at swing high 9 bars ago",
+              "score": 0, "side": "long", "shape": "fade", "z": -2.31, "age": 9}
+    p = _perception(triggers=[vw_hit])
+    st_off = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                            win_rate=0.5, n_closes=10)
+    assert "vwap_deviation" not in st_off
+    assert st_off["triggers_fired"] == ["vwapDeviation"]  # name always flows
+    st_on = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                           win_rate=0.5, n_closes=10, vwap_fields=True)
+    assert st_on["vwap_deviation"] == {
+        "shape": "fade", "suggested_side": "long",
+        "z_sigma": -2.31, "anchor_age_bars": 9,
+    }
+    json.dumps(st_on)
 
 
 def test_state_held_pnl_signed_for_short():

@@ -137,6 +137,143 @@ def results_path(tag):
     return SCRATCH / f"_ab_{tag}_results.jsonl"
 
 
+# ---- vwap shadow-episode injection (state-schema A/B, B.43 gauntlet) ----
+VWAP_EPS = SCRATCH / "_vwap_eps.json"
+
+
+def load_vwap_episodes():
+    """Deduped [vwap-deviation][SHADOW] episodes keyed by coin (ts epoch-ms)."""
+    from datetime import datetime, timezone
+    by_coin = {}
+    for e in json.loads(VWAP_EPS.read_text()):
+        ms = int(datetime.strptime(e["ts"], "%Y-%m-%d %H:%M:%S")
+                 .replace(tzinfo=timezone.utc).timestamp() * 1000)
+        by_coin.setdefault(str(e["coin"]).upper(), []).append((ms, e))
+    return by_coin
+
+
+def vwap_join(by_coin, coin, ts_ms, window_s=900):
+    """Nearest episode for this coin within +/- window_s of the decision ts."""
+    best = None
+    for ms, e in by_coin.get(str(coin).upper(), []):
+        dt = abs(ts_ms - ms)
+        if dt <= window_s * 1000 and (best is None or dt < best[0]):
+            best = (dt, ms, e)
+    return best
+
+
+MFI_FIRE_RE = re.compile(
+    r"mfiExtreme: (long|short) — MFI (\d+) (<=|>=) (\d+) (oversold|overbought)")
+RSI_FIRE_RE = re.compile(
+    r"rsiDivergence: (long|short) — (bullish|bearish) RSI divergence: "
+    r"price (lower low|higher high) (-?[\d.]+)% beyond prior")
+
+
+def apply_strip_fields(state, mode):
+    """State-field ablation (B.44 follow-on): map which parts of the dv state
+    actually drive the decision model. 'triggers' empties triggers_fired,
+    'news' blanks news_recent, 'meta' drops composite_score + track_record."""
+    if mode == "triggers":
+        state["triggers_fired"] = []
+    elif mode == "news":
+        state["news_recent"] = "no news"
+    elif mode == "meta":
+        state.pop("composite_score", None)
+        state.pop("track_record", None)
+    elif mode == "score":
+        state.pop("composite_score", None)
+    elif mode == "track":
+        state.pop("track_record", None)
+    # NOTE: 'trackadd' is handled in the replay loop (needs the call ts):
+    # the archived prompts never carried track_record, so replay state never
+    # had it; to test whether the LIVE field moves the model we synthesize it
+    # from the ledger as of each call's timestamp.
+
+
+_TRACK_CLOSES = None
+
+
+def _track_at(ts_ms):
+    """Synthesized live-shape track_record: ledger closes strictly before the
+    call ts, as build_state would have computed it at scan time."""
+    global _TRACK_CLOSES
+    if _TRACK_CLOSES is None:
+        rows = []
+        for l in open(REPO / "trader-logs" / "trades.jsonl", errors="ignore"):
+            try:
+                r = json.loads(l)
+            except Exception:
+                continue
+            if r.get("event") == "CLOSE" and r.get("ts"):
+                rows.append((int(r["ts"]), float(r.get("realized_pnl_usd") or 0)))
+        rows.sort()
+        _TRACK_CLOSES = rows
+    import bisect
+    n = bisect.bisect_left([c[0] for c in _TRACK_CLOSES], ts_ms)
+    wins = sum(1 for _, p in _TRACK_CLOSES[:n] if p > 0)
+    return {"n_closes": n, "win_rate": round(wins / n, 3) if n else 0.0}
+
+
+def fade_fired(user_message):
+    return bool(MFI_FIRE_RE.search(user_message) or RSI_FIRE_RE.search(user_message))
+
+
+def apply_fade_mode(state, user_message, mode):
+    """Fade-family state A/B (mfiExtreme/rsiDivergence are LIVE triggers, so the
+    control state already carries their NAMES in triggers_fired — side-less).
+    'strip' ablates the names: does d3 use them at all?
+    'fields' adds side-aware structured fields parsed from the archived fired
+    reason text, full2-style semantics-bearing wording."""
+    if mode in ("strip", "fields_nonames"):
+        state["triggers_fired"] = [t for t in state.get("triggers_fired", [])
+                                   if t not in ("mfiExtreme", "rsiDivergence")]
+    if mode in ("fields", "fields_nonames"):
+        m = MFI_FIRE_RE.search(user_message)
+        if m:
+            side, val, op, thr, kind = m.groups()
+            state["mfi_extreme"] = {
+                "signal": f"mfi_{kind}",
+                "trade_side": side,
+                "expected_move": "price_reverts_from_volume_exhaustion",
+                "mfi_value": int(val), "threshold": int(thr),
+            }
+        m = RSI_FIRE_RE.search(user_message)
+        if m:
+            side, flavour, _lbl, ext = m.groups()
+            state["rsi_divergence"] = {
+                "signal": f"rsi_divergence_{flavour}",
+                "trade_side": side,
+                "expected_move": "momentum_reversal_from_divergence",
+                "price_extreme_pct": float(ext),
+            }
+
+
+def apply_vwap_inject(state, ep, mode):
+    """Treatment arms: 'name' appends the trigger name to triggers_fired;
+    'full' adds the numeric vwap_deviation state fields; 'full2' adds the same
+    facts with semantics-bearing field names (the expected move is STATED, not
+    left to inference — tests whether the trap misread is a wording artifact)."""
+    if not ep:
+        return
+    if mode in ("name", "full", "full2") and "vwapDeviation" not in state.get("triggers_fired", []):
+        state.setdefault("triggers_fired", []).append("vwapDeviation")
+    if mode == "full":
+        state["vwap_deviation"] = {
+            "shape": ep["shape"], "suggested_side": ep["side"],
+            "z_sigma": ep["z"], "anchor_age_bars": ep["age"],
+        }
+    elif mode == "full2":
+        state["vwap_deviation"] = {
+            "signal": f"vwap_{ep['shape']}",
+            "trade_side": ep["side"],
+            "expected_move": ("price_reverts_to_anchored_vwap"
+                              if ep["shape"] == "fade"
+                              else "trend_continues_from_vwap_retest"),
+            "stretch_sigma": ep["z"],
+            "anchor_age_bars": ep["age"],
+        }
+
+
 def purge_errors(tag):
     p = results_path(tag)
     if not p.exists():
@@ -173,18 +310,37 @@ def cmd_replay(args):
         ctk = c0 if ctk is None else ctk
         max_toks = max_toks or m0
 
-    done = purge_errors(args.arm)
+    arm_tag = args.arm
+    if args.inject_vwap:
+        arm_tag += f"__vw-{args.inject_vwap}"
+    if args.fade_mode:
+        arm_tag += f"__fade-{args.fade_mode}"
+    if args.strip_fields:
+        arm_tag += f"__strip-{args.strip_fields}"
+    done = purge_errors(arm_tag)
     rows = [json.loads(l) for l in COHORT.open(errors="ignore") if l.strip()]
+    if args.only_vwap_episodes or args.inject_vwap:
+        by_coin = load_vwap_episodes()
+        rows = [r for r in rows if vwap_join(by_coin, r["coin"], r["ts"])]
+    if args.fade_mode:
+        rows = [r for r in rows if fade_fired(r["user_message"])]
+        if args.stride > 1:
+            rows = rows[:: args.stride]
+    if args.strip_fields:
+        if args.stride > 1 and not args.fade_mode:
+            rows = rows[:: args.stride]
+    elif args.stride > 1 and not args.fade_mode and not args.only_vwap_episodes and not args.inject_vwap:
+        rows = rows[:: args.stride]
     if args.limit:
         rows = [r for r in rows if r["perception_id"] not in done][: args.limit]
     else:
         rows = [r for r in rows if r["perception_id"] not in done]
-    print(f"arm={args.arm} model={arm['model']} todo={len(rows)} (already done: {len(done)})")
+    print(f"arm={arm_tag} model={arm['model']} todo={len(rows)} (already done: {len(done)})")
 
     # decision-model arm (Clef family): typed state+questions via /v1/systemone,
     # reusing the bot's OWN decision_voice module for state build + verdict map.
     if arm.get("kind") == "systemone":
-        return _replay_systemone(args, arm, api_key, rows, done)
+        return _replay_systemone(args, arm, api_key, rows, done, arm_tag)
 
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -307,7 +463,7 @@ def _state_from_prompt(coin, user_message):
     return state, held
 
 
-def _replay_systemone(args, arm, api_key, rows, done):
+def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
     """Decision-model arm: state+questions -> POST /v1/systemone -> the bot's
     own verdict_from_answers mapping. No generation, no parse_verdict — the
     masked-verdict class cannot occur, so the audit step is a no-op for this arm."""
@@ -317,15 +473,49 @@ def _replay_systemone(args, arm, api_key, rows, done):
     model = arm["model"]
     timeout_s = float(arm.get("timeout_s", 30.0))
     conc = max(1, args.concurrency)
+    inject = args.inject_vwap
+    fade = args.fade_mode
+    stripf = args.strip_fields
+    vwap_by_coin = load_vwap_episodes() if inject or args.only_vwap_episodes else None
     n_ok = n_err = 0
     from concurrent.futures import ThreadPoolExecutor
     import threading
     write_lock = threading.Lock()
 
     def one(r):
-        rec = {"perception_id": r["perception_id"], "arm": args.arm,
+        rec = {"perception_id": r["perception_id"], "arm": arm_tag,
                "coin": r["coin"], "ts": r["ts"], "model": model}
         state, held = _state_from_prompt(r["coin"], r["user_message"])
+        # Mirror B.45 live build_state: news_recent only rides when live; the
+        # archive never had real news, so drop it (news_negative unasked).
+        # B.45 meta drop: composite_score + track_record no longer ride state
+        # either — strip score/meta arms are no-ops by design now; the
+        # trackadd arm re-adds a synthesized track_record on demand.
+        state.pop("news_recent", None)
+        if stripf != "scoreadd":
+            state.pop("composite_score", None)
+        state.pop("track_record", None)
+        if stripf == "trackadd":
+            state["track_record"] = _track_at(r["ts"])
+        if stripf:
+            apply_strip_fields(state, stripf)
+        if fade:
+            apply_fade_mode(state, r["user_message"], fade)
+            mm = MFI_FIRE_RE.search(r["user_message"])
+            rm = RSI_FIRE_RE.search(r["user_message"])
+            if mm:
+                rec["mfi"] = {"side": mm.group(1), "value": int(mm.group(2)),
+                              "kind": mm.group(5)}
+            if rm:
+                rec["rsi"] = {"side": rm.group(1), "flavour": rm.group(2),
+                              "ext_pct": float(rm.group(4))}
+        j = vwap_join(vwap_by_coin, r["coin"], r["ts"]) if vwap_by_coin else None
+        if j:
+            rec["vwap"] = {"shape": j[2]["shape"], "side": j[2]["side"],
+                           "z": j[2]["z"], "age": j[2]["age"],
+                           "dt_s": int(j[0] / 1000)}
+            if inject:
+                apply_vwap_inject(state, j[2], inject)
         questions = build_questions(held)
         answers, wall_ms, server_ms = call_systemone(
             url_root, api_key, model, state, questions, timeout_s=timeout_s)
@@ -342,7 +532,7 @@ def _replay_systemone(args, arm, api_key, rows, done):
                          ("verdict", "confidence", "side", "news_risk")}
         return rec
 
-    with results_path(args.arm).open("a") as out, \
+    with results_path(arm_tag).open("a") as out, \
             ThreadPoolExecutor(max_workers=conc) as ex:
         for i, rec in enumerate(ex.map(one, rows), 1):
             if rec.get("error"):
@@ -354,7 +544,7 @@ def _replay_systemone(args, arm, api_key, rows, done):
                 out.flush()
             if i % 100 == 0 or i == len(rows):
                 print(f"  {i}/{len(rows)} ok={n_ok} err={n_err}")
-    print(f"done arm={args.arm} ok={n_ok} err={n_err} -> {results_path(args.arm)}")
+    print(f"done arm={arm_tag} ok={n_ok} err={n_err} -> {results_path(arm_tag)}")
 
 
 # --------------------------------------------------------------- audit ----
@@ -738,6 +928,29 @@ def main():
     rp.add_argument("--concurrency", type=int, default=1,
                     help="parallel in-flight calls (remote llama-server must "
                          "run with --parallel >= this; slots split ctx)")
+    rp.add_argument("--inject-vwap", choices=("none", "name", "full", "full2"), default=None,
+                    help="systemone arms only: state-schema A/B against the "
+                         "vwap shadow episodes (scratch/_vwap_eps.json). "
+                         "none=control (join recorded, state untouched), "
+                         "name=append vwapDeviation to triggers_fired, "
+                         "full=+ numeric vwap_deviation fields. Results go to "
+                         "_ab_<arm>__vw-<mode>_results.jsonl")
+    rp.add_argument("--only-vwap-episodes", action="store_true",
+                    help="restrict the cohort to archived calls within "
+                         "+/-15min of a vwap shadow episode")
+    rp.add_argument("--fade-mode", choices=("none", "strip", "fields", "fields_nonames"), default=None,
+                    help="systemone arms only: fade-family state A/B on rows where "
+                         "mfiExtreme/rsiDivergence fired. none=control (names left "
+                         "in triggers_fired as today), strip=ablate the names, "
+                         "fields=+ side-aware mfi_extreme/rsi_divergence fields. "
+                         "Results go to _ab_<arm>__fade-<mode>_results.jsonl")
+    rp.add_argument("--stride", type=int, default=1,
+                    help="keep every Nth row after cohort filters (sampling)")
+    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track", "trackadd", "scoreadd"), default=None,
+                    help="systemone arms only: state-field ablation on a stride-sampled "
+                         "general cohort. none=control, triggers=empty triggers_fired, "
+                         "news=blank news_recent, meta=drop composite_score+track_record. "
+                         "Results go to _ab_<arm>__strip-<mode>_results.jsonl")
     au = sub.add_parser("audit")
     au.add_argument("--arm", required=True)
     sc = sub.add_parser("score")

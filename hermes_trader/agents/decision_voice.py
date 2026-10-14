@@ -49,6 +49,26 @@ Endpoint/key are env (like the other slots' endpoint vars, read at CALL
 time): LLM_DV_BASE_URL (llama-server ROOT, e.g. http://192.168.1.16:8080),
 LLM_DV_API_KEY (optional — bare llama-server needs no auth).
 
+PRIMARY-ENGINE seat (2026-10-13): the SAME machinery can drive the entry
+verdict INSTEAD of the chat LLM (research() branches on it — see
+`primary_engine_config` below). Sibling block, deliberately separate from
+the observer seat so the two can name different models/endpoints:
+
+    "llm": {
+        "primary_engine": {
+            "engine": "llm",                # "llm" (default) | "systemone"
+            "model": "",                    # required when systemone
+            "base_url": "",                 # llama-server ROOT; env
+                                            # LLM_SYSTEMONE_BASE_URL wins
+            "timeout_s": 30.0,              # per-call budget (optional)
+            "max_state_chars": 12000        # state JSON budget (optional)
+        }
+    }
+
+Absent block / any fault / unknown engine = "llm" — the current chat path,
+byte-for-byte. Env vars: LLM_SYSTEMONE_BASE_URL (overrides the config
+base_url), LLM_SYSTEMONE_API_KEY (optional).
+
 Persistence: append-only JSONL, path via HERMES_DV_FILE (the duel-store
 pattern — an evaluation artifact, never truncated, corrupt line = one row).
 """
@@ -65,7 +85,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from hermes_trader.agents.config_store import read_agent_config
+from hermes_trader.agents import config_store
+from hermes_trader.agents.config_store import read_agent_config, resolve_model_slot
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +186,8 @@ def _dv_config() -> Optional[Dict[str, Any]]:
     Fail-open: any config fault degrades to dormant, never raises."""
     try:
         block = read_agent_config().get("llm")
-        slot = block.get("decision_voice") if isinstance(block, dict) else None
+        raw_slot = block.get("decision_voice") if isinstance(block, dict) else None
+        slot = resolve_model_slot(raw_slot)
         if not isinstance(slot, dict):
             slot = {}
         if str(slot.get("enabled", True)).lower() in ("false", "0", "off"):
@@ -173,11 +195,21 @@ def _dv_config() -> Optional[Dict[str, Any]]:
         model = str(slot.get("model") or "").strip()
         if not model:
             return None
+        # base_url precedence mirrors primary_engine_config: PROFILE base_url
+        # (a shadow seat names its own server — e.g. the d3-nano profile
+        # pointing at nano-serve) > env vars > inline slot key.
         base_url = ""
-        for n in _DV_URL_VARS:
-            base_url = os.environ.get(n, "")
-            if base_url:
-                break
+        if isinstance(raw_slot, dict) and raw_slot.get("model_profile"):
+            base_url = str(
+                config_store.read_model_profile(raw_slot["model_profile"]).get("base_url") or ""
+            ).strip()
+        if not base_url:
+            for n in _DV_URL_VARS:
+                base_url = os.environ.get(n, "")
+                if base_url:
+                    break
+        if not base_url:
+            base_url = str(slot.get("base_url") or "").strip()
         if not base_url:
             return None
         api_key = ""
@@ -191,6 +223,9 @@ def _dv_config() -> Optional[Dict[str, Any]]:
             "api_key": api_key,
             "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
             "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
+            "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
+            "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
+            "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open (see module docstring)
         return None
@@ -199,6 +234,184 @@ def _dv_config() -> Optional[Dict[str, Any]]:
 def dv_file() -> str:
     """Current decision-voice log path (read at call time so tests redirect)."""
     return os.environ.get("HERMES_DV_FILE", _DV_FILE)
+
+
+# ── primary-engine seat (2026-10-13) ───────────────────────────────────────
+
+_LLM_ENGINE = {"engine": "llm"}
+
+_SYSTEMONE_URL_VARS = ("LLM_SYSTEMONE_BASE_URL",)
+_SYSTEMONE_KEY_VARS = ("LLM_SYSTEMONE_API_KEY",)
+
+
+def primary_engine_config() -> Dict[str, Any]:
+    """Resolve the PRIMARY verdict engine from config `llm.primary_engine`.
+
+    {"engine": "llm"} (the default when the block is absent) = the chat
+    path in research(), byte-for-byte today's behavior. {"engine":
+    "systemone", ...} = the decision model answers the typed
+    state+questions schema INSTEAD of the LLM generation call.
+
+    Hot read at every research() call (no cache — same pattern as the
+    other llm slots, so arming the seat is a same-inode config flip).
+    Fail-open: any config fault, an unknown engine name, or a systemone
+    engine missing model/base_url degrades to "llm" — the switch can
+    never break the primary path. A missing model/endpoint while asking
+    for systemone logs LOUDLY (an intended flip that silently no-ops is
+    worse than a crash).
+    """
+    try:
+        block = read_agent_config().get("llm")
+        raw_slot = block.get("primary_engine") if isinstance(block, dict) else None
+        slot = resolve_model_slot(raw_slot)
+        if not isinstance(slot, dict):
+            return dict(_LLM_ENGINE)
+        engine = str(slot.get("engine") or "llm").strip().lower()
+        if engine != "systemone":
+            return dict(_LLM_ENGINE)
+        model = str(slot.get("model") or "").strip()
+        # base_url precedence: PROFILE base_url (per-model endpoint — the
+        # env var names one fixed server, so it must never silently
+        # re-point a profile at the wrong model) > env vars (ops override
+        # for inline configs, existing contract) > inline slot key.
+        profile_base_url = ""
+        if isinstance(raw_slot, dict) and raw_slot.get("model_profile"):
+            profile_base_url = str(
+                config_store.read_model_profile(raw_slot["model_profile"]).get("base_url") or ""
+            ).strip()
+        base_url = profile_base_url
+        if not base_url:
+            for n in _SYSTEMONE_URL_VARS:
+                base_url = os.environ.get(n, "")
+                if base_url:
+                    break
+        if not base_url:
+            base_url = str(slot.get("base_url") or "").strip()
+        if not model or not base_url:
+            logger.warning(
+                "[research] primary_engine=systemone but model/base_url "
+                "missing — staying on the LLM engine (flip is INERT)"
+            )
+            return dict(_LLM_ENGINE)
+        api_key = ""
+        for n in _SYSTEMONE_KEY_VARS:
+            api_key = os.environ.get(n, "")
+            if api_key:
+                break
+        return {
+            "engine": "systemone",
+            "model": model,
+            "base_url": base_url,
+            "api_key": api_key,
+            "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
+            "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
+            # Entry trap veto (owner call 2026-10-13, nano-tuned book):
+            # threshold 0/absent = OFF (byte-identical seat mapping);
+            # >0 = a LONG/SHORT whose trap noul EXCEEDS the threshold is
+            # rejected. shadow defaults TRUE (house doctrine: new gates
+            # ship log-only); the config flip sets it false to arm live.
+            "trap_veto_threshold": float(slot.get("trap_veto_threshold") or 0.0),
+            "trap_veto_shadow_mode": str(
+                slot.get("trap_veto_shadow_mode", True)
+            ).lower() not in ("false", "0", "off"),
+            # Fade-family state shape (B.44 gauntlet, MODEL-DEPENDENT):
+            # true = side-aware fields, names stripped (nano-tuned, the
+            # shipped default); false = names in, no fields (decision2 —
+            # the fields price −46% there, see WATCHLIST B.44/B.45).
+            "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
+            # composite_score in state: MODEL-DEPENDENT (B.45 re-run) —
+            # harmful on nano, +12.04% on decision2 (scoreadd arm). Default
+            # off (nano-tuned); decision2's profile turns it on.
+            "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
+            # vwapDeviation numeric fields: keep-out was nano-tuned; the
+            # verdict-side re-score reads mildly positive for decision2
+            # (B.46 watch). Default off; profiles opt in per model.
+            "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
+        }
+    except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
+        return dict(_LLM_ENGINE)
+
+
+def systemone_primary_verdict(
+    coin: str,
+    perception: Dict[str, Any],
+    tf1h: Dict[str, Any],
+    tf4h: Dict[str, Any],
+    tf1d: Dict[str, Any],
+    funding_raw: str,
+    news: str,
+    open_positions: List[Dict[str, Any]],
+    win_rate: float,
+    n_closes: int,
+    cfg: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Run the decision model as the PRIMARY verdict engine for one research
+    call (the seat the DV observer shadows). Reuses the exact observer
+    machinery: build_state + build_questions + call_systemone +
+    verdict_from_answers (whose output is parse_verdict-shaped, so every
+    downstream gate/sizing/executor site is engine-agnostic).
+
+    Returns {"parsed", "answers", "request_json", "wall_ms", "server_ms"}
+    on success, None on ANY call failure — the CALLER owns the fallback
+    policy (owner call 2026-10-13: failure-PASS + ai_down, NO LLM
+    fallback, so the 27B stays unloaded). NEVER raises: call_systemone
+    already swallows every transport fault and returns (None, ms, None).
+    """
+    held = any(p.get("coin") == coin for p in (open_positions or []))
+    state = build_state(
+        coin, perception, tf1h, tf4h, tf1d, funding_raw, news,
+        open_positions, win_rate, n_closes,
+        max_state_chars=cfg["max_state_chars"],
+        fade_shape="fields" if cfg.get("fade_fields", True) else "names",
+        emit_composite_score=bool(cfg.get("composite_score", False)),
+        vwap_fields=bool(cfg.get("vwap_fields", False)),
+    )
+    questions = build_questions(held, news_live=_news_live(news))
+    answers, wall_ms, server_ms = call_systemone(
+        cfg["base_url"], cfg["api_key"], cfg["model"], state, questions,
+        timeout_s=cfg["timeout_s"],
+    )
+    if answers is None:
+        return None
+    parsed = verdict_from_answers(answers, coin, perception)
+    parsed.pop("_answers", None)  # raw probs go to the archive, not the analysis
+
+    # Entry trap veto (seat-level, config `llm.primary_engine.trap_veto_*`):
+    # the nano-tuned optimum (trap<=.35 rung, +$53.48 vs +$38.35 at live
+    # bars on the 15,792-state walk) — a LONG/SHORT the seat calls with a
+    # trap noul ABOVE the threshold is downgraded to VETO, the executor's
+    # categorical rejection (never upgraded by whale/composite/breakout
+    # force paths). Entry-only: CLOSE/PASS/VETO untouched; threshold 0 =
+    # off, byte-identical to the seat without the knob.
+    thr = cfg.get("trap_veto_threshold") or 0.0
+    if thr > 0 and parsed["verdict"] in ("LONG", "SHORT"):
+        trap_p = float((answers.get("trap") or {}).get("noul", 0.0))
+        if trap_p > thr:
+            if cfg.get("trap_veto_shadow_mode", True):
+                logger.warning(
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"— WOULD BE VETOED (shadow; entry proceeds)"
+                )
+            else:
+                parsed["reasoning"] = (
+                    (parsed.get("reasoning") or "")
+                    + f" [trap_veto: trap {trap_p:.2f} > {thr:.2f}]"
+                )
+                parsed["verdict"], parsed["side"] = "VETO", None
+                logger.warning(
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"— VETOED (entry blocked)"
+                )
+    return {
+        "parsed": parsed,
+        "answers": answers,
+        # Self-contained rendered request (same shape as the decision_voice
+        # prompt-log rows) — archived as user_message so llm_ab_replay prep
+        # cohorts keep working unchanged.
+        "request_json": json.dumps({"state": state, "questions": questions}),
+        "wall_ms": wall_ms,
+        "server_ms": server_ms,
+    }
 
 
 def record_dv(entry: Dict[str, Any]) -> None:
@@ -227,6 +440,9 @@ def build_state(
     win_rate: float,
     n_closes: int,
     max_state_chars: int = DEFAULT_MAX_STATE_CHARS,
+    fade_shape: str = "fields",
+    emit_composite_score: bool = False,
+    vwap_fields: bool = False,
 ) -> Dict[str, Any]:
     """The STATE: a compact structured snapshot of what the chat prompt says
     in prose. Deliberately lean (~1-2k tokens): the decision model's edge is
@@ -238,10 +454,42 @@ def build_state(
     held = next(
         (p for p in (open_positions or []) if p.get("coin") == coin), None
     )
-    triggers = [
-        t.get("name") for t in (perception.get("triggers") or [])
-        if t.get("fired")
-    ]
+    # B.44 fade-family state fix 2026-10-14 (d3-nano gauntlet, 870 calls x 4
+    # arms): the side-less names mfiExtreme/rsiDivergence in triggers_fired
+    # act as danger-tokens for the decision model — trap-prob up, vetoes on
+    # winners, zero directional value (strip-only arm: +40.5% priced). With
+    # side-aware fields instead, alignment is 99% and the fields_nonames arm
+    # nets +24.4% with a neutral trap delta. So: names out, fields in.
+    triggers: List[str] = []
+    fade_fields: Dict[str, Any] = {}
+    for t in (perception.get("triggers") or []):
+        if not t.get("fired"):
+            continue
+        name = t.get("name")
+        if fade_shape != "fields":
+            # decision2 shape (B.44/B.45 re-run): names stay, no fields.
+            triggers.append(name)
+            continue
+        if name == "mfiExtreme":
+            if t.get("side"):
+                fade_fields["mfi_extreme"] = {
+                    "signal": f"mfi_{t.get('kind')}",
+                    "trade_side": t["side"],
+                    "expected_move": "price_reverts_from_volume_exhaustion",
+                    "mfi_value": t.get("mfi_value"),
+                    "threshold": t.get("threshold"),
+                }
+            continue
+        if name == "rsiDivergence":
+            if t.get("side"):
+                fade_fields["rsi_divergence"] = {
+                    "signal": f"rsi_divergence_{t.get('flavour')}",
+                    "trade_side": t["side"],
+                    "expected_move": "momentum_reversal_from_divergence",
+                    "price_extreme_pct": t.get("extreme_pct"),
+                }
+            continue
+        triggers.append(name)
 
     def _tf(d: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -256,16 +504,51 @@ def build_state(
     state: Dict[str, Any] = {
         "coin": coin,
         "mid": perception.get("mid"),
-        "composite_score": perception.get("composite_score"),
         "daily_move_pct": perception.get("daily_move_pct"),
         "funding_rate": funding_raw,
         "triggers_fired": triggers,
         "tf_1h": _tf(tf1h or {}),
         "tf_4h": _tf(tf4h or {}),
         "tf_1d": _tf(tf1d or {}),
-        "news_recent": (news or "no news")[:1500],
-        "track_record": {"n_closes": n_closes, "win_rate": round(float(win_rate or 0), 3)},
     }
+    # B.45 per-field gauntlet 2026-10-14: track_record is net-negative for
+    # every seat model tested and no longer rides the state (add −11.96% on
+    # nano, −2.75% on decision2 — a ~0.63 lifetime win rate reads as caution
+    # and vetoed winners worth +12.21%). composite_score is MODEL-DEPENDENT:
+    # harmful on nano (strip +1.67%, it suppressed vetoes) but HELPFUL on
+    # decision2 (scoreadd arm +12.04%, 908 calls) — so it is a per-model
+    # profile knob (emit_composite_score), default off. win_rate/n_closes
+    # params kept for call-site stability; the chat seat still sees both in
+    # prose.
+    # B.45 2026-10-14: the news feed has NEVER fired since go-live (no
+    # BRAVE_API_KEY — all 19,955 archived calls carry literal "no news"), so
+    # news_recent was a constant token and news_negative was answered blind.
+    # Owner call: drop the field + question while the feed is disabled; they
+    # auto-return the moment real headlines flow.
+    if _news_live(news):
+        state["news_recent"] = news.strip()[:1500]
+    if emit_composite_score and perception.get("composite_score") is not None:
+        state["composite_score"] = _round(perception.get("composite_score"))
+    # vwapDeviation numeric fields (B.46, d2-tuned): the gauntlet's vw-full
+    # arm shape. The NAME already rides triggers_fired on the seat path
+    # (the shadow filter is chat-prompt only); the numbers are the knob.
+    # Verdict-side re-score: mildly POSITIVE for decision2 (+43pp on the
+    # vwap cohort, thin) — profile-gated, logged so the live accrual can be
+    # re-checked before it hardens.
+    if vwap_fields:
+        vw = next((t for t in (perception.get("triggers") or [])
+                   if t.get("fired") and t.get("name") == "vwapDeviation"), None)
+        if vw and vw.get("side"):
+            state["vwap_deviation"] = {
+                "shape": vw.get("shape"),
+                "suggested_side": vw.get("side"),
+                "z_sigma": vw.get("z"),
+                "anchor_age_bars": vw.get("age"),
+            }
+            logger.info(
+                f"[dv] vwap_deviation fields emitted: {state['vwap_deviation']} "
+                f"(profile vwap_fields on — B.46 watch)"
+            )
     whale = perception.get("whale_signal")
     if whale:
         state["whale_signal"] = whale if isinstance(whale, str) else str(whale)
@@ -296,28 +579,40 @@ def build_state(
                 pass
         state["held_position"] = hp
 
+    # Fade fields ride LAST (same position the gauntlet arms appended them).
+    state.update(fade_fields)
+
     # Bound the state (encode_record's max_state_tokens analogue): if the
     # JSON is over budget, drop the news text first — it is the bulkiest and
     # the least structural part.
     try:
         if len(json.dumps(state)) > max_state_chars:
-            state["news_recent"] = state["news_recent"][: max(0, max_state_chars // 4)]
+            if "news_recent" in state:
+                state["news_recent"] = state["news_recent"][: max(0, max_state_chars // 4)]
     except (TypeError, ValueError):
         pass
     return state
 
 
-def build_questions(held: bool) -> Dict[str, Dict[str, Any]]:
+def _news_live(news: Any) -> bool:
+    """True only when the feed actually produced headline text (B.45)."""
+    return bool(news) and str(news).strip().lower() not in ("no news", "none")
+
+
+def build_questions(held: bool, news_live: bool = False) -> Dict[str, Dict[str, Any]]:
     """The question schema for one research call. `close_now` is asked ONLY
     when the coin is held — a decision model can't misread a CLOSE for a
     coin it was never asked about, so the phantom-CLOSE class (2026-09-04
-    xyz:HOOD) is structurally impossible here, not just guarded."""
+    xyz:HOOD) is structurally impossible here, not just guarded.
+    `news_negative` is asked ONLY when the news feed is live (B.45) —
+    verdict_from_answers treats its absence as news_risk=none."""
     q = {
         "direction": DIRECTION_QUESTION,
         "conviction": CONVICTION_QUESTION,
         "trap": TRAP_QUESTION,
-        "news_negative": NEWS_NEG_QUESTION,
     }
+    if news_live:
+        q["news_negative"] = NEWS_NEG_QUESTION
     if held:
         q["close_now"] = CLOSE_QUESTION
     return q
@@ -531,8 +826,11 @@ def decision_voice_verdict(
             coin, perception, tf1h, tf4h, tf1d, funding_raw, news,
             open_positions, win_rate, n_closes,
             max_state_chars=cfg["max_state_chars"],
+            fade_shape="fields" if cfg.get("fade_fields", True) else "names",
+            emit_composite_score=bool(cfg.get("composite_score", False)),
+            vwap_fields=bool(cfg.get("vwap_fields", False)),
         )
-        questions = build_questions(held)
+        questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(
             cfg["base_url"], cfg["api_key"], cfg["model"], state, questions,
             timeout_s=cfg["timeout_s"],

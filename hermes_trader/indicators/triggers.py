@@ -452,6 +452,8 @@ def rsi_divergence(candles: List[Candle], rsi_period: int = 14, lookback: int = 
                                f"{(p2 - p1) / p1 * 100:.1f}% beyond prior, RSI "
                                f"{r2:.0f} vs {r1:.0f} (+{gap:.1f})"),
                     "fired": True,
+                    "side": "long", "flavour": "bullish",
+                    "extreme_pct": round((p2 - p1) / p1 * 100, 1),
                 }
 
     # Bear side: highest highs in each half.
@@ -472,6 +474,8 @@ def rsi_divergence(candles: List[Candle], rsi_period: int = 14, lookback: int = 
                                f"{(p2 - p1) / p1 * 100:.1f}% beyond prior, RSI "
                                f"{r2:.0f} vs {r1:.0f} (-{gap:.1f})"),
                     "fired": True,
+                    "side": "short", "flavour": "bearish",
+                    "extreme_pct": round((p2 - p1) / p1 * 100, 1),
                 }
 
     return {"name": name, "score": 0, "reason": "flat", "fired": False}
@@ -527,6 +531,8 @@ def mfi_extreme(candles: List[Candle], mfi_period: int = 14,
             "reason": (f"long — MFI {m:.0f} <= {oversold:.0f} oversold"
                        f"{' (volume-confirmed)' if vol_confirmed else ' (no volume confirm)'}"),
             "fired": True,
+            "side": "long", "kind": "oversold",
+            "mfi_value": int(round(m)), "threshold": int(oversold),
         }
     if m >= overbought:
         depth = m - overbought
@@ -539,6 +545,8 @@ def mfi_extreme(candles: List[Candle], mfi_period: int = 14,
             "reason": (f"short — MFI {m:.0f} >= {overbought:.0f} overbought"
                        f"{' (volume-confirmed)' if vol_confirmed else ' (no volume confirm)'}"),
             "fired": True,
+            "side": "short", "kind": "overbought",
+            "mfi_value": int(round(m)), "threshold": int(overbought),
         }
 
     return {"name": name, "score": 0, "reason": "flat", "fired": False}
@@ -640,6 +648,9 @@ def vwap_deviation(candles: List[Candle], swing_wick: int = 2,
                        f"{vwap:.6g} anchored at {anchor_word} {age} bars ago "
                        f"(anchor px {anchor_px:.6g}){extra}"),
             "fired": True,
+            # Structured keys for the dv/systemone state fields (mirrors the
+            # gauntlet's vw-full arm shape; reason stays the human line).
+            "side": side, "shape": shape, "z": round(z, 2), "age": age,
         }
 
     # 1) Bull fade: stretched BELOW the VWAP anchored at the swing high.
