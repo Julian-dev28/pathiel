@@ -186,7 +186,8 @@ def _dv_config() -> Optional[Dict[str, Any]]:
     Fail-open: any config fault degrades to dormant, never raises."""
     try:
         block = read_agent_config().get("llm")
-        slot = resolve_model_slot(block.get("decision_voice") if isinstance(block, dict) else None)
+        raw_slot = block.get("decision_voice") if isinstance(block, dict) else None
+        slot = resolve_model_slot(raw_slot)
         if not isinstance(slot, dict):
             slot = {}
         if str(slot.get("enabled", True)).lower() in ("false", "0", "off"):
@@ -194,11 +195,21 @@ def _dv_config() -> Optional[Dict[str, Any]]:
         model = str(slot.get("model") or "").strip()
         if not model:
             return None
+        # base_url precedence mirrors primary_engine_config: PROFILE base_url
+        # (a shadow seat names its own server — e.g. the d3-nano profile
+        # pointing at nano-serve) > env vars > inline slot key.
         base_url = ""
-        for n in _DV_URL_VARS:
-            base_url = os.environ.get(n, "")
-            if base_url:
-                break
+        if isinstance(raw_slot, dict) and raw_slot.get("model_profile"):
+            base_url = str(
+                config_store.read_model_profile(raw_slot["model_profile"]).get("base_url") or ""
+            ).strip()
+        if not base_url:
+            for n in _DV_URL_VARS:
+                base_url = os.environ.get(n, "")
+                if base_url:
+                    break
+        if not base_url:
+            base_url = str(slot.get("base_url") or "").strip()
         if not base_url:
             return None
         api_key = ""

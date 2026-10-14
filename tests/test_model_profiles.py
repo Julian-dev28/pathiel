@@ -115,3 +115,24 @@ def test_composite_score_knob_flows_from_profile(tmp_path, monkeypatch):
     from hermes_trader.agents import decision_voice as dv
     assert dv.primary_engine_config()["composite_score"] is True
     assert dv._dv_config()["composite_score"] is False
+
+
+def test_dv_profile_base_url_beats_env(tmp_path, monkeypatch):
+    """The nano shadow seat names its own server: a dv slot pointing at the
+    d3-nano profile must reach nano-serve, NOT the stale LLM_DV_BASE_URL
+    env (which names lemonade-server for the old clef-flash observer)."""
+    cfg = tmp_path / ".agent-config.json"
+    cfg.write_text(json.dumps({"llm": {"decision_voice": {
+        "enabled": True, "model_profile": "nano"}}}))
+    models = tmp_path / "config-models"
+    models.mkdir()
+    (models / "nano.json").write_text(json.dumps(
+        {"model": "vllm-d3-nano", "base_url": "http://nano-serve:8080"}))
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(config_store, "MODEL_CONFIG_DIR", str(models))
+    monkeypatch.setenv("LLM_DV_BASE_URL", "http://lemonade-server:8080")
+    from hermes_trader.agents import decision_voice as dv
+    resolved = dv._dv_config()
+    assert resolved is not None
+    assert resolved["base_url"] == "http://nano-serve:8080"
+    assert resolved["model"] == "vllm-d3-nano"
