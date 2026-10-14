@@ -43,3 +43,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["hermes_trader"]
+
+[tool.pytest.ini_options]
+# scratch/ holds agent working files; some match *_test.py and must never
+# be collected (B.46: scratch/_ab_hoist_test.py broke collection after the
+# seat flip removed the inline model key it reads).
+testpaths = ["tests"]
