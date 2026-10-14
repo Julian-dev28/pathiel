@@ -12,7 +12,8 @@ Rate limit management:
 - candleSnapshot per-coin costs weight 20 each
 - Total capacity: 1,200 weight/minute
 - Strategy: volume-filter to top N markets, then fetch candles only for those
-- Candle cache with 15min TTL so repeated scans reuse data
+- Rolling-window candle cache per (coin, interval): longest series stored,
+  shorter counts served by slicing; per-interval TTLs (see _WINDOW_TTL_S)
 """
 
 from __future__ import annotations
@@ -162,13 +163,50 @@ def resolve_user_address() -> str:
     return os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
 
 
-# Short-TTL candle cache. ta_filter and research() each fetched the SAME
-# coin's 1h/4h/1d candles back-to-back per scan (6 network calls where 3 suffice),
-# doubling the API pressure behind the recurring 429 storms that kill scans. A
-# small per-(coin,interval) TTL collapses those duplicates within a cycle. TTL is
-# well under a candle period so freshness is unaffected; env-tunable / 0 disables.
-_CANDLE_CACHE: Dict[str, tuple] = {}
-_CANDLE_CACHE_TTL_S = float(os.environ.get("HERMES_CANDLE_CACHE_TTL_S", "90"))
+# Rolling-window candle cache. The old exact-count TTL cache (key
+# coin|interval|count) collapsed same-call duplicates but NOT the cross-consumer
+# fan-out: because candleSnapshot costs a FLAT weight 20 regardless of bar count
+# (rate_limit.py), one candidate coin paid ~4 separate weight-20 fetches for the
+# SAME 5m series (×50 chronos/tirex, ×60 rvol, ×100 scan/timesfm, ×290 coin-tape)
+# plus 2× for 4h and 2× for 1d — ~9-10 fetches for ~4 distinct series, and that
+# duplication is what saturates the 1200 weight/min bucket mid-scan.
+#
+# The window store keys on (coin, interval) ONLY: it keeps the LONGEST series
+# fetched for that pair and serves any count <= stored length by slicing the
+# tail (a slice read never extends the TTL — freshness is always measured from
+# the original fetch). A refetch on expiry re-fetches max(requested, stored)
+# bars at the SAME weight-20 cost, keeping the long window warm for the tape/
+# model consumers. Write-back only UPGRADES: a fresh short fetch (fast-exit's
+# 1m×3) never shrinks a still-fresh longer window.
+#
+# Per-interval freshness budgets (the old uniform 90s both wasted freshness on
+# 5m tip-readers and starved the slow intervals): a 5m window is refetchable
+# after 30s — fresher than the scan already tolerated under the old 90s — while
+# 1h/4h/1d bars change once per period, so they cache for minutes. HERMES_CANDLE_
+# CACHE_TTL_S, when set, forces a UNIFORM TTL across all intervals (0 disables
+# caching entirely) — same kill-switch semantics as the old env var.
+_CANDLE_WINDOWS: Dict[str, tuple] = {}
+_CANDLE_WINDOWS_LOCK = threading.Lock()
+_WINDOW_TTL_S: Dict[str, float] = {
+    "1m": 15.0,
+    "5m": 30.0,
+    "15m": 300.0,
+    "1h": 600.0,
+    "4h": 1800.0,
+    "1d": 1800.0,
+}
+_WINDOW_TTL_DEFAULT_S = 90.0
+_MAX_STORED_BARS = 500  # cap the upgrade ratchet so one odd request can't bloat the window
+_CANDLE_TTL_OVERRIDE_S: Optional[float] = (
+    float(os.environ["HERMES_CANDLE_CACHE_TTL_S"])
+    if os.environ.get("HERMES_CANDLE_CACHE_TTL_S") is not None else None
+)
+
+
+def _window_ttl(interval: str) -> float:
+    if _CANDLE_TTL_OVERRIDE_S is not None:
+        return _CANDLE_TTL_OVERRIDE_S
+    return _WINDOW_TTL_S.get(interval, _WINDOW_TTL_DEFAULT_S)
 
 
 def fetch_hl_candles(
@@ -177,22 +215,37 @@ def fetch_hl_candles(
     count: int = 100,
     fresh: bool = False,
 ) -> List[Candle]:
-    """Fetch candles via HTTP (short-TTL cached per coin+interval+count).
+    """Fetch candles via HTTP (rolling-window cached per coin+interval).
 
-    `fresh=True` bypasses the READ-side cache (still writes back), so the
-    caller gets the current candle snapshot rather than a sub-TTL cached one.
-    The fast-exit pass uses this so a spike in the still-forming last candle is
-    seen on the next tick instead of waiting out the 90s TTL.
+    Serves `count` bars from the stored window when it is fresh and long
+    enough; otherwise fetches max(count, stored length) bars — flat weight 20
+    either way — and stores the longer series.
+
+    `fresh=True` bypasses the READ-side window (still writes back, upgrade-only),
+    so the caller gets the current candle snapshot rather than a sub-TTL cached
+    one. The fast-exit pass uses this so a spike in the still-forming last
+    candle is seen on the next tick instead of waiting out the window TTL.
     """
-    cache_key = f"{coin}|{interval}|{count}"
-    if _CANDLE_CACHE_TTL_S > 0 and not fresh:
-        hit = _CANDLE_CACHE.get(cache_key)
-        if hit and (time.time() - hit[0]) < _CANDLE_CACHE_TTL_S:
-            return hit[1]
+    window_key = f"{coin}|{interval}"
+    ttl = _window_ttl(interval)
+    fetch_count = count
+
+    if ttl > 0:
+        with _CANDLE_WINDOWS_LOCK:
+            hit = _CANDLE_WINDOWS.get(window_key)
+        if hit:
+            fetched_at, bars = hit
+            if not fresh and (time.time() - fetched_at) < ttl and len(bars) >= count:
+                return bars[-count:]
+            # Stale (or too short): the refetch is the same weight-20 price, so
+            # keep the stored length warm instead of downgrading it. (The
+            # caller's own count is always honored — the cap guards what we
+            # STORE, never what a caller asked for.)
+            fetch_count = max(count, len(bars))
 
     ms = _MS_PER_CANDLE.get(interval, 300_000)
     end_time = int(time.time() * 1000)
-    start_time = end_time - ms * count
+    start_time = end_time - ms * fetch_count
 
     payload = {
         "type": "candleSnapshot",
@@ -235,9 +288,25 @@ def fetch_hl_candles(
         )
         for c in raw
     ]
-    if _CANDLE_CACHE_TTL_S > 0 and candles:
-        _CANDLE_CACHE[cache_key] = (time.time(), candles)
-    return candles
+    if ttl > 0 and candles:
+        # Write-back UPGRADES the window only: replace when there is no entry,
+        # the entry is stale, or the new series is at least as long. A fresh
+        # short fetch (fast-exit's 1m×3) must never shrink a still-fresh longer
+        # window that other consumers slice from. The stored series is capped
+        # at _MAX_STORED_BARS (tail kept) so one pathological request can't
+        # bloat the window; a caller asking for more still GETS more, it just
+        # isn't cached long.
+        now = time.time()
+        stored = candles[-_MAX_STORED_BARS:]
+        with _CANDLE_WINDOWS_LOCK:
+            prev = _CANDLE_WINDOWS.get(window_key)
+            if (prev is None
+                    or (now - prev[0]) >= ttl
+                    or len(stored) >= len(prev[1])):
+                _CANDLE_WINDOWS[window_key] = (now, stored)
+    # The fetch may have been longer than requested (window kept warm) — hand
+    # the caller exactly the last `count` bars it asked for.
+    return candles[-count:] if len(candles) > count else candles
 
 
 def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]:
