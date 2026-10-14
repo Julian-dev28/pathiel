@@ -329,7 +329,7 @@ def cmd_replay(args):
     if args.strip_fields:
         if args.stride > 1 and not args.fade_mode:
             rows = rows[:: args.stride]
-    elif args.stride > 1 and not args.only_vwap_episodes and not args.inject_vwap:
+    elif args.stride > 1 and not args.fade_mode and not args.only_vwap_episodes and not args.inject_vwap:
         rows = rows[:: args.stride]
     if args.limit:
         rows = [r for r in rows if r["perception_id"] not in done][: args.limit]
@@ -492,7 +492,8 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
         # either — strip score/meta arms are no-ops by design now; the
         # trackadd arm re-adds a synthesized track_record on demand.
         state.pop("news_recent", None)
-        state.pop("composite_score", None)
+        if stripf != "scoreadd":
+            state.pop("composite_score", None)
         state.pop("track_record", None)
         if stripf == "trackadd":
             state["track_record"] = _track_at(r["ts"])
@@ -945,7 +946,7 @@ def main():
                          "Results go to _ab_<arm>__fade-<mode>_results.jsonl")
     rp.add_argument("--stride", type=int, default=1,
                     help="keep every Nth row after cohort filters (sampling)")
-    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track", "trackadd"), default=None,
+    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta", "score", "track", "trackadd", "scoreadd"), default=None,
                     help="systemone arms only: state-field ablation on a stride-sampled "
                          "general cohort. none=control, triggers=empty triggers_fired, "
                          "news=blank news_recent, meta=drop composite_score+track_record. "
