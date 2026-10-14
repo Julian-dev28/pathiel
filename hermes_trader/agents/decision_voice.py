@@ -214,6 +214,7 @@ def _dv_config() -> Optional[Dict[str, Any]]:
             "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
             "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
             "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
+            "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open (see module docstring)
         return None
@@ -311,6 +312,10 @@ def primary_engine_config() -> Dict[str, Any]:
             # harmful on nano, +12.04% on decision2 (scoreadd arm). Default
             # off (nano-tuned); decision2's profile turns it on.
             "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
+            # vwapDeviation numeric fields: keep-out was nano-tuned; the
+            # verdict-side re-score reads mildly positive for decision2
+            # (B.46 watch). Default off; profiles opt in per model.
+            "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
         return dict(_LLM_ENGINE)
@@ -348,6 +353,7 @@ def systemone_primary_verdict(
         max_state_chars=cfg["max_state_chars"],
         fade_shape="fields" if cfg.get("fade_fields", True) else "names",
         emit_composite_score=bool(cfg.get("composite_score", False)),
+        vwap_fields=bool(cfg.get("vwap_fields", False)),
     )
     questions = build_questions(held, news_live=_news_live(news))
     answers, wall_ms, server_ms = call_systemone(
@@ -425,6 +431,7 @@ def build_state(
     max_state_chars: int = DEFAULT_MAX_STATE_CHARS,
     fade_shape: str = "fields",
     emit_composite_score: bool = False,
+    vwap_fields: bool = False,
 ) -> Dict[str, Any]:
     """The STATE: a compact structured snapshot of what the chat prompt says
     in prose. Deliberately lean (~1-2k tokens): the decision model's edge is
@@ -511,6 +518,26 @@ def build_state(
         state["news_recent"] = news.strip()[:1500]
     if emit_composite_score and perception.get("composite_score") is not None:
         state["composite_score"] = _round(perception.get("composite_score"))
+    # vwapDeviation numeric fields (B.46, d2-tuned): the gauntlet's vw-full
+    # arm shape. The NAME already rides triggers_fired on the seat path
+    # (the shadow filter is chat-prompt only); the numbers are the knob.
+    # Verdict-side re-score: mildly POSITIVE for decision2 (+43pp on the
+    # vwap cohort, thin) — profile-gated, logged so the live accrual can be
+    # re-checked before it hardens.
+    if vwap_fields:
+        vw = next((t for t in (perception.get("triggers") or [])
+                   if t.get("fired") and t.get("name") == "vwapDeviation"), None)
+        if vw and vw.get("side"):
+            state["vwap_deviation"] = {
+                "shape": vw.get("shape"),
+                "suggested_side": vw.get("side"),
+                "z_sigma": vw.get("z"),
+                "anchor_age_bars": vw.get("age"),
+            }
+            logger.info(
+                f"[dv] vwap_deviation fields emitted: {state['vwap_deviation']} "
+                f"(profile vwap_fields on — B.46 watch)"
+            )
     whale = perception.get("whale_signal")
     if whale:
         state["whale_signal"] = whale if isinstance(whale, str) else str(whale)
@@ -790,6 +817,7 @@ def decision_voice_verdict(
             max_state_chars=cfg["max_state_chars"],
             fade_shape="fields" if cfg.get("fade_fields", True) else "names",
             emit_composite_score=bool(cfg.get("composite_score", False)),
+            vwap_fields=bool(cfg.get("vwap_fields", False)),
         )
         questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(

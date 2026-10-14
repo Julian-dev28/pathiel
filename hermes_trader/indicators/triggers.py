@@ -648,6 +648,9 @@ def vwap_deviation(candles: List[Candle], swing_wick: int = 2,
                        f"{vwap:.6g} anchored at {anchor_word} {age} bars ago "
                        f"(anchor px {anchor_px:.6g}){extra}"),
             "fired": True,
+            # Structured keys for the dv/systemone state fields (mirrors the
+            # gauntlet's vw-full arm shape; reason stays the human line).
+            "side": side, "shape": shape, "z": round(z, 2), "age": age,
         }
 
     # 1) Bull fade: stretched BELOW the VWAP anchored at the swing high.

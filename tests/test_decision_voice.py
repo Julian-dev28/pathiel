@@ -283,6 +283,27 @@ def test_state_composite_score_is_a_per_model_knob():
     assert st_on["composite_score"] == 62.0  # decision2 profile shape
 
 
+def test_state_vwap_fields_knob():
+    """vwapDeviation numeric fields (B.46): the NAME always rides
+    triggers_fired on the seat path; the numeric vwap_deviation block is a
+    per-model profile knob (vw-full arm shape), default off."""
+    vw_hit = {"name": "vwapDeviation", "fired": True,
+              "reason": "long — vwap fade: px -2.3σ from VWAP 741.4 anchored at swing high 9 bars ago",
+              "score": 0, "side": "long", "shape": "fade", "z": -2.31, "age": 9}
+    p = _perception(triggers=[vw_hit])
+    st_off = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                            win_rate=0.5, n_closes=10)
+    assert "vwap_deviation" not in st_off
+    assert st_off["triggers_fired"] == ["vwapDeviation"]  # name always flows
+    st_on = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                           win_rate=0.5, n_closes=10, vwap_fields=True)
+    assert st_on["vwap_deviation"] == {
+        "shape": "fade", "suggested_side": "long",
+        "z_sigma": -2.31, "anchor_age_bars": 9,
+    }
+    json.dumps(st_on)
+
+
 def test_state_held_pnl_signed_for_short():
     # short at mid ABOVE entry = losing: pnl_pct must be negative
     st = dv.build_state(

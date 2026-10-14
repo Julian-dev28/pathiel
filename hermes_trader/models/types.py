@@ -34,6 +34,9 @@ class TriggerHitExtras(TypedDict, total=False):
     threshold: int
     flavour: str         # rsiDivergence: "bullish" | "bearish"
     extreme_pct: float   # rsiDivergence: signed price-extreme % beyond prior
+    shape: str           # vwapDeviation: "fade" | "retest"
+    z: float             # vwapDeviation: signed stretch sigma
+    age: int             # vwapDeviation: anchor age in bars
 
 
 class TriggerHit(TriggerHitExtras):
