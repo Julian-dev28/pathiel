@@ -174,6 +174,44 @@ def test_state_shape_and_held_block():
     json.dumps(st)
 
 
+def test_state_fade_names_stripped_fields_carried():
+    """B.44: side-less fade names are danger-tokens for the decision model —
+    they come OUT of triggers_fired and side-aware fields go IN."""
+    p = _perception(triggers=[
+        {"name": "momentumBurst", "fired": True, "reason": "vol surge"},
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold",
+         "side": "long", "kind": "oversold", "mfi_value": 12, "threshold": 20},
+        {"name": "rsiDivergence", "fired": True, "reason": "short — bearish RSI divergence",
+         "side": "short", "flavour": "bearish", "extreme_pct": 1.8},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10)
+    assert st["triggers_fired"] == ["momentumBurst"]
+    assert st["mfi_extreme"] == {
+        "signal": "mfi_oversold", "trade_side": "long",
+        "expected_move": "price_reverts_from_volume_exhaustion",
+        "mfi_value": 12, "threshold": 20,
+    }
+    assert st["rsi_divergence"] == {
+        "signal": "rsi_divergence_bearish", "trade_side": "short",
+        "expected_move": "momentum_reversal_from_divergence",
+        "price_extreme_pct": 1.8,
+    }
+    json.dumps(st)
+
+
+def test_state_fade_name_stripped_even_without_structured_keys():
+    """Strip is unconditional (strip-only arm measured +40.5%): a fade name
+    never rides triggers_fired even if its payload lacks the new keys."""
+    p = _perception(triggers=[
+        {"name": "mfiExtreme", "fired": True, "reason": "long — MFI 12 <= 20 oversold"},
+    ])
+    st = dv.build_state("BTC", p, _tf(), _tf(), _tf(), "0.0100%/hr", "n", [],
+                        win_rate=0.5, n_closes=10)
+    assert st["triggers_fired"] == []
+    assert "mfi_extreme" not in st
+
+
 def test_state_held_pnl_signed_for_short():
     # short at mid ABOVE entry = losing: pnl_pct must be negative
     st = dv.build_state(

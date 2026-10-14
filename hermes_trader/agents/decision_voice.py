@@ -409,10 +409,38 @@ def build_state(
     held = next(
         (p for p in (open_positions or []) if p.get("coin") == coin), None
     )
-    triggers = [
-        t.get("name") for t in (perception.get("triggers") or [])
-        if t.get("fired")
-    ]
+    # B.44 fade-family state fix 2026-10-14 (d3-nano gauntlet, 870 calls x 4
+    # arms): the side-less names mfiExtreme/rsiDivergence in triggers_fired
+    # act as danger-tokens for the decision model — trap-prob up, vetoes on
+    # winners, zero directional value (strip-only arm: +40.5% priced). With
+    # side-aware fields instead, alignment is 99% and the fields_nonames arm
+    # nets +24.4% with a neutral trap delta. So: names out, fields in.
+    triggers: List[str] = []
+    fade_fields: Dict[str, Any] = {}
+    for t in (perception.get("triggers") or []):
+        if not t.get("fired"):
+            continue
+        name = t.get("name")
+        if name == "mfiExtreme":
+            if t.get("side"):
+                fade_fields["mfi_extreme"] = {
+                    "signal": f"mfi_{t.get('kind')}",
+                    "trade_side": t["side"],
+                    "expected_move": "price_reverts_from_volume_exhaustion",
+                    "mfi_value": t.get("mfi_value"),
+                    "threshold": t.get("threshold"),
+                }
+            continue
+        if name == "rsiDivergence":
+            if t.get("side"):
+                fade_fields["rsi_divergence"] = {
+                    "signal": f"rsi_divergence_{t.get('flavour')}",
+                    "trade_side": t["side"],
+                    "expected_move": "momentum_reversal_from_divergence",
+                    "price_extreme_pct": t.get("extreme_pct"),
+                }
+            continue
+        triggers.append(name)
 
     def _tf(d: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -466,6 +494,9 @@ def build_state(
             except (TypeError, ValueError):
                 pass
         state["held_position"] = hp
+
+    # Fade fields ride LAST (same position the gauntlet arms appended them).
+    state.update(fade_fields)
 
     # Bound the state (encode_record's max_state_tokens analogue): if the
     # JSON is over budget, drop the news text first — it is the bulkiest and
