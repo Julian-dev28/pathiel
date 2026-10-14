@@ -426,13 +426,24 @@ def _scan_single_market(
                 )
                 hits.append(_vw_hit)
                 if _vw.get("shadow_mode") and _vw_hit.get("fired"):
-                    # Shadow accrual record — the only visible trace while
-                    # shadow_mode suppresses surfacing + prompt.
-                    logger.warning(
-                        f"[vwap-deviation][SHADOW] {market['coin']} "
-                        f"{_vw_hit.get('reason', '')} "
-                        f"(shadow: surfacing+prompt suppressed, log-only)"
-                    )
+                    if trigger_mod.vwap_hit_promoted(_vw, _vw_hit):
+                        # B.46 selective promote: this shape-side surfaces
+                        # despite shadow_mode (log line kept, tag flipped to
+                        # SURFACE so cohort greps stay separable).
+                        logger.warning(
+                            f"[vwap-deviation][SURFACE] {market['coin']} "
+                            f"{_vw_hit.get('reason', '')} "
+                            f"(selective promote: {_vw_hit.get('shape')}-"
+                            f"{_vw_hit.get('side')}, shadow_mode otherwise still on)"
+                        )
+                    else:
+                        # Shadow accrual record — the only visible trace while
+                        # shadow_mode suppresses surfacing + prompt.
+                        logger.warning(
+                            f"[vwap-deviation][SHADOW] {market['coin']} "
+                            f"{_vw_hit.get('reason', '')} "
+                            f"(shadow: surfacing+prompt suppressed, log-only)"
+                        )
 
         # Daily mover surfacing: the scan already reserves slots for top 24h
         # movers, but the trigger gate can still drop an orderly runner once the
@@ -562,7 +573,8 @@ def _scan_single_market(
         # surfacing (the trigger still computes and accrues the [SHADOW]
         # line).
         vwap_bypass = (bool(_vw.get("enabled"))
-                       and not bool(_vw.get("shadow_mode"))
+                       and (not bool(_vw.get("shadow_mode"))
+                            or trigger_mod.vwap_hit_promoted(_vw, _vw_hit))
                        and _vw_hit is not None and _vw_hit.get("fired"))
         if (score < min_score and not burst_fired and not whale_bypass
                 and not trend_bypass and not pattern_bypass and not snapback_bypass

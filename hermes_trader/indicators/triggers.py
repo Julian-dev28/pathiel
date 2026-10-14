@@ -7,7 +7,7 @@ trend strength, plus a weighted composite score across them.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from hermes_trader.indicators.math import adx, anchored_vwap, atr, ema, mfi, rsi, sma, candle_val
 from hermes_trader.models.types import Candle, TriggerHit
@@ -584,6 +584,22 @@ def _last_swing(candles: List[Candle], key: str, wick: int,
             break
         return i
     return None
+
+
+def vwap_hit_promoted(vw_cfg: dict, hit: Any) -> bool:
+    """B.46 selective promote: a shadow-mode vwap hit can surface per
+    shape-side token. `vwap_deviation.promote` holds tokens like
+    ["fade-short"] — the fade-SHORT cohort was the one priced positive
+    through the d2 seat (gauntlet 2026-10-14: d2-prod fade-short +27.3%
+    Σcf4 over 143 eps; fade-long −21.7% and the trigger welds the seat
+    INTO bad longs, so longs stay shadow). Empty/absent promote list ->
+    shadow_mode governs every hit (historical behavior)."""
+    if not hit or not hit.get("fired"):
+        return False
+    promote = [str(x).strip().lower() for x in (vw_cfg.get("promote") or [])]
+    if not promote:
+        return False
+    return f"{hit.get('shape')}-{hit.get('side')}".lower() in promote
 
 
 def vwap_deviation(candles: List[Candle], swing_wick: int = 2,

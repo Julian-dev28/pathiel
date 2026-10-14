@@ -470,9 +470,12 @@ def _build_user_message(
         _rd_shadow = bool((_cfg.get("rsi_divergence") or {}).get("shadow_mode"))
         _mf_shadow = bool((_cfg.get("mfi_extreme") or {}).get("shadow_mode"))
         _bs_shadow = bool((_cfg.get("band_snapback") or {}).get("shadow_mode"))
-        _vw_shadow = bool((_cfg.get("vwap_deviation") or {}).get("shadow_mode"))
+        _vw_cfg_sum = _cfg.get("vwap_deviation") or {}
+        _vw_shadow = bool(_vw_cfg_sum.get("shadow_mode"))
     except Exception:
         _rd_shadow = _mf_shadow = _bs_shadow = _vw_shadow = False
+        _vw_cfg_sum = {}
+    from hermes_trader.indicators.triggers import vwap_hit_promoted as _vw_promoted
     trigger_summary = (
         ", ".join(
             f"{t['name']}: {t['reason']}"
@@ -481,7 +484,8 @@ def _build_user_message(
             and not (_rd_shadow and t.get("name") == "rsiDivergence")
             and not (_mf_shadow and t.get("name") == "mfiExtreme")
             and not (_bs_shadow and t.get("name") == "bandSnapback")
-            and not (_vw_shadow and t.get("name") == "vwapDeviation")
+            and not (_vw_shadow and t.get("name") == "vwapDeviation"
+                     and not _vw_promoted(_vw_cfg_sum, t))
         )
         or "no triggers fired"
     )
@@ -719,9 +723,11 @@ def _build_user_message(
         _vw_cfg = read_agent_config().get("vwap_deviation") or {}
     except Exception:
         _vw_cfg = {}
-    _vw_live = bool(_vw_cfg.get("enabled")) and not bool(_vw_cfg.get("shadow_mode"))
     _vw = next((t for t in perception.get("triggers", [])
                 if t.get("name") == "vwapDeviation"), None)
+    _vw_live = (bool(_vw_cfg.get("enabled"))
+                and (not bool(_vw_cfg.get("shadow_mode"))
+                     or _vw_promoted(_vw_cfg, _vw)))
     vwap_block = ""
     if _vw_live and _vw is not None:
         _vw_reason = _vw.get("reason", "")
