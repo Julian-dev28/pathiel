@@ -181,6 +181,18 @@ def test_news_live_helper():
     assert dv._news_live(None) is False
 
 
+def test_meta_fields_dropped_from_state():
+    # B.45 per-field gauntlet: both meta fields price net-negative for the
+    # decision seat — composite_score strip +1.67%, track_record add −11.96%.
+    st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                        "0.0100%/hr", "no news", [], win_rate=0.63, n_closes=650)
+    assert "composite_score" not in st
+    assert "track_record" not in st
+    # the rest of the schema is untouched
+    assert st["mid"] == 50_000.0 and st["daily_move_pct"] == 3.1
+    assert "tf_1h" in st and "triggers_fired" in st
+
+
 def test_state_shape_and_held_block():
     st = dv.build_state(
         "BTC", _perception(), _tf(), _tf(), _tf(bull=False), "0.0100%/hr",

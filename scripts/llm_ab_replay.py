@@ -486,7 +486,12 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
         state, held = _state_from_prompt(r["coin"], r["user_message"])
         # Mirror B.45 live build_state: news_recent only rides when live; the
         # archive never had real news, so drop it (news_negative unasked).
+        # B.45 meta drop: composite_score + track_record no longer ride state
+        # either — strip score/meta arms are no-ops by design now; the
+        # trackadd arm re-adds a synthesized track_record on demand.
         state.pop("news_recent", None)
+        state.pop("composite_score", None)
+        state.pop("track_record", None)
         if stripf == "trackadd":
             state["track_record"] = _track_at(r["ts"])
         if stripf:

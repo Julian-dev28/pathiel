@@ -455,15 +455,19 @@ def build_state(
     state: Dict[str, Any] = {
         "coin": coin,
         "mid": perception.get("mid"),
-        "composite_score": perception.get("composite_score"),
         "daily_move_pct": perception.get("daily_move_pct"),
         "funding_rate": funding_raw,
         "triggers_fired": triggers,
         "tf_1h": _tf(tf1h or {}),
         "tf_4h": _tf(tf4h or {}),
         "tf_1d": _tf(tf1d or {}),
-        "track_record": {"n_closes": n_closes, "win_rate": round(float(win_rate or 0), 3)},
     }
+    # B.45 per-field gauntlet 2026-10-14: composite_score and track_record are
+    # BOTH net-negative for the decision seat and no longer ride the state
+    # (composite_score strip +1.67% — it was suppressing vetoes; track_record
+    # add −11.96% — a ~0.63 lifetime win rate reads as caution and vetoed
+    # winners worth +12.21%). win_rate/n_closes params kept for call-site
+    # stability; the chat seat still sees both in prose.
     # B.45 2026-10-14: the news feed has NEVER fired since go-live (no
     # BRAVE_API_KEY — all 19,955 archived calls carry literal "no news"), so
     # news_recent was a constant token and news_negative was answered blind.
