@@ -85,6 +85,36 @@ services:
               count: all
               capabilities: [gpu]
 
+  # decision2-lux-9b — B.46 primary-seat candidate (config profile
+  # decision2-lux-9b points here at http://decision2-serve:8081).
+  # Serves the Xunzhuo/llama.cpp@decision2-gguf FORK build (vanilla llama.cpp
+  # cannot run this arch), compiled sm_89 in-container at
+  # /home/oknight/llama-decision2/build. Flags mirror the gauntleted arm
+  # exactly (f16 KV kept — the priced behavior). VRAM: Q8 ~8.5 GB + KV,
+  # coexists with nano-serve (~3 GB) on the 16 GB card.
+  decision2-serve:
+    image: nvidia/cuda:12.8.1-devel-ubuntu22.04
+    container_name: decision2-serve
+    environment:
+      - LD_LIBRARY_PATH=/srv/bin
+    command: /srv/bin/llama-server
+      -m /models/Decision-2.0-Lux-9B-Q8_0.gguf
+      --embeddings --pooling none -c 8192 -b 8192 -ub 8192 -np 1
+      --host 0.0.0.0 --port 8081
+    volumes:
+      - /home/oknight/llama-decision2/build:/srv:ro
+      - /home/oknight/models/decision2-gguf:/models:ro
+    networks:
+      - llama-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 networks:
   llama-net:
     external: true
