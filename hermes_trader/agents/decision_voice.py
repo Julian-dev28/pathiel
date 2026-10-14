@@ -324,7 +324,7 @@ def systemone_primary_verdict(
         open_positions, win_rate, n_closes,
         max_state_chars=cfg["max_state_chars"],
     )
-    questions = build_questions(held)
+    questions = build_questions(held, news_live=_news_live(news))
     answers, wall_ms, server_ms = call_systemone(
         cfg["base_url"], cfg["api_key"], cfg["model"], state, questions,
         timeout_s=cfg["timeout_s"],
@@ -462,9 +462,15 @@ def build_state(
         "tf_1h": _tf(tf1h or {}),
         "tf_4h": _tf(tf4h or {}),
         "tf_1d": _tf(tf1d or {}),
-        "news_recent": (news or "no news")[:1500],
         "track_record": {"n_closes": n_closes, "win_rate": round(float(win_rate or 0), 3)},
     }
+    # B.45 2026-10-14: the news feed has NEVER fired since go-live (no
+    # BRAVE_API_KEY — all 19,955 archived calls carry literal "no news"), so
+    # news_recent was a constant token and news_negative was answered blind.
+    # Owner call: drop the field + question while the feed is disabled; they
+    # auto-return the moment real headlines flow.
+    if _news_live(news):
+        state["news_recent"] = news.strip()[:1500]
     whale = perception.get("whale_signal")
     if whale:
         state["whale_signal"] = whale if isinstance(whale, str) else str(whale)
@@ -503,23 +509,32 @@ def build_state(
     # the least structural part.
     try:
         if len(json.dumps(state)) > max_state_chars:
-            state["news_recent"] = state["news_recent"][: max(0, max_state_chars // 4)]
+            if "news_recent" in state:
+                state["news_recent"] = state["news_recent"][: max(0, max_state_chars // 4)]
     except (TypeError, ValueError):
         pass
     return state
 
 
-def build_questions(held: bool) -> Dict[str, Dict[str, Any]]:
+def _news_live(news: Any) -> bool:
+    """True only when the feed actually produced headline text (B.45)."""
+    return bool(news) and str(news).strip().lower() not in ("no news", "none")
+
+
+def build_questions(held: bool, news_live: bool = False) -> Dict[str, Dict[str, Any]]:
     """The question schema for one research call. `close_now` is asked ONLY
     when the coin is held — a decision model can't misread a CLOSE for a
     coin it was never asked about, so the phantom-CLOSE class (2026-09-04
-    xyz:HOOD) is structurally impossible here, not just guarded."""
+    xyz:HOOD) is structurally impossible here, not just guarded.
+    `news_negative` is asked ONLY when the news feed is live (B.45) —
+    verdict_from_answers treats its absence as news_risk=none."""
     q = {
         "direction": DIRECTION_QUESTION,
         "conviction": CONVICTION_QUESTION,
         "trap": TRAP_QUESTION,
-        "news_negative": NEWS_NEG_QUESTION,
     }
+    if news_live:
+        q["news_negative"] = NEWS_NEG_QUESTION
     if held:
         q["close_now"] = CLOSE_QUESTION
     return q
@@ -734,7 +749,7 @@ def decision_voice_verdict(
             open_positions, win_rate, n_closes,
             max_state_chars=cfg["max_state_chars"],
         )
-        questions = build_questions(held)
+        questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(
             cfg["base_url"], cfg["api_key"], cfg["model"], state, questions,
             timeout_s=cfg["timeout_s"],

@@ -154,6 +154,33 @@ def test_close_question_only_when_held():
         assert q["type"] in ("choice", "score", "noul")
 
 
+# ── B.45: news field + question ride ONLY a live feed ──────────────────────
+
+def test_news_question_only_when_live():
+    assert "news_negative" not in dv.build_questions(held=False)
+    assert "news_negative" not in dv.build_questions(held=True, news_live=False)
+    assert "news_negative" in dv.build_questions(held=False, news_live=True)
+
+
+def test_news_field_dropped_when_feed_dead():
+    for dead in ("no news", "", "  NO NEWS ", "none"):
+        st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                            "0.0100%/hr", dead, [], win_rate=0.5, n_closes=3)
+        assert "news_recent" not in st, dead
+    st = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                        "0.0100%/hr", "exchange halts BTC withdrawals", [],
+                        win_rate=0.5, n_closes=3)
+    assert st["news_recent"] == "exchange halts BTC withdrawals"
+
+
+def test_news_live_helper():
+    assert dv._news_live("some headline") is True
+    assert dv._news_live("no news") is False
+    assert dv._news_live("No News") is False
+    assert dv._news_live("") is False
+    assert dv._news_live(None) is False
+
+
 def test_state_shape_and_held_block():
     st = dv.build_state(
         "BTC", _perception(), _tf(), _tf(), _tf(bull=False), "0.0100%/hr",
