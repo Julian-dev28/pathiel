@@ -94,3 +94,24 @@ def test_profile_base_url_beats_env(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_SYSTEMONE_BASE_URL", "http://env:8081")
     from hermes_trader.agents import decision_voice as dv
     assert dv.primary_engine_config()["base_url"] == "http://decision2-serve:8081"
+
+
+def test_composite_score_knob_flows_from_profile(tmp_path, monkeypatch):
+    """decision2's profile turns composite_score back ON for the seat
+    (scoreadd +12.04%); slots/profiles without the key keep it off."""
+    cfg = tmp_path / ".agent-config.json"
+    cfg.write_text(json.dumps({"llm": {
+        "primary_engine": {"engine": "systemone", "model_profile": "d2"},
+        "decision_voice": {"model_profile": "nano"}}}))
+    models = tmp_path / "config-models"
+    models.mkdir()
+    (models / "d2.json").write_text(json.dumps(
+        {"model": "d2", "base_url": "http://x:1", "composite_score": True}))
+    (models / "nano.json").write_text(json.dumps(
+        {"model": "nano", "base_url": "http://y:2"}))
+    monkeypatch.setattr(config_store, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(config_store, "MODEL_CONFIG_DIR", str(models))
+    monkeypatch.setenv("LLM_DV_BASE_URL", "http://y:2")
+    from hermes_trader.agents import decision_voice as dv
+    assert dv.primary_engine_config()["composite_score"] is True
+    assert dv._dv_config()["composite_score"] is False

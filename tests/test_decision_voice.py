@@ -270,6 +270,19 @@ def test_state_fade_shape_names_for_models_that_read_them_directionally():
     json.dumps(st)
 
 
+def test_state_composite_score_is_a_per_model_knob():
+    """composite_score is MODEL-DEPENDENT (B.45 re-run): harmful on nano
+    (strip +1.67%), +12.04% on decision2 (scoreadd, 908 calls) — so it rides
+    the state only when the profile turns emit_composite_score on."""
+    st_off = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                            "0.0100%/hr", "n", [], win_rate=0.5, n_closes=10)
+    assert "composite_score" not in st_off  # default = nano shape, field absent
+    st_on = dv.build_state("BTC", _perception(), _tf(), _tf(), _tf(),
+                           "0.0100%/hr", "n", [], win_rate=0.5, n_closes=10,
+                           emit_composite_score=True)
+    assert st_on["composite_score"] == 62.0  # decision2 profile shape
+
+
 def test_state_held_pnl_signed_for_short():
     # short at mid ABOVE entry = losing: pnl_pct must be negative
     st = dv.build_state(

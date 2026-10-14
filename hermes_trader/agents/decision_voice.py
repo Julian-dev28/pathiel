@@ -213,6 +213,7 @@ def _dv_config() -> Optional[Dict[str, Any]]:
             "max_state_chars": int(slot.get("max_state_chars") or DEFAULT_MAX_STATE_CHARS),
             "timeout_s": float(slot.get("timeout_s") or DEFAULT_TIMEOUT_S),
             "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
+            "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open (see module docstring)
         return None
@@ -306,6 +307,10 @@ def primary_engine_config() -> Dict[str, Any]:
             # shipped default); false = names in, no fields (decision2 —
             # the fields price −46% there, see WATCHLIST B.44/B.45).
             "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
+            # composite_score in state: MODEL-DEPENDENT (B.45 re-run) —
+            # harmful on nano, +12.04% on decision2 (scoreadd arm). Default
+            # off (nano-tuned); decision2's profile turns it on.
+            "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
         return dict(_LLM_ENGINE)
@@ -342,6 +347,7 @@ def systemone_primary_verdict(
         open_positions, win_rate, n_closes,
         max_state_chars=cfg["max_state_chars"],
         fade_shape="fields" if cfg.get("fade_fields", True) else "names",
+        emit_composite_score=bool(cfg.get("composite_score", False)),
     )
     questions = build_questions(held, news_live=_news_live(news))
     answers, wall_ms, server_ms = call_systemone(
@@ -418,6 +424,7 @@ def build_state(
     n_closes: int,
     max_state_chars: int = DEFAULT_MAX_STATE_CHARS,
     fade_shape: str = "fields",
+    emit_composite_score: bool = False,
 ) -> Dict[str, Any]:
     """The STATE: a compact structured snapshot of what the chat prompt says
     in prose. Deliberately lean (~1-2k tokens): the decision model's edge is
@@ -486,12 +493,15 @@ def build_state(
         "tf_4h": _tf(tf4h or {}),
         "tf_1d": _tf(tf1d or {}),
     }
-    # B.45 per-field gauntlet 2026-10-14: composite_score and track_record are
-    # BOTH net-negative for the decision seat and no longer ride the state
-    # (composite_score strip +1.67% — it was suppressing vetoes; track_record
-    # add −11.96% — a ~0.63 lifetime win rate reads as caution and vetoed
-    # winners worth +12.21%). win_rate/n_closes params kept for call-site
-    # stability; the chat seat still sees both in prose.
+    # B.45 per-field gauntlet 2026-10-14: track_record is net-negative for
+    # every seat model tested and no longer rides the state (add −11.96% on
+    # nano, −2.75% on decision2 — a ~0.63 lifetime win rate reads as caution
+    # and vetoed winners worth +12.21%). composite_score is MODEL-DEPENDENT:
+    # harmful on nano (strip +1.67%, it suppressed vetoes) but HELPFUL on
+    # decision2 (scoreadd arm +12.04%, 908 calls) — so it is a per-model
+    # profile knob (emit_composite_score), default off. win_rate/n_closes
+    # params kept for call-site stability; the chat seat still sees both in
+    # prose.
     # B.45 2026-10-14: the news feed has NEVER fired since go-live (no
     # BRAVE_API_KEY — all 19,955 archived calls carry literal "no news"), so
     # news_recent was a constant token and news_negative was answered blind.
@@ -499,6 +509,8 @@ def build_state(
     # auto-return the moment real headlines flow.
     if _news_live(news):
         state["news_recent"] = news.strip()[:1500]
+    if emit_composite_score and perception.get("composite_score") is not None:
+        state["composite_score"] = _round(perception.get("composite_score"))
     whale = perception.get("whale_signal")
     if whale:
         state["whale_signal"] = whale if isinstance(whale, str) else str(whale)
@@ -777,6 +789,7 @@ def decision_voice_verdict(
             open_positions, win_rate, n_closes,
             max_state_chars=cfg["max_state_chars"],
             fade_shape="fields" if cfg.get("fade_fields", True) else "names",
+            emit_composite_score=bool(cfg.get("composite_score", False)),
         )
         questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(
