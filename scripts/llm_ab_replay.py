@@ -329,6 +329,8 @@ def cmd_replay(args):
     if args.strip_fields:
         if args.stride > 1 and not args.fade_mode:
             rows = rows[:: args.stride]
+    elif args.stride > 1 and not args.only_vwap_episodes and not args.inject_vwap:
+        rows = rows[:: args.stride]
     if args.limit:
         rows = [r for r in rows if r["perception_id"] not in done][: args.limit]
     else:
