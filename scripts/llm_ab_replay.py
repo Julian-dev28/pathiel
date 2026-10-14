@@ -169,6 +169,19 @@ RSI_FIRE_RE = re.compile(
     r"price (lower low|higher high) (-?[\d.]+)% beyond prior")
 
 
+def apply_strip_fields(state, mode):
+    """State-field ablation (B.44 follow-on): map which parts of the dv state
+    actually drive the decision model. 'triggers' empties triggers_fired,
+    'news' blanks news_recent, 'meta' drops composite_score + track_record."""
+    if mode == "triggers":
+        state["triggers_fired"] = []
+    elif mode == "news":
+        state["news_recent"] = "no news"
+    elif mode == "meta":
+        state.pop("composite_score", None)
+        state.pop("track_record", None)
+
+
 def fade_fired(user_message):
     return bool(MFI_FIRE_RE.search(user_message) or RSI_FIRE_RE.search(user_message))
 
@@ -270,6 +283,8 @@ def cmd_replay(args):
         arm_tag += f"__vw-{args.inject_vwap}"
     if args.fade_mode:
         arm_tag += f"__fade-{args.fade_mode}"
+    if args.strip_fields:
+        arm_tag += f"__strip-{args.strip_fields}"
     done = purge_errors(arm_tag)
     rows = [json.loads(l) for l in COHORT.open(errors="ignore") if l.strip()]
     if args.only_vwap_episodes or args.inject_vwap:
@@ -278,6 +293,9 @@ def cmd_replay(args):
     if args.fade_mode:
         rows = [r for r in rows if fade_fired(r["user_message"])]
         if args.stride > 1:
+            rows = rows[:: args.stride]
+    if args.strip_fields:
+        if args.stride > 1 and not args.fade_mode:
             rows = rows[:: args.stride]
     if args.limit:
         rows = [r for r in rows if r["perception_id"] not in done][: args.limit]
@@ -423,6 +441,7 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
     conc = max(1, args.concurrency)
     inject = args.inject_vwap
     fade = args.fade_mode
+    stripf = args.strip_fields
     vwap_by_coin = load_vwap_episodes() if inject or args.only_vwap_episodes else None
     n_ok = n_err = 0
     from concurrent.futures import ThreadPoolExecutor
@@ -433,6 +452,8 @@ def _replay_systemone(args, arm, api_key, rows, done, arm_tag):
         rec = {"perception_id": r["perception_id"], "arm": arm_tag,
                "coin": r["coin"], "ts": r["ts"], "model": model}
         state, held = _state_from_prompt(r["coin"], r["user_message"])
+        if stripf:
+            apply_strip_fields(state, stripf)
         if fade:
             apply_fade_mode(state, r["user_message"], fade)
             mm = MFI_FIRE_RE.search(r["user_message"])
@@ -880,6 +901,11 @@ def main():
                          "Results go to _ab_<arm>__fade-<mode>_results.jsonl")
     rp.add_argument("--stride", type=int, default=1,
                     help="keep every Nth row after cohort filters (sampling)")
+    rp.add_argument("--strip-fields", choices=("none", "triggers", "news", "meta"), default=None,
+                    help="systemone arms only: state-field ablation on a stride-sampled "
+                         "general cohort. none=control, triggers=empty triggers_fired, "
+                         "news=blank news_recent, meta=drop composite_score+track_record. "
+                         "Results go to _ab_<arm>__strip-<mode>_results.jsonl")
     au = sub.add_parser("audit")
     au.add_argument("--arm", required=True)
     sc = sub.add_parser("score")
