@@ -179,10 +179,10 @@ def apply_fade_mode(state, user_message, mode):
     'strip' ablates the names: does d3 use them at all?
     'fields' adds side-aware structured fields parsed from the archived fired
     reason text, full2-style semantics-bearing wording."""
-    if mode == "strip":
+    if mode in ("strip", "fields_nonames"):
         state["triggers_fired"] = [t for t in state.get("triggers_fired", [])
                                    if t not in ("mfiExtreme", "rsiDivergence")]
-    elif mode == "fields":
+    if mode in ("fields", "fields_nonames"):
         m = MFI_FIRE_RE.search(user_message)
         if m:
             side, val, op, thr, kind = m.groups()
@@ -872,7 +872,7 @@ def main():
     rp.add_argument("--only-vwap-episodes", action="store_true",
                     help="restrict the cohort to archived calls within "
                          "+/-15min of a vwap shadow episode")
-    rp.add_argument("--fade-mode", choices=("none", "strip", "fields"), default=None,
+    rp.add_argument("--fade-mode", choices=("none", "strip", "fields", "fields_nonames"), default=None,
                     help="systemone arms only: fade-family state A/B on rows where "
                          "mfiExtreme/rsiDivergence fired. none=control (names left "
                          "in triggers_fired as today), strip=ablate the names, "
