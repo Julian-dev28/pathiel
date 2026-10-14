@@ -17,6 +17,11 @@ __pycache__/
 .venv-*/
 hf-cache/
 
+# Host-only work areas (trader-logs is bind-mounted at runtime; scratch/ is
+# agent working data — 8+ GB of gauntlet archives must never enter the image)
+scratch/
+trader-logs/
+
 # Git / editor / OS
 .git/
 .gitignore
