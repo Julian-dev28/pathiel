@@ -138,3 +138,34 @@ def test_aggregate_caps_still_use_aggregate(monkeypatch):
     assert seen["equity"] == pytest.approx(170.0)
     # ...and the sized notional is the FUNDING-based $30 (not the $85 aggregate).
     assert seen["notional"] == pytest.approx(RISK_PCT * 60.0 / STOP_FRAC)
+
+
+# ── UNIFIED ACCOUNT: an open position must NOT collapse the funding equity ─
+def test_unified_open_position_sizes_vs_funding_not_committed_margin(monkeypatch):
+    # The live 2026-10-15 DOGE case: a $950 unified account holding a $33/5x
+    # ONDO short. The main clearinghouse accountValue (dex_equity[""]) then
+    # reads $6.68 — ONLY the committed margin, not the shared spot pool that
+    # funds new entries. Sizing on it produced $0.29 notional, below the HL
+    # $10.56 floor, and every entry while the position was open was dropped
+    # as below_min_order_notional. With main_equity present the sizer must
+    # use the $950 funding equity.
+    ex, captured = _setup(monkeypatch,
+        {"equity": 950.0, "available": 943.4, "total_ntl": 33.2,
+         "dex_equity": {"": 6.68}, "main_equity": 950.0})
+    r = ex.maybe_execute(_analysis(coin="DOGE", confidence=0.75, composite_score=60))
+    assert r["executed"] is True, r
+    assert captured["size"] == pytest.approx(RISK_PCT * 950.0 / STOP_FRAC / MID)
+    # The committed-margin figure must NOT be the sizing basis:
+    assert captured["size"] != pytest.approx(RISK_PCT * 6.68 / STOP_FRAC / MID)
+
+
+def test_main_equity_absent_falls_back_to_dex_breakdown(monkeypatch):
+    # States without the new field (older stubs, degraded reads) keep the
+    # pre-fix resolution: dex_equity[""] -> aggregate. Pins the fallback
+    # branch of the main-dex read.
+    ex, captured = _setup(monkeypatch,
+        {"equity": 170.0, "available": 200.0, "total_ntl": 0.0,
+         "dex_equity": {"": 60.0}})  # no main_equity
+    r = ex.maybe_execute(_analysis(coin="BTC", confidence=0.75, composite_score=60))
+    assert r["executed"] is True, r
+    assert captured["size"] == pytest.approx(RISK_PCT * 60.0 / STOP_FRAC / MID)
