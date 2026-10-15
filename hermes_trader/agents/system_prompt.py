@@ -19,6 +19,19 @@ def _fade_doctrine_armed() -> bool:
         return False
 
 
+def _conf_floor() -> float:
+    """Live runner-entry confidence floor, hot-read so the CONFIDENCE
+    CALIBRATION block can never drift from the gate (owner fix 2026-10-16:
+    the prompt hard-coded 0.70 while the gate ran min_confidence 0.65).
+    Fail-open to the historical 0.70 on any config-read error."""
+    try:
+        from hermes_trader.agents.config_store import read_agent_config
+        gate = (read_agent_config() or {}).get("runner_entry_gate") or {}
+        return float(gate.get("min_confidence", 0.70))
+    except Exception:
+        return 0.70
+
+
 def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
     """Build the system prompt for the AI model.
 
@@ -42,6 +55,7 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
     )
 
     fade_armed = _fade_doctrine_armed()
+    floor = _conf_floor()
 
     # rule6 renders as multiple parts-list elements (one prompt line each);
     # the FIRST element is concatenated onto rule 5's tail in `parts` below,
@@ -152,11 +166,11 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "4. Your default is to PICK A DIRECTION that AGREES WITH THE 4h/1d TREND. PASS is reserved",
         "   for genuine conflict: 1h/4h/1d give no coherent direction AND no slow-burn fired.",
         "5. THE HIGHER-TIMEFRAME TREND IS KING. Trade in its direction, never against it:",
-        "   - Clean bullish 4h/1d EMA  → LONG.  Take it with confidence 0.70+.",
-        "   - Clean bearish 4h/1d EMA  → SHORT. Take it with confidence 0.70+. (Do NOT 'buy the dip'.)",
+        f"   - Clean bullish 4h/1d EMA  → LONG.  Take it with confidence {floor:.2f}+.",
+        f"   - Clean bearish 4h/1d EMA  → SHORT. Take it with confidence {floor:.2f}+. (Do NOT 'buy the dip'.)",
         "   Shorting a downtrend is just as good a trade as longing an uptrend — weight them equally.",
         "   If the higher-TF trend is clean AND the composite score cleared scanning (>=25), this is NOT",
-        "   a marginal setup — take the trade. The execution gate requires 0.70, so meet it when the trend is clear.",
+        f"   a marginal setup — take the trade. The execution gate requires {floor:.2f}, so meet it when the trend is clear.",
         "   CRITICAL: The execution gate also requires a FRESH breakout or momentum burst structure at entry time.",
         "   If the trend is clean but no breakout/structure triggers have fired recently, this is a late-trend",
         "   continuation setup — the gate will normally reject it as a chase. HOWEVER: the gate has a bypass for",
@@ -164,7 +178,7 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "   risk/reward is clearly favorable). If you see such a setup, explicitly justify it (why the pullback is",
         "   structurally sound, support level, volume profile) and give a higher confidence score — a setup that",
         "   would warrant buying the dip rather than chasing will clear the bypass. For ordinary late-chase risk",
-        "   without strong justification, output PASS with confidence < 0.70 instead of fighting the gate.",
+        f"   without strong justification, output PASS with confidence < {floor:.2f} instead of fighting the gate.",
         "   Only commit to LONG/SHORT when BOTH higher-TF alignment AND recent breakout/momentum structure are",
         "   present — unless the pullback/retest is structurally compelling enough to warrant the bypass."
         + rule6_parts[0],
@@ -192,13 +206,13 @@ def build_system_prompt(mode: str, win_rate: float, recent_trades: int) -> str:
         "",
         "CONFIDENCE CALIBRATION (identical for LONG and SHORT):",
         "- 0.85–1.0: multi-TF alignment + slow-burn fired + favorable funding — high-conviction bet",
-        "- 0.70–0.84: clean 4h/1d trend + composite score cleared scanning. This is a STRONG ENOUGH setup to trade.",
+        f"- {floor:.2f}–0.84: clean 4h/1d trend + composite score cleared scanning. This is a STRONG ENOUGH setup to trade.",
         "  In SHADOW mode, if the trend is clean, commit here. A setup with aligned EMAs that reached you",
         "  via scanning is NOT marginal — it's a trade candidate.",
-        "- 0.45–0.69: mixed/partial signals — PASS. (Ledger: trades taken here are net-NEGATIVE.)",
+        f"- 0.45–{floor - 0.01:.2f}: mixed/partial signals — PASS. (Ledger: trades taken here are net-NEGATIVE.)",
         "- < 0.45: conflicting setup — PASS.",
-        "  NOTE: the execution gate requires confidence >= 0.70. If you see a clean trend but only output",
-        "  0.65, the gate blocks it anyway — so if the trend alignment justifies a trade, give it 0.70+.",
+        f"  NOTE: the execution gate requires confidence >= {floor:.2f}. If you see a clean trend but only output",
+        f"  a number below {floor:.2f}, the gate blocks it anyway — so if the trend alignment justifies a trade, give it {floor:.2f}+.",
         "  Don't self-sabotage by setting confidence to 0.0 on a PASS or 0.60 on a decent setup.",
         "",
         "ANTI-PATTERNS TO AVOID:",
