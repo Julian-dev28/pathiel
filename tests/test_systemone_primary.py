@@ -347,3 +347,127 @@ def test_research_systemone_failure_pass_ai_down(monkeypatch, caplog):
     prim = [r for r in rows if r.get("role") == "primary"]
     assert prim and prim[0]["parsed"]["ai_down"] is True
     assert prim[0]["user_message"] is None  # no request was rendered
+
+# ── per-cohort trap-veto bar overrides (B.46 fade-short promote) ──────────
+
+_VWAP_SHORT = {"name": "vwapDeviation", "fired": True, "reason": "vwap fade",
+               "side": "short", "shape": "fade", "z": 2.4, "age": 10}
+
+
+def _arm_veto_ovr(monkeypatch, trap, threshold, overrides, vwap_fields=True):
+    slot = {"engine": "systemone", "model": "d2-lux",
+            "base_url": "http://so.test:8080",
+            "trap_veto_threshold": threshold,
+            "trap_veto_shadow_mode": False,
+            "vwap_fields": vwap_fields}
+    if overrides is not None:
+        slot["trap_veto_overrides"] = overrides
+    _write_cfg(slot)
+    answers = _answers({"long": 0.05, "short": 0.8, "none": 0.15},
+                       {0: 0.0, 1: 0.0, 2: 0.2, 3: 0.6, 4: 0.2}, trap=trap)
+    monkeypatch.setattr(dv, "call_systemone",
+                        lambda *a, **k: (answers, 42, 30))
+
+
+def test_trap_veto_cohort_bar_passes_with_signal(monkeypatch, caplog):
+    # fade-short state + SHORT verdict + trap between global and cohort bar
+    # -> entry proceeds, grep-separable INFO line
+    import logging
+    caplog.set_level(logging.INFO, logger="hermes_trader.agents.decision_voice")
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "SHORT" and a["side"] == "short"
+    assert "cohort bar 0.75" in caplog.text
+    assert "global bar 0.50 overridden" in caplog.text
+
+
+def test_trap_veto_cohort_bar_absent_key_is_noop(monkeypatch):
+    # no overrides key -> byte-identical baseline: global bar vetoes
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5, overrides=None)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "VETO"
+    assert "trap 0.62 > 0.50" in a["reasoning"]
+
+
+def test_trap_veto_cohort_bar_counter_signal_keeps_global(monkeypatch):
+    # fade-SHORT state but LONG verdict (counter-fade = the weld class):
+    # the cohort bar must NOT apply
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    _patch_research_deps(monkeypatch)
+    answers = _answers({"long": 0.8, "short": 0.05, "none": 0.15},
+                       {0: 0.0, 1: 0.0, 2: 0.2, 3: 0.6, 4: 0.2}, trap=0.62)
+    monkeypatch.setattr(dv, "call_systemone",
+                        lambda *a, **k: (answers, 42, 30))
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "VETO"
+
+
+def test_trap_veto_cohort_bar_no_vwap_state_keeps_global(monkeypatch):
+    # override armed but state carries no vwap field -> global bar
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception())  # default triggers, no vwap
+    assert a["verdict"] == "VETO"
+
+
+def test_trap_veto_cohort_bar_malformed_fails_open(monkeypatch):
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": "abc", 5: None})
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "VETO"  # malformed entries dropped -> global bar
+
+
+def test_trap_veto_cohort_bar_above_cohort_bar_still_vetoes(monkeypatch, caplog):
+    _arm_veto_ovr(monkeypatch, trap=0.80, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "VETO"
+    assert "trap 0.80 > 0.75" in a["reasoning"]
+    assert "VETOED (entry blocked)" in caplog.text
+    assert "(vwap-fade-short)" in caplog.text  # cohort tag annotated
+
+
+def test_trap_veto_cohort_bar_shadow_mode_uses_cohort_bar(monkeypatch, caplog):
+    # shadow + cohort bar: trap under cohort bar -> no accrual line at all
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    import hermes_trader.agents.config_store as cs
+    cfg = json.load(open(cs.CONFIG_PATH))
+    cfg["llm"]["primary_engine"]["trap_veto_shadow_mode"] = True
+    with open(cs.CONFIG_PATH, "w") as f:
+        json.dump(cfg, f)
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "SHORT"
+    assert "WOULD BE VETOED" not in caplog.text  # cohort bar cleared it
+
+
+def test_trap_veto_cohort_tag_pure_helper():
+    assert dv._trap_veto_cohort_tag(
+        {"vwap_deviation": {"shape": "Fade", "suggested_side": "SHORT"}},
+        "short") == "vwap-fade-short"
+    assert dv._trap_veto_cohort_tag(
+        {"vwap_deviation": {"shape": "fade", "suggested_side": "short"}},
+        "long") is None                      # counter-signal
+    assert dv._trap_veto_cohort_tag({}, "short") is None
+    assert dv._trap_veto_cohort_tag(
+        {"vwap_deviation": "garbage"}, "short") is None
+    assert dv._trap_veto_cohort_tag(None, None) is None
+    assert dv._trap_veto_cohort_tag(
+        {"vwap_deviation": {"shape": "", "suggested_side": "short"}},
+        "short") is None                     # shapeless -> no tag
+
+
+def test_parse_trap_veto_overrides_normalises():
+    assert dv._parse_trap_veto_overrides(
+        {"VWAP-Fade-Short ": 0.75, "x": "abc", "y": None, "z": "0.5"}
+    ) == {"vwap-fade-short": 0.75, "z": 0.5}
+    assert dv._parse_trap_veto_overrides(None) == {}
+    assert dv._parse_trap_veto_overrides(["nope"]) == {}
