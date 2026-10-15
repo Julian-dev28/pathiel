@@ -475,15 +475,20 @@ def test_dsl_rehydrate_from_exchange(monkeypatch, tmp_path):
 
 
 def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
-    """close_position_market deregisters the tracker when the post-close
-    re-read confirms the exchange is flat (no-fill-evidence path)."""
+    """close_position_market with NO fill evidence + a confirmed-flat re-read
+    + a LIVE tracker = the exchange-side-close shape (UNI 2026-10-15): the
+    close settles it through the stale-close path instead of dropping the
+    tracker. With no attributable fill yet, the tracker is KEPT for the
+    next-cycle retry and nothing is booked — the old behaviour (silently
+    deregister, leaving a ghost OPEN) is exactly what was removed."""
     from hermes_trader.agents import dsl_exit, executor
+    from hermes_trader import stale_close_settle
     dsl_exit, _ = _isolate_dsl_state(monkeypatch, tmp_path)
     dsl_exit.register_position("ETH", "long", 100.0)
 
     monkeypatch.setattr(executor, "resolve_user_address", lambda: "0xUSER")
     # Pre-close snapshot shows the open position; the no-fill verification
-    # re-read (second call) shows the book flat → safe to drop the tracker.
+    # re-read (second call) shows the book flat.
     states = iter([
         {"asset_positions": [{"position": {"coin": "ETH", "szi": "0.5", "entryPx": "100"}}]},
         {"equity": 1000.0, "asset_positions": []},
@@ -493,12 +498,14 @@ def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     monkeypatch.setattr(executor, "place_hl_order",
                         lambda is_buy, size, mid_price, coin, **kw: {"ok": True, "order_id": "x1"})
     monkeypatch.setattr(executor, "cancel_open_orders_for_coin", lambda c: 0)
+    # No closing fill attributable yet (offline: no network).
+    monkeypatch.setattr(stale_close_settle, "_fetch_user_fills", lambda addr: [])
 
     res = executor.close_position_market("ETH")
     assert res["ok"] is True
     assert res["side"] == "long"
-    assert res["noop"] == "no_fill_position_already_flat"
-    assert "ETH_long" not in dsl_exit._active_positions
+    assert res["noop"] == "already_flat_settle_pending"
+    assert "ETH_long" in dsl_exit._active_positions  # kept for next-cycle settle
     assert "realized_pnl_pct" not in res   # no fill evidence → no PnL booked
 
 

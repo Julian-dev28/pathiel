@@ -3172,6 +3172,81 @@ def was_recently_booked_close(coin: str, side: str, entry_px: float) -> bool:
     return (time.monotonic() - _recently_closed_full.get(key, 0.0)) < _RECENTLY_CLOSED_WINDOW_S
 
 
+def _settle_exchange_side_flat(coin: str, state: Dict[str, Any]) -> bool:
+    """Flat exchange read + LIVE DSL tracker = an exchange-side close.
+
+    The position left the exchange WITHOUT going through
+    close_position_market — the usual shape is the exchange-side SL/TP
+    trigger bracket filling seconds before a bot close lands
+    (UNI 2026-10-15 14:47:49Z: the SL trigger filled 42s BEFORE the
+    dsl-fast max_loss close; the close hit `already_flat`, dropped the
+    tracker, and booked NOTHING — the settle_stale_closes net never saw
+    the tracker because the deregister destroyed the only evidence,
+    leaving a ghost OPEN with no CLOSE row and no loss cooldown).
+
+    Settle it NOW through the SAME stale-close path
+    rehydrate_from_exchange uses (fill attribution from userFills, CLOSE
+    row + outcome store, loss cooldown, B.36 double-book guard) at the
+    moment of detection instead of waiting for the startup reconcile.
+
+    Conservative, mirroring the existing rules:
+    - No live tracker for this coin → nothing to settle; the plain stale
+      tracker drop behaves exactly as before.
+    - Untrusted read (equity <= 0 — a failed read looks exactly like a
+      flat account, same rule as the no-fill verification branch) →
+      trackers KEPT, next cycle reconciles.
+    - Settled → that tracker is deregistered here. Unsettled ones are
+      KEPT so rehydrate_from_exchange retries next cycle (the fill may
+      not have propagated to userFills yet). NEVER deregister an
+      unsettled tracker — that is exactly the evidence-destroying
+      behavior this function exists to kill.
+
+    Returns True when trackers were kept (caller must NOT deregister);
+    False when it is safe for the caller to drop them.
+    """
+    from hermes_trader.agents import dsl_exit
+    recs = []
+    for side in ("long", "short"):
+        t = dsl_exit._active_positions.get(f"{coin}_{side}")
+        if t is not None:
+            recs.append({
+                "kind": "stale_close",
+                "coin": t.coin, "side": t.side,
+                "entry_px": t.entry_px, "size": abs(t.size),
+                "leverage": int(getattr(t, "leverage", 0) or 1),
+                "entry_time": t.entry_time,
+            })
+    if not recs:
+        return False
+    try:
+        equity = float(state.get("equity") or 0)
+    except (TypeError, ValueError, AttributeError):
+        equity = 0.0
+    if equity <= 0:
+        logger.warning(
+            f"[executor] {coin}: exchange read flat but {len(recs)} live "
+            f"tracker(s) and equity read untrusted — trackers KEPT "
+            f"(reconciles next cycle)")
+        return True
+    logger.warning(
+        f"[executor] {coin}: exchange read flat with live tracker(s) — "
+        f"settling as exchange-side close (no order sent)")
+    from hermes_trader.stale_close_settle import settle_stale_closes
+    settled = settle_stale_closes(recs, memory=memory,
+                                  read_agent_config=read_agent_config)
+    settled_keys = {f"{s.get('coin')}_{s.get('side')}" for s in settled}
+    for k in settled_keys:
+        _c, _, _side = k.rpartition("_")
+        if _c == coin and _side in ("long", "short"):
+            deregister_position(coin, _side)
+    if len(settled) < len(recs):
+        logger.warning(
+            f"[executor] {coin}: exchange-side close not attributable to a "
+            f"fill yet — remaining tracker(s) KEPT for next-cycle settle")
+        return True
+    return False
+
+
 @_serialized
 def close_position_market(coin: str, exit_reason: str = "") -> Dict[str, Any]:
     """Market-close any open perp position for `coin`. Deregisters the DSL tracker on success.
@@ -3208,7 +3283,12 @@ def close_position_market(coin: str, exit_reason: str = "") -> Dict[str, Any]:
         None,
     )
     if not pos:
-        # Already flat — drop any stale tracker so we don't keep retrying.
+        # Already flat. A LIVE tracker here means the position left the
+        # exchange WITHOUT this function (exchange-side SL/TP fill) —
+        # settle it before touching the tracker (UNI 2026-10-15 ghost OPEN).
+        if _settle_exchange_side_flat(coin, state):
+            return {"ok": True, "coin": coin, "noop": "already_flat_settle_pending"}
+        # Nothing to settle — drop any stale tracker so we don't keep retrying.
         deregister_position(coin, "long")
         deregister_position(coin, "short")
         return {"ok": True, "coin": coin, "noop": "already_flat"}
@@ -3219,6 +3299,10 @@ def close_position_market(coin: str, exit_reason: str = "") -> Dict[str, Any]:
     except (TypeError, ValueError):
         return {"ok": False, "coin": coin, "error": "bad_szi"}
     if szi == 0:
+        # Same shape as `not pos` above: flat read + live tracker = an
+        # exchange-side close that never went through this function.
+        if _settle_exchange_side_flat(coin, state):
+            return {"ok": True, "coin": coin, "noop": "zero_szi_settle_pending"}
         deregister_position(coin, "long")
         deregister_position(coin, "short")
         return {"ok": True, "coin": coin, "noop": "zero_szi"}
@@ -3289,7 +3373,14 @@ def close_position_market(coin: str, exit_reason: str = "") -> Dict[str, Any]:
                                f"position still {post_szi:g} — no-op, tracker kept")
                 out["noop"] = "no_fill_position_still_open"
                 return out
-            # Confirmed flat: drop the stale tracker and stranded bracket.
+            # Confirmed flat (positive-equity read). If a tracker is still
+            # alive, the position left the exchange via a trigger fill —
+            # settle it before dropping the tracker (same UNI shape; the
+            # equity>0 guard above already satisfies the helper's trust
+            # rule, so the only pending case here is fill-propagation lag).
+            if _settle_exchange_side_flat(coin, post):
+                out["noop"] = "already_flat_settle_pending"
+                return out
             deregister_position(coin, side)
             cancel_open_orders_for_coin(coin)
             out["noop"] = "no_fill_position_already_flat"
