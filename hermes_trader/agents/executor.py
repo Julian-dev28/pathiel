@@ -2851,6 +2851,38 @@ def _runner_entry_block_reason(analysis: Dict[str, Any], config: Dict[str, Any])
     forced = "[structural override]" in (analysis.get("reasoning") or "")
 
     fresh_impulse = (volume and (breakout or burst)) or (burst and score >= min_score)
+
+    # Cohort admission (B.46): model+cohort-scoped entry path for promoted
+    # signal cohorts whose edge demonstrably lives OUTSIDE the general
+    # population's requirements — the fade-short archive read (326 eps):
+    # conf p50 0.42 / max 0.58 (0/34 reach the 0.65 floor; the low-conf
+    # band is where the 92% WR lives) and 1/60 pass structured_short (fade
+    # setups have no fresh impulse BY CONSTRUCTION). Key is
+    # "<answering model>/<cohort tag>" so the exemption is welded to the
+    # gauntleted model: another model in the seat (or a tagless analysis or
+    # an absent key) = byte-identical general path. The cohort floor is a
+    # SANITY floor, not selectivity; below it the entry falls through to
+    # the normal checks and logs the standard block reason. Shorts remain
+    # subject to the global allow_shorts kill-switch. Every OTHER gate
+    # (quiet-tape, band-counter-breach, late-chase sub-gates, cooldowns,
+    # slots) still applies — this exempts the runner gate only.
+    cohort_tag = str(analysis.get("cohort_tag") or "").strip().lower()
+    if cohort_tag:
+        adm = gate.get("cohort_admissions") or {}
+        adm_key = f"{str(analysis.get('primary_model') or '').strip().lower()}/{cohort_tag}"
+        if adm_key in adm and (side != "short" or bool(gate.get("allow_shorts", False))):
+            try:
+                cohort_floor = float(adm[adm_key])
+            except (TypeError, ValueError):
+                cohort_floor = None  # malformed -> general path (fail-open)
+            if cohort_floor is not None and conf >= cohort_floor:
+                logger.info(
+                    f"[gate][COHORT] ADMIT {coin} {side.upper()}: {adm_key} "
+                    f"conf {conf:.2f} >= cohort floor {cohort_floor:.2f} — "
+                    f"runner-gate shape checks exempted (other gates still apply)"
+                )
+                return ""
+
     if conf < min_conf:
         return f"runner_gate_blocked (confidence {conf:.2f} < {min_conf:.2f})"
 

@@ -428,13 +428,23 @@ def systemone_primary_verdict(
     # force paths). Entry-only: CLOSE/PASS/VETO untouched; threshold 0 =
     # off, byte-identical to the seat without the knob.
     thr = cfg.get("trap_veto_threshold") or 0.0
+    # Cohort tag (B.46): a with-the-signal entry whose state carries a
+    # matching vwap field. Attached to the verdict so the executor's runner
+    # gate can apply the model+cohort admission (the cohort's entries live
+    # under the general conf floor AND outside its shape requirements —
+    # 0/34 reach conf 0.65, 1/60 pass structured_short). Model-scoping is
+    # structural: only THIS seat (its own state + model identity) tags;
+    # another model in the seat would emit its own identity or nothing.
+    cohort_tag = _trap_veto_cohort_tag(state, parsed.get("side"))
+    if cohort_tag and parsed["verdict"] in ("LONG", "SHORT"):
+        parsed["cohort_tag"] = cohort_tag
     if thr > 0 and parsed["verdict"] in ("LONG", "SHORT"):
         trap_p = float((answers.get("trap") or {}).get("noul", 0.0))
         # Per-cohort bar override (B.46): with-the-signal entries whose
         # state carries a matching vwap field use the cohort bar; anything
         # else keeps the global bar (absent overrides = byte-identical).
         bar = thr
-        tag = _trap_veto_cohort_tag(state, parsed.get("side"))
+        tag = cohort_tag
         if tag and tag in (cfg.get("trap_veto_overrides") or {}):
             bar = cfg["trap_veto_overrides"][tag]
         # Annotate the line with the cohort tag ONLY when the override is
