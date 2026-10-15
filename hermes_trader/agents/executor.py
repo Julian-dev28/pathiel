@@ -1424,6 +1424,8 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
         tirex_q10_path_pct=_tirex_q10p,
         tirex_q90_path_pct=_tirex_q90p,
         duelist_verdict=_duelist_verdict,
+        cohort_tag=analysis.get("cohort_tag"),
+        primary_model=analysis.get("primary_model"),
     )
 
     gate_output = eval_all_gates(ctx, config, last_trade_time)

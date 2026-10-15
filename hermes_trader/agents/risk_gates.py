@@ -46,6 +46,12 @@ class GateContext:
         tirex_q10_path_pct: Optional[List[float]] = None,
         tirex_q90_path_pct: Optional[List[float]] = None,
         duelist_verdict: Optional[str] = None,
+        # Cohort admission (B.46): with-the-signal vwap entries carry the
+        # cohort tag + answering model so the classic confidence gate can
+        # apply the same model+cohort admission as the runner gate.
+        # Default None = byte-identical for every other construction site.
+        cohort_tag: Optional[str] = None,
+        primary_model: Optional[str] = None,
     ):
         self.confidence = confidence
         self.current_positions = current_positions
@@ -125,6 +131,8 @@ class GateContext:
         # maybe_execute. None = the duelist is disabled or failed — the
         # veto has no opinion and passes.
         self.duelist_verdict = duelist_verdict
+        self.cohort_tag = cohort_tag
+        self.primary_model = primary_model
 
 
 def _tail_composite_escape_allowed(ctx: GateContext, cfg: Dict[str, Any]) -> bool:
@@ -163,6 +171,43 @@ def confidence_gate(ctx: GateContext, min_confidence: float) -> GateResult:
     if ctx.confidence >= min_confidence:
         return {"pass": True}
     return {"pass": False, "reason": f"confidence {ctx.confidence:.2f} < {min_confidence}"}
+
+
+def _cohort_conf_admission(ctx: GateContext, cfg: Dict[str, Any],
+                           res: GateResult, min_conf: float) -> GateResult:
+    """Model+cohort admission for the CLASSIC confidence gate (B.46).
+
+    Same key and floor as the runner gate's cohort_admissions (PR #84):
+    the fade-short cohort's conf lives at p50 0.42 / max 0.58 (0/34 reach
+    0.65) and the edge IS the low-conf band, so the general floor is a wall
+    for it. Keyed "<answering model>/<cohort tag>" — welded to the
+    gauntleted model; absent key / model mismatch / tagless / malformed =
+    the original block result, byte-identical, fail-open. This exempts
+    ONLY the confidence gate: the short-liquidity floor (squeeze risk on
+    thin markets) and every other classic gate still apply — the cohort
+    proves itself on liquid names first.
+    """
+    tag = str(getattr(ctx, "cohort_tag", "") or "").strip().lower()
+    if not tag:
+        return res
+    adm = (cfg.get("runner_entry_gate") or {}).get("cohort_admissions") or {}
+    key = f"{str(getattr(ctx, 'primary_model', '') or '').strip().lower()}/{tag}"
+    if key not in adm:
+        return res
+    try:
+        floor = float(adm[key])
+    except (TypeError, ValueError):
+        return res  # malformed -> original block (fail-open)
+    if ctx.confidence >= floor:
+        logger.info(
+            f"[gate][COHORT] conf-gate ADMIT {ctx.coin} "
+            f"{str(ctx.trade_side).upper()}: {key} conf {ctx.confidence:.2f} "
+            f">= cohort floor {floor:.2f} (general {min_conf:.2f} exempted) — "
+            f"all other classic gates incl. short liquidity still apply"
+        )
+        return {"pass": True, "via": f"cohort_admission:{key}",
+                "cohort_floor": floor}
+    return res
 
 
 def max_concurrent_positions_gate(ctx: GateContext, max_concurrent: int) -> GateResult:
@@ -1704,7 +1749,8 @@ def eval_all_gates(
                 min_conf = min(min_conf, float(aligned_min_conf))
         except Exception:
             pass
-    results["confidence"] = confidence_gate(ctx, min_conf)
+    results["confidence"] = _cohort_conf_admission(
+        ctx, effective_config, confidence_gate(ctx, min_conf), min_conf)
     results["max_concurrent"] = max_concurrent_positions_gate(ctx, _cfg(effective_config, "max_concurrent", 3))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, _cfg(effective_config, "max_trade_notional_usd", 300))
     # Equity-relative daily kill + halt timer (see daily_loss_kill_switch).
