@@ -2030,6 +2030,10 @@ def research(coin: str, perception: Dict[str, Any]) -> Dict[str, Any]:
         "stop_px": parsed["stop_px"],
         "tp_px": parsed["tp_px"],
         "reasoning": parsed["reasoning"],
+        # Cohort tag (B.46): set by the systemone seat for with-the-signal
+        # vwap entries; consumed by the runner gate's cohort_admissions.
+        # Must survive this whitelist or the gate never sees it.
+        "cohort_tag": parsed.get("cohort_tag"),
         "news_context": news,
         "primary_model": primary_model,
         # AI's good/bad judgment of the recent news — drives the news gate
