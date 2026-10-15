@@ -462,9 +462,21 @@ def systemone_primary_verdict(
         elif bar > thr and trap_p > thr:
             # The cohort bar is the ONLY reason this entry proceeds — log it
             # so the promoted cohort stays grep-separable for the ledger join.
+            # Regime annotation (B.46): the archive read is regime-SYMMETRIC
+            # for fade-shorts (+1.59%/ep down vs +1.55%/ep up) but the window
+            # never saw a sustained euphoric tape — tag every override-pass
+            # so the live join can cut by regime and gate later WITH evidence
+            # if a regime dependency appears. Fail-open: a regime-read fault
+            # must never cost the entry or the line.
+            try:
+                from hermes_trader.agents import market_regime
+                _reg = market_regime.detect_regime("BTC")
+            except Exception:  # noqa: BLE001
+                _reg = "unknown"
             logger.info(
                 f"[research] {coin}: trap {trap_p:.2f} <= cohort bar {bar:.2f} "
-                f"({tag}) — global bar {thr:.2f} overridden, entry proceeds"
+                f"({tag}) — global bar {thr:.2f} overridden, entry proceeds "
+                f"(regime={_reg})"
             )
     return {
         "parsed": parsed,

@@ -371,9 +371,11 @@ def _arm_veto_ovr(monkeypatch, trap, threshold, overrides, vwap_fields=True):
 
 def test_trap_veto_cohort_bar_passes_with_signal(monkeypatch, caplog):
     # fade-short state + SHORT verdict + trap between global and cohort bar
-    # -> entry proceeds, grep-separable INFO line
+    # -> entry proceeds, grep-separable INFO line, regime-tagged
     import logging
     caplog.set_level(logging.INFO, logger="hermes_trader.agents.decision_voice")
+    from hermes_trader.agents import market_regime
+    monkeypatch.setattr(market_regime, "detect_regime", lambda coin, **k: "down")
     _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
                   overrides={"vwap-fade-short": 0.75})
     _patch_research_deps(monkeypatch)
@@ -381,6 +383,23 @@ def test_trap_veto_cohort_bar_passes_with_signal(monkeypatch, caplog):
     assert a["verdict"] == "SHORT" and a["side"] == "short"
     assert "cohort bar 0.75" in caplog.text
     assert "global bar 0.50 overridden" in caplog.text
+    assert "(regime=down)" in caplog.text  # B.46 regime-cuttable join line
+
+
+def test_trap_veto_cohort_bar_regime_read_fails_open(monkeypatch, caplog):
+    # a regime-read fault must never cost the entry or the line
+    import logging
+    caplog.set_level(logging.INFO, logger="hermes_trader.agents.decision_voice")
+    from hermes_trader.agents import market_regime
+    def boom(coin, **k):
+        raise RuntimeError("network down")
+    monkeypatch.setattr(market_regime, "detect_regime", boom)
+    _arm_veto_ovr(monkeypatch, trap=0.62, threshold=0.5,
+                  overrides={"vwap-fade-short": 0.75})
+    _patch_research_deps(monkeypatch)
+    a = research.research("BTC", _perception(triggers=[dict(_VWAP_SHORT)]))
+    assert a["verdict"] == "SHORT"
+    assert "(regime=unknown)" in caplog.text
 
 
 def test_trap_veto_cohort_bar_absent_key_is_noop(monkeypatch):
