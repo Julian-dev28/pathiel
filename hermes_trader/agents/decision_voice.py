@@ -240,6 +240,42 @@ def dv_file() -> str:
 
 _LLM_ENGINE = {"engine": "llm"}
 
+
+def _parse_trap_veto_overrides(raw) -> Dict[str, float]:
+    """Normalise the `trap_veto_overrides` config slot: {tag: bar}. Malformed
+    entries are dropped (fail-open to the global bar), never raise."""
+    out: Dict[str, float] = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                out[str(k).strip().lower()] = float(v)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _trap_veto_cohort_tag(state: Any, verdict_side: Any) -> Optional[str]:
+    """Cohort tag for trap-veto bar overrides (B.46 fade-short promote).
+
+    Returns "vwap-<shape>-<side>" when the state carries a vwap_deviation
+    field whose suggested_side MATCHES the entry side — an entry WITH the
+    signal. Counter-signal entries (side mismatch) and non-vwap states get
+    None = the global bar. Pure: no logging, no config read (decision-
+    function purity rule)."""
+    try:
+        vw = state.get("vwap_deviation") if isinstance(state, dict) else None
+        if not isinstance(vw, dict):
+            return None
+        side = str(vw.get("suggested_side") or "").strip().lower()
+        if not side or side != str(verdict_side or "").strip().lower():
+            return None
+        shape = str(vw.get("shape") or "").strip().lower()
+        if not shape:
+            return None
+        return f"vwap-{shape}-{side}"
+    except Exception:  # noqa: BLE001 — tagging must never break the veto path
+        return None
+
 _SYSTEMONE_URL_VARS = ("LLM_SYSTEMONE_BASE_URL",)
 _SYSTEMONE_KEY_VARS = ("LLM_SYSTEMONE_API_KEY",)
 
@@ -314,6 +350,14 @@ def primary_engine_config() -> Dict[str, Any]:
             "trap_veto_shadow_mode": str(
                 slot.get("trap_veto_shadow_mode", True)
             ).lower() not in ("false", "0", "off"),
+            # Per-cohort trap-veto bar overrides (B.46 fade-short promote):
+            # {cohort tag: bar}. A with-the-signal entry whose state carries
+            # a matching vwap_deviation field uses the cohort bar INSTEAD of
+            # the global one; absent key / malformed entries fail open to
+            # the global bar (no-op merge — byte-identical without the key).
+            "trap_veto_overrides": _parse_trap_veto_overrides(
+                slot.get("trap_veto_overrides")
+            ),
             # Fade-family state shape (B.44 gauntlet, MODEL-DEPENDENT):
             # true = side-aware fields, names stripped (nano-tuned, the
             # shipped default); false = names in, no fields (decision2 —
@@ -386,22 +430,54 @@ def systemone_primary_verdict(
     thr = cfg.get("trap_veto_threshold") or 0.0
     if thr > 0 and parsed["verdict"] in ("LONG", "SHORT"):
         trap_p = float((answers.get("trap") or {}).get("noul", 0.0))
-        if trap_p > thr:
+        # Per-cohort bar override (B.46): with-the-signal entries whose
+        # state carries a matching vwap field use the cohort bar; anything
+        # else keeps the global bar (absent overrides = byte-identical).
+        bar = thr
+        tag = _trap_veto_cohort_tag(state, parsed.get("side"))
+        if tag and tag in (cfg.get("trap_veto_overrides") or {}):
+            bar = cfg["trap_veto_overrides"][tag]
+        # Annotate the line with the cohort tag ONLY when the override is
+        # what set the bar — without an override the lines stay byte-
+        # identical to the pre-B.46 format (watchlist greps depend on it).
+        note = f"({tag}) " if bar != thr else ""
+        if trap_p > bar:
             if cfg.get("trap_veto_shadow_mode", True):
                 logger.warning(
-                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {bar:.2f} "
+                    f"{note}"
                     f"— WOULD BE VETOED (shadow; entry proceeds)"
                 )
             else:
                 parsed["reasoning"] = (
                     (parsed.get("reasoning") or "")
-                    + f" [trap_veto: trap {trap_p:.2f} > {thr:.2f}]"
+                    + f" [trap_veto: trap {trap_p:.2f} > {bar:.2f}]"
                 )
                 parsed["verdict"], parsed["side"] = "VETO", None
                 logger.warning(
-                    f"[research] {coin}: primary trap {trap_p:.2f} > {thr:.2f} "
+                    f"[research] {coin}: primary trap {trap_p:.2f} > {bar:.2f} "
+                    f"{note}"
                     f"— VETOED (entry blocked)"
                 )
+        elif bar > thr and trap_p > thr:
+            # The cohort bar is the ONLY reason this entry proceeds — log it
+            # so the promoted cohort stays grep-separable for the ledger join.
+            # Regime annotation (B.46): the archive read is regime-SYMMETRIC
+            # for fade-shorts (+1.59%/ep down vs +1.55%/ep up) but the window
+            # never saw a sustained euphoric tape — tag every override-pass
+            # so the live join can cut by regime and gate later WITH evidence
+            # if a regime dependency appears. Fail-open: a regime-read fault
+            # must never cost the entry or the line.
+            try:
+                from hermes_trader.agents import market_regime
+                _reg = market_regime.detect_regime("BTC")
+            except Exception:  # noqa: BLE001
+                _reg = "unknown"
+            logger.info(
+                f"[research] {coin}: trap {trap_p:.2f} <= cohort bar {bar:.2f} "
+                f"({tag}) — global bar {thr:.2f} overridden, entry proceeds "
+                f"(regime={_reg})"
+            )
     return {
         "parsed": parsed,
         "answers": answers,
