@@ -361,6 +361,16 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     # spot-reserved portion to keep only separately-deposited margin.
     perp_deposited_cash = max(0.0, perp_equity - perp_uPnL - spot_held)
     equity = spot_usdc + perp_uPnL + perp_deposited_cash
+    # MAIN-DEX FUNDING EQUITY (unified-margin fix, 2026-10-15): in a unified
+    # account the main clearinghouse's accountValue counts ONLY the margin
+    # committed to open positions (~$6.68 for a $33/5x short), not the shared
+    # spot pool that actually funds new entries. Sizing against that raw value
+    # collapsed every new entry to sub-floor notional ($0.29 vs a $10.56 HL
+    # minimum) while ANY position was open — the bot could hold one main-dex
+    # position and nothing else. The true main-dex funding equity is the
+    # aggregate BEFORE HIP-3 dex values are added (those are separate
+    # clearinghouses): spot cash + perp uPnL + separately-deposited perp margin.
+    main_equity = spot_usdc + perp_uPnL + perp_deposited_cash
     # Free initial margin = what HL's UI shows as "Available to Trade" and
     # what HL checks before accepting new orders. `withdrawable` is a
     # different (much tighter) number — the spot-bridgeable amount — and
@@ -432,6 +442,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     return {
         "equity": equity,
+        "main_equity": main_equity,                   # main-dex funding equity (unified-safe)
         "available": available,                       # main-only — for executor sizing
         "available_aggregated": available_aggregated, # total across all dexes — for display
         "spot_usdc": spot_usdc,

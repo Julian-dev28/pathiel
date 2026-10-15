@@ -1286,6 +1286,10 @@ def test_fetch_account_state_aggregates_hip3_dexes(monkeypatch):
     # as deposited -> main equity 1010. (The pre-unified expectation of 1000
     # double-counted the reserved margin on a real unified account.)
     assert state["equity"] == 1010.0 + 250.0 + 50.0
+    # main_equity = the MAIN-dex funding equity only (spot 10 + uPnL 0 +
+    # deposited margin 1000), EXCLUDING the HIP-3 dex values — the field the
+    # executor sizes main trades against (unified-margin fix 2026-10-15).
+    assert state["main_equity"] == 1010.0
     # Aggregated notional = main 500 + xyz 300 + vntl 0 = 800
     assert state["total_ntl"] == 800.0
     # `available` = main free initial margin (unified equity 1010 - margin

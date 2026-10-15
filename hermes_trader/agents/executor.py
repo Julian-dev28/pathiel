@@ -958,14 +958,21 @@ def maybe_execute(analysis: Dict[str, Any], _rotation_retry: bool = False) -> Di
 
     def _read_state() -> tuple[dict, float, float]:
         st = fetch_account_state(user, include_hip3=True) or {}
-        logger.info(f"[executor] raw account state: equity={st.get('equity')!r} available={st.get('available')!r} spot_usdc={st.get('spot_usdc')!r}")
+        logger.info(f"[executor] raw account state: equity={st.get('equity')!r} main_equity={st.get('main_equity')!r} available={st.get('available')!r} spot_usdc={st.get('spot_usdc')!r}")
         deq = st.get("dex_equity") or {}
         dav = st.get("dex_available") or {}
         if _target_dex:
             eq = float(deq.get(_target_dex, 0) or 0)
             av = float(dav.get(_target_dex, 0) or 0)
         else:
-            eq = float(deq.get("", st.get("equity")) or 0)
+            # Unified-margin fix (2026-10-15): prefer the client-computed
+            # main-dex FUNDING equity. dex_equity[""] is the raw main
+            # clearinghouse accountValue, which in a unified account is only
+            # the COMMITTED margin once any position is open — sizing on it
+            # collapsed new entries to $0.29 notional (below the HL floor)
+            # while a position was held. Fall back to the old read for
+            # stubbed/degraded states without the field.
+            eq = float(st.get("main_equity") or deq.get("", st.get("equity")) or 0)
             av = float(dav.get("", st.get("available")) or 0)
 
         # For unified accounts: spot USDC is shared margin for perps.
