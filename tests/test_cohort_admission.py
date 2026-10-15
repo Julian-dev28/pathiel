@@ -104,6 +104,94 @@ def test_admission_key_is_case_insensitive():
         a, _gate(cohort_admissions=dict(_ADM))) == ""
 
 
+# ── classic pipeline confidence gate (risk_gates) ─────────────────────────
+
+from hermes_trader.agents import risk_gates
+
+
+def _classic_ctx(conf=0.43, **over):
+    kw = dict(confidence=conf, current_positions=[], trade_notional_usd=100.0,
+              daily_pnl=0.0, market_volume_24h_usd=500e6, coin="ASTER",
+              trade_side="short", has_binary_news_risk=False, equity=1000.0,
+              total_open_notional=0.0, cohort_tag="vwap-fade-short",
+              primary_model="decision2-lux-9b")
+    kw.update(over)
+    return risk_gates.GateContext(**kw)  # type: ignore[arg-type]
+
+
+_CFG = {"min_ai_confidence": 0.65, "min_short_volume_usd": 20e6,
+        "runner_entry_gate": {"cohort_admissions": dict(_ADM)}}
+
+
+def test_classic_conf_gate_admits_cohort(monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="hermes_trader.agents.risk_gates")
+    res = risk_gates._cohort_conf_admission(
+        _classic_ctx(), _CFG,
+        risk_gates.confidence_gate(_classic_ctx(), 0.65), 0.65)
+    assert res["pass"] is True
+    assert res["via"] == "cohort_admission:decision2-lux-9b/vwap-fade-short"
+    assert "conf-gate ADMIT ASTER SHORT" in caplog.text
+
+
+def test_classic_conf_gate_absent_key_keeps_block():
+    cfg = {"min_ai_confidence": 0.65}
+    ctx = _classic_ctx()
+    res = risk_gates._cohort_conf_admission(
+        ctx, cfg, risk_gates.confidence_gate(ctx, 0.65), 0.65)
+    assert res["pass"] is False and "0.43 < 0.65" in res["reason"]
+
+
+def test_classic_conf_gate_model_mismatch_keeps_block():
+    ctx = _classic_ctx(primary_model="d3-nano")
+    res = risk_gates._cohort_conf_admission(
+        ctx, _CFG, risk_gates.confidence_gate(ctx, 0.65), 0.65)
+    assert res["pass"] is False
+
+
+def test_classic_conf_gate_below_floor_keeps_block():
+    ctx = _classic_ctx(conf=0.30)
+    res = risk_gates._cohort_conf_admission(
+        ctx, _CFG, risk_gates.confidence_gate(ctx, 0.65), 0.65)
+    assert res["pass"] is False
+
+
+def test_classic_conf_gate_malformed_floor_keeps_block():
+    cfg = {"min_ai_confidence": 0.65,
+           "runner_entry_gate": {"cohort_admissions":
+                                 {"decision2-lux-9b/vwap-fade-short": "x"}}}
+    ctx = _classic_ctx()
+    res = risk_gates._cohort_conf_admission(
+        ctx, cfg, risk_gates.confidence_gate(ctx, 0.65), 0.65)
+    assert res["pass"] is False
+
+
+def test_classic_conf_gate_tagless_keeps_block():
+    ctx = _classic_ctx(cohort_tag=None)
+    res = risk_gates._cohort_conf_admission(
+        ctx, _CFG, risk_gates.confidence_gate(ctx, 0.65), 0.65)
+    assert res["pass"] is False
+
+
+def test_classic_eval_all_gates_wires_admission_short_liquidity_still_blocks():
+    # end-to-end through eval_all_gates: cohort conf passes, but the thin-
+    # market short-liquidity floor must STILL block (option A: liquidity
+    # floor is NOT exempted)
+    ctx = _classic_ctx(market_volume_24h_usd=4.3e6)
+    out = risk_gates.eval_all_gates(ctx, _CFG)["results"]
+    assert out["confidence"]["pass"] is True
+    assert out["confidence"]["via"] == "cohort_admission:decision2-lux-9b/vwap-fade-short"
+    assert out["short_liquidity"]["pass"] is False
+    assert "thin market" in out["short_liquidity"]["reason"]
+
+
+def test_classic_eval_all_gates_liquid_cohort_entry_clears_both():
+    ctx = _classic_ctx(market_volume_24h_usd=500e6)
+    out = risk_gates.eval_all_gates(ctx, _CFG)["results"]
+    assert out["confidence"]["pass"] is True
+    assert out["short_liquidity"]["pass"] is True
+
+
 # ── seat -> analysis carry ────────────────────────────────────────────────
 
 from hermes_trader.agents import decision_voice as dv
