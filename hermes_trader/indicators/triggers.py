@@ -102,6 +102,12 @@ def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
         pct_break = (candle_val(current, "c") - prior_high) / prior_high * 100
         return {
             "name": "breakout",
+            # t_a99fdac2 (B.44): side + magnitude ride the hit so the seat
+            # state can render breakoutUp/breakoutDown. The internal NAME
+            # stays "breakout" — composite weights, gate lookups
+            # (research.breakout_fired) and shadow logs key on it.
+            "side": "up",
+            "pct_break": round(pct_break, 2),
             "score": min(10, max(0, pct_break)),
             "reason": f"breakout above {lookback}-bar high",
             "fired": True,
@@ -111,6 +117,8 @@ def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
         pct_break = (prior_low - candle_val(current, "c")) / prior_low * 100
         return {
             "name": "breakout",
+            "side": "down",
+            "pct_break": round(pct_break, 2),
             "score": min(10, max(0, pct_break)),
             "reason": f"breakout below {lookback}-bar low",
             "fired": True,
