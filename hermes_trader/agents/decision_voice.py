@@ -226,6 +226,10 @@ def _dv_config() -> Optional[Dict[str, Any]]:
             "fade_fields": str(slot.get("fade_fields", True)).lower() not in ("false", "0", "off"),
             "composite_score": str(slot.get("composite_score", False)).lower() not in ("false", "0", "off"),
             "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
+            # t_a99fdac2 (B.44): side+magnitude breakout label in seat state
+            # (breakoutUp:0.42% / breakoutDown:0.12%). Default off = today's
+            # byte-identical state; profile opt-in, hot rollback.
+            "breakout_side_label": str(slot.get("breakout_side_label", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open (see module docstring)
         return None
@@ -371,6 +375,10 @@ def primary_engine_config() -> Dict[str, Any]:
             # verdict-side re-score reads mildly positive for decision2
             # (B.46 watch). Default off; profiles opt in per model.
             "vwap_fields": str(slot.get("vwap_fields", False)).lower() not in ("false", "0", "off"),
+            # t_a99fdac2 (B.44): side+magnitude breakout label in seat state
+            # (breakoutUp:0.42% / breakoutDown:0.12%). Default off = today's
+            # byte-identical state; profile opt-in, hot rollback.
+            "breakout_side_label": str(slot.get("breakout_side_label", False)).lower() not in ("false", "0", "off"),
         }
     except Exception:  # noqa: BLE001 — fail-open: the LLM engine is the default
         return dict(_LLM_ENGINE)
@@ -409,6 +417,7 @@ def systemone_primary_verdict(
         fade_shape="fields" if cfg.get("fade_fields", True) else "names",
         emit_composite_score=bool(cfg.get("composite_score", False)),
         vwap_fields=bool(cfg.get("vwap_fields", False)),
+        breakout_side_label=bool(cfg.get("breakout_side_label", False)),
     )
     questions = build_questions(held, news_live=_news_live(news))
     answers, wall_ms, server_ms = call_systemone(
@@ -529,6 +538,7 @@ def build_state(
     fade_shape: str = "fields",
     emit_composite_score: bool = False,
     vwap_fields: bool = False,
+    breakout_side_label: bool = False,
 ) -> Dict[str, Any]:
     """The STATE: a compact structured snapshot of what the chat prompt says
     in prose. Deliberately lean (~1-2k tokens): the decision model's edge is
@@ -548,13 +558,28 @@ def build_state(
     # nets +24.4% with a neutral trap delta. So: names out, fields in.
     triggers: List[str] = []
     fade_fields: Dict[str, Any] = {}
+
+    def _label(t: Dict[str, Any]) -> str:
+        # t_a99fdac2 (B.44 doctrine: names must carry side): render the
+        # range-break as breakoutUp:0.42% / breakoutDown:0.12% instead of
+        # the side-less "breakout" — the NXPC 2026-10-15 loss rode a 12bp
+        # DOWNWARD scrape presented to the seat as a bullish-sounding name.
+        # Render-site only: the internal trigger name, composite weights,
+        # gate lookups and shadow logs keep using "breakout".
+        if (breakout_side_label and t.get("name") == "breakout"
+                and t.get("side") in ("up", "down")):
+            pct = t.get("pct_break")
+            pct_s = f":{pct:.2f}%" if isinstance(pct, (int, float)) else ""
+            return f"breakout{'Up' if t['side'] == 'up' else 'Down'}{pct_s}"
+        return t.get("name") or ""
+
     for t in (perception.get("triggers") or []):
         if not t.get("fired"):
             continue
         name = t.get("name")
         if fade_shape != "fields":
             # decision2 shape (B.44/B.45 re-run): names stay, no fields.
-            triggers.append(name)
+            triggers.append(_label(t))
             continue
         if name == "mfiExtreme":
             if t.get("side"):
@@ -575,7 +600,7 @@ def build_state(
                     "price_extreme_pct": t.get("extreme_pct"),
                 }
             continue
-        triggers.append(name)
+        triggers.append(_label(t))
 
     def _tf(d: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -915,6 +940,7 @@ def decision_voice_verdict(
             fade_shape="fields" if cfg.get("fade_fields", True) else "names",
             emit_composite_score=bool(cfg.get("composite_score", False)),
             vwap_fields=bool(cfg.get("vwap_fields", False)),
+            breakout_side_label=bool(cfg.get("breakout_side_label", False)),
         )
         questions = build_questions(held, news_live=_news_live(news))
         answers, wall_ms, server_ms = call_systemone(

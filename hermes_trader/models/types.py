@@ -28,12 +28,15 @@ class TriggerHitExtras(TypedDict, total=False):
     as danger-tokens for the decision model — B.44 gauntlet). Perception and
     composite scoring ignore these keys; only decision_voice.build_state
     reads them."""
-    side: str            # "long" | "short" — the trade side the signal suggests
+    side: str            # "long" | "short" — the trade side the signal suggests;
+                         # breakout uses "up" | "down" — the break DIRECTION
+                         # (t_a99fdac2), not a suggested trade side
     kind: str            # mfiExtreme: "oversold" | "overbought"
     mfi_value: int
     threshold: int
     flavour: str         # rsiDivergence: "bullish" | "bearish"
     extreme_pct: float   # rsiDivergence: signed price-extreme % beyond prior
+    pct_break: float     # breakout: % beyond the range edge (t_a99fdac2)
     shape: str           # vwapDeviation: "fade" | "retest"
     z: float             # vwapDeviation: signed stretch sigma
     age: int             # vwapDeviation: anchor age in bars
