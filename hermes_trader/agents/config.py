@@ -57,6 +57,17 @@ TRIGGER_CONFIG: Dict[str, Any] = {
         "trendFlipBars": 3,      # EMA8/21 cross within last N 1h bars
         "higherLowsRequired": 4, # of last 6 1h bars
     },
+    # t_62c58463 — momentum trigger estimator (t_38944f65 NXPC post-mortem).
+    # The close-to-close net reads a pump bar's MEMORY, not a trend: it fired
+    # uptrendMomentum +13.3% UP through six red hours on 2026-10-15. Theil-Sen
+    # (median of pairwise log-price slopes) is pump-immune AND reads genuine
+    # regime changes; 11/11 labeled bake-off, 82% vs net 81% forward-2h on an
+    # 8-perp basket. mode: "off" = net only (legacy) | "shadow" = net decides,
+    # Theil-Sen accrues [momentum-shadow] comparison lines | "live" = Theil-Sen
+    # decides fired/score (net still logged as flight recorder). Hot-reload.
+    "momentum_theilsen": {
+        "mode": "off",
+    },
     "scan": {
         "minCompositeScore": 54,  # recalibrated for new weights: P230 zeroed 3 triggers -> denom 2.85->1.85 -> scores ~1.54x. 54 preserves the old-35 selectivity (35*1.54). Without this the gate silently loosened.
         "candleInterval": "5m",

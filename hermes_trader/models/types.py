@@ -34,6 +34,13 @@ class TriggerHitExtras(TypedDict, total=False):
     kind: str            # mfiExtreme: "oversold" | "overbought"
     mfi_value: int
     threshold: int
+    shadow_ts_move: float        # t_62c58463: Theil-Sen robust slope (%/window)
+                                 # computed alongside the live net on the
+                                 # momentum triggers — comparison only
+    shadow_ts_fired: bool        # same arm, thresholded at +-trendMomentumPct
+    live_net_move: float         # t_62c58463 theilsen_mode="live": the old
+                                 # close-to-close net, kept on the hit so the
+                                 # accrual line records both arms either way
     flavour: str         # rsiDivergence: "bullish" | "bearish"
     extreme_pct: float   # rsiDivergence: signed price-extreme % beyond prior
     pct_break: float     # breakout: % beyond the range edge (t_a99fdac2)
