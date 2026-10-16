@@ -9,6 +9,7 @@ limits the sweep to the top-N markets by 24h volume to stay within HL's
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
 import time
@@ -20,6 +21,7 @@ from hermes_trader.agents.config import get_config
 from hermes_trader.client.hl_client import fetch_all_mids, fetch_hl_candles
 from hermes_trader.client.universe import get_universe
 from hermes_trader.indicators import triggers as trigger_mod
+from hermes_trader.indicators.math import atr
 from hermes_trader.models.types import Candle
 
 logger = logging.getLogger(__name__)
@@ -216,10 +218,26 @@ def _scan_single_market(
         _mts_mode = str((config.get("momentum_theilsen") or {}).get("mode", "off")).lower()
         if _mts_mode not in ("off", "shadow", "live"):
             _mts_mode = "off"
+        # t_240a0d58 breakout width-rule mode: "off" (v1 rule, default) |
+        # "shadow" (v1 decides, width arms accrue) | "live" (width rule
+        # decides: last CLOSED bar beyond the edge by >= atr_mult x ATR14(5m)
+        # = arm 2a; arm 2b uses the 1h ATR and keeps accruing for the
+        # bake-off). Hot-reloadable config knob — rollback is a flip.
+        _bw = config.get("breakout_width") or {}
+        _bw_mode = str(_bw.get("mode", "off")).lower()
+        if _bw_mode not in ("off", "shadow", "live"):
+            _bw_mode = "off"
+        _bw_mult = float(_bw.get("atr_mult", 0.25))
+        _atr1h = None
+        if _bw_mode != "off" and len(candles_1h) >= 16:
+            _a1 = atr(candles_1h, 14)
+            _atr1h = _a1[-1] if _a1 and not math.isnan(_a1[-1]) else None
         hits = [
             trigger_mod.pct_move_spike(candles, thresholds["sigmaThreshold"]),
             trigger_mod.volume_spike(candles, thresholds["sigmaThreshold"]),
-            trigger_mod.breakout(candles, thresholds["breakoutLookback"]),
+            trigger_mod.breakout(candles, thresholds["breakoutLookback"],
+                                 width_mode=_bw_mode, atr_mult=_bw_mult,
+                                 atr1h=_atr1h),
             trigger_mod.range_compression(candles, thresholds["bbLength"], thresholds["bbStdDev"]),
             trigger_mod.trend_strength(candles, thresholds["adxPeriod"]),
             trigger_mod.momentum_burst(candles, thresholds["momentumLookback"], thresholds["momentumPct"]),
@@ -274,6 +292,26 @@ def _scan_single_market(
                             logger.info(
                                 f"[momentum-shadow] {market['coin']} {h['name']} mode=shadow "
                                 f"live={_live_side} ts={h['shadow_ts_move']:+.1f}%/{_ts_side}")
+
+        # breakout-width arm-comparison accrual line (t_240a0d58): one line
+        # per scan where ANY arm fires — grep "breakout-width" to join
+        # against forward returns. Records v1/2a/2b in every non-off mode
+        # (flight recorder): "live" mode still logs what v1 WOULD have done
+        # and what 2b would have suppressed, so the 2a-vs-2b bake-off keeps
+        # accruing after the 2a flip. Silent when all arms are flat.
+        if _bw_mode != "off":
+            for h in hits:
+                if h["name"] == "breakout" and "width_arms" in h:
+                    _wa = h["width_arms"]
+                    if _wa["v1"] or _wa["2a"] or _wa["2b"]:
+                        def _arm_s(v):
+                            return "FIRE" if v else ("na" if v is None else "flat")
+                        logger.info(
+                            f"[breakout-width] {market['coin']} mode={_bw_mode} "
+                            f"v1={_arm_s(_wa['v1'])} 2a={_arm_s(_wa['2a'])} "
+                            f"2b={_arm_s(_wa['2b'])} side={_wa['side'] or '-'} "
+                            f"bp={_wa['bp']} thr2a={_wa['thr2a_bp']}bp "
+                            f"thr2b={_wa['thr2b_bp']}bp")
 
         # Momentum-continuation trigger (LEAK #2) — OFF by default. Catches a coin
         # in a sustained multi-hour uptrend that is now consolidating (already-

@@ -82,15 +82,12 @@ def volume_spike(candles: List[Candle], sigma_threshold: float = 3) -> TriggerHi
     }
 
 
-def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
-    """Breakout detection against the prior range high/low over lookback bars."""
-    if len(candles) < lookback + 2:
-        return {"name": "breakout", "score": 0, "reason": "flat", "fired": False}
-
-    current = candles[-1]
+def _range_edges(candles: List[Candle], lookback: int):
+    """(prior_high, prior_low) over the `lookback` bars ending at
+    candles[-2] inclusive — the window EXCLUDES candles[-1] (the bar being
+    evaluated against it)."""
     prior_start = len(candles) - lookback - 1
     prior_end = len(candles) - 1
-
     prior_high = float("-inf")
     prior_low = float("inf")
     for i in range(prior_start, prior_end):
@@ -98,6 +95,15 @@ def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
             prior_high = candle_val(candles[i], "h")
         if candle_val(candles[i], "l") < prior_low:
             prior_low = candle_val(candles[i], "l")
+    return prior_high, prior_low
+
+
+def _breakout_v1(candles: List[Candle], lookback: int) -> TriggerHit:
+    """The original rule: forming-bar close-so-far beyond the range edge,
+    ANY width. Kept byte-identical for width_mode="off" and as the shadow
+    reference in shadow/live modes (t_240a0d58)."""
+    prior_high, prior_low = _range_edges(candles, lookback)
+    current = candles[-1]
 
     if candle_val(current, "c") > prior_high:
         pct_break = (candle_val(current, "c") - prior_high) / prior_high * 100
@@ -138,6 +144,97 @@ def breakout(candles: List[Candle], lookback: int = 48) -> TriggerHit:
         "reason": "inside range",
         "fired": False,
     }
+
+
+def _width_verdict(candles: List[Candle], lookback: int, atr_mult: float,
+                   atr_ref: Optional[float]) -> Dict[str, Any]:
+    """The width rule (t_240a0d58): the LAST CLOSED bar (candles[-2]) must
+    have CLOSED beyond the range edge (window excludes the evaluated bar
+    itself) by >= atr_mult x ATR. A 1-tick scrape of a forming bar (NXPC
+    2026-10-15: 12bp on a 90-second-old bar) no longer qualifies; a bar
+    that poked over mid-candle and CLOSED beyond the edge (AAVE 2026-10-16:
+    closed 27bp up) still fires, one bar later.
+
+    fired=None means NOT EVALUABLE (no ATR reference / short history) —
+    callers must fall back, never treat None as False."""
+    if atr_ref is None or atr_ref <= 0 or len(candles) < lookback + 3:
+        return {"fired": None}
+    confirmed = candles[-2]
+    prior_high, prior_low = _range_edges(candles[:-1], lookback)
+    c = candle_val(confirmed, "c")
+    if c > prior_high:
+        side, bp = "up", (c - prior_high) / prior_high * 100
+    elif c < prior_low:
+        side, bp = "down", (prior_low - c) / prior_low * 100
+    else:
+        return {"fired": False, "side": None, "bp": 0.0,
+                "thr_bp": atr_mult * atr_ref / c * 10000}
+    thr_pct = atr_mult * atr_ref / c * 100
+    return {"fired": bp >= thr_pct, "side": side, "bp": bp,
+            "thr_bp": thr_pct * 100, "pct_break": round(bp, 2)}
+
+
+def breakout(candles: List[Candle], lookback: int = 48,
+             width_mode: str = "off", atr_mult: float = 0.25,
+             atr1h: Optional[float] = None) -> TriggerHit:
+    """Breakout detection against the prior range high/low over lookback bars.
+
+    width_mode (t_240a0d58, config `breakout_width.mode`, hot-read):
+      "off"    — original rule, byte-identical (default; rollback state).
+      "shadow" — original rule decides; the width verdict rides in
+                 hit["width_arms"] for the [breakout-width] accrual line.
+      "live"   — the width rule decides (2a: 0.25x ATR14 of the 5m array);
+                 2b (0.25x the 1h ATR, passed in) keeps accruing for the
+                 later bake-off. Not-evaluable falls back to the v1 verdict.
+    """
+    if len(candles) < lookback + 2:
+        return {"name": "breakout", "score": 0, "reason": "flat", "fired": False}
+
+    v1 = _breakout_v1(candles, lookback)
+    if width_mode == "off":
+        return v1
+
+    atr_list = atr(candles[:-1], 14)
+    a5 = atr_list[-1] if atr_list and not math.isnan(atr_list[-1]) else None
+    v2a = _width_verdict(candles, lookback, atr_mult, a5)
+    v2b = _width_verdict(candles, lookback, atr_mult, atr1h)
+
+    arms = {
+        "v1": bool(v1["fired"]),
+        "2a": v2a["fired"], "2b": v2b["fired"],
+        "bp": round(v2a.get("bp", 0.0) or 0.0, 1),
+        "thr2a_bp": round(v2a.get("thr_bp", 0.0) or 0.0, 1),
+        "thr2b_bp": round(v2b.get("thr_bp", 0.0) or 0.0, 1) if v2b.get("fired") is not None else None,
+        "side": v2a.get("side"),
+    }
+
+    if width_mode != "live" or v2a["fired"] is None:
+        # shadow (v1 decides) or live-but-not-evaluable (fallback): v1 wins,
+        # arms recorded either way — flight recorder.
+        hit = dict(v1)
+        hit["width_arms"] = arms
+        return hit
+
+    if v2a["fired"]:
+        return {
+            "name": "breakout",
+            "side": v2a["side"],
+            "pct_break": v2a["pct_break"],
+            "score": min(10, max(0, v2a["bp"])),
+            "reason": f"breakout confirmed beyond {lookback}-bar "
+                      f"{'high' if v2a['side'] == 'up' else 'low'} "
+                      f"({v2a['bp']:.0f}bp >= {v2a['thr_bp']:.0f}bp)",
+            "fired": True,
+            "width_arms": arms,
+        }
+
+    hit = dict(v1)
+    hit["fired"] = False
+    hit["side"] = None
+    hit["reason"] = ("width-suppressed" if v1["fired"]
+                    else "inside range (confirmed)")
+    hit["width_arms"] = arms
+    return hit
 
 
 def range_compression(
