@@ -7,6 +7,7 @@ trend strength, plus a weighted composite score across them.
 from __future__ import annotations
 
 import math
+import statistics
 from typing import Any, Dict, List, Optional
 
 from hermes_trader.indicators.math import adx, anchored_vwap, atr, ema, mfi, rsi, sma, candle_val
@@ -268,7 +269,43 @@ def _sustained_move_pct(candles: List[Candle], lookback: int) -> Optional[float]
     return (end - start) / start * 100
 
 
-def uptrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0) -> TriggerHit:
+def _theilsen_move_pct(candles: List[Candle], lookback: int,
+                       min_span: int = 4) -> Optional[float]:
+    """Robust trend estimate over the last `lookback` bars: median of ALL pairwise
+    log-price slopes (pairs >= `min_span` bars apart), scaled to % over the window.
+
+    Theil-Sen regression on the log-price path. Replaces the close-to-close net
+    (`_sustained_move_pct`) as the SHADOW arm for the momentum triggers
+    (t_62c58463): the net is one subtraction from first dot to last dot, so a
+    single vertical pump bar inside the window answers "uptrend" no matter what
+    the typical bar did — the NXPC 2026-10-15 incident (net +13.3% UP fired while
+    the last 4h was -10.2%; board t_38944f65). Median-over-pairs keeps the
+    robustness of a median but on SLOPES, so magnitude and recency both
+    participate: a pump is one loud minority of the pairs, while a genuine
+    regime change (bleed -> parabola) wins on pair count. Bake-off vs median /
+    trimmed-mean / winsorized / OLS on the incident tape + 11 labeled scenarios:
+    Theil-Sen 11/11, every naive robust-stats alternative inverted somewhere.
+    """
+    if len(candles) < lookback + 1:
+        return None
+    closes = [candle_val(c, "c") for c in candles[-lookback - 1:]]
+    if any(c <= 0 for c in closes):
+        return None
+    ys = [math.log(closes[0])]
+    ys += [math.log(c) for c in closes[1:]]
+    n = len(ys)
+    slopes: List[float] = []
+    for i in range(n):
+        yi = ys[i]
+        for j in range(i + min_span, n):
+            slopes.append((ys[j] - yi) / (j - i))
+    if not slopes:
+        return None
+    return (math.exp(statistics.median(slopes) * lookback) - 1.0) * 100
+
+
+def uptrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0,
+                     theilsen_mode: str = "off") -> TriggerHit:
     """Sustained UPward move over `lookback` bars (default ~6h on 5m).
 
     Surfaces a coin in a steady uptrend that the fast spike triggers (which need
@@ -276,21 +313,45 @@ def uptrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: f
     together they remove the long-bias in surfacing — both directions get a
     sustained-trend signal so the AI sees up-movers (LONG) and down-movers (SHORT)
     alike. Used as a surfacing BYPASS (weight 0), so it never reaches the
-    composite gate's denominator."""
-    move = _sustained_move_pct(candles, lookback)
-    if move is None:
+    composite gate's denominator.
+
+    `theilsen_mode` (t_62c58463) selects the trend estimator:
+      "off"    — live behaviour, close-to-close net only (default).
+      "shadow" — net decides fired/score; the robust Theil-Sen slope is computed
+                 alongside and attached as `shadow_ts_move`/`shadow_ts_fired` for
+                 comparison accrual.
+      "live"   — Theil-Sen decides fired/score; the net is attached as
+                 `live_net_move` so the accrual line still records both arms
+                 (flight recorder — rollback is a config flip, not a rebuild).
+    Theil-Sen = median of pairwise log-price slopes; immune to a single pump bar
+    inside the window (NXPC 2026-10-15: net +13.3% UP fired through six red
+    hours, t_38944f65) while still reading genuine regime changes that a
+    bar-median majority-vote misses. 11/11 on the labeled bake-off, 82% vs the
+    net's 81% forward-2h directional accuracy on an 8-perp basket."""
+    net_move = _sustained_move_pct(candles, lookback)
+    if net_move is None:
         return {"name": "uptrendMomentum", "score": 0, "reason": "insufficient_history", "fired": False}
+    ts_move = _theilsen_move_pct(candles, lookback) if theilsen_mode != "off" else None
+    move = ts_move if (theilsen_mode == "live" and ts_move is not None) else net_move
     fired = move >= pct_threshold
     score = min(10, max(0, move / pct_threshold * 5)) if pct_threshold > 0 else 0
-    return {
+    hit = {
         "name": "uptrendMomentum",
         "score": score if fired else 0,
         "reason": f"+{move:.1f}% over {lookback} bars (uptrend)" if fired else "flat",
         "fired": fired,
     }
+    if ts_move is not None:
+        if theilsen_mode == "live":
+            hit["live_net_move"] = round(net_move, 2)
+        else:
+            hit["shadow_ts_move"] = round(ts_move, 2)
+            hit["shadow_ts_fired"] = ts_move >= pct_threshold
+    return hit
 
 
-def downtrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0) -> TriggerHit:
+def downtrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold: float = 3.0,
+                       theilsen_mode: str = "off") -> TriggerHit:
     """Sustained DOWNward move over `lookback` bars (default ~6h on 5m).
 
     The bearish mirror of uptrend_momentum — surfaces a coin in a steady
@@ -298,18 +359,29 @@ def downtrend_momentum(candles: List[Candle], lookback: int = 72, pct_threshold:
     triggers (breakout/trendStrength/higherLows) are bullish-structured, so a coin
     grinding down -X% scored ~0 and never reached the AI. Surfacing BYPASS
     (weight 0); downstream the AI calls SHORT, the aligned-conf bar + $50M short
-    floor + counter-regime gate adjudicate."""
-    move = _sustained_move_pct(candles, lookback)
-    if move is None:
+    floor + counter-regime gate adjudicate.
+
+    `theilsen_mode`: see uptrend_momentum — mirror arm, same three modes."""
+    net_move = _sustained_move_pct(candles, lookback)
+    if net_move is None:
         return {"name": "downtrendMomentum", "score": 0, "reason": "insufficient_history", "fired": False}
+    ts_move = _theilsen_move_pct(candles, lookback) if theilsen_mode != "off" else None
+    move = ts_move if (theilsen_mode == "live" and ts_move is not None) else net_move
     fired = move <= -pct_threshold
     score = min(10, max(0, abs(move) / pct_threshold * 5)) if pct_threshold > 0 else 0
-    return {
+    hit = {
         "name": "downtrendMomentum",
         "score": score if fired else 0,
         "reason": f"{move:.1f}% over {lookback} bars (downtrend)" if fired else "flat",
         "fired": fired,
     }
+    if ts_move is not None:
+        if theilsen_mode == "live":
+            hit["live_net_move"] = round(net_move, 2)
+        else:
+            hit["shadow_ts_move"] = round(ts_move, 2)
+            hit["shadow_ts_fired"] = ts_move <= -pct_threshold
+    return hit
 
 
 def bearish_reversal_candle(candles: List[Candle], wick_body_ratio: float = 2.0,

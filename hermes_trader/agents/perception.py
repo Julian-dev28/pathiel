@@ -210,6 +210,12 @@ def _scan_single_market(
         ) or []
 
         thresholds = config["thresholds"]
+        # t_62c58463 momentum estimator mode: "off" (net only, default) |
+        # "shadow" (net decides, Theil-Sen accrues) | "live" (Theil-Sen decides).
+        # Hot-reloadable config knob — rollback is a flip, not a rebuild.
+        _mts_mode = str((config.get("momentum_theilsen") or {}).get("mode", "off")).lower()
+        if _mts_mode not in ("off", "shadow", "live"):
+            _mts_mode = "off"
         hits = [
             trigger_mod.pct_move_spike(candles, thresholds["sigmaThreshold"]),
             trigger_mod.volume_spike(candles, thresholds["sigmaThreshold"]),
@@ -227,11 +233,47 @@ def _scan_single_market(
             # triggers are all long-structured, so down-movers scored ~0 and never
             # reached the AI). Acts as a bypass below; the AI + aligned-conf bar +
             # short floor + counter-regime gate adjudicate direction/execution.
+            #
+            # theilsen_mode (t_62c58463): the live net (first→last close) reads a
+            # pump's MEMORY, not a trend — NXPC 2026-10-15 fired uptrendMomentum
+            # +13.3% UP through six red hours (t_38944f65). "shadow" accrues the
+            # robust Theil-Sen comparison; "live" lets Theil-Sen decide fired/score
+            # (hot-rollback via config). The [momentum-shadow] line records both
+            # arms in either mode.
             trigger_mod.uptrend_momentum(candles, thresholds.get("trendMomentumLookback", 72),
-                                         thresholds.get("trendMomentumPct", 3.0)),
+                                         thresholds.get("trendMomentumPct", 3.0),
+                                         theilsen_mode=_mts_mode),
             trigger_mod.downtrend_momentum(candles, thresholds.get("trendMomentumLookback", 72),
-                                           thresholds.get("trendMomentumPct", 3.0)),
+                                           thresholds.get("trendMomentumPct", 3.0),
+                                           theilsen_mode=_mts_mode),
         ]
+
+        # Momentum arm-comparison accrual line (t_62c58463): one line per scan
+        # where either arm fires or the arms disagree — grep "momentum-shadow"
+        # to join against forward returns. Records BOTH arms in every mode
+        # (flight recorder). Silent when both are flat: no signal, no info.
+        if _mts_mode != "off":
+            for h in hits:
+                if h["name"] in ("uptrendMomentum", "downtrendMomentum"):
+                    _up = h["name"] == "uptrendMomentum"
+                    if _mts_mode == "live":
+                        _net = h.get("live_net_move")
+                        _ts_side = ("UP" if _up else "DN") if h["fired"] else "flat"
+                        if _net is not None and (_net != 0.0 or h["fired"]):
+                            _net_side = ("UP" if _net >= thresholds.get("trendMomentumPct", 3.0)
+                                         else "DN" if _net <= -thresholds.get("trendMomentumPct", 3.0)
+                                         else "flat")
+                            if _net_side != _ts_side or h["fired"]:
+                                logger.info(
+                                    f"[momentum-shadow] {market['coin']} {h['name']} mode=live "
+                                    f"net={_net:+.1f}%/{_net_side} ts={_ts_side}")
+                    elif "shadow_ts_move" in h:
+                        _live_side = ("UP" if _up else "DN") if h["fired"] else "flat"
+                        _ts_side = ("UP" if _up else "DN") if h.get("shadow_ts_fired") else "flat"
+                        if _live_side != _ts_side or h["fired"] or h.get("shadow_ts_fired"):
+                            logger.info(
+                                f"[momentum-shadow] {market['coin']} {h['name']} mode=shadow "
+                                f"live={_live_side} ts={h['shadow_ts_move']:+.1f}%/{_ts_side}")
 
         # Momentum-continuation trigger (LEAK #2) — OFF by default. Catches a coin
         # in a sustained multi-hour uptrend that is now consolidating (already-
