@@ -1,0 +1,37 @@
+{
+  "equity_usd": 5.0,
+  "preset_applied": "starter",
+  "profile": {
+    "preset": "starter",
+    "risk_per_trade_pct": 3.0,
+    "daily_loss_limit_pct": 8.0,
+    "max_leverage": 10.0,
+    "max_open_positions": 1,
+    "allow_min_order_bump": true,
+    "max_bumped_risk_pct": 6.0
+  },
+  "risk_per_trade_usd": 0.15,
+  "daily_loss_limit_usd": 0.4,
+  "max_open_positions": 1,
+  "min_order_notional_usd": 10.0,
+  "min_equity_to_trade_usd": 6.0,
+  "can_trade": false,
+  "books": [
+    {
+      "book": "news_surge_short",
+      "enabled": true,
+      "can_trade": false,
+      "notional_usd": null,
+      "leverage": null,
+      "margin_usd": null,
+      "stop_pct": null,
+      "risk_usd": null,
+      "risk_pct": null,
+      "bumped_to_min": false,
+      "needs_equity_usd": 10.0,
+      "reason": "Hyperliquid's $10 minimum order would risk 12% of $5. Add $5 to start."
+    }
+  ],
+  "headline": "Add at least $1 more to place your first trade.",
+  "notes": []
+}

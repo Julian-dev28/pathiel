@@ -90,3 +90,36 @@ Any test or script that runs `git` in a temp repo must clear `GIT_DIR`,
 `scripts/preflight_secrets.py`). Inside the pre-commit hook those variables point
 at the shared repo, and a bare `git init` re-initialises it with `core.bare = true`,
 which breaks the main checkout for everyone.
+
+## 10. Wave 2 (2026-10-17 evening): accounts, wallet, risk sizing
+
+Contracts: `contracts/accounts/models.py`, `contracts/risk/models.py` (+ fixtures).
+
+Extra live-money rules for this wave:
+- Never submit any Hyperliquid `/exchange` action, approveAgent included. Mock it.
+  The real approval only ever happens when Julien clicks in the UI.
+- Never read, print or copy the VALUES of `HYPERLIQUID_*PRIVATE_KEY` from
+  `.env.local`. Addresses are public; keys are not.
+- Never write the live `.agent-config.json` or a vault in the live state dir.
+  Every test and dev server uses `PATHIEL_STATE_DIR="$(mktemp -d)"` and
+  `PATHIEL_AGENT_CONFIG_FILE` pointing into that temp dir.
+- Test keys are generated fresh (`eth_account.Account.create()`), never real.
+
+Ownership, wave 2:
+
+| agent | owns |
+|---|---|
+| risk | `services/risk/**`, `pathiel/agents/{executor,sizing,risk_gates,config_store,config,book_params}.py`, `scripts/config_preset.py`, their tests |
+| accounts | `services/accounts/**`, `pathiel/client/exchange.py`, `pathiel/client/hl_client.py`, `scripts/preflight_secrets.py`, their tests |
+| auth | `services/auth/**` (session from a verified account, local mode, retire the separate sign-in) |
+| wallet-ui | `services/wallet_ui/**`, `pathiel/static/wallet.js`, `pathiel/static/wallet.css` |
+| onboarding | `pathiel/templates/**`, `pathiel/static/{pathiel.js,pathiel.css,app.css}`, `pathiel/dashboard.py`, `tests/browser/**`, `tests/test_dashboard*.py` |
+
+`pathiel/server.py` is integrator-only this wave: expose an APIRouter and say
+in your report what to mount.
+
+Shared UI hooks (wallet-ui provides, onboarding consumes):
+- The bundle mounts in `<div id="wallet-connect-root">` (keep it in every masthead).
+- `window.PathielWallet.open(view)` with view in `"choose" | "connect" | "apikey" | "watch"`.
+- `document` receives a `pathiel:account-changed` CustomEvent after any connect,
+  switch or removal; `detail` is the new SessionInfo.
