@@ -427,11 +427,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "market_get_mids",
-        "description": "Get all current mid prices for all assets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
         "name": "close_position",
         "description": "Close a position for a specific coin.",
         "inputSchema": {
@@ -443,13 +438,8 @@ TOOLS = [
         },
     },
     {
-        "name": "get_portfolio",
-        "description": "Get current positions and portfolio state.",
-        "inputSchema": {"type": "object", "properties": {}},
-    },
-    {
         "name": "get_price",
-        "description": "Get current mid price for a coin.",
+        "description": "Get current mid price for a coin. Also answers get_coin_price.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -459,7 +449,8 @@ TOOLS = [
     },
     {
         "name": "get_candles",
-        "description": "Get candles for a coin and interval.",
+        "description": "Candles for a coin and interval, lookback by count. Also answers "
+                       "get_candles_aggregated. For an explicit time window see get_price_history.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -483,11 +474,15 @@ TOOLS = [
     },
     {
         "name": "get_open_orders",
-        "description": "Get open orders for the account.",
+        "description": ("Open orders (frontend shape: trigger type, tp/sl), optionally "
+                        "filtered by coin. Also answers get_frontend_open_orders, get_user_orders."),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "coin": {"type": "string", "description": "Filter by coin (optional)"}
+                "coin": {"type": "string", "description": "Filter by coin (optional)"},
+                "user": {"type": "string",
+                        "description": "Account address (optional; defaults to this deployment's)"},
+                "limit": {"type": "number", "description": "Max orders to return (default 100)"}
             }
         }
     },
@@ -510,7 +505,7 @@ TOOLS = [
     },
     {
         "name": "get_user_fees",
-        "description": "Get user fee tiers and rates.",
+        "description": "Get user fee tiers and rates. Also answers get_user_fees_detailed.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
@@ -520,10 +515,13 @@ TOOLS = [
     },
     {
         "name": "get_trade_history",
-        "description": "Get user trade history.",
+        "description": ("This account's fills, newest last (HL has no public trade tape). "
+                        "Also answers get_user_fills, get_recent_trades."),
         "inputSchema": {"type": "object", "properties": {
             "coin": {"type": "string", "description": "Filter by coin (optional)"},
-            "limit": {"type": "number", "description": "Max trades to return (default 100)"}
+            "limit": {"type": "number", "description": "Max trades to return (default 100)"},
+            "user": {"type": "string",
+                    "description": "Account address (optional; defaults to this deployment's)"}
         }}
     },
     {
@@ -553,27 +551,21 @@ TOOLS = [
     },
     {
         "name": "get_l2_book",
-        "description": "Get L2 order book for a coin.",
+        "description": "L2 order book for a coin. Also answers get_market_depth.",
         "inputSchema": {"type": "object", "properties": {
             "coin": {"type": "string", "description": "Coin ticker (e.g. BTC)"}
         }, "required": ["coin"]}
     },
     {
         "name": "get_user_state",
-        "description": "Get full frontend user state (positions, balances, etc.).",
+        "description": "Full raw frontend clearinghouse state (main dex only). For a "
+                       "normalized cross-dex view use get_asset_positions / get_account_summary.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_user_twist",
         "description": "Get user staking (twist) information.",
         "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_frontend_open_orders",
-        "description": "Get open orders (frontend format).",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Filter by coin (optional)"}
-        }}
     },
     {
         "name": "get_withdrawals",
@@ -598,12 +590,19 @@ TOOLS = [
     },
     {
         "name": "get_predicted_funding",
-        "description": "Get predicted funding rates for all assets.",
-        "inputSchema": {"type": "object", "properties": {}}
+        "description": ("Predicted next funding per venue for one coin, or every main-dex coin "
+                        "when omitted. HIP-3 coins (xyz:, vntl:, km:, ...) have no cross-venue "
+                        "prediction on HL; this falls back to their current hourly rate, "
+                        "clearly labeled as such."),
+        "inputSchema": {"type": "object", "properties": {
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
     },
     {
         "name": "get_asset_context",
-        "description": "Funding, open interest, mark and day volume for one coin, or every coin when omitted.",
+        "description": ("Funding, open interest, mark and day volume for one coin (HIP-3-aware: "
+                        "xyz:CL, vntl:NVDA, ... route to their own dex), or every main-dex coin "
+                        "when omitted. Also answers get_market_stats."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -618,15 +617,6 @@ TOOLS = [
         "name": "get_user_defined_types",
         "description": "Get user-defined perpetual types.",
         "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_candles_aggregated",
-        "description": "Get aggregated candle data across timeframes.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"},
-            "interval": {"type": "string", "description": "Interval (1m, 5m, 15m, 1h, 4h, 1d)"},
-            "count": {"type": "number", "description": "Number of candles (default 100)"}
-        }, "required": ["coin"]}
     },
     {
         "name": "get_price_history",
@@ -657,53 +647,13 @@ TOOLS = [
         }
     },
     {
-        "name": "get_order_status",
-        "description": "Status of one order by order ID.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "user": {
-                    "type": "string",
-                    "description": "Account address (optional; defaults to this deployment's)"
-                },
-                "oid": {
-                    "type": "number",
-                    "description": "Order ID"
-                }
-            },
-            "required": [
-                "oid"
-            ]
-        }
-    },
-    {
-        "name": "get_user_orders",
-        "description": "Open orders with trigger and TP/SL fields.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "user": {
-                    "type": "string",
-                    "description": "Account address (optional; defaults to this deployment's)"
-                },
-                "limit": {
-                    "type": "number",
-                    "description": "Max entries to return (default 100)"
-                }
-            }
-        }
-    },
-    {
         "name": "get_assets",
-        "description": "Get list of all tradeable assets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_market_stats",
-        "description": "Get market statistics for a coin.",
+        "description": ("Every tradeable perp (main dex) with size decimals and max leverage. "
+                        "Also answers get_markets_info, get_perp_markets, get_asset_contexts."),
         "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
+            "fields": {"type": "array", "items": {"type": "string"},
+                      "description": "Return only these keys per asset (optional, trims payload)"}
+        }}
     },
     {
         "name": "get_deposits",
@@ -728,7 +678,8 @@ TOOLS = [
     },
     {
         "name": "get_transfers",
-        "description": "This account's internal, spot, sub-account and vault transfers.",
+        "description": "This account's internal, spot, sub-account and vault transfers. "
+                       "Also answers get_transfer_history.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -763,13 +714,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_leverage",
-        "description": "Get current leverage for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
-    },
-    {
         "name": "get_max_trade_size",
         "description": "Max notional this account can open on a coin, bounded by margin and checked against the book.",
         "inputSchema": {
@@ -795,13 +739,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_coin_price",
-        "description": "Get current price for a specific coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
-    },
-    {
         "name": "get_coin_info",
         "description": "Get detailed info for a specific coin.",
         "inputSchema": {"type": "object", "properties": {
@@ -810,12 +747,12 @@ TOOLS = [
     },
     {
         "name": "get_all_mids",
-        "description": "Get all mid prices (alias for market_get_mids).",
+        "description": "All current mid prices, including HIP-3 (xyz:, vntl:, km:, ...). Also answers market_get_mids.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_order_by_oid",
-        "description": "Order status by order ID.",
+        "description": "Order status by order ID. Also answers get_order_status.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -826,17 +763,16 @@ TOOLS = [
                 "oid": {
                     "type": "number",
                     "description": "Order ID"
+                },
+                "orderId": {
+                    "type": "number",
+                    "description": "Alias of oid"
                 }
             },
             "required": [
                 "oid"
             ]
         }
-    },
-    {
-        "name": "get_user_fees_detailed",
-        "description": "Get detailed fee structure.",
-        "inputSchema": {"type": "object", "properties": {}}
     },
     {
         "name": "get_trading_permissions",
@@ -858,7 +794,8 @@ TOOLS = [
     },
     {
         "name": "get_asset_positions",
-        "description": "Open positions across main dex and HIP-3; pass coin to filter.",
+        "description": "Open positions across main dex and HIP-3; pass coin to filter. "
+                       "Also answers get_portfolio.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -881,28 +818,12 @@ TOOLS = [
         }, "required": ["coin"]}
     },
     {
-        "name": "get_recent_trades",
-        "description": "This account's most recent fills on a coin (HL has no public trade feed).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "coin": {
-                    "type": "string",
-                    "description": "Coin ticker (optional filter)"
-                },
-                "limit": {
-                    "type": "number",
-                    "description": "Max entries to return (default 50)"
-                }
-            }
-        }
-    },
-    {
         "name": "get_funding_rate",
-        "description": "Get current funding rate for a coin.",
+        "description": "Current hourly funding for one coin, or the whole board sorted by "
+                       "it when omitted.",
         "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
     },
     {
         "name": "get_portfolio_pnl",
@@ -931,30 +852,14 @@ TOOLS = [
         }
     },
     {
-        "name": "get_markets_info",
-        "description": "Get detailed info for all markets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
         "name": "get_spot_markets",
         "description": "Get all spot markets.",
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_perp_markets",
-        "description": "Get all perpetual markets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
-        "name": "get_market_depth",
-        "description": "Get market depth (order book) for a coin.",
-        "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
-    },
-    {
         "name": "get_historical_funding",
-        "description": "Funding this ACCOUNT paid or received (not the venue rate; see get_funding_history).",
+        "description": ("Funding this ACCOUNT paid or received (not the venue rate; see "
+                        "get_funding_history). Also answers get_user_funding_history."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -965,6 +870,10 @@ TOOLS = [
                 "startTime": {
                     "type": "number",
                     "description": "Start time, unix ms (default: all history)"
+                },
+                "endTime": {
+                    "type": "number",
+                    "description": "End time, unix ms (optional)"
                 },
                 "limit": {
                     "type": "number",
@@ -979,10 +888,10 @@ TOOLS = [
     },
     {
         "name": "get_open_interest",
-        "description": "Get open interest for a coin.",
+        "description": "Open interest for a coin (HIP-3-aware), or the top 100 by OI when omitted.",
         "inputSchema": {"type": "object", "properties": {
-            "coin": {"type": "string", "description": "Coin ticker"}
-        }, "required": ["coin"]}
+            "coin": {"type": "string", "description": "Coin ticker (optional)"}
+        }}
     },
     {
         "name": "get_vault_details",
@@ -1011,11 +920,6 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
-        "name": "get_asset_contexts",
-        "description": "Get contexts for all assets.",
-        "inputSchema": {"type": "object", "properties": {}}
-    },
-    {
         "name": "get_user_orders_history",
         "description": "Get user's order history with filtering.",
         "inputSchema": {"type": "object", "properties": {
@@ -1024,35 +928,8 @@ TOOLS = [
     },
     {
         "name": "get_price_impact",
-        "description": "Walk the live L2 book for a trade and report avg fill, worst price, slippage and unfilled size.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "coin": {
-                    "type": "string",
-                    "description": "Coin ticker"
-                },
-                "size": {
-                    "type": "number",
-                    "description": "Trade size in COIN units"
-                },
-                "notionalUsd": {
-                    "type": "number",
-                    "description": "Trade size in USD (overrides size)"
-                },
-                "is_buy": {
-                    "type": "boolean",
-                    "description": "True to buy (default), False to sell"
-                }
-            },
-            "required": [
-                "coin"
-            ]
-        }
-    },
-    {
-        "name": "get_slippage_estimate",
-        "description": "Alias of get_price_impact.",
+        "description": "Walk the live L2 book for a trade and report avg fill, worst price, "
+                       "slippage and unfilled size. Also answers get_slippage_estimate.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1087,27 +964,6 @@ TOOLS = [
                 "withdrawal_id": {
                     "type": "string",
                     "description": "Withdrawal tx hash (optional)"
-                },
-                "user": {
-                    "type": "string",
-                    "description": "Account address (optional; defaults to this deployment's)"
-                }
-            }
-        }
-    },
-    {
-        "name": "get_transfer_history",
-        "description": "Alias of get_transfers.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "startTime": {
-                    "type": "number",
-                    "description": "Start time, unix ms (default: all history)"
-                },
-                "limit": {
-                    "type": "number",
-                    "description": "Max entries to return (default 100)"
                 },
                 "user": {
                     "type": "string",
@@ -1164,29 +1020,15 @@ TOOLS = [
     },
     {
         "name": "get_max_leverage",
-        "description": "Get maximum allowed leverage for a coin.",
+        "description": "Maximum allowed leverage for a coin (HIP-3-aware: xyz:CL, vntl:NVDA, "
+                       "... route to their own dex). Also answers get_leverage.",
         "inputSchema": {"type": "object", "properties": {
             "coin": {"type": "string", "description": "Coin ticker"}
         }, "required": ["coin"]}
     },
     {
-        "name": "get_user_fills",
-        "description": "Get recent fills for the configured user (most recent first).",
-        "inputSchema": {"type": "object", "properties": {
-            "limit": {"type": "number", "description": "Max fills to return (default 100)"}
-        }}
-    },
-    {
         "name": "get_user_fills_by_time",
         "description": "Get user fills within a time window (unix ms).",
-        "inputSchema": {"type": "object", "properties": {
-            "start_time": {"type": "number", "description": "Start time (unix ms)"},
-            "end_time": {"type": "number", "description": "End time (unix ms, optional)"}
-        }, "required": ["start_time"]}
-    },
-    {
-        "name": "get_user_funding_history",
-        "description": "Get user's funding-payment history within a time window.",
         "inputSchema": {"type": "object", "properties": {
             "start_time": {"type": "number", "description": "Start time (unix ms)"},
             "end_time": {"type": "number", "description": "End time (unix ms, optional)"}
@@ -1216,6 +1058,103 @@ TOOLS = [
                 "cloid"
             ]
         }
+    },
+    # ── desk tools (services.strategies facade; desk-core owns the service) ──
+    {
+        "name": "desk_list",
+        "description": "Every desk's one-line card: tagline, primary coin, mid, 1d return, "
+                       "latest call and track record. Start here before desk_brief.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "desk_brief",
+        "description": "Full brief for one desk: spec, analytics, intel and latest thesis. "
+                       "mode=quick renders a short markdown summary; mode=full returns the "
+                       "raw structured payload.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "mode": {"type": "string", "enum": ["quick", "full"], "default": "quick"},
+            },
+            "required": ["desk"],
+        },
+    },
+    {
+        "name": "desk_refresh",
+        "description": "Kick off (or reuse) a desk's data+thesis refresh. Returns a job you "
+                       "can poll; the pipeline skips the LLM step unless the market moved, "
+                       "a high-relevance headline arrived, the thesis expired, or force=true.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "force": {"type": "boolean", "default": False,
+                         "description": "Rewrite the thesis even if nothing material changed"},
+            },
+            "required": ["desk"],
+        },
+    },
+    {
+        "name": "desk_submit_call",
+        "description": "Record your own trade call on a desk (author=user), journaled "
+                       "alongside the machine's theses for track-record comparison.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+                "call": {
+                    "type": "object",
+                    "description": "The trade in one shot.",
+                    "properties": {
+                        "side": {"type": "string", "enum": ["long", "short", "flat", "pair"]},
+                        "instrument": {"type": "string",
+                                      "description": "Coin, or pair label when side=pair"},
+                        "one_liner": {"type": "string", "description": "The whole trade, <=160 chars"},
+                        "entry_px": {"type": "number"},
+                        "entry_zone": {"type": "array", "items": {"type": "number"},
+                                      "description": "[lo, hi]"},
+                        "stop_px": {"type": "number"},
+                        "targets": {"type": "array", "items": {"type": "number"}},
+                        "leverage": {"type": "number"},
+                        "confidence": {"type": "number", "description": "0-1"},
+                        "invalidation": {"type": "string",
+                                        "description": "The observable that kills the idea"},
+                    },
+                    "required": ["side", "instrument", "one_liner", "confidence", "invalidation"],
+                },
+                "scenarios": {
+                    "type": "array",
+                    "description": "Optional probability-weighted outcome scenarios, must sum to 1",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "probability": {"type": "number"},
+                            "move_lo_pct": {"type": "number"},
+                            "move_hi_pct": {"type": "number"},
+                            "description": {"type": "string"},
+                            "triggers": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["name", "probability", "move_lo_pct", "move_hi_pct", "description"],
+                    },
+                },
+                "notes": {"type": "string"},
+            },
+            "required": ["desk", "call"],
+        },
+    },
+    {
+        "name": "desk_track_record",
+        "description": "Graded-thesis track record for one desk: hit rate, mean Brier, mean "
+                       "return, split machine vs user calls.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "desk": {"type": "string", "description": "Desk id, e.g. \"oil\""},
+            },
+            "required": ["desk"],
+        },
     },
 ]
 
@@ -1698,9 +1637,6 @@ def handle_market_list_instruments(params: Dict[str, Any]) -> str:
     return json.dumps(market_list_instruments())
 
 
-def handle_market_get_mids(params: Dict[str, Any]) -> str:
-    return json.dumps(market_get_mids())
-
 
 def _tool_handlers() -> Dict[str, Any]:
     """tool name -> handler. Built on first use because the handlers are
@@ -1711,18 +1647,13 @@ def _tool_handlers() -> Dict[str, Any]:
     tool_handlers = {
         "get_assets": handle_get_assets,
         "get_user_defined_types": handle_get_user_defined_types,
-        "get_market_stats": handle_get_market_stats,
         "get_funding_rate": handle_get_funding_rate,
         "get_historical_funding": handle_get_historical_funding,
         "get_trade_history": handle_get_trade_history,
-        "get_recent_trades": handle_get_recent_trades,
-        "get_user_orders": handle_get_user_orders,
         "get_user_orders_history": handle_get_user_orders_history,
-        "get_order_status": handle_get_order_status,
         "get_deposits": handle_get_deposits,
         "get_withdrawals": handle_get_withdrawals,
         "get_transfers": handle_get_transfers,
-        "get_transfer_history": handle_get_transfer_history,
         "get_withdrawal_status": handle_get_withdrawal_status,
         "get_staking_info": handle_get_staking_info,
         "get_user_twist": handle_get_user_twist,
@@ -1734,14 +1665,11 @@ def _tool_handlers() -> Dict[str, Any]:
         "get_validator_info": handle_get_validator_info,
         "get_network_stats": handle_get_network_stats,
         "get_price_impact": handle_get_price_impact,
-        "get_slippage_estimate": handle_get_slippage_estimate,
         "get_max_trade_size": handle_get_max_trade_size,
         "get_vault_details": handle_get_vault_details,
         "get_funding_history": handle_get_funding_history,
         "get_predicted_funding": handle_get_predicted_funding,
         "get_asset_context": handle_get_asset_context,
-        "get_coin_price": handle_get_coin_price,
-        "get_leverage": handle_get_leverage,
         "get_open_interest": handle_get_open_interest,
         "scan": handle_scan,
         "research": handle_research,
@@ -1759,9 +1687,7 @@ def _tool_handlers() -> Dict[str, Any]:
         "market_get_asset_data": handle_market_get_asset_data,
         "market_get_funding_regime": handle_market_get_funding_regime,
         "market_list_instruments": handle_market_list_instruments,
-        "market_get_mids": handle_market_get_mids,
         "close_position": handle_close_position,
-        "get_portfolio": handle_get_portfolio,
         "get_price": handle_get_price,
         "get_candles": handle_get_candles,
         "set_leverage": handle_set_leverage,
@@ -1772,8 +1698,6 @@ def _tool_handlers() -> Dict[str, Any]:
         "get_referral": handle_get_referral,
         "get_l2_book": handle_get_l2_book,
         "get_user_state": handle_get_user_state,
-        "get_frontend_open_orders": handle_get_frontend_open_orders,
-        "get_candles_aggregated": handle_get_candles_aggregated,
         "get_price_history": handle_get_price_history,
         "get_coin_info": handle_get_coin_info,
         "get_all_mids": handle_get_all_mids,
@@ -1782,30 +1706,60 @@ def _tool_handlers() -> Dict[str, Any]:
         "get_24h_stats": handle_get_24h_stats,
         "get_portfolio_pnl": handle_get_portfolio_pnl,
         "get_risk_metrics": handle_get_risk_metrics,
-        "get_markets_info": handle_get_markets_info,
         "get_spot_markets": handle_get_spot_markets,
-        "get_perp_markets": handle_get_perp_markets,
-        "get_market_depth": handle_get_market_depth,
         "get_server_time": handle_get_server_time,
-        "get_asset_contexts": handle_get_asset_contexts,
         "get_liquidation_price": handle_get_liquidation_price,
         "get_max_leverage": handle_get_max_leverage,
         "get_order_by_oid": handle_get_order_by_oid,
-        "get_user_fees_detailed": handle_get_user_fees_detailed,
-        "get_user_fills": handle_get_user_fills,
         "get_user_fills_by_time": handle_get_user_fills_by_time,
-        "get_user_funding_history": handle_get_user_funding_history,
         "get_historical_orders": handle_get_historical_orders,
         "query_order_by_cloid": handle_query_order_by_cloid,
+        "desk_list": handle_desk_list,
+        "desk_brief": handle_desk_brief,
+        "desk_refresh": handle_desk_refresh,
+        "desk_submit_call": handle_desk_submit_call,
+        "desk_track_record": handle_desk_track_record,
     }
 
     for _name in _STUB_TOOL_NAMES:
         tool_handlers[_name] = _make_stub_handler(_name)
+
+    # Hidden aliases: old tool names from before the 2026-10-17 consolidation,
+    # dispatched to the handler that now covers them but no longer listed in
+    # TOOLS (tools/list). Every existing client that calls one of these by
+    # name keeps working; new discovery (tools/list) only sees the lean set.
+    # A name on the right MUST be a key already in tool_handlers above.
+    for _alias, _canonical in ALIASES.items():
+        tool_handlers[_alias] = tool_handlers[_canonical]
+
     _TOOL_HANDLERS = tool_handlers
     return tool_handlers
 
 
 _TOOL_HANDLERS: "Dict[str, Any] | None" = None
+
+# old tool name -> canonical tool name. See the comment in _tool_handlers().
+ALIASES: Dict[str, str] = {
+    "get_coin_price": "get_price",
+    "market_get_mids": "get_all_mids",
+    "get_markets_info": "get_assets",
+    "get_perp_markets": "get_assets",
+    "get_asset_contexts": "get_assets",
+    "get_market_stats": "get_asset_context",
+    "get_market_depth": "get_l2_book",
+    "get_candles_aggregated": "get_candles",
+    "get_user_fees_detailed": "get_user_fees",
+    "get_user_fills": "get_trade_history",
+    "get_recent_trades": "get_trade_history",
+    "get_user_funding_history": "get_historical_funding",
+    "get_order_status": "get_order_by_oid",
+    "get_portfolio": "get_asset_positions",
+    "get_frontend_open_orders": "get_open_orders",
+    "get_user_orders": "get_open_orders",
+    "get_slippage_estimate": "get_price_impact",
+    "get_transfer_history": "get_transfers",
+    "get_leverage": "get_max_leverage",
+}
 
 # Protocol versions this server speaks. The tools surface is identical across
 # them, so a client asking for any of these gets its own version echoed back;
@@ -1932,13 +1886,6 @@ def run() -> None:
             _send(response)
 
 
-def handle_get_portfolio(params: Dict[str, Any]) -> str:
-    """Handle get_portfolio tool call."""
-    from pathiel.client.hl_client import fetch_account_state
-    user = resolve_user_address()
-    state = fetch_account_state(user, include_hip3=True)
-    return json.dumps(state.get('asset_positions', []), indent=2, default=str)
-
 def handle_get_price(params: Dict[str, Any]) -> str:
     """Handle get_price tool call."""
     from pathiel.client.exchange import get_hl_price
@@ -1953,7 +1900,7 @@ def handle_get_candles(params: Dict[str, Any]) -> str:
     interval = params.get('interval', '1h')
     count = params.get('count', 100)
     candles = fetch_hl_candles(coin, interval, count)
-    return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
+    return json.dumps([c.model_dump() for c in candles], default=str)
 
 def handle_close_position(params: Dict[str, Any]) -> str:
     """Handle close_position tool call."""
@@ -1980,15 +1927,25 @@ def handle_set_leverage(params: Dict[str, Any]) -> str:
     return json.dumps(result, default=str)
 
 def handle_get_open_orders(params: Dict[str, Any]) -> str:
-    """Handle get_open_orders tool call."""
-    from pathiel.client.hl_client import fetch_account_state
-    user = resolve_user_address()
-    state = fetch_account_state(user)
-    orders = state.get('open_orders', [])
+    """Open orders (frontend shape: trigger type, tp/sl). Also answers
+    get_frontend_open_orders, get_user_orders.
+
+    FIXED 2026-10-17: this read fetch_account_state(user)['open_orders'], a
+    key that function never returns (it has no such field), so every call
+    silently answered [] regardless of real open orders — a silent lie, not
+    an error. The real data is frontendOpenOrders, which get_frontend_open_orders
+    and get_user_orders already called correctly; this now does the same.
+    """
+    user = _user(params)
     coin_filter = _norm_coin(params.get('coin', ''))
-    if coin_filter:
-        orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin_filter]
-    return json.dumps(orders, indent=2, default=str)
+    try:
+        orders = _info("frontendOpenOrders", user=user) or []
+        if coin_filter:
+            orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin_filter]
+        return json.dumps({"count": len(orders), "orders": orders[:_limit(params, 100)]},
+                          default=str)
+    except Exception as e:
+        return json.dumps({'error': str(e)}, default=str)
 
 def handle_cancel_order(params: Dict[str, Any]) -> str:
     """Handle cancel_order tool call."""
@@ -2010,7 +1967,7 @@ def handle_get_spot_balances(params: Dict[str, Any]) -> str:
     try:
         info = _limited_info()
         spot_state = info.spot_user_state(user)
-        return json.dumps(spot_state.get('balances', []), indent=2, default=str)
+        return json.dumps(spot_state.get('balances', []), default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2020,7 +1977,7 @@ def handle_get_user_fees(params: Dict[str, Any]) -> str:
     try:
         info = _limited_info()
         fees = info.user_fees(user)
-        return json.dumps(fees, indent=2, default=str)
+        return json.dumps({"fees": fees}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2032,7 +1989,7 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
         # `info.referral` does not exist on the SDK's Info class; the real
         # method is query_referral_state. This handler raised on every call.
         referral = info.query_referral_state(user)
-        return json.dumps(referral, indent=2, default=str)
+        return json.dumps(referral, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2045,20 +2002,19 @@ def handle_get_referral(params: Dict[str, Any]) -> str:
 # against what hl_client and exchange already expose.
 
 
-def handle_get_coin_price(params: Dict[str, Any]) -> str:
-    """Mid price for one coin."""
-    from pathiel.client.exchange import get_hl_price
-    coin = _norm_coin(params.get("coin", "BTC"))
-    try:
-        return json.dumps({"coin": coin, "price": get_hl_price(coin)}, default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, default=str)
+def handle_get_max_leverage(params: Dict[str, Any]) -> str:
+    """The venue's max leverage for a coin (HIP-3-aware: xyz:CL, vntl:NVDA, ...
+    route to their own dex's meta). Also answers get_leverage.
 
+    FIXED 2026-10-17: this used to re-scan info.meta()["universe"] (main dex
+    only) by hand and answer "not found" for every HIP-3 coin. Delegates to
+    pathiel.client.exchange.get_max_leverage, which already resolves the
+    dex from the coin's namespace prefix, caches per-dex, and refuses to
+    silently return a wrong/missing value as 1x.
 
-def handle_get_leverage(params: Dict[str, Any]) -> str:
-    """The venue's max leverage for a coin. Coin maxes differ (BTC 40x, BOME 3x),
-    and sizing that assumes a global ceiling silently over-levers the small
-    ones."""
+    Coin maxes differ (BTC 40x, BOME 3x), and sizing that assumes a global
+    ceiling silently over-levers the small ones.
+    """
     from pathiel.client.exchange import get_max_leverage
     coin = _norm_coin(params.get("coin", "BTC"))
     try:
@@ -2082,28 +2038,90 @@ def handle_get_funding_history(params: Dict[str, Any]) -> str:
         return json.dumps({"error": str(e)}, default=str)
 
 
-def _asset_contexts() -> Dict[str, Dict[str, Any]]:
+def _coin_dex(coin: str) -> str:
+    """The HIP-3 perpDex name for a namespaced coin ("xyz:CL" -> "xyz"), or ""
+    for a bare main-dex coin ("BTC" -> "")."""
+    return coin.split(":", 1)[0] if ":" in coin else ""
+
+
+def _asset_contexts(dex: str = "") -> Dict[str, Dict[str, Any]]:
     """coin -> its asset context (funding, open interest, mark, day volume).
 
-    One `metaAndAssetCtxs` POST. The response is a two-element array whose
-    halves are positionally aligned — universe[i] describes ctxs[i] — so they
-    are zipped rather than indexed independently.
+    One `metaAndAssetCtxs` POST, optionally scoped to a HIP-3 perpDex via
+    `dex` (e.g. "xyz"). The response is a two-element array whose halves are
+    positionally aligned — universe[i] describes ctxs[i] — so they are
+    zipped rather than indexed independently.
+
+    HIP-3: verified live against /info on 2026-10-17 that a dex-scoped
+    metaAndAssetCtxs already returns dex-prefixed names ("xyz:CL", not
+    "CL") -- unlike clearinghouseState, which returns bare names for a
+    dex-scoped position. No renaming needed here; the bug this fixes was
+    simply never passing `dex` at all, so a HIP-3 coin was never in the
+    (main-dex-only) map to begin with.
     """
-    raw = _info("metaAndAssetCtxs")
+    raw = _info("metaAndAssetCtxs", **({"dex": dex} if dex else {}))
     if not isinstance(raw, list) or len(raw) != 2:
         # Raise, not {}: an empty map makes every caller answer
         # "unknown coin: BTC" for what was a 429 or a timeout.
-        raise RuntimeError("metaAndAssetCtxs unavailable (rate limit or timeout); retry")
+        raise RuntimeError(
+            f"metaAndAssetCtxs unavailable for dex={dex!r} (rate limit or timeout); retry")
     universe = (raw[0] or {}).get("universe") or []
     ctxs = raw[1] or []
     return {a.get("name"): c for a, c in zip(universe, ctxs) if a.get("name")}
 
 
+def _mid_price(coin: str) -> float:
+    """Current mid for one coin, routed to its HIP-3 dex when namespaced.
+
+    `allMids` with no `dex` only covers the main perp universe — verified
+    live 2026-10-17 that a HIP-3 coin like "xyz:CL" is simply absent from
+    it. This is the same fix as pathiel.client.exchange.get_hl_price,
+    applied through this server's own rate-limited `_info` instead of a
+    second SDK Info instance.
+    """
+    mids = _info("allMids", **({"dex": _coin_dex(coin)} if ":" in coin else {})) or {}
+    try:
+        return float(mids.get(coin) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _hip3_predicted_funding(coin: str) -> "Dict[str, Any] | None":
+    """Best-available predicted-funding substitute for a HIP-3 coin.
+
+    HL's `predictedFundings` has no cross-venue data for HIP-3 perpDexs —
+    there is no other venue to compare against, these are HL-only synthetic
+    markets — and verified live 2026-10-17 that it ignores a `dex` param
+    entirely (identical main-universe rows come back regardless). Returns
+    the dex's own current hourly funding as a single HlPerp-shaped venue
+    entry, explicitly labeled as current rather than predicted so a caller
+    can't mistake it for the real thing.
+    """
+    dex = _coin_dex(coin)
+    if not dex:
+        return None
+    try:
+        ctx = _asset_contexts(dex)
+    except Exception:
+        return None
+    rate = (ctx.get(coin) or {}).get("funding")
+    if rate is None:
+        return None
+    return {
+        "coin": coin,
+        "venues": [["HlPerp", {"fundingRate": str(rate), "fundingIntervalHours": 1}]],
+        "source": "hip3_current_funding",
+        "note": "HIP-3 perpDexs have no predictedFundings coverage on HL; this is "
+                "the current hourly funding rate, not a forward prediction.",
+    }
+
+
 def handle_get_asset_context(params: Dict[str, Any]) -> str:
-    """Funding, open interest, mark and day volume for one coin, or all."""
+    """Funding, open interest, mark and day volume for one coin, or all.
+    Also answers get_market_stats."""
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        ctx = _asset_contexts()
+        ctx = _asset_contexts(_coin_dex(coin))
         if coin:
             if coin not in ctx:
                 return json.dumps({"error": f"unknown coin: {coin}"})
@@ -2114,11 +2132,12 @@ def handle_get_asset_context(params: Dict[str, Any]) -> str:
 
 
 def handle_get_open_interest(params: Dict[str, Any]) -> str:
-    """Open interest, from the same asset contexts. Sorted so the crowded names
-    are at the top rather than buried in an alphabetical list."""
+    """Open interest, from the same asset contexts (HIP-3-aware). Sorted so
+    the crowded names are at the top rather than buried in an alphabetical
+    list."""
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        ctx = _asset_contexts()
+        ctx = _asset_contexts(_coin_dex(coin))
         if coin:
             if coin not in ctx:
                 return json.dumps({"error": f"unknown coin: {coin}"})
@@ -2138,7 +2157,8 @@ def handle_get_open_interest(params: Dict[str, Any]) -> str:
 
 
 def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
-    """Predicted next funding per venue, straight from /info."""
+    """Predicted next funding per venue, straight from /info. Falls back to
+    the current hourly rate for HIP-3 coins, which HL does not predict."""
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
         raw = _info("predictedFundings") or []
@@ -2146,6 +2166,9 @@ def handle_get_predicted_funding(params: Dict[str, Any]) -> str:
             for entry in raw:
                 if isinstance(entry, list) and entry and entry[0] == coin:
                     return json.dumps({"coin": coin, "venues": entry[1]}, default=str)
+            hip3 = _hip3_predicted_funding(coin)
+            if hip3 is not None:
+                return json.dumps(hip3, default=str)
             return json.dumps({"error": f"no predicted funding for {coin}"})
         return json.dumps({"count": len(raw), "rows": raw}, default=str)
     except Exception as e:
@@ -2305,10 +2328,17 @@ def _walk_book(coin: str, usd: float, is_buy: bool) -> Dict[str, Any]:
 
 
 def handle_get_assets(params: Dict[str, Any]) -> str:
-    """Every tradeable perp with its size decimals and max leverage."""
+    """Every tradeable perp (main dex) with its size decimals and max
+    leverage. Also answers get_markets_info, get_perp_markets,
+    get_asset_contexts. HIP-3 coins aren't in this bulk listing (an extra
+    HTTP call per dex); look one up with get_asset_context/get_max_leverage."""
     try:
         meta = _info("meta") or {}
         uni = meta.get("universe") or []
+        fields = params.get("fields")
+        if isinstance(fields, list) and fields:
+            keep = [str(f) for f in fields]
+            uni = [{k: a.get(k) for k in keep} for a in uni]
         return json.dumps({"count": len(uni), "assets": uni}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
@@ -2323,23 +2353,12 @@ def handle_get_user_defined_types(params: Dict[str, Any]) -> str:
         return json.dumps({"error": str(e)}, default=str)
 
 
-def handle_get_market_stats(params: Dict[str, Any]) -> str:
-    """Mark, oracle, day volume, open interest and funding for one coin."""
-    coin = _norm_coin(params.get("coin", "BTC"))
-    try:
-        ctx = _asset_contexts()
-        if coin not in ctx:
-            return json.dumps({"error": f"unknown coin: {coin}"})
-        return json.dumps({"coin": coin, **ctx[coin]}, default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, default=str)
-
-
 def handle_get_funding_rate(params: Dict[str, Any]) -> str:
-    """Current hourly funding for one coin, or the whole board sorted by it."""
+    """Current hourly funding for one coin (HIP-3-aware), or the whole
+    main-dex board sorted by it when omitted."""
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        ctx = _asset_contexts()
+        ctx = _asset_contexts(_coin_dex(coin))
         if coin:
             if coin not in ctx:
                 return json.dumps({"error": f"unknown coin: {coin}"})
@@ -2359,10 +2378,16 @@ def handle_get_funding_rate(params: Dict[str, Any]) -> str:
 
 def handle_get_historical_funding(params: Dict[str, Any]) -> str:
     """Funding this ACCOUNT actually paid or received. Distinct from
-    get_funding_history, which is the venue rate for a coin."""
+    get_funding_history, which is the venue rate for a coin. Also answers
+    get_user_funding_history."""
     try:
-        start = int(params.get("startTime") or 0)
-        rows = _info("userFunding", user=_user(params), startTime=start) or []
+        start = int(params.get("startTime") if params.get("startTime") is not None
+                    else params.get("start_time") or 0)
+        end = params.get("endTime") if params.get("endTime") is not None else params.get("end_time")
+        kw: Dict[str, Any] = {"user": _user(params), "startTime": start}
+        if end is not None:
+            kw["endTime"] = int(end)
+        rows = _info("userFunding", **kw) or []
         coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
         if coin:
             rows = [r for r in rows
@@ -2374,42 +2399,19 @@ def handle_get_historical_funding(params: Dict[str, Any]) -> str:
 
 
 def handle_get_trade_history(params: Dict[str, Any]) -> str:
-    """This account's fills, newest last."""
+    """This account's fills, newest last (HL has no public trade tape). Also
+    answers get_user_fills, get_recent_trades.
+
+    FIXED 2026-10-17: called `_user()` with no params, so a `user` override
+    was silently ignored even once advertised.
+    """
     coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
     try:
-        rows = _info("userFills", user=_user()) or []
+        rows = _info("userFills", user=_user(params)) or []
         if coin:
             rows = [r for r in rows if r.get("coin") == coin]
         return json.dumps({"coin": coin or "all", "count": len(rows),
                            "fills": rows[-_limit(params, 100):]}, default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, default=str)
-
-
-def handle_get_recent_trades(params: Dict[str, Any]) -> str:
-    """This account's most recent fills on a coin.
-
-    Named `recent_trades`, which on most venues means the public tape.
-    Hyperliquid's /info exposes no public trade feed, so this is scoped to the
-    account and says so rather than returning something that looks like the tape.
-    """
-    coin = _norm_coin(params.get("coin", "")) if params.get("coin") else ""
-    try:
-        rows = _info("userFills", user=_user()) or []
-        if coin:
-            rows = [r for r in rows if r.get("coin") == coin]
-        return json.dumps({"scope": "this account only — HL /info has no public trade feed",
-                           "coin": coin or "all", "count": len(rows),
-                           "fills": rows[-_limit(params, 50):]}, default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, default=str)
-
-
-def handle_get_user_orders(params: Dict[str, Any]) -> str:
-    """Open orders, with the frontend's extra fields (trigger type, tp/sl)."""
-    try:
-        rows = _info("frontendOpenOrders", user=_user(params)) or []
-        return json.dumps({"count": len(rows), "orders": rows[:_limit(params, 100)]}, default=str)
     except Exception as e:
         return json.dumps({"error": str(e)}, default=str)
 
@@ -2440,17 +2442,6 @@ def handle_get_user_orders_history(params: Dict[str, Any]) -> str:
         return json.dumps({"error": str(e)}, default=str)
 
 
-def handle_get_order_status(params: Dict[str, Any]) -> str:
-    """Status of one order by oid."""
-    oid = params.get("oid") or params.get("orderId")
-    if oid is None:
-        return json.dumps({"error": "oid is required"})
-    try:
-        return json.dumps(_info("orderStatus", user=_user(params), oid=int(oid)), default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, default=str)
-
-
 def handle_get_deposits(params: Dict[str, Any]) -> str:
     return _ledger(("deposit",), params)
 
@@ -2464,10 +2455,6 @@ def handle_get_transfers(params: Dict[str, Any]) -> str:
                     "subAccountTransfer", "vaultTransfer"), params)
 
 
-def handle_get_transfer_history(params: Dict[str, Any]) -> str:
-    """Same ledger as get_transfers. Kept because both names are advertised and
-    silently returning different data for synonyms is worse than duplication."""
-    return handle_get_transfers(params)
 
 
 def handle_get_withdrawal_status(params: Dict[str, Any]) -> str:
@@ -2585,7 +2572,8 @@ def handle_get_network_stats(params: Dict[str, Any]) -> str:
 
 
 def handle_get_price_impact(params: Dict[str, Any]) -> str:
-    """What a given notional actually costs against the current book."""
+    """What a given notional actually costs against the current book
+    (HIP-3-aware). Also answers get_slippage_estimate."""
     coin = _norm_coin(params.get("coin", "BTC"))
     try:
         is_buy = _is_buy(params)
@@ -2595,7 +2583,10 @@ def handle_get_price_impact(params: Dict[str, Any]) -> str:
             # `size` is in COIN units, as the schema says. It used to be read
             # as USD, so 0.5 BTC was priced as a $0.50 order: zero impact on
             # every request, on exactly the tool meant to warn about impact.
-            mid = float(_info("allMids").get(coin) or 0)
+            # And bare allMids() misses HIP-3 coins entirely (_mid_price
+            # routes to the coin's own dex), so a HIP-3 size conversion used
+            # to always answer "no mid for xyz:CL".
+            mid = _mid_price(coin)
             if mid <= 0:
                 return json.dumps({"error": f"no mid for {coin}; cannot convert size to notional"})
             usd = float(params["size"]) * mid
@@ -2617,11 +2608,6 @@ def _is_buy(params: Dict[str, Any]) -> bool:
         v = params["is_buy"]
         return v if isinstance(v, bool) else str(v).strip().lower() in ("1", "true", "yes", "buy")
     return str(params.get("side", "buy")).lower() not in ("sell", "short")
-
-
-def handle_get_slippage_estimate(params: Dict[str, Any]) -> str:
-    """Same book walk as get_price_impact, reported as slippage."""
-    return handle_get_price_impact(params)
 
 
 def handle_get_max_trade_size(params: Dict[str, Any]) -> str:
@@ -2669,13 +2655,13 @@ def handle_get_vault_details(params: Dict[str, Any]) -> str:
 
 
 def handle_get_l2_book(params: Dict[str, Any]) -> str:
-    """Handle get_l2_book tool call."""
+    """L2 order book for a coin. Also answers get_market_depth."""
     coin = _norm_coin(params.get('coin', 'BTC'))
     try:
         info = _limited_info()
         # L2 book snapshot
         book = info.l2_snapshot(coin)
-        return json.dumps(book, indent=2, default=str)
+        return json.dumps(book, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2690,36 +2676,10 @@ def handle_get_user_state(params: Dict[str, Any]) -> str:
         # failure. `user_state` is the real method and returns the same
         # clearinghouse state the rest of this repo reads.
         state = info.user_state(user)
-        return json.dumps(state, indent=2, default=str)
+        return json.dumps(state, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-
-def handle_get_frontend_open_orders(params: Dict[str, Any]) -> str:
-    """Handle get_frontend_open_orders tool call."""
-    user = resolve_user_address()
-    coin = _norm_coin(params.get('coin', ''))
-    try:
-        info = _limited_info()
-        orders = info.frontend_open_orders(user)
-        if coin:
-            orders = [o for o in orders if _norm_coin(o.get('coin', '')) == coin]
-        return json.dumps(orders, indent=2, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_candles_aggregated(params: Dict[str, Any]) -> str:
-    """Handle get_candles_aggregated tool call."""
-    from pathiel.client.hl_client import fetch_hl_candles
-    coin = _norm_coin(params.get('coin', 'BTC'))
-    interval = params.get('interval', '1h')
-    count = params.get('count', 100)
-    try:
-        candles = fetch_hl_candles(coin, interval, count)
-        return json.dumps([c.model_dump() for c in candles], indent=2, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
 
 # The real stdout, captured by run() before it redirects sys.stdout to stderr.
 # None outside run() (tests, imports), where sys.stdout is used as-is.
@@ -2826,7 +2786,8 @@ def _research_brain():
 
 
 def handle_get_price_history(params: Dict[str, Any]) -> str:
-    """Candles over [start_time, end_time] (unix seconds or ms), default the last 100 hours."""
+    """Candles over [start_time, end_time] (unix seconds or ms), default the
+    last 100 hours. For a lookback-by-count view see get_candles."""
     coin = _norm_coin(params.get('coin', 'BTC'))
     interval = str(params.get('interval') or '1h')
     try:
@@ -2837,10 +2798,24 @@ def handle_get_price_history(params: Dict[str, Any]) -> str:
         start = _ms(params["start_time"]) if params.get("start_time") else end - 100 * 3_600_000
         if start >= end:
             return json.dumps({'error': 'start_time must be before end_time'})
-        rows = _info("candleSnapshot", req={"coin": coin, "interval": interval,
-                                            "startTime": start, "endTime": end})
-        if not isinstance(rows, list):
+        raw = _info("candleSnapshot", req={"coin": coin, "interval": interval,
+                                           "startTime": start, "endTime": end})
+        if not isinstance(raw, list):
             return json.dumps({'error': f'no candles for {coin}'})
+
+        def _f(v: Any) -> "float | None":
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
+        # Trim the venue's raw candle (t,T,s,i,o,c,h,l,v,n) down to the same
+        # lean {t,o,h,l,c,v} shape get_candles already uses: T/s/i are
+        # redundant with the request, and dropping them plus the string ->
+        # float conversion materially shrinks a multi-hundred-row response.
+        rows = [{"t": r.get("t"), "o": _f(r.get("o")), "h": _f(r.get("h")),
+                "l": _f(r.get("l")), "c": _f(r.get("c")), "v": _f(r.get("v"))}
+               for r in raw]
         return json.dumps({'coin': coin, 'interval': interval, 'start': start, 'end': end,
                            'count': len(rows), 'candles': rows}, default=str)
     except Exception as e:
@@ -2858,11 +2833,16 @@ def handle_get_coin_info(params: Dict[str, Any]) -> str:
         return json.dumps({'error': str(e)}, default=str)
 
 def handle_get_all_mids(params: Dict[str, Any]) -> str:
-    """Handle get_all_mids tool call."""
+    """All current mid prices, including HIP-3 (xyz:, vntl:, km:, ...). Also
+    answers market_get_mids.
+
+    FIXED 2026-10-17: used to call the SDK's bare info.all_mids() (main dex
+    only), so every HIP-3 coin was simply missing. Delegates to hyperfeed's
+    market_get_mids(), which already merges allMids(dex=...) per registered
+    HIP-3 dex.
+    """
     try:
-        info = _limited_info()
-        mids = info.all_mids()
-        return json.dumps({'mids': mids}, default=str)
+        return json.dumps({'mids': market_get_mids()}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -2998,16 +2978,6 @@ def handle_get_risk_metrics(params: Dict[str, Any]) -> str:
         return json.dumps({'error': str(e)}, default=str)
 
 
-def handle_get_markets_info(params: Dict[str, Any]) -> str:
-    """Handle get_markets_info tool call."""
-    try:
-        info = _limited_info()
-        meta = info.meta()
-        return json.dumps({'markets': meta}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
 def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     """Handle get_spot_markets tool call."""
     try:
@@ -3017,40 +2987,12 @@ def handle_get_spot_markets(params: Dict[str, Any]) -> str:
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
-def handle_get_perp_markets(params: Dict[str, Any]) -> str:
-    """Handle get_perp_markets tool call."""
-    try:
-        info = _limited_info()
-        meta = info.meta()
-        return json.dumps({'perp_markets': meta}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_market_depth(params: Dict[str, Any]) -> str:
-    """Handle get_market_depth tool call."""
-    coin = _norm_coin(params.get('coin', ''))
-    try:
-        info = _limited_info()
-        l2 = info.l2_snapshot(coin)
-        return json.dumps({'coin': coin, 'depth': l2}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
 
 def handle_get_server_time(params: Dict[str, Any]) -> str:
     """Handle get_server_time tool call."""
     try:
         import time
         return json.dumps({'server_time': int(time.time() * 1000)}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-def handle_get_asset_contexts(params: Dict[str, Any]) -> str:
-    """Handle get_asset_contexts tool call."""
-    try:
-        info = _limited_info()
-        meta = info.meta()
-        return json.dumps({'contexts': meta}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -3091,12 +3033,16 @@ def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
         if leverage > max_lev:
             return json.dumps({"error": f"leverage {leverage:g}x exceeds {coin} max {max_lev:g}x",
                                "coin": coin})
-        entry = _fnum(params.get("entry_px")) or _fnum((_info("allMids") or {}).get(coin))
+        # _mid_price (not a bare allMids lookup) routes a HIP-3 coin to its
+        # own dex -- bare allMids() has no HIP-3 coverage at all, which is
+        # exactly why this previously failed for every xyz:/vntl:/km: coin
+        # unless the caller supplied entry_px by hand.
+        entry = _fnum(params.get("entry_px")) or _mid_price(coin)
         if entry <= 0:
             return json.dumps({"error": f"no price for {coin}", "coin": coin})
         side = 1.0 if is_long else -1.0
         mmr = 1.0 / (2.0 * max_lev)
-        liq = entry - side * (entry / leverage - mmr * entry) / (1.0 - mmr * side)
+        liq = round(entry - side * (entry / leverage - mmr * entry) / (1.0 - mmr * side), 6)
         return json.dumps({'coin': coin, 'source': 'estimate', 'size': params.get('size'),
                            'leverage': leverage, 'is_long': bool(is_long), 'entry_px': entry,
                            'maintenance_margin_rate': mmr,
@@ -3108,26 +3054,11 @@ def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
         return json.dumps({'error': str(e)}, default=str)
 
 
-def handle_get_max_leverage(params: Dict[str, Any]) -> str:
-    """Handle get_max_leverage tool call."""
-    coin = _norm_coin(params.get('coin', ''))
-    try:
-        info = _limited_info()
-        meta = info.meta()
-        universe = meta.get('universe', []) if isinstance(meta, dict) else []
-        for asset in universe:
-            if _norm_coin(asset.get('name', '')) == coin:
-                return json.dumps({'coin': coin, 'max_leverage': asset.get('maxLeverage')},
-                                  default=str)
-        return json.dumps({'coin': coin, 'max_leverage': None, 'note': 'not found'},
-                          default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
 def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
-    """Handle get_order_by_oid tool call."""
+    """Order status by order ID. Also answers get_order_status."""
     oid = params.get('oid')
+    if oid is None:
+        oid = params.get('orderId')
     if oid is None:
         return json.dumps({'error': 'oid is required'})
     user = _user(params)
@@ -3138,35 +3069,6 @@ def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
         # user went to HL as "" and came back as a 422 deserialization error.
         res = _info("orderStatus", user=user, oid=int(oid))
         return json.dumps({'order': res, 'user': user}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_user_fees_detailed(params: Dict[str, Any]) -> str:
-    """Handle get_user_fees_detailed tool call."""
-    try:
-        from pathiel.client.exchange import HL_ACCOUNT
-        info = _limited_info()
-        if HL_ACCOUNT:
-            res = info.user_fees(HL_ACCOUNT)
-            return json.dumps({'fees': res}, default=str)
-        return json.dumps({'fees': {}, 'note': 'no address or SDK method pending'}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_user_fills(params: Dict[str, Any]) -> str:
-    """Handle get_user_fills tool call."""
-    limit = int(params.get('limit', 100))
-    try:
-        from pathiel.client.exchange import HL_ACCOUNT
-        info = _limited_info()
-        if not HL_ACCOUNT:
-            return json.dumps({'error': 'no configured user address'}, default=str)
-        fills = info.user_fills(HL_ACCOUNT)
-        if isinstance(fills, list):
-            fills = fills[:limit]
-        return json.dumps({'fills': fills, 'count': len(fills) if isinstance(fills, list) else 0}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
 
@@ -3185,25 +3087,6 @@ def handle_get_user_fills_by_time(params: Dict[str, Any]) -> str:
         else:
             fills = info.user_fills_by_time(HL_ACCOUNT, start_time)
         return json.dumps({'fills': fills, 'count': len(fills) if isinstance(fills, list) else 0,
-                           'start_time': start_time, 'end_time': end_time}, default=str)
-    except Exception as e:
-        return json.dumps({'error': str(e)}, default=str)
-
-
-def handle_get_user_funding_history(params: Dict[str, Any]) -> str:
-    """Handle get_user_funding_history tool call."""
-    start_time = int(params.get('start_time', 0))
-    end_time = params.get('end_time')
-    try:
-        from pathiel.client.exchange import HL_ACCOUNT
-        info = _limited_info()
-        if not HL_ACCOUNT:
-            return json.dumps({'error': 'no configured user address'}, default=str)
-        if end_time is not None:
-            hist = info.user_funding_history(HL_ACCOUNT, start_time, int(end_time))
-        else:
-            hist = info.user_funding_history(HL_ACCOUNT, start_time)
-        return json.dumps({'funding': hist, 'count': len(hist) if isinstance(hist, list) else 0,
                            'start_time': start_time, 'end_time': end_time}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
@@ -3238,6 +3121,173 @@ def handle_query_order_by_cloid(params: Dict[str, Any]) -> str:
         return json.dumps({'order': res, 'cloid': cloid, 'user': addr}, default=str)
     except Exception as e:
         return json.dumps({'error': str(e)}, default=str)
+
+
+# ── desk tools ────────────────────────────────────────────────────────────
+# Client of services.strategies.facade (owned by the desk-core agent, built
+# in parallel; it does not exist in this worktree). Every number an agent
+# sees here was computed by that service's DeskAnalytics/IntelPacket — this
+# file only renders what the facade returns, per the contract in
+# contracts/strategies/models.py. Tested against a fake facade.
+
+
+def _strategies_facade():
+    """Import services.strategies.facade lazily so a missing desk-core
+    service degrades every desk_* tool to a clear error instead of an
+    import-time crash of the whole MCP server. desk-core is a separate,
+    parallel-owned service that may not exist yet in every worktree/deploy
+    (it does not exist in this one)."""
+    try:
+        import services.strategies.facade as facade
+    except Exception as e:
+        raise RuntimeError(
+            f"services.strategies facade unavailable ({type(e).__name__}: {e}). "
+            "desk-core has not shipped this service in this environment yet."
+        ) from e
+    return facade
+
+
+def _render_quick_fallback(thesis: Any, analytics: Any, mode: str) -> str:
+    """Minimal markdown used only when services.thesis.api.render_markdown is
+    not importable (that service is owned by a different agent/worktree).
+
+    Mirrors the real renderer's contract (contracts/strategies/models.py):
+    every number comes from `analytics`/`thesis` as computed upstream, never
+    invented here.
+    """
+    lines: List[str] = []
+    if analytics is not None:
+        lines.append(f"as of {analytics.as_of.isoformat()}")
+        for inst in analytics.instruments:
+            lines.append(
+                f"- {inst.label} ({inst.coin}): {inst.mid:g}  "
+                f"1d {inst.ret_1d:+.2%}  5d {inst.ret_5d:+.2%}"
+            )
+    if thesis is None:
+        lines.append("")
+        lines.append("_no thesis yet -- call desk_refresh_")
+        return "\n".join(lines)
+    c = thesis.call
+    lines.append("")
+    lines.append(f"**{c.side.upper()} {c.instrument}** (confidence {c.confidence:.0%})")
+    lines.append(c.one_liner)
+    if c.entry_px is not None:
+        lines.append(f"entry {c.entry_px:g}")
+    if c.stop_px is not None:
+        lines.append(f"stop {c.stop_px:g}")
+    if c.targets:
+        lines.append(f"targets {', '.join(f'{t:g}' for t in c.targets)}")
+    lines.append(f"invalidation: {c.invalidation}")
+    if mode == "full":
+        for b in thesis.bull:
+            lines.append(f"+ {b.text}")
+        for b in thesis.bear:
+            lines.append(f"- {b.text}")
+        for lv in thesis.leverage_view:
+            lines.append(f"{lv.leverage:g}x: {lv.verdict} -- {lv.reason}")
+    return "\n".join(lines)
+
+
+def _render_quick(thesis: Any, analytics: Any, mode: str) -> str:
+    """services.thesis.api.render_markdown when importable, else the
+    fallback above. Only an import failure falls back -- an exception
+    raised BY the real renderer propagates, so a real bug there surfaces as
+    an error instead of being masked by the fallback."""
+    try:
+        from services.thesis.api import render_markdown
+    except Exception:
+        return _render_quick_fallback(thesis, analytics, mode)
+    return render_markdown(thesis, analytics, mode)
+
+
+def handle_desk_list(params: Dict[str, Any]) -> str:
+    """Every desk's one-line card. Start here before desk_brief."""
+    try:
+        facade = _strategies_facade()
+        cards = facade.list_cards()
+        return json.dumps({"count": len(cards),
+                           "desks": [c.model_dump(mode="json") for c in cards]})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+def handle_desk_brief(params: Dict[str, Any]) -> str:
+    """Full brief for one desk. mode=quick renders short markdown (the call
+    first); mode=full returns the raw structured payload (details on
+    demand)."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    mode = str(params.get("mode") or "quick").lower()
+    if mode not in ("quick", "full"):
+        return json.dumps({"error": f"mode must be quick or full, got {mode!r}", "desk": desk_id})
+    try:
+        facade = _strategies_facade()
+        brief = facade.get_brief(desk_id)
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+    if mode == "full":
+        return json.dumps({"desk": desk_id, "mode": "full",
+                           "brief": brief.model_dump(mode="json")})
+    try:
+        markdown = _render_quick(brief.thesis, brief.analytics, mode)
+    except Exception as e:
+        return json.dumps({"error": f"render failed: {type(e).__name__}: {e}", "desk": desk_id})
+    return json.dumps({"desk": desk_id, "mode": "quick", "markdown": markdown,
+                       "stale": brief.stale})
+
+
+def handle_desk_refresh(params: Dict[str, Any]) -> str:
+    """Kick off (or reuse) a desk's data+thesis refresh."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    force = bool(params.get("force", False))
+    try:
+        facade = _strategies_facade()
+        job = facade.refresh(desk_id, force=force)
+        return json.dumps({"desk": desk_id, "job": job.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def handle_desk_submit_call(params: Dict[str, Any]) -> str:
+    """Record a user trade call on a desk, journaled alongside the
+    machine's theses."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    call = params.get("call")
+    if not isinstance(call, dict):
+        return json.dumps({"error": "call object is required", "desk": desk_id})
+    try:
+        from contracts.strategies.models import UserThesisIn
+        body = UserThesisIn.model_validate({
+            "call": call,
+            "scenarios": params.get("scenarios") or [],
+            "notes": params.get("notes"),
+        })
+    except Exception as e:
+        return json.dumps({"error": f"invalid call: {e}", "desk": desk_id})
+    try:
+        facade = _strategies_facade()
+        thesis = facade.submit_user_thesis(desk_id, body)
+        return json.dumps({"desk": desk_id, "thesis": thesis.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
+
+
+def handle_desk_track_record(params: Dict[str, Any]) -> str:
+    """Graded-thesis track record for one desk."""
+    desk_id = str(params.get("desk") or "").strip()
+    if not desk_id:
+        return json.dumps({"error": "desk is required"})
+    try:
+        facade = _strategies_facade()
+        tr = facade.track_record(desk_id)
+        return json.dumps({"desk": desk_id, "track_record": tr.model_dump(mode="json")})
+    except Exception as e:
+        return json.dumps({"error": str(e), "desk": desk_id})
 
 
 if __name__ == "__main__":
