@@ -243,6 +243,7 @@ def check_scenarios_non_overlapping(scenarios: List[Scenario]) -> List[str]:
 
 def check_scenario_numbers(
     scenarios: List[Scenario], spec: DeskSpec, analytics: DeskAnalytics,
+    pool: Optional[set] = None,
 ) -> List[str]:
     """Every number in a scenario's description/triggers must be consistent
     with that scenario's OWN move_lo_pct/move_hi_pct bucket - a derived
@@ -257,6 +258,14 @@ def check_scenario_numbers(
     integer, a day-window size, or a calendar year (same universal
     allowances as the general grounding check) - a day-of-month inside a
     spelled-out trigger should not force a repair round.
+
+    A number quoted near-exactly from the data (``pool``, the ground-truth
+    pool the general grounding rule uses, at a much tighter tolerance) passes:
+    it is a fact from the payload, not a scenario target. Live 2026-10-17: Polymarket odds (0.97),
+    Brent's price (107.06) and a 20-day distance (7.01%) inside scenario text
+    tripped this rule on every oil draft and forced a paid repair round each
+    time. The rule exists to catch INVENTED scenario prices, which by
+    definition are not in the pool.
     """
     primary = desk_lookup.primary_instrument(spec, analytics)
     mid = primary.mid if primary is not None and primary.mid else None
@@ -276,6 +285,11 @@ def check_scenario_numbers(
 
         text = " ".join([s.description, *s.triggers])
         for value, is_pct in extract_numbers_with_flags(text):
+            # Near-exact quotes only (0.2% / 0.005): the general rule's 1.5%
+            # tolerance over a pool of hundreds of values would wave through
+            # almost any number, which is exactly what this rule must catch.
+            if pool is not None and _is_grounded(value, pool, rel=0.002, abs_tol=0.005):
+                continue
             if is_pct:
                 if not (pct_low <= value <= pct_high):
                     errors.append(
@@ -489,7 +503,8 @@ def _run_all_rules(
     errors += check_scenario_count(scenarios)
     errors += check_scenarios_sum_to_one(scenarios)
     errors += check_scenarios_non_overlapping(scenarios)
-    errors += check_scenario_numbers(scenarios, spec, analytics)
+    errors += check_scenario_numbers(scenarios, spec, analytics,
+                                     pool=build_ground_truth_pool(analytics, intel))
     errors += check_one_liner_length(call)
     errors += check_stop_side(call)
     errors += check_instrument_known(call, analytics)
