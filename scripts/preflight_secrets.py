@@ -42,6 +42,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import stat
 import subprocess
@@ -49,7 +50,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
@@ -191,9 +192,54 @@ def _emit(findings: List[Finding], secret_values: Sequence[str],
 
 # ── checks ────────────────────────────────────────────────────────────────────
 
+# HYPERLIQUID_WALLET_ADDRESS / HYPERLIQUID_PRIVATE_KEY / HYPERLIQUID_MASTER_ADDRESS:
+# a fully-migrated-to-the-accounts-vault setup can legitimately have none of
+# these in .env.local at all — services/accounts/credentials.py resolves the
+# trading identity from the registry/vault instead. Without this, preflight
+# would FAIL a correctly configured box the moment an operator finished
+# migrating, which is exactly backwards: the vault is the safer setup (the
+# main key never touches this repo at all), not an unverified one.
+_VAULT_SATISFIABLE_VARS = frozenset(
+    {"HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_ADDRESS"})
+
+
+def _vault_active_trade_account(env: Mapping[str, str]) -> Optional[Dict[str, Any]]:
+    """The services/accounts registry's active account, ONLY when its mode
+    is "trade" — None otherwise, including when PATHIEL_STATE_DIR is unset
+    (nothing to look at) or the file is missing/malformed (fails safe: a
+    vault preflight can't verify falls through to the ordinary env checks,
+    never the reverse).
+
+    Reads ONLY the plain-JSON registry (services/accounts/env.py's
+    registry_path(), same file services.accounts.registry writes) —
+    addresses, ids, labels. NEVER the vault's encrypted key files: this
+    script must never touch key material, per
+    docs/overhaul/SWARM_RULES.md section 10 ("never read the VALUES of
+    private keys").
+    """
+    state_dir = (env.get("PATHIEL_STATE_DIR") or "").strip()
+    if not state_dir:
+        return None
+    path = Path(state_dir) / "accounts" / "accounts.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    active_id = data.get("active_id")
+    for account in data.get("accounts", []) or []:
+        if isinstance(account, dict) and account.get("id") == active_id and account.get("mode") == "trade":
+            return account
+    return None
+
+
 def check_required_present(env: Mapping[str, str]) -> List[Finding]:
     findings: List[Finding] = []
     provider = _effective_ai_brain_provider(env)
+    vault_account = _vault_active_trade_account(env)
     for spec in REGISTRY:
         applies = spec.required == "always" or (spec.required == "openrouter" and provider == "openrouter")
         if not applies:
@@ -201,6 +247,12 @@ def check_required_present(env: Mapping[str, str]) -> List[Finding]:
         val = (env.get(spec.name) or "").strip()
         if val:
             findings.append(Finding("required_present", "PASS", spec.name, "present and non-empty"))
+        elif vault_account is not None and spec.name in _VAULT_SATISFIABLE_VARS:
+            findings.append(Finding(
+                "required_present", "PASS", spec.name,
+                f"not set in .env.local, but satisfied by the connected accounts "
+                f"vault (active account {vault_account.get('label', '?')!r}, "
+                f"source={vault_account.get('source', '?')})"))
         else:
             reason = "required" if spec.required == "always" else \
                 "required because AI_BRAIN_PROVIDER resolves to 'openrouter'"
@@ -226,7 +278,36 @@ def check_master_not_agent(env: Mapping[str, str]) -> List[Finding]:
     """The highest-value check: the trading key must be an agent/API wallet,
     never the master. Mirrors pathiel/client/exchange.py's own
     IS_AGENT computation, but preflight treats an unproven relationship as a
-    failure rather than a silent single-wallet fallback."""
+    failure rather than a silent single-wallet fallback.
+
+    Vault-aware: a connected accounts-vault trade account gets the SAME
+    scrutiny as the legacy env vars, using its own (public) main_address /
+    agent_address pair instead. Its agent_address is always server-generated
+    and distinct from main_address by construction (services.accounts.registry
+    never stores a row where they match), so the only way this reports FAIL
+    for a vault account is a corrupt registry file — which is exactly the
+    case worth failing loudly on.
+    """
+    vault_account = _vault_active_trade_account(env)
+    if vault_account is not None:
+        name = "accounts vault: active trade account"
+        agent = (vault_account.get("agent_address") or "").strip()
+        main = (vault_account.get("main_address") or "").strip()
+        label = vault_account.get("label", "?")
+        if not agent:
+            return [Finding("agent_not_master", "WARN", name,
+                             f"active vault account {label!r} has mode=trade but no "
+                             f"agent_address on record — cannot confirm it trades through "
+                             f"a distinct agent wallet")]
+        if agent.lower() == main.lower():
+            return [Finding("agent_not_master", "FAIL", name,
+                             f"active vault account {label!r} has agent_address == "
+                             f"main_address — this should never happen; the account "
+                             f"registry is corrupt")]
+        return [Finding("agent_not_master", "PASS", name,
+                         f"active vault account {label!r} trades through a distinct "
+                         f"agent wallet — cannot withdraw")]
+
     wallet = (env.get("HYPERLIQUID_WALLET_ADDRESS") or "").strip()
     master = (env.get("HYPERLIQUID_MASTER_ADDRESS") or "").strip()
     name = "HYPERLIQUID_WALLET_ADDRESS/HYPERLIQUID_MASTER_ADDRESS"
@@ -264,8 +345,11 @@ def check_master_key_not_deployed(env: Mapping[str, str], deploy_mode: bool) -> 
                          "can withdraw funds and must stay laptop-only for scripts/treasury.py — "
                          "remove it from the deploy secret store immediately and rotate it.")]
     return [Finding("master_key_not_deployed", "WARN", name,
-                     "present locally — fine for scripts/treasury.py, but confirm it is never "
-                     "copied into a Fly/k8s secret store alongside the trading key.")]
+                     "present locally. This key can withdraw funds. An agent key "
+                     "(services/accounts, or HYPERLIQUID_WALLET_ADDRESS + "
+                     "HYPERLIQUID_PRIVATE_KEY) makes it unnecessary for trading — only "
+                     "scripts/treasury.py uses it. Confirm it is never copied into a "
+                     "Fly/k8s secret store alongside the trading key.")]
 
 
 def _env_files_present(repo_root: Path) -> List[Path]:

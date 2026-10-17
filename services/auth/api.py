@@ -22,11 +22,10 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from services.auth import stateless as stateless_auth
+from services.auth import integration, stateless as stateless_auth
 from services.auth import siwe
-from services.auth.deps import (SESSION_COOKIE, cookie_kwargs, get_store,
-                                require_user)
-from services.auth.store import SESSION_TTL_S, User
+from services.auth.deps import SESSION_COOKIE, get_store, require_user
+from services.auth.store import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -148,22 +147,12 @@ def verify(request: Request, response: Response, body: VerifyBody) -> Dict[str, 
     if not nonce_ok:
         raise HTTPException(status_code=401, detail="signature rejected")
 
-    user = store.upsert_user(parsed.address)
-    if user.disabled:
-        raise HTTPException(status_code=403, detail="account disabled")
-
-    # A stored session is a row on a disk this host may not have next request —
-    # /auth/verify returns 200, the cookie is set, and the next /auth/me is 401.
-    # The page prompts again, the user signs again, and it loops. Where the disk
-    # is ephemeral the token carries its own proof instead.
-    if stateless_auth.sessions_enabled():
-        token = stateless_auth.issue_session(user.address)
-        max_age = stateless_auth.STATELESS_SESSION_TTL_S
-    else:
-        token = store.create_session(user.id, user_agent=request.headers.get("user-agent", ""))
-        max_age = SESSION_TTL_S
-    response.set_cookie(SESSION_COOKIE, token, max_age=max_age,
-                        **cookie_kwargs(request))
+    # Session-opening itself (upsert the user, mint or mint-stateless the
+    # token, set the cookie) lives in integration._open_session, shared with
+    # issue_session_for_address — the accounts connect flow's own proof of
+    # ownership (approveAgent / a verified API-key import) must open a session
+    # that cannot drift from this one. See services/auth/integration.py.
+    user, token = integration._open_session(parsed.address, request, response)
     # Returned as well as set, so a CLI that cannot hold cookies can use Bearer.
     return {"user": user.public(), "session_token": token}
 

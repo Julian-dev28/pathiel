@@ -186,7 +186,11 @@ async def _require_session_for_account_data(request: Request, call_next):
     if (path.startswith(_GATED_PREFIXES) and not path.startswith(_OPEN_PREFIXES)
             and not os.environ.get("PATHIEL_PUBLIC_DASHBOARD")):
         from services.auth.deps import current_user
-        if current_user(request) is None:
+        from services.auth.integration import is_local_mode
+        # Local mode (Julien's own machine, loopback peer, no cross-site
+        # Origin, no deployment marker) needs no session: connecting a
+        # Hyperliquid account replaced the separate sign-in step.
+        if not is_local_mode(request) and current_user(request) is None:
             # 401 with a machine-readable marker so the pages can tell "sign in"
             # apart from a genuine failure and show the login prompt instead of
             # an error banner.

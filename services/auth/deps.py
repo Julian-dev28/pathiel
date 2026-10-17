@@ -12,6 +12,12 @@ The legacy `PATHIEL_OPERATOR_TOKEN` still works and is still checked in
 secret: fine for one operator on one box, useless the moment there is more than
 one human, because it cannot say who acted. It is retained for the machine paths
 (the scheduler, the supervisor, smoke checks) and is not a login.
+
+A third audience exists now, with no door at all: `is_loopback_peer` below
+identifies a caller whose request itself arrived from this machine, so
+`services.auth.integration.is_local_mode` can grant it full access with no
+credential checked, ever. `services/auth/README.md` (Local mode) has the
+threat model for why that is safe and the one way it would not be.
 """
 from __future__ import annotations
 
@@ -128,6 +134,46 @@ def _is_local(request: Optional[Request]) -> bool:
         return False
     host = (request.url.hostname or "").lower()
     return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
+def is_loopback_peer(request: Optional[Request]) -> bool:
+    """Did this request's own TCP connection originate from this machine?
+
+    Used for the local-mode auth bypass in `services.auth.integration`,
+    which is a much higher-stakes decision than the cookie flag `_is_local`
+    above exists for — getting this one wrong does not drop a cookie
+    attribute, it skips authentication entirely. The two must never be
+    merged into one function.
+
+    Deliberately reads `request.client`, never `request.url` / the `Host`
+    header, and never `X-Forwarded-For`. All three are text the CALLER wrote
+    and a remote attacker controls completely — see the probe in this
+    service's test suite showing `request.url.hostname` following an
+    attacker-supplied `Host:` header verbatim while `request.client` stays
+    the real transport-layer peer regardless of what headers arrive.
+    `request.client` is set by the ASGI server from the actual socket
+    peername; the only way to make it say "127.0.0.1" is to actually hold a
+    connection from 127.0.0.1.
+
+    This degrades to "not local" (fails CLOSED) when `request.client` is
+    absent, e.g. some non-HTTP ASGI transports. It also fails closed if the
+    app is ever run behind a reverse proxy configured to honour forwarded
+    headers (uvicorn's `--proxy-headers`) — that proxy, not this function,
+    would then own the true peer address, and nothing here is in a position
+    to verify whether it is honest. Nothing in this repo's entrypoints sets
+    that flag as of this writing (see `pathiel/server.py`'s `uvicorn.run`
+    call); if a future deployment adds it, the proxy's trust boundary must
+    be re-audited alongside this function.
+
+    "0.0.0.0" is deliberately not treated as loopback here, unlike the Host
+    allowlist in `_is_local`: that is a bind address, never a real peer
+    address, so accepting it as one would not relax anything an attacker
+    could actually trigger — it would only mask the bug if `request.client`
+    were ever wrongly populated with it.
+    """
+    if request is None or request.client is None:
+        return False
+    return request.client.host in ("127.0.0.1", "::1")
 
 
 def cookie_kwargs(request: Optional[Request] = None) -> dict:
