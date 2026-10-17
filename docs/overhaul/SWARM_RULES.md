@@ -11,7 +11,7 @@ Every agent reads this first. Breaking a rule in section 1 can lose real money.
   `/api/hl/close-position`, `/api/agent/execute`, `/api/agent/start` routes.
 - Never run `scripts/trading_loop.py`, `scheduler.py`, `autonomous_cycle.py`,
   `monitor_loop.py`, `supervise_processes.py`, `restart.sh`, `preflight_live.py`,
-  `funded_dry_run.py`, `treasury.py`, `install_launchd_jobs.py`, `record_capital_flows.py`.
+  `funded_dry_run.py`, `treasury.py`, `record_capital_flows.py`.
 - Never run `pytest -m live`. Never set `PATHIEL_E2E=1`.
 - Never write to the live state dir. Export a throwaway one for every test, script
   or server you start: `export PATHIEL_STATE_DIR="$(mktemp -d)"`.
@@ -82,3 +82,11 @@ No em dashes. No AI filler words (delve, robust, comprehensive, crucial, ...).
 Branch name. Commit hashes. What changed and why, one line each. Tests added
 (unit/e2e/eval counts) and the exact commands to run them. Anything left undone and
 why. "For the integrator" section with required cross-ownership edits.
+
+## 9. Git hygiene (added after an incident)
+
+Any test or script that runs `git` in a temp repo must clear `GIT_DIR`,
+`GIT_WORK_TREE` and `GIT_INDEX_FILE` from its env (see `_git_subprocess_env()` in
+`scripts/preflight_secrets.py`). Inside the pre-commit hook those variables point
+at the shared repo, and a bare `git init` re-initialises it with `core.bare = true`,
+which breaks the main checkout for everyone.
