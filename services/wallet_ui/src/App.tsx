@@ -1,134 +1,94 @@
 /**
- * The connect button, as a React island inside a server-rendered page.
+ * The wallet island, as a React tree inside a server-rendered page.
  *
- * The pathiel dashboard is Jinja templates plus vendored vanilla JS, and stays
- * that way. This mounts into one `<div>` in the masthead and owns exactly one
- * thing: connecting a wallet and proving control of it. Every other panel on
- * every page is untouched vanilla, and talks to this island through the small
- * `window.PathielWallet` bridge in index.tsx.
+ * The pathiel dashboard is Jinja templates plus vendored vanilla JS, and
+ * stays that way. This mounts into one `<div>` in the masthead and owns
+ * exactly one thing: accounts — connecting a wallet, authorizing a trading
+ * key, or adding an API-key / watch-only account. Every other panel on every
+ * page is untouched vanilla, and talks to this island through the small
+ * `window.PathielWallet` bridge in index.tsx and the `pathiel:account-
+ * changed` DOM event (lib/api.ts, lib/bridge.ts).
  *
- * Why RainbowKit rather than the `window.ethereum` call this replaces: with two
- * extensions installed, `window.ethereum` is whichever one won a race at page
- * load. There was no way to choose, and the failure text said "install MetaMask
- * or Rabby" to people who had a wallet installed already. RainbowKit resolves
+ * There is no sign-in step and no RainbowKitAuthenticationProvider here
+ * anymore. contracts/accounts/models.py's own docstring says why: connecting
+ * a Hyperliquid account IS the identity, so there is nothing separate to
+ * authenticate — services/auth now derives the session from the active
+ * account instead of its own SIWE exchange. (The previous version of this
+ * file drove that SIWE flow; see git history / services/auth/siwe.py for
+ * what it replaced.)
+ *
+ * Why RainbowKit's picker rather than a direct `window.ethereum` call: with
+ * two wallet extensions installed, `window.ethereum` is whichever one won a
+ * race at page load — no way to choose, and the failure text told people who
+ * already had a wallet to "install MetaMask or Rabby". RainbowKit resolves
  * wallets over EIP-6963, so each one appears by name and the user picks.
  */
 
-import { useEffect, useState } from 'react';
-import {
-  ConnectButton,
-  RainbowKitProvider,
-  RainbowKitAuthenticationProvider,
-  darkTheme,
-  type AuthenticationStatus,
-} from '@rainbow-me/rainbowkit';
+import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { injected } from '@wagmi/core';
-import { hyperEvm } from 'viem/chains';
+import { arbitrum, arbitrumSepolia, hyperEvm } from 'viem/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
 
-import { buildAdapter, fetchMe, type User } from './auth';
+import { WalletRoot } from './components/WalletRoot';
 
 /**
- * Wallet discovery is wagmi's, not RainbowKit's registry.
+ * Wallet discovery is wagmi's, not RainbowKit's registry — see
+ * services/wallet_ui/README.md for the 4.3 MB mistake this avoids
+ * (`connectorsForWallets` with named wallets from
+ * `@rainbow-me/rainbowkit/wallets` drags in @metamask/sdk and the whole
+ * @reown/@walletconnect relay stack). wagmi's own EIP-6963 discovery builds
+ * one connector per announced wallet and RainbowKit renders whatever the
+ * config has, which is the same picker for 1.3 MB less. No WalletConnect, so
+ * no relay, no project ID, no third party between the user and their signer.
  *
- * The obvious way to build this list is `connectorsForWallets` with named
- * wallets from `@rainbow-me/rainbowkit/wallets`. Do not: that barrel re-exports
- * every wallet RainbowKit supports, and esbuild cannot tree-shake past the
- * dynamic icon imports inside it. Importing two names from it cost 4.3 MB,
- * because it drags in @metamask/sdk and the whole @reown/@walletconnect relay
- * stack whether or not any of it is reachable.
- *
- * wagmi discovers EIP-6963 wallets natively (`multiInjectedProviderDiscovery`,
- * on by default) and builds one connector per wallet that announces itself.
- * RainbowKit renders whatever connectors the config has, so the modal still
- * lists OKX, MetaMask, Rabby, Phantom — each by its own name and icon, supplied
- * by the wallet rather than by a bundled registry.
- *
- * What this gives up is phone wallets over a WalletConnect relay. That is a
- * deliberate loss: it costs a vendor, a project ID and a third party between
- * the user and their signer, on an operator console opened from a desktop.
+ * Three chains, for two different reasons. `hyperEvm` is the chain this
+ * product actually trades on. `arbitrum` / `arbitrumSepolia` are NOT traded
+ * on here — they are what Hyperliquid's own ApproveAgent EIP-712 domain
+ * signs against (contracts/accounts/fixtures/agent_prepare.json:
+ * domain.chainId 42161), independent of which chain the perps run on. Both
+ * have to be in wagmi's `chains` list or `useSwitchChain` has nothing to
+ * switch the wallet to when the stepper asks for one of them.
  */
+const chains = [hyperEvm, arbitrum, arbitrumSepolia] as const;
 
 export function App() {
-  const [status, setStatus] = useState<AuthenticationStatus>('loading');
-  const [, setUser] = useState<User | null>(null);
-
-  // One config per mount. `ssr` is off: this island only ever renders in a
-  // browser, and setting it would suppress the EIP-6963 discovery that is the
-  // entire reason for the change.
-  const [{ wagmiConfig, queryClient }] = useState(() => {
-    return {
-      wagmiConfig: createConfig({
-        chains: [hyperEvm],
-        // The generic fallback, for a browser with exactly one wallet that
-        // predates EIP-6963. Announced wallets are added by wagmi on top.
-        connectors: [injected()],
-        transports: { [hyperEvm.id]: http() },
-      }),
-      queryClient: new QueryClient({
-        defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
-      }),
-    };
-  });
-
-  // The session is a cookie the server set, so the source of truth for "am I
-  // signed in" is /auth/me, not anything wagmi knows.
-  useEffect(() => {
-    let live = true;
-    fetchMe().then((me) => {
-      if (!live) return;
-      setUser(me);
-      setStatus(me ? 'authenticated' : 'unauthenticated');
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const adapter = buildAdapter((me) => {
-    setUser(me);
-    setStatus('authenticated');
-    // Panels that 401'd while signed out have to be refetched, and a reload is
-    // both the honest and the cheapest way to do that in a multi-page app.
-    window.location.reload();
-  });
-
-  const wrapped = {
-    ...adapter,
-    signOut: async () => {
-      await adapter.signOut();
-      setStatus('unauthenticated');
-      setUser(null);
-      window.location.reload();
-    },
-  };
+  // One config/client per mount, not per render. `ssr` is off: this island
+  // only ever renders in a browser, and turning it on would suppress the
+  // EIP-6963 discovery that is the entire reason wagmi owns the wallet list.
+  const [{ wagmiConfig, queryClient }] = useState(() => ({
+    wagmiConfig: createConfig({
+      chains,
+      // The generic fallback, for a browser with exactly one wallet that
+      // predates EIP-6963. Announced wallets are added by wagmi on top.
+      connectors: [injected()],
+      transports: {
+        [hyperEvm.id]: http(),
+        [arbitrum.id]: http(),
+        [arbitrumSepolia.id]: http(),
+      },
+    }),
+    queryClient: new QueryClient({
+      defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+    }),
+  }));
 
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitAuthenticationProvider adapter={wrapped} status={status}>
-          <RainbowKitProvider
-            theme={darkTheme({
-              accentColor: '#4fd1b8',      // --accent, so the modal is ours
-              accentColorForeground: '#06100e',
-              borderRadius: 'small',       // --radius is 3px; RainbowKit's
-                                           // default pill looks foreign here
-              overlayBlur: 'small',
-            })}
-            modalSize="compact"
-            appInfo={{ appName: 'pathiel' }}
-          >
-            <ConnectButton
-              // The masthead is a single narrow row. A balance and a chain
-              // pill would wrap it onto two lines on a laptop.
-              showBalance={false}
-              accountStatus="address"
-              chainStatus="none"
-              label="Connect wallet"
-            />
-          </RainbowKitProvider>
-        </RainbowKitAuthenticationProvider>
+        <RainbowKitProvider
+          theme={darkTheme({
+            accentColor: '#4fd1b8',      // --accent, so the modal is ours
+            accentColorForeground: '#06100e',
+            borderRadius: 'small',       // --radius is 3px; RainbowKit's
+                                         // default pill looks foreign here
+            overlayBlur: 'small',
+          })}
+          appInfo={{ appName: 'pathiel' }}
+        >
+          <WalletRoot />
+        </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
