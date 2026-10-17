@@ -20,7 +20,6 @@ import ast
 import importlib
 import pathlib
 
-import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FIRST_PARTY = ("pathiel", "services")
@@ -67,9 +66,7 @@ def test_every_guarded_first_party_import_resolves():
     # bug this test was written to catch. Scoped to this exact line so any
     # OTHER guarded import (new or old) still fails loudly; remove an entry
     # once its service lands.
-    EXPECTED_MISSING_UNTIL_SWARM_MERGES = {
-        ("scripts/pathiel-mcp-server.py", "services.thesis.api", "render_markdown"),
-    }
+    EXPECTED_MISSING_UNTIL_SWARM_MERGES: set = set()
     broken = []
     for rel, line, module, name in _guarded_imports():
         if (str(rel), module, name) in EXPECTED_MISSING_UNTIL_SWARM_MERGES:
@@ -87,14 +84,12 @@ def test_every_guarded_first_party_import_resolves():
         "indistinguishable from the condition being guarded:\n" + "\n".join(broken))
 
 
-def test_the_services_thesis_allowlist_entry_is_still_needed():
-    """Passes now because services/thesis genuinely doesn't exist in this
-    worktree. Once the thesis agent's parallel worktree merges and that
-    import starts resolving, THIS test starts failing -- no xfail marker
-    needed, that failure IS the reminder to delete the matching entry from
-    EXPECTED_MISSING_UNTIL_SWARM_MERGES above."""
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("services.thesis.api")
+def test_mcp_desk_tools_render_through_the_thesis_service():
+    """The swarm merge landed: the MCP server's guarded import of
+    services.thesis.api.render_markdown must resolve, or desk_brief silently
+    falls back to its minimal renderer."""
+    mod = importlib.import_module("services.thesis.api")
+    assert callable(getattr(mod, "render_markdown", None))
 
 
 def test_the_scan_finds_the_guarded_imports_it_should():

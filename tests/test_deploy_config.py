@@ -182,7 +182,7 @@ def test_scan_found_the_known_services_packages():
 # multi-worktree feature mid-flight. Remove an entry once that service
 # merges and the Dockerfile picks it up (cleanup/integrator territory, not
 # the mcp agent's -- Dockerfile isn't in its ownership either).
-_NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT = {"services.thesis"}
+_NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT: set = set()
 
 
 def test_dockerfile_copies_every_imported_top_level_package():

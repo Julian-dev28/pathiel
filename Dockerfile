@@ -48,6 +48,11 @@ COPY services/strategies/ services/strategies/
 # Zero-LLM news/policy/catalyst/odds/positioning packet services/strategies
 # imports (services.intel.api.build_packet) — same reasoning again.
 COPY services/intel/ services/intel/
+# LLM gateway (local Claude Code CLI only) and the desk thesis writer on top
+# of it. The image has no claude CLI, so in a container write_thesis degrades
+# to the previous thesis or a flat placeholder instead of crashing.
+COPY services/llm/ services/llm/
+COPY services/thesis/ services/thesis/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
