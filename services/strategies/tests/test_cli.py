@@ -55,6 +55,28 @@ def test_cmd_refresh_reports_state(capsys, stub_live_analytics):
     assert out.startswith("oil: ")
 
 
+def test_cmd_refresh_all_runs_every_desk(capsys, stub_live_analytics):
+    stub_live_analytics(lambda spec: minimal_analytics(spec.id, mid=1.0, coin=spec.instruments[0].coin))
+    rc = cli.main(["refresh", "--all"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 6
+    assert {line.split(":")[0] for line in lines} == {"oil", "btc", "top5", "ai", "metals", "indices"}
+
+
+def test_cmd_refresh_all_json_is_a_list(capsys, stub_live_analytics):
+    stub_live_analytics(lambda spec: minimal_analytics(spec.id, mid=1.0, coin=spec.instruments[0].coin))
+    rc = cli.main(["--json", "refresh", "--all"])
+    assert rc == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert len(rows) == 6
+
+
+def test_cmd_refresh_requires_desk_or_all():
+    with pytest.raises(SystemExit):
+        cli.main(["refresh"])
+
+
 def test_cmd_refresh_error_exit_code(capsys, monkeypatch):
     import services.strategies.pipeline as pipeline_mod
 

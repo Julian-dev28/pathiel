@@ -1,6 +1,7 @@
-"""CLI: python -m services.strategies {list,brief <desk>,refresh <desk> [--force],grade}
+"""CLI: python -m services.strategies {list,brief <desk>,refresh <desk|--all> [--force],grade}
 
 Human-readable by default; pass --json (before the subcommand) for raw JSON.
+`refresh --all` is the one-line scheduler hook — see services/strategies/README.md.
 """
 from __future__ import annotations
 
@@ -66,12 +67,14 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 
 def cmd_refresh(args: argparse.Namespace) -> int:
-    job = facade.refresh(args.desk, force=args.force)
+    desk_ids = desks.list_desk_ids() if args.all else [args.desk]
+    jobs = [facade.refresh(desk_id, force=args.force) for desk_id in desk_ids]
     if args.json:
-        _print_json(job)
+        _print_json(jobs if args.all else jobs[0])
     else:
-        print(f"{job.desk_id}: {job.state} - {job.message or ''}")
-    return 0 if job.state != "error" else 1
+        for job in jobs:
+            print(f"{job.desk_id}: {job.state} - {job.message or ''}")
+    return 1 if any(job.state == "error" for job in jobs) else 0
 
 
 def cmd_grade(args: argparse.Namespace) -> int:
@@ -94,13 +97,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_brief = sub.add_parser("brief", help="full brief for one desk")
     p_brief.add_argument("desk")
 
-    p_refresh = sub.add_parser("refresh", help="run the refresh pipeline for one desk")
-    p_refresh.add_argument("desk")
+    p_refresh = sub.add_parser("refresh", help="run the refresh pipeline for one desk, or --all")
+    p_refresh.add_argument("desk", nargs="?", help="desk id; omit when passing --all")
+    p_refresh.add_argument("--all", action="store_true", help="refresh every registered desk")
     p_refresh.add_argument("--force", action="store_true", help="bypass the token gate")
 
     sub.add_parser("grade", help="grade every expired, ungraded thesis")
 
     args = parser.parse_args(argv)
+    if args.command == "refresh" and not args.all and not args.desk:
+        parser.error("refresh needs a desk id or --all")
     handlers = {"list": cmd_list, "brief": cmd_brief, "refresh": cmd_refresh, "grade": cmd_grade}
     return handlers[args.command](args)
 
