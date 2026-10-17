@@ -181,11 +181,15 @@ def build_session_log(
         watched = rng.sample(COINS, 6)
         scores = {c: round(rng.uniform(18, 88), 1) for c in watched}
         triggers = sum(1 for v in scores.values() if v >= 62)
+        # Same shape scripts/trading_loop.py logs: a LIST of per-coin rows.
+        # A dict here crashed /activity's feed renderer (ux-qa, 2026-10-17).
         events.append({
             "event": "scan",
             "ts": ts + 1_000,
             "coins": watched,
-            "coin_scores": scores,
+            "coin_scores": [{"coin": c, "score": v,
+                             "triggers": ["vol_breakout"] if v >= 62 else []}
+                            for c, v in scores.items()],
             "triggers": triggers,
         })
 
@@ -389,6 +393,20 @@ def build_shadow_ledgers(now_ms: int, seed: int = 20260910,
                 "horizon_days": horizon,
                 "side": "short" if "short" in book or "reversal" in book else "long",
             })
+            if book.startswith("news_") and rng.random() < 0.5:
+                # /news renders these. Titles and urls are marked as demo
+                # data so a public demo never passes for real headlines.
+                n_hl = rng.randint(1, 3)
+                recs[-1]["meta"] = {
+                    "surge_x": round(rng.uniform(2.5, 9.0), 1),
+                    "n_recent": rng.randint(3, 40),
+                    "breaking": rng.random() < 0.2,
+                    "top3_titles": [f"[demo] {recs[-1]['coin']} headline {k + 1}"
+                                    for k in range(n_hl)],
+                    "top3_ages_h": [round(rng.uniform(0.1, 12.0), 1) for _ in range(n_hl)],
+                    "top3_urls": [f"https://example.com/demo/{recs[-1]['coin'].lower()}/{k + 1}"
+                                  for k in range(n_hl)],
+                }
         recs.sort(key=lambda r: r["ts"])
         out[book] = recs
     return out
