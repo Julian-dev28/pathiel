@@ -68,6 +68,12 @@ class Account(_M):
 class AgentPrepareIn(_M):
     main_address: Address = Field(pattern=_ADDR)
     label: str = Field(default="Main", max_length=48)
+    # The chain the wallet is on right now. Hyperliquid accepts a user-signed
+    # action from ANY chain (the SDK: "signatureChainId is the chain used by
+    # the wallet to sign and can be any chain"), so signing on the wallet's
+    # current chain means the user never has to switch networks. None means
+    # Arbitrum One (42161), the chain Hyperliquid deposits already use.
+    signature_chain_id: Optional[int] = Field(default=None, ge=1, le=2**53 - 1)
 
 
 class AgentPrepareOut(_M):

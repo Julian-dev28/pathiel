@@ -147,7 +147,9 @@ def prepare_agent(body: AgentPrepareIn, request: Request) -> AgentPrepareOut:
 
     agent_key = EthAccount.create()
     nonce_ms = agent_approval.new_nonce_ms()
-    typed_data = agent_approval.build_typed_data(agent_key.address, nonce_ms, agent_approval.AGENT_NAME)
+    chain_id = body.signature_chain_id or agent_approval.DEFAULT_WALLET_SIGNATURE_CHAIN_ID
+    typed_data = agent_approval.build_typed_data(agent_key.address, nonce_ms, agent_approval.AGENT_NAME,
+                                                 signature_chain_id=chain_id)
     request_id = "req_" + secrets.token_hex(12)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=agent_approval.EXPIRY_MINUTES)
 
@@ -161,6 +163,7 @@ def prepare_agent(body: AgentPrepareIn, request: Request) -> AgentPrepareOut:
         label=body.label,
         typed_data=typed_data,
         expires_at=expires_at,
+        signature_chain_id=chain_id,
     ))
 
     return AgentPrepareOut(request_id=request_id, agent_address=agent_key.address,
@@ -203,7 +206,8 @@ def confirm_agent(body: AgentConfirmIn, request: Request, response: Response) ->
     # (docs/overhaul/SWARM_RULES.md section 10, wave 2 extra rule).
     try:
         agent_approval.submit_approve_agent(pend.agent_address, pend.agent_name,
-                                           pend.nonce_ms, body.signature)
+                                           pend.nonce_ms, body.signature,
+                                           signature_chain_id=pend.signature_chain_id)
     except HLRequestError as e:
         raise HTTPException(status_code=502, detail=f"could not reach Hyperliquid to submit the approval: {e}")
 

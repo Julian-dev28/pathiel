@@ -220,3 +220,34 @@ def test_submit_approve_agent_propagates_network_failure(monkeypatch):
 
     with pytest.raises(HLRequestError):
         aa.submit_approve_agent(Account.create().address, AGENT_NAME, 123, "0x" + "11" * 65)
+
+
+# ── signing on the wallet's own chain (integrator, 2026-10-17) ────────────────
+
+def test_typed_data_uses_the_requested_signing_chain():
+    from services.accounts import agent_approval as aa
+    td = aa.build_typed_data("0x" + "1" * 40, 1, "pathiel", signature_chain_id=42161)
+    assert td["domain"]["chainId"] == 42161
+    assert aa.build_typed_data("0x" + "1" * 40, 1, "pathiel")["domain"]["chainId"] == 0x66EEE
+
+
+def test_submission_carries_the_same_chain_the_wallet_signed(monkeypatch):
+    """Hyperliquid recovers the signer with the action's signatureChainId; it
+    must equal the domain chainId the wallet signed or the approval fails."""
+    from services.accounts import agent_approval as aa
+    sent = {}
+    monkeypatch.setattr(aa, "_http_post_strict", lambda path, payload: sent.update(payload) or {"status": "ok"})
+    aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65, signature_chain_id=42161)
+    assert sent["action"]["signatureChainId"] == "0xa4b1"
+    aa.submit_approve_agent("0x" + "2" * 40, "pathiel", 7, "0x" + "ab" * 65)
+    assert sent["action"]["signatureChainId"] == "0x66eee"
+
+
+def test_a_wallet_signature_on_arbitrum_one_recovers_the_main_address():
+    from eth_account import Account
+    from eth_account.messages import encode_typed_data
+    from services.accounts import agent_approval as aa
+    wallet = Account.create()
+    td = aa.build_typed_data("0x" + "3" * 40, 99, "pathiel", signature_chain_id=42161)
+    sig = Account.sign_message(encode_typed_data(full_message=td), private_key=wallet.key).signature.hex()
+    assert aa.recover_signer(td, "0x" + sig.removeprefix("0x")).lower() == wallet.address.lower()
