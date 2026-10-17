@@ -1,0 +1,196 @@
+{
+  "contract_version": "1.0.0",
+  "desk_id": "oil",
+  "as_of": "2026-10-17T02:10:00Z",
+  "instruments": [
+    {
+      "coin": "xyz:CL",
+      "label": "WTI",
+      "mid": 99.339,
+      "ret_1d": 0.005,
+      "ret_5d": 0.0746,
+      "ret_20d": 0.0652,
+      "ret_60d": 0.1752,
+      "high_20d": 101.19,
+      "low_20d": 86.84,
+      "high_60d": 106.62,
+      "low_60d": 84.0,
+      "atr14_pct": 0.0278,
+      "vol_daily_10d": 0.0124,
+      "vol_daily_20d": 0.0183,
+      "vol_daily_60d": 0.0214,
+      "funding_hourly": 6.25e-6,
+      "open_interest_usd": 154400000.0,
+      "volume_24h_usd": 229640437.0,
+      "max_leverage": 20.0
+    },
+    {
+      "coin": "xyz:BRENTOIL",
+      "label": "Brent",
+      "mid": 107.245,
+      "ret_1d": 0.043,
+      "ret_5d": 0.031,
+      "ret_20d": 0.04,
+      "ret_60d": null,
+      "high_20d": 110.0,
+      "low_20d": 96.5,
+      "high_60d": null,
+      "low_60d": null,
+      "atr14_pct": 0.026,
+      "vol_daily_10d": 0.012,
+      "vol_daily_20d": 0.017,
+      "vol_daily_60d": null,
+      "funding_hourly": -2.5462e-6,
+      "open_interest_usd": 185300000.0,
+      "volume_24h_usd": 218368080.0,
+      "max_leverage": 20.0
+    }
+  ],
+  "pairs": [
+    {
+      "label": "Brent-WTI spread",
+      "long": "xyz:BRENTOIL",
+      "short": "xyz:CL",
+      "spread_now": 7.9,
+      "spread_mean_20d": 9.69,
+      "spread_mean_60d": 6.3,
+      "spread_min_60d": 2.66,
+      "spread_max_60d": 11.58,
+      "pair_vol_daily": 0.0088,
+      "spread_change_7d": {
+        "p10": -2.42,
+        "p25": -1.0,
+        "p50": 0.11,
+        "p75": 1.2,
+        "p90": 2.81
+      }
+    }
+  ],
+  "forward": [
+    {
+      "coin": "xyz:CL",
+      "horizon_days": 7,
+      "n_windows": 278,
+      "sample_start": "2026-01-06T00:00:00Z",
+      "sample_end": "2026-10-10T00:00:00Z",
+      "final_ret": {
+        "p10": -0.0919,
+        "p25": -0.04,
+        "p50": 0.0131,
+        "p75": 0.06,
+        "p90": 0.1059
+      },
+      "final_ret_mean": 0.0158,
+      "long_mae": {
+        "p10": -0.139,
+        "p25": -0.0855,
+        "p50": -0.0415,
+        "p75": -0.015,
+        "p90": -0.005
+      },
+      "short_mae": {
+        "p10": 0.01,
+        "p25": 0.025,
+        "p50": 0.0574,
+        "p75": 0.1089,
+        "p90": 0.1556
+      },
+      "conditional": [
+        {
+          "label": "after +5% 5d run",
+          "n": 75,
+          "mean": 0.022,
+          "p50": 0.0302,
+          "hit_rate_up": 0.56
+        }
+      ]
+    }
+  ],
+  "ladder": [
+    {
+      "coin": "xyz:CL",
+      "side": "long",
+      "leverage": 5.0,
+      "equity_usd": 15.21,
+      "notional_usd": 76.03,
+      "entry_px": 99.339,
+      "liq_px": 81.51,
+      "liq_dist_pct": -0.1795,
+      "p_liq": 0.032,
+      "p_win": 0.55,
+      "ev_pct": 0.058,
+      "equity_ret": {
+        "p10": -0.479,
+        "p25": -0.205,
+        "p50": 0.049,
+        "p75": 0.328,
+        "p90": 0.52
+      },
+      "p_double": 0.02,
+      "p_lose_half": 0.09,
+      "fees_funding_pct": 0.0097,
+      "stop_px": 88.64,
+      "p_stop": 0.183,
+      "verdict": "hold"
+    },
+    {
+      "coin": "xyz:CL",
+      "side": "long",
+      "leverage": 10.0,
+      "equity_usd": 15.21,
+      "notional_usd": 152.06,
+      "entry_px": 99.339,
+      "liq_px": 91.7,
+      "liq_dist_pct": -0.0769,
+      "p_liq": 0.284,
+      "p_win": 0.51,
+      "ev_pct": 0.043,
+      "equity_ret": {
+        "p10": -1.0,
+        "p25": -1.0,
+        "p50": 0.04,
+        "p75": 0.622,
+        "p90": 1.039
+      },
+      "p_double": 0.11,
+      "p_lose_half": 0.29,
+      "fees_funding_pct": 0.0195,
+      "stop_px": 94.75,
+      "p_stop": 0.317,
+      "verdict": "dip_only"
+    },
+    {
+      "coin": "xyz:CL",
+      "side": "long",
+      "leverage": 20.0,
+      "equity_usd": 15.21,
+      "notional_usd": 304.11,
+      "entry_px": 99.339,
+      "liq_px": 96.79,
+      "liq_dist_pct": -0.0256,
+      "p_liq": 0.647,
+      "p_win": 0.32,
+      "ev_pct": -0.149,
+      "equity_ret": {
+        "p10": -1.0,
+        "p25": -1.0,
+        "p50": -1.0,
+        "p75": 0.785,
+        "p90": 1.772
+      },
+      "p_double": 0.22,
+      "p_lose_half": 0.65,
+      "fees_funding_pct": 0.039,
+      "stop_px": 97.81,
+      "p_stop": 0.248,
+      "verdict": "avoid"
+    }
+  ],
+  "account": {
+    "equity_usd": 15.21,
+    "source": "fixture"
+  },
+  "notes": [
+    "sample includes the Mar/Apr 2026 war shocks (-20% and -16.6% days)"
+  ]
+}

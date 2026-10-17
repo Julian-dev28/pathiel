@@ -1,0 +1,101 @@
+{
+  "contract_version": "1.0.0",
+  "desk_id": "oil",
+  "as_of": "2026-10-17T02:10:00Z",
+  "headlines": [
+    {
+      "id": "h1",
+      "title": "U.S. crude oil tops $100 as Iran escalates Hormuz attacks",
+      "url": "https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html",
+      "source": "CNBC",
+      "published_at": "2026-10-16T12:10:00Z",
+      "stance": "bull",
+      "relevance": 0.95,
+      "summary": null
+    },
+    {
+      "id": "h2",
+      "title": "WTI gains 6.5% as US crude inventories drop 8.6 million barrels",
+      "url": "https://coinpaper.com/37418/oil-price-today-wti-gains-65-as-us-crude-inventories-drop-86-million-barrels-brent-tops-105",
+      "source": "Coinpaper",
+      "published_at": "2026-10-16T06:10:00Z",
+      "stance": "bull",
+      "relevance": 0.8,
+      "summary": null
+    },
+    {
+      "id": "h3",
+      "title": "IEA says members to accelerate release of 100 million barrels",
+      "url": "https://qna.org.qa/en/News-Area/News/2026-10/7/iea-says-members-to-accelerate-release-of-100-million-barrels",
+      "source": "QNA",
+      "published_at": "2026-10-07T02:10:00Z",
+      "stance": "bear",
+      "relevance": 0.7,
+      "summary": null
+    }
+  ],
+  "policy": [
+    {
+      "id": "p1",
+      "title": "G7 agrees 100M bbl emergency stock release over four months",
+      "url": "https://www.omanobserver.om/article/1197153/business/energy/iea-325-million-barrels-of-oil-from-strategic-reserves-released",
+      "body": "G7/IEA",
+      "status": "announced",
+      "date": null,
+      "summary": null,
+      "stance": "bear"
+    }
+  ],
+  "catalysts": [
+    {
+      "id": "c1",
+      "kind": "api_weekly",
+      "title": "API crude inventories",
+      "at": "2026-10-20T20:30:00Z",
+      "importance": 2,
+      "source": "API",
+      "expected": null
+    },
+    {
+      "id": "c2",
+      "kind": "eia_weekly",
+      "title": "EIA Weekly Petroleum Status Report",
+      "at": "2026-10-21T14:30:00Z",
+      "importance": 3,
+      "source": "EIA",
+      "expected": null
+    },
+    {
+      "id": "c3",
+      "kind": "opec_meeting",
+      "title": "OPEC+ eight-country monthly meeting",
+      "at": "2026-11-01T12:00:00Z",
+      "importance": 3,
+      "source": "OPEC",
+      "expected": null
+    }
+  ],
+  "odds": [
+    {
+      "id": "o1",
+      "venue": "polymarket",
+      "question": "FIXTURE ONLY: US-Iran deal by Oct 31?",
+      "probability": 0.12,
+      "volume_usd": 1200000.0,
+      "url": "https://polymarket.com/",
+      "closes_at": null
+    }
+  ],
+  "positioning": [
+    {
+      "id": "cot1",
+      "source": "cftc_cot",
+      "label": "WTI non-commercial net long",
+      "value": 99060.0,
+      "change": -10403.0,
+      "as_of": "2026-10-06T00:00:00Z"
+    }
+  ],
+  "token_estimate": 900,
+  "sources_failed": []
+}
