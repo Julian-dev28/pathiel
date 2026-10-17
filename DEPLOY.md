@@ -409,4 +409,16 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
   Left out rather than shipped half-working.
 - **One-off scripts under `scripts/`** not named in `scripts/restart.sh` or
   `scripts/scheduler.py` — run by hand (`flyctl ssh console`) when needed, not
-  continuously supervised processes.
+  continuously supervised processes. Two worth naming specifically, since
+  neither is referenced anywhere else in the repo and both are easy to mistake
+  for dead code on a `grep`:
+  - **`scripts/grade_forward_ledger.py [book]`** — grades a book's live
+    forward ledger (`.state/shadow_ledger/<book>.jsonl`) against what actually
+    happened, deduplicated to one row per (coin, entry day) decision rather
+    than per re-recorded cycle. Run by hand after a book has accumulated a
+    few days of signals.
+  - **`scripts/phase3_replay.py COIN ENTRY LEV [SPOT_MOVE%]`** — read-only,
+    no-lookahead post-mortem replay of the real exit engine
+    (`pathiel.agents.dsl_exit.DSLTracker`) against real historical 15m
+    candles, for answering "what would have happened to this specific trade"
+    after the fact.
