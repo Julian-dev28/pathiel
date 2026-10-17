@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from contracts.strategies.models import Call, Lesson, Point, Scenario
 from services.thesis import validator
+from services.thesis.llm_schema import LeverageReason
 from services.thesis.llm_schema import ThesisDraft
 
 
@@ -16,7 +17,7 @@ def _draft_from_thesis(thesis) -> ThesisDraft:
     return ThesisDraft(
         call=thesis.call, scenarios=thesis.scenarios, bull=thesis.bull, bear=thesis.bear,
         what_changes_my_mind=thesis.what_changes_my_mind, lessons=thesis.lessons,
-        leverage_reasons=[lv.reason for lv in thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in thesis.leverage_view],
     )
 
 
@@ -40,7 +41,7 @@ def test_invented_number_in_bear_text_fails(oil):
     errors = validator.check_numbers_grounded(
         call=oil.thesis.call, bull=oil.thesis.bull, bear=bear, lessons=oil.thesis.lessons,
         what_changes_my_mind=oil.thesis.what_changes_my_mind,
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[LeverageReason(leverage=lv.leverage, reason=lv.reason) for lv in oil.thesis.leverage_view],
         spec=oil.spec, analytics=oil.analytics, intel=oil.intel,
     )
     assert any("9999" in e for e in errors)
@@ -50,7 +51,7 @@ def test_invented_number_in_one_liner_fails(oil):
     call = oil.thesis.call.model_copy(update={"one_liner": "Long WTI, target 4567 by Friday."})
     errors = validator.check_numbers_grounded(
         call=call, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
         spec=oil.spec, analytics=oil.analytics, intel=oil.intel,
     )
     assert any("4567" in e for e in errors)
@@ -62,7 +63,7 @@ def test_number_grounded_via_headline_title_text_passes(oil):
     bull = [Point(text="8.6M bbl US crude draw", source_ids=["h2"])]
     errors = validator.check_numbers_grounded(
         call=oil.thesis.call, bull=bull, bear=[], lessons=oil.thesis.lessons,
-        what_changes_my_mind=[], leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        what_changes_my_mind=[], leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
         spec=oil.spec, analytics=oil.analytics, intel=oil.intel,
     )
     assert errors == []
@@ -71,7 +72,8 @@ def test_number_grounded_via_headline_title_text_passes(oil):
 def test_number_grounded_via_percent_scaled_ladder_value_passes(oil):
     """P(liq) is stored as a 0-1 fraction (0.032); prose citing "3.2%" must
     be recognized as the same number, scaled."""
-    reasons = ["liq 81.51, P(liq) 3.2%"] + [lv.reason for lv in oil.thesis.leverage_view[1:]]
+    reasons = ([LeverageReason(leverage=5.0, reason="liq 81.51, P(liq) 3.2%")]
+               + [LeverageReason(leverage=lv.leverage, reason=lv.reason) for lv in oil.thesis.leverage_view[1:]])
     errors = validator.check_numbers_grounded(
         call=oil.thesis.call, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
         leverage_reasons=reasons, spec=oil.spec, analytics=oil.analytics, intel=oil.intel,
@@ -87,14 +89,14 @@ def test_number_grounded_when_sign_is_dropped_by_the_verb(oil):
     bull = [Point(text="WTI non-commercial net long fell by 10403 contracts", source_ids=["cot1"])]
     errors = validator.check_numbers_grounded(
         call=oil.thesis.call, bull=bull, bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
         spec=oil.spec, analytics=oil.analytics, intel=oil.intel,
     )
     assert errors == []
 
 
 def test_numbers_grounded_with_no_intel_still_allows_analytics_numbers(oil):
-    reasons = [lv.reason for lv in oil.thesis.leverage_view]
+    reasons = [LeverageReason(leverage=lv.leverage, reason=lv.reason) for lv in oil.thesis.leverage_view]
     errors = validator.check_numbers_grounded(
         call=oil.thesis.call, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
         leverage_reasons=reasons, spec=oil.spec, analytics=oil.analytics, intel=None,
@@ -260,7 +262,7 @@ def test_llm_schema_itself_rejects_an_over_length_one_liner_at_parse_time(oil):
         "call": {**payload["call"], "one_liner": "x" * 200},
         "scenarios": payload["scenarios"], "bull": payload["bull"], "bear": payload["bear"],
         "what_changes_my_mind": payload["what_changes_my_mind"], "lessons": payload["lessons"],
-        "leverage_reasons": [lv["reason"] for lv in payload["leverage_view"]],
+        "leverage_reasons": [{"leverage": lv["leverage"], "reason": lv["reason"]} for lv in payload["leverage_view"]],
     }
     import pytest
     with pytest.raises(ValidationError):
@@ -336,12 +338,19 @@ def test_exactly_one_lesson_passes(oil):
 
 
 def test_leverage_reasons_count_mismatch_fails(oil):
-    errors = validator.check_leverage_reasons_count(["only one reason"], oil.analytics)
-    assert len(errors) == 1 and "3" in errors[0]
+    errors = validator.check_leverage_reasons_count(
+        [LeverageReason(leverage=5.0, reason="only one reason")], oil.analytics)
+    assert len(errors) == 1 and "10" in errors[0]
+
+
+def test_leverage_reasons_duplicate_leverage_fails(oil):
+    dup = [LeverageReason(leverage=5.0, reason="a"), LeverageReason(leverage=5.0, reason="b"),
+           LeverageReason(leverage=20.0, reason="c")]
+    assert validator.check_leverage_reasons_count(dup, oil.analytics)
 
 
 def test_leverage_reasons_count_match_passes(oil):
-    reasons = [lv.reason for lv in oil.thesis.leverage_view]
+    reasons = [LeverageReason(leverage=lv.leverage, reason=lv.reason) for lv in oil.thesis.leverage_view]
     assert validator.check_leverage_reasons_count(reasons, oil.analytics) == []
 
 

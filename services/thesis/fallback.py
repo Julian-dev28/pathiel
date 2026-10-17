@@ -58,7 +58,7 @@ def build_fallback_thesis(
     )
     leverage_view = [
         LeverageView(leverage=rung.leverage, verdict=rung.verdict, reason="no reason available (LLM call failed)")
-        for rung in analytics.ladder
+        for rung in analytics.ladder if rung.side == "long"
     ]
     return Thesis(
         id=_make_id(spec.id, now),

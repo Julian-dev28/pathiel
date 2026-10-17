@@ -24,15 +24,26 @@ def make_thesis_id(desk_id: str, now: datetime) -> str:
     return f"{desk_id}-{now.strftime('%Y%m%dT%H%M')}-m"
 
 
-def build_leverage_view(analytics: DeskAnalytics, leverage_reasons: List[str]) -> List[LeverageView]:
-    """leverage + verdict are copied from analytics.ladder 1:1 (never
-    authored by the LLM); reason is the LLM's prose, positionally aligned to
-    the same order. validator.check_leverage_reasons_count already
-    guarantees the lengths match by the time this runs."""
+def build_leverage_view(analytics: DeskAnalytics, leverage_reasons, call) -> List[LeverageView]:
+    """One LeverageView per ladder leverage, for the side of the call (long
+    when the call is flat or a pair). leverage + verdict come from the
+    matching ladder rung, never from the LLM; reason is matched by leverage,
+    not by position."""
+    from services.thesis import desk_lookup
+
+    side = call.side if call.side in ("long", "short") else "long"
+    coins = {r.coin for r in analytics.ladder}
+    coin = call.instrument if call.instrument in coins else None
+    by_lev = {}
+    for lr in leverage_reasons:
+        by_lev.setdefault(float(lr.leverage), lr.reason)
     out: List[LeverageView] = []
-    for i, rung in enumerate(analytics.ladder):
-        reason = leverage_reasons[i] if i < len(leverage_reasons) else "no reason provided"
-        out.append(LeverageView(leverage=rung.leverage, verdict=rung.verdict, reason=reason))
+    for lev in desk_lookup.ladder_leverages(analytics):
+        rung = (desk_lookup.find_ladder_rung(lev, analytics, coin=coin, side=side)
+                or desk_lookup.find_ladder_rung(lev, analytics, side=side)
+                or desk_lookup.find_ladder_rung(lev, analytics))
+        out.append(LeverageView(leverage=lev, verdict=rung.verdict,
+                                reason=by_lev.get(float(lev), "no reason provided")))
     return out
 
 
@@ -88,7 +99,7 @@ def assemble_thesis(
         bull=draft.bull,
         bear=draft.bear,
         catalysts=list(intel.catalysts) if intel is not None else [],
-        leverage_view=build_leverage_view(analytics, draft.leverage_reasons),
+        leverage_view=build_leverage_view(analytics, draft.leverage_reasons, draft.call),
         lessons=draft.lessons,
         what_changes_my_mind=draft.what_changes_my_mind,
         sources=resolve_sources(draft, intel),

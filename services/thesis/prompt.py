@@ -115,6 +115,9 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "non-overlapping and contiguous, with probabilities that sum to "
         "1.0. move_lo_pct and move_hi_pct are FRACTIONS: -0.05 means -5%, "
         "never write -5.\n"
+        "- leverage_reasons: one {leverage, reason} per ladder leverage, for "
+        "the SIDE of your call (long rungs for a long call, short rungs for a "
+        "short call; long rungs if flat).\n"
         "- Cite every bull/bear point with the source id(s) (in brackets in "
         "the data below) it came from.\n"
         "- one_liner is at most 160 characters.\n"
@@ -273,7 +276,7 @@ def _render_pair(pair: PairSnapshot) -> str:
 
 def _render_ladder_rung(rung: LadderRung) -> str:
     bits = [
-        f"- {rung.leverage:.0f}x: liq {_num(rung.liq_px)} ({_pct(rung.liq_dist_pct)}), "
+        f"- {rung.leverage:.0f}x {rung.side}: liq {_num(rung.liq_px)} ({_pct(rung.liq_dist_pct)}), "
         f"P(liq) {_pct_abs(rung.p_liq)}, P(win) {_pct_abs(rung.p_win)}, EV {_pct(rung.ev_pct)}, "
         f"P(2x) {_pct_abs(rung.p_double)}, P(lose half) {_pct_abs(rung.p_lose_half)}, "
         f"fees+funding {_pct_abs(rung.fees_funding_pct)}"
