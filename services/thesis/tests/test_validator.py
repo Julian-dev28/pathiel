@@ -427,3 +427,25 @@ def test_validate_thesis_matches_validate_draft_on_the_same_content(oil):
     draft = _draft_from_thesis(oil.thesis)
     assert validator.validate_draft(draft, oil.spec, oil.analytics, oil.intel) == \
         validator.validate_thesis(oil.thesis, oil.spec, oil.analytics, oil.intel)
+
+
+# -- scenario numbers: grounded facts pass (live finding 2026-10-17) ----------
+
+def test_scenario_text_may_quote_grounded_numbers_outside_its_range(oil):
+    """Polymarket odds or another instrument's price in a scenario's text are
+    facts from the payload, not scenario targets: they must not force repair."""
+    from services.thesis import validator as V
+    brent_mid = next(i.mid for i in oil.analytics.instruments if i.coin == "xyz:BRENTOIL")
+    odds_p = oil.intel.odds[0].probability
+    sc = oil.thesis.scenarios[2].model_copy(update={
+        "description": f"Brent holds {brent_mid}; deal odds {odds_p} stay low."})
+    pool = V.build_ground_truth_pool(oil.analytics, oil.intel)
+    assert V.check_scenario_numbers([sc], oil.spec, oil.analytics, pool=pool) == []
+
+
+def test_scenario_text_with_an_invented_price_still_fails(oil):
+    from services.thesis import validator as V
+    sc = oil.thesis.scenarios[2].model_copy(update={"description": "WTI collapses to 61.37."})
+    pool = V.build_ground_truth_pool(oil.analytics, oil.intel)
+    errs = V.check_scenario_numbers([sc], oil.spec, oil.analytics, pool=pool)
+    assert errs and "61.37" in errs[0]
