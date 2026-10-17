@@ -157,3 +157,12 @@ def test_session_gate_skipped_for_local_mode(monkeypatch):
     assert r.status_code != 401
     r = local.get("/api/dashboard/positions", headers={"Origin": "https://evil.example"})
     assert r.status_code == 401
+
+
+def test_accounts_router_is_mounted_and_session_answers_anonymously():
+    from fastapi.testclient import TestClient
+    import pathiel.server as srv
+    r = TestClient(srv.app, client=("203.0.113.9", 50000)).get("/api/session")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["local_mode"] is False and body["address"] is None
