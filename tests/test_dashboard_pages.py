@@ -545,6 +545,87 @@ def styled(client, path="/"):
     return client.get(path).text + CSS
 
 
+# ── accessibility: contrast ──────────────────────────────────────────────────
+#
+# Computed from the real token values rather than asserted as frozen hex
+# strings, so a future legitimate retune only has to clear the actual WCAG
+# bar, not match a string this test pins in place.
+
+def _css_var(css_text: str, block_selector: str, var_name: str) -> str:
+    """Pull `--var: #hex;` out of one labelled top-level CSS block.
+
+    Not a general CSS parser — good enough for this file's consistent,
+    one-token-per-line style, same as the rest of this test module's
+    source-text assertions."""
+    start = css_text.index(block_selector)
+    end = css_text.index("}", start)
+    block = css_text[start:end]
+    m = re.search(re.escape(var_name) + r"\s*:\s*(#[0-9a-fA-F]{6})", block)
+    assert m, f"{var_name} not found in the {block_selector!r} block"
+    return m.group(1)
+
+
+def _relative_luminance(hex_color: str) -> float:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+    def f(v: int) -> float:
+        v = v / 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def _contrast_ratio(fg_hex: str, bg_hex: str) -> float:
+    l1 = _relative_luminance(fg_hex) + 0.05
+    l2 = _relative_luminance(bg_hex) + 0.05
+    return max(l1, l2) / min(l1, l2)
+
+
+def test_tertiary_text_clears_wcag_aa_against_every_background_it_sits_on():
+    """Regression (2026-10-17 ux-qa sweep): --ink-3 — .sec-label and every
+    other 'dim/tertiary' text treatment (section headers like 'Live books',
+    table <th>s, the sign-in copy) on every page — contrasted 4.26:1 against
+    --surface-2 in dark mode and 3.35:1 against --paper in light mode, both
+    under the 4.5:1 WCAG AA floor for text this size (~12px, never bold).
+    Found by sampling every real text/background pair actually rendered
+    across all 5 pages at both viewports with a headless-Chromium crawl."""
+    dark_ink3 = _css_var(CSS, ":root{", "--ink-3")
+    dark_backgrounds = {
+        "surface": _css_var(CSS, ":root{", "--surface"),
+        "surface-2": _css_var(CSS, ":root{", "--surface-2"),
+        "paper": _css_var(CSS, ":root{", "--paper"),
+    }
+    for label, bg in dark_backgrounds.items():
+        ratio = _contrast_ratio(dark_ink3, bg)
+        assert ratio >= 4.5, f"dark --ink-3 ({dark_ink3}) vs {label} ({bg}): {ratio:.2f} < 4.5"
+
+    light_ink3 = _css_var(CSS, ':root[data-theme="light"]{', "--ink-3")
+    light_backgrounds = {
+        "surface-2": _css_var(CSS, ':root[data-theme="light"]{', "--surface-2"),
+        "paper": _css_var(CSS, ':root[data-theme="light"]{', "--paper"),
+    }
+    for label, bg in light_backgrounds.items():
+        ratio = _contrast_ratio(light_ink3, bg)
+        assert ratio >= 4.5, f"light --ink-3 ({light_ink3}) vs {label} ({bg}): {ratio:.2f} < 4.5"
+
+
+def test_hidden_attribute_cannot_be_silently_overridden_by_a_display_rule():
+    """Regression (2026-10-17 ux-qa sweep): the `hidden` HTML attribute's
+    UA-stylesheet rule (`[hidden]{display:none}`) is NORMAL-priority,
+    author-origin-losing — any of this file's OWN rules that set `display`
+    on the same element (.disclose, .seg, …) wins regardless of selector
+    specificity, because author CSS beats the UA sheet at equal or lower
+    specificity too. #hl-more (trends.html, class="disclose" hidden)
+    rendered as an empty but fully visible, clickable button:
+    `.disclose{display:flex}` silently un-hid it. `!important` on a blanket
+    [hidden] rule is the standard fix for this exact gotcha and must stay
+    ahead of (textually, it doesn't matter where — !important wins the
+    cascade step outright) any class that sets display on a hideable
+    element."""
+    assert re.search(r"\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important", CSS), (
+        "the defensive [hidden]{display:none !important} rule is missing from pathiel.css")
+
+
 def test_landing_page_copy_and_removed_chrome(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -587,19 +668,114 @@ def test_config_and_operator_pages_are_gone(client):
     assert client.get("/api/dashboard/operator/trackers").status_code == 404
     assert client.post("/api/dashboard/operator/terminal",
                        json={"command": "status"}).status_code == 404
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         page = client.get(path).text
         assert 'data-nav="/config"' not in page, path
         assert 'data-nav="/operator"' not in page, path
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news", "/analytics"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
                        "https://cdn"):
             assert banned not in r.text, f"{path} references CDN: {banned}"
+
+
+# ── nav: the "Desks" link (2026-10-17) ───────────────────────────────────────
+
+ALL_PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
+
+
+def test_nav_is_identical_across_every_page_and_carries_desks(client):
+    """Desks is the new core of the app (another agent builds desks.html /
+    desk.html; this repo does not own those templates yet, so /desks 404s
+    here until that work merges — the link existing and being consistent is
+    what this suite can prove today). Placed second, right after Dashboard,
+    per the overhaul brief's 'near the front'. Every page's nav must be
+    byte-identical in order and labels, matching the pre-existing pattern
+    this sweep found already held for the original five links."""
+    navs = {}
+    for path in ALL_PAGES:
+        page = client.get(path).text
+        start = page.index('<nav class="tabs-main">')
+        end = page.index("</nav>", start)
+        navs[path] = page[start:end]
+    first = navs[ALL_PAGES[0]]
+    for path, nav in navs.items():
+        assert nav == first, f"{path}'s nav differs from {ALL_PAGES[0]}'s"
+    assert '<a href="/desks" data-nav="/desks" class="nav-link">Desks</a>' in first
+    # "near the front": right after Dashboard, before every other link
+    assert first.index('data-nav="/"') < first.index('data-nav="/desks"')
+    assert first.index('data-nav="/desks"') < first.index('data-nav="/activity"')
+
+
+def test_trends_masthead_has_no_leftover_corrupted_markup(client):
+    """Regression (2026-10-17 ux-qa sweep): trends.html's masthead carried a
+    dead <span> whose id attribute was five real element ids pasted in with
+    literal embedded newlines
+    (id="token-clear\\ntoken-input\\ntoken-row\\ntoken-save\\ntoken-why") —
+    invalid per the HTML5 spec (an id must not contain ASCII whitespace),
+    referenced by nothing, and contributing zero width/content — found while
+    tracing why /trends' masthead overflowed the page at 375px. The real
+    #token-row / #token-input / #token-save / #token-clear / #token-why
+    elements exist correctly elsewhere in the same file and must still be
+    there; only the stray duplicate span is gone."""
+    page = client.get("/trends").text
+    assert "token-clear\ntoken-input" not in page
+    assert page.count('id="token-row"') == 1
+    assert page.count('id="token-input"') == 1
+    assert page.count('id="token-save"') == 1
+    assert page.count('id="token-clear"') == 1
+    assert page.count('id="token-why"') == 1
+
+
+def test_mobile_masthead_right_wraps_instead_of_overflowing():
+    """Regression (2026-10-17 ux-qa sweep): .masthead-right is its OWN flex
+    row, independent of .masthead-inner's flex-wrap above it — it does not
+    inherit the parent's wrapping. On a page with a few extra controls
+    (trends.html: operator-token button + lane-meta, on top of the wallet
+    chip + status pill every page carries), the children's combined width
+    exceeded 375px and the box overflowed the page edge, dragging the WHOLE
+    document into horizontal scroll (measured live: 456px document width
+    against a 375px viewport, 81px of which traced straight back to this
+    rule having no wrap). See tests/browser/test_pages_browser.py for the
+    real-browser proof this is fixed at 375px on every page; this is the
+    cheap source-level guard against the fix being reverted."""
+    start = CSS.index("@media (max-width:720px)")
+    open_brace = CSS.index("{", start)
+    # depth-counted scan for the matching close brace — the block contains
+    # several nested rules, each with their own '}', so the first '}' after
+    # `start` closes only the FIRST inner rule, not the media query itself.
+    depth = 0
+    i = open_brace
+    while True:
+        if CSS[i] == "{":
+            depth += 1
+        elif CSS[i] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    block = CSS[start:i + 1]
+    assert re.search(r"\.masthead-right\s*\{[^}]*flex-wrap\s*:\s*wrap", block), (
+        ".masthead-right has no flex-wrap in the mobile media query")
+
+
+def test_book_filter_and_coin_select_have_accessible_names():
+    """Regression (2026-10-17 ux-qa sweep): #book-filter (activity.html) and
+    #coin-select (analytics.html) are <select> elements with no <label>, no
+    aria-label, and no title — a screen-reader user tabbing to them hears
+    nothing describing what they filter."""
+    activity = (pathlib.Path(__file__).resolve().parent.parent
+                / "pathiel" / "templates" / "activity.html").read_text()
+    analytics = (pathlib.Path(__file__).resolve().parent.parent
+                 / "pathiel" / "templates" / "analytics.html").read_text()
+    assert re.search(r'id="book-filter"[^>]*aria-label="[^"]+"', activity), (
+        "#book-filter has no aria-label")
+    assert re.search(r'id="coin-select"[^>]*aria-label="[^"]+"', analytics), (
+        "#coin-select has no aria-label")
 
 
 def test_activity_endpoint_filters(client, monkeypatch):
@@ -819,6 +995,45 @@ def test_trade_empty_copy_does_not_claim_nothing_actionable_with_open_positions(
         "tradeEmptyCopy({since_ts: Date.now(), scans: 1, blocks: 0, open_positions: 1})",
     )
     assert "1 position open" in singular and "1 positions" not in singular, singular
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not on PATH")
+def test_scan_freshtext_guards_against_non_array_coins(client):
+    """Regression (2026-10-17 ux-qa sweep): dashboard.py's scan classification
+    prefers e.coin_scores over e.coins whenever coin_scores is present and
+    truthy (`e.get("coin_scores") or e.get("coins") or []`, dashboard.py's
+    scan branch) — correct when coin_scores is a list (the real shape
+    scripts/trading_loop.py logs), but services/demo/generator.py logs it as
+    a `{coin: score}` dict instead, and this file's freshText() called
+    `.slice()` on whatever came through behind only a truthiness fallback
+    (`e.coins || []`) — a dict is truthy, so that fallback never ran.
+
+    Reproduced live: one 'scan' event with a dict `coins` field threw inside
+    fullLoad()'s per-event ingest loop and aborted it entirely. Not one bad
+    row — all 300 events in that load silently failed to render, and the
+    trade pane got stuck forever on the generic 'feed load failed — is the
+    server up?' banner (the outer .catch()), while every OTHER pane kept
+    showing whatever had rendered before the throw. The fix is the
+    Array.isArray guard below; the per-event try/catch in fullLoad/pollNew is
+    defense in depth for whatever shape nobody has thought of yet — this test
+    proves the specific cause is actually closed, not just contained."""
+    html = client.get("/activity").text
+    # the exact shape that crashed it: coin_scores logged as a dict
+    out = _run_node(
+        html, [("const", "esc"), ("function", "freshText")],
+        "freshText({type: 'scan', coins: {BTC: 50.0, ETH: 61.2}, triggers: 2})")
+    assert "scanned the board" in out and "2 triggers" in out, out
+    # no coins field at all (the common, unremarkable case) must not throw
+    out2 = _run_node(
+        html, [("const", "esc"), ("function", "freshText")],
+        "freshText({type: 'scan', triggers: 0})")
+    assert "no triggers" in out2, out2
+    # the real, correct shape (scripts/trading_loop.py: a list) must still
+    # name the top coins — the guard must not blind the working case
+    out3 = _run_node(
+        html, [("const", "esc"), ("function", "freshText")],
+        "freshText({type: 'scan', coins: ['BTC', 'ETH'], triggers: 2})")
+    assert "BTC, ETH" in out3, out3
 
 
 def test_activity_has_time_decay_flow(client):

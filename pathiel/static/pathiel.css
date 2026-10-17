@@ -35,7 +35,9 @@
   --surface-2:#14211f;
   --ink:#e8efec;
   --ink-2:#9aaaa5;
-  --ink-3:#6e807b;
+  /* was #6e807b: 4.26:1 vs --surface-2, under WCAG AA's 4.5:1 floor for
+     .sec-label-size text. #788a85 clears 4.56-5.21:1 against every bg it sits on. */
+  --ink-3:#788a85;
   --rule:#1c2a27;
   --rule-2:#2b3c38;
 
@@ -65,7 +67,9 @@
 
 :root[data-theme="light"]{
   --paper:#ffffff; --surface:#ffffff; --surface-2:#f4f7f6;
-  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#838f8b;
+  /* was #838f8b: 3.35:1 vs --paper, worse than dark mode's failure. #687470
+     clears 4.51-4.86:1. */
+  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#687470;
   --rule:#e2e8e6; --rule-2:#c6d0cd;
   --bar:#0a1211; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
   --accent:#0d6b5c; --accent-ink:#085146; --accent-wash:#eaf5f2;
@@ -79,7 +83,7 @@
   --surface-2:#14211f;
   --ink:#e8efec;
   --ink-2:#9aaaa5;
-  --ink-3:#6e807b;
+  --ink-3:#788a85;          /* see :root — same AA-contrast fix */
   --rule:#1c2a27;
   --rule-2:#2b3c38;
 
@@ -98,6 +102,13 @@
   --amber:#d0a45c;
   --amber-wash:#26200f;
 }
+
+/* `[hidden]{display:none}` is a normal-priority UA rule — any of this file's
+   own `display` rules on the same element (.disclose, .seg, …) overrides it
+   regardless of specificity. #hl-more (trends.html, class="disclose" hidden)
+   rendered empty but fully visible: .disclose{display:flex} un-hid it.
+   !important is the standard fix and stays inert once JS clears `hidden`. */
+[hidden]{ display:none !important; }
 
 /* ── base ─────────────────────────────────────────────────────────────── */
 
@@ -693,6 +704,11 @@ footer.site-foot{
   .kv.hero{ font-size:32px; }
   .masthead-inner{ flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
   nav.tabs-main{ order:3; width:100%; margin-left:0; overflow-x:auto; }
+  /* masthead-right does not inherit masthead-inner's wrap above — its own
+     children overflowed the page on trends.html (456px doc vs 375px
+     viewport, extra operator-token/lane-meta controls). Same wrap technique
+     as nav.tabs-main one line up. */
+  .masthead-right{ flex-wrap:wrap; justify-content:flex-end; row-gap:8px; }
   .fn-row,.funnel-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
   .heat-row{ grid-template-columns:52px 1fr auto auto auto; gap:8px; }
 }
