@@ -481,18 +481,24 @@ def create_app() -> FastAPI:
         msg = f"new thesis, {tokens_k:.1f}k tokens".replace(".0k", "k")
         jobs[job_id] = job.model_copy(update={"state": "done", "finished_at": now, "message": msg})
 
-    # pathiel.js's PathielAuth.refresh() calls this unconditionally on every
-    # page's DOMContentLoaded (it is in the shared masthead, not this desk's
-    # code) and already treats a failed fetch as "not signed in" via its own
-    # try/catch — so this is purely a console-noise fix (Chromium logs a
-    # "Failed to load resource: 404" diagnostic for ANY non-2xx response,
-    # application code notwithstanding), not a behavior change. auth is out
-    # of scope for the desks contract either way, and this is actually MORE
-    # representative of a real deployment — where services/auth answers
-    # this route — than leaving it 404 here.
-    @app.get("/auth/me")
-    async def auth_me() -> dict:
-        return {"user": None}
+    # pathiel.js's PathielSession (wave-2 onboarding, 2026-10-17 — replaced
+    # the old PathielAuth.refresh()/`/auth/me` call this stub used to answer)
+    # fetches /api/session unconditionally on every page's DOMContentLoaded
+    # (it is in the shared masthead, not this desk's code), for the
+    # "trading is off" banner that pathiel.js itself renders everywhere but
+    # "/" and "/account". PathielSession.get() already treats a failed
+    # fetch as "nothing gates this page" via its own try/catch — so this is
+    # purely a console-noise fix (Chromium logs a "Failed to load resource:
+    # 404" diagnostic for ANY non-2xx response, application code
+    # notwithstanding), not a behavior change. accounts is out of scope for
+    # the desks contract either way, and answering "fully onboarded,
+    # nothing to say" here is actually MORE representative of a real
+    # deployment — where the accounts router answers this route — than
+    # leaving it 404.
+    @app.get("/api/session")
+    async def session() -> dict:
+        return {"local_mode": True, "address": None, "active_account_id": None,
+                "accounts_count": 1, "can_trade": True, "needs_onboarding": False}
 
     @app.get("/desks", response_class=HTMLResponse)
     async def desks_page() -> HTMLResponse:

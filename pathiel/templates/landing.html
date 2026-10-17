@@ -38,10 +38,12 @@
       <a href="/news" data-nav="/news" class="nav-link">News</a>
       <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
       <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+      <a href="/account" data-nav="/account" class="nav-link">Account</a>
     </nav>
     <div class="masthead-right">
-      <!-- The RainbowKit island mounts here on demand; pathiel.js renders a
-           plain chip into the masthead until then. See services/wallet_ui. -->
+      <!-- services/wallet_ui mounts its connect/account UI here. onboarding's
+           PathielSession.openWallet(view) in pathiel.js calls
+           window.PathielWallet.open(view) to drive it. -->
       <div id="wallet-connect-root"></div>
       <button id="discreet-toggle" type="button" class="icon-btn"
               title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
@@ -51,6 +53,69 @@
 </div>
 
 <div class="shell">
+
+  <!-- Onboarding: one step visible at a time (Julien's ADHD-first brief —
+       one decision per screen, the call first). Hidden by default so a slow
+       or not-yet-mounted /api/session (contracts/accounts/models.py; the
+       integrator mounts the accounts router once this wave's agents merge,
+       per SWARM_RULES section 10) never flashes the wizard over a working
+       dashboard — pathiel.js's PathielSession decides which of this and
+       #dashboard-main to reveal, as soon as the session fetch settles. -->
+  <div id="onboarding-root" class="onboard" hidden>
+
+    <section id="onboard-welcome" class="onboard-step card" data-step="1">
+      <div class="sec-label">Get started</div>
+      <h1 class="page-title">Connect your Hyperliquid account</h1>
+      <p class="page-sub">pathiel trades through an agent key it generates for you.
+        Your main wallet key never leaves your wallet and can never withdraw.</p>
+      <div class="onboard-actions">
+        <button type="button" id="onb-connect" class="btn go">Connect your Hyperliquid account</button>
+        <button type="button" id="onb-watch" class="btn">Watch an address</button>
+        <a href="/demo" id="onb-demo" class="btn">Explore the demo</a>
+      </div>
+    </section>
+
+    <section id="onboard-risk" class="onboard-step card" data-step="2" hidden>
+      <div class="sec-label">Step 2 of 3</div>
+      <h1 class="page-title">How much risk?</h1>
+      <p class="page-sub" id="onb-risk-equity">&nbsp;</p>
+
+      <div id="onb-preset-cards" class="preset-grid" role="radiogroup" aria-label="Risk preset"></div>
+
+      <div id="onb-low-equity" class="callout callout-amber" hidden></div>
+
+      <div id="onb-preview" class="onboard-preview">
+        <div class="kv" id="onb-headline">&mdash;</div>
+        <div class="stat-row">
+          <div><div class="sec-label">Risk per trade</div><div class="kv" id="onb-risk-usd">&mdash;</div></div>
+          <div><div class="sec-label">Daily pause</div><div class="kv" id="onb-daily-pause">&mdash;</div></div>
+          <div><div class="sec-label">Max positions</div><div class="kv" id="onb-max-positions">&mdash;</div></div>
+        </div>
+        <div id="onb-books" class="book-feasibility"></div>
+      </div>
+
+      <div class="onboard-actions">
+        <button type="button" id="onb-save" class="btn go">Save and continue</button>
+      </div>
+    </section>
+
+    <section id="onboard-done" class="onboard-step card" data-step="3" hidden>
+      <div class="sec-label">Step 3 of 3</div>
+      <h1 class="page-title">You&rsquo;re set</h1>
+      <p class="page-sub">Your risk profile is saved. Desks shows what can trade right now.</p>
+      <div class="onboard-actions">
+        <a href="/desks" id="onb-goto-desks" class="btn go">Go to Desks</a>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Hidden by default too, alongside #onboarding-root above: without
+       this, a brand-new visitor would see one frame of the ordinary
+       (all-zero) dashboard before the session fetch resolves and swaps it
+       for the wizard — a flash, not a crash, but still a worse first
+       impression than showing nothing for the same instant. -->
+  <div id="dashboard-main" hidden>
 
   <div class="page-head">
     <h1 class="page-title">Account</h1>
@@ -80,7 +145,6 @@
         <div class="sec-label">Open positions</div>
         <div class="kv" id="kpi-open">0</div>
       </div>
-      <div class="kpi" id="my-account" hidden></div>
       <div class="kpi">
         <div class="sec-label">Last scan</div>
         <div class="kv" id="kpi-tick">&mdash;</div>
@@ -251,6 +315,8 @@
       indicative of future performance; nothing here is financial advice.
     </p>
   </section>
+
+  </div><!-- /#dashboard-main -->
 
   <footer class="site-foot">
     <span>One wallet &middot; live</span>
@@ -868,6 +934,150 @@ async function refreshLeague() {
       `${live} ${live === 1 ? 'book' : 'books'} spending capital`;
   } catch (e) { reportRefreshFailure('refreshLeague', e); }
 }
+
+// ── Onboarding: first run + the "how much risk" wizard ──────────────────────
+// Julien's ADHD-first brief: one decision per screen, the call first, details
+// collapsed. needs_onboarding (GET /api/session, contracts/accounts/models.py)
+// means no Hyperliquid account is connected at all; the wizard walks a first
+// connect through the risk preset before ever showing the ordinary dashboard
+// (empty, all zeros, for a brand new account) underneath it.
+(function () {
+  const root = document.getElementById('onboarding-root');
+  const main = document.getElementById('dashboard-main');
+  if (!root || !main) return;
+
+  // Set while mid-wizard past step 1, so a reload before Save resumes the
+  // risk step instead of snapping back to the (still-empty) dashboard —
+  // needs_onboarding itself already flipped false the moment the account
+  // connected, so it alone can't tell step 2 apart from "done".
+  const RESUME_KEY = 'pathiel-onboarding-step';
+  const steps = Array.from(root.querySelectorAll('.onboard-step'));
+
+  function showStep(n) { steps.forEach(el => { el.hidden = el.dataset.step !== String(n); }); }
+  function showWizard(n) { main.hidden = true; root.hidden = false; showStep(n); }
+  function showDashboard() { root.hidden = true; main.hidden = false; }
+
+  const PRESETS = [
+    { id: 'starter', label: 'Starter', blurb: 'Smallest size. Widest safety margin.' },
+    { id: 'small', label: 'Small', blurb: 'A bit more room to size up.' },
+    { id: 'standard', label: 'Standard', blurb: 'The common default.' },
+    { id: 'pro', label: 'Pro', blurb: 'Larger size. Tighter discipline required.' },
+  ];
+  let equity = 0;
+  let chosenPreset = null;   // null until the first preview resolves "auto"
+
+  function renderPresetCards() {
+    const wrap = document.getElementById('onb-preset-cards');
+    wrap.innerHTML = PRESETS.map(p => `
+      <button type="button" class="preset-card${p.id === chosenPreset ? ' on' : ''}"
+              data-preset="${p.id}" role="radio" aria-checked="${p.id === chosenPreset}">
+        <span class="preset-card-name">${esc(p.label)}</span>
+        <span class="preset-card-blurb">${esc(p.blurb)}</span>
+      </button>`).join('');
+    wrap.querySelectorAll('.preset-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chosenPreset = btn.dataset.preset;
+        renderPresetCards();
+        loadPreview();
+      });
+    });
+  }
+
+  function renderOnbBooks(books) {
+    const el = document.getElementById('onb-books');
+    el.innerHTML = (books || []).map(b => `
+      <div class="book-row">
+        <span class="badge ${b.can_trade ? 'b-live' : 'b-off'}">${b.can_trade ? 'can trade' : 'blocked'}</span>
+        <span class="book-row-name">${esc(b.book)}</span>
+        <span class="book-row-reason mut">${esc(b.reason || '')}</span>
+      </div>`).join('');
+  }
+
+  async function loadPreview() {
+    const presetToSend = chosenPreset || 'auto';
+    try {
+      const r = await fetch('/api/risk/preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ equity_usd: equity, profile: { preset: presetToSend } }),
+      });
+      if (!r.ok) throw new Error('preview ' + r.status);
+      const d = await r.json();
+      if (!chosenPreset) { chosenPreset = d.preset_applied || 'starter'; renderPresetCards(); }
+      document.getElementById('onb-headline').textContent = d.headline || '—';
+      document.getElementById('onb-risk-usd').textContent = fmtUsd(d.risk_per_trade_usd);
+      document.getElementById('onb-daily-pause').textContent = fmtUsd(d.daily_loss_limit_usd);
+      document.getElementById('onb-max-positions').textContent = d.max_open_positions ?? '—';
+      renderOnbBooks(d.books);
+      const low = document.getElementById('onb-low-equity');
+      // Never silent zeros: a non-tradable account always says the exact
+      // dollar amount that would fix it, built from min_equity_to_trade_usd.
+      if (!d.can_trade && Number(d.min_equity_to_trade_usd) > equity) {
+        low.textContent = 'Add ' + fmtAddUsd(d.min_equity_to_trade_usd, equity) + ' to place your first trade.';
+        low.hidden = false;
+      } else {
+        low.hidden = true;
+      }
+    } catch (e) { reportRefreshFailure('onboarding risk preview', e, 'onb-preview'); }
+  }
+
+  async function enterRiskStep() {
+    localStorage.setItem(RESUME_KEY, '2');
+    showWizard(2);
+    try {
+      const r = await fetch('/api/accounts/active/summary');
+      const s = r.ok ? await r.json() : {};
+      equity = Number(s.equity_usd ?? 0);
+    } catch (e) { equity = 0; }
+    document.getElementById('onb-risk-equity').textContent = 'Your account has ' + fmtUsd(equity) + '.';
+    chosenPreset = null;
+    await loadPreview();
+  }
+
+  document.getElementById('onb-connect').addEventListener('click', () => PathielSession.openWallet('choose'));
+  document.getElementById('onb-watch').addEventListener('click', () => PathielSession.openWallet('watch'));
+
+  document.getElementById('onb-save').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/risk/profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset: chosenPreset }),
+      });
+      if (!r.ok) throw new Error('save ' + r.status);
+      localStorage.removeItem(RESUME_KEY);
+      showStep(3);
+    } catch (e) {
+      reportRefreshFailure('onboarding risk save', e, 'onb-preview');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('onb-goto-desks').addEventListener('click', () => localStorage.removeItem(RESUME_KEY));
+
+  // True only while this load is showing the welcome card — so a later
+  // account SWITCH (which also fires this event, with needs_onboarding
+  // already false) never yanks an already-onboarded visitor back into the
+  // wizard. See the shared hook contract, SWARM_RULES section 10.
+  let wasOnboarding = false;
+
+  document.addEventListener('pathiel:account-changed', (e) => {
+    const session = e.detail || {};
+    if (wasOnboarding && !session.needs_onboarding) {
+      wasOnboarding = false;
+      enterRiskStep();
+    }
+  });
+
+  (async function initOnboarding() {
+    const session = await PathielSession.get();
+    wasOnboarding = !!session.needs_onboarding;
+    if (wasOnboarding) { showWizard(1); return; }
+    if (localStorage.getItem(RESUME_KEY) === '2') { await enterRiskStep(); return; }
+    showDashboard();
+  })();
+})();
 
 refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();
