@@ -1,0 +1,176 @@
+[
+  [
+    "0G",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "0.0000125",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ]
+    ]
+  ],
+  [
+    "2Z",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "0.0000105732",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ]
+    ]
+  ],
+  [
+    "AAVE",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.00004775",
+          "nextFundingTime": 1792224000000,
+          "fundingIntervalHours": 8
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "-0.0000048949",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "-0.00000746",
+          "nextFundingTime": 1792224000000,
+          "fundingIntervalHours": 8
+        }
+      ]
+    ]
+  ],
+  [
+    "ACE",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "0.0000125",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ]
+    ]
+  ],
+  [
+    "ADA",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.00003173",
+          "nextFundingTime": 1792224000000,
+          "fundingIntervalHours": 8
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "-0.000010152",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "0.0001",
+          "nextFundingTime": 1792224000000,
+          "fundingIntervalHours": 8
+        }
+      ]
+    ]
+  ],
+  [
+    "AERO",
+    [
+      [
+        "BinPerp",
+        {
+          "fundingRate": "0.0000462",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ],
+      [
+        "HlPerp",
+        {
+          "fundingRate": "0.0000125",
+          "nextFundingTime": 1792206000000,
+          "fundingIntervalHours": 1
+        }
+      ],
+      [
+        "BybitPerp",
+        {
+          "fundingRate": "0.00005",
+          "nextFundingTime": 1792209600000,
+          "fundingIntervalHours": 4
+        }
+      ]
+    ]
+  ]
+]
