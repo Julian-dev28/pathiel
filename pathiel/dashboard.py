@@ -106,29 +106,16 @@ def _ttl_cached(key: str, ttl: float, fn: Callable[[], Any]) -> Any:
 
 
 async def _run_off_loop(fn: Callable[..., Any], *args: Any) -> Any:
-    """Run a synchronous payload builder on the default executor instead of
-    the request coroutine, so it cannot block every OTHER request this
-    process is serving.
+    """Run a payload builder on the executor, not the request coroutine.
 
-    Found 2026-10-17 (ux-qa perf sweep): /api/dashboard/coin_chart calls
-    fetch_hl_candles, a real HTTP round trip to Hyperliquid, directly inside
-    its `async def` handler with no `await`. uvicorn runs this whole app on
-    ONE event loop, so for the duration of that HTTP call nothing else — any
-    endpoint, on any page, for any visitor — could be scheduled. A concurrent
-    load of /analytics measured four unrelated, individually-fast (<10ms)
-    endpoints all completing within 1ms of the slow chart call's ~200ms,
-    which is the signature of head-of-line blocking, not five slow
-    endpoints. A slow or rate-limited Hyperliquid response would stall the
-    entire dashboard, not just the chart.
-
-    Every dashboard JSON route is routed through this now rather than only
-    the one handler that happened to get caught: a future payload function
-    that adds a blocking call (another HL fetch, a slow disk read) is then
-    automatically off the hot path instead of silently reintroducing the
-    same class of bug. The cost on the common cache-hit path is one
-    thread-pool round trip — sub-millisecond, and still strictly off the
-    loop that every other concurrent request depends on.
-    """
+    coin_chart's fetch_hl_candles is a real HL round trip called directly
+    inside `async def` with no `await` — on uvicorn's one event loop that
+    blocks every other request, on every page, for every visitor, for its
+    duration (confirmed: concurrent /analytics calls clustered at the chart
+    call's ~200ms, the signature of head-of-line blocking). Every route uses
+    this now so the next payload function that adds a blocking call is
+    automatically off the hot path too. Cache-hit cost: one thread-pool
+    round trip, sub-millisecond."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args)
 
@@ -250,13 +237,8 @@ _POSITIONS_CACHE: Dict[str, Any] = {"ts": 0.0, "data": []}
 logger = logging.getLogger(__name__)
 
 _POSITIONS_CACHE_TTL_S = 5.0  # acceptable staleness for a display endpoint
-# Every route handler now runs its payload builder through _run_off_loop
-# (see the route-registration section), which means this cache can genuinely
-# be touched from two different executor threads at once — unlike the rest of
-# this module's lifetime so far, where one cooperative event loop made races
-# here structurally impossible. A lock matching _TTL_CACHE_LOCK's is cheap
-# insurance against two concurrent misses both firing the ~9-HTTP-POST HL
-# fetch and stepping on each other's write.
+# _run_off_loop means this can now be hit from two executor threads at once;
+# lock it like _TTL_CACHE_LOCK.
 _POSITIONS_CACHE_LOCK = threading.Lock()
 
 
@@ -313,20 +295,13 @@ def _positions_payload_uncached() -> List[Dict[str, Any]]:
 
     user = resolve_user_address()
     if not user:
-        # Found 2026-10-17 ux-qa sweep: this was `return []`, which is exactly
-        # the "fetch failure becomes a silent flat" outcome the comment two
-        # lines down says this function must never produce — it just reached
-        # it from a different door. Reproduced on the demo deployment: once
-        # the positions snapshot ages past 120s (no loop writing it) with no
-        # HL address configured, this returned [] as fresh data, overwriting
-        # a cache that had 3 real positions in it with "flat — no open
-        # positions" — while the KPI row, reading open_positions off the
-        # heartbeat instead (a 300s staleness window, not 120s), kept
-        # confidently showing 3. Two panels on one screen disagreeing about
-        # whether the account held anything. Raising lets _positions_payload's
-        # existing except-block do what it already does for a fetch_account_state
-        # failure: serve the last known good read and say so in the log,
-        # rather than accepting "no address resolvable" as proof of flat.
+        # Was `return []` — the exact "failure reads as flat" bug the comment
+        # two lines down says this function must avoid, reached from a
+        # different door. Reproduced live: snapshot stale + no address
+        # configured silently overwrote a 3-position cache with "flat",
+        # while the KPI (a different, 300s-not-120s staleness window) kept
+        # showing 3. Raising lets the except-block below do what it already
+        # does on a fetch failure: serve last-known-good instead of a false zero.
         raise RuntimeError("no HL address resolvable — cannot confirm positions")
     # include_hip3=True so xyz:MU / vntl:* positions appear in the dashboard
     # list alongside main-dex positions; HIP-3 dexes are separate
@@ -1441,9 +1416,7 @@ _DEAD_SUBSYSTEM_REASONS = ("MAIN_ENGINE_DELETED",)
 
 _ACCOUNT_TTL_S = 20.0
 _ACCOUNT_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-# Same reasoning as _POSITIONS_CACHE_LOCK: this is read/written off the event
-# loop thread now (route goes through _run_off_loop), so two concurrent
-# misses for the same address are a real possibility, not a theoretical one.
+# Same reasoning as _POSITIONS_CACHE_LOCK.
 _ACCOUNT_CACHE_LOCK = threading.Lock()
 
 

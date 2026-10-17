@@ -22,17 +22,21 @@ import pytest
 
 pytest.importorskip("playwright.sync_api", reason="playwright not installed")
 
-# Bare import, not `from tests.browser._shared import ...`: a dotted import
-# forces Python to resolve `tests` as an importable package (pythonpath=["."]
-# plus no tests/__init__.py makes it an implicit PEP 420 namespace package),
-# which then collides with services/pathiel_data_api/tests — a REAL package
-# (it has __init__.py) that also happens to be named "tests". Both conftest
-# .py files end up registered under the identical plugin name "tests.conftest"
-# and pytest refuses the second one outright. pytest's own rootdir-prepend
-# collection already puts this file's directory on sys.path with no __init__.py
-# anywhere above it, so the bare import below resolves _shared.py directly —
-# no package name is ever created, so there is nothing to collide with.
-from _shared import load_page  # noqa: E402
+# Relative import. tests/browser/__init__.py exists (desk-ui's
+# test_desks_browser.py needs "tests.browser.desks_fixture_app" as a
+# resolvable dotted path for uvicorn's string-based app loader), which makes
+# `tests/browser/` a real package — a bare `from _shared import load_page`
+# does not resolve once a package's own directory is no longer inserted onto
+# sys.path by pytest's collector. A dotted `from tests.browser._shared
+# import ...` would resolve but forces `tests` itself to become an
+# importable package (pythonpath=["."] plus no tests/__init__.py makes it an
+# implicit PEP 420 namespace package), which collides with
+# services/pathiel_data_api/tests — a REAL package also named "tests" — the
+# two conftest.py files end up registered under the identical plugin name
+# "tests.conftest" and pytest refuses the second one outright. The relative
+# import below resolves _shared.py through tests.browser specifically,
+# without ever requiring `tests` on its own to resolve as anything.
+from ._shared import load_page  # noqa: E402
 
 pytestmark = pytest.mark.browser
 
