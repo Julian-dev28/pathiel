@@ -81,11 +81,13 @@
       <p class="page-sub" id="onb-risk-equity">&nbsp;</p>
 
       <div id="onb-preset-cards" class="preset-grid" role="radiogroup" aria-label="Risk preset"></div>
+      <div id="onb-custom-note" class="chip chip-amber" hidden></div>
 
       <div id="onb-low-equity" class="callout callout-amber" hidden></div>
 
       <div id="onb-preview" class="onboard-preview">
         <div class="kv" id="onb-headline">&mdash;</div>
+        <div id="onb-notes" class="preview-notes"></div>
         <div class="stat-row">
           <div><div class="sec-label">Risk per trade</div><div class="kv" id="onb-risk-usd">&mdash;</div></div>
           <div><div class="sec-label">Daily pause</div><div class="kv" id="onb-daily-pause">&mdash;</div></div>
@@ -957,30 +959,29 @@ async function refreshLeague() {
   function showWizard(n) { main.hidden = true; root.hidden = false; showStep(n); }
   function showDashboard() { root.hidden = true; main.hidden = false; }
 
-  const PRESETS = [
-    { id: 'starter', label: 'Starter', blurb: 'Smallest size. Widest safety margin.' },
-    { id: 'small', label: 'Small', blurb: 'A bit more room to size up.' },
-    { id: 'standard', label: 'Standard', blurb: 'The common default.' },
-    { id: 'pro', label: 'Pro', blurb: 'Larger size. Tighter discipline required.' },
-  ];
   let equity = 0;
   let chosenPreset = null;   // null until the first preview resolves "auto"
+  let isCustom = false;      // true when the account's real numbers don't match any card
 
   function renderPresetCards() {
     const wrap = document.getElementById('onb-preset-cards');
-    wrap.innerHTML = PRESETS.map(p => `
-      <button type="button" class="preset-card${p.id === chosenPreset ? ' on' : ''}"
-              data-preset="${p.id}" role="radio" aria-checked="${p.id === chosenPreset}">
+    wrap.innerHTML = RISK_PRESETS.map(p => `
+      <button type="button" class="preset-card${!isCustom && p.id === chosenPreset ? ' on' : ''}"
+              data-preset="${p.id}" role="radio" aria-checked="${!isCustom && p.id === chosenPreset}">
         <span class="preset-card-name">${esc(p.label)}</span>
         <span class="preset-card-blurb">${esc(p.blurb)}</span>
       </button>`).join('');
     wrap.querySelectorAll('.preset-card').forEach(btn => {
       btn.addEventListener('click', () => {
         chosenPreset = btn.dataset.preset;
+        isCustom = false;
         renderPresetCards();
         loadPreview();
       });
     });
+    const note = document.getElementById('onb-custom-note');
+    note.textContent = 'Custom (from your old settings)';
+    note.hidden = !isCustom;
   }
 
   function renderOnbBooks(books) {
@@ -1002,8 +1003,18 @@ async function refreshLeague() {
       });
       if (!r.ok) throw new Error('preview ' + r.status);
       const d = await r.json();
-      if (!chosenPreset) { chosenPreset = d.preset_applied || 'starter'; renderPresetCards(); }
+      if (!chosenPreset) {
+        chosenPreset = d.preset_applied || 'starter';
+        isCustom = !matchesPresetDefaults(d.preset_applied, d.profile);
+        renderPresetCards();
+      }
       document.getElementById('onb-headline').textContent = d.headline || '—';
+      // Plainly, right under the headline, never buried in a per-book row:
+      // the exchange-minimum bump risk note services/risk/derive.py already
+      // computes (notes), so a starter account risking up to 15% on a
+      // bumped order is never a surprise.
+      document.getElementById('onb-notes').innerHTML = (d.notes || [])
+        .map(n => `<div class="preview-note">${esc(n)}</div>`).join('');
       document.getElementById('onb-risk-usd').textContent = fmtUsd(d.risk_per_trade_usd);
       document.getElementById('onb-daily-pause').textContent = fmtUsd(d.daily_loss_limit_usd);
       document.getElementById('onb-max-positions').textContent = d.max_open_positions ?? '—';

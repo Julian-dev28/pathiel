@@ -281,6 +281,60 @@ def test_account_page_feasibility_table_reflects_the_preview(server, browser):
     page.context.close()
 
 
+def test_account_page_shows_a_migrated_custom_profile_plainly(server, browser):
+    """Integration note (wave-2 integrator, 2026-10-17): a migrated legacy
+    config (services/risk/migrate.py) resolves preset_applied to a real
+    tier NAME but keeps its own overridden numbers — Julien's real shape
+    (~15.75% risk/trade, 12.1% daily, 3x leverage, 3 positions; verified
+    against the real migrate_legacy + derive_limits in
+    test_dashboard_pages.py) must show those REAL numbers, make "Custom"
+    obvious, and switch to a clean preset in one click."""
+    seed(server, "julien_custom")
+    page, issues = open_page(browser)
+    page.goto(server + "/account", wait_until="load", timeout=20000)
+
+    page.locator("#risk-custom-note").wait_for(state="visible", timeout=5000)
+    assert "Custom" in page.locator("#risk-custom-note").inner_text()
+    # No preset button is highlighted while showing Custom — highlighting
+    # "starter" here would claim the account is on starter's defaults
+    # (3% risk) when the real number is ~15.75%.
+    assert page.locator(".fsel.on").count() == 0
+
+    assert "15.75" in page.locator("#risk-risk-usd").inner_text() or \
+        "2.39" in page.locator("#risk-risk-usd").inner_text(), \
+        page.locator("#risk-risk-usd").inner_text()
+    adv_risk = page.locator("#adv-risk-pct").input_value()
+    assert adv_risk.startswith("15.75") or adv_risk.startswith("15.74"), adv_risk
+
+    # One click away from Custom, to a clean preset.
+    page.locator('.fsel[data-preset="starter"]').click()
+    page.locator("#risk-custom-note").wait_for(state="hidden", timeout=5000)
+    assert "on" in (page.locator('.fsel[data-preset="starter"]').get_attribute("class") or "")
+
+    assert not issues, f"console issues on a migrated custom profile: {issues}"
+    page.context.close()
+
+
+def test_account_page_shows_the_bump_risk_note_plainly(server, browser):
+    """Integration note (wave-2 integrator, 2026-10-17): starter allows
+    bumping to the exchange minimum up to 15% risk — at low equity that is
+    a double-digit percent of the account on one stop-out, and
+    services/risk/derive.py's own notes field already says so
+    plainly ("<books> sized up to the exchange minimum (risk allowed up
+    to N% for this)."). This has to actually render, not just exist in
+    the API response — it was rendered nowhere before this fix."""
+    seed(server, "julien_custom")   # equity $15.19, ~15.75% risk/trade -> bumped books
+    page, issues = open_page(browser)
+    page.goto(server + "/account", wait_until="load", timeout=20000)
+    page.locator("#risk-notes .preview-note").first.wait_for(state="visible", timeout=5000)
+    notes_text = page.locator("#risk-notes").inner_text()
+    assert "Daily pause" in notes_text, notes_text
+    assert "exchange minimum" in notes_text, (
+        f"the bump-risk note is missing from the preview headline area: {notes_text!r}")
+    assert not issues, f"console issues reading the preview notes: {issues}"
+    page.context.close()
+
+
 # ── cross-cutting: nav, no sign-in, mobile, console ──────────────────────────
 
 ALL_FIXTURE_PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/account")

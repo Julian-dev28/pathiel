@@ -31,6 +31,46 @@ const fmtUsd = v => (Number(v ?? 0) < 0 ? '-$' : '$') + Math.abs(Number(v ?? 0))
  *  formatting. */
 const fmtAddUsd = (need, have) => fmtUsd(Math.max(0, Math.ceil((Number(need) - Number(have)) * 100) / 100)).replace(/\.00$/, '');
 
+/** The four risk presets, mirrored from services/risk/presets.py — blurbs
+ *  copied verbatim from there (that file is the one source of truth for
+ *  this copy, including the "starter risks up to 15% on a bumped order"
+ *  warning). Shared by landing.html's onboarding wizard and account.html's
+ *  risk editor, so the two screens can never show two different
+ *  descriptions of the same preset. */
+const RISK_PRESETS = [
+  { id: 'starter', label: 'Starter', risk_per_trade_pct: 3.0, daily_loss_limit_pct: 8.0, max_leverage: 10.0,
+    blurb: 'One position at a time. Risks up to 3% a trade (as much as 15% if the $10 '
+          + 'exchange minimum forces it on a wide-stop book), stops for the day after an 8% loss.' },
+  { id: 'small', label: 'Small', risk_per_trade_pct: 2.0, daily_loss_limit_pct: 6.0, max_leverage: 8.0,
+    blurb: 'Up to 3 positions at once. Risks up to 2% a trade (4% if bumped to the exchange '
+          + 'minimum), stops for the day after 6%.' },
+  { id: 'standard', label: 'Standard', risk_per_trade_pct: 1.5, daily_loss_limit_pct: 5.0, max_leverage: 6.0,
+    blurb: 'Up to 6 positions at once. Risks up to 1.5% a trade, stops for the day after 5%. '
+          + 'The $10 minimum never needs a bump at this size.' },
+  { id: 'pro', label: 'Pro', risk_per_trade_pct: 1.0, daily_loss_limit_pct: 4.0, max_leverage: 5.0,
+    blurb: 'Up to 10 positions at once. Risks up to 1% a trade, stops for the day after 4%. '
+          + 'Capital preservation over expression.' },
+];
+
+/** Does a resolved profile's OWN numbers actually match preset_applied's
+ *  table entry? A migrated legacy config (services/risk/migrate.py) comes
+ *  back from GET /api/risk/limits with preset_applied resolved to whatever
+ *  tier the equity falls into — but every number overridden away from
+ *  that tier's own defaults, so the literal preset name alone would
+ *  mislabel it (Julien's real config: preset_applied could read "starter"
+ *  while risk_per_trade_pct is ~15.75%, nothing like starter's 3%).
+ *  Comparing the numbers that actually vary by preset catches that:
+ *  `false` means show this as "Custom (from your old settings)", whatever
+ *  preset_applied literally says. */
+function matchesPresetDefaults(presetApplied, profile) {
+  const def = RISK_PRESETS.find(p => p.id === presetApplied);
+  if (!def || !profile) return false;   // "custom", or an unrecognized name
+  const close = (a, b) => Math.abs(Number(a) - Number(b)) < 0.01;
+  return close(profile.risk_per_trade_pct, def.risk_per_trade_pct)
+      && close(profile.daily_loss_limit_pct, def.daily_loss_limit_pct)
+      && close(profile.max_leverage, def.max_leverage);
+}
+
 /** Mark the current tab in the masthead. */
 (function () {
   const here = window.location.pathname.replace(/\/$/, '') || '/';
