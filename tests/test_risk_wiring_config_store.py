@@ -153,3 +153,25 @@ def test_regression_the_real_config_migrates_through_the_real_read_agent_config(
         f"{rp.risk_per_trade_pct} -- migration silently did not fire")
     assert rp.max_open_positions == 3   # the real file's max_concurrent, carried over
     assert rp.daily_loss_limit_pct == 12.1   # the real file's max_daily_loss_pct=0.121
+
+
+def test_fresh_install_gets_the_auto_preset_not_a_custom_profile(tmp_path, monkeypatch):
+    """Live e2e 2026-10-17: an empty config showed 'Custom (from your old
+    settings)' because built-in defaults were migrated as if the user set them."""
+    import pathiel.agents.config_store as cs
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text("{}")
+    monkeypatch.setattr(cs, "CONFIG_PATH", str(cfg))
+    prof = cs.read_risk_profile()
+    assert prof.preset == "auto"
+    assert prof.risk_per_trade_pct is None and prof.max_bumped_risk_pct is None
+
+
+def test_a_user_set_legacy_key_still_migrates(tmp_path, monkeypatch):
+    import json as _json
+    import pathiel.agents.config_store as cs
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(_json.dumps({"equity_fraction_per_trade": 0.35, "leverage": 3}))
+    monkeypatch.setattr(cs, "CONFIG_PATH", str(cfg))
+    prof = cs.read_risk_profile()
+    assert prof.risk_per_trade_pct is not None   # migrated, not auto
