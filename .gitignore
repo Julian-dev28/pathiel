@@ -196,3 +196,6 @@ research/alpha_swarm/**/*_dataset.json
 .forge/
 .qwen/
 .env*
+
+# virtualenv, and the .venv symlink agent worktrees create
+.venv

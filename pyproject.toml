@@ -60,7 +60,7 @@ select = ["F"]
 pythonpath = ["."]
 # services/*/tests too: a service whose suite is not collected is a service
 # whose suite does not exist. services/auth is on every request path.
-testpaths = ["tests", "services"]
+testpaths = ["tests", "services", "contracts"]
 addopts = "-m 'not online and not live and not browser'"
 markers = [
     "browser: drives a real Chromium via Playwright and boots a server; too slow for the commit gate, deselected by default (run with: pytest -m browser)",
