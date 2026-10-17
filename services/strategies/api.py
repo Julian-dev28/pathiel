@@ -121,16 +121,21 @@ def post_thesis(desk_id: str, body: UserThesisIn) -> Thesis:
 
 # ── HTML routes ────────────────────────────────────────────────────────────
 
+_NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate"}
+
+
 def _render_or_placeholder(filename: str, title: str, body: str) -> HTMLResponse:
     path = _TEMPLATES_DIR / filename
     if path.exists():
-        return HTMLResponse(path.read_text(encoding="utf-8"))
+        # Same no-cache policy as every other dashboard page: a stale cached
+        # page would pair new JS with old markup after a deploy.
+        return HTMLResponse(path.read_text(encoding="utf-8"), headers=_NO_CACHE)
     placeholder = (
         f"<!doctype html><html><head><title>{title}</title></head><body>"
         f"<h1>{title}</h1><p>{body}</p>"
         f"<p>JSON: <a href=\"/api/desks\">/api/desks</a></p></body></html>"
     )
-    return HTMLResponse(placeholder, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+    return HTMLResponse(placeholder, headers=_NO_CACHE)
 
 
 @router.get("/desks", response_class=HTMLResponse)

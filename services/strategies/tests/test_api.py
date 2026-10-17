@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -145,11 +146,24 @@ def test_post_thesis_rejects_extra_fields(client):
 
 # ── HTML routes ──────────────────────────────────────────────────────────
 
-def test_desks_html_page_placeholder_when_template_missing(client):
+def test_desks_html_page_placeholder_when_template_missing(client, monkeypatch, tmp_path):
+    """Templates ship now (desk-ui), so simulate a missing one: the route must
+    still answer 200 with a placeholder, never a 500."""
+    from services.strategies import api as strategies_api
+    monkeypatch.setattr(strategies_api, "_TEMPLATES_DIR", tmp_path)
     r = client.get("/desks")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     assert "desk-ui" in r.text or "/api/desks" in r.text
+
+
+def test_desks_html_page_serves_real_template(client):
+    """With desk-ui merged, /desks serves pathiel/templates/desks.html."""
+    r = client.get("/desks")
+    assert r.status_code == 200
+    real = (Path(__file__).resolve().parents[3] / "pathiel/templates/desks.html").read_text()
+    assert r.text == real
+    assert "no-cache" in r.headers.get("cache-control", "")
 
 
 def test_desk_html_page_known_desk(client):
