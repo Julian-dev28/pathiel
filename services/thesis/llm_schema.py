@@ -15,11 +15,12 @@ not re-declared here, so this schema can never silently drift from it - a
 contract change that adds a required field on any of them is a type error
 here, not a shape that quietly stops matching.
 
-``leverage_reasons`` is this service's OWN shape, not a contract type: the
-contract's LeverageView already carries ``leverage`` and ``verdict``, both
-code-filled by copying analytics.ladder 1:1 - the LLM only ever supplies the
-prose ``reason``, positionally aligned to analytics.ladder's order (which is
-DeskSpec.leverage_ladder's order).
+``leverage_reasons`` is this service's OWN shape, not a contract type: one
+{leverage, reason} per ladder leverage, for the side of the call. Code fills
+the contract's LeverageView by matching each reason to the ladder rung with
+that leverage AND the call's side, and copies the verdict from the rung. It
+used to be a bare list of strings aligned by position; live on 2026-10-17 the
+model ordered them differently and every reason landed on the wrong rung.
 """
 from __future__ import annotations
 
@@ -39,6 +40,14 @@ _MIN_SCENARIOS = 3
 _MAX_SCENARIOS = 5
 
 
+class LeverageReason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    leverage: float = Field(description="One of the ladder leverages, e.g. 5, 10, 20.")
+    reason: str = Field(description="Why this leverage fits or not, for the side of YOUR call, "
+                                    "quoting that rung's numbers.")
+
+
 class ThesisDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,7 +57,7 @@ class ThesisDraft(BaseModel):
     bear: List[Point] = Field(min_length=1, max_length=4)
     what_changes_my_mind: List[str] = Field(min_length=1, max_length=4)
     lessons: List[Lesson] = Field(min_length=_MIN_LESSONS, max_length=_MAX_LESSONS)
-    leverage_reasons: List[str] = Field(min_length=1)
+    leverage_reasons: List[LeverageReason] = Field(min_length=1)
 
 
 # Per-field prose caps injected into the generated schema (see
@@ -90,7 +99,7 @@ def thesis_draft_json_schema(n_leverage_rungs: int) -> dict[str, Any]:
     n = max(1, int(n_leverage_rungs))
     schema["properties"]["leverage_reasons"]["minItems"] = n
     schema["properties"]["leverage_reasons"]["maxItems"] = n
-    schema["properties"]["leverage_reasons"]["items"]["maxLength"] = _LEVERAGE_REASON_MAX_LENGTH
+    schema["$defs"]["LeverageReason"]["properties"]["reason"]["maxLength"] = _LEVERAGE_REASON_MAX_LENGTH
     schema["properties"]["what_changes_my_mind"]["items"]["maxLength"] = _WHAT_CHANGES_MY_MIND_ITEM_MAX_LENGTH
 
     defs = schema.get("$defs", {})

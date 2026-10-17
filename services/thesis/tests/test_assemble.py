@@ -15,7 +15,7 @@ def _draft_from_thesis(thesis) -> ThesisDraft:
     return ThesisDraft(
         call=thesis.call, scenarios=thesis.scenarios, bull=thesis.bull, bear=thesis.bear,
         what_changes_my_mind=thesis.what_changes_my_mind, lessons=thesis.lessons,
-        leverage_reasons=[lv.reason for lv in thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in thesis.leverage_view],
     )
 
 
@@ -23,16 +23,42 @@ def test_make_thesis_id_matches_the_fixture_format(oil):
     assert assemble.make_thesis_id("oil", oil.T0) == "oil-20261017T0210-m"
 
 
+def _lr(lev, reason):
+    from services.thesis.llm_schema import LeverageReason
+    return LeverageReason(leverage=lev, reason=reason)
+
+
 def test_build_leverage_view_copies_leverage_and_verdict_from_the_ladder(oil):
-    reasons = ["r5", "r10", "r20"]
-    out = assemble.build_leverage_view(oil.analytics, reasons)
+    reasons = [_lr(5.0, "r5"), _lr(10.0, "r10"), _lr(20.0, "r20")]
+    out = assemble.build_leverage_view(oil.analytics, reasons, oil.thesis.call)
     assert [(lv.leverage, lv.verdict, lv.reason) for lv in out] == [
         (5.0, "hold", "r5"), (10.0, "dip_only", "r10"), (20.0, "avoid", "r20"),
     ]
 
 
+def test_build_leverage_view_matches_reasons_by_leverage_not_position(oil):
+    """Live 2026-10-17: the model listed reasons in its own order and every
+    reason landed on the wrong rung. Matching is by leverage now."""
+    reasons = [_lr(20.0, "r20"), _lr(5.0, "r5"), _lr(10.0, "r10")]
+    out = assemble.build_leverage_view(oil.analytics, reasons, oil.thesis.call)
+    assert [(lv.leverage, lv.reason) for lv in out] == [(5.0, "r5"), (10.0, "r10"), (20.0, "r20")]
+
+
+def test_build_leverage_view_uses_the_call_side_rungs(oil):
+    """With long and short rungs in the ladder, a short call gets the SHORT
+    rungs' verdicts, one view per leverage."""
+    shorts = [r.model_copy(update={"side": "short", "verdict": "avoid"}) for r in oil.analytics.ladder]
+    analytics = oil.analytics.model_copy(update={"ladder": list(oil.analytics.ladder) + shorts})
+    short_call = oil.thesis.call.model_copy(update={"side": "short"})
+    out = assemble.build_leverage_view(analytics, [_lr(5.0, "a"), _lr(10.0, "b"), _lr(20.0, "c")], short_call)
+    assert [lv.leverage for lv in out] == [5.0, 10.0, 20.0]
+    assert {lv.verdict for lv in out} == {"avoid"}
+    long_out = assemble.build_leverage_view(analytics, [_lr(5.0, "a")], oil.thesis.call)
+    assert [lv.verdict for lv in long_out] == ["hold", "dip_only", "avoid"]
+
+
 def test_build_leverage_view_tolerates_too_few_reasons(oil):
-    out = assemble.build_leverage_view(oil.analytics, ["only one"])
+    out = assemble.build_leverage_view(oil.analytics, [_lr(5.0, "only one")], oil.thesis.call)
     assert out[0].reason == "only one"
     assert out[1].reason == "no reason provided"
 
@@ -51,7 +77,7 @@ def test_resolve_sources_excludes_uncited_ids(oil):
         bull=[Point(text="x", source_ids=["h1"])],
         bear=[Point(text="uncited bear point", source_ids=[])],
         what_changes_my_mind=oil.thesis.what_changes_my_mind, lessons=oil.thesis.lessons,
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
     )
     sources = assemble.resolve_sources(draft, oil.intel)
     assert {s.id for s in sources} == {"h1"}
@@ -63,7 +89,7 @@ def test_resolve_sources_skips_catalyst_and_positioning_citations_no_url(oil):
         bull=[Point(text="x", source_ids=["c1", "cot1"])],
         bear=[Point(text="uncited bear point", source_ids=[])],
         what_changes_my_mind=oil.thesis.what_changes_my_mind, lessons=oil.thesis.lessons,
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
     )
     assert assemble.resolve_sources(draft, oil.intel) == []
 

@@ -26,7 +26,7 @@ from pydantic import ValidationError
 
 from contracts.strategies.models import DeskAnalytics, DeskSpec, IntelPacket, Thesis, Usage
 from services.llm import LlmError, LlmResult, complete
-from services.thesis import assemble, fallback, validator
+from services.thesis import assemble, desk_lookup, fallback, validator
 from services.thesis import prompt as prompt_mod
 from services.thesis.llm_schema import ThesisDraft, thesis_draft_json_schema
 from services.thesis.render import render_markdown  # noqa: F401  (public: MCP desk tools)
@@ -49,7 +49,7 @@ def write_thesis(
         incremental = prev is not None and prompt_mod.is_small_change(spec, analytics, intel, prev)
         system_prompt = prompt_mod.build_system_prompt(spec)
         user_prompt, _ = prompt_mod.build_user_prompt(spec, analytics, intel, prev, incremental=incremental)
-        schema = thesis_draft_json_schema(len(analytics.ladder))
+        schema = thesis_draft_json_schema(len(desk_lookup.ladder_leverages(analytics)))
 
         result1 = complete(
             system_prompt,

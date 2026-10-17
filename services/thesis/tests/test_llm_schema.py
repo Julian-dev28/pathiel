@@ -19,7 +19,8 @@ def test_leverage_reasons_pinned_to_the_requested_rung_count():
 
 def test_leverage_reasons_items_have_a_length_cap():
     schema = thesis_draft_json_schema(3)
-    assert schema["properties"]["leverage_reasons"]["items"]["maxLength"] == _LEVERAGE_REASON_MAX_LENGTH
+    reason = schema["$defs"]["LeverageReason"]["properties"]["reason"]
+    assert reason["maxLength"] == _LEVERAGE_REASON_MAX_LENGTH
 
 
 def test_what_changes_my_mind_items_have_a_length_cap():

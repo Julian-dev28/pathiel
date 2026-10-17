@@ -23,7 +23,7 @@ def _draft_json(oil, *, scenarios=None, bear=None) -> str:
         bear=bear if bear is not None else oil.thesis.bear,
         what_changes_my_mind=oil.thesis.what_changes_my_mind,
         lessons=oil.thesis.lessons,
-        leverage_reasons=[lv.reason for lv in oil.thesis.leverage_view],
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view],
     )
     return draft.model_dump_json()
 

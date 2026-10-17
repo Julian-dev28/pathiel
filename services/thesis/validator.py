@@ -398,9 +398,10 @@ def check_targets_consistent(call: Call, analytics: DeskAnalytics) -> List[str]:
 def check_leverage_not_avoid(call: Call, analytics: DeskAnalytics) -> List[str]:
     if call.side not in ("long", "short") or call.leverage is None:
         return []
-    rung = desk_lookup.find_ladder_rung(call.leverage, analytics, coin=call.instrument)
+    rung = desk_lookup.find_ladder_rung(call.leverage, analytics, coin=call.instrument,
+                                        side=call.side)
     if rung is None:
-        rung = desk_lookup.find_ladder_rung(call.leverage, analytics)
+        rung = desk_lookup.find_ladder_rung(call.leverage, analytics, side=call.side)
     if rung is None:
         return [f"call.leverage {call.leverage} is not one of the ladder's rungs"]
     if rung.verdict == "avoid":
@@ -436,12 +437,22 @@ def check_lessons_count(lessons: List[Lesson]) -> List[str]:
     return []
 
 
-def check_leverage_reasons_count(leverage_reasons: List[str], analytics: DeskAnalytics) -> List[str]:
-    expected = len(analytics.ladder)
-    if len(leverage_reasons) != expected:
+def _lr_field(lr, name: str):
+    """LeverageReason objects in production; dicts in hand-built test drafts."""
+    return lr.get(name) if isinstance(lr, dict) else getattr(lr, name, None)
+
+
+def check_leverage_reasons_count(leverage_reasons, analytics: DeskAnalytics) -> List[str]:
+    """Exactly one reason per ladder leverage, each leverage named once."""
+    expected = desk_lookup.ladder_leverages(analytics)
+    try:
+        got = [float(_lr_field(lr, "leverage")) for lr in leverage_reasons]
+    except (TypeError, ValueError):
+        return ["leverage_reasons entries must each be {leverage, reason}"]
+    if sorted(got) != sorted(float(x) for x in expected):
         return [
-            f"leverage_reasons must have exactly {expected} entries (one per ladder "
-            f"rung), got {len(leverage_reasons)}"
+            f"leverage_reasons must name each ladder leverage exactly once "
+            f"({', '.join(f'{x:g}' for x in expected)}), got {', '.join(f'{x:g}' for x in got) or 'none'}"
         ]
     return []
 
@@ -478,8 +489,8 @@ def check_numbers_grounded(
         _scan(f"lessons[{i}].tied_to", lesson.tied_to)
     for i, line in enumerate(what_changes_my_mind):
         _scan(f"what_changes_my_mind[{i}]", line)
-    for i, reason in enumerate(leverage_reasons):
-        _scan(f"leverage_reasons[{i}]", reason)
+    for i, lr in enumerate(leverage_reasons):
+        _scan(f"leverage_reasons[{i}]", str(_lr_field(lr, "reason") or ""))
     return errors
 
 
@@ -537,7 +548,7 @@ def validate_thesis(
 ) -> List[str]:
     """Same rules, run against an already-assembled Thesis (used by the
     eval harness to score a finished write_thesis() result end to end)."""
-    leverage_reasons = [lv.reason for lv in thesis.leverage_view]
+    leverage_reasons = [{"leverage": lv.leverage, "reason": lv.reason} for lv in thesis.leverage_view]
     return _run_all_rules(
         call=thesis.call, scenarios=thesis.scenarios, bull=thesis.bull, bear=thesis.bear,
         lessons=thesis.lessons, what_changes_my_mind=thesis.what_changes_my_mind,

@@ -7,7 +7,7 @@ def _oil_draft(oil):
     t = oil.thesis
     return ThesisDraft(call=t.call, scenarios=t.scenarios, bull=t.bull, bear=t.bear,
                        what_changes_my_mind=t.what_changes_my_mind, lessons=t.lessons,
-                       leverage_reasons=[lv.reason for lv in t.leverage_view])
+                       leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in t.leverage_view])
 
 
 def test_percent_scenario_bounds_are_coerced_to_fractions(oil):

@@ -38,12 +38,24 @@ def find_pair(label: str, analytics: DeskAnalytics) -> Optional[PairSnapshot]:
     return None
 
 
-def find_ladder_rung(leverage: float, analytics: DeskAnalytics, *, coin: Optional[str] = None):
-    """The LadderRung matching ``leverage`` (and ``coin`` if given). Exact
-    float equality is intentional: the ladder's own leverage values come
-    from DeskSpec.leverage_ladder, the same literal floats the LLM is shown
-    and asked to pick from, so there is no rounding gap to tolerate."""
+def find_ladder_rung(leverage: float, analytics: DeskAnalytics, *, coin: Optional[str] = None,
+                     side: Optional[str] = None):
+    """The LadderRung matching ``leverage`` (and ``coin`` / ``side`` if
+    given). The ladder holds a long AND a short rung per leverage, with
+    different verdicts, so callers that know the call's side must pass it.
+    Exact float equality is intentional: the ladder's leverage values come
+    from DeskSpec.leverage_ladder, the same literal floats the LLM is shown."""
     for rung in analytics.ladder:
-        if rung.leverage == leverage and (coin is None or rung.coin == coin):
+        if (rung.leverage == leverage and (coin is None or rung.coin == coin)
+                and (side is None or rung.side == side)):
             return rung
     return None
+
+
+def ladder_leverages(analytics: DeskAnalytics) -> list:
+    """Distinct leverages in ladder order (each appears once per side)."""
+    out = []
+    for rung in analytics.ladder:
+        if rung.leverage not in out:
+            out.append(rung.leverage)
+    return out
