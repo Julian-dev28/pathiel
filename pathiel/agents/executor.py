@@ -34,6 +34,7 @@ from pathiel.client.exchange import (
     get_hl_price,
     get_max_leverage,
     min_entry_notional_usd,
+    place_entry_order,
     place_hl_order,
     place_hl_trigger_order,
     set_leverage,
@@ -1180,7 +1181,12 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             }
 
     set_leverage(coin, leverage)
-    order_res = place_hl_order(is_buy, size_in_coin, mid_price, coin)
+    # entry_order_mode gates maker-first vs taker (default "taker" below is
+    # byte-identical to the old direct place_hl_order call — see
+    # pathiel.client.exchange.place_entry_order). Stops/closes/trigger orders
+    # (line ~1775's close path, place_hl_trigger_order) are UNCHANGED by this
+    # and always stay taker — only this entry call site is gated.
+    order_res = place_entry_order(is_buy, size_in_coin, mid_price, coin, config=config)
 
     if not order_res.get("ok"):
         return {

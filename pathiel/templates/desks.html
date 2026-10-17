@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Desks · pathiel</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathiel.css" />
+<link rel="stylesheet" href="/static/desks.css" />
+<!-- Same reason as landing.html: pathiel.js installs the window.fetch wrapper
+     this page's own script depends on, so it loads first and un-deferred. -->
+<script src="/static/pathiel.js"></script>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathiel</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+      <a href="/desks" data-nav="/desks" class="nav-link">Desks</a>
+    </nav>
+    <div class="masthead-right">
+      <div id="wallet-connect-root"></div>
+      <button id="discreet-toggle" type="button" class="icon-btn"
+              title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="page-head">
+    <h1 class="page-title">Desks</h1>
+    <div class="page-sub">
+      One siloed focus per desk. Pick one, see today's call first &mdash;
+      leverage, scenarios and everything else is below it, not in front of it.
+    </div>
+  </div>
+
+  <section class="section" aria-label="Desks">
+    <!-- Loading: visible by default (the honest state before the first fetch
+         resolves, including with JS disabled), three flat skeleton cards,
+         zero shimmer per pathiel.css's own "no sweep" rule. -->
+    <div id="desks-loading" class="desks-grid" aria-hidden="true">
+      <div class="skeleton dc-skel"></div>
+      <div class="skeleton dc-skel"></div>
+      <div class="skeleton dc-skel"></div>
+    </div>
+
+    <div id="desks-empty" class="state-block" hidden>
+      <div class="state-title">No desks configured</div>
+      <div class="state-sub">Nothing is registered to trade yet.</div>
+    </div>
+
+    <div id="desks-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load desks</div>
+      <div class="state-sub">The desks API did not answer. No open position is affected by this.</div>
+      <button id="desks-retry" type="button" class="btn">Retry</button>
+    </div>
+
+    <div id="desks-grid" class="desks-grid" hidden></div>
+  </section>
+
+</div>
+
+<script src="/static/desks.js"></script>
+</body>
+</html>

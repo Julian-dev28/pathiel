@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Desk · pathiel</title>
+<link rel="stylesheet" href="/static/app.css" />
+<link rel="stylesheet" href="/static/pathiel.css" />
+<link rel="stylesheet" href="/static/desks.css" />
+<script src="/static/pathiel.js"></script>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="masthead-inner">
+    <a href="/" class="brand">Pathiel</a>
+    <nav class="tabs-main">
+      <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
+      <a href="/news" data-nav="/news" class="nav-link">News</a>
+      <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
+      <a href="/trends" data-nav="/trends" class="nav-link">Trends</a>
+      <a href="/desks" data-nav="/desks" class="nav-link nav-active">Desks</a>
+    </nav>
+    <div class="masthead-right">
+      <div id="wallet-connect-root"></div>
+      <button id="discreet-toggle" type="button" class="icon-btn"
+              title="Blur all cash amounts. Percentages stay visible.">Hide amounts</button>
+      <span id="status-pill" class="pill offline">Offline</span>
+    </div>
+  </div>
+</div>
+
+<!-- data-desk-id is set by desks.js from the URL path the moment it runs, so
+     a test (or a human) can read which desk this is without parsing the URL
+     a second time. -->
+<main class="shell" id="desk-root" data-desk-id="">
+
+  <div class="page-head">
+    <a href="/desks" class="note">&larr; All desks</a>
+    <h1 class="page-title" id="desk-name">&nbsp;</h1>
+    <div class="page-sub" id="desk-tagline">&nbsp;</div>
+  </div>
+
+  <div id="desk-loading" class="state-block" aria-live="polite">
+    <div class="state-title">Loading desk&hellip;</div>
+  </div>
+
+  <div id="desk-error" class="state-block" hidden role="alert">
+    <div class="state-title">Could not load this desk</div>
+    <div class="state-sub">The desks API returned an error. No open position is affected by this.</div>
+    <button id="desk-retry" type="button" class="btn">Retry</button>
+  </div>
+
+  <div id="desk-content" hidden>
+
+    <div id="stale-banner" class="stale-banner" hidden role="status"></div>
+
+    <!-- 1. THE CALL — side, leverage and invalidation must clear the fold at
+         1280x800 and 375x812 with no scroll. Nothing above this competes for
+         that space: the page head above is two short lines and the stale
+         banner only renders when there is one. -->
+    <section class="section" id="call-section">
+      <div class="section-head"><h2 class="sec-label">The call</h2></div>
+
+      <div id="call-empty" class="state-block" hidden>
+        <div class="state-title">No call yet on this desk</div>
+        <div class="state-sub">
+          Hit Refresh below to generate one, or write your own in
+          "Make your own call" further down &mdash; that is how you drill.
+        </div>
+      </div>
+
+      <div id="call-card" class="card call-card" hidden>
+        <div class="call-top">
+          <span id="call-side-badge"></span>
+          <span class="sec-label" id="call-instrument"></span>
+        </div>
+        <p class="call-sentence" id="call-one-liner"></p>
+        <div class="call-meta-row">
+          <div>
+            <div class="sec-label">Recommended leverage</div>
+            <div class="kv call-num" id="call-leverage">&mdash;</div>
+          </div>
+          <div>
+            <div class="sec-label">Confidence</div>
+            <div class="kv call-num" id="call-confidence">&mdash;</div>
+          </div>
+          <div>
+            <div class="sec-label">Entry / Stop</div>
+            <div class="kv call-num"><span id="call-entry">&mdash;</span> / <span id="call-stop">&mdash;</span></div>
+          </div>
+          <div>
+            <div class="sec-label">Targets</div>
+            <div class="kv call-num" id="call-targets">&mdash;</div>
+          </div>
+        </div>
+        <div class="call-invalidation"><b>Out if:</b> <span id="call-invalidation"></span></div>
+        <div class="call-age" id="call-age"></div>
+      </div>
+    </section>
+
+    <!-- 2. PICK YOUR LEVERAGE — a radiogroup, not buttons: native arrow-key
+         navigation between rungs for free, and selecting one IS activating
+         it (no separate Enter/Space step). Every number below the switch
+         comes from the ladder already fetched with the page — switching
+         rungs never calls the network. -->
+    <section class="section" id="lev-section">
+      <div class="section-head"><h2 class="sec-label">Pick your leverage</h2></div>
+
+      <div id="lev-empty" class="state-block" hidden>
+        <div class="state-sub">No leverage ladder for this desk yet.</div>
+      </div>
+
+      <div id="lev-card" class="card lev-card" hidden>
+        <div class="lev-seg" id="lev-seg" role="radiogroup" aria-label="Leverage"></div>
+        <div class="lev-stats">
+          <div><div class="sec-label">Liquidation</div><div class="kv" id="lev-liq-px">&mdash;</div></div>
+          <div><div class="sec-label">Distance</div><div class="kv" id="lev-liq-dist">&mdash;</div></div>
+          <div><div class="sec-label">P(liquidated)</div><div class="kv" id="lev-p-liq">&mdash;</div></div>
+          <div><div class="sec-label">P(win)</div><div class="kv" id="lev-p-win">&mdash;</div></div>
+          <div><div class="sec-label">EV</div><div class="kv" id="lev-ev">&mdash;</div></div>
+          <div><div class="sec-label">p10 worst case</div><div class="kv" id="lev-p10">&mdash;</div></div>
+          <div><div class="sec-label">P(double)</div><div class="kv" id="lev-p-double">&mdash;</div></div>
+          <div><div class="sec-label">At risk (full equity)</div><div class="kv" id="lev-at-risk">&mdash;</div></div>
+        </div>
+        <div class="lev-verdict-row">
+          <span id="lev-verdict"></span>
+          <span class="lev-reason" id="lev-reason"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. SCENARIOS -->
+    <section class="section" id="scenarios-section">
+      <div class="section-head"><h2 class="sec-label">Scenarios</h2></div>
+      <div id="scenarios-empty" class="state-block" hidden>
+        <div class="state-sub">No scenarios on the current call.</div>
+      </div>
+      <div id="scenario-bar" class="scenario-bar"></div>
+      <div id="scenario-list"></div>
+    </section>
+
+    <!-- 4. NEXT CATALYSTS -->
+    <section class="section" id="catalysts-section">
+      <div class="section-head"><h2 class="sec-label">Next catalysts</h2></div>
+      <div id="catalysts-empty" class="state-block" hidden>
+        <div class="state-sub">Nothing scheduled.</div>
+      </div>
+      <div id="catalyst-chips" class="catalyst-chips"></div>
+    </section>
+
+    <!-- 5. BULL VS BEAR -->
+    <section class="section" id="bull-bear-section">
+      <div class="section-head"><h2 class="sec-label">Bull vs bear</h2></div>
+      <div id="bull-bear-empty" class="state-block" hidden>
+        <div class="state-sub">No bull or bear case recorded yet.</div>
+      </div>
+      <div class="bull-bear">
+        <div>
+          <div class="bb-col-head bull">Bull</div>
+          <div id="bull-col"></div>
+        </div>
+        <div>
+          <div class="bb-col-head bear">Bear</div>
+          <div id="bear-col"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. WHAT CHANGES MY MIND -->
+    <section class="section" id="wcmm-section">
+      <div class="section-head"><h2 class="sec-label">What changes my mind</h2></div>
+      <div id="wcmm-empty" class="state-block" hidden>
+        <div class="state-sub">Nothing recorded yet.</div>
+      </div>
+      <ul class="wcmm-list" id="wcmm-list"></ul>
+    </section>
+
+    <!-- 7. DESK SCHOOL -->
+    <section class="section" id="school-section">
+      <div class="section-head"><h2 class="sec-label">Desk school</h2></div>
+      <div class="lesson-grid" id="lessons-list"></div>
+      <div class="lesson-upcoming" id="lessons-upcoming"></div>
+    </section>
+
+    <!-- 8. YOUR CALLS VS THE MACHINE -->
+    <section class="section" id="history-section">
+      <div class="section-head"><h2 class="sec-label">Your calls vs the machine</h2></div>
+      <div class="track-cols" id="track-record"></div>
+      <div id="history-empty" class="state-block" hidden>
+        <div class="state-sub">No calls graded yet &mdash; the journal starts with the first one.</div>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Author</th><th>Call</th><th class="num">Confidence</th><th class="num">Result</th></tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 9. MAKE YOUR OWN CALL -->
+    <section class="section" id="user-thesis-section">
+      <div class="section-head"><h2 class="sec-label">Make your own call</h2></div>
+      <p class="note">This is the drill. Write a real call; it is graded the same way the machine's is.</p>
+
+      <div id="ut-form-error" class="form-error" role="alert" hidden></div>
+      <div id="ut-success" class="form-success" role="status" hidden></div>
+
+      <form id="user-thesis-form" novalidate>
+        <div class="form-grid">
+          <div class="field">
+            <label for="ut-side">Side</label>
+            <select id="ut-side">
+              <option value="long">Long</option>
+              <option value="short">Short</option>
+              <option value="flat">Flat</option>
+              <option value="pair">Pair</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ut-instrument">Instrument</label>
+            <select id="ut-instrument"></select>
+          </div>
+          <div class="field">
+            <label for="ut-leverage">Leverage</label>
+            <select id="ut-leverage"></select>
+          </div>
+          <div class="field">
+            <label for="ut-entry">Entry (optional)</label>
+            <input type="text" id="ut-entry" inputmode="decimal" placeholder="e.g. 99.3">
+            <span class="field-error" id="ut-entry-error"></span>
+          </div>
+          <div class="field">
+            <label for="ut-stop">Stop (optional)</label>
+            <input type="text" id="ut-stop" inputmode="decimal" placeholder="e.g. 91.4">
+            <span class="field-error" id="ut-stop-error"></span>
+          </div>
+          <div class="field">
+            <label for="ut-targets">Targets (optional, comma-separated)</label>
+            <input type="text" id="ut-targets" placeholder="e.g. 106.6, 111.0">
+            <span class="field-error" id="ut-targets-error"></span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ut-one-liner">The call, one sentence</label>
+          <input type="text" id="ut-one-liner" maxlength="160" placeholder="Long WTI at 5x: ...">
+          <span class="field-hint">Max 160 characters.</span>
+          <span class="field-error" id="ut-one-liner-error"></span>
+        </div>
+
+        <div class="field">
+          <label for="ut-confidence">Confidence</label>
+          <div class="confidence-row">
+            <input type="range" id="ut-confidence" min="0" max="1" step="0.01" value="0.5">
+            <output class="confidence-val" id="ut-confidence-display">0.50</output>
+          </div>
+          <span class="field-error" id="ut-confidence-error"></span>
+        </div>
+
+        <div class="field">
+          <label for="ut-invalidation">What proves this wrong</label>
+          <input type="text" id="ut-invalidation" placeholder="e.g. daily close below 91.4">
+          <span class="field-error" id="ut-invalidation-error"></span>
+        </div>
+
+        <div class="field">
+          <label>Scenarios (optional &mdash; probabilities must sum to 1 if you add any)</label>
+        </div>
+        <div class="scenario-rows" id="ut-scenarios"></div>
+        <div class="field-error" id="ut-scenarios-error" role="alert"></div>
+        <button type="button" id="ut-add-scenario" class="icon-btn">+ Add scenario</button>
+
+        <div class="field">
+          <label for="ut-notes">Notes (optional)</label>
+          <textarea id="ut-notes" rows="2"></textarea>
+        </div>
+
+        <button type="submit" id="ut-submit" class="btn">Save my call</button>
+      </form>
+    </section>
+
+    <!-- 10. REFRESH -->
+    <section class="section" id="refresh-section">
+      <div class="section-head"><h2 class="sec-label">Refresh</h2></div>
+      <div class="refresh-row">
+        <button id="refresh-btn" type="button" class="btn">Refresh</button>
+        <span id="refresh-status" class="refresh-status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <!-- 11. DETAILS — collapsed. Reuses .explainer from pathiel.css verbatim:
+         same chevron, same disclosure behavior, zero new CSS needed. -->
+    <details class="explainer" id="desk-details">
+      <summary>Details &mdash; market snapshot, forward stats, odds, sources</summary>
+      <div class="details-body">
+        <div class="details-sub">Market snapshot</div>
+        <div class="scroll-x" id="snapshot-table"></div>
+
+        <div class="details-sub">Pair</div>
+        <div class="scroll-x" id="pair-table"></div>
+
+        <div class="details-sub">Forward-window stats</div>
+        <div class="scroll-x" id="forward-table"></div>
+
+        <div class="details-sub">Prediction-market odds</div>
+        <div class="scroll-x" id="odds-table"></div>
+
+        <div class="details-sub">Positioning</div>
+        <div class="scroll-x" id="positioning-table"></div>
+
+        <div class="details-sub">Sources</div>
+        <div id="sources-list"></div>
+        <div id="sources-failed"></div>
+      </div>
+    </details>
+
+  </div>
+
+</main>
+
+<script src="/static/desks.js"></script>
+</body>
+</html>

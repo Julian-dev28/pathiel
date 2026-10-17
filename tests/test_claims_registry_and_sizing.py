@@ -278,9 +278,13 @@ class TestStrategyBookEquityFracSizing:
         monkeypatch.setattr(ex, "entry_size_for_notional",
                             lambda coin, notional, px: round(notional / px, 4))
         monkeypatch.setattr(ex, "min_entry_notional_usd", lambda coin, px: 10.0)
-        monkeypatch.setattr(ex, "place_hl_order",
-                            lambda is_buy, sz, px, coin: {"ok": True, "order_id": "test-order",
-                                                          "avg_px": px, "total_sz": sz})
+        # maybe_execute's entry call site routes through place_entry_order
+        # (entry_order_mode gate, added for maker-first fills); default mode
+        # "taker" passes straight through to place_hl_order, but the call
+        # site itself now names place_entry_order, so that's what tests stub.
+        monkeypatch.setattr(ex, "place_entry_order",
+                            lambda is_buy, sz, px, coin, **kw: {"ok": True, "order_id": "test-order",
+                                                                "avg_px": px, "total_sz": sz})
         monkeypatch.setattr(ex, "place_hl_trigger_order",
                             lambda is_buy, sz, px, kind, coin: {"ok": True})
         monkeypatch.setattr(ex, "cancel_open_orders_for_coin", lambda coin: None)

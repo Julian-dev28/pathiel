@@ -1,0 +1,313 @@
+/* ============================================================================
+   desks.css — Strategies ("Desks") pages
+   ----------------------------------------------------------------------------
+   Extends pathiel.css. Every color is a var(--token) from that stylesheet so
+   this page follows the same dark-default / data-theme="light" switch with
+   zero extra wiring. Only NEW tokens live here (--orange*, for the
+   intraday_only verdict) — added, never redefined, so pathiel.css stays the
+   single source for every color this product already has.
+
+   Deliberately free of Tailwind-shaped class names. scripts/build_static_css.py
+   scans every pathiel/templates/*.html file and hard-fails the build if a new
+   utility-shaped token shows up unmapped, and two gate tests (test_dashboard_
+   pages.py, test_trend_engine.py) assert the committed app.css is byte-exact
+   with what that scanner emits right now. This file — and desks.html / desk.html
+   — stay off that scanner's radar by using only bespoke, non-utility class
+   names, the same way every component in pathiel.css already does.
+
+   Design rule for /desks/{id}: one decision per screen. The call card and the
+   leverage switch sit first and compact enough to clear the fold at 1280x800
+   and 375x812 with no scroll. Everything else is a normal scroll below —
+   never a chart/canvas, so a leverage switch is a pure DOM write, no network,
+   well under the 50ms budget.
+   ========================================================================= */
+
+:root{
+  --orange:#d97b3f;
+  --orange-wash:#2a1d10;
+}
+:root[data-theme="light"]{
+  --orange:#9a4e14;
+  --orange-wash:#faf0e6;
+}
+:root[data-theme="dark"]{
+  --orange:#d97b3f;
+  --orange-wash:#2a1d10;
+}
+
+/* ── grid page ────────────────────────────────────────────────────────────── */
+
+.desks-grid{
+  display:grid; gap:20px;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+}
+.desk-card{
+  display:block; padding:18px 20px;
+  background:var(--surface); border:1px solid var(--rule); border-radius:var(--radius);
+  color:inherit; text-decoration:none;
+}
+.desk-card:hover{ border-color:var(--ink-3); text-decoration:none; }
+.desk-card:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.dc-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
+.dc-name{ font-size:16px; font-weight:600; letter-spacing:-.01em; }
+.dc-mid{ margin-left:auto; font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; }
+.dc-move{ font-size:12.5px; font-variant-numeric:tabular-nums; }
+.dc-call{ font-size:13.5px; color:var(--ink-2); margin-bottom:12px; min-height:2.6em; }
+.dc-call .mut{ font-style:normal; }
+.dc-foot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--ink-3); }
+.dc-foot .badge{ font-size:10.5px; }
+.dc-track{ margin-left:auto; }
+.dc-skel{ height:128px; }
+
+/* ── states shared by both pages ─────────────────────────────────────────── */
+
+.state-block{ padding:32px 0; text-align:center; color:var(--ink-2); }
+.state-block .state-title{ font-size:15px; font-weight:600; color:var(--ink); margin-bottom:6px; }
+.state-block .state-sub{ font-size:13px; color:var(--ink-3); max-width:48ch; margin:0 auto 16px; }
+
+/* A call that has aged past usefulness. A corner badge reading "stale" is easy
+   to miss on a page someone opens to decide whether to risk money right now —
+   this is a full-width line above the call, worded as a instruction
+   ("check Refresh"), not just a label. */
+.stale-banner{
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  margin-bottom:14px; padding:9px 14px;
+  background:var(--amber-wash); border:1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  border-radius:var(--radius); color:var(--amber); font-size:13px;
+}
+.stale-banner .b-strong{ font-weight:600; }
+
+/* ── the call card ────────────────────────────────────────────────────────── */
+
+.call-card{ padding:22px 24px; }
+.call-top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+.call-sentence{
+  font-size:19px; font-weight:500; line-height:1.4; letter-spacing:-.012em;
+  margin:0 0 14px; max-width:62ch;
+}
+.call-meta-row{
+  display:grid; gap:16px 28px; margin-bottom:14px;
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+}
+.call-meta-row .sec-label{ margin-bottom:4px; }
+.call-invalidation{
+  padding-top:14px; border-top:1px solid var(--rule);
+  font-size:13.5px; color:var(--ink-2);
+}
+.call-invalidation b{ color:var(--ink); font-weight:600; }
+.call-age{ font-size:12px; color:var(--ink-3); margin-top:10px; }
+.call-num{ font-variant-numeric:tabular-nums; }
+
+/* ── leverage switch ──────────────────────────────────────────────────────── */
+
+.lev-card{ padding:20px 24px; }
+.lev-seg{
+  display:flex; flex-wrap:wrap; gap:0;
+  border:1px solid var(--rule-2); border-radius:var(--radius); overflow:hidden;
+  width:fit-content; margin-bottom:18px;
+}
+/* Each rung is its own positioned wrapper. Visually hidden, not display:none
+   (that would drop it from the tab order and kill native radiogroup arrow-key
+   behavior — the entire reason this is <input type=radio> and not <button>),
+   and NOT a bare position:absolute on the input either: with no positioned
+   ancestor of its own, "auto" top/left resolved to the same point for every
+   rung, so all three radios stacked on top of each other and only the last
+   one in DOM order was ever clickable (caught by the e2e suite, not a visual
+   review — three radios rendered as one overlapping input). inset:0 against
+   this wrapper keeps each input exactly the size and position of its own
+   label, for every rung independently. */
+.lev-radio-wrap{ position:relative; display:flex; }
+.lev-radio{
+  position:absolute; inset:0; opacity:0; margin:0; width:100%; height:100%; cursor:pointer;
+}
+.lev-radio-label{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:64px; padding:8px 16px; font-size:14px; font-weight:500;
+  color:var(--ink-2); background:var(--surface); cursor:pointer;
+  border-right:1px solid var(--rule-2); user-select:none;
+}
+.lev-radio-wrap:last-of-type .lev-radio-label{ border-right:0; }
+.lev-radio-label:hover{ background:var(--surface-2); color:var(--ink); }
+.lev-radio:checked + .lev-radio-label{
+  background:var(--accent-wash); color:var(--accent-ink); font-weight:600;
+}
+.lev-radio:focus-visible + .lev-radio-label{
+  outline:2px solid var(--accent); outline-offset:-2px;
+}
+.lev-stats{
+  display:grid; gap:16px 24px;
+  grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  margin-bottom:16px;
+}
+.lev-stats .kv{ font-size:20px; }
+.lev-verdict-row{
+  display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  padding-top:14px; border-top:1px solid var(--rule);
+}
+.lev-reason{ font-size:13px; color:var(--ink-2); }
+
+.badge.b-hold{ color:var(--up); background:var(--up-wash); border-color:transparent; }
+.badge.b-dip-only{ color:var(--amber); background:var(--amber-wash); border-color:transparent; }
+.badge.b-intraday-only{ color:var(--orange); background:var(--orange-wash); border-color:transparent; }
+.badge.b-avoid{ color:var(--down); background:var(--down-wash); border-color:transparent; }
+.badge.b-flat{ color:var(--ink-3); background:var(--surface-2); }
+.badge.b-pair{ color:var(--accent); background:var(--accent-wash); border-color:transparent; }
+.badge.b-user{ color:var(--accent); background:var(--accent-wash); border-color:transparent; }
+.badge.b-machine{ color:var(--ink-3); background:var(--surface-2); }
+
+/* ── scenarios ────────────────────────────────────────────────────────────── */
+
+.scenario-bar{
+  display:flex; height:22px; border-radius:2px; overflow:hidden;
+  margin-bottom:14px; background:var(--surface-2);
+}
+.scenario-seg{ height:100%; min-width:2px; }
+.scenario-seg.seg-up{ background:var(--up); }
+.scenario-seg.seg-down{ background:var(--down); }
+.scenario-seg.seg-neutral{ background:var(--amber); }
+.scenario-row{
+  display:grid; grid-template-columns:1fr auto auto; gap:4px 14px;
+  padding:10px 0; border-bottom:1px solid var(--rule); align-items:baseline;
+}
+.scenario-row:last-child{ border-bottom:0; }
+.scenario-name{ display:flex; align-items:baseline; gap:8px; font-size:13.5px; font-weight:500; }
+.scenario-dot{ width:8px; height:8px; border-radius:1px; flex:none; }
+.scenario-dot.seg-up{ background:var(--up); } .scenario-dot.seg-down{ background:var(--down); }
+.scenario-dot.seg-neutral{ background:var(--amber); }
+.scenario-prob{ font-variant-numeric:tabular-nums; color:var(--ink-2); }
+.scenario-bucket{ font-variant-numeric:tabular-nums; color:var(--ink-2); text-align:right; }
+.scenario-desc{ grid-column:1 / -1; font-size:12.5px; color:var(--ink-3); margin-top:2px; }
+.scenario-triggers{ grid-column:1 / -1; margin-top:4px; }
+
+/* ── catalysts ────────────────────────────────────────────────────────────── */
+
+.catalyst-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.catalyst-chip{
+  display:inline-flex; align-items:baseline; gap:6px; padding:6px 10px;
+  font-size:12.5px; border-radius:2px; background:var(--surface-2);
+  border:1px solid var(--rule); cursor:default;
+}
+.catalyst-chip.imp-3{ border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
+.catalyst-kind{ font-weight:600; color:var(--ink); }
+.catalyst-when{ color:var(--ink-2); font-variant-numeric:tabular-nums; }
+
+/* ── bull / bear ──────────────────────────────────────────────────────────── */
+
+.bull-bear{ display:grid; gap:28px; grid-template-columns:1fr 1fr; }
+.bb-col-head{ font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
+.bb-col-head.bull{ color:var(--up); } .bb-col-head.bear{ color:var(--down); }
+.bb-point{ font-size:13.5px; color:var(--ink-2); padding:9px 0; border-bottom:1px solid var(--rule); }
+.bb-point:last-child{ border-bottom:0; }
+.bb-sources{ margin-top:5px; display:flex; gap:6px; flex-wrap:wrap; }
+@media (max-width:720px){ .bull-bear{ grid-template-columns:1fr; gap:4px; } }
+
+/* ── what changes my mind ────────────────────────────────────────────────── */
+
+.wcmm-list{ margin:0; padding-left:20px; }
+.wcmm-list li{ font-size:13.5px; color:var(--ink-2); padding:4px 0; }
+
+/* ── desk school ──────────────────────────────────────────────────────────── */
+
+.lesson-grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+.lesson-card{ padding:14px 16px; }
+.lesson-term{ font-size:13.5px; font-weight:600; margin-bottom:5px; }
+.lesson-exp{ font-size:12.5px; color:var(--ink-2); margin-bottom:8px; }
+.lesson-tied{ font-size:11.5px; color:var(--ink-3); }
+.lesson-tied::before{ content:"tied to today: "; color:var(--ink-3); }
+.lesson-upcoming{ margin-top:12px; font-size:12px; color:var(--ink-3); }
+
+/* ── track record + history ──────────────────────────────────────────────── */
+
+.track-cols{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); margin-bottom:20px; }
+.track-col .sec-label{ margin-bottom:6px; }
+.grade-hit{ color:var(--up); } .grade-miss{ color:var(--down); } .grade-pending{ color:var(--ink-3); }
+
+/* ── user thesis form ─────────────────────────────────────────────────────── */
+
+.form-grid{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); margin-bottom:16px; }
+.field{ display:flex; flex-direction:column; gap:5px; min-width:0; margin-bottom:16px; }
+.field:last-child{ margin-bottom:0; }
+.field label{ font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); }
+.field input,.field select,.field textarea{
+  padding:7px 9px; font-size:13.5px; font-family:var(--sans); color:var(--ink);
+  background:var(--paper); border:1px solid var(--rule-2); border-radius:var(--radius);
+}
+.field input:focus,.field select:focus,.field textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+.field textarea{ resize:vertical; min-height:56px; font-family:inherit; }
+.field-hint{ font-size:11px; color:var(--ink-3); }
+.field-error{ font-size:11.5px; color:var(--down); min-height:1.2em; }
+.field.has-error input,.field.has-error select,.field.has-error textarea{ border-color:var(--down); }
+.form-error{
+  padding:10px 12px; margin-bottom:14px; font-size:13px; color:var(--down);
+  background:var(--down-wash); border-radius:var(--radius);
+}
+.form-success{
+  padding:10px 12px; margin-bottom:14px; font-size:13px; color:var(--up);
+  background:var(--up-wash); border-radius:var(--radius);
+}
+.confidence-row{ display:flex; align-items:center; gap:10px; }
+.confidence-row input[type="range"]{ flex:1; }
+.confidence-val{ font-variant-numeric:tabular-nums; font-size:13px; min-width:3.2em; text-align:right; }
+.scenario-rows{ display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+#ut-scenarios-error{ margin-bottom:12px; }
+#ut-add-scenario{ margin-bottom:18px; }
+.scenario-edit-row{
+  display:grid; gap:8px; grid-template-columns:1.4fr .8fr .8fr .8fr 1.4fr auto;
+  align-items:start; padding:10px; background:var(--surface-2); border-radius:var(--radius);
+}
+.scenario-edit-row input{ width:100%; }
+.scenario-remove{
+  padding:6px 9px; font-size:11px; color:var(--down); background:transparent;
+  border:1px solid var(--rule-2); border-radius:var(--radius); cursor:pointer;
+}
+@media (max-width:720px){ .scenario-edit-row{ grid-template-columns:1fr 1fr; } }
+
+/* ── refresh ──────────────────────────────────────────────────────────────── */
+
+.refresh-row{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.refresh-status{ font-size:13px; color:var(--ink-2); }
+.refresh-status.is-skipped{ color:var(--ink-3); }
+.refresh-status.is-done{ color:var(--up); }
+.refresh-status.is-error{ color:var(--down); }
+
+/* ── details (collapsed) ─────────────────────────────────────────────────── */
+
+.details-body{ padding-top:14px; }
+.details-sub{ font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin:22px 0 10px; }
+.details-sub:first-child{ margin-top:4px; }
+.sources-failed-note{ font-size:12px; color:var(--amber); margin-top:8px; }
+
+/* ── responsive ───────────────────────────────────────────────────────────── */
+
+@media (max-width:720px){
+  /* pathiel.js injects a Live/Demo mode chip AND an auth chip into
+     .masthead-right at runtime on every page (PathielMode.render(),
+     PathielAuth.render()) on top of the three chips already in the markup —
+     five children total, not the three in the HTML source. pathiel.css never
+     lets that row wrap, so at 375px it pushes the whole document about 13px
+     wider than the viewport. Not this page's markup and not pathiel.js's or
+     pathiel.css's to fix from here (out of this agent's ownership) — this is
+     a scoped, this-stylesheet-only rule that only ever applies on the two
+     pages that load desks.css, so it changes nothing elsewhere. Flagged for
+     the integrator to consider fixing at the source (pathiel.css) too. */
+  .masthead-right{ flex-wrap:wrap; justify-content:flex-end; gap:8px; row-gap:6px; }
+
+  .desks-grid{ grid-template-columns:1fr; }
+  .call-sentence{ font-size:16.5px; margin-bottom:10px; }
+  .call-card,.lev-card{ padding:14px 14px; }
+  .call-meta-row{ gap:10px 18px; margin-bottom:10px; }
+  .call-invalidation{ padding-top:10px; }
+  .lev-radio-label{ min-width:0; flex:1; padding:8px 10px; }
+  .track-cols{ grid-template-columns:1fr 1fr; }
+
+  /* The fold budget is tightest here: masthead chrome plus the page head
+     plus a stale banner (when there is one) all sit above the call card, and
+     the measurable outcome ("call sentence, side, recommended leverage,
+     invalidation visible with no scroll at 375x812") is measured from the
+     very top of the page. Scoped to #desk-root so no other page's page-head
+     or stale state is touched. */
+  #desk-root .page-head{ margin-bottom:12px; }
+  #desk-root .page-title{ font-size:19px; }
+  #desk-root .page-sub{ font-size:12px; margin-top:2px; }
+  .stale-banner{ padding:6px 10px; margin-bottom:10px; font-size:11.5px; }
+}

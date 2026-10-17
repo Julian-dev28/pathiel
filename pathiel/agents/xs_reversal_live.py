@@ -56,6 +56,7 @@ from pathiel.agents import shadow_ledger
 from pathiel.agents.book_helpers import bounded_exit_override
 from pathiel.agents.rebalancer_owned import get_claims_registry
 from pathiel.models.types import BookAnalysis
+from pathiel.session_log import append as log_event
 from pathiel.agents.book_params import FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD, book_params
 
 logger = logging.getLogger(__name__)
@@ -297,6 +298,13 @@ def maybe_run(config: Dict[str, Any],
             continue
         if isinstance(result, dict) and result.get("executed"):
             opened += 1
+            # Exact footprint for scripts/pnl_by_book.py; without it this
+            # book's fills were attributed to "main-engine".
+            try:
+                log_event({"event": "book_open", "book": _BOOK_NAME, "coin": coin,
+                           "side": "short"})
+            except Exception as exc:  # attribution must never block a trade
+                logger.warning("[%s] book_open log failed: %s", _BOOK_NAME, exc)
             logger.info("[%s] SHORT %s (+%.1f%% 3d, awake %.0f%%)",
                         _BOOK_NAME, coin, c["mom"], c["awake"] * 100)
         else:
