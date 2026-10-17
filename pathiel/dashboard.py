@@ -810,6 +810,12 @@ def _require_operator_role(request: Request) -> None:
     # each other, so the role check has nothing to decide.
     if os.environ.get("PATHIEL_PUBLIC_DASHBOARD"):
         return
+    # Local mode: the owner on his own machine reads his own book with no
+    # session (wave 2 retired the separate sign-in). Loopback peer, no
+    # cross-site Origin and no deployment marker, see services/auth/integration.
+    from services.auth.integration import is_local_mode
+    if is_local_mode(request):
+        return
     from services.auth.deps import current_user
     user = current_user(request)
     if user is not None and user.is_operator:
