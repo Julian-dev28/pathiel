@@ -258,3 +258,35 @@ class TestMaterialize:
         with open(env["PATHIEL_POSITIONS_SNAPSHOT_FILE"]) as f:
             saved_at = json.load(f)["saved_at"]
         assert abs(saved_at - time.time() * 1000) < 10_000
+
+
+# ── shapes the dashboard depends on (ux-qa findings, 2026-10-17) ─────────────
+
+def test_scan_coin_scores_match_the_real_loop_shape():
+    """scripts/trading_loop.py logs coin_scores as a list of {coin, score,
+    triggers}. The demo used a dict, which crashed /activity's feed."""
+    from services.demo import generator as g
+    events, _ = g.build_session_log(1_792_195_200_000)
+    scans = [e for e in events if e.get("event") == "scan"]
+    assert scans
+    for e in scans:
+        assert isinstance(e["coin_scores"], list)
+        for row in e["coin_scores"]:
+            assert set(row) == {"coin", "score", "triggers"}
+            assert isinstance(row["triggers"], list)
+
+
+def test_news_books_carry_demo_marked_meta():
+    """/news renders shadow-ledger meta; the demo must populate it, and every
+    title and url must read as demo data, never as a real headline."""
+    from services.demo import generator as g
+    ledgers = g.build_shadow_ledgers(1_792_195_200_000)
+    metas = [r["meta"] for b, rows in ledgers.items() if b.startswith("news_")
+             for r in rows if "meta" in r]
+    assert metas
+    for m in metas:
+        assert all(t.startswith("[demo] ") for t in m["top3_titles"])
+        assert all(u.startswith("https://example.com/demo/") for u in m["top3_urls"])
+        assert len(m["top3_titles"]) == len(m["top3_urls"]) == len(m["top3_ages_h"])
+    assert not any("meta" in r for b, rows in ledgers.items()
+                   if not b.startswith("news_") for r in rows)
