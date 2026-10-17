@@ -124,3 +124,15 @@ def stub_live_analytics(monkeypatch):
         monkeypatch.setattr(pipeline_mod.analytics_mod, "build_analytics", fake_build)
 
     return _set
+
+
+@pytest.fixture(autouse=True)
+def _gate_safe_providers(monkeypatch):
+    """Default every strategies test to offline intel/thesis providers. With
+    services/intel and services/thesis merged, the real defaults would make
+    network reads and billable LLM calls from the gate suite."""
+    from services.strategies import pipeline as _pipeline
+    monkeypatch.setattr(_pipeline, "INTEL_PROVIDER_PATH",
+                        "services.strategies.tests._gate_providers:build_packet")
+    monkeypatch.setattr(_pipeline, "THESIS_PROVIDER_PATH",
+                        "services.strategies.tests._gate_providers:write_thesis")
