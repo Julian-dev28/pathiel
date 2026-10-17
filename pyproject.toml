@@ -36,9 +36,11 @@ path = "pathiel/__init__.py"
 packages = ["pathiel"]
 
 [tool.ruff]
-# The vendored per-IDE agent skill copies are an installed plugin's code, not
-# ours, and research/ is exploratory scratch by design.
-exclude = [".agents", ".forge", ".qwen", "research", ".venv"]
+# research/ is exploratory scratch by design. The vendored .agents/.forge/.qwen
+# caveman skill copies this used to also exclude were removed 2026-10-17 (dead
+# duplicates of a skill already installed via the Claude Code plugin system);
+# see archive/vendored-caveman-skills-2026-10-17 if they ever need to come back.
+exclude = ["research", ".venv"]
 line-length = 100
 
 [tool.ruff.lint]
