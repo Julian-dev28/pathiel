@@ -127,6 +127,7 @@ export PATHIEL_STATE_DIR="$(mktemp -d)"                      # never the live on
 .venv/bin/python -m services.strategies list
 .venv/bin/python -m services.strategies brief oil
 .venv/bin/python -m services.strategies refresh oil --force
+.venv/bin/python -m services.strategies refresh --all      # every desk, one call — the scheduler hook
 .venv/bin/python -m services.strategies grade
 .venv/bin/python -m services.strategies.evals.verdict_backtest          # periodic eval, hits live HL
 ```
