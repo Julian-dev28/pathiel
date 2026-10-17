@@ -169,9 +169,11 @@ const PathielAuth = (function () {
   /* ── Loading the wallet picker ──────────────────────────────────────────
    *
    * The picker is RainbowKit, bundled at services/wallet_ui into
-   * /static/wallet.js. It is ~380 KB over the wire against ~30 KB for this
-   * whole file, so it is fetched on demand rather than on page load: a
-   * signed-in operator reloading the dashboard never pays for it.
+   * /static/wallet.js. It is ~3 MB over the wire (RainbowKit + wagmi + viem,
+   * minified — see services/wallet_ui/bundle.manifest.json for the exact
+   * byte count) against ~30 KB for this whole file, so it is fetched on
+   * demand rather than on page load: a signed-in operator reloading the
+   * dashboard never pays for it.
    *
    * This replaced a direct `window.ethereum` call. With two extensions
    * installed that is whichever one won a race at page load, with no way to
@@ -340,6 +342,16 @@ const PathielAuth = (function () {
   async function loadMyAccount() {
     const slot = document.getElementById('my-account');
     if (!slot) return;
+    // refresh() already ran and set `me` before this is called (see the
+    // DOMContentLoaded handler below). An anonymous visitor has no session,
+    // so /api/dashboard/account is GUARANTEED to 401 — calling it anyway
+    // bought no information, cost a round trip, and left a "Failed to load
+    // resource: 401" line in the console on every single page view, for
+    // every visitor who had never signed in. Found 2026-10-17 ux-qa sweep:
+    // that line is logged by the browser's network stack itself, not by
+    // this file's error handling, so no amount of a .catch() here removes
+    // it — only not making the doomed request does.
+    if (!me) { slot.hidden = true; return; }
     try {
       const r = await fetch('/api/dashboard/account');
       if (!r.ok) { slot.hidden = true; return; }

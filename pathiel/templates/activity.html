@@ -23,6 +23,7 @@
     <a href="/" class="brand">Pathiel</a>
     <nav class="tabs-main">
       <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/desks" data-nav="/desks" class="nav-link">Desks</a>
       <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
       <a href="/news" data-nav="/news" class="nav-link">News</a>
       <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
@@ -62,7 +63,7 @@
     </section>
     <section class="pane" id="pane-books">
       <div class="pane-head"><span class="pm pm-books"></span><span class="sec-label">books</span>
-        <select id="book-filter" class="fsel" style="margin-left:auto"><option value="">all books</option></select>
+        <select id="book-filter" class="fsel" style="margin-left:auto" aria-label="Filter by book"><option value="">all books</option></select>
       </div>
       <div class="pane-flow" id="flow-books"></div>
     </section>
@@ -275,7 +276,20 @@ function freshText(e) {
   if (e.type === 'gate')
     return `${tk(e.coin)} entry refused — ${esc(e.human || e.reason || 'gate')}`;
   if (e.type === 'scan') {
-    const tops = (e.coins || []).slice(0, 4).map(c =>
+    // dashboard.py prefers e.coin_scores over e.coins when present (so the
+    // line can show which coin, not just the count) — the live loop always
+    // logs coin_scores as a LIST (scripts/trading_loop.py), but a malformed
+    // or future producer is not this page's job to trust blindly. Found
+    // 2026-10-17 ux-qa sweep: the demo generator logs coin_scores as a
+    // {coin: score} OBJECT instead, and `(e.coins || [])` does not catch
+    // that — an object is truthy, so `|| []` never ran, and
+    // `.slice is not a function` threw inside fullLoad()'s per-event loop,
+    // aborting it entirely: 300 good events never rendered, and the trade
+    // pane was stuck forever on "feed load failed — is the server up?" from
+    // the generic catch two hundred lines down, while every OTHER pane
+    // quietly kept working off whatever had rendered before the throw.
+    // Array.isArray is the actual contract this line needs, not truthiness.
+    const tops = (Array.isArray(e.coins) ? e.coins : []).slice(0, 4).map(c =>
       typeof c === 'object' ? c.coin : String(c)).join(', ');
     const n = e.triggers ?? 0;
     return `scanned the board — ${n ? n + ' trigger' + (n === 1 ? '' : 's') + (tops ? ': ' + esc(tops) : '') : 'no triggers'}`;
@@ -584,7 +598,17 @@ async function fullLoad() {
   coalIndex.clear(); seen.clear(); seenOrder.length = 0;
   newestTs = 0; lastHB = null; steadyRun = 0;
   const chrono = (data.events || []).slice().reverse();   // oldest → newest
-  for (const e of chrono) ingest(e, false);
+  // One malformed event must cost one row, not the page: ingest() reaches
+  // into whichever fields its event `type` expects, and a shape neither this
+  // file nor dashboard.py's contract anticipated (a server-side bug, a
+  // schema drift, a demo-data mismatch) threw straight out of this loop
+  // before 2026-10-17 — every event after the bad one, sometimes most of the
+  // 300, never rendered, and the generic catch around fullLoad() below
+  // blamed "is the server up?" on data the server had already served fine.
+  for (const e of chrono) {
+    try { ingest(e, false); }
+    catch (err) { console.error('activity: skipping one malformed event', e, err); }
+  }
   paneEmpties(data.session);
   setMeta();
 }
@@ -595,7 +619,10 @@ async function pollNew() {
     const data = await (await fetch('/api/dashboard/activity?limit=100&since=' + (newestTs - 1))).json();
     renderStrip(data.session);
     const chrono = (data.events || []).slice().reverse();
-    for (const e of chrono) ingest(e, true);
+    for (const e of chrono) {
+      try { ingest(e, true); }
+      catch (err) { console.error('activity: skipping one malformed event', e, err); }
+    }
     foldAged();
     setMeta();
   } catch (e) { reportRefreshFailure('pollNew', e); }
