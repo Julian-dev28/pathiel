@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 # Hyperliquid rejects any order below $10 notional. Target a small buffer above
@@ -654,6 +655,218 @@ def place_hl_order(
     except Exception as e:
         logger.error(f"Failed to place order for {coin}: {e}")
         return {"ok": False, "error": str(e)}
+
+
+# ── Entry order mode: taker vs maker-first ───────────────────────────────────
+# Fee audit (2026-10, docs/overhaul/PROFIT_AUDIT.md): 88/88 fills over the
+# trailing 60d were taker (crossed=True) — $0 of maker volume. Taker costs 3x
+# maker on the main dex (0.045% vs 0.015%) and ~3x on HIP-3 xyz too (0.009%
+# observed vs an implied ~0.003% add rate at the same discount ratio). A
+# post-only entry that fills converts that 3x to 1x; one that doesn't still
+# costs nothing beyond the fill it would have gotten anyway, because it falls
+# back to the exact same taker order `place_hl_order` would have placed.
+#
+# `entry_order_mode` ("taker" | "maker_first") gates this. Default "taker" —
+# every existing call site is unaffected until the operator flips it. Stops,
+# emergency exits and the close path never route through here; they call
+# `place_hl_order` directly, same as before this existed.
+DEFAULT_MAKER_FIRST_TIMEOUT_S = 3.0
+DEFAULT_MAKER_FIRST_POLL_INTERVAL_S = 0.5
+
+
+def _best_touch_price(coin: str, is_buy: bool, mid_price: float) -> float:
+    """Best bid (buy) / best ask (sell) from a fresh L2 snapshot — the price a
+    post-only maker order joins so it never crosses. Falls back to the mid
+    price if the L2 fetch fails or that side is empty (thin/new market); the
+    caller's own passive rounding keeps the order non-crossing either way."""
+    try:
+        levels = _get_info().l2_snapshot(coin).get("levels", [])
+        bids, asks = levels[0], levels[1]
+        if is_buy and bids:
+            return float(bids[0]["px"])
+        if not is_buy and asks:
+            return float(asks[0]["px"])
+    except Exception as e:
+        logger.warning(f"[_best_touch_price] l2_snapshot failed for {coin}: {e}")
+    return mid_price
+
+
+def _fills_for_order(oid: Any, coin: str, since_ms: int) -> Tuple[float, float]:
+    """(total size filled, size-weighted avg price) for one order id, read from
+    the account's own fill history. (0.0, 0.0) when nothing has matched yet.
+
+    `since_ms` is the local time the order was placed; the 5s lookback margin
+    absorbs clock skew between this process and the exchange's fill timestamps
+    without widening the window enough to risk picking up a same-coin fill from
+    an unrelated, immediately-prior order."""
+    user = resolve_user_address()
+    if not user:
+        return 0.0, 0.0
+    try:
+        fills = _http_post("/info", {
+            "type": "userFillsByTime", "user": user,
+            "startTime": max(0, since_ms - 5_000),
+        }) or []
+    except Exception as e:
+        logger.warning(f"[_fills_for_order] fill lookup failed for {coin} oid={oid}: {e}")
+        return 0.0, 0.0
+    matched = [f for f in fills if f.get("coin") == coin and str(f.get("oid")) == str(oid)]
+    total_sz = sum(abs(float(f.get("sz") or 0)) for f in matched)
+    if total_sz <= 0:
+        return 0.0, 0.0
+    notional = sum(abs(float(f.get("sz") or 0)) * float(f.get("px") or 0) for f in matched)
+    return total_sz, (notional / total_sz if total_sz > 0 else 0.0)
+
+
+def _place_maker_first(
+    is_buy: bool,
+    size: float,
+    mid_price: float,
+    coin: str,
+    config: Dict[str, Any],
+    reduce_only: bool,
+) -> Dict[str, Any]:
+    """The maker_first state machine. Raises on any setup failure (coin
+    resolution, exchange client) — `place_entry_order` catches that and falls
+    back to taker, so every failure mode here degrades to "exactly what taker
+    mode would have done," never to a worse or stuck state.
+
+    1. Rest a post-only (ALO) limit AT the current touch (join best bid/ask —
+       by construction this cannot cross, so HL either rests it or rejects it
+       outright; it can never pay the taker fee).
+    2. Poll briefly (`maker_first_poll_interval_s`, up to
+       `maker_first_timeout_s`) for it to fill.
+    3. Cancel whatever is left resting (a no-op, ignored, if it already filled
+       or was rejected) and read the account's OWN fill record for this oid —
+       this is the only way to learn the fill price/size for an order that
+       filled asynchronously after our last poll.
+    4. Whatever didn't fill goes out taker (`place_hl_order`) for the exact
+       remainder, at a fresh price — so a book that ran away during the wait
+       is handled the same way plain taker mode always handled it.
+
+    Returns the same {ok, order_id?, avg_px?, total_sz?, error?} shape as
+    `place_hl_order`, blending the two legs' avg price when both filled.
+    """
+    _, sz_dec, _ = get_coin_index(coin)
+    touch_px = _best_touch_price(coin, is_buy, mid_price)
+    # Passive rounding — same convention as place_hl_limit_order: a buy rounds
+    # DOWN and a sell rounds UP, so the order never rests at a price more
+    # aggressive than the touch it is joining (which would make it crossing).
+    maker_price_str = _round_price_for_hl(touch_px, sz_dec, is_perp=True, is_buy=not is_buy)
+    order_size = max(size, _min_order_size(mid_price, sz_dec))
+    size_str = f"{order_size:.{sz_dec}f}"
+
+    placed_at_ms = int(time.time() * 1000)
+    exchange = _make_exchange()
+    result = exchange.order(
+        coin, is_buy, float(size_str), float(maker_price_str),
+        OrderType(limit={"tif": "Alo"}), reduce_only=reduce_only,
+    )
+    placed = _parse_order_result(result, accept_resting=True)
+
+    if not placed.get("ok"):
+        # Post-only rejected outright (would have crossed the book) — no
+        # resting order exists to poll or cancel; go straight to taker.
+        logger.info(f"[place_entry_order] {coin} ALO rejected "
+                    f"({placed.get('error')}) — taker for the full size")
+        return place_hl_order(is_buy, size, mid_price, coin, reduce_only=reduce_only)
+
+    if "avg_px" in placed:
+        # Not expected from a true post-only order (a fill there would have
+        # been a taker cross), but if the venue ever reports one this way the
+        # position is already fully open — nothing left to chase.
+        return placed
+
+    oid = placed.get("order_id")
+    timeout_s = float(config.get("maker_first_timeout_s", DEFAULT_MAKER_FIRST_TIMEOUT_S)
+                       or DEFAULT_MAKER_FIRST_TIMEOUT_S)
+    poll_s = float(config.get("maker_first_poll_interval_s", DEFAULT_MAKER_FIRST_POLL_INTERVAL_S)
+                    or DEFAULT_MAKER_FIRST_POLL_INTERVAL_S)
+    max_polls = max(1, int(timeout_s / poll_s)) if poll_s > 0 else 1
+
+    status = "open"
+    for i in range(max_polls):
+        try:
+            status = fetch_order_status(oid)
+        except Exception as e:
+            logger.warning(f"[place_entry_order] status poll failed for {coin} oid={oid}: {e}")
+            status = "error"
+        if status != "open":
+            break
+        if i < max_polls - 1:
+            time.sleep(poll_s)
+
+    try:
+        cancel_orders(oid, coin)  # harmless no-op if already filled/gone
+    except Exception as e:
+        logger.warning(f"[place_entry_order] cancel failed for {coin} oid={oid}: {e}")
+
+    filled_sz, filled_avg_px = _fills_for_order(oid, coin, placed_at_ms)
+    remainder = max(0.0, order_size - filled_sz)
+
+    if remainder <= 0:
+        return {"ok": True, "order_id": str(oid), "avg_px": filled_avg_px, "total_sz": filled_sz}
+
+    logger.info(f"[place_entry_order] {coin} maker leg filled {filled_sz:g}/{order_size:g} "
+                f"(status={status}) — taking the remainder {remainder:g} at market")
+    taker_res = place_hl_order(is_buy, remainder, mid_price, coin, reduce_only=reduce_only)
+
+    if filled_sz <= 0:
+        # Nothing rested; the taker leg alone IS the result.
+        return taker_res
+    if not taker_res.get("ok"):
+        # Partial maker fill + a failed taker remainder: report the position
+        # the account actually holds (the maker fill is real) rather than a
+        # clean failure that would hide it from the caller.
+        return {
+            "ok": True, "order_id": str(oid), "avg_px": filled_avg_px, "total_sz": filled_sz,
+            "error": f"maker leg filled {filled_sz:g}; taker remainder failed: {taker_res.get('error')}",
+        }
+
+    taker_sz = float(taker_res.get("total_sz") or remainder)
+    taker_px = float(taker_res.get("avg_px") or mid_price)
+    total_sz = filled_sz + taker_sz
+    blended_px = ((filled_sz * filled_avg_px) + (taker_sz * taker_px)) / total_sz if total_sz > 0 else 0.0
+    return {"ok": True, "order_id": str(oid), "avg_px": blended_px, "total_sz": total_sz}
+
+
+def place_entry_order(
+    is_buy: bool,
+    size: float,
+    mid_price: float,
+    coin: str = "BTC",
+    config: Optional[Dict[str, Any]] = None,
+    reduce_only: bool = False,
+) -> Dict[str, Any]:
+    """Entry order, routed by `config["entry_order_mode"]` ("taker" | "maker_first").
+
+    This is the ONLY function that should gain a maker-first mode — stops,
+    emergency exits and position closes call `place_hl_order` directly and
+    must keep doing so (a stop that waits to save a fee is not a stop).
+
+    "taker" (default, or any value other than "maker_first") calls
+    `place_hl_order` with the exact same arguments a direct call would have
+    used — byte-identical to every call site before this function existed.
+
+    "maker_first" tries a post-only entry first (see `_place_maker_first`) and
+    is built so that NO failure mode inside it can end up worse than plain
+    taker: any exception anywhere in the maker path is caught here and the
+    full order falls back to `place_hl_order`, same as "taker" mode.
+    """
+    cfg = config or {}
+    mode = str(cfg.get("entry_order_mode", "taker") or "taker").lower()
+    if mode != "maker_first":
+        return place_hl_order(is_buy, size, mid_price, coin, reduce_only=reduce_only)
+    if mid_price <= 0:
+        return {"ok": False, "error": f"invalid price for {coin}"}
+    if size <= 0:
+        return {"ok": False, "error": f"invalid size for {coin}"}
+    try:
+        return _place_maker_first(is_buy, size, mid_price, coin, cfg, reduce_only)
+    except Exception as e:
+        logger.warning(f"[place_entry_order] maker_first path raised for {coin}, "
+                       f"falling back to taker: {e}")
+        return place_hl_order(is_buy, size, mid_price, coin, reduce_only=reduce_only)
 
 
 def place_hl_trigger_order(
