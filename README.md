@@ -27,8 +27,9 @@ part of this system that reliably works, and it is worth more than the trading.
   not exist. `shadow_only` exists only as the switch
   `scripts/autonomous_cycle.py` flips to demote a book whose forward ledger
   turns negative.
-- The account is sized for $12.94 (2026-09-04): $11 notional at 1x,
-  `max_concurrent` 1, daily kill at -$4. See **Sizing a small account** below.
+- Sizing scales with equity from a $10 account up (2026-10-17): at $15 that
+  is one position, sized to Hyperliquid's $10.50 minimum, with the daily pause
+  covering one stop-out. See **Sizing any account** below and `/account`.
 
 | book | n | EV@25bps | OOS halves | null p |
 |---|---|---|---|---|
@@ -70,25 +71,50 @@ them is the equity floor in `executor.maybe_execute`, the per-book margin check,
 the majors allowlist, the daily-loss kill switch, and the nightly grader that
 demotes any book whose forward ledger turns negative.
 
-### Sizing a small account
+### Sizing any account, $10 to $100k
 
-Two gates stand between an account and a fill, and clearing one does nothing:
+Sizing comes from four plain settings: risk per trade, daily pause, max
+leverage and max positions. A preset picked from equity fills them in, and
+`services/risk` derives everything else:
 
-| gate | where | at $12.94 |
-|---|---|---|
-| equity floor | `executor.min_tradable_equity` | derived $88.89, overridden to $12 |
-| per-position margin | `executor.maybe_execute` | $11 notional at 1x needs $11 |
-| exchange minimum | `client.exchange.MIN_ORDER_USD` | $10.50 |
-| free-margin floor | `min_available_margin_pct` | 10%, leaving $11.65 usable |
+| preset | equity | risk / trade | daily pause | max leverage | positions |
+|---|---|---|---|---|---|
+| starter | under $1k | 3% | 8% | 10x | 1 |
+| small | $1k-$10k | 2% | 6% | 8x | up to 3 |
+| standard | $10k-$50k | 1.5% | 5% | 6x | up to 6 |
+| pro | $50k+ | 1% | 4% | 5x | up to 10 |
 
-$11 is the only notional that clears the exchange minimum and fits usable
-margin. `max_concurrent` is 1 because exactly one position fits.
+There is no global equity floor any more. Each trade is checked on its own,
+and every book gets one sentence saying why it can or cannot trade ("Sized up
+to Hyperliquid's $10.50 minimum: risks $1.57 (10.4%) if the stop hits", or
+"Needs $525.00 of equity"). Three guarantees hold for every preset and for
+custom settings, property-tested from $5 to $100k:
 
-The derived $88.89 floor is what all five books need to hold a position *at
-once*; below it the first book to fire consumes the budget and the rest sit
-margin-blocked, which from outside looks like books that simply do not fire
-(W-FUND1). `min_tradable_equity_usd` overrides it deliberately, and
-`.agent-config.json` carries a note on what to restore when funded.
+1. A trade never plans to risk more than the daily pause.
+2. The daily pause always fits one minimum-size trade. Without that, a $15
+   account could never trade, because the exchange minimum sets the floor.
+3. Max positions times the worst stop-out fits inside the daily pause.
+
+Old configs migrate automatically: the scattered sizing keys become a custom
+profile, shown as "Custom (from your old settings)" on `/account`, one click
+from a preset. Fresh installs start on "auto".
+
+## Connecting an account
+
+There is no sign-in. Open pathiel and connect a Hyperliquid account:
+
+- **Connect your wallet** (recommended). One signature approves a trading key
+  that pathiel generates and keeps encrypted at rest. That key can trade but
+  can never withdraw, and your main key never leaves your wallet. The
+  signature is made on whatever chain your wallet is on, so you never switch
+  networks.
+- **Use an API key** made on app.hyperliquid.xyz/API.
+- **Watch an address**: read-only dashboards and desks.
+
+Then pick a risk preset with a live preview and you are trading. Existing
+`.env.local` keys keep working and appear as the "From .env.local" account.
+On your own machine nothing asks you to log in. A public deployment is
+single-operator: only the operator's wallet manages accounts and risk.
 
 The exemption list that used to hold ten capital-less books is empty and a test
 keeps it empty. It produced exactly the failure it sounds like: on 2026-08-29
@@ -389,6 +415,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 |------|---------------|
 | `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, live books |
 | `/desks` | Desks — one card per desk; `/desks/<id>` leads with the call, then the leverage switch |
+| `/account` | Account & Risk — the connected account, the risk preset with a live preview, which books can trade |
 | `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
 | `/news` | News-catalyst reads + research events with news context |
 | `/trends` | Trend analysis + forecasts (see `services/trend_engine/README.md`) |
