@@ -342,15 +342,9 @@ const PathielAuth = (function () {
   async function loadMyAccount() {
     const slot = document.getElementById('my-account');
     if (!slot) return;
-    // refresh() already ran and set `me` before this is called (see the
-    // DOMContentLoaded handler below). An anonymous visitor has no session,
-    // so /api/dashboard/account is GUARANTEED to 401 — calling it anyway
-    // bought no information, cost a round trip, and left a "Failed to load
-    // resource: 401" line in the console on every single page view, for
-    // every visitor who had never signed in. Found 2026-10-17 ux-qa sweep:
-    // that line is logged by the browser's network stack itself, not by
-    // this file's error handling, so no amount of a .catch() here removes
-    // it — only not making the doomed request does.
+    // `me` is already set by refresh() below. Anonymous means this fetch is
+    // GUARANTEED to 401 — skip it (saves the request and the console error
+    // the browser logs for any non-2xx fetch, independent of JS handling).
     if (!me) { slot.hidden = true; return; }
     try {
       const r = await fetch('/api/dashboard/account');
