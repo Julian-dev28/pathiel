@@ -458,3 +458,43 @@ def test_scenario_text_with_an_invented_price_still_fails(oil):
     pool = V.build_ground_truth_pool(oil.analytics, oil.intel)
     errs = V.check_scenario_numbers([sc], oil.spec, oil.analytics, pool=pool)
     assert errs and "61.37" in errs[0]
+
+
+def test_points_may_cite_analytics_sections(oil):
+    """Live 2026-10-17: a point cited "forward" (the forward-window stats) and
+    forced a repair. Analytics section ids are valid citations; made-up ids
+    still fail."""
+    ok = [Point(text="forward p50 +1.31%", source_ids=["forward"]),
+          Point(text="5x liq far below", source_ids=["ladder", "h1"])]
+    assert validator.check_cited_ids_exist(ok, [], oil.intel) == []
+    bad = [Point(text="x", source_ids=["made_up_id"])]
+    assert validator.check_cited_ids_exist(bad, [], oil.intel)
+
+
+def test_analytics_citations_never_become_links(oil):
+    from services.thesis import assemble
+    draft = ThesisDraft(
+        call=oil.thesis.call, scenarios=oil.thesis.scenarios,
+        bull=[Point(text="forward p50", source_ids=["forward"])], bear=oil.thesis.bear,
+        what_changes_my_mind=oil.thesis.what_changes_my_mind, lessons=oil.thesis.lessons,
+        leverage_reasons=[{"leverage": lv.leverage, "reason": lv.reason} for lv in oil.thesis.leverage_view])
+    assert "forward" not in {s.id for s in assemble.resolve_sources(draft, oil.intel)}
+
+
+def test_call_distance_from_mid_is_grounded(oil):
+    """Live 2026-10-17: "stop 94.33 (-4.6% from mid)" in the invalidation
+    forced a repair. Distances between the call's own prices and the mid or
+    entry are arithmetic on validated numbers; an unrelated percent still fails."""
+    mid = next(i.mid for i in oil.analytics.instruments if i.coin == "xyz:CL")
+    call = oil.thesis.call
+    d = (call.stop_px / mid - 1.0) * 100.0
+    ok = call.model_copy(update={"invalidation": f"Close below {call.stop_px} ({d:.1f}% from mid)."})
+    errs = validator.check_numbers_grounded(
+        call=ok, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
+        leverage_reasons=[], spec=oil.spec, analytics=oil.analytics, intel=oil.intel)
+    assert errs == []
+    bad = call.model_copy(update={"invalidation": "Close below 37.77% drawdown."})
+    errs = validator.check_numbers_grounded(
+        call=bad, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
+        leverage_reasons=[], spec=oil.spec, analytics=oil.analytics, intel=oil.intel)
+    assert errs and "37.77" in errs[0]
