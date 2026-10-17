@@ -115,7 +115,8 @@ def test_templates_carry_the_mount_point():
 
 
 def test_bundle_is_not_loaded_on_page_load():
-    """It is ~380 KB over the wire against ~30 KB for the dashboard's own JS.
+    """It is ~3 MB over the wire (RainbowKit + wagmi + viem, minified) against
+    ~30 KB for the dashboard's own JS.
 
     Loading it from a <script> tag in the templates would put that on every
     page view, including the signed-in operator who never opens the picker. It

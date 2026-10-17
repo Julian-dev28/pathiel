@@ -35,7 +35,13 @@
   --surface-2:#14211f;
   --ink:#e8efec;
   --ink-2:#9aaaa5;
-  --ink-3:#6e807b;
+  /* #788a85, not the #6e807b this was: that value contrasts 4.26:1 against
+     --surface-2 (#14211f), under the 4.5:1 WCAG AA floor for text this size
+     (.sec-label and friends run ~12px, never bold) — found by the 2026-10-17
+     ux-qa sweep sampling every text/background pair actually rendered.
+     4.89:1 against --surface, 5.21:1 against --paper, 4.56:1 against
+     --surface-2: AA-clean everywhere this token is used. */
+  --ink-3:#788a85;
   --rule:#1c2a27;
   --rule-2:#2b3c38;
 
@@ -65,7 +71,11 @@
 
 :root[data-theme="light"]{
   --paper:#ffffff; --surface:#ffffff; --surface-2:#f4f7f6;
-  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#838f8b;
+  /* #687470, not #838f8b: that value contrasts 3.35:1 against --paper and
+     only gets worse against --surface-2 — light mode's tertiary text failed
+     AA worse than dark's. 4.86:1 against --paper, 4.51:1 against
+     --surface-2 after this darkening (2026-10-17 ux-qa sweep). */
+  --ink:#0a1211; --ink-2:#4c5956; --ink-3:#687470;
   --rule:#e2e8e6; --rule-2:#c6d0cd;
   --bar:#0a1211; --bar-ink:#ffffff; --bar-ink-2:#93a29d;
   --accent:#0d6b5c; --accent-ink:#085146; --accent-wash:#eaf5f2;
@@ -79,7 +89,7 @@
   --surface-2:#14211f;
   --ink:#e8efec;
   --ink-2:#9aaaa5;
-  --ink-3:#6e807b;
+  --ink-3:#788a85;          /* see :root — same AA-contrast fix */
   --rule:#1c2a27;
   --rule-2:#2b3c38;
 
@@ -98,6 +108,19 @@
   --amber:#d0a45c;
   --amber-wash:#26200f;
 }
+
+/* The `hidden` attribute's UA-stylesheet rule (`[hidden]{display:none}`) is
+   NORMAL-priority author-origin-losing, not a specificity winner — ANY of
+   this file's own rules that set `display` on the same element (.disclose,
+   .seg, .auth-note, …) beats it regardless of selector weight, because
+   author CSS of equal-or-lower specificity still outranks the UA sheet.
+   Found 2026-10-17: #hl-more (trends.html, class="disclose" hidden) rendered
+   as an empty but fully visible, clickable button — `.disclose{display:flex}`
+   silently un-hid it. `!important` here is the standard fix (MDN's own
+   recommendation for this exact gotcha) and is safe: it only ever applies
+   while the attribute is present, so `el.hidden = false` / removeAttribute
+   still work everywhere JS already relies on them. */
+[hidden]{ display:none !important; }
 
 /* ── base ─────────────────────────────────────────────────────────────── */
 
@@ -693,6 +716,18 @@ footer.site-foot{
   .kv.hero{ font-size:32px; }
   .masthead-inner{ flex-wrap:wrap; gap:10px; padding-top:10px; padding-bottom:10px; }
   nav.tabs-main{ order:3; width:100%; margin-left:0; overflow-x:auto; }
+  /* masthead-right is its OWN flex row, independent of masthead-inner's wrap
+     above — it does not inherit the parent's wrapping. On a page with a few
+     extra controls (trends.html: operator-token button + lane-meta, on top
+     of the wallet chip + status pill every page carries) its children's
+     combined width exceeds 375px and the box overflows the page edge,
+     dragging the WHOLE document into horizontal scroll — found 2026-10-17
+     ux-qa sweep: 456px document width against a 375px viewport on /trends,
+     81px of which traced straight back to this rule having no wrap. Letting
+     it wrap onto a second line is the same technique nav.tabs-main already
+     uses one line up; every child here is far narrower than 375px on its
+     own, so two lines is the worst case, never a scrollbar. */
+  .masthead-right{ flex-wrap:wrap; justify-content:flex-end; row-gap:8px; }
   .fn-row,.funnel-row,.tape-row,.reason-row{ grid-template-columns:110px 1fr auto; }
   .heat-row{ grid-template-columns:52px 1fr auto auto auto; gap:8px; }
 }
