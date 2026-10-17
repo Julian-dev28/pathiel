@@ -31,8 +31,11 @@ SERVER = ROOT / "scripts" / "pathiel-mcp-server.py"
 PASS_THRESHOLD = 0.97
 
 # Tools that act on the account or call an LLM. Never exercised here.
+# desk_submit_call joins this group 2026-10-17: it writes a stored Thesis to
+# a desk's journal, the same non-idempotent-write reason submit_verdict is
+# here, not a live-money reason.
 MUTATING = {"execute", "close_position", "set_leverage", "cancel_order",
-            "submit_verdict", "research", "config"}
+            "submit_verdict", "research", "config", "desk_submit_call"}
 
 ZERO = "0x0000000000000000000000000000000000000000"
 ARGS = {
@@ -42,6 +45,8 @@ ARGS = {
     # HLP, a vault that has existed since launch.
     "vaultAddress": "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303",
     "leverage": 5, "is_long": True, "size": 0.01,
+    # Real desk id: contracts/strategies/fixtures/oil_*.json is built around it.
+    "desk": "oil",
 }
 # A missing record is a correct answer for these probes, not a tool failure.
 EXPECTED_ERRORS = {
@@ -49,6 +54,14 @@ EXPECTED_ERRORS = {
     # tests/conftest.py points PATHIEL_STATE_DIR at a temp dir, which the
     # child inherits: no auth DB, so nobody has signed in. Correct answer.
     "wallet_account": "no wallet has signed in",
+    # services/strategies (desk-core) is a separate, parallel-owned service.
+    # It does not exist in every worktree/deploy yet; a clear "unavailable"
+    # error is the correct answer here, not a crash. Once desk-core ships,
+    # these start getting real data and this becomes a real end-to-end probe.
+    "desk_list": "facade unavailable",
+    "desk_brief": "facade unavailable",
+    "desk_refresh": "facade unavailable",
+    "desk_track_record": "facade unavailable",
 }
 
 
