@@ -272,6 +272,21 @@ def _env_files_present(repo_root: Path) -> List[Path]:
     return [repo_root / name for name in ENV_FILE_CANDIDATES if (repo_root / name).exists()]
 
 
+def _git_env() -> Dict[str, str]:
+    """Environment for every git subprocess call below, with GIT_DIR /
+    GIT_WORK_TREE / GIT_INDEX_FILE / GIT_CEILING_DIRECTORIES stripped.
+
+    Without this, a caller running under a git hook — which is exactly how
+    this script's own gate test suite runs, via scripts/hooks/pre-commit —
+    inherits those vars pointed at the OUTER repo. git lets an env var win
+    over `cwd`, so every check below would silently inspect the wrong
+    repository instead of `repo_root`: a secrets scanner that can be fooled
+    into scanning the wrong tree by its own calling context is worse than
+    one that is merely offline, so this is checked first, not last.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
 def check_env_files_gitignored(repo_root: Path) -> List[Finding]:
     findings: List[Finding] = []
     if not (repo_root / ".git").exists():
@@ -279,7 +294,7 @@ def check_env_files_gitignored(repo_root: Path) -> List[Finding]:
     for path in _env_files_present(repo_root):
         rel = path.relative_to(repo_root)
         proc = subprocess.run(["git", "check-ignore", "-q", str(rel)],
-                               cwd=repo_root, capture_output=True)
+                               cwd=repo_root, capture_output=True, env=_git_env())
         if proc.returncode == 0:
             findings.append(Finding("env_gitignored", "PASS", str(rel), "gitignored"))
         else:
@@ -297,7 +312,7 @@ def check_env_files_not_tracked(repo_root: Path) -> List[Finding]:
     for path in _env_files_present(repo_root):
         rel = path.relative_to(repo_root)
         proc = subprocess.run(["git", "ls-files", "--error-unmatch", str(rel)],
-                               cwd=repo_root, capture_output=True)
+                               cwd=repo_root, capture_output=True, env=_git_env())
         if proc.returncode == 0:
             findings.append(Finding("env_not_tracked", "FAIL", str(rel),
                                      "TRACKED by git — this file has secrets and must never be "
@@ -336,7 +351,7 @@ def check_git_index_for_secrets(repo_root: Path, secrets: Mapping[str, str]) -> 
         return [Finding("git_index_scan", "SKIP", "-", f"{repo_root} is not a git repository")]
     try:
         subprocess.run(["git", "rev-parse", "--git-dir"], cwd=repo_root,
-                        capture_output=True, check=True)
+                        capture_output=True, check=True, env=_git_env())
     except Exception:
         return [Finding("git_index_scan", "SKIP", "-", "git not available or repo has no HEAD")]
 
@@ -354,7 +369,7 @@ def check_git_index_for_secrets(repo_root: Path, secrets: Mapping[str, str]) -> 
             # the secret) reach this process's stdout.
             proc = subprocess.run(
                 ["git", "grep", "--cached", "--fixed-strings", "-l", "-f", pattern_file],
-                cwd=repo_root, capture_output=True, text=True,
+                cwd=repo_root, capture_output=True, text=True, env=_git_env(),
             )
             if proc.returncode == 0:
                 paths = [p for p in proc.stdout.splitlines() if p]

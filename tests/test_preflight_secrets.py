@@ -58,12 +58,33 @@ def _complete_env(**overrides: str) -> Dict[str, str]:
 
 
 def _git_repo(tmp_path: Path) -> Path:
+    """A throwaway git repo, fully isolated from whatever git process this
+    test is itself running under.
+
+    Without stripping GIT_* here, this breaks when pytest is invoked from
+    inside a git hook running in a WORKTREE (exactly what the repo's own
+    pre-commit hook does): git sets GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE to
+    the worktree's own git-dir for the hook's subprocess tree, and `git
+    init -q` below inherits them — it then treats THIS tmp dir as already
+    belonging to the outer worktree's repo instead of creating a fresh,
+    independent one, and every assertion in this file about "untracked" /
+    "gitignored" in a clean nested repo reads the wrong index entirely.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=env)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True, env=env)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, env=env)
     return repo
+
+
+def _git_add(repo: Path, *paths: str) -> None:
+    """`git add` against the isolated nested repo — same GIT_* stripping as
+    _git_repo, for the same reason. Every `git add` in this file against a
+    _git_repo()-created repo must go through this, not a bare subprocess.run."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "add", *paths], cwd=repo, check=True, env=env)
 
 
 def _statuses(findings, check=None):
@@ -222,7 +243,7 @@ def test_env_file_tracked_in_git_fails(tmp_path):
     repo = _git_repo(tmp_path)
     # No .gitignore entry, so `git add` succeeds — exactly the accidental-add case.
     (repo / ".env.local").write_text("X=1\n")
-    subprocess.run(["git", "add", ".env.local"], cwd=repo, check=True)
+    _git_add(repo, ".env.local")
     findings = pf.check_env_files_not_tracked(repo)
     assert _statuses(findings, "env_not_tracked") == {"FAIL"}
 
@@ -233,7 +254,7 @@ def test_git_index_scan_detects_staged_secret(tmp_path):
     repo = _git_repo(tmp_path)
     leaked = repo / "config_dump.py"
     leaked.write_text(f'API_KEY = "{FAKE_PRIVATE_KEY}"\n')
-    subprocess.run(["git", "add", "config_dump.py"], cwd=repo, check=True)
+    _git_add(repo, "config_dump.py")
 
     findings = pf.check_git_index_for_secrets(repo, {"HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY})
     fail = [f for f in findings if f.status == "FAIL"]
@@ -249,7 +270,7 @@ def test_git_index_scan_still_catches_secret_after_working_tree_revert(tmp_path)
     repo = _git_repo(tmp_path)
     leaked = repo / "config_dump.py"
     leaked.write_text(f'API_KEY = "{FAKE_PRIVATE_KEY}"\n')
-    subprocess.run(["git", "add", "config_dump.py"], cwd=repo, check=True)
+    _git_add(repo, "config_dump.py")
     leaked.write_text("API_KEY = None\n")  # working tree no longer shows it
 
     findings = pf.check_git_index_for_secrets(repo, {"HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY})
@@ -259,7 +280,7 @@ def test_git_index_scan_still_catches_secret_after_working_tree_revert(tmp_path)
 def test_git_index_scan_clean_repo_passes(tmp_path):
     repo = _git_repo(tmp_path)
     (repo / "readme.txt").write_text("nothing secret here\n")
-    subprocess.run(["git", "add", "readme.txt"], cwd=repo, check=True)
+    _git_add(repo, "readme.txt")
 
     findings = pf.check_git_index_for_secrets(repo, {"HYPERLIQUID_PRIVATE_KEY": FAKE_PRIVATE_KEY})
     assert _statuses(findings) == {"PASS"}
@@ -269,7 +290,7 @@ def test_git_index_scan_skips_short_placeholder_values(tmp_path):
     repo = _git_repo(tmp_path)
     leaked = repo / "config_dump.py"
     leaked.write_text('TOKEN = "1234"\n')
-    subprocess.run(["git", "add", "config_dump.py"], cwd=repo, check=True)
+    _git_add(repo, "config_dump.py")
 
     # "1234" is below MIN_SECRET_SCAN_LEN — must not be scanned (would be noise).
     findings = pf.check_git_index_for_secrets(repo, {"SOME_TOKEN": "1234"})
@@ -316,7 +337,7 @@ def test_main_never_prints_a_secret_value_even_on_a_detected_leak(tmp_path, monk
     (repo / ".gitignore").write_text(".env.local\n")
     leaked = repo / "oops_committed_config.py"
     leaked.write_text(f'HYPERLIQUID_PRIVATE_KEY = "{FAKE_PRIVATE_KEY}"\n')
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    _git_add(repo, ".")
 
     env_file = tmp_path / "env_not_used.local"
     env_file.write_text("")  # everything comes from the monkeypatched process env
