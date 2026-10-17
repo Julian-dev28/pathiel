@@ -168,6 +168,11 @@ class AuthStore:
                     last_seen_at=row["last_seen_at"],
                     disabled=bool(row["disabled"]))
 
+    def user_count(self) -> int:
+        """How many wallets have ever held a session. Zero means a fresh
+        deployment whose first connect becomes the operator (see upsert_user)."""
+        return int(self._db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"])
+
     def upsert_user(self, address: str, now: Optional[float] = None) -> User:
         """Find or create the user for a wallet address.
 

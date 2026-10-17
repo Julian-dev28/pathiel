@@ -1,10 +1,26 @@
 #!/usr/bin/env python3
-"""Apply named config presets to .agent-config.json.
+"""Config presets, two generations.
 
-Presets encode opinionated defaults for different account sizes + styles.
-See docs/CONFIG.md for the full key reference and what each knob does.
+PRIMARY (config v2, docs/overhaul/PROFIT_AUDIT.md / services/risk/): a
+RiskProfile — preset name + a handful of overrides — DERIVES every number a
+book needs (notional, max positions, daily loss limit) from current equity.
+This is the one to reach for:
 
-Usage:
+    scripts/config_preset.py derive --equity 15.19                 # this install's own config/profile
+    scripts/config_preset.py derive --equity 15.19 --profile starter
+    scripts/config_preset.py derive --equity 500 --profile small --json
+
+`derive` NEVER writes `.agent-config.json` — read-only, prints the derived
+numbers for a hypothetical equity/profile. To actually SAVE a RiskProfile,
+use `PUT /api/risk/profile` (services/risk/api.py) or edit the "risk_profile"
+key by hand.
+
+LEGACY (pre-v2, kept for existing installs that haven't migrated): named
+dollar-bucket presets that overwrite ~15 scattered keys at once. Guarded
+behind --allow-legacy-risk-preset since 2026-09-07 — they predate the
+profit audit and will overwrite audited live-risk gates. See
+docs/CONFIG.md for the full key reference.
+
     scripts/config_preset.py list
     scripts/config_preset.py show small_aggressive
     scripts/config_preset.py apply small_aggressive            # diff + confirm
@@ -15,10 +31,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
 CONFIG_FILE = _REPO / ".agent-config.json"
+
+# Running this file directly (not `python -m`) puts scripts/ on sys.path[0],
+# not the repo root — the `derive` subcommand needs `contracts`/`pathiel`/
+# `services` importable (see scripts/profit_audit.py for the same fix).
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 
 PRESETS: dict[str, dict] = {
@@ -263,6 +286,46 @@ def cmd_apply(
     return 0
 
 
+def cmd_derive(equity: float, profile_name: str | None, as_json: bool) -> int:
+    """Print DerivedLimits (services/risk/derive.py) for `equity`. READ-ONLY:
+    never writes .agent-config.json. Uses this install's OWN book roster
+    (services.risk.books.all_book_specs) so the numbers reflect what is
+    actually configured, not a generic example.
+
+    `profile_name` overrides the preset for a "what if I switched tiers"
+    preview; omit it to use the config's own saved RiskProfile (or a
+    migration of its legacy keys, when no "risk_profile" key exists yet —
+    see pathiel.agents.config_store.read_risk_profile)."""
+    from contracts.risk.models import RiskProfile
+    from pathiel.agents.config_store import read_agent_config, read_risk_profile
+    from pathiel.client.exchange import MIN_ORDER_USD
+    from services.risk import books as risk_books
+    from services.risk.derive import VenueRules, derive_limits
+
+    cfg = read_agent_config()
+    profile = RiskProfile(preset=profile_name) if profile_name else read_risk_profile(cfg)
+    limits = derive_limits(equity, profile, risk_books.all_book_specs(cfg),
+                           VenueRules(min_order_notional_usd=MIN_ORDER_USD))
+
+    if as_json:
+        print(limits.model_dump_json(indent=2))
+        return 0
+
+    print(f"# ${equity:,.2f} equity, {limits.preset_applied} preset\n")
+    print(limits.headline)
+    print(f"\nRisk per trade   ${limits.risk_per_trade_usd:,.2f}")
+    print(f"Daily loss limit ${limits.daily_loss_limit_usd:,.2f}")
+    print(f"Max positions    {limits.max_open_positions}")
+    print(f"Min to trade     ${limits.min_equity_to_trade_usd:,.2f}\n")
+    width = max((len(b.book) for b in limits.books), default=4)
+    for b in limits.books:
+        mark = "OK  " if b.can_trade else "--  "
+        print(f"  {mark}{b.book:<{width}}  {b.reason}")
+    for note in limits.notes:
+        print(f"\n  note: {note}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -276,6 +339,12 @@ def main() -> int:
     p_apply.add_argument("--yes", "-y", action="store_true", help="skip confirm")
     p_apply.add_argument("--allow-legacy-risk-preset", action="store_true",
                          help="permit old account-size presets that overwrite live risk gates")
+    p_derive = sub.add_parser("derive", help="config v2: print derived limits for an equity/profile (read-only)")
+    p_derive.add_argument("--equity", type=float, required=True)
+    p_derive.add_argument("--profile", default=None,
+                         choices=["auto", "starter", "small", "standard", "pro", "custom"],
+                         help="override the preset; omit to use the config's own saved/migrated profile")
+    p_derive.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args()
 
     if args.cmd == "list":
@@ -284,6 +353,8 @@ def main() -> int:
         return cmd_show(args.name)
     if args.cmd == "apply":
         return cmd_apply(args.name, args.account_size, args.yes, args.allow_legacy_risk_preset)
+    if args.cmd == "derive":
+        return cmd_derive(args.equity, args.profile, args.as_json)
     return 0
 
 

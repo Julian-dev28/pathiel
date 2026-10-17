@@ -157,3 +157,26 @@ def test_session_gate_skipped_for_local_mode(monkeypatch):
     assert r.status_code != 401
     r = local.get("/api/dashboard/positions", headers={"Origin": "https://evil.example"})
     assert r.status_code == 401
+
+
+def test_accounts_router_is_mounted_and_session_answers_anonymously():
+    from fastapi.testclient import TestClient
+    import pathiel.server as srv
+    r = TestClient(srv.app, client=("203.0.113.9", 50000)).get("/api/session")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["local_mode"] is False and body["address"] is None
+
+
+def test_risk_router_is_mounted_and_preview_works_locally():
+    from fastapi.testclient import TestClient
+    import pathiel.server as srv
+    from services.auth import integration
+    import os
+    if any(os.environ.get(m) for m in integration._DEPLOYMENT_MARKERS):
+        return
+    r = TestClient(srv.app, client=("127.0.0.1", 50000)).post(
+        "/api/risk/preview", json={"equity_usd": 15.21, "profile": {"preset": "auto"}})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["preset_applied"] == "starter" and body["headline"]

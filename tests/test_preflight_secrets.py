@@ -602,3 +602,16 @@ def test_effective_env_file_fills_gaps_not_set_in_process(tmp_path):
 ])
 def test_effective_ai_brain_provider_normalisation(raw, expected):
     assert pf._effective_ai_brain_provider({"AI_BRAIN_PROVIDER": raw}) == expected
+
+
+def test_gate_sessions_never_load_wallet_private_keys():
+    """The root conftest must not put .env.local private keys into a gate run;
+    only PATHIEL_E2E=1 (the real-money suite) loads them."""
+    import os
+    if os.environ.get("PATHIEL_E2E") == "1":
+        return
+    for k, v in os.environ.items():
+        if "PRIVATE_KEY" in k.upper() and v:
+            # a test may set a FAKE key itself; the real ones are 66-char hex
+            # loaded at session start, before any test runs
+            assert k not in ("HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_PRIVATE_KEY"), k

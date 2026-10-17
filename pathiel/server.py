@@ -265,6 +265,15 @@ app.include_router(_auth_router)
 
 from services.strategies.api import router as _strategies_router  # noqa: E402
 app.include_router(_strategies_router)
+# Accounts: connect a Hyperliquid wallet (approve an agent key), import an API
+# key, or watch an address. Gates itself (local mode, else operator only), so
+# it is deliberately NOT under _GATED_PREFIXES: /api/session must answer an
+# anonymous visitor, and a fresh deployment's first connect needs no session.
+from services.accounts.api import router as _accounts_router  # noqa: E402
+app.include_router(_accounts_router)
+# Risk: the four-knob profile, derived limits, and a preview for any equity.
+from services.risk.api import router as _risk_router  # noqa: E402
+app.include_router(_risk_router)
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

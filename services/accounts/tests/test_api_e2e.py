@@ -421,3 +421,58 @@ def test_rate_limit_is_keyed_per_client_not_global(clients, monkeypatch, tmp_pat
     assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_a).status_code == 200
     assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_a).status_code == 429
     assert c.post("/api/accounts/agent/prepare", json=body, headers=headers_b).status_code == 200
+
+
+# ── public mode is single-operator (integrator, 2026-10-17) ───────────────────
+
+def test_a_second_wallet_cannot_hijack_the_bot_in_public_mode(clients, monkeypatch, tmp_path):
+    """pathiel runs ONE bot on ONE active account. Before this rule, any wallet
+    that signed in remotely could connect its own account and activate it,
+    switching the operator's bot onto a stranger's account."""
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    _approve_agent_mocks(monkeypatch)
+    operator, stranger = EthAccount.create(), EthAccount.create()
+
+    op = clients.remote(addr="203.0.113.20")
+    login_via_siwe(op, operator)                     # first wallet ever: operator
+    prep = op.post("/api/accounts/agent/prepare",
+                   json={"main_address": operator.address, "label": "Op"}).json()
+    op_acc = op.post("/api/accounts/agent/confirm",
+                     json={"request_id": prep["request_id"],
+                           "signature": _sign_prepare(prep, operator)}).json()
+
+    st = clients.remote(addr="203.0.113.21")
+    login_via_siwe(st, stranger)                     # second wallet: plain user
+    r = st.post("/api/accounts/agent/prepare",
+                json={"main_address": stranger.address, "label": "Mine"})
+    assert r.status_code == 403
+    assert st.post(f"/api/accounts/{op_acc['id']}/activate").status_code == 403
+    assert st.post("/api/accounts/watch", json={"address": stranger.address}).status_code == 403
+    assert st.get("/api/accounts").status_code == 403
+
+
+def test_fresh_deployment_lets_the_first_connect_through_then_closes(clients, monkeypatch, tmp_path):
+    """No wallet has ever held a session: the first remote connect may start
+    without one (it becomes the operator). After that, a session is required."""
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    monkeypatch.delenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", raising=False)
+    _approve_agent_mocks(monkeypatch)
+    first = EthAccount.create()
+    c = clients.remote(addr="203.0.113.30")
+    prep = c.post("/api/accounts/agent/prepare", json={"main_address": first.address})
+    assert prep.status_code == 200
+    ok = c.post("/api/accounts/agent/confirm",
+                json={"request_id": prep.json()["request_id"],
+                      "signature": _sign_prepare(prep.json(), first)})
+    assert ok.status_code == 200
+    late = clients.remote(addr="203.0.113.31")
+    assert late.post("/api/accounts/agent/prepare",
+                     json={"main_address": EthAccount.create().address}).status_code == 401
+
+
+def test_bootstrap_can_be_disabled(clients, monkeypatch, tmp_path):
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR", "1")
+    c = clients.remote(addr="203.0.113.40")
+    assert c.post("/api/accounts/agent/prepare",
+                  json={"main_address": EthAccount.create().address}).status_code == 401
