@@ -35,6 +35,11 @@ DEFAULT_CONCURRENCY = 4
 # silent downgrades."
 MODEL_PROBE_CANDIDATES: tuple[str, ...] = ("fable", "opus", "sonnet")
 MODEL_PROBE_TTL_S = 24 * 3600
+# A probe that settled on anything but the best candidate is a degraded
+# state, often a transient limit on the best model. Re-probe soon instead of
+# pinning the fallback for a day (seen 2026-10-17: one failed fable ping put
+# every thesis on opus).
+MODEL_PROBE_DEGRADED_TTL_S = 15 * 60
 
 DEFAULT_MAX_TURNS = 1
 WEB_SEARCH_MAX_TURNS = 8  # matches ai_brain.ClaudeCliBrain: search+verdict lands in 2-4 turns live
