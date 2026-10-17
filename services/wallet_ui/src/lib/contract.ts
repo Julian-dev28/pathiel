@@ -53,6 +53,9 @@ export interface TypedData {
 export interface AgentPrepareIn {
   main_address: Address;
   label?: string;
+  /** The chain the wallet is on now. Hyperliquid accepts a signature from any
+   *  chain, so the server builds the approval for this one: no network switch. */
+  signature_chain_id?: number;
 }
 
 export interface AgentPrepareOut {

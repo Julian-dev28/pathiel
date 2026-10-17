@@ -35,7 +35,14 @@ EXPIRY_MINUTES = 10
 # constant for this class of action. Matching it exactly (rather than, say,
 # the real mainnet chain id) is what makes the signature recoverable the same
 # way the SDK's own `recover_user_from_user_signed_action` would recover it.
-SIGNATURE_CHAIN_ID_HEX = "0x66eee"
+SIGNATURE_CHAIN_ID_HEX = "0x66eee"   # the SDK's default for local-key signing
+# Wallet signing (integrator, 2026-10-17): the SDK documents that
+# signatureChainId "is the chain used by the wallet to sign and can be any
+# chain". Signing on the wallet's CURRENT chain removes the network switch
+# (live e2e: the SDK default 421614 is Arbitrum Sepolia, a testnet, and the
+# wallet asked the user to switch to it). Default when the wallet says
+# nothing: Arbitrum One, where Hyperliquid deposits already live.
+DEFAULT_WALLET_SIGNATURE_CHAIN_ID = 42161
 
 PRIMARY_TYPE = "HyperliquidTransaction:ApproveAgent"
 
@@ -61,7 +68,8 @@ def new_nonce_ms() -> int:
     return int(time.time() * 1000)
 
 
-def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_NAME) -> Dict[str, Any]:
+def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_NAME,
+                     signature_chain_id: int | None = None) -> Dict[str, Any]:
     """The exact object the connected wallet signs with `eth_signTypedData_v4`.
 
     The SDK's own in-memory action dict carries two extra keys at the point it
@@ -76,7 +84,7 @@ def build_typed_data(agent_address: str, nonce_ms: int, agent_name: str = AGENT_
     all, and it keeps what the wallet shows the user to exactly the 4 fields
     that matter: chain, agent address, agent name, nonce.
     """
-    chain_id = int(SIGNATURE_CHAIN_ID_HEX, 16)
+    chain_id = int(signature_chain_id) if signature_chain_id else int(SIGNATURE_CHAIN_ID_HEX, 16)
     return {
         "domain": {
             "name": "HyperliquidSignTransaction",
@@ -126,7 +134,7 @@ def _split_signature(signature_hex: str) -> Dict[str, Any]:
 
 
 def submit_approve_agent(agent_address: str, agent_name: str, nonce_ms: int,
-                          signature_hex: str) -> Dict[str, Any]:
+                          signature_hex: str, signature_chain_id: int | None = None) -> Dict[str, Any]:
     """Submit the ALREADY-SIGNED approveAgent action to Hyperliquid's
     `/exchange`. This function signs nothing — the signature was produced by
     the user's own wallet, over exactly this (agent_address, agent_name,
@@ -151,7 +159,9 @@ def submit_approve_agent(agent_address: str, agent_name: str, nonce_ms: int,
         "agentAddress": agent_address,
         "agentName": agent_name,
         "nonce": nonce_ms,
-        "signatureChainId": SIGNATURE_CHAIN_ID_HEX,
+        # Must equal the domain chainId the wallet signed, or Hyperliquid
+        # recovers a different signer and rejects the approval.
+        "signatureChainId": hex(int(signature_chain_id)) if signature_chain_id else SIGNATURE_CHAIN_ID_HEX,
         "hyperliquidChain": "Mainnet",
     }
     payload = {

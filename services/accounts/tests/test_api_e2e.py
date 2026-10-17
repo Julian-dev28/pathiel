@@ -476,3 +476,23 @@ def test_bootstrap_can_be_disabled(clients, monkeypatch, tmp_path):
     c = clients.remote(addr="203.0.113.40")
     assert c.post("/api/accounts/agent/prepare",
                   json={"main_address": EthAccount.create().address}).status_code == 401
+
+
+def test_prepare_builds_for_the_wallets_chain_and_confirm_submits_it(clients, monkeypatch, tmp_path):
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    from services.accounts import agent_approval as aa
+    seen = {}
+    monkeypatch.setattr(aa, "submit_approve_agent",
+                        lambda *a, **k: seen.update(k) or {"status": "ok"})
+    monkeypatch.setattr(hl_verify, "is_agent_approved", lambda *a, **k: True)
+    wallet = EthAccount.create()
+    c = clients.loopback()
+    prep = c.post("/api/accounts/agent/prepare",
+                  json={"main_address": wallet.address, "signature_chain_id": 1}).json()
+    assert prep["typed_data"]["domain"]["chainId"] == 1          # Ethereum: no switch needed
+    r = c.post("/api/accounts/agent/confirm",
+               json={"request_id": prep["request_id"], "signature": _sign_prepare(prep, wallet)})
+    assert r.status_code == 200, r.text
+    assert seen["signature_chain_id"] == 1
+    default = c.post("/api/accounts/agent/prepare", json={"main_address": wallet.address}).json()
+    assert default["typed_data"]["domain"]["chainId"] == 42161   # Arbitrum One by default

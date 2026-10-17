@@ -38,6 +38,7 @@ class PendingAgent:
     label: str
     typed_data: Dict[str, Any]
     expires_at: datetime
+    signature_chain_id: int | None = None
 
 
 def _prune_locked() -> None:

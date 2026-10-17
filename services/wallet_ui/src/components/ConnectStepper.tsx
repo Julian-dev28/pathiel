@@ -112,7 +112,13 @@ export function ConnectStepper({ onAuthorized, onDone }: ConnectStepperProps) {
     // catch block needs the record from THIS attempt, not last render's.
     let current: AgentPrepareOut | null = null;
     try {
-      current = await prepareAgent({ main_address: address as string, label: 'Main' });
+      // Sign on whatever chain the wallet is already on (Hyperliquid accepts
+      // any signing chain), so the user is never asked to switch networks.
+      current = await prepareAgent({
+        main_address: address as string,
+        label: 'Main',
+        ...(chainId ? { signature_chain_id: chainId } : {}),
+      });
       setPrepared(current);
 
       const targetChainId = Number(current.typed_data.domain.chainId);
