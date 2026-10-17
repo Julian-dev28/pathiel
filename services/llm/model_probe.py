@@ -52,7 +52,7 @@ def probe_default_model(*, force: bool = False) -> str:
     if env_pin:
         return env_pin
 
-    if not force and _memo is not None:
+    if not force and _memo is not None and _memo_is_fresh(_memo):
         return str(_memo["model"])
 
     if not force:
@@ -73,6 +73,17 @@ def probe_default_model(*, force: bool = False) -> str:
     _memo = {"model": "", "probed_at": time.time()}
     _write_cache(_memo)
     return ""
+
+
+def _memo_is_fresh(memo: dict[str, Any]) -> bool:
+    """The in-process memo follows the same TTL rule as the disk cache, so a
+    long-running scheduler process re-probes after a degraded pick too."""
+    best = config.MODEL_PROBE_CANDIDATES[0] if config.MODEL_PROBE_CANDIDATES else ""
+    ttl = config.MODEL_PROBE_TTL_S if memo.get("model") == best else config.MODEL_PROBE_DEGRADED_TTL_S
+    try:
+        return (time.time() - float(memo.get("probed_at", 0))) <= ttl
+    except (TypeError, ValueError):
+        return False
 
 
 def _ping(model: str) -> bool:
@@ -101,8 +112,10 @@ def _read_cache() -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     probed_at = data.get("probed_at", 0)
+    best = config.MODEL_PROBE_CANDIDATES[0] if config.MODEL_PROBE_CANDIDATES else ""
+    ttl = config.MODEL_PROBE_TTL_S if data.get("model") == best else config.MODEL_PROBE_DEGRADED_TTL_S
     try:
-        fresh = (time.time() - float(probed_at)) <= config.MODEL_PROBE_TTL_S
+        fresh = (time.time() - float(probed_at)) <= ttl
     except (TypeError, ValueError):
         fresh = False
     if not fresh:
