@@ -131,7 +131,7 @@ def test_resolve_provider_resolves_a_real_module_attr():
 
 def test_resolve_provider_missing_module_raises_importerror():
     with pytest.raises(ImportError):
-        pipeline._resolve_provider(pipeline.INTEL_PROVIDER_PATH)  # services.intel doesn't exist here
+        pipeline._resolve_provider("services.no_such_module_for_tests.api:build_packet")
 
 
 def test_resolve_provider_missing_attr_raises_attributeerror():
@@ -157,10 +157,11 @@ def test_refresh_analytics_failure_is_an_error_job(monkeypatch):
     assert "analytics build failed" in job.message
 
 
-def test_refresh_degrades_when_providers_missing(stub_live_analytics):
-    """In THIS worktree services.intel / services.thesis genuinely don't
-    exist yet (owned by other agents) — refresh() must not crash, and must
-    say clearly what it skipped."""
+def test_refresh_degrades_when_providers_missing(monkeypatch, stub_live_analytics):
+    """A deploy without services.intel / services.thesis (or a broken import)
+    must not crash refresh(), and must say clearly what it skipped."""
+    monkeypatch.setattr(pipeline, "INTEL_PROVIDER_PATH", "services.no_such_intel.api:build_packet")
+    monkeypatch.setattr(pipeline, "THESIS_PROVIDER_PATH", "services.no_such_thesis.api:write_thesis")
     stub_live_analytics(minimal_analytics("oil", mid=99.0))
     job = pipeline.refresh("oil")
     assert job.state == "done"
@@ -242,3 +243,13 @@ def test_refresh_caches_analytics_for_later_reads(stub_live_analytics):
     cached = pipeline.load_cached_analytics("oil")
     assert cached is not None
     assert cached.instruments[0].mid == 123.0
+
+
+def test_refresh_degrades_when_thesis_provider_raises(stub_live_analytics):
+    """The gate-safe default thesis provider raises; refresh() records why and
+    writes no thesis, never crashes."""
+    stub_live_analytics(minimal_analytics("oil", mid=99.0))
+    job = pipeline.refresh("oil", force=True)
+    assert job.state == "done"
+    assert "thesis provider raised" in job.message
+    assert journal.latest_thesis("oil") is None
