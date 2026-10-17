@@ -1,9 +1,9 @@
 {
-  "sourceHash": "bd782ea77470dec8d323a6b6f092abd2a05c6d76d984e5cde005e97dc955711a",
+  "sourceHash": "5a7465622e1216942cd48cf0687f5b551318566fdb66e1e937bc62ec49d51918",
   "artifacts": [
     "wallet.js",
     "wallet.css"
   ],
-  "builtBytes": 3104372,
+  "builtBytes": 3133714,
   "note": "Regenerate with `npm run build` in services/wallet_ui, then commit."
 }
