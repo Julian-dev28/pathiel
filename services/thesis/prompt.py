@@ -53,6 +53,11 @@ CHARS_PER_TOKEN = 4  # same rule-of-thumb estimate used across the industry;
 
 INSTRUCTIONS_RESERVE_TOKENS = 350
 
+# Ceiling on the intel block, whatever the desk budget leaves. Intel is the
+# part that grows with the news cycle; the analytics and instructions do not.
+# 2026-10-17 live oil run: intel filled 6k tokens and one call cost ~19k input.
+INTEL_MAX_TOKENS = 2500
+
 
 def estimate_tokens(text: str) -> int:
     """Deterministic, conservative token estimate: ~4 chars/token for
@@ -108,7 +113,8 @@ def build_system_prompt(spec: DeskSpec) -> str:
         "choose a leverage rung whose verdict (given below) is \"avoid\".\n"
         "- scenarios must be 3 to 5 buckets of horizon-day return, "
         "non-overlapping and contiguous, with probabilities that sum to "
-        "1.0.\n"
+        "1.0. move_lo_pct and move_hi_pct are FRACTIONS: -0.05 means -5%, "
+        "never write -5.\n"
         "- Cite every bull/bear point with the source id(s) (in brackets in "
         "the data below) it came from.\n"
         "- one_liner is at most 160 characters.\n"
@@ -440,7 +446,7 @@ def build_user_prompt(
         analytics_text = render_analytics_dense(spec, analytics)
         budget = spec.token_budget.max_input_tokens
         used = estimate_tokens(header) + estimate_tokens(analytics_text) + INSTRUCTIONS_RESERVE_TOKENS
-        remaining = max(200, budget - used)
+        remaining = max(200, min(INTEL_MAX_TOKENS, budget - used))
         intel_text = render_intel_compact(intel, remaining) if intel is not None else (
             "No live intel packet is available. Reason from the market data above only; "
             "do not invent news, policy, catalysts, or positioning."

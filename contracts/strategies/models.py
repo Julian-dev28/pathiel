@@ -275,8 +275,13 @@ class Call(_M):
 class Scenario(_M):
     name: str
     probability: float = Field(ge=0, le=1)
-    move_lo_pct: float                         # horizon return bucket [lo, hi), fractions
-    move_hi_pct: float
+    # Horizon return bucket [lo, hi) as FRACTIONS despite the _pct name:
+    # -0.05 means -5%. The description reaches the LLM through the JSON schema;
+    # without it, live drafts wrote -12.37 for -12.37% (2026-10-17).
+    move_lo_pct: float = Field(description="Horizon return bucket lower bound as a FRACTION, "
+                                           "not percent: -0.05 means -5%.")
+    move_hi_pct: float = Field(description="Horizon return bucket upper bound as a FRACTION, "
+                                           "not percent: 0.03 means +3%.")
     description: str
     triggers: List[str] = []
 

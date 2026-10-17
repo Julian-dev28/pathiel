@@ -67,3 +67,44 @@ def ai_equity_spec() -> DeskSpec:
         catalyst_kinds=["earnings"],
         horizon_days=14,
     )
+
+
+def _network_allowed(config) -> bool:
+    expr = (config.getoption("markexpr", "") or "").replace(" ", "")
+    return "online" in expr and "notonline" not in expr
+
+
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_real_network_in_gate_tests(request):
+    """Block real outbound HTTP for the rest of the process unless online
+    tests are selected.
+
+    build_packet abandons stragglers past its deadline (shutdown(wait=False)).
+    A straggler can wake after its test's http mocks were torn down and hit
+    the real API: seen 2026-10-17 as a real GDELT 429 printed after pytest's
+    summary. The guard sits on httpx's real network transport, so tests that
+    mock httpx.Client.request and the in-process TestClient are unaffected,
+    loopback stays allowed, and it is deliberately never undone: a straggler
+    can outlive session teardown too.
+    """
+    if _network_allowed(request.config):
+        yield
+        return
+    import httpx
+
+    real = httpx.HTTPTransport.handle_request
+    if getattr(real, "_pathiel_gate_guard", False):
+        yield
+        return
+
+    def guarded(self, req):
+        if req.url.host in _LOOPBACK:
+            return real(self, req)
+        raise httpx.ConnectError(f"real network disabled in gate tests: {req.url}", request=req)
+
+    guarded._pathiel_gate_guard = True
+    httpx.HTTPTransport.handle_request = guarded
+    yield

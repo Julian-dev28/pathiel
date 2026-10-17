@@ -106,3 +106,63 @@ def test_render_catalysts_prioritized_over_low_relevance_headlines():
     )
     text = render_compact(packet, max_tokens=90)
     assert "[c1]" in text
+
+
+# ── prediction-market compaction (2026-10-17 token audit) ────────────────────
+
+def _ladder_packet(probs, vol=2_000.0, closes="2026-10-30T21:00:00+00:00", url="https://kalshi.com/markets/kxbrentmon"):
+    from datetime import datetime as _dt
+    from contracts.strategies.models import IntelPacket, MarketOdds
+    odds = [MarketOdds(id=f"k{i}", venue="kalshi",
+                       question=f"Will the brent crude oil close price be above {90 + 2 * i}.99 USD/Bbl on October 30, 2026?",
+                       probability=p, volume_usd=vol, url=url, closes_at=_dt.fromisoformat(closes))
+            for i, p in enumerate(probs)]
+    return IntelPacket(desk_id="oil", as_of=_dt.fromisoformat("2026-10-17T02:10:00+00:00"), odds=odds)
+
+
+def test_strike_ladder_collapses_to_one_line_with_only_the_uncertain_strikes():
+    from services.intel.render import render_compact
+    probs = [0.99, 0.99, 0.98, 0.9, 0.7, 0.5, 0.3, 0.1, 0.02, 0.01]
+    text = render_compact(_ladder_packet(probs), 4000)
+    lines = [ln for ln in text.splitlines() if "ladder" in ln]
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.startswith("[k0]")               # cites a real id from the packet
+    assert "P(>94.99)=0.98" in line              # bracket below the uncertain zone
+    assert "P(>106.99)=0.02" in line             # bracket above it
+    assert "P(>90.99)" not in line               # near-certain tail dropped
+    assert "10 strikes" in line
+
+
+def test_thin_or_non_monotonic_ladders_are_dropped():
+    from services.intel.render import render_compact
+    thin = render_compact(_ladder_packet([0.9, 0.5, 0.1], vol=100.0), 4000)
+    assert "ladder" not in thin
+    broken = render_compact(_ladder_packet([0.9, 0.7, 0.88, 0.2]), 4000)
+    assert "ladder" not in broken
+
+
+def test_plain_markets_keep_the_two_most_traded_per_event():
+    from datetime import datetime as _dt
+    from contracts.strategies.models import IntelPacket, MarketOdds
+    odds = [MarketOdds(id=f"p{i}", venue="polymarket", question=f"Will clause {i} be in a US-Iran deal?",
+                       probability=0.1, volume_usd=1000.0 * i, url="https://polymarket.com/event/us-iran-deal")
+            for i in range(1, 7)]
+    pk = IntelPacket(desk_id="oil", as_of=_dt.fromisoformat("2026-10-17T02:10:00+00:00"), odds=odds)
+    text = render_compact(pk, 4000)
+    kept = [ln for ln in text.splitlines() if ln.startswith("[p")]
+    assert [ln.split("]")[0] for ln in kept] == ["[p6", "[p5"]
+
+
+def test_section_caps_bound_a_flooded_packet():
+    from datetime import datetime as _dt, timedelta as _td
+    from contracts.strategies.models import Headline, IntelPacket
+    from services.intel.render import SECTION_CAPS, render_compact
+    now = _dt.fromisoformat("2026-10-17T02:10:00+00:00")
+    hs = [Headline(id=f"h{i}", title=f"headline {i}", url=f"https://x/{i}", source="s",
+                   published_at=now - _td(hours=i), relevance=min(1.0, i / 50))
+          for i in range(50)]
+    text = render_compact(IntelPacket(desk_id="oil", as_of=now, headlines=hs), 100_000)
+    kept = [ln for ln in text.splitlines() if ln.startswith("[h")]
+    assert len(kept) == SECTION_CAPS["HEADLINES"]
+    assert all(int(ln[2:ln.index("]")]) >= 40 for ln in kept)   # the most relevant ones
