@@ -675,7 +675,7 @@ def test_config_and_operator_pages_are_gone(client):
 
 
 def test_all_pages_render_and_are_self_contained(client):
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
         r = client.get(path)
         assert r.status_code == 200, path
         for banned in ("unpkg.com", "fonts.googleapis", "fonts.gstatic",
@@ -689,13 +689,13 @@ ALL_PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
 
 
 def test_nav_is_identical_across_every_page_and_carries_desks(client):
-    """Desks is the new core of the app (another agent builds desks.html /
-    desk.html; this repo does not own those templates yet, so /desks 404s
-    here until that work merges — the link existing and being consistent is
-    what this suite can prove today). Placed second, right after Dashboard,
-    per the overhaul brief's 'near the front'. Every page's nav must be
-    byte-identical in order and labels, matching the pre-existing pattern
-    this sweep found already held for the original five links."""
+    """Desks and Account sit in every page's nav. Placed second, right after
+    Dashboard, per the overhaul brief's 'near the front'. Every page's nav
+    must be byte-identical in order and labels, matching the pre-existing
+    pattern this sweep found already held for the original five links.
+    Account is wave-2 onboarding's own addition (Build step 4): always the
+    LAST item, so it reads as "everything else, then account settings"
+    rather than competing with Desks for the front."""
     navs = {}
     for path in ALL_PAGES:
         page = client.get(path).text
@@ -706,9 +706,34 @@ def test_nav_is_identical_across_every_page_and_carries_desks(client):
     for path, nav in navs.items():
         assert nav == first, f"{path}'s nav differs from {ALL_PAGES[0]}'s"
     assert '<a href="/desks" data-nav="/desks" class="nav-link">Desks</a>' in first
+    assert '<a href="/account" data-nav="/account" class="nav-link">Account</a>' in first
     # "near the front": right after Dashboard, before every other link
     assert first.index('data-nav="/"') < first.index('data-nav="/desks"')
     assert first.index('data-nav="/desks"') < first.index('data-nav="/activity"')
+    # Account is last, after everything else — including Trends.
+    assert first.index('data-nav="/trends"') < first.index('data-nav="/account"')
+    assert first.rindex('<a ') == first.index('<a href="/account"'), (
+        "Account is not the last nav link")
+
+
+def test_account_is_the_last_nav_item_on_every_template():
+    """Build step 4: 'Add Account as the last nav item, identical in every
+    template.' Desks and desk.html (nav order Desks-last, pre-existing — not
+    this wave's to unify) get their own check since
+    test_nav_is_identical_across_every_page_and_carries_desks above only
+    compares ALL_PAGES, which excludes them. Reads the template files
+    directly rather than through a client: desks.html/desk.html are served
+    by services/strategies' router, not dashboard.register_routes(), so the
+    bare `client` fixture 404s on them."""
+    account_link = '<a href="/account" data-nav="/account" class="nav-link">Account</a>'
+    for name, html in _template_files():
+        if name not in ("desks.html", "desk.html"):
+            continue
+        start = html.index('<nav class="tabs-main">')
+        end = html.index("</nav>", start)
+        nav = html[start:end]
+        assert account_link in nav, f"{name} has no Account nav link"
+        assert nav.rindex("<a ") == nav.index(account_link), f"{name}: Account is not last"
 
 
 def test_trends_masthead_has_no_leftover_corrupted_markup(client):
@@ -1246,9 +1271,13 @@ def test_humanize_reason_translates_real_vocabulary():
     # headline copy on the dashboard.
     assert h("some_new_gate (whatever)") == "Some new gate"
     assert h("MAIN_ENGINE_DELETED") == "Main engine deleted"
-    assert h("below_min_tradable_equity ($12.91 < $88.89 floor — fund the "
-             "account or lower min_tradable_equity_usd)") == \
-        "account below the trading minimum ($12.91 of $88.89)"
+    # services/risk (wave-2, 2026-10-17) replaced the flat
+    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
+    # already carries its own plain-English reason
+    # (contracts/risk/models.py's BookFeasibility.reason) — shown as-is.
+    assert h("book_not_feasible (drawdown_ladder @ $15.21 equity: "
+             "Needs $525: five resting rungs of $10.50 each at 1x.)") == \
+        "drawdown_ladder: Needs $525: five resting rungs of $10.50 each at 1x."
     assert h(None) == ""
 
 
@@ -1842,6 +1871,30 @@ def test_no_page_reaches_for_an_element_that_does_not_exist():
         assert not (used - defined), f"{name} reaches for missing ids: {sorted(used - defined)}"
 
 
+# Wave-2 overhaul (2026-10-17): the accounts + risk routers
+# (contracts/accounts/models.py, contracts/risk/models.py) are built by
+# sibling agents in their own worktrees this wave and mounted onto
+# pathiel.server by the integrator once every wave-2 agent's work merges
+# (SWARM_RULES section 10) — so real_app.routes does not have them YET in
+# this worktree, even though landing.html's onboarding wizard and
+# account.html correctly call them. Listed here, by hand, from the exact
+# route table each contract's module docstring documents, so this stays a
+# real cross-check against the contract rather than a blanket exemption.
+# Delete this set once the integrator's merge makes it redundant.
+_WAVE2_CONTRACT_ROUTES = frozenset({
+    "/api/session",
+    "/api/accounts",
+    "/api/accounts/agent/prepare",
+    "/api/accounts/agent/confirm",
+    "/api/accounts/import",
+    "/api/accounts/watch",
+    "/api/accounts/active/summary",
+    "/api/risk/profile",
+    "/api/risk/limits",
+    "/api/risk/preview",
+})
+
+
 def test_no_page_calls_an_endpoint_that_is_not_registered(client):
     """Every page is a static shell over the JSON API. A route renamed on the
     server and not in the template is a control that 404s in production."""
@@ -1852,6 +1905,7 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
     from pathiel.server import app as real_app
     routes = {r.path for r in client.app.routes if hasattr(r, "path")}
     routes |= {r.path for r in real_app.routes if hasattr(r, "path")}
+    routes |= _WAVE2_CONTRACT_ROUTES
     for name, html in _template_files():
         for raw in set(re.findall(r"'(/api/[\w/{}?=&.-]*)'", html)):
             path = raw.split("?")[0].rstrip("/")
@@ -1870,7 +1924,7 @@ def test_no_page_calls_an_endpoint_that_is_not_registered(client):
 def test_no_page_pulls_a_third_party_asset(client):
     """The dashboard runs on a trading box. Every asset is vendored under
     /static so a CDN outage (or a CDN owner) cannot change what it renders."""
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
         # the SVG namespace is an identifier, not a fetch — everything else is
         body = client.get(path).text.replace(
             'xmlns="http://www.w3.org/2000/svg"', "")
@@ -1885,7 +1939,7 @@ def test_no_page_pulls_a_third_party_asset(client):
 # words are not testable, but the specific things that made it read as a toy
 # are, and each one below was really on the page before this redesign.
 
-PAGES = ("/", "/activity", "/news", "/analytics", "/trends")
+PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/account")
 
 
 def test_no_page_ships_decorative_chrome(client):
@@ -1929,7 +1983,7 @@ def test_every_page_uses_the_one_stylesheet(client):
 def test_no_page_carries_a_second_design_system(client):
     """A page-level <style> block is allowed for genuinely page-specific
     geometry (chart heights), but not for a whole palette."""
-    for name in ("landing", "activity", "analytics", "news", "trends"):
+    for name in ("landing", "activity", "analytics", "news", "trends", "account"):
         src = (pathlib.Path(__file__).resolve().parent.parent
                / "pathiel" / "templates" / f"{name}.html").read_text()
         blocks = re.findall(r"<style>(.*?)</style>", src, re.S)
@@ -2055,7 +2109,7 @@ def test_no_template_hard_codes_a_colour():
 def test_every_page_reaches_every_other_page(client):
     """A route that renders but is linked from nowhere is dead UI. Whatever
     ships must be reachable by clicking."""
-    routes = {"/", "/activity", "/news", "/analytics", "/trends"}
+    routes = {"/", "/activity", "/news", "/analytics", "/trends", "/account"}
     for path in routes:
         page = client.get(path).text
         linked = {r for r in routes if f'data-nav="{r}"' in page}
@@ -2066,7 +2120,7 @@ def test_the_nav_marks_the_page_you_are_on(client):
     """The marking runs from static/pathiel.js — every page has to load it and
     give the nav something to match on."""
     assert "nav-active" in SHARED_JS
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
         page = client.get(path).text
         assert "/static/pathiel.js" in page, f"{path} does not load the shared script"
         assert f'data-nav="{path}"' in page, f"{path} has no nav entry to mark"
@@ -2220,41 +2274,307 @@ def test_the_single_operator_escape_hatch_is_explicit(monkeypatch):
     assert TestClient(app).get("/api/dashboard/summary").status_code == 200
 
 
-def test_every_page_can_offer_sign_in(client):
-    """The sign-in flow lives in the one shared script, so all five pages get
-    it from a single copy. Five near-identical fmtPct definitions is how this
-    codebase learned what per-page copies cost.
+def test_every_page_keeps_the_wallet_connect_mount(client):
+    """Wave-2 onboarding (2026-10-17): sign-in is retired from the UI.
+    PathielAuth — the sign-in chip, the full-page 401 gate, signIn/signOut,
+    the on-demand RainbowKit loader — is deleted outright, not replaced.
+    Wallet-connect IS the identity now (contracts/accounts/models.py);
+    GET /api/session answers "who is this" with no login step at all in
+    local mode.
 
-    The mechanics moved: `personal_sign` and the nonce/verify round trip used to
-    be inline here against `window.ethereum`, and now live in the RainbowKit
-    island at services/wallet_ui (asserted by its own suite). What this file
-    still owns, and what this test still checks, is that every page loads the
-    shared script, has somewhere to put the chip, and can reach the picker.
+    What survives, and what this test checks instead: every page still
+    loads the shared script and still carries the ONE mount point
+    services/wallet_ui's bundle renders into — the two things this file
+    owns that the shared contract (SWARM_RULES section 10) actually needs.
     """
     js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
                            "pathiel", "static", "pathiel.js")).read()
-    assert "PathielAuth" in js
-    assert "signIn" in js and "signOut" in js
-    # The picker is fetched on demand; see loadWalletUI in pathiel.js.
-    assert "/static/wallet.js" in js
-    for path in ("/", "/activity", "/news", "/analytics", "/trends"):
+    assert "PathielAuth" not in js
+    assert "signIn" not in js and "signOut" not in js
+    assert "PathielSession" in js
+    for path in ("/", "/activity", "/news", "/analytics", "/trends", "/account"):
         body = client.get(path).text
         assert "pathiel.js" in body, f"{path} does not load the shared script"
-        assert "masthead-right" in body, f"{path} has nowhere to put the account chip"
+        assert "masthead-right" in body, f"{path} has nowhere to put the wallet mount"
         assert 'id="wallet-connect-root"' in body, (
             f"{path} has nowhere for the wallet picker to mount")
 
 
-def test_the_sign_in_gate_uses_tokens_that_exist():
-    """`--bg` is not a token this stylesheet defines; body paints with
-    `--paper`. A color-mix over an undefined token renders transparent, so the
-    overlay would have been invisible over a page of empty panels."""
+def test_no_sign_in_ui_survives_anywhere(client):
+    """Build step 1's regression test. The old chip, gate, signIn/signOut
+    and 'Your wallet' tile are gone from every page's markup AND from the
+    one shared script every page loads — not just hidden, not just
+    unreferenced from one page.
+
+    loadWalletUI is NOT on this list: services/wallet_ui/tests/
+    test_wallet_bundle.py's test_bundle_is_not_loaded_on_page_load requires
+    the ~3MB bundle stay out of every template's <script> tags, so the
+    on-demand loader survives sign-in's retirement — PathielSession.
+    openWallet(view) still calls it, just to reach window.PathielWallet.
+    open(view) instead of the old openConnectModal()/signIn()."""
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathiel", "static", "pathiel.js")).read()
+    for gone in ("auth-chip", "auth-gate", "PathielAuth", "signIn", "signOut", "my-account"):
+        assert gone not in js, f"pathiel.js still references {gone}"
+    assert "loadWalletUI" in js, "the on-demand wallet-bundle loader was removed, not just renamed"
+    for name, html in _template_files():
+        for gone in ("auth-chip", "auth-gate", "auth-card", "id=\"my-account\""):
+            assert gone not in html, f"{name} still has {gone}"
+
+
+def test_the_onboarding_card_uses_tokens_that_exist():
+    """Same regression this test caught before wave-2 (then against the
+    retired #auth-gate): a `var(--x)` that does not exist renders as nothing,
+    so a typo'd token would make the preset card, the low-equity callout or
+    the trade-off banner invisible rather than failing loudly."""
     import re
     css = _css()
-    gate = css[css.index("#auth-gate{"):]
-    used = set(re.findall(r"var\((--[a-z0-9-]+)\)", gate[:1200]))
     defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
-    assert not (used - defined), f"gate uses undefined tokens: {sorted(used - defined)}"
+    for selector in (".preset-card.on", ".callout-amber", ".trade-banner", ".btn.go", ".security-note"):
+        m = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css)
+        assert m, f"{selector} has no rule in pathiel.css"
+        used = set(re.findall(r"var\((--[a-z0-9-]+)\)", m.group(1)))
+        assert not (used - defined), f"{selector} uses undefined tokens: {sorted(used - defined)}"
+
+
+# ── onboarding (wave-2, 2026-10-17): template structure ─────────────────────
+#
+# These are unit tests on markup and pure JS, not the behaviour — the full
+# first-run-through-save flow, the live preview re-rendering, and the $5
+# low-equity message are covered end to end in
+# tests/browser/test_onboarding_browser.py against a fixture app that serves
+# the real accounts + risk contract fixtures. What belongs here is what
+# doesn't need a browser: the right ids exist, in the right place, wired to
+# the right call.
+
+def test_landing_ships_one_welcome_card_hidden_by_default():
+    """Build step 2: '/' shows one welcome card ... with the three actions.
+    Hidden by default (not the dashboard) so PathielSession.get() — not a
+    guess — decides which one a visitor actually sees; see pathiel.js."""
+    html = dict(_template_files())["landing.html"]
+    start = html.index('id="onboarding-root"')
+    tag_start = html.rindex("<div", 0, start)
+    tag_end = html.index(">", start)
+    assert "hidden" in html[tag_start:tag_end], (
+        "#onboarding-root is not hidden by default — it would flash over the dashboard")
+    welcome = html[html.index('id="onboard-welcome"'):html.index('id="onboard-risk"')]
+    assert 'id="onb-connect"' in welcome and "Connect your Hyperliquid account" in welcome
+    assert 'id="onb-watch"' in welcome and "Watch an address" in welcome
+    assert 'id="onb-demo"' in welcome and 'href="/demo"' in welcome
+    # The dashboard itself also starts hidden, so there is no flash of empty
+    # zeros before PathielSession.get() resolves either.
+    dash_start = html.rindex("<div", 0, html.index('id="dashboard-main"'))
+    dash_end = html.index(">", dash_start)
+    assert "hidden" in html[dash_start:dash_end], (
+        "#dashboard-main is not hidden by default — a brand-new visitor would flash-see it")
+
+
+def test_landing_onboarding_wizard_has_exactly_three_steps_in_order():
+    """Build step 2-3: welcome -> 'How much risk?' -> 'You're set', one
+    visible at a time (showStep() in landing.html toggles `hidden` by
+    data-step, never more than one shown)."""
+    html = dict(_template_files())["landing.html"]
+    steps = re.findall(r'<section id="onboard-(\w+)" class="onboard-step card" data-step="(\d)"', html)
+    assert steps == [("welcome", "1"), ("risk", "2"), ("done", "3")], steps
+    # Only step 1 ships visible; 2 and 3 carry their own `hidden`.
+    welcome_tag = html[html.index('<section id="onboard-welcome"'):html.index('<section id="onboard-welcome"') + 120]
+    assert " hidden" not in welcome_tag, "step 1 ships hidden — nothing would show at all"
+    risk_tag = html[html.index('<section id="onboard-risk"'):html.index('<section id="onboard-risk"') + 120]
+    done_tag = html[html.index('<section id="onboard-done"'):html.index('<section id="onboard-done"') + 120]
+    assert " hidden" in risk_tag, "step 2 ships visible — two steps would show at once"
+    assert " hidden" in done_tag, "step 3 ships visible — two steps would show at once"
+
+
+def test_landing_risk_step_has_preset_cards_preview_and_low_equity_callout():
+    """Build step 2: 'preset cards ... a live preview ... per-book list with
+    can-trade badges and reasons' plus the low-equity callout, 'never silent
+    zeros'."""
+    html = dict(_template_files())["landing.html"]
+    risk_step = html[html.index('id="onboard-risk"'):html.index('id="onboard-done"')]
+    for needed in ("onb-preset-cards", "onb-low-equity", "onb-headline",
+                   "onb-risk-usd", "onb-daily-pause", "onb-max-positions", "onb-books", "onb-save"):
+        assert f'id="{needed}"' in risk_step, f"missing #{needed} in the risk step"
+    # Four presets, matching contracts/risk/models.py's Preset literal
+    # (minus "auto"/"custom" — the wizard only ever offers the four a human
+    # picks between; auto is what the FIRST preview resolves TO, not a
+    # fifth card). RISK_PRESETS lives in pathiel.js (SHARED_JS below), not
+    # in this page's own script: account.html's risk editor needs the exact
+    # same four, and a second copy is how this codebase got five
+    # near-identical fmtPct definitions in the first place.
+    assert "RISK_PRESETS" in html, "the risk step doesn't reference the shared preset table"
+    assert re.search(r"RISK_PRESETS\s*=\s*\[", SHARED_JS)
+    for preset in ("starter", "small", "standard", "pro"):
+        assert f"id: '{preset}'" in SHARED_JS, f"preset card '{preset}' missing from pathiel.js"
+    # Custom (wave-2 integration note, 2026-10-17): a migrated legacy config
+    # resolves preset_applied to SOME tier name but keeps its own numbers —
+    # matchesPresetDefaults() is what tells "Custom" apart from a real
+    # preset match, and the wizard has to consult it, not just trust the
+    # name literally.
+    assert "matchesPresetDefaults" in SHARED_JS
+    assert "matchesPresetDefaults(" in html
+
+
+def test_landing_onboarding_calls_the_contract_routes_with_the_right_verbs():
+    """Build step 2: equity from GET /api/accounts/active/summary, the
+    preview from POST /api/risk/preview, saved with PUT /api/risk/profile —
+    exactly contracts/accounts/models.py + contracts/risk/models.py's own
+    route table, not a route this agent invented."""
+    html = dict(_template_files())["landing.html"]
+    assert "fetch('/api/accounts/active/summary')" in html
+    assert "fetch('/api/risk/preview'" in html and "method: 'POST'" in html
+    assert "fetch('/api/risk/profile'" in html and "method: 'PUT'" in html
+    # The save body is exactly {preset: ...} — RiskProfile's other fields
+    # default to None server-side, so this alone is a valid, complete body.
+    assert "JSON.stringify({ preset: chosenPreset })" in html
+
+
+def test_risk_presets_table_mirrors_services_risk_presets_exactly():
+    """Tripwire, same pattern services/risk/tests/test_books.py's own
+    registry-mirror test uses: pathiel.js's RISK_PRESETS is a second copy
+    of services/risk/presets.py's table, kept only because this is a
+    browser file that cannot import a Python module. If the risk team
+    retunes a preset and this file is not updated, /account would show a
+    stale blurb and number while the real sizing silently changed
+    underneath it — caught here, run on every commit, rather than noticed
+    by a confused Julien later."""
+    from services.risk.presets import PRESETS as REAL_PRESETS
+    for preset_id in ("starter", "small", "standard", "pro"):
+        real = REAL_PRESETS[preset_id]
+        pat = re.compile(
+            r"id:\s*'" + preset_id + r"'.*?risk_per_trade_pct:\s*([\d.]+).*?"
+            r"daily_loss_limit_pct:\s*([\d.]+).*?max_leverage:\s*([\d.]+)", re.S)
+        m = pat.search(SHARED_JS)
+        assert m, f"pathiel.js's RISK_PRESETS has no entry for {preset_id!r}"
+        js_risk, js_daily, js_lev = (float(g) for g in m.groups())
+        assert js_risk == real.risk_per_trade_pct, (
+            f"{preset_id}: pathiel.js says {js_risk}% risk/trade, "
+            f"services/risk/presets.py says {real.risk_per_trade_pct}%")
+        assert js_daily == real.daily_loss_limit_pct, (
+            f"{preset_id}: pathiel.js says {js_daily}% daily loss, "
+            f"services/risk/presets.py says {real.daily_loss_limit_pct}%")
+        assert js_lev == real.max_leverage, (
+            f"{preset_id}: pathiel.js says {js_lev}x max leverage, "
+            f"services/risk/presets.py says {real.max_leverage}x")
+
+
+def test_a_migrated_legacy_profile_is_detectable_as_custom_front_end_side():
+    """Integration note (wave-2 integrator, 2026-10-17): 'A migrated legacy
+    config shows up as preset custom' — but services/risk/migrate.py +
+    derive.py actually resolve it to a real tier NAME (whatever "auto"
+    picks for the equity) while keeping its own overridden numbers, so the
+    front end has to notice the numbers don't match that tier, not trust
+    the name. Runs the REAL migration + derivation (no HTTP, no browser,
+    no network) against Julien's real shape (services/risk/README.md:
+    0.35 equity-fraction, 3x leverage, max_daily_loss_pct 0.121,
+    max_concurrent 3) and checks pathiel.js's matchesPresetDefaults would
+    correctly call it custom under node."""
+    from services.risk.derive import VenueRules, derive_limits
+    from services.risk.migrate import migrate_legacy
+
+    legacy_config = {
+        "equity_fraction_per_trade": 0.35, "leverage": 3,
+        "max_daily_loss_pct": 0.121, "max_concurrent": 3,
+        "min_tradable_equity_usd": 26.0,
+    }
+    profile, _report = migrate_legacy(legacy_config)
+    limits = derive_limits(15.19, profile, [], VenueRules())
+    assert limits.profile.risk_per_trade_pct > 10.0, (
+        "Julien's real migrated risk_per_trade_pct should be ~15.75%, "
+        f"got {limits.profile.risk_per_trade_pct}")
+
+    # RISK_PRESETS is a multi-line array (object literals, no DOTALL needed
+    # inside them except across the whole block) — _extract_js_block's
+    # "const" kind is MULTILINE-only (by design: most consts here are one-
+    # liners, and DOTALL would risk over-matching one that has its own
+    # internal `;`), so it's pulled out here instead of through that helper.
+    node = shutil.which("node")
+    assert node, "node not on PATH"
+    m = re.search(r"^const RISK_PRESETS = \[.*?\n\];$", SHARED_JS, re.M | re.S)
+    assert m, "couldn't find `const RISK_PRESETS` in pathiel.js"
+    snippet = m.group(0) + "\n" + _extract_js_block("", "function", "matchesPresetDefaults")
+    driver = snippet + (
+        f"\nconsole.log(matchesPresetDefaults({json.dumps(limits.preset_applied)}, "
+        f"{limits.profile.model_dump_json()}));"
+    )
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, f"js snippet crashed under node:\n{r.stderr}"
+    assert r.stdout.strip() == "false", (
+        f"matchesPresetDefaults said Julien's migrated profile matches "
+        f"{limits.preset_applied!r}'s own defaults — it should say Custom")
+
+
+def test_account_page_has_the_active_card_risk_editor_and_feasibility_table():
+    """Build step 4: active account card, switch/add, a preset segmented
+    control plus the 4 advanced fields collapsed, a book feasibility table,
+    a security note."""
+    html = dict(_template_files())["account.html"]
+    for needed in ("account-card", "acct-label", "acct-address", "acct-mode", "acct-equity",
+                   "acct-blockers", "acct-switch", "security-note",
+                   "risk-preset-seg", "risk-advanced", "adv-risk-pct", "adv-daily-pct",
+                   "adv-max-lev", "adv-max-pos", "risk-save", "feasibility-body"):
+        assert f'id="{needed}"' in html, f"/account is missing #{needed}"
+    # Advanced fields are COLLAPSED: a <details> with no `open` attribute.
+    details_tag = html[html.index('<details class="risk-advanced"'):html.index(">", html.index('<details class="risk-advanced"')) + 1]
+    assert "open" not in details_tag, "the advanced risk fields ship expanded, not collapsed"
+    note_start = html.rindex("<div", 0, html.index('id="security-note"'))
+    note_end = html.index(">", note_start)
+    assert "hidden" in html[note_start:note_end], "#security-note does not ship hidden by default"
+    # Keyed on account.source === "env" (contracts/accounts/models.py), not
+    # a blocker string: the real services/accounts/summary.py's four
+    # blockers never mention a key at all (verified by reading that file
+    # directly — "No account connected yet", "Watch-only account",
+    # "Agent not yet approved", "Could not read...live state").
+    assert "a.source === 'env'" in html, (
+        "the security note isn't keyed on Account.source — no real blocker ever says \"main key\"")
+
+
+def test_account_page_live_preview_has_no_reload_anywhere():
+    """Build step 4: 'The live preview updates as values change, with no
+    reload.' Every control that changes the profile re-POSTs
+    /api/risk/preview and rewrites the DOM in place — no form submit, no
+    location.reload, no location.href assignment anywhere on the page
+    (the only navigation is PathielSession.openWallet, and the one redirect
+    for needs_onboarding, which this test does not touch)."""
+    html = dict(_template_files())["account.html"]
+    assert "<form" not in html, "/account uses a <form> — that submits and reloads"
+    assert html.count("fetch('/api/risk/preview'") >= 1
+    assert "location.reload" not in html
+    # location.href is used exactly once, for the needs_onboarding bounce —
+    # never as a reaction to a preset click or a field edit.
+    assert html.count("location.href") == 1
+
+
+def test_low_equity_message_is_built_from_min_equity_to_trade_usd_everywhere():
+    """Build step 3: 'a clear "Add $X to place your first trade" built from
+    min_equity_to_trade_usd. Never silent zeros.' Checked on both screens
+    that show it — the onboarding wizard and /account's risk editor — so
+    neither can drift to a different, uncomputed string."""
+    for name in ("landing.html", "account.html"):
+        html = dict(_template_files())[name]
+        assert "min_equity_to_trade_usd" in html, f"{name}: low-equity math isn't wired"
+        assert "to place your first trade" in html, f"{name}: missing the exact copy"
+        assert "fmtAddUsd(" in html, f"{name}: not using the shared, tested shortfall formatter"
+
+
+def test_fmt_add_usd_is_the_shortfall_rounded_up_to_the_cent_never_negative():
+    """Deterministic arithmetic (CLAUDE.md: write the script, don't eyeball
+    dollar math in a template) — run under node against the ACTUAL shipped
+    function, not a Python reimplementation that could quietly drift from
+    it. Whole-dollar shortfalls print without cents; the venue-minimum case
+    in contracts/risk/fixtures/limits_5.json (equity $5, needs $6) is the
+    exact scenario the $1 case below reproduces."""
+    out = _run_node(
+        "", [("const", "fmtUsd"), ("const", "fmtAddUsd")],
+        "JSON.stringify([fmtAddUsd(6, 5), fmtAddUsd(10, 4.991), fmtAddUsd(5, 5), "
+        "fmtAddUsd(5, 7), fmtUsd(-5), fmtUsd(1234.5)])",
+    )
+    whole, rounds_up, exact, already_above, negative, thousands = json.loads(out)
+    assert whole == "$1"                 # 6 - 5 = 1, a whole dollar: no cents printed
+    assert rounds_up == "$5.01"          # 5.009 ceils to the next cent, never a cent short
+    assert exact == "$0"                 # equity already meets the floor: no shortfall
+    assert already_above == "$0"         # equity above the floor: never a negative "shortfall"
+    assert negative == "-$5.00"
+    assert thousands == "$1,234.50"
 
 
 def _served():
@@ -2410,10 +2730,17 @@ def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
     assert dashboard._viewer_account_payload("")["is_house"] is False
 
 
-def test_the_page_says_pathiel_has_not_traded_a_visitors_wallet():
-    """The copy is the point. A balance with no attribution reads as a track
-    record, and this system's whole posture is that it never holds your key."""
-    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                           "pathiel", "static", "pathiel.js")).read()
-    assert "is_house" in js
-    assert "has never traded it" in js
+# test_the_page_says_pathiel_has_not_traded_a_visitors_wallet removed
+# (wave-2 onboarding, 2026-10-17): it asserted on loadMyAccount()'s copy for
+# the SIWE-triggered "Your wallet" tile, which is deleted along with the
+# rest of PathielAuth (Build step 1 — see
+# test_every_page_keeps_the_wallet_connect_mount and
+# test_no_sign_in_ui_survives_anywhere above). dashboard._viewer_account_payload
+# and GET /api/dashboard/account are UNCHANGED — services/auth/tests/
+# test_api_keys.py still exercises that function directly, and the two
+# tests just above this comment (test_the_viewer_payload_says_whether_it_is_
+# the_house_account, test_an_unconfigured_house_never_claims_a_visitor_as_
+# its_own) still cover it — only the front-end copy this test checked is
+# gone. The new /account page (pathiel/templates/account.html) shows whose
+# account is active instead, sourced from contracts/accounts/models.py's
+# ActiveSummary rather than the retired /api/dashboard/account.

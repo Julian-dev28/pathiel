@@ -7,10 +7,19 @@ For each of /, /activity, /analytics, /news, /trends, at both 1280x800 and
     (see tests/browser/_shared.py's _EXPECTED_CONSOLE_ERROR)
   - zero failed requests, zero unexpected HTTP error responses
   - no horizontal scroll at 375px
-  - the nav is present, identical across pages, and carries the Desks link
-    second (right after Dashboard)
+  - the nav is present, identical across pages, carries the Desks link
+    second (right after Dashboard), and ends with Account (wave-2
+    onboarding, 2026-10-17)
   - one page-specific element that answers "the one thing that matters" is
     visible above the fold
+
+/account itself, and the full first-run-through-save onboarding flow, are
+NOT in this file's PAGES — demo_server boots the real pathiel.server:app,
+which does not mount the accounts/risk routers this wave (integrator-only,
+SWARM_RULES section 10), so account.html's own fetches would 404 here with
+no account to show. See tests/browser/test_onboarding_browser.py, which
+runs the same kind of checks against a fixture app that serves the real
+contract fixtures instead.
 
 Deselected from the commit gate (-m browser): boots a server and drives
 Chromium. Run with:
@@ -48,7 +57,14 @@ VIEWPORTS = {"desktop": (1280, 800), "mobile": (375, 812)}
 # element is not above the fold has failed that mandate regardless of
 # whatever else is on it.
 ABOVE_FOLD_ELEMENT = {
-    "/": "#kpi-equity",             # net asset value — the hero number
+    # demo_server is a fresh deployment with no account ever connected
+    # (services/accounts + services/risk are mounted in pathiel.server:app
+    # as of the wave-2 merge) — GET /api/session always answers
+    # needs_onboarding=true here, so "/" shows onboarding's welcome card
+    # (pathiel/templates/landing.html's #onboarding-root), not the
+    # dashboard underneath it. That IS "the call first" for this state:
+    # the connect button, not a net-asset-value of zero.
+    "/": "#onb-connect",
     "/activity": "#session-strip",  # 6h scans/candidates/opened/closed/equity
     "/analytics": "#panel-funnel",  # the decision funnel, first panel
     "/news": "#news-strip",         # reads today / breaking / last read
@@ -58,6 +74,7 @@ ABOVE_FOLD_ELEMENT = {
 EXPECTED_NAV = [
     ("/", "Dashboard"), ("/desks", "Desks"), ("/activity", "Activity"),
     ("/news", "News"), ("/analytics", "Markets"), ("/trends", "Trends"),
+    ("/account", "Account"),
 ]
 
 

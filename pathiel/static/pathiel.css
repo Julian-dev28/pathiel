@@ -381,6 +381,12 @@ td.num,td[class*="text-right"]{ text-align:right; }
 }
 .btn-danger:hover{ color:#fff; background:var(--down); border-color:var(--down); }
 
+/* The one call per screen (Julien's ADHD brief): filled, not another hairline
+   rectangle lost among the rest. Reuses --accent rather than a new colour. */
+.btn.go{ color:var(--paper); background:var(--accent); border-color:var(--accent); font-weight:600; }
+.btn.go:hover{ color:var(--paper); background:var(--accent-ink); border-color:var(--accent-ink); }
+.btn.go:disabled{ opacity:.6; }
+
 .seg{
   display:inline-flex; border:1px solid var(--rule-2);
   border-radius:var(--radius); overflow:hidden;
@@ -728,36 +734,11 @@ footer.site-foot{
   *,*::before,*::after{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
 }
 
-/* ── sign-in gate ─────────────────────────────────────────────────────────
-   Shown when a gated fetch returns 401. Covers the page rather than sitting
-   inline: the panels behind it are empty by definition, and an inline prompt
-   next to eight "loading…" skeletons reads as one more broken widget. */
-#auth-gate{
-  position:fixed; inset:0; z-index:60; display:flex;
-  align-items:center; justify-content:center; padding:24px;
-  background:color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter:blur(3px);
-}
-.auth-card{
-  max-width:420px; width:100%; padding:28px;
-  background:var(--surface); border:1px solid var(--rule-2);
-  border-radius:var(--radius);
-}
-.auth-card p{ margin:10px 0 0; font-size:13px; color:var(--ink-2); line-height:1.55; }
-.auth-card .auth-fine{ font-size:11.5px; color:var(--ink-3); }
-.auth-card .btn{ margin-top:18px; }
-.auth-note{ margin-top:12px; font-size:11.5px; color:var(--amber); font-family:var(--mono); }
-
 /* A customer is not the operator: the house-account panels answer 403 for them,
    and a panel that can never fill is worse than one that is not there. */
 body.not-operator #funnel-strip,
 body.not-operator #trade-tape,
 body.not-operator #risk-band{ display:none; }
-#my-account .l{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase;
-  letter-spacing:.09em; color:var(--ink-3); display:block; }
-#my-account .v{ font-size:26px; font-weight:600; display:block; margin-top:2px; }
-#my-account .s{ font-size:11.5px; color:var(--ink-3); display:block; margin-top:2px; }
-#my-account .amb{ color:var(--amber); }
 
 /* ── Live / Demo toggle ──────────────────────────────────────────────────────
    Two words in the masthead, the current one filled. Deliberately quiet: it is
@@ -780,3 +761,105 @@ body.is-demo .page-sub::after {
   content: " · sample data, generated";
   color: var(--amber);
 }
+
+/* ── onboarding wizard (landing.html) ────────────────────────────────────────
+   One step visible at a time — a wide card, not a form buried in the page.
+   Shares --accent/--surface/--rule with the rest of the sheet; nothing here
+   is a second design system. */
+.onboard{ max-width:620px; margin:40px auto; }
+.onboard-step{ padding:32px; }
+.onboard-step .page-title{ margin-top:10px; }
+.onboard-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+.onboard-actions .btn{ padding:9px 16px; font-size:13px; }
+
+.preset-grid{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:10px;
+  margin-top:22px;
+}
+.preset-card{
+  display:flex; flex-direction:column; gap:4px; text-align:left;
+  padding:14px 12px; background:var(--surface); color:var(--ink-2);
+  border:1px solid var(--rule-2); border-radius:var(--radius); cursor:pointer;
+}
+.preset-card:hover{ border-color:var(--ink-3); }
+.preset-card.on{
+  border-color:var(--accent); background:var(--accent-wash); color:var(--ink);
+}
+.preset-card-name{ font-size:13.5px; font-weight:600; color:var(--ink); }
+.preset-card-blurb{ font-size:11.5px; color:var(--ink-3); line-height:1.4; }
+.preset-card.on .preset-card-blurb{ color:var(--ink-2); }
+
+.onboard-preview{ margin-top:22px; padding-top:18px; border-top:1px solid var(--rule); }
+.onboard-preview .stat-row{ margin-top:14px; gap:20px 28px; }
+.onboard-preview .kv{ font-size:22px; }
+
+/* Right under the headline, never buried in a per-book row — the exchange-
+   minimum bump-risk note (services/risk/derive.py's DerivedLimits.notes)
+   has to be read without hunting for it. */
+.preview-notes{ margin-top:6px; }
+.preview-note{ font-size:12.5px; color:var(--amber); line-height:1.5; }
+
+.book-feasibility{ margin-top:16px; display:flex; flex-direction:column; gap:8px; }
+.book-row{ display:flex; align-items:baseline; gap:10px; font-size:12.5px; flex-wrap:wrap; }
+.book-row-name{ font-family:var(--mono); color:var(--ink); }
+.book-row-reason{ flex:1 1 auto; }
+
+/* Attention, not alarm — amber, same family as the funding-heat and
+   book-league "needs attention" treatments elsewhere on the dashboard. */
+.callout{
+  margin-top:18px; padding:12px 14px; border-radius:var(--radius);
+  font-size:13px; line-height:1.5; border:1px solid transparent;
+}
+.callout-amber{ background:var(--amber-wash); color:var(--amber); border-color:color-mix(in srgb, var(--amber) 35%, transparent); }
+
+@media (max-width:640px){
+  .onboard{ margin:20px auto; }
+  .onboard-step{ padding:20px; }
+  .preset-grid{ grid-template-columns:1fr 1fr; }
+}
+@media (max-width:420px){
+  .preset-grid{ grid-template-columns:1fr; }
+}
+
+/* ── /account page ────────────────────────────────────────────────────────── */
+.account-card{ display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+.account-card-id{ min-width:0; }
+.account-card-label{ font-size:17px; font-weight:600; }
+.account-card-addr{ margin-top:2px; }
+.account-card-stats{ display:flex; gap:28px; flex-wrap:wrap; }
+.account-blockers{ margin-top:12px; display:flex; flex-direction:column; gap:4px; }
+.account-blocker{ font-size:12.5px; color:var(--amber); }
+
+.risk-editor-head{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+details.risk-advanced{ margin-top:16px; }
+details.risk-advanced summary{ cursor:pointer; font-size:12.5px; color:var(--ink-2); }
+details.risk-advanced summary:hover{ color:var(--ink); }
+.risk-advanced-grid{
+  display:grid; grid-template-columns:repeat(2,minmax(140px,1fr)); gap:14px;
+  margin-top:14px;
+}
+.risk-advanced-grid label{ display:block; font-size:11.5px; color:var(--ink-3); margin-bottom:4px; }
+.risk-advanced-grid input{
+  width:100%; padding:6px 9px; font-size:13px; font-variant-numeric:tabular-nums;
+  background:var(--surface); color:var(--ink);
+  border:1px solid var(--rule-2); border-radius:var(--radius);
+}
+.risk-advanced-grid input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+@media (max-width:480px){ .risk-advanced-grid{ grid-template-columns:1fr; } }
+
+.security-note{
+  margin-top:16px; padding:10px 14px; font-size:12.5px; color:var(--ink-2);
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:var(--radius);
+}
+
+/* ── "trading is off" banner (every page but "/" and "/account") ───────────
+   One line, top of the page content, same register as the rest of the
+   sheet — not a toast, not a modal. */
+.trade-banner{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  margin-bottom:24px; padding:10px 16px;
+  background:var(--amber-wash); color:var(--amber);
+  border:1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+  border-radius:var(--radius); font-size:13px;
+}
+.trade-banner .btn{ margin-left:auto; }
