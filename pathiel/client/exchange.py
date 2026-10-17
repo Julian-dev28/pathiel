@@ -55,7 +55,104 @@ HL_ACCOUNT = HL_MASTER if IS_AGENT else HL_WALLET
 HL_LEVERAGE = 5  # 5x cross margin
 
 
+# ── Credential resolution (services/accounts overhaul, 2026-10-17) ─────────────
+#
+# This module used to read HYPERLIQUID_* once at import time and never again.
+# services/accounts lets Julien connect an account from the UI instead of
+# hand-editing .env.local, which means the identity that should sign orders
+# can change while this process is already running. The five globals above
+# stay EXACTLY as they were (every existing test monkeypatches them directly,
+# e.g. tests/test_set_leverage_margin_mode.py, tests/test_mcp_overhaul.py) —
+# they are now simply "the legacy env identity" rather than "the only
+# identity". Resolution adds one more source ahead of them: an active,
+# verified, mode=trade account in services.accounts' registry/vault.
+
+
+def resolve_env_identity() -> Optional[Dict[str, Any]]:
+    """The trading identity implied by THIS module's own PRIVATE_KEY_HEX /
+    HL_WALLET / HL_MASTER / IS_AGENT / HL_ACCOUNT globals.
+
+    Deliberately reads those globals, not a fresh os.environ lookup: that is
+    what lets a test (or a future caller) fully control this function by
+    monkeypatching them directly, and what guarantees this function can never
+    disagree with what _make_exchange() has always built — they share one
+    source of truth. services.accounts.credentials' own env-fallback leg
+    calls this exact function for the same reason: so the registry/vault path
+    and the legacy path can never silently drift apart.
+
+    Returns None when there is no legacy key at all (PRIVATE_KEY_HEX empty).
+    """
+    if not PRIVATE_KEY_HEX:
+        return None
+    return {
+        "private_key": PRIVATE_KEY_HEX,
+        "main_address": HL_ACCOUNT,
+        "agent_address": HL_WALLET if IS_AGENT else None,
+        "is_agent": IS_AGENT,
+    }
+
+
+def _vault_credentials() -> Optional[Any]:
+    """services.accounts' active-trade-account credentials, or None.
+
+    Guarded: services/accounts may not be importable in every context this
+    module is used from (a minimal script, an old pinned environment before
+    that service existed), and this module must keep working exactly as it
+    did before that service existed in that case.
+
+    Filters out a `source == "env"` result on purpose. That leg of
+    get_trading_credentials() is itself just resolve_env_identity() above —
+    i.e. the SAME data this function's caller already has directly via
+    PRIVATE_KEY_HEX / HL_ACCOUNT / HL_WALLET / IS_AGENT. Re-trusting it here
+    would add nothing when it agrees, and would risk disagreeing with this
+    module's own (possibly monkeypatched, e.g. forced empty in
+    tests/test_mcp_overhaul.py's live-money-safety suite) globals if the two
+    code paths were ever extended differently in the future. The registry
+    path is the only thing this function exists to add.
+    """
+    try:
+        from services.accounts.credentials import get_trading_credentials
+    except ImportError:
+        return None
+    try:
+        creds = get_trading_credentials()
+    except Exception as e:
+        logger.warning(f"[_vault_credentials] accounts registry lookup failed, "
+                       f"falling back to the legacy env identity: {e}")
+        return None
+    if creds is None or creds.source == "env":
+        return None
+    return creds
+
+
+def _has_usable_credential() -> bool:
+    """Is there ANY identity that can sign an order right now? Checked ahead
+    of every mutating call (set_leverage, place_*, cancel_orders) exactly
+    where `if not PRIVATE_KEY_HEX:` used to be the whole check."""
+    if PRIVATE_KEY_HEX:
+        return True
+    return _vault_credentials() is not None
+
+
+def _resolve_identity() -> Tuple[str, str, Optional[str], bool]:
+    """(private_key_hex, main_address, agent_address, is_agent) actually used
+    to sign. The vault account takes priority over the legacy env globals —
+    connecting or switching accounts in the UI must take effect immediately,
+    with no restart — and falls back to resolve_env_identity()'s view of
+    PRIVATE_KEY_HEX / HL_ACCOUNT / HL_WALLET / IS_AGENT when no vault account
+    is active. Raises RuntimeError (never silently signs with nothing) when
+    neither source has a key."""
+    creds = _vault_credentials()
+    if creds is not None:
+        is_agent = bool(creds.agent_address) and creds.agent_address.lower() != creds.main_address.lower()
+        return creds.private_key, creds.main_address, creds.agent_address, is_agent
+    if not PRIVATE_KEY_HEX:
+        raise RuntimeError("HYPERLIQUID_PRIVATE_KEY not set")
+    return PRIVATE_KEY_HEX, HL_ACCOUNT, (HL_WALLET if IS_AGENT else None), IS_AGENT
+
+
 _exchange_instance = None  # Singleton instance
+_exchange_identity_key: Optional[Tuple[str, str, Optional[str]]] = None
 
 
 def _resolve_perp_dexs() -> Optional[List[str]]:
@@ -82,25 +179,43 @@ def _resolve_perp_dexs() -> Optional[List[str]]:
 
 
 def _make_exchange() -> Exchange:
-    """Create or reuse Exchange client singleton (avoids WebSocket connection limit)."""
-    global _exchange_instance
-    if _exchange_instance is not None:
+    """Create or reuse the Exchange client singleton (avoids WebSocket
+    connection limit) for whichever identity _resolve_identity() currently
+    resolves to.
+
+    Rebuilds the singleton when that identity changes (a different key, main
+    address, or agent address than what built the cached instance) — the
+    accounts vault can change which account is active while this process is
+    already running, and signing with a stale SDK client would silently keep
+    using the PREVIOUS account. Raises exactly as before
+    ("HYPERLIQUID_PRIVATE_KEY not set") when nothing is usable at all;
+    tests/test_mcp_overhaul.py::TestLiveMoneyToolsNeverTouchNetwork pins this
+    message's text and this function's raise-not-return behavior.
+    """
+    global _exchange_instance, _exchange_identity_key
+    key_hex, main_address, agent_address, is_agent = _resolve_identity()
+
+    identity_key = (key_hex, main_address, agent_address)
+    if _exchange_instance is not None and _exchange_identity_key == identity_key:
         return _exchange_instance
 
-    if not PRIVATE_KEY_HEX:
-        raise RuntimeError("HYPERLIQUID_PRIVATE_KEY not set")
-
-    key_hex = PRIVATE_KEY_HEX
-    if key_hex.startswith("0x"):
-        key_hex = key_hex[2:]
+    clean_key = key_hex[2:] if key_hex.startswith("0x") else key_hex
 
     # The SDK uses eth_account for signing
-    acct = Account.from_key(key_hex)
+    acct = Account.from_key(clean_key)
 
-    # For unified accounts with agent wallet:
-    # - WALLET signs orders
-    # - MASTER holds funds
-    account_address = HL_WALLET if IS_AGENT else None
+    # account_address is the FUNDS account, used by a couple of the SDK's own
+    # convenience reads (e.g. Exchange.market_close(), which this codebase
+    # does not call — it closes via place_hl_order(reduce_only=True) instead)
+    # when signing as a distinct agent wallet. It is never sent to Hyperliquid
+    # on an order/cancel/leverage call (those are authorized purely by WHO
+    # signed, resolved server-side from the agent approval) — grepped
+    # confirmed zero non-SDK callers of market_close or .account_address in
+    # this repo, so this was previously a latent, inert bug (set to the
+    # agent's own address, i.e. equivalent to None) rather than one with any
+    # live trading impact. See the accounts-agent final report for the full
+    # trace.
+    account_address = main_address if is_agent else None
 
     # perp_dexs= teaches the SDK the HIP-3 dex list at init so name_to_asset
     # can resolve `xyz:NVDA` etc. when enable_hip3 is on. With it None the
@@ -111,6 +226,7 @@ def _make_exchange() -> Exchange:
         account_address=account_address,
         perp_dexs=_resolve_perp_dexs(),
     ))
+    _exchange_identity_key = identity_key
     return _exchange_instance
 
 
@@ -417,7 +533,7 @@ def set_leverage(coin: str, leverage: int, is_cross: Optional[bool] = None,
     No-op when no private key is set. `leverage < 1` is rejected before any
     exchange call (and before the `is_cross` meta lookup).
     """
-    if not PRIVATE_KEY_HEX:
+    if not _has_usable_credential():
         return {"ok": False, "error": "no private key"}
     if leverage < 1:
         return {"ok": False, "error": f"invalid leverage {leverage} (< 1)"}
@@ -604,7 +720,7 @@ def place_hl_order(
     OVERSHOOT and flip the position to the opposite side without this flag. With
     reduce_only, HL fills only up to the live position size and rejects the rest
     → clean flatten, never a flip."""
-    if not PRIVATE_KEY_HEX:
+    if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if mid_price <= 0:
         return {"ok": False, "error": f"invalid price for {coin}"}
@@ -881,7 +997,7 @@ def place_hl_trigger_order(
     Triggers a market order in the position-closing direction once the
     trigger price is crossed.
     """
-    if not PRIVATE_KEY_HEX:
+    if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or trigger_px <= 0:
         return {"ok": False, "error": "invalid size/price"}
@@ -946,7 +1062,7 @@ def place_hl_limit_order(
     Returns {ok, order_id} when it rests, {ok, order_id, avg_px, total_sz} when
     it fills on arrival, {ok: False, error} otherwise.
     """
-    if not PRIVATE_KEY_HEX:
+    if not _has_usable_credential():
         return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
     if size <= 0 or limit_px <= 0:
         return {"ok": False, "error": f"invalid size/price for {coin}"}
@@ -1012,7 +1128,7 @@ def cancel_open_orders_for_coin(coin: str) -> int:
 
 def cancel_orders(oid: int, coin: Optional[str] = None, asset_idx: Optional[int] = None) -> Dict[str, Any]:
     """Cancel an order by order ID."""
-    if not PRIVATE_KEY_HEX:
+    if not _has_usable_credential():
         return {"ok": False, "error": "PRIVATE_KEY not set"}
     
     try:

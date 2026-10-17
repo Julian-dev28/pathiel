@@ -53,6 +53,11 @@ COPY services/intel/ services/intel/
 # to the previous thesis or a flat placeholder instead of crashing.
 COPY services/llm/ services/llm/
 COPY services/thesis/ services/thesis/
+# Account registry/vault/credentials (Hyperdash-style connect flow). Imported
+# lazily (guarded) by pathiel/client/exchange.py and hl_client.py, but
+# server.py mounts services.accounts.api's router unconditionally once wired
+# in — same "500 on first import" reasoning as auth above.
+COPY services/accounts/ services/accounts/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
