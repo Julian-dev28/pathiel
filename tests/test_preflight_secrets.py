@@ -126,6 +126,79 @@ def test_openrouter_key_required_only_when_provider_is_openrouter():
     assert "OPENROUTER_API_KEY" in _names_with_status(findings_ok, "PASS")
 
 
+# ── accounts vault awareness (services/accounts) ────────────────────────────────
+# A fully-migrated-to-the-vault setup has NONE of the three HYPERLIQUID_*
+# env vars below in .env.local at all -- preflight must recognise the
+# connected vault account as satisfying them, never FAIL a correctly
+# configured box. Every fixture here writes ONLY public fields (ids, labels,
+# addresses) to a synthetic accounts.json, exactly what
+# services.accounts.registry itself writes -- never a key, never the vault's
+# encrypted keystore files, matching _vault_active_trade_account's own
+# contract.
+
+FAKE_VAULT_MAIN = "0xCCCC000000000000000000000000000000CCCC"
+FAKE_VAULT_AGENT = "0xDDDD000000000000000000000000000000DDDD"
+
+
+def _write_vault_registry(tmp_path: Path, *, active_id="acc_1", accounts=None) -> Path:
+    import json
+    state_dir = tmp_path / "state"
+    accounts_dir = state_dir / "accounts"
+    accounts_dir.mkdir(parents=True, exist_ok=True)
+    if accounts is None:
+        accounts = [{
+            "id": "acc_1", "label": "Main", "main_address": FAKE_VAULT_MAIN,
+            "agent_address": FAKE_VAULT_AGENT, "mode": "trade", "source": "wallet_sign",
+            "created_at": "2026-10-17T12:00:00+00:00", "verified_at": "2026-10-17T12:00:00+00:00",
+            "agent_name": "pathiel",
+        }]
+    (accounts_dir / "accounts.json").write_text(
+        json.dumps({"version": 1, "rev": 1, "active_id": active_id, "accounts": accounts}))
+    return state_dir
+
+
+def test_required_present_satisfied_by_a_connected_vault_account_with_no_env_vars(tmp_path):
+    state_dir = _write_vault_registry(tmp_path)
+    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
+           "AI_BRAIN_PROVIDER": "claude_cli"}
+    findings = pf.check_required_present(env)
+    for name in ("HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_ADDRESS"):
+        matches = [f for f in findings if f.name == name]
+        assert len(matches) == 1
+        assert matches[0].status == "PASS"
+        assert "vault" in matches[0].message.lower()
+
+
+def test_required_present_still_fails_when_vault_account_is_watch_mode(tmp_path):
+    state_dir = _write_vault_registry(tmp_path, accounts=[{
+        "id": "acc_1", "label": "Whale", "main_address": FAKE_VAULT_MAIN, "agent_address": None,
+        "mode": "watch", "source": "watch", "created_at": "2026-10-17T12:00:00+00:00",
+        "verified_at": None, "agent_name": None,
+    }])
+    env = {"PATHIEL_STATE_DIR": str(state_dir), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
+           "AI_BRAIN_PROVIDER": "claude_cli"}
+    findings = pf.check_required_present(env)
+    assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
+
+
+def test_required_present_ignores_a_missing_or_malformed_vault_file(tmp_path):
+    env = {"PATHIEL_STATE_DIR": str(tmp_path / "nope"), "PATHIEL_OPERATOR_TOKEN": FAKE_OPERATOR_TOKEN,
+           "AI_BRAIN_PROVIDER": "claude_cli"}
+    findings = pf.check_required_present(env)
+    assert "HYPERLIQUID_WALLET_ADDRESS" in _names_with_status(findings, "FAIL")
+
+
+def test_required_present_real_env_vars_still_win_over_the_vault(tmp_path):
+    """An env var actually set always passes on its own merits -- the vault
+    branch only ever fires for the gap, never overrides a real value."""
+    state_dir = _write_vault_registry(tmp_path)
+    env = _complete_env(PATHIEL_STATE_DIR=str(state_dir))
+    findings = pf.check_required_present(env)
+    match = [f for f in findings if f.name == "HYPERLIQUID_WALLET_ADDRESS"][0]
+    assert match.status == "PASS"
+    assert "vault" not in match.message.lower()
+
+
 # ── agent vs master (the highest-value check) ──────────────────────────────────
 
 def test_agent_not_master_fails_when_trading_key_is_master():
@@ -158,6 +231,46 @@ def test_agent_not_master_skips_when_wallet_unset():
     assert _statuses(findings) == {"SKIP"}
 
 
+def test_agent_not_master_passes_for_a_vault_account_with_distinct_agent(tmp_path):
+    state_dir = _write_vault_registry(tmp_path)
+    findings = pf.check_master_not_agent({"PATHIEL_STATE_DIR": str(state_dir)})
+    assert _statuses(findings) == {"PASS"}
+    assert "vault" in findings[0].message.lower()
+
+
+def test_agent_not_master_fails_for_a_corrupt_vault_account(tmp_path):
+    state_dir = _write_vault_registry(tmp_path, accounts=[{
+        "id": "acc_1", "label": "Corrupt", "main_address": FAKE_VAULT_MAIN,
+        "agent_address": FAKE_VAULT_MAIN, "mode": "trade", "source": "wallet_sign",
+        "created_at": "2026-10-17T12:00:00+00:00", "verified_at": "2026-10-17T12:00:00+00:00",
+        "agent_name": "pathiel",
+    }])
+    findings = pf.check_master_not_agent({"PATHIEL_STATE_DIR": str(state_dir)})
+    assert _statuses(findings) == {"FAIL"}
+
+
+def test_agent_not_master_warns_for_a_vault_account_missing_agent_address(tmp_path):
+    state_dir = _write_vault_registry(tmp_path, accounts=[{
+        "id": "acc_1", "label": "Half-built", "main_address": FAKE_VAULT_MAIN, "agent_address": None,
+        "mode": "trade", "source": "wallet_sign", "created_at": "2026-10-17T12:00:00+00:00",
+        "verified_at": None, "agent_name": None,
+    }])
+    findings = pf.check_master_not_agent({"PATHIEL_STATE_DIR": str(state_dir)})
+    assert _statuses(findings) == {"WARN"}
+
+
+def test_agent_not_master_vault_check_takes_priority_over_env_vars(tmp_path):
+    """A vault account active AND stale/mismatched env vars present: the
+    vault account is what actually trades (services.accounts.credentials'
+    own priority), so it is what gets checked."""
+    state_dir = _write_vault_registry(tmp_path)
+    env = _complete_env(PATHIEL_STATE_DIR=str(state_dir),
+                        HYPERLIQUID_WALLET_ADDRESS=FAKE_MASTER_ADDR,
+                        HYPERLIQUID_MASTER_ADDRESS=FAKE_MASTER_ADDR)  # would FAIL on its own
+    findings = pf.check_master_not_agent(env)
+    assert _statuses(findings) == {"PASS"}
+
+
 # ── master private key must never be in a deployed environment ────────────────
 
 def test_master_private_key_fails_in_deploy_mode():
@@ -170,6 +283,17 @@ def test_master_private_key_only_warns_locally():
     env = {"HYPERLIQUID_MASTER_PRIVATE_KEY": FAKE_PRIVATE_KEY}
     findings = pf.check_master_key_not_deployed(env, deploy_mode=False)
     assert _statuses(findings) == {"WARN"}
+
+
+def test_master_private_key_warning_names_the_specific_risk_and_mitigation():
+    """The task's exact wording: the main key can withdraw, an agent key
+    makes it unnecessary for trading, and only treasury.py uses it."""
+    env = {"HYPERLIQUID_MASTER_PRIVATE_KEY": FAKE_PRIVATE_KEY}
+    findings = pf.check_master_key_not_deployed(env, deploy_mode=False)
+    message = findings[0].message.lower()
+    assert "withdraw" in message
+    assert "agent key" in message
+    assert "treasury.py" in message
 
 
 def test_master_private_key_absent_passes_either_mode():

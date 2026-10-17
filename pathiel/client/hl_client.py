@@ -179,7 +179,32 @@ def get_info() -> "Info | None":
 
 
 def resolve_user_address() -> str:
-    """Master address if set, else wallet address, else empty string."""
+    """The address whose state (fills, positions, open orders) this process
+    reads, and that actually trades right now.
+
+    Active trade account in the services.accounts registry first, else the
+    legacy fallback (master address if set, else wallet address, else empty
+    string) exactly as before.
+
+    Deliberately NOT "whatever account is active for dashboard viewing" — a
+    `watch`-mode active account is skipped here on purpose. This function
+    backs real trading code (stranded-order cancellation, fill lookups for
+    maker_first, order-status polling), and pointing it at a different
+    account than the one actually placing orders would silently break fill
+    tracking for whoever IS trading. services/accounts/summary.py is the
+    purpose-built way to look up an arbitrary (including watch-mode)
+    account's state for display.
+    """
+    try:
+        from services.accounts.credentials import get_trading_credentials
+        creds = get_trading_credentials()
+        if creds is not None and creds.source != "env":
+            return creds.main_address
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"[resolve_user_address] accounts registry lookup failed, "
+                       f"falling back to legacy env: {e}")
     return os.environ.get("HYPERLIQUID_MASTER_ADDRESS") or os.environ.get("HYPERLIQUID_WALLET_ADDRESS", "")
 
 
@@ -285,6 +310,13 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     perp_equity = float(margin_summary.get("accountValue", "0"))
     total_ntl = float(margin_summary.get("totalNtlPos", "0"))
     total_margin_used = float(margin_summary.get("totalMarginUsed", "0"))
+    # HL's own "withdrawable" (confirmed live, 2026-10-17: a top-level field on
+    # clearinghouseState, distinct from `available` below) — the
+    # spot-bridgeable amount, tighter than free trading margin. services.accounts
+    # surfaces this as ActiveSummary.withdrawable_usd; nothing else reads it,
+    # so a missing/odd value here degrades to 0.0 rather than breaking the
+    # existing `available` (margin-based) callers.
+    withdrawable = float(perp.get("withdrawable", "0") or 0)
 
     raw_balances = spot.get("balances", []) or []
     spot_balances = [b for b in raw_balances if b.get("coin", "") in ("USDC", "USDT", "USD")]
@@ -308,6 +340,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     dex_available: Dict[str, float] = {"": available}
     queried_dexes: Set[str] = {""}
     available_aggregated = available  # starts as main; HIP-3 adds in
+    withdrawable_aggregated = withdrawable  # starts as main; HIP-3 adds in
 
     if include_hip3:
         from pathiel.client.universe import list_hip3_dexes
@@ -347,6 +380,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
                     equity += dex_value
                     total_ntl += dex_ntl
                     available_aggregated += dex_free
+                    withdrawable_aggregated += float(dex_state.get("withdrawable", 0) or 0)
                     for p in (dex_state.get("assetPositions") or []):
                         pos = p.get("position", {}) or {}
                         if float(pos.get("szi", "0") or 0) == 0:
@@ -361,6 +395,8 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
         "equity": equity,
         "available": available,                       # main-only — for executor sizing
         "available_aggregated": available_aggregated, # total across all dexes — for display
+        "withdrawable": withdrawable,                             # main-only, HL's own tighter number
+        "withdrawable_aggregated": withdrawable_aggregated,       # total across all dexes — for display
         "spot_usdc": spot_usdc,
         "total_usdc": equity + spot_usdc,
         "total_ntl": total_ntl,
