@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "RainbowKit connect button for the pathiel dashboard, bundled to a vendored static asset.",
+  "description": "pathiel's trading-wallet island (connect/authorize/API-key/watch + account switcher), bundled to a vendored static asset.",
   "scripts": {
     "build": "node build.mjs",
     "check": "node build.mjs --check"
