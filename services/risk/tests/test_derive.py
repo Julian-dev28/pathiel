@@ -128,10 +128,54 @@ def test_profile_echoed_back_is_fully_resolved_every_field_set():
         assert getattr(p, field) is not None, f"{field} was left unresolved"
 
 
-def test_explicit_max_open_positions_overrides_derivation():
-    limits = derive_limits(100.0, RiskProfile(preset="starter", max_open_positions=7), BOOKS, VENUE)
+def test_explicit_max_open_positions_is_honored_when_it_fits_the_daily_pause():
+    roomy = RiskProfile(preset="starter", max_open_positions=7, daily_loss_limit_pct=50.0)
+    limits = derive_limits(100.0, roomy, BOOKS, VENUE)
     assert limits.max_open_positions == 7
     assert limits.profile.max_open_positions == 7
+
+
+def test_explicit_max_open_positions_is_capped_when_stop_outs_would_exceed_the_pause():
+    limits = derive_limits(100.0, RiskProfile(preset="starter", max_open_positions=7), BOOKS, VENUE)
+    worst = max(b.risk_usd for b in limits.books if b.can_trade and b.risk_usd)
+    assert limits.max_open_positions * worst <= limits.daily_loss_limit_usd + 0.01
+    assert any("open stop-out" in n for n in limits.notes)
+
+
+# -- coherence guarantees (integrator, 2026-10-17) -----------------------------
+
+ALL_PROFILES = [RiskProfile(preset=p) for p in PRESET_NAMES] + [
+    RiskProfile(preset="custom", risk_per_trade_pct=15.75, daily_loss_limit_pct=12.1,
+                max_open_positions=3, allow_min_order_bump=True, max_bumped_risk_pct=15.0),
+]
+
+
+@pytest.mark.parametrize("profile", ALL_PROFILES, ids=lambda p: p.preset)
+def test_no_trade_can_risk_more_than_the_daily_pause(profile):
+    for eq in EQUITIES:
+        lim = derive_limits(eq, profile, BOOKS, VENUE)
+        assert lim.risk_per_trade_usd <= lim.daily_loss_limit_usd + 0.01, eq
+        for b in lim.books:
+            if b.can_trade and b.risk_usd:
+                assert b.risk_usd <= lim.daily_loss_limit_usd + 0.01, (eq, b.book)
+
+
+@pytest.mark.parametrize("profile", ALL_PROFILES, ids=lambda p: p.preset)
+def test_all_open_stop_outs_together_fit_the_daily_pause(profile):
+    for eq in EQUITIES:
+        lim = derive_limits(eq, profile, BOOKS, VENUE)
+        risks = [b.risk_usd for b in lim.books if b.can_trade and b.risk_usd]
+        if risks and lim.max_open_positions > 1:
+            assert lim.max_open_positions * max(risks) <= lim.daily_loss_limit_usd + 0.01, eq
+
+
+def test_the_live_15_dollar_case_is_coherent():
+    """Live 2026-10-17: $2.40 budget vs $1.84 pause and 3 positions."""
+    custom = ALL_PROFILES[-1]
+    lim = derive_limits(15.21, custom, BOOKS, VENUE)
+    assert lim.risk_per_trade_usd <= lim.daily_loss_limit_usd
+    assert lim.headline.startswith("You can trade")
+    assert "stop-out costs" in lim.headline
 
 
 def test_real_dollar_padded_venue_minimum_is_respected():
@@ -193,9 +237,13 @@ def test_more_equity_never_shrinks_the_feasible_book_set_or_drops_max_open(prese
         assert feasible.issuperset(prev_feasible), (
             f"preset={preset} eq={eq}: feasible set shrank, "
             f"prev={sorted(prev_feasible)} now={sorted(feasible)}")
-        assert limits.max_open_positions >= prev_max_open, (
-            f"preset={preset} eq={eq}: max_open_positions dropped "
-            f"{prev_max_open} -> {limits.max_open_positions}")
+        # max_open is only comparable while the SAME books can trade: more
+        # equity can unlock a riskier book, and then fewer open stop-outs fit
+        # inside the daily pause (coherence rule 3, 2026-10-17).
+        if limits.can_trade and feasible == prev_feasible:
+            assert limits.max_open_positions >= prev_max_open, (
+                f"preset={preset} eq={eq}: max_open_positions dropped "
+                f"{prev_max_open} -> {limits.max_open_positions}")
         prev_feasible, prev_max_open = feasible, limits.max_open_positions
 
 
