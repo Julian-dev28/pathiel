@@ -95,6 +95,14 @@ def _require_control(request: Request, main_address: str) -> None:
     raise HTTPException(status_code=403, detail="not authorized for this account")
 
 
+def _require_operator_or_local(request: Request, *, allow_bootstrap: bool = False) -> None:
+    """Account management is single-operator off the local machine: pathiel
+    runs ONE bot on ONE active account, and letting any signed-in wallet add
+    and activate its own account would move the operator's bot onto a
+    stranger's account. See services.auth.integration.require_operator_or_local."""
+    integration.require_operator_or_local(request, allow_bootstrap=allow_bootstrap)
+
+
 def _normalize_hex_key(raw: str) -> str:
     return raw if raw.startswith("0x") else f"0x{raw}"
 
@@ -126,7 +134,7 @@ def get_session(request: Request) -> SessionInfo:
 
 @router.get("/accounts", response_model=List[ContractAccount])
 def list_accounts(request: Request) -> List[ContractAccount]:
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request)
     return view.list_all_accounts()
 
 
@@ -135,7 +143,7 @@ def list_accounts(request: Request) -> List[ContractAccount]:
 @router.post("/accounts/agent/prepare", response_model=AgentPrepareOut)
 def prepare_agent(body: AgentPrepareIn, request: Request) -> AgentPrepareOut:
     _rate_limit(request)
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request, allow_bootstrap=True)
 
     agent_key = EthAccount.create()
     nonce_ms = agent_approval.new_nonce_ms()
@@ -164,7 +172,7 @@ def prepare_agent(body: AgentPrepareIn, request: Request) -> AgentPrepareOut:
 @router.post("/accounts/agent/confirm", response_model=ContractAccount)
 def confirm_agent(body: AgentConfirmIn, request: Request, response: Response) -> ContractAccount:
     _rate_limit(request)
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request, allow_bootstrap=True)
 
     # Burn FIRST, before the signature is even inspected — see module and
     # pending.py docstrings. A replay of this exact call, successful or not,
@@ -232,7 +240,7 @@ def confirm_agent(body: AgentConfirmIn, request: Request, response: Response) ->
 @router.post("/accounts/import", response_model=ContractAccount)
 def import_api_key(body: ApiKeyImportIn, request: Request) -> ContractAccount:
     _rate_limit(request)
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request, allow_bootstrap=True)
 
     key_hex = _normalize_hex_key(body.agent_private_key)
     try:
@@ -266,7 +274,7 @@ def import_api_key(body: ApiKeyImportIn, request: Request) -> ContractAccount:
 
 @router.post("/accounts/watch", response_model=ContractAccount)
 def watch_address(body: WatchIn, request: Request) -> ContractAccount:
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request)
     stored = registry.add(label=body.label, main_address=body.address, agent_address=None,
                           mode="watch", source="watch", agent_name=None, verified=False)
     return view.to_contract_account(stored, registry.get_active_id())
@@ -279,7 +287,7 @@ def activate_account(account_id: str, request: Request) -> ContractAccount:
     account = view.get_account_or_env(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="unknown account")
-    _require_control(request, account.main_address)
+    _require_operator_or_local(request)
 
     if account_id == view.ENV_ACCOUNT_ID:
         registry.clear_active()
@@ -299,7 +307,7 @@ def rename_account(account_id: str, body: AccountPatch, request: Request) -> Con
     account = view.get_account_or_env(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="unknown account")
-    _require_control(request, account.main_address)
+    _require_operator_or_local(request)
 
     if body.label is None:
         return account
@@ -318,7 +326,7 @@ def delete_account(account_id: str, request: Request) -> Dict[str, bool]:
     account = view.get_account_or_env(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="unknown account")
-    _require_control(request, account.main_address)
+    _require_operator_or_local(request)
 
     if account_id == view.ENV_ACCOUNT_ID:
         raise HTTPException(status_code=400,
@@ -333,5 +341,5 @@ def delete_account(account_id: str, request: Request) -> Dict[str, bool]:
 
 @router.get("/accounts/active/summary", response_model=ActiveSummary)
 def active_summary(request: Request) -> ActiveSummary:
-    integration.require_session_or_local(request)
+    _require_operator_or_local(request)
     return summary.get_active_summary()

@@ -110,3 +110,12 @@ def test_registry_file_on_disk_never_contains_a_private_key(monkeypatch, tmp_pat
     from services.accounts import env
     raw_registry = open(env.registry_path()).read()
     assert key_hex[2:].lower() not in raw_registry.lower()
+
+
+def test_trading_credentials_repr_never_contains_the_key():
+    """2026-10-17: an assertion printed TradingCredentials and leaked a real key."""
+    from services.accounts.credentials import TradingCredentials
+    key = "0x" + "ab" * 32
+    c = TradingCredentials(private_key=key, main_address="0x" + "1" * 40,
+                           agent_address="0x" + "2" * 40, source="env")
+    assert key not in repr(c) and key[2:] not in repr(c) and key not in str(c)

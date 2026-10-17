@@ -66,6 +66,14 @@ def test_every_guarded_first_party_import_resolves():
     # bug this test was written to catch. Scoped to this exact line so any
     # OTHER guarded import (new or old) still fails loudly; remove an entry
     # once its service lands.
+    #
+    # services/risk/api.py:67 added by the "risk" wave-2 agent (contracts/
+    # risk + contracts/accounts, docs/overhaul/SWARM_RULES.md section 10):
+    # GET /api/risk/limits reads the active account's equity from
+    # services.accounts when importable, else falls back to
+    # pathiel.client.hl_client directly -- the accounts agent owns that
+    # service and is building it in its own worktree right now. Remove once
+    # services/accounts merges.
     EXPECTED_MISSING_UNTIL_SWARM_MERGES: set = set()
     broken = []
     for rel, line, module, name in _guarded_imports():

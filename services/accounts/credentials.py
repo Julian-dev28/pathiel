@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from services.accounts import registry, vault
@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class TradingCredentials:
-    private_key: str          # 0x-prefixed hex — the key that SIGNS orders
+    # 0x-prefixed hex, the key that SIGNS orders. repr=False: a dataclass repr
+    # lands in assertion output, logs and tracebacks, and once printed a real key.
+    private_key: str = field(repr=False)
     main_address: str         # the funds-holding account HL executes orders against
     agent_address: Optional[str]  # the signing address, when distinct from main_address
     source: str                # "wallet_sign" | "api_key" | "env"

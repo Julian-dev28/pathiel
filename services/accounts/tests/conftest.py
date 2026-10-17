@@ -96,3 +96,16 @@ def login_via_siwe(client: TestClient, wallet) -> None:
     signature = wallet.sign_message(encode_defunct(text=message)).signature.hex()
     verify_resp = client.post("/auth/verify", json={"message": message, "signature": signature})
     assert verify_resp.status_code == 200, verify_resp.text
+
+
+@pytest.fixture(autouse=True)
+def _no_real_env_identity(monkeypatch):
+    """Blank the legacy env identity for every test here. Tests that need one
+    set fake values themselves. A real key must never reach these tests."""
+    for k in ("HYPERLIQUID_PRIVATE_KEY", "HYPERLIQUID_MASTER_PRIVATE_KEY",
+              "HYPERLIQUID_WALLET_ADDRESS", "HYPERLIQUID_MASTER_ADDRESS"):
+        monkeypatch.delenv(k, raising=False)
+    from pathiel.client import exchange as _ex
+    for name, blank in (("PRIVATE_KEY_HEX", ""), ("HL_WALLET", ""), ("HL_MASTER", ""),
+                        ("IS_AGENT", False), ("HL_ACCOUNT", "")):
+        monkeypatch.setattr(_ex, name, blank, raising=False)

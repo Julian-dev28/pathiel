@@ -270,3 +270,30 @@ def require_session_or_local(request: Request) -> Optional[str]:
     if address is None:
         raise HTTPException(status_code=401, detail="sign in required")
     return address
+
+
+
+def require_operator_or_local(request: Request, *, allow_bootstrap: bool = False) -> None:
+    """Gate for anything that changes or reveals what the ONE trading bot does
+    (accounts, risk profile, live limits).
+
+    Local mode: always allowed. Public mode: only the deployment's operator.
+    allow_bootstrap: on a fresh deployment (no wallet has ever held a session,
+    bootstrap not disabled) the first caller is let through; the session it
+    then opens becomes the operator under store.upsert_user's first-login rule.
+    401 when nobody is signed in, 403 for a signed-in non-operator.
+    """
+    import os
+    if is_local_mode(request):
+        return
+    user = deps.current_user(request)
+    if user is not None and user.is_operator:
+        return
+    if (allow_bootstrap and user is None
+            and not os.environ.get("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR")
+            and get_store().user_count() == 0):
+        return
+    if user is None:
+        raise HTTPException(status_code=401, detail="connect the operator wallet first")
+    raise HTTPException(status_code=403,
+                        detail="this deployment has one operator; only the operator can do this")

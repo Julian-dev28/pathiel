@@ -37,7 +37,7 @@ this directly, so the landmine cannot be reintroduced by editing a default.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, NamedTuple
+from typing import Any, Dict, NamedTuple, Optional
 
 # Floors used ONLY when the config supplies neither a book value nor a
 # top-level default. Deliberately the least aggressive values that still
@@ -145,3 +145,27 @@ def book_params(config: Dict[str, Any], book: str) -> BookParams:
     except (TypeError, ValueError):
         stop = FLOOR_STOP_PCT
     return BookParams(notional_usd=notional, leverage=leverage, stop_pct=stop)
+
+
+def apply_notional_ceiling(notional_usd: float, ceiling_usd: Optional[float]) -> float:
+    """Clamp a requested notional DOWN to a risk-derived ceiling. Never up.
+
+    `pathiel.agents.executor.maybe_execute` calls this with
+    `ceiling_usd=services.risk.derive.BookFeasibility.notional_usd` — the
+    per-book ceiling DerivedLimits computed for the account's CURRENT
+    equity and resolved RiskProfile (services/risk/derive.py). This is the
+    one-line policy that makes "per-book notional comes from the limits"
+    (docs/overhaul/PROFIT_AUDIT.md) true for every book without touching
+    their own config: a legacy fixed `notional_usd` (or an equity-fraction
+    result) that has drifted above what's safe at today's equity gets
+    capped; a book already sized BELOW the ceiling — including a
+    deliberate under-sizing like xs_reversal's documented de-risking while
+    its forward ledger is unvalidated — is left exactly as requested.
+
+    `ceiling_usd=None` (a fixed/structural book like drawdown_ladder has no
+    derived ceiling — see BookSpec.fixed_min_equity_usd) or a non-positive
+    ceiling is a no-op: this function never fabricates a ceiling of its own.
+    """
+    if ceiling_usd is None or ceiling_usd <= 0:
+        return notional_usd
+    return min(notional_usd, ceiling_usd)

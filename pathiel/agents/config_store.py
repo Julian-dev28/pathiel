@@ -12,8 +12,11 @@ import copy
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
+from pydantic import ValidationError
+
+from contracts.risk.models import RiskProfile
 from pathiel.agents import universe as _universe
 
 logger = logging.getLogger(__name__)
@@ -30,6 +33,16 @@ CONFIG_PATH = os.environ.get(
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "mode": "OFF",
+    # Config v2 (docs/overhaul/PROFIT_AUDIT.md section 1 / services/risk/):
+    # DELIBERATELY ABSENT here. "risk_profile" is written only by an explicit
+    # PUT /api/risk/profile or a hand edit — read_risk_profile() treats its
+    # ABSENCE as "migrate the legacy keys instead" (services.risk.migrate).
+    # merge_agent_config layers `updates` onto THIS dict, so if a template
+    # value lived here, every config read through read_agent_config() would
+    # carry a syntactically-valid "risk_profile" forever, even when the file
+    # on disk never set one — permanently defeating migration for every
+    # config that predates config v2, which is every real one today. See
+    # read_risk_profile's docstring for the precedence this preserves.
     "ai_brain": {
         "provider": "openrouter",
         "timeout_s": 120,
@@ -205,6 +218,64 @@ def write_agent_config(cfg: Dict[str, Any]) -> None:
         os.fsync(f.fileno())
     os.replace(tmp, CONFIG_PATH)
     logger.info(f"[config] written {len(cfg)} keys to {CONFIG_PATH}")
+
+
+def read_risk_profile(config: Optional[Dict[str, Any]] = None) -> RiskProfile:
+    """The resolved config-v2 RiskProfile for `config` (reads the live file
+    via read_agent_config() when `config` is omitted).
+
+    PRECEDENCE (see services/risk/migrate.py's module docstring for the full
+    rationale):
+      1. a valid "risk_profile" key in the config — used as-is.
+      2. services.risk.migrate.migrate_legacy(config) — a best-effort
+         profile built from the old scattered keys, when (1) is absent or
+         fails to validate.
+      3. RiskProfile() (preset="auto") — migrate_legacy's own fallback when
+         the config carries none of the old keys either.
+
+    Never raises: a malformed "risk_profile" value (e.g. a hand-edit that
+    breaks the schema) degrades to migration rather than taking the
+    executor down — the same fail-safe rule read_agent_config() already
+    follows for the config file itself.
+    """
+    cfg = config if config is not None else read_agent_config()
+    raw = cfg.get("risk_profile")
+    if isinstance(raw, dict):
+        try:
+            return RiskProfile.model_validate(raw)
+        except ValidationError as e:
+            logger.warning(f"[config] risk_profile failed to validate ({e}); "
+                           "migrating legacy keys instead")
+    from services.risk.migrate import migrate_legacy
+    profile, _report = migrate_legacy(cfg)
+    return profile
+
+
+def migration_report(config: Optional[Dict[str, Any]] = None) -> List[str]:
+    """The plain-English mapping services.risk.migrate.migrate_legacy would
+    make for this config, regardless of whether a "risk_profile" key is
+    already present. Lets an API/CLI show "here is what migrating would
+    do" even after a v2 profile has already been saved, without that
+    display path silently becoming the one read_risk_profile() uses."""
+    from services.risk.migrate import migrate_legacy
+    _profile, report = migrate_legacy(config if config is not None else read_agent_config())
+    return report
+
+
+def write_risk_profile(profile: RiskProfile) -> None:
+    """Persist `profile` into the agent config's "risk_profile" key,
+    atomically (write_agent_config does the fsync + os.replace).
+
+    Never called implicitly — only an explicit PUT /api/risk/profile
+    (services/risk/api.py) or a deliberate script calls this. Writes
+    whatever CONFIG_PATH / PATHIEL_AGENT_CONFIG_FILE currently points at;
+    tests and dev servers must export that to a temp dir first (see
+    docs/overhaul/SWARM_RULES.md section 1) — this function has no opinion
+    about live vs. temp, same as write_agent_config.
+    """
+    cfg = dict(read_agent_config())
+    cfg["risk_profile"] = profile.model_dump()
+    write_agent_config(cfg)
 
 
 def merge_agent_config(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
