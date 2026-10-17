@@ -128,28 +128,70 @@ def liquidation_price(entry_px: float, leverage: float, max_leverage: float, sid
     return entry_px - s * (entry_px / leverage - mmr * entry_px) / (1.0 - mmr * s)
 
 
-def verdict_for_rung(p_liq: float) -> str:
-    """hold / dip_only / intraday_only / avoid, from empirical P(liquidated
-    within the horizon). Thresholds are on p_liq alone — the single number
-    the ladder simulation already estimates with the most data behind it —
-    and are half-open on the low end, so a rung sitting exactly on a
-    boundary reads as the SAFER bucket (p_liq==0.10 -> dip_only, not hold):
+_VERDICT_ORDER = ("hold", "dip_only", "intraday_only", "avoid")
 
-        p_liq < 0.10            hold            survives the full horizon >90% of the time, historically
-        0.10 <= p_liq < 0.35    dip_only        size down / add on dips, don't carry the full horizon casually
-        0.35 <= p_liq < 0.55    intraday_only   only defensible as a same-day, actively managed trade
-        p_liq >= 0.55           avoid           coin-flip or worse on liquidation within the horizon
+# Parametric second opinion. The empirical p_liq only knows the trailing
+# sample; after a calm stretch it calls a 10x rung "hold" right before a
+# volatility expansion liquidates it (verdict_backtest, 2026-10-17: 14 of 72
+# desk/side/leverage rows put >15% of their "hold" days into liquidation).
+# p_touch asks a different question from the same data: how likely is price
+# to TOUCH the liquidation level within the horizon at today's volatility,
+# using the larger of 20-day and full-sample daily vol, inflated for fat
+# tails. Driftless Brownian touch probability: 2 * (1 - Phi(d / (sigma*sqrt(h)))).
+TAIL_VOL_MULT = 1.25
+# Fewer forward windows than this and the empirical p_liq is too thin to
+# trust: the verdict drops one level.
+MIN_RELIABLE_WINDOWS = 120
 
-    Calibrated against the oil fixture (contracts/strategies/fixtures/oil_analytics.json):
-    5x p_liq=0.032->hold, 10x p_liq=0.284->dip_only, 20x p_liq=0.647->avoid — all three match.
-    """
-    if p_liq < 0.10:
+
+def _bucket(p: float) -> str:
+    if p < 0.10:
         return "hold"
-    if p_liq < 0.35:
+    if p < 0.35:
         return "dip_only"
-    if p_liq < 0.55:
+    if p < 0.55:
         return "intraday_only"
     return "avoid"
+
+
+def touch_probability(d_liq: float, sigma_daily: float, horizon_days: int) -> float:
+    """P(price touches a level d_liq away, as a fraction, within horizon_days),
+    driftless Brownian approximation. A level at or behind the price is
+    already touched (1.0); zero volatility or zero horizon never moves (0.0).
+    Unknown volatility is the caller's case: pass p_touch=None instead."""
+    if d_liq <= 0:
+        return 1.0
+    if sigma_daily <= 0 or horizon_days <= 0:
+        return 0.0
+    z = d_liq / (sigma_daily * math.sqrt(horizon_days))
+    phi = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+    return max(0.0, min(1.0, 2.0 * (1.0 - phi)))
+
+
+def verdict_for_rung(p_liq: float, p_touch: Optional[float] = None,
+                     n_windows: Optional[int] = None) -> str:
+    """hold / dip_only / intraday_only / avoid.
+
+    Each probability maps to a bucket with the same thresholds, half-open on
+    the low end so a boundary reads as the SAFER bucket:
+
+        p < 0.10            hold            survives the horizon >90% of the time
+        0.10 <= p < 0.35    dip_only        size down, add on dips, don't carry casually
+        0.35 <= p < 0.55    intraday_only   only as a same-day, actively managed trade
+        p >= 0.55           avoid           coin-flip or worse on liquidation
+
+    The verdict is the WORSE of the empirical bucket (p_liq, the ladder
+    simulation) and the parametric bucket (p_touch, today's volatility), then
+    one level worse again when n_windows < MIN_RELIABLE_WINDOWS. Called with
+    p_liq alone it is the original single-signal rule.
+    """
+    levels = [_VERDICT_ORDER.index(_bucket(p_liq))]
+    if p_touch is not None:
+        levels.append(_VERDICT_ORDER.index(_bucket(p_touch)))
+    level = max(levels)
+    if n_windows is not None and n_windows < MIN_RELIABLE_WINDOWS:
+        level = min(level + 1, len(_VERDICT_ORDER) - 1)
+    return _VERDICT_ORDER[level]
 
 
 # ── instrument snapshot ───────────────────────────────────────────────────────
@@ -406,8 +448,26 @@ def simulate_ladder_rung(coin: str, side: Side, leverage: float, max_leverage: f
         ev_pct=st.mean(rets), equity_ret=quantiles(rets),
         p_double=sum(o >= 2.0 for o in outcomes) / n, p_lose_half=sum(o <= 0.5 for o in outcomes) / n,
         fees_funding_pct=cost, stop_px=stop_px, p_stop=stop_hits / n,
-        verdict=verdict_for_rung(liq_hits / n),
+        verdict=verdict_for_rung(liq_hits / n, p_touch=_p_touch(d_liq, daily, horizon_days),
+                                 n_windows=n),
     )
+
+
+def _p_touch(d_liq: float, daily: Sequence[Candle], horizon_days: int) -> Optional[float]:
+    sigma = _sigma_for_verdict(daily)
+    return None if sigma is None else touch_probability(d_liq, sigma, horizon_days)
+
+
+def _sigma_for_verdict(daily: Sequence[Candle]) -> Optional[float]:
+    """Larger of 20-day and full-sample daily log-return stdev, times
+    TAIL_VOL_MULT. None if there are too few closes to say."""
+    closes = [c.c for c in daily if c.c and c.c > 0]
+    rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+    if len(rets) < 2:
+        return None
+    full = st.pstdev(rets)
+    recent = st.pstdev(rets[-20:]) if len(rets) >= 20 else full
+    return max(full, recent) * TAIL_VOL_MULT
 
 
 # ── default I/O (live network; injectable for tests) ─────────────────────────
