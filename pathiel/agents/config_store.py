@@ -220,6 +220,23 @@ def write_agent_config(cfg: Dict[str, Any]) -> None:
     logger.info(f"[config] written {len(cfg)} keys to {CONFIG_PATH}")
 
 
+# Old scattered sizing keys that migrate_legacy() turns into a profile.
+LEGACY_SIZING_KEYS = ("equity_fraction_per_trade", "leverage", "min_order_bump_max_mult",
+                      "max_concurrent", "max_daily_loss_pct", "max_daily_loss_usd",
+                      "min_tradable_equity_usd", "default_stop_pct")
+_MISSING = object()
+
+
+def _has_legacy_sizing(cfg: Dict[str, Any]) -> bool:
+    """True when the config carries a sizing key the USER set: present and
+    different from the built-in default. read_agent_config() merges defaults
+    in, so presence alone cannot tell a user's choice from a default."""
+    for k in LEGACY_SIZING_KEYS:
+        if k in cfg and cfg[k] != DEFAULT_CONFIG.get(k, _MISSING):
+            return True
+    return False
+
+
 def read_risk_profile(config: Optional[Dict[str, Any]] = None) -> RiskProfile:
     """The resolved config-v2 RiskProfile for `config` (reads the live file
     via read_agent_config() when `config` is omitted).
@@ -240,6 +257,12 @@ def read_risk_profile(config: Optional[Dict[str, Any]] = None) -> RiskProfile:
     """
     cfg = config if config is not None else read_agent_config()
     raw = cfg.get("risk_profile")
+    if not isinstance(raw, dict) and not _has_legacy_sizing(cfg):
+        # A fresh install has no old settings: the auto preset, not a
+        # "custom" profile reverse-engineered from built-in defaults (live
+        # e2e 2026-10-17: a brand-new user saw "Custom (from your old
+        # settings)" with a 25% bump cap).
+        return RiskProfile()
     if isinstance(raw, dict):
         try:
             return RiskProfile.model_validate(raw)

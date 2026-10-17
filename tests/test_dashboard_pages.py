@@ -2744,3 +2744,17 @@ def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
 # gone. The new /account page (pathiel/templates/account.html) shows whose
 # account is active instead, sourced from contracts/accounts/models.py's
 # ActiveSummary rather than the retired /api/dashboard/account.
+
+
+def test_nav_order_is_identical_on_every_page():
+    """Desks second and Account last everywhere (desks pages used to list
+    Desks last, 2026-10-17)."""
+    import re as _re
+    from pathlib import Path as _P
+    tdir = _P(__file__).resolve().parents[1] / "pathiel" / "templates"
+    orders = {}
+    for f in sorted(tdir.glob("*.html")):
+        navs = _re.findall(r'data-nav="(/[a-z]*)"', f.read_text())
+        if navs:
+            orders[f.name] = navs
+    assert len(set(map(tuple, orders.values()))) == 1, orders
