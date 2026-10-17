@@ -14,8 +14,9 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from pathiel.agents.book_params import (
-    BACKUP_SL_MAX_FRAC_OF_LIQ, LIQ_SAFETY_FRAC, max_stop_pct_at_leverage)
-from pathiel.agents.config_store import read_agent_config
+    BACKUP_SL_MAX_FRAC_OF_LIQ, LIQ_SAFETY_FRAC, apply_notional_ceiling, book_params,
+    max_stop_pct_at_leverage)
+from pathiel.agents.config_store import read_agent_config, read_risk_profile
 from pathiel.agents.dsl_exit import (
     ExitPolicy,
     RetraceTier,
@@ -28,6 +29,7 @@ from pathiel.agents.memory import memory
 from pathiel.agents.risk_gates import GateContext, eval_all_gates
 from pathiel.client.exchange import (
     HL_LEVERAGE,
+    MIN_ORDER_USD,
     cancel_open_orders_for_coin,
     entry_size_for_notional,
     get_hl_atr,
@@ -40,6 +42,17 @@ from pathiel.client.exchange import (
     set_leverage,
 )
 from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+from services.risk import books as risk_books
+from services.risk.derive import BookSpec as _RiskBookSpec
+from services.risk.derive import VenueRules as _RiskVenueRules
+from services.risk.derive import book_feasibility as _risk_book_feasibility
+from services.risk.derive import derive_limits as _derive_risk_limits
+
+# The real, padded exchange minimum (10.5, not the contract's illustrative
+# 10.0 default) — see services/risk/derive.py VenueRules docstring for why
+# this one has to be the live number: it's what Hyperliquid's own coin-size
+# rounding can actually land on, and can_trade has to agree with that.
+_RISK_VENUE = _RiskVenueRules(min_order_notional_usd=MIN_ORDER_USD)
 
 logger = logging.getLogger(__name__)
 
@@ -762,21 +775,58 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             "reason": "equity_unavailable (live account state returned 0 after retries)",
         }
 
-    # Structural dust floor. `mode: LIVE` sitting in a config against a $0.03
-    # account is not a safe state just because the loop happens to be stopped:
-    # any restart would start firing orders that HL rejects under its ~$10
-    # minimum, burning rate budget and filling the log with failures that read
-    # like signal problems. This is enforced HERE, in the single choke point
-    # every order passes through, so no book and no config edit can route
-    # around it. Below the floor the system is structurally incapable of
-    # trading, whatever the mode says.
-    if equity < min_tradable_equity(config):
+    # Per-trade feasibility (docs/overhaul/PROFIT_AUDIT.md section 1;
+    # services/risk/derive.py). REPLACES the old single global
+    # min_tradable_equity(config) block: that floor gated every book behind
+    # one operator-set (or derived "every enabled book at once") number, so a
+    # $15.19 account sat under a $26 override and could place NOTHING, in a
+    # system whose own books can clear Hyperliquid's $10.50 minimum well
+    # below $26. The replacement asks a narrower, truthful question — "can
+    # THIS book afford THIS trade at THIS equity" — via the exact same
+    # RiskProfile (config_store.read_risk_profile: an explicit "risk_profile"
+    # key, else a migration of the old scattered keys, else presets.py's
+    # equity-tiered defaults) every other risk surface uses.
+    # min_tradable_equity()/book_margin_requirement() ARE UNCHANGED above and
+    # stay exported — tests/test_funded_readiness.py, tests/test_risk_panel.py
+    # and others assert their standalone behavior directly; this call site is
+    # the only thing that stopped using them to BLOCK a trade.
+    _book_name = analysis.get("strategy_book") or "main_engine"
+    if _book_name in risk_books.BOOK_NAMES:
+        _book_spec = risk_books.book_spec_from_config(
+            config, _book_name, coin_max_leverage=get_max_leverage(coin))
+    else:
+        # Bookless (main-engine) entries, OR a strategy_book tag that is not
+        # one of the seven currently registered books (services/risk/books.py
+        # models only those — a retired/hypothesis-stage name like
+        # "rally_exhaustion" or a test harness's synthetic tag both land
+        # here). Build the BookSpec directly rather than looking up a config
+        # block that may not exist or may not mean what its presence would
+        # imply. book_params() degrades safely on an unknown key (no block
+        # -> top-level/floor fallback) and `enabled` is forced True here
+        # because whether THIS caller is allowed to trade at all was already
+        # decided earlier (the entries_enabled check for bookless entries;
+        # nothing further to check for an unregistered book name) — this
+        # gate only asks "can equity afford it", not "is it turned on".
+        _mp = book_params(config, _book_name)
+        _lev_caps = [v for v in (float(_mp.leverage), float(get_max_leverage(coin))) if v > 0]
+        _book_spec = _RiskBookSpec(
+            name=_book_name, enabled=True, stop_pct=float(_mp.stop_pct),
+            max_leverage=min(_lev_caps) if _lev_caps else None,
+        )
+    _risk_profile = read_risk_profile(config)
+    _limits = _derive_risk_limits(equity, _risk_profile, [_book_spec], _RISK_VENUE)
+    _feasibility = _risk_book_feasibility(_limits, _book_name)
+    if _feasibility is None or not _feasibility.can_trade:
+        _detail = _feasibility.reason if _feasibility is not None else (
+            f"{_book_name} has no sizing rule configured (needs a stop_pct or a fixed minimum)")
         return {
             "executed": False, "mode": mode,
             "analysis_id": analysis["id"],
-            "reason": (f"below_min_tradable_equity (${equity:.2f} < "
-                       f"${min_tradable_equity(config):.2f} floor — fund the "
-                       f"account or lower min_tradable_equity_usd)"),
+            "reason": f"book_not_feasible ({_book_name} @ ${equity:.2f} equity: {_detail})",
+            "derived_limits": {
+                "preset_applied": _limits.preset_applied,
+                "min_equity_to_trade_usd": _limits.min_equity_to_trade_usd,
+            },
         }
 
     # Free-margin floor: leave headroom for maintenance + slippage so HL
@@ -978,6 +1028,31 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
             f"${_before_mult:.0f} × {_asset_mult:.2f} = ${trade_notional:.0f}"
         )
 
+    # Per-BOOK notional CEILING from DerivedLimits (services/risk/derive.py),
+    # applied through book_params.apply_notional_ceiling — see its docstring
+    # for exactly why this only ever clamps DOWN (never sizes a trade up, so
+    # a deliberate under-sizing like xs_reversal's documented de-risking
+    # stays untouched) and why None (a fixed/structural book like
+    # drawdown_ladder) is a no-op.
+    #
+    # Scoped to the seven REGISTERED books (risk_books.BOOK_NAMES) — the exact
+    # same condition the feasibility gate above used to decide whether
+    # _book_spec came from real config or a generic fallback. Main-engine
+    # (bookless) entries and any unregistered/synthetic strategy_book tag
+    # keep their existing, separately-tested sizing mechanisms
+    # (equity_fraction_per_trade, ai_long_notional_usd, the
+    # strategy_book_equity_frac branch) completely untouched: "per-book
+    # notional comes from the limits" is a statement about the seven real
+    # books, not about every string that can appear in analysis["strategy_book"].
+    if _book_name in risk_books.BOOK_NAMES:
+        _capped_notional = apply_notional_ceiling(trade_notional, _feasibility.notional_usd)
+        if _capped_notional != trade_notional:
+            logger.info(
+                f"[executor] {_book_name}: notional ${trade_notional:.2f} > risk-profile ceiling "
+                f"${_capped_notional:.2f} at ${equity:.2f} equity — clamping to the ceiling"
+            )
+        trade_notional = _capped_notional
+
     # Normalize to the exact HL-valid entry size BEFORE risk gates. The order
     # layer enforces a $10.50 minimum and coin-size precision; if we wait until
     # place_hl_order() to apply that, the gates, DSL tracker, memory, and SL/TP
@@ -1096,8 +1171,16 @@ def maybe_execute(analysis: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             gate_config = config
 
+    # max_open_positions and the daily-loss PERCENT both come from the same
+    # resolved RiskProfile the feasibility gate above already computed
+    # (_limits) — one profile, every number derived from it consistently.
+    # The kill-switch MECHANICS (SOD math, the giveback ladder, the carveout
+    # for book entries) are untouched; see effective_daily_loss_limit's and
+    # eval_all_gates' docstrings for the exact precedence.
     gate_output = eval_all_gates(ctx, gate_config, last_trade_time,
-                                 is_book=bool(analysis.get("strategy_book")))
+                                 is_book=bool(analysis.get("strategy_book")),
+                                 max_open_positions_override=_limits.max_open_positions,
+                                 profile_daily_loss_limit_pct=_limits.profile.daily_loss_limit_pct)
 
     if gate_output["blocked"]:
         # thin_short_relax (W-G1, 2026-07-09): the thin-short floor blocked 314
