@@ -226,11 +226,18 @@ def _price_risk_scaled_book(book: BookSpec, equity_usd: float, resolved: RiskPro
 
 
 def _headline(can_trade: bool, equity_usd: float, min_equity_to_trade_usd: float,
-             max_open_positions: int, risk_per_trade_usd: float) -> str:
+             max_open_positions: int, risk_per_trade_usd: float,
+             books: Optional[List[BookFeasibility]] = None) -> str:
     if can_trade:
         plural = "s" if max_open_positions != 1 else ""
-        return (f"You can trade {max_open_positions} position{plural} at a time, "
-                f"risking about ${risk_per_trade_usd:,.2f} per trade.")
+        risks = sorted(b.risk_usd for b in (books or []) if b.can_trade and b.risk_usd)
+        if risks and abs(risks[-1] - risks[0]) >= 0.01:
+            cost = f"a stop-out costs ${risks[0]:,.2f} to ${risks[-1]:,.2f}"
+        elif risks:
+            cost = f"a stop-out costs about ${risks[0]:,.2f}"
+        else:
+            cost = f"risking about ${risk_per_trade_usd:,.2f} per trade"
+        return f"You can trade {max_open_positions} position{plural} at a time; {cost}."
     if min_equity_to_trade_usd <= 0 or min_equity_to_trade_usd == float("inf"):
         return "No book is configured to trade yet."
     shortfall = max(0.0, min_equity_to_trade_usd - equity_usd)
@@ -268,6 +275,14 @@ def derive_limits(equity_usd: float, profile: RiskProfile, books: List[BookSpec]
     preset_name, resolved = presets.resolve_profile(profile, equity_usd)
     risk_per_trade_usd = equity_risk_budget_usd(equity_usd, float(resolved.risk_per_trade_pct or 0.0))
     daily_loss_limit_usd = equity_usd * float(resolved.daily_loss_limit_pct or 0.0) / 100.0
+    coherence_notes: List[str] = []
+    # Coherence 1 (integrator, 2026-10-17): a trade's risk budget never exceeds
+    # the daily pause. Live: a migrated config risked $2.40 per trade against
+    # a $1.84 daily pause, so one budget-sized stop-out would end the day early.
+    if daily_loss_limit_usd > 0 and risk_per_trade_usd > daily_loss_limit_usd + 1e-9:
+        risk_per_trade_usd = daily_loss_limit_usd
+        coherence_notes.append(
+            f"Risk per trade capped at your daily pause (${daily_loss_limit_usd:,.2f}).")
 
     if profile.max_open_positions is not None:
         max_open = max(1, min(50, int(profile.max_open_positions)))
@@ -279,6 +294,55 @@ def derive_limits(equity_usd: float, profile: RiskProfile, books: List[BookSpec]
         )
     resolved = resolved.model_copy(update={"max_open_positions": max_open})
 
+    def _price_all(max_open_now: int):
+        return _price_books(books, equity_usd, resolved, risk_per_trade_usd, max_open_now, venue)
+
+    rows, thresholds = _price_all(max_open)
+    # Coherence 2 and 3. The minimum order can force one trade to risk more
+    # than the pct-based daily pause (at $15, Hyperliquid's ~$10.50 minimum
+    # with a 15% stop risks $1.57 vs an 8% pause of $1.22). Then the pause is
+    # raised to that one trade, or the account could never trade at all, and
+    # the enforced pct is raised with it so the executor agrees. Positions
+    # are capped so every open stop-out together fits inside the pause.
+    for _ in range(4):
+        risks = [r.risk_usd for r in rows if r.can_trade and r.risk_usd]
+        worst = max(risks, default=0.0)
+        if worst > daily_loss_limit_usd + 1e-9 and equity_usd > 0:
+            daily_loss_limit_usd = worst
+            resolved = resolved.model_copy(update={
+                "daily_loss_limit_pct": round(min(50.0, worst / equity_usd * 100.0), 4)})
+            coherence_notes.append(
+                f"Daily pause raised to ${worst:,.2f}: one minimum-size trade must fit in a day.")
+        if worst > 0 and daily_loss_limit_usd > 0:
+            fit = max(1, _floor_eps(daily_loss_limit_usd / worst))
+            if fit < max_open:
+                coherence_notes.append(
+                    f"Capped at {fit} open position{'s' if fit != 1 else ''} so that every "
+                    f"open stop-out together stays within the ${daily_loss_limit_usd:,.2f} daily pause.")
+                max_open = fit
+                resolved = resolved.model_copy(update={"max_open_positions": max_open})
+                rows, thresholds = _price_all(max_open)
+                continue
+        break
+
+    min_equity_to_trade = min(thresholds) if thresholds else float("inf")
+    can_trade = any(r.can_trade for r in rows)
+    min_equity_display = round(min_equity_to_trade, 2) if min_equity_to_trade != float("inf") else 0.0
+
+    return DerivedLimits(
+        equity_usd=equity_usd, preset_applied=preset_name, profile=resolved,
+        risk_per_trade_usd=round(risk_per_trade_usd, 2),
+        daily_loss_limit_usd=round(daily_loss_limit_usd, 2),
+        max_open_positions=max_open,
+        min_order_notional_usd=venue.min_order_notional_usd,
+        min_equity_to_trade_usd=min_equity_display,
+        can_trade=can_trade, books=rows,
+        headline=_headline(can_trade, equity_usd, min_equity_to_trade, max_open, risk_per_trade_usd, rows),
+        notes=_notes(resolved, daily_loss_limit_usd, rows) + coherence_notes,
+    )
+
+
+def _price_books(books, equity_usd, resolved, risk_per_trade_usd, max_open, venue):
     rows: List[BookFeasibility] = []
     thresholds: List[float] = []
     for b in books:
@@ -301,22 +365,7 @@ def derive_limits(equity_usd: float, profile: RiskProfile, books: List[BookSpec]
             rows.append(BookFeasibility(
                 book=b.name, enabled=True, can_trade=False,
                 reason="Book has no sizing rule configured (needs a stop_pct or a fixed minimum)."))
-
-    min_equity_to_trade = min(thresholds) if thresholds else float("inf")
-    can_trade = any(r.can_trade for r in rows)
-    min_equity_display = round(min_equity_to_trade, 2) if min_equity_to_trade != float("inf") else 0.0
-
-    return DerivedLimits(
-        equity_usd=equity_usd, preset_applied=preset_name, profile=resolved,
-        risk_per_trade_usd=round(risk_per_trade_usd, 2),
-        daily_loss_limit_usd=round(daily_loss_limit_usd, 2),
-        max_open_positions=max_open,
-        min_order_notional_usd=venue.min_order_notional_usd,
-        min_equity_to_trade_usd=min_equity_display,
-        can_trade=can_trade, books=rows,
-        headline=_headline(can_trade, equity_usd, min_equity_to_trade, max_open, risk_per_trade_usd),
-        notes=_notes(resolved, daily_loss_limit_usd, rows),
-    )
+    return rows, thresholds
 
 
 def book_feasibility(limits: DerivedLimits, book_name: str) -> Optional[BookFeasibility]:
