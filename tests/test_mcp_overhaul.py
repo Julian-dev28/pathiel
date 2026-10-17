@@ -417,14 +417,25 @@ class TestDeskTools:
         assert fake_desk.thesis.call.instrument in body["markdown"]
         assert fake_desk.thesis.call.invalidation in body["markdown"]
 
-    def test_desk_brief_quick_uses_the_fallback_renderer(self, fake_desk):
-        """services.thesis doesn't exist in this worktree, so this exercises
-        the real fallback path by construction -- no mocking needed to
-        prove 'otherwise use a minimal fallback' actually happens."""
-        with pytest.raises(ImportError):
-            import services.thesis.api  # noqa: F401
+    def test_desk_brief_quick_uses_the_fallback_renderer(self, fake_desk, monkeypatch):
+        """With services.thesis unimportable, desk_brief must still answer
+        through its minimal fallback renderer."""
+        import builtins
+        real_import = builtins.__import__
+
+        def no_thesis(name, *a, **kw):
+            if name.startswith("services.thesis"):
+                raise ImportError("simulated: services.thesis not installed")
+            return real_import(name, *a, **kw)
+        monkeypatch.setattr(builtins, "__import__", no_thesis)
         _, body = _call("desk_brief", {"desk": "oil"})
         assert body["markdown"]  # the fallback produced something, not an empty string
+        assert fake_desk.thesis.call.one_liner in body["markdown"]
+
+    def test_desk_brief_quick_uses_the_thesis_renderer(self, fake_desk):
+        from services.thesis.api import render_markdown
+        _, body = _call("desk_brief", {"desk": "oil"})
+        assert body["markdown"] == render_markdown(fake_desk.thesis, fake_desk.analytics, "quick")
 
     def test_desk_brief_full_mode_is_the_raw_structured_payload(self, fake_desk):
         _, body = _call("desk_brief", {"desk": "oil", "mode": "full"})
