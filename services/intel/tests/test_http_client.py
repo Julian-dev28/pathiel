@@ -146,3 +146,12 @@ def test_fetch_json_custom_retry_count(monkeypatch, retries):
     monkeypatch.setattr(http_client.time, "sleep", lambda s: None)
     http_client.fetch_json("https://x.test/a", retries=retries)
     assert calls["n"] == retries + 1
+
+
+def test_gate_session_blocks_real_network():
+    """The session guard in conftest must be active for the default (offline)
+    selection: an unmocked fetch fails closed instead of reaching the network."""
+    from services.intel import http_client
+    data, err = http_client.fetch_json("https://api.gdeltproject.org/api/v2/doc/doc", retries=0)
+    assert data is None
+    assert err == "ConnectError"

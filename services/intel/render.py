@@ -13,8 +13,10 @@ must never be silently dropped.
 """
 from __future__ import annotations
 
+import re
+from collections import OrderedDict
 from datetime import datetime
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from contracts.strategies.models import IntelPacket
 
@@ -52,7 +54,9 @@ def _policy_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
         (p.id,
          f"[{p.id}] {p.status:<16} {p.stance:<7} {p.body[:20]:<20}"
          f" {(p.date.strftime('%Y-%m-%d') if p.date else 'undated')}: {p.title}",
-         0.65)
+         # newer first within the section; stays below 0.66 so cross-section
+         # priority versus headlines and catalysts is unchanged
+         0.65 - min(0.1, ((packet.as_of - p.date).days / 3650.0) if p.date else 0.1))
         for p in packet.policy
     ]
 
@@ -67,12 +71,85 @@ def _catalyst_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
     return out
 
 
+_STRIKE_RE = re.compile(r"\babove\s+\$?([0-9]+(?:\.[0-9]+)?)", re.IGNORECASE)
+# A strike ladder is a set of "above X" markets on one underlying and one
+# close time. Kalshi lists one market per strike (36 rows for one WTI week on
+# 2026-10-17), which spent most of the prompt on near-certain 0.98 rows.
+# Collapsed, one line carries the implied distribution: only the strikes
+# where the market is genuinely uncertain, plus the two that bracket them.
+LADDER_UNCERTAIN = (0.05, 0.95)
+LADDER_MAX_STRIKES = 7
+ODDS_MAX_PER_EVENT = 2
+# A ladder whose odds rise with a higher strike is quoting stale books, not
+# a distribution (live 2026-10-17: a WTI Nov-3 ladder read P(>58.99)=0.88,
+# P(>59.99)=0.96 with $11K traded). Thin or broken ladders are dropped.
+LADDER_MIN_VOLUME_USD = 5_000.0
+LADDER_MONOTONE_TOL = 0.05
+
+
+def _ladder_is_usable(rows) -> bool:
+    if sum(o.volume_usd or 0.0 for _k, o in rows) < LADDER_MIN_VOLUME_USD:
+        return False
+    probs = [o.probability for _k, o in rows]
+    return all(b <= a + LADDER_MONOTONE_TOL for a, b in zip(probs, probs[1:]))
+
+
+def _ladder_key(o) -> str:
+    return f"{o.venue}|{o.url}|{o.closes_at.isoformat() if o.closes_at else ''}"
+
+
+def _ladder_line(rows) -> Tuple[str, str, float]:
+    """rows: [(strike, MarketOdds)] sorted by strike. Strikes and
+    probabilities are copied verbatim from the packet, so every number in
+    the line is grounded for the thesis validator; nothing is derived."""
+    lo, hi = LADDER_UNCERTAIN
+    idx = [i for i, (_k, o) in enumerate(rows) if lo <= o.probability <= hi]
+    if idx:
+        first, last = max(0, idx[0] - 1), min(len(rows) - 1, idx[-1] + 1)
+    else:  # every strike is near-certain: keep the boundary where it flips
+        flip = next((i for i, (_k, o) in enumerate(rows) if o.probability < 0.5), len(rows) - 1)
+        first, last = max(0, flip - 1), min(len(rows) - 1, flip)
+    window = rows[first:last + 1]
+    if len(window) > LADDER_MAX_STRIKES:  # keep the ends, thin the middle evenly
+        step = (len(window) - 1) / (LADDER_MAX_STRIKES - 1)
+        window = [window[round(i * step)] for i in range(LADDER_MAX_STRIKES)]
+    head = rows[0][1]
+    vol = sum(o.volume_usd or 0.0 for _k, o in rows)
+    closes = head.closes_at.strftime("%Y-%m-%d %H:%MZ") if head.closes_at else "close?"
+    stem = _STRIKE_RE.split(head.question)[0].strip().rstrip(",")
+    strikes = " ".join(f"P(>{k:g})={o.probability:.2f}" for k, o in window)
+    line = (f"[{head.id}] {head.venue:<10} ladder {len(rows)} strikes, ${vol / 1000:.0f}K vol,"
+            f" closes {closes}: {stem} ... {strikes}")
+    return head.id, line, 0.60
+
+
 def _odds_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
-    out = []
+    ladders: Dict[str, list] = OrderedDict()
+    singles = []
     for o in packet.odds:
-        vol = f"${o.volume_usd / 1000:.0f}K vol" if o.volume_usd else "vol?"
-        line = f"[{o.id}] {o.venue:<10} p={o.probability:.2f} {vol} {o.question}"
-        out.append((o.id, line, 0.55))
+        m = _STRIKE_RE.search(o.question)
+        if m:
+            ladders.setdefault(_ladder_key(o), []).append((float(m.group(1)), o))
+        else:
+            singles.append(o)
+
+    out = []
+    for rows in ladders.values():
+        rows.sort(key=lambda t: t[0])
+        if _ladder_is_usable(rows):
+            out.append(_ladder_line(rows))
+
+    # Plain markets: at most ODDS_MAX_PER_EVENT per event (same url), the
+    # most traded first. 16 near-duplicate "will X be in a US-Iran deal"
+    # rows say no more than the two most liquid of them.
+    by_event: Dict[str, list] = OrderedDict()
+    for o in sorted(singles, key=lambda o: -(o.volume_usd or 0.0)):
+        by_event.setdefault(o.url, []).append(o)
+    for rows in by_event.values():
+        for o in rows[:ODDS_MAX_PER_EVENT]:
+            vol = f"${o.volume_usd / 1000:.0f}K vol" if o.volume_usd else "vol?"
+            line = f"[{o.id}] {o.venue:<10} p={o.probability:.2f} {vol} {o.question}"
+            out.append((o.id, line, 0.55))
     return out
 
 
@@ -94,6 +171,21 @@ _SECTIONS = (
     ("POSITIONING", _positioning_lines),
 )
 
+# Hard per-section caps, applied before the budget fill. Measured on the live
+# oil packet of 2026-10-17: 42 headlines, 25 policy items and 130 odds rows
+# filled a 6,000-token allowance and pushed one thesis call to ~19k input
+# tokens. A thesis needs the best few of each, not all of them.
+SECTION_CAPS = {"HEADLINES": 10, "POLICY": 6, "CATALYSTS": 8,
+                "PREDICTION MARKETS": 8, "POSITIONING": 6}
+
+
+def _cap(name: str, lines: List[Tuple[str, str, float]]) -> List[Tuple[str, str, float]]:
+    cap = SECTION_CAPS.get(name)
+    if cap is None or len(lines) <= cap:
+        return lines
+    keep = {cid for cid, _l, _p in sorted(lines, key=lambda t: -t[2])[:cap]}
+    return [t for t in lines if t[0] in keep]   # original (chronological) order
+
 
 def render_compact(packet: IntelPacket, max_tokens: int) -> str:
     budget_chars = max(200, max_tokens * CHARS_PER_TOKEN)
@@ -101,7 +193,7 @@ def render_compact(packet: IntelPacket, max_tokens: int) -> str:
     failed_line = (f"SOURCES_FAILED: {', '.join(packet.sources_failed)}"
                     if packet.sources_failed else "SOURCES_FAILED: none")
 
-    all_sections = [(name, fn(packet)) for name, fn in _SECTIONS]
+    all_sections = [(name, _cap(name, fn(packet))) for name, fn in _SECTIONS]
     # Reserve for the fixed header/failed lines AND, worst case, every
     # section's own "NAME:" line — unknown in advance which sections end
     # up non-empty, so reserve for all of them rather than risk the actual

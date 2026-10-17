@@ -65,6 +65,10 @@ def write_thesis(
         errors = [parse_err] if parse_err else validator.validate_draft(draft, spec, analytics, intel)
 
         if errors:
+            # Trace: a repair round roughly doubles the cost of a thesis, so
+            # what triggers it must be visible in the log, not inferred.
+            logger.warning(f"[thesis] {spec.id}: draft failed validation, repairing: "
+                           + "; ".join(str(e) for e in errors)[:800])
             result2 = _run_repair(system_prompt, user_prompt, errors, result1, spec, schema, tag)
             calls.append(result2)
             draft2, parse_err2 = _parse_draft(result2.text)
@@ -138,9 +142,28 @@ def _degrade(spec, analytics, intel, prev, reason, now) -> Thesis:
     return fallback.build_fallback_thesis(spec, analytics, intel, reason, now)
 
 
+# A 7-day bucket bound beyond +/-100% is not a forecast any desk here makes;
+# a draft with one wrote percent where the contract says fraction.
+_PERCENT_UNITS_THRESHOLD = 1.0
+
+
+def _coerce_scenario_units(draft: ThesisDraft) -> ThesisDraft:
+    """Deterministic unit repair: if any scenario bound exceeds +/-1.0 the
+    whole set was written in percent, so divide every bound by 100. Cheaper
+    and more reliable than a repair round, which re-reads the full session."""
+    bounds = [b for sc in draft.scenarios for b in (sc.move_lo_pct, sc.move_hi_pct)]
+    if not bounds or max(abs(b) for b in bounds) <= _PERCENT_UNITS_THRESHOLD:
+        return draft
+    logger.warning("[thesis] scenario buckets were written in percent; coerced to fractions")
+    fixed = [sc.model_copy(update={"move_lo_pct": sc.move_lo_pct / 100.0,
+                                   "move_hi_pct": sc.move_hi_pct / 100.0})
+             for sc in draft.scenarios]
+    return draft.model_copy(update={"scenarios": fixed})
+
+
 def _parse_draft(text: str) -> Tuple[Optional[ThesisDraft], Optional[str]]:
     try:
-        return ThesisDraft.model_validate_json(text), None
+        return _coerce_scenario_units(ThesisDraft.model_validate_json(text)), None
     except (ValidationError, ValueError) as exc:
         return None, f"draft JSON failed to parse/validate against the schema: {exc}"
 
