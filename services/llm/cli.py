@@ -43,6 +43,11 @@ from services.llm.errors import (
 )
 
 
+# Claude Code CLI --effort levels. Lower effort spends fewer thinking tokens,
+# which the CLI reports inside output_tokens.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
 def build_args(
     *,
     binary: str,
@@ -55,6 +60,7 @@ def build_args(
     max_budget_usd: float | None = None,
     persist_session: bool = False,
     resume_session: str | None = None,
+    effort: str | None = None,
 ) -> list[str]:
     """Build the argv for one non-interactive CLI call.
 
@@ -92,6 +98,10 @@ def build_args(
         args += ["--max-budget-usd", f"{max_budget_usd:.4f}"]
     if json_schema is not None:
         args += ["--json-schema", json.dumps(json_schema)]
+    if effort:
+        if effort not in EFFORT_LEVELS:
+            raise ValueError(f"effort must be one of {EFFORT_LEVELS}, got {effort!r}")
+        args += ["--effort", effort]
     return args
 
 
