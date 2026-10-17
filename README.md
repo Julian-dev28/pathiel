@@ -115,6 +115,55 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 ---
 
+## Desks: one market, one thesis, one decision
+
+A desk is a siloed focus with its own instruments, news, policy watch,
+catalyst calendar, leverage ladder, token budget and thesis journal. Six ship:
+**oil** (WTI, Brent, natgas; the flagship), **btc**, **top5** crypto, **ai**
+equities, **metals** and **indices**. Open `/desks`, pick one, read the call.
+
+```
+services/strategies   desk registry, deterministic analytics, journal, grader, HTTP routes
+services/intel        news, bills and regulation, catalysts, Polymarket/Kalshi odds, CFTC COT (zero LLM)
+services/thesis       the only LLM step: writes the thesis, rejects any number not in the data
+services/llm          gateway to the local Claude Code CLI (no hosted API)
+contracts/strategies  the shared models every service above speaks
+```
+
+How a refresh spends tokens:
+
+1. Analytics are pure math on Hyperliquid candles: returns, volatility, forward
+   windows, and a full-equity 5x/10x/20x ladder with liquidation odds and EV.
+2. Intel is fetched and scored without an LLM. Prediction-market strike ladders
+   collapse to one line each.
+3. The token gate skips the LLM unless price moved past the desk's threshold, a
+   high-relevance headline arrived, or the thesis expired.
+4. One LLM call writes the thesis. A validator rejects invented numbers, and a
+   repair round runs only when that check fails.
+
+Measured on live oil (2026-10-17): from 43.8k input tokens and $1.57 per thesis
+in two calls, down to about 7k input and $0.35 in one call.
+
+Leverage verdicts take the worse of two signals: empirical liquidation odds
+and the chance volatility touches the liquidation price. On the walk-forward
+eval, "hold" rungs liquidated at most 4.8% of the time, down from 100% for the
+old rule (`services/strategies/README.md`).
+
+Every thesis is graded when it expires: direction, target-before-stop, Brier
+score on the scenarios. Your own calls (the "Make your own call" form) are
+graded the same way, so the track record shows you against the machine.
+
+```bash
+python -m services.strategies list
+python -m services.strategies refresh oil          # token-gated; --force to rewrite
+python -m services.strategies brief oil
+python -m services.strategies grade
+```
+
+The scheduler runs `desks-refresh` every 30 minutes and `desks-grade` every hour.
+MCP agents get `desk_list`, `desk_brief`, `desk_refresh`, `desk_submit_call`
+and `desk_track_record`.
+
 ## MCP Integration
 
 pathiel is a standalone Python application; **Pathiel Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathiel-framework dependency.
@@ -339,6 +388,7 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 | Path | What it shows |
 |------|---------------|
 | `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, live books |
+| `/desks` | Desks — one card per desk; `/desks/<id>` leads with the call, then the leverage switch |
 | `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
 | `/news` | News-catalyst reads + research events with news context |
 | `/trends` | Trend analysis + forecasts (see `services/trend_engine/README.md`) |
@@ -683,6 +733,9 @@ process. Use `scripts/restart.sh` for normal operation.
 ```bash
 pytest                          # offline unit tests — fast, no network, CI-safe
 pytest -m online                # read-only tests against the live Hyperliquid public API
+pytest -m browser               # Playwright e2e for every page, desks included
+python -m services.thesis.evals.run_eval              # paid: real LLM thesis eval, threshold 0.85
+python -m services.strategies.evals.verdict_backtest  # walk-forward check of the leverage verdicts
 PATHIEL_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
 ```
 

@@ -58,6 +58,7 @@ def write_thesis(
             json_schema=schema,
             tag=tag,
             timeout_s=DEFAULT_TIMEOUT_S,
+            effort=thesis_effort(),
             persist_session=True,
         )
         calls: List[LlmResult] = [result1]
@@ -120,6 +121,7 @@ def _run_repair(
                 json_schema=schema,
                 tag=tag,
                 timeout_s=DEFAULT_TIMEOUT_S,
+                effort=thesis_effort(),
                 resume_session=result1.session_id,
             )
         except LlmError as exc:
@@ -133,6 +135,7 @@ def _run_repair(
         json_schema=schema,
         tag=tag,
         timeout_s=DEFAULT_TIMEOUT_S,
+        effort=thesis_effort(),
     )
 
 
@@ -159,6 +162,19 @@ def _coerce_scenario_units(draft: ThesisDraft) -> ThesisDraft:
                                    "move_hi_pct": sc.move_hi_pct / 100.0})
              for sc in draft.scenarios]
     return draft.model_copy(update={"scenarios": fixed})
+
+
+def thesis_effort() -> Optional[str]:
+    """CLI effort for thesis calls: PATHIEL_THESIS_EFFORT if set, else the
+    measured default THESIS_EFFORT_DEFAULT. Effort trades thinking tokens
+    (reported inside output_tokens) for depth."""
+    import os
+    raw = (os.environ.get("PATHIEL_THESIS_EFFORT") or THESIS_EFFORT_DEFAULT or "").strip().lower()
+    return raw or None
+
+
+# None = the model's own default. Set from the 2026-10-17 eval comparison.
+THESIS_EFFORT_DEFAULT: Optional[str] = None
 
 
 def _parse_draft(text: str) -> Tuple[Optional[ThesisDraft], Optional[str]]:

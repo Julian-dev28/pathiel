@@ -48,3 +48,11 @@ def test_scenario_schema_tells_the_model_bounds_are_fractions():
     from services.thesis.llm_schema import thesis_draft_json_schema
     text = json.dumps(thesis_draft_json_schema(3))
     assert "FRACTION" in text
+
+
+def test_thesis_effort_env_override(monkeypatch):
+    from services.thesis import api as thesis_api
+    monkeypatch.delenv("PATHIEL_THESIS_EFFORT", raising=False)
+    assert thesis_api.thesis_effort() == thesis_api.THESIS_EFFORT_DEFAULT
+    monkeypatch.setenv("PATHIEL_THESIS_EFFORT", "Medium")
+    assert thesis_api.thesis_effort() == "medium"

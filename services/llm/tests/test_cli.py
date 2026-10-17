@@ -206,3 +206,20 @@ def test_build_args_resume_session_adds_resume_flag_and_still_disables_persisten
     # Resuming for one last turn should still clean the session up afterward
     # unless the caller explicitly asks to keep it open further.
     assert "--no-session-persistence" in args
+
+
+def test_build_args_passes_effort_when_set():
+    from services.llm.cli import build_args
+    args = build_args(binary="claude", model=None, system_prompt="s", max_turns=1, tools="",
+                      effort="medium")
+    assert args[args.index("--effort") + 1] == "medium"
+    assert "--effort" not in build_args(binary="claude", model=None, system_prompt="s",
+                                        max_turns=1, tools="")
+
+
+def test_build_args_rejects_unknown_effort():
+    import pytest
+    from services.llm.cli import build_args
+    with pytest.raises(ValueError):
+        build_args(binary="claude", model=None, system_prompt="s", max_turns=1, tools="",
+                   effort="turbo")

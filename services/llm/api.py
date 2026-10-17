@@ -117,6 +117,7 @@ def complete(
     tag: str | None = None,
     persist_session: bool = False,
     resume_session: str | None = None,
+    effort: str | None = None,
 ) -> LlmResult:
     """Run one completion through the local Claude Code CLI.
 
@@ -149,6 +150,7 @@ def complete(
         max_budget_usd=budget,
         persist_session=persist_session,
         resume_session=resume_session,
+        effort=effort,
     )
     env = _subprocess_env(resolved_model, web_search)
     bounded_timeout = config.timeout_ceiling(timeout_s)

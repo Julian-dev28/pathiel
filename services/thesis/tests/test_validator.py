@@ -498,3 +498,10 @@ def test_call_distance_from_mid_is_grounded(oil):
         call=bad, bull=[], bear=[], lessons=oil.thesis.lessons, what_changes_my_mind=[],
         leverage_reasons=[], spec=oil.spec, analytics=oil.analytics, intel=oil.intel)
     assert errs and "37.77" in errs[0]
+
+
+def test_unsigned_thousands_shorthand_is_grounded(oil):
+    """Eval 2026-10-17: COT change -10403 written as "fell 10.4k contracts"."""
+    pool = validator.build_ground_truth_pool(oil.analytics, oil.intel)
+    assert validator._is_grounded(10.4, pool)
+    assert validator._is_grounded(-10.4, pool)

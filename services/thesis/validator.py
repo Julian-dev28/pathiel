@@ -140,19 +140,18 @@ def _scaled_variants(v: float) -> Iterator[float]:
     clearly invented price like 9999 - caught by this project's own
     adversarial test for exactly that number.
     """
-    yield v
-    if v < 0:
-        # Prose drops the sign when the verb already carries direction
-        # ("fell by 10403 contracts" for a change of -10403) - caught live
-        # 2026-10-17 on the real oil eval: positioning.change=-10403,
-        # repair-round prose wrote "10403" with no minus sign.
-        yield -v
-    if abs(v) <= 1.5:
-        yield v * 100.0
-    if abs(v) >= 1000:
-        yield v / 1_000.0
-        yield v / 1_000_000.0
-        yield v / 1_000_000_000.0
+    # Prose drops the sign when the verb already carries direction ("fell by
+    # 10403 contracts" for a change of -10403, caught live 2026-10-17), and
+    # it does so at every scale: "fell 10.4k" needs +10.403 too, which the
+    # eval of 2026-10-17 rejected when only -10.403 was in the pool.
+    for base in ((v, -v) if v < 0 else (v,)):
+        yield base
+        if abs(base) <= 1.5:
+            yield base * 100.0
+        if abs(base) >= 1000:
+            yield base / 1_000.0
+            yield base / 1_000_000.0
+            yield base / 1_000_000_000.0
 
 
 def build_ground_truth_pool(analytics: DeskAnalytics, intel: Optional[IntelPacket]) -> set:
