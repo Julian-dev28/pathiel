@@ -39,6 +39,9 @@ COPY services/trend_engine/ services/trend_engine/
 # Auth is on the request path for every gated route, so a missing copy here is
 # not a degraded feature, it is a server that 500s on the first page load.
 COPY services/auth/ services/auth/
+# server.py mounts this router unconditionally (/api/desks, /desks/...) —
+# same "500 on first import" reasoning as auth above.
+COPY services/strategies/ services/strategies/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
