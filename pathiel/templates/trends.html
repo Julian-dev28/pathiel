@@ -20,6 +20,7 @@
     <a href="/" class="brand">Pathiel</a>
     <nav class="tabs-main">
       <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/desks" data-nav="/desks" class="nav-link">Desks</a>
       <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
       <a href="/news" data-nav="/news" class="nav-link">News</a>
       <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
@@ -29,11 +30,6 @@
       <!-- The RainbowKit island mounts here on demand; pathiel.js renders a
            plain chip into the masthead until then. See services/wallet_ui. -->
       <div id="wallet-connect-root"></div>
-      <span class="mono mut" id="token-clear
-token-input
-token-row
-token-save
-token-why"></span>
       <button id="op-token-btn" class="icon-btn" type="button" title="Refreshes and research passes spend network and model calls, so they are operator-gated">Operator token</button>
       <span class="mono mut" id="lane-meta"></span>
       <span id="status-pill" class="pill offline">Offline</span>
@@ -414,7 +410,25 @@ function majorCard(r, closes) {
 
 function renderHL(d) {
   $('#hl-age').textContent = d.generated_at ? `data ${age(d.age_s)}${d.stale ? ' · STALE' : ''}` : '';
-  if (d.status !== 'ok') { emptyState($('#hl-majors'), d, 'hyperliquid'); return; }
+  if (d.status !== 'ok') {
+    emptyState($('#hl-majors'), d, 'hyperliquid');
+    // #hl-strip ships with a static "… loading" skeleton row (the page's
+    // first paint, before any fetch resolves) and nothing else in this
+    // function ever touched it on the not-ok path — found 2026-10-17 ux-qa
+    // sweep: with no cached trend_engine read (every fresh environment,
+    // including the demo), that skeleton sat there permanently, looking
+    // like a stuck request rather than the same honest "no data yet" the
+    // card right below it already shows correctly.
+    $('#hl-strip').innerHTML = '<div class="kpi"><span class="l">no cached hyperliquid read</span></div>';
+    // renderHLRows() is normally only reached from the end of this function's
+    // ok path (below) — on the not-ok path it was never called at all, so
+    // its OWN not-ok guard (which also needs fixing, see there) was dead
+    // code: #hl-rows kept its static "loading…" skeleton forever. DATA.hl is
+    // already set to `d` by loadLane() before this function runs, so
+    // renderHLRows() reads the same not-ok status this branch just handled.
+    renderHLRows();
+    return;
+  }
   const g = d.regime || {};
 
   const regs = d.regimes || { crypto: g };
@@ -465,7 +479,14 @@ function renderHL(d) {
 }
 
 function renderHLRows() {
-  const d = DATA.hl; if (!d || d.status !== 'ok') return;
+  const d = DATA.hl;
+  if (!d || d.status !== 'ok') {
+    // Same bug as #hl-strip above, second instance: the table ships with a
+    // static "loading…" row and nothing ever replaced it on the not-ok path.
+    $('#hl-rows').innerHTML =
+      '<tr><td colspan="14" class="dim">no cached hyperliquid read — see the card above</td></tr>';
+    return;
+  }
   let rows = d.reads || [];
   if (HL_SECTOR !== 'all') rows = rows.filter(r => (r.sector || 'crypto') === HL_SECTOR);
   if (HL_FILTER === 'trend') rows = rows.filter(r => r.label !== 'CHOP');

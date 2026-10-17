@@ -105,6 +105,21 @@ def _ttl_cached(key: str, ttl: float, fn: Callable[[], Any]) -> Any:
     return val
 
 
+async def _run_off_loop(fn: Callable[..., Any], *args: Any) -> Any:
+    """Run a payload builder on the executor, not the request coroutine.
+
+    coin_chart's fetch_hl_candles is a real HL round trip called directly
+    inside `async def` with no `await` — on uvicorn's one event loop that
+    blocks every other request, on every page, for every visitor, for its
+    duration (confirmed: concurrent /analytics calls clustered at the chart
+    call's ~200ms, the signature of head-of-line blocking). Every route uses
+    this now so the next payload function that adds a blocking call is
+    automatically off the hot path too. Cache-hit cost: one thread-pool
+    round trip, sub-millisecond."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, fn, *args)
+
+
 _LOG_STATE: Dict[str, Any] = {"offset": 0, "ino": None,
                               "events": collections.deque(maxlen=250_000),
                               "lock": threading.Lock()}
@@ -222,6 +237,9 @@ _POSITIONS_CACHE: Dict[str, Any] = {"ts": 0.0, "data": []}
 logger = logging.getLogger(__name__)
 
 _POSITIONS_CACHE_TTL_S = 5.0  # acceptable staleness for a display endpoint
+# _run_off_loop means this can now be hit from two executor threads at once;
+# lock it like _TTL_CACHE_LOCK.
+_POSITIONS_CACHE_LOCK = threading.Lock()
 
 
 def _positions_payload() -> List[Dict[str, Any]]:
@@ -233,8 +251,9 @@ def _positions_payload() -> List[Dict[str, Any]]:
     is short enough that the position table never feels stuck.
     """
     now = time.time()
-    if now - _POSITIONS_CACHE["ts"] < _POSITIONS_CACHE_TTL_S:
-        return _POSITIONS_CACHE["data"]
+    with _POSITIONS_CACHE_LOCK:
+        if now - _POSITIONS_CACHE["ts"] < _POSITIONS_CACHE_TTL_S:
+            return _POSITIONS_CACHE["data"]
     try:
         data = _positions_payload_uncached()
     except Exception as exc:                       # noqa: BLE001
@@ -246,10 +265,12 @@ def _positions_payload() -> List[Dict[str, Any]]:
         logger.warning(f"[positions] HL fetch failed ({type(exc).__name__}: "
                        f"{exc}) — serving the last good read rather than "
                        f"reporting flat")
-        return _POSITIONS_CACHE["data"]
-    _POSITIONS_CACHE["ts"] = now
-    _POSITIONS_CACHE["data"] = data
-    return data
+        with _POSITIONS_CACHE_LOCK:
+            return _POSITIONS_CACHE["data"]
+    with _POSITIONS_CACHE_LOCK:
+        _POSITIONS_CACHE["ts"] = now
+        _POSITIONS_CACHE["data"] = data
+        return data
 
 
 def _positions_payload_uncached() -> List[Dict[str, Any]]:
@@ -274,7 +295,14 @@ def _positions_payload_uncached() -> List[Dict[str, Any]]:
 
     user = resolve_user_address()
     if not user:
-        return []
+        # Was `return []` — the exact "failure reads as flat" bug the comment
+        # two lines down says this function must avoid, reached from a
+        # different door. Reproduced live: snapshot stale + no address
+        # configured silently overwrote a 3-position cache with "flat",
+        # while the KPI (a different, 300s-not-120s staleness window) kept
+        # showing 3. Raising lets the except-block below do what it already
+        # does on a fetch failure: serve last-known-good instead of a false zero.
+        raise RuntimeError("no HL address resolvable — cannot confirm positions")
     # include_hip3=True so xyz:MU / vntl:* positions appear in the dashboard
     # list alongside main-dex positions; HIP-3 dexes are separate
     # clearinghouses that the default fetch ignores.
@@ -1388,6 +1416,8 @@ _DEAD_SUBSYSTEM_REASONS = ("MAIN_ENGINE_DELETED",)
 
 _ACCOUNT_TTL_S = 20.0
 _ACCOUNT_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+# Same reasoning as _POSITIONS_CACHE_LOCK.
+_ACCOUNT_CACHE_LOCK = threading.Lock()
 
 
 def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[str, Any]:
@@ -1400,9 +1430,10 @@ def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[s
     """
     now = now if now is not None else time.time()
     addr = (address or "").lower()
-    hit = _ACCOUNT_CACHE.get(addr)
-    if hit and now - hit[0] < _ACCOUNT_TTL_S:
-        return hit[1]
+    with _ACCOUNT_CACHE_LOCK:
+        hit = _ACCOUNT_CACHE.get(addr)
+        if hit and now - hit[0] < _ACCOUNT_TTL_S:
+            return hit[1]
 
     # Whether this viewer IS the account pathiel trades.
     #
@@ -1458,7 +1489,8 @@ def _viewer_account_payload(address: str, now: Optional[float] = None) -> Dict[s
         out["status"] = "unavailable"
         out["error"] = str(exc)[:200]
 
-    _ACCOUNT_CACHE[addr] = (now, out)
+    with _ACCOUNT_CACHE_LOCK:
+        _ACCOUNT_CACHE[addr] = (now, out)
     return out
 
 
@@ -2142,7 +2174,7 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/dashboard/books")
     async def dashboard_books() -> JSONResponse:
         """Live-books table rows: name, live/shadow/off status, size, thesis."""
-        return JSONResponse(_ttl_cached("books", 30.0, _books_payload))
+        return JSONResponse(await _run_off_loop(_ttl_cached, "books", 30.0, _books_payload))
 
     @app.get("/api/dashboard/activity")
     async def dashboard_activity(
@@ -2151,25 +2183,25 @@ def register_routes(app: FastAPI) -> None:
         etype: str = Query("", alias="type", max_length=32),
         since: int = Query(0, ge=0),
     ) -> JSONResponse:
-        session = _ttl_cached("session-strip", 30.0, _session_strip)
+        session = await _run_off_loop(_ttl_cached, "session-strip", 30.0, _session_strip)
         if since:
             # Incremental poll: the reversed walk breaks at the first event
             # <= since, so cost is O(new events). NOT TTL-cached on purpose —
             # every poll carries a fresh `since`, so caching would only grow
             # _TTL_CACHE with dead one-shot keys.
-            payload = _activity_payload(limit, book, etype, since)
+            payload = await _run_off_loop(_activity_payload, limit, book, etype, since)
         else:
             # Full-window load: TTL (8s) >= the page's poll interval (8s).
-            payload = _ttl_cached(
-                f"activity:{limit}:{book}:{etype}", 8.0,
+            payload = await _run_off_loop(
+                _ttl_cached, f"activity:{limit}:{book}:{etype}", 8.0,
                 lambda: _activity_payload(limit, book, etype))
         return JSONResponse({**payload, "session": session})
 
     @app.get("/api/dashboard/news")
     async def dashboard_news(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
         # TTL (30s) >= the page's poll interval (30s).
-        return JSONResponse(_ttl_cached(f"news:{limit}", 30.0,
-                                        lambda: _news_payload(limit)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"news:{limit}", 30.0, lambda: _news_payload(limit)))
 
     @app.get("/api/dashboard/trends/{lane}")
     async def dashboard_trends(lane: str) -> JSONResponse:
@@ -2177,8 +2209,8 @@ def register_routes(app: FastAPI) -> None:
         file only changes when a refresh job runs."""
         if lane not in _TREND_LANES:
             raise HTTPException(status_code=404, detail="unknown lane")
-        return JSONResponse(_ttl_cached(f"trends:{lane}", 15.0,
-                                        lambda: _trends_payload(lane)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"trends:{lane}", 15.0, lambda: _trends_payload(lane)))
 
     @app.post("/api/dashboard/trends/{lane}/refresh",
               dependencies=[Depends(_require_operator)])
@@ -2229,7 +2261,7 @@ def register_routes(app: FastAPI) -> None:
         if user is None:
             return JSONResponse({"detail": "sign in required", "auth_required": True},
                                 status_code=401)
-        return JSONResponse(_viewer_account_payload(user.address))
+        return JSONResponse(await _run_off_loop(_viewer_account_payload, user.address))
 
     # ── the house account ────────────────────────────────────────────────────
     #
@@ -2244,18 +2276,19 @@ def register_routes(app: FastAPI) -> None:
     @app.get("/api/dashboard/summary",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_summary() -> JSONResponse:
-        return JSONResponse(_ttl_cached("summary", 6.0, _summary_payload))
+        return JSONResponse(await _run_off_loop(_ttl_cached, "summary", 6.0, _summary_payload))
 
     @app.get("/api/dashboard/positions",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_positions() -> JSONResponse:
-        return JSONResponse(_positions_payload())  # already 5s-cached internally
+        return JSONResponse(await _run_off_loop(_positions_payload))  # already 5s-cached internally
 
     @app.get("/api/dashboard/equity-curve",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_equity_curve(range_s: int = Query(86400, ge=60, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"equity-curve:{range_s}", 65.0,
-                                        lambda: _equity_curve_payload(range_s)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"equity-curve:{range_s}", 65.0,
+            lambda: _equity_curve_payload(range_s)))
 
     @app.get("/api/dashboard/risk",
              dependencies=[Depends(_require_operator_role)])
@@ -2265,41 +2298,48 @@ def register_routes(app: FastAPI) -> None:
 
         Cached for a minute: it walks the whole session log twice and the
         numbers move on a heartbeat cadence, not a request cadence."""
-        return JSONResponse(_ttl_cached(f"risk:{range_s}", 60.0,
-                                        lambda: _risk_payload(range_s)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"risk:{range_s}", 60.0, lambda: _risk_payload(range_s)))
 
     @app.get("/api/dashboard/closed-trades",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_closed_trades(limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"closed-trades:{limit}", 25.0,
-                                        lambda: _closed_trades_payload(limit)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"closed-trades:{limit}", 25.0,
+            lambda: _closed_trades_payload(limit)))
 
     @app.get("/api/dashboard/funnel",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_funnel(window_s: int = Query(86400, ge=3600, le=2_592_000)) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"funnel:{window_s}", 30.0,
-                                        lambda: _funnel_payload(window_s)))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"funnel:{window_s}", 30.0, lambda: _funnel_payload(window_s)))
 
     @app.get("/api/dashboard/book_league",
              dependencies=[Depends(_require_operator_role)])
     async def dashboard_book_league() -> JSONResponse:
-        return JSONResponse(_ttl_cached("book_league", 30.0, _book_league_payload))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, "book_league", 30.0, _book_league_payload))
 
     @app.get("/api/dashboard/funding_heat")
     async def dashboard_funding_heat() -> JSONResponse:
-        return JSONResponse(_ttl_cached("funding_heat", 60.0, _funding_heat_payload))
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, "funding_heat", 60.0, _funding_heat_payload))
 
     @app.get("/api/dashboard/tapes")
     async def dashboard_tapes() -> JSONResponse:
-        return JSONResponse(_ttl_cached("tapes", 30.0, _tapes_payload))
+        return JSONResponse(await _run_off_loop(_ttl_cached, "tapes", 30.0, _tapes_payload))
 
     @app.get("/api/dashboard/coin_chart")
     async def dashboard_coin_chart(
         coin: str = Query(..., min_length=1, max_length=24),
         interval: str = Query("1h", max_length=4),
     ) -> JSONResponse:
-        return JSONResponse(_ttl_cached(f"coin_chart:{coin}:{interval}", 60.0,
-                                        lambda: _coin_chart_payload(coin, interval)))
+        # The one handler with a real, unbounded network call in it
+        # (fetch_hl_candles via _coin_chart_payload) — see _run_off_loop's
+        # docstring for the head-of-line-blocking bug this closes.
+        return JSONResponse(await _run_off_loop(
+            _ttl_cached, f"coin_chart:{coin}:{interval}", 60.0,
+            lambda: _coin_chart_payload(coin, interval)))
 
     @app.get("/api/feed/stream")
     async def feed_stream() -> StreamingResponse:

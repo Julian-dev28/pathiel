@@ -23,6 +23,7 @@
     <a href="/" class="brand">Pathiel</a>
     <nav class="tabs-main">
       <a href="/" data-nav="/" class="nav-link">Dashboard</a>
+      <a href="/desks" data-nav="/desks" class="nav-link">Desks</a>
       <a href="/activity" data-nav="/activity" class="nav-link">Activity</a>
       <a href="/news" data-nav="/news" class="nav-link">News</a>
       <a href="/analytics" data-nav="/analytics" class="nav-link">Markets</a>
@@ -108,7 +109,7 @@
   <section class="card p-0 mb-4 panel span2" id="panel-chart">
     <button class="panel-head" data-panel="chart" type="button" aria-expanded="true">
       <span class="sec-label">coin chart</span>
-      <select id="coin-select" class="fsel" style="margin-left:auto" onclick="event.stopPropagation()"></select>
+      <select id="coin-select" class="fsel" style="margin-left:auto" onclick="event.stopPropagation()" aria-label="Select coin for chart"></select>
       <span class="chev"></span>
     </button>
     <div class="panel-wrap" id="wrap-chart">

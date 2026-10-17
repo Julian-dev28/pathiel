@@ -169,9 +169,11 @@ const PathielAuth = (function () {
   /* ── Loading the wallet picker ──────────────────────────────────────────
    *
    * The picker is RainbowKit, bundled at services/wallet_ui into
-   * /static/wallet.js. It is ~380 KB over the wire against ~30 KB for this
-   * whole file, so it is fetched on demand rather than on page load: a
-   * signed-in operator reloading the dashboard never pays for it.
+   * /static/wallet.js. It is ~3 MB over the wire (RainbowKit + wagmi + viem,
+   * minified — see services/wallet_ui/bundle.manifest.json for the exact
+   * byte count) against ~30 KB for this whole file, so it is fetched on
+   * demand rather than on page load: a signed-in operator reloading the
+   * dashboard never pays for it.
    *
    * This replaced a direct `window.ethereum` call. With two extensions
    * installed that is whichever one won a race at page load, with no way to
@@ -340,6 +342,10 @@ const PathielAuth = (function () {
   async function loadMyAccount() {
     const slot = document.getElementById('my-account');
     if (!slot) return;
+    // `me` is already set by refresh() below. Anonymous means this fetch is
+    // GUARANTEED to 401 — skip it (saves the request and the console error
+    // the browser logs for any non-2xx fetch, independent of JS handling).
+    if (!me) { slot.hidden = true; return; }
     try {
       const r = await fetch('/api/dashboard/account');
       if (!r.ok) { slot.hidden = true; return; }
