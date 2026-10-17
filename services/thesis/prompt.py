@@ -583,7 +583,10 @@ def build_repair_prompt(errors: List[str], *, full_context: Optional[str] = None
     return body
 
 
-_NUM_RE = re.compile(r"(?<![A-Za-z0-9_])(-?\d+(?:\.\d+)?)(%)?")
+# Thousands separators are part of the number: "10,403" is ten thousand four
+# hundred three, not 10 and 403 (eval 2026-10-17 paid a repair round for it).
+# A comma group must be exactly three digits, so "5,10,20" stays three numbers.
+_NUM_RE = re.compile(r"(?<![A-Za-z0-9_])(-?(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?)(%)?")
 
 
 def extract_numbers_with_flags(text: str) -> List[Tuple[float, bool]]:
@@ -597,7 +600,7 @@ def extract_numbers_with_flags(text: str) -> List[Tuple[float, bool]]:
     out: List[Tuple[float, bool]] = []
     for m in _NUM_RE.finditer(text or ""):
         try:
-            value = float(m.group(1))
+            value = float(m.group(1).replace(",", ""))
         except ValueError:
             continue
         out.append((value, m.group(2) == "%"))

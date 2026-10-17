@@ -63,6 +63,7 @@ def write_thesis(
         )
         calls: List[LlmResult] = [result1]
         draft, parse_err = _parse_draft(result1.text)
+        draft = _normalize_instrument(draft, analytics)
         errors = [parse_err] if parse_err else validator.validate_draft(draft, spec, analytics, intel)
 
         if errors:
@@ -73,6 +74,7 @@ def write_thesis(
             result2 = _run_repair(system_prompt, user_prompt, errors, result1, spec, schema, tag)
             calls.append(result2)
             draft2, parse_err2 = _parse_draft(result2.text)
+            draft2 = _normalize_instrument(draft2, analytics)
             errors2 = [parse_err2] if parse_err2 else validator.validate_draft(draft2, spec, analytics, intel)
             if errors2:
                 reason = "validator rejected after repair: " + "; ".join(errors2)
@@ -173,8 +175,38 @@ def thesis_effort() -> Optional[str]:
     return raw or None
 
 
-# None = the model's own default. Set from the 2026-10-17 eval comparison.
-THESIS_EFFORT_DEFAULT: Optional[str] = None
+# Eval 2026-10-17 (oil + btc): default and medium both scored 0.857; medium
+# used 15% fewer output tokens ($0.87 vs $1.04 for the pair). Override with
+# PATHIEL_THESIS_EFFORT.
+THESIS_EFFORT_DEFAULT: Optional[str] = "medium"
+
+
+_INSTRUMENT_SUFFIXES = ("-PERP", "PERP", "-USDT", "-USDC", "-USD", "/USDT", "/USDC", "/USD", "USDT")
+
+
+def _normalize_instrument(draft: Optional[ThesisDraft], analytics) -> Optional[ThesisDraft]:
+    """Map the model's spelling of the instrument onto the desk's real coin.
+    Eval 2026-10-17 paid a repair round for "BTC-PERP" on the BTC desk. Matches
+    the bare symbol (xyz:CL -> CL) and the human label (WTI -> xyz:CL),
+    case-insensitively, after stripping venue suffixes. Pair calls and exact
+    matches are left alone; an unmatched name stays for the validator."""
+    if draft is None or draft.call.side == "pair":
+        return draft
+    raw = draft.call.instrument.strip()
+    coins = {i.coin for i in analytics.instruments}
+    if raw in coins:
+        return draft
+    key = raw.upper()
+    for suf in _INSTRUMENT_SUFFIXES:
+        if key.endswith(suf) and len(key) > len(suf):
+            key = key[: -len(suf)]
+            break
+    for inst in analytics.instruments:
+        symbol = inst.coin.split(":", 1)[-1].upper()
+        if key in (inst.coin.upper(), symbol, inst.label.upper()):
+            logger.warning(f"[thesis] instrument {raw!r} normalized to {inst.coin!r}")
+            return draft.model_copy(update={"call": draft.call.model_copy(update={"instrument": inst.coin})})
+    return draft
 
 
 def _parse_draft(text: str) -> Tuple[Optional[ThesisDraft], Optional[str]]:
