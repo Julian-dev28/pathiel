@@ -211,6 +211,19 @@ def create_app() -> FastAPI:
         elif body.scenario == "connected":
             STATE["session"] = dict(SESSION_READY)
             STATE["summary"] = dict(SUMMARY_TRADE)
+        elif body.scenario == "env_account":
+            # The legacy .env.local path (contracts/accounts/models.py's
+            # source="env") — Julien's actual CURRENT live setup, before
+            # any wallet-connect account exists. The MAIN key (not a
+            # delegated agent key) is what's really on this box; the
+            # account.html security note is keyed on this field, not on
+            # any blocker string (services/accounts/summary.py's four
+            # blockers never mention a key).
+            STATE["session"] = dict(SESSION_READY)
+            STATE["summary"] = {
+                **dict(SUMMARY_TRADE),
+                "account": {**dict(SUMMARY_TRADE)["account"], "source": "env", "agent_address": None},
+            }
         elif body.scenario == "low_equity":
             # A FIRST-time connect whose Hyperliquid account happens to be
             # low on funds — needs_onboarding is still true until the

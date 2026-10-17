@@ -2519,6 +2519,13 @@ def test_account_page_has_the_active_card_risk_editor_and_feasibility_table():
     note_start = html.rindex("<div", 0, html.index('id="security-note"'))
     note_end = html.index(">", note_start)
     assert "hidden" in html[note_start:note_end], "#security-note does not ship hidden by default"
+    # Keyed on account.source === "env" (contracts/accounts/models.py), not
+    # a blocker string: the real services/accounts/summary.py's four
+    # blockers never mention a key at all (verified by reading that file
+    # directly — "No account connected yet", "Watch-only account",
+    # "Agent not yet approved", "Could not read...live state").
+    assert "a.source === 'env'" in html, (
+        "the security note isn't keyed on Account.source — no real blocker ever says \"main key\"")
 
 
 def test_account_page_live_preview_has_no_reload_anywhere():
