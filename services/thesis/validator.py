@@ -193,6 +193,25 @@ def _self_reference_pool(call: Call, spec: DeskSpec) -> set:
     return pool
 
 
+def _call_distance_pool(call: Call, spec: DeskSpec, analytics: DeskAnalytics) -> set:
+    """Percent distances between the call's own prices and the reference
+    prices (primary mid, entry). "Stop 94.33, -4.6% from mid" is arithmetic
+    on numbers that are already validated, not an invented fact; live
+    2026-10-17 it still forced a paid repair round. Signed and absolute,
+    in percent (4.6) and fraction (0.046) form."""
+    primary = desk_lookup.primary_instrument(spec, analytics)
+    refs = [x for x in ((primary.mid if primary is not None else None), call.entry_px) if x]
+    prices = [x for x in (call.entry_px, call.stop_px, *call.targets, *(call.entry_zone or [])) if x]
+    pool: set = set()
+    for ref in refs:
+        for px in prices:
+            d = px / ref - 1.0
+            for v in (d, abs(d)):
+                pool.add(round(v, 6))
+                pool.add(round(v * 100.0, 4))
+    return pool
+
+
 def _is_grounded(value: float, pool: set, *, rel: float = 0.015, abs_tol: float = 0.05) -> bool:
     if value in _TINY_INT_ALLOWANCE or value in _WINDOW_SIZE_ALLOWANCE:
         return True
@@ -409,8 +428,15 @@ def check_leverage_not_avoid(call: Call, analytics: DeskAnalytics) -> List[str]:
     return []
 
 
+# Points may rest on the deterministic analytics rather than a news item.
+# Live 2026-10-17 the model cited "forward" (the forward-window stats) and
+# the draft paid for a repair round. These ids name analytics sections; they
+# carry no url, so resolve_sources never turns them into links.
+ANALYTICS_CITE_IDS = frozenset({"analytics", "snapshot", "forward", "ladder", "pair"})
+
+
 def check_cited_ids_exist(bull: List[Point], bear: List[Point], intel: Optional[IntelPacket]) -> List[str]:
-    universe = _citeable_id_universe(intel)
+    universe = _citeable_id_universe(intel) | ANALYTICS_CITE_IDS
     errors: List[str] = []
     for label, points in (("bull", bull), ("bear", bear)):
         for i, pt in enumerate(points):
@@ -471,6 +497,7 @@ def check_numbers_grounded(
 ) -> List[str]:
     pool = build_ground_truth_pool(analytics, intel)
     pool |= _self_reference_pool(call, spec)
+    pool |= _call_distance_pool(call, spec, analytics)
     errors: List[str] = []
 
     def _scan(label: str, text: str) -> None:
