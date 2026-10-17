@@ -8,9 +8,23 @@ import os
 import pathlib
 
 _ENV_FILE = pathlib.Path(__file__).parent / ".env.local"
+# Wallet private keys are loaded ONLY for the real-money e2e run
+# (PATHIEL_E2E=1, `pytest -m live`). Gate and online tests are offline or
+# read-only and never need them; with them loaded, one failing assertion that
+# printed a credentials object leaked a real agent key into test output
+# (2026-10-17). Addresses and other settings still load.
+_LOAD_PRIVATE_KEYS = os.environ.get("PATHIEL_E2E") == "1"
 if _ENV_FILE.exists():
     for _line in _ENV_FILE.read_text().splitlines():
         _line = _line.strip()
         if _line and not _line.startswith("#") and "=" in _line:
             _k, _, _v = _line.partition("=")
-            os.environ.setdefault(_k.strip(), _v.strip())
+            _k = _k.strip()
+            if "PRIVATE_KEY" in _k.upper() and not _LOAD_PRIVATE_KEYS:
+                # Pin it EMPTY rather than skipping it: server.py, the MCP
+                # server, services/*/env.py and scripts/_state_env.py all load
+                # .env.local with os.environ.setdefault at import time, and an
+                # existing empty value is what keeps them from re-adding it.
+                os.environ[_k] = ""
+                continue
+            os.environ.setdefault(_k, _v.strip())
