@@ -15,7 +15,7 @@
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -23,13 +23,25 @@ const REPO = resolve(HERE, '..', '..');
 const OUT_DIR = join(REPO, 'pathiel', 'static');
 const MANIFEST = join(HERE, 'bundle.manifest.json');
 
-/** Hash of every input that can change the bundle: sources plus the lockfile. */
+/** Every file under `dir`, recursively, as repo-relative POSIX paths —
+ * sorted, so the walk order never depends on the filesystem's own order. */
+function walk(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(full));
+    else out.push(full);
+  }
+  return out.sort();
+}
+
+/** Hash of every input that can change the bundle: sources (now nested under
+ * src/lib and src/components, not just flat files) plus the lockfile. */
 function sourceHash() {
   const hash = createHash('sha256');
-  const files = readdirSync(join(HERE, 'src')).sort();
-  for (const name of files) {
-    hash.update(name);
-    hash.update(readFileSync(join(HERE, 'src', name)));
+  for (const path of walk(join(HERE, 'src'))) {
+    hash.update(relative(HERE, path).split('\\').join('/'));
+    hash.update(readFileSync(path));
   }
   for (const name of ['package.json', 'build.mjs']) {
     hash.update(readFileSync(join(HERE, name)));
