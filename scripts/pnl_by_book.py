@@ -91,6 +91,7 @@ BOOK_PRIORITY = (
     "young_mover_short",
     "extreme_fade", "xs_momentum", "xs_xyz_equities",
     "numerology_eth", "uw_flow_xs",
+    "social_trending", "xs_reversal", "drawdown_ladder",
     "external_alpha",
 )
 
@@ -217,16 +218,22 @@ def extract_exact_footprints(start_ms: int,
     foot: Dict[str, List[Tuple[str, Optional[str], int]]] = {b: [] for b in BOOK_PRIORITY}
     if os.path.exists(session_log):
         for line in open(session_log):
-            if '"book_open"' not in line:
+            if '"book_open"' not in line and '"ladder"' not in line:
                 continue
             try:
                 e = json.loads(line)
             except Exception:
                 continue
-            if e.get("event") != "book_open":
+            # drawdown_ladder writes its opens as {"event": "ladder",
+            # "action": "open", "strategy_book": ...}; every other book uses
+            # book_open. Both are exact footprints.
+            if e.get("event") == "book_open":
+                book = e.get("book")
+            elif e.get("event") == "ladder" and e.get("action") == "open":
+                book = e.get("strategy_book")
+            else:
                 continue
             ts = e.get("ts", 0)
-            book = e.get("book")
             if book in foot and isinstance(ts, (int, float)) and ts >= start_ms:
                 foot[book].append((e.get("coin"), e.get("side"), int(ts)))
     if os.path.exists(loop_log):

@@ -2739,10 +2739,14 @@ def _exec_baseline(monkeypatch, cfg_overrides=None, state_overrides=None):
     monkeypatch.setattr("pathiel.agents.market_regime.detect_regime", lambda c: "neutral")
     monkeypatch.setattr("pathiel.agents.hyperfeed.market_get_funding_regime",
                         lambda: {"regime": "NEUTRAL", "regimes_by_class": {}})
-    def _place(is_buy, size, mid, coin):
+    def _place(is_buy, size, mid, coin, **kw):
         captured["is_buy"] = is_buy; captured["size"] = size; captured["coin"] = coin
         return {"ok": True, "order_id": "OID1", "avg_px": mid}
-    monkeypatch.setattr(executor, "place_hl_order", _place)
+    # The entry call site routes through place_entry_order (entry_order_mode
+    # gate); default "taker" mode passes straight through to place_hl_order,
+    # but it's place_entry_order that executor actually calls, so that's what
+    # gets stubbed here.
+    monkeypatch.setattr(executor, "place_entry_order", _place)
     monkeypatch.setattr(executor, "register_position", lambda *a, **k: None)
     monkeypatch.setattr(executor.memory, "track_daily_pnl", lambda *a, **k: None)
     monkeypatch.setattr(executor.memory, "get_daily_pnl", lambda: 0.0)
@@ -2874,8 +2878,8 @@ def test_maybe_execute_honors_strategy_specific_overrides(monkeypatch):
 
 def test_maybe_execute_order_failed(monkeypatch):
     ex, _, _ = _exec_baseline(monkeypatch)
-    monkeypatch.setattr(ex, "place_hl_order",
-                        lambda b, s, m, c: {"ok": False, "error": "no match"})
+    monkeypatch.setattr(ex, "place_entry_order",
+                        lambda b, s, m, c, **kw: {"ok": False, "error": "no match"})
     r = ex.maybe_execute(_analysis())
     assert r["executed"] is False and "order_failed" in r["reason"]
 
