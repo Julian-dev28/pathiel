@@ -63,25 +63,41 @@ reference scratch scripts' numbers (they spliced a no-stop run's P(liq) onto
 a with-stop run's P(stop), which don't describe the same probability space).
 Here, `p_liq + p_stop + P(rode to the horizon close) == 1.0` exactly.
 
-Verdict rule (`analytics.verdict_for_rung`), on empirical P(liquidated
-within the horizon) alone:
+Verdict rule (`analytics.verdict_for_rung`). Two probabilities, each mapped
+to the same buckets, and the verdict is the WORSE of the two:
 
-| p_liq | verdict | meaning |
+| probability | verdict | meaning |
 |---|---|---|
-| < 10% | `hold` | survives the full horizon >90% of the time, historically |
-| 10–35% | `dip_only` | size down / add on dips, don't carry the full horizon casually |
-| 35–55% | `intraday_only` | only defensible as a same-day, actively managed trade |
+| < 10% | `hold` | survives the full horizon >90% of the time |
+| 10-35% | `dip_only` | size down / add on dips, don't carry the full horizon casually |
+| 35-55% | `intraday_only` | only as a same-day, actively managed trade |
 | >= 55% | `avoid` | coin-flip or worse on liquidation within the horizon |
 
-Calibrated against the oil fixture (5x -> hold, 10x -> dip_only, 20x ->
-avoid). The walk-forward eval (`evals/verdict_backtest.py`) found this rule
-well-calibrated for BTC (large sample: 0-11% actual liquidation rate on
-"hold" days vs the <10% promise) but UNRELIABLE for oil at 10x specifically
-(57.9% long / 100% short actual liquidation rate on the handful of days
-classified "hold" — xyz:CL's ~285-day history gives too small/noisy a
-trailing sample at that leverage). See the eval's output and this service's
-final delivery report for the two follow-up options; not fixed here pending
-Julien's call on which approach he wants.
+1. `p_liq`: empirical, from the ladder simulation over every historical
+   horizon window.
+2. `p_touch`: parametric, the chance price touches the liquidation level
+   within the horizon at today's volatility: driftless Brownian touch
+   probability with sigma = max(full-sample, 20-day) daily vol x 1.25.
+
+Fewer than 120 forward windows drops the verdict one more level.
+
+Why two signals (2026-10-17): the walk-forward eval (`evals/verdict_backtest.py`)
+showed the p_liq-only rule calling rungs "hold" right before volatility
+expansions liquidated them. 14 of 72 desk/side/leverage rows put more than
+15% of their "hold" days into liquidation (oil 10x long 57.9%, SOL 10x short
+42.2%, XYZ100 20x 21.5%). A grid over the volatility choice and tail
+multiplier found exactly one setting with zero failing rows:
+
+| | p_liq only | two signals |
+|---|---|---|
+| failing rows (hold-day liquidation > 15%) | 14 | 0 |
+| worst hold-bucket liquidation rate | 100% | 4.8% |
+| hold-days across all rows | 13,204 | 4,036 |
+
+The cost is fewer "hold" calls. Oil 5x is `dip_only` while the sample
+includes the March/April war shocks. That is deliberate: liquidations were
+92% of this account's 60-day loss (docs/overhaul/PROFIT_AUDIT.md).
+
 
 ## Pipeline: the token gate
 

@@ -303,9 +303,18 @@ def test_ladder_certain_survival_flat_market():
     assert rung is not None
     assert rung.p_liq == 0.0
     assert rung.p_stop == 0.0
-    assert rung.verdict == "hold"
+    # 33 forward windows < MIN_RELIABLE_WINDOWS: a perfect record on thin
+    # history drops one level by design.
+    assert rung.verdict == "dip_only"
     # flat price, no funding -> only cost is the round-trip taker fee
     assert rung.ev_pct == pytest.approx(-2 * A.TAKER_FEE * 5.0, abs=1e-9)
+
+
+def test_ladder_flat_market_with_enough_history_is_hold():
+    candles = make_candles([100.0] * (A.MIN_RELIABLE_WINDOWS + 20), wiggle=0.0)
+    rung = A.simulate_ladder_rung("XYZ", "long", 5.0, 20.0, 1000.0, candles, 7, 0.0)
+    assert rung is not None and rung.p_liq == 0.0
+    assert rung.verdict == "hold"
 
 
 def test_ladder_outcomes_partition():
@@ -408,3 +417,46 @@ def test_build_analytics_notes_missing_candles():
                                account_fetcher=lambda: AccountSnapshot())
     assert result.instruments == []
     assert any("no candle data" in n for n in result.notes)
+
+
+# ── two-signal verdict (2026-10-17 integrator change) ────────────────────────
+
+def test_touch_probability_known_values():
+    # z = 0 -> certain touch; z = 1.959964 -> 5%; huge z -> ~0
+    assert A.touch_probability(0.0, 0.02, 7) == pytest.approx(1.0)
+    sig, h = 0.01, 4
+    d = 1.959964 * sig * 2.0          # sqrt(4) = 2
+    assert A.touch_probability(d, sig, h) == pytest.approx(0.05, abs=1e-4)
+    assert A.touch_probability(10.0, 0.01, 7) < 1e-12
+
+
+def test_touch_probability_edges():
+    assert A.touch_probability(0.1, 0.0, 7) == 0.0      # no volatility, never moves
+    assert A.touch_probability(0.1, 0.02, 0) == 0.0     # no time, never moves
+    assert A.touch_probability(0.0, 0.02, 7) == 1.0     # level at the price
+    assert A.touch_probability(-0.01, 0.02, 7) == 1.0   # level behind the price
+
+
+@pytest.mark.parametrize("p_liq,p_touch,n,want", [
+    (0.03, None, None, "hold"),            # original single-signal behaviour
+    (0.03, 0.05, 500, "hold"),             # both calm
+    (0.03, 0.20, 500, "dip_only"),         # vol says worse: worse wins
+    (0.40, 0.05, 500, "intraday_only"),    # empirical says worse: worse wins
+    (0.03, 0.05, 50, "dip_only"),          # thin sample drops one level
+    (0.60, 0.70, 50, "avoid"),             # downgrade caps at avoid
+    (0.10, 0.10, 500, "dip_only"),         # boundary reads as the safer bucket
+])
+def test_verdict_two_signals(p_liq, p_touch, n, want):
+    assert A.verdict_for_rung(p_liq, p_touch=p_touch, n_windows=n) == want
+
+
+def test_sigma_for_verdict_takes_the_larger_vol_and_inflates_it():
+    calm = [100.0 * (1.001 ** i) for i in range(60)]
+    wild_tail = calm + [calm[-1] * (1.05 if i % 2 else 0.95) for i in range(20)]
+    candles = [A.Candle(t=i, o=c, h=c, l=c, c=c, v=1.0) for i, c in enumerate(wild_tail)]
+    sig = A._sigma_for_verdict(candles)
+    closes = [c.c for c in candles]
+    import math as _m, statistics as _st
+    rets = [_m.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+    assert sig == pytest.approx(max(_st.pstdev(rets), _st.pstdev(rets[-20:])) * A.TAIL_VOL_MULT)
+    assert A._sigma_for_verdict(candles[:2]) is None   # unknown, not calm
