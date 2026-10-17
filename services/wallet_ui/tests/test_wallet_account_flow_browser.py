@@ -221,6 +221,33 @@ def test_expired_twice_surfaces_a_manual_retry(page):
     assert page.get_by_role("button", name="Try again", exact=True).is_visible()
 
 
+def test_network_error_on_confirm_shows_retry_and_recovers(page):
+    """A transport-level failure (DNS/offline/connection reset), not a
+    response the server sent — lib/api.ts's request() wraps the fetch()
+    rejection itself into ApiError('network'), separately from any HTTP
+    status the "expired" tests above simulate."""
+    setup(page)
+
+    aborted = {"done": False}
+
+    def abort_once(route):
+        if route.request.url.endswith("/api/accounts/agent/confirm") and not aborted["done"]:
+            aborted["done"] = True
+            route.abort("failed")
+        else:
+            route.fallback()
+
+    page.route(f"{ORIGIN}/api/accounts/agent/confirm", abort_once)
+
+    connect_step1(page)
+    page.get_by_role("button", name="Approve", exact=True).click()
+    page.get_by_text("Could not reach pathiel", exact=False).wait_for(timeout=10000)
+
+    page.get_by_role("button", name="Try again", exact=True).click()
+    page.get_by_text("Trading key authorized").wait_for(timeout=10000)
+    assert aborted["done"] is True
+
+
 # ── 4. chain-switch prompt ───────────────────────────────────────────────
 
 def test_chain_mismatch_prompts_a_switch_then_proceeds(page):
