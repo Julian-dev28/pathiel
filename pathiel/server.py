@@ -259,6 +259,9 @@ async def _security_headers(request: Request, call_next):
 from services.auth.api import router as _auth_router            # noqa: E402
 app.include_router(_auth_router)
 
+from services.strategies.api import router as _strategies_router  # noqa: E402
+app.include_router(_strategies_router)
+
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
