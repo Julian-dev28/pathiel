@@ -39,6 +39,15 @@ COPY services/trend_engine/ services/trend_engine/
 # Auth is on the request path for every gated route, so a missing copy here is
 # not a degraded feature, it is a server that 500s on the first page load.
 COPY services/auth/ services/auth/
+# LLM gateway (local Claude Code CLI only) and the desk thesis service built
+# on it (services/thesis). Added by the "thesis" overhaul agent purely to
+# keep tests/test_deploy_config.py's import-completeness gate green - the
+# pre-commit hook runs this repo-wide and --no-verify is banned; this is a
+# minimal, additive, pattern-matching fix, flagged in that agent's final
+# report under "for the integrator" in case deploy-config ownership prefers
+# to fold it into a different change.
+COPY services/llm/ services/llm/
+COPY services/thesis/ services/thesis/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────

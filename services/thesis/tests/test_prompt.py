@@ -1,0 +1,230 @@
+"""Unit tests for services/thesis/prompt.py: token estimation, the system
+prompt, the dense analytics/intel renderers (and their budget trimming), the
+incremental diff, is_small_change, and the repair prompt.
+"""
+from __future__ import annotations
+
+from datetime import timedelta
+
+import pytest
+
+from contracts.strategies.models import Headline
+from services.thesis import prompt as prompt_mod
+
+
+# -- estimate_tokens ----------------------------------------------------------
+
+
+def test_estimate_tokens_roughly_four_chars_per_token():
+    assert prompt_mod.estimate_tokens("a" * 400) == 100
+
+
+def test_estimate_tokens_never_zero_for_nonempty_text():
+    assert prompt_mod.estimate_tokens("hi") >= 1
+
+
+# -- extract_numbers / extract_numbers_with_flags -----------------------------
+
+
+def test_extract_numbers_ignores_digits_glued_to_a_source_id():
+    assert prompt_mod.extract_numbers("cites h1 and c2 and o10") == []
+
+
+def test_extract_numbers_finds_standalone_numbers_including_negatives_and_decimals():
+    assert prompt_mod.extract_numbers("liq 81.51, P(liq) 3.2%, down -17.95%") == [81.51, 3.2, -17.95]
+
+
+def test_extract_numbers_with_flags_marks_percent_numbers():
+    out = prompt_mod.extract_numbers_with_flags("price 99.34, move -10%")
+    assert out == [(99.34, False), (-10.0, True)]
+
+
+# -- system prompt ------------------------------------------------------------
+
+
+def test_system_prompt_names_the_desk_and_its_lessons(oil):
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "Oil desk" in text
+    assert "Julien" in text and "ADHD" in text
+    for lesson in oil.spec.lessons:
+        assert lesson in text
+
+
+def test_system_prompt_has_no_em_dash(oil):
+    assert "\u2014" not in prompt_mod.build_system_prompt(oil.spec)
+
+
+def test_system_prompt_states_the_160_char_cap_and_the_grounding_rule(oil):
+    text = prompt_mod.build_system_prompt(oil.spec)
+    assert "160" in text
+    assert "invent" in text.lower()
+
+
+# -- render_analytics_dense ---------------------------------------------------
+
+
+def test_render_analytics_dense_includes_every_instrument_and_key_figures(oil):
+    text = prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+    assert "WTI" in text and "Brent" in text
+    assert "99.339" in text  # mid
+    assert "81.51" in text  # 5x liq px
+    assert "AVOID" in text  # 20x verdict
+
+
+def test_render_analytics_dense_has_no_em_dash(oil):
+    assert "\u2014" not in prompt_mod.render_analytics_dense(oil.spec, oil.analytics)
+
+
+# -- render_intel_compact (fallback renderer) ---------------------------------
+
+
+def test_render_intel_compact_includes_headline_ids_and_catalysts(oil):
+    text = prompt_mod.render_intel_compact(oil.intel, max_tokens=4000)
+    assert "[h1]" in text and "[h2]" in text and "[h3]" in text
+    assert "[c1]" in text and "[c2]" in text and "[c3]" in text
+    assert "[o1]" in text
+    assert "[cot1]" in text
+
+
+def test_render_intel_compact_sorts_headlines_by_relevance_descending(oil):
+    text = prompt_mod.render_intel_compact(oil.intel, max_tokens=4000)
+    assert text.index("[h1]") < text.index("[h2]") < text.index("[h3]")  # 0.95, 0.80, 0.70
+
+
+def test_render_intel_compact_truncates_under_a_tight_budget(oil):
+    full = prompt_mod.render_intel_compact(oil.intel, max_tokens=4000)
+    tight = prompt_mod.render_intel_compact(oil.intel, max_tokens=20)
+    assert len(tight) < len(full)
+    assert prompt_mod.estimate_tokens(tight) <= 20 + 5  # a little slack for the section title itself
+
+
+def test_render_intel_compact_notes_how_many_lines_were_omitted(oil):
+    tight = prompt_mod.render_intel_compact(oil.intel, max_tokens=25)
+    assert "omitted for the token budget" in tight
+
+
+def test_render_intel_compact_prefers_services_intel_api_when_importable(monkeypatch, oil):
+    calls = {}
+
+    def _fake_render_compact(packet, max_tokens):
+        calls["packet"] = packet
+        calls["max_tokens"] = max_tokens
+        return "RENDERED BY SERVICES.INTEL"
+
+    monkeypatch.setattr(prompt_mod, "_intel_render_compact", _fake_render_compact)
+    out = prompt_mod.render_intel_compact(oil.intel, max_tokens=500)
+    assert out == "RENDERED BY SERVICES.INTEL"
+    assert calls["packet"] is oil.intel
+    assert calls["max_tokens"] == 500
+
+
+# -- build_user_prompt --------------------------------------------------------
+
+
+def test_build_user_prompt_full_mode_includes_analytics_and_intel(oil):
+    text, tokens = prompt_mod.build_user_prompt(oil.spec, oil.analytics, oil.intel, None, incremental=False)
+    assert "MARKET SNAPSHOT" in text
+    assert "[h1]" in text
+    assert tokens <= oil.spec.token_budget.max_input_tokens
+
+
+def test_build_user_prompt_handles_missing_intel(oil):
+    text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, None, None, incremental=False)
+    assert "No live intel packet" in text
+    assert "do not invent" in text
+
+
+def test_build_user_prompt_incremental_is_smaller_than_full(oil):
+    full_text, full_tokens = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=False,
+    )
+    inc_text, inc_tokens = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=True,
+    )
+    assert inc_tokens < full_tokens
+    assert inc_tokens <= full_tokens * 0.6  # measured ~52% smaller on this fixture
+    assert "SMALL update" in inc_text
+    assert "PREVIOUS CALL" in inc_text
+
+
+def test_build_user_prompt_incremental_states_the_previous_call(oil):
+    text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=True)
+    assert oil.thesis.call.one_liner in text
+    assert str(oil.thesis.call.stop_px) in text
+
+
+def test_build_user_prompt_incremental_reports_new_high_relevance_headlines(oil):
+    new_headline = Headline(
+        id="h99", title="Fresh Iran deal rumor spikes WTI", url="https://example.com/h99",
+        source="Reuters", published_at=oil.thesis.created_at + timedelta(hours=1),
+        stance="bear", relevance=0.9,
+    )
+    intel2 = oil.intel.model_copy(update={"headlines": [*oil.intel.headlines, new_headline]})
+    text, _ = prompt_mod.build_user_prompt(oil.spec, oil.analytics, intel2, oil.thesis, incremental=True)
+    assert "1 new high-relevance headline" in text
+    assert "h99" in text
+
+
+# -- is_small_change -----------------------------------------------------------
+
+
+def test_is_small_change_true_when_price_and_news_are_quiet(oil):
+    assert prompt_mod.is_small_change(oil.spec, oil.analytics, oil.intel, oil.thesis) is True
+
+
+def test_is_small_change_false_on_a_material_move(oil):
+    moved = oil.analytics.model_copy(update={
+        "instruments": [
+            snap.model_copy(update={"mid": snap.mid * 1.05}) if snap.coin == "xyz:CL" else snap
+            for snap in oil.analytics.instruments
+        ],
+    })
+    assert prompt_mod.is_small_change(oil.spec, moved, oil.intel, oil.thesis) is False
+
+
+def test_is_small_change_false_on_a_new_high_relevance_headline(oil):
+    new_headline = Headline(
+        id="h99", title="Breaking", url="https://example.com/h99", source="Reuters",
+        published_at=oil.thesis.created_at + timedelta(minutes=5), stance="bull", relevance=0.95,
+    )
+    intel2 = oil.intel.model_copy(update={"headlines": [*oil.intel.headlines, new_headline]})
+    assert prompt_mod.is_small_change(oil.spec, oil.analytics, intel2, oil.thesis) is False
+
+
+def test_is_small_change_ignores_a_low_relevance_new_headline(oil):
+    new_headline = Headline(
+        id="h99", title="Minor note", url="https://example.com/h99", source="Reuters",
+        published_at=oil.thesis.created_at + timedelta(minutes=5), stance="bull", relevance=0.1,
+    )
+    intel2 = oil.intel.model_copy(update={"headlines": [*oil.intel.headlines, new_headline]})
+    assert prompt_mod.is_small_change(oil.spec, oil.analytics, intel2, oil.thesis) is True
+
+
+def test_is_small_change_false_when_prev_has_no_entry_price(oil):
+    flat_prev = oil.thesis.model_copy(update={"call": oil.thesis.call.model_copy(update={"entry_px": None})})
+    assert prompt_mod.is_small_change(oil.spec, oil.analytics, oil.intel, flat_prev) is False
+
+
+# -- build_repair_prompt -------------------------------------------------------
+
+
+def test_build_repair_prompt_without_context_is_short_and_lists_every_error():
+    errors = ["scenario probabilities sum to 0.900, must sum to 1.0", "long stop_px (105) must be below entry_px (100)"]
+    text = prompt_mod.build_repair_prompt(errors)
+    assert "0.900" in text and "105" in text
+    assert "market data again" not in text
+    assert prompt_mod.estimate_tokens(text) < 150
+
+
+def test_build_repair_prompt_with_context_includes_it():
+    text = prompt_mod.build_repair_prompt(["bad thing"], full_context="MARKET SNAPSHOT: mid 99")
+    assert "bad thing" in text
+    assert "MARKET SNAPSHOT: mid 99" in text
+
+
+@pytest.mark.parametrize("mode", ["full", "incremental"])
+def test_build_user_prompt_never_contains_an_em_dash(oil, mode):
+    text, _ = prompt_mod.build_user_prompt(
+        oil.spec, oil.analytics, oil.intel, oil.thesis, incremental=(mode == "incremental"),
+    )
+    assert "\u2014" not in text
