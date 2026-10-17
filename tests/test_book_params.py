@@ -47,7 +47,8 @@ import pytest
 
 from pathiel.agents.book_params import (
     BACKUP_SL_MAX_FRAC_OF_LIQ, FLOOR_LEVERAGE, FLOOR_NOTIONAL_USD,
-    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, book_params, max_stop_pct_at_leverage)
+    FLOOR_STOP_PCT, LIQ_SAFETY_FRAC, apply_notional_ceiling, book_params,
+    max_stop_pct_at_leverage)
 
 BOOKS = ("xs_reversal", "news_surge_short", "news_surge_multi",
          "unlock_short", "social_trending")
@@ -273,3 +274,47 @@ def test_zero_notional_means_equity_fraction_sizing():
     # drifts with equity.
     for b in PROMOTED_BOOKS:
         assert book_params(CFG, b).notional_usd == _AC.PROMOTE_NOTIONAL_USD
+
+
+# ------------------------------------------- apply_notional_ceiling (wave 2)
+# Config v2 / services/risk: the per-book notional ceiling DerivedLimits
+# computes for the account's current equity + resolved RiskProfile. See
+# pathiel.agents.executor.maybe_execute's call site and
+# book_params.apply_notional_ceiling's own docstring for the full picture;
+# these pin the function's own contract in isolation.
+
+def test_apply_notional_ceiling_clamps_down_when_over():
+    assert apply_notional_ceiling(100.0, 40.0) == 40.0
+
+
+def test_apply_notional_ceiling_never_sizes_up():
+    """A request already below the ceiling is untouched -- a book
+    deliberately under-sized (e.g. xs_reversal's documented de-risking
+    while its forward ledger is unvalidated) must keep its own number."""
+    assert apply_notional_ceiling(10.0, 40.0) == 10.0
+
+
+def test_apply_notional_ceiling_equal_is_a_no_op():
+    assert apply_notional_ceiling(40.0, 40.0) == 40.0
+
+
+def test_apply_notional_ceiling_none_is_a_no_op():
+    """A fixed/structural book (drawdown_ladder) has no derived ceiling --
+    BookFeasibility.notional_usd is None for those, and that must never
+    collapse a real request to zero or raise."""
+    assert apply_notional_ceiling(100.0, None) == 100.0
+
+
+def test_apply_notional_ceiling_non_positive_ceiling_is_a_no_op():
+    assert apply_notional_ceiling(100.0, 0.0) == 100.0
+    assert apply_notional_ceiling(100.0, -5.0) == 100.0
+
+
+def test_apply_notional_ceiling_never_fabricates_risk():
+    """The function's entire job is to REDUCE, never introduce, risk: its
+    output is never larger than max(requested, 0) when requested is already
+    the smaller number, and never larger than the ceiling otherwise."""
+    for requested, ceiling in ((100.0, 40.0), (10.0, 40.0), (0.0, 40.0), (40.0, 40.0)):
+        result = apply_notional_ceiling(requested, ceiling)
+        assert result <= max(requested, ceiling)
+        assert result <= requested or result == ceiling

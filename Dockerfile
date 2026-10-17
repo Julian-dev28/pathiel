@@ -53,6 +53,10 @@ COPY services/intel/ services/intel/
 # to the previous thesis or a flat placeholder instead of crashing.
 COPY services/llm/ services/llm/
 COPY services/thesis/ services/thesis/
+# pathiel.agents.executor imports this unconditionally on every entry
+# attempt (the per-trade feasibility gate, docs/overhaul/PROFIT_AUDIT.md
+# section 1) — same "500 on first import" reasoning as auth above.
+COPY services/risk/ services/risk/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────
