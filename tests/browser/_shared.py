@@ -34,18 +34,25 @@ class PageLoad:
         return self.scroll_width > self.client_width + 1
 
 
-# Every page is visited as an anonymous, never-signed-in browser. /auth/me
-# depends on require_user (services/auth/api.py), which 401s for that caller
-# by design — and a browser logs "Failed to load resource: <status>" for ANY
-# non-2xx fetch response, independent of how gracefully the page's own JS
-# handles it (verified empirically during the sweep: wrapping the same fetch
-# in a try/catch that reads response.ok cleanly still produced the console
-# line). No amount of fixing pathiel.js removes this one; only a status-code
-# change in services/auth (outside this agent's ownership — see the ux-qa
-# final report's "for the integrator" section) does. Until then this is the
-# one allowed line, matched exactly so any OTHER console error still fails
-# the test.
-_EXPECTED_CONSOLE_ERROR = "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+# Wave-2 onboarding (2026-10-17) retired the sign-in chip outright — see
+# pathiel/static/pathiel.js's PathielSession, which replaced PathielAuth.
+# Nothing fetches /auth/me from the UI any more, so the 401 carve-out that
+# used to live here is gone with it.
+#
+# In its place: every page now asks GET /api/session on load
+# (PathielSession.get(), used by the onboarding gate on "/" and the
+# "trading is off" banner everywhere else — contracts/accounts/models.py).
+# demo_server (this file) boots the real pathiel.server:app, and that app
+# does not mount the accounts router YET in this worktree — the integrator
+# mounts it once every wave-2 agent's work merges (SWARM_RULES section 10) —
+# so the fetch 404s here. A browser logs "Failed to load resource: <status>"
+# for ANY non-2xx fetch response independent of how gracefully the page's
+# own JS handles it (verified empirically during the original ux-qa sweep,
+# for the equivalent /auth/me case this one replaces), and
+# PathielSession.get() does handle it gracefully — falling back to "nothing
+# gates this page" — so the 404 itself is not a bug. Delete this carve-out
+# once the integrator's merge mounts the real route.
+_EXPECTED_CONSOLE_ERROR = "Failed to load resource: the server responded with a status of 404 (Not Found)"
 
 
 def load_page(browser: Browser, base_url: str, path: str,
@@ -98,7 +105,7 @@ def load_page(browser: Browser, base_url: str, path: str,
         console_errors=[e for e in console_errors if e != _EXPECTED_CONSOLE_ERROR],
         failed_requests=failed,
         http_error_responses=[r for r in requests if r["status"] and r["status"] >= 400
-                              and not r["url"].endswith("/auth/me")],
+                              and not r["url"].endswith("/api/session")],
         api_durations_ms=[r["duration_ms"] for r in api_requests if r["duration_ms"] is not None],
         scroll_width=dims["sw"], client_width=dims["cw"],
         nav_links=nav_links,

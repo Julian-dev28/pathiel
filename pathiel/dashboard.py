@@ -7,6 +7,8 @@ Pages (markup in pathiel/templates/*.html, assets vendored in /static):
   GET /activity                  — the trading-desk journal: tiered flowing
                                    stream + 6h session strip
   GET /news                      — news-catalyst reads + research news context
+  GET /account                   — Account & Risk: active Hyperliquid account,
+                                   risk preset, per-book feasibility
 
 JSON APIs:
 
@@ -1015,8 +1017,15 @@ _REASON_TRANSLATIONS: List[Tuple[re.Pattern, str]] = [
      "long against the daily downtrend ({0}MA)"),
     (re.compile(r"sidestep_extension_blocked.*?([\d.+-]+)% >= ([\d.]+)%"),
      "already extended ({0}% day, ceiling {1}%)"),
-    (re.compile(r"below_min_tradable_equity \(\$([\d.]+) < \$([\d.]+)"),
-     "account below the trading minimum (${0} of ${1})"),
+    # services/risk (wave-2, 2026-10-17) replaced the old flat
+    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
+    # already carries its own plain-English reason (contracts/risk/models.py's
+    # BookFeasibility.reason) — shown as-is rather than re-derived, so this
+    # humanizer never drifts from what the preview on "/" and "/account"
+    # already says about the same book. See services/risk/README.md's
+    # "for the integrator" note.
+    (re.compile(r"book_not_feasible \(([\w_]+) @ \$([\d.]+) equity: (.+)\)"),
+     "{0}: {2}"),
     (re.compile(r"below_min_order_notional|min_order_notional"),
      "order below the exchange minimum"),
     (re.compile(r"short_liquidity"), "volume below the short floor"),
@@ -2129,6 +2138,7 @@ _ACTIVITY_HTML = _load_template("activity.html")
 _NEWS_HTML = _load_template("news.html")
 _ANALYTICS_HTML = _load_template("analytics.html")
 _TRENDS_HTML = _load_template("trends.html")
+_ACCOUNT_HTML = _load_template("account.html")
 
 
 # ── route registration ──────────────────────────────────────────────────────
@@ -2136,11 +2146,19 @@ _TRENDS_HTML = _load_template("trends.html")
 
 def register_routes(app: FastAPI) -> None:
     """Mount the dashboard pages, JSON APIs, and SSE feed onto an existing
-    FastAPI app. Pages: / (landing), /activity, /news, /analytics, /trends.
-    The former /config and
+    FastAPI app. Pages: / (landing), /activity, /news, /analytics, /trends,
+    /account. The former /config and
     /operator pages were deleted by operator order 2026-07-12 — those paths
     404 by design; token-gated actions live in server.py's /api/agent + /api/hl
-    endpoints, with the token entered via the landing footer (localStorage)."""
+    endpoints, with the token entered via the landing footer (localStorage).
+
+    /account (wave-2 onboarding, 2026-10-17) is a static shell like every
+    other page here: it reads contracts/accounts/models.py's
+    ActiveSummary and contracts/risk/models.py's DerivedLimits entirely
+    client-side, over routes this module does not own and does not mount —
+    the accounts + risk routers land on pathiel.server separately, mounted
+    by the integrator once every wave-2 agent's work merges (SWARM_RULES
+    section 10)."""
 
     # no-store on the pages so a server restart isn't masked by a cached
     # HTML shell that pre-dates the new JS. The JSON endpoints below are fine
@@ -2176,6 +2194,15 @@ def register_routes(app: FastAPI) -> None:
         is derived from data already collected — read-only, no new network
         load beyond one coin's candles at a time."""
         return HTMLResponse(content=_ANALYTICS_HTML, headers=_NO_CACHE_HEADERS)
+
+    @app.get("/account", response_class=HTMLResponse)
+    async def account_page() -> HTMLResponse:
+        """Account & Risk: the active Hyperliquid account (contracts/accounts)
+        and the risk preset that scales sizing to its equity
+        (contracts/risk). Bounces to "/" client-side when SessionInfo says
+        needs_onboarding — there is nothing to manage yet, and "/" is where
+        that starts."""
+        return HTMLResponse(content=_ACCOUNT_HTML, headers=_NO_CACHE_HEADERS)
 
     @app.get("/api/dashboard/books")
     async def dashboard_books() -> JSONResponse:
