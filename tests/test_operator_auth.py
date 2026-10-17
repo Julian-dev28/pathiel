@@ -137,3 +137,23 @@ def test_the_audit_records_no_token(client, monkeypatch):
     monkeypatch.setattr(db.session_log, "append", lambda e: seen.append(e))
     client.post("/api/agent/stop", headers={"X-Operator-Token": TOKEN})
     assert TOKEN not in str(seen)
+
+
+# ── local mode skips the session gate (wave 2, 2026-10-17) ────────────────────
+
+def test_session_gate_skipped_for_local_mode(monkeypatch):
+    """Connecting an account replaced sign-in. A request local mode accepts
+    reads account data without a session; anything else still gets 401."""
+    from fastapi.testclient import TestClient
+    import pathiel.server as srv
+    from services.auth import integration
+    for m in integration._DEPLOYMENT_MARKERS:
+        monkeypatch.delenv(m, raising=False)
+    remote = TestClient(srv.app, client=("203.0.113.5", 50000))
+    r = remote.get("/api/dashboard/positions")
+    assert r.status_code == 401 and r.json().get("auth_required") is True
+    local = TestClient(srv.app, client=("127.0.0.1", 50000))
+    r = local.get("/api/dashboard/positions")
+    assert r.status_code != 401
+    r = local.get("/api/dashboard/positions", headers={"Origin": "https://evil.example"})
+    assert r.status_code == 401

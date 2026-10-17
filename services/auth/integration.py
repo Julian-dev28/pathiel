@@ -58,6 +58,21 @@ _ADDR_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _LOOPBACK_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
 
 
+# Environment markers that mean "this process serves the internet". Behind a
+# same-host reverse proxy or a service-mesh sidecar (k8s/ ships manifests),
+# EVERY request reaches the app from 127.0.0.1, so a loopback peer proves
+# nothing there. Local mode is therefore off on any deployment, whatever the
+# peer address says. PATHIEL_DISABLE_LOCAL_MODE=1 forces it off anywhere.
+_DEPLOYMENT_MARKERS = ("KUBERNETES_SERVICE_HOST", "FLY_APP_NAME", "VERCEL", "RENDER",
+                       "RAILWAY_ENVIRONMENT", "PATHIEL_PUBLIC_DASHBOARD",
+                       "PATHIEL_DISABLE_LOCAL_MODE")
+
+
+def deployed_environment() -> bool:
+    import os
+    return any(os.environ.get(k) for k in _DEPLOYMENT_MARKERS)
+
+
 def _origin_is_loopback(origin: str) -> bool:
     try:
         host = urlsplit(origin).hostname or ""
@@ -176,6 +191,8 @@ def is_local_mode(request: Request) -> bool:
     which is exactly right: that is Julien's own tooling, the case this mode
     exists for.
     """
+    if deployed_environment():
+        return False
     if not deps.is_loopback_peer(request):
         return False
     origin = request.headers.get("origin", "")

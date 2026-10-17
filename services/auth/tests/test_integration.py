@@ -389,3 +389,24 @@ def test_a_stateless_session_from_issue_session_for_address_can_never_be_operato
     r = c.post(f"/demo/accounts/{ADDR_B}/activate")
     assert r.status_code == 403, \
         "a stateless session must not inherit the DB row's operator role"
+
+
+# ── deployment fail-safe (integrator, 2026-10-17) ─────────────────────────────
+
+import pytest as _pytest
+
+
+@_pytest.mark.parametrize("marker", ["KUBERNETES_SERVICE_HOST", "FLY_APP_NAME", "VERCEL",
+                                     "PATHIEL_PUBLIC_DASHBOARD", "PATHIEL_DISABLE_LOCAL_MODE"])
+def test_local_mode_is_off_on_any_deployment_even_for_a_loopback_peer(monkeypatch, marker):
+    """Behind a same-host proxy or a k8s sidecar every request arrives from
+    127.0.0.1. On a deployment, a loopback peer must not mean 'trusted'."""
+    from types import SimpleNamespace
+    from services.auth import integration
+    for m in integration._DEPLOYMENT_MARKERS:
+        monkeypatch.delenv(m, raising=False)
+    req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1", port=1234), headers={})
+    monkeypatch.setattr(integration.deps, "is_loopback_peer", lambda r: True)
+    assert integration.is_local_mode(req) is True
+    monkeypatch.setenv(marker, "1")
+    assert integration.is_local_mode(req) is False
