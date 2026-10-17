@@ -81,6 +81,26 @@ def atr_equal_risk_notional(
     return SizingResult(notional, implied_leverage, risk_usd, stop_distance_frac, clamped_by)
 
 
+def equity_risk_budget_usd(equity_usd: float, risk_per_trade_pct: float) -> float:
+    """Dollars at stake if the stop hits: equity x risk_per_trade_pct (a percent,
+    e.g. 3.0 means 3%).
+
+    The one-line formula every risk-scaled book sizes against.
+    `services/risk/derive.py` imports this rather than re-deriving the same
+    product a second time, so there is exactly one definition of "risk
+    budget in dollars" shared between the live DerivedLimits path and the
+    offline backtest harnesses (`scripts/backtest_logged.py`,
+    `scripts/strategy_grid_search.py`) that already call this module.
+
+    Returns 0.0 for non-positive inputs — a degenerate risk budget must read
+    as "size nothing", never as a negative or NaN dollar figure a caller
+    might subtract or divide by.
+    """
+    if equity_usd <= 0 or risk_per_trade_pct <= 0:
+        return 0.0
+    return equity_usd * risk_per_trade_pct / 100.0
+
+
 def risk_of_ruin(
     *,
     win_rate: float,           # 0..1

@@ -85,16 +85,35 @@ def per_trade_notional_cap_gate(ctx: GateContext, cap_usd: float) -> GateResult:
     return {"pass": False, "reason": f"trade notional ${ctx.trade_notional_usd:.2f} exceeds cap ${cap:.2f}"}
 
 
-def effective_daily_loss_limit(config: Dict[str, Any], equity: float, daily_pnl: float) -> float:
+def effective_daily_loss_limit(config: Dict[str, Any], equity: float, daily_pnl: float,
+                               profile_daily_loss_limit_pct: Optional[float] = None) -> float:
     """Negative USD daily-loss floor. Prefers max_daily_loss_pct (fraction of
-    start-of-day equity; SOD = equity - daily_pnl) when set > 0, else falls
+    start-of-day equity; SOD = equity - daily_pnl) when set > 0, else
+    `profile_daily_loss_limit_pct` (a PERCENT, e.g. 8.0 = 8%, from the
+    resolved RiskProfile — services/risk/derive.py DerivedLimits), else falls
     back to max_daily_loss_usd. Rebuild 2026-07-18: the static -$100 was
     ~550% of an $18 account — unreachable, i.e. no kill switch at all. A
-    percentage floor scales with the account in both directions."""
+    percentage floor scales with the account in both directions.
+
+    `profile_daily_loss_limit_pct` is an explicit PARAMETER, not a config
+    key, so every existing caller that doesn't pass it (the config-only
+    `max_daily_loss_pct`/`max_daily_loss_usd` precedence) is byte-identical
+    to before this parameter existed. The one caller that does pass it
+    (executor.py's maybe_execute, via eval_all_gates) is the only thing that
+    changed: the SOURCE of the percent now defaults to the profile instead
+    of requiring a separate max_daily_loss_pct key, while every existing
+    explicit max_daily_loss_pct override still wins outright — "keep the
+    existing kill-switch mechanics" (the SOD math, the >, the floor being a
+    negative number) is unchanged either way."""
     try:
         pct = float(config.get("max_daily_loss_pct", 0.0) or 0.0)
     except (TypeError, ValueError):
         pct = 0.0
+    if pct <= 0 and profile_daily_loss_limit_pct is not None:
+        try:
+            pct = max(0.0, float(profile_daily_loss_limit_pct)) / 100.0
+        except (TypeError, ValueError):
+            pct = 0.0
     if pct > 0 and equity > 0:
         # equity<=0 is a degraded read — never derive a near-zero floor from it
         sod = equity - daily_pnl
@@ -533,8 +552,21 @@ def eval_all_gates(
     config: Dict[str, Any],
     last_trade_time: Optional[int] = None,
     is_book: bool = False,
+    max_open_positions_override: Optional[int] = None,
+    profile_daily_loss_limit_pct: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Evaluate all risk gates and collect results.
+
+    max_open_positions_override: when given, replaces config.get("max_concurrent", 3)
+    as the max_concurrent_positions_gate's ceiling — the DERIVED max_open_positions
+    (services/risk/derive.py DerivedLimits, from equity + margin + the daily loss
+    limit) enforced instead of the static config knob. None (every caller that
+    predates this wave) is byte-identical to before: config["max_concurrent"] still
+    decides it.
+
+    profile_daily_loss_limit_pct: forwarded to effective_daily_loss_limit — see
+    that function's docstring for the precedence (an explicit max_daily_loss_pct
+    in config still wins over this).
 
     is_book: strategy-book entries get a CAPITAL CARVE-OUT from the three
     AGGREGATE gates (daily_giveback, max_concurrent, equity_risk) when
@@ -569,11 +601,13 @@ def eval_all_gates(
             # every call rather than the rare transient case it's meant for.
             logger.warning(f"[eval_all_gates] aligned_min_conf lookup failed for {ctx.coin}: {exc}")
     results["confidence"] = confidence_gate(ctx, min_conf)
+    _max_concurrent = (int(max_open_positions_override) if max_open_positions_override is not None
+                      else config.get("max_concurrent", 3))
     results["max_concurrent"] = ({"pass": True, "reason": "book_carveout"} if carveout
-                                 else max_concurrent_positions_gate(ctx, config.get("max_concurrent", 3)))
+                                 else max_concurrent_positions_gate(ctx, _max_concurrent))
     results["notional_cap"] = per_trade_notional_cap_gate(ctx, config.get("max_trade_notional_usd", 300))
     results["daily_loss"] = daily_loss_kill_switch(
-        ctx, effective_daily_loss_limit(config, ctx.equity, ctx.daily_pnl))
+        ctx, effective_daily_loss_limit(config, ctx.equity, ctx.daily_pnl, profile_daily_loss_limit_pct))
     results["daily_giveback"] = ({"pass": True, "reason": "book_carveout"} if carveout
                                  else daily_giveback_gate(
         ctx,
