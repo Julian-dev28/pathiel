@@ -1,0 +1,153 @@
+{
+  "description": "Documents matching 'Iran sanctions' and from Foreign Assets Control Office",
+  "count": 369,
+  "total_pages": 37,
+  "next_page_url": "https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=foreign-assets-control-office&conditions%5Bterm%5D=Iran+sanctions&fields%5B%5D=title&fields%5B%5D=publication_date&fields%5B%5D=type&fields%5B%5D=html_url&fields%5B%5D=agencies&fields%5B%5D=document_number&fields%5B%5D=abstract&fields%5B%5D=excerpts&format=json&order=newest&page=2&per_page=10",
+  "results": [
+    {
+      "title": "Publication of an Iran-Related Determination",
+      "publication_date": "2026-10-13",
+      "type": "Rule",
+      "html_url": "https://www.federalregister.gov/documents/2026/10/13/2026-20839/publication-of-an-iran-related-determination",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "document_number": "2026-20839",
+      "abstract": "The Department of the Treasury's Office of Foreign Assets Control (OFAC) is publishing a sector determination pursuant to a January 10, 2020 Executive Order. The determination was previously issued on OFAC's website.",
+      "excerpts": "below.\n \n Determination Pursuant to Section 1(a)(i) of Executive Order 13902 \n Automotive and Rail Sectors of the <span class=\"match\">Iranian</span> Economy \n Section 1(a)(i) of Executive Order (E.O.) 13902 of January 10, 2020 (\u201cImposing <span class=\"match\">Sanctions</span> With Respect to Additional Sectors of <span class=\"match\">Iran</span>\u201d) imposes economic <span class=\"match\">sanctions</span> on any person determined by the Secretary of the Treasury, in consultation with the Secretary of State, to operate in such sectors of the <span class=\"match\">Iranian</span> economy as may be determined by the Secretary of the Treasury, in consultation with the Secretary of State. \n To"
+    },
+    {
+      "title": "Publication of Iran-Related Web General Licenses X and X1",
+      "publication_date": "2026-09-30",
+      "type": "Rule",
+      "html_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20010/publication-of-iran-related-web-general-licenses-x-and-x1",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "document_number": "2026-20010",
+      "abstract": "The Department of the Treasury's Office of Foreign Assets Control (OFAC) is publishing two Iran-related general licenses (GLs): GL X and GL X1. These GLs were previously made available on OFAC's website. GL X was revoked and superseded by GL X1. GL X1 has expired.",
+      "excerpts": "authorize certain transactions otherwise prohibited by the <span class=\"match\">Iranian</span> Transactions and <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 560; Russian Harmful Foreign Activities <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 587; Ukraine-/Russia-Related <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 589; Weapons of Mass Destruction Proliferators <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 544; <span class=\"match\">Iranian</span> Financial <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 561; <span class=\"match\">Iranian</span> Sector and Human Rights Abuses <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 562; Global Terrorism <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 594; Executive Order (E.O"
+    },
+    {
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 46D, 47B, 48C, 50C, 51C, 52B, 54B, and 61A",
+      "publication_date": "2026-09-30",
+      "type": "Rule",
+      "html_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20009/publication-of-venezuela-sanctions-regulations-web-general-licenses-46d-47b-48c-50c-51c-52b-54b-and",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "document_number": "2026-20009",
+      "abstract": "The Department of the Treasury's Office of Foreign Assets Control (OFAC) is publishing eight general licenses (GLs) issued pursuant to the Venezuela Sanctions Regulations: GLs 46D, 47B, 48C, 50C, 51C, 52B, 54B, and 61A, each of which was previously made available on OFAC's website.",
+      "excerpts": "https://ofac.treasury.gov \n ) when they were issued. The text of these GLs is provided below.\n \n OFFICE OF FOREIGN ASSETS CONTROL \n Venezuela <span class=\"match\">Sanctions</span> Regulations \n 31 CFR Part 591 \n GENERAL LICENSE NO. 46D \n Authorizing Certain Activities Involving Venezuelan-Origin Oil or Petrochemical Products \n (a) Except as provided in paragraph (b) of this general license, all transactions prohibited by the Venezuela <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 591 (the VSR), including those involving the Government of Venezuela, Petr\u00f3leos de Venezuela, S.A. (PdVSA), or"
+    },
+    {
+      "title": "Publication of Venezuela Sanctions Regulations Web General Licenses 52, 53, 54, 55, 56, 57, and 58",
+      "publication_date": "2026-09-30",
+      "type": "Rule",
+      "html_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20008/publication-of-venezuela-sanctions-regulations-web-general-licenses-52-53-54-55-56-57-and-58",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "document_number": "2026-20008",
+      "abstract": "The Department of the Treasury's Office of Foreign Assets Control (OFAC) is publishing seven general licenses (GLs) issued pursuant to the Venezuela Sanctions Regulations: GLs 52, 53, 54, 55, 56, 57, and 58, each of which was previously made available on OFAC's website.",
+      "excerpts": "Bureau of Industry and Security. \n \n \n Bradley T. Smith \n \n Director, Office of Foreign Assets Control. \n \n \n Dated: March 18, 2026. \n OFFICE OF FOREIGN ASSETS CONTROL \n Venezuela <span class=\"match\">Sanctions</span> Regulations \n 31 CFR Part 591 \n GENERAL LICENSE NO. 53 \n Official Missions of the Government of Venezuela to the United States \n (a) All transactions prohibited by the Venezuela <span class=\"match\">Sanctions</span> Regulations, 31 CFR part 591 (the VSR), that are related to the provision of goods or services in the United States to official missions of the Government of Venezuela to the United"
+    },
+    {
+      "title": "Removing Duplicative Penalties Information and Reorganizing Certain Parts",
+      "publication_date": "2026-09-30",
+      "type": "Rule",
+      "html_url": "https://www.federalregister.gov/documents/2026/09/30/2026-20007/removing-duplicative-penalties-information-and-reorganizing-certain-parts",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF THE TREASURY",
+          "name": "Treasury Department",
+          "id": 497,
+          "url": "https://www.federalregister.gov/agencies/treasury-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/497",
+          "parent_id": null,
+          "slug": "treasury-department"
+        },
+        {
+          "raw_name": "Office of Foreign Assets Control",
+          "name": "Foreign Assets Control Office",
+          "id": 203,
+          "url": "https://www.federalregister.gov/agencies/foreign-assets-control-office",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/203",
+          "parent_id": 497,
+          "slug": "foreign-assets-control-office"
+        }
+      ],
+      "document_number": "2026-20007",
+      "abstract": "The Department of the Treasury's Office of Foreign Assets Control (OFAC) is removing duplicative regulatory provisions, and adding a provision to those parts directing readers to the Sanctions Penalties Regulations where the information is located. OFAC is also moving to an expanded subpart at the beginning of each part information regarding delegations of authority, recordkeeping and reporting requirements, and the Paperwork Reduction Act within multiple parts of the Office of Foreign Assets Control chapter of the CFR.",
+      "excerpts": "trade <span class=\"match\">sanctions</span> programs against targeted foreign governments, individuals, groups, and entities in accordance with national security and foreign policy goals and objectives. OFAC is responsible for civil investigation and enforcement of economic <span class=\"match\">sanctions</span> violations under Presidential national emergency powers and specific legislation, including the International Emergency Economic Powers Act (50 U.S.C. 1701 \n et seq. \n ) (IEEPA).\n \n OFAC's <span class=\"match\">Sanctions</span> Penalties Regulations, 31 CFR Part 505 \n On September 25, 2026, OFAC issued the <span class=\"match\">Sanctions</span> Penalties"
+    }
+  ]
+}

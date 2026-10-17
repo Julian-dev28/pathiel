@@ -27,6 +27,9 @@ RUN pip install -e .
 #                                autonomous_cycle.py, and CLI tooling
 #   services/trend_engine/      /trends lanes (services.trend_engine.run —
 #                                imported by dashboard.py, scheduler.py)
+#   services/intel/             desk news/policy/catalyst/odds/positioning
+#                                packet (services.intel.api.build_packet —
+#                                imported by services/strategies)
 # `services/pathiel_data_api` is its OWN deploy unit — own Dockerfile, own
 # Postgres, own requirements.txt (sqlalchemy/psycopg2, never installed here)
 # — deliberately NOT bundled into this image. `research/` (159MB, dev-only
@@ -42,6 +45,9 @@ COPY services/auth/ services/auth/
 # server.py mounts this router unconditionally (/api/desks, /desks/...) —
 # same "500 on first import" reasoning as auth above.
 COPY services/strategies/ services/strategies/
+# Zero-LLM news/policy/catalyst/odds/positioning packet services/strategies
+# imports (services.intel.api.build_packet) — same reasoning again.
+COPY services/intel/ services/intel/
 COPY conftest.py ./
 
 # ── Runtime state ────────────────────────────────────────────────────────────

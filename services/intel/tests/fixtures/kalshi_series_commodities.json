@@ -1,0 +1,1167 @@
+{
+  "series": [
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=HI"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDHI",
+      "title": "Hawaii gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/ITEMPRICES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/ITEMPRICES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:00:30.718899Z",
+      "settlement_sources": [
+        {
+          "name": "USDA",
+          "url": "https://www.usda.gov/about-usda/reports-and-data/agency-reports"
+        }
+      ],
+      "tags": [
+        "Product launches"
+      ],
+      "ticker": "KX65BEEF",
+      "title": "65% Beef"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/NEWRELEASE.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/NEWRELEASE.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:00:30.718899Z",
+      "settlement_sources": [
+        {
+          "name": "company",
+          "url": "https://kalshi.com/"
+        },
+        {
+          "name": "authorized retailers and distributors of company",
+          "url": "https://kalshi.com/"
+        }
+      ],
+      "tags": [
+        "Product launches",
+        "Compute",
+        "Companies"
+      ],
+      "ticker": "KXVERARELEASE",
+      "title": "Vera /rubin release"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/WTIWHENPRICE.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/WTIWHENPRICE.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:14:10.229686Z",
+      "settlement_sources": [
+        {
+          "name": "ICE",
+          "url": "https://www.ice.com/report/10"
+        }
+      ],
+      "tags": [
+        "Oil & Gas"
+      ],
+      "ticker": "KXWTIWHEN",
+      "title": "WTI When"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-16T17:05:49.941262Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth",
+          "url": "https://pythdata.app/explore"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXSOYBEANW",
+      "title": "Soybean Weekly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/ERCOTPOWER.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/ERCOTPOWER.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "Electric Reliability Council of Texas, Inc. (ERCOT)",
+          "url": "https://ercot.com"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXERCOTHOUW",
+      "title": "ERCOT Houston Hub weekly power price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/WHENCOMMODITY.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/WHENCOMMODITY.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:13:22.437741Z",
+      "settlement_sources": [
+        {
+          "name": "Trading Economics - Copper Futures",
+          "url": "https://tradingeconomics.com/commodity/copper"
+        },
+        {
+          "name": "Trading Economics - Silver",
+          "url": "https://tradingeconomics.com/commodity/silver"
+        },
+        {
+          "name": "Trading Economics - Brent crude oil",
+          "url": "https://tradingeconomics.com/commodity/brent-crude-oil"
+        },
+        {
+          "name": "Trading Economics - Steel Rebar Futures",
+          "url": "https://tradingeconomics.com/commodity/steel"
+        }
+      ],
+      "tags": [
+        "Gold"
+      ],
+      "ticker": "KXWHENGOLD",
+      "title": "When will Gold hit price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/TOKENITEMPRICES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/TOKENITEMPRICES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "annual",
+      "last_updated_ts": "2026-10-15T08:00:30.718899Z",
+      "settlement_sources": [
+        {
+          "name": " San Francisco Unified School District",
+          "url": "https://www.sfusd.edu/"
+        }
+      ],
+      "tags": [
+        "AI",
+        "Tokens"
+      ],
+      "ticker": "KXGEMINI35OY",
+      "title": "Gemini 3.5 Flash Output Token"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities",
+        "Financials"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/TOKENITEMPRICES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/TOKENITEMPRICES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:14:10.229686Z",
+      "settlement_sources": [
+        {
+          "name": "Anthropic",
+          "url": "https://claude.com/pricing#api"
+        }
+      ],
+      "tags": [
+        "Product launches",
+        "Markets",
+        "Tech",
+        "Tokens"
+      ],
+      "ticker": "KXOPUS48M",
+      "title": "Opus 4.8 Input Token"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=ME"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDME",
+      "title": "Maine gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-16T17:05:50.100787Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Silver",
+          "url": "https://app.pyth.com/explore/Metal.Index.SILVER%2FUSD?returnUrl=%2Fexplore%3Fstate%3Dstable"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Precious Metals",
+        "Silver"
+      ],
+      "ticker": "KXSILVERD",
+      "title": "Silver daily"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-16T17:05:50.314326Z",
+      "settlement_sources": [
+        {
+          "name": "Trading Economics - Cocoa",
+          "url": "https://tradingeconomics.com/commodity/cocoa"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXCOCOAW",
+      "title": "Cocoa Directional Weekly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/PJMPOWER.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/PJMPOWER.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "PJM Interconnection, L.L.C.",
+          "url": "https://dataminer2.pjm.com/feed/rt_hrl_lmps"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXPJMAEPDAYW",
+      "title": "PJM AEP-Dayton Hub weekly power price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=AL"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDAL",
+      "title": "Alabama gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/PJMPOWER.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/PJMPOWER.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "PJM Interconnection, L.L.C.",
+          "url": "https://dataminer2.pjm.com/feed/rt_hrl_lmps"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXPJMAEPDAYM",
+      "title": "PJM AEP-Dayton Hub monthly power price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.322481Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Silver",
+          "url": "https://app.pyth.com/explore/Metal.Index.SILVER%2FUSD?returnUrl=%2Fexplore%3Fstate%3Dstable"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Precious Metals",
+        "Silver"
+      ],
+      "ticker": "KXSILVERMON",
+      "title": "Silver Monthly Price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=RI"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDRI",
+      "title": "Rhode Island gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.23687Z",
+      "settlement_sources": [
+        {
+          "name": "Trading Economics - Live Cattle",
+          "url": "https://tradingeconomics.com/commodity/live-cattle"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXLCATTLEMON",
+      "title": "Live Cattle Monthly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/ALUMINUM.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/ALUMINUM.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "CME Group - Aluminum Midwest Premium (AUP)",
+          "url": "https://www.cmegroup.com/markets/metals/base/aluminum-mw-us-transaction-premium-platts-swap-futures.html"
+        }
+      ],
+      "tags": [
+        "Aluminum",
+        "Industrial Metals",
+        "Metals"
+      ],
+      "ticker": "KXALMWP",
+      "title": "Aluminum Midwest premium"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-16T17:05:50.064978Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Copper",
+          "url": "https://app.pyth.com/explore/Commodities.Index.CU%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dcopper%26state%3Dstable"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Copper",
+        "Industrial Metals"
+      ],
+      "ticker": "KXCOPPERD",
+      "title": "Daily Copper"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=MT"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDMT",
+      "title": "Montana gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.12364Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth",
+          "url": "https://pythdata.app/explore"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXSOYBEANMON",
+      "title": "Soybean monthly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "quarterly",
+      "last_updated_ts": "2026-10-16T17:05:49.983406Z",
+      "settlement_sources": [
+        {
+          "name": "the European Commission",
+          "url": "https://ec.europa.eu/"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXEUBEEFQ",
+      "title": "EU beef quarterly threshold"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODSM.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODSM.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "one_off",
+      "last_updated_ts": "2026-10-15T08:02:28.792359Z",
+      "settlement_sources": [
+        {
+          "name": "USDA",
+          "url": "https://www.usda.gov/about-usda/reports-and-data/agency-reports"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXBEEF85",
+      "title": "Monthly Beef 85%"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "fifteen_min",
+      "last_updated_ts": "2026-10-16T17:05:49.902356Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Palladium",
+          "url": "https://app.pyth.com/explore/Metal.XPD%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dpalladium%26state%3Dstable"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Precious Metals",
+        "15 min",
+        "Palladium"
+      ],
+      "ticker": "KXPALLADIUM15M",
+      "title": "Palladium 15-minute"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/ERCOTPOWER.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/ERCOTPOWER.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "Electric Reliability Council of Texas, Inc. (ERCOT)",
+          "url": "https://ercot.com"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXERCOTWESTM",
+      "title": "ERCOT West Hub monthly power price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.035577Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Brent",
+          "url": "https://app.pyth.com/explore/Commodities.Index.BRENT%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dbrent%2Bindex%26state%3Dstable"
+        }
+      ],
+      "tags": [
+        "Oil & Gas"
+      ],
+      "ticker": "KXBRENTMON",
+      "title": "Brent Monthly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.292036Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth",
+          "url": "https://pythdata.app/explore"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXCORNMON",
+      "title": "Corn Monthly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=IA"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDIA",
+      "title": "Iowa gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/TOKENITEMPRICES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/TOKENITEMPRICES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "annual",
+      "last_updated_ts": "2026-10-15T08:00:30.718899Z",
+      "settlement_sources": [
+        {
+          "name": " San Francisco Unified School District",
+          "url": "https://www.sfusd.edu/"
+        }
+      ],
+      "tags": [
+        "Tokens"
+      ],
+      "ticker": "KXOPUS48OY",
+      "title": "Opus 4.8 Output Token"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-16T17:05:49.975873Z",
+      "settlement_sources": [
+        {
+          "name": "Trading Economics - Nickel",
+          "url": "https://tradingeconomics.com/commodity/nickel"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Industrial Metals"
+      ],
+      "ticker": "KXNICKELW",
+      "title": "Nickel Weekly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/PJMPOWER.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/PJMPOWER.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "PJM Interconnection, L.L.C.",
+          "url": "https://dataminer2.pjm.com/feed/rt_hrl_lmps"
+        }
+      ],
+      "tags": null,
+      "ticker": "KXPJMWESTW",
+      "title": "PJM Western Hub weekly power price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/WTIOIL.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/WTIOIL.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "custom",
+      "last_updated_ts": "2026-10-15T08:14:10.229686Z",
+      "settlement_sources": [
+        {
+          "name": "ICE",
+          "url": "https://www.theice.com/products/213/WTI-Crude-Futures"
+        }
+      ],
+      "tags": [
+        "Oil & Gas"
+      ],
+      "ticker": "KXWTIEU",
+      "title": "WTI oil up after election"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=WY"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDWY",
+      "title": "Wyoming gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "monthly",
+      "last_updated_ts": "2026-10-16T17:05:50.057092Z",
+      "settlement_sources": [
+        {
+          "name": "Trading Economics - Cocoa",
+          "url": "https://tradingeconomics.com/commodity/cocoa"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXCOCOAMON",
+      "title": "Cocoa Monthly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=WV"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDWV",
+      "title": "West Virginia gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=LA"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDLA",
+      "title": "Louisiana gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Economics",
+        "Commodities"
+      ],
+      "category": "Economics",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/AAAGAS.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/AAAGAS.pdf",
+      "exchange_index": 0,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "daily",
+      "last_updated_ts": "2026-10-15T08:07:31.71984Z",
+      "settlement_sources": [
+        {
+          "name": "AAA",
+          "url": "https://gasprices.aaa.com/?state=SD"
+        }
+      ],
+      "tags": [
+        "Oil and energy",
+        "Econ Daily"
+      ],
+      "ticker": "KXAAAGASDSD",
+      "title": "South Dakota gas price"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "hourly",
+      "last_updated_ts": "2026-10-16T17:05:50.130446Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth - Palladium",
+          "url": "https://app.pyth.com/explore/Metal.XPD%2FUSD?returnUrl=%2Fexplore%3Fsearch%3Dpalladium%26state%3Dstable"
+        }
+      ],
+      "tags": [
+        "Metals",
+        "Precious Metals",
+        "Palladium"
+      ],
+      "ticker": "KXPALLADIUMH",
+      "title": "Palladium Hourly"
+    },
+    {
+      "additional_prohibitions": [
+        "Persons who are employed by any of the Source Agencies are not permitted to trade on the Contract.",
+        "Persons who hold any material, non-public information on the Underlying are not permitted to trade on the Contract."
+      ],
+      "categories": [
+        "Commodities"
+      ],
+      "category": "Commodities",
+      "contract_terms_url": "https://assets.kalshi.com/contract_terms/COMMODITIES.pdf",
+      "contract_url": "https://assets.kalshi.com/regulatory/product-certifications/COMMODITIES.pdf",
+      "exchange_index": 2,
+      "fee_multiplier": 1,
+      "fee_type": "quadratic",
+      "frequency": "weekly",
+      "last_updated_ts": "2026-10-16T17:05:50.005026Z",
+      "settlement_sources": [
+        {
+          "name": "Pyth",
+          "url": "https://pythdata.app/explore"
+        }
+      ],
+      "tags": [
+        "Agriculture"
+      ],
+      "ticker": "KXWHEATW",
+      "title": "Wheat Weekly"
+    }
+  ]
+}

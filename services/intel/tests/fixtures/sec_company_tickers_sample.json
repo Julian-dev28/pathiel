@@ -1,0 +1,27 @@
+{
+  "0": {
+    "cik_str": 1045810,
+    "ticker": "NVDA",
+    "title": "NVIDIA CORP"
+  },
+  "1": {
+    "cik_str": 320193,
+    "ticker": "AAPL",
+    "title": "Apple Inc."
+  },
+  "3": {
+    "cik_str": 789019,
+    "ticker": "MSFT",
+    "title": "MICROSOFT CORP"
+  },
+  "15": {
+    "cik_str": 2115436,
+    "ticker": "XOM",
+    "title": "ExxonMobil Holdings Corp"
+  },
+  "23": {
+    "cik_str": 93410,
+    "ticker": "CVX",
+    "title": "CHEVRON CORP"
+  }
+}
