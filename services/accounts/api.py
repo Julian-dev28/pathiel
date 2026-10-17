@@ -96,34 +96,11 @@ def _require_control(request: Request, main_address: str) -> None:
 
 
 def _require_operator_or_local(request: Request, *, allow_bootstrap: bool = False) -> None:
-    """Who may manage accounts.
-
-    Local mode: always. Public mode: only the deployment's operator. pathiel
-    runs ONE trading bot that trades the ONE active account; letting any
-    signed-in wallet add and activate its own account would let a stranger
-    switch the operator's bot onto their account. Multi-tenant trading is not
-    supported, so account management is operator-only off the local machine.
-
-    allow_bootstrap: on a fresh deployment (no wallet has ever held a
-    session, bootstrap not disabled) the first connect is let through; the
-    session it opens becomes the operator, the same first-login rule
-    services/auth/store.py applies to SIWE.
-    """
-    if integration.is_local_mode(request):
-        return
-    import os
-    from services.auth.deps import current_user, get_store
-    user = current_user(request)
-    if user is not None and user.is_operator:
-        return
-    if (allow_bootstrap and user is None
-            and not os.environ.get("PATHIEL_AUTH_NO_BOOTSTRAP_OPERATOR")
-            and get_store().user_count() == 0):
-        return
-    if user is None:
-        raise HTTPException(status_code=401, detail="connect the operator wallet to manage accounts")
-    raise HTTPException(status_code=403,
-                        detail="this deployment has one operator; only the operator manages accounts")
+    """Account management is single-operator off the local machine: pathiel
+    runs ONE bot on ONE active account, and letting any signed-in wallet add
+    and activate its own account would move the operator's bot onto a
+    stranger's account. See services.auth.integration.require_operator_or_local."""
+    integration.require_operator_or_local(request, allow_bootstrap=allow_bootstrap)
 
 
 def _normalize_hex_key(raw: str) -> str:

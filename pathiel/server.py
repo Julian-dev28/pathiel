@@ -271,6 +271,9 @@ app.include_router(_strategies_router)
 # anonymous visitor, and a fresh deployment's first connect needs no session.
 from services.accounts.api import router as _accounts_router  # noqa: E402
 app.include_router(_accounts_router)
+# Risk: the four-knob profile, derived limits, and a preview for any equity.
+from services.risk.api import router as _risk_router  # noqa: E402
+app.include_router(_risk_router)
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

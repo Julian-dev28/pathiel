@@ -174,14 +174,17 @@ def test_scan_found_the_known_services_packages():
     assert "services.trend_engine" in IMPORTED_PACKAGES
 
 
-# 2026-10-17 overhaul swarm: services.strategies and services.thesis are
+# 2026-10-17 overhaul swarm: services.strategies and services.thesis were
 # real forward references (scripts/pathiel-mcp-server.py's new desk_* tools,
-# guarded) to services two OTHER agents are building in separate worktrees
-# right now -- neither directory exists yet, so there is nothing for the
-# Dockerfile to COPY. Not a missing-package bug; a snapshot of a
-# multi-worktree feature mid-flight. Remove an entry once that service
-# merges and the Dockerfile picks it up (cleanup/integrator territory, not
-# the mcp agent's -- Dockerfile isn't in its ownership either).
+# guarded) to services two OTHER agents were building in separate worktrees;
+# both have since merged, hence the empty set below for those two.
+#
+# services.accounts is this wave's live instance of the same situation:
+# services/risk/api.py guards `from services.accounts import api` (the
+# accounts agent owns that service, building it in its own worktree right
+# now) and falls back to pathiel.client.hl_client when it's absent. Not a
+# missing-package bug; remove once services/accounts merges and add its
+# Dockerfile COPY line (cleanup/integrator territory, not the risk agent's).
 _NOT_YET_BUILT_BY_ANOTHER_SWARM_AGENT: set = set()
 
 
