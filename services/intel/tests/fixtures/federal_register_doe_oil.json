@@ -1,0 +1,154 @@
+{
+  "description": "Documents matching 'crude oil' and from Energy Department",
+  "count": 759,
+  "total_pages": 50,
+  "next_page_url": "https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=energy-department&conditions%5Bterm%5D=crude+oil&format=json&order=newest&page=2&per_page=5",
+  "results": [
+    {
+      "title": "Secretary of Energy Advisory Board",
+      "type": "Notice",
+      "abstract": "Pursuant to the Federal Advisory Committee Act and following consultation with the Committee Management Secretariat, General Services Administration, notice is hereby given that the Secretary of Energy Advisory Board (SEAB) will be renewed for a two-year period beginning on August 26, 2026. The Committee provides advice and recommendations to the Secretary of Energy on energy policies; the Department's basic and applied research and developmental activities; economic and national security policy; and on any other activities and operations of the Department of Energy.",
+      "document_number": "2026-16801",
+      "html_url": "https://www.federalregister.gov/documents/2026/08/18/2026-16801/secretary-of-energy-advisory-board",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-08-18/pdf/2026-16801.pdf",
+      "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-16801.pdf?1786970722",
+      "publication_date": "2026-08-18",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF ENERGY",
+          "name": "Energy Department",
+          "id": 136,
+          "url": "https://www.federalregister.gov/agencies/energy-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/136",
+          "parent_id": null,
+          "slug": "energy-department"
+        }
+      ],
+      "excerpts": "expand all forms of reliable and affordable energy production to drive down inflation, grow our economy, create good-paying jobs, reestablish American leadership in manufacturing, and lead the world in artificial intelligence. By utilizing our national assets, including our <span class=\"match\">crude</span> <span class=\"match\">oil</span>, natural gas, lease condensates, natural gas liquids, refined petroleum products, uranium, coal, biofuels, geothermal heat, the kinetic movement of flowing water, and critical minerals, we will preserve and protect our most beautiful places, reduce our dependency on foreign"
+    },
+    {
+      "title": "Agency Information Collection Extension",
+      "type": "Notice",
+      "abstract": "EIA invites public comment on the proposed collection of information, EIA-914, Monthly Crude Oil and Lease Condensate, and Natural Gas Production Report, as required under the Paperwork Reduction Act of 1995. EIA is requesting a three-year extension of Form EIA-914 Monthly Crude Oil and Lease Condensate, and Natural Gas Production Report. The survey collects monthly data on production and sales of natural gas, and crude oil and lease condensate. The data provide timely and useful information on the nation's production and sales of crude oil and natural gas.",
+      "document_number": "2026-13986",
+      "html_url": "https://www.federalregister.gov/documents/2026/07/10/2026-13986/agency-information-collection-extension",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-07-10/pdf/2026-13986.pdf",
+      "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-13986.pdf?1783601117",
+      "publication_date": "2026-07-10",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF ENERGY",
+          "name": "Energy Department",
+          "id": 136,
+          "url": "https://www.federalregister.gov/agencies/energy-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/136",
+          "parent_id": null,
+          "slug": "energy-department"
+        },
+        {
+          "raw_name": "Energy Information Administration",
+          "name": "Energy Information Administration",
+          "id": 138,
+          "url": "https://www.federalregister.gov/agencies/energy-information-administration",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/138",
+          "parent_id": 136,
+          "slug": "energy-information-administration"
+        }
+      ],
+      "excerpts": "collection of information, EIA-914, \n Monthly <span class=\"match\">Crude</span> <span class=\"match\">Oil</span> and Lease Condensate, and Natural Gas Production Report, \n as required under the Paperwork Reduction Act of 1995. EIA is requesting a three-year extension of Form EIA-914 \n Monthly <span class=\"match\">Crude</span> <span class=\"match\">Oil</span> and Lease Condensate, and Natural Gas Production Report \n . The survey collects monthly data on production and sales of natural gas, and <span class=\"match\">crude</span> <span class=\"match\">oil</span> and lease condensate. The data provide timely and useful information on the nation's production and sales of <span class=\"match\">crude</span> <span class=\"match\">oil</span> and natural gas.\n \n \n \n DATES: \n \n EIA must"
+    },
+    {
+      "title": "Revisions to Financial Forms Reporting and Filing Requirements",
+      "type": "Proposed Rule",
+      "abstract": "The Federal Energy Regulatory Commission (Commission) invites comments on its proposal to amend certain annual and quarterly financial forms, which the Commission requires jurisdictional public utilities, licensees, centralized service companies, and natural gas and oil pipeline companies to file. Additionally, the Commission proposes to amend its current regulations governing certain FERC financial forms. The Commission proposes to update FERC Annual Report Form Nos. 1, 1-F, 2, 2-A, 6, and 60 and FERC Quarterly Report Form Nos. 3-Q and 6-Q. Specifically, the Commission proposes to update the general filing instructions and certain schedule instructions to reflect current reporting requirements and correct discrepancies. Additionally, the Commission proposes to eliminate certain schedules from FERC Form Nos. 3-Q and 6-Q. The Commission also proposes to revise the regulation for FERC Form No. 6-Q to clarify that oil pipelines with annual jurisdictional operating revenues below $500,000 are exempt from filing the quarterly form. These changes to the quarterly forms would reduce the reporting burden for jurisdictional entities.",
+      "document_number": "2026-12712",
+      "html_url": "https://www.federalregister.gov/documents/2026/06/24/2026-12712/revisions-to-financial-forms-reporting-and-filing-requirements",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-06-24/pdf/2026-12712.pdf",
+      "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-12712.pdf?1782218720",
+      "publication_date": "2026-06-24",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF ENERGY",
+          "name": "Energy Department",
+          "id": 136,
+          "url": "https://www.federalregister.gov/agencies/energy-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/136",
+          "parent_id": null,
+          "slug": "energy-department"
+        },
+        {
+          "raw_name": "Federal Energy Regulatory Commission",
+          "name": "Federal Energy Regulatory Commission",
+          "id": 167,
+          "url": "https://www.federalregister.gov/agencies/federal-energy-regulatory-commission",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/167",
+          "parent_id": 136,
+          "slug": "federal-energy-regulatory-commission"
+        }
+      ],
+      "excerpts": "by States of origin for <span class=\"match\">crude</span> <span class=\"match\">oil</span> and for each kind of product received year to date and totals only (\n i.e., \n no State detail) for number of barrels of <span class=\"match\">crude</span> <span class=\"match\">oil</span> and of each kind of product delivered out of the pipeline year to date. \n In column (a) list the state of origin. \n Classify and list in column (b) by States of origin the refined products transported in the following order: 29111, Gasoline, jet fuels, and other high volatile petroleum fuels, except natural gasoline; 29112, Kerosene; 29113, Distillate fuel <span class=\"match\">oil</span>; 29114, Lubricating and"
+    },
+    {
+      "title": "Five-Year Review of the Oil Pipeline Index",
+      "type": "Rule",
+      "abstract": "The Federal Energy Regulatory Commission (Commission) issues this Final Order concluding its five-year review of the index level used to determine annual changes to oil pipeline rate ceilings. The Commission establishes an index level of Producer Price Index for Finished Goods minus 0.55% (PPI-FG-0.55%) for the five-year period beginning July 1, 2026.",
+      "document_number": "2026-08264",
+      "html_url": "https://www.federalregister.gov/documents/2026/04/28/2026-08264/five-year-review-of-the-oil-pipeline-index",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-04-28/pdf/2026-08264.pdf",
+      "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-08264.pdf?1777293918",
+      "publication_date": "2026-04-28",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF ENERGY",
+          "name": "Energy Department",
+          "id": 136,
+          "url": "https://www.federalregister.gov/agencies/energy-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/136",
+          "parent_id": null,
+          "slug": "energy-department"
+        },
+        {
+          "raw_name": "Federal Energy Regulatory Commission",
+          "name": "Federal Energy Regulatory Commission",
+          "id": 167,
+          "url": "https://www.federalregister.gov/agencies/federal-energy-regulatory-commission",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/167",
+          "parent_id": 136,
+          "slug": "federal-energy-regulatory-commission"
+        }
+      ],
+      "excerpts": "govern <span class=\"match\">oil</span> pipeline rates.\n \n \n 2. My concurrence is informed by the recent history of the Commission's prior <span class=\"match\">oil</span> index. The divided Commission's fracture in that proceeding produced tremendous uncertainty for both <span class=\"match\">oil</span> pipelines and their customers, and ultimately resulted in a D.C. Circuit remand, vacatur, scores of refund applications, and overall volatility associated with the Commission's <span class=\"match\">oil</span> ratemaking regime. This did not yield the clarity and dependability of a Commission work product that unlocks certainty and investment for the <span class=\"match\">oil</span> industry"
+    },
+    {
+      "title": "Commission Information Collection Activities (FERC-547, FERC-550, FERC-914); Consolidated Comment Request; Extension",
+      "type": "Notice",
+      "abstract": "In compliance with the requirements of the Paperwork Reduction Act of 1995, 44 U.S.C. 3507(a)(1)(D), the Federal Energy Regulatory Commission (Commission or FERC) is submitting the following currently approved information collections: FERC-547 (Gas Pipeline Rates: Refund Report Requirements), FERC-550 (Oil Pipeline Rates--Tariff Filings and Depreciation Studies), and FERC-914 (Cogeneration and Small Power Production--Tariff Filings). There are no changes to the information collection requirements.",
+      "document_number": "2026-07213",
+      "html_url": "https://www.federalregister.gov/documents/2026/04/14/2026-07213/commission-information-collection-activities-ferc-547-ferc-550-ferc-914-consolidated-comment-request",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2026-04-14/pdf/2026-07213.pdf",
+      "public_inspection_pdf_url": "https://public-inspection.federalregister.gov/2026-07213.pdf?1776084321",
+      "publication_date": "2026-04-14",
+      "agencies": [
+        {
+          "raw_name": "DEPARTMENT OF ENERGY",
+          "name": "Energy Department",
+          "id": 136,
+          "url": "https://www.federalregister.gov/agencies/energy-department",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/136",
+          "parent_id": null,
+          "slug": "energy-department"
+        },
+        {
+          "raw_name": "Federal Energy Regulatory Commission",
+          "name": "Federal Energy Regulatory Commission",
+          "id": 167,
+          "url": "https://www.federalregister.gov/agencies/federal-energy-regulatory-commission",
+          "json_url": "https://www.federalregister.gov/api/v1/agencies/167",
+          "parent_id": 136,
+          "slug": "federal-energy-regulatory-commission"
+        }
+      ],
+      "excerpts": "in compliance with the Commission's regulations. \n FERC 550: <span class=\"match\">Oil</span> Pipeline Rates\u2014Tariff Filings and Depreciation Studies \n The FERC-550 550 (<span class=\"match\">Oil</span> Pipeline Rates\u2014Tariff Filings and Depreciation Studies) is required to assist the Commission in implementing the duties and powers that were vested on October 1, 1977, in the Interstate Commerce Commission pursuant to 49 U.S.C. 60502. The Commission's regulatory jurisdiction over <span class=\"match\">oil</span> pipelines includes: \n \u2022 Regulation of rates and practices of <span class=\"match\">oil</span> pipeline companies engaged in interstate transportation; \n"
+    }
+  ]
+}
