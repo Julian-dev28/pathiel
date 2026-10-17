@@ -24,6 +24,8 @@ outside every process" below for why that fact drives the whole design.
 | `logs/log_rotate.log` | the log-rotator daemon itself | `restart.sh rotate` / `restart.sh restart` |
 | `logs/autonomous_cycle.log` | `scheduler.py` job `autonomous-cycle` | fired by the scheduler |
 | `logs/trend_engine.log` | `scheduler.py` job `trends-price` | fired by the scheduler |
+| `logs/desks_refresh.log` | `scheduler.py` job `desks-refresh` | fired by the scheduler |
+| `logs/desks_grade.log` | `scheduler.py` job `desks-grade` | fired by the scheduler |
 | `logs/capital_flows.log` | `scheduler.py` job `capital-flows` | fired by the scheduler |
 | `logs/supervisor.log` | `scheduler.py` job `supervisor` — restarts dead processes | fired by the scheduler |
 | `logs/alerts_eval.log` | `scheduler.py` job `alerts` — each evaluation pass | fired by the scheduler |

@@ -207,3 +207,18 @@ def test_the_running_table_reports_what_is_in_flight(tmp_path):
     release.set()
     time.sleep(0.1)
     assert sched.running_jobs() == []
+
+
+def test_desk_jobs_are_scheduled_through_the_strategies_cli():
+    """The /desks track record only moves if theses get refreshed and graded.
+    Both jobs go through the services.strategies CLI, never a hand-rolled path."""
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "sched_desks", Path(__file__).resolve().parents[1] / "scripts" / "scheduler.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    refresh, grade = mod.JOBS["desks-refresh"], mod.JOBS["desks-grade"]
+    assert refresh["args"][1:] == ["-m", "services.strategies", "refresh", "--all"]
+    assert grade["args"][1:] == ["-m", "services.strategies", "grade"]
+    assert refresh["interval_min"] >= 15 and grade["interval_min"] >= 15

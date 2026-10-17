@@ -9,7 +9,6 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_no_absolute_paths.py"
@@ -190,20 +189,6 @@ def test_every_restart_action_an_operator_doc_names_is_real():
                      + "\n".join(sorted(bad)))
 
 
-@pytest.mark.xfail(
-    reason=(
-        "2026-10-17 MCP consolidation (overhaul-2026-10-17, mcp agent): tool "
-        "count dropped 88 -> 74. skills/pathiel-agent/{SKILL.md,references/"
-        "mcp-config.md,references/mcp-server.md} are outside the mcp agent's "
-        "ownership (docs/overhaul/SWARM_RULES.md section 6 lists scripts/"
-        "pathiel-mcp-server.py, pathiel/client/hl_client.py, pathiel/agents/"
-        "hyperfeed.py, tests/test_mcp*.py -- skills/ isn't anyone's listed "
-        "glob). Exact replacement text is in the mcp agent's final report. "
-        "strict=True: once a doc is fixed, this starts passing and that "
-        "failure is the reminder this marker is now stale."
-    ),
-    strict=True,
-)
 def test_the_mcp_tool_count_in_the_docs_matches_the_server():
     """The skill quotes "99 tools (52 implemented + 47 stubs)" in three places.
     A count that drifts from the source is the kind of claim a reader trusts and

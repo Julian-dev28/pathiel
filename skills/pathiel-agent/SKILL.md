@@ -169,7 +169,7 @@ non-interactively in the loop's actual environment before switching live.
 
 ## MCP Integration
 
-The server (`scripts/pathiel-mcp-server.py`, stdio, 88 tools) is registered in
+The server (`scripts/pathiel-mcp-server.py`, stdio, 74 tools) is registered in
 `~/.pathiel/config.yaml`:
 
 ```yaml

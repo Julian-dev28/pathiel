@@ -2,7 +2,7 @@
 > Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent) through an MCP server.
 
 **How you drive it: MCP.** The whole control surface is an MCP server —
-`scripts/pathiel-mcp-server.py`, 88 tools over stdio. Scanning, research,
+`scripts/pathiel-mcp-server.py`, 74 tools over stdio. Scanning, research,
 execution, config, risk state, Hyperliquid market data and the wallets signed in
 to the dashboard are all tools an agent calls. There is no second API to learn
 and no framework dependency in the engine: point Claude Desktop, Pathiel Agent or
@@ -119,7 +119,7 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 pathiel is a standalone Python application; **Pathiel Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathiel-framework dependency.
 
-The MCP server (`scripts/pathiel-mcp-server.py`) exposes 88 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs (some are placeholders pending SDK wiring).
+The MCP server (`scripts/pathiel-mcp-server.py`) exposes 74 tools over stdio transport. The 18 primary tools are listed below; the remainder are Hyperliquid data passthroughs and the `desk_*` tools. Full table: `docs/overhaul/MCP.md`.
 
 **The wallet boundary, because an agent will ask.** `connected_wallets` and
 `wallet_account` report on wallets that signed in to the dashboard, and they are
@@ -867,7 +867,7 @@ pathiel/
 │   └── models/                    # Shared data types
 │       └── types.py               # Candle (OHLCV)
 ├── scripts/
-│   ├── pathiel-mcp-server.py       # MCP server (stdio, 88 tools)
+│   ├── pathiel-mcp-server.py       # MCP server (stdio, 74 tools)
 │   └── trading_loop.py            # Continuous trading loop
 ├── skills/pathiel-agent/    # Pathiel Agent skill
 ├── tests/                         # pytest suite — offline / online / live e2e

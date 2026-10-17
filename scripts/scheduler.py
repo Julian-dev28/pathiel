@@ -94,6 +94,21 @@ JOBS: Dict[str, Dict[str, Any]] = {
                "shadow-ledger evidence base, capital flows. All gitignored, all "
                "on one laptop, and until this job none had a copy",
     },
+    "desks-refresh": {
+        "args": [PY, "-m", "services.strategies", "refresh", "--all"],
+        "interval_min": 30,
+        "log": "logs/desks_refresh.log",
+        "why": "rebuild every desk's analytics and intel. The LLM thesis step "
+               "is token-gated per desk (material move, new high-relevance "
+               "headline, expiry), so most runs spend zero tokens. No capital",
+    },
+    "desks-grade": {
+        "args": [PY, "-m", "services.strategies", "grade"],
+        "interval_min": 60,
+        "log": "logs/desks_grade.log",
+        "why": "grade expired desk theses, machine and user alike, so the "
+               "track record on /desks stays current. Deterministic, no LLM",
+    },
     "supervisor": {
         "args": [PY, os.path.join(ROOT, "scripts", "supervise_processes.py")],
         "interval_min": 2,            # a dead loop should cost minutes, not days
