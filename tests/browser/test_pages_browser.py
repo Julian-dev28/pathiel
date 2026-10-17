@@ -57,7 +57,14 @@ VIEWPORTS = {"desktop": (1280, 800), "mobile": (375, 812)}
 # element is not above the fold has failed that mandate regardless of
 # whatever else is on it.
 ABOVE_FOLD_ELEMENT = {
-    "/": "#kpi-equity",             # net asset value — the hero number
+    # demo_server is a fresh deployment with no account ever connected
+    # (services/accounts + services/risk are mounted in pathiel.server:app
+    # as of the wave-2 merge) — GET /api/session always answers
+    # needs_onboarding=true here, so "/" shows onboarding's welcome card
+    # (pathiel/templates/landing.html's #onboarding-root), not the
+    # dashboard underneath it. That IS "the call first" for this state:
+    # the connect button, not a net-asset-value of zero.
+    "/": "#onb-connect",
     "/activity": "#session-strip",  # 6h scans/candidates/opened/closed/equity
     "/analytics": "#panel-funnel",  # the decision funnel, first panel
     "/news": "#news-strip",         # reads today / breaking / last read

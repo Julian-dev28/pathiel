@@ -36,6 +36,13 @@
     <div class="page-sub">Who you are trading as, and how much you risk per trade.</div>
   </div>
 
+  <!-- Off the local machine, every route this page calls except
+       /api/risk/preview needs the deployment's operator
+       (services/auth/integration.py's require_operator_or_local);
+       connecting a wallet is what grants that. Hidden by default — in
+       local mode (the normal case) this never shows. -->
+  <div id="risk-auth-notice" class="callout callout-amber" hidden></div>
+
   <section class="section" id="account-section">
     <div class="section-head">
       <h2 class="sec-label">Active account</h2>
@@ -70,6 +77,7 @@
 
     <div class="risk-editor-head">
       <span class="seg" id="risk-preset-seg" role="radiogroup" aria-label="Risk preset"></span>
+      <span id="risk-custom-note" class="chip chip-amber" hidden></span>
     </div>
 
     <details class="risk-advanced" id="risk-advanced">
@@ -98,6 +106,7 @@
 
     <div class="onboard-preview" id="risk-preview">
       <div class="kv" id="risk-headline">&mdash;</div>
+      <div id="risk-notes" class="preview-notes"></div>
       <div class="stat-row">
         <div>
           <div class="sec-label">Risk per trade</div>
@@ -146,18 +155,20 @@
 </div>
 
 <script>
-const PRESETS = [
-  { id: 'starter', label: 'Starter' },
-  { id: 'small', label: 'Small' },
-  { id: 'standard', label: 'Standard' },
-  { id: 'pro', label: 'Pro' },
-];
-
 let equity = 0;
 let chosenPreset = 'starter';
+// True when the saved profile's real numbers don't match preset_applied's
+// own table (services/risk/presets.py) — a migrated legacy config
+// (services/risk/migrate.py) resolves to SOME tier name via "auto" but
+// keeps its own overridden numbers, so the bare name alone would mislabel
+// it. See matchesPresetDefaults() in pathiel.js.
+let isCustom = false;
 // Explicit advanced-field overrides. null means "use the preset's own
 // value" — matches contracts/risk/models.py's RiskProfile exactly, field
-// for field, so the body this page PUTs is always valid as-is.
+// for field, so the body this page PUTs is always valid as-is. When
+// isCustom, these hold the REAL current numbers instead of null, so
+// clicking Save without touching anything is a safe no-op rather than a
+// silent collapse into a plain preset's defaults.
 let overrides = { risk_per_trade_pct: null, daily_loss_limit_pct: null, max_leverage: null, max_open_positions: null };
 
 function numOrNull(el) {
@@ -171,20 +182,28 @@ function currentProfile() {
 
 function renderPresetSeg() {
   const seg = document.getElementById('risk-preset-seg');
-  seg.innerHTML = PRESETS.map(p => `
-    <button type="button" class="fsel${p.id === chosenPreset ? ' on' : ''}"
-            data-preset="${p.id}" role="radio" aria-checked="${p.id === chosenPreset}">${esc(p.label)}</button>`).join('');
+  seg.innerHTML = RISK_PRESETS.map(p => `
+    <button type="button" class="fsel${!isCustom && p.id === chosenPreset ? ' on' : ''}"
+            data-preset="${p.id}" role="radio"
+            aria-checked="${!isCustom && p.id === chosenPreset}">${esc(p.label)}</button>`).join('');
   seg.querySelectorAll('.fsel').forEach(btn => {
+    // One click switches away from Custom AND to a clean preset — never a
+    // two-step "first clear custom, then pick one."
     btn.addEventListener('click', () => {
       chosenPreset = btn.dataset.preset;
+      isCustom = false;
       // A new preset starts from ITS OWN defaults; stale overrides from the
-      // last preset would otherwise silently keep fighting it.
+      // last preset (or the real custom numbers) would otherwise silently
+      // keep fighting it.
       overrides = { risk_per_trade_pct: null, daily_loss_limit_pct: null, max_leverage: null, max_open_positions: null };
       ['adv-risk-pct', 'adv-daily-pct', 'adv-max-lev', 'adv-max-pos'].forEach(id => { document.getElementById(id).value = ''; });
       renderPresetSeg();
       refreshPreview();
     });
   });
+  const note = document.getElementById('risk-custom-note');
+  note.textContent = 'Custom (from your old settings)';
+  note.hidden = !isCustom;
 }
 
 function renderFeasibilityTable(books) {
@@ -206,6 +225,11 @@ function renderFeasibilityTable(books) {
 
 function applyLimits(d) {
   document.getElementById('risk-headline').textContent = d.headline || '—';
+  // Plainly, right under the headline: the exchange-minimum bump-risk note
+  // services/risk/derive.py already computes (notes), so a starter account
+  // risking up to 15% on a bumped order is never a surprise.
+  document.getElementById('risk-notes').innerHTML = (d.notes || [])
+    .map(n => `<div class="preview-note">${esc(n)}</div>`).join('');
   document.getElementById('risk-risk-usd').textContent = fmtUsd(d.risk_per_trade_usd);
   document.getElementById('risk-daily-pause').textContent = fmtUsd(d.daily_loss_limit_usd);
   document.getElementById('risk-max-positions').textContent = d.max_open_positions ?? '—';
@@ -219,6 +243,23 @@ function applyLimits(d) {
   } else {
     low.hidden = true;
   }
+}
+
+// Off the local machine, GET/PUT /api/risk/profile, GET /api/risk/limits
+// and every /api/accounts route need the deployment's operator
+// (services/auth/integration.py's require_operator_or_local — 401 "connect
+// the operator wallet first", 403 "this deployment has one operator...").
+// Connecting a wallet is what grants that, so this is rare in practice;
+// shown plainly with the backend's own reason rather than reinventing a
+// sign-in flow. /api/risk/preview stays open and never hits this.
+async function handleAuthError(r) {
+  if (r.status !== 401 && r.status !== 403) return false;
+  let detail = null;
+  try { detail = (await r.json()).detail; } catch { /* body wasn't JSON */ }
+  const el = document.getElementById('risk-auth-notice');
+  el.textContent = detail || 'Connect the operator wallet to manage this account.';
+  el.hidden = false;
+  return true;
 }
 
 async function refreshPreview() {
@@ -258,6 +299,7 @@ document.getElementById('risk-save').addEventListener('click', async (e) => {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(currentProfile()),
     });
+    if (await handleAuthError(r)) { status.textContent = ''; return; }
     if (!r.ok) throw new Error('save ' + r.status);
     status.textContent = 'Saved.';
   } catch (e) {
@@ -272,14 +314,29 @@ document.getElementById('risk-save').addEventListener('click', async (e) => {
 async function loadRiskLimits() {
   try {
     const r = await fetch('/api/risk/limits');
+    if (await handleAuthError(r)) return;
     if (!r.ok) throw new Error('limits ' + r.status);
     const d = await r.json();
-    chosenPreset = d.preset_applied || 'starter';
     const p = d.profile || {};
-    overrides = {
-      risk_per_trade_pct: null, daily_loss_limit_pct: null,
-      max_leverage: null, max_open_positions: null,
-    };
+    isCustom = !matchesPresetDefaults(d.preset_applied, p);
+    if (isCustom) {
+      // Preserve the REAL numbers as explicit overrides: Save has to be a
+      // safe no-op until the user actually changes something, never a
+      // silent collapse of a migrated custom profile into a plain
+      // preset's defaults (Julien's real config: ~15.75% risk/trade,
+      // nothing like any preset's own number).
+      chosenPreset = 'auto';
+      overrides = {
+        risk_per_trade_pct: p.risk_per_trade_pct, daily_loss_limit_pct: p.daily_loss_limit_pct,
+        max_leverage: p.max_leverage, max_open_positions: p.max_open_positions,
+      };
+    } else {
+      chosenPreset = d.preset_applied || 'starter';
+      overrides = {
+        risk_per_trade_pct: null, daily_loss_limit_pct: null,
+        max_leverage: null, max_open_positions: null,
+      };
+    }
     document.getElementById('adv-risk-pct').value = p.risk_per_trade_pct ?? '';
     document.getElementById('adv-daily-pct').value = p.daily_loss_limit_pct ?? '';
     document.getElementById('adv-max-lev').value = p.max_leverage ?? '';
@@ -322,6 +379,7 @@ function renderAccountCard(s) {
 async function loadAccount() {
   try {
     const r = await fetch('/api/accounts/active/summary');
+    if (await handleAuthError(r)) return;
     if (!r.ok) throw new Error('summary ' + r.status);
     renderAccountCard(await r.json());
   } catch (e) { reportRefreshFailure('account summary', e, 'account-card'); }

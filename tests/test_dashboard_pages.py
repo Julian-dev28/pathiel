@@ -1271,9 +1271,13 @@ def test_humanize_reason_translates_real_vocabulary():
     # headline copy on the dashboard.
     assert h("some_new_gate (whatever)") == "Some new gate"
     assert h("MAIN_ENGINE_DELETED") == "Main engine deleted"
-    assert h("below_min_tradable_equity ($12.91 < $88.89 floor — fund the "
-             "account or lower min_tradable_equity_usd)") == \
-        "account below the trading minimum ($12.91 of $88.89)"
+    # services/risk (wave-2, 2026-10-17) replaced the flat
+    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
+    # already carries its own plain-English reason
+    # (contracts/risk/models.py's BookFeasibility.reason) — shown as-is.
+    assert h("book_not_feasible (drawdown_ladder @ $15.21 equity: "
+             "Needs $525: five resting rungs of $10.50 each at 1x.)") == \
+        "drawdown_ladder: Needs $525: five resting rungs of $10.50 each at 1x."
     assert h(None) == ""
 
 
@@ -2393,10 +2397,21 @@ def test_landing_risk_step_has_preset_cards_preview_and_low_equity_callout():
     # Four presets, matching contracts/risk/models.py's Preset literal
     # (minus "auto"/"custom" — the wizard only ever offers the four a human
     # picks between; auto is what the FIRST preview resolves TO, not a
-    # fifth card).
-    assert re.search(r"PRESETS\s*=\s*\[", html)
+    # fifth card). RISK_PRESETS lives in pathiel.js (SHARED_JS below), not
+    # in this page's own script: account.html's risk editor needs the exact
+    # same four, and a second copy is how this codebase got five
+    # near-identical fmtPct definitions in the first place.
+    assert "RISK_PRESETS" in html, "the risk step doesn't reference the shared preset table"
+    assert re.search(r"RISK_PRESETS\s*=\s*\[", SHARED_JS)
     for preset in ("starter", "small", "standard", "pro"):
-        assert f"id: '{preset}'" in html, f"preset card '{preset}' missing"
+        assert f"id: '{preset}'" in SHARED_JS, f"preset card '{preset}' missing from pathiel.js"
+    # Custom (wave-2 integration note, 2026-10-17): a migrated legacy config
+    # resolves preset_applied to SOME tier name but keeps its own numbers —
+    # matchesPresetDefaults() is what tells "Custom" apart from a real
+    # preset match, and the wizard has to consult it, not just trust the
+    # name literally.
+    assert "matchesPresetDefaults" in SHARED_JS
+    assert "matchesPresetDefaults(" in html
 
 
 def test_landing_onboarding_calls_the_contract_routes_with_the_right_verbs():
@@ -2411,6 +2426,81 @@ def test_landing_onboarding_calls_the_contract_routes_with_the_right_verbs():
     # The save body is exactly {preset: ...} — RiskProfile's other fields
     # default to None server-side, so this alone is a valid, complete body.
     assert "JSON.stringify({ preset: chosenPreset })" in html
+
+
+def test_risk_presets_table_mirrors_services_risk_presets_exactly():
+    """Tripwire, same pattern services/risk/tests/test_books.py's own
+    registry-mirror test uses: pathiel.js's RISK_PRESETS is a second copy
+    of services/risk/presets.py's table, kept only because this is a
+    browser file that cannot import a Python module. If the risk team
+    retunes a preset and this file is not updated, /account would show a
+    stale blurb and number while the real sizing silently changed
+    underneath it — caught here, run on every commit, rather than noticed
+    by a confused Julien later."""
+    from services.risk.presets import PRESETS as REAL_PRESETS
+    for preset_id in ("starter", "small", "standard", "pro"):
+        real = REAL_PRESETS[preset_id]
+        pat = re.compile(
+            r"id:\s*'" + preset_id + r"'.*?risk_per_trade_pct:\s*([\d.]+).*?"
+            r"daily_loss_limit_pct:\s*([\d.]+).*?max_leverage:\s*([\d.]+)", re.S)
+        m = pat.search(SHARED_JS)
+        assert m, f"pathiel.js's RISK_PRESETS has no entry for {preset_id!r}"
+        js_risk, js_daily, js_lev = (float(g) for g in m.groups())
+        assert js_risk == real.risk_per_trade_pct, (
+            f"{preset_id}: pathiel.js says {js_risk}% risk/trade, "
+            f"services/risk/presets.py says {real.risk_per_trade_pct}%")
+        assert js_daily == real.daily_loss_limit_pct, (
+            f"{preset_id}: pathiel.js says {js_daily}% daily loss, "
+            f"services/risk/presets.py says {real.daily_loss_limit_pct}%")
+        assert js_lev == real.max_leverage, (
+            f"{preset_id}: pathiel.js says {js_lev}x max leverage, "
+            f"services/risk/presets.py says {real.max_leverage}x")
+
+
+def test_a_migrated_legacy_profile_is_detectable_as_custom_front_end_side():
+    """Integration note (wave-2 integrator, 2026-10-17): 'A migrated legacy
+    config shows up as preset custom' — but services/risk/migrate.py +
+    derive.py actually resolve it to a real tier NAME (whatever "auto"
+    picks for the equity) while keeping its own overridden numbers, so the
+    front end has to notice the numbers don't match that tier, not trust
+    the name. Runs the REAL migration + derivation (no HTTP, no browser,
+    no network) against Julien's real shape (services/risk/README.md:
+    0.35 equity-fraction, 3x leverage, max_daily_loss_pct 0.121,
+    max_concurrent 3) and checks pathiel.js's matchesPresetDefaults would
+    correctly call it custom under node."""
+    from services.risk.derive import VenueRules, derive_limits
+    from services.risk.migrate import migrate_legacy
+
+    legacy_config = {
+        "equity_fraction_per_trade": 0.35, "leverage": 3,
+        "max_daily_loss_pct": 0.121, "max_concurrent": 3,
+        "min_tradable_equity_usd": 26.0,
+    }
+    profile, _report = migrate_legacy(legacy_config)
+    limits = derive_limits(15.19, profile, [], VenueRules())
+    assert limits.profile.risk_per_trade_pct > 10.0, (
+        "Julien's real migrated risk_per_trade_pct should be ~15.75%, "
+        f"got {limits.profile.risk_per_trade_pct}")
+
+    # RISK_PRESETS is a multi-line array (object literals, no DOTALL needed
+    # inside them except across the whole block) — _extract_js_block's
+    # "const" kind is MULTILINE-only (by design: most consts here are one-
+    # liners, and DOTALL would risk over-matching one that has its own
+    # internal `;`), so it's pulled out here instead of through that helper.
+    node = shutil.which("node")
+    assert node, "node not on PATH"
+    m = re.search(r"^const RISK_PRESETS = \[.*?\n\];$", SHARED_JS, re.M | re.S)
+    assert m, "couldn't find `const RISK_PRESETS` in pathiel.js"
+    snippet = m.group(0) + "\n" + _extract_js_block("", "function", "matchesPresetDefaults")
+    driver = snippet + (
+        f"\nconsole.log(matchesPresetDefaults({json.dumps(limits.preset_applied)}, "
+        f"{limits.profile.model_dump_json()}));"
+    )
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True, timeout=10)
+    assert r.returncode == 0, f"js snippet crashed under node:\n{r.stderr}"
+    assert r.stdout.strip() == "false", (
+        f"matchesPresetDefaults said Julien's migrated profile matches "
+        f"{limits.preset_applied!r}'s own defaults — it should say Custom")
 
 
 def test_account_page_has_the_active_card_risk_editor_and_feasibility_table():

@@ -155,6 +155,18 @@ def compute_limits(equity_usd: float, profile: Dict[str, Any]) -> Dict[str, Any]
         f"to place your first trade."
     )
 
+    # Mirrors services/risk/derive.py's _notes(): the daily-pause note
+    # always comes first, then — plainly, so it's never a surprise — which
+    # books got bumped to the exchange minimum and the risk% that was
+    # allowed for it (starter's own bump cap is 15%; see
+    # services/risk/presets.py and this wave's integrator note).
+    bumped_books = [b["book"] for b in books if b.get("bumped_to_min")]
+    notes = [f"Daily pause after -${daily_usd}."]
+    if can_trade and bumped_books:
+        bump_cap = profile.get("max_bumped_risk_pct") or (risk_pct * 2)
+        notes.append(f"{', '.join(bumped_books)} sized up to the exchange minimum "
+                     f"(risk allowed up to {bump_cap:.1f}% for this).")
+
     return {
         "equity_usd": equity_usd, "preset_applied": applied,
         "profile": {
@@ -166,7 +178,7 @@ def compute_limits(equity_usd: float, profile: Dict[str, Any]) -> Dict[str, Any]
         "max_open_positions": max_pos, "min_order_notional_usd": MIN_ORDER_USD,
         "min_equity_to_trade_usd": MIN_EQUITY_TO_TRADE_USD, "can_trade": can_trade,
         "books": books, "headline": headline,
-        "notes": [f"Daily pause after -${daily_usd}."] if can_trade else [],
+        "notes": notes if can_trade else [],
     }
 
 
@@ -211,6 +223,23 @@ def create_app() -> FastAPI:
             STATE["session"] = {**dict(SESSION_READY), "can_trade": False,
                                "active_account_id": SUMMARY_WATCH["account"]["id"]}
             STATE["summary"] = dict(SUMMARY_WATCH)
+        elif body.scenario == "julien_custom":
+            # An EXISTING account (not onboarding) whose .agent-config.json
+            # has the legacy risk keys services/risk/migrate.py maps —
+            # verified for real against services.risk.migrate.migrate_legacy
+            # + services.risk.derive.derive_limits in
+            # tests/test_dashboard_pages.py's
+            # test_a_migrated_legacy_profile_is_detectable_as_custom_front_end_side
+            # (0.35 equity-fraction, 3x leverage, max_daily_loss_pct 0.121):
+            # preset_applied resolves to "starter" at this equity, but every
+            # number is the migrated override, not starter's own default.
+            STATE["session"] = dict(SESSION_READY)
+            STATE["summary"] = {**dict(SUMMARY_TRADE), "equity_usd": 15.19, "withdrawable_usd": 15.19}
+            STATE["profile"] = {
+                "preset": "auto", "risk_per_trade_pct": 15.75, "daily_loss_limit_pct": 12.1,
+                "max_leverage": 3.0, "max_open_positions": 3,
+            }
+            return {"ok": True}
         else:
             return {"ok": False, "error": f"unknown scenario {body.scenario!r}"}
         STATE["profile"] = {"preset": "auto", "risk_per_trade_pct": None, "daily_loss_limit_pct": None,

@@ -1017,8 +1017,15 @@ _REASON_TRANSLATIONS: List[Tuple[re.Pattern, str]] = [
      "long against the daily downtrend ({0}MA)"),
     (re.compile(r"sidestep_extension_blocked.*?([\d.+-]+)% >= ([\d.]+)%"),
      "already extended ({0}% day, ceiling {1}%)"),
-    (re.compile(r"below_min_tradable_equity \(\$([\d.]+) < \$([\d.]+)"),
-     "account below the trading minimum (${0} of ${1})"),
+    # services/risk (wave-2, 2026-10-17) replaced the old flat
+    # below_min_tradable_equity ($X < $Y) refusal with a per-book one that
+    # already carries its own plain-English reason (contracts/risk/models.py's
+    # BookFeasibility.reason) — shown as-is rather than re-derived, so this
+    # humanizer never drifts from what the preview on "/" and "/account"
+    # already says about the same book. See services/risk/README.md's
+    # "for the integrator" note.
+    (re.compile(r"book_not_feasible \(([\w_]+) @ \$([\d.]+) equity: (.+)\)"),
+     "{0}: {2}"),
     (re.compile(r"below_min_order_notional|min_order_notional"),
      "order below the exchange minimum"),
     (re.compile(r"short_liquidity"), "volume below the short floor"),
