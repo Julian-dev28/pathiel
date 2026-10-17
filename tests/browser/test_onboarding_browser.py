@@ -335,6 +335,30 @@ def test_account_page_shows_the_bump_risk_note_plainly(server, browser):
     page.context.close()
 
 
+def test_account_page_security_note_shows_only_for_the_env_sourced_account(server, browser):
+    """Build step 4: 'a small Security note when a blocker says the main
+    key is present.' The real services/accounts/summary.py's four
+    blockers never mention a key at all — account.source == "env" (the
+    legacy .env.local path, Julien's actual current live setup) is the
+    real signal checked, not a blocker string."""
+    seed(server, "env_account")
+    page, issues = open_page(browser)
+    page.goto(server + "/account", wait_until="load", timeout=20000)
+    note = page.locator("#security-note")
+    note.wait_for(state="visible", timeout=5000)
+    assert "main wallet key" in note.inner_text()
+
+    seed(server, "connected")   # source="wallet_sign" — no main key on this box
+    page2, issues2 = open_page(browser)
+    page2.goto(server + "/account", wait_until="load", timeout=20000)
+    page2.locator("#acct-label").filter(has_text="Main").wait_for(timeout=5000)
+    assert page2.locator("#security-note").is_hidden()
+
+    assert not issues and not issues2, f"console issues: {issues + issues2}"
+    page.context.close()
+    page2.context.close()
+
+
 # ── cross-cutting: nav, no sign-in, mobile, console ──────────────────────────
 
 ALL_FIXTURE_PAGES = ("/", "/activity", "/news", "/analytics", "/trends", "/account")

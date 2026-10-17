@@ -363,11 +363,16 @@ function renderAccountCard(s) {
   blockersEl.innerHTML = blockers.map(b => `<div class="account-blocker">${esc(b)}</div>`).join('');
 
   // A small, plain note — never the key's value, never more than "it's
-  // there" — when a blocker names the main key as the reason.
+  // there". contracts/accounts/models.py: source="env" is the one case
+  // where the MAIN key (not a delegated agent key) is what's actually on
+  // this box — the legacy .env.local path every pre-onboarding deployment,
+  // including Julien's current live one, still uses. No blocker string
+  // says this (checked against the real services/accounts/summary.py:
+  // none of its four blockers mention a key at all) — source is the
+  // actual signal.
   const note = document.getElementById('security-note');
-  const keyBlocker = blockers.find(b => /main key/i.test(b));
-  if (keyBlocker) {
-    note.textContent = 'Security: your main wallet key is present on this box. ' +
+  if (a && a.source === 'env') {
+    note.textContent = 'Security: your main wallet key is present on this box (the legacy .env.local setup). ' +
       'Connecting with an agent key instead means it never has to be.';
     note.hidden = false;
   } else {
