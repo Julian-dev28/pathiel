@@ -173,6 +173,21 @@ backtest-trades.csv
 # consolidated runtime state dir (PATHIA_STATE_DIR, 2026-07-09)
 .state/
 
+# scripts/_state_env.py's state_dir() falls back to the repo ROOT when
+# PATHIEL_STATE_DIR is unset, so supervise_processes.py / alert_eval.py write
+# supervisor.json / alerts.json straight into the repo root on a box without
+# that env var — which is how both ended up tracked (removed 2026-10-17, see
+# archive/tracked-runtime-state-2026-10-17). pathiel_data.db is the sqlite
+# backing services/pathiel_data_api + services/auth's api_keys table; its
+# schema is created idempotently on boot (db.create_all()), so it must never
+# be a committed blob either.
+/alerts.json
+/supervisor.json
+/pathiel_data.db
+/pathiel_data.db-journal
+/pathiel_data.db-wal
+/pathiel_data.db-shm
+
 # alpha_swarm re-fetchable data caches. These are downloaded candles, funding,
 # filings and event tables — regenerate by rerunning the hypothesis script that
 # built them (W-U1_unlock_backtest.py for the W-U set, and so on). They were
