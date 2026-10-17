@@ -135,3 +135,32 @@ def test_live_xs_rebalance_without_shadow_key_is_attributed(pbb, tmp_path, monke
     foot = pbb.extract_footprints(0)
     assert ("BTC", "long", ts) in foot["xs_momentum"]
     assert ("XPL", "short", ts) in foot["xs_momentum"]
+
+
+def test_newest_live_books_in_priority(pbb):
+    """Regression (2026-10-17 profit audit): these three were missing, so their
+    fills were silently attributed to main-engine."""
+    for book in ("social_trending", "xs_reversal", "drawdown_ladder"):
+        assert book in pbb.BOOK_PRIORITY
+
+
+def test_ladder_open_event_is_an_exact_footprint(pbb, tmp_path):
+    """drawdown_ladder logs opens as event=ladder/action=open; book_open stays
+    supported; other ladder actions are not opens."""
+    import json as _json
+    sl = tmp_path / "session.jsonl"
+    rows = [
+        {"event": "ladder", "action": "open", "strategy_book": "drawdown_ladder",
+         "coin": "ETH", "side": "long", "ts": 2_000},
+        {"event": "ladder", "action": "closed", "strategy_book": "drawdown_ladder",
+         "coin": "ETH", "ts": 3_000},
+        {"event": "book_open", "book": "xs_reversal", "coin": "DOGE", "side": "short",
+         "ts": 2_500},
+        {"event": "book_open", "book": "xs_reversal", "coin": "OLD", "side": "short",
+         "ts": 500},
+    ]
+    sl.write_text("\n".join(_json.dumps(r) for r in rows) + "\n")
+    foot = pbb.extract_exact_footprints(1_000, loop_log=str(tmp_path / "none.log"),
+                                        session_log=str(sl))
+    assert foot["drawdown_ladder"] == [("ETH", "long", 2_000)]
+    assert foot["xs_reversal"] == [("DOGE", "short", 2_500)]

@@ -382,12 +382,12 @@ def test_book_roster_staleness_clean_when_fully_covered():
 
 
 def test_book_roster_staleness_against_real_pnl_by_book_script():
-    """Regression pin for the actual finding: as of this audit, the three
-    newest live books are absent from pnl_by_book.py's BOOK_PRIORITY."""
+    """Regression pin: the audit found drawdown_ladder, social_trending and
+    xs_reversal missing from pnl_by_book.py's BOOK_PRIORITY (2026-10-17).
+    Fixed the same day; every live book must stay covered."""
     priority = pa.load_pnl_by_book_priority()
     r = pa.book_roster_staleness(pa.CURRENT_BOOK_ROSTER, priority)
-    assert r["is_stale"] is True
-    assert set(r["missing_from_book_priority"]) == {"drawdown_ladder", "social_trending", "xs_reversal"}
+    assert r["is_stale"] is False, r["missing_from_book_priority"]
 
 
 # ── pair_trade_stats ──────────────────────────────────────────────────────
@@ -548,7 +548,7 @@ def test_run_audit_e2e_against_fixture_state_dir(fixture_state_dir, fixture_fetc
     assert report["liquidations"]["n_liquidations"] == 1
     assert report["liquidations"]["coins"] == ["ZRO"]
     assert report["hype_price_usd"] == pytest.approx(0.08)
-    assert report["book_roster"]["is_stale"] is True
+    assert report["book_roster"]["is_stale"] is False  # fixed 2026-10-17
     assert "error" not in report["pair_trade_brent_wti"]
     assert report["liquidation_safety_open_positions"] == []   # no open positions in fixture
 
