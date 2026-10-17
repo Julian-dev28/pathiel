@@ -19,6 +19,18 @@ const fmtPct = n => (Number(n ?? 0) >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2)
  *  hard-coding a colour the stylesheet cannot reach. */
 const tok = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
+/** Plain dollars, always two decimals — the onboarding wizard and /account's
+ *  risk editor both render live DerivedLimits previews and used to carry
+ *  byte-identical copies of this. */
+const fmtUsd = v => (Number(v ?? 0) < 0 ? '-$' : '$') + Math.abs(Number(v ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** The exact top-up that clears a venue minimum, rounded UP to the next cent
+ *  so the number this prints is never itself one cent short — deterministic
+ *  arithmetic done once here, not re-derived per caller. Whole dollars print
+ *  without cents ("$5", not "$5.00"); Julien reads numbers, not currency
+ *  formatting. */
+const fmtAddUsd = (need, have) => fmtUsd(Math.max(0, Math.ceil((Number(need) - Number(have)) * 100) / 100)).replace(/\.00$/, '');
+
 /** Mark the current tab in the masthead. */
 (function () {
   const here = window.location.pathname.replace(/\/$/, '') || '/';
@@ -135,51 +147,112 @@ const PathielMode = (function () {
     if (demo) document.body.classList.add('is-demo');
   }
 
+  // Self-registering: this used to be called from the now-deleted sign-in
+  // module's own DOMContentLoaded handler, which had nothing to do with
+  // the demo/live toggle beyond happening to also fire on page load.
+  // Losing that handler silently lost this call with it — regression
+  // caught by services/demo/tests/test_router.py's
+  // test_the_toggle_renders_on_load, which is the reason this module now
+  // owns rendering itself instead of depending on another one to remember
+  // to. The callback runs on DOMContentLoaded, well after this IIFE
+  // returns and the const below is assigned, so the outer-scope reference
+  // resolves fine despite looking circular.
+  document.addEventListener('DOMContentLoaded', () => PathielMode.render());
+
   return { render, isDemo, prefix: () => (isDemo() ? DEMO_PREFIX : '') };
 })();
 
-/* ── Sign in with your wallet ────────────────────────────────────────────────
+/* ── fetch wrapper: demo-mode rewrite + operator-role signal ────────────────
  *
- * Lives here, not in each page, because all five load this file and all five
- * read the same gated APIs. One copy also means one place where the 401 -> sign
- * in behaviour can drift out of sync, which is the defect that put five
- * near-identical `fmtPct` definitions in this codebase in the first place.
- *
- * The flow is EIP-4361: ask the server for a nonce and the exact text to sign,
- * hand that text to the wallet, post the signature back. The server never
- * accepts a message the client composed — see services/auth/api.py.
- *
- * There is no password anywhere in this product, so there is nothing here to
- * remember, reset, or leak.
+ * Used to live inside the now-deleted sign-in module, which also used it to
+ * pop a sign-in gate on 401. The gate is gone — wallet-connect is the
+ * identity now, there is no separate sign-in — but this wrapper's other two
+ * jobs are unrelated to that and still needed by every page, so it moved out
+ * on its own rather than disappearing with it.
  */
-const PathielAuth = (function () {
-  let me = null;                      // the signed-in user, or null
+(function () {
+  const _fetch = window.fetch;
+  window.fetch = async function (...args) {
+    // Keep a demo page talking to the demo app.
+    //
+    // Every dashboard call in the templates is written absolute — the pages
+    // were the whole site before /demo existed. From /demo/ an absolute
+    // `/api/dashboard/summary` resolves to the LIVE app, so the demo rendered
+    // the live account's numbers: on this deployment a page of zeros, and on a
+    // real one somebody else's book behind a button labelled Demo.
+    //
+    // Rewritten here rather than at ~30 call sites across five templates,
+    // because this wrapper already exists and a call site added tomorrow is
+    // covered by it without anyone remembering.
+    if (PathielMode.isDemo() && typeof args[0] === 'string'
+        && args[0].startsWith('/api/')) {
+      args = [PathielMode.prefix() + args[0], ...args.slice(1)];
+    }
+    const res = await _fetch.apply(this, args);
+    // 403 on a house-account route is not an error to report. It is the normal
+    // answer for a signed-in customer: those routes describe the deployment's
+    // own trading, and the customer's account is /api/dashboard/account. Left
+    // unhandled, every page painted a rack of red "refresh failed" banners at
+    // exactly the people we most want to keep.
+    if (res.status === 403) document.body.classList.add('not-operator');
+    return res;
+  };
+})();
 
-  const short = a => a ? a.slice(0, 6) + '…' + a.slice(-4) : '';
+/* ── PathielSession: the account, not a sign-in ──────────────────────────────
+ *
+ * Replaces the deleted sign-in module. Wallet-connect IS the identity now (Hyperdash-style
+ * Terminal Wallet — contracts/accounts/models.py): there is no separate
+ * SIWE sign-in step, no chip, no full-page gate. Every page asks ONE question,
+ * GET /api/session -> SessionInfo, and local_mode means that question can
+ * come back "nothing to do" with no login at all.
+ *
+ * `get()` never rejects. A missing endpoint (this wave's accounts router is
+ * mounted by the integrator once every wave-2 agent's work merges — see
+ * SWARM_RULES section 10 — so it 404s until then) or any other network
+ * failure falls back to "nothing gates this page": every caller gets a
+ * SessionInfo-shaped object either way and never needs its own try/catch.
+ *
+ * `openWallet(view)` and the `pathiel:account-changed` listener are the two
+ * shared hooks wallet-ui's bundle and this file's consumers (pathiel.js
+ * itself, landing.html's onboarding wizard, account.html) agree on.
+ */
+const PathielSession = (function () {
+  const FALLBACK = Object.freeze({
+    local_mode: true, address: null, active_account_id: null,
+    accounts_count: 0, can_trade: true, needs_onboarding: false,
+  });
+  let cached = null;
 
-  async function refresh() {
+  async function get() {
+    if (cached) return cached;
     try {
-      const r = await fetch('/auth/me');
-      me = r.ok ? (await r.json()).user : null;
-    } catch { me = null; }
-    render();
-    return me;
+      const r = await fetch('/api/session');
+      cached = r.ok ? await r.json() : FALLBACK;
+    } catch {
+      cached = FALLBACK;
+    }
+    return cached;
   }
 
-  /* ── Loading the wallet picker ──────────────────────────────────────────
+  /* Any connect, switch or removal invalidates the cache AND re-renders the
+   * "trading is off" banner below — one place reacts, every page's own
+   * script just reads e.detail (already the new SessionInfo; no re-fetch
+   * needed) for whatever it wants to do next. */
+  document.addEventListener('pathiel:account-changed', (e) => {
+    cached = e.detail || null;
+    renderTradeBanner();
+  });
+
+  /* ── loading the wallet picker ──────────────────────────────────────────
    *
-   * The picker is RainbowKit, bundled at services/wallet_ui into
-   * /static/wallet.js. It is ~3 MB over the wire (RainbowKit + wagmi + viem,
-   * minified — see services/wallet_ui/bundle.manifest.json for the exact
-   * byte count) against ~30 KB for this whole file, so it is fetched on
-   * demand rather than on page load: a signed-in operator reloading the
-   * dashboard never pays for it.
-   *
-   * This replaced a direct `window.ethereum` call. With two extensions
-   * installed that is whichever one won a race at page load, with no way to
-   * choose — and it told people who already had a wallet to "install MetaMask
-   * or Rabby". RainbowKit resolves wallets over EIP-6963, so each announces
-   * itself by name and the user picks the one they meant.
+   * The bundle (services/wallet_ui) is ~3 MB over the wire against ~30 KB
+   * for this whole file (services/wallet_ui/bundle.manifest.json has the
+   * exact byte count), so it is fetched on demand rather than on page
+   * load: a visitor who never opens the picker never pays for it — see
+   * services/wallet_ui/tests/test_wallet_bundle.py's
+   * test_bundle_is_not_loaded_on_page_load, which fails the build outright
+   * if any template loads it eagerly instead.
    */
   let walletLoading = null;
 
@@ -195,194 +268,86 @@ const PathielAuth = (function () {
       js.src = '/static/wallet.js';
       js.defer = true;
       js.onload = () => resolve();
-      // Reset the latch so a second click retries rather than hanging forever
-      // on a request that failed once.
+      // Reset the latch so a second click retries rather than hanging
+      // forever on a request that failed once.
       js.onerror = () => { walletLoading = null; reject(new Error('could not load the wallet picker')); };
       document.head.appendChild(js);
     });
     return walletLoading;
   }
 
-  async function signIn() {
-    // The island renders its own button into #wallet-connect-root, so the
-    // placeholder chip has to go before it mounts or the masthead shows two.
-    const chip = document.getElementById('auth-chip');
-    if (chip) chip.hidden = true;
-    // Read by index.tsx once React commits: the user already clicked, and
-    // nobody clicks a second time to open the modal they asked for.
-    window.__pathielWalletAutoOpen = true;
-    try {
-      await loadWalletUI();
-      if (window.PathielWallet) window.PathielWallet.openConnectModal();
-    } catch (e) {
-      if (chip) chip.hidden = false;
-      note(String((e && e.message) || e));
-    }
-    return null;
-  }
-
-  async function signOut() {
-    try { await fetch('/auth/logout', { method: 'POST' }); } catch {}
-    me = null;
-    window.location.reload();
-  }
-
-  function note(msg) {
-    const el = document.getElementById('auth-note');
-    if (el) { el.textContent = msg; el.hidden = !msg; }
-  }
-
-  /* The masthead chip: who you are, and the way out. */
-  function render() {
-    const slot = document.querySelector('.masthead-right');
-    if (!slot) return;
-    let chip = document.getElementById('auth-chip');
-    if (!chip) {
-      chip = document.createElement('button');
-      chip.id = 'auth-chip';
-      chip.type = 'button';
-      chip.className = 'icon-btn';
-      slot.insertBefore(chip, slot.firstChild);
-    }
-    if (me) {
-      // Deliberately still vanilla. A signed-in operator needs an identity and
-      // a way out, not a wallet picker, so this path never loads the bundle.
-      chip.hidden = false;
-      chip.textContent = me.display_name || short(me.address);
-      chip.title = me.address + (me.role === 'operator' ? ' · operator' : '') + ' — click to sign out';
-      chip.onclick = signOut;
-    } else {
-      chip.textContent = 'Connect wallet';
-      chip.title = 'Sign a message to prove you control your wallet. No transaction is sent.';
-      chip.onclick = signIn;
-    }
-  }
-
-  /* The full-page prompt, shown when a gated fetch comes back 401. */
-  function showGate() {
-    if (document.getElementById('auth-gate')) return;
-    const d = document.createElement('div');
-    d.id = 'auth-gate';
-    d.innerHTML =
-      '<div class="auth-card">' +
-        '<div class="sec-label">Sign in</div>' +
-        '<p>This account’s positions, balances and history are private. ' +
-        'Prove you control your wallet to see them.</p>' +
-        '<p class="auth-fine">You will sign a plain-text message. It sends no ' +
-        'transaction and approves no trade.</p>' +
-        '<button type="button" class="btn go" id="auth-gate-btn">Connect wallet</button>' +
-        '<div id="auth-note" class="auth-note" hidden></div>' +
-      '</div>';
-    document.body.appendChild(d);
-    document.getElementById('auth-gate-btn').onclick = signIn;
-  }
-  function hideGate() {
-    const d = document.getElementById('auth-gate');
-    if (d) d.remove();
-  }
-
-  /* Every page fetches its own data, so the 401 handling belongs at the
-   * transport, not in each of the ~20 loaders. A page that forgot to handle it
-   * would otherwise show empty panels and no explanation — the exact "looks
-   * quiet, is actually broken" failure the rest of this UI works to avoid. */
-  const _fetch = window.fetch;
-  window.fetch = async function (...args) {
-    // Keep a demo page talking to the demo app.
-    //
-    // Every dashboard call in the templates is written absolute — the pages
-    // were the whole site before /demo existed. From /demo/ an absolute
-    // `/api/dashboard/summary` resolves to the LIVE app, so the demo rendered
-    // the live account's numbers: on this deployment a page of zeros, and on a
-    // real one somebody else's book behind a button labelled Demo.
-    //
-    // Rewritten here rather than at ~30 call sites across five templates,
-    // because this wrapper already exists and a call site added tomorrow is
-    // covered by it without anyone remembering.
-    //
-    // /auth/* is deliberately NOT rewritten: sessions belong to the live app,
-    // and the demo has no business minting its own.
-    if (PathielMode.isDemo() && typeof args[0] === 'string'
-        && args[0].startsWith('/api/')) {
-      args = [PathielMode.prefix() + args[0], ...args.slice(1)];
-    }
-    const res = await _fetch.apply(this, args);
-    if (res.status === 401) {
+  /* window.PathielWallet.open(view) is the bundle's own entry point once
+   * loaded (contracts/accounts/models.py's "choose" | "connect" | "apikey"
+   * | "watch"). openConnectModal() survives only as a temporary alias on
+   * the bundle's side — this file calls .open() directly, never the
+   * alias. Checks for an already-defined window.PathielWallet first
+   * (tests/browser/test_onboarding_browser.py's stub installs one before
+   * any page script runs) so a page that somehow already has it loaded
+   * never re-injects the ~3MB bundle a second time. */
+  async function openWallet(view) {
+    if (!(window.PathielWallet && typeof window.PathielWallet.open === 'function')) {
       try {
-        const body = await res.clone().json();
-        if (body && body.auth_required) showGate();
-      } catch {}
+        await loadWalletUI();
+      } catch (e) {
+        console.warn('[pathiel] could not load the wallet UI:', e);
+        return;
+      }
     }
-    // 403 on a house-account route is not an error to report. It is the normal
-    // answer for a signed-in customer: those routes describe the deployment's
-    // own trading, and the customer's account is /api/dashboard/account. Left
-    // unhandled, every page painted a rack of red "refresh failed" banners at
-    // exactly the people we most want to keep.
-    if (res.status === 403) document.body.classList.add('not-operator');
-    return res;
-  };
+    if (window.PathielWallet && typeof window.PathielWallet.open === 'function') {
+      window.PathielWallet.open(view);
+    } else {
+      console.warn('[pathiel] wallet UI loaded but did not define open()');
+    }
+  }
 
-  /* The connected wallet, reflected.
+  /* ── "everywhere else": why trading is off, in dollars ──────────────────
    *
-   * Reads that wallet's own Hyperliquid state through /api/dashboard/account,
-   * which needs no stored key: /info clearinghouseState takes a plain address
-   * and SIWE already proved the caller controls it. So the page can show
-   * somebody their account while the product remains unable to trade it.
-   *
-   * This matters most on a fresh deployment, where the house book is empty and
-   * this tile is the only thing on the page with a number in it.
-   *
-   * Classes match the KPI tiles around it (`sec-label` / `kv` / `ksub`). They
-   * used to be `l` / `v` / `s`, which this stylesheet does not define, so the
-   * tile rendered as three unstyled lines wedged between two proper cards.
+   * landing.html's onboarding wizard and account.html own this story in
+   * full on their own pages, so this banner stays out of their way (it is a
+   * no-op on "/" and "/account") and only speaks up on every OTHER page —
+   * activity, news, analytics, trends, desks — where nothing else would.
+   * Never a silent "nothing happens when you'd expect a trade": the reason
+   * and the dollar shortfall come straight off ActiveSummary / DerivedLimits,
+   * never invented here.
    */
-  function accountTile(inner) {
-    return '<div class="sec-label">Your wallet</div>' + inner;
+  function bannerEl() {
+    let el = document.getElementById('trade-status-banner');
+    if (el) return el;
+    const shell = document.querySelector('.shell');
+    if (!shell) return null;
+    el = document.createElement('div');
+    el.id = 'trade-status-banner';
+    el.className = 'trade-banner';
+    el.hidden = true;
+    shell.insertBefore(el, shell.firstChild);
+    return el;
   }
 
-  async function loadMyAccount() {
-    const slot = document.getElementById('my-account');
-    if (!slot) return;
-    // `me` is already set by refresh() below. Anonymous means this fetch is
-    // GUARANTEED to 401 — skip it (saves the request and the console error
-    // the browser logs for any non-2xx fetch, independent of JS handling).
-    if (!me) { slot.hidden = true; return; }
+  async function renderTradeBanner() {
+    if (location.pathname === '/' || location.pathname === '/account') return;
+    const el = bannerEl();
+    if (!el) return;
+    const session = await get();
+    if (session.needs_onboarding) {
+      el.innerHTML = '<span>Connect your Hyperliquid account to start trading.</span>' +
+        '<button type="button" class="btn go" id="trade-banner-connect">Connect</button>';
+      el.hidden = false;
+      document.getElementById('trade-banner-connect').onclick = () => openWallet('choose');
+      return;
+    }
+    if (session.can_trade) { el.hidden = true; return; }
     try {
-      const r = await fetch('/api/dashboard/account');
-      if (!r.ok) { slot.hidden = true; return; }
-      const a = await r.json();
-      slot.hidden = false;
-      const addr = '<div class="ksub mono">' + esc(short(a.address || (me && me.address) || '')) + '</div>';
-
-      if (a.status === 'unavailable') {
-        slot.innerHTML = accountTile(
-          '<div class="kv amb">unavailable</div>' +
-          '<div class="ksub">could not reach Hyperliquid just now</div>' + addr);
-        return;
-      }
-      if (!a.funded) {
-        slot.innerHTML = accountTile(
-          '<div class="kv">not funded</div>' +
-          '<div class="ksub">deposit to Hyperliquid with this wallet to see it here</div>' + addr);
-        return;
-      }
-      const n = (a.positions || []).length;
-      // Whose work this account reflects. pathiel trades one account: the
-      // deployment's own. A visitor signing in is looking at their Hyperliquid
-      // balance, which this system has never traded and cannot — saying so is
-      // the difference between a profile and an implied track record.
-      const whose = a.is_house
-        ? '<div class="ksub">traded by this deployment — the history below is its work</div>'
-        : '<div class="ksub">your own account. pathiel has never traded it, and holds no key for it.</div>';
-      slot.innerHTML = accountTile(
-        '<div class="kv">$' + Number(a.equity).toFixed(2) + '</div>' +
-        '<div class="ksub">' + n + ' open position' + (n === 1 ? '' : 's') + '</div>' +
-        whose + addr);
-    } catch { slot.hidden = true; }
+      const r = await fetch('/api/accounts/active/summary');
+      const s = r.ok ? await r.json() : null;
+      const reason = (s && s.blockers && s.blockers[0]) || 'Trading is off for this account.';
+      el.innerHTML = '<span>' + esc(reason) + '</span>';
+      el.hidden = false;
+    } catch (e) {
+      reportRefreshFailure('trade status banner', e, el);
+    }
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    PathielMode.render();
-    refresh().then(loadMyAccount);
-  });
-  return { refresh, signIn, signOut, loadMyAccount, user: () => me };
+  document.addEventListener('DOMContentLoaded', () => { renderTradeBanner(); });
+
+  return { get, openWallet, renderTradeBanner };
 })();

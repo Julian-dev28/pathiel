@@ -136,10 +136,16 @@ def test_loader_resets_its_latch_on_failure():
     The promise is cached so two clicks do not inject two script tags. If the
     cache is kept after an error, every later click resolves against the failed
     promise and the picker can never open again without a reload.
+
+    End boundary updated (wave-2 onboarding, 2026-10-17): signIn/signOut and
+    the rest of the old sign-in chip are deleted outright — wallet-connect
+    is the identity now (contracts/accounts/models.py) — so loadWalletUI is
+    followed by openWallet(view) instead, which is what now calls
+    PathielWallet.open() once the bundle resolves.
     """
     source = (STATIC / "pathiel.js").read_text()
     start = source.index("function loadWalletUI()")
-    end = source.index("async function signIn()")
+    end = source.index("async function openWallet(view)")
     loader = source[start:end]
     assert "onerror" in loader
     assert "walletLoading = null" in loader, (
