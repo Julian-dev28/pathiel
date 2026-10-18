@@ -638,11 +638,14 @@ def test_dsl_close_helper_deregisters(monkeypatch, tmp_path):
     monkeypatch.setattr(executor, "get_hl_price", lambda c: 99.0)
     monkeypatch.setattr(executor, "place_hl_order",
                         lambda is_buy, size, mid_price, coin, **kw: {"ok": True, "order_id": "x1"})
+    cleared = []   # offline: the real cleanup reads /info for the account's orders
+    monkeypatch.setattr(executor, "cancel_open_orders_for_coin", lambda c: cleared.append(c) or 0)
 
     res = executor.close_position_market("ETH")
     assert res["ok"] is True
     assert res["side"] == "long"
     assert "ETH_long" not in dsl_exit._active_positions
+    assert cleared == ["ETH"]
 
 
 def test_mcp_close_position_delegates_to_executor(monkeypatch):
@@ -798,6 +801,7 @@ def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_
     recorded = []
     monkeypatch.setattr(executor.memory, "record_close", lambda c: recorded.append(c))
     monkeypatch.setattr(executor.memory, "pop_entry_context", lambda coin, side: {})
+    monkeypatch.setattr(executor, "cancel_open_orders_for_coin", lambda c: 0)   # offline
 
     res = executor.close_position_market("ARB")
     assert res["ok"] is True

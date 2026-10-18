@@ -1102,27 +1102,115 @@ def fetch_order_status(oid: int) -> str:
         return "error"
 
 
+def _dex_of(coin: str) -> str:
+    """The perp dex `coin` trades on: "xyz" for "xyz:CL", "" (main) for "BTC"."""
+    return coin.split(":", 1)[0] if ":" in coin else ""
+
+
+def _names_on_dex(coin: str) -> Tuple[str, ...]:
+    """Names `coin` can carry in a read scoped to its own dex. Hyperliquid
+    prefixes HIP-3 names there ("xyz:CL"); the bare symbol is accepted too,
+    which is unambiguous inside one dex's list."""
+    return (coin, coin.split(":", 1)[1]) if ":" in coin else (coin,)
+
+
+def _resting_orders_for_coin(user: str, coin: str) -> List[Dict[str, Any]]:
+    """Every resting order on `coin`, read from the coin's OWN perp dex.
+
+    Hyperliquid answers an open-orders read for one dex at a time, the main
+    dex unless `dex` is given, so a bare read never lists an xyz:CL order.
+    That is how stranded HIP-3 brackets survived every cleanup until
+    2026-10-19. frontendOpenOrders rather than openOrders: same weight, and
+    each row says whether it is reduce-only. A failed read gives []."""
+    dex = _dex_of(coin)
+    payload: Dict[str, Any] = {"type": "frontendOpenOrders", "user": user}
+    if dex:
+        payload["dex"] = dex
+    rows = _http_post("/info", payload)
+    names = _names_on_dex(coin)
+    return [o for o in (rows if isinstance(rows, list) else [])
+            if isinstance(o, dict) and o.get("coin") in names and o.get("oid") is not None]
+
+
+def _position_size_on_coin(user: str, coin: str) -> Optional[float]:
+    """Signed size of the account's position on `coin`, read fresh from the
+    coin's own dex: 0.0 when flat, None when the read failed (callers must
+    treat None as "unknown", never as flat)."""
+    dex = _dex_of(coin)
+    payload: Dict[str, Any] = {"type": "clearinghouseState", "user": user}
+    if dex:
+        payload["dex"] = dex
+    state = _http_post("/info", payload)
+    if not isinstance(state, dict) or not isinstance(state.get("assetPositions"), list):
+        return None
+    names = _names_on_dex(coin)
+    for row in state["assetPositions"]:
+        pos = (row or {}).get("position") or {}
+        if pos.get("coin") in names:
+            try:
+                return float(pos.get("szi") or 0)
+            except (TypeError, ValueError):
+                return None
+    return 0.0
+
+
 def cancel_open_orders_for_coin(coin: str) -> int:
     """Best-effort: cancel all resting orders for `coin` — e.g. the reduce-only
     SL/TP trigger bracket left stranded after a market close. Without this,
     stale triggers accumulate and a later reduce-only order on the same coin is
-    rejected ('reduce only order would increase position'). Returns the count
-    cancelled. Never raises."""
+    rejected ('reduce only order would increase position'). Reads the coin's
+    own dex: xyz:CL orders live on xyz and a main-dex read never sees them.
+    Returns the count cancelled. Never raises."""
     try:
         user = resolve_user_address()
         if not user:
             return 0
-        orders = _http_post("/info", {"type": "openOrders", "user": user}) or []
         n = 0
-        for o in orders:
-            if o.get("coin") == coin and o.get("oid") is not None:
-                if cancel_orders(int(o["oid"]), coin).get("ok"):
-                    n += 1
+        for o in _resting_orders_for_coin(user, coin):
+            if cancel_orders(int(o["oid"]), coin).get("ok"):
+                n += 1
         if n:
             logger.info(f"[cancel_open_orders_for_coin] cancelled {n} stranded order(s) for {coin}")
         return n
     except Exception as e:
         logger.warning(f"[cancel_open_orders_for_coin] {coin} failed: {e}")
+        return 0
+
+
+def cancel_stranded_reduce_only_orders(coin: str) -> int:
+    """Cancel the reduce-only orders left on `coin` after its position closed
+    outside our own close path: an exchange-side stop or take-profit filled
+    (its sibling keeps resting), a manual close, a liquidation.
+
+    A reduce-only order on a flat coin is not harmless clutter. The moment a
+    new position opens on that coin in the same direction as the old one,
+    the old trigger is live again at a stale price and can close it.
+
+    Only reduce-only orders are touched (a manual entry or a ladder rung is
+    not), and only after a fresh read of the coin's own dex says it is flat,
+    so one bad position read can never strip a live position's stops.
+    Returns the count cancelled. Never raises."""
+    try:
+        user = resolve_user_address()
+        if not user:
+            return 0
+        size = _position_size_on_coin(user, coin)
+        if size is None:
+            logger.warning(f"[cancel_stranded_reduce_only_orders] {coin}: position read failed; "
+                           f"leaving its orders alone")
+            return 0
+        if size != 0:
+            return 0   # still open: its reduce-only orders are its live stops
+        n = 0
+        for o in _resting_orders_for_coin(user, coin):
+            if o.get("reduceOnly") and cancel_orders(int(o["oid"]), coin).get("ok"):
+                n += 1
+        if n:
+            logger.info(f"[cancel_stranded_reduce_only_orders] cancelled {n} stranded reduce-only "
+                        f"order(s) for flat {coin}")
+        return n
+    except Exception as e:
+        logger.warning(f"[cancel_stranded_reduce_only_orders] {coin} failed: {e}")
         return 0
 
 

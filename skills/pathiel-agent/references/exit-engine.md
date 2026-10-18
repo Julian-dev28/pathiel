@@ -65,6 +65,27 @@ bracket without "would increase position" rejects.
 close to clear the stranded SL/TP bracket, else stale reduce-only orders pile up
 and reject later reduce-only orders (`reduce only order would increase position`).
 
+Fixed 2026-10-19, two leaks:
+
+- **HIP-3 orders were never seen.** The cleanup read `openOrders` with no `dex`,
+  which Hyperliquid answers for the main dex only, so an xyz:CL bracket survived
+  every close. Both cleanups now read the coin's own dex (`frontendOpenOrders`
+  with `dex="xyz"`), see `exchange._resting_orders_for_coin`.
+- **Positions that closed outside our path kept half a bracket.** When the SL
+  fills on the exchange the TP keeps resting (and the other way round), and the
+  same after a manual close or a liquidation. A reduce-only trigger left on a
+  flat coin closes the next same-direction position on that coin at a stale
+  price. The trading loop now hands every vanished tracker to
+  `executor.settle_vanished_positions`, which records the outcome and calls
+  `cancel_stranded_reduce_only_orders(coin)`; `close_position_market` does the
+  same on its `already_flat` / `zero_szi` branches. That sweep re-reads the
+  coin's own dex first and does nothing unless the coin is flat (a failed read
+  counts as not flat), cancels reduce-only orders only (a manual entry or a
+  ladder rung stays), and skips drawdown_ladder / copy_trade coins.
+
+Tests: `tests/test_stranded_orders.py` (offline), `tests/test_online_stranded_orders.py`
+(live `/info` reads, `-m online`).
+
 ## Execution-quality capture (2026-06-16)
 
 Each close logs `entry_slip_bps`/`exit_slip_bps` (fill vs arrival mid),
