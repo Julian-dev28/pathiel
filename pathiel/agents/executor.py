@@ -31,6 +31,7 @@ from pathiel.client.exchange import (
     HL_LEVERAGE,
     MIN_ORDER_USD,
     cancel_open_orders_for_coin,
+    cancel_stranded_reduce_only_orders,
     entry_size_for_notional,
     get_hl_atr,
     get_hl_price,
@@ -1834,6 +1835,12 @@ def close_position_market(coin: str) -> Dict[str, Any]:
         # Already flat — drop any stale tracker so we don't keep retrying.
         deregister_position(coin, "long")
         deregister_position(coin, "short")
+        # It closed outside this path (an exchange-side stop or TP filled, a
+        # manual close), so the rest of its bracket may still be resting. The
+        # tracker is gone now, so settle_vanished_positions will never see
+        # this coin: clear the bracket here. Re-checks flatness on the coin's
+        # own dex first; reduce-only orders only.
+        cancel_stranded_reduce_only_orders(coin)
         return {"ok": True, "coin": coin, "noop": "already_flat"}
 
     try:
@@ -1844,6 +1851,7 @@ def close_position_market(coin: str) -> Dict[str, Any]:
     if szi == 0:
         deregister_position(coin, "long")
         deregister_position(coin, "short")
+        cancel_stranded_reduce_only_orders(coin)   # same as already_flat above
         return {"ok": True, "coin": coin, "noop": "zero_szi"}
 
     is_long = szi > 0
@@ -2079,3 +2087,37 @@ def record_external_position_close(stale: Dict[str, Any], user: str | None = Non
         f"{' [LIQUIDATION]' if liquidated else ''}{' [estimated]' if estimated else ''}"
     )
     return {"ok": True, **row}
+
+
+def settle_vanished_positions(stale_trackers: List[Dict[str, Any]], *,
+                              exempt_coins: Optional[set] = None,
+                              user: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Settle DSL-tracked positions that closed outside our close path, as
+    reported by dsl_exit.rehydrate_from_exchange: an exchange-side stop or
+    take-profit filled, a manual close, a liquidation.
+
+    For each one: record the outcome (record_external_position_close), then
+    cancel its bracket's stranded reduce-only orders. Before 2026-10-19 the
+    second step did not exist, so when one half of an SL/TP pair filled on
+    the exchange the other kept resting, on xyz and main alike, ready to
+    close the next position opened on that coin at a stale price.
+    cancel_stranded_reduce_only_orders re-reads the coin's own dex and does
+    nothing unless it is flat.
+
+    Coins in `exempt_coins` (books that own their orders: drawdown_ladder,
+    copy_trade) are recorded but never swept. One failure never stops the
+    rest. Returns one row per tracker: coin, recorded (bool), cancelled."""
+    exempt = exempt_coins or set()
+    user = user or resolve_user_address()
+    out: List[Dict[str, Any]] = []
+    for stale in stale_trackers or []:
+        coin = str(stale.get("coin") or "")
+        row: Dict[str, Any] = {"coin": coin, "recorded": False, "cancelled": 0}
+        try:
+            row["recorded"] = bool(record_external_position_close(stale, user=user).get("ok"))
+        except Exception as e:
+            logger.error(f"[outcome-store] vanished tracker record failed for {coin}: {e}")
+        if coin and coin not in exempt:
+            row["cancelled"] = cancel_stranded_reduce_only_orders(coin)
+        out.append(row)
+    return out

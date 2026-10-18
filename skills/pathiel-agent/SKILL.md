@@ -382,7 +382,11 @@ Every executed position gets THREE layers of exit, all set at entry:
 **Trigger hygiene:** `close_position_market` calls `cancel_open_orders_for_coin`
 after a market close to clear the stranded SL/TP bracket — otherwise stale
 reduce-only orders accumulate and reject a later reduce-only order ("reduce only
-order would increase position"). See `references/exit-engine.md`.
+order would increase position"). Both cleanups read the coin's own dex (xyz:CL
+orders live on xyz). A position that closes outside our path (one bracket half
+filled on the exchange, a manual close) has its leftover reduce-only orders
+cancelled by `settle_vanished_positions`, after a fresh read confirms it is flat.
+See `references/exit-engine.md`.
 
 ## Unified Accounts
 

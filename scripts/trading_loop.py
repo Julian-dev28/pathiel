@@ -82,8 +82,8 @@ from pathiel.agents.executor import (
     close_position_market,
     maybe_execute,
     monitor_exits,
-    record_external_position_close,
     route_verdict,
+    settle_vanished_positions,
 )
 from pathiel.agents.dsl_exit import active_position_coins, rehydrate_from_exchange
 from pathiel.agents.config import get_config
@@ -640,12 +640,14 @@ while True:
                 default_leverage=int(_cfg.get("leverage", 1) or 1),
                 queried_dexes=queried_dexes,
             )
-            for _stale in stale_trackers:
-                try:
-                    record_external_position_close(_stale, user=resolve_user_address())
-                except Exception as _e:
-                    logger.error(f"[outcome-store] vanished tracker record failed "
-                                 f"for {_stale.get('coin')}: {_e}")
+            # Record each vanished position's outcome and clear the rest of
+            # its bracket (on its own dex: xyz:CL orders live on xyz).
+            if stale_trackers:
+                for _settled in settle_vanished_positions(
+                        stale_trackers, exempt_coins=_ladder_coins, user=resolve_user_address()):
+                    if _settled["cancelled"]:
+                        log_event({"event": "stranded_orders_cancelled", "coin": _settled["coin"],
+                                   "count": _settled["cancelled"]})
             # include_hip3=True so xyz:MU / vntl:* etc. get fresh mids each
             # cycle — without them, monitor_exits has no price for HIP-3
             # trackers and their peak/floor never advance (dashboard shows
