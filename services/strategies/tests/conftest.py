@@ -74,7 +74,7 @@ def flat_meta(max_leverage: float = 20.0, funding: float = 0.0, oi: float = 1_00
 
 def make_thesis(*, desk_id: str = "oil", thesis_id: Optional[str] = None,
                 author: Author = "machine", created_at: Optional[datetime] = None,
-                horizon_days: int = 7, side: CallSide = "long", instrument: str = "xyz:CL",
+                horizon_days: int = 7, side: CallSide = "long", instrument: str = "xyz:BRENTOIL",
                 entry_px: Optional[float] = 100.0, stop_px: Optional[float] = 90.0,
                 targets: Sequence[float] = (110.0,), leverage: Optional[float] = 5.0,
                 confidence: float = 0.6, scenarios: Optional[List[Scenario]] = None,

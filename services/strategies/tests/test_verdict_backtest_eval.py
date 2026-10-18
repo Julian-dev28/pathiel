@@ -76,7 +76,7 @@ def test_run_for_desk_fully_offline_with_injected_fetchers():
 
     rows = VB.run_for_desk("oil", daily_fetcher=daily_fetcher, meta_fetcher=meta_fetcher)
     assert rows, "expected rows for oil's primary instrument(s)"
-    assert {r["coin"] for r in rows} == {"xyz:CL"}   # only the primary instrument
+    assert {r["coin"] for r in rows} == {"xyz:BRENTOIL"}   # only the primary instrument (Brent)
     assert {r["side"] for r in rows} == {"long", "short"}
     for r in rows:
         assert "passed" in r and "hold_liq_rate" in r

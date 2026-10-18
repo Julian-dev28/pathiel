@@ -355,6 +355,10 @@ class Thesis(_M):
     sources: List[SourceRef] = []
     analytics_ref: Optional[PayloadRef] = None
     intel_ref: Optional[PayloadRef] = None
+    # The desk's primary coin(s) when this thesis was written, stamped by
+    # services/strategies/pipeline. [] = written before 2026-10-19 (unknown).
+    # The token gate rewrites a thesis whose desk has changed primary since.
+    primary_coins: List[str] = []
     usage: Usage = Usage()
     grade: Optional[Grade] = None
 

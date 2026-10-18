@@ -25,7 +25,7 @@ def test_cmd_list_json(capsys):
 
 
 def test_cmd_brief_known_desk(capsys, stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     rc = cli.main(["brief", "oil"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -33,7 +33,7 @@ def test_cmd_brief_known_desk(capsys, stub_live_analytics):
 
 
 def test_cmd_brief_json(capsys, stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     rc = cli.main(["--json", "brief", "oil"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -48,7 +48,7 @@ def test_cmd_brief_unknown_desk(capsys):
 
 
 def test_cmd_refresh_reports_state(capsys, stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     rc = cli.main(["refresh", "oil", "--force"])
     assert rc == 0
     out = capsys.readouterr().out

@@ -146,6 +146,7 @@ thesis = Thesis(
     sources=[SourceRef(id="h1", title="CNBC", url="https://www.cnbc.com/2026/10/16/oil-price-today-iran-strait-hormuz-ukraine-russia.html")],
     analytics_ref=PayloadRef(as_of=T0, sha256="0" * 64),
     intel_ref=PayloadRef(as_of=T0, sha256="0" * 64),
+    primary_coins=["xyz:CL"],   # this fixture desk is the 2026-10-17 one, priced off WTI
     usage=Usage(model="fixture", input_tokens=5200, output_tokens=1400),
 )
 

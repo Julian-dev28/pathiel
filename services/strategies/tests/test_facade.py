@@ -21,9 +21,9 @@ def test_list_cards_one_per_desk_with_no_prior_refresh():
 
 
 def test_list_cards_reflects_cached_analytics_and_latest_thesis(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=101.5, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=101.5, coin="xyz:BRENTOIL"))
     facade.refresh("oil")  # populates the analytics cache (providers unavailable -> no thesis)
-    journal.save_thesis(make_thesis(desk_id="oil", instrument="xyz:CL", side="long"))
+    journal.save_thesis(make_thesis(desk_id="oil", instrument="xyz:BRENTOIL", side="long"))
 
     cards = {c.id: c for c in facade.list_cards()}
     assert cards["oil"].mid == 101.5
@@ -38,7 +38,7 @@ def test_get_brief_unknown_desk_raises():
 
 
 def test_get_brief_never_refreshed_is_honestly_empty(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     brief = facade.get_brief("oil")
     assert brief.analytics is not None   # brief ALWAYS builds analytics live
     assert brief.intel is None
@@ -48,9 +48,9 @@ def test_get_brief_never_refreshed_is_honestly_empty(stub_live_analytics):
 
 
 def test_get_brief_shows_cached_intel_and_thesis_after_refresh(monkeypatch, stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
 
-    written = make_thesis(desk_id="oil", thesis_id="w1", instrument="xyz:CL", scenarios=[],
+    written = make_thesis(desk_id="oil", thesis_id="w1", instrument="xyz:BRENTOIL", scenarios=[],
                           created_at=datetime.now(timezone.utc))  # must be unexpired "right now"
 
     def fake_resolve(path):
@@ -72,8 +72,8 @@ def test_get_brief_shows_cached_intel_and_thesis_after_refresh(monkeypatch, stub
 
 
 def test_get_brief_flags_expired_thesis_as_stale(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
-    expired = make_thesis(desk_id="oil", instrument="xyz:CL",
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
+    expired = make_thesis(desk_id="oil", instrument="xyz:BRENTOIL",
                           created_at=datetime.now(timezone.utc) - timedelta(days=30), horizon_days=7)
     journal.save_thesis(expired)
     brief = facade.get_brief("oil")
@@ -81,7 +81,7 @@ def test_get_brief_flags_expired_thesis_as_stale(stub_live_analytics):
 
 
 def test_refresh_passes_through_to_pipeline(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     job = facade.refresh("oil", force=True)
     assert job.desk_id == "oil"
     assert job.state in ("done", "skipped", "error")
@@ -89,7 +89,7 @@ def test_refresh_passes_through_to_pipeline(stub_live_analytics):
 
 def test_submit_user_thesis_creates_a_valid_journaled_thesis():
     body = UserThesisIn(
-        call=Call(side="long", instrument="xyz:CL", one_liner="my own call", entry_px=100.0,
+        call=Call(side="long", instrument="xyz:BRENTOIL", one_liner="my own call", entry_px=100.0,
                  stop_px=90.0, targets=[110.0], leverage=5.0, confidence=0.7,
                  invalidation="daily close below 90"),
         scenarios=[Scenario(name="up", probability=1.0, move_lo_pct=-1.0, move_hi_pct=1.0,
@@ -117,7 +117,7 @@ def test_submit_user_thesis_unknown_desk_raises():
 
 
 def test_submit_user_thesis_without_notes_leaves_bull_empty():
-    body = UserThesisIn(call=Call(side="flat", instrument="xyz:CL", one_liner="x", confidence=0.5,
+    body = UserThesisIn(call=Call(side="flat", instrument="xyz:BRENTOIL", one_liner="x", confidence=0.5,
                                   invalidation="x"))
     thesis = facade.submit_user_thesis("oil", body)
     assert thesis.bull == []
@@ -133,7 +133,7 @@ def test_track_record_delegates_to_grader():
 
 def test_grade_due_is_idempotent_through_the_facade():
     created = NOW - timedelta(days=10)
-    journal.save_thesis(make_thesis(desk_id="oil", thesis_id="due1", instrument="xyz:CL",
+    journal.save_thesis(make_thesis(desk_id="oil", thesis_id="due1", instrument="xyz:BRENTOIL",
                                     entry_px=100.0, horizon_days=1, created_at=created, scenarios=[]))
 
     def fetcher(coin, interval, count):

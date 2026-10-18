@@ -19,7 +19,7 @@ from services.strategies.tests.conftest import make_thesis, minimal_analytics
 
 @pytest.fixture
 def client(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL"))
     # fresh per-test job registry — a module-level dict would otherwise leak
     # queued/done jobs from one test into the next's assertions.
     strategies_api._JOBS.clear()
@@ -114,7 +114,7 @@ def test_get_theses_unknown_desk_404(client):
 
 def test_post_thesis_creates_a_user_thesis(client):
     body = {
-        "call": {"side": "long", "instrument": "xyz:CL", "one_liner": "api test call",
+        "call": {"side": "long", "instrument": "xyz:BRENTOIL", "one_liner": "api test call",
                  "entry_px": 100.0, "stop_px": 90.0, "targets": [110.0], "leverage": 5.0,
                  "confidence": 0.6, "invalidation": "daily close below 90"},
         "scenarios": [],

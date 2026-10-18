@@ -13,6 +13,10 @@ THIS service's own analytics is treated as a hard "error" RefreshJob.
 
 `needs_rewrite()` is the token gate: skip the (billable, slow) thesis
 provider unless something actually changed since the last machine thesis.
+A change of a desk's primary instrument (oil: WTI to Brent, 2026-10-19) is
+one of those changes: the cached read and the last thesis were priced off
+the old primary, so neither is served or built on (`analytics_matches_spec`,
+`primary_changed`).
 Every refresh — written, skipped, or errored — appends one row to
 `$PATHIEL_STATE_DIR/strategies/usage.jsonl`, so cost per thesis is visible.
 """
@@ -24,7 +28,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 from contracts.strategies.models import (
     DeskAnalytics, DeskSpec, IntelPacket, RefreshJob, Thesis, Usage,
@@ -64,6 +68,38 @@ def _usage_log_path() -> str:
     return os.path.join(_state_dir(), "strategies", "usage.jsonl")
 
 
+# ── desk primaries: what a cached read or a thesis was priced off ──────────
+
+def primary_coins(spec: DeskSpec) -> List[str]:
+    """The desk's primary coins, in spec order: the instruments the leverage
+    ladder and the forward stats are built for, and the call is priced off."""
+    return [i.coin for i in spec.instruments if i.role == "primary"]
+
+
+def analytics_matches_spec(spec: DeskSpec, result: DeskAnalytics) -> bool:
+    """False when `result` was built while the desk had other primaries.
+    Ladder rungs and forward stats are only ever built for primaries, so a
+    rung or forward row on a coin that is not a primary now proves the read
+    is from before the change. A primary ADDED since is not detected (every
+    old row is still a primary): that read is incomplete until the next
+    rebuild, not wrong."""
+    built = {r.coin for r in result.ladder} | {f.coin for f in result.forward}
+    return built <= set(primary_coins(spec))
+
+
+def primary_changed(spec: DeskSpec, prev: Thesis) -> bool:
+    """Whether `prev` was written while the desk had other primaries.
+    Theses written since 2026-10-19 carry the answer (primary_coins). Older
+    ones do not, so for those a long or short call on a coin that is not a
+    primary now is read as written for the old desk. That can misfire once,
+    on an old call that chose a secondary coin on purpose; the rewrite is
+    stamped, so it never fires twice for the same desk."""
+    now = primary_coins(spec)
+    if prev.primary_coins:
+        return sorted(prev.primary_coins) != sorted(now)
+    return prev.call.side in ("long", "short") and prev.call.instrument not in now
+
+
 # ── analytics / intel cache (read by facade.get_brief / list_cards) ─────────
 
 def save_analytics(desk_id: str, result: DeskAnalytics) -> None:
@@ -71,8 +107,19 @@ def save_analytics(desk_id: str, result: DeskAnalytics) -> None:
 
 
 def load_cached_analytics(desk_id: str) -> Optional[DeskAnalytics]:
+    """The cached read, or None when there is none or it was built for other
+    primaries than the desk has now: that cache counts as no cache, so it is
+    rebuilt rather than served with the old primary's ladder."""
     raw = read_json(_analytics_cache_path(desk_id))
-    return DeskAnalytics.model_validate(raw) if raw else None
+    if not raw:
+        return None
+    result = DeskAnalytics.model_validate(raw)
+    spec = get_spec(desk_id)
+    if spec is not None and not analytics_matches_spec(spec, result):
+        logger.info(f"[strategies.pipeline] {desk_id}: cached analytics were built for other "
+                    f"primaries than {primary_coins(spec)}; treating them as missing")
+        return None
+    return result
 
 
 def cached_analytics_age_s(desk_id: str, *, now: Optional[float] = None) -> Optional[float]:
@@ -146,19 +193,22 @@ def needs_rewrite(spec: DeskSpec, result: DeskAnalytics, intel: Optional[IntelPa
 
         1. force                             -> True,  "forced"
         2. no prior machine thesis           -> True,  "no_prior_thesis"
-        3. prior thesis expired              -> True,  "expired"
-        4. refresh_min_interval_min not yet elapsed since prior -> False, "min_interval_not_elapsed"
+        3. desk's primaries changed since prior (primary_changed) -> True, "primary_changed"
+        4. prior thesis expired              -> True,  "expired"
+        5. refresh_min_interval_min not yet elapsed since prior -> False, "min_interval_not_elapsed"
            (rate limit wins even over a material move below — it only
-           guards the two triggers after it, expiry/force above always win)
-        5. primary instrument moved >= material_move_pct since prior entry -> True, "material_move"
-        6. a headline >= min_headline_relevance arrived after prior.created_at -> True, "high_relevance_headline"
-        7. otherwise                         -> False, "no_trigger"
+           guards the two triggers after it; the three above always win)
+        6. call instrument moved >= material_move_pct since prior entry -> True, "material_move"
+        7. a headline >= min_headline_relevance arrived after prior.created_at -> True, "high_relevance_headline"
+        8. otherwise                         -> False, "no_trigger"
     """
     now = now or datetime.now(timezone.utc)
     if force:
         return True, "forced"
     if prev is None:
         return True, "no_prior_thesis"
+    if primary_changed(spec, prev):
+        return True, "primary_changed"
     if now >= prev.expires_at:
         return True, "expired"
 
@@ -250,7 +300,12 @@ def refresh(desk_id: str, force: bool = False,
                           finished_at=datetime.now(timezone.utc), message=message, usage=usage)
 
     stage(STAGE_THESIS)
-    thesis, thesis_note = _load_thesis(spec, result, intel, prev)
+    # A thesis written for other primaries is not a base to update: the
+    # incremental prompt would measure the new primary's price against the
+    # old call's entry (Brent at 107 vs a WTI entry at 98.87), and a failed
+    # call would fall back to re-serving the old call. Write from scratch.
+    base = None if prev is not None and primary_changed(spec, prev) else prev
+    thesis, thesis_note = _load_thesis(spec, result, intel, base)
     if thesis_note:
         notes.append(thesis_note)
 
@@ -261,6 +316,7 @@ def refresh(desk_id: str, force: bool = False,
         return RefreshJob(id=job_id, desk_id=desk_id, state="done", started_at=started,
                           finished_at=datetime.now(timezone.utc), message=message, usage=usage)
 
+    thesis = thesis.model_copy(update={"primary_coins": primary_coins(spec)})
     journal.save_thesis(thesis)
     usage = thesis.usage or Usage()
     if usage.duration_s is None:
