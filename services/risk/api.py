@@ -4,6 +4,7 @@
     PUT  /api/risk/profile   -> RiskProfile           body: RiskProfile
     GET  /api/risk/limits    -> DerivedLimits         (active account's equity)
     POST /api/risk/preview   -> DerivedLimits         body: PreviewIn (any equity, any profile)
+    POST /api/risk/size      -> TradeSize             body: TradeSizeIn (active account's equity)
 
 INTEGRATOR: this router is not mounted anywhere. pathiel/server.py is
 integrator-only this wave (docs/overhaul/SWARM_RULES.md section 10) — add,
@@ -32,15 +33,18 @@ number is worse than an honest failure here).
 from __future__ import annotations
 
 import logging
+import os
+import time
 from typing import Optional
 
 from fastapi import Request, APIRouter, HTTPException
 
-from contracts.risk.models import DerivedLimits, PreviewIn, RiskProfile
+from contracts.risk.models import DerivedLimits, PreviewIn, RiskProfile, TradeSize, TradeSizeIn
 from pathiel.agents.config_store import read_agent_config, read_risk_profile, write_risk_profile
 from pathiel.client.exchange import MIN_ORDER_USD
 from services.risk import books as risk_books
 from services.risk.derive import VenueRules, derive_limits
+from services.risk.size import size_trade
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +119,19 @@ def _equity_from_env_account() -> Optional[float]:
         return None
 
 
+# One equity read fans out to every perp dex plus spot (~12 requests on the
+# dashboard server's 2-weight/s budget). The desk page asks for it on every
+# render ("Your size"), so a read is reused for this long. 0 disables.
+_EQUITY_CACHE = {"ts": 0.0, "eq": None}
+EQUITY_TTL_S = float(os.environ.get("PATHIEL_RISK_EQUITY_TTL_S", "60"))
+
+
 def active_equity_usd() -> float:
-    """The active account's current equity, services.accounts preferred."""
+    """The active account's current equity, services.accounts preferred,
+    reused for EQUITY_TTL_S seconds."""
+    now = time.monotonic()
+    if EQUITY_TTL_S > 0 and _EQUITY_CACHE["eq"] is not None and now - _EQUITY_CACHE["ts"] < EQUITY_TTL_S:
+        return _EQUITY_CACHE["eq"]
     eq = _equity_from_accounts_service()
     if eq is None:
         eq = _equity_from_env_account()
@@ -126,6 +141,7 @@ def active_equity_usd() -> float:
             detail=("could not read the active account's equity (services.accounts "
                     "unavailable and the env account's Hyperliquid state read failed)"),
         )
+    _EQUITY_CACHE.update(ts=now, eq=eq)
     return eq
 
 
@@ -157,3 +173,32 @@ def post_preview(body: PreviewIn) -> DerivedLimits:
     config = read_agent_config()
     books = risk_books.all_book_specs(config)
     return derive_limits(body.equity_usd, body.profile, books, _VENUE)
+
+
+def _coin_specs(coin: str):
+    """(venue max leverage, size decimals) for a coin; None for either when
+    the venue metadata cannot be read (sizing still works without them)."""
+    from pathiel.client.exchange import get_coin_index, get_max_leverage
+    try:
+        max_lev = float(get_max_leverage(coin))
+    except Exception:
+        max_lev = None
+    try:
+        sz_dec = int(get_coin_index(coin)[1])
+    except Exception:
+        sz_dec = None
+    return max_lev, sz_dec
+
+
+@router.post("/size", response_model=TradeSize)
+def post_size(body: TradeSizeIn, request: Request) -> TradeSize:
+    """One trade sized for the active account (the desk page's "Your size"
+    line). Same rules as the books: services/risk/size.py."""
+    _gate(request)
+    config = read_agent_config()
+    coin_max, sz_dec = _coin_specs(body.coin)
+    return size_trade(
+        active_equity_usd(), read_risk_profile(config), risk_books.all_book_specs(config),
+        entry_px=body.entry_px, stop_px=body.stop_px, leverage=body.leverage,
+        coin_max_leverage=coin_max, targets=body.targets, venue=_VENUE, sz_decimals=sz_dec)
+

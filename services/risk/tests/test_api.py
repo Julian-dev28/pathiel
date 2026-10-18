@@ -170,3 +170,52 @@ def test_profile_and_limits_are_operator_only_off_the_local_machine(monkeypatch,
     finally:
         auth_deps.reset_store_for_tests(None)
         store.close()
+
+
+# ── POST /api/risk/size: the desk page's "Your size" line ──────────────────
+
+@pytest.fixture
+def _sized(_client, monkeypatch):
+    monkeypatch.setattr(risk_api, "_coin_specs", lambda coin: (20.0, 3))
+    return _client
+
+
+def test_size_sizes_one_trade_for_the_active_account(_sized):
+    r = _sized.post("/api/risk/size", json={"coin": "xyz:CL", "entry_px": 98.87,
+                                            "stop_px": 88.22, "leverage": 5,
+                                            "targets": [101.19, 105.55]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["can_trade"] is True and body["side"] == "long"
+    assert body["notional_usd"] >= 10.5 and body["size"] == round(body["size"], 3)
+    assert any("R:" in w for w in body["warnings"])          # 0.6R best target
+
+
+def test_size_rejects_a_non_positive_price(_sized):
+    r = _sized.post("/api/risk/size", json={"coin": "xyz:CL", "entry_px": 0, "stop_px": 88.22})
+    assert r.status_code == 422
+
+
+def test_size_is_gated_like_the_other_account_reads(app, monkeypatch, tmp_path):
+    """Reads the account's equity: a non-local caller with no session is refused."""
+    monkeypatch.setenv("PATHIEL_PUBLIC_DASHBOARD", "1")       # deployment marker: no local mode
+    monkeypatch.setattr(risk_api, "active_equity_usd", lambda: 15.19)
+    monkeypatch.setattr(risk_api, "_coin_specs", lambda coin: (20.0, 3))
+    c = TestClient(app, client=("203.0.113.9", 41000))
+    r = c.post("/api/risk/size", json={"coin": "xyz:CL", "entry_px": 98.87, "stop_px": 88.22})
+    assert r.status_code in (401, 403)
+
+
+def test_active_equity_is_reused_within_its_ttl(monkeypatch):
+    """The desk page sizes the call on every render; each fresh equity read
+    is ~12 venue requests on the server's small budget."""
+    calls = []
+    monkeypatch.setattr(risk_api, "_equity_from_accounts_service", lambda: calls.append(1) or 15.21)
+    monkeypatch.setattr(risk_api, "_EQUITY_CACHE", {"ts": 0.0, "eq": None})
+    monkeypatch.setattr(risk_api, "EQUITY_TTL_S", 30.0)
+    assert risk_api.active_equity_usd() == 15.21
+    assert risk_api.active_equity_usd() == 15.21
+    assert len(calls) == 1
+    monkeypatch.setattr(risk_api, "EQUITY_TTL_S", 0.0)          # 0 disables the cache
+    risk_api.active_equity_usd()
+    assert len(calls) == 2

@@ -14,6 +14,12 @@ Routes (services/risk/api.py):
   PUT  /api/risk/profile   -> RiskProfile        body: RiskProfile
   GET  /api/risk/limits    -> DerivedLimits      (active account's equity)
   POST /api/risk/preview   -> DerivedLimits      body: PreviewIn (any equity, any profile)
+  POST /api/risk/size      -> TradeSize          body: TradeSizeIn (active account's equity)
+
+Function surface (services/risk/size.py, used by the MCP server):
+  size_trade(equity, profile, books, entry_px=, stop_px=, ...) -> TradeSize
+    How big ONE specific trade (entry, stop, optional leverage and targets)
+    should be for this account under the same rules as the books.
 """
 from __future__ import annotations
 
@@ -77,3 +83,39 @@ class DerivedLimits(_M):
 class PreviewIn(_M):
     equity_usd: float = Field(ge=0)
     profile: RiskProfile = RiskProfile()
+
+
+class TargetPayoff(_M):
+    px: float
+    gain_usd: float                                   # if price reaches px, at this size
+    r_multiple: float                                 # gain / risk_usd
+
+
+class TradeSize(_M):
+    """One trade, sized. Every money field is None when can_trade is False."""
+    side: Literal["long", "short"]                    # inferred: stop below entry = long
+    entry_px: float
+    stop_px: float
+    stop_pct: float                                   # distance entry -> stop, % of entry
+    can_trade: bool
+    size: Optional[float] = None                      # coin units, rounded to the venue's size step
+    notional_usd: Optional[float] = None
+    leverage: Optional[float] = None                  # applied: min(requested, coin max, profile max)
+    leverage_capped_by: Optional[Literal["profile", "coin"]] = None
+    margin_usd: Optional[float] = None
+    risk_usd: Optional[float] = None                  # lost if the stop fills
+    risk_pct: Optional[float] = None                  # of equity
+    bumped_to_min: bool = False                       # sized up to the venue minimum
+    targets: List[TargetPayoff] = []
+    reason: str                                       # one plain sentence, always present
+    warnings: List[str] = []                          # e.g. best target pays under 1R
+
+
+class TradeSizeIn(_M):
+    """POST /api/risk/size body: one trade to size for the active account."""
+    coin: str
+    entry_px: float = Field(gt=0)
+    stop_px: float = Field(gt=0)
+    leverage: Optional[float] = Field(default=None, gt=0, le=100)
+    targets: List[float] = []
+
