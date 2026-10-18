@@ -253,3 +253,47 @@ def test_refresh_degrades_when_thesis_provider_raises(stub_live_analytics):
     assert job.state == "done"
     assert "thesis provider raised" in job.message
     assert journal.latest_thesis("oil") is None
+
+
+# ── stage reporting (refresh progress for the UI / MCP) ─────────────────────
+
+def test_refresh_reports_each_stage_in_order(stub_live_analytics):
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL"))
+    seen = []
+    pipeline.refresh("oil", force=True, on_stage=seen.append)
+    assert seen == [pipeline.STAGE_MARKET, pipeline.STAGE_INTEL,
+                    pipeline.STAGE_GATE, pipeline.STAGE_THESIS]
+
+
+def test_skipped_refresh_never_claims_to_write_a_thesis(stub_live_analytics):
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL", mid=100.0))
+    journal.save_thesis(make_thesis(desk_id="oil", instrument="xyz:CL",
+                                    created_at=datetime.now(timezone.utc)))
+    seen = []
+    job = pipeline.refresh("oil", force=False, on_stage=seen.append)
+    assert job.state == "skipped"
+    assert pipeline.STAGE_THESIS not in seen
+
+
+def test_a_raising_stage_hook_never_breaks_the_refresh(stub_live_analytics):
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL"))
+
+    def boom(label):
+        raise ValueError("ui went away")
+
+    job = pipeline.refresh("oil", force=True, on_stage=boom)
+    assert job.state in ("done", "skipped")
+
+
+def test_thesis_refresh_asks_for_fresh_candles(monkeypatch):
+    """A thesis is written against the market now: refresh() must pass
+    candle_max_age_s=0 so the candle store re-fetches the tail."""
+    seen = {}
+
+    def fake_build(spec, **kwargs):
+        seen.update(kwargs)
+        return minimal_analytics(spec.id, coin="xyz:CL")
+
+    monkeypatch.setattr(pipeline.analytics_mod, "build_analytics", fake_build)
+    pipeline.refresh("oil", force=True)
+    assert seen.get("candle_max_age_s") == 0

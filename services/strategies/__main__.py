@@ -38,7 +38,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_brief(args: argparse.Namespace) -> int:
     try:
-        brief = facade.get_brief(args.desk)
+        brief = facade.get_brief(args.desk, wait=True)
     except desks.UnknownDeskError:
         print(f"unknown desk '{args.desk}'; known: {', '.join(desks.list_desk_ids())}", file=sys.stderr)
         return 1

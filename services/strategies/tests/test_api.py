@@ -177,3 +177,36 @@ def test_desk_html_page_known_desk(client):
 def test_desk_html_page_unknown_desk_404(client):
     r = client.get("/desks/not-a-real-desk")
     assert r.status_code == 404
+
+
+def test_running_job_reports_the_current_stage(client, monkeypatch):
+    """The page shows what a refresh is doing ("writing the thesis") while it
+    runs, read from the polled job's message."""
+    import threading
+    from services.strategies import facade
+    gate = threading.Event()
+
+    def slow_refresh(desk_id, force=False, on_stage=None):
+        on_stage("writing the thesis (about a minute)")
+        gate.wait(5)
+        return RefreshJob(id="x", desk_id=desk_id, state="done",
+                          started_at=datetime.now(timezone.utc), message="thesis written")
+
+    monkeypatch.setattr(facade, "refresh", slow_refresh)
+    job = client.post("/api/desks/oil/refresh", json={}).json()
+    deadline = time.monotonic() + 5
+    msg = None
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/desks/jobs/{job['id']}").json()
+        if body["state"] == "running" and body.get("message"):
+            msg = body["message"]
+            break
+        time.sleep(0.01)
+    gate.set()
+    assert msg == "writing the thesis (about a minute)"
+    assert _poll_job(client, job["id"])["state"] == "done"
+
+
+def test_brief_payload_carries_the_refreshing_flag(client):
+    body = client.get("/api/desks/oil").json()
+    assert body["refreshing"] is False

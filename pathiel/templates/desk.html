@@ -6,7 +6,7 @@
 <title>Desk · pathiel</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/pathiel.css" />
-<link rel="stylesheet" href="/static/desks.css" />
+<link rel="stylesheet" href="/static/desks.css?v=20261018" />
 <script src="/static/pathiel.js"></script>
 </head>
 <body>
@@ -41,6 +41,7 @@
     <a href="/desks" class="note">&larr; All desks</a>
     <h1 class="page-title" id="desk-name">&nbsp;</h1>
     <div class="page-sub" id="desk-tagline">&nbsp;</div>
+    <div id="desk-updating" class="note desk-updating" hidden role="status">Updating prices&hellip;</div>
   </div>
 
   <div id="desk-loading" class="state-block" aria-live="polite">
@@ -97,6 +98,7 @@
           </div>
         </div>
         <div class="call-invalidation"><b>Out if:</b> <span id="call-invalidation"></span></div>
+        <div class="call-size" id="call-size" hidden></div>
         <div class="call-age" id="call-age"></div>
       </div>
     </section>
@@ -323,6 +325,6 @@
 
 </main>
 
-<script src="/static/desks.js"></script>
+<script src="/static/desks.js?v=20261018"></script>
 </body>
 </html>

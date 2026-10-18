@@ -55,6 +55,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from contracts.risk.models import RiskProfile, TradeSize, TradeSizeIn
+from services.risk.derive import VenueRules
+from services.risk.size import size_trade
 from contracts.strategies.models import (
     AccountSnapshot, Call, Catalyst, ConditionalStats, DeskAnalytics, DeskBrief, DeskCard,
     DeskSpec, ForwardStats, Grade, Headline, Instrument, InstrumentSnapshot, IntelPacket,
@@ -69,6 +72,7 @@ TEMPLATES = REPO_ROOT / "pathiel" / "templates"
 STATIC_DIR = REPO_ROOT / "pathiel" / "static"
 
 NOW = datetime.now(timezone.utc)
+FIXTURE_EQUITY_USD = 15.21
 
 
 def q(p10, p25, p50, p75, p90) -> Quantiles:
@@ -91,11 +95,36 @@ def ladder_rows(coin: str, side: str, entry: float, equity: float, rungs: list[d
 
 # ── oil: the real fixtures ───────────────────────────────────────────────────
 
+def _shift_dates(obj, delta: timedelta):
+    """Every ISO-8601 datetime string in a raw fixture, moved by `delta`."""
+    if isinstance(obj, dict):
+        return {k: _shift_dates(v, delta) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_shift_dates(v, delta) for v in obj]
+    if isinstance(obj, str) and len(obj) >= 19 and obj[4] == "-" and obj[10] == "T":
+        try:
+            return (datetime.fromisoformat(obj.replace("Z", "+00:00")) + delta).isoformat()
+        except ValueError:
+            return obj
+    return obj
+
+
 def _load_oil() -> dict:
-    spec = DeskSpec.model_validate(json.loads((FIXTURES / "oil_spec.json").read_text()))
-    analytics = DeskAnalytics.model_validate(json.loads((FIXTURES / "oil_analytics.json").read_text()))
-    intel = IntelPacket.model_validate(json.loads((FIXTURES / "oil_intel.json").read_text()))
-    thesis = Thesis.model_validate(json.loads((FIXTURES / "oil_thesis.json").read_text()))
+    """The real contract fixtures, re-anchored so their analytics were built
+    at import time. Every date moves by the same delta, so the packet keeps
+    its internal shape (thesis 30 min after the data, catalysts ahead of it)
+    and stays FRESH whatever day the suite runs. Loaded as-is, the fixtures
+    aged past the 24h staleness window a day after they were written and
+    test_desk_brief_oil_matches_the_real_fixtures began failing on the
+    calendar alone (2026-10-18)."""
+    raw = {name: json.loads((FIXTURES / f"oil_{name}.json").read_text())
+           for name in ("spec", "analytics", "intel", "thesis")}
+    as_of = datetime.fromisoformat(raw["analytics"]["as_of"].replace("Z", "+00:00"))
+    delta = NOW - as_of
+    spec = DeskSpec.model_validate(raw["spec"])
+    analytics = DeskAnalytics.model_validate(_shift_dates(raw["analytics"], delta))
+    intel = IntelPacket.model_validate(_shift_dates(raw["intel"], delta))
+    thesis = Thesis.model_validate(_shift_dates(raw["thesis"], delta))
     return {"spec": spec, "analytics": analytics, "intel": intel, "thesis": thesis}
 
 
@@ -499,6 +528,17 @@ def create_app() -> FastAPI:
     async def session() -> dict:
         return {"local_mode": True, "address": None, "active_account_id": None,
                 "accounts_count": 1, "can_trade": True, "needs_onboarding": False}
+
+    # The desk page sizes the call for the active account ("Your size") via
+    # the risk service. Answered here with the REAL size_trade at a fixed
+    # $15.21 starter account, so the line renders deterministically and the
+    # page never logs a 404 for it.
+    @app.post("/api/risk/size", response_model=TradeSize)
+    async def risk_size(body: TradeSizeIn) -> TradeSize:
+        return size_trade(FIXTURE_EQUITY_USD, RiskProfile(preset="starter"), [],
+                          entry_px=body.entry_px, stop_px=body.stop_px, leverage=body.leverage,
+                          coin_max_leverage=20.0, targets=body.targets,
+                          venue=VenueRules(min_order_notional_usd=10.5), sz_decimals=3)
 
     @app.get("/desks", response_class=HTMLResponse)
     async def desks_page() -> HTMLResponse:

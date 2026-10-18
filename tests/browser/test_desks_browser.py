@@ -471,3 +471,31 @@ def test_zero_console_errors_across_every_state(server, browser):
     page.wait_for_timeout(200)
     assert not issues, issues
     page.close()
+
+
+
+# ── "Your size" (2026-10-18) ──────────────────────────────────────────────────
+
+def test_your_size_line_sizes_the_call_and_hides_with_amounts(server, browser):
+    """The call card says how big THIS account's position would be, from the
+    risk service, and "Hide amounts" masks the dollars like every other cash
+    figure. The fixture app answers /api/risk/size with the real size_trade
+    at a $15.21 starter account."""
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.goto(server + "/desks/oil", wait_until="networkidle")
+    line = page.locator("#call-size")
+    line.wait_for(state="visible", timeout=5000)
+    text = line.inner_text()
+    assert text.startswith("Your size:") and "margin" in text and "Stop-out costs $" in text
+    page.click("#discreet-toggle")
+    assert "$" not in line.inner_text()          # dollars masked, percentages stay
+    page.click("#discreet-toggle")
+    assert not issues, issues
+    page.close()
+
+
+def test_no_size_line_without_a_call(server, browser):
+    page, _ = open_page(browser, DESKTOP_VP)
+    page.goto(server + "/desks/ai", wait_until="networkidle")
+    assert page.locator("#call-size").is_hidden()
+    page.close()

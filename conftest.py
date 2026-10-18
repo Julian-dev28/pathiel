@@ -32,3 +32,5 @@ if _ENV_FILE.exists():
 # The dashboard reads live equity when the loop heartbeat is stale; gate tests
 # must not reach Hyperliquid. Tests that cover the live path enable it with a mock.
 os.environ.setdefault("PATHIEL_DASHBOARD_LIVE_EQUITY", "0")
+os.environ.setdefault("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
+os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")

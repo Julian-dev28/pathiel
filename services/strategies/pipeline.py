@@ -24,7 +24,7 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from contracts.strategies.models import (
     DeskAnalytics, DeskSpec, IntelPacket, RefreshJob, Thesis, Usage,
@@ -73,6 +73,17 @@ def save_analytics(desk_id: str, result: DeskAnalytics) -> None:
 def load_cached_analytics(desk_id: str) -> Optional[DeskAnalytics]:
     raw = read_json(_analytics_cache_path(desk_id))
     return DeskAnalytics.model_validate(raw) if raw else None
+
+
+def cached_analytics_age_s(desk_id: str, *, now: Optional[float] = None) -> Optional[float]:
+    """Seconds since the analytics cache was last WRITTEN (file mtime), or
+    None when there is none. The write time, not DeskAnalytics.as_of, is
+    what says how long ago this process last paid for a rebuild."""
+    try:
+        mtime = os.path.getmtime(_analytics_cache_path(desk_id))
+    except OSError:
+        return None
+    return max(0.0, (time.time() if now is None else now) - mtime)
 
 
 def save_intel(desk_id: str, packet: IntelPacket) -> None:
@@ -181,17 +192,39 @@ def _log_usage(desk_id: str, decision: str, reason: str, usage: Optional[Usage])
 
 # ── entrypoint ─────────────────────────────────────────────────────────────
 
-def refresh(desk_id: str, force: bool = False) -> RefreshJob:
+# Plain-English stage labels, reported through refresh(on_stage=...) so a UI
+# polling the job can say what is happening instead of a bare spinner.
+STAGE_MARKET = "reading market data"
+STAGE_INTEL = "pulling news, policy and odds"
+STAGE_GATE = "checking whether anything changed"
+STAGE_THESIS = "writing the thesis (about a minute)"
+
+
+def refresh(desk_id: str, force: bool = False,
+            on_stage: Optional[Callable[[str], None]] = None) -> RefreshJob:
     job_id = uuid.uuid4().hex
     started = datetime.now(timezone.utc)
+
+    def stage(label: str) -> None:
+        if on_stage is not None:
+            try:
+                on_stage(label)
+            except Exception:  # noqa: BLE001 - a progress hook must never break a refresh
+                logger.debug("[strategies.pipeline] on_stage hook raised", exc_info=True)
+
     spec = get_spec(desk_id)
     if spec is None:
         return RefreshJob(id=job_id, desk_id=desk_id, state="error", started_at=started,
                           finished_at=datetime.now(timezone.utc), message=f"unknown desk '{desk_id}'")
 
     t0 = time.monotonic()
+    stage(STAGE_MARKET)
     try:
-        result = build_and_cache_analytics(spec)
+        # candle_max_age_s=0: a thesis is written against the market NOW, so
+        # the stored daily series always gets its tail re-fetched here (one
+        # small request per instrument), unlike a brief, which may serve a
+        # few-minute-old copy.
+        result = build_and_cache_analytics(spec, candle_max_age_s=0)
     except Exception as exc:
         logger.exception(f"[strategies.pipeline] analytics build failed for {desk_id}")
         _log_usage(desk_id, "error", "analytics_failed", Usage(duration_s=time.monotonic() - t0))
@@ -199,10 +232,12 @@ def refresh(desk_id: str, force: bool = False) -> RefreshJob:
                           finished_at=datetime.now(timezone.utc),
                           message=f"analytics build failed: {exc}")
 
+    stage(STAGE_INTEL)
     intel, intel_note = _load_intel(spec)
     if intel is not None:
         save_intel(desk_id, intel)
 
+    stage(STAGE_GATE)
     prev = journal.latest_thesis(desk_id, author="machine")
     decision, reason = needs_rewrite(spec, result, intel, prev, force=force)
     notes = [n for n in (intel_note,) if n]
@@ -214,6 +249,7 @@ def refresh(desk_id: str, force: bool = False) -> RefreshJob:
         return RefreshJob(id=job_id, desk_id=desk_id, state="skipped", started_at=started,
                           finished_at=datetime.now(timezone.utc), message=message, usage=usage)
 
+    stage(STAGE_THESIS)
     thesis, thesis_note = _load_thesis(spec, result, intel, prev)
     if thesis_note:
         notes.append(thesis_note)
