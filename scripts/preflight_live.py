@@ -72,30 +72,35 @@ def check_brain(r: Report) -> None:
                 "or install the CLI binary")
 
 
+def _live_limits():
+    """Live equity of the ACTIVE account (HIP-3 dexes included) and the limits
+    the executor derives from it. The dashboard's risk payload is a snapshot of
+    the loop's last heartbeat, stale whenever the loop is down (it read $1.37
+    while the account held $15.21, 2026-10-18)."""
+    from pathiel.agents.config_store import read_agent_config, read_risk_profile
+    from services.accounts.summary import get_active_summary
+    from services.risk import books as risk_books
+    from services.risk.api import _VENUE
+    from services.risk.derive import derive_limits
+    summary = get_active_summary()
+    eq = float(summary.equity_usd or 0.0)
+    cfg = read_agent_config()
+    return cfg, eq, derive_limits(eq, read_risk_profile(cfg), risk_books.all_book_specs(cfg), _VENUE)
+
+
 def check_capital(r: Report) -> None:
-    from pathiel.agents.config_store import read_agent_config
-    from pathiel.agents.executor import min_tradable_equity
-    from pathiel.dashboard import _risk_payload
-    x = _risk_payload()
-    # The LIVE config's floor, not the bare backstop — it is derived from the
-    # enabled book set, so quoting min_tradable_equity({}) here would print $25
-    # while the executor actually refuses below $88.89.
-    floor = min_tradable_equity(read_agent_config())
-    eq = float(x.get("equity") or 0)
-    if eq >= floor:
-        r.ok("equity", f"${eq:.2f} clears the ${floor:.0f} floor")
+    # Per-trade feasibility replaced the global equity floor (services/risk):
+    # the question is whether ANY enabled book can place a trade right now.
+    cfg, eq, lim = _live_limits()
+    if lim.can_trade:
+        r.ok("equity", f"${eq:.2f}: {lim.headline}")
     else:
-        r.block("equity", f"${eq:.2f} is under the ${floor:.2f} floor "
-                          f"(what all enabled books cost to hold at once)",
-                "fund the account; the executor refuses every order below it")
-    if x.get("mode") != "LIVE":
-        r.warn("mode", f"{x.get('mode')} — books will not trade until mode is LIVE")
+        r.block("equity", f"${eq:.2f}: {lim.headline}",
+                "fund the account, or pick a different risk preset on /account")
+    if cfg.get("mode") != "LIVE":
+        r.warn("mode", f"{cfg.get('mode')} — books will not trade until mode is LIVE")
     else:
         r.ok("mode", "LIVE")
-    dd = x.get("max_drawdown_pct")
-    if dd is not None and dd < -25:
-        r.warn("drawdown", f"{dd}% max over {x.get('window_days')}d "
-                           f"({x.get('drawdown_basis')} basis)")
 
 
 def check_books(r: Report) -> None:
@@ -179,34 +184,19 @@ def check_book_reachability(r: Report) -> None:
 
 
 def check_margin_headroom(r: Report) -> None:
-    """Enough equity for the books to hold positions simultaneously.
-
-    Funding to exactly the dust floor buys a system where the first book to fire
-    consumes the whole budget and the rest are margin-blocked behind it.
-    """
-    import pathiel.dashboard as db
-    from pathiel.agents.config_store import read_agent_config
-    from pathiel.dashboard import _risk_payload
-
-    cfg = read_agent_config()
-    min_avail = float(cfg.get("min_available_margin_pct", 0.10))
-    total = 0.0
-    for book in db._KNOWN_BOOK_NAMES:
-        c = cfg.get(book) or cfg.get("unlock_short") or {}
-        n = float(c.get("notional_usd", 0) or 0)
-        lev = max(1, int(c.get("leverage", 1) or 1))
-        total += n / lev
-    needed = total / (1 - min_avail) if min_avail < 1 else total
-    eq = float(_risk_payload().get("equity") or 0)
-    if eq >= needed:
-        r.ok("margin headroom", f"${eq:.2f} covers all {len(db._KNOWN_BOOK_NAMES)} books "
-                                f"(${needed:.2f})")
+    """Which enabled books can trade at this equity, from the same derived
+    limits the executor enforces."""
+    _cfg, eq, lim = _live_limits()
+    enabled = [b for b in lim.books if b.enabled]
+    able = [b for b in enabled if b.can_trade]
+    detail = (f"{len(able)} of {len(enabled)} enabled books can trade, "
+              f"{lim.max_open_positions} position(s) at a time")
+    blocked = [f"{b.book} (needs ${b.needs_equity_usd:,.0f})" for b in enabled
+               if not b.can_trade and b.needs_equity_usd]
+    if blocked:
+        r.warn("book capacity", detail + "; waiting on equity: " + ", ".join(blocked))
     else:
-        holdable = int(eq * (1 - min_avail) // (total / max(len(db._KNOWN_BOOK_NAMES), 1))) \
-            if total else 0
-        r.warn("margin headroom",
-               f"${eq:.2f} holds {holdable} of {len(db._KNOWN_BOOK_NAMES)} books at once "
-               f"— ${needed:.2f} needed for all")
+        r.ok("book capacity", detail)
 
 
 def check_feed(r: Report) -> None:
