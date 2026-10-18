@@ -186,3 +186,11 @@ def test_the_exchange_minimum_is_the_backstop():
     from pathiel.agents.executor import (MIN_TRADABLE_EQUITY_USD,
                                                min_tradable_equity)
     assert min_tradable_equity({}) == MIN_TRADABLE_EQUITY_USD
+
+
+def test_the_preflight_uses_the_per_trade_rule_not_the_retired_floor():
+    """2026-10-18: the preflight still blocked on min_tradable_equity ($26) and
+    read equity from the loop's stale heartbeat ($1.37 vs a live $15.21)."""
+    src = (ROOT / "scripts" / "preflight_live.py").read_text()
+    assert "derive_limits" in src and "get_active_summary" in src
+    assert "min_tradable_equity(" not in src
