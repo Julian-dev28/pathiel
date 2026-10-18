@@ -121,7 +121,7 @@ def _render_full(thesis: Thesis, analytics: DeskAnalytics) -> str:
         _render_news(thesis),
         _render_base_case(thesis),
         _render_ladder_table(thesis, analytics),
-        _render_full_send_table(analytics),
+        _render_full_send_table(thesis, analytics),
         _render_catalyst_calendar(thesis),
         _render_what_changes_my_mind(thesis),
         _render_sources(thesis),
@@ -177,25 +177,46 @@ def _render_base_case(thesis: Thesis) -> str:
     return "\n".join(lines)
 
 
+def _rungs_call_side_first(thesis: Thesis, analytics: DeskAnalytics):
+    """The ladder has a long AND a short rung per leverage. Rows for the
+    call's own side come first; the other side follows for comparison.
+    Stable within each side, so leverage order is preserved."""
+    side = thesis.call.side
+    return sorted(analytics.ladder, key=lambda r: 0 if r.side == side else 1)
+
+
+def _side_cell(thesis: Thesis, side: str) -> str:
+    return f"**{side}**" if side == thesis.call.side else side
+
+
 def _render_ladder_table(thesis: Thesis, analytics: DeskAnalytics) -> str:
+    """One row per (side, leverage) rung, with a Side column. The thesis's
+    leverage reasons are about ITS side only, so they are listed under the
+    table, labelled with that side, never pasted onto the other side's rows
+    (they were, until 2026-10-18: the short 5x row read "Chosen")."""
     if not analytics.ladder:
         return ""
-    reason_by_leverage = {lv.leverage: lv.reason for lv in thesis.leverage_view}
     lines = [
         "### Leverage ladder",
-        "| Lev | Liq px | P(liq) | EV | Verdict | Reason |",
+        "| Side | Lev | Liq px | P(liq) | EV | Verdict |",
         "|---|---|---|---|---|---|",
     ]
-    for rung in analytics.ladder:
-        reason = reason_by_leverage.get(rung.leverage, "")
+    for rung in _rungs_call_side_first(thesis, analytics):
         lines.append(
-            f"| {rung.leverage:.0f}x | {rung.liq_px:.2f} | {rung.p_liq * 100:.1f}% | "
-            f"{rung.ev_pct * 100:+.1f}% | {rung.verdict.upper()} | {reason} |"
+            f"| {_side_cell(thesis, rung.side)} | {rung.leverage:.0f}x | {rung.liq_px:.2f} | "
+            f"{rung.p_liq * 100:.1f}% | {rung.ev_pct * 100:+.1f}% | {rung.verdict.upper()} |"
         )
+    if thesis.leverage_view:
+        side = thesis.call.side
+        who = f"the {side} call" if side in ("long", "short") else "this call"
+        lines.append("")
+        lines.append(f"**Why, for {who}:**")
+        for lv in thesis.leverage_view:
+            lines.append(f"- {lv.leverage:.0f}x {lv.verdict.upper()}: {lv.reason}")
     return "\n".join(lines)
 
 
-def _render_full_send_table(analytics: DeskAnalytics) -> str:
+def _render_full_send_table(thesis: Thesis, analytics: DeskAnalytics) -> str:
     """What exactly happens to your money per rung - distinct from the
     ladder table above (should I do this) by cutting the same ladder data
     on equity-outcome quantiles and tail probabilities instead."""
@@ -203,14 +224,15 @@ def _render_full_send_table(analytics: DeskAnalytics) -> str:
         return ""
     lines = [
         "### Full send (equity outcome by leverage)",
-        "| Lev | P10 | P50 | P90 | P(2x) | P(lose half) |",
-        "|---|---|---|---|---|---|",
+        "| Side | Lev | P10 | P50 | P90 | P(2x) | P(lose half) |",
+        "|---|---|---|---|---|---|---|",
     ]
-    for rung in analytics.ladder:
+    for rung in _rungs_call_side_first(thesis, analytics):
         q = rung.equity_ret
         lines.append(
-            f"| {rung.leverage:.0f}x | {q.p10 * 100:+.0f}% | {q.p50 * 100:+.0f}% | "
-            f"{q.p90 * 100:+.0f}% | {rung.p_double * 100:.0f}% | {rung.p_lose_half * 100:.0f}% |"
+            f"| {_side_cell(thesis, rung.side)} | {rung.leverage:.0f}x | {q.p10 * 100:+.0f}% | "
+            f"{q.p50 * 100:+.0f}% | {q.p90 * 100:+.0f}% | {rung.p_double * 100:.0f}% | "
+            f"{rung.p_lose_half * 100:.0f}% |"
         )
     return "\n".join(lines)
 
