@@ -430,6 +430,32 @@ def test_stale_state_shows_the_banner_with_a_reason(server, browser):
     page.close()
 
 
+def test_a_call_from_before_a_primary_change_says_why_it_is_stale(server, browser):
+    """facade.get_brief flags a machine call priced off a desk's old primary
+    (oil moved from WTI to Brent on 2026-10-19). The banner must say that,
+    not the generic "older than its refresh window"."""
+    import json as _json
+    note = "thesis: written for xyz:CL; this desk now prices off xyz:BRENTOIL (run refresh)"
+
+    def add_note(route):
+        response = route.fetch()
+        body = response.json()
+        body["stale"] = [note]
+        route.fulfill(response=response, body=_json.dumps(body),
+                      headers={**response.headers, "content-type": "application/json"})
+
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.route("**/api/desks/oil", add_note)
+    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.wait_for_selector("#stale-banner:not([hidden])", timeout=5000)
+    text = page.inner_text("#stale-banner")
+    assert "written for xyz:CL" in text and "xyz:BRENTOIL" in text
+    assert "old main instrument" in text and "Refresh" in text
+    assert "older than its refresh window" not in text
+    assert not issues, issues
+    page.close()
+
+
 def test_grid_loading_then_error_state_on_a_dead_backend(server, browser):
     """A request to an unreachable API must land on the grid's own error
     state with a retry — not a blank page or an uncaught exception."""

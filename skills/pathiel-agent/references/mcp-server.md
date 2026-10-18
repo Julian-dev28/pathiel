@@ -26,9 +26,10 @@
   full=false); `_guard_output` cuts anything over `MAX_OUTPUT_CHARS` (40k) into
   a `truncated` payload with a hint. The tools/list budget gate is in
   `tests/test_mcp_overhaul.py`.
-- **HIP-3.** Money and orders on a HIP-3 dex (oil is `xyz:CL`) are invisible to
-  a main-dex read. `get_open_orders`, `get_max_trade_size`, `get_risk_metrics`,
-  `get_user_state(dex=)` and `account_overview` all read the right dex.
+- **HIP-3.** Money and orders on a HIP-3 dex (oil: `xyz:BRENTOIL`, the oil desk's
+  price, and `xyz:CL` WTI) are invisible to a main-dex read. `get_open_orders`,
+  `get_max_trade_size`, `get_risk_metrics`, `get_user_state(dex=)` and
+  `account_overview` all read the right dex.
 
 Checks: `.venv/bin/python scripts/mcp_smoke.py` (live, read-only tools, leak
 check by secret value, parallel check), `scripts/mcp_tool_table.py --check`

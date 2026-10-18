@@ -42,12 +42,27 @@ def test_list_specs_matches_list_desk_ids():
     assert [s.id for s in desks.list_specs()] == desks.list_desk_ids()
 
 
-def test_oil_desk_has_wti_and_brent():
+def test_oil_desk_prices_off_brent_with_wti_as_the_spread_leg():
+    """Julien, 2026-10-19: "for oil desk use the brent oil price". Brent is
+    the one primary (the call, ladder, forward stats and sizing are priced
+    off it) and is listed first; WTI stays as the spread's other leg."""
     spec = desks.require_spec("oil")
     coins = {i.coin: i.role for i in spec.instruments}
-    assert coins["xyz:CL"] == "primary"
-    assert coins["xyz:BRENTOIL"] == "secondary"
+    assert coins["xyz:BRENTOIL"] == "primary"
+    assert coins["xyz:CL"] == "secondary"
+    assert [i.coin for i in spec.instruments if i.role == "primary"] == ["xyz:BRENTOIL"]
+    assert spec.instruments[0].coin == "xyz:BRENTOIL"
     assert any(p.long == "xyz:BRENTOIL" and p.short == "xyz:CL" for p in spec.pairs)
+
+
+def test_oil_desk_keeps_iran_in_the_gdelt_query():
+    """GDELT reads only the first 6 news queries; the Brent query was added
+    last so the Iran exports query stays inside them."""
+    from services.intel.sources import news
+    spec = desks.require_spec("oil")
+    assert "Iran oil exports" in spec.news_queries[:6]
+    assert "Brent crude" in spec.news_queries[:8]
+    assert '"Iran oil exports"' in news._gdelt_query(spec)
 
 
 def test_btc_desk_is_btc_only():

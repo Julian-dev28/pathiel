@@ -124,10 +124,10 @@ SERVER_INSTRUCTIONS = """pathiel: one operator's live Hyperliquid trading desk. 
 Start here
 - desk_list, then desk_brief {desk} for that desk's call (oil, btc, top5, ai, metals, indices). Quick mode is short markdown, call first, and includes "Your size" for the active account.
 - desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, or when the brief says the thesis is stale.
-- account_overview: equity and where it sits. HIP-3 money (xyz:CL oil, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
+- account_overview: equity and where it sits. HIP-3 money (oil: xyz:BRENTOIL, xyz:CL; xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
 - risk_limits / risk_size_trade: what this account may trade and how big, from the operator's saved risk profile. Size every suggested trade with risk_size_trade; do not do sizing math by hand.
 
-Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:CL = WTI, xyz:BRENTOIL = Brent, xyz:GOLD).
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD).
 
 LIVE MONEY: execute, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh and desk_submit_call write the desk journal)."""
 

@@ -174,7 +174,7 @@ def test_refresh_writes_thesis_when_gate_passes_and_providers_available(
     result = minimal_analytics("oil", mid=99.0)
     stub_live_analytics(result)
 
-    written = make_thesis(desk_id="oil", thesis_id="written-1", instrument="xyz:CL",
+    written = make_thesis(desk_id="oil", thesis_id="written-1", instrument="xyz:BRENTOIL",
                           scenarios=[], created_at=NOW)
     written = written.model_copy(update={"usage": Usage(model="fake", input_tokens=100,
                                                         output_tokens=50, duration_s=0.01)})
@@ -198,9 +198,9 @@ def test_refresh_writes_thesis_when_gate_passes_and_providers_available(
 
 
 def test_refresh_skips_when_gate_blocks(monkeypatch, stub_live_analytics):
-    result = minimal_analytics("oil", mid=99.0, coin="xyz:CL")
+    result = minimal_analytics("oil", mid=99.0, coin="xyz:BRENTOIL")
     stub_live_analytics(result)
-    prev = make_thesis(desk_id="oil", thesis_id="prev-1", instrument="xyz:CL", entry_px=99.0,
+    prev = make_thesis(desk_id="oil", thesis_id="prev-1", instrument="xyz:BRENTOIL", entry_px=99.0,
                        created_at=datetime.now(timezone.utc) - timedelta(minutes=1), horizon_days=7,
                        scenarios=[])
     journal.save_thesis(prev)
@@ -258,7 +258,7 @@ def test_refresh_degrades_when_thesis_provider_raises(stub_live_analytics):
 # ── stage reporting (refresh progress for the UI / MCP) ─────────────────────
 
 def test_refresh_reports_each_stage_in_order(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:BRENTOIL"))
     seen = []
     pipeline.refresh("oil", force=True, on_stage=seen.append)
     assert seen == [pipeline.STAGE_MARKET, pipeline.STAGE_INTEL,
@@ -266,8 +266,8 @@ def test_refresh_reports_each_stage_in_order(stub_live_analytics):
 
 
 def test_skipped_refresh_never_claims_to_write_a_thesis(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL", mid=100.0))
-    journal.save_thesis(make_thesis(desk_id="oil", instrument="xyz:CL",
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:BRENTOIL", mid=100.0))
+    journal.save_thesis(make_thesis(desk_id="oil", instrument="xyz:BRENTOIL",
                                     created_at=datetime.now(timezone.utc)))
     seen = []
     job = pipeline.refresh("oil", force=False, on_stage=seen.append)
@@ -276,7 +276,7 @@ def test_skipped_refresh_never_claims_to_write_a_thesis(stub_live_analytics):
 
 
 def test_a_raising_stage_hook_never_breaks_the_refresh(stub_live_analytics):
-    stub_live_analytics(minimal_analytics("oil", coin="xyz:CL"))
+    stub_live_analytics(minimal_analytics("oil", coin="xyz:BRENTOIL"))
 
     def boom(label):
         raise ValueError("ui went away")
@@ -292,7 +292,7 @@ def test_thesis_refresh_asks_for_fresh_candles(monkeypatch):
 
     def fake_build(spec, **kwargs):
         seen.update(kwargs)
-        return minimal_analytics(spec.id, coin="xyz:CL")
+        return minimal_analytics(spec.id, coin="xyz:BRENTOIL")
 
     monkeypatch.setattr(pipeline.analytics_mod, "build_analytics", fake_build)
     pipeline.refresh("oil", force=True)

@@ -4,8 +4,10 @@ A desk is one siloed trading focus (oil, btc, top5 crypto, AI equities,
 metals, indices) with its own instruments, news queries, policy topics,
 catalysts, leverage ladder, token budget and thesis journal. Oil is the
 flagship — Julien wants to become a master oil trader — and gets the most
-depth: three real energy perps (WTI, Brent, Nat Gas), the Brent-WTI spread,
-and the widest news/policy/catalyst coverage.
+depth: three real energy perps (Brent, WTI, Nat Gas), the Brent-WTI spread,
+and the widest news/policy/catalyst coverage. Since 2026-10-19 it is priced
+off Brent: Brent is the primary, so the call, ladder, forward stats and
+"Your size" are Brent's; WTI is the spread's other leg.
 
 This service owns the `DeskSpec` registry, `DeskAnalytics` (deterministic
 math), the thesis journal + grader, and the HTTP/CLI surface. It does NOT
@@ -17,7 +19,7 @@ one degrades gracefully when they're missing (see "Pipeline" below).
 
 | id | instruments | notes |
 |---|---|---|
-| `oil` | xyz:CL (WTI, primary), xyz:BRENTOIL (Brent, secondary), xyz:NATGAS (hedge) | Brent-WTI pair. Checked heating oil (xyz:HO, $77k/24h) and gasoline/RBOB (doesn't exist on HL) — both excluded, see `desks/oil.py`. |
+| `oil` | xyz:BRENTOIL (Brent, primary since 2026-10-19), xyz:CL (WTI, secondary), xyz:NATGAS (hedge) | Brent-WTI pair. Checked heating oil (xyz:HO, $43k/24h) and gasoline/RBOB (doesn't exist on HL) — both excluded, see `desks/oil.py`. |
 | `btc` | BTC | Single largest, most liquid perp on the main dex. |
 | `top5` | BTC, ETH, SOL, HYPE, ZEC (all primary) | The 5 largest native crypto perps by 24h volume, verified 2026-10-17. Drifts — see "Adding/updating a desk" below. |
 | `ai` | xyz:NVDA, MU, AMD, GOOGL, META, PLTR, TSM (primary); MSFT, AVGO, ORCL, ARM (secondary) | HIP-3 AI-chip/AI-infra equities, >$1M 24h volume. |
@@ -59,7 +61,7 @@ took 22s (btc) to 122s (ai, 11 instruments) per page view. Now:
 | `get_brief()` (web) | cache if < 15 min old; else the cache at once plus a queued background rebuild (`brief.refreshing=True`, the page re-reads until it lands) |
 | `get_brief(wait=True)` (MCP, CLI) | rebuilt inline when older than `max_age_s` (MCP: 120 s) |
 | `list_cards()` | cache only; desks older than an hour are queued for the worker |
-| server startup | desks with no cache at all are queued (`start_warmup`) |
+| server startup | desks with no cache at all, or a cache built for other primaries, are queued (`start_warmup`) |
 
 One worker drains the queue one desk at a time (a brief someone is looking at
 jumps the line), so six stale desks never stampede the budget. A failed
@@ -127,11 +129,24 @@ tries to load intel and generate a new thesis — but only actually CALLS the
 
 1. `force=True` -> always
 2. no prior machine thesis -> always
-3. prior thesis expired -> always
-4. `refresh_min_interval_min` not yet elapsed since the prior thesis -> never (rate limit; this check runs before 5/6 and wins over them)
-5. primary instrument moved >= `material_move_pct` since the prior thesis's entry -> yes
-6. a headline >= `min_headline_relevance` arrived after the prior thesis -> yes
-7. otherwise -> no
+3. the desk's primary changed since the prior thesis (`primary_changed`) -> always
+4. prior thesis expired -> always
+5. `refresh_min_interval_min` not yet elapsed since the prior thesis -> never (rate limit; this check runs before 6/7 and wins over them)
+6. the call's instrument moved >= `material_move_pct` since the prior thesis's entry -> yes
+7. a headline >= `min_headline_relevance` arrived after the prior thesis -> yes
+8. otherwise -> no
+
+Changing a desk's primary (oil: WTI to Brent, 2026-10-19) is safe. Every
+written thesis is stamped with the desk's primaries (`Thesis.primary_coins`);
+older, unstamped theses count as from the old desk when they are long or short
+a coin that is not a primary now. A thesis from the old desk triggers rule 3,
+and the rewrite starts from scratch: the old call is not handed to the thesis
+service as a base, so no incremental update ever measures Brent's price
+against a WTI entry. A cached read whose ladder or forward stats are on a coin
+that is not a primary now counts as no cache (`load_cached_analytics` returns
+None), so the overview, the brief and the startup warmup rebuild it rather
+than show the old primary's numbers. Until the rewrite lands, the brief's
+`stale` says which coin the shown call was written for.
 
 Intel and thesis are resolved by import path (`services.intel.api:build_packet`,
 `services.thesis.api:write_thesis`), not a hard dependency — missing or

@@ -145,7 +145,7 @@ mover-recorder live arms. Roughly 26,000 lines came out.
 
 A desk is a siloed focus with its own instruments, news, policy watch,
 catalyst calendar, leverage ladder, token budget and thesis journal. Six ship:
-**oil** (WTI, Brent, natgas; the flagship), **btc**, **top5** crypto, **ai**
+**oil** (priced off Brent, plus WTI and natgas; the flagship), **btc**, **top5** crypto, **ai**
 equities, **metals** and **indices**. Open `/desks`, pick one, read the call.
 
 ```

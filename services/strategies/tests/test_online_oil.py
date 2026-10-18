@@ -26,10 +26,15 @@ def test_build_analytics_for_oil_completes_under_10s_with_real_data():
 
     assert elapsed < 10.0, f"oil analytics build took {elapsed:.1f}s, budget is 10s"
     assert len(result.instruments) >= 2          # at least CL + BRENTOIL came back
+    brent = next((i for i in result.instruments if i.coin == "xyz:BRENTOIL"), None)
     cl = next((i for i in result.instruments if i.coin == "xyz:CL"), None)
+    assert brent is not None and brent.mid > 0
     assert cl is not None and cl.mid > 0
     assert result.pairs, "Brent-WTI pair should resolve with live data"
     assert result.ladder, "primary instrument should produce ladder rungs"
+    # The desk is priced off Brent (2026-10-19): every rung and forward row is Brent's.
+    assert {r.coin for r in result.ladder} == {"xyz:BRENTOIL"}
+    assert {f.coin for f in result.forward} == {"xyz:BRENTOIL"}
     assert result.account.source in ("venue", "assumed")
 
 

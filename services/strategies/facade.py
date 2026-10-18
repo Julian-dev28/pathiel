@@ -142,14 +142,16 @@ def is_refreshing(desk_id: str) -> bool:
 
 
 def warm_all(*, max_age_s: Optional[float] = None, only_missing: bool = False) -> List[str]:
-    """Queue a rebuild for every desk whose analytics cache is missing or
-    (unless only_missing) older than `max_age_s`, in registry order (oil
-    first). Returns the queued desk ids."""
+    """Queue a rebuild for every desk whose analytics cache is missing, was
+    built for other primaries (pipeline.load_cached_analytics treats that as
+    missing), or (unless only_missing) is older than `max_age_s`, in
+    registry order (oil first). Returns the queued desk ids."""
     max_age = _env_float("PATHIEL_DESK_BRIEF_MAX_AGE_S", BRIEF_MAX_AGE_S) if max_age_s is None else max_age_s
     queued = []
     for spec in desks.list_specs():
         age = pipeline.cached_analytics_age_s(spec.id)
-        if age is None or (not only_missing and age > max_age):
+        missing = age is None or pipeline.load_cached_analytics(spec.id) is None
+        if missing or (not only_missing and age > max_age):
             if revalidate(spec.id):
                 queued.append(spec.id)
     return queued
@@ -188,9 +190,9 @@ def list_cards() -> List[DeskCard]:
     cards: List[DeskCard] = []
     for spec in desks.list_specs():
         age = pipeline.cached_analytics_age_s(spec.id)
-        if age is None or age > _env_float("PATHIEL_DESK_CARD_MAX_AGE_S", CARD_MAX_AGE_S):
+        result = pipeline.load_cached_analytics(spec.id)   # None if built for other primaries
+        if result is None or age is None or age > _env_float("PATHIEL_DESK_CARD_MAX_AGE_S", CARD_MAX_AGE_S):
             revalidate(spec.id)   # background, single worker; this call never waits on it
-        result = pipeline.load_cached_analytics(spec.id)
         intel = pipeline.load_cached_intel(spec.id)
         thesis = journal.latest_thesis(spec.id)
         track = grader.track_record_for_desk(spec.id)
@@ -255,6 +257,10 @@ def get_brief(desk_id: str, *, max_age_s: Optional[float] = None, wait: bool = F
         stale.append("thesis: none yet (run refresh)")
     elif thesis.expires_at <= now:
         stale.append("thesis: expired")
+    elif thesis.author == "machine" and pipeline.primary_changed(spec, thesis):
+        was = ", ".join(thesis.primary_coins) or thesis.call.instrument
+        stale.append(f"thesis: written for {was}; this desk now prices off "
+                     f"{', '.join(pipeline.primary_coins(spec))} (run refresh)")
 
     return DeskBrief(spec=spec, analytics=result, intel=intel, thesis=thesis,
                      history=history, track_record=track, stale=stale, refreshing=refreshing)

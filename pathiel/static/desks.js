@@ -218,10 +218,14 @@ function renderStaleBanner(brief) {
   if (!stale.size) { el.hidden = true; return; }
   el.hidden = false;
   const bits = [...stale];
+  // facade.get_brief: "thesis: written for xyz:CL; this desk now prices off ..."
+  const otherPrimary = bits.some(b => b.startsWith('thesis: written for'));
   el.innerHTML = `<span class="b-strong">Stale:</span> ${esc(bits.join(', '))} &mdash; ` +
     (stale.has('thesis')
       ? 'this call is older than its own horizon. Price has likely moved — hit Refresh before sizing anything off it.'
-      : 'this data is older than its refresh window.');
+      : otherPrimary
+        ? 'this call was priced off the desk\'s old main instrument. Hit Refresh before sizing anything off it.'
+        : 'this data is older than its refresh window.');
 }
 
 function renderCallCard(brief) {
