@@ -308,3 +308,18 @@ at each equity, and reports risk taken vs. would-execute counts. Pass rule:
 numbers (no live `PATHIEL_STATE_DIR` exists in this isolated worktree, so
 that run used a representative synthetic ledger — the script itself takes
 a real one exactly the same way).
+
+## Sizing one trade (`size.py`)
+
+`size_trade(equity, profile, books, entry_px=, stop_px=, leverage=, targets=)`
+answers "how big is THIS trade for my account" with the same rules the books
+use: the profile's risk budget over the stop distance, leverage capped at
+min(requested, coin max, profile max), bumped to the venue minimum only when
+the profile allows. It returns `TradeSize` (contracts/risk/models.py) with the
+coin size rounded to the venue's step (never under the minimum), margin, dollars
+at risk, payoff and R multiple per target, and `warnings` when the best target
+pays under 1R. Served as `POST /api/risk/size` (the desk page's "Your size"
+line) and as the MCP tools `risk_size_trade` and `desk_brief`'s `your_size`.
+`active_equity_usd()` reuses one equity read for 60 s
+(`PATHIEL_RISK_EQUITY_TTL_S`): each read is about 12 venue requests.
+
