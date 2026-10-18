@@ -16,9 +16,9 @@ xyz:HO (heating oil, NYMEX ticker "HO") exists but trades $77k/24h — too thin
 to list under the same >$1M bar every other desk in this registry uses, so it
 is left out. No gasoline/RBOB perp exists on Hyperliquid as of this check
 (searched the full universe dump for "RBOB"/"GASOLINE"/"USOIL" — zero hits).
-Re-checked 2026-10-19 (a Monday, after a quiet weekend): xyz:BRENTOIL $24.9M
-24h, xyz:CL $30.7M, xyz:NATGAS $1.3M, maxLeverage 20/20/10; xyz:HO still thin
-($43k).
+Re-checked 2026-10-18 22:00 UTC (a Sunday, so weekend volumes): xyz:BRENTOIL
+$24.9M 24h, xyz:CL $30.7M, xyz:NATGAS $1.3M, maxLeverage 20/20/10; xyz:HO still
+thin ($43k).
 Regenerate this check with:
     PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m services.strategies.desks._verify oil
 """
