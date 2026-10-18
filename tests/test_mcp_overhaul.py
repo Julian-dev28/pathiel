@@ -73,11 +73,13 @@ def info(monkeypatch):
 
 class TestToolsListBudget:
     def test_tool_count_snapshot(self):
-        """Pins the exact count (74: 88 - 19 names folded into hidden
-        aliases + 5 new desk_* tools) so a drift -- someone re-adding a
-        duplicate schema, or silently dropping a tool -- shows up as a
-        failing assert, not a surprise someone has to notice by eye."""
-        assert len(M.TOOLS) == 74
+        """Pins the exact count (78: 88 - 19 names folded into hidden
+        aliases + 5 desk_* tools + 4 account/risk tools added 2026-10-18:
+        account_overview, accounts, risk_limits, risk_size_trade) so a
+        drift -- someone re-adding a duplicate schema, or silently dropping
+        a tool -- shows up as a failing assert, not a surprise someone has
+        to notice by eye."""
+        assert len(M.TOOLS) == 78
 
     def test_desk_tools_are_present(self):
         names = {t["name"] for t in M.TOOLS}
@@ -86,14 +88,16 @@ class TestToolsListBudget:
 
     def test_token_budget_gate(self):
         """Ceiling, not a pin: 88 tools cost 29370 chars (~7342 tokens,
-        chars/4) before this overhaul; 74 tools + 5 new desk tools cost
-        29568 (~7392 tokens) after. The gate leaves headroom for a few more
-        legitimate tools/descriptions later without silently creeping back
-        toward the old bloat -- a future PR that blows through this number
-        should have to touch this test, not slide in unnoticed."""
+        chars/4) before the 2026-10-17 overhaul; 74 tools + 5 desk tools
+        cost 29568 after. 2026-10-18 (MCP shore-up): +4 account/risk tools,
+        safety annotations on every tool and narrowing params on the
+        oversized readers, paid for mostly by compacting the config schema
+        (4.9k -> 0.9k chars): 32847 chars (~8.2k tokens). The gate leaves
+        a little headroom without letting bloat slide in unnoticed -- a
+        future PR that blows through this number has to touch this test."""
         payload = json.dumps({"tools": M.TOOLS})
         assert len(M.TOOLS) <= 80, "tool count crept back up -- did a duplicate return?"
-        assert len(payload) <= 31000, f"tools/list grew to {len(payload)} chars"
+        assert len(payload) <= 34000, f"tools/list grew to {len(payload)} chars"
 
     def test_no_duplicate_names_between_tools_and_aliases(self):
         tool_names = {t["name"] for t in M.TOOLS}
@@ -372,14 +376,18 @@ class _FakeFacade:
             call_side=self.thesis.call.side, thesis_age_min=5.0,
         )]
 
-    def get_brief(self, desk_id: str):
+    def get_brief(self, desk_id: str, *, max_age_s=None, wait=False):
         if desk_id != self.spec.id:
             raise KeyError(f"no such desk: {desk_id}")
+        self.brief_kwargs = {"max_age_s": max_age_s, "wait": wait}
+        thesis = self.thesis
         return self._DeskBrief(spec=self.spec, analytics=self.analytics, intel=self.intel,
-                               thesis=self.thesis, history=[self.thesis])
+                               thesis=thesis, history=[thesis] if thesis else [])
 
-    def refresh(self, desk_id: str, force: bool = False):
+    def refresh(self, desk_id: str, force: bool = False, on_stage=None):
         self.refresh_calls.append((desk_id, force))
+        if on_stage is not None:
+            on_stage("writing the thesis (about a minute)")
         return self._RefreshJob(id="job-1", desk_id=desk_id, state="done",
                                 started_at=self.thesis.created_at,
                                 finished_at=self.thesis.created_at)
@@ -399,8 +407,17 @@ class _FakeFacade:
 
 @pytest.fixture
 def fake_desk(monkeypatch):
+    """The fake facade, plus offline sizing inputs: desk_brief sizes the
+    call for the active account, which would otherwise read the live config,
+    the venue's coin metadata and the account's equity."""
+    from contracts.risk.models import RiskProfile
+    from services.risk.derive import VenueRules
     facade = _FakeFacade()
     monkeypatch.setattr(M, "_strategies_facade", lambda: facade)
+    monkeypatch.setattr(M, "_risk_inputs", lambda: (
+        RiskProfile(preset="starter"), [], VenueRules(min_order_notional_usd=10.5)))
+    monkeypatch.setattr(M, "_coin_specs", lambda coin: (20.0, 3))
+    monkeypatch.setattr(M, "_live_equity", lambda: 15.21)
     return facade
 
 
@@ -435,7 +452,9 @@ class TestDeskTools:
     def test_desk_brief_quick_uses_the_thesis_renderer(self, fake_desk):
         from services.thesis.api import render_markdown
         _, body = _call("desk_brief", {"desk": "oil"})
-        assert body["markdown"] == render_markdown(fake_desk.thesis, fake_desk.analytics, "quick")
+        rendered = render_markdown(fake_desk.thesis, fake_desk.analytics, "quick")
+        assert body["markdown"].startswith(rendered)
+        assert "\nYour size: " in body["markdown"][len(rendered):]
 
     def test_desk_brief_full_mode_is_the_raw_structured_payload(self, fake_desk):
         _, body = _call("desk_brief", {"desk": "oil", "mode": "full"})
@@ -593,7 +612,7 @@ class TestStdioE2E:
             names = {t["name"] for t in listing["result"]["tools"]}
             assert "get_server_time" in names and "desk_list" in names
             assert "get_coin_price" not in names, "hidden alias leaked into tools/list"
-            assert len(names) == 74
+            assert len(names) == len(M.TOOLS) == 78
 
             send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "get_server_time", "arguments": {}}})

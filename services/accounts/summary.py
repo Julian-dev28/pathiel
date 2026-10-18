@@ -8,7 +8,7 @@ into the totals, exactly like the dashboard's own summary does.
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import Any, Dict, List, Optional, Tuple
 
 from contracts.accounts.models import ActiveSummary
 from services.accounts import view
@@ -31,10 +31,18 @@ def _blockers_for(account, state_ok: bool) -> List[str]:
 
 
 def get_active_summary() -> ActiveSummary:
+    return get_active_snapshot()[0]
+
+
+def get_active_snapshot() -> Tuple[ActiveSummary, Optional[Dict[str, Any]]]:
+    """get_active_summary() plus the raw fetch_account_state() dict it was
+    built from (per-dex equity, positions, spot), or None when there is no
+    account or the read failed. For callers that need the detail (the MCP
+    account_overview tool) without paying for a second Hyperliquid read."""
     account = view.get_effective_active_account()
     if account is None:
         return ActiveSummary(account=None, can_trade=False,
-                             blockers=_blockers_for(None, state_ok=True))
+                             blockers=_blockers_for(None, state_ok=True)), None
 
     state = None
     state_ok = True
@@ -53,7 +61,7 @@ def get_active_summary() -> ActiveSummary:
         # _blockers_for always adds the "could not read live state" blocker
         # when state_ok is False, so blockers is never empty here — can_trade
         # is correctly False and there is nothing else numeric to report.
-        return ActiveSummary(account=account, can_trade=can_trade, blockers=blockers)
+        return ActiveSummary(account=account, can_trade=can_trade, blockers=blockers), None
 
     return ActiveSummary(
         account=account,
@@ -62,4 +70,4 @@ def get_active_summary() -> ActiveSummary:
         open_positions=len(state.get("asset_positions") or []),
         can_trade=can_trade,
         blockers=blockers,
-    )
+    ), state
