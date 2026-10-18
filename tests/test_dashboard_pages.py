@@ -2758,3 +2758,44 @@ def test_nav_order_is_identical_on_every_page():
         if navs:
             orders[f.name] = navs
     assert len(set(map(tuple, orders.values()))) == 1, orders
+
+
+# ── live equity when the heartbeat is stale (2026-10-18) ──────────────────────
+
+def test_summary_reads_live_equity_when_the_loop_heartbeat_is_stale(monkeypatch):
+    """The dashboard showed $1.37 from a weeks-old heartbeat while the account
+    held $15.21 across main + xyz. A stale heartbeat now yields the live read."""
+    import pathiel.dashboard as dbm
+    monkeypatch.setenv("PATHIEL_DASHBOARD_LIVE_EQUITY", "1")
+    monkeypatch.setattr(dbm, "_read_log_lines", lambda *a, **k: [
+        {"event": "loop_heartbeat", "ts": 1_000, "equity": 1.37, "open_positions": 0}])
+    dbm._LIVE_EQ_CACHE.update(ts=0.0, data=None)
+    from contracts.accounts.models import ActiveSummary
+    import services.accounts.summary as acc_summary
+    monkeypatch.setattr(acc_summary, "get_active_summary",
+                        lambda: ActiveSummary(equity_usd=15.21, withdrawable_usd=0.01,
+                                              open_positions=0, can_trade=True))
+    out = dbm._summary_payload()
+    assert out["equity"] == 15.21 and out["equity_source"] == "live"
+
+
+def test_summary_keeps_the_heartbeat_while_the_loop_is_fresh(monkeypatch):
+    import time as _t
+    import pathiel.dashboard as dbm
+    monkeypatch.setenv("PATHIEL_DASHBOARD_LIVE_EQUITY", "1")
+    now_ms = int(_t.time() * 1000)
+    monkeypatch.setattr(dbm, "_read_log_lines", lambda *a, **k: [
+        {"event": "loop_heartbeat", "ts": now_ms, "equity": 15.0, "open_positions": 1}])
+    monkeypatch.setattr(dbm, "_live_equity",
+                        lambda: (_ for _ in ()).throw(AssertionError("no live read when fresh")))
+    out = dbm._summary_payload()
+    assert out["equity"] == 15.0 and out["equity_source"] == "heartbeat"
+
+
+def test_risk_panel_uses_derived_limits_not_the_retired_floor(monkeypatch):
+    import pathiel.dashboard as dbm
+    monkeypatch.setattr(dbm, "_summary_payload", lambda: {"equity": 15.21, "daily_pnl": 0.0})
+    out = dbm._risk_payload()
+    assert out["can_trade"] is True
+    assert out["min_tradable_equity"] < 26.0
+    assert out["trade_headline"].startswith("You can trade")

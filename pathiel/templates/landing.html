@@ -702,9 +702,10 @@ async function refreshRisk() {
     if (r.can_trade === false) {
       mode.textContent = (r.mode || '—') + ' · BLOCKED';
       mode.className = 'badge mono b-shadow';
-      mode.title = 'equity $' + Number(r.equity || 0).toFixed(2) +
-                   ' is under the $' + Number(r.min_tradable_equity || 0).toFixed(0) +
-                   ' floor — the executor refuses every order';
+      mode.title = r.trade_headline ||
+                   ('equity $' + Number(r.equity || 0).toFixed(2) +
+                    ' is under the $' + Number(r.min_tradable_equity || 0).toFixed(2) +
+                    ' needed for the first trade');
     } else {
       mode.textContent = r.mode || '—';
       mode.className = 'badge mono ' + (r.mode === 'LIVE' ? 'b-live' : 'b-off');

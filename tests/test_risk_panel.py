@@ -296,7 +296,10 @@ def test_the_panel_reports_blocked_rather_than_a_green_live_badge(monkeypatch, c
     monkeypatch.setattr(db, "_read_log_lines", lambda: [
         {"ts": 1, "event": "loop_heartbeat", "equity": 0.03, "daily_pnl": 0.0,
          "open_positions": 0, "available": 0.03}])
-    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    # can_trade now means "an ENABLED book can place an order at this equity"
+    # (services/risk); enable one so the test measures equity, not config.
+    monkeypatch.setattr(db, "read_agent_config",
+                        lambda: {"mode": "LIVE", "xs_reversal": {"enabled": True}})
     r = db._risk_payload()
     assert r["mode"] == "LIVE"
     assert r["can_trade"] is False
@@ -308,8 +311,21 @@ def test_a_funded_account_reads_tradable(monkeypatch):
         {"ts": 1, "event": "loop_heartbeat", "equity": 500.0, "daily_pnl": 0.0,
          "open_positions": 0, "available": 500.0}])
     monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
-    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    monkeypatch.setattr(db, "read_agent_config",
+                        lambda: {"mode": "LIVE", "xs_reversal": {"enabled": True}})
     assert db._risk_payload()["can_trade"] is True
+
+
+def test_no_enabled_book_means_nothing_can_trade(monkeypatch):
+    """Money alone does not trade: with every book off the panel says so."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [
+        {"ts": 1, "event": "loop_heartbeat", "equity": 500.0, "daily_pnl": 0.0,
+         "open_positions": 0, "available": 500.0}])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    r = db._risk_payload()
+    assert r["can_trade"] is False
+    assert r["min_tradable_equity"] >= 10.0
 
 
 def test_the_page_shows_the_blocked_state(client):
