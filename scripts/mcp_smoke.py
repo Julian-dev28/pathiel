@@ -32,7 +32,8 @@ from typing import Any, Dict, List, Optional
 
 REPO = Path(__file__).resolve().parent.parent
 SERVER = REPO / "scripts" / "pathiel-mcp-server.py"
-OIL = "xyz:CL"
+OIL = "xyz:BRENTOIL"   # the oil desk prices off Brent since 2026-10-19
+WTI = "xyz:CL"        # the desk's spread leg
 HLP_VAULT = "0xdfc24b077bc1425ad1dea75bcb6f8158e10df303"
 
 # Never called by the smoke: live orders, journal writes, billable LLM calls.
@@ -70,7 +71,7 @@ def cases(user: str) -> List[Case]:
         Case("discovery_get_trader_state", {"trader_addresses": [user]}),
         Case("market_get_asset_data", {"asset": OIL}),
         Case("market_get_funding_regime"), Case("market_list_instruments"),
-        Case("get_price", {"coin": OIL}),
+        Case("get_price", {"coin": OIL}), Case("get_price", {"coin": WTI}),
         Case("get_candles", {"coin": OIL, "interval": "1h", "count": 24}),
         Case("get_open_orders"), Case("get_spot_balances"), Case("get_user_fees"),
         Case("get_referral"), Case("get_trade_history", {"limit": 5}),
@@ -105,8 +106,8 @@ def cases(user: str) -> List[Case]:
         Case("desk_track_record", {"desk": "oil"}),
         Case("account_overview"), Case("accounts"), Case("risk_limits"),
         Case("risk_limits", {"equity_usd": 15, "preset": "starter"}),
-        Case("risk_size_trade", {"coin": OIL, "entry_px": 98.87, "stop_px": 88.22,
-                                 "leverage": 5, "targets": [101.19, 105.55]}),
+        Case("risk_size_trade", {"coin": OIL, "entry_px": 105.5, "stop_px": 101.35,
+                                 "leverage": 5, "targets": [110.31, 112.19]}),
         Case("get_user_state", {"dex": "xyz"}),
         Case("market_list_instruments", {"query": "xyz:", "limit": 5}),
     ]
