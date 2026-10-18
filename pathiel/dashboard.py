@@ -172,6 +172,46 @@ def _last_event(events: List[Dict[str, Any]], name: str) -> Optional[Dict[str, A
     return None
 
 
+_LIVE_EQ_CACHE: Dict[str, Any] = {"ts": 0.0, "data": None}
+_LIVE_EQ_TTL_S = 30.0
+_LIVE_EQ_LOCK = threading.Lock()
+
+
+def _live_equity_enabled() -> bool:
+    # Off in gate tests (root conftest), which must not reach Hyperliquid.
+    return os.environ.get("PATHIEL_DASHBOARD_LIVE_EQUITY", "1") == "1"
+
+
+def _live_equity() -> Optional[Dict[str, Any]]:
+    """The ACTIVE account's live equity across every perp dex (HIP-3
+    included), cached 30s. None when disabled or unreadable.
+
+    The heartbeat is the loop's own snapshot and freezes when the loop stops:
+    on 2026-10-18 the dashboard showed $1.37 while the account held $15.21
+    (xyz $15.18 + main $0.01 + dust), because the last heartbeat was weeks old.
+    """
+    if not _live_equity_enabled():
+        return None
+    now = time.time()
+    with _LIVE_EQ_LOCK:
+        if _LIVE_EQ_CACHE["data"] is not None and now - _LIVE_EQ_CACHE["ts"] < _LIVE_EQ_TTL_S:
+            return _LIVE_EQ_CACHE["data"]
+    try:
+        from services.accounts.summary import get_active_summary
+        summ = get_active_summary()
+        if summ.equity_usd is None:
+            return None
+        data = {"equity": float(summ.equity_usd),
+                "withdrawable": float(summ.withdrawable_usd or 0.0),
+                "open_positions": int(summ.open_positions or 0)}
+    except Exception as e:  # never break a page over a display read
+        logger.warning(f"[dashboard] live equity read failed: {e}")
+        return None
+    with _LIVE_EQ_LOCK:
+        _LIVE_EQ_CACHE.update(ts=now, data=data)
+    return data
+
+
 def _summary_payload() -> Dict[str, Any]:
     """Equity, daily PnL, open count, last-tick — derived from the session log so
     the dashboard works even if the live HL fetch is rate-limited."""
@@ -213,6 +253,18 @@ def _summary_payload() -> Dict[str, Any]:
     dex_equity = heartbeat.get("dex_equity") or {}
     dex_available = heartbeat.get("dex_available") or {}
 
+    # A heartbeat older than the loop's cadence is history, not the balance.
+    # Read the account live instead and say which number is shown.
+    equity_source = "heartbeat"
+    open_positions = int(heartbeat.get("open_positions", 0) or 0)
+    if status != "scanning":
+        live = _live_equity()
+        if live is not None:
+            equity, spot_usdc = live["equity"], 0.0
+            open_positions = live["open_positions"]
+            dex_equity, dex_available = {}, {}
+            equity_source = "live"
+
     return {
         # True account equity as the exchange app shows it: perps across every
         # dex PLUS idle spot USDC (operator correction 2026-07-17 — the KPI
@@ -224,7 +276,8 @@ def _summary_payload() -> Dict[str, Any]:
         "spot_usdc": round(spot_usdc, 2),
         "daily_pnl": round(daily_pnl, 2),
         "daily_pnl_pct": round(daily_pnl_pct, 2),
-        "open_positions": int(heartbeat.get("open_positions", 0) or 0),
+        "open_positions": open_positions,
+        "equity_source": equity_source,
         "last_tick_age_s": last_tick_age_s,
         # Kept separate and named honestly: this moves on ANY log write, so it
         # says the process is writing, not that the loop is running.
@@ -518,6 +571,22 @@ def _feed_health() -> Dict[str, Any]:
                 "trustworthy": None, "ts": 0}
 
 
+def _derived_limits_for(equity: float, cfg: Dict[str, Any]):
+    """services.risk's DerivedLimits at this equity and config. Pure, no
+    network. None if the risk service cannot load (the panel then falls back
+    to the legacy floor rather than breaking)."""
+    try:
+        from pathiel.agents.config_store import read_risk_profile
+        from services.risk import books as risk_books
+        from services.risk.api import _VENUE
+        from services.risk.derive import derive_limits
+        return derive_limits(max(0.0, equity), read_risk_profile(cfg),
+                             risk_books.all_book_specs(cfg), _VENUE)
+    except Exception as e:
+        logger.warning(f"[dashboard] derived limits unavailable: {e}")
+        return None
+
+
 def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
     """What a person with money asks first: how much can this lose, how much has
     it already lost from its high, what does trading itself cost, and where is
@@ -600,6 +669,7 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
         cfg = {}
     kill_at = float(cfg.get("max_daily_loss_usd", 0) or 0)
     daily_pnl = float(summary.get("daily_pnl") or 0)
+    _lim = _derived_limits_for(float(summary.get("equity") or 0), cfg)
     # Fraction of the way to the hard kill, 0 when green and 1 at the floor.
     kill_used = (min(1.0, daily_pnl / kill_at) if kill_at < 0 and daily_pnl < 0 else 0.0)
 
@@ -621,12 +691,18 @@ def _risk_payload(range_s: int = 90 * 86400) -> Dict[str, Any]:
         # structural dust floor the executor refuses every order regardless of
         # mode, and the panel must say so rather than showing a green LIVE badge
         # over an account that cannot place a trade.
-        "min_tradable_equity": _min_tradable_equity(cfg),
+        # The smallest equity at which ANY book can trade, from the same
+        # derived limits the executor enforces (services/risk). The old global
+        # floor ($26 = every book at once) blocked accounts that can trade.
+        "min_tradable_equity": ((_lim.min_equity_to_trade_usd or _lim.min_order_notional_usd)
+                                if _lim is not None else _min_tradable_equity(cfg)),
+        "trade_headline": _lim.headline if _lim is not None else None,
         # Feed health from the last completed scan. A degraded feed reads
         # downstream as a quiet market, so it has to be visible next to the
         # numbers people would otherwise interpret as "nothing is happening".
         "feed": _feed_health(),
-        "can_trade": bool(float(summary.get("equity") or 0) >= _min_tradable_equity(cfg)),
+        "can_trade": (bool(_lim.can_trade) if _lim is not None
+                      else bool(float(summary.get("equity") or 0) >= _min_tradable_equity(cfg))),
         "window_days": round(range_s / 86400, 1),
         "points": len(equities),
         "capital_flows_tracked": bool(cover.get("covered")),
