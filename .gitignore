@@ -214,3 +214,6 @@ research/alpha_swarm/**/*_dataset.json
 
 # virtualenv, and the .venv symlink agent worktrees create
 .venv
+
+# intel cache written at the repo root when PATHIEL_STATE_DIR is unset
+/intel/
