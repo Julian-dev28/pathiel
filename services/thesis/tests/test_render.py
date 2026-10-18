@@ -182,3 +182,41 @@ def test_render_full_send_table_has_a_row_per_rung(oil):
     text = render.render_markdown(oil.thesis, oil.analytics, mode="full")
     full_send = text[text.index("Full send"):]
     assert "| 5x |" in full_send and "| 10x |" in full_send and "| 20x |" in full_send
+
+
+# ── ladder rows carry their side (regression 2026-10-18) ─────────────────────
+# The ladder has a long and a short rung per leverage. The table had no Side
+# column and pasted the thesis's reason onto BOTH rows, so the short 5x row
+# of a long call read "Chosen. Liq 81.12 ..." next to the short's own 115.74.
+
+def _ladder_section(text: str) -> str:
+    return text[text.index("### Leverage ladder"):text.index("### Full send")]
+
+
+def test_ladder_table_has_a_side_column_and_call_side_first(oil):
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="full")
+    rows = [ln for ln in _ladder_section(text).splitlines() if ln.startswith("| ") and "---" not in ln]
+    assert rows[0].startswith("| Side | Lev |")
+    body = rows[1:]
+    call_side = oil.thesis.call.side
+    sides = [r.split("|")[1].strip().strip("*") for r in body]
+    first_other = next((i for i, sd in enumerate(sides) if sd != call_side), len(sides))
+    assert all(sd == call_side for sd in sides[:first_other])
+    assert all(sd != call_side for sd in sides[first_other:])
+
+
+def test_ladder_reasons_never_sit_in_the_other_sides_rows(oil):
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="full")
+    section = _ladder_section(text)
+    table = [ln for ln in section.splitlines() if ln.startswith("| ")]
+    for lv in oil.thesis.leverage_view:
+        assert all(lv.reason not in row for row in table)
+        assert lv.reason in section            # still shown, under the table
+    assert f"Why, for the {oil.thesis.call.side} call" in section
+
+
+def test_full_send_table_has_a_side_column(oil):
+    text = render.render_markdown(oil.thesis, oil.analytics, mode="full")
+    full_send = text[text.index("### Full send"):]
+    assert "| Side | Lev | P10 |" in full_send
+    assert f"| **{oil.thesis.call.side}** | 5x |" in full_send   # the call's side, bolded
