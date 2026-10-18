@@ -78,3 +78,33 @@ def test_live_state_fetch_failure_blocks_trading_but_keeps_the_account(monkeypat
     assert result.can_trade is False
     assert any("could not read" in b.lower() for b in result.blockers)
     assert result.equity_usd is None
+
+
+def test_snapshot_returns_the_raw_state_from_the_same_single_read(monkeypatch, tmp_path):
+    """account_overview (MCP) needs per-dex detail; it must come from the
+    same read as the summary, not a second Hyperliquid round trip."""
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    _clear_env_identity(monkeypatch)
+    registry.add(label="Main", main_address="0x" + "a1" * 20, agent_address="0x" + "b2" * 20,
+                mode="trade", source="wallet_sign", agent_name="pathiel", verified=True)
+
+    import pathiel.client.hl_client as hl_client
+    calls = []
+
+    def fake_fetch(user, include_hip3=False):
+        calls.append(user)
+        return {"equity": 15.21, "withdrawable_aggregated": 15.0, "asset_positions": [],
+                "dex_equity": {"": 0.01, "xyz": 15.18}}
+    monkeypatch.setattr(hl_client, "fetch_account_state", fake_fetch)
+
+    result, state = summary.get_active_snapshot()
+    assert len(calls) == 1
+    assert result.equity_usd == 15.21
+    assert state["dex_equity"]["xyz"] == 15.18
+
+
+def test_snapshot_state_is_none_without_an_account(monkeypatch, tmp_path):
+    monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
+    _clear_env_identity(monkeypatch)
+    result, state = summary.get_active_snapshot()
+    assert result.account is None and state is None

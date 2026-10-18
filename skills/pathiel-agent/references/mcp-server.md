@@ -1,6 +1,38 @@
 # MCP Server Structure
 
-`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 74 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`.
+`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 78 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
+
+## Transport and safety (2026-10-18)
+
+- **Concurrent calls.** `run()` reads stdin on the main thread; each
+  `tools/call` runs on a worker (`PATHIEL_MCP_MAX_CONCURRENT`, default 6) and is
+  answered exactly once: by the handler, or by a timeout result at its deadline
+  (`TOOL_TIMEOUT_S`: desk_refresh 300 s, research 240 s, scan 180 s, else 120 s;
+  `PATHIEL_MCP_TOOL_TIMEOUT_S` overrides all). A timed-out handler keeps its
+  worker until it returns; Python cannot kill a thread.
+- **Cancel and progress.** `notifications/cancelled` suppresses the reply.
+  A `_meta.progressToken` gets `notifications/progress` from
+  `_report_progress()` (desk_refresh reports each pipeline stage).
+- **Sampling.** Inside `run()`, the reply to the server's own request is routed
+  by id to the waiting handler (`_deliver_response`); other requests keep
+  flowing. Outside `run()` (tests), `_server_request_inline` reads stdin itself.
+- **Instructions and annotations.** `initialize` returns `SERVER_INSTRUCTIONS`
+  (short; it rides in every session). Every tool carries MCP annotations, only
+  the non-default hints: `LIVE_MONEY_TOOLS` destructive (and their descriptions
+  start "LIVE MONEY"), `config` destructive, `LOCAL_WRITE_TOOLS` non-destructive
+  writes, everything else `readOnlyHint`. A new tool lands read-only unless put
+  in a bucket; `tests/test_mcp_shoreup.py` checks the buckets.
+- **Output size.** Handlers narrow their own output (limit, coin, query,
+  full=false); `_guard_output` cuts anything over `MAX_OUTPUT_CHARS` (40k) into
+  a `truncated` payload with a hint. The tools/list budget gate is in
+  `tests/test_mcp_overhaul.py`.
+- **HIP-3.** Money and orders on a HIP-3 dex (oil is `xyz:CL`) are invisible to
+  a main-dex read. `get_open_orders`, `get_max_trade_size`, `get_risk_metrics`,
+  `get_user_state(dex=)` and `account_overview` all read the right dex.
+
+Checks: `.venv/bin/python scripts/mcp_smoke.py` (live, read-only tools, leak
+check by secret value, parallel check), `scripts/mcp_tool_table.py --check`
+(docs/overhaul/MCP.md is generated), `skills/pathiel-agent/scripts/audit_mcp_server.py`.
 
 **There are no stubs left.** All 47 were audited against the live `/info` API on
 2026-09-06: 34 had a working endpoint and were implemented, 13 had none and were

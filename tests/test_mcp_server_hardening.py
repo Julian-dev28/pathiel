@@ -349,9 +349,13 @@ class TestAccountTools:
         assert p["window_pnl"] == {"day": 4.5, "week": 0.0}
 
     def test_risk_metrics(self, acct):
+        """Equity and leverage span every dex (2026-10-18: main-only read an
+        all-xyz account as $0.0086); the cross margin ratio is main's own."""
         _, body = _call("get_risk_metrics")
         r = body["risk"]
-        assert r["account_leverage"] == 3.0 and r["margin_ratio"] == 0.05
+        assert r["equity"] == 1010.0 and r["equity_by_dex"] == {"main": 1000.0, "xyz": 10.0}
+        assert r["account_leverage"] == round(3000.0 / 1010.0, 4)
+        assert r["main_margin_ratio"] == 0.05
         assert len(r["positions"]) == 1  # flat ETH excluded
         assert r["positions"][0]["liq_distance_pct"] == 30.0
 
