@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import statistics as st
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -477,13 +479,46 @@ def default_candle_fetcher(coin: str, interval: str, count: int) -> Sequence[Can
     return fetch_hl_candles(coin, interval, count)
 
 
+def stored_candle_fetcher(max_age_s: Optional[float] = None) -> CandleFetcher:
+    """Daily candles through services.strategies.candle_store: served from
+    disk while younger than `max_age_s` (None = the store's default), else
+    only the missing tail is fetched. Any other interval goes straight to
+    the venue. This is build_analytics()'s default fetcher."""
+    from services.strategies import candle_store
+
+    def fetch(coin: str, interval: str, count: int) -> Sequence[Candle]:
+        if interval != "1d":
+            return default_candle_fetcher(coin, interval, count)
+        return candle_store.get_daily(coin, count, default_candle_fetcher, max_age_s=max_age_s)
+
+    return fetch
+
+
 def default_meta_fetcher() -> Dict[str, Dict[str, Any]]:
     from pathiel.client.universe import get_universe
     universe = get_universe(include_hip3=True)
     return {m["coin"]: m for m in universe if m.get("coin")}
 
 
+# The account read fans out to every perp dex plus spot (~12 requests). A
+# brief only needs the equity to size the "full send" rows, so one read is
+# reused for this long. Env-tunable; 0 disables.
+_ACCOUNT_CACHE: Dict[str, Any] = {"ts": 0.0, "snap": None}
+ACCOUNT_CACHE_TTL_S = float(os.environ.get("PATHIEL_DESK_ACCOUNT_TTL_S", "120"))
+
+
 def default_account_snapshot() -> AccountSnapshot:
+    now = time.monotonic()
+    cached = _ACCOUNT_CACHE.get("snap")
+    if cached is not None and ACCOUNT_CACHE_TTL_S > 0 and now - _ACCOUNT_CACHE["ts"] < ACCOUNT_CACHE_TTL_S:
+        return cached
+    snap = _read_account_snapshot()
+    if snap.source == "venue":   # never pin the $1,000 assumption for the whole TTL
+        _ACCOUNT_CACHE.update(ts=now, snap=snap)
+    return snap
+
+
+def _read_account_snapshot() -> AccountSnapshot:
     try:
         from pathiel.client.hl_client import fetch_account_state, resolve_user_address
         user = resolve_user_address()
@@ -502,15 +537,21 @@ def default_account_snapshot() -> AccountSnapshot:
 def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] = None,
                     meta_fetcher: Optional[MetaFetcher] = None,
                     account_fetcher: Optional[AccountFetcher] = None,
-                    now: Optional[datetime] = None) -> DeskAnalytics:
+                    now: Optional[datetime] = None,
+                    candle_max_age_s: Optional[float] = None) -> DeskAnalytics:
     """The one function that assembles a full DeskAnalytics. Candle fetches
     for every instrument + both legs of every pair run in parallel (same
     ThreadPoolExecutor pattern as hl_client.fetch_account_state's HIP-3
     fan-out) so a multi-instrument desk (ai: 11 instruments) doesn't pay for
     each one serially — this is what keeps `brief oil` under the 10s budget
     and keeps every other desk in the same ballpark.
+
+    The default fetcher is the disk-backed candle store
+    (stored_candle_fetcher); `candle_max_age_s` is how old a stored daily
+    series may be before its tail is re-fetched (None = the store default,
+    0 = always re-fetch the tail, which is what a thesis refresh wants).
     """
-    candle_fetcher = candle_fetcher or default_candle_fetcher
+    candle_fetcher = candle_fetcher or stored_candle_fetcher(candle_max_age_s)
     meta_fetcher = meta_fetcher or default_meta_fetcher
     account_fetcher = account_fetcher or default_account_snapshot
     now = now or datetime.now(timezone.utc)

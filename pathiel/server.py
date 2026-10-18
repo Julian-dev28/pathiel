@@ -118,6 +118,10 @@ async def lifespan(app: FastAPI):
     other write doors (executor-triggered flush / DSL saves) the same way."""
     memory.load()
     logger.info("Pathiel server started — memory loaded (state writes read-only)")
+    # Desk analytics warm in a background thread so /desks opens instantly
+    # (PATHIEL_DESK_WARMUP=0 skips; the test session sets it).
+    from services.strategies.facade import start_warmup
+    start_warmup()
     yield
     logger.info("Pathiel server stopped — no state flush by design")
 
@@ -276,7 +280,20 @@ from services.risk.api import router as _risk_router  # noqa: E402
 app.include_router(_risk_router)
 
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+class _RevalidatedStatic(StaticFiles):
+    """Static assets carry an ETag but used to carry no Cache-Control, so a
+    browser applied heuristic freshness (about 10% of the file's age) and kept
+    running an old desks.js for hours after a deploy, against new markup
+    (seen 2026-10-18: the new "Your size" element, the old script). no-cache
+    means revalidate every time: a 304 when unchanged, the new file when not."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
+app.mount("/static", _RevalidatedStatic(directory=_STATIC_DIR), name="static")
 
 app.add_middleware(
     CORSMiddleware,

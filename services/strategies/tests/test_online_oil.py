@@ -49,3 +49,31 @@ def test_list_cards_real_desks_all_validate():
     registry, not fakes, as a final sanity sweep."""
     cards = facade.list_cards()
     assert len(cards) == len(desks.list_desk_ids())
+
+
+def test_a_second_brief_build_inside_the_store_window_makes_zero_candle_requests(monkeypatch):
+    """The 2026-10-18 speed fix, measured live: the first build fills
+    services/strategies/candle_store; a rebuild inside its max age reads the
+    disk copy and sends no candle request at all (it took 22-122s per desk
+    when every brief re-downloaded 400 days through the server's budget)."""
+    import pathiel.client.hl_client as hl
+    from services.strategies import analytics as A
+
+    real = hl.fetch_hl_candles
+    calls = []
+
+    def counting(coin, interval="5m", count=100):
+        calls.append((coin, interval, count))
+        return real(coin, interval, count)
+
+    monkeypatch.setattr(hl, "fetch_hl_candles", counting)
+    spec = desks.require_spec("oil")
+    build_analytics(spec, account_fetcher=A.default_account_snapshot)
+    first = len(calls)
+    t0 = time.monotonic()
+    result = build_analytics(spec, account_fetcher=A.default_account_snapshot)
+    elapsed = time.monotonic() - t0
+    assert first >= 1
+    assert len(calls) == first, f"second build fetched candles: {calls[first:]}"
+    assert elapsed < 3.0, f"store-warm oil build took {elapsed:.1f}s"
+    assert result.instruments

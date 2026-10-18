@@ -407,6 +407,7 @@ class DeskBrief(_M):
     history: List[Thesis] = []
     track_record: TrackRecord = TrackRecord()
     stale: List[str] = []                      # which parts are older than their TTL
+    refreshing: bool = False                   # analytics shown are cached; a rebuild is queued/running
 
 
 class RefreshJob(_M):

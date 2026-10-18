@@ -161,9 +161,37 @@ async function loadGrid() {
     if (!Array.isArray(cards) || !cards.length) { empty.hidden = false; return; }
     grid.hidden = false;
     grid.innerHTML = cards.map(deskCardHtml).join('');
+    if (cards.some(c => c.mid == null)) followWarmup();
   } catch (err) {
     loading.hidden = true; error.hidden = false;
     reportRefreshFailure('loadGrid', err);
+  }
+}
+
+// The server warms every desk's market data in the background after a
+// restart. Until a desk's first build lands its card has no price; re-read
+// the (cache-only, instant) card list a few times so prices fill in without
+// a reload. Gives up after ~90s; a card still empty then stays honest ("—").
+let WARMUP_FOLLOWING = false;
+async function followWarmup() {
+  if (WARMUP_FOLLOWING) return;
+  WARMUP_FOLLOWING = true;
+  const grid = document.getElementById('desks-grid');
+  try {
+    for (let i = 0; i < 30; i++) {
+      await new Promise(res => setTimeout(res, 3000));
+      let cards;
+      try {
+        const r = await fetch('/api/desks');
+        if (!r.ok) continue;
+        cards = await r.json();
+      } catch (_) { continue; }
+      if (!Array.isArray(cards) || !cards.length) continue;
+      grid.innerHTML = cards.map(deskCardHtml).join('');
+      if (!cards.some(c => c.mid == null)) return;
+    }
+  } finally {
+    WARMUP_FOLLOWING = false;
   }
 }
 
@@ -221,6 +249,47 @@ function renderCallCard(brief) {
 
   const ageMin = (Date.now() - new Date(thesis.created_at).getTime()) / 60000;
   document.getElementById('call-age').textContent = 'Called ' + fmtAgeMinutes(ageMin) + ' ago';
+  renderYourSize(brief);
+}
+
+// "Your size": the call sized for the active account by the risk service
+// (POST /api/risk/size, the same rules the bot sizes its books with). Money
+// uses the value+mask pair so "Hide amounts" covers it. Any failure hides the
+// line: the call card stands on its own without it.
+let SIZE_SEQ = 0;
+async function renderYourSize(brief) {
+  const el = document.getElementById('call-size');
+  if (!el) return;
+  const call = brief.thesis && brief.thesis.call;
+  if (!call || !['long', 'short'].includes(call.side) || call.entry_px == null || call.stop_px == null) {
+    el.hidden = true;
+    return;
+  }
+  const seq = ++SIZE_SEQ;
+  let s;
+  try {
+    const r = await fetch('/api/risk/size', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coin: call.instrument, entry_px: call.entry_px, stop_px: call.stop_px,
+                             leverage: call.leverage || null, targets: call.targets || [] }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    s = await r.json();
+  } catch (_) {
+    if (seq === SIZE_SEQ) el.hidden = true;
+    return;
+  }
+  if (seq !== SIZE_SEQ) return;          // a newer render owns this line
+  const money = v => `<span class="dollar-value">${esc(fmtMoney(v))}</span><span class="dollar-mask">•••</span>`;
+  if (!s.can_trade) {
+    el.innerHTML = `<b>Your size:</b> ${esc(s.reason)}`;
+  } else {
+    const cap = s.leverage_capped_by ? ` (your ${esc(s.leverage_capped_by)} max)` : '';
+    el.innerHTML = `<b>Your size:</b> ${money(s.notional_usd)} position at ${esc(String(s.leverage))}x${cap}, `
+      + `${money(s.margin_usd)} margin. Stop-out costs ${money(s.risk_usd)} (${esc(s.risk_pct.toFixed(1))}%).`
+      + ((s.warnings && s.warnings.length) ? `<div class="call-size-warn">${esc(s.warnings[0])}</div>` : '');
+  }
+  el.hidden = false;
 }
 
 /** The ladder rungs matching the call's own side for its own instrument —
@@ -661,27 +730,34 @@ function wireUserThesisForm(deskId) {
 
 // ── refresh ──────────────────────────────────────────────────────────────────
 
+// A refresh that writes a thesis takes about a minute (news + one model
+// call); one that finds nothing new takes seconds. Poll fast at first, then
+// once a second, for up to 4 minutes, showing the server's stage label and
+// the elapsed time so a long write never looks hung.
+const JOB_POLL_LIMIT_MS = 240000;
 async function pollJob(jobId, deskId, status) {
-  for (let i = 0; i < 50; i++) {
+  const t0 = Date.now();
+  for (let i = 0; Date.now() - t0 < JOB_POLL_LIMIT_MS; i++) {
     const r = await fetch(`/api/desks/jobs/${encodeURIComponent(jobId)}`);
     if (!r.ok) throw new Error('job poll HTTP ' + r.status);
     const job = await r.json();
     if (job.state === 'running' || job.state === 'queued') {
+      const secs = Math.round((Date.now() - t0) / 1000);
       status.className = 'refresh-status';
-      status.textContent = job.message || 'checking for a material move…';
-      await new Promise(res => setTimeout(res, 250));
+      status.textContent = (job.message || 'checking for a material move') + '… ' + secs + 's';
+      await new Promise(res => setTimeout(res, i < 8 ? 250 : 1000));
       continue;
     }
     status.className = 'refresh-status is-' + job.state;
     status.textContent = job.message || job.state;
     if (job.state === 'done') {
       const brief = await (await fetch(`/api/desks/${encodeURIComponent(deskId)}`)).json();
-      renderDesk(brief);
+      renderDesk(brief, { quiet: true });
     }
     return job;
   }
   status.className = 'refresh-status is-error';
-  status.textContent = 'refresh is taking longer than expected — try again shortly.';
+  status.textContent = 'still running after 4 minutes. It will land on its own; reload in a bit.';
   return null;
 }
 
@@ -710,7 +786,9 @@ function wireRefresh(deskId) {
 
 // ── page assembly ────────────────────────────────────────────────────────────
 
-function renderDesk(brief) {
+// quiet: a background update of a page the user may be typing on. Data
+// sections re-render; the "Make your own call" form is left alone.
+function renderDesk(brief, opts = {}) {
   BRIEF = brief;
   document.getElementById('desk-root').dataset.deskId = brief.spec.id;
   document.title = brief.spec.name + ' · pathiel desks';
@@ -726,7 +804,42 @@ function renderDesk(brief) {
   renderLessons(brief.spec, brief.thesis);
   renderHistory(brief);
   renderDetails(brief);
-  prefillUserForm(brief.spec);
+  if (!opts.quiet) prefillUserForm(brief.spec);
+  renderUpdating(brief);
+}
+
+function renderUpdating(brief) {
+  const el = document.getElementById('desk-updating');
+  if (el) el.hidden = !brief.refreshing;
+}
+
+// The brief came from cache while the server rebuilds it in the background
+// (brief.refreshing). Re-read it every few seconds until the new numbers
+// land, then re-render in place. Stops after ~2 minutes either way.
+let FOLLOWING = false;
+async function followRefresh(deskId) {
+  if (FOLLOWING) return;
+  FOLLOWING = true;
+  const asOf = BRIEF && BRIEF.analytics ? BRIEF.analytics.as_of : null;
+  try {
+    for (let i = 0; i < 40; i++) {
+      await new Promise(res => setTimeout(res, i < 10 ? 2000 : 4000));
+      let next;
+      try {
+        const r = await fetch(`/api/desks/${encodeURIComponent(deskId)}`);
+        if (!r.ok) continue;
+        next = await r.json();
+      } catch (_) { continue; }
+      const landed = next.analytics && next.analytics.as_of !== asOf;
+      if (landed || !next.refreshing) {
+        renderDesk(next, { quiet: true });
+        return;
+      }
+    }
+    renderUpdating({ refreshing: false });
+  } finally {
+    FOLLOWING = false;
+  }
 }
 
 async function loadDesk(deskId) {
@@ -737,6 +850,7 @@ async function loadDesk(deskId) {
     const brief = await r.json();
     renderDesk(brief);
     setDeskState('ready');
+    if (brief.refreshing) followRefresh(deskId);
   } catch (err) {
     setDeskState('error');
     reportRefreshFailure('loadDesk', err);

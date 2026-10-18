@@ -77,11 +77,17 @@ def post_refresh(desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
     with _JOBS_LOCK:
         _JOBS[job_id] = job
 
+    def _stage(label: str) -> None:
+        with _JOBS_LOCK:
+            current = _JOBS.get(job_id)
+            if current is not None and current.state == "running":
+                _JOBS[job_id] = current.model_copy(update={"message": label})
+
     def _run() -> None:
         with _JOBS_LOCK:
             _JOBS[job_id] = job.model_copy(update={"state": "running"})
         try:
-            result = facade.refresh(desk_id, force=body.force)
+            result = facade.refresh(desk_id, force=body.force, on_stage=_stage)
             with _JOBS_LOCK:
                 _JOBS[job_id] = result.model_copy(update={"id": job_id, "started_at": started})
         except Exception as exc:  # noqa: BLE001 - record the crash on the job, don't just vanish it

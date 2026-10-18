@@ -77,10 +77,12 @@ def test_desks_grid_required_ids():
 
 
 def test_desks_grid_links_shared_assets_and_own_css_js():
+    # desks.css/js may carry a ?v= cache-buster (see pathiel/server.py
+    # _RevalidatedStatic for why one was needed once), so match the prefix.
     assert '"/static/pathiel.css"' in DESKS_HTML
-    assert '"/static/desks.css"' in DESKS_HTML
+    assert '"/static/desks.css' in DESKS_HTML
     assert '"/static/pathiel.js"' in DESKS_HTML
-    assert '"/static/desks.js"' in DESKS_HTML
+    assert '"/static/desks.js' in DESKS_HTML
 
 
 def test_desks_grid_has_desks_nav_link():

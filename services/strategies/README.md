@@ -38,17 +38,37 @@ analytics.py     DeskAnalytics (deterministic: snapshots, pairs, forward
 journal.py       Thesis storage on disk, atomic writes
 grader.py        Grade expired theses from hourly candles; TrackRecord roll-up
 pipeline.py      refresh(): analytics -> intel -> token gate -> thesis -> journal
+                 (on_stage reports "reading market data" ... "writing the thesis")
+candle_store.py  daily candles on disk, shared by server, MCP and scheduler;
+                 only the missing tail is fetched, a failed fetch serves disk
 facade.py        list_cards / get_brief / refresh / submit_user_thesis /
-                 track_record / grade_due — the stable surface other agents import
+                 track_record / grade_due — the stable surface other agents import;
+                 also the one background analytics worker (revalidate, warm_all)
 api.py           FastAPI routes (contracts/strategies/models.py's route list)
 __main__.py      CLI: list / brief / refresh / grade
 evals/           verdict_backtest.py — walk-forward backtest, runnable as a script
 ```
 
-Analytics is always rebuilt fresh on `refresh()` and `get_brief()` (live HL
-data, parallel fetches, <10s even for an 11-instrument desk); `list_cards()`
-reads only whatever the last `refresh()` cached, so an overview page never
-triggers a live fetch per desk.
+Analytics freshness (2026-10-18). Rebuilding live on every `get_brief()` ran
+through the dashboard server's Hyperliquid budget (60 burst, 2 weight/s) and
+took 22s (btc) to 122s (ai, 11 instruments) per page view. Now:
+
+| caller | analytics |
+|---|---|
+| `refresh()` | always rebuilt; candle tails re-fetched (`candle_max_age_s=0`) |
+| `get_brief()` (web) | cache if < 15 min old; else the cache at once plus a queued background rebuild (`brief.refreshing=True`, the page re-reads until it lands) |
+| `get_brief(wait=True)` (MCP, CLI) | rebuilt inline when older than `max_age_s` (MCP: 120 s) |
+| `list_cards()` | cache only; desks older than an hour are queued for the worker |
+| server startup | desks with no cache at all are queued (`start_warmup`) |
+
+One worker drains the queue one desk at a time (a brief someone is looking at
+jumps the line), so six stale desks never stampede the budget. A failed
+rebuild serves the old copy with a note in `stale`; no copy at all gives
+`analytics=None` with a note, never a 500. Knobs: `PATHIEL_DESK_BRIEF_MAX_AGE_S`,
+`PATHIEL_DESK_CARD_MAX_AGE_S`, `PATHIEL_DESK_CANDLE_MAX_AGE_S`,
+`PATHIEL_DESK_ACCOUNT_TTL_S`; `PATHIEL_DESK_BACKGROUND_REFRESH=0` and
+`PATHIEL_DESK_WARMUP=0` switch the worker and the warmup off (the test session
+does both).
 
 ## The leverage ladder and the verdict rule
 
