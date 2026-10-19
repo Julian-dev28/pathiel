@@ -50,8 +50,9 @@ fi
 ok "no undefined names or dead imports"
 
 # 5. The gate suite. Offline and deterministic by construction — pytest's
-#    addopts deselect the `online` and `live` markers, so this places no orders
-#    and makes no network calls.
+#    addopts deselect the `online`, `live` and `browser` markers, so this places
+#    no orders, and conftest.py refuses any host that is not loopback and fails
+#    the test that asked (enforced since 2026-10-19; it was only a promise).
 #
 #    PATHIEL_STATE_DIR points at a throwaway directory: the root conftest loads
 #    the real .env.local, and a test that writes state must never touch the live

@@ -14,14 +14,29 @@ from __future__ import annotations
 
 import ast
 import collections
+import os
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKIP = (".venv", "__pycache__", "build", "node_modules", ".git")
 
 
+# Old agent worktrees: 13 stale copies of this repo (926 MB). Walking them
+# took 8 s of the gate and judged code this checkout does not contain. Pruned
+# during the walk, not filtered after it.
+WORKTREES = ROOT / ".claude" / "worktrees"
+
+
+def _walk_py():
+    for here, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in SKIP and pathlib.Path(here, d) != WORKTREES]
+        for name in files:
+            if name.endswith(".py"):
+                yield pathlib.Path(here, name)
+
+
 def _python_files():
-    for p in ROOT.rglob("*.py"):
+    for p in _walk_py():
         if not any(part in SKIP for part in p.parts):
             yield p
 

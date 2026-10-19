@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict
@@ -40,6 +41,7 @@ def _load_env_local_early() -> None:
 _load_env_local_early()
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response  # noqa: E402
+from fastapi.encoders import jsonable_encoder                        # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware                   # noqa: E402
 from fastapi.responses import JSONResponse                            # noqa: E402
 from fastapi.staticfiles import StaticFiles                           # noqa: E402
@@ -85,6 +87,20 @@ async def _append_session_log(entry: Dict[str, Any]) -> None:
     await loop.run_in_executor(None, session_log.append, entry)
 
 
+async def _json_object(request: Request, *, empty_ok: bool = False) -> Dict[str, Any]:
+    """The request's JSON body as a dict, else a 400. Read on the event loop
+    (it is an await); the work the body asks for then goes to a worker thread."""
+    if empty_ok and not await request.body():
+        return {}
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "invalid JSON")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "JSON body must be an object")
+    return body
+
+
 # ── PID file helpers (start/stop) ──────────────────────────────────────────────
 
 # Falls back to the pre-rename name so a server started before the rename is
@@ -122,8 +138,27 @@ async def lifespan(app: FastAPI):
     # (PATHIEL_DESK_WARMUP=0 skips; the test session sets it).
     from services.strategies.facade import start_warmup
     start_warmup()
+    # Same idea for "Your size" on those desks: its venue metadata. Off with
+    # PATHIEL_META_PREWARM=0 (the test session sets it).
+    if os.environ.get("PATHIEL_META_PREWARM", "1") != "0":
+        threading.Thread(target=_prewarm_size_specs, name="size-prewarm", daemon=True).start()
     yield
     logger.info("Pathiel server stopped — no state flush by design")
+
+
+def _prewarm_size_specs() -> None:
+    """Warm the metadata every desk coin's "Your size" reads, at background
+    priority so a page request made meanwhile goes first."""
+    from pathiel.client.rate_limit import background_priority
+    from services.risk.api import prewarm_coin_specs
+    from services.strategies import desks
+    try:
+        coins = sorted({i.coin for d in desks.list_desk_ids() for i in desks.get_spec(d).instruments})
+        with background_priority():
+            warmed = prewarm_coin_specs(coins)
+        logger.info(f"[server] size metadata warm for {warmed}/{len(coins)} desk coins")
+    except Exception as exc:  # noqa: BLE001 - best-effort; "Your size" warms lazily
+        logger.warning(f"[server] size metadata prewarm failed ({exc}); it warms on first use")
 
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -306,21 +341,21 @@ app.add_middleware(
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-async def _fetch_live_equity() -> float:
-    """Fetch live account equity from HL; returns 0.0 if no wallet is configured.
+def _live_equity() -> float:
+    """Live account equity from the shared snapshot; 0.0 if no wallet is configured.
 
     Honors the runtime HIP-3 flag so the dashboard reflects total tradeable
     USDC across main + HIP-3 dexes when HIP-3 is enabled. Without this the
     equity card only counts the main HL clearinghouse.
+
+    Blocking (a cold read waits on the Hyperliquid budget): call it from a
+    plain `def` handler or a worker thread, never from a coroutine.
     """
     user = resolve_user_address()
     if not user:
         return 0.0
-    # The shared snapshot, on a worker thread: this coroutine runs on the one
-    # event loop, and a cold read waits on the Hyperliquid budget.
     from pathiel.client.account_snapshot import account_state
-    state = await asyncio.to_thread(account_state, user, _hip3_on())
-    return float(state.get("equity", 0))
+    return float(account_state(user, _hip3_on()).get("equity", 0))
 
 
 def _hip3_on() -> bool:
@@ -342,15 +377,24 @@ def _hip3_on() -> bool:
 
 
 # ── Agent endpoints ───────────────────────────────────────────────────────────
+#
+# No handler here blocks the event loop. uvicorn serves every request for every
+# page on one loop, so a Hyperliquid read, a model call or an order placed
+# inside an `async def` froze the whole site for as long as it took
+# (2026-10-19; dashboard.py's _run_off_loop docstring has the first case). A
+# handler that does that work is a plain `def`, which FastAPI runs on its
+# thread pool; one that must await its request body reads it on the loop and
+# hands the rest to asyncio.to_thread. Enforced by
+# tests/test_no_blocking_on_the_event_loop.py.
 
 
 @app.get("/api/agent/state", dependencies=[Depends(_require_operator)])
-async def get_agent_state():
+def get_agent_state():
     """GET /api/agent/state — full state snapshot for the UI."""
     memory.load()
     state = memory.get_full_state()
     config = read_agent_config()
-    live_equity = await _fetch_live_equity()
+    live_equity = _live_equity()
 
     if live_equity > 0:
         memory.update_equity(live_equity)
@@ -365,7 +409,12 @@ async def get_agent_state():
 async def run_scan(request: Request):
     """POST /api/agent/scan — sweep markets for trigger signals."""
     global _last_scan_at
+    body = await _json_object(request, empty_ok=True)
+    min_score = body.get("minScore", 20)
 
+    # Check and claim the window with no await in between, which on the one
+    # event loop is atomic: two clicks cannot both start a scan (dozens of
+    # Hyperliquid reads) now that the scan itself runs on a worker thread.
     elapsed = time.time() - _last_scan_at
     if elapsed < _SCAN_MIN_SECONDS and _last_scan_at > 0:
         remaining = max(1, int(_SCAN_MIN_SECONDS - elapsed))
@@ -373,23 +422,14 @@ async def run_scan(request: Request):
             429,
             detail=f"Rate limited. Try again in {remaining}s",
         )
+    claimed_from, _last_scan_at = _last_scan_at, time.time()
+    try:
+        universe = await asyncio.to_thread(lambda: get_universe(include_hip3=_hip3_on()))
+    except Exception:
+        _last_scan_at = claimed_from        # a failed universe read never used the window
+        raise
 
-    raw_body = await request.body()
-    if raw_body:
-        try:
-            body = await request.json()
-        except Exception:
-            raise HTTPException(400, "invalid JSON")
-    else:
-        body = {}
-    if not isinstance(body, dict):
-        raise HTTPException(400, "JSON body must be an object")
-    min_score = body.get("minScore", 20)
-
-    universe = get_universe(include_hip3=_hip3_on())
-    _last_scan_at = time.time()
-
-    perceptions = scan_once(universe=universe, min_score=min_score)
+    perceptions = await asyncio.to_thread(scan_once, universe=universe, min_score=min_score)
 
     result = {"perceptions": perceptions, "count": len(perceptions)}
     await _append_session_log({"event": "scan", "perceptions": len(perceptions)})
@@ -399,52 +439,50 @@ async def run_scan(request: Request):
 @app.post("/api/agent/research/{coin}", dependencies=[Depends(_require_operator)])
 async def run_research(coin: str, request: Request):
     """POST /api/agent/research/{coin} — full AI analysis for one coin."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+
+    # A model call, tens of seconds: on a worker thread.
+    analysis = await asyncio.to_thread(_research, coin, body)
+    await _append_session_log({"event": "research", "coin": coin, "verdict": analysis.get("verdict")})
+    return JSONResponse(content=analysis)
+
+
+def _research(coin: str, body: Dict[str, Any]) -> Dict[str, Any]:
     memory.load()
 
     # Build a minimal perception from memory or request
     perception: Dict[str, Any] = {"coin": coin, "type": "perp", "mid": 0, "composite_score": 0}
 
-    if request:
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
+    if body.get("perception"):
+        perception.update(body["perception"])
+        if "coin" not in perception:
+            perception["coin"] = coin
+    elif body.get("perceptionId"):
+        # Look up from recent perceptions
+        for p in memory.get_recent_perceptions(200):
+            if p.get("id") == body["perceptionId"] and p.get("coin") == coin:
+                perception = p
+                break
 
-        if body.get("perception"):
-            perception.update(body["perception"])
-            if "coin" not in perception:
-                perception["coin"] = coin
-        elif body.get("perceptionId"):
-            # Look up from recent perceptions
-            for p in memory.get_recent_perceptions(200):
-                if p.get("id") == body["perceptionId"] and p.get("coin") == coin:
-                    perception = p
-                    break
-
-    analysis = research(coin=coin, perception=perception)
-    await _append_session_log({"event": "research", "coin": coin, "verdict": analysis.get("verdict")})
-    return JSONResponse(content=analysis)
+    return research(coin=coin, perception=perception)
 
 
 @app.post("/api/agent/execute", dependencies=[Depends(_require_operator)])
 async def run_execute(request: Request):
     """POST /api/agent/execute — run risk gates and execute an analysis."""
-    memory.load()
-
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "invalid JSON")
+    body = await _json_object(request)
 
     analysis_id = body.get("analysisId")
     if not analysis_id:
         raise HTTPException(400, "analysisId required")
 
-    analysis = memory.get_analysis_by_id(analysis_id)
-    if not analysis:
-        raise HTTPException(404, f"analysis {analysis_id} not found")
-
-    result = maybe_execute(analysis)
+    # Risk gates and, when they pass, the orders: on a worker thread.
+    result = await asyncio.to_thread(_execute, analysis_id)
     await _append_session_log({
         "event": "execute",
         "analysisId": analysis_id,
@@ -453,21 +491,29 @@ async def run_execute(request: Request):
     return JSONResponse(content=result)
 
 
+def _execute(analysis_id: str) -> Dict[str, Any]:
+    memory.load()
+    analysis = memory.get_analysis_by_id(analysis_id)
+    if not analysis:
+        raise HTTPException(404, f"analysis {analysis_id} not found")
+    return maybe_execute(analysis)
+
+
 @app.get("/api/agent/trades", dependencies=[Depends(_require_operator)])
-async def get_trades():
+def get_trades():
     """GET /api/agent/trades — all recorded trades."""
     memory.load()
     return JSONResponse(content=memory.get_all_trades())
 
 
 @app.get("/api/agent/session-log", dependencies=[Depends(_require_operator)])
-async def get_session_log():
+def get_session_log():
     """GET /api/agent/session-log — last 50 log entries."""
     return JSONResponse(content=session_log.tail(50))
 
 
 @app.get("/api/agent/start", dependencies=[Depends(_require_operator)])
-async def agent_start():
+def agent_start():
     """GET /api/agent/start — report whether the scanner process is running."""
     if not os.path.exists(PID_FILE):
         return JSONResponse(content={"running": False, "cycle": 0, "lastUpdate": None})
@@ -478,7 +524,7 @@ async def agent_start():
 
 
 @app.post("/api/agent/start", dependencies=[Depends(_require_operator)])
-async def agent_start_post():
+def agent_start_post():
     """POST /api/agent/start — report scanner status.
 
     The Python agent runs as its own process; this endpoint does not spawn it.
@@ -497,7 +543,7 @@ async def agent_start_post():
 
 
 @app.post("/api/agent/stop", dependencies=[Depends(_require_operator)])
-async def agent_stop():
+def agent_stop():
     """POST /api/agent/stop — terminate the scanner process."""
     if not os.path.exists(PID_FILE):
         return JSONResponse(content={"status": "not_running"})
@@ -518,7 +564,7 @@ async def agent_stop():
 
 
 @app.get("/api/agent/config", dependencies=[Depends(_require_operator)])
-async def get_config():
+def get_config():
     """GET /api/agent/config — read the agent config."""
     return JSONResponse(content=read_agent_config())
 
@@ -526,25 +572,29 @@ async def get_config():
 @app.post("/api/agent/config", dependencies=[Depends(_require_operator)])
 async def update_config(request: Request):
     """POST /api/agent/config — merge new values into the agent config."""
-    existing = read_agent_config()
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "invalid JSON")
-
-    if not isinstance(body, dict):
-        raise HTTPException(400, "JSON body must be an object")
-
-    merged = merge_agent_config(existing, body)
-    write_agent_config(merged)
+    body = await _json_object(request)
+    merged = await asyncio.to_thread(_merge_config, body)
     return JSONResponse(content={"ok": True, "config": merged})
+
+
+_CONFIG_LOCK = threading.Lock()
+
+
+def _merge_config(body: Dict[str, Any]) -> Dict[str, Any]:
+    # Read, merge and write as one step. On the event loop two saves could not
+    # interleave; on worker threads two landing together would each merge into
+    # the same old config and the second write would drop the first's change.
+    with _CONFIG_LOCK:
+        merged = merge_agent_config(read_agent_config(), body)
+        write_agent_config(merged)
+    return merged
 
 
 # ── HL endpoints ──────────────────────────────────────────────────────────────
 
 
 @app.get("/api/hl/account", dependencies=[Depends(_require_operator)])
-async def get_account():
+def get_account():
     """GET /api/hl/account — perp + spot account state."""
     user = resolve_user_address()
     if not user:
@@ -552,13 +602,16 @@ async def get_account():
 
     try:
         state = fetch_account_state(user, include_hip3=_hip3_on())
-        return JSONResponse(content=state)
+        # jsonable_encoder: the state carries sets (queried_dexes), which
+        # json.dumps refuses. Until 2026-10-19 every call answered 500
+        # "Object of type set is not JSON serializable".
+        return JSONResponse(content=jsonable_encoder(state))
     except Exception as e:
         raise HTTPException(500, str(e))
 
 
 @app.get("/api/hl/all-mids")
-async def get_all_mids():
+def get_all_mids():
     """GET /api/hl/all-mids — all mid prices (incl. HIP-3 when enabled)."""
     try:
         mids = fetch_all_mids(include_hip3=_hip3_on())
@@ -568,7 +621,7 @@ async def get_all_mids():
 
 
 @app.get("/api/hl/universe")
-async def get_market_universe():
+def get_market_universe():
     """GET /api/hl/universe — full market universe (incl. HIP-3 when enabled)."""
     try:
         universe = get_universe(include_hip3=_hip3_on())
@@ -578,7 +631,7 @@ async def get_market_universe():
 
 
 @app.get("/api/hl/price")
-async def get_price(coin: str = Query("BTC")):
+def get_price(coin: str = Query("BTC")):
     """GET /api/hl/price — mid price for a coin.
 
     Always includes HIP-3 dexes in the mid lookup so a request for
@@ -595,7 +648,7 @@ async def get_price(coin: str = Query("BTC")):
 
 
 @app.get("/api/hl/candles")
-async def get_candles(
+def get_candles(
     coin: str = Query("BTC"),
     interval: str = Query("5m"),
     count: int = Query(100),
@@ -609,7 +662,7 @@ async def get_candles(
 
 
 @app.get("/api/hl/portfolio", dependencies=[Depends(_require_operator)])
-async def get_portfolio():
+def get_portfolio():
     """GET /api/hl/portfolio — positions and equity."""
     user = resolve_user_address()
     if not user:
@@ -657,7 +710,7 @@ async def get_portfolio():
 
 
 @app.get("/api/hl/orderbook")
-async def get_orderbook(coin: str = Query("BTC")):
+def get_orderbook(coin: str = Query("BTC")):
     """GET /api/hl/orderbook — top-of-book L2 levels."""
     try:
         from pathiel.client.hl_client import _http_post
@@ -675,11 +728,13 @@ async def get_orderbook(coin: str = Query("BTC")):
 @app.post("/api/hl/place-order", dependencies=[Depends(_require_operator)])
 async def place_order(request: Request):
     """POST /api/hl/place-order — manual order with ATR-based SL/TP brackets."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "invalid JSON")
+    body = await _json_object(request)
+    # Price, leverage, ATR, equity, the order and its two brackets: several
+    # exchange round trips, on a worker thread.
+    return JSONResponse(content=await asyncio.to_thread(_place_order, body))
 
+
+def _place_order(body: Dict[str, Any]) -> Dict[str, Any]:
     side = body.get("side", "long")
     coin = (body.get("coin") or "BTC").upper()
     leverage = body.get("leverage", 5)
@@ -707,7 +762,7 @@ async def place_order(request: Request):
         risk_usd = body.get("riskUSD")
         if risk_usd is None:
             risk_pct = body.get("riskPct", 0.01)
-            equity = await _fetch_live_equity()
+            equity = _live_equity()
             risk_usd = max(2, equity * risk_pct)
 
         cfg = read_agent_config()
@@ -751,14 +806,14 @@ async def place_order(request: Request):
                 {"type": "TP", "price": tp_px, "ok": tp.get("ok")},
             ]
 
-        await _append_session_log({
+        session_log.append({
             "event": "place_order",
             "coin": coin,
             "side": side,
             "ok": result.get("ok"),
         })
 
-        return JSONResponse(content={
+        return {
             **result,
             "coin": coin,
             "side": side,
@@ -766,7 +821,7 @@ async def place_order(request: Request):
             "midPrice": mid_price,
             "entryPrice": entry_px,
             "brackets": brackets,
-        })
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -776,11 +831,12 @@ async def place_order(request: Request):
 @app.post("/api/hl/close-position", dependencies=[Depends(_require_operator)])
 async def close_position(request: Request):
     """POST /api/hl/close-position — close an open position for a coin."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "invalid JSON")
+    body = await _json_object(request)
+    # A fresh account read, a price and the closing order: on a worker thread.
+    return JSONResponse(content=await asyncio.to_thread(_close_position, body))
 
+
+def _close_position(body: Dict[str, Any]) -> Dict[str, Any]:
     coin = (body.get("coin") or "BTC").upper()
     user = resolve_user_address()
 
@@ -818,13 +874,13 @@ async def close_position(request: Request):
             coin=coin,
         )
 
-        await _append_session_log({
+        session_log.append({
             "event": "close_position",
             "coin": coin,
             "ok": result.get("ok"),
         })
 
-        return JSONResponse(content={**result, "coin": coin, "side": "long" if is_long else "short"})
+        return {**result, "coin": coin, "side": "long" if is_long else "short"}
     except HTTPException:
         raise
     except Exception as e:
@@ -834,10 +890,7 @@ async def close_position(request: Request):
 @app.post("/api/hl/cancel-order", dependencies=[Depends(_require_operator)])
 async def cancel_order(request: Request):
     """POST /api/hl/cancel-order — cancel an order by OID."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "invalid JSON")
+    body = await _json_object(request)
 
     oid = body.get("oid")
     coin = body.get("coin")
@@ -846,7 +899,7 @@ async def cancel_order(request: Request):
 
     try:
         from pathiel.client.exchange import cancel_orders
-        result = cancel_orders(oid, coin=coin)
+        result = await asyncio.to_thread(cancel_orders, oid, coin=coin)
         return JSONResponse(content=result)
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -865,13 +918,16 @@ async def health():
 
     System health lives at /api/health/system and returns 503. Use that for
     alerting and readiness, never for liveness.
+
+    The one `async def` here with no await: it does no I/O, so it answers even
+    when every worker thread is busy.
     """
     return {"service": "Pathiel-Trader", "version": __version__,
             "status": "running", "system_health": "/api/health/system"}
 
 
 @app.get("/api/health/system")
-async def health_system(response: Response):
+def health_system(response: Response):
     """Is the SYSTEM working, not just this process. 503 when it is not.
 
     This exists because /api/health answered "running" unconditionally, so a
@@ -886,9 +942,7 @@ async def health_system(response: Response):
     from pathiel import dashboard as _db
 
     checks: Dict[str, Any] = {}
-    # On a worker thread: the summary includes the live account read, and
-    # this coroutine runs on the one event loop every page shares.
-    summary = await asyncio.to_thread(_db._summary_payload)
+    summary = _db._summary_payload()
 
     # 1. Is the loop alive? The heartbeat is written every cycle; p99 is ~420s
     #    on healthy days, so 900s is a genuinely dead loop, not a slow one.
@@ -952,7 +1006,7 @@ async def health_system(response: Response):
 
 
 @app.get("/metrics")
-async def metrics():
+def metrics():
     """Prometheus scrape target. Unauthenticated (like /api/health) so the
     scraper needs no operator token; reads local state only — never hits HL."""
     body, content_type = render_metrics()

@@ -22,28 +22,27 @@ wx7 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(wx7)
 
 
-def _rows():
+@pytest.fixture(scope="module")
+def rows():
+    """One sweep (about 7 s; it is deterministic) shared by the three checks."""
     _, rows = wx7.sweep()
     return rows
 
 
-def test_grid_size_and_live_present():
-    rows = _rows()
+def test_grid_size_and_live_present(rows):
     assert len(rows) >= 200, len(rows)  # 288 minus any too-few-rebalance drops
     assert any(wx7.is_live(r) for r in rows), "live recipe cell missing"
 
 
-def test_meme_exclusion_beats_memes_in():
-    rows = _rows()
+def test_meme_exclusion_beats_memes_in(rows):
     live = next(r for r in rows if wx7.is_live(r))
     user_now = next(r for r in rows if wx7.is_user_current(r))
     # dropping memes must improve the live recipe's net25 (W-X4 reproduced)
     assert live["net25"] > user_now["net25"], (live["net25"], user_now["net25"])
 
 
-def test_live_recipe_has_top_tier_sharpe():
+def test_live_recipe_has_top_tier_sharpe(rows):
     """No cell should beat live on BOTH net25 AND Sharpe AND both halves (frontier)."""
-    rows = _rows()
     live = next(r for r in rows if wx7.is_live(r))
     for r in rows:
         if wx7.is_live(r):

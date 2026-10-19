@@ -147,8 +147,13 @@ def test_session_gate_skipped_for_local_mode(monkeypatch):
     from fastapi.testclient import TestClient
     import pathiel.server as srv
     from services.auth import integration
+    from pathiel.client import account_snapshot
     for m in integration._DEPLOYMENT_MARKERS:
         monkeypatch.delenv(m, raising=False)
+    # A request the gate lets through reads the account; keep it off the venue.
+    monkeypatch.setattr(account_snapshot, "FETCH", lambda *a, **kw: {
+        "equity": 0.0, "asset_positions": [], "dex_equity": {"": 0.0}, "queried_dexes": {""}})
+    monkeypatch.setattr(account_snapshot, "LIST_DEXES", lambda: [])
     remote = TestClient(srv.app, client=("203.0.113.5", 50000))
     r = remote.get("/api/dashboard/positions")
     assert r.status_code == 401 and r.json().get("auth_required") is True

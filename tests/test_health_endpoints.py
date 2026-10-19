@@ -177,15 +177,28 @@ def test_the_system_check_says_where_the_hl_budget_went(client, monkeypatch):
     assert budget["background_reserve"] <= budget["capacity"]
 
 
-def test_the_system_check_reads_the_summary_off_the_event_loop(client, monkeypatch):
+def test_the_system_check_runs_off_the_event_loop(client, monkeypatch):
     """The summary carries the live account read; on the event loop a cold
-    read froze every page for its duration."""
-    import threading
+    read froze every page for its duration. The check is a plain `def`, so
+    all of it (summary, feed, disk) runs on a worker thread."""
+    import asyncio
     seen = {}
-    monkeypatch.setattr(db, "_summary_payload",
-                        lambda: seen.setdefault("summary", threading.get_ident()) and {"last_tick_age_s": 30})
-    # _feed_health runs in the coroutine itself: its thread IS the event loop's.
-    monkeypatch.setattr(db, "_feed_health",
-                        lambda: seen.setdefault("loop", threading.get_ident()) and {"trustworthy": True})
+
+    def on_loop():
+        try:
+            asyncio.get_running_loop()
+            return True
+        except RuntimeError:
+            return False
+
+    def summary():
+        seen["summary"] = on_loop()
+        return {"last_tick_age_s": 30}
+
+    def feed():
+        seen["feed"] = on_loop()
+        return {"trustworthy": True}
+    monkeypatch.setattr(db, "_summary_payload", summary)
+    monkeypatch.setattr(db, "_feed_health", feed)
     client.get("/api/health/system")
-    assert set(seen) == {"summary", "loop"} and seen["summary"] != seen["loop"]
+    assert seen == {"summary": False, "feed": False}

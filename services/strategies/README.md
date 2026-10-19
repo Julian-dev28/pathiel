@@ -159,7 +159,10 @@ instead of a second market read and a second model call. `GET
 a page opened mid-refresh shows its progress at the top and follows it to the
 end. Every refresh logs `"<desk>: refresh <state> in <s>s: <message>"`. A desk
 with no call yet shows "Write the first call" in the call section rather than
-a "Stale" banner: missing is not stale.
+a "Stale" banner: missing is not stale. A finished job stays readable at
+`GET /api/desks/jobs/{id}` for an hour (a page follows one for at most 10
+minutes), then the next refresh click drops it; queued and running jobs are
+never dropped.
 
 Intel and thesis are resolved by import path (`services.intel.api:build_packet`,
 `services.thesis.api:write_thesis`), not a hard dependency — missing or

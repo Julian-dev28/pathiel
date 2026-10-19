@@ -2703,9 +2703,9 @@ def test_the_viewer_payload_says_whether_it_is_the_house_account(monkeypatch):
     from pathiel import dashboard
     house = "0x" + "1" * 40
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: house)
-    monkeypatch.setattr(dashboard, "fetch_account_state",
-                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []},
-                        raising=False)
+    import pathiel.client.hl_client as hl_client     # _viewer_account_payload imports it lazily
+    monkeypatch.setattr(hl_client, "fetch_account_state",
+                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []})
     dashboard._ACCOUNT_CACHE.clear()
     assert dashboard._viewer_account_payload(house)["is_house"] is True
     dashboard._ACCOUNT_CACHE.clear()
@@ -2721,9 +2721,9 @@ def test_an_unconfigured_house_never_claims_a_visitor_as_its_own(monkeypatch):
     """
     from pathiel import dashboard
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "")
-    monkeypatch.setattr(dashboard, "fetch_account_state",
-                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []},
-                        raising=False)
+    import pathiel.client.hl_client as hl_client     # _viewer_account_payload imports it lazily
+    monkeypatch.setattr(hl_client, "fetch_account_state",
+                        lambda *a, **kw: {"equity": 0.0, "asset_positions": []})
     dashboard._ACCOUNT_CACHE.clear()
     assert dashboard._viewer_account_payload("0x" + "3" * 40)["is_house"] is False
     dashboard._ACCOUNT_CACHE.clear()

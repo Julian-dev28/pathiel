@@ -323,5 +323,9 @@ line) and as the MCP tools `risk_size_trade` and `desk_brief`'s `your_size`.
 `active_equity_usd()` reuses one equity read for 60 s
 (`PATHIEL_RISK_EQUITY_TTL_S`), and that read itself comes from the server's
 shared account snapshot (`pathiel/client/account_snapshot.py`), so "Your size"
-never waits on a fresh 12-request venue read.
+never waits on a fresh 12-request venue read. The venue metadata it also needs
+(max leverage, size decimals) is warmed for every desk coin when the server
+starts (`prewarm_coin_specs`, called from `pathiel/server.py`; skip with
+`PATHIEL_META_PREWARM=0`): cold, the first size after a restart built the SDK
+client inside the request, 2.8 s.
 

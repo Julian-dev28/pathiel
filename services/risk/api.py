@@ -193,6 +193,15 @@ def _coin_specs(coin: str):
     return max_lev, sz_dec
 
 
+def prewarm_coin_specs(coins) -> int:
+    """Read the venue metadata "Your size" needs (max leverage, size decimals)
+    for these coins before the first request does. The first read builds the
+    SDK client, which fetches every dex's meta: about 3 s, and it used to land
+    on the first desk a user opened after a server restart (2026-10-19).
+    pathiel.client.exchange keeps it an hour. Returns how many coins resolved."""
+    return sum(None not in _coin_specs(coin) for coin in coins)
+
+
 @router.post("/size", response_model=TradeSize)
 def post_size(body: TradeSizeIn, request: Request) -> TradeSize:
     """One trade sized for the active account (the desk page's "Your size"

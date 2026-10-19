@@ -392,8 +392,11 @@ def test_fetch_news_google_primary_no_key_needed(monkeypatch):
 def test_fetch_news_sends_freshness_window(monkeypatch):
     """The Brave request must carry a freshness range so year-old articles
     (the AIXBT 2025 hack) don't feed the gate. Regression guard."""
-    from pathiel.agents import research
+    from pathiel.agents import news_catalyst, research
     monkeypatch.setenv("BRAVE_API_KEY", "k")
+    # Google News is the primary and Brave the fallback: with a live Google
+    # read this test reached Brave only on days Google had nothing on AIXBT.
+    monkeypatch.setattr(news_catalyst, "google_news_search", lambda *a, **kw: [])
     captured = {}
     class _Resp:
         is_success = True
@@ -3673,8 +3676,12 @@ def test_xyz_short_concentration_ignores_longs_crypto_and_missing_value():
     assert r["pass"] is False and "name cap" in r["reason"]
 
 
-def test_xyz_concentration_is_wired_and_not_carveout_exempt():
+def test_xyz_concentration_is_wired_and_not_carveout_exempt(monkeypatch):
+    from pathiel.agents import market_regime
     from pathiel.agents.risk_gates import eval_all_gates
+    # The regime gate reads live candles (for xyz:C, then the SP500 proxy):
+    # 24.7 s of retries against the real venue before 2026-10-19.
+    monkeypatch.setattr(market_regime, "detect_regime", lambda coin, **kw: "neutral")
     cfg = {"min_ai_confidence": 0.0, "max_concurrent": 100, "max_trade_notional_usd": 1000,
            "max_daily_loss_usd": -1000, "min_market_volume_usd": 0, "min_hip3_volume_usd": 0,
            "min_short_volume_usd": 0, "max_total_notional_pct": 100.0, "cooldown_min": 0,

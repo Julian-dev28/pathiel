@@ -149,10 +149,11 @@ class TestTheRenameIsComplete:
         skip_dirs = {".git", "node_modules", ".venv", "__pycache__", ".next",
                      "logs", ".state", ".backups", ".mypy_cache", ".pytest_cache",
                      ".ruff_cache", "research", ".agents", ".forge", ".qwen"}
+        worktrees = ROOT / ".claude" / "worktrees"     # stale agent copies of the repo
         offenders = []
-        for path in ROOT.rglob("*"):
-            if any(part in skip_dirs for part in path.parts):
-                continue
-            if "pathia" in path.name.lower() and "pathiel" not in path.name.lower():
-                offenders.append(str(path.relative_to(ROOT)))
+        for here, dirs, files in os.walk(ROOT):
+            dirs[:] = [d for d in dirs if d not in skip_dirs and Path(here, d) != worktrees]
+            for name in dirs + files:
+                if "pathia" in name.lower() and "pathiel" not in name.lower():
+                    offenders.append(str(Path(here, name).relative_to(ROOT)))
         assert not offenders, f"still named for the old project: {offenders}"
