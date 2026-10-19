@@ -52,7 +52,8 @@ from pathiel.agents import dsl_exit
 from pathiel.agents import capital_flows
 from pathiel.agents.config_store import read_agent_config
 from pathiel.agents.executor import min_tradable_equity as _min_tradable_equity
-from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+from pathiel.client.account_snapshot import account_state
+from pathiel.client.hl_client import resolve_user_address
 from pathiel.positions_snapshot import read_snapshot as read_position_snapshot
 from pathiel.agents.rebalancer_owned import state_file
 
@@ -365,7 +366,11 @@ def _positions_payload_uncached() -> List[Dict[str, Any]]:
     # Deliberately NOT guarded here: a fetch failure must not become an empty
     # position list, which reads as "flat". _positions_payload() catches it and
     # serves the last known good read instead.
-    state = fetch_account_state(user, include_hip3=True)
+    #
+    # The shared snapshot (pathiel.client.account_snapshot), not a fresh read
+    # per poll: the landing page asks every 10 s and a read costs 12 s of the
+    # server's budget, so polls piled up (2026-10-19).
+    state = account_state(user, include_hip3=True)
     return _rows_from_state(state)
 
 

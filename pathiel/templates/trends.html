@@ -672,7 +672,7 @@ $('#s-all').classList.add('go');
   await Promise.all(LANES.map(loadLane));
   LANES.forEach(l => renderAI(l, (DATA[l] || {}).ai));
   showLane(LANE);
-  setInterval(() => LANES.forEach(loadLane), 60000);
+  pollEvery(() => Promise.all(LANES.map(loadLane)), 60000);
 })();
 </script>
 </body>

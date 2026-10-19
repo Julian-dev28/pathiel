@@ -26,7 +26,7 @@ def test_watch_only_account_is_blocked_from_trading(monkeypatch, tmp_path):
 
     import pathiel.client.hl_client as hl_client
 
-    def fake_fetch(user, include_hip3=False):
+    def fake_fetch(user, include_hip3=False, **kw):
         return {"equity": 48210.5, "withdrawable_aggregated": 30000.0,
                "asset_positions": [1, 2, 3]}
     monkeypatch.setattr(hl_client, "fetch_account_state", fake_fetch)
@@ -49,7 +49,7 @@ def test_verified_trade_account_can_trade_with_no_blockers(monkeypatch, tmp_path
 
     import pathiel.client.hl_client as hl_client
 
-    def fake_fetch(user, include_hip3=False):
+    def fake_fetch(user, include_hip3=False, **kw):
         return {"equity": 15.21, "withdrawable_aggregated": 15.21, "asset_positions": []}
     monkeypatch.setattr(hl_client, "fetch_account_state", fake_fetch)
 
@@ -69,7 +69,7 @@ def test_live_state_fetch_failure_blocks_trading_but_keeps_the_account(monkeypat
 
     import pathiel.client.hl_client as hl_client
 
-    def boom(user, include_hip3=False):
+    def boom(user, include_hip3=False, **kw):
         raise RuntimeError("network down")
     monkeypatch.setattr(hl_client, "fetch_account_state", boom)
 
@@ -91,7 +91,7 @@ def test_snapshot_returns_the_raw_state_from_the_same_single_read(monkeypatch, t
     import pathiel.client.hl_client as hl_client
     calls = []
 
-    def fake_fetch(user, include_hip3=False):
+    def fake_fetch(user, include_hip3=False, **kw):
         calls.append(user)
         return {"equity": 15.21, "withdrawable_aggregated": 15.0, "asset_positions": [],
                 "dex_equity": {"": 0.01, "xyz": 15.18}}

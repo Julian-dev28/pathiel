@@ -3295,14 +3295,14 @@ def test_session_log_tail_streams_last_events(tmp_path, monkeypatch):
 
 
 def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):
-    """When a fresh snapshot exists the dashboard transforms it and never calls
-    fetch_account_state — this is what removes the cross-process HL load."""
+    """When a fresh snapshot exists the dashboard transforms it and never reads
+    the account itself — this is what removes the cross-process HL load."""
     from pathiel import dashboard
     called = {"hl": False}
     def boom(*a, **k):
         called["hl"] = True
-        raise AssertionError("fetch_account_state must not be called")
-    monkeypatch.setattr(dashboard, "fetch_account_state", boom)
+        raise AssertionError("the account read must not be called")
+    monkeypatch.setattr(dashboard, "account_state", boom)
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "0xUSER")
     monkeypatch.setattr(dashboard.dsl_exit, "load_state", lambda force=False: None)
     monkeypatch.setattr(dashboard.dsl_exit, "_active_positions", {})
@@ -3319,7 +3319,8 @@ def test_dashboard_positions_prefers_snapshot_no_hl_call(monkeypatch):
 
 
 def test_dashboard_positions_falls_back_to_hl_when_no_snapshot(monkeypatch):
-    """No snapshot (loop down) → dashboard does a live fetch so it still works."""
+    """No snapshot (loop down) → dashboard reads the account (through the shared
+    pathiel.client.account_snapshot) so it still works."""
     from pathiel import dashboard
     monkeypatch.setattr(dashboard, "read_position_snapshot", lambda max_age_s=120.0: None)
     monkeypatch.setattr(dashboard, "resolve_user_address", lambda: "0xUSER")
@@ -3333,7 +3334,7 @@ def test_dashboard_positions_falls_back_to_hl_when_no_snapshot(monkeypatch):
                           "positionValue": "15000", "unrealizedPnl": "-50",
                           "marginUsed": "3000", "leverage": 5}},
         ]}
-    monkeypatch.setattr(dashboard, "fetch_account_state", fake_fetch)
+    monkeypatch.setattr(dashboard, "account_state", fake_fetch)
     rows = dashboard._positions_payload_uncached()
     assert fetched["n"] == 1
     assert rows[0]["coin"] == "ETH" and rows[0]["side"] == "short"

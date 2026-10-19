@@ -212,7 +212,10 @@ function setDeskState(state) {   // 'loading' | 'ready' | 'error'
 
 function renderStaleBanner(brief) {
   const el = document.getElementById('stale-banner');
-  const stale = new Set(brief.stale || []);
+  // "none yet" / "never fetched" are missing, not stale: the empty call block
+  // says so and carries the button. Only what is actually old goes here (a
+  // desk with no call used to open on "Stale: ... none yet (run refresh)").
+  const stale = new Set((brief.stale || []).filter(b => !/none yet|never fetched/.test(b)));
   const expired = !!(brief.thesis && Date.now() >= new Date(brief.thesis.expires_at).getTime());
   if (expired) stale.add('thesis');
   if (!stale.size) { el.hidden = true; return; }
@@ -734,58 +737,121 @@ function wireUserThesisForm(deskId) {
 
 // ── refresh ──────────────────────────────────────────────────────────────────
 
-// A refresh that writes a thesis takes about a minute (news + one model
-// call); one that finds nothing new takes seconds. Poll fast at first, then
-// once a second, for up to 4 minutes, showing the server's stage label and
-// the elapsed time so a long write never looks hung.
-const JOB_POLL_LIMIT_MS = 240000;
-async function pollJob(jobId, deskId, status) {
-  const t0 = Date.now();
-  for (let i = 0; Date.now() - t0 < JOB_POLL_LIMIT_MS; i++) {
-    const r = await fetch(`/api/desks/jobs/${encodeURIComponent(jobId)}`);
-    if (!r.ok) throw new Error('job poll HTTP ' + r.status);
-    const job = await r.json();
-    if (job.state === 'running' || job.state === 'queued') {
-      const secs = Math.round((Date.now() - t0) / 1000);
-      status.className = 'refresh-status';
-      status.textContent = (job.message || 'checking for a material move') + '… ' + secs + 's';
-      await new Promise(res => setTimeout(res, i < 8 ? 250 : 1000));
-      continue;
-    }
-    status.className = 'refresh-status is-' + job.state;
-    status.textContent = job.message || job.state;
-    if (job.state === 'done') {
-      const brief = await (await fetch(`/api/desks/${encodeURIComponent(deskId)}`)).json();
-      renderDesk(brief, { quiet: true });
-    }
-    return job;
-  }
-  status.className = 'refresh-status is-error';
-  status.textContent = 'still running after 4 minutes. It will land on its own; reload in a bit.';
-  return null;
+// A refresh that writes a thesis takes a minute or two (market data, news,
+// one model call); one that finds nothing new takes seconds. Poll fast at
+// first, then every second or two, for up to 10 minutes, showing the
+// server's stage label and the elapsed time twice: next to the button, and
+// at the top of the page (#refresh-progress), because the button sits at the
+// bottom and a refresh followed from the top used to look like nothing
+// happened (2026-10-19, BTC). The server runs one refresh per desk; a second
+// click, or a reload mid-refresh (brief.refresh_job), follows that one.
+const JOB_POLL_LIMIT_MS = 600000;
+let JOB_FOLLOWING = false;
+
+const REFRESH_SKIP_TEXT = {
+  min_interval_not_elapsed: 'No new call: the last one is too recent to rewrite yet.',
+  no_trigger: 'No new call: no material price move or big headline since the last one.',
+};
+
+function refreshResultText(job) {
+  const msg = job.message || '';
+  if (job.state === 'done' && msg.startsWith('thesis written')) return 'New call written.';
+  if (job.state === 'skipped') return REFRESH_SKIP_TEXT[msg.split(';')[0].trim()] || msg || 'No new call.';
+  if (job.state === 'error') return 'Refresh failed: ' + (msg || 'unknown error');
+  return msg || job.state;
 }
 
-function wireRefresh(deskId) {
-  const btn = document.getElementById('refresh-btn');
+function showRefreshStatus(text, state) {
   const status = document.getElementById('refresh-status');
-  btn.addEventListener('click', async () => {
-    btn.disabled = true; btn.textContent = 'Checking…';
-    status.className = 'refresh-status'; status.textContent = 'checking for a material move…';
-    try {
+  status.className = 'refresh-status' + (state ? ' is-' + state : '');
+  status.textContent = text;
+  const top = document.getElementById('refresh-progress');
+  if (top) {
+    top.hidden = false;
+    top.textContent = (state ? '' : 'Refreshing: ') + text;
+  }
+}
+
+function setRefreshBusy(busy) {
+  const btn = document.getElementById('refresh-btn');
+  const first = document.getElementById('call-empty-refresh');
+  btn.disabled = busy;
+  btn.textContent = busy ? 'Checking…' : 'Refresh';
+  if (first) {
+    first.disabled = busy;
+    first.textContent = busy ? 'Writing…' : 'Write the first call';
+  }
+}
+
+let PROGRESS_HIDE = null;
+function settleProgress(state) {
+  // The outcome stays readable at the top for a moment; an error stays put.
+  clearTimeout(PROGRESS_HIDE);
+  if (state === 'error') return;
+  PROGRESS_HIDE = setTimeout(() => {
+    const top = document.getElementById('refresh-progress');
+    if (top && !JOB_FOLLOWING) top.hidden = true;
+  }, 10000);
+}
+
+async function pollJob(job, deskId) {
+  const started = Date.parse(job.started_at);
+  const t0 = Number.isFinite(started) ? Math.min(started, Date.now()) : Date.now();
+  const pollStart = Date.now();
+  for (let i = 0; job.state === 'queued' || job.state === 'running'; i++) {
+    if (Date.now() - pollStart > JOB_POLL_LIMIT_MS) {
+      showRefreshStatus('still running after 10 minutes. It will land on its own; reload in a bit.', 'error');
+      return null;
+    }
+    showRefreshStatus((job.message || 'starting') + '… ' + Math.round((Date.now() - t0) / 1000) + 's');
+    await new Promise(res => setTimeout(res, i < 8 ? 250 : (i < 68 ? 1000 : 2000)));
+    const r = await fetch(`/api/desks/jobs/${encodeURIComponent(job.id)}`);
+    if (r.status === 404) throw new Error('the server restarted and lost this refresh; press Refresh again');
+    if (!r.ok) throw new Error('job poll HTTP ' + r.status);
+    job = await r.json();
+  }
+  showRefreshStatus(refreshResultText(job), job.state);
+  if (job.state === 'done' || job.state === 'skipped') {
+    // A skipped refresh still rebuilt the market numbers; show them.
+    const brief = await (await fetch(`/api/desks/${encodeURIComponent(deskId)}`)).json();
+    renderDesk(brief, { quiet: true });
+  }
+  return job;
+}
+
+// existingJob: a refresh already running on the server (brief.refresh_job);
+// follow it instead of asking for another.
+async function runRefresh(deskId, existingJob) {
+  if (JOB_FOLLOWING) return;
+  JOB_FOLLOWING = true;
+  setRefreshBusy(true);
+  let state = 'error';
+  try {
+    let job = existingJob;
+    if (!job) {
+      showRefreshStatus('checking for a material move…');
       const r = await fetch(`/api/desks/${encodeURIComponent(deskId)}/refresh`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ force: false }),
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      const job = await r.json();
-      await pollJob(job.id, deskId, status);
-    } catch (err) {
-      status.className = 'refresh-status is-error';
-      status.textContent = 'refresh failed: ' + String(err);
-      reportRefreshFailure('refresh', err);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Refresh';
+      job = await r.json();
     }
-  });
+    const finished = await pollJob(job, deskId);
+    state = finished ? finished.state : 'error';
+  } catch (err) {
+    showRefreshStatus('refresh failed: ' + String(err), 'error');
+    reportRefreshFailure('refresh', err);
+  } finally {
+    JOB_FOLLOWING = false;
+    setRefreshBusy(false);
+    settleProgress(state);
+  }
+}
+
+function wireRefresh(deskId) {
+  document.getElementById('refresh-btn').addEventListener('click', () => runRefresh(deskId));
+  const first = document.getElementById('call-empty-refresh');
+  if (first) first.addEventListener('click', () => runRefresh(deskId));
 }
 
 // ── page assembly ────────────────────────────────────────────────────────────
@@ -810,6 +876,8 @@ function renderDesk(brief, opts = {}) {
   renderDetails(brief);
   if (!opts.quiet) prefillUserForm(brief.spec);
   renderUpdating(brief);
+  const job = brief.refresh_job;
+  if (job && (job.state === 'queued' || job.state === 'running')) runRefresh(brief.spec.id, job);
 }
 
 function renderUpdating(brief) {

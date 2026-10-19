@@ -473,11 +473,11 @@ async function loadTapes() {
   loadTapes();
   setPageMeta();
 })();
-setInterval(loadFunnel, 30000);
-setInterval(loadLeague, 30000);
-setInterval(() => { const sel = document.getElementById('coin-select'); if (sel.value) loadCoinChart(sel.value); }, 60000);
-setInterval(loadHeat, 60000);
-setInterval(loadTapes, 30000);
+pollEvery(loadFunnel, 30000);
+pollEvery(loadLeague, 30000);
+pollEvery(() => { const sel = document.getElementById('coin-select'); return sel.value ? loadCoinChart(sel.value) : null; }, 60000);
+pollEvery(loadHeat, 60000);
+pollEvery(loadTapes, 30000);
 setInterval(setPageMeta, 30000);
 
 

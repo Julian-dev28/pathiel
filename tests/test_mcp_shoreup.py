@@ -417,7 +417,7 @@ class TestAccountTools:
                                                    "positionValue": "11.87", "unrealizedPnl": "0.1",
                                                    "liquidationPx": "81.1",
                                                    "leverage": {"type": "isolated", "value": 3}}}]}
-        monkeypatch.setattr(summary, "get_active_snapshot", lambda: (ActiveSummary(
+        monkeypatch.setattr(summary, "get_active_snapshot", lambda **kw: (ActiveSummary(
             account=_account(), equity_usd=15.21, withdrawable_usd=15.0, open_positions=1,
             can_trade=True), state))
         _, body = _call("account_overview")
@@ -431,7 +431,7 @@ class TestAccountTools:
 
     def test_overview_without_an_account_says_how_to_connect(self, monkeypatch):
         import services.accounts.summary as summary
-        monkeypatch.setattr(summary, "get_active_snapshot", lambda: (ActiveSummary(
+        monkeypatch.setattr(summary, "get_active_snapshot", lambda **kw: (ActiveSummary(
             account=None, can_trade=False, blockers=["No account connected yet."]), None))
         _, body = _call("account_overview")
         assert body["account"] is None and body["blockers"]

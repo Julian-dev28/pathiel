@@ -64,7 +64,11 @@ took 22s (btc) to 122s (ai, 11 instruments) per page view. Now:
 | server startup | desks with no cache at all, or a cache built for other primaries, are queued (`start_warmup`) |
 
 One worker drains the queue one desk at a time (a brief someone is looking at
-jumps the line), so six stale desks never stampede the budget. A failed
+jumps the line), so six stale desks never stampede the budget. The worker runs
+at background priority (`pathiel.client.rate_limit.background_priority`): its
+requests may only spend the bucket above its reserve, so a page view or a
+clicked refresh is never queued behind it (2026-10-19: a BTC rebuild took 213 s
+and a clicked BTC refresh sat behind it). A failed
 rebuild serves the old copy with a note in `stale`; no copy at all gives
 `analytics=None` with a note, never a 500. Knobs: `PATHIEL_DESK_BRIEF_MAX_AGE_S`,
 `PATHIEL_DESK_CARD_MAX_AGE_S`, `PATHIEL_DESK_CANDLE_MAX_AGE_S`,
@@ -147,6 +151,15 @@ that is not a primary now counts as no cache (`load_cached_analytics` returns
 None), so the overview, the brief and the startup warmup rebuild it rather
 than show the old primary's numbers. Until the rewrite lands, the brief's
 `stale` says which coin the shown call was written for.
+
+Refresh jobs (`POST /api/desks/{id}/refresh`). One per desk at a time: a
+second click, or a reloaded page clicking again, gets the running job back
+instead of a second market read and a second model call. `GET
+/api/desks/{id}` carries it as `refresh_job` (queued or running, else null), so
+a page opened mid-refresh shows its progress at the top and follows it to the
+end. Every refresh logs `"<desk>: refresh <state> in <s>s: <message>"`. A desk
+with no call yet shows "Write the first call" in the call section rather than
+a "Stale" banner: missing is not stale.
 
 Intel and thesis are resolved by import path (`services.intel.api:build_packet`,
 `services.thesis.api:write_thesis`), not a hard dependency — missing or

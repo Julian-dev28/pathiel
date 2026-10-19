@@ -30,15 +30,21 @@ def _blockers_for(account, state_ok: bool) -> List[str]:
     return blockers
 
 
-def get_active_summary() -> ActiveSummary:
-    return get_active_snapshot()[0]
+def get_active_summary(max_age_s: Optional[float] = None) -> ActiveSummary:
+    return get_active_snapshot(max_age_s)[0]
 
 
-def get_active_snapshot() -> Tuple[ActiveSummary, Optional[Dict[str, Any]]]:
+def get_active_snapshot(max_age_s: Optional[float] = None
+                        ) -> Tuple[ActiveSummary, Optional[Dict[str, Any]]]:
     """get_active_summary() plus the raw fetch_account_state() dict it was
     built from (per-dex equity, positions, spot), or None when there is no
     account or the read failed. For callers that need the detail (the MCP
-    account_overview tool) without paying for a second Hyperliquid read."""
+    account_overview tool) without paying for a second Hyperliquid read.
+
+    The state comes from pathiel.client.account_snapshot: shared by every
+    page and poll, served at once and re-read in the background (one read in
+    flight at a time). `max_age_s`: for a caller that must not see an older
+    read (the MCP passes 0: always a new read, shared with concurrent calls)."""
     account = view.get_effective_active_account()
     if account is None:
         return ActiveSummary(account=None, can_trade=False,
@@ -47,10 +53,10 @@ def get_active_snapshot() -> Tuple[ActiveSummary, Optional[Dict[str, Any]]]:
     state = None
     state_ok = True
     try:
-        from pathiel.client.hl_client import fetch_account_state
-        state = fetch_account_state(account.main_address, include_hip3=True)
+        from pathiel.client.account_snapshot import account_state
+        state = account_state(account.main_address, include_hip3=True, max_age_s=max_age_s)
     except Exception as e:
-        logger.warning(f"[accounts.summary] fetch_account_state failed for "
+        logger.warning(f"[accounts.summary] account read failed for "
                        f"{account.main_address}: {e}")
         state_ok = False
 

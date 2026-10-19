@@ -138,12 +138,12 @@ def test_trader_state_pnl_is_unrealized_not_equity(monkeypatch):
 
 class TestStrictPost:
     def test_strict_raises_on_rate_budget(self, monkeypatch):
-        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait: False)
+        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait, **kw: False)
         with pytest.raises(hl_client.HLRequestError, match="rate budget"):
             hl_client._http_post_strict("/info", {"type": "meta"})
 
     def test_lenient_still_returns_none(self, monkeypatch):
-        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait: False)
+        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait, **kw: False)
         assert hl_client._http_post("/info", {"type": "meta"}) is None
 
     def test_strict_returns_json_null(self, monkeypatch):
@@ -158,6 +158,6 @@ class TestStrictPost:
         class Sess:
             def post(self, *a, **k):
                 return Resp()
-        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait: True)
+        monkeypatch.setattr(hl_client._HL_LIMITER, "acquire", lambda w, max_wait, **kw: True)
         monkeypatch.setattr(hl_client, "_get_session", lambda: Sess())
         assert hl_client._http_post_strict("/info", {"type": "vaultDetails"}) is None

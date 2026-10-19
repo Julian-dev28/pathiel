@@ -3830,7 +3830,7 @@ def _risk_inputs():
 
 def _live_equity() -> float:
     from services.accounts.summary import get_active_summary
-    summary = get_active_summary()
+    summary = get_active_summary(max_age_s=0)   # a tool result is acted on: always a new read
     if summary.equity_usd is None:
         raise RuntimeError("could not read the active account's equity"
                            + (": " + "; ".join(summary.blockers) if summary.blockers else ""))
@@ -3866,7 +3866,7 @@ def handle_account_overview(params: Dict[str, Any]) -> str:
     """Equity and where it sits, positions, can-trade, for the active account."""
     try:
         from services.accounts.summary import get_active_snapshot
-        summary, state = get_active_snapshot()
+        summary, state = get_active_snapshot(max_age_s=0)
     except Exception as e:
         return json.dumps({"error": f"account read failed: {e}"})
     acct = summary.account

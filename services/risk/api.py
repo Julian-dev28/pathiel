@@ -109,9 +109,12 @@ def _equity_from_accounts_service() -> Optional[float]:
 
 def _equity_from_env_account() -> Optional[float]:
     try:
-        from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+        from pathiel.client.account_snapshot import account_state
+        from pathiel.client.hl_client import resolve_user_address
         user = resolve_user_address()
-        state = fetch_account_state(user) or {}
+        # Every dex, like the services.accounts path above it: main-only read
+        # $0.01 for an account holding $15.18 on xyz (2026-10-18).
+        state = account_state(user, include_hip3=True) or {}
         eq = state.get("equity")
         return float(eq) if eq is not None else None
     except Exception as e:

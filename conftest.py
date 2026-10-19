@@ -34,3 +34,17 @@ if _ENV_FILE.exists():
 os.environ.setdefault("PATHIEL_DASHBOARD_LIVE_EQUITY", "0")
 os.environ.setdefault("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
 os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_account_snapshot():
+    """pathiel.client.account_snapshot shares one account read per address
+    across the whole process (that is its job in the server); one test's
+    fake account must never be served to the next test."""
+    from pathiel.client import account_snapshot
+    account_snapshot.reset()
+    yield
+    account_snapshot.reset()

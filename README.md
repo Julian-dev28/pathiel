@@ -789,6 +789,7 @@ pytest -m online                # read-only tests against the live Hyperliquid p
 pytest -m browser               # Playwright e2e for every page, desks included
 python -m services.thesis.evals.run_eval              # paid: real LLM thesis eval, threshold 0.85
 python -m services.strategies.evals.verdict_backtest  # walk-forward check of the leverage verdicts
+python scripts/site_latency_eval.py   # live: pages answer < 1 s with a dashboard tab open (server must run)
 PATHIEL_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
 ```
 
@@ -933,7 +934,9 @@ With `PATHIEL_MAX_MARKETS=45`, a small `PATHIEL_UNIVERSE_SWEEP`, and a 50s candl
 
 The crypto/HIP-3 budget split (`PATHIEL_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `PATHIEL_UNIVERSE_SWEEP` or increase `PATHIEL_BATCH_SLEEP` before tightening strategy gates.
 
-When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (~8 dexes × weight 2 = ~16 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio` handlers. MCP `close_position` delegates to `executor.close_position_market()`, so closes share the same reduce-only order path, DSL cleanup, trigger-order cancellation, and loss-cooldown behavior as loop exits.
+When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (10 dexes × weight 2, plus main and spot: 24 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio` handlers. MCP `close_position` delegates to `executor.close_position_market()`, so closes share the same reduce-only order path, DSL cleanup, trigger-order cancellation, and loss-cooldown behavior as loop exits.
+
+**The dashboard server's budget (60 burst, 2 weight/s).** 24 weight is 12 s of it, so the server never reads the account per request. Everything that shows the account (dashboard summary and positions, the trade banner, "Your size", desk analytics) shares one snapshot, `pathiel/client/account_snapshot.py`: under 15 s old it is served as is; older, it is served at once and one background re-read starts; past 5 minutes the caller waits for a read (still one read, however many callers). Between full sweeps (every 5 minutes) a re-read asks only the dexes that held money or a position: main + spot + xyz is 6 weight. A failed read, or one that lost a dex that held money, never replaces the last good one. Background work (desk rebuilds, those re-reads) yields: it may only spend tokens above half the bucket, so a page view or a clicked refresh goes first. The trading loop and the executor still read fresh every time. Knobs: `PATHIEL_ACCOUNT_FRESH_S`, `PATHIEL_ACCOUNT_MAX_STALE_S`, `PATHIEL_ACCOUNT_SWEEP_S`, `PATHIEL_HL_BACKGROUND_RESERVE`. Where the budget went: `curl -s localhost:8000/api/health/system | jq .hl_budget` (weight granted and requests refused, per request type and priority). Pages poll with `pollEvery` (pathiel.js): the next poll waits for the last answer and hidden tabs stop polling, so a slow answer can no longer stack requests and hold the browser's six connections to the site (2026-10-19: that is what stalled the Desks click).
 
 ---
 
