@@ -40,6 +40,23 @@ _TEMPLATES_DIR = Path(pathiel.__file__).parent / "templates"
 # dict + lock is the right amount of machinery — no external queue needed.
 _JOBS: Dict[str, RefreshJob] = {}
 _JOBS_LOCK = threading.Lock()
+# A finished job is kept this long so a polling page (desks.js follows one for
+# up to 10 minutes) and a reload still find its outcome, then dropped: without
+# this the registry grew by one entry per click for the life of the process.
+_FINISHED_JOB_TTL_S = 3600.0
+
+
+def _prune_finished_jobs(now: datetime) -> None:
+    """Drop finished jobs older than _FINISHED_JOB_TTL_S. Caller holds _JOBS_LOCK."""
+    def age_s(job: RefreshJob) -> float:
+        at = job.finished_at or job.started_at
+        if at.tzinfo is None:            # a naive stamp must not crash every later click
+            at = at.replace(tzinfo=timezone.utc)
+        return (now - at).total_seconds()
+
+    for job_id in [k for k, j in _JOBS.items()
+                   if j.state not in ("queued", "running") and age_s(j) > _FINISHED_JOB_TTL_S]:
+        del _JOBS[job_id]
 
 
 def running_job(desk_id: str) -> Optional[RefreshJob]:
@@ -86,6 +103,7 @@ def post_refresh(desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
     started = datetime.now(timezone.utc)
     job = RefreshJob(id=job_id, desk_id=desk_id, state="queued", started_at=started)
     with _JOBS_LOCK:
+        _prune_finished_jobs(started)
         # One refresh per desk at a time; check and register under one lock
         # so two clicks a millisecond apart cannot both start one.
         live = [j for j in _JOBS.values()

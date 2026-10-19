@@ -2371,7 +2371,7 @@ def register_routes(app: FastAPI) -> None:
         already proved the caller controls it.
         """
         from services.auth.deps import current_user
-        user = current_user(request)
+        user = await _run_off_loop(current_user, request)   # a session-store lookup
         if user is None:
             return JSONResponse({"detail": "sign in required", "auth_required": True},
                                 status_code=401)

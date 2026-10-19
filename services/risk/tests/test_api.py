@@ -219,3 +219,21 @@ def test_active_equity_is_reused_within_its_ttl(monkeypatch):
     monkeypatch.setattr(risk_api, "EQUITY_TTL_S", 0.0)          # 0 disables the cache
     risk_api.active_equity_usd()
     assert len(calls) == 2
+
+
+def test_prewarm_reads_each_coins_size_metadata_once(monkeypatch):
+    """The server warms "Your size" at startup (pathiel/server.py
+    _prewarm_size_specs): before 2026-10-19 the first size after a restart
+    built the SDK client and read every dex's meta inside the request, 2.8 s."""
+    import pathiel.client.exchange as exchange
+    seen = []
+
+    def max_lev(coin):
+        seen.append(coin)
+        if coin == "xyz:GONE":
+            raise ValueError("Unknown coin: xyz:GONE")
+        return 20
+    monkeypatch.setattr(exchange, "get_max_leverage", max_lev)
+    monkeypatch.setattr(exchange, "get_coin_index", lambda coin: (0, 3, 2))
+    assert risk_api.prewarm_coin_specs(["BTC", "xyz:BRENTOIL", "xyz:GONE"]) == 2
+    assert seen == ["BTC", "xyz:BRENTOIL", "xyz:GONE"]

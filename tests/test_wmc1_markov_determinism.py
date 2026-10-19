@@ -26,22 +26,27 @@ def _d():
     return A.load_dataset()
 
 
-def test_primary_cell_refuted_and_gross_near_zero():
-    r = wmc1.run(_d(), iv="1d", n_states=3)
+@pytest.fixture(scope="module")
+def primary():
+    """One seed-locked run (about 1.7 s) for the checks that only read it."""
+    return wmc1.run(_d(), iv="1d", n_states=3)
+
+
+def test_primary_cell_refuted_and_gross_near_zero(primary):
+    r = primary
     assert r["verdict"] == "REFUTED"
     assert r["cells"]["ev25"] < 0            # dies to fees
     assert abs(r["cells"]["ev0"]) < 0.1      # gross ~flat (%), no OOS edge
 
 
-def test_deterministic_permutation_p():
-    r1 = wmc1.run(_d(), iv="1d", n_states=3)
-    r2 = wmc1.run(_d(), iv="1d", n_states=3)
-    assert r1["perm_p"] == r2["perm_p"]      # seed-locked
+def test_deterministic_permutation_p(primary):
+    again = wmc1.run(_d(), iv="1d", n_states=3)          # fresh data, fresh run
+    assert primary["perm_p"] == again["perm_p"]          # seed-locked
 
 
-def test_transition_matrix_is_near_uniform():
+def test_transition_matrix_is_near_uniform(primary):
     """The core finding: memoryless. Every row within 0.06 of 1/n_states."""
-    r = wmc1.run(_d(), iv="1d", n_states=3)
+    r = primary
     for row in r["transition_matrix"].values():
         for p in row:
             assert abs(p - 1 / 3) < 0.06, r["transition_matrix"]

@@ -145,6 +145,7 @@ def test_research_analysis_persists_requested_and_actual_use_separately(
     monkeypatch.setattr(research, "fetch_hl_candles", lambda *args, **kwargs: candles)
     monkeypatch.setattr(research, "_fetch_funding_rate", lambda coin: "0.0000%/hr")
     monkeypatch.setattr(research, "_fetch_news", lambda coin: "no news")
+    monkeypatch.setattr(research, "_fetch_macro_tape", lambda: "")    # Google News, 18 s live
     monkeypatch.setattr(research, "read_agent_config", lambda: _cfg())
     monkeypatch.setattr(research, "resolve_user_address", lambda: None)
     monkeypatch.setattr(research, "selected_ai_brain_provider", lambda config=None: "claude_cli")

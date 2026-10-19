@@ -34,6 +34,7 @@ if _ENV_FILE.exists():
 os.environ.setdefault("PATHIEL_DASHBOARD_LIVE_EQUITY", "0")
 os.environ.setdefault("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
 os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")
+os.environ.setdefault("PATHIEL_META_PREWARM", "0")
 
 
 import pytest  # noqa: E402
@@ -48,3 +49,117 @@ def _fresh_account_snapshot():
     account_snapshot.reset()
     yield
     account_snapshot.reset()
+
+
+# ── Gate tests are offline ──────────────────────────────────────────────────
+#
+# scripts/hooks/pre-commit says the gate suite makes no network calls. Until
+# 2026-10-19 nothing enforced it: 19 tests reached api.hyperliquid.xyz or
+# news.google.com through calls they had not stubbed. One spent 24.7 s in retry
+# backoff, one 18 s, and some passed or failed on what Google or the live
+# market said that day. Now a lookup of any host that is not loopback is
+# refused at once and recorded, and the running test errors at teardown naming
+# the host and the code that asked. Tests marked online, live or browser are
+# the lanes that talk to the world; they keep the network.
+
+import socket      # noqa: E402
+import threading   # noqa: E402
+import traceback   # noqa: E402
+
+_ROOT = str(pathlib.Path(__file__).parent)
+_NETWORK_LANES = ("online", "live", "browser")
+_LOOPBACK = {"localhost", "::1", "0.0.0.0", "testserver"}
+_net_open = threading.Event()      # set while a test in a network lane runs
+_net_attempts: list = []
+_net_lock = threading.Lock()
+_real_getaddrinfo = socket.getaddrinfo
+_real_connect = socket.socket.connect
+
+
+def _is_loopback(host: str) -> bool:
+    return host in _LOOPBACK or host.startswith("127.") or host.endswith(".localhost")
+
+
+def _refuse(host: str) -> None:
+    frames = [f"{os.path.relpath(f.filename, _ROOT)}:{f.lineno} {f.name}"
+              for f in traceback.extract_stack()
+              if f.filename.startswith(_ROOT) and "/.venv/" not in f.filename
+              and f.name not in ("_refuse", "_offline_getaddrinfo", "_offline_connect")]
+    with _net_lock:
+        _net_attempts.append((host, threading.current_thread().name, frames[-6:]))
+    raise socket.gaierror(socket.EAI_NONAME, f"gate tests are offline (conftest.py): {host}")
+
+
+def _offline_getaddrinfo(host, *args, **kwargs):
+    name = host.decode() if isinstance(host, bytes) else str(host or "")
+    if name and not _is_loopback(name) and not _net_open.is_set():
+        _refuse(name)
+    return _real_getaddrinfo(host, *args, **kwargs)
+
+
+def _offline_connect(self, address, *args, **kwargs):
+    if (isinstance(address, tuple) and address and not _is_loopback(str(address[0]))
+            and not _net_open.is_set()):
+        _refuse(str(address[0]))
+    return _real_connect(self, address, *args, **kwargs)
+
+
+# Process-wide, so a daemon thread a test started is covered too.
+socket.getaddrinfo = _offline_getaddrinfo
+socket.socket.connect = _offline_connect
+
+
+def _leak_report(attempts) -> str:
+    lines = ["this gate test reached for the network; stub the call, or mark the "
+             "test online if talking to the venue is the point:"]
+    for host, thread, frames in attempts[:5]:
+        lines.append(f"  {host} (thread {thread}) via {' <- '.join(reversed(frames)) or '?'}")
+    if len(attempts) > 5:
+        lines.append(f"  ... {len(attempts) - 5} more")
+    return "\n".join(lines)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    # Before this test's fixtures, module-scoped ones included, are set up.
+    if any(item.get_closest_marker(m) for m in _NETWORK_LANES):
+        _net_open.set()
+    else:
+        _net_open.clear()
+    with _net_lock:
+        _net_attempts.clear()
+
+
+@pytest.fixture(autouse=True)
+def _offline():
+    yield
+    with _net_lock:
+        attempts = list(_net_attempts)
+        _net_attempts.clear()
+    if attempts:
+        pytest.fail(_leak_report(attempts), pytrace=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_market_regime(request, monkeypatch):
+    """The regime gate (pathiel.agents.market_regime) reads live 1h candles and
+    caches its answer per proxy for the process. In the gate lane there is no
+    market: the candle read returns nothing, so the regime is "neutral" (what a
+    failed fetch gives in production too), and the cache starts empty for every
+    test, so one test's stubbed "up" is never the next test's regime. Tests
+    about the regime patch detect_regime, _detect_for_proxy or this read."""
+    if any(request.node.get_closest_marker(m) for m in _NETWORK_LANES):
+        yield
+        return
+    from pathiel.agents import market_regime
+    market_regime._regime_cache.clear()
+    monkeypatch.setattr(market_regime, "fetch_hl_candles", lambda *a, **kw: [])
+    yield
+    market_regime._regime_cache.clear()
+
+
+@pytest.fixture
+def offline_attempts():
+    """The refused lookups so far in this test, for tests of the guard itself.
+    Clear it before returning if the test reached out on purpose."""
+    return _net_attempts

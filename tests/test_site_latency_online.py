@@ -49,5 +49,44 @@ def test_p95_and_budget_reading():
     assert ev._refused_foreground({}) == 0
 
 
+def _fake_site(threaded: bool):
+    """A stand-in server: order books take 0.1 s, health answers at once.
+    Threaded, it serves health while books wait (the fixed server.py); not
+    threaded, health queues behind every book (one event loop, blocked)."""
+    import http.server
+    import threading
+    import time
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/api/hl/orderbook"):
+                time.sleep(0.1)
+            body = b"{}"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    cls = http.server.ThreadingHTTPServer if threaded else http.server.HTTPServer
+    srv = cls(("127.0.0.1", 0), Handler)
+    srv.request_queue_size = 32
+    threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+
+def test_the_venue_read_check_tells_a_blocked_loop_from_a_free_one():
+    ev = _eval()
+    free, free_url = _fake_site(threaded=True)
+    blocked, blocked_url = _fake_site(threaded=False)
+    try:
+        assert ev._loop_check(free_url)[0] < ev.LOOP_MAX_S
+        assert ev._loop_check(blocked_url)[0] > 0.4          # behind ~8 x 0.1 s of books
+    finally:
+        free.shutdown()
+        blocked.shutdown()
+
+
 def test_a_dead_server_is_reported_not_crashed_on():
     assert _eval().run("http://127.0.0.1:9", rounds=1, browser=False) == 2

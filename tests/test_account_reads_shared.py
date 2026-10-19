@@ -10,7 +10,6 @@ click on Desks waited. Offline: the venue is a fake.
 """
 from __future__ import annotations
 
-import asyncio
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -129,17 +128,21 @@ def test_concurrent_page_polls_do_not_queue_behind_a_slow_venue(venue, monkeypat
     assert venue.reads <= 3, f"{venue.reads} reads for 12 polls: they are not shared"
 
 
-def test_server_live_equity_reads_off_the_event_loop(monkeypatch):
+def test_server_live_equity_reads_the_shared_snapshot(monkeypatch):
+    """server.py's equity (the agent state view, order sizing) is a display
+    read like the others. That its handlers call it off the event loop is
+    tests/test_no_blocking_on_the_event_loop.py's job."""
     import pathiel.server as srv
-    threads = []
+    asked = []
 
     def fake_state(user, include_hip3=True, **kw):
-        threads.append(threading.current_thread())
+        asked.append((user, include_hip3))
         return {"equity": 15.21}
     monkeypatch.setattr(snap, "account_state", fake_state)
     monkeypatch.setattr(srv, "resolve_user_address", lambda: ADDR)
-    assert asyncio.run(srv._fetch_live_equity()) == pytest.approx(15.21)
-    assert threads and threads[0] is not threading.main_thread()
+    monkeypatch.setattr(srv, "read_agent_config", lambda: {"enable_hip3": True})
+    assert srv._live_equity() == pytest.approx(15.21)
+    assert asked == [(ADDR, True)]
 
 
 # ── desks: background rebuilds yield, clicked refreshes do not ─────────────

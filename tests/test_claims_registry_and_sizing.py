@@ -289,6 +289,14 @@ class TestStrategyBookEquityFracSizing:
                             lambda is_buy, sz, px, kind, coin: {"ok": True})
         monkeypatch.setattr(ex, "cancel_open_orders_for_coin", lambda coin: None)
 
+        # The entry context recorded after a fill reads the live venue: the
+        # funding rate and the market regime (both best-effort). The regime also
+        # feeds a risk gate, so a live read made this outcome depend on the day.
+        import pathiel.client.hl_client as _hl
+        from pathiel.agents import market_regime as _mr
+        monkeypatch.setattr(_hl, "fetch_funding_history", lambda coin, start_ms, *a, **kw: [])
+        monkeypatch.setattr(_mr, "detect_regime", lambda coin, **kw: "neutral")
+
         # Stub memory so it doesn't block
         from pathiel.agents.memory import memory
         monkeypatch.setattr(memory, "get_recent_trades", lambda n: [])

@@ -29,6 +29,11 @@ def test_no_route_response_or_log_line_ever_contains_a_private_key(clients, monk
     monkeypatch.setenv("PATHIEL_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(agent_approval, "submit_approve_agent", lambda *a, **kw: {"status": "ok"})
     monkeypatch.setattr(hl_verify, "is_agent_approved", lambda *a, **kw: True)
+    # /api/accounts/active/summary below reads the account; keep it off the venue.
+    from pathiel.client import account_snapshot
+    monkeypatch.setattr(account_snapshot, "FETCH", lambda *a, **kw: {
+        "equity": 0.0, "asset_positions": [], "dex_equity": {"": 0.0}, "queried_dexes": {""}})
+    monkeypatch.setattr(account_snapshot, "LIST_DEXES", lambda: [])
     caplog.set_level(logging.DEBUG)
 
     c = clients.loopback()

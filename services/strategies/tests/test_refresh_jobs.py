@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -154,3 +154,43 @@ def test_every_refresh_leaves_a_log_line_with_its_outcome(slow, caplog):
     text = caplog.text
     assert "btc: refresh started (force=False)" in text
     assert "btc: refresh done in" in text and "thesis written (no_prior_thesis)" in text
+
+
+def _finished(job_id, desk_id, minutes_ago, state="done"):
+    at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return RefreshJob(id=job_id, desk_id=desk_id, state=state, started_at=at, finished_at=at,
+                      message="thesis written")
+
+
+def test_finished_jobs_are_dropped_after_an_hour_and_live_ones_never(slow):
+    """The registry used to keep every job for the life of the process: one
+    entry per click, forever. A finished job stays an hour (a page follows one
+    for at most 10 minutes), then goes; a queued or running one is never
+    dropped, however old."""
+    client, fake = slow
+    old_running = RefreshJob(id="stuck", desk_id="btc", state="running",
+                             started_at=datetime.now(timezone.utc) - timedelta(hours=5))
+    strategies_api._JOBS.update({
+        "old-done": _finished("old-done", "oil", 61),
+        "old-error": _finished("old-error", "btc", 120, state="error"),
+        "recent": _finished("recent", "oil", 9),
+        "stuck": old_running,
+    })
+    fake.release.set()
+    job = client.post("/api/desks/oil/refresh", json={}).json()
+    _wait_finished(client, job["id"])
+    assert set(strategies_api._JOBS) == {"recent", "stuck", job["id"]}
+    assert client.get("/api/desks/jobs/recent").status_code == 200
+    assert client.get("/api/desks/jobs/old-done").status_code == 404
+
+
+def test_a_naive_timestamp_does_not_break_the_next_click(slow):
+    client, fake = slow
+    naive = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=3)   # UTC, no tzinfo
+    strategies_api._JOBS["naive"] = RefreshJob(id="naive", desk_id="oil", state="done",
+                                               started_at=naive, finished_at=naive)
+    fake.release.set()
+    r = client.post("/api/desks/oil/refresh", json={})
+    assert r.status_code == 200
+    _wait_finished(client, r.json()["id"])
+    assert "naive" not in strategies_api._JOBS
