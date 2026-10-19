@@ -44,6 +44,7 @@ from contracts.strategies.models import (
     Thesis, TrackRecord, Usage, UserThesisIn,
 )
 
+from pathiel.client.rate_limit import background_priority
 from services.strategies import desks, grader, journal, pipeline
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,10 @@ def _drain() -> None:
             continue
         t0 = time.monotonic()
         try:
-            pipeline.build_and_cache_analytics(spec)
+            # Background priority: a page view or a clicked refresh goes
+            # first (2026-10-19: a clicked BTC refresh sat behind this queue).
+            with background_priority():
+                pipeline.build_and_cache_analytics(spec)
             logger.info(f"[strategies.facade] {desk_id}: analytics rebuilt in the background "
                         f"in {time.monotonic() - t0:.1f}s")
         except Exception as exc:  # noqa: BLE001 - one desk failing must not stop the queue

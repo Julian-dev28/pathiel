@@ -525,3 +525,147 @@ def test_no_size_line_without_a_call(server, browser):
     page.goto(server + "/desks/ai", wait_until="networkidle")
     assert page.locator("#call-size").is_hidden()
     page.close()
+
+
+# ── a refresh you can see (2026-10-19) ───────────────────────────────────────
+#
+# On the BTC desk, Refresh "did nothing": the refresh ran, slowly, but its
+# progress showed only next to a button at the bottom of the page, a reload
+# lost it, and a desk with no call opened on "Stale: ... none yet (run
+# refresh)". These drive the page with the API stubbed at the network.
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _patched_brief(route, **changes) -> None:
+    import json as _json
+    response = route.fetch()
+    body = response.json()
+    body.update(changes)
+    route.fulfill(response=response, body=_json.dumps(body),
+                  headers={**response.headers, "content-type": "application/json"})
+
+
+def _json_route(body):
+    import json as _json
+    return lambda route: route.fulfill(status=200, content_type="application/json",
+                                       body=_json.dumps(body))
+
+
+def test_a_page_opened_mid_refresh_follows_the_running_job(server, browser):
+    running = {"id": "live-1", "desk_id": "btc", "state": "running",
+               "started_at": _now_iso(), "message": "reading market data"}
+    polls = {"n": 0}
+
+    def job(route):
+        polls["n"] += 1
+        body = running if polls["n"] < 4 else {**running, "state": "done", "finished_at": _now_iso(),
+                                               "message": "thesis written (no_prior_thesis)"}
+        _json_route(body)(route)
+
+    served = {"n": 0}
+
+    def brief(route):
+        served["n"] += 1
+        if served["n"] == 1:
+            _patched_brief(route, refresh_job=running)
+        else:
+            route.continue_()
+
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.route("**/api/desks/btc", brief)
+    page.route("**/api/desks/jobs/live-1", job)
+    page.goto(server + "/desks/btc", wait_until="domcontentloaded")
+    page.wait_for_selector("#refresh-progress:not([hidden])", timeout=5000)
+    assert "reading market data" in page.inner_text("#refresh-progress")
+    assert page.is_disabled("#refresh-btn")
+    page.wait_for_selector("#refresh-status.is-done", timeout=10000)
+    assert page.inner_text("#refresh-status") == "New call written."
+    assert page.inner_text("#refresh-progress") == "New call written."
+    assert not page.is_disabled("#refresh-btn")
+    assert served["n"] >= 2, "done must re-fetch the brief so the new call renders"
+    assert not issues, issues
+    page.close()
+
+
+def test_a_desk_with_no_call_offers_the_first_call_not_a_stale_banner(server, browser):
+    started = _now_iso()
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.route("**/api/desks/btc", lambda r: _patched_brief(
+        r, thesis=None, history=[],
+        stale=["intel: never fetched (run refresh)", "thesis: none yet (run refresh)"]))
+    posted = []
+
+    def refresh(route):
+        posted.append(route.request.post_data)
+        _json_route({"id": "first-1", "desk_id": "btc", "state": "running", "started_at": started,
+                     "message": "pulling news, policy and odds"})(route)
+
+    page.route("**/api/desks/btc/refresh", refresh)
+    page.route("**/api/desks/jobs/first-1", _json_route(
+        {"id": "first-1", "desk_id": "btc", "state": "running", "started_at": started,
+         "message": "writing the thesis (about a minute)"}))
+    page.goto(server + "/desks/btc", wait_until="networkidle")
+    assert page.is_hidden("#stale-banner"), "missing parts are not stale"
+    assert page.is_visible("#call-empty-refresh")
+    assert "1 to 2 minutes" in page.inner_text("#call-empty")
+    page.click("#call-empty-refresh")
+    page.wait_for_selector("#refresh-progress:not([hidden])", timeout=5000)
+    page.wait_for_function("document.getElementById('refresh-progress').textContent"
+                           ".includes('writing the thesis')", timeout=5000)
+    assert posted == ['{"force":false}']
+    assert page.inner_text("#call-empty-refresh") == "Writing…"
+    assert page.is_disabled("#call-empty-refresh") and page.is_disabled("#refresh-btn")
+    assert not issues, issues
+    page.close()
+
+
+def test_a_skipped_refresh_says_why_in_plain_english(server, browser):
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.route("**/api/desks/oil/refresh", _json_route(
+        {"id": "skip-1", "desk_id": "oil", "state": "skipped", "started_at": _now_iso(),
+         "finished_at": _now_iso(), "message": "no_trigger"}))
+    page.goto(server + "/desks/oil", wait_until="networkidle")
+    page.click("#refresh-btn")
+    page.wait_for_selector("#refresh-status.is-skipped", timeout=5000)
+    assert page.inner_text("#refresh-status") == \
+        "No new call: no material price move or big headline since the last one."
+    assert not issues, issues
+    page.close()
+
+
+def test_polls_never_stack_and_stop_in_a_hidden_tab(server, browser):
+    """pathiel.js pollEvery, which every page's network polls now use. A
+    poll slower than its interval must not start another one alongside it
+    (the dashboard's 6 s summary poll stacking up behind 6-12 s account reads
+    held the browser's connections and stalled the Desks click)."""
+    page, issues = open_page(browser, DESKTOP_VP)
+    page.goto(server + "/desks", wait_until="networkidle")
+    r = page.evaluate("""async () => {
+      const sleep = ms => new Promise(res => setTimeout(res, ms));
+      let running = 0, maxRunning = 0, runs = 0, hidden = false;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      pollEvery(async () => {
+        running++; runs++; maxRunning = Math.max(maxRunning, running);
+        await sleep(200); running--;
+      }, 20);
+      await sleep(1000);
+      const visibleRuns = runs;
+      hidden = true;
+      await sleep(300);
+      const atHide = runs;
+      await sleep(700);
+      const whileHidden = runs - atHide;
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      await sleep(50);
+      return { maxRunning, visibleRuns, whileHidden, afterShow: runs - atHide };
+    }""")
+    assert r["maxRunning"] == 1, r
+    assert 3 <= r["visibleRuns"] <= 6, r          # setInterval(fn, 20) would have started ~50
+    assert r["whileHidden"] == 0, r
+    assert r["afterShow"] == 1, r
+    assert not issues, issues
+    page.close()

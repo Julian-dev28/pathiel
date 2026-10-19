@@ -165,3 +165,27 @@ def test_a_credential_less_container_reports_unhealthy(client, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     body = client.get("/api/health/system").json()
     assert set(body["failing"]) >= {"ai_brain", "loop"}
+
+
+def test_the_system_check_says_where_the_hl_budget_went(client, monkeypatch):
+    """The trace for "the site is slow" (2026-10-19): weight granted and
+    requests refused per request type and priority, with no account data."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: _hb(30))
+    budget = client.get("/api/health/system").json()["hl_budget"]
+    assert {"capacity", "refill_per_sec", "background_reserve", "available_weight",
+            "granted_weight", "refused_requests"} <= set(budget)
+    assert budget["background_reserve"] <= budget["capacity"]
+
+
+def test_the_system_check_reads_the_summary_off_the_event_loop(client, monkeypatch):
+    """The summary carries the live account read; on the event loop a cold
+    read froze every page for its duration."""
+    import threading
+    seen = {}
+    monkeypatch.setattr(db, "_summary_payload",
+                        lambda: seen.setdefault("summary", threading.get_ident()) and {"last_tick_age_s": 30})
+    # _feed_health runs in the coroutine itself: its thread IS the event loop's.
+    monkeypatch.setattr(db, "_feed_health",
+                        lambda: seen.setdefault("loop", threading.get_ident()) and {"trustworthy": True})
+    client.get("/api/health/system")
+    assert set(seen) == {"summary", "loop"} and seen["summary"] != seen["loop"]

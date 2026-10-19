@@ -21,12 +21,13 @@ import logging
 import os
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
 
 from pathiel.client.http_session import _set_session_timeout
-from pathiel.client.rate_limit import HL_LIMITER as _HL_LIMITER, endpoint_weight as _endpoint_weight
+from pathiel.client.rate_limit import (HL_LIMITER as _HL_LIMITER, carry_priority as _carry_priority,
+                                       endpoint_weight as _endpoint_weight, in_background as _in_background)
 from pathiel.models.types import Candle
 
 if TYPE_CHECKING:
@@ -138,7 +139,8 @@ def _http_post_strict(path: str, payload: Dict[str, Any], timeout: int = 5) -> A
     """
     weight = _endpoint_weight(payload.get("type"))
     max_wait = float(os.environ.get("PATHIEL_HL_RATE_MAX_WAIT_S", "30"))
-    if not _HL_LIMITER.acquire(weight, max_wait=max_wait):
+    if not _HL_LIMITER.acquire(weight, max_wait=max_wait, background=_in_background(),
+                               label=str(payload.get("type") or "unknown")):
         raise HLRequestError(
             f"rate budget exhausted for {payload.get('type') or 'unknown'} "
             f"(weight={weight}, waited {max_wait:g}s)"
@@ -286,7 +288,9 @@ def fetch_hl_candles(
     return candles
 
 
-def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]:
+def fetch_account_state(user: str, include_hip3: bool = False, *,
+                        hip3_dexes: Optional[Iterable[str]] = None,
+                        strict: bool = False) -> Dict[str, Any]:
     """Fetch perp + spot account state, optionally aggregating HIP-3 dexes.
 
     When `include_hip3=True`, queries each HIP-3 perpDex's clearinghouse
@@ -297,9 +301,17 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
 
     `available` stays main-dex only because HIP-3 free margin only backs
     trades on its own dex; the executor sizes against this for main trades.
+
+    `hip3_dexes` (with include_hip3): ask exactly these HIP-3 dexes instead of
+    every listed one; pathiel.client.account_snapshot re-reads only the dexes
+    that held money at its last full sweep. `strict`: a main or spot read
+    that never landed (rate budget, 429, timeout) raises HLRequestError
+    instead of reading as an empty $0 account. Both default to the old
+    behavior, which the trading loop and the executor rely on.
     """
-    perp = _http_post("/info", {"type": "clearinghouseState", "user": user})
-    spot = _http_post("/info", {"type": "spotClearinghouseState", "user": user})
+    post = _http_post_strict if strict else _http_post
+    perp = post("/info", {"type": "clearinghouseState", "user": user})
+    spot = post("/info", {"type": "spotClearinghouseState", "user": user})
 
     if not perp:
         perp = {}
@@ -345,11 +357,14 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
     if include_hip3:
         from pathiel.client.universe import list_hip3_dexes
         from concurrent.futures import ThreadPoolExecutor
-        try:
-            dexes = list_hip3_dexes()
-        except Exception as e:
-            logger.warning(f"[hl] list_hip3_dexes failed during account aggregation: {e}")
-            dexes = []
+        if hip3_dexes is not None:
+            dexes = [d for d in hip3_dexes if d]
+        else:
+            try:
+                dexes = list_hip3_dexes()
+            except Exception as e:
+                logger.warning(f"[hl] list_hip3_dexes failed during account aggregation: {e}")
+                dexes = []
 
         # Fan out the per-dex clearinghouse queries in parallel — serial loop
         # was 8 sequential POSTs × ~150ms each = 1.2s. Parallel finishes in
@@ -366,7 +381,7 @@ def fetch_account_state(user: str, include_hip3: bool = False) -> Dict[str, Any]
         if dexes:
             with ThreadPoolExecutor(max_workers=min(8, len(dexes)),
                                     thread_name_prefix="hl-dex") as pool:
-                for dex, dex_state in pool.map(_fetch_dex, dexes):
+                for dex, dex_state in pool.map(_carry_priority(_fetch_dex), dexes):
                     if dex_state is None:
                         continue
                     queried_dexes.add(dex)

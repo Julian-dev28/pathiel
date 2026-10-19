@@ -18,7 +18,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
@@ -42,6 +42,16 @@ _JOBS: Dict[str, RefreshJob] = {}
 _JOBS_LOCK = threading.Lock()
 
 
+def running_job(desk_id: str) -> Optional[RefreshJob]:
+    """The refresh queued or running for this desk, if any. At most one: a
+    second click (or a reloaded page clicking again) joins it rather than
+    starting another market read and another model call."""
+    with _JOBS_LOCK:
+        live = [j for j in _JOBS.values()
+                if j.desk_id == desk_id and j.state in ("queued", "running")]
+    return max(live, key=lambda j: j.started_at) if live else None
+
+
 class RefreshBody(BaseModel):
     force: bool = False
 
@@ -61,9 +71,10 @@ def get_desks() -> List[DeskCard]:
 @router.get("/api/desks/{desk_id}", response_model=DeskBrief)
 def get_desk_brief(desk_id: str) -> DeskBrief:
     try:
-        return facade.get_brief(desk_id)
+        brief = facade.get_brief(desk_id)
     except desks.UnknownDeskError:
         raise _unknown_desk(desk_id)
+    return brief.model_copy(update={"refresh_job": running_job(desk_id)})
 
 
 @router.post("/api/desks/{desk_id}/refresh", response_model=RefreshJob)
@@ -75,6 +86,12 @@ def post_refresh(desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
     started = datetime.now(timezone.utc)
     job = RefreshJob(id=job_id, desk_id=desk_id, state="queued", started_at=started)
     with _JOBS_LOCK:
+        # One refresh per desk at a time; check and register under one lock
+        # so two clicks a millisecond apart cannot both start one.
+        live = [j for j in _JOBS.values()
+                if j.desk_id == desk_id and j.state in ("queued", "running")]
+        if live:
+            return max(live, key=lambda j: j.started_at)
         _JOBS[job_id] = job
 
     def _stage(label: str) -> None:
@@ -86,10 +103,16 @@ def post_refresh(desk_id: str, body: RefreshBody = RefreshBody()) -> RefreshJob:
     def _run() -> None:
         with _JOBS_LOCK:
             _JOBS[job_id] = job.model_copy(update={"state": "running"})
+        logger.info(f"[strategies.api] {desk_id}: refresh started (force={body.force})")
         try:
             result = facade.refresh(desk_id, force=body.force, on_stage=_stage)
             with _JOBS_LOCK:
                 _JOBS[job_id] = result.model_copy(update={"id": job_id, "started_at": started})
+            # The trace a "nothing happened" report needs (2026-10-19: a BTC
+            # refresh left no line anywhere saying whether it ran).
+            took = (datetime.now(timezone.utc) - started).total_seconds()
+            logger.info(f"[strategies.api] {desk_id}: refresh {result.state} in {took:.0f}s: "
+                        f"{result.message}")
         except Exception as exc:  # noqa: BLE001 - record the crash on the job, don't just vanish it
             logger.exception(f"[strategies.api] background refresh crashed for {desk_id}")
             with _JOBS_LOCK:

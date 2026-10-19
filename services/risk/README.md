@@ -321,5 +321,7 @@ at risk, payoff and R multiple per target, and `warnings` when the best target
 pays under 1R. Served as `POST /api/risk/size` (the desk page's "Your size"
 line) and as the MCP tools `risk_size_trade` and `desk_brief`'s `your_size`.
 `active_equity_usd()` reuses one equity read for 60 s
-(`PATHIEL_RISK_EQUITY_TTL_S`): each read is about 12 venue requests.
+(`PATHIEL_RISK_EQUITY_TTL_S`), and that read itself comes from the server's
+shared account snapshot (`pathiel/client/account_snapshot.py`), so "Your size"
+never waits on a fresh 12-request venue read.
 

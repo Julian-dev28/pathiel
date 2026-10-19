@@ -6,7 +6,7 @@
 <title>Desk · pathiel</title>
 <link rel="stylesheet" href="/static/app.css" />
 <link rel="stylesheet" href="/static/pathiel.css" />
-<link rel="stylesheet" href="/static/desks.css?v=20261018" />
+<link rel="stylesheet" href="/static/desks.css?v=20261019" />
 <script src="/static/pathiel.js"></script>
 </head>
 <body>
@@ -42,6 +42,10 @@
     <h1 class="page-title" id="desk-name">&nbsp;</h1>
     <div class="page-sub" id="desk-tagline">&nbsp;</div>
     <div id="desk-updating" class="note desk-updating" hidden role="status">Updating prices&hellip;</div>
+    <!-- A refresh in progress, at the top where you are looking: the Refresh
+         button sits near the bottom, and a reload mid-refresh picks the job
+         back up from the brief (refresh_job). desks.js fills it. -->
+    <div id="refresh-progress" class="note desk-updating" hidden role="status" aria-live="polite"></div>
   </div>
 
   <div id="desk-loading" class="state-block" aria-live="polite">
@@ -68,9 +72,11 @@
       <div id="call-empty" class="state-block" hidden>
         <div class="state-title">No call yet on this desk</div>
         <div class="state-sub">
-          Hit Refresh below to generate one, or write your own in
+          Write the first one now (reads the market and the news, then one
+          model call: usually 1 to 2 minutes), or write your own in
           "Make your own call" further down &mdash; that is how you drill.
         </div>
+        <button id="call-empty-refresh" type="button" class="btn go">Write the first call</button>
       </div>
 
       <div id="call-card" class="card call-card" hidden>
@@ -325,6 +331,6 @@
 
 </main>
 
-<script src="/static/desks.js?v=20261018"></script>
+<script src="/static/desks.js?v=20261019"></script>
 </body>
 </html>

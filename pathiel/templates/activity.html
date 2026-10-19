@@ -660,7 +660,7 @@ FLOWS.machine = document.getElementById('flow-machine');
 fullLoad().catch(() => {
   FLOWS.trade.innerHTML = '<div class="pane-empty">feed load failed — is the server up?</div>';
 });
-setInterval(pollNew, 8000);
+pollEvery(pollNew, 8000);
 setInterval(foldAged, 20000);
 
 

@@ -390,7 +390,7 @@ async function load() {
 FLOWS.catalysts = document.getElementById('flow-catalysts');
 FLOWS.watcher = document.getElementById('flow-watcher');
 load();
-setInterval(load, 30000);
+pollEvery(load, 30000);
 setInterval(foldAged, 20000);
 
 

@@ -41,6 +41,7 @@ from contracts.strategies.models import (
     AccountSnapshot, ConditionalStats, DeskAnalytics, DeskSpec, ForwardStats,
     Instrument, InstrumentSnapshot, LadderRung, PairSnapshot, Quantiles, Side,
 )
+from pathiel.client.rate_limit import carry_priority
 from pathiel.models.types import Candle
 
 logger = logging.getLogger(__name__)
@@ -520,10 +521,11 @@ def default_account_snapshot() -> AccountSnapshot:
 
 def _read_account_snapshot() -> AccountSnapshot:
     try:
-        from pathiel.client.hl_client import fetch_account_state, resolve_user_address
+        from pathiel.client.account_snapshot import account_state
+        from pathiel.client.hl_client import resolve_user_address
         user = resolve_user_address()
         if user:
-            state = fetch_account_state(user, include_hip3=True)
+            state = account_state(user, include_hip3=True)   # shared with every page's read
             equity = float(state.get("equity") or 0.0)
             if equity > 0:
                 return AccountSnapshot(equity_usd=equity, source="venue")
@@ -561,7 +563,10 @@ def build_analytics(spec: DeskSpec, *, candle_fetcher: Optional[CandleFetcher] =
 
     daily_by_coin: Dict[str, Sequence[Candle]] = {}
     with ThreadPoolExecutor(max_workers=max(1, min(8, len(coins)))) as pool:
-        futures = {coin: pool.submit(candle_fetcher, coin, "1d", DAILY_CANDLE_COUNT) for coin in coins}
+        # carry_priority: a background rebuild's fetches stay background on
+        # the pool's threads (thread-locals do not cross into a pool).
+        fetch = carry_priority(candle_fetcher)
+        futures = {coin: pool.submit(fetch, coin, "1d", DAILY_CANDLE_COUNT) for coin in coins}
         for coin, fut in futures.items():
             try:
                 daily_by_coin[coin] = fut.result()

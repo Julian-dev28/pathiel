@@ -12,6 +12,30 @@
 /** Escape a value for interpolation into HTML. */
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/** Re-run `fn` every `ms`, the way a page should poll a server it shares
+ *  with every other open tab: the next run is scheduled only after this one
+ *  settles, so a slow answer never stacks requests behind itself, and
+ *  nothing runs while the tab is hidden (one catch-up run when it shows).
+ *
+ *  2026-10-19: the dashboard polled with setInterval. With account reads
+ *  taking 6-12 s, its 6 s and 10 s polls stacked up and held the browser's
+ *  six connections to this site, so clicking Desks in any tab waited. */
+function pollEvery(fn, ms) {
+  let timer = null, running = false, due = false;
+  async function tick() {
+    timer = null;
+    if (document.hidden) { due = true; return; }
+    running = true;
+    try { await fn(); } catch (_) { /* each poller reports its own failures */ }
+    running = false;
+    timer = setTimeout(tick, ms);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && due && !running && timer === null) { due = false; tick(); }
+  });
+  timer = setTimeout(tick, ms);
+}
+
 /** Signed percentage to two places. */
 const fmtPct = n => (Number(n ?? 0) >= 0 ? '+' : '') + Number(n ?? 0).toFixed(2) + '%';
 

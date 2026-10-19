@@ -1093,14 +1093,14 @@ async function refreshLeague() {
 
 refreshSummary(); refreshRisk(); refreshPositions(); refreshBooks(); refreshChart(86400);
 refreshFunnel(); refreshTape(); refreshLeague();
-setInterval(refreshSummary, 6000);
-setInterval(refreshRisk, 61000);   // endpoint TTL is 60s
-setInterval(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
-setInterval(refreshBooks, 30000);
-setInterval(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
-setInterval(refreshFunnel, 60000);      // pure log walk server-side
-setInterval(refreshTape, 45000);        // pure log walk server-side
-setInterval(refreshLeague, 90000);      // local ledger files only
+pollEvery(refreshSummary, 6000);
+pollEvery(refreshRisk, 61000);   // endpoint TTL is 60s
+pollEvery(refreshPositions, 10000);   // endpoint has its own 5s HL-fetch cache
+pollEvery(refreshBooks, 30000);
+pollEvery(() => refreshChart(currentRange), 65000);  // endpoint TTL is 65s
+pollEvery(refreshFunnel, 60000);      // pure log walk server-side
+pollEvery(refreshTape, 45000);        // pure log walk server-side
+pollEvery(refreshLeague, 90000);      // local ledger files only
 
 // ── the wire — SSE tail of the session log. Drops are fine (the strip just
 // goes quiet); prerendered copies of this page open their own short-lived

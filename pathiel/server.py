@@ -316,7 +316,10 @@ async def _fetch_live_equity() -> float:
     user = resolve_user_address()
     if not user:
         return 0.0
-    state = fetch_account_state(user, include_hip3=_hip3_on())
+    # The shared snapshot, on a worker thread: this coroutine runs on the one
+    # event loop, and a cold read waits on the Hyperliquid budget.
+    from pathiel.client.account_snapshot import account_state
+    state = await asyncio.to_thread(account_state, user, _hip3_on())
     return float(state.get("equity", 0))
 
 
@@ -883,7 +886,9 @@ async def health_system(response: Response):
     from pathiel import dashboard as _db
 
     checks: Dict[str, Any] = {}
-    summary = _db._summary_payload()
+    # On a worker thread: the summary includes the live account read, and
+    # this coroutine runs on the one event loop every page shares.
+    summary = await asyncio.to_thread(_db._summary_payload)
 
     # 1. Is the loop alive? The heartbeat is written every cycle; p99 is ~420s
     #    on healthy days, so 900s is a genuinely dead loop, not a slow one.
@@ -937,8 +942,13 @@ async def health_system(response: Response):
     ok = all(c.get("ok") for c in checks.values())
     if not ok:
         response.status_code = 503
+    # Not a check: where this process's Hyperliquid budget went (weight
+    # granted and requests refused, per request type and priority) — the
+    # trace for "the site is slow" (2026-10-19). Counts only, no account data.
+    from pathiel.client.rate_limit import HL_LIMITER
     return {"ok": ok, "checks": checks,
-            "failing": sorted(k for k, v in checks.items() if not v.get("ok"))}
+            "failing": sorted(k for k, v in checks.items() if not v.get("ok")),
+            "hl_budget": HL_LIMITER.stats()}
 
 
 @app.get("/metrics")

@@ -412,6 +412,11 @@ class DeskBrief(_M):
     track_record: TrackRecord = TrackRecord()
     stale: List[str] = []                      # which parts are older than their TTL
     refreshing: bool = False                   # analytics shown are cached; a rebuild is queued/running
+    # The refresh (POST /api/desks/{id}/refresh) queued or running for this
+    # desk right now, if any: a page opened or reloaded mid-refresh shows its
+    # progress instead of a Refresh button that seems to do nothing. Set by
+    # services/strategies/api.py; None everywhere else (CLI, MCP).
+    refresh_job: Optional["RefreshJob"] = None
 
 
 class RefreshJob(_M):
@@ -422,6 +427,9 @@ class RefreshJob(_M):
     finished_at: Optional[datetime] = None
     message: Optional[str] = None
     usage: Optional[Usage] = None
+
+
+DeskBrief.model_rebuild()
 
 
 class UserThesisIn(_M):
