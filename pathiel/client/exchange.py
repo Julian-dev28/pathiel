@@ -1083,6 +1083,65 @@ def place_hl_limit_order(
         return {"ok": False, "error": str(e)}
 
 
+def place_hl_bracket_order(coin: str, is_buy: bool, size: float, entry_px: float,
+                           stop_px: float, tp_px: float) -> Dict[str, Any]:
+    """Rest a GTC limit entry with its stop and take-profit attached, in ONE
+    signed action (Hyperliquid grouping "normalTpsl"). The two reduce-only
+    children arm only as the entry fills, sized to what filled, so a resting
+    entry can never sit naked after a fill, and nothing has to watch it.
+
+    Returns {ok, entry: {...}, sl: {...}, tp: {...}} with each leg parsed by
+    _parse_order_result; ok is False if the action or ANY leg was rejected.
+    """
+    if not _has_usable_credential():
+        return {"ok": False, "error": "HYPERLIQUID_PRIVATE_KEY not set"}
+    if size <= 0 or min(entry_px, stop_px, tp_px) <= 0:
+        return {"ok": False, "error": f"invalid size/price for {coin}"}
+    try:
+        _, sz_dec, _ = get_coin_index(coin)
+        size_f = float(f"{size:.{sz_dec}f}")
+        # Entry rounds passively (never rests at a worse price than asked).
+        entry_f = float(_round_price_for_hl(entry_px, sz_dec, is_perp=True, is_buy=not is_buy))
+        stop_f = float(_round_price_for_hl(stop_px, sz_dec, is_perp=True))
+        tp_f = float(_round_price_for_hl(tp_px, sz_dec, is_perp=True))
+        close_is_buy = not is_buy
+
+        def _trigger(px: float, kind: str) -> Dict[str, Any]:
+            return {"coin": coin, "is_buy": close_is_buy, "sz": size_f, "limit_px": px,
+                    "order_type": OrderType(trigger=TriggerOrderType(
+                        triggerPx=px, isMarket=True, tpsl=kind)),
+                    "reduce_only": True}
+
+        reqs = [
+            {"coin": coin, "is_buy": is_buy, "sz": size_f, "limit_px": entry_f,
+             "order_type": OrderType(limit={"tif": "Gtc"}), "reduce_only": False},
+            _trigger(stop_f, "sl"),
+            _trigger(tp_f, "tp"),
+        ]
+        logger.info(f"[place_hl_bracket_order] {coin} {'BUY' if is_buy else 'SELL'} {size_f} "
+                    f"@ {entry_f} sl={stop_f} tp={tp_f}")
+        result = _make_exchange().bulk_orders(reqs, grouping="normalTpsl")
+        if not (isinstance(result, dict) and result.get("status") == "ok"):
+            return {"ok": False, "error": str(result)}
+        statuses = result.get("response", {}).get("data", {}).get("statuses", [])
+        legs = []
+        for st in statuses[:3]:
+            one = {"status": "ok", "response": {"data": {"statuses": [st]}}}
+            legs.append(_parse_order_result(one, accept_resting=True)
+                        if isinstance(st, dict) and ("resting" in st or "filled" in st or "error" in st)
+                        else {"ok": True, "status": st})   # e.g. "waitingForFill"
+        while len(legs) < 3:
+            legs.append({"ok": False, "error": "no status returned"})
+        out = {"ok": all(leg.get("ok") for leg in legs), "entry": legs[0], "sl": legs[1],
+               "tp": legs[2], "px": {"entry": entry_f, "stop": stop_f, "tp": tp_f}, "size": size_f}
+        if not out["ok"]:
+            out["error"] = "; ".join(str(leg.get("error")) for leg in legs if not leg.get("ok"))
+        return out
+    except Exception as e:
+        logger.error(f"Failed to place bracket for {coin}: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 def fetch_order_status(oid: int) -> str:
     """Hyperliquid's status for one order: open, filled, canceled, rejected,
     marginCanceled, ... Returns "unknown" when HL does not know the oid and

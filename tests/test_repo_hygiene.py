@@ -231,6 +231,7 @@ ENTRY_POINT_FILES = (
     ROOT / "pathiel" / "server.py",
     ROOT / "pathiel" / "dashboard.py",
     ROOT / "pathiel" / "__main__.py",
+    ROOT / "scripts" / "pathiel-mcp-server.py",   # Claude's trading surface (bracket)
 )
 
 

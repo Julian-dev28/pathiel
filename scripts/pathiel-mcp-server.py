@@ -1213,13 +1213,45 @@ TOOLS = [
             "required": ["coin", "entry_px", "stop_px"],
         },
     },
+    {
+        "name": "place_bracket",
+        "description": "One trade with exact stop and take-profit, sized like "
+                       "risk_size_trade. entry_px = resting limit, stop/target attached on "
+                       "fill; omit for market. Refuses under min_r (1.5R) or if the "
+                       "coin has a position or resting entry. dry_run = size only.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "coin": {"type": "string", "description": "e.g. xyz:BRENTOIL"},
+                "entry_px": {"type": "number"},
+                "stop_px": {"type": "number"},
+                "tp_px": {"type": "number"},
+                "leverage": {"type": "number"},
+                "min_r": {"type": "number"},
+                "dry_run": {"type": "boolean"},
+            },
+            "required": ["coin", "stop_px", "tp_px"],
+        },
+    },
+    {
+        "name": "bracket_sweep",
+        "description": "Flat: cancel leftover reduce-only orders (sibling of a fired "
+                       "stop/target), list resting entries. In a position: say whether a "
+                       "stop covers it. Never opens or closes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"coin": {"type": "string"}},
+            "required": ["coin"],
+        },
+    },
 ]
 
 
 # ── tool annotations (MCP 2025-06-18) ────────────────────────────────────────
 # Clients use these to decide what needs a human's yes. Every tool lands in
 # exactly one bucket; tests/test_mcp_shoreup.py fails on a tool with none.
-LIVE_MONEY_TOOLS = frozenset({"execute", "close_position", "set_leverage", "cancel_order"})
+LIVE_MONEY_TOOLS = frozenset({"execute", "close_position", "set_leverage", "cancel_order",
+                              "place_bracket", "bracket_sweep"})
 LIVE_CONFIG_TOOLS = frozenset({"config"})
 LOCAL_WRITE_TOOLS = frozenset({"submit_verdict", "desk_refresh", "desk_submit_call"})
 
@@ -1861,6 +1893,8 @@ def _tool_handlers() -> Dict[str, Any]:
         "accounts": handle_accounts,
         "risk_limits": handle_risk_limits,
         "risk_size_trade": handle_risk_size_trade,
+        "place_bracket": handle_place_bracket,
+        "bracket_sweep": handle_bracket_sweep,
     }
 
     for _name in _STUB_TOOL_NAMES:
@@ -3956,6 +3990,54 @@ def handle_risk_limits(params: Dict[str, Any]) -> str:
         "notes": lim.notes,
         "change_it": "Account tab in the dashboard (risk profile), or PUT /api/risk/profile.",
     }, default=str)
+
+
+def handle_place_bracket(params: Dict[str, Any]) -> str:
+    """Size with services.risk.size.size_trade, then pathiel.agents.bracket.place_bracket."""
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        stop = float(params["stop_px"])
+        tp = float(params["tp_px"])
+        entry = float(params["entry_px"]) if params.get("entry_px") not in (None, "") else None
+    except (KeyError, TypeError, ValueError):
+        return json.dumps({"ok": False, "coin": coin, "error": "stop_px and tp_px are required numbers"})
+    min_r = _fnum(params.get("min_r")) if params.get("min_r") not in (None, "") else bracket.DEFAULT_MIN_R
+    lev_raw = params.get("leverage")
+    try:
+        from pathiel.client.exchange import get_hl_price
+        from services.risk.size import size_trade
+        profile, books, venue = _risk_inputs()
+        coin_max, sz_dec = _coin_specs(coin)
+        ref = entry if entry is not None else float(get_hl_price(coin))
+        leverage = _fnum(lev_raw) if lev_raw not in (None, "") else (profile.max_leverage or None)
+        sized = size_trade(_live_equity(), profile, books, entry_px=ref, stop_px=stop,
+                           leverage=leverage, coin_max_leverage=coin_max, targets=[tp],
+                           venue=venue, sz_decimals=sz_dec)
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": f"sizing failed: {e}"})
+    if not sized.can_trade or not sized.size:
+        return json.dumps({"ok": False, "coin": coin, "placed": False,
+                           "error": f"sizing refused: {sized.reason}"}, default=str)
+    out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=float(sized.size),
+                                leverage=int(sized.leverage or 1), min_r=min_r,
+                                dry_run=bool(params.get("dry_run")))
+    out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
+                     "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct}
+    return json.dumps(out, default=str)
+
+
+def handle_bracket_sweep(params: Dict[str, Any]) -> str:
+    from pathiel.agents import bracket
+    coin = _norm_coin(str(params.get("coin") or ""))
+    if not coin:
+        return json.dumps({"ok": False, "error": "coin is required"})
+    try:
+        return json.dumps(bracket.sweep(coin), default=str)
+    except Exception as e:
+        return json.dumps({"ok": False, "coin": coin, "error": str(e)})
 
 
 def handle_risk_size_trade(params: Dict[str, Any]) -> str:
