@@ -51,9 +51,8 @@ from pathiel.metrics import render_metrics                      # noqa: E402
 from pathiel import __version__, dashboard, session_log         # noqa: E402
 from pathiel.dashboard import _require_operator                 # noqa: E402
 from pathiel.agents.config_store import (                       # noqa: E402
-    merge_agent_config,
     read_agent_config,
-    write_agent_config,
+    update_agent_config,
 )
 from pathiel.agents.executor import maybe_execute               # noqa: E402
 from pathiel.agents.memory import memory                        # noqa: E402
@@ -584,10 +583,10 @@ def _merge_config(body: Dict[str, Any]) -> Dict[str, Any]:
     # Read, merge and write as one step. On the event loop two saves could not
     # interleave; on worker threads two landing together would each merge into
     # the same old config and the second write would drop the first's change.
+    # update_agent_config merges into the SAVED file (not the defaults-merged
+    # view), so a save never pins every built-in default into the file.
     with _CONFIG_LOCK:
-        merged = merge_agent_config(read_agent_config(), body)
-        write_agent_config(merged)
-    return merged
+        return update_agent_config(body)
 
 
 # ── HL endpoints ──────────────────────────────────────────────────────────────

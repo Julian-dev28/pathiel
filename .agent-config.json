@@ -213,5 +213,14 @@
     "leverage_mult": 1.0,
     "sleeve_frac": 0.25,
     "_note": "Operator override 2026-09-21 of W-CP1, which REFUTED this copy (liquidated in every 2025-03..10 start month at 0.5x-3x). Our exposure on the sleeve = leverage_mult x the leader's; code clamps leverage_mult to 3.0. Only positions he opens after the book first sees him are copied. Copies under $10.50 are skipped. Demoted at -50% mark-to-market of the sleeve."
+  },
+  "risk_profile": {
+    "preset": "auto",
+    "risk_per_trade_pct": 15.749999999999996,
+    "daily_loss_limit_pct": 12.1,
+    "max_leverage": 10.0,
+    "max_open_positions": 3,
+    "allow_min_order_bump": true,
+    "max_bumped_risk_pct": 25.0
   }
 }

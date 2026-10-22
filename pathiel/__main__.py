@@ -267,7 +267,7 @@ def cmd_account():
 
 def cmd_config(*args):
     """Show or set config."""
-    from pathiel.agents.config_store import read_agent_config, write_agent_config
+    from pathiel.agents.config_store import read_agent_config, update_agent_config
 
     print_banner()
     config = read_agent_config()
@@ -284,6 +284,7 @@ def cmd_config(*args):
         print()
     else:
         print("  Updating config:\n")
+        updates = {}
         for arg in args:
             if "=" not in arg:
                 print(f"  Invalid: {arg} (use KEY=VALUE)")
@@ -307,10 +308,10 @@ def cmd_config(*args):
                     except ValueError:
                         pass
 
-            config[key] = val
+            updates[key] = val
             print(f"  {key}: {old!r:12} → {val!r}")
 
-        write_agent_config(config)
+        update_agent_config(updates)
         print("\n  ✓ Config updated.\n")
 
 
