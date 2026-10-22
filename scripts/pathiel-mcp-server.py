@@ -1392,11 +1392,7 @@ def handle_wallet_account(params: Dict[str, Any]) -> str:
 
 
 def handle_config(params: Dict[str, Any]) -> str:
-    from pathiel.agents.config_store import (
-        merge_agent_config,
-        read_agent_config,
-        write_agent_config,
-    )
+    from pathiel.agents.config_store import read_agent_config, update_agent_config
 
     config = read_agent_config()
 
@@ -1441,6 +1437,26 @@ def handle_config(params: Dict[str, Any]) -> str:
             return json.dumps({"status": "error", "error": f"{key} must be an object"})
         updates[key] = params[key]
 
+    # Any other key already in the live config (strategy books such as
+    # xs_reversal, risk_profile, ...) is accepted too, as the tool contract
+    # promises. Before this, those keys were dropped silently and the call
+    # still returned the unchanged config, which read as success.
+    _handled = set(_DIRECT_KEYS) | set(_NESTED_KEYS) | {"runner_mover_surface_enabled"}
+    unknown = []
+    for key, val in params.items():
+        if key in _handled or val is None:
+            continue
+        if key not in config:
+            unknown.append(key)
+            continue
+        if isinstance(config[key], dict) and not isinstance(val, dict):
+            return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        updates[key] = val
+    if unknown:
+        # Fail loud and write nothing: a typo must never look like a saved change.
+        return json.dumps({"status": "error",
+                           "error": f"unknown config key(s): {', '.join(sorted(unknown))}"})
+
     # Save only if a setting was actually passed (a bare read must not rewrite).
     if params.get("runner_mover_surface_enabled") is not None:
         updates.setdefault("runner_mover_surface", {})["enabled"] = bool(
@@ -1448,8 +1464,10 @@ def handle_config(params: Dict[str, Any]) -> str:
         )
 
     if updates:
-        config = merge_agent_config(config, updates)
-        write_agent_config(config)
+        try:
+            config = update_agent_config(updates)
+        except ValueError as e:
+            return json.dumps({"status": "error", "error": str(e)})
 
     return json.dumps(config)
 

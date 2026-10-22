@@ -65,6 +65,22 @@ def test_render_quick_shows_the_worst_case_scenario(oil):
     assert worst.description in text
 
 
+@pytest.fixture
+def frozen_at_fixture_time(monkeypatch, oil):
+    """Pin render's clock to when the fixture thesis was written. The fixture's
+    catalysts are fixed dates, so on the real clock "earliest upcoming" drifts
+    as each one passes (this test went red on 2026-10-21 when c1 and c2 had)."""
+    pinned = oil.thesis.created_at
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return pinned if tz is None else pinned.astimezone(tz)
+
+    monkeypatch.setattr(render, "datetime", _Clock)
+
+
+@pytest.mark.usefixtures("frozen_at_fixture_time")
 def test_render_quick_shows_the_earliest_upcoming_catalyst(oil):
     text = render.render_markdown(oil.thesis, oil.analytics, mode="quick")
     assert "API crude inventories" in text  # c1, the earliest of the three

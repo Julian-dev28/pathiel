@@ -227,7 +227,7 @@ def calls(monkeypatch):
     monkeypatch.setattr(srv, "research", c.fake("research", {"verdict": "PASS"}))
     monkeypatch.setattr(srv, "maybe_execute", c.fake("maybe_execute", {"executed": False}))
     monkeypatch.setattr(srv, "read_agent_config", c.fake("read_agent_config", {}))
-    monkeypatch.setattr(srv, "write_agent_config", c.fake("write_agent_config"))
+    monkeypatch.setattr(srv, "update_agent_config", c.fake("update_agent_config", {}))
     monkeypatch.setattr(srv, "render_metrics", c.fake("render_metrics", (b"", "text/plain")))
     monkeypatch.setattr(srv.memory, "load", c.fake("memory.load"))
     monkeypatch.setattr(srv.memory, "get_full_state", c.fake("memory.get_full_state", {}))
@@ -257,7 +257,7 @@ ROUTES = [
     ("GET", "/api/agent/trades", None, {"memory.get_all_trades"}),
     ("GET", "/api/agent/session-log", None, {"session_log.tail"}),
     ("GET", "/api/agent/config", None, {"read_agent_config"}),
-    ("POST", "/api/agent/config", {"mode": "OFF"}, {"read_agent_config", "write_agent_config"}),
+    ("POST", "/api/agent/config", {"mode": "OFF"}, {"update_agent_config"}),
     ("GET", "/api/hl/account", None, {"fetch_account_state"}),
     ("GET", "/api/hl/all-mids", None, {"fetch_all_mids"}),
     ("GET", "/api/hl/universe", None, {"get_universe"}),
@@ -418,14 +418,17 @@ def test_two_config_saves_landing_together_keep_both_changes(monkeypatch):
     the lock, both read the old config and the second write drops the first
     save's change."""
     import pathiel.server as srv
+    from pathiel.agents import config_store as cs
     store = {"cfg": {"mode": "OFF"}}
 
     def write(cfg):
         time.sleep(0.1)                    # a save that takes a moment
         store["cfg"] = dict(cfg)
-    monkeypatch.setattr(srv, "read_agent_config", lambda: dict(store["cfg"]))
-    monkeypatch.setattr(srv, "write_agent_config", write)
-    monkeypatch.setattr(srv, "merge_agent_config", lambda old, new: {**old, **new})
+    # _merge_config -> config_store.update_agent_config, which reads the SAVED
+    # file and writes it back; fake both ends of that file.
+    monkeypatch.setattr(cs, "read_agent_config_file", lambda: dict(store["cfg"]))
+    monkeypatch.setattr(cs, "read_agent_config", lambda: dict(store["cfg"]))
+    monkeypatch.setattr(cs, "write_agent_config", write)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(srv._merge_config, [{"a": 1}, {"b": 2}]))
     assert store["cfg"] == {"mode": "OFF", "a": 1, "b": 2}

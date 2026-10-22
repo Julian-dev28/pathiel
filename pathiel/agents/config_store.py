@@ -12,6 +12,7 @@ import copy
 import json
 import logging
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
@@ -205,6 +206,41 @@ def read_agent_config() -> Dict[str, Any]:
     return merge_agent_config(DEFAULT_CONFIG, cfg)
 
 
+_UPDATE_LOCK = threading.Lock()
+
+
+def read_agent_config_file() -> Dict[str, Any]:
+    """The config file exactly as saved, WITHOUT the built-in defaults merged in.
+
+    Writers must start from this, not read_agent_config(): writing the merged
+    view back copies every DEFAULT_CONFIG value into the file, so a one-field
+    change silently pins dozens of defaults (2026-10-23: a risk_profile write
+    materialized per-book notional/leverage/stop into four books).
+
+    Missing file -> {}. Unreadable file -> raises ValueError, because writing
+    {} + updates over a corrupt file would erase every operator setting.
+    """
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        raise ValueError(f"refusing to update: invalid JSON in {CONFIG_PATH}: {e}") from e
+    if not isinstance(cfg, dict):
+        raise ValueError(f"refusing to update: {CONFIG_PATH} is not a JSON object")
+    return cfg
+
+
+def update_agent_config(updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Deep-merge `updates` into the saved file and write it. Returns the
+    effective config (defaults merged) after the write. Serialized by a lock so
+    two concurrent updates cannot drop each other's change."""
+    with _UPDATE_LOCK:
+        write_agent_config(merge_agent_config(read_agent_config_file(), updates))
+    return read_agent_config()
+
+
 def write_agent_config(cfg: Dict[str, Any]) -> None:
     """Write the agent config to .agent-config.json (atomic replace)."""
     directory = os.path.dirname(CONFIG_PATH)
@@ -296,9 +332,11 @@ def write_risk_profile(profile: RiskProfile) -> None:
     docs/overhaul/SWARM_RULES.md section 1) — this function has no opinion
     about live vs. temp, same as write_agent_config.
     """
-    cfg = dict(read_agent_config())
-    cfg["risk_profile"] = profile.model_dump()
-    write_agent_config(cfg)
+    # Replace the whole key (not deep-merge): a field set back to None must clear.
+    with _UPDATE_LOCK:
+        cfg = dict(read_agent_config_file())
+        cfg["risk_profile"] = profile.model_dump()
+        write_agent_config(cfg)
 
 
 def merge_agent_config(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:

@@ -140,7 +140,11 @@ def test_regression_the_real_config_migrates_through_the_real_read_agent_config(
     before this test existed; this is what would have caught it in the gate
     suite instead."""
     cfg_path = tmp_path / "agent-config.json"
-    cfg_path.write_text((REPO_ROOT / ".agent-config.json").read_text())
+    real = json.loads((REPO_ROOT / ".agent-config.json").read_text())
+    # The operator may since have SAVED an explicit profile (2026-10-23: max
+    # leverage 10x). This test is about migrating the legacy keys, so drop it.
+    real.pop("risk_profile", None)
+    cfg_path.write_text(json.dumps(real))
     monkeypatch.setattr(cs, "CONFIG_PATH", str(cfg_path))
 
     merged = cs.read_agent_config()
@@ -175,3 +179,50 @@ def test_a_user_set_legacy_key_still_migrates(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "CONFIG_PATH", str(cfg))
     prof = cs.read_risk_profile()
     assert prof.risk_per_trade_pct is not None   # migrated, not auto
+
+
+# --- writers start from the saved file, never the defaults-merged view -------
+# Regression 2026-10-23: write_risk_profile read through read_agent_config()
+# (DEFAULT_CONFIG merged in) and wrote that back, which pinned per-book
+# notional/leverage/stop defaults into four books of the live file and broke
+# tests/test_book_params.py's fallback invariant on the next commit.
+
+def _saved():
+    return json.loads(Path(cs.CONFIG_PATH).read_text())
+
+
+def test_write_risk_profile_does_not_copy_defaults_into_the_file():
+    try:
+        cs.write_agent_config({"mode": "OFF", "xs_reversal": {"enabled": True}})
+        cs.write_risk_profile(RiskProfile(max_leverage=10.0))
+        saved = _saved()
+        assert set(saved) == {"mode", "xs_reversal", "risk_profile"}
+        assert saved["xs_reversal"] == {"enabled": True}
+        assert saved["risk_profile"]["max_leverage"] == 10.0
+    finally:
+        cs.write_agent_config({"mode": "OFF"})
+
+
+def test_update_agent_config_merges_into_saved_file_only():
+    try:
+        cs.write_agent_config({"mode": "OFF", "xs_reversal": {"enabled": True, "top_pct": 98.0}})
+        effective = cs.update_agent_config({"xs_reversal": {"enabled": False}})
+        assert _saved() == {"mode": "OFF", "xs_reversal": {"enabled": False, "top_pct": 98.0}}
+        # The return value is still the effective (defaults-merged) config.
+        assert effective["xs_reversal"]["enabled"] is False
+        assert set(cs.DEFAULT_CONFIG) <= set(effective)
+    finally:
+        cs.write_agent_config({"mode": "OFF"})
+
+
+def test_update_agent_config_refuses_a_corrupt_file_instead_of_erasing_it():
+    import pytest
+
+    path = Path(cs.CONFIG_PATH)
+    try:
+        path.write_text("{not json")
+        with pytest.raises(ValueError):
+            cs.update_agent_config({"mode": "OFF"})
+        assert path.read_text() == "{not json"
+    finally:
+        cs.write_agent_config({"mode": "OFF"})

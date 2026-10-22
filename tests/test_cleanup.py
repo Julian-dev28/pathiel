@@ -702,6 +702,65 @@ def test_mcp_config_allows_ai_brain_provider_update():
         config_store.write_agent_config({"mode": "OFF"})
 
 
+def _load_mcp_named(name):
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "pathiel-mcp-server.py"
+    spec = importlib.util.spec_from_file_location(name, script)
+    assert spec and spec.loader
+    mcp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mcp)
+    return mcp
+
+
+def test_mcp_config_updates_any_existing_key_like_strategy_books():
+    """Regression 2026-10-23: {"xs_reversal": {"enabled": false}} was dropped
+    silently (key not on the hardcoded lists) and the call returned the
+    unchanged config, so the books kept trading while it looked switched off."""
+    import json
+
+    from pathiel.agents import config_store
+
+    mcp = _load_mcp_named("pathiel_mcp_server_config_books_test")
+    try:
+        config_store.write_agent_config({
+            "mode": "OFF",
+            "xs_reversal": {"enabled": True, "notional_usd": 11.0},
+            "risk_profile": {"preset": "auto", "max_leverage": 3.0},
+        })
+        out = json.loads(mcp.handle_config({
+            "xs_reversal": {"enabled": False},
+            "risk_profile": {"max_leverage": 10.0},
+        }))
+        saved = config_store.read_agent_config()
+        for cfg in (out, saved):
+            assert cfg["xs_reversal"]["enabled"] is False
+            assert cfg["xs_reversal"]["notional_usd"] == 11.0  # deep-merged, sibling kept
+            assert cfg["risk_profile"]["max_leverage"] == 10.0
+            assert cfg["risk_profile"]["preset"] == "auto"
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})
+
+
+def test_mcp_config_rejects_unknown_key_and_writes_nothing():
+    import json
+
+    from pathiel.agents import config_store
+
+    mcp = _load_mcp_named("pathiel_mcp_server_config_unknown_test")
+    try:
+        config_store.write_agent_config({"mode": "OFF", "xs_reversal": {"enabled": True}})
+        out = json.loads(mcp.handle_config({"xs_reversal": {"enabled": False},
+                                            "xs_reversl": {"enabled": False}}))
+        assert out["status"] == "error" and "xs_reversl" in out["error"]
+        assert config_store.read_agent_config()["xs_reversal"]["enabled"] is True
+        out = json.loads(mcp.handle_config({"xs_reversal": False}))
+        assert out["status"] == "error"
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})
+
+
 def test_mcp_submit_verdict_records_and_executes_agent_analysis(monkeypatch):
     """Agent-authored verdicts become analyses and execute through the gates."""
     import importlib.util
