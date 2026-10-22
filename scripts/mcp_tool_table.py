@@ -24,6 +24,7 @@ SECTIONS: Dict[str, List[str]] = {
     "Start here: desks, account, risk": [
         "desk_list", "desk_brief", "desk_refresh", "desk_submit_call", "desk_track_record",
         "account_overview", "accounts", "risk_limits", "risk_size_trade",
+        "place_bracket", "bracket_sweep",
     ],
     "Agent loop and live-money actions": [
         "scan", "research", "submit_verdict", "execute", "close_position", "set_leverage",

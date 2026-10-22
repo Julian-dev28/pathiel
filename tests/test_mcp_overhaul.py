@@ -73,13 +73,13 @@ def info(monkeypatch):
 
 class TestToolsListBudget:
     def test_tool_count_snapshot(self):
-        """Pins the exact count (78: 88 - 19 names folded into hidden
+        """Pins the exact count (80: 90 - 19 names folded into hidden
         aliases + 5 desk_* tools + 4 account/risk tools added 2026-10-18:
         account_overview, accounts, risk_limits, risk_size_trade) so a
         drift -- someone re-adding a duplicate schema, or silently dropping
         a tool -- shows up as a failing assert, not a surprise someone has
         to notice by eye."""
-        assert len(M.TOOLS) == 78
+        assert len(M.TOOLS) == 80
 
     def test_desk_tools_are_present(self):
         names = {t["name"] for t in M.TOOLS}
@@ -612,7 +612,7 @@ class TestStdioE2E:
             names = {t["name"] for t in listing["result"]["tools"]}
             assert "get_server_time" in names and "desk_list" in names
             assert "get_coin_price" not in names, "hidden alias leaked into tools/list"
-            assert len(names) == len(M.TOOLS) == 78
+            assert len(names) == len(M.TOOLS) == 80
 
             send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "get_server_time", "arguments": {}}})
