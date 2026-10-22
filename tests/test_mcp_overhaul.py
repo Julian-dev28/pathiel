@@ -73,18 +73,19 @@ def info(monkeypatch):
 
 class TestToolsListBudget:
     def test_tool_count_snapshot(self):
-        """Pins the exact count (80: 90 - 19 names folded into hidden
+        """Pins the exact count (81: 90 - 19 names folded into hidden
         aliases + 5 desk_* tools + 4 account/risk tools added 2026-10-18:
-        account_overview, accounts, risk_limits, risk_size_trade) so a
-        drift -- someone re-adding a duplicate schema, or silently dropping
-        a tool -- shows up as a failing assert, not a surprise someone has
-        to notice by eye."""
-        assert len(M.TOOLS) == 80
+        account_overview, accounts, risk_limits, risk_size_trade + desk_grade
+        added 2026-10-23 for the grade-everything build) so a drift --
+        someone re-adding a duplicate schema, or silently dropping a tool --
+        shows up as a failing assert, not a surprise someone has to notice
+        by eye."""
+        assert len(M.TOOLS) == 81
 
     def test_desk_tools_are_present(self):
         names = {t["name"] for t in M.TOOLS}
         assert {"desk_list", "desk_brief", "desk_refresh",
-               "desk_submit_call", "desk_track_record"} <= names
+               "desk_submit_call", "desk_track_record", "desk_grade"} <= names
 
     def test_token_budget_gate(self):
         """Ceiling, not a pin: 88 tools cost 29370 chars (~7342 tokens,
@@ -92,11 +93,12 @@ class TestToolsListBudget:
         cost 29568 after. 2026-10-18 (MCP shore-up): +4 account/risk tools,
         safety annotations on every tool and narrowing params on the
         oversized readers, paid for mostly by compacting the config schema
-        (4.9k -> 0.9k chars): 32847 chars (~8.2k tokens). The gate leaves
-        a little headroom without letting bloat slide in unnoticed -- a
-        future PR that blows through this number has to touch this test."""
+        (4.9k -> 0.9k chars): 32847 chars (~8.2k tokens). 2026-10-23: +1
+        desk_grade tool for grade-everything. The gate leaves a little
+        headroom without letting bloat slide in unnoticed -- a future PR
+        that blows through this number has to touch this test."""
         payload = json.dumps({"tools": M.TOOLS})
-        assert len(M.TOOLS) <= 80, "tool count crept back up -- did a duplicate return?"
+        assert len(M.TOOLS) <= 81, "tool count crept back up -- did a duplicate return?"
         assert len(payload) <= 34000, f"tools/list grew to {len(payload)} chars"
 
     def test_no_duplicate_names_between_tools_and_aliases(self):
@@ -404,6 +406,14 @@ class _FakeFacade:
         return self._TrackRecord(n_graded=3, direction_hit_rate=0.67,
                                  mean_brier=0.2, mean_ret_pct=0.05)
 
+    def grade_due(self):
+        self.grade_due_calls = getattr(self, "grade_due_calls", 0) + 1
+        return 2
+
+    def grade_due_trades(self, desk_id=None):
+        self.grade_due_trades_calls = getattr(self, "grade_due_trades_calls", []) + [desk_id]
+        return 5
+
 
 @pytest.fixture
 def fake_desk(monkeypatch):
@@ -505,9 +515,21 @@ class TestDeskTools:
         _, body = _call("desk_track_record", {"desk": "oil"})
         assert body["track_record"]["n_graded"] == 3
 
+    def test_desk_grade(self, fake_desk):
+        _, body = _call("desk_grade", {"desk": "oil"})
+        assert body == {"desk": "oil", "theses_graded": 2, "trades_graded": 5}
+        assert fake_desk.grade_due_calls == 1
+        assert fake_desk.grade_due_trades_calls == ["oil"]
+
+    def test_desk_grade_omitting_desk_grades_every_desk(self, fake_desk):
+        _, body = _call("desk_grade", {})
+        assert body["desk"] is None
+        assert fake_desk.grade_due_trades_calls == [None]
+
     @pytest.mark.parametrize("tool,args", [
         ("desk_list", {}), ("desk_brief", {"desk": "oil"}),
         ("desk_refresh", {"desk": "oil"}), ("desk_track_record", {"desk": "oil"}),
+        ("desk_grade", {}),
     ])
     def test_missing_facade_is_a_clear_error_not_a_crash(self, monkeypatch, tool, args):
         """services.strategies does not exist in this worktree (desk-core
@@ -612,7 +634,7 @@ class TestStdioE2E:
             names = {t["name"] for t in listing["result"]["tools"]}
             assert "get_server_time" in names and "desk_list" in names
             assert "get_coin_price" not in names, "hidden alias leaked into tools/list"
-            assert len(names) == len(M.TOOLS) == 80
+            assert len(names) == len(M.TOOLS) == 81
 
             send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                  "params": {"name": "get_server_time", "arguments": {}}})

@@ -151,9 +151,42 @@ thesis = Thesis(
 )
 
 
+# A second thesis fixture, Brent instead of WTI, with a window that brackets
+# the real watch-wallet fill history services/strategies/tests/fixtures/
+# watch_wallet_brent_fills.json replays (2026-09-10 16:55 to 2026-10-22
+# 15:53 UTC) -- services/strategies/evals/trades_replay.py grades that
+# fixture's fills against THIS thesis, so the replay has something real to
+# match against instead of the WTI thesis above's zero-overlap coin.
+oil_thesis_brent = Thesis(
+    id="oil-20260910T0000-m-brent", desk_id="oil", author="machine",
+    created_at=datetime(2026, 9, 10, tzinfo=timezone.utc),
+    expires_at=datetime(2026, 10, 24, tzinfo=timezone.utc), horizon_days=44,
+    call=Call(side="long", instrument="xyz:BRENTOIL",
+             one_liner="Long Brent at 20x off the Hormuz escalation: out below 95.",
+             entry_px=103.95, entry_zone=[100.0, 108.0], stop_px=95.0,
+             targets=[112.0, 118.0], leverage=20, confidence=0.55,
+             invalidation="Daily close below 95, or a confirmed Hormuz reopening"),
+    scenarios=[
+        Scenario(name="Hormuz stays shut", probability=0.55, move_lo_pct=0.03, move_hi_pct=0.4,
+                 description="Grinds to 112-118."),
+        Scenario(name="Chop", probability=0.25, move_lo_pct=-0.05, move_hi_pct=0.03,
+                 description="Range 99-107."),
+        Scenario(name="Deal / SPR release", probability=0.20, move_lo_pct=-0.4, move_hi_pct=-0.05,
+                 description="Gap down on a de-escalation headline."),
+    ],
+    bull=[Point(text="Record tanker attacks keep the Strait effectively closed")],
+    bear=[Point(text="G7/IEA 100M bbl emergency release accelerating")],
+    what_changes_my_mind=["Iran accepts a reopening framework", "daily close below 95"],
+    analytics_ref=PayloadRef(as_of=T0, sha256="0" * 64),
+    primary_coins=["xyz:BRENTOIL"],
+    usage=Usage(model="fixture", input_tokens=4800, output_tokens=1300),
+)
+
+
 def main() -> None:
     for name, obj in (("oil_spec", spec), ("oil_analytics", analytics),
-                      ("oil_intel", intel), ("oil_thesis", thesis)):
+                      ("oil_intel", intel), ("oil_thesis", thesis),
+                      ("oil_thesis_brent", oil_thesis_brent)):
         (HERE / f"{name}.json").write_text(obj.model_dump_json(indent=2) + "\n")
     print("wrote fixtures to", HERE)
 

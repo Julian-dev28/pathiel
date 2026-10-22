@@ -4,7 +4,8 @@ One desk = one siloed focus (oil, btc, top5 crypto, AI equities, ...). Every
 service that touches a desk speaks these models and nothing else:
 
     services/strategies  owns DeskSpec registry, DeskAnalytics (deterministic),
-                         the thesis journal + grader, and the HTTP routes.
+                         the thesis journal + grader + trade grader, and the
+                         HTTP routes.
     services/intel       owns IntelPacket (news, policy, catalysts, odds, COT).
     services/llm +
     services/thesis      own Thesis generation (the only latent step).
@@ -386,6 +387,44 @@ class TrackRecord(_M):
     mean_brier: Optional[float] = None
     mean_ret_pct: Optional[float] = None
     by_author: dict = {}                       # {"machine": {...}, "user": {...}} same keys
+    # Trade-grading roll-up (services/strategies/trades.py), aggregated across
+    # every registered account's fills on every graded thesis for this desk.
+    # Optional/absent = no trades computed yet, never a 0 standing in for
+    # "nothing to report" (0.0 realized P&L is a real, different fact).
+    realized_pnl_usd: Optional[float] = None
+    n_trades: int = 0
+    follow_rate: Optional[float] = None
+
+
+class AccountTradeGrade(_M):
+    """One registered account's fills against one thesis's call, over the
+    window [thesis.created_at, min(thesis.expires_at, next thesis's
+    created_at)]. See services/strategies/trades.py."""
+    account_id: str
+    label: str
+    main_address: str
+    mode: str                                  # "trade" | "watch"
+    source: str                                # "wallet_sign" | "api_key" | "watch" | "env"
+    n_fills: int = 0
+    n_opens: int = 0
+    n_closes: int = 0
+    realized_pnl_usd: float = 0.0              # sum(closedPnl) - sum(fee) over matched fills
+    follow_rate: Optional[float] = None         # fraction of OPENING fills in the call's direction
+    first_entry_px: Optional[float] = None      # px of the earliest opening fill in the window
+    entered_in_zone: Optional[bool] = None      # first_entry_px inside call.entry_zone
+    max_adverse_fill: Optional[float] = None    # worst single fill's closedPnl (most negative)
+
+
+class ThesisTrades(_M):
+    """Every registered account's AccountTradeGrade for one thesis. Stored as
+    a sibling file to the thesis in the journal, not a Thesis field — see
+    services/strategies/trades.py's module docstring for why."""
+    thesis_id: str
+    desk_id: str
+    window_start: datetime
+    window_end: datetime
+    computed_at: datetime
+    accounts: List[AccountTradeGrade] = []
 
 
 class DeskCard(_M):
