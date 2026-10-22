@@ -22,6 +22,15 @@ never from mental arithmetic.
 2. **Levels.** `python3 scripts/oil_levels.py` (add `--coin xyz:CL` for WTI).
    Gives mid, last closed 1h candle, 8h/24h/48h range, ATR14, 15m micro
    range. Candles beyond that: `get_candles` with interval 15m or 1h.
+   Judging a level for a trade: `python3 scripts/oil_levels.py --check ENTRY STOP TP --lev 20`
+   prints the R gate and the 20x line (liquidation, how much of the
+   liquidation distance the stop uses, max leverage for that stop).
+2b. **Julien's own wallet** (read only; pathiel never trades it):
+   `python3 scripts/watch_wallet.py 0x8debbedbdc603769549a6277fed38dae65185019`.
+   If `any_naked` is true, a position has no stop covering it: message
+   Julien in that tick with the coin, size, leverage, liquidation price and
+   the stop level the thesis implies. Say it once per position, then only
+   if the liquidation distance shrinks under 1.5%.
 3. **Thesis.** `desk_brief {desk: "oil"}` (quick). Call `desk_refresh` only
    when the brief says the thesis is stale or expired, or a headline has
    moved the market more than 1.5%; the tool skips itself otherwise, and it

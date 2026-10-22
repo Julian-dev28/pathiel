@@ -99,9 +99,20 @@ def summarize(c1h: List[Dict[str, Any]], c15: List[Dict[str, Any]], mid: float, 
     return out
 
 
-def check(entry: float, stop: float, tp: float) -> Dict[str, Any]:
-    from pathiel.agents.bracket import check_levels
-    return {"entry": entry, "stop": stop, "tp": tp, **check_levels(entry, stop, tp)}
+def check(entry: float, stop: float, tp: float, leverage: Optional[float] = None,
+          max_leverage: float = 20.0) -> Dict[str, Any]:
+    """The R gate, plus the leverage gate when --lev is given: liquidation
+    price, how much of the liquidation distance the stop uses, and the
+    highest leverage this stop allows (the "20x line" for Julien's wallet)."""
+    from pathiel.agents.bracket import check_levels, check_leverage
+    out = {"entry": entry, "stop": stop, "tp": tp, **check_levels(entry, stop, tp)}
+    if leverage:
+        lev = check_leverage(entry, stop, leverage, max_leverage)
+        out["leverage"] = lev
+        out["ok"] = bool(out.get("ok")) and bool(lev.get("ok"))
+        out["verdict"] = (f"{leverage:g}x OK" if lev.get("ok")
+                          else f"no {leverage:g}x: max {lev.get('max_leverage_ok')}x for this stop")
+    return out
 
 
 # ------------------------------------------------------------------ CLI
@@ -109,9 +120,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--coin", default="xyz:BRENTOIL")
     ap.add_argument("--check", nargs=3, type=float, metavar=("ENTRY", "STOP", "TP"))
+    ap.add_argument("--lev", type=float, help="with --check: leverage to judge (e.g. 20)")
+    ap.add_argument("--max-lev", type=float, default=20.0, help="venue max leverage for the coin (Brent/WTI 20)")
     a = ap.parse_args(argv)
     if a.check:
-        print(json.dumps(check(*a.check)))
+        print(json.dumps(check(*a.check, leverage=a.lev, max_leverage=a.max_lev)))
         return 0
     now_ms = int(time.time() * 1000)
     out = summarize(fetch_candles(a.coin, "1h", 50, now_ms), fetch_candles(a.coin, "15m", 3, now_ms),
