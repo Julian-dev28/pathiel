@@ -78,3 +78,12 @@ def test_check_passes_through_the_bracket_r_gate(capsys):
     assert out["ok"] and out["side"] == "long" and out["r_multiple"] == 2.5
     L.main(["--check", "107.61", "106.70", "108.45"])
     assert json.loads(capsys.readouterr().out)["ok"] is False
+
+
+def test_check_with_leverage_prints_the_20x_line(capsys):
+    L.main(["--check", "107.16", "106.70", "108.45", "--lev", "20"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] and out["verdict"] == "20x OK" and out["leverage"]["liq_px"] == pytest.approx(104.41, abs=0.03)
+    L.main(["--check", "107", "101.65", "115", "--lev", "20"])
+    out = json.loads(capsys.readouterr().out)
+    assert not out["ok"] and out["verdict"] == "no 20x: max 8x for this stop"

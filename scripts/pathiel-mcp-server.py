@@ -3556,12 +3556,10 @@ def handle_get_liquidation_price(params: Dict[str, Any]) -> str:
 
 
 def _liq_estimate(entry: float, leverage: float, max_leverage: float, is_long: bool) -> float:
-    """HL isolated-margin liquidation price (see get_liquidation_price):
-    liq = entry - side * (entry/leverage - mmr*entry) / (1 - mmr*side),
-    mmr = 1 / (2 * max_leverage)."""
-    side = 1.0 if is_long else -1.0
-    mmr = 1.0 / (2.0 * max_leverage)
-    return entry - side * (entry / leverage - mmr * entry) / (1.0 - mmr * side)
+    """HL isolated-margin liquidation price. One formula for the whole repo:
+    pathiel.agents.bracket.liq_estimate (the leverage gate uses the same one)."""
+    from pathiel.agents.bracket import liq_estimate
+    return liq_estimate(entry, leverage, max_leverage, is_long)
 
 
 def handle_get_order_by_oid(params: Dict[str, Any]) -> str:
@@ -4023,7 +4021,7 @@ def handle_place_bracket(params: Dict[str, Any]) -> str:
                            "error": f"sizing refused: {sized.reason}"}, default=str)
     out = bracket.place_bracket(coin, entry_px=entry, stop_px=stop, tp_px=tp, size=float(sized.size),
                                 leverage=int(sized.leverage or 1), min_r=min_r,
-                                dry_run=bool(params.get("dry_run")))
+                                coin_max_leverage=coin_max, dry_run=bool(params.get("dry_run")))
     out["sizing"] = {"notional_usd": sized.notional_usd, "margin_usd": sized.margin_usd,
                      "risk_usd": sized.risk_usd, "risk_pct": sized.risk_pct}
     return json.dumps(out, default=str)

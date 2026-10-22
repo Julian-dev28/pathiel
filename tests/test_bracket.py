@@ -235,4 +235,61 @@ def test_handler_sizes_then_places(monkeypatch):
         {"coin": "xyz:BRENTOIL", "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
     assert out["ok"] and out["sizing"]["risk_usd"] == 0.64
     assert seen == {"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45,
-                    "size": 1.27, "leverage": 10, "min_r": 1.5, "dry_run": False}
+                    "size": 1.27, "leverage": 10, "min_r": 1.5, "coin_max_leverage": 20.0, "dry_run": False}
+
+
+# ------------------------------------------------- the 20x rule (leverage gate)
+def test_liq_estimate_matches_the_venue_within_fees():
+    # Julien's 20x Brent long 2026-10-23: venue showed liquidationPx 104.4289.
+    assert bracket.liq_estimate(107.16, 20, 20, True) == pytest.approx(104.41, abs=0.03)
+    # The pathiel 10x long: venue showed 99.3422.
+    assert bracket.liq_estimate(107.61, 10, 20, True) == pytest.approx(99.34, abs=0.02)
+
+
+def test_tight_stop_passes_at_20x_wide_stop_does_not():
+    ok = bracket.check_leverage(107.16, 106.70, 20, 20)
+    assert ok["ok"] and ok["stop_frac_of_liq"] < 0.2 and ok["max_leverage_ok"] == 20
+    bad = bracket.check_leverage(107.0, 101.65, 20, 20)        # a 5% stop at 20x: past liquidation
+    assert not bad["ok"] and bad["stop_frac_of_liq"] > 1
+    assert bad["max_leverage_ok"] == 8 and "at most 8x" in bad["reason"]
+
+
+def test_max_leverage_for_stop_is_the_boundary():
+    # The returned leverage passes; one more fails. Long and short.
+    for entry, stop in ((107.0, 105.5), (100.0, 103.0)):
+        lev = bracket.max_leverage_for_stop(entry, stop, 20)
+        assert bracket.check_leverage(entry, stop, lev, 20)["ok"]
+        if lev < 20:
+            assert not bracket.check_leverage(entry, stop, lev + 1, 20)["ok"]
+
+
+def test_place_bracket_refuses_a_stop_too_close_to_liquidation():
+    ex = FakeEx()
+    out = bracket.place_bracket(COIN, entry_px=107.0, stop_px=101.65, tp_px=116.0,   # 1.68R: passes the R gate
+                                size=1.0, leverage=20, coin_max_leverage=20, ex=ex)
+    assert not out["placed"] and "at most 8x" in out["reason"]
+    assert out["liq"]["max_leverage_ok"] == 8
+    assert ex.calls == []                                       # refused before touching the exchange
+
+
+def test_place_bracket_passes_the_gate_and_reports_liquidation():
+    ex = FakeEx()
+    out = bracket.place_bracket(COIN, entry_px=107.20, stop_px=106.70, tp_px=108.45,
+                                size=1.27, leverage=10, coin_max_leverage=20, ex=ex)
+    assert out["placed"] and out["liq"]["liq_px"] == pytest.approx(98.95, abs=0.02)
+
+
+def test_handler_passes_the_coin_max_leverage_through(monkeypatch):
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+
+    seen = {}
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 15.21)
+    import services.risk.size as size_mod
+    monkeypatch.setattr(size_mod, "size_trade", lambda *a, **k: SimpleNamespace(
+        can_trade=True, size=1.27, leverage=10.0, reason="", notional_usd=1, margin_usd=1, risk_usd=1, risk_pct=1))
+    monkeypatch.setattr(br, "place_bracket", lambda coin, **k: seen.update(k) or {"ok": True})
+    mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45})
+    assert seen["coin_max_leverage"] == 20.0
