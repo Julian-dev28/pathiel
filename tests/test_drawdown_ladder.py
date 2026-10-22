@@ -454,7 +454,9 @@ def test_the_crypto_exception_is_this_book_and_these_five_coins_only():
     assert not any(":" in c for c in L.UNIVERSE)
 
 
-def test_the_book_is_live_in_the_running_config():
+def test_the_book_block_in_the_running_config_is_well_formed():
+    # Whether the book is ON is the operator's call (all books switched off
+    # 2026-10-23), so this pins the block's shape, not its on/off state.
     b = CFG_LIVE["drawdown_ladder"]
-    assert b["enabled"] is True and b["shadow_only"] is False
+    assert isinstance(b["enabled"], bool) and b["shadow_only"] is False
     assert "leverage" not in b, "leverage is a code constant; a config key would be a lie"
