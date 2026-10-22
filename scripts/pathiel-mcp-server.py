@@ -473,14 +473,15 @@ TOOLS = [
     },
     {
         "name": "cancel_order",
-        "description": "Cancel an open order by asset index and order ID.",
+        "description": "Cancel an open order by order ID and coin.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "asset": {"type": "number", "description": "Asset index"},
-                "order_id": {"type": "number", "description": "Order ID to cancel"}
+                "order_id": {"type": "number"},
+                "coin": {"type": "string", "description": "e.g. xyz:BRENTOIL"},
+                "asset": {"type": "number", "description": "index, if no coin"}
             },
-            "required": ["asset", "order_id"]
+            "required": ["order_id"]
         }
     },
     {
@@ -1462,12 +1463,22 @@ def handle_config(params: Dict[str, Any]) -> str:
         if key in params and params[key] is not None:
             updates[key] = params[key]
 
+    def _as_object(key: str, val: Any) -> Any:
+        # MCP clients send untyped nested params as a JSON string; accept both.
+        if isinstance(val, str):
+            try:
+                val = json.loads(val)
+            except ValueError:
+                return None
+        return val if isinstance(val, dict) else None
+
     for key in _NESTED_KEYS:
         if key not in params or params[key] is None:
             continue
-        if not isinstance(params[key], dict):
+        obj = _as_object(key, params[key])
+        if obj is None:
             return json.dumps({"status": "error", "error": f"{key} must be an object"})
-        updates[key] = params[key]
+        updates[key] = obj
 
     # Any other key already in the live config (strategy books such as
     # xs_reversal, risk_profile, ...) is accepted too, as the tool contract
@@ -1481,8 +1492,10 @@ def handle_config(params: Dict[str, Any]) -> str:
         if key not in config:
             unknown.append(key)
             continue
-        if isinstance(config[key], dict) and not isinstance(val, dict):
-            return json.dumps({"status": "error", "error": f"{key} must be an object"})
+        if isinstance(config[key], dict):
+            val = _as_object(key, val)
+            if val is None:
+                return json.dumps({"status": "error", "error": f"{key} must be an object"})
         updates[key] = val
     if unknown:
         # Fail loud and write nothing: a typo must never look like a saved change.
@@ -2346,16 +2359,21 @@ def _dexes_for(coin: str, user: str) -> List[str]:
     return [""] + extra
 
 def handle_cancel_order(params: Dict[str, Any]) -> str:
-    """Handle cancel_order tool call."""
-    from pathiel.client.exchange import _make_exchange
-    asset = params.get('asset')
+    """Cancel one order by coin (preferred) or asset index. The SDK's cancel
+    takes a coin NAME; passing the index straight through (the old code)
+    raised on every call, so this tool never worked for xyz:* orders."""
+    from pathiel.client.exchange import _has_usable_credential, cancel_orders
     order_id = params.get('order_id')
-    if asset is None or order_id is None:
-        return json.dumps({'cancelled': False, 'error': 'asset and order_id required'})
+    coin = _norm_coin(str(params.get('coin') or '')) or None
+    asset = params.get('asset')
+    if order_id is None or (coin is None and asset is None):
+        return json.dumps({'cancelled': False, 'error': 'order_id plus coin (or asset index) required'})
+    if not _has_usable_credential():
+        return json.dumps({'cancelled': False, 'error': 'HYPERLIQUID_PRIVATE_KEY not set'})
     try:
-        exchange = _make_exchange()
-        result = exchange.cancel(asset, order_id)
-        return json.dumps({'cancelled': True, 'result': result}, default=str)
+        res = cancel_orders(int(order_id), coin=coin, asset_idx=int(asset) if asset is not None and coin is None else None)
+        return json.dumps({'cancelled': bool(res.get('ok')), 'order_id': int(order_id), 'coin': coin,
+                           **({} if res.get('ok') else {'error': res.get('error')})}, default=str)
     except Exception as e:
         return json.dumps({'cancelled': False, 'error': str(e)}, default=str)
 

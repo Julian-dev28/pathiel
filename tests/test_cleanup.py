@@ -3824,3 +3824,44 @@ def test_dsl_reconciles_a_manually_reopened_position(monkeypatch, tmp_path):
     t.peak_px = 250.0
     dsl_exit.rehydrate_from_exchange(live)
     assert dsl_exit._active_positions["xyz:BE_short"].peak_px == 250.0
+
+
+def test_mcp_config_accepts_nested_objects_sent_as_json_strings():
+    """MCP clients send untyped nested params as JSON strings. 2026-10-23:
+    {"risk_profile": "{\\"max_open_positions\\": 1}"} was refused as "must be
+    an object" and the sizing stayed split across 3 slots."""
+    import json
+
+    from pathiel.agents import config_store
+
+    mcp = _load_mcp_named("pathiel_mcp_server_config_string_test")
+    try:
+        config_store.write_agent_config({"mode": "OFF", "risk_profile": {"preset": "auto", "max_leverage": 10.0},
+                                         "dsl_exit": {"max_loss_pct": 2.5}})
+        out = json.loads(mcp.handle_config({"risk_profile": '{"max_open_positions": 1}',
+                                            "dsl_exit": '{"protect_pct": 1.0}'}))
+        assert out["risk_profile"] == {"preset": "auto", "max_leverage": 10.0, "max_open_positions": 1}
+        assert out["dsl_exit"]["protect_pct"] == 1.0 and out["dsl_exit"]["max_loss_pct"] == 2.5
+        bad = json.loads(mcp.handle_config({"risk_profile": "not json"}))
+        assert bad["status"] == "error"
+    finally:
+        config_store.write_agent_config({"mode": "OFF"})
+
+
+def test_mcp_cancel_order_cancels_by_coin(monkeypatch):
+    """The old handler passed the asset INDEX to the SDK's cancel(name, oid)
+    and raised on every call. Now: coin preferred, routed through
+    exchange.cancel_orders, which knows HIP-3 dexes."""
+    import json
+
+    import pathiel.client.exchange as ex
+
+    mcp = _load_mcp_named("pathiel_mcp_server_cancel_test")
+    calls = []
+    monkeypatch.setattr(ex, "_has_usable_credential", lambda: True)
+    monkeypatch.setattr(ex, "cancel_orders", lambda oid, coin=None, asset_idx=None:
+                        calls.append((oid, coin, asset_idx)) or {"ok": True})
+    out = json.loads(mcp.handle_cancel_order({"order_id": 583051313779, "coin": "xyz:brentoil"}))
+    assert out["cancelled"] is True and calls == [(583051313779, "xyz:BRENTOIL", None)]
+    out = json.loads(mcp.handle_cancel_order({"order_id": 7}))
+    assert out["cancelled"] is False and "coin" in out["error"]
