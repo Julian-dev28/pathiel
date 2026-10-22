@@ -111,6 +111,11 @@ def _real_config_for_test() -> Dict[str, Any]:
     # max_daily_loss_pct, min_order_bump_max_mult, the book blocks) is
     # exactly the real file's.
     cfg["enable_crypto"] = True
+    # The operator switched every book off on 2026-10-23 (trades through
+    # Claude only). This test proves the SIZING path for the book it names in
+    # _analysis, so re-enable that one book in the copy; its parameters stay
+    # exactly the real file's.
+    cfg["xs_reversal"] = {**cfg.get("xs_reversal", {}), "enabled": True}
     return cfg
 
 
