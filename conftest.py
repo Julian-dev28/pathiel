@@ -35,6 +35,7 @@ os.environ.setdefault("PATHIEL_DASHBOARD_LIVE_EQUITY", "0")
 os.environ.setdefault("PATHIEL_DESK_BACKGROUND_REFRESH", "0")
 os.environ.setdefault("PATHIEL_DESK_WARMUP", "0")
 os.environ.setdefault("PATHIEL_META_PREWARM", "0")
+os.environ.setdefault("PATHIEL_GRADE_LOOP", "0")
 
 
 import pytest  # noqa: E402
