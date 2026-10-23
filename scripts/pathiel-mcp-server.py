@@ -116,16 +116,18 @@ def _make_stub_handler(tool_name: str):
 
 # What a client model reads at connect time (MCP initialize "instructions").
 # Short on purpose: it rides in every session's context.
-SERVER_INSTRUCTIONS = """pathiel: a headless oil desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot.
+SERVER_INSTRUCTIONS = """pathiel: a headless trading desk on live Hyperliquid. Real money. Claude is the trader; there is no autonomous bot. Active desks (config active_desks): oil (primary), metals, ai, gas; btc, top5 and indices exist but are off.
 
 Start here
-- desk_list, then desk_brief {desk} for that desk's call (oil is primary; gas, btc, top5, ai, metals, indices also exist). Quick mode is short markdown, call first, and includes "Your size" for the active account.
-- desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, or when the brief says the thesis is stale.
-- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized and leverage-checked by the tool. bracket_sweep {coin}: cancel a stranded sibling order and confirm an open position is covered by a stop. Run bracket_sweep after every close.
-- account_overview: equity and where it sits. HIP-3 money (oil: xyz:BRENTOIL, xyz:CL; xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
-- risk_limits / risk_size_trade: what this account may trade and how big, from the operator's saved risk profile. Size every suggested trade with risk_size_trade; do not do sizing math by hand.
+- desk_list, then desk_brief {desk} for that desk's call. Quick mode is short markdown, call first, with "Your size" for the active account. The Desk page (http://localhost:8000/) shows the same call as a card plus the open position with margin in use.
+- desk_refresh {desk} writes a NEW thesis (news + one local model call, about a minute). Use it when asked, when the brief says the thesis is stale, or when its target has already been hit.
+- place_bracket {coin, entry_px, stop_px, tp_px}: one entry with an exact stop and target, sized by the risk profile (100% risk, 20x cap, ONE position per account) and leverage-checked (stop inside half the distance to liquidation). Refuses under 1.5R and refuses a second position or entry while one is open: never add, the next bracket is the whole stake. bracket_sweep {coin}: cancel a stranded sibling order and confirm an open position is covered by a stop. Run it after every close.
+- set_leverage {coin, leverage}: keeps an open position's own margin type; a venue refusal is an error. Confirm with get_asset_positions.
+- account_overview: equity and where it sits. HIP-3 money (xyz:BRENTOIL, xyz:CL, xyz:NVDA, ...) lives on its own dex (xyz), not main; main-dex-only reads look empty for it.
+- risk_limits / risk_size_trade: what this account may trade and how big, from the saved risk profile. Size every suggested trade with risk_size_trade, never by hand.
+- A missing position or dashes on the Desk page while the venue shows one: GET /api/health/system -> hl_budget names who spent or was refused the venue budget.
 
-Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD).
+Coins: main-dex perps by name (BTC, ETH). HIP-3 perps as dex:SYMBOL (xyz:BRENTOIL = Brent, the oil desk's price; xyz:CL = WTI; xyz:GOLD; xyz:NATGAS).
 
 LIVE MONEY: place_bracket, bracket_sweep, close_position, set_leverage, cancel_order act on the real account, and config with arguments rewrites the live trading config. Call them only when the operator asked for that exact action in this conversation. Every other tool only reads (desk_refresh, desk_submit_call and desk_grade write the desk journal; desk_grade never places or touches an order, it only grades what already happened)."""
 
