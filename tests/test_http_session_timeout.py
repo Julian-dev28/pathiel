@@ -36,13 +36,13 @@ def _wrapped(timeout_s=10.0):
 def test_explicit_none_timeout_gets_the_default():
     client, seen = _wrapped(7.0)
     client.session.request("POST", "u", timeout=None)
-    assert seen.calls[-1]["timeout"] == 7.0
+    assert seen.calls[-1]["timeout"] == (5.0, 7.0)   # (connect, read) since 2026-10-23
 
 
 def test_missing_timeout_gets_the_default():
     client, seen = _wrapped(7.0)
     client.session.request("POST", "u")
-    assert seen.calls[-1]["timeout"] == 7.0
+    assert seen.calls[-1]["timeout"] == (5.0, 7.0)   # (connect, read) since 2026-10-23
 
 
 def test_an_explicit_timeout_is_kept():
@@ -67,4 +67,4 @@ def test_the_real_sdk_post_path_ends_up_with_a_timeout(monkeypatch):
         api.post("/info", {"type": "allMids"})
     except RuntimeError:
         pass
-    assert captured["timeout"] == 10.0
+    assert captured["timeout"] == (5.0, 10.0)   # (connect, read) since 2026-10-23
