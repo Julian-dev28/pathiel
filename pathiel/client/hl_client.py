@@ -557,3 +557,41 @@ def fetch_funding_history(
     payload = {"type": "fundingHistory", "coin": coin, "startTime": start_time, "endTime": end_time}
     raw = _http_post("/info", payload)
     return raw if isinstance(raw, list) else []
+
+
+def fetch_user_fills_by_time(
+    user: str, start_time_ms: int, end_time_ms: Optional[int] = None, *, max_pages: int = 50,
+) -> List[Dict[str, Any]]:
+    """Every fill `user` made in [start_time_ms, end_time_ms] (end defaults to
+    now), oldest first. userFillsByTime caps at 2000 rows per call; this
+    pages forward (same technique as scripts/pnl_by_book.fetch_all_fills)
+    using each batch's own latest `time` as the next `startTime`, de-duping
+    by `tid` since a page boundary can repeat the last row. [] on no fills,
+    a rate-limited request, or no `user` -- never raises (services/strategies/
+    trades.py grades what it gets; a 429 mid-sweep should not crash the
+    grading job, just undercount until the next sweep)."""
+    if not user:
+        return []
+    if end_time_ms is None:
+        end_time_ms = int(time.time() * 1000)
+    out: List[Dict[str, Any]] = []
+    seen: Set[int] = set()
+    cur = start_time_ms
+    for _ in range(max_pages):
+        payload: Dict[str, Any] = {"type": "userFillsByTime", "user": user, "startTime": cur,
+                                   "endTime": end_time_ms}
+        batch = _http_post("/info", payload)
+        if not isinstance(batch, list) or not batch:
+            break
+        fresh = [f for f in batch if f.get("tid") not in seen]
+        for f in fresh:
+            seen.add(f.get("tid"))
+        out.extend(fresh)
+        if len(batch) < 2000:
+            break
+        nxt = max((int(f.get("time") or 0) for f in batch), default=cur)
+        if nxt <= cur:
+            break
+        cur = nxt
+    out.sort(key=lambda f: f.get("time") or 0)
+    return out

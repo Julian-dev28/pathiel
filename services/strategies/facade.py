@@ -6,8 +6,9 @@ else) code against directly:
     get_brief(desk_id) -> DeskBrief
     refresh(desk_id, force=False) -> RefreshJob          (synchronous)
     submit_user_thesis(desk_id, body: UserThesisIn) -> Thesis
-    track_record(desk_id) -> TrackRecord
-    grade_due() -> int
+    track_record(desk_id) -> TrackRecord          (thesis grading + trade grading, combined)
+    grade_due() -> int                            (thesis grading only)
+    grade_due_trades(desk_id=None) -> int          (trade grading only; run AFTER grade_due())
 
 `list_cards()` is cheap: it reads whatever analytics/intel/thesis were last
 cached (pipeline.load_cached_analytics / load_cached_intel) plus the journal,
@@ -45,7 +46,7 @@ from contracts.strategies.models import (
 )
 
 from pathiel.client.rate_limit import background_priority
-from services.strategies import desks, grader, journal, pipeline
+from services.strategies import desks, grader, journal, pipeline, trades as trade_grading
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,7 @@ def list_cards() -> List[DeskCard]:
             revalidate(spec.id)   # background, single worker; this call never waits on it
         intel = pipeline.load_cached_intel(spec.id)
         thesis = journal.latest_thesis(spec.id)
-        track = grader.track_record_for_desk(spec.id)
+        track = trade_grading.track_record_for_desk(spec.id)
         primary = _primary_instrument(spec)
         snap = next((s for s in result.instruments if s.coin == primary.coin), None) if result else None
 
@@ -253,7 +254,7 @@ def get_brief(desk_id: str, *, max_age_s: Optional[float] = None, wait: bool = F
     intel = pipeline.load_cached_intel(desk_id)
     history = journal.list_theses(desk_id)
     thesis = history[0] if history else None
-    track = grader.aggregate_track_record(history)
+    track = trade_grading.enrich_track_record(grader.aggregate_track_record(history), desk_id)
 
     if intel is None:
         stale.append("intel: never fetched (run refresh)")
@@ -300,10 +301,20 @@ def submit_user_thesis(desk_id: str, body: UserThesisIn) -> Thesis:
 
 
 def track_record(desk_id: str) -> TrackRecord:
-    return grader.track_record_for_desk(desk_id)
+    return trade_grading.track_record_for_desk(desk_id)
 
 
 def grade_due() -> int:
     """Grade every expired, ungraded thesis across every desk. Idempotent —
-    see grader.grade_all_due."""
+    see grader.grade_all_due. Thesis grading only; call grade_due_trades()
+    after this (same sweep) so a thesis that just expired is graded before
+    its trades are computed — the server's background job and the
+    desk_grade MCP tool both do this in that order."""
     return grader.grade_all_due()
+
+
+def grade_due_trades(desk_id: Optional[str] = None) -> int:
+    """Grade every registered account's trades against every graded-or-
+    expired thesis that has no trades computed yet, across every desk (or
+    just `desk_id`). Idempotent — see services.strategies.trades.grade_due."""
+    return trade_grading.grade_due(desk_id=desk_id)

@@ -141,8 +141,52 @@ async def lifespan(app: FastAPI):
     # PATHIEL_META_PREWARM=0 (the test session sets it).
     if os.environ.get("PATHIEL_META_PREWARM", "1") != "0":
         threading.Thread(target=_prewarm_size_specs, name="size-prewarm", daemon=True).start()
+    # Grade every expired thesis, and every account's trades against it, on
+    # its own schedule (see _grade_loop) — the only place this now runs,
+    # since scripts/scheduler.py's "desks-grade" job is not a live process
+    # on the operator's machine. Off with PATHIEL_GRADE_LOOP=0 (the test
+    # session sets it); the reference is kept on app.state so the task is
+    # never garbage-collected out from under itself mid-sweep.
+    grade_task = None
+    if os.environ.get("PATHIEL_GRADE_LOOP", "1") != "0":
+        grade_task = asyncio.create_task(_grade_loop())
+        app.state.grade_task = grade_task
     yield
+    if grade_task is not None:
+        grade_task.cancel()
     logger.info("Pathiel server stopped — no state flush by design")
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+async def _grade_loop() -> None:
+    """Grade every expired thesis, then every registered account's trades
+    against it, once ~`PATHIEL_GRADE_INITIAL_DELAY_S` (default 60) after
+    startup and every `PATHIEL_GRADE_INTERVAL_MIN` (default 60) minutes
+    after that — the only place this runs, now that scripts/scheduler.py is
+    not a live process on the operator's machine. Both calls are blocking
+    (file + Hyperliquid reads), so each runs via asyncio.to_thread; this
+    coroutine itself never blocks the loop. A bad sweep (a desk directory
+    that fails to parse, a Hyperliquid read that 429s) is logged and the
+    loop tries again next interval — it never raises out and kills the
+    background task."""
+    await asyncio.sleep(_env_float("PATHIEL_GRADE_INITIAL_DELAY_S", 60.0))
+    while True:
+        try:
+            from services.strategies.facade import grade_due, grade_due_trades
+            n_theses = await asyncio.to_thread(grade_due)
+            n_trades = await asyncio.to_thread(grade_due_trades)
+            logger.info(f"[server] grading sweep: {n_theses} thesis/theses graded, "
+                        f"{n_trades} trade grade(s) computed")
+        except Exception as exc:  # noqa: BLE001 - the background task must survive a bad sweep
+            logger.warning(f"[server] grading sweep failed: {exc}")
+        interval_min = max(0.0006, _env_float("PATHIEL_GRADE_INTERVAL_MIN", 60.0))
+        await asyncio.sleep(interval_min * 60.0)
 
 
 def _prewarm_size_specs() -> None:
