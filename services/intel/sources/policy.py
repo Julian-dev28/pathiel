@@ -148,7 +148,15 @@ def parse_ofac_html(html: str, desk_id: str, *, max_items: int = 20) -> List[Pol
 
 
 def fetch_ofac(spec: DeskSpec) -> Tuple[List[PolicyItem], Optional[str]]:
-    html, err = http_client.fetch_text(OFAC_RECENT_ACTIONS_URL)
+    # http_client's unbounded default (connect=4s, read=6s, each attempt)
+    # plus its default one retry can cost ~2*10s + 1s backoff = ~21s worst
+    # case on a slow treasury.gov page — comfortably over build_packet's
+    # 12s FETCH_DEADLINE_S on its own, which is why desk_refresh was
+    # showing `policy.fetch_ofac:timeout_budget_exceeded` (the whole-job
+    # timeout, not OFAC's own error). A tighter explicit timeout keeps two
+    # attempts safely inside the packet budget instead of relying on the
+    # generic default meant for faster APIs.
+    html, err = http_client.fetch_text(OFAC_RECENT_ACTIONS_URL, timeout_s=4.0)
     if err:
         return [], f"policy:ofac:{err}"
     items = parse_ofac_html(html, spec.id)

@@ -146,6 +146,41 @@ def load_fresh(desk_dir: str, key: str, ttl_s: float) -> Optional[Any]:
     return payload if age_s <= ttl_s else None
 
 
+def read_history(desk_dir: str, key: str) -> list:
+    """The rolling sample list written by `append_history`, or [] if none
+    exists yet. Each sample is whatever dict `append_history` was given,
+    always including a 'ts' epoch-seconds field.
+
+    Exists for sources/venue.py's open-interest 24h change: Hyperliquid's
+    public /info API has no historical-OI endpoint (confirmed live
+    2026-10-23 - openInterestHistory/assetHistory/candleSnapshot all 400 on
+    a bare {"type": ..., "coin": ...} body), so this service grows its own
+    short history by appending one sample per REAL (non-cached) fetch and
+    reading back whatever is closest to 24h old. Until ~20h of samples
+    exist, the 24h change is None with a note saying so - never a fabricated
+    number."""
+    hit = _read(desk_dir, key)
+    if hit is None:
+        return []
+    payload, _age_s = hit
+    return payload if isinstance(payload, list) else []
+
+
+def append_history(desk_dir: str, key: str, sample: dict, *, keep_s: float,
+                    now: Optional[float] = None) -> list:
+    """Append `sample` (must be JSON-safe and include a numeric 'ts') to the
+    rolling list cached under `key`, drop entries older than `keep_s`, write
+    it back atomically, and return the resulting list. `now` is injectable
+    (epoch seconds) so tests never depend on the real wall clock."""
+    now = time.time() if now is None else now
+    history = read_history(desk_dir, key)
+    history.append(sample)
+    cutoff = now - keep_s
+    history = [s for s in history if float(s.get("ts", 0)) >= cutoff]
+    save(desk_dir, key, history)
+    return history
+
+
 def get_or_fetch(desk_dir: str, key: str, ttl_s: float,
                   fetch_fn: Callable[[], Tuple[Optional[Any], Optional[str]]]
                   ) -> Tuple[Optional[Any], Optional[str]]:

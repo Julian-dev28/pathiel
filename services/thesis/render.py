@@ -31,9 +31,10 @@ _VERDICT_WORD: Dict[str, str] = {
 }
 
 
-def render_markdown(thesis: Thesis, analytics: DeskAnalytics, mode: str = "quick") -> str:
+def render_markdown(thesis: Thesis, analytics: DeskAnalytics, mode: str = "quick",
+                     *, now: Optional[datetime] = None) -> str:
     if mode == "quick":
-        return _render_quick(thesis)
+        return _render_quick(thesis, now=now)
     if mode == "full":
         return _render_full(thesis, analytics)
     raise ValueError(f"unknown render mode {mode!r}, expected 'quick' or 'full'")
@@ -104,7 +105,7 @@ def decision_word(thesis: Thesis) -> str:
 # -- quick ---------------------------------------------------------------
 
 
-def _render_quick(thesis: Thesis) -> str:
+def _render_quick(thesis: Thesis, *, now: Optional[datetime] = None) -> str:
     lv = _leverage_pick(thesis)
     if lv is not None and thesis.call.leverage:
         lev_line = (f"Leverage: {thesis.call.leverage:.0f}x on {thesis.call.instrument}"
@@ -118,7 +119,7 @@ def _render_quick(thesis: Thesis) -> str:
     else:
         risk_line = "Biggest risk: n/a"
 
-    cat = _next_catalyst(thesis)
+    cat = _next_catalyst(thesis, now=now)
     if cat is not None:
         cat_line = f"Next catalyst: {cat.title} ({cat.at.strftime('%Y-%m-%d %H:%M')} UTC)"
     else:

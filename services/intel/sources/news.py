@@ -184,10 +184,20 @@ def fetch_gdelt(spec: DeskSpec, *, max_records: int = 30) -> Tuple[List[Dict], O
     query = _gdelt_query(spec)
     if not query:
         return [], None
+    # retries=0: this sandbox's shared egress IP hits GDELT's "one request
+    # every 5 seconds" 429 limit on most calls (see module docstring), and
+    # http_client's retry backoff is a fixed 1.0s — nowhere near 5s, so a
+    # retry here almost never succeeds and only burns budget. Two 8s
+    # attempts plus a 1s backoff (the old default) could cost ~17s on its
+    # own, well over build_packet's 12s FETCH_DEADLINE_S, which is exactly
+    # why desk_refresh was showing `news.fetch_gdelt:timeout_budget_exceeded`
+    # (the whole-job timeout, not GDELT's own error) even when GDELT itself
+    # answered the first attempt's 429 promptly. One bounded attempt keeps
+    # this source's own worst case comfortably inside the packet budget.
     data, err = http_client.fetch_json(GDELT_URL, params={
         "query": query, "mode": "artlist", "format": "json",
         "maxrecords": max_records, "sort": "datedesc",
-    }, timeout_s=8.0)
+    }, timeout_s=5.0, retries=0)
     if err:
         return [], f"news:gdelt:{err}"
     if not isinstance(data, dict):

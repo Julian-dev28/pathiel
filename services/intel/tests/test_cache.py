@@ -163,6 +163,38 @@ def test_atomic_write_leaves_no_tmp_file(tmp_path):
     assert not any(s.endswith(".tmp") for s in siblings)
 
 
+def test_append_history_grows_and_reads_back(tmp_path):
+    d = str(tmp_path / "oil")
+    h1 = cache.append_history(d, "oi_hist", {"ts": 100.0, "oi_usd": 1.0}, keep_s=86400.0, now=100.0)
+    assert h1 == [{"ts": 100.0, "oi_usd": 1.0}]
+    h2 = cache.append_history(d, "oi_hist", {"ts": 200.0, "oi_usd": 2.0}, keep_s=86400.0, now=200.0)
+    assert h2 == [{"ts": 100.0, "oi_usd": 1.0}, {"ts": 200.0, "oi_usd": 2.0}]
+    assert cache.read_history(d, "oi_hist") == h2
+
+
+def test_append_history_trims_entries_older_than_keep_s(tmp_path):
+    d = str(tmp_path / "oil")
+    cache.append_history(d, "oi_hist", {"ts": 0.0}, keep_s=100.0, now=0.0)
+    cache.append_history(d, "oi_hist", {"ts": 50.0}, keep_s=100.0, now=50.0)
+    history = cache.append_history(d, "oi_hist", {"ts": 150.0}, keep_s=100.0, now=150.0)
+    # cutoff at now(150) - keep_s(100) = 50: the ts=0 sample must be dropped,
+    # ts=50 (exactly at the cutoff) and ts=150 kept.
+    assert [s["ts"] for s in history] == [50.0, 150.0]
+
+
+def test_read_history_on_unknown_key_is_empty_not_an_error(tmp_path):
+    d = str(tmp_path / "oil")
+    assert cache.read_history(d, "never_written") == []
+
+
+def test_append_history_isolated_per_desk(tmp_path):
+    oil_dir, metals_dir = str(tmp_path / "oil"), str(tmp_path / "metals")
+    cache.append_history(oil_dir, "k", {"ts": 1.0, "v": "oil"}, keep_s=3600.0, now=1.0)
+    cache.append_history(metals_dir, "k", {"ts": 1.0, "v": "metals"}, keep_s=3600.0, now=1.0)
+    assert cache.read_history(oil_dir, "k") == [{"ts": 1.0, "v": "oil"}]
+    assert cache.read_history(metals_dir, "k") == [{"ts": 1.0, "v": "metals"}]
+
+
 def test_a_straggler_job_writes_to_its_captured_directory_not_wherever_it_wakes_up(tmp_path):
     """Regression test for the exact bug this module's docstring
     describes: a worker that receives its directory as a plain string
