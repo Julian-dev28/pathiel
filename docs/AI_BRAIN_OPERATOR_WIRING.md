@@ -53,59 +53,51 @@ printf '%s' 'Return PASS as final-line JSON.' | codex exec --sandbox read-only -
 On this local Codex environment, `codex exec` may need permissions outside the
 test sandbox. The live host must be able to run it non-interactively.
 
-## Mode 2: Agent As MCP Brain And Operator
+## Mode 2: Agent As MCP Brain And Operator (headless oil desk, 2026-10-23)
 
-Use this when Codex / Claude Code / Pathiel Agent / OpenClaw owns orchestration:
-which coins to inspect, when to submit a verdict, when to execute, and when to
-close.
+As of 2026-10-23 pathiel is a headless oil desk: Claude (or any MCP client)
+owns orchestration directly through the MCP server, the autonomous bot's own
+brain path (`scan` / `research` / `submit_verdict` / `execute`) is retired,
+and Claude places trades through `place_bracket` rather than routing a stored
+verdict through `executor.route_verdict()`. See
+`.claude/skills/oil-tick/SKILL.md` for the loop Claude actually runs.
 
 The important MCP tools are:
 
 | Tool | Purpose |
 |------|---------|
-| `scan` | Surface triggered candidates. |
+| `desk_list`, `desk_brief`, `desk_refresh` | The desk's thesis for a coin. |
 | `market_get_asset_data`, `get_candles`, `get_l2_book`, `state` | Read-only context gathering. |
-| `submit_verdict` | Store the agent's own verdict as an analysis. |
-| `execute` | Route the stored verdict through `executor.route_verdict()`. |
+| `place_bracket` | One entry with an exact stop and target, sized by the risk engine. |
+| `bracket_sweep` | Cancel a stranded sibling order; confirm an open position is covered by a stop. |
 | `close_position` | Direct discretionary close via `close_position_market()`. |
 | `config` | Read/write hot config, including `mode` and `ai_brain`. |
 
-Agent-owned verdict flow:
+Agent-owned flow:
 
 ```text
-scan / read tools
-  -> agent decides PASS/LONG/SHORT/CLOSE
-  -> submit_verdict(...)
-  -> execute(analysisId)
-  -> route_verdict()
-  -> maybe_execute() or close_position_market()
+desk_brief / market read tools
+  -> agent decides a setup (or holds / does nothing)
+  -> place_bracket(coin, entry_px?, stop_px, tp_px)
+  -> bracket_sweep(coin)        # after every close, to clear a stranded sibling
 ```
 
-`submit_verdict` is the thin verdict-authority adapter. It does not place
-orders. It records the submitted verdict as an analysis and returns an
-`analysisId`. `execute` is the only action step and still runs the existing risk
-gates for entries. `CLOSE` routes to the same close helper used by the loop.
+`place_bracket` sizes with `services.risk.size.size_trade`, then places the
+entry with its stop and target attached through
+`pathiel.agents.bracket.place_bracket`. It refuses under the R-multiple
+minimum, refuses when the stop sits too close to liquidation for the
+requested leverage, and refuses a second entry on a coin that already has a
+position or a resting order — a repeated call can never stack a trade.
 
 Example payload:
 
 ```json
 {
-  "coin": "BTC",
-  "verdict": "LONG",
-  "confidence": 0.82,
-  "side": "long",
-  "entryPx": 100000,
-  "stopPx": 98500,
-  "tpPx": 103000,
-  "reasoning": "4h/1d trend aligned, pullback held, volume confirms.",
-  "source": "codex_mcp"
+  "coin": "xyz:BRENTOIL",
+  "entry_px": 105.5,
+  "stop_px": 101.35,
+  "tp_px": 112.19
 }
-```
-
-Then:
-
-```json
-{ "analysisId": "<id returned by submit_verdict>" }
 ```
 
 ## One Executor Rule
@@ -150,10 +142,10 @@ mcp_servers:
 Use the repo skill and instruct Pathiel:
 
 ```text
-Use pathiel as the MCP operator. Scan, inspect the best candidates with
-read-only tools, submit your own verdict with submit_verdict, then execute the
-returned analysisId only if the verdict is LONG/SHORT/CLOSE. Keep risk gates
-non-bypassable and never place orders outside pathiel tools.
+Use pathiel as the MCP operator. Read the desk brief and market context with
+read-only tools, then place_bracket a setup with an exact stop and target if
+one passes the R gate. Keep risk gates non-bypassable and never place orders
+outside pathiel tools.
 ```
 
 ## Claude Code
@@ -191,9 +183,9 @@ Operator prompt:
 
 ```text
 You are the pathiel brain. Use only pathiel MCP tools for market
-state and actions. For entries or discretionary closes, submit your own verdict
-with submit_verdict, then call execute on the returned analysisId. Never bypass
-the risk gates or call exchange APIs directly.
+state and actions. For entries, call place_bracket with an exact stop and
+target. For discretionary closes, call close_position, then bracket_sweep.
+Never bypass the risk gates or call exchange APIs directly.
 ```
 
 ## Codex CLI
@@ -210,8 +202,8 @@ For provider mode smoke test:
 .venv/bin/python -c 'from pathiel.agents.ai_brain import CodexCliBrain; print(CodexCliBrain().complete("Return final-line JSON.", "Return PASS for BTC with numeric fields."))'
 ```
 
-For MCP operator mode, use the same `submit_verdict -> execute` contract as
-Claude Code.
+For MCP operator mode, use the same `place_bracket` / `bracket_sweep` contract
+as Claude Code.
 
 ## OpenClaw / OpenClaw-Compatible MCP Clients
 
@@ -240,25 +232,24 @@ Required operator instruction:
 
 ```text
 Use pathiel MCP tools only. Read market/account context with read-only
-tools. When you decide, call submit_verdict. Then call execute with the returned
-analysisId. Do not call raw exchange tools or create another executor path.
+tools. When you decide, call place_bracket with an exact stop and target.
+Do not call raw exchange tools or create another executor path.
 ```
 
-## Research routing: MCP sampling
+## Research routing: MCP sampling (no current consumer)
 
-The `research` tool runs the deep multi-timeframe analysis and returns a verdict.
-By default it uses the configured `ai_brain` provider (OpenRouter unless changed).
-When the connected harness advertises the MCP `sampling` capability at
-`initialize`, `research` instead routes the verdict completion back through the
-harness's own model via `sampling/createMessage`, so the harness driving the bot
-is also the brain that researches, with no OpenRouter call. If the host cannot
-sample, or sampling returns nothing, it falls back to the configured provider so
-a verdict is never lost.
+The MCP server still negotiates the client's `sampling` capability at
+`initialize` and can send a server -> client `sampling/createMessage` request
+via `_server_request`. The `research` tool that originally consumed this (so
+the harness driving the bot was also the brain that researched, no OpenRouter
+call) was retired with the bot's MCP brain path on 2026-10-23 — Mode 2 above
+is now `place_bracket`, not a stored-verdict flow. The transport itself stays
+wired, for a future tool that wants the connected harness's own model instead
+of a hosted API.
 
-- No config needed: it auto-detects the client's `sampling` capability.
-- Force off with `PATHIEL_MCP_DISABLE_SAMPLING=1` (research then uses `ai_brain`).
-- `submit_verdict` is unaffected: the harness authored that verdict itself.
-- Tests: `tests/test_mcp_sampling.py` (transport correlation, brain parse, capability gate, fallback).
+- `PATHIEL_MCP_DISABLE_SAMPLING=1` still exists but has nothing to disable.
+- Tests: `tests/test_mcp_sampling.py` (transport correlation; the brain-parse
+  and capability-gate tests were removed with `research`).
 
 ## Verification
 
@@ -267,8 +258,6 @@ Safe focused tests:
 ```bash
 .venv/bin/python -m pytest \
   tests/test_ai_brain.py \
-  tests/test_cleanup.py::test_mcp_submit_verdict_records_and_executes_agent_analysis \
-  tests/test_cleanup.py::test_mcp_submit_close_routes_to_executor_close \
   tests/test_cleanup.py::test_mcp_close_position_delegates_to_executor \
   tests/test_cleanup.py::test_mcp_config_allows_ai_brain_provider_update
 ```

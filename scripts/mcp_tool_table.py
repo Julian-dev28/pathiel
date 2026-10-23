@@ -27,31 +27,25 @@ SECTIONS: Dict[str, List[str]] = {
         "place_bracket", "bracket_sweep",
     ],
     "Agent loop and live-money actions": [
-        "scan", "research", "submit_verdict", "execute", "close_position", "set_leverage",
-        "cancel_order", "state", "config",
+        "close_position", "set_leverage", "cancel_order", "state", "config",
     ],
     "Wallet / dashboard (read-only)": ["connected_wallets", "wallet_account"],
-    "Leaderboard / discovery": [
-        "leaderboard_get_markets", "leaderboard_get_top_traders", "leaderboard_get_trader_positions",
-        "discovery_get_top_traders", "discovery_get_trader_state",
-    ],
     "Market data": [
         "get_price", "get_all_mids", "get_candles", "get_price_history", "get_24h_stats",
         "get_l2_book", "get_price_impact", "get_asset_context", "get_assets", "get_coin_info",
-        "get_max_leverage", "get_liquidation_price", "get_funding_rate", "get_funding_history",
-        "get_predicted_funding", "get_open_interest", "get_spot_markets", "get_user_defined_types",
+        "get_max_leverage", "get_liquidation_price", "get_funding_rate",
+        "get_predicted_funding", "get_open_interest",
         "market_get_asset_data", "market_get_funding_regime", "market_list_instruments",
-        "get_server_time", "get_network_stats", "get_validator_info", "get_vault_details",
+        "get_server_time",
     ],
     "Account / orders / history": [
         "get_account_summary", "get_user_state", "get_asset_positions", "get_portfolio_pnl",
         "get_portfolio_status", "get_risk_metrics", "get_max_trade_size", "get_open_orders",
         "get_order_by_oid", "query_order_by_cloid", "get_historical_orders",
         "get_user_orders_history", "get_trade_history", "get_user_fills_by_time",
-        "get_historical_funding", "get_spot_balances", "get_user_fees", "get_referral",
+        "get_historical_funding", "get_user_fees",
         "get_deposits", "get_withdrawals", "get_transfers", "get_withdrawal_status",
-        "get_staking_info", "get_user_twist", "get_rewards", "get_user_roles",
-        "get_trading_permissions", "get_api_rate_limits",
+        "get_api_rate_limits",
     ],
 }
 

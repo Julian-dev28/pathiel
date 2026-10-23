@@ -106,8 +106,11 @@ script does NOT actually fork or daemonize itself. The loop already has its own
 `while True` with periodic sleeps; use `scripts/restart.sh` when it needs to
 survive the terminal session.
 
-Cadence is `PATHIEL_SCAN_INTERVAL` (default 60s). Or drive the steps individually
-through the MCP `scan` / `research` / `execute` tools.
+Cadence is `PATHIEL_SCAN_INTERVAL` (default 60s). The MCP server no longer
+exposes the bot's own scan/research/execute steps directly (retired
+2026-10-23 — see MCP Integration below); driving the loop step by step means
+running `trading_loop.py` itself or calling `pathiel.agents.research`/
+`pathiel.agents.executor` in-process.
 
 ### Restarting the Trading Loop + Server
 
@@ -169,7 +172,12 @@ non-interactively in the loop's actual environment before switching live.
 
 ## MCP Integration
 
-The server (`scripts/pathiel-mcp-server.py`, stdio, 81 tools) is registered in
+Pathiel is a headless oil desk as of 2026-10-23: Claude trades through this
+MCP server, the autonomous bot's own brain path is retired, and the operator
+trades his own wallet by hand from Claude's thesis. See
+`.claude/skills/oil-tick/SKILL.md` for the loop Claude runs.
+
+The server (`scripts/pathiel-mcp-server.py`, stdio, 59 tools) is registered in
 `~/.pathiel/config.yaml`:
 
 ```yaml
@@ -185,20 +193,23 @@ mcp_servers:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
 ```
 
-Primary tools: `scan`, `research`, `submit_verdict`, `execute`,
-`close_position`, `state`, `config`. Adding tools and the audit invariant: see
-`references/mcp-server.md`. After editing the server, restart it:
-`pkill -f pathiel-mcp-server.py` (the next call respawns it fresh).
+Primary tools: `place_bracket`, `bracket_sweep`, `close_position`,
+`set_leverage`, `cancel_order`, `state`, `config`. Adding tools and the audit
+invariant: see `references/mcp-server.md`. After editing the server, restart
+it: `pkill -f pathiel-mcp-server.py` (the next call respawns it fresh).
 
 `close_position` delegates to `executor.close_position_market()`. Do not
 re-implement close logic in MCP handlers; that helper owns reduce-only close
 orders, DSL tracker cleanup, stale trigger-order cancellation, realized PnL
 capture, and loss-cooldown arming.
 
-`submit_verdict` is the MCP-native verdict-authority seam: external operators
-such as Codex, Claude Code, Pathiel Agent, or OpenClaw submit their own
-PASS/LONG/SHORT/CLOSE analysis, then call `execute(analysisId)` to route it
-through the existing gates and close helper.
+`place_bracket` is the MCP-native entry seam: an agent (Claude, Codex, Pathiel
+Agent, or OpenClaw) names a coin, stop and target; the tool sizes it with
+`services.risk.size.size_trade` and places the entry with its stop and target
+attached through `pathiel.agents.bracket.place_bracket`, refusing under the
+R-multiple minimum or when the stop sits too close to liquidation for the
+requested leverage. `bracket_sweep` cancels a stranded sibling order and
+confirms an open position is covered by a stop; run it after every close.
 
 ## State Files
 
@@ -416,8 +427,8 @@ the movers slot, BTC/ETH/SOL dominate the volume cut and every +10% midcap
 rally goes unscanned.
 
 To force coverage of a specific coin not in the buckets:
-- Call `research` directly on the symbol via MCP (confirm it's in
-  `get_perp_markets` first), or
+- Call `pathiel.agents.research.research()` directly on the symbol in-process
+  (confirm it's in `get_perp_markets`/`get_assets` first), or
 - Bump `PATHIEL_MAX_MARKETS_MOVERS` if it's a momentum candidate.
 
 ## HIP-3 Tokenized Equity / Commodity Perps

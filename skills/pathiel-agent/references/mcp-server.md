@@ -1,21 +1,26 @@
 # MCP Server Structure
 
-`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 81 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
+`scripts/pathiel-mcp-server.py` — a stdio JSON-RPC MCP server exposing 59 tools, every one of them implemented. Registered in `~/.pathiel/config.yaml` under `mcp_servers.pathiel`, and for Claude Code in the repo's `.mcp.json`.
 
 ## Transport and safety (2026-10-18)
 
 - **Concurrent calls.** `run()` reads stdin on the main thread; each
   `tools/call` runs on a worker (`PATHIEL_MCP_MAX_CONCURRENT`, default 6) and is
   answered exactly once: by the handler, or by a timeout result at its deadline
-  (`TOOL_TIMEOUT_S`: desk_refresh 300 s, research 240 s, scan 180 s, else 120 s;
+  (`TOOL_TIMEOUT_S`: desk_refresh 300 s, else 120 s;
   `PATHIEL_MCP_TOOL_TIMEOUT_S` overrides all). A timed-out handler keeps its
   worker until it returns; Python cannot kill a thread.
 - **Cancel and progress.** `notifications/cancelled` suppresses the reply.
   A `_meta.progressToken` gets `notifications/progress` from
   `_report_progress()` (desk_refresh reports each pipeline stage).
-- **Sampling.** Inside `run()`, the reply to the server's own request is routed
-  by id to the waiting handler (`_deliver_response`); other requests keep
-  flowing. Outside `run()` (tests), `_server_request_inline` reads stdin itself.
+- **Sampling.** The server negotiates the client's MCP `sampling` capability at
+  `initialize` and can send it a server -> client request via
+  `_server_request()`; inside `run()` the reply is routed by id to the waiting
+  handler (`_deliver_response`), other requests keep flowing, and outside
+  `run()` (tests) `_server_request_inline` reads stdin itself. No tool uses
+  this today — the `research` tool that originally did was retired with the
+  bot's brain path on 2026-10-23 — but the transport stays for a future tool
+  that wants the connected harness's own model instead of a hosted API.
 - **Instructions and annotations.** `initialize` returns `SERVER_INSTRUCTIONS`
   (short; it rides in every session). Every tool carries MCP annotations, only
   the non-default hints: `LIVE_MONEY_TOOLS` destructive (and their descriptions
@@ -49,9 +54,14 @@ fake zeros. Two rules before you use it:
 2. **If the venue has no endpoint at all, delete the tool.** A permanently
    unimplementable tool costs a call to discover and teaches nothing.
 
-Counted from source, not from memory: `TOOLS` holds 99 entries and
-`_STUB_TOOL_NAMES` holds 47 of those names, so 52 are genuinely implemented. If
-you change either list, recount rather than adjusting this sentence by hand:
+Counted from source, not from memory: `TOOLS` holds 59 entries and
+`_STUB_TOOL_NAMES` is empty, so all 59 are genuinely implemented. 2026-10-23
+(headless oil desk): 22 bot-era/off-topic tools cut outright (80 -> 58) --
+scan, research, submit_verdict, execute, the leaderboard/discovery pair,
+staking/validator/vault/referral/rewards/spot/network reads, and two reads
+redundant with what stayed -- then +1 (`desk_grade`) the same day for
+grade-everything: 59. If you change either list, recount rather than
+adjusting this sentence by hand:
 
 ```sh
 python - <<'EOF'
@@ -134,10 +144,11 @@ def handle_get_xxx(params: Dict[str, Any]) -> str:
   `place_hl_order` inline from the MCP server; the executor helper owns
   reduce-only handling, DSL deregistration, trigger-order cleanup, realized PnL
   capture, and loss-cooldown arming.
-- `submit_verdict` is the MCP-native brain adapter. It records an agent-authored
-  verdict as an analysis and returns an `analysisId`; `execute` then calls
-  `executor.route_verdict()` so LONG/SHORT entries hit gates and CLOSE hits the
-  close helper.
+- `place_bracket` is the MCP-native entry adapter. It sizes with
+  `services.risk.size.size_trade`, then calls `pathiel.agents.bracket.place_bracket`,
+  which refuses under the R-multiple minimum or when the stop sits too close
+  to liquidation for the requested leverage. `bracket_sweep` cancels a
+  stranded sibling order and confirms an open position is covered by a stop.
 - `config` whitelists nested updates, including `ai_brain`, so MCP clients can
   hot-switch the research provider without editing `.agent-config.json` by hand.
 
@@ -163,8 +174,8 @@ reads. `tests/test_mcp_server_hardening.py` runs it as a gate test.
 supported `protocolVersion`: 2025-06-18, 2025-03-26 or 2024-11-05), `ping`,
 `tools/list`, `tools/call`. Notifications never get a reply. Unknown method:
 `-32601`. Unknown tool: `-32602`. Bad JSON: `-32700` with `id: null`. A request
-that arrives while `research` is parked on `sampling/createMessage` still gets
-answered (`ping` normally, anything else with a busy error).
+that arrives while a call is parked on a server -> client `_server_request`
+still gets answered (`ping` normally, anything else with a busy error).
 
 ## Testing
 

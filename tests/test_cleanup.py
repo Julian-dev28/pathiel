@@ -761,84 +761,6 @@ def test_mcp_config_rejects_unknown_key_and_writes_nothing():
         config_store.write_agent_config({"mode": "OFF"})
 
 
-def test_mcp_submit_verdict_records_and_executes_agent_analysis(monkeypatch):
-    """Agent-authored verdicts become analyses and execute through the gates."""
-    import importlib.util
-    import json
-    from pathlib import Path
-
-    script = Path(__file__).resolve().parents[1] / "scripts" / "pathiel-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("pathiel_mcp_server_submit_test", script)
-    assert spec and spec.loader
-    mcp = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mcp)
-
-    from pathiel.agents import executor
-
-    captured = []
-    monkeypatch.setattr(
-        executor,
-        "maybe_execute",
-        lambda analysis: captured.append(analysis) or {"executed": True, "coin": analysis["coin"]},
-    )
-
-    submitted = json.loads(mcp.handle_submit_verdict({
-        "coin": "eth",
-        "verdict": "LONG",
-        "confidence": 0.9,
-        "entryPx": 100.0,
-        "stopPx": 95.0,
-        "tpPx": 115.0,
-        "reasoning": "agent-authored test verdict",
-        "source": "codex_mcp",
-    }))
-    assert submitted["status"] == "complete"
-    assert submitted["coin"] == "ETH"
-
-    executed = json.loads(mcp.handle_execute({"analysisId": submitted["analysisId"]}))
-    assert executed["executed"] is True
-    assert captured and captured[0]["coin"] == "ETH"
-    assert captured[0]["side"] == "long"
-    assert captured[0]["ai_brain_provider"] == "codex_mcp"
-    assert captured[0]["mcp_submitted"] is True
-
-
-def test_mcp_submit_close_routes_to_executor_close(monkeypatch):
-    """Agent-authored CLOSE verdicts use route_verdict -> close_position_market."""
-    import importlib.util
-    import json
-    from pathlib import Path
-
-    script = Path(__file__).resolve().parents[1] / "scripts" / "pathiel-mcp-server.py"
-    spec = importlib.util.spec_from_file_location("pathiel_mcp_server_submit_close_test", script)
-    assert spec and spec.loader
-    mcp = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mcp)
-
-    from pathiel.agents import executor
-
-    calls = []
-    monkeypatch.setattr(
-        executor,
-        "close_position_market",
-        lambda coin: calls.append(coin) or {"ok": True, "coin": coin},
-    )
-
-    submitted = json.loads(mcp.handle_submit_verdict({
-        "coin": "btc",
-        "verdict": "CLOSE",
-        "confidence": 0.8,
-        "reasoning": "agent-authored close test",
-        "source": "codex_mcp",
-    }))
-    closed = json.loads(mcp.handle_execute({"analysisId": submitted["analysisId"]}))
-
-    assert calls == ["BTC"]
-    assert closed["status"] == "closed"
-    assert closed["action"] == "close"
-    assert closed["result"]["ok"] is True
-
-
 def test_close_position_market_computes_realized_pnl_from_fill(monkeypatch, tmp_path):
     """When place_hl_order returns avg_px, the close result carries an exact
     realized PnL (leveraged × spot move from fill, minus taker fees) — this is
@@ -1536,7 +1458,7 @@ def test_mcp_server_stdio_end_to_end():
         {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-         "params": {"name": "get_rewards", "arguments": {}}},
+         "params": {"name": "get_server_time", "arguments": {}}},
     ]
     inp = "\n".join(json.dumps(r) for r in reqs) + "\n"
     proc = subprocess.run([sys.executable, MCP_SCRIPT], input=inp,
@@ -1553,13 +1475,13 @@ def test_mcp_server_stdio_end_to_end():
     _mod = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_mod)
     assert len(resps[1]["result"]["tools"]) == len(_mod.TOOLS)
-    # get_rewards was a stub until 2026-09-06 and this asserted it said so.
-    # It now returns real delegator data, so the end-to-end check is that a
-    # tools/call round-trips into JSON at all — not that it refuses.
+    # The end-to-end check is that a tools/call round-trips into real JSON
+    # over the real stdio transport, not fake/stubbed data.
     call = json.loads(resps[2]["result"]["content"][0]["text"])
     assert isinstance(call, dict)
     assert "not_implemented" not in json.dumps(call), (
-        "get_rewards regressed to a stub")
+        "get_server_time regressed to a stub")
+    assert isinstance(call.get("server_time"), int) and call["server_time"] > 0
 
 
 # ── HIP-3 aggregation in fetch_account_state ────────────────────────────

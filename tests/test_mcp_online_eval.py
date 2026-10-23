@@ -30,12 +30,13 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "scripts" / "pathiel-mcp-server.py"
 PASS_THRESHOLD = 0.97
 
-# Tools that act on the account or call an LLM. Never exercised here.
+# Tools that act on the account. Never exercised here.
 # desk_submit_call joins this group 2026-10-17: it writes a stored Thesis to
-# a desk's journal, the same non-idempotent-write reason submit_verdict is
-# here, not a live-money reason.
-MUTATING = {"execute", "close_position", "set_leverage", "cancel_order",
-            "submit_verdict", "research", "config", "desk_submit_call"}
+# a desk's journal, a non-idempotent-write reason, not a live-money one.
+# place_bracket/bracket_sweep join 2026-10-23, replacing the retired
+# scan/research/submit_verdict/execute bot brain path.
+MUTATING = {"place_bracket", "bracket_sweep", "close_position", "set_leverage",
+            "cancel_order", "config", "desk_submit_call"}
 
 ZERO = "0x0000000000000000000000000000000000000000"
 ARGS = {
@@ -128,11 +129,3 @@ def test_every_read_only_tool_answers(server):
         if not r["ok"]:
             print(f"  FAIL {r['tool']}: {r['head']}")
     assert rate >= PASS_THRESHOLD
-
-
-def test_leaderboard_is_populated(server):
-    """Both leaderboard tools returned [] for their whole lives."""
-    res = server.call("tools/call", {"name": "leaderboard_get_top_traders",
-                                     "arguments": {"limit": 3}})["result"]
-    traders = json.loads(res["content"][0]["text"])["traders"]
-    assert len(traders) == 3 and all(t["address"].startswith("0x") for t in traders)

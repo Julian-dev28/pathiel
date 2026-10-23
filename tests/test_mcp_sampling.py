@@ -1,9 +1,14 @@
-"""Gate tests for MCP sampling in the pathiel MCP server.
+"""Gate tests for the MCP server -> client sampling transport.
 
-The `research` tool routes its verdict completion through the connected harness's
-own model (server -> client `sampling/createMessage`) instead of ai_brain/OpenRouter,
-and falls back to the configured provider when the host cannot sample. These are
-deterministic, no network, no LLM.
+`_server_request` sends a server -> client JSON-RPC request and blocks for
+its correlated reply; `_deliver_response` routes that reply back to the
+waiting call by id while other traffic keeps flowing. No tool currently uses
+it -- the `research` tool that originally drove verdict completion through
+`sampling/createMessage` was retired with the bot's brain path on 2026-10-23
+(see tests/test_mcp_overhaul.py) -- but the transport and the `initialize`
+capability negotiation (`_CLIENT_SUPPORTS_SAMPLING`) stay: a future tool is
+free to ask the connected harness's own model a question this way instead of
+a hosted API. These are deterministic, no network, no LLM.
 """
 import importlib.util
 import io
@@ -55,67 +60,11 @@ def test_server_request_raises_on_client_error(monkeypatch):
         MOD._server_request("sampling/createMessage", {})
 
 
-# ── sampling brain: builds the request, parses the verdict text ────────────────
-def test_sampling_brain_builds_request_and_parses_text(monkeypatch):
-    captured = {}
-
-    def fake_req(method, params, timeout_s=120.0):
-        captured["method"] = method
-        captured["params"] = params
-        return {"role": "assistant", "content": {"type": "text", "text": 'reason\n{"verdict": "LONG"}'}}
-
-    monkeypatch.setattr(MOD, "_server_request", fake_req)
-    text = MOD._McpSamplingBrain().complete("SYS", "USER")
-    assert '"verdict": "LONG"' in text
-    assert captured["method"] == "sampling/createMessage"
-    assert captured["params"]["systemPrompt"] == "SYS"
-    assert captured["params"]["messages"][0]["content"]["text"] == "USER"
-
-
-def test_sampling_brain_handles_list_content(monkeypatch):
-    monkeypatch.setattr(
-        MOD, "_server_request",
-        lambda *a, **k: {"content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]},
-    )
-    assert MOD._McpSamplingBrain().complete("s", "u") == "a b"
-
-
-# ── gating: sampling brain only when the harness can be the model ──────────────
-def test_research_brain_gated_on_capability(monkeypatch):
-    monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", False)
-    assert MOD._research_brain() is None
-
-    monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", True)
-    monkeypatch.delenv("PATHIEL_MCP_DISABLE_SAMPLING", raising=False)
-    assert isinstance(MOD._research_brain(), MOD._McpSamplingBrain)
-
-    monkeypatch.setenv("PATHIEL_MCP_DISABLE_SAMPLING", "1")
-    assert MOD._research_brain() is None
-
-
-def test_handle_research_injects_brain_per_capability(monkeypatch):
-    import pathiel.agents.research as rm
-    captured = {}
-
-    def fake_research(coin, perception, brain=None):
-        captured["brain"] = brain
-        return {"id": "a1", "verdict": "PASS", "confidence": 0.0, "side": None,
-                "entry_px": 0, "stop_px": 0, "tp_px": 0, "reasoning": "x"}
-
-    monkeypatch.setattr(rm, "research", fake_research)
-    MOD._perception_cache["BTC"] = {"id": "p1", "coin": "BTC", "mid": 1.0, "triggers": [], "composite_score": 0}
-    monkeypatch.delenv("PATHIEL_MCP_DISABLE_SAMPLING", raising=False)
-
-    monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", True)
-    assert json.loads(MOD.handle_research({"coin": "BTC"}))["status"] == "complete"
-    assert isinstance(captured["brain"], MOD._McpSamplingBrain)
-
-    monkeypatch.setattr(MOD, "_CLIENT_SUPPORTS_SAMPLING", False)
-    MOD.handle_research({"coin": "BTC"})
-    assert captured["brain"] is None
-
-
 # ── research seam: injected brain wins, empty result falls back ────────────────
+# pathiel.agents.research itself stays on this branch (trading_loop.py and
+# pathiel/server.py still import it; its deletion is wave 2 on headless-desk),
+# so its own brain-injection contract is still worth gating here even though
+# the MCP server no longer has a `research` tool to inject into.
 def test_call_ai_prefers_injected_brain(monkeypatch):
     from pathiel.agents import research as rm
 

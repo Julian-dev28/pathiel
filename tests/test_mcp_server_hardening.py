@@ -9,7 +9,6 @@ import ast
 import importlib.util
 import io
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -411,51 +410,6 @@ class TestPriceHistory:
     def test_inverted_window_rejected(self, info):
         result, _ = _call("get_price_history", {"coin": "ETH", "start_time": 2, "end_time": 1})
         assert result["isError"]
-
-
-class TestScanResearchExecute:
-    def test_scan_restores_max_markets_env(self, monkeypatch):
-        """scan(maxMarkets=5) used to shrink every later scan in the process."""
-        import pathiel.client.universe as uni
-        seen = []
-        monkeypatch.setattr(uni, "get_universe", lambda: [{"coin": "BTC"}])
-        monkeypatch.setattr(M, "scan_once", lambda **kw: seen.append(
-            os.environ.get("PATHIEL_MAX_MARKETS")) or [{"coin": "btc", "id": "p"}])
-        monkeypatch.setenv("PATHIEL_MAX_MARKETS", "45")
-        _call("scan", {"maxMarkets": 5})
-        assert seen == ["5"] and os.environ["PATHIEL_MAX_MARKETS"] == "45"
-        assert "BTC" in M._perception_cache  # keyed normalized
-
-    def test_scan_rejects_bad_numbers(self):
-        result, _ = _call("scan", {"minScore": "high"})
-        assert result["isError"]
-
-    def test_execute_finds_analysis_older_than_20(self, monkeypatch):
-        """execute scanned only the newest 20 analyses."""
-        from pathiel.agents import executor
-        from pathiel.agents.memory import memory
-        target = {"id": "old-one", "coin": "BTC", "verdict": "PASS"}
-        memory.record_analysis(target)
-        for i in range(30):
-            memory.record_analysis({"id": f"n{i}", "coin": "ETH", "verdict": "PASS"})
-        monkeypatch.setattr(executor, "route_verdict", lambda a: {"action": "skip"})
-        _, body = _call("execute", {"analysisId": "old-one"})
-        assert body["status"] == "skipped" and body["coin"] == "BTC"
-
-    def test_research_unknown_coin_without_scan(self, monkeypatch):
-        import pathiel.client.hl_client as hl
-        monkeypatch.setattr(hl, "fetch_all_mids", lambda: {"BTC": "1"})
-        M._perception_cache.pop("NOPE", None)
-        result, body = _call("research", {"coin": "nope"})
-        assert result["isError"] and "unknown coin NOPE" in body["error"]
-
-
-class TestLeaderboardHandlers:
-    def test_bad_time_frame_is_error_not_default(self, monkeypatch):
-        from pathiel.agents import hyperfeed
-        monkeypatch.setattr(hyperfeed, "_leaderboard_cache", ([], 1e18))
-        result, body = _call("leaderboard_get_top_traders", {"time_frame": "YEARLY"})
-        assert result["isError"] and "time_frame" in body["error"]
 
 
 class TestRateLimitedInfo:

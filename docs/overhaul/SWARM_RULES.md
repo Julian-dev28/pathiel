@@ -6,9 +6,10 @@ Every agent reads this first. Breaking a rule in section 1 can lose real money.
 
 `.env.local` holds live Hyperliquid keys. The account trades real money.
 
-- Never place, modify or cancel an order. Never call `execute`, `close_position`,
-  `set_leverage`, `cancel_order`, `place_bracket`, `bracket_sweep`, or the `/api/hl/place-order`, `/api/hl/cancel-order`,
-  `/api/hl/close-position`, `/api/agent/execute`, `/api/agent/start` routes.
+- Never place, modify or cancel an order. Never call `place_bracket`, `bracket_sweep`,
+  `close_position`, `set_leverage`, `cancel_order`, or the `/api/hl/place-order`,
+  `/api/hl/cancel-order`, `/api/hl/close-position`, `/api/agent/execute`,
+  `/api/agent/start` routes.
 - Never run `scripts/trading_loop.py`, `scheduler.py`, `autonomous_cycle.py`,
   `monitor_loop.py`, `supervise_processes.py`, `restart.sh`, `preflight_live.py`,
   `funded_dry_run.py`, `treasury.py`, `record_capital_flows.py`.

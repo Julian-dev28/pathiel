@@ -35,7 +35,7 @@ def test_every_read_only_tool_answers_live(tmp_path):
 
 def test_the_smoke_never_calls_a_live_money_tool():
     smoke = _smoke()
-    called = {c.tool for c in smoke.cases("0x" + "0" * 40)}
-    for tool in ("execute", "close_position", "set_leverage", "cancel_order",
-                 "desk_refresh", "desk_submit_call", "research", "submit_verdict"):
+    called = {c.tool for c in smoke.cases()}
+    for tool in ("place_bracket", "bracket_sweep", "close_position", "set_leverage",
+                 "cancel_order", "desk_refresh", "desk_submit_call"):
         assert tool in smoke.SKIPPED and tool not in called
