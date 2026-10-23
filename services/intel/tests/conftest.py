@@ -69,6 +69,30 @@ def ai_equity_spec() -> DeskSpec:
     )
 
 
+@pytest.fixture
+def metals_spec() -> DeskSpec:
+    """Mirrors services/strategies/desks/metals.py's real shape, for
+    sources/fred.py and the metals-desk slice of sources/positioning.py."""
+    return DeskSpec(
+        id="metals", name="Metals", tagline="Gold and silver perps on Hyperliquid.",
+        instruments=[Instrument(coin="xyz:GOLD", label="Gold", role="primary"),
+                     Instrument(coin="xyz:SILVER", label="Silver", role="secondary")],
+        horizon_days=7,
+    )
+
+
+@pytest.fixture
+def indices_spec() -> DeskSpec:
+    """Mirrors services/strategies/desks/indices.py's real shape, for
+    sources/fred.py, sources/cboe.py, and positioning's S&P/Nasdaq codes."""
+    return DeskSpec(
+        id="indices", name="Indices", tagline="Broad index perps on Hyperliquid.",
+        instruments=[Instrument(coin="xyz:XYZ100", label="XYZ100", role="primary"),
+                     Instrument(coin="xyz:SP500", label="S&P 500", role="primary")],
+        horizon_days=7,
+    )
+
+
 def _network_allowed(config) -> bool:
     expr = (config.getoption("markexpr", "") or "").replace(" ", "")
     return "online" in expr and "notonline" not in expr

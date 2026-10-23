@@ -63,6 +63,17 @@ def is_crypto_desk(spec: DeskSpec) -> bool:
     return bool(coins & tickers) or bool(labels & tickers)
 
 
+def is_metals_desk(spec: DeskSpec) -> bool:
+    hay = (spec.id + " " + " ".join(instrument_tokens(spec))).lower()
+    return any(k in hay for k in ("gold", "silver", "xau", "xag", "metal"))
+
+
+def is_indices_desk(spec: DeskSpec) -> bool:
+    hay = (spec.id + " " + " ".join(instrument_tokens(spec))).lower()
+    return any(k in hay for k in ("s&p", "sp500", "nasdaq", "ndx", "nikkei", "kospi",
+                                  "xyz100", "index", "indices"))
+
+
 def is_equity_desk(spec: DeskSpec) -> bool:
     """True if any instrument looks like a plain equity ticker rather than
     a commodity/crypto perp — used to gate the best-effort SEC EDGAR

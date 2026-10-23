@@ -90,6 +90,23 @@ def test_fetch_gdelt_propagates_http_error(monkeypatch):
     assert items == [] and err == "news:gdelt:http_429"
 
 
+def test_fetch_gdelt_does_not_retry_and_keeps_timeout_under_the_packet_budget(monkeypatch):
+    """Regression for the real `news.fetch_gdelt:timeout_budget_exceeded`
+    failure: GDELT's own 429 rate limit (one request per 5s, see module
+    docstring) can never clear within http_client's 1.0s retry backoff, so
+    retrying wastes the whole packet's 12s FETCH_DEADLINE_S. fetch_gdelt
+    must call with retries=0 and a timeout well under that deadline."""
+    captured = {}
+
+    def fake(url, params=None, **kw):
+        captured.update(kw)
+        return {"articles": []}, None
+    monkeypatch.setattr(http_client, "fetch_json", fake)
+    news.fetch_gdelt(_oil_spec())
+    assert captured["retries"] == 0
+    assert captured["timeout_s"] <= 6.0
+
+
 def test_fetch_gdelt_falls_back_to_instrument_tokens_when_no_news_queries(monkeypatch):
     """A DeskSpec always has at least one primary instrument (the contract
     enforces it), so `_gdelt_query` can never truly have nothing to

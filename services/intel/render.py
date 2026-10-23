@@ -157,7 +157,8 @@ def _positioning_lines(packet: IntelPacket) -> List[Tuple[str, str, float]]:
     out = []
     for p in packet.positioning:
         chg = f"{p.change:+,.0f}" if p.change is not None else "n/a"
-        line = (f"[{p.id}] {p.source:<10} {p.label}: {p.value:,.0f} (chg {chg})"
+        pctl = f" pct1y={p.percentile_1y:.2f}" if p.percentile_1y is not None else ""
+        line = (f"[{p.id}] {p.source:<10} {p.label}: {p.value:,.0f} (chg {chg}){pctl}"
                 f" as_of {p.as_of.strftime('%Y-%m-%d')}")
         out.append((p.id, line, 0.55))
     return out

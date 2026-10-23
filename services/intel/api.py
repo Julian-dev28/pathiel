@@ -31,11 +31,13 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from contracts.strategies.models import (
-    Catalyst, DeskSpec, IntelPacket, MarketOdds, PolicyItem, PositioningItem,
+    Catalyst, DataPoint, DeskSpec, IntelPacket, MarketOdds, PolicyItem, PositioningItem,
 )
 from services.intel import cache, env
 from services.intel.render import estimate_tokens, render_compact  # re-exported, see below
-from services.intel.sources import catalysts, news, policy, positioning, predictions
+from services.intel.sources import (
+    catalysts, cboe, eia, edgar, fred, news, policy, positioning, predictions, venue,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,11 @@ _TTL_S = {
                                # unlocks/earnings are far slower but share
                                # the shortest TTL rather than adding a 4th
                                # category for two rarely-changing checks.
+    "venue": 600.0,          # 10 min — funding/OI/volume move fast
+    "eia": 14_400.0,         # 4h — weekly stocks number, no need to poll it
+    "fred": 3_600.0,         # 1h — daily series (DGS10, DFII10, T10YIE, DTWEXBGS)
+    "cboe": 3_600.0,         # 1h — daily VIX term-structure close
+    "edgar": 14_400.0,       # 4h — Form 4 + earnings cadence, both slow movers
 }
 
 _JsonList = List[Dict[str, Any]]
@@ -94,7 +101,19 @@ _CODECS = {
     "predictions": ("predictions", _pyd_to_jsonable, _pyd_from_jsonable(MarketOdds)),
     "positioning": ("positioning", _pyd_to_jsonable, _pyd_from_jsonable(PositioningItem)),
     "catalysts_live": ("catalysts_live", _pyd_to_jsonable, _pyd_from_jsonable(Catalyst)),
+    "eia": ("eia", _pyd_to_jsonable, _pyd_from_jsonable(DataPoint)),
+    "fred": ("fred", _pyd_to_jsonable, _pyd_from_jsonable(DataPoint)),
+    "cboe": ("cboe", _pyd_to_jsonable, _pyd_from_jsonable(DataPoint)),
+    "edgar": ("edgar", _pyd_to_jsonable, _pyd_from_jsonable(DataPoint)),
 }
+
+# Every category above that produces DataPoint rows, folded into
+# IntelPacket.datapoints. venue's own rows land there too, but through a
+# dedicated path (see _submit_venue) rather than this set, since
+# fetch_venue_positioning's signature carries desk_dir and so cannot be
+# fanned out through the generic `_submit(..., fn, (spec,))` convention
+# every args-uniform source uses.
+_DATAPOINT_CATEGORIES = frozenset({"eia", "fred", "cboe", "edgar"})
 
 
 def _submit(executor: ThreadPoolExecutor, desk_dir: str, category: str, fn: Callable,
@@ -124,6 +143,30 @@ def _submit(executor: ThreadPoolExecutor, desk_dir: str, category: str, fn: Call
     return executor.submit(job), key
 
 
+def _submit_venue(executor: ThreadPoolExecutor, desk_dir: str, spec: DeskSpec,
+                   now: datetime) -> Tuple[Future, str]:
+    """venue.fetch_venue_positioning takes `desk_dir` (for its own-grown OI
+    history, see services/intel/cache.py's append_history/read_history and
+    sources/venue.py's module docstring) in addition to `(spec, now)`, so it
+    gets its own thin wrapper instead of `_submit`'s generic `fn(*args)`
+    convention — otherwise identical: same cache.get_or_fetch TTL wrapping,
+    same jsonable round-trip, same "never raise, return (items, err)"
+    contract as every other source."""
+    ttl_s = _TTL_S["venue"]
+    key = "venue.fetch_venue_positioning"
+
+    def job() -> Tuple[List[DataPoint], Optional[str]]:
+        def fetch_jsonable() -> Tuple[Optional[_JsonList], Optional[str]]:
+            items, errs = venue.fetch_venue_positioning(spec, now, desk_dir)
+            err = "; ".join(errs) if errs else None
+            return (_pyd_to_jsonable(items) if items is not None else None), err
+        raw, err = cache.get_or_fetch(desk_dir, key, ttl_s, fetch_jsonable)
+        items = _pyd_from_jsonable(DataPoint)(raw) if raw is not None else []
+        return items, err
+
+    return executor.submit(job), key
+
+
 def build_packet(spec: DeskSpec, now: Optional[datetime] = None) -> IntelPacket:
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
@@ -135,6 +178,7 @@ def build_packet(spec: DeskSpec, now: Optional[datetime] = None) -> IntelPacket:
     odds: List[MarketOdds] = []
     positioning_items: List[PositioningItem] = []
     live_catalysts: List[Catalyst] = []
+    datapoints: List[DataPoint] = []
 
     # Resolved ONCE, synchronously, in this (the caller's) thread — see
     # _submit's docstring for why every worker closes over this plain
@@ -159,6 +203,20 @@ def build_packet(spec: DeskSpec, now: Optional[datetime] = None) -> IntelPacket:
         for fn in catalysts.ATOMIC_FETCHERS:
             fut, key = _submit(executor, desk_dir, "catalysts_live", fn, (spec, now))
             jobs.append(("catalysts_live", key, fut))
+        for fn in eia.ATOMIC_FETCHERS:
+            fut, key = _submit(executor, desk_dir, "eia", fn, (spec,))
+            jobs.append(("eia", key, fut))
+        for fn in fred.ATOMIC_FETCHERS:
+            fut, key = _submit(executor, desk_dir, "fred", fn, (spec,))
+            jobs.append(("fred", key, fut))
+        for fn in cboe.ATOMIC_FETCHERS:
+            fut, key = _submit(executor, desk_dir, "cboe", fn, (spec,))
+            jobs.append(("cboe", key, fut))
+        for fn in edgar.ATOMIC_FETCHERS:
+            fut, key = _submit(executor, desk_dir, "edgar", fn, (spec, now))
+            jobs.append(("edgar", key, fut))
+        fut, key = _submit_venue(executor, desk_dir, spec, now)
+        jobs.append(("venue", key, fut))
 
         all_futures = [fut for _cat, _key, fut in jobs]
         done, not_done = wait(all_futures, timeout=FETCH_DEADLINE_S)
@@ -195,6 +253,8 @@ def build_packet(spec: DeskSpec, now: Optional[datetime] = None) -> IntelPacket:
             positioning_items.extend(items)
         elif cat == "catalysts_live":
             live_catalysts.extend(items)
+        elif cat == "venue" or cat in _DATAPOINT_CATEGORIES:
+            datapoints.extend(items)
 
     headlines = news.score_and_dedup(raw_news, spec, now)
     policy_items = policy.dedup_policy(policy_items)
@@ -204,7 +264,7 @@ def build_packet(spec: DeskSpec, now: Optional[datetime] = None) -> IntelPacket:
     packet = IntelPacket(
         desk_id=spec.id, as_of=now, headlines=headlines, policy=policy_items,
         catalysts=catalyst_items, odds=odds, positioning=positioning_items,
-        token_estimate=0, sources_failed=failed,
+        datapoints=datapoints, token_estimate=0, sources_failed=failed,
     )
     rendered = render_compact(packet, spec.token_budget.max_input_tokens)
     packet.token_estimate = estimate_tokens(rendered)

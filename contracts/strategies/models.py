@@ -284,6 +284,9 @@ class PositioningItem(_M):
     value: float
     change: Optional[float] = None
     as_of: datetime
+    percentile_1y: Optional[float] = None      # 1.2.0+: value's rank (0..1) in its own
+                                                # trailing ~52 weekly reports — "WTI net
+                                                # long is near its 1y high" vs a bare number
 
 
 class DataPoint(_M):
