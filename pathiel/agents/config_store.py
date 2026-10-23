@@ -86,47 +86,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # for why this is a capacity decision and not an edge claim.
     "coin_allowlist": list(_universe.MAJORS),
     "coin_blocklist": ["TON", "TRX"],
-    # ── the four books that graded VALIDATED on 2026-08-29 ───────────────────
-    # LIVE. Operator directive 2026-08-30: "if it's shadow, nuke it" — a book is
-    # either trading or it does not exist, so there is no shadow tier left to
-    # sit in. Each is bounded at $20/1x with a 15% stop and a 1-day horizon,
-    # which is the geometry each was GRADED on.
-    #
-    # What still stands between these and a bad day: the structural dust floor
-    # in executor.maybe_execute (nothing trades under $25 equity), the majors
-    # allowlist, the daily-loss kill switch, and autonomous_cycle, which demotes
-    # any of them the moment its forward ledger turns negative.
-    "news_surge_short": {
-        "enabled": True, "shadow_only": False,
-        "equity_live": True, "crypto_live": True,
-        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
-        "hold_days": 1.0, "max_new_per_cycle": 1,
-    },
-    "news_surge_multi": {
-        "enabled": True, "shadow_only": False,
-        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
-        "hold_days": 1.0, "max_new_per_cycle": 1,
-    },
-    # W-XSR1. Sized at $11 like every other book on this account: the only
-    # notional that clears HL MIN_ORDER_USD and fits usable margin at $12.94.
-    "xs_reversal": {
-        "enabled": True, "shadow_only": False,
-        "notional_usd": 11.0, "leverage": 1, "stop_pct": 15.0,
-        "hold_hours": 24.0, "lookback_d": 3.0,
-        "awake_lookback_d": 7.0, "awake_min_frac": 0.67,
-        "top_pct": 90.0, "min_volume_usd": 1_000_000.0,
-        "min_universe": 20, "max_new_per_cycle": 1,
-    },
-    "social_trending": {
-        "enabled": True, "shadow_only": False,
-        "poll_hours": 1.0, "dedup_hours": 24.0, "horizon_days": 1.0,
-        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
-        "max_new_per_cycle": 1,
-    },
-    "unlock_short": {
-        "enabled": True, "shadow_only": False,
-        "notional_usd": 20.0, "leverage": 1, "stop_pct": 15.0,
-    },
     "hip3_dex_allowlist": ["xyz"],
     "hip3_dex_blocklist": [],
     "dsl_exit": {
@@ -144,11 +103,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "stale_flat_timeout_minutes": 480,
     },
     "ta_sidestep_force_execute": True,
-    # Existing strategy books place WITHOUT an AI veto (they route straight
-    # through maybe_execute's risk gates). This flag documents and controls that:
-    # true = current behavior (books self-place); set false to require the books
-    # to be AI-confirmed before placing. Honored by the book-execute path.
-    "books_bypass_ai": True,
     "override_max_daily_extension_pct": 30.0,
     "block_counter_trend_bypass": True,
     "trend_surface_enabled": True,
@@ -175,18 +129,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_hip3_24h_pct": 8.0,
         "min_volume_usd": 5_000_000,
     },
-    # Strategy-book (rebalancer) position sizing.
-    # strategy_book_equity_frac: fraction of the FUNDING account's equity × leverage used to size
-    # each rebalancer trade. Default 0.1 → notional = size_equity × 0.1 × leverage (e.g. $60 main,
-    # 12x lev → $72/trade). This replaces the old flat $15 cap with a properly equity-scaled size
-    # while keeping the same safety gates (margin floor, max_total_notional_pct, per-name cap).
-    # strategy_book_notional_usd: optional ABSOLUTE ceiling in USD (0 = inactive). When >0 the
-    # equity-fraction result is min()'d with this cap so the operator can hard-bound per-trade size.
-    # NOTE: if strategy_book_equity_frac=0 (disabled), the old fallback to strategy_book_notional_usd
-    # is used directly (backward-compatible); set notional_usd=0 too for a full no-op until enabled.
-    "strategy_book_equity_frac": 0.1,
-    "strategy_book_notional_usd": 0,
-
 }
 
 

@@ -71,12 +71,3 @@ def test_every_name_the_loop_imports_actually_exists():
             if not hasattr(mod, alias.name):
                 missing.append(f"{node.module}.{alias.name}")
     assert not missing, f"the loop imports names that do not exist: {missing}"
-
-
-def test_every_live_book_module_is_importable():
-    """The books are what spend money. Each must load."""
-    for mod in ("pathiel.agents.news_surge_short_live",
-                "pathiel.agents.news_surge_multi",
-                "pathiel.agents.social_trending_recorder",
-                "pathiel.agents.unlock_short_live"):
-        importlib.import_module(mod)

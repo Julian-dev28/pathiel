@@ -37,18 +37,20 @@ class TriggerHit(TypedDict, total=False):
     direction: str
 
 
-# ── DSL exit-policy override (book -> executor) ─────────────────────────────
+# ── DSL exit-policy override (analysis -> executor) ─────────────────────────
 #
-# Shape of `analysis["dsl_exit_override"]`, built identically by all four live
-# strategy books (news_surge_multi.py, news_surge_short_live.py,
-# social_trending_recorder.py, unlock_short_live.py) and consumed by
-# `executor.py` via `_merge_nested_config(config["dsl_exit"], override)` before
-# being unpacked into `dsl_exit.ExitPolicy`. Stays a dict (not a dataclass) on
-# purpose: it has to survive a dict-merge against the base `dsl_exit` config
-# before `ExitPolicy` is constructed from the merged result
-# (executor.py:748-1094) — converting it to a dataclass here would break that
-# merge step. total=False throughout: every book supplies a different subset
-# depending on which knobs its geometry actually uses.
+# Shape of `analysis["dsl_exit_override"]`, consumed by `executor.py` via
+# `_merge_nested_config(config["dsl_exit"], override)` before being unpacked
+# into `dsl_exit.ExitPolicy`. Originally built by the four live strategy
+# books (news_surge_multi.py, news_surge_short_live.py,
+# social_trending_recorder.py, unlock_short_live.py), all retired 2026-10-23
+# (headless desk) — nothing sets this key today, but `executor.py`'s merge
+# still accepts one from any analysis (e.g. a future MCP caller) so the type
+# stays. Stays a dict (not a dataclass) on purpose: it has to survive a
+# dict-merge against the base `dsl_exit` config before `ExitPolicy` is
+# constructed from the merged result — converting it to a dataclass here
+# would break that merge step. total=False throughout: a caller supplies
+# only the subset of knobs its geometry actually uses.
 
 class AtrStopOverride(TypedDict, total=False):
     enabled: bool
@@ -101,19 +103,21 @@ class _BookAnalysisRequired(TypedDict):
 
 
 class BookAnalysis(_BookAnalysisRequired, total=False):
-    """The `analysis` dict handed from a book/research pipeline into
-    `executor.maybe_execute`. Built independently at 6 sites:
-    `research.py` (thin-4h-history early return + the main AI-verdict path),
-    and each of the 4 live strategy books' `_analysis`/`_live_analysis`
-    builder. `total=False` here mirrors the actual contract exactly: every key
-    below is read via `.get()` (with a default) somewhere in `executor.py`,
-    never via a bare subscript — see `_BookAnalysisRequired` for the 4 keys
-    that ARE required.
+    """The `analysis` dict handed from the research pipeline (or an MCP
+    caller) into `executor.maybe_execute`. Built at `research.py`'s two
+    construction sites (thin-4h-history early return + the main AI-verdict
+    path). Before 2026-10-23 it was also built independently by each of the
+    four live strategy books' `_analysis`/`_live_analysis` builders — all
+    retired (headless desk); the `strategy_book*` fields below are dead
+    weight from that era, kept only because `executor.py` still reads them
+    via `.get()` with a safe default. `total=False` here mirrors the actual
+    contract exactly: every key below is read via `.get()` (with a default)
+    somewhere in `executor.py`, never via a bare subscript — see
+    `_BookAnalysisRequired` for the 4 keys that ARE required.
 
-    This type exists to let a type checker catch the failure mode the brief
-    called out directly: a 5th book that forgets a key (or misspells one) an
-    existing book relies on. It does not change any dict literal or access
-    pattern — `TypedDict` is erased at runtime.
+    This type exists to let a type checker catch a construction site that
+    forgets a key (or misspells one) another relies on. It does not change
+    any dict literal or access pattern — `TypedDict` is erased at runtime.
     """
     side: Optional[str]                      # "long" | "short" | None
     entry_px: float
@@ -148,10 +152,10 @@ class BookAnalysis(_BookAnalysisRequired, total=False):
     web_search_used: bool
     web_search_request_count: int
     web_search_citations: List[str]
-    # Strategy-book identity + sizing/exit overrides.
+    # Strategy-book identity (dead weight: nothing sets this since the books
+    # were retired 2026-10-23, but `executor.py` still reads it via `.get()`
+    # for a couple of log-line fallbacks) + sizing/exit overrides.
     strategy_book: str
-    strategy_book_notional: float
-    strategy_book_equity_frac_override: float
     leverage_override: int
     backup_sl_pct_override: float
     sl_atr_mult_override: float

@@ -23,53 +23,15 @@ part of this system that reliably works, and it is worth more than the trading.
 
 ### Read this before funding it
 
-- **Six books registered.** There is no shadow tier: a book trades or it does
-  not exist. `shadow_only` exists only as the switch
-  `scripts/autonomous_cycle.py` flips to demote a book whose forward ledger
-  turns negative.
+- **Headless desk (2026-10-23).** The autonomous strategy books are retired —
+  Claude places every trade through the MCP server
+  (`scripts/pathiel-mcp-server.py`, `place_bracket` / `bracket_sweep`), and
+  `scripts/trading_loop.py` only scans, reviews open positions, and manages
+  exits. There is exactly one trader on the wallet. See **What was removed
+  (2026-10-23)** below for what that deleted and why.
 - Sizing scales with equity from a $10 account up (2026-10-17): at $15 that
   is one position, sized to Hyperliquid's $10.50 minimum, with the daily pause
   covering one stop-out. See **Sizing any account** below and `/account`.
-
-| book | n | EV@25bps | OOS halves | null p |
-|---|---|---|---|---|
-| `news_surge_short` | 255 | +1.24% | +0.58 / +2.16 | 0.0005 |
-| `news_surge_multi` | 230 | +1.87% | +1.50 / +2.50 | 0.0005 |
-| `social_trending` | 185 | +0.89% | +0.54 / +1.50 | 0.0005 |
-| `unlock_short_runin` | 14 | +3.75% | +0.71 / +7.06 | 0.0375 |
-| `xs_reversal` | 1995 | +2.47% | quartiles +4.94/+0.70/+0.89/+3.05 | 0.0000 |
-| `drawdown_ladder` | 296 ladders (6y backtest) | 2.933x equity at 1x | 1.516x / 1.429x | 0.0015 |
-
-These are FORWARD-ledger grades, not realized P&L. This repo has a documented
-history of books whose comments claimed +EV while they ran live and lost.
-
-`xs_reversal` (2026-09-04, findings/W-XSR1) shorts the top decile of 3-day
-cross-sectional return, but only where funding has spent >= 67% of the last 7
-days off Hyperliquid's 1.25e-05 baseline — no positioning means nothing to
-unwind, and the pinned bucket loses 0.443%. It carries one honest discount the
-others do not: that gate was **found, not pre-registered**. It fell out of a
-different test that was failing.
-
-`drawdown_ladder` (2026-09-14, findings/W-WH2) is the one book with **no stop**.
-It buys a 21% drawdown in BTC/ETH/SOL/BNB/XRP on five resting rungs and exits
-the whole position at +5.14% over average entry. Its row is a backtest, not a
-forward ledger, and holding the same coins did 8.37x over the same six years.
-It is exempt from the backup stop and the hard daily-loss flatten, and it
-trades the main-dex majors while every other book is HIP-3 only. Those are
-operator decisions, recorded in the finding. It places nothing below $525 of
-equity, and it is demoted when its mark-to-market drawdown passes -43.5% of
-its 50% sleeve.
-
-### No recorders, no shadow
-
-Every book trades and has a switch `scripts/autonomous_cycle.py` can flip, or it
-does not exist. There is no third state, and tests enforce that in the defaults
-and in the live config.
-
-**Start the loop and every enabled book places real orders unattended.** What bounds
-them is the equity floor in `executor.maybe_execute`, the per-book margin check,
-the majors allowlist, the daily-loss kill switch, and the nightly grader that
-demotes any book whose forward ledger turns negative.
 
 ### Sizing any account, $10 to $100k
 
@@ -85,10 +47,11 @@ leverage and max positions. A preset picked from equity fills them in, and
 | pro | $50k+ | 1% | 4% | 5x | up to 10 |
 
 There is no global equity floor any more. Each trade is checked on its own,
-and every book gets one sentence saying why it can or cannot trade ("Sized up
-to Hyperliquid's $10.50 minimum: risks $1.57 (10.4%) if the stop hits", or
-"Needs $525.00 of equity"). Three guarantees hold for every preset and for
-custom settings, property-tested from $5 to $100k:
+and the one entry path left (main-engine / MCP-submitted) gets one sentence
+saying why it can or cannot trade right now ("Sized up to Hyperliquid's
+$10.50 minimum: risks $1.57 (10.4%) if the stop hits"). Three guarantees
+hold for every preset and for custom settings, property-tested from $5 to
+$100k:
 
 1. A trade never plans to risk more than the daily pause.
 2. The daily pause always fits one minimum-size trade. Without that, a $15
@@ -116,13 +79,42 @@ Then pick a risk preset with a live preview and you are trading. Existing
 On your own machine nothing asks you to log in. A public deployment is
 single-operator: only the operator's wallet manages accounts and risk.
 
-The exemption list that used to hold ten capital-less books is empty and a test
-keeps it empty. It produced exactly the failure it sounds like: on 2026-08-29
-the grader printed `unlock_short — VALIDATED: validated but has no bounded
-capital path`. A book that can prove itself and still never trade costs budget,
-log volume and attention to maintain evidence nothing may act on.
-
 ---
+
+## What was removed (2026-10-23)
+
+Operator decision: pathiel is a headless desk. Claude places every trade
+through the MCP server; the autonomous strategy books that used to place
+trades unattended are retired, so there is no second trader on the wallet.
+Deleted rather than disabled, same reasoning as the 2026-08-29 removal below
+— a half-removal that leaves a live route is worse than either end state:
+
+- **All seven strategy books** and their private helpers — news_surge_short,
+  news_surge_multi, social_trending, unlock_short_runin, xs_reversal,
+  drawdown_ladder, copy_trade — plus the cross-book claims registry
+  (`ClaimsRegistry`/`OwnedPositions`) that coordinated them, the nightly
+  grader (`autonomous_cycle.py`, formerly `scripts/`) that promoted/demoted
+  them, and every book-only status/grading script (`book_status.py`,
+  `pnl_by_book.py`, `grade_forward_ledger.py`, `shadow_status.py`,
+  `shadow_inverse_status.py`, `funded_dry_run.py` — all formerly `scripts/`).
+- The book-only config blocks (per-book `enabled`/`notional_usd`/`stop_pct`,
+  `strategy_book_equity_frac`, `strategy_book_notional_usd`,
+  `books_bypass_ai`).
+
+The dashboard is frozen, not developed, and its book panels (`/book_league`,
+`/news`, `/analytics`'s tapes) are left exactly as they were: they will
+render whatever the shadow ledger already holds, and nothing writes a new
+row to it any more, so they are an honest historical view rather than a
+broken one. See **Dashboard tabs** below.
+
+What survives: `scripts/trading_loop.py` as the exit-management loop (DSL
+exits, housekeeping, no entries of its own), the MCP server as the one
+trading surface, and the general-purpose pieces the books leaned on but
+did not own — `book_params.py`'s sizing-floor resolver (now the one
+fallback for every entry), `shadow_ledger.py` (still grades the
+`thin_short_relax` live experiment), `rebalancer_owned.py`'s `state_file()`,
+`capital_flows.py`, `data_logger.py`, `news_catalyst.py`, `deadline.py`.
+Full account in `docs/overhaul/HEADLESS_2026-10-23.md`.
 
 ## What was removed (2026-08-29)
 
@@ -187,7 +179,7 @@ python -m services.strategies grade
 ```
 
 Every call card ends with **Your size**: the call sized for the active account
-by the same rules the bot sizes its books with (`POST /api/risk/size`), plus a
+by the same rules every real trade sizes with (`POST /api/risk/size`), plus a
 warning when the best target pays less than the stop costs.
 
 Pages open from cache. A desk's analytics are rebuilt on one background worker
@@ -277,8 +269,7 @@ scripts/restart.sh status
 
 # 3. Monitor
 tail -f logs/trading_loop.log
-python3 scripts/preflight_live.py    # secrets, capital, books, feed, processes
-python3 scripts/book_status.py       # where each live book stands
+python3 scripts/preflight_live.py    # secrets, capital, feed, disk, processes
 ```
 
 Dashboard served at `http://localhost:8000` (port from `PATHIEL_PORT`).
@@ -431,15 +422,22 @@ Replicates the Hyperfeed MCP plugin's data directly from HL API:
 
 ### Dashboard tabs
 
+**Frozen 2026-10-23:** the dashboard is maintained but not developed — Claude
+via MCP is the operator surface now. `/`, `/book_league` and the `/news` and
+`/analytics` tapes still render whatever the shadow ledger already holds
+(the strategy books that wrote to it are retired, so that history is a
+historical view, not a live one); `/desks`, `/account`, `/activity` and
+`/trends` are unaffected.
+
 | Path | What it shows |
 |------|---------------|
-| `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, live books |
+| `/` | Landing — risk band (drawdown, fee drag, win rate, kill switch) then equity, positions, the books table (every row now permanently `off`) |
 | `/desks` | Desks — one card per desk; `/desks/<id>` leads with the call, then the leverage switch |
-| `/account` | Account & Risk — the connected account, the risk preset with a live preview, which books can trade |
+| `/account` | Account & Risk — the connected account, the risk preset with a live preview |
 | `/activity` | Event journal — verdicts, executions, gate results, DSL closes |
-| `/news` | News-catalyst reads + research events with news context |
+| `/news` | News-catalyst reads + research events with news context (historical — see freeze note above) |
 | `/trends` | Trend analysis + forecasts (see `services/trend_engine/README.md`) |
-| `/analytics` | Funnel, book league, coin chart with our trade markers, funding heat |
+| `/analytics` | Funnel, book league (historical), coin chart with our trade markers, funding heat |
 
 Keyboard: `g` then `d` / `a` / `n` / `p` / `t` / `y`.
 
@@ -637,8 +635,7 @@ values are optimal in future market regimes. Missing keys are filled from
 | `asset_notional_multiplier` | Optional asset-bucket sizing scale applied after risk sizing. Defaults neutral; use it only for controlled risk experiments, not as the primary alpha fix. | `{"crypto": 1.0, "hip3": 1.0}` |
 | `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
 | `max_daily_loss_usd` | Daily-loss kill switch (negative number). **Size it to the account**: a -$100 kill on a $12.94 account can never fire, so the switch is decorative. | `-100` |
-| `min_tradable_equity_usd` | Operator override of the derived equity floor. Precedence #1, ahead of the per-book requirement and the $25 exchange backstop. A negative or non-numeric value falls back rather than disabling the floor — a typo must not unlock trading on a dust account. | *(unset)* |
-| `notional_usd` (per book) | Fixed notional per position. Must clear `MIN_ORDER_USD` ($10.50) and fit equity less `min_available_margin_pct`. | `20.0` |
+| `min_tradable_equity_usd` | Operator override of the derived equity floor. Precedence #1, ahead of `book_margin_requirement` (always 0 now — the strategy books it summed are retired 2026-10-23) and the $25 exchange backstop. A negative or non-numeric value falls back rather than disabling the floor — a typo must not unlock trading on a dust account. | *(unset)* |
 | `daily_giveback_halt_pct` | **Give-back breaker**: once the day peaks ≥ `daily_giveback_min_peak_usd`, halt NEW entries if it retraces more than this from peak (existing positions ride their stops; resets at UTC roll). Locks green days from round-tripping | `0` (off) |
 | `daily_giveback_min_peak_usd` | Arm threshold for the give-back breaker — stays disarmed until the day's peak PnL reaches this | `20` |
 | `tp_scale_fraction` | Fraction auto-banked at the TP target (server-side reduce-only trigger at ~1 ATR); rest rides the trail. Captures profit instead of round-tripping | `0.5` |
@@ -694,11 +691,6 @@ values are optimal in future market regimes. Missing keys are filled from
   blocked purely by capital (book full / notional cap), evicts the weakest
   non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
   room.
-- **The four live books**, each bounded at $20/1x with a 15% stop and a 1-day
-  horizon — the geometry each was graded on. `scripts/autonomous_cycle.py`
-  grades them nightly and demotes anything its own forward ledger refutes;
-  `scripts/book_status.py` shows where each stands without needing the exchange.
-
 Trigger internals (weights, sigma thresholds, candle interval) live separately in
 `pathiel/agents/config.py` — edit there to tune the scan itself.
 
