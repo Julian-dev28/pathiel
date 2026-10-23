@@ -377,7 +377,6 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
 | `PATHIEL_STARTUP_GRACE_S` | 12 | Loop startup grace period before first scan |
 | `PATHIEL_META_PREWARM_TIMEOUT_S` | 3 | Meta cache prewarm timeout |
 | `PATHIEL_WATCHDOG_TIMEOUT_S` | 600 | Loop self-heal re-exec timeout on a stuck cycle |
-| `PATHIEL_CYCLE_DEADLINE_S` | 1500 | `autonomous_cycle.py` per-run deadline |
 | `PATHIEL_DASHBOARD_READONLY` | unset | Hard-refuse every mutating dashboard POST regardless of token |
 | `PATHIEL_LOG_DIR` | `<repo>/logs` | Override where `pathiel/log_setup.py` writes/rotates logs |
 | `PATHIEL_LOG_MAX_BYTES`, `PATHIEL_LOG_BACKUP_COUNT`, `PATHIEL_LOG_DIR_MAX_BYTES`, `PATHIEL_LOG_ROTATE_INTERVAL_SEC` | see `pathiel/log_setup.py` | Log rotation policy |
@@ -409,14 +408,9 @@ dashboard's HL polling to ~1/4 budget so it yields to the loop's fetches
   Left out rather than shipped half-working.
 - **One-off scripts under `scripts/`** not named in `scripts/restart.sh` or
   `scripts/scheduler.py` — run by hand (`flyctl ssh console`) when needed, not
-  continuously supervised processes. Two worth naming specifically, since
-  neither is referenced anywhere else in the repo and both are easy to mistake
-  for dead code on a `grep`:
-  - **`scripts/grade_forward_ledger.py [book]`** — grades a book's live
-    forward ledger (`.state/shadow_ledger/<book>.jsonl`) against what actually
-    happened, deduplicated to one row per (coin, entry day) decision rather
-    than per re-recorded cycle. Run by hand after a book has accumulated a
-    few days of signals.
+  continuously supervised processes. One worth naming specifically, since it
+  is not referenced anywhere else in the repo and is easy to mistake for dead
+  code on a `grep`:
   - **`scripts/phase3_replay.py COIN ENTRY LEV [SPOT_MOVE%]`** — read-only,
     no-lookahead post-mortem replay of the real exit engine
     (`pathiel.agents.dsl_exit.DSLTracker`) against real historical 15m

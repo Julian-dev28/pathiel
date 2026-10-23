@@ -28,7 +28,6 @@ temp dir first (see `snapshot_state_dir`) and reads only the copy.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import os
 import shutil
@@ -58,15 +57,6 @@ if str(REPO) not in sys.path:
 # those same round amounts directly. If HL ever changes the max supply this
 # constant needs updating — it is the one external fact this file assumes.
 HYPE_MAX_SUPPLY = 1_000_000_000
-
-# README "Six books registered" table, 2026-10-17 — the CURRENT live roster.
-# This exists to catch roster drift against scripts/pnl_by_book.py's
-# BOOK_PRIORITY tuple (owned by a different agent; this file only reads it).
-# Update this tuple when the README table changes.
-CURRENT_BOOK_ROSTER = (
-    "news_surge_short", "news_surge_multi", "social_trending",
-    "unlock_short_runin", "xs_reversal", "drawdown_ladder",
-)
 
 EQUITY_SCALE_TIERS = (15.0, 1_000.0, 10_000.0)
 
@@ -561,17 +551,6 @@ def hip3_growth_mode_evidence(fills: Sequence[dict], main_dex_taker_rate_pct: fl
     }
 
 
-# ── book roster staleness ────────────────────────────────────────────────────
-
-def book_roster_staleness(current_roster: Sequence[str], pnl_by_book_priority: Sequence[str]) -> Dict[str, Any]:
-    """Books that trade live (current_roster) but are absent from
-    scripts/pnl_by_book.py's BOOK_PRIORITY tuple — their realized PnL
-    silently rolls up into "main-engine" in that script's attribution
-    (exactly the failure class its own 2026-07-09 comment warns about)."""
-    missing = sorted(set(current_roster) - set(pnl_by_book_priority))
-    return {"missing_from_book_priority": missing, "is_stale": bool(missing)}
-
-
 # ── pair-trade stats (Brent / WTI) ──────────────────────────────────────────
 
 def pair_trade_stats(closes_a: Sequence[float], closes_b: Sequence[float]) -> Dict[str, Any]:
@@ -657,15 +636,6 @@ def hype_usd_price(spot_meta_ctxs: Any) -> float:
     except (KeyError, IndexError, TypeError, ValueError):
         pass
     return 0.0
-
-
-def load_pnl_by_book_priority(repo: Path = REPO) -> Sequence[str]:
-    spec = importlib.util.spec_from_file_location(
-        "pnl_by_book_for_audit", repo / "scripts" / "pnl_by_book.py")
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.BOOK_PRIORITY
 
 
 def open_positions_from_state(clearinghouse_states: Sequence[dict],
@@ -786,7 +756,6 @@ def run_audit(
         ),
         "funding": funding_summary(funding, window_days),
         "cross_venue_funding_gap": cross_venue_funding_gap(predicted, coins_traded),
-        "book_roster": book_roster_staleness(CURRENT_BOOK_ROSTER, load_pnl_by_book_priority()),
         "pair_trade_brent_wti": pair_trade_stats(candles_cl, candles_bo),
         "monthly_fee_usd_at_current_volume": round(monthly_fee_usd, 4),
     }
@@ -859,11 +828,6 @@ def render_markdown(report: Dict[str, Any]) -> str:
     lines.append("## Funding")
     fn = report["funding"]
     lines.append(f"- Net funding: ${fn['total_usd']:.2f} over the window (${fn['per_month_usd']:.2f}/mo)")
-    lines.append("")
-
-    lines.append("## Book roster vs pnl_by_book.py")
-    br = report["book_roster"]
-    lines.append(f"- Stale: {br['is_stale']}; missing from BOOK_PRIORITY: {br['missing_from_book_priority']}")
     lines.append("")
 
     lines.append("## Brent/WTI pair stats (xyz:CL vs xyz:BRENTOIL)")

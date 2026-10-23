@@ -11,12 +11,17 @@ SWARM_RULES.md section 4 asks every feature to ship, read literally
 
 THE SIGNAL SOURCE
 `pathiel.agents.shadow_ledger` is the live system's own "forward ledger":
-every book appends a normalized {book, coin, side, stop_pct, entry_ref_px,
-ts, ...} record for every candidate it considers, whether or not capital
-was available at the time (xs_reversal_live.py's own docstring: "Records
-every candidate it considered... so the forward record is the strategy's
-and not the account balance's"). That is exactly the unbiased-by-equity
-signal stream this replay needs.
+a normalized {book, coin, side, stop_pct, entry_ref_px, ts, ...} record is
+appended for every candidate considered, whether or not capital was
+available at the time — unbiased-by-equity signal stream, exactly what
+this replay needs. Before 2026-10-23 that meant one of seven strategy
+books' ledgers; all seven are retired (headless desk: Claude trades
+through the MCP server) and the live ledger today is whatever the
+surviving experiments record (e.g. executor.py's thin_short_relax). Either
+way `replay()` does not care WHICH tag a historical record carries — see
+its own docstring for why every signal is now priced against the one
+bookless BookSpec (`services.risk.books.main_engine_spec`), not looked up
+by a per-book roster that no longer exists.
 
 SAFETY (docs/overhaul/SWARM_RULES.md section 1): copies ONLY the
 shadow_ledger/ subdirectory of --state-dir into a fresh temp directory
@@ -85,19 +90,26 @@ def load_recent_signals(state_dir: Path, max_age_days: float) -> List[Dict[str, 
 def replay(signals: List[Dict[str, Any]], equities: List[float],
           profile_name: str = "auto") -> Dict[str, Any]:
     """PURE: signals + equities -> a report dict. No I/O, no network, no
-    clock reads beyond the one timestamp in the report header. Every
-    signal is replayed as though its book were enabled today (a historical
-    signal, by definition, was live when its book recorded it — whether
-    that book is enabled in TODAY's config says nothing about whether its
-    risk would have fit the derived limit at a given equity, which is the
-    one thing this eval measures)."""
+    clock reads beyond the one timestamp in the report header.
+
+    Every signal is priced against `services.risk.books.main_engine_spec`
+    — the one BookSpec shape left since the strategy books were retired
+    2026-10-23 — using the SIGNAL's own recorded `stop_pct` (a historical
+    signal, by definition, was live when it was recorded; what matters here
+    is only whether ITS risk would fit the derived limit at a given equity).
+    There is no more per-book lookup to miss: this eval used to skip a
+    signal whose `book` tag was not one of the seven registered books (a
+    retired hypothesis, or a fixed/structural book like drawdown_ladder
+    with no risk-scaled shape) — with the roster gone, every signal with a
+    usable stop is considered, tagged by its own `book` string so
+    `book_feasibility` can look the row back up."""
     from contracts.risk.models import RiskProfile
     from pathiel.client.exchange import MIN_ORDER_USD
     from services.risk import books as risk_books
     from services.risk.derive import VenueRules, book_feasibility, derive_limits
 
     venue = VenueRules(min_order_notional_usd=MIN_ORDER_USD)
-    base_specs = {name: risk_books.book_spec_from_config({}, name) for name in risk_books.BOOK_NAMES}
+    base = risk_books.main_engine_spec({})
 
     per_equity: List[Dict[str, Any]] = []
     violations: List[str] = []
@@ -108,13 +120,12 @@ def replay(signals: List[Dict[str, Any]], equities: List[float],
         considered = 0
         risk_taken_usd = 0.0
         for sig in signals:
-            book = sig.get("book")
+            book = sig.get("book") or risk_books.MAIN_ENGINE
             stop_pct = float(sig.get("stop_pct") or 0.0)
-            base = base_specs.get(book)
-            if base is None or base.fixed_min_equity_usd is not None or stop_pct <= 0:
-                continue   # unregistered book, a fixed/structural book, or no usable stop
+            if stop_pct <= 0:
+                continue   # no usable stop
             considered += 1
-            spec = replace(base, enabled=True, stop_pct=stop_pct)
+            spec = replace(base, name=str(book), enabled=True, stop_pct=stop_pct)
             limits = derive_limits(float(equity), profile, [spec], venue)
             row = book_feasibility(limits, book)
             if row is None or not row.can_trade:

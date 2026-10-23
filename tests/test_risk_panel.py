@@ -316,16 +316,34 @@ def test_a_funded_account_reads_tradable(monkeypatch):
     assert db._risk_payload()["can_trade"] is True
 
 
-def test_no_enabled_book_means_nothing_can_trade(monkeypatch):
-    """Money alone does not trade: with every book off the panel says so."""
+def test_below_the_floor_means_nothing_can_trade(monkeypatch):
+    """Money alone does not trade: under the derived equity floor the panel
+    says so. There is no "book off" state any more (the strategy books are
+    retired, 2026-10-23) — the one entry path left (main-engine / MCP-
+    submitted, services.risk.books.main_engine_spec) is always enabled, so
+    the only way to be unable to trade is not having enough equity."""
+    monkeypatch.setattr(db, "_read_log_lines", lambda: [
+        {"ts": 1, "event": "loop_heartbeat", "equity": 1.0, "daily_pnl": 0.0,
+         "open_positions": 0, "available": 1.0}])
+    monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
+    monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
+    r = db._risk_payload()
+    assert r["can_trade"] is False
+    assert r["min_tradable_equity"] >= 10.0
+
+
+def test_above_the_floor_means_it_can_trade(monkeypatch):
+    """The regression this file would otherwise miss: all_book_specs()
+    returning `[]` (instead of the one-item main_engine roster) makes
+    derive_limits report can_trade=False unconditionally, even on a
+    well-funded account — see services/risk/books.py's module docstring."""
     monkeypatch.setattr(db, "_read_log_lines", lambda: [
         {"ts": 1, "event": "loop_heartbeat", "equity": 500.0, "daily_pnl": 0.0,
          "open_positions": 0, "available": 500.0}])
     monkeypatch.setattr(db, "_closed_trades_payload", lambda limit=20: [])
     monkeypatch.setattr(db, "read_agent_config", lambda: {"mode": "LIVE"})
     r = db._risk_payload()
-    assert r["can_trade"] is False
-    assert r["min_tradable_equity"] >= 10.0
+    assert r["can_trade"] is True
 
 
 def test_the_page_shows_the_blocked_state(client):

@@ -23,8 +23,12 @@ import pytest
 from pathiel.agents.deadline import with_deadline
 
 LOOP = Path(__file__).resolve().parents[1] / "scripts" / "trading_loop.py"
-RECORDERS = ("_data_logger_maybe_log", "_unlock_maybe_record",
-             "_social_trending_maybe_record")
+# _unlock_maybe_record and _social_trending_maybe_record (unlock_recorder.py,
+# social_trending_recorder.py) were deleted with the strategy books,
+# 2026-10-23 — data_logger is the one network recorder trading_loop.py still
+# runs, and it must stay deadline-bounded for the same reason the others
+# were: a stall in it must not stop every subsequent exit on live positions.
+RECORDERS = ("_data_logger_maybe_log",)
 
 
 def test_a_hanging_call_returns_the_default_not_the_hang():
