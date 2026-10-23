@@ -1,45 +1,233 @@
 # Pathiel
-> Autonomous trading agent for Hyperliquid, restricted to majors — BTC/ETH, gold, silver, oil, the broad indices, and the mega-caps. A standalone Python system built with FastAPI and a pluggable AI brain (OpenRouter default; Claude/Codex CLI optional), operated by [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent) through an MCP server.
 
-**How you drive it: MCP.** The whole control surface is an MCP server —
-`scripts/pathiel-mcp-server.py`, 59 tools over stdio. Desk briefs, bracket
-orders, config, risk state, Hyperliquid market data and the wallets signed in
-to the dashboard are all tools an agent calls. There is no second API to learn
-and no framework dependency in the engine: point Claude Desktop, Pathiel Agent or
-any MCP client at it and you are operating the system. Full table under
-[MCP Integration](#mcp-integration).
+> A headless trading desk on live Hyperliquid. Claude places every trade
+> through an MCP server (`scripts/pathiel-mcp-server.py`, 59 tools over
+> stdio); there is no autonomous bot and no standing process that trades on
+> its own. Pure Python, FastAPI dashboard, real money.
 
-**What it does:** Scans the majors universe, fires statistical triggers on
-price/volume/breakout signals, runs a cheap pre-AI technical analysis filter,
-and only calls AI on CONFIRMED setups. Executes with DSL-managed dynamic exits.
+## Read this first
 
-**What it mostly does, honestly:** kills ideas. The measurement layer — the
-recorders, the shadow ledger, the point-in-time grader — has correctly refuted
-perpetual-candle trading (a 2-minute BTC move averages 0.028% against a 0.09%
-round trip), prediction-market forecasting (n=263 against a market already at
-Brier 0.088), Markov regime models, numerology, social-surge signals, and a
-"top 25 leaderboard" that lost to random 2000 times out of 2000. That is the
-part of this system that reliably works, and it is worth more than the trading.
+- **Headless since 2026-10-23.** The autonomous scan/research/execute
+  engine, the seven strategy books it ran, and the DSL exit loop are all
+  deleted. Claude is the only trader on the wallet, calling `place_bracket`
+  and `bracket_sweep` through the MCP server. See **What was removed**
+  below.
+- **One position per account.** The operator's live risk profile
+  (`.agent-config.json`) sets `max_open_positions: 1`. `place_bracket`
+  refuses to stack a second position or a second resting order on the same
+  coin (`pathiel/agents/bracket.py`).
+- **The trading loop is a Claude Code skill, not a script.** `.claude/skills/desk-tick/SKILL.md`,
+  run on a schedule (`/loop 15m /desk-tick oil`, 30 minutes for metals, ai
+  and gas). Nothing trades between ticks; nothing trades if no Claude
+  session is running the tick.
+- **No kill switch, no status pill, no operator-token UI.** All three were
+  removed from the Desk and Thesis pages 2026-10-24 because nothing updated
+  the pill and the switch did not touch the one trading path left. Live-money
+  calls (`place_bracket`, `bracket_sweep`, `close_position`, `set_leverage`,
+  `cancel_order`) are marked destructive in the MCP tool list, so an MCP
+  client asks before each call.
 
-### Read this before funding it
+## Desks: one market, one thesis, one decision
 
-- **Headless desk (2026-10-23).** The autonomous strategy books, and then
-  the autonomous engine itself (the scan/research/execute loop, its 11 risk
-  gates, the DSL exit loop, the scheduler), are retired across two waves —
-  Claude places every trade through the MCP server
-  (`scripts/pathiel-mcp-server.py`, `place_bracket` / `bracket_sweep`).
-  There is exactly one trader on the wallet, and no standing background
-  process places or exits a trade on its own. See **What was removed
-  (2026-10-23)** below for what that deleted and why.
-- Sizing scales with equity from a $10 account up (2026-10-17): at $15 that
-  is one position, sized to Hyperliquid's $10.50 minimum, with the daily pause
-  covering one stop-out. See **Sizing any account** below and `/account`.
+A desk is one market with its own instruments, news queries, policy watch,
+catalyst calendar, leverage ladder and thesis journal. Six are registered in
+`services/strategies/desks/*.py`; four are active (`.agent-config.json`'s
+`active_desks`):
+
+| desk | file | status | primary instrument |
+|---|---|---|---|
+| oil | `oil.py` | active, flagship | `xyz:BRENTOIL` (Brent; WTI and natgas tracked alongside) |
+| metals | `metals.py` | active | gold / silver |
+| ai | `ai.py` | active | AI-adjacent equities |
+| gas | `gas.py` | active | natural gas |
+| btc | `btc.py` | registered, off | BTC |
+| top5 | `top5.py` | registered, off | top 5 crypto by volume |
+| indices | `indices.py` | registered, off | broad indices |
+
+An off desk still has a working route (`/desk/{id}`) and a working
+`desk_brief` call; it is just not on the Desk page and nothing ticks it.
+
+```
+services/strategies   desk registry, deterministic analytics, journal, grader, HTTP routes
+services/intel        news, policy, EIA, FRED, CBOE, EDGAR, positioning, prediction markets (zero LLM)
+services/thesis       the only LLM step: writes the thesis, rejects any number not in the data
+services/llm          gateway to the local Claude Code CLI, not a hosted API
+contracts/strategies  the shared models every service above speaks
+```
+
+Intel sources (`services/intel/sources/`): `news.py` (deterministic
+relevance and bull/bear/neutral stance scoring in `services/intel/scoring.py`),
+`eia.py` (crude stocks, nat gas storage), `fred.py` (rates, macro series),
+`cboe.py`, `edgar.py`, `positioning.py` (CFTC COT), `predictions.py`
+(Polymarket/Kalshi), `policy.py` (bills, Federal Register, OFAC). Every
+source degrades to "skipped" rather than failing the brief when its key is
+missing; `scripts/intel_keys.py` reports which of `EIA_API_KEY`,
+`FRED_API_KEY` and `CONGRESS_API_KEY` are set and where to get each free.
+
+`services/thesis` writes the thesis: `prompt.py` builds the prompt,
+`validator.py` rejects any number the LLM invented and enforces a 1.5R
+minimum payoff (`DEFAULT_MIN_R = 1.5`) plus a stop on real market structure,
+`render.py::quick_fields` turns a thesis into the handful of fields the Desk
+page's call card and the MCP `desk_brief` quick mode both render from, so
+the card and the text never say two different things.
+
+Grading runs hourly inside `pathiel/server.py` (`PATHIEL_GRADE_LOOP=0` turns
+it off, `PATHIEL_GRADE_INTERVAL_MIN` sets the interval, default 60). It
+expires due theses and scores real account fills against each call
+(`services/strategies/trades.py`). Your own calls (the Thesis page's "make
+your own call" form) are graded the same way, so the track record shows you
+against the machine.
+
+```bash
+python -m services.strategies list
+python -m services.strategies brief oil
+python -m services.strategies grade
+```
+
+## Risk: the live profile and the rules place_bracket enforces
+
+`contracts/risk/models.py` is contract `1.1.0`. `RiskProfile.risk_per_trade_pct`
+and `.daily_loss_limit_pct` go up to 100 (100 = no cap), widened 2026-10-23
+so the operator can opt all the way out of the per-trade and daily caps. The
+operator's own live profile:
+
+```json
+{
+  "preset": "auto",
+  "risk_per_trade_pct": 100,
+  "daily_loss_limit_pct": 100,
+  "max_leverage": 20,
+  "max_open_positions": 1,
+  "allow_min_order_bump": true,
+  "max_bumped_risk_pct": 100
+}
+```
+
+One position, full stake, up to 20x. `pathiel/agents/bracket.py` enforces
+the rest:
+
+- `slot_taken_by` refuses a second position or resting entry while the
+  account's one slot is held by another coin.
+- `check_leverage` is the 20x rule: the stop must sit inside half the
+  distance to liquidation at the requested leverage, or the tool refuses.
+- `check_levels` refuses any bracket paying under 1.5R to its target.
+- Never add to an open position. The next bracket after a close sizes
+  full-port again; a filled position is left alone until its stop or
+  target fires.
+
+## The trading loop
+
+`.claude/skills/desk-tick/SKILL.md` is the loop, run on a cron per desk
+(`/loop 15m /desk-tick oil`; metals, ai and gas every 30 minutes). Each tick,
+in order:
+
+1. **Slot check** (`scripts/desk_slot.py`): if another desk's coin holds the
+   account's one slot, log and stop. No brief, no levels, no MCP calls.
+2. **`desk_brief`** (quick mode): the current call. `desk_refresh` only when
+   the brief says the thesis is stale, a headline moved the market past
+   1.5%, or the target already hit.
+3. **`bracket_sweep`**: cancel a stranded sibling order, confirm an open
+   position is covered by a stop.
+4. **Levels** (`scripts/oil_levels.py`): mid, last closed 1h candle, 8h/24h/48h
+   range, ATR14, 15m micro range; `--check ENTRY STOP TP --lev 20` judges one
+   level against the R gate and the 20x line.
+5. **The operator's own wallet, read-only** (`scripts/watch_wallet.py`):
+   warns once if a hand-placed position is naked.
+6. **One decision**: hold, cancel a stale resting entry, or place one new
+   bracket anchored on structure. No setup, no trade.
+7. **One log line** to `/tmp/oil-loop/progress.log`.
+
+## MCP server
+
+`scripts/pathiel-mcp-server.py` exposes **59 tools over stdio**. The full
+table, regenerated by `scripts/mcp_tool_table.py` from the server's own
+`TOOLS` list, lives in `docs/overhaul/MCP.md`. Claude Code registers it via
+`.mcp.json`; enable it once with `/mcp`. Any MCP client, Claude Code,
+Pathiel Agent, Cursor, Claude Desktop, can register the same server and
+read the same tools.
+
+| Tool | Description |
+|---|---|
+| `desk_list` | Every desk's one-line card: tagline, primary coin, mid, latest call |
+| `desk_brief` | One desk's current call; quick mode is short markdown, full mode is the structured brief |
+| `desk_refresh` | Write a new thesis (news, then one local model call); skipped unless stale or forced |
+| `desk_submit_call` | Record your own trade call, journaled alongside the machine's theses |
+| `desk_track_record` | Graded-thesis track record: hit rate, mean Brier, mean return |
+| `desk_grade` | Grade expired theses, then accounts' trades against each call |
+| `account_overview` | Active account's equity, where it sits (every dex), positions, can-trade |
+| `accounts` | Registered accounts, which is active |
+| `risk_limits` | Positions at once, $ per stop-out, daily pause, max leverage |
+| `risk_size_trade` | Size one trade for this account: size, margin, $ at risk, payoff, liquidation |
+| `place_bracket` | **Live money.** One entry with exact stop and target, refuses under 1.5R or a taken slot |
+| `bracket_sweep` | **Live money.** Cancel a stranded sibling order, confirm stop coverage |
+| `close_position` | **Live money.** Close a coin through the reduce-only close helper |
+| `set_leverage` | **Live money.** Set leverage, keeping the position's own margin type |
+| `cancel_order` | **Live money.** Cancel one resting order by id |
+| `connected_wallets` | Wallets that signed in to the dashboard, read-only by construction |
+| `wallet_account` | Read-only Hyperliquid state for any address |
+
+`connected_wallets` and `wallet_account` report on wallets that signed in to
+the dashboard. This server signs orders with its own key and holds no other,
+so there is no path by which it places, closes or resizes an order on a
+visitor's account; `connected_wallets` says so in its own response
+(`can_this_server_trade_them: false`).
+
+## Dashboard
+
+`python -m pathiel.server`, three pages:
+
+| Path | Page | What it shows |
+|---|---|---|
+| `/` | Desk | The active desk's call as a card (from `quick_fields`), a banner when the call drifts from the open position, one row per wallet with entry/mark/P&L/R/leverage/margin/liquidation/stop/target (a flat watch-only wallet gets no row), Levels, headlines and catalysts, the loop log, the track record |
+| `/desk/{id}` | Thesis | The full reading room for one desk: the call, a leverage picker (5/10/20x, same 20x line as `/`), scenarios, bull vs bear, what changes the call, desk school, track record, make-your-own-call |
+| `/account` | Account | Connect or switch a Hyperliquid account, risk preset with a live preview |
+
+The leverage line reads "Stop clears 20x liquidation" or "Stop too close for
+20x" depending on `check_leverage`'s verdict. Pages poll with `pollEvery`
+(`pathiel/static/pathiel.js`); the next poll waits for the last answer, and
+a hidden or prerendered tab stops polling and resumes on
+`visibilitychange`/`prerenderingchange` (`tests/test_page_polling.py`).
+
+## Venue budget
+
+`pathiel/client/rate_limit.py` is a token bucket shared by every outbound
+Hyperliquid call. The server runs at 200 burst + 8 weight/s (`scripts/restart.sh`),
+sized for one headless desk plus the MCP server's own reads; Hyperliquid's
+own ceiling is 1,200 weight/min. Every request is labelled
+`<type><<module.function>` by the first caller frame outside
+`pathiel.client`, so `GET /api/health/system` -> `hl_budget` shows weight
+granted and refused per request type and caller. Check this first when a
+page shows dashes instead of numbers.
+
+No request handler blocks the server's event loop: every handler that calls
+Hyperliquid, the model, or the exchange is a plain `def` (FastAPI's thread
+pool) rather than `async def`; `tests/test_no_blocking_on_the_event_loop.py`
+checks every route module.
+
+## Connecting an account
+
+There is no sign-in gate for the operator's own box. Three ways to connect a
+Hyperliquid account (`services/accounts/api.py`):
+
+- **Connect your wallet** (recommended). One signature approves a trading
+  key pathiel generates and keeps encrypted at rest (`services/accounts/vault.py`).
+  That key can trade but can never withdraw; the main key never leaves your
+  wallet.
+- **Use an API key** made on app.hyperliquid.xyz/API.
+- **Watch an address**: read-only, no key needed.
+
+Then pick a risk preset with a live preview and you are trading. Existing
+`.env.local` keys keep working and appear as the read-only "From .env.local"
+account. `services/accounts/positions.py` skips any dex holding under
+`DUST_USD` ($1) with no position, so a wallet spread across six dexes reads
+one dex instead of six; a failed read never reports as a flat account, and
+the last good snapshot serves while a fresh one is fetched.
 
 ### Sizing any account, $10 to $100k
 
 Sizing comes from four plain settings: risk per trade, daily pause, max
 leverage and max positions. A preset picked from equity fills them in, and
-`services/risk` derives everything else:
+`services/risk/derive.py` derives everything else:
 
 | preset | equity | risk / trade | daily pause | max leverage | positions |
 |---|---|---|---|---|---|
@@ -48,970 +236,146 @@ leverage and max positions. A preset picked from equity fills them in, and
 | standard | $10k-$50k | 1.5% | 5% | 6x | up to 6 |
 | pro | $50k+ | 1% | 4% | 5x | up to 10 |
 
-There is no global equity floor any more. Each trade is checked on its own,
-and the one entry path left (main-engine / MCP-submitted) gets one sentence
-saying why it can or cannot trade right now ("Sized up to Hyperliquid's
-$10.50 minimum: risks $1.57 (10.4%) if the stop hits"). Three guarantees
-hold for every preset and for custom settings, property-tested from $5 to
-$100k:
+The operator's own account runs a custom profile outside this table (risk
+100%, daily pause 100%, 20x, one position), not one of the four presets.
+Three guarantees hold for every preset and for custom settings,
+property-tested from $5 to $100k (`services/risk/tests/test_derive.py`):
 
 1. A trade never plans to risk more than the daily pause.
-2. The daily pause always fits one minimum-size trade. Without that, a $15
-   account could never trade, because the exchange minimum sets the floor.
+2. The daily pause always fits one minimum-size trade, or a $15 account
+   could never trade at all.
 3. Max positions times the worst stop-out fits inside the daily pause.
 
-Old configs migrate automatically: the scattered sizing keys become a custom
-profile, shown as "Custom (from your old settings)" on `/account`, one click
-from a preset. Fresh installs start on "auto".
-
-## Connecting an account
-
-There is no sign-in. Open pathiel and connect a Hyperliquid account:
-
-- **Connect your wallet** (recommended). One signature approves a trading key
-  that pathiel generates and keeps encrypted at rest. That key can trade but
-  can never withdraw, and your main key never leaves your wallet. The
-  signature is made on whatever chain your wallet is on, so you never switch
-  networks.
-- **Use an API key** made on app.hyperliquid.xyz/API.
-- **Watch an address**: read-only dashboards and desks.
-
-Then pick a risk preset with a live preview and you are trading. Existing
-`.env.local` keys keep working and appear as the "From .env.local" account.
-On your own machine nothing asks you to log in. A public deployment is
-single-operator: only the operator's wallet manages accounts and risk.
-
----
-
-## What was removed (2026-10-23)
-
-Operator decision: pathiel is a headless desk. Claude places every trade
-through the MCP server; the autonomous strategy books that used to place
-trades unattended are retired, so there is no second trader on the wallet.
-Deleted rather than disabled, same reasoning as the 2026-08-29 removal below
-— a half-removal that leaves a live route is worse than either end state:
-
-- **All seven strategy books** and their private helpers — news_surge_short,
-  news_surge_multi, social_trending, unlock_short_runin, xs_reversal,
-  drawdown_ladder, copy_trade — plus the cross-book claims registry
-  (`ClaimsRegistry`/`OwnedPositions`) that coordinated them, the nightly
-  grader (`autonomous_cycle.py`, formerly `scripts/`) that promoted/demoted
-  them, and every book-only status/grading script (`book_status.py`,
-  `pnl_by_book.py`, `grade_forward_ledger.py`, `shadow_status.py`,
-  `shadow_inverse_status.py`, `funded_dry_run.py` — all formerly `scripts/`).
-- The book-only config blocks (per-book `enabled`/`notional_usd`/`stop_pct`,
-  `strategy_book_equity_frac`, `strategy_book_notional_usd`,
-  `books_bypass_ai`).
-
-The dashboard's bot-watching surface (the old `/activity`, `/news`,
-`/trends`, `/analytics` pages, and the landing page's book panels/decision
-funnel/trade tape) was removed outright 2026-10-23, not frozen — there is
-no shadow ledger left to render, and a headless desk needs a different
-screen, not a historical view of a dead one. See **Dashboard: the Desk
-page** below.
-
-What survives: the MCP server as the one trading surface, and the
-general-purpose pieces the books leaned on but did not own —
-`book_params.py`'s sizing-floor resolver (now the one fallback for every
-entry), `capital_flows.py`, `news_catalyst.py`. Full account in
-`docs/overhaul/HEADLESS_2026-10-23.md`.
-
-**Wave 2 (2026-10-23): the autonomous engine itself is gone.** The
-scan/research/execute loop (the trading-loop script), the AI research
-pipeline (`pathiel/agents/research.py`), the perception scanner
-(`perception.py`), the 11 risk gates (`risk_gates.py`), the DSL exit engine
-(`dsl_exit.py`), the entry-context/trade-ledger memory (`memory.py`), and
-the cron-replacement scheduler/process supervisor/alert evaluator (three
-more deleted scripts) are all deleted — Claude is the only trader on the wallet, placing every order
-through the MCP server's `place_bracket`/`bracket_sweep`/`close_position`
-(`pathiel/agents/bracket.py`), sized against the operator's saved risk
-profile (`risk_limits`/`risk_size_trade`), not a scanned/researched/gated
-pipeline. `shadow_ledger.py` and `data_logger.py` (no writer left once the
-executor's `thin_short_relax` experiment went with it) and `deadline.py`
-are deleted too. `book_params.py` and `rebalancer_owned.py`'s
-`state_file()` (moved to `pathiel/state.py`) stay — both are still
-load-bearing for the MCP server's live risk-sizing path. Full account in
-`docs/overhaul/HEADLESS_2026-10-23.md`'s wave-2 section.
-
-## What was removed (2026-08-29)
-
-The candle-strategy space is saturated and the perp fee math is fatal, not
-fixable. Deleted rather than disabled, because a half-removal that leaves a live
-route is worse than either end state:
-
-- **17 strategy books** and every order-placing call site, plus `pathiel/v2/`
-  (a parallel engine whose only three signal generators were among them)
-- **The entire prediction-market side** — the arb crossed 2 of 276 sampled
-  windows and the forecasts lost to the market's own calibration
-
-What survives is the engine: ingestion, the TA filter, the risk gates, the
-executor, the DSL exit engine, the shadow ledger and its grader, and the three
-mover-recorder live arms. Roughly 26,000 lines came out.
-
----
-
-## Desks: one market, one thesis, one decision
-
-A desk is a siloed focus with its own instruments, news, policy watch,
-catalyst calendar, leverage ladder, token budget and thesis journal. Six ship:
-**oil** (priced off Brent, plus WTI and natgas; the flagship and the only one
-currently marked active — agent config `active_desks`), **btc**, **top5** crypto,
-**ai** equities, **metals** and **indices**. The Desk page (`/`) renders the
-active desk's call; its Thesis tab (`/desk/{id}`, default `oil`) is the full
-reading room.
-
-```
-services/strategies   desk registry, deterministic analytics, journal, grader, HTTP routes
-services/intel        news, bills and regulation, catalysts, Polymarket/Kalshi odds, CFTC COT (zero LLM)
-services/thesis       the only LLM step: writes the thesis, rejects any number not in the data
-services/llm          gateway to the local Claude Code CLI (no hosted API)
-contracts/strategies  the shared models every service above speaks
-```
-
-How a refresh spends tokens:
-
-1. Analytics are pure math on Hyperliquid candles: returns, volatility, forward
-   windows, and a full-equity 5x/10x/20x ladder with liquidation odds and EV.
-2. Intel is fetched and scored without an LLM. Prediction-market strike ladders
-   collapse to one line each.
-3. The token gate skips the LLM unless price moved past the desk's threshold, a
-   high-relevance headline arrived, or the thesis expired.
-4. One LLM call writes the thesis. A validator rejects invented numbers, and a
-   repair round runs only when that check fails.
-
-Measured on live oil (2026-10-17): from 43.8k input tokens and $1.57 per thesis
-in two calls, down to about 7k input and $0.35 in one call.
-
-Leverage verdicts take the worse of two signals: empirical liquidation odds
-and the chance volatility touches the liquidation price. On the walk-forward
-eval, "hold" rungs liquidated at most 4.8% of the time, down from 100% for the
-old rule (`services/strategies/README.md`).
-
-Every thesis is graded when it expires: direction, target-before-stop, Brier
-score on the scenarios. Your own calls (the "Make your own call" form) are
-graded the same way, so the track record shows you against the machine.
-
-```bash
-python -m services.strategies list
-python -m services.strategies refresh oil          # token-gated; --force to rewrite
-python -m services.strategies brief oil
-python -m services.strategies grade
-```
-
-Every call card ends with **Your size**: the call sized for the active account
-by the same rules every real trade sizes with (`POST /api/risk/size`), plus a
-warning when the best target pays less than the stop costs.
-
-Pages open from cache. A desk's analytics are rebuilt on one background worker
-when older than 15 minutes ("Updating prices" shows meanwhile), and daily
-candles live on disk (`$PATHIEL_STATE_DIR/strategies/candles/`), so a rebuild
-only fetches the newest bars. Measured 2026-10-18: a desk brief went from 22 to
-122 seconds to under 5 milliseconds.
-
-The scheduler runs `desks-refresh` every 30 minutes and `desks-grade` every hour.
-MCP agents get `desk_list`, `desk_brief`, `desk_refresh`, `desk_submit_call`,
-`desk_track_record` and `desk_grade`.
-
-## MCP Integration
-
-pathiel is a standalone Python application; **Pathiel Agent operates it through this MCP server** — that is the whole integration boundary. The agent calls the tools below; the trading engine itself has no Pathiel-framework dependency.
-
-The MCP server (`scripts/pathiel-mcp-server.py`) exposes 59 tools over stdio transport. The 17 primary tools are listed below; the remainder are Hyperliquid data passthroughs and the `desk_*` tools. Full table: `docs/overhaul/MCP.md`.
-
-**From Claude Code.** `.mcp.json` registers the server for this repo. Enable
-it once with `/mcp` (or `"enabledMcpjsonServers": ["pathiel"]` in
-`.claude/settings.local.json`). "Brief oil" calls `desk_brief`, "how big"
-calls `risk_size_trade`, "how much do I have" calls `account_overview` (every
-dex: HIP-3 money such as oil on xyz is not on the main dex). The server sends
-short instructions at connect time, and every tool carries MCP safety
-annotations: the five live-money tools are marked destructive, so Claude Code
-asks before each call. Calls run concurrently with a deadline each (120 s,
-`desk_refresh` 300 s), honor cancel, and report progress. Live check,
-read-only tools only: `.venv/bin/python scripts/mcp_smoke.py`.
-
-**The wallet boundary, because an agent will ask.** `connected_wallets` and
-`wallet_account` report on wallets that signed in to the dashboard, and they are
-read-only by construction rather than by policy. A SIWE sign-in grants a
-session, not a key; this server signs with the deployment's own key and holds no
-other. So there is no path — through these tools or any other — by which an
-agent places, closes or resizes an order on a visitor's account. `connected_wallets`
-says so in its own response payload (`can_this_server_trade_them: false`), because
-the alternative is an agent inferring otherwise and telling a user it can trade
-for them.
-
-| Tool | Description |
-|------|-------------|
-| **Trading Core** | |
-| `place_bracket` | One entry (market or resting limit) with an exact stop and target, sized by the risk engine |
-| `bracket_sweep` | Cancel a stranded sibling order and confirm an open position is covered by a stop |
-| `close_position` | Close a coin through the same reduce-only executor close helper used by loop exits |
-| `set_leverage` | Set isolated leverage for a coin before an entry |
-| `cancel_order` | Cancel one resting order by id |
-| `state` | Get full agent state (mode, equity, positions, trades) |
-| `config` | Get/set agent configuration (mode, risk caps, thresholds, `ai_brain`) |
-| **Account and risk** (read-only) | |
-| `account_overview` | Active account: equity, where it sits (every perp dex and spot), positions, can-trade |
-| `accounts` | Registered accounts, which one is active, which address the bot trades with |
-| `risk_limits` | Positions at once, $ per stop-out, daily pause; `equity_usd`/`preset` for a what-if |
-| `risk_size_trade` | One trade sized for this account: size, margin, $ at risk, payoff per target, liquidation |
-| **Connected wallets** (read-only) | |
-| `connected_wallets` | Wallets that signed in to the dashboard over SIWE, newest first |
-| `wallet_account` | Read-only Hyperliquid equity + positions for any address |
-| **Market Data** | |
-| `market_get_asset_data` | Candles + funding + OI for any coin |
-| `market_get_funding_regime` | LONG_CROWDED / SHORT_CROWDED / NEUTRAL |
-| `market_list_instruments` | All tradeable instruments |
-| `market_get_mids` | Real-time mid prices |
-
-Configure in Pathiel Agent's `config.yaml`:
-```yaml
-mcp_servers:
-  pathiel:
-    command: python3
-    args:
-      - /path/to/pathiel/scripts/pathiel-mcp-server.py
-    cwd: /path/to/pathiel
-    timeout: 60
-    env:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-```
-
----
-
-## CLI Quick Start
-
-```bash
-# 1. Start/restart autonomous trading loop + dashboard API
-scripts/restart.sh
-
-# 2. Confirm there is one loop process and one API server
-scripts/restart.sh status
-
-# 3. Monitor
-tail -f logs/trading_loop.log
-python3 scripts/preflight_live.py    # secrets, capital, feed, disk, processes
-```
-
-Dashboard served at `http://localhost:8000` (port from `PATHIEL_PORT`).
-
----
-
-## The problem it solves
-
-Trading signals appear constantly — 5-minute spikes, hourly trends, daily breakouts. Most systems call expensive AI on every signal, burning tokens on noise. Pathiel-Trader solves this by separating cheap statistical analysis from expensive AI reasoning:
-
-1. **Scan** — the majors universe in parallel with volume pre-filtering and rate-limit-aware batching. The allowlist is applied at scan time, not just at the entry gate, so the tail costs nothing in candles or AI calls
-2. **TA Filter** — multi-timeframe indicators (EMA, RSI, ATR, ADX, volume) — zero AI cost
-3. **AI Research** — only on CONFIRMED signals, plus any fired momentum burst, through the selected AI brain provider
-4. **Execution** — ATR equal-risk sizing, Hyperliquid-valid order normalization, and DSL dynamic exits (loss protection → profit locking)
-5. **Discovery** — built-in Hyperfeed Discovery replicates Smart Money leaderboards and whale signals
-
-This architecture reduced daily AI costs from $8-$52 to $3-$10 while improving signal quality.
-
----
-
-## The failure modes it now refuses to hide
-
-Every one of these was a real silent failure in this system, where broken and
-"nothing to report" were indistinguishable. Each is now something that fails
-loudly, blocks, or pages:
-
-| was silent | now |
-|---|---|
-| A dead trading loop read as healthy | `/api/health/system` returns 503; `PathielLoopDead` alerts |
-| An exchange outage read as a quiet market | Entries blocked while the scan feed is degraded |
-| A withdrawal read as a trading loss | Drawdown is flow-neutral; capital flows are recorded |
-| An unusable AI brain read as a PASS verdict | `provider_readiness()` gates the deploy and the healthcheck |
-| `mode: LIVE` on a dust account | Structural floor in the executor; no config can bypass it |
-| Logs growing until the disk filled | Rotation, a directory cap, and a disk guard on startup |
-| A crash mid-write dropping every claim | Atomic writes with fsync on the state that matters |
-| Tests passing on one laptop only | CI installs from a lockfile and rejects absolute paths |
-
----
-
-## Architecture
-
-```
-+---------------------------------------------------------------+
-|          pathiel — autonomous trading pipeline          |
-|                                                               |
-|  Scan ➜ TA Filter ➜ AI Brain ➜ Risk Gates ➜ Execute ➜ DSL Monitor ──▶ Auto-Close
-|        (cheap)          (expensive)     (11 gates)            (per-tick, 2-phase)
-│                       |
-│                  Only CONFIRMED
-│                  signals proceed
-├───────────────────────────────────────────────────────────────┤
-│               Hyperfeed Discovery                             |
-│  Leaderboard • Whale Flow • OI Anomaly • Whale Tracking       |
-+---------------------------------------------------------------+
-```
-
-### Pipeline
-
-```
-┌─────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────┐    ┌──────────┐
-│  Perception │───>│  TA Filter   │───>│    AI Brain     │───>│  Risk    │───>│  Executor│
-│   Scanner   │    │  (TA Filter) │    │ provider seam   │    │  Gates   │    │ (HL + DSL)│
-│ 5m/1h/4h    │    │  EMA/RSI/ATR│    │ Verdict + Price │    │  11 gates│    │ SL/TP    │
-│ Volume-N    │    └──────────────┘    └─────────────────┘    └──────────┘    └──────────┘
-└─────────────┘
-     │
-     ├── Hyperfeed Discovery (leaderboard, whale index, OI anomaly)
-     │     ↳ whale_concentration(), oi_funding_anomaly()
-     │     ↳ discovery_get_top_traders(), leaderboard_get_trader_positions()
-     └── Rate-Limit Pipeline (1200 weight/min — batch + cache)
-```
-
----
-
-## Key Features
-
-### Rate-Limit-Aware Scan Pipeline
-- **Volume pre-filtering**: Top-N markets by 24h notional volume plus mover and rotating-sweep slots
-- **Parallel batch scanning**: Workers fan out within batches, sleep between
-- **TTL caching**: 5m candles are cached inside the scan interval; 1h enrichment is cached longer and only fetched for surfaced markets
-- **Configurable**: `PATHIEL_SCAN_INTERVAL`, `PATHIEL_MAX_MARKETS`, `PATHIEL_SCAN_WORKERS`, `PATHIEL_BATCH_SIZE`, `PATHIEL_BATCH_SLEEP`
-
-### Pluggable AI Brain
-- **Single seam**: `research._call_ai()` delegates to `pathiel/agents/ai_brain.py`; every provider returns verdict text for the same `parse_verdict()` contract.
-- **Providers**: `openrouter` (default), `claude_cli`, and `codex_cli`.
-- **Hot switch**: set `AI_BRAIN_PROVIDER` or `.agent-config.json` → `ai_brain.provider` to switch without code changes. Config is read on each research call.
-- **Failure-safe**: provider failure, timeout, empty output, or CLI JSON-less output returns `""`, which becomes `ai_down=True` and a PASS that cannot be upgraded by the TA sidestep path.
-- **OpenRouter preserved**: the 402 affordability retry still downgrades `max_tokens` once before failing closed.
-
-### DSL (Dynamic Stop-Loss) Exit Engine
-- **Phase 1 — Loss Protection**: Hard stop at the tighter of `max_loss_pct` or `max_loss_roe_pct / leverage` in spot terms, optionally widened to a volatility-scaled `atr_stop` (ATR×mult, clamped to floor/ceiling). Current live new-entry config is `2.5%` spot / `15%` ROE with `atr_stop` enabled (1.5× ATR, 1.0–2.5% clamp).
-- **Phase 2 — Profit Locking**: Activated once price moves `protect_pct` in your favor. Current live new-entry config arms at `1.25%`, trails with a tight `retrace_threshold=0.10` (banks give-backs early), then loosens via `phase2_tiers` at `+8%` (0.35) and `+15%` (0.40) so proven runners get room; the floor ratchets one-way and never gives back locked profit.
-- **Hard/stale timeout**: `hard_timeout_minutes` is the maximum hold horizon; `stale_flat_timeout_minutes` exits positions that never reach the profit-lock phase.
-- **Auto-registration**: Every executed position is registered for DSL tracking
-- **Persisted across restarts**: Tracker state (peak, floor, breach counter) is written to `.dsl-state.json` on every advance, so a daemon restart doesn't reset the ratchet
-- **Exchange reconciliation**: Each scan tick, trackers are reconciled with live exchange positions — manually-opened or externally-closed positions stay in sync; positions opened before the engine shipped are synthesized from `entryPx`
-- **Auto-close**: When a tick trips a floor/stop/timeout, the trading loop market-closes the position and logs a `dsl_exit` event to the session log. No human in the loop
-
-### Risk & Resilience Gates
-- **Regime-aware gating**: trades are scored against the asset's applicable trend regime — BTC for native crypto, own-trend-first for tokenized equities, and own trend for commodities. Aligned trades clear at `aligned_min_conf`; counter-regime trades need `counter_regime_min_conf`. `block_counter_trend_bypass` stops weak own-coin trigger bypasses from sneaking longs into a downtrend.
-- **Short-specific liquidity floor**: shorts require deeper 24h volume (`min_short_volume_usd`) than longs — thin markets squeeze.
-- **Free-margin floor**: `min_available_margin_pct` blocks new entries once free margin gets thin, capping over-leverage and correlated stacking.
-- **Correlation cap**: `max_crypto_long_correlated` limits simultaneous correlated crypto exposure.
-- **Self-healing watchdog**: the loop re-execs itself if a scan cycle hangs; the watchdog is armed *before* startup network I/O so it also covers startup hangs.
-- **Partial-dex degraded-read guard**: a HIP-3 dex that fails to fetch no longer drops its equity from the aggregate — prevents false "huge loss" reads from poisoning memory or tripping the kill switch.
-- **Re-entry backstop**: a DSL-registry check prevents position stacking when a live read flakes (restart / 429 window).
-
-### Hyperfeed Discovery (Native, no MCP)
-Replicates the Hyperfeed MCP plugin's data directly from HL API:
-- `leaderboard_get_markets(limit)` — top markets by OI + volume
-- `market_get_funding_regime()` — LONG_CROWDED / SHORT_CROWDED / NEUTRAL analysis
-- `whale_concentration()` — identifies assets with whale accumulation
-- `oi_funding_anomaly()` — OI spike + negative funding + flat price = accumulation signal
-- `discovery_get_top_traders(...)` — leaderboard rankings with pnl/roi per window
-- `market_get_asset_data(asset)` — candles + funding + OI for any coin
-
----
-
-## Core Modules
-
-| Module | Purpose |
-|--------|---------|
-| `pathiel/agents/perception.py` | Multi-market volume-pre-filtered scanner with parallel batch scanning |
-| `pathiel/indicators/triggers.py` | Trigger engine — composite scoring across signal types |
-| `pathiel/agents/ta_filter.py` | Pre-AI technical analysis — multi-TF (1h/4h/1d) EMA, RSI, ATR, ADX, volume confirmation |
-| `pathiel/agents/research.py` | AI research pipeline — fetches candles, builds context, dispatches to the configured AI brain |
-| `pathiel/agents/ai_brain.py` | Pluggable verdict providers: OpenRouter HTTP, Claude CLI, Codex CLI |
-| `pathiel/agents/risk_gates.py` | 11 independent risk gates: confidence, notional caps, daily loss, cooldown, correlation, news blackout, etc. |
-| `pathiel/agents/executor.py` | ATR/fallback sizing + Hyperliquid precision normalization + EIP-712 order signing + DSL exit registration |
-| `pathiel/agents/dsl_exit.py` | Two-phase trailing stop engine — disk-persisted (`.dsl-state.json`), reconciled with exchange positions each tick |
-| `pathiel/agents/hyperfeed.py` | Hyperfeed Discovery API — leaderboard, whale index, OI/funding context |
-| `pathiel/agents/memory.py` | Persistent file-backed state (`.agent-memory.json`, `.agent-config.json`) |
-| `pathiel/agents/config_store.py` | Config persistence layer |
-| `pathiel/agents/system_prompt.py` | Dedicated system prompt for the trading agent |
-| `pathiel/client/hl_client.py` | Hyperliquid REST + WebSocket client (mids, candles, account state) |
-| `pathiel/client/ws_client.py` | Persistent WebSocket connection for sub-second mids |
-| `pathiel/client/universe.py` | Volume-ranked market loader with 24h caching |
-| `pathiel/client/cache.py` | LRU + TTL memoization with in-flight dedup |
-| `pathiel/client/lock.py` | fcntl lock with stale-PID recovery for scan coalescing |
-| `pathiel/client/parallel.py` | Concurrency-bounded fan-out for independent API calls |
-| `pathiel/client/daemon.py` | Long-lived scan scheduler with tick timeouts + graceful shutdown |
-| `pathiel/client/exchange.py` | Order placement, leverage setting, trigger orders (SL/TP) |
-| `pathiel/indicators/math.py` | TA indicators: EMA, SMA, ATR, RSI, ADX |
-| `pathiel/models/types.py` | Shared data type: `Candle` (OHLCV) |
-| `pathiel/server.py` | FastAPI server — 22 REST routes for frontend/dashboard |
-| `services/trend_engine/` | 7d HL regime + recorder P&L (own README); its dashboard tab was removed 2026-10-23, the service itself is untouched |
-| `pathiel/agents/universe.py` | The majors allowlist, applied at scan time as well as at the gate |
-| `pathiel/agents/capital_flows.py` | Deposits/withdrawals + the flow-neutral NAV index the drawdown uses |
-| `pathiel/agents/atomic_io.py` | Crash-safe state writes (temp + fsync + rename + dir fsync) |
-
-### Dashboard: the Desk page
-
-**Rebuilt 2026-10-23** (docs/overhaul/DESK_UI_2026-10-23.md) for the headless
-oil desk: the bot is retired, Claude runs a 15-minute loop through MCP
-(`.claude/skills/oil-tick/SKILL.md`), and the operator trades their own
-wallet by hand from the same thesis. The old bot-watching surface (scan
-feed, book panels, AI-brain trend tab, trade tape) is gone; three tabs are
-left.
-
-The product is a generic desk UI, not an oil-only one — other `DeskSpec`s
-(`btc`, `top5`, `ai`, `metals`, `indices`) stay registered in
-`services/strategies/desks/*.py` and reachable by a direct link or script,
-but the UI only ever shows desks listed in agent config's `active_desks`
-(default `["oil"]`). One active desk renders with no switcher; several show
-a small tab row. Oil is the only desk actually trading today, not the
-product's identity.
-
-| Path | What it shows |
-|------|---------------|
-| `/` | **Desk** — the active desk's current call plus the 20x line (liquidation price, stop distance as a share of it, verdict, R to targets — computed from the call's own entry/stop, `pathiel/agents/bracket.py`), one row per registered wallet (active + watch-only, with a NAKED badge for an uncovered position), candle-derived levels, headlines and catalysts, the last 30 lines of that desk's loop log, and the track record. Shows an onboarding wizard first for a brand-new visitor (connect account → risk preset → done). |
-| `/desk/{id}` | **Thesis** — the full reading room for one desk (default `oil`): the call, the leverage picker (same 20x line as `/`, plus the probabilistic ladder), scenarios, catalysts, bull vs bear, what changes my mind, desk school, track record, and "make your own call." |
-| `/account` | **Account** — the connected Hyperliquid account (or a watch-only address) and the risk preset with a live preview. |
-
-The old auto-trader's kill switch survives on `/` (sets agent config `mode:
-OFF`) but is relabeled plainly: it does not stop the oil-tick loop
-(`place_bracket`/`bracket_sweep`) or the operator's own trades, only the
-retired bot's own `execute` path.
-
-The `/desks` grid list page (one card per desk, with no active-desk concept)
-was removed — see the keep/delete audit in
-docs/overhaul/DESK_UI_2026-10-23.md for the full reasoning behind every page
-and section cut.
-
-### Who can see this
-
-Every `/api/dashboard` route was open until 2026-09-04. Verified against the
-running app, an anonymous GET returned equity, free balance, daily P&L, open
-positions, net capital in, and the full trade history. Anyone with the URL had
-the books.
-
-Reads are closed by default now, and there are two tiers:
-
-| surface | who | route |
-|---|---|---|
-| the **house** account | operator role only | `/api/dashboard/risk`, `/positions` (the rest — `/summary`, `/closed-trades`, `/equity-curve`, `/funnel`, `/book_league` — were removed 2026-10-23 with the pages that rendered them; `/risk` and `/positions` stay because `pathiel/metrics.py`'s `/metrics` endpoint and their own test suites read them independent of any page) |
-| **your own** account | any signed-in wallet | `/api/dashboard/account` |
-| health probes | anyone | `/api/health*` — a check that needs a session cannot report a broken session |
-
-Sign-in is **Sign-In With Ethereum** (EIP-4361), no vendor. `eth-account` is
-already a hard dependency because it signs the Hyperliquid orders, so this cost
-zero new dependencies and no third party learns anyone's wallet. There are no
-passwords in the system.
-
-`/api/dashboard/account` reads the caller's own Hyperliquid account **with no
-stored key**: `/info clearinghouseState` takes a plain address, and the
-signature already proved the caller controls it. The product can show a
-customer their balance while remaining structurally unable to trade it.
-
-- The **first wallet to sign in claims operator**, which closes the
-  open-kill-switch window on a fresh box without a bootstrap password to leak.
-  If something else gets there first, `scripts/grant_operator.py` is the way
-  back.
-- Set `PATHIEL_AUTH_DOMAIN` to the real host before deploying, or every
-  signature is rejected for a domain mismatch.
-- `PATHIEL_PUBLIC_DASHBOARD=1` restores the old open reads for a genuinely
-  private single-operator box. Named to be obvious in a diff and in
-  `fly secrets list`.
-- `PATHIEL_OPERATOR_TOKEN` still exists and is now scoped to **machine callers
-  only** — the scheduler, the supervisor, smoke checks. It is one static string
-  for the whole deployment: it cannot say who acted, cannot be revoked for one
-  person, and cannot rotate without restarting everything. It is not a login.
-
-API keys for `services/pathiel_data_api` are minted by a signed-in wallet at
-`/auth/keys` and belong to it. Only the SHA-256 is stored, so a leaked database
-yields no usable credential and "show it to me again" is not a feature that can
-exist.
-
----
+Old configs migrate automatically into a custom profile, shown as "Custom
+(from your old settings)" on `/account`. Fresh installs start on "auto".
 
 ## Configuration
 
-There are two config files, and they bootstrap **differently**:
+Two files, and they bootstrap differently:
 
-| File | Ships with repo? | You… | Read |
-|------|------------------|------|------|
-| **`.agent-config.json`** | **Yes — tracked**, comes pre-populated with the live strategy | **edit** it (don't create) | fresh on every trade — no restart |
-| **`.env.local`** | **No — gitignored** | **create** it: `cp .env.local.example .env.local`, fill in keys | at process start — restart to apply |
+| File | Ships with repo? | You... | Read |
+|---|---|---|---|
+| `.agent-config.json` | Yes, tracked | edit it (don't create) | fresh on every trade, no restart |
+| `.env.local` | No, gitignored | create it: `cp .env.local.example .env.local` | at process start, restart to apply |
 
-So on a fresh clone: `.agent-config.json` is already there (tweak the values); `.env.local` does not exist until you copy the example and add your credentials. If `.agent-config.json` is ever missing or malformed, the loader falls back to the tuned default config with `"mode": "OFF"` (analyse-only, no orders) — it fails safe, never trades blind. Partial configs are normalized against the same defaults, and bad nested strategy blocks are ignored rather than wiping stop/gate settings.
+`.agent-config.json` today carries 8 top-level keys: `mode`, `ai_brain`,
+`enable_hip3`, `coin_allowlist`, `coin_blocklist`, `hip3_dex_allowlist`,
+`hip3_dex_blocklist`, `risk_profile`, plus `active_desks`. Everything the
+old scan/research/execute engine read (sizing fractions, gate thresholds,
+DSL exit tuning) is gone with that engine.
 
-### `.env.local` — credentials & runtime
-
-Copy `.env.local.example` → `.env.local` and fill in:
-
-```bash
-# ── AI brain / OpenRouter (default research provider) ─────────
-AI_BRAIN_PROVIDER=openrouter              # openrouter | claude_cli | codex_cli
-OPENROUTER_API_KEY=sk-or-...your-key      # required when provider=openrouter
-OPENROUTER_MODEL=x-ai/grok-4.3            # optional — this is the OpenRouter default
-# OPENROUTER_MAX_TOKENS=2048              # optional; 402 retry can shrink this once
-# AI_BRAIN_TIMEOUT_S=120                  # CLI providers are capped at 120s
-# CLAUDE_CLI_COMMAND=claude               # optional override for provider=claude_cli
-# CLAUDE_CLI_MAX_TURNS=1                  # cheap mode default
-# CODEX_CLI_COMMAND=codex                 # optional override for provider=codex_cli
-
-# ── Hyperliquid ──────────────────────────────────────────────
-HYPERLIQUID_WALLET_ADDRESS=0x...          # required — the signing (agent) wallet
-HYPERLIQUID_PRIVATE_KEY=0x...             # required — that wallet's key
-# HYPERLIQUID_MASTER_ADDRESS=0x...        # optional — set for an agent-wallet
-#                                           setup; the master holds the funds
-
-# ── News (optional) ──────────────────────────────────────────
-# BRAVE_API_KEY=BSA...                    # optional — enables news headlines
-#   in AI research and the news-blackout risk gate. Without it, research runs
-#   with news_context = "no news" and that gate is inert.
-
-# ── Scan tuning (optional — defaults shown) ──────────────────
-PATHIEL_SCAN_INTERVAL=60        # seconds between scan cycles
-PATHIEL_MAX_MARKETS=45          # top-vol+movers candle-fetch budget per scan
-PATHIEL_MAX_MARKETS_HIP3=18     # of that budget, slots reserved for HIP-3
-PATHIEL_UNIVERSE_SWEEP=0        # >0 = ALSO rotate N extra tail markets/cycle so the
-#                                FULL universe is covered over ceil(N_universe/N)
-#                                cycles (top-vol+movers still scanned every cycle).
-#                                Keep total (MAX_MARKETS+SWEEP) within the rate budget.
-PATHIEL_SCAN_WORKERS=8          # max concurrent market scans per batch
-PATHIEL_BATCH_SIZE=10           # markets per parallel batch
-PATHIEL_BATCH_SLEEP=1.0         # seconds between batches (raise to pace a wider scan)
-PATHIEL_WATCHDOG_TIMEOUT_S=600  # re-exec the loop if a scan/cycle makes no progress
-#                                for this long. A scan slower than this (too many
-#                                markets / too much batch_sleep) trips it — keep
-#                                MAX_MARKETS+SWEEP fast enough that a cycle stays well under.
-# PATHIEL_PORT=8000             # FastAPI server port
-```
-
-Keep `MAX_MARKETS + UNIVERSE_SWEEP` within HL's ~1200 weight/min budget — a wider per-cycle scan must be paced (`BATCH_SLEEP`) or it 429-storms AND trips the watchdog. For full-universe coverage prefer the **rotating sweep** (fast cycles, full coverage over time) over one giant slow scan. See [Rate Limit Math](#rate-limit-math).
-
-When `enable_hip3=true`, the budget splits into `(PATHIEL_MAX_MARKETS - PATHIEL_MAX_MARKETS_HIP3)` crypto slots + `PATHIEL_MAX_MARKETS_HIP3` HIP-3 slots, each sorted by 24h volume independently. Without this split, BTC/ETH/SOL/etc. dominate the single sorted list and tokenized-equity perps (e.g. `xyz:CRCL` $34M, `xyz:DRAM` $22M) never get candles fetched — so their +20% / −8% swings never surface a signal.
-
-### `.agent-config.json` — trading behaviour & risk
-
-The live trading knobs. Read fresh on **every trade**, so edits take effect on the
-next cycle — no restart. Keys are read tolerantly: `snake_case` or `camelCase`
-both resolve (`max_trade_notional_usd` ≡ `maxTradeNotionalUsd`).
-
-```json
-{
-  "mode": "LIVE",
-  "ai_brain": {
-    "provider": "openrouter",
-    "timeout_s": 120,
-    "claude_cli": { "command": "claude", "max_turns": 1 },
-    "codex_cli": { "command": "codex" }
-  },
-  "enable_crypto": true,
-  "enable_hip3": true,
-  "equity_fraction_per_trade": 0.2,
-  "leverage": 12,
-  "max_trade_notional_usd": 350,
-  "tp_scale_fraction": 0.5,
-  "max_concurrent": 10,
-  "max_total_notional_pct": 10.0,
-  "max_daily_loss_usd": -30,
-  "daily_giveback_halt_pct": 0.35,
-  "daily_giveback_min_peak_usd": 25.0,
-  "min_available_margin_pct": 0.10,
-  "min_market_volume_usd": 700000,
-  "min_hip3_volume_usd": 700000,
-  "min_short_volume_usd": 50000000,
-  "cooldown_min": 30,
-  "min_ai_confidence": 0.67,
-  "counter_regime_min_conf": 0.8,
-  "block_counter_trend_bypass": true,
-  "max_crypto_long_correlated": 3,
-  "coin_allowlist": [],
-  "coin_blocklist": [],
-  "dsl_exit": {
-    "max_loss_pct": 2.5,
-    "max_loss_roe_pct": 15.0,
-    "atr_stop": { "enabled": true, "atr_mult": 1.5, "floor_pct": 1.0, "ceiling_pct": 2.5 },
-    "protect_pct": 1.25,
-    "retrace_threshold": 0.1,
-    "phase2_tiers": [
-      { "pct_above_entry": 8.0, "retrace_threshold": 0.35 },
-      { "pct_above_entry": 15.0, "retrace_threshold": 0.4 }
-    ],
-    "stale_flat_timeout_minutes": 480
-  },
-  "atr_risk_sizing": {
-    "enabled": true,
-    "risk_per_trade_pct": 0.02,
-    "sizing_basis": "primary_stop"
-  },
-  "ta_sidestep_force_execute": true,
-  "override_max_daily_extension_pct": 30.0,
-  "override_volume_confirm": { "enabled": true, "min_ratio": 1.2 },
-  "trend_filter_200ma": { "enabled": true, "period": 200, "allow_daily_mover_long_bypass": true },
-  "runner_entry_gate": {
-    "enabled": true,
-    "allow_shorts": false,
-    "require_daily_mover_longs": false,
-    "shock_day_fresh_impulse": true,
-    "min_confidence": 0.67,
-    "min_crypto_composite": 20.0,
-    "min_hip3_composite": 32.0,
-    "mover_min_composite": 20.0
-  },
-  "late_chase_relax": { "enabled": true, "min_ext_pct": 20.0, "max_ext_pct": 30.0, "min_volume_usd": 5000000 },
-  "capital_rotation": { "enabled": true, "min_candidate_composite": 40.0, "min_hold_minutes": 30, "protect_winner_roe_pct": 3.0 }
-}
-```
-
-The snippet above is the current live strategy shape, not a guarantee that those
-values are optimal in future market regimes. Missing keys are filled from
-`pathiel.agents.config_store.DEFAULT_CONFIG`; keep the tracked
-`.agent-config.json` explicit so reviews show intentional strategy changes.
-
-| Key | What it does | Fallback/default |
-|-----|--------------|---------|
-| `mode` | `OFF` = analyse only, no orders · `LIVE` = place real orders | `OFF` |
-| `equity_fraction_per_trade` | Fraction of perp equity committed as margin per trade when ATR risk sizing is disabled — see [Trade Sizing](#trade-sizing) | `0.01` |
-| `leverage` | Leverage **ceiling** — each trade uses `min(this, the coin's own max)`. Coin maxes differ (BOME 3×, BTC 40×). Set high (e.g. 40) to ride each coin's max. Also multiplies position notional. | `5` |
-| `min_ai_confidence` | Minimum AI confidence for a LONG/SHORT to execute | `0.8` |
-| `max_concurrent` | Max simultaneous open positions | `3` |
-| `max_trade_notional_usd` | Hard ceiling on a single trade's notional | `350` |
-| `asset_notional_multiplier` | Optional asset-bucket sizing scale applied after risk sizing. Defaults neutral; use it only for controlled risk experiments, not as the primary alpha fix. | `{"crypto": 1.0, "hip3": 1.0}` |
-| `max_total_notional_pct` | Ceiling on combined open notional, as a multiple of equity | `1.0` |
-| `max_daily_loss_usd` | Daily-loss kill switch (negative number). **Size it to the account**: a -$100 kill on a $12.94 account can never fire, so the switch is decorative. | `-100` |
-| `min_tradable_equity_usd` | Operator override of the derived equity floor. Precedence #1, ahead of `book_margin_requirement` (always 0 now — the strategy books it summed are retired 2026-10-23) and the $25 exchange backstop. A negative or non-numeric value falls back rather than disabling the floor — a typo must not unlock trading on a dust account. | *(unset)* |
-| `daily_giveback_halt_pct` | **Give-back breaker**: once the day peaks ≥ `daily_giveback_min_peak_usd`, halt NEW entries if it retraces more than this from peak (existing positions ride their stops; resets at UTC roll). Locks green days from round-tripping | `0` (off) |
-| `daily_giveback_min_peak_usd` | Arm threshold for the give-back breaker — stays disarmed until the day's peak PnL reaches this | `20` |
-| `tp_scale_fraction` | Fraction auto-banked at the TP target (server-side reduce-only trigger at ~1 ATR); rest rides the trail. Captures profit instead of round-tripping | `0.5` |
-| `crowded_with_min_conf` | **Squeeze caution**: a with-the-crowd aligned trade (short into `SHORT_CROWDED` / long into `LONG_CROWDED`) must clear this conf or it's blocked `via:crowded_squeeze` | `0` (off) |
-| `min_available_margin_pct` | Block new trades when free margin drops below this fraction of equity — caps over-leverage/stacking. Lower = deploys more aggressively | `0.10` |
-| `min_market_volume_usd` | Skip markets below this 24h volume | `5_000_000` |
-| `min_short_volume_usd` | Extra 24h-volume floor for **shorts only** — thin markets squeeze, so shorts need deeper liquidity | `0` |
-| `cooldown_min` | Minutes before re-trading the same coin | `60` |
-| `counter_regime_min_conf` | Confidence bar for a trade **against** the regime (e.g. long in a downtrend) | `0.7` |
-| `aligned_min_conf` | Confidence bar for a trade **with** the regime (trend-aligned) — typically lower than the counter-regime bar | _unset_ |
-| `block_counter_trend_bypass` | When `true`, own-coin trigger bypasses cannot override the counter-regime gate — stops long-into-downtrend bleed | `false` |
-| `override_max_daily_extension_pct` | Max positive 24h move allowed for PASS→LONG TA sidestep. Blocks parabolic chase entries (e.g. TNSR +70%, which backtests −EV above 30% extension). `0` disables | `30` |
-| `backup_sl_max_frac_of_liq` | Caps server-side backup stop distance to this fraction of the approximate liquidation buffer | `0.60` |
-| `max_crypto_long_correlated` | Cap on simultaneous correlated crypto positions (concentration guard) | `2` |
-| `coin_allowlist` | If non-empty, **only** these coins are tradeable | `[]` (all) |
-| `coin_blocklist` | Coins that are never traded | `[]` |
-
-**Nested blocks** (all in `.agent-config.json`, all hot-read for new entries):
-
-- **`ai_brain`** — verdict provider selection. `provider` can be `openrouter`,
-  `claude_cli`, or `codex_cli`; `AI_BRAIN_PROVIDER` overrides it. CLI providers
-  run in cheap/headless mode by default and must emit the same final-line verdict
-  JSON as OpenRouter. On any provider failure the result is `ai_down=True` PASS.
-- **`dsl_exit`** — trailing-stop engine. `max_loss_pct` and `max_loss_roe_pct`
-  are the hard stop, with the tighter spot-equivalent value binding; the optional
-  `atr_stop` sub-block widens it to a volatility-scaled stop (`atr_mult` × ATR,
-  clamped to `floor_pct`/`ceiling_pct`). Current live new-entry values are
-  `max_loss_pct=2.5`, `max_loss_roe_pct=25`, `atr_stop` enabled (1.5×, 1.0–2.5%),
-  `protect_pct=1.25`, and a tight `retrace_threshold=0.10`. `phase2_tiers` is the
-  profit-scaled give-back ladder (loosens the trail on proven runners: +8%→0.35,
-  +15%→0.40). `stale_flat_timeout_minutes` (480) exits positions that never reach
-  the profit-lock phase. Tracker state → `.dsl-state.json` (override
-  `PATHIEL_DSL_STATE_FILE`). Existing open positions keep the policy captured at
-  entry; config edits affect new entries and synthesized trackers.
-- **`atr_risk_sizing`** `{enabled, risk_per_trade_pct, sizing_basis}` —
-  equal-risk position sizing: target risk = `risk_per_trade_pct × equity`, converted
-  to notional from the configured stop distance. Current live uses
-  `risk_per_trade_pct=0.2` and `sizing_basis="primary_stop"`. This overrides the
-  flat `equity_fraction_per_trade` path; volatile/wide-stop coins get smaller size.
-- **`ta_sidestep_force_execute`** — the only remaining PASS upgrade path. It can
-  upgrade an AI PASS to LONG only on composite>=runner minimum or momentumBurst,
-  never on slow-burn alone, never when AI is down, and never above
-  `override_max_daily_extension_pct`. The upgraded LONG still must pass the
-  normal runner gate.
-- **`late_chase_relax`** `{enabled, min_ext_pct, max_ext_pct, min_volume_usd}` —
-  narrows the runner gate's "late trend-only chase" block:
-  trend-aligned entries with no fresh breakout are admitted ONLY on liquid coins
-  (vol ≥ `min_volume_usd`) inside the `[min_ext_pct, max_ext_pct]` daily-extension
-  band — the one pocket backtested +EV / OOS-robust (20–30% ext, +0.15–0.20%/t).
-  Low-liquidity and out-of-band chases stay blocked.
-- **`capital_rotation`** `{enabled, min_candidate_composite,
-  min_hold_minutes, protect_winner_roe_pct}` — when a strong fresh candidate is
-  blocked purely by capital (book full / notional cap), evicts the weakest
-  non-winner (roe < `protect_winner_roe_pct`, held ≥ `min_hold_minutes`) to make
-  room.
-Trigger internals (weights, sigma thresholds, candle interval) live separately in
-`pathiel/agents/config.py` — edit there to tune the scan itself.
-
-**TL;DR — where to set what:** strategy/risk knobs → `.agent-config.json` (live,
-no restart); credentials + scan/infra env → `.env.local` (restart to apply); scan
-trigger internals → `pathiel/agents/config.py` (restart).
-
----
-
-## Quick Start
-
-### Prerequisites
-- Python 3.11+
-- Hyperliquid wallet with private key
-- OpenRouter API key ([openrouter.ai](https://openrouter.ai)) for the default `openrouter` brain, or non-interactive Claude/Codex CLI auth for `claude_cli` / `codex_cli`
-- (Optional) Brave Search API key for news
-
-### Setup
-```bash
-git clone https://github.com/Julian-dev28/pathiel
-cd pathiel
-
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies (editable, with dev extras: pytest + ruff)
-pip install -e ".[dev]"
-
-# Configure
-cp .env.local.example .env.local
-# Edit .env.local with your keys
-```
-
-## Running
-
-### Trading Loop + API Server
-```bash
-# Start or restart both long-running processes
-scripts/restart.sh
-
-# Check process status
-scripts/restart.sh status
-
-# Follow logs
-tail -f logs/server.log
-```
-The API is available at `http://localhost:8000`. Health check: `GET /` returns `{"service": "Pathiel-Trader", "version": "0.3.0", "status": "running"}`.
-
-`scripts/restart.sh` manages the FastAPI server and the log rotator,
-including stop/verify/start and log files under `logs/`. The MCP stdio server
-is not managed by this script; Pathiel Agent respawns it on tool calls.
-
-> **Known gap (2026-10-23, wave 2):** `scripts/restart.sh`, `fly.toml` and the
-> k8s manifests still declare a `loop`/`sched` process pair for the now-deleted
-> autonomous trading loop and scheduler scripts — that cleanup has not landed
-> yet. Fixing the deploy config is tracked separately from this doc update.
-
-### Manual Process Launch
-```bash
-# API server only
-python -m pathiel.server
-# or: uvicorn pathiel.server:app --host 0.0.0.0 --port 8000
-```
-
-The `--env prod --daemon` flags are informational only; they do not fork the
-process. Use `scripts/restart.sh` for normal operation.
-
-Claude is the only trader on the wallet (2026-10-23, wave 2): there is no
-standing scan/research/execute loop left to describe here. Every trade comes
-from an explicit `place_bracket` call through the MCP server, sized against
-the operator's saved risk profile (`risk_limits`/`risk_size_trade`); see
-`.claude/skills/oil-tick/SKILL.md` for the one scheduled loop that still
-exists — a 15-minute Claude-run tick, not a Python process.
-
----
-
-## Testing
+### `.env.local`: credentials
 
 ```bash
-pytest                          # offline unit tests — fast, no network, CI-safe
-pytest -m online                # read-only tests against the live Hyperliquid public API
-pytest -m browser               # Playwright e2e for every page, desks included
-python -m services.thesis.evals.run_eval              # paid: real LLM thesis eval, threshold 0.85
-python -m services.strategies.evals.verdict_backtest  # walk-forward check of the leverage verdicts
-python scripts/site_latency_eval.py   # live: pages answer < 1 s with a dashboard tab open, and while venue reads are in flight (server must run)
-PATHIEL_E2E=1 pytest -m live      # real-money e2e: places a tiny order, calls the LLM
+HYPERLIQUID_WALLET_ADDRESS=0x...   # required: the agent wallet that signs orders
+HYPERLIQUID_PRIVATE_KEY=0x...      # required: that wallet's key
+HYPERLIQUID_MASTER_ADDRESS=0x...   # optional: set for an agent-wallet setup
+
+# services/intel: every one of these is optional; a missing key skips that
+# source cleanly rather than failing the brief. Run scripts/intel_keys.py to
+# see which are set.
+EIA_API_KEY=...        # free, eia.gov/opendata/register.php
+FRED_API_KEY=...       # free, fred.stlouisfed.org/docs/api/api_key.html
+CONGRESS_API_KEY=...   # free, api.congress.gov/sign-up/
+
+AI_BRAIN_PROVIDER=claude_cli   # claude_cli routes through the local Claude Code
+                                 # CLI, not a hosted API; openrouter/codex_cli
+                                 # are the other options in pathiel/agents/ai_brain.py
 ```
 
-`online` and `live` tests are deselected by default. The `live` suite spends
-real funds (a ~$14 round-trip order plus a billable AI-brain call) and is
-additionally gated behind `PATHIEL_E2E=1` so it can never run by accident.
+`.env.local.example` at the repo root does not yet list the `services/intel`
+keys above; they are real, read by `services/intel/sources/*.py` directly
+from the environment, just undocumented in that file today.
 
-The default lane is offline by enforcement, not by convention: `conftest.py`
-refuses every host that is not loopback and fails the test that asked, naming
-the host and the code path. A test that needs the venue is marked `online`
-(or `live`, `browser`), which keeps the network. In this lane the market
-regime reads no candles, so it is "neutral" unless a test sets it, and its
-cache starts empty for every test. Until 2026-10-19, 19 tests reached
-Hyperliquid or Google News unstubbed; one took 24.7 s, and some passed or
-failed on that day's headlines or BTC trend.
-
-### Backtests and Grid Sweeps
-
-Deleted 2026-10-23 (wave 2) along with the autonomous AI-verdict pipeline
-they replayed: the logged-replay backtest and the strategy grid sweep both
-read `.agent-memory.json`'s saved verdicts and routed them through gates
-that no longer exist (`pathiel/agents/research.py`, `risk_gates.py`). There
-is no equivalent for the MCP-submitted path yet; the desk-grading service
-(`desk_grade` / `services/strategies/facade.py`) grades what actually
-happened, not a replayed what-if.
-
----
-
-## Operating via Pathiel Agent
-
-With the skill loaded and the MCP server registered (see [MCP Integration](#mcp-integration)),
-you operate pathiel by prompting your Pathiel Agent in plain language — the agent
-calls the MCP tools for you. Restart your Pathiel session first so the skill and MCP
-server are picked up.
-
-| Goal | Prompt to give Pathiel |
-|------|-----------------------|
-| **Check state** | *Load the pathiel skill, show me the oil desk's brief, and tell me what's open.* |
-| **Configure** | *Set pathiel to LIVE mode.* |
-| **Read the desk** | *Give me the oil desk brief and its current call.* |
-| **Place a trade** | *Place a bracket on xyz:BRENTOIL: entry 72.10, stop 71.40, target 73.80.* |
-| **Housekeeping** | *Run bracket_sweep on xyz:BRENTOIL and tell me if the position is covered by a stop.* |
-| **Monitor (in session)** | *Check pathiel's account overview and tell me if anything changed since the last report.* |
-
-2026-10-23 (wave 2): there is no autonomous loop left to start, stop, or
-monitor between sessions — Claude is the only trader, and every trade is an
-explicit `place_bracket` call in response to a prompt like the ones above.
-The closest thing to "continuous trading" is `/loop 15m /oil-tick`
-(`.claude/skills/oil-tick/SKILL.md`), which re-prompts Claude itself every
-15 minutes; it is not a background process and does nothing while no Claude
-session is running it.
+## Running it
 
 ```bash
-python3 scripts/preflight_live.py    # one-shot readiness, anything blocking a trade
+scripts/restart.sh          # stop + start the FastAPI server and the log rotator
+scripts/restart.sh status   # what's running
 ```
 
----
+The MCP server is not managed by `restart.sh`: it is a transient stdio
+process Claude Code spawns on each tool call, not a long-running daemon.
+There is no autonomous trading loop or scheduler process any more; the
+desk-tick skill is what re-prompts Claude on an interval, and it does
+nothing while no Claude session is running it.
 
-## Trade Sizing
-
-The current live path uses ATR equal-risk sizing in `executor.py`:
-
-```
-target_risk_usd = perp_equity × atr_risk_sizing.risk_per_trade_pct
-raw_notional    = target_risk_usd / primary_stop_distance_pct
-trade_notional  = clamp(raw_notional, max_trade_notional_usd, leverage caps)
-```
-
-Then the executor converts the target notional into the exact Hyperliquid-valid
-coin size before risk gates run. That prevents a small intended trade from
-passing gates and then being silently enlarged by exchange minimum-order logic.
-
-Relevant knobs live in `.agent-config.json`:
-
-| Key | Meaning | Example |
-|-----|---------|---------|
-| `atr_risk_sizing.enabled` | Use stop-distance-based equal-risk sizing | `true` |
-| `atr_risk_sizing.risk_per_trade_pct` | Fraction of equity risked at the primary stop | `0.02` = 2% |
-| `atr_risk_sizing.sizing_basis` | Stop source for sizing | `primary_stop` |
-| `leverage` | Leverage ceiling — each trade uses `min(this, coin's own max)`; pushed to the exchange via `set_leverage` | `10` = up to 10× |
-| `max_trade_notional_usd` | Hard cap on a single trade's notional | `350` |
-| `equity_fraction_per_trade` | Fallback margin fraction when ATR sizing is disabled | `0.20` = 20% |
-
-When ATR sizing is disabled, the fallback formula is:
-
-```
-trade_notional = perp_equity × equity_fraction_per_trade × leverage
+```bash
+PATHIEL_STATE_DIR=$(mktemp -d) .venv/bin/python -m pytest -q   # gate: offline, ~2,700 tests
+pytest -m online        # read-only tests against the live Hyperliquid API
+pytest -m browser       # Playwright e2e for every page
+.venv/bin/python scripts/mcp_smoke.py   # live, read-only MCP smoke
 ```
 
-Caps that bound both sizing paths: `max_concurrent`, `max_total_notional_pct`,
-`max_trade_notional_usd`, exchange max leverage, available margin, and the
-coin-specific precision/minimum order. Config keys are read tolerantly —
-`snake_case` or `camelCase` both work.
+The gate suite runs in `scripts/hooks/pre-commit` on every commit
+(`scripts/install_hooks.sh` to wire it in): no absolute paths bound to one
+machine, staged Python parses, ruff is clean, then the full offline suite.
+Hooks are never skipped with `--no-verify`; a failing hook gets fixed.
+`conftest.py` refuses any host that is not loopback, so the default lane
+can place no orders by construction.
 
-Defaults if the keys are absent: `equity_fraction_per_trade = 0.01`, `leverage = 5`.
+## What was removed
 
----
+Two waves, both 2026-10-23, both operator decisions, both documented in
+full:
 
-## Design Decisions
+- **The seven autonomous strategy books** and the claims registry that
+  coordinated them. `docs/overhaul/HEADLESS_2026-10-23.md`.
+- **The autonomous engine itself**: the scan/research/execute loop, the 11
+  risk gates, the DSL exit engine, the trade-ledger memory, the scheduler.
+  Claude is the only trader left, placing every order through
+  `place_bracket`/`bracket_sweep`/`close_position`. Same doc, wave 2
+  section.
+- **The bot-watching dashboard pages** (`/activity`, `/news`, `/trends`,
+  `/analytics`, the `/desks` grid): nothing left to watch once the books
+  and the engine were gone. `docs/overhaul/DESK_UI_2026-10-23.md`.
+- **The kill switch, the status pill, the operator-token popover**: removed
+  from the Desk and Thesis pages 2026-10-24, same commit that turned the
+  call into a card.
 
-### Why volume pre-filtering?
-HL's API rate limit is **1200 weight/minute**. A single candle fetch costs **weight 20**. Scanning the full 500+ market universe naively required 10,000+ weight -> instant 429. The majors allowlist removes most of that pressure on its own. Volume pre-filtering to 45 core markets plus a small rotating sweep leaves room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. Sustained usage is roughly `1200 * markets / interval` weight/min, so the safe rule is **markets plus sweep should stay below the scan interval in seconds**.
-
-### Why DSL exit engine?
-Static SL/TP orders don't adapt to price action. The DSL engine implements a two-phase design: Phase 1 protects your capital (hard stop), Phase 2 locks in profits (trailing floor with tiered retrace thresholds). The floor only moves up — it never gives back locked profit. State is persisted on disk so a daemon restart doesn't reset the ratchet, and the registry is reconciled against the exchange each tick so manually-opened or externally-closed positions stay coherent. This pattern is inspired by senpi-skills' DSL dynamic stop-loss engine.
-
-### Why pluggable AI brain?
-The research prompt and verdict parser are stable; only the transport changes.
-Keeping OpenRouter, Claude CLI, and Codex CLI behind one provider interface lets
-the operator switch the decision-maker without adding another executor or another
-prompt/parse path. LONG/SHORT/CLOSE verdicts still flow through the same risk
-gates, kill switch, close helper, and DSL exit engine.
-
-### Why Hyperfeed Discovery?
-Leaderboard rankings come from the JSON Hyperliquid's own UI renders (`stats-data.hyperliquid.xyz/Mainnet/leaderboard`, cached 10 minutes), joined to live `/info` positions. Funding regime and OI context come from the raw HL endpoints we already call. No external MCP dependency needed.
-
-### Why pure Python?
-Rewritten from TypeScript/Next.js to enable simpler deployment, MCP integration with Pathiel Agent, and native testability without a headless browser.
-
----
-
-## Rate Limit Math
-
-| Operation | Weight | Notes |
-|-----------|--------|-------|
-| `allMids` | 2 | Real-time prices |
-| `metaAndAssetCtxs` | 20 | Universe + volume + OI (perp) |
-| `spotMetaAndAssetCtxs` | 20 | Universe + volume + OI (spot) |
-| `candleSnapshot` (per coin) | 20 | Plus per-item weight |
-| **Total per scan cycle** | ~900-1,100 | Top 45 markets plus a small sweep, one 5m candle fetch each |
-
-With `PATHIEL_MAX_MARKETS=45`, a small `PATHIEL_UNIVERSE_SWEEP`, and a 50s candle-cache TTL, each 60s scan fetches fresh 5m candles while keeping room for mids, HIP-3 metadata, dashboard/account calls, and occasional 1h enrichment. The cache TTL is deliberately kept just below the scan interval so the scanner never reacts to a stale snapshot — raising it would re-introduce that lag.
-
-The crypto/HIP-3 budget split (`PATHIEL_MAX_MARKETS_HIP3`) is a *partition* of the same scan budget, not extra calls. If 429s or data gaps show up, lower `PATHIEL_UNIVERSE_SWEEP` or increase `PATHIEL_BATCH_SLEEP` before tightening strategy gates.
-
-When HIP-3 is enabled, `fetch_account_state(user, include_hip3=True)` issues one extra `clearinghouseState` POST per registered HIP-3 dex (10 dexes × weight 2, plus main and spot: 24 weight). The aggregated path is used by the dashboard, the trading-loop heartbeat, and the MCP `state`/`portfolio` handlers. MCP `close_position` delegates to `executor.close_position_market()`, so closes share the same reduce-only order path, DSL cleanup, trigger-order cancellation, and loss-cooldown behavior as loop exits.
-
-**The dashboard server's budget (60 burst, 2 weight/s).** 24 weight is 12 s of it, so the server never reads the account per request. Everything that shows the account (dashboard summary and positions, the trade banner, "Your size", desk analytics) shares one snapshot, `pathiel/client/account_snapshot.py`: under 15 s old it is served as is; older, it is served at once and one background re-read starts; past 5 minutes the caller waits for a read (still one read, however many callers). Between full sweeps (every 5 minutes) a re-read asks only the dexes that held money or a position: main + spot + xyz is 6 weight. A failed read, or one that lost a dex that held money, never replaces the last good one. Background work (desk rebuilds, those re-reads) yields: it may only spend tokens above half the bucket, so a page view or a clicked refresh goes first. The trading loop and the executor still read fresh every time. Knobs: `PATHIEL_ACCOUNT_FRESH_S`, `PATHIEL_ACCOUNT_MAX_STALE_S`, `PATHIEL_ACCOUNT_SWEEP_S`, `PATHIEL_HL_BACKGROUND_RESERVE`. Where the budget went: `curl -s localhost:8000/api/health/system | jq .hl_budget` (weight granted and requests refused, per request type and priority). Pages poll with `pollEvery` (pathiel.js): the next poll waits for the last answer and hidden tabs stop polling, so a slow answer can no longer stack requests and hold the browser's six connections to the site (2026-10-19: that is what stalled the Desks click).
-
-**No request handler blocks the server's event loop.** uvicorn runs every request on one loop, so a venue read, a model call or an order inside an `async def` handler holds up every page for as long as it takes. Handlers that do that work are plain `def` (FastAPI runs them on its thread pool), or read their body on the loop and hand the rest to `asyncio.to_thread`; `tests/test_no_blocking_on_the_event_loop.py` checks every route module. Until 2026-10-19 `pathiel/server.py` had 20 such handlers (every `/api/hl/*` read, scan, research, the order routes); on the live server `/api/health` waited 0.87 s behind 8 order-book reads, now 0.001 s. The server also warms "Your size" venue metadata for every desk coin at startup (`PATHIEL_META_PREWARM=0` skips it): the first size after a restart used to build the SDK client inside the request, 2.8 s.
-
----
-
-## Project Structure
+## Project structure
 
 ```
 pathiel/
-├── pathiel/                  # Pure Python agent
-│   ├── __init__.py
-│   ├── __main__.py                # Entry point
-│   ├── server.py                  # FastAPI server — 22 routes
-│   ├── agents/                    # Core agent logic
-│   │   ├── config.py              # Agent configuration model
-│   │   ├── config_store.py        # Config persistence
-│   │   ├── ai_brain.py            # Pluggable AI brain providers
-│   │   ├── executor.py            # ATR/fallback sizing + order execution + DSL registration
-│   │   ├── memory.py              # File-backed state
-│   │   ├── perception.py          # Volume-filtered parallel scanner
-│   │   ├── research.py            # AI research pipeline
-│   │   ├── risk_gates.py          # 11 risk gates
-│   │   ├── system_prompt.py       # Agent system prompt
-│   │   ├── ta_filter.py           # Pre-AI TA filter
-│   │   ├── dsl_exit.py            # Two-phase trailing stop engine
-│   │   └── hyperfeed.py           # Discovery API (leaderboard, funding regime, OI context)
-│   ├── client/                    # External API clients
-│   │   ├── exchange.py            # HL order placement
-│   │   ├── hl_client.py           # HL REST + WebSocket client
-│   │   ├── ws_client.py           # Persistent WebSocket for real-time mids
-│   │   ├── universe.py            # Volume-ranked market loader with caching
-│   │   ├── cache.py               # LRU + TTL memoization
-│   │   ├── lock.py                # fcntl lock with stale-PID recovery
-│   │   ├── parallel.py            # Concurrency-bounded fan-out
-│   │   └── daemon.py              # Long-lived scan scheduler
-│   ├── indicators/                # TA math
-│   │   ├── math.py                # EMA, SMA, ATR, RSI, ADX
-│   │   └── triggers.py            # Trigger detection + composite scoring
-│   └── models/                    # Shared data types
-│       └── types.py               # Candle (OHLCV)
+├── pathiel/
+│   ├── server.py                  # FastAPI app, page routes, health, grading loop
+│   ├── dashboard.py                # Desk and Account page handlers, payload builders
+│   ├── state.py                    # shared state-directory resolver
+│   ├── agents/
+│   │   ├── bracket.py              # place_bracket, bracket_sweep, close_position, the 20x rule
+│   │   ├── ai_brain.py              # pluggable verdict providers (openrouter, claude_cli, codex_cli)
+│   │   ├── book_params.py           # the sizing-floor resolver place_bracket still prices against
+│   │   ├── capital_flows.py         # deposits/withdrawals, flow-neutral drawdown
+│   │   ├── hyperfeed.py             # leaderboard, whale index, funding-regime classification
+│   │   └── news_catalyst.py         # desk news-headline fetch
+│   ├── client/
+│   │   ├── hl_client.py             # Hyperliquid REST client
+│   │   ├── exchange.py              # order placement, leverage setting
+│   │   ├── account_snapshot.py      # shared, cached account reads
+│   │   └── rate_limit.py            # the venue token bucket
+│   └── templates/, static/          # oil_desk.html/.js, desk.html, account.html
+├── services/
+│   ├── strategies/                  # desk registry, analytics, journal, grader, trade grading
+│   ├── thesis/                      # prompt, validator, render (the one LLM step)
+│   ├── intel/                       # news, EIA, FRED, CBOE, EDGAR, positioning, predictions
+│   ├── llm/                         # gateway to the local Claude Code CLI
+│   ├── risk/                        # RiskProfile -> derive_limits, presets
+│   ├── accounts/                    # registry, vault, positions, credentials
+│   └── auth/                        # SIWE sessions, operator role
+├── contracts/                       # shared pydantic models (risk, strategies, accounts)
 ├── scripts/
-│   ├── pathiel-mcp-server.py       # MCP server (stdio, 59 tools)
-│   └── trading_loop.py            # Continuous trading loop
-├── skills/pathiel-agent/    # Pathiel Agent skill
-├── tests/                         # pytest suite — offline / online / live e2e
-└── docs/
-    ├── AI_BRAIN_OPERATOR_WIRING.md # Codex/Claude/Pathiel/OpenClaw brain wiring
-    └── journal-schema.md          # Trade journal schema
+│   ├── pathiel-mcp-server.py        # MCP server (stdio, 59 tools)
+│   ├── desk_slot.py, oil_levels.py, watch_wallet.py   # desk-tick's own tools
+│   ├── restart.sh                   # server + log rotator
+│   └── mcp_tool_table.py            # regenerates docs/overhaul/MCP.md
+├── docs/overhaul/                   # the headless-desk and desk-ui removal writeups
+└── tests/                           # pytest: offline gate, online, browser, live e2e
 ```
 
----
+## Built with
 
-## Built With
-
-- FastAPI — Python web framework
-- OpenRouter / Claude CLI / Codex CLI — AI research brain providers
-- Hyperliquid Python SDK — perpetual futures DEX
-- Brave Search API (optional, for news signals)
-- Prometheus (`prometheus-client`) — `/metrics` instrumentation + observability
-- Kubernetes (kind + kube-prometheus-stack) — local deployment & Grafana dashboards (see [`k8s/`](k8s/README.md))
-
-It is **operated by** [Pathiel Agent](https://github.com/Julian-dev28/pathiel-agent)
-through the MCP server — Pathiel Agent is not a build dependency; the trading
-engine is plain Python.
-
----
-
-**Note:** Project trunk is `main` (Python). The legacy TypeScript/Next.js implementation lives on archived branches.
+- FastAPI, vanilla HTML/CSS/JS (no frontend framework)
+- Hyperliquid Python SDK
+- `services/llm`, a gateway to the local Claude Code CLI, the project's one
+  sanctioned path to an LLM
+- Pydantic contracts (`contracts/`) as the shared schema between services
