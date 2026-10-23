@@ -12,6 +12,12 @@ or a script, never from mental arithmetic.
 
 ## Steps, in order
 
+0. **Slot first, before anything else.** `python3 scripts/desk_slot.py --desk $ARGUMENTS`.
+   If `slot` is `held` and `mine` is false, another desk's coin holds the
+   account's one slot: write the log line
+   `DESK-TICK $ARGUMENTS <utc> action=SKIP slot held by <holder>` and STOP.
+   No brief, no levels, no MCP calls. The desk that holds the slot is the
+   only desk that ticks (operator rule, 2026-10-23).
 1. **Thesis first.** `desk_brief {desk: "$ARGUMENTS"}` (quick). The call's
    instrument is COIN for the rest of the tick (oil: xyz:BRENTOIL, metals:
    xyz:GOLD or xyz:SILVER, ai: whichever equity the call names, gas:
@@ -32,11 +38,8 @@ or a script, never from mental arithmetic.
    `python3 scripts/watch_wallet.py 0x8debbedbdc603769549a6277fed38dae65185019`.
    If `any_naked` is true, tell him once per position, then only if the
    liquidation distance shrinks under 1.5%.
-5. **Account slot.** `account_overview`. If ANY coin on the account has an
-   open position, or `bracket_sweep` on the other active desks' coins would
-   show a resting entry, this desk does not place a new entry: the wallet
-   holds one full-port position. Log `action=NONE slot taken by <coin>`.
-   (`place_bracket` also refuses this on its own.)
+5. **Account slot.** Step 0 already answered it: a free slot or ours.
+   (`place_bracket` refuses a taken slot on its own as well.)
 6. **Decide.** Exactly one of:
    - **In a position on COIN:** HOLD. `close_position` only if the thesis
      invalidation triggered on a CLOSED hourly candle, or a headline from
