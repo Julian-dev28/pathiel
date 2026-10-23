@@ -227,6 +227,9 @@ def test_tools_are_registered_as_live_money():
 def test_handler_sizes_then_places(monkeypatch):
     mcp = _mcp()
     from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
 
     seen = {}
     monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0), [], None))
@@ -288,6 +291,9 @@ def test_place_bracket_passes_the_gate_and_reports_liquidation():
 def test_handler_passes_the_coin_max_leverage_through(monkeypatch):
     mcp = _mcp()
     from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: None)
 
     seen = {}
     monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0), [], None))
@@ -340,3 +346,44 @@ def test_handler_refuses_when_venue_max_leverage_is_unknown(monkeypatch):
     monkeypatch.setattr(br, "place_bracket", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not place")))
     out = json.loads(mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
     assert out["ok"] is False and out["placed"] is False and "not trading blind" in out["error"]
+
+
+
+# ------------------------------------------------- the account-wide slot guard
+def _raw(positions=(), entries=()):
+    return {"state": {"assetPositions": [{"position": {"coin": c, "szi": sz}} for c, sz in positions]},
+            "orders": [{"coin": c, "reduceOnly": False, "oid": i} for i, c in enumerate(entries)]}
+
+
+def test_slot_guard_counts_positions_and_resting_entries_on_other_coins():
+    fetch = lambda user, dex: _raw(positions=[("xyz:GOLD", "0.5")])
+    assert bracket.slot_taken_by("0xu", "xyz:BRENTOIL", 1, fetch_raw=fetch, dexes=["xyz"]) == "xyz:GOLD"
+    fetch = lambda user, dex: _raw(entries=["xyz:NVDA"])
+    assert bracket.slot_taken_by("0xu", "xyz:BRENTOIL", 1, fetch_raw=fetch, dexes=["xyz"]) == "xyz:NVDA"
+
+
+def test_slot_guard_ignores_the_same_coin_and_reduce_only_rows():
+    fetch = lambda user, dex: {"state": {"assetPositions": [{"position": {"coin": "xyz:BRENTOIL", "szi": "1.3"}}]},
+                               "orders": [{"coin": "xyz:GOLD", "reduceOnly": True, "oid": 1}]}
+    assert bracket.slot_taken_by("0xu", "xyz:BRENTOIL", 1, fetch_raw=fetch, dexes=["xyz"]) is None
+
+
+def test_slot_guard_respects_more_slots_and_a_flat_account():
+    fetch = lambda user, dex: _raw(positions=[("xyz:GOLD", "0.5")])
+    assert bracket.slot_taken_by("0xu", "xyz:BRENTOIL", 2, fetch_raw=fetch, dexes=["xyz"]) is None
+    assert bracket.slot_taken_by("0xu", "xyz:BRENTOIL", 1, fetch_raw=lambda u, d: _raw(), dexes=["", "xyz"]) is None
+
+
+def test_handler_refuses_when_another_desk_holds_the_slot(monkeypatch):
+    mcp = _mcp()
+    from pathiel.agents import bracket as br
+    import pathiel.client.exchange as ex
+
+    monkeypatch.setattr(mcp, "_risk_inputs", lambda: (SimpleNamespace(max_leverage=10.0, max_open_positions=1), [], None))
+    monkeypatch.setattr(mcp, "_coin_specs", lambda c: (20.0, 2))
+    monkeypatch.setattr(mcp, "_live_equity", lambda: 15.21)
+    monkeypatch.setattr(ex, "resolve_user_address", lambda: "0xu")
+    monkeypatch.setattr(br, "slot_taken_by", lambda user, coin, n: "xyz:GOLD")
+    monkeypatch.setattr(br, "place_bracket", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not place")))
+    out = json.loads(mcp.handle_place_bracket({"coin": COIN, "entry_px": 107.2, "stop_px": 106.7, "tp_px": 108.45}))
+    assert out["placed"] is False and "slot taken by xyz:GOLD" in out["error"]

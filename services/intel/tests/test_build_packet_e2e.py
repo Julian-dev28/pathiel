@@ -66,7 +66,12 @@ def mock_all_http(monkeypatch):
     monkeypatch.setattr(http_client, "fetch_text", lambda url, **kw: _router_text(url, **kw))
 
 
-def test_build_packet_oil_desk_is_valid_and_populated(oil_spec):
+def test_build_packet_oil_desk_is_valid_and_populated(oil_spec, monkeypatch):
+    # The operator's .env.local may carry a real key (it does since
+    # 2026-10-23); this test is about the MISSING-key path, so force it.
+    # Empty, not deleted: the intel env loader re-reads .env.local with
+    # setdefault, so a deleted key comes straight back; an empty one stays.
+    monkeypatch.setenv("CONGRESS_API_KEY", "")
     packet = build_packet(oil_spec, now=T0)
     assert isinstance(packet, IntelPacket)
     assert packet.desk_id == "oil"
@@ -75,7 +80,7 @@ def test_build_packet_oil_desk_is_valid_and_populated(oil_spec):
     assert len(packet.catalysts) > 0
     assert len(packet.odds) > 0
     assert len(packet.positioning) > 0
-    # congress.gov key is unset in the test environment -> must be named
+    # congress.gov key unset -> must be named
     assert any("CONGRESS_API_KEY" in f for f in packet.sources_failed)
 
 
