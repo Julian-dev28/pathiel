@@ -252,3 +252,17 @@ def test_the_loop_settles_vanished_positions_with_the_books_exempt():
     assert isinstance(kw["exempt_coins"], ast.Name) and kw["exempt_coins"].id == "_ladder_coins"
     names = {getattr(n.func, "id", None) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     assert "record_external_position_close" not in names   # only through settle_vanished_positions
+
+
+def test_sweep_keeps_the_children_of_a_resting_bracket_entry(info, cancels):
+    """2026-10-23: a normalTpsl bracket rests its stop and target as
+    reduce-only rows before the entry fills; the venue lists them under the
+    parent's `children`. They must survive a sweep. An unrelated reduce-only
+    leftover on the same flat coin is still cancelled."""
+    sl = order(46, "xyz:BRENTOIL", reduce_only=True)
+    tp = {**order(47, "xyz:BRENTOIL", reduce_only=True), "orderType": "Take Profit Market"}
+    entry = {**order(45, "xyz:BRENTOIL", reduce_only=False, trigger=False), "children": [sl, tp]}
+    stale = order(40, "xyz:BRENTOIL", reduce_only=True)
+    info.orders["xyz"] = [tp, sl, entry, stale]
+    assert xc.cancel_stranded_reduce_only_orders("xyz:BRENTOIL") == 1
+    assert cancels == [(40, "xyz:BRENTOIL")]
