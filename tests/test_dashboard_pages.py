@@ -331,6 +331,116 @@ def test_nav_is_identical_across_every_page_and_carries_desks(client):
         "Account is not the last nav link")
 
 
+def test_the_demo_toggle_is_gone(client):
+    """The Live/Demo header toggle (PathielMode, services/demo) was removed
+    2026-10-23 (docs/overhaul/DESK_UI_2026-10-23.md, Polish section) along
+    with /demo itself. The toggle's own test file (services/demo/tests/
+    test_router.py) was deleted with the service that owned it — this is
+    its replacement, scoped to the templates and shared script rather than
+    the deleted router."""
+    assert "PathielMode" not in SHARED_JS
+    assert "mode-toggle" not in SHARED_JS
+    for name, html in _template_files():
+        assert "/demo" not in html, f"{name} still links to /demo"
+        assert "mode-toggle" not in html, f"{name} still carries the Live/Demo toggle"
+    assert "mode-toggle" not in _css() and "is-demo" not in _css()
+
+
+def test_every_page_shell_shows_a_loading_panel_with_a_spinner_never_blank(client):
+    """docs/overhaul/DESK_UI_2026-10-23.md, Polish section: Thesis and
+    Account used to show a slow blank screen (Thesis: a cold desk's first
+    build ran inline, sometimes 9-24s; Account: bare '—' dashes with no
+    sign anything was in flight). Every section's own loading panel now
+    ships visible in the served markup — a spinner plus the section's own
+    "Loading ..." title, the same look everywhere (one `.spinner` rule,
+    pathiel.css) — so nothing a reader opens is ever a blank page, even
+    before any JS runs."""
+    pages = {"/": ("call-loading", "wallets-loading", "levels-loading", "intel-loading"),
+             "/account": ("account-loading", "risk-loading")}
+    for path, loading_ids in pages.items():
+        body = client.get(path).text
+        for loading_id in loading_ids:
+            start = body.index(f'id="{loading_id}"')
+            block_end = body.index("</div>", start)
+            block = body[start:block_end]
+            assert 'class="spinner"' in block, f"{path}#{loading_id} has no spinner"
+            assert "Loading" in block, f"{path}#{loading_id} has no loading copy"
+    desk_html = dict(_template_files())["desk.html"]
+    start = desk_html.index('id="desk-loading"')
+    block = desk_html[start:desk_html.index("</div>", start)]
+    assert 'class="spinner"' in block and "Loading" in block
+    # The spinner itself: one rule, reused everywhere, with a reduced-motion
+    # opt-out (test_no_page_animates_for_decoration already requires the
+    # opt-out exists somewhere in CSS; this pins it to THIS rule).
+    css = _css()
+    assert ".spinner{" in css and "@keyframes pathiel-spin" in css
+    assert ".spinner{animation:none;}" in css.replace(" ", "")
+
+
+def test_account_sections_fail_independently_with_their_own_error_panel():
+    """A dead account read must not blank the risk editor, and vice versa —
+    each section gets its own #<prefix>-error block (role=alert) and its
+    own #<prefix>-body the content lives in, toggled by the page's own
+    setSectionState(), never the other section's."""
+    html = dict(_template_files())["account.html"]
+    for prefix in ("account", "risk"):
+        assert f'id="{prefix}-loading"' in html
+        assert f'id="{prefix}-error"' in html and 'role="alert"' in html
+        assert f'id="{prefix}-error-detail"' in html
+        assert f'id="{prefix}-body"' in html
+    assert "setSectionState(" in html
+    # account-card/risk-preview etc. live INSIDE their section's -body wrap,
+    # not loose in the section — otherwise toggling -body does nothing.
+    acct_start, acct_end = html.index('id="account-body"'), html.index('id="risk-loading"')
+    assert 'id="account-card"' in html[acct_start:acct_end]
+    risk_start = html.index('id="risk-body"')
+    risk_end = html.index("</section>", risk_start)
+    assert 'id="risk-preview"' in html[risk_start:risk_end]
+
+
+def test_the_thesis_page_carries_a_desk_switcher_like_the_desk_page():
+    """Request 2 (2026-10-23 Polish): the Thesis page gets the same desk
+    tab row as the Desk page ("/"), filled from GET /api/desks/active by
+    desks.js's loadActiveDesksForSwitcher — one active desk means no row,
+    exactly the Desk page's own rule (oil_desk.js's renderDeskSwitcher)."""
+    desk_html = dict(_template_files())["desk.html"]
+    assert 'id="desk-switcher"' in desk_html
+    switcher_tag = desk_html[desk_html.index('id="desk-switcher"') - 5:
+                             desk_html.index(">", desk_html.index('id="desk-switcher"')) + 1]
+    assert "hidden" in switcher_tag, "#desk-switcher should ship hidden until the switcher knows there's >1 desk"
+    oil_desk_html = dict(_template_files())["oil_desk.html"]
+    assert 'id="desk-switcher"' in oil_desk_html  # the Desk page's own switcher, unchanged
+
+    js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                           "pathiel", "static", "desks.js")).read()
+    assert "loadActiveDesksForSwitcher" in js
+    assert "fetch('/api/desks/active')" in js
+    assert "initDeskPage" in js and "loadActiveDesksForSwitcher(deskId)" in js
+
+
+def test_the_thesis_nav_link_follows_the_selected_desk_not_a_hardcoded_oil():
+    """Request 2: PathielDesk (pathiel.js) persists the reader's selected
+    desk in localStorage and repoints every page's #nav-thesis-link to it;
+    the static markup still ships /desk/oil as the no-JS fallback (checked
+    by test_nav_is_identical_across_every_page_and_carries_desks above),
+    but the mechanism to override it at runtime has to exist on every page
+    that carries the link, including account.html, which loads no
+    desk-aware script of its own."""
+    assert "const PathielDesk" in SHARED_JS
+    assert "pathiel.activeDesk" in SHARED_JS
+    assert "repointThesisLink" in SHARED_JS
+    assert "function markActiveNav()" in SHARED_JS
+    for name, html in _template_files():
+        assert 'id="nav-thesis-link"' in html, f"{name} nav has no #nav-thesis-link to repoint"
+        assert "/static/pathiel.js" in html, f"{name} doesn't load pathiel.js (PathielDesk)"
+    oil_desk_js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    "pathiel", "static", "oil_desk.js")).read()
+    assert "PathielDesk.set(activeDesk)" in oil_desk_js
+    desks_js = open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                 "pathiel", "static", "desks.js")).read()
+    assert "PathielDesk.set(deskId)" in desks_js
+
+
 def test_account_is_the_last_nav_item_on_every_template():
     """Account is always the last nav item, identical in every template —
     including desk.html, which gets its own check here since
@@ -536,10 +646,6 @@ def test_the_dashboard_age_format_scales_past_minutes():
 
 
 # ── the Markets panels have to be readable, not just correct ────────────────
-
-
-def _analytics_source():
-    return dict(_template_files())["analytics.html"]
 
 
 def _css():

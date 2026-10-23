@@ -230,6 +230,32 @@ def _analytics_for_brief(spec: DeskSpec, max_age_s: float,
         if age > STALE_AFTER_S:
             notes.append(f"analytics: {age / 60:.0f} min old")
         return cached, refreshing, notes
+    if age is None and not wait:
+        # A desk with NO cache file at all yet — never built, ever, on this
+        # state dir — used to fall through to the inline build below
+        # regardless of `wait`, on the theory that it is "fast: candles come
+        # from services/strategies/candle_store" (this function's own
+        # module docstring). Measured against a cold candle_store 2026-10-23
+        # (docs/overhaul/DESK_UI_2026-10-23.md, Polish section) that is not
+        # true the first time any desk is ever opened, or right after a
+        # restart before start_warmup()'s background pass finishes: ai took
+        # 24s, top5 took 9s, oil/gas/btc 0.1-0.5s — and the web route
+        # (services/strategies/api.py's get_desk_brief/get_call_line) calls
+        # get_brief() with wait=False, so that whole build ran synchronously
+        # inside the one request a browser's Thesis-page fetch was waiting
+        # on: a blank page for as long as the venue took to answer every
+        # instrument. `wait=True` (MCP, CLI — scripts/pathiel-mcp-server.py,
+        # services/strategies/__main__.py) has no page coming back later to
+        # update, so it still builds inline below; the web path never blocks
+        # on a desk's FIRST build again. A cache that exists but was built
+        # for a different primary instrument (age is not None, cached is
+        # None) is a narrower, rarer case — actively wrong data, not merely
+        # absent — and keeps the inline rebuild below so a stale wrong-coin
+        # ladder is never served even once.
+        refreshing = revalidate(spec.id, urgent=True)
+        notes.append("analytics: first build queued in the background — reload in a few seconds"
+                     if refreshing else "analytics: unavailable right now (background refresh is off)")
+        return None, refreshing, notes
     try:
         return pipeline.build_and_cache_analytics(spec), False, notes
     except Exception as exc:  # noqa: BLE001 - serve what we have rather than fail the brief

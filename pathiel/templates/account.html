@@ -43,33 +43,61 @@
     <div class="section-head">
       <h2 class="sec-label">Active account</h2>
     </div>
-    <div class="card account-card" id="account-card">
-      <div class="account-card-id">
-        <div class="account-card-label" id="acct-label">&mdash;</div>
-        <div class="ksub mono account-card-addr" id="acct-address"></div>
-        <div class="account-blockers" id="acct-blockers"></div>
-      </div>
-      <div class="account-card-stats">
-        <div>
-          <div class="sec-label">Mode</div>
-          <span class="badge" id="acct-mode">&mdash;</span>
-        </div>
-        <div>
-          <div class="sec-label">Equity</div>
-          <div class="kv" id="acct-equity">&mdash;</div>
-        </div>
-      </div>
+    <!-- Shell renders at once; the card below fills in once GET
+         /api/accounts/active/summary answers (docs/overhaul/
+         DESK_UI_2026-10-23.md, Polish section — this page used to show
+         bare "—" dashes with no sign anything was loading, which on a
+         slow first read (the account summary reads the venue live) looked
+         identical to broken). Fails on its own: a dead account read never
+         blocks the risk editor below it. -->
+    <div id="account-loading" class="state-block" aria-live="polite">
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading account&hellip;</div>
     </div>
-    <div class="onboard-actions">
-      <button type="button" id="acct-switch" class="btn">Switch or add account</button>
+    <div id="account-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load the account</div>
+      <div class="state-sub" id="account-error-detail"></div>
     </div>
-    <div id="security-note" class="security-note" hidden></div>
+    <div id="account-body" hidden>
+      <div class="card account-card" id="account-card">
+        <div class="account-card-id">
+          <div class="account-card-label" id="acct-label">&mdash;</div>
+          <div class="ksub mono account-card-addr" id="acct-address"></div>
+          <div class="account-blockers" id="acct-blockers"></div>
+        </div>
+        <div class="account-card-stats">
+          <div>
+            <div class="sec-label">Mode</div>
+            <span class="badge" id="acct-mode">&mdash;</span>
+          </div>
+          <div>
+            <div class="sec-label">Equity</div>
+            <div class="kv" id="acct-equity">&mdash;</div>
+          </div>
+        </div>
+      </div>
+      <div class="onboard-actions">
+        <button type="button" id="acct-switch" class="btn">Switch or add account</button>
+      </div>
+      <div id="security-note" class="security-note" hidden></div>
+    </div>
   </section>
 
   <section class="section" id="risk-section">
     <div class="section-head">
       <h2 class="sec-label">Risk</h2>
     </div>
+
+    <!-- Same independent loading/error pattern as the account section
+         above — a slow or failed risk read never blocks it, and vice
+         versa. -->
+    <div id="risk-loading" class="state-block" aria-live="polite">
+      <div class="state-title"><span class="spinner" aria-hidden="true"></span>Loading risk settings&hellip;</div>
+    </div>
+    <div id="risk-error" class="state-block" hidden role="alert">
+      <div class="state-title">Could not load risk settings</div>
+      <div class="state-sub" id="risk-error-detail"></div>
+    </div>
+    <div id="risk-body" hidden>
 
     <div class="risk-editor-head">
       <span class="seg" id="risk-preset-seg" role="radiogroup" aria-label="Risk preset"></span>
@@ -122,6 +150,7 @@
     <div class="onboard-actions">
       <button type="button" id="risk-save" class="btn go">Save</button>
       <span class="ksub mono" id="risk-save-status" aria-live="polite"></span>
+    </div>
     </div>
   </section>
 
@@ -201,6 +230,21 @@ function applyLimits(d) {
   }
 }
 
+// Loading/error/body state for a section — same three-state pattern as
+// desks.js's setDeskState, inlined here since this is the only page with
+// no external script of its own. 'auth' is handleAuthError's case: the
+// shared #risk-auth-notice banner at the top of the page already explains
+// why, so neither this section's own error block nor its body has
+// anything useful to add.
+function setSectionState(prefix, state) {
+  const loading = document.getElementById(`${prefix}-loading`);
+  const error = document.getElementById(`${prefix}-error`);
+  const body = document.getElementById(`${prefix}-body`);
+  if (loading) loading.hidden = state !== 'loading';
+  if (error) error.hidden = state !== 'error';
+  if (body) body.hidden = state !== 'ready';
+}
+
 // Off the local machine, GET/PUT /api/risk/profile, GET /api/risk/limits
 // and every /api/accounts route need the deployment's operator
 // (services/auth/integration.py's require_operator_or_local — 401 "connect
@@ -268,9 +312,12 @@ document.getElementById('risk-save').addEventListener('click', async (e) => {
 });
 
 async function loadRiskLimits() {
+  setSectionState('risk', 'loading');
   try {
     const r = await fetch('/api/risk/limits');
-    if (await handleAuthError(r)) return;
+    // Explained by #risk-auth-notice at the top of the page already —
+    // just stop showing the spinner, nothing else to say here.
+    if (await handleAuthError(r)) { document.getElementById('risk-loading').hidden = true; return; }
     if (!r.ok) throw new Error('limits ' + r.status);
     const d = await r.json();
     const p = d.profile || {};
@@ -299,7 +346,10 @@ async function loadRiskLimits() {
     document.getElementById('adv-max-pos').value = p.max_open_positions ?? '';
     renderPresetSeg();
     applyLimits(d);
+    setSectionState('risk', 'ready');
   } catch (e) {
+    document.getElementById('risk-error-detail').textContent = String(e.message || e);
+    setSectionState('risk', 'error');
     reportRefreshFailure('risk limits', e, 'risk-preview');
     renderPresetSeg();
   }
@@ -338,12 +388,18 @@ function renderAccountCard(s) {
 }
 
 async function loadAccount() {
+  setSectionState('account', 'loading');
   try {
     const r = await fetch('/api/accounts/active/summary');
-    if (await handleAuthError(r)) return;
+    if (await handleAuthError(r)) { document.getElementById('account-loading').hidden = true; return; }
     if (!r.ok) throw new Error('summary ' + r.status);
     renderAccountCard(await r.json());
-  } catch (e) { reportRefreshFailure('account summary', e, 'account-card'); }
+    setSectionState('account', 'ready');
+  } catch (e) {
+    document.getElementById('account-error-detail').textContent = String(e.message || e);
+    setSectionState('account', 'error');
+    reportRefreshFailure('account summary', e, 'account-card');
+  }
 }
 
 document.getElementById('acct-switch').addEventListener('click', () => PathielSession.openWallet('choose'));

@@ -46,11 +46,9 @@ SCAN_DIRS = ("pathiel", "scripts", "services")
 # Own deploy unit, own Dockerfile or host — never bundled into the Fly image,
 # so their imports must not force a COPY line into it.
 #   pathiel_data_api  own Dockerfile + Postgres deps
-#   demo             Vercel-only; generates synthetic data for the public demo
 #   wallet_ui        an npm package built to a static asset; its Python tests
-#                    import services.demo to boot a server, and neither belongs
-#                    in the image that trades the real account
-EXCLUDE_PREFIXES = ("services/pathiel_data_api", "services/demo", "services/wallet_ui")
+#                    boot a server against a built file, not the image
+EXCLUDE_PREFIXES = ("services/pathiel_data_api", "services/wallet_ui")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -224,20 +222,6 @@ def test_dockerfile_does_not_bundle_wallet_ui():
     assert not any(c.startswith("services/wallet_ui") for c in copies), (
         "the Fly image copies services/wallet_ui — only its built asset, "
         "pathiel/static/wallet.js, belongs in the image"
-    )
-
-
-def test_dockerfile_does_not_bundle_demo():
-    """services/demo exists to feed a public Vercel deployment synthetic data.
-
-    It has no business in the image that runs the real account: the trading
-    loop must never have a code path that can substitute invented equity and
-    positions for the real ones.
-    """
-    copies = _dockerfile_copy_sources()
-    assert not any(c.startswith("services/demo") for c in copies), (
-        "the Fly image copies services/demo — the live trading image should "
-        "carry no synthetic-data generator"
     )
 
 
